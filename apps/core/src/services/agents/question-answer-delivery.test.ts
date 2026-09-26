@@ -9,6 +9,7 @@ import { Squad } from '../../entities/Squad'
 import { User } from '../../entities/User'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { QUESTION_ANSWER_DELIVERY_LEASE_MS, reconcileQuestionAnswerDeliveriesOnce } from './question-answer-delivery'
+import { retryAgentQuestionAnswerDelivery } from './questions'
 import { reconcileQuestionDeliveryFailureAlertsOnce } from './question-delivery-failure-alert'
 
 const QUESTION = { questions: [{ id: 'q1', type: 'text' as const, question: 'Ship it?' }] }
@@ -255,6 +256,118 @@ describe('question answer delivery outbox', () => {
         .from(inbox)
         .where(like(inbox.idempotencyKey, `%${id}:9`))
     ).toHaveLength(1)
+  })
+
+  it('reconciles terminal failure from an accepted receipt without resending or changing the answer', async () => {
+    const { question, now } = await createPendingDelivery()
+    await reconcileQuestionAnswerDeliveriesOnce({
+      now,
+      testHooks: {
+        afterAgentSend: async () => {
+          throw new Error('lost confirmation after acceptance')
+        },
+      },
+    })
+    await db
+      .update(agentQuestions)
+      .set({ answerDeliveryStatus: 'failed', answerDeliveryNextAttemptAt: null })
+      .where(eq(agentQuestions.id, question.id))
+
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 0,
+      delivered: 1,
+      failed: 0,
+    })
+    const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(row).toMatchObject({ status: 'answered', answer: 'Yes, ship it', answerDeliveryStatus: 'delivered' })
+    expect(row.answerDeliveryMessageId).not.toBeNull()
+    expect(row.answerDeliveryExecutionId).not.toBeNull()
+    expect(
+      await db
+        .select()
+        .from(chatSendReceipts)
+        .where(eq(chatSendReceipts.clientId, `agent-question-answer:v1:${question.id}:inbox`))
+    ).toHaveLength(1)
+  })
+
+  it('reconciles accepted failure on explicit retry without incrementing generation or sending again', async () => {
+    const { question, now } = await createPendingDelivery()
+    await reconcileQuestionAnswerDeliveriesOnce({
+      now,
+      testHooks: {
+        afterAgentSend: async () => {
+          throw new Error('lost settlement')
+        },
+      },
+    })
+    await db
+      .update(agentQuestions)
+      .set({ answerDeliveryStatus: 'failed', answerDeliveryNextAttemptAt: null })
+      .where(eq(agentQuestions.id, question.id))
+    expect((await retryAgentQuestionAnswerDelivery(question.id))?.answerDelivery).toMatchObject({
+      status: 'delivered',
+      generation: 1,
+    })
+    expect(
+      await db
+        .select()
+        .from(chatSendReceipts)
+        .where(eq(chatSendReceipts.clientId, `agent-question-answer:v1:${question.id}:inbox`))
+    ).toHaveLength(1)
+  })
+
+  it('requires an accepted receipt, not only receipt identities, and never sends on a failed-row sweep', async () => {
+    const { question, now } = await createPendingDelivery()
+    await reconcileQuestionAnswerDeliveriesOnce({
+      now,
+      testHooks: {
+        afterAgentSend: async () => {
+          throw new Error('lost settlement')
+        },
+      },
+    })
+    const clientId = `agent-question-answer:v1:${question.id}:inbox`
+    await db.update(chatSendReceipts).set({ state: 'pending' }).where(eq(chatSendReceipts.clientId, clientId))
+    await db
+      .update(agentQuestions)
+      .set({ answerDeliveryStatus: 'failed', answerDeliveryNextAttemptAt: null })
+      .where(eq(agentQuestions.id, question.id))
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 0,
+      delivered: 0,
+      failed: 0,
+    })
+    await db.update(chatSendReceipts).set({ state: 'accepted' }).where(eq(chatSendReceipts.clientId, clientId))
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 0,
+      delivered: 1,
+      failed: 0,
+    })
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.clientId, clientId))).toHaveLength(1)
+  })
+
+  it('does not reconcile a failed answer from inbox persistence alone', async () => {
+    const { question, now } = await createPendingDelivery()
+    await reconcileQuestionAnswerDeliveriesOnce({
+      now,
+      testHooks: {
+        afterInboxPersisted: async () => {
+          throw new Error('not accepted')
+        },
+      },
+    })
+    await db
+      .update(agentQuestions)
+      .set({ answerDeliveryStatus: 'failed', answerDeliveryNextAttemptAt: null })
+      .where(eq(agentQuestions.id, question.id))
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 0,
+      delivered: 0,
+      failed: 0,
+    })
+    const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(row.answerDeliveryStatus).toBe('failed')
+    expect(row.answerDeliveredAt).toBeNull()
   })
 
   it('adopts a prior Agent.sendMessage acceptance after a crash', async () => {

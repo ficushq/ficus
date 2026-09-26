@@ -1,5 +1,5 @@
 import { FlowWaitSupersededError } from '../work-streams/wait-scope'
-import { and, eq, isNotNull, lte, or } from 'drizzle-orm'
+import { and, eq, isNotNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestions, agents, chatSendReceipts, inbox } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
@@ -256,12 +256,93 @@ async function deliverClaim(
   }
 }
 
+/**
+ * An accepted chat receipt (with both persisted identities) and the original answer inbox row
+ * prove agent-send acceptance. An inbox row or unread/read flag alone does NOT prove delivery.
+ * Reconcile terminal failures without a new send: a late/failed settlement can outlive acceptance.
+ */
+export async function reconcileAcceptedQuestionAnswerFailuresOnce(
+  questionId?: string,
+  now = new Date()
+): Promise<number> {
+  const candidates = await db
+    .select({
+      id: agentQuestions.id,
+      generation: agentQuestions.answerDeliveryGeneration,
+      inboxId: inbox.id,
+      messageId: chatSendReceipts.messageId,
+      executionId: chatSendReceipts.executionId,
+    })
+    .from(agentQuestions)
+    .innerJoin(
+      chatSendReceipts,
+      and(
+        eq(chatSendReceipts.agentId, agentQuestions.agentId),
+        eq(
+          chatSendReceipts.clientId,
+          sql<string>`'agent-question-answer:v1:' || ${agentQuestions.id}::text || ':inbox'`
+        ),
+        eq(chatSendReceipts.state, 'accepted'),
+        isNotNull(chatSendReceipts.messageId),
+        isNotNull(chatSendReceipts.executionId)
+      )
+    )
+    .innerJoin(
+      inbox,
+      and(
+        eq(inbox.idempotencyKey, sql<string>`'agent-question-answer:v1:' || ${agentQuestions.id}::text`),
+        eq(inbox.recipientType, 'agent'),
+        eq(inbox.recipientId, sql<string>`${agentQuestions.agentId}::text`)
+      )
+    )
+    .where(
+      and(
+        eq(agentQuestions.status, 'answered'),
+        eq(agentQuestions.answerDeliveryStatus, 'failed'),
+        ...(questionId ? [eq(agentQuestions.id, questionId)] : [])
+      )
+    )
+    .limit(QUESTION_ANSWER_DELIVERY_BATCH_SIZE)
+  let delivered = 0
+  for (const candidate of candidates) {
+    const updated = await db.transaction(async (tx) => {
+      const [settled] = await tx
+        .update(agentQuestions)
+        .set({
+          answerDeliveryStatus: 'delivered',
+          answerDeliveryClaimToken: null,
+          answerDeliveryClaimedAt: null,
+          answerDeliveryNextAttemptAt: null,
+          answerDeliveryLastError: null,
+          answerDeliveryInboxMessageId: candidate.inboxId,
+          answerDeliveryMessageId: candidate.messageId,
+          answerDeliveryExecutionId: candidate.executionId,
+          answerDeliveredAt: now,
+        })
+        .where(
+          and(
+            eq(agentQuestions.id, candidate.id),
+            eq(agentQuestions.status, 'answered'),
+            eq(agentQuestions.answerDeliveryStatus, 'failed'),
+            eq(agentQuestions.answerDeliveryGeneration, candidate.generation)
+          )
+        )
+        .returning({ id: agentQuestions.id })
+      if (settled) await tx.update(inbox).set({ deliveredAt: now }).where(eq(inbox.id, candidate.inboxId))
+      return Boolean(settled)
+    })
+    if (updated) delivered++
+  }
+  return delivered
+}
+
 export async function reconcileQuestionAnswerDeliveriesOnce(
   options: ReconcileQuestionAnswerDeliveriesOptions = {}
 ): Promise<{ processed: number; delivered: number; failed: number }> {
   const now = options.now ?? new Date()
+  const reconciled = await reconcileAcceptedQuestionAnswerFailuresOnce(options.questionId, now)
   const claims = await claimDueDeliveries(now, options.questionId)
-  let delivered = 0
+  let delivered = reconciled
   let failed = 0
   for (const claim of claims) {
     const result = await deliverClaim(claim, now, options.testHooks)

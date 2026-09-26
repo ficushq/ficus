@@ -14,7 +14,7 @@ import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'
 import { sendAgentMessage, continueHaltedAgents } from '../api/agents'
 import { resolveWorkStreamWait } from '../api/squads'
-import { retryAgentQuestionAnswerDelivery } from '../api/agentQuestions'
+import { retryAgentQuestionAnswerDelivery, dismissAgentQuestionDeliveryFailure } from '../api/agentQuestions'
 import { actionErrorMessage } from '../lib/actionError'
 import type {
   PendingAction,
@@ -231,7 +231,9 @@ export function ActionItem({
         {expanded && (
           <div className={clsx('pb-4 space-y-4', !embedded && 'px-4 sm:pl-11')}>
             {/* Action controls */}
-            {action.canRespond ? (
+            {action.canRespond ||
+            (action.type === 'agent-question' &&
+              (action.data as AgentQuestionActionData).answerDelivery?.status === 'failed') ? (
               <ActionContent
                 action={action}
                 onComplete={completeAction}
@@ -272,7 +274,7 @@ function ActionSubtitle({ action }: { action: PendingAction }) {
       return (
         <p className="text-xs text-muted truncate">
           {data.squadName ? `${data.squadName} · ` : ''}
-          {data.answerDelivery?.status === 'failed' ? 'Answer delivery failed' : 'Needs your answer'}
+          {data.answerDelivery?.status === 'failed' ? 'Answer delivery unconfirmed' : 'Needs your answer'}
         </p>
       )
     }
@@ -419,16 +421,29 @@ function AgentQuestionActionContent({
     onSuccess: onComplete,
   })
 
+  const dismissMutation = useMutation({
+    mutationFn: () => dismissAgentQuestionDeliveryFailure(data.questionId, data.answerDelivery!.generation),
+    onSuccess: onComplete,
+  })
+
   if (data.answerDelivery?.status === 'failed') {
     return (
       <div className="space-y-3">
-        <p className="text-xs text-secondary">Your answer was saved, but delivery to the agent failed.</p>
+        <p className="text-xs text-secondary">
+          Your answer was saved, but confirmation that the agent accepted it was not recorded. The agent may already
+          have received it. Check the agent conversation before retrying; dismissing only hides this notice for you.
+        </p>
         {retryMutation.isError && (
           <p role="alert" className="text-xs text-status-danger-600">
             {actionErrorMessage(retryMutation.error)}
           </p>
         )}
-        {data.answerDelivery.canRetry && (
+        {dismissMutation.isError && (
+          <p role="alert" className="text-xs text-status-danger-600">
+            {actionErrorMessage(dismissMutation.error)}
+          </p>
+        )}
+        {action.canRespond && data.answerDelivery.canRetry && (
           <button
             type="button"
             onClick={() => retryMutation.mutate()}
@@ -438,6 +453,14 @@ function AgentQuestionActionContent({
             {retryMutation.isPending ? 'Retrying…' : 'Retry delivery'}
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => dismissMutation.mutate()}
+          disabled={dismissMutation.isPending || retryMutation.isPending}
+          className="tau-button min-h-10 px-3 py-2 text-sm disabled:opacity-50"
+        >
+          {dismissMutation.isPending ? 'Dismissing…' : 'Dismiss notice'}
+        </button>
       </div>
     )
   }

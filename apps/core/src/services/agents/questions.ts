@@ -28,7 +28,10 @@ import { listSquadScopeNotifyUserIds } from '../attention/resolver'
 import { getUserIdsWithPermission } from '../rbac/permissions'
 import { filterUserIdsWithPermission } from '../rbac/permitted-users'
 import { listEnabledUserIds } from '../users/enabled'
-import { drainQuestionAnswerDeliverySoon } from './question-answer-delivery'
+import {
+  drainQuestionAnswerDeliverySoon,
+  reconcileAcceptedQuestionAnswerFailuresOnce,
+} from './question-answer-delivery'
 import { ensureQuestionDeliveryFailureAlert } from './question-delivery-failure-alert'
 
 const log = createLogger('agent-questions')
@@ -830,6 +833,9 @@ export async function retryAgentQuestionAnswerDelivery(
   id: string,
   opts: { expectedAgentScope?: ExpectedAgentScope; testHooks?: { beforeAgentScopeLock?: () => Promise<void> } } = {}
 ): Promise<AgentQuestion | null> {
+  // A failed settlement may follow a committed agent send. Adopt that receipt before any retry;
+  // the stable send clientId remains the fallback idempotency fence if acceptance is still unknown.
+  if (await reconcileAcceptedQuestionAnswerFailuresOnce(id)) return getAgentQuestion(id)
   const updated = await db.transaction(async (tx) => {
     const [candidate] = await tx
       .select({ agentId: agentQuestions.agentId })
