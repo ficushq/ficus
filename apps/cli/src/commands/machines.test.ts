@@ -20,7 +20,7 @@ function makeRunner(register: (program: Command) => void) {
 
 const emptyPlan = { moves: [], skippedActive: [], unplaceable: [], unresolvable: [], results: [] }
 
-describe('tau machines commands', () => {
+describe('ficus machines commands', () => {
   beforeEach(() => {
     ;(apiPost as AnyMock).mockClear()
     ;(apiPost as AnyMock).mockResolvedValue({})

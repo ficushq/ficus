@@ -3465,8 +3465,8 @@ fs.writeFileSync(
   `FICUS_ROOT=${process.env.FICUS_ROOT}\nTAU_ROOT=${process.env.TAU_ROOT}\nFICUS_MIGRATE_LIVE=${process.env.FICUS_MIGRATE_LIVE}\nTAU_MIGRATE_LIVE=${process.env.TAU_MIGRATE_LIVE}\nDATABASE_URL=${process.env.DATABASE_URL}\nCWD=${process.cwd()}\nPW=${process.env.PW}\n`,
 )
 JSEOF
-    printf '#!/usr/bin/env bun\nconsole.log("tau")\n' >"${tree}/apps/cli/dist/tau.js"
-    chmod 755 "${tree}/apps/cli/dist/tau.js"
+    printf '#!/usr/bin/env bun\nconsole.log("ficus")\n' >"${tree}/apps/cli/dist/ficus.js"
+    chmod 755 "${tree}/apps/cli/dist/ficus.js"
     printf 'agent: fixture\n' >"${tree}/config/agent.yaml"
   }
 
@@ -3558,7 +3558,7 @@ PYREPACK
   expect_eq 'artifact_acquire: line 2 is the extracted tree' \
     "$([[ -f ${ART_TREE_A}/artifact.json ]] && echo tree || echo missing)" 'tree'
   expect_eq 'artifact_acquire: the tarball round-trip preserves exec bits' \
-    "$([[ -x ${ART_TREE_A}/apps/cli/dist/tau.js ]] && echo executable || echo plain)" 'executable'
+    "$([[ -x ${ART_TREE_A}/apps/cli/dist/ficus.js ]] && echo executable || echo plain)" 'executable'
   expect_eq 'artifact_acquire: prints nothing else on stdout (2 lines exactly)' \
     "$(printf '%s\n' "${ART_OUT_A}" | wc -l | tr -d ' ')" '2'
 
@@ -4641,7 +4641,7 @@ touch "${BS_TMP}/apps/core/dist/migrate.js"
 expect_eq 'build_outputs_present: core built but CLI bundle missing -> false' \
   "$(build_outputs_present "${BS_TMP}" false && echo yes || echo no)" 'no'
 mkdir -p "${BS_TMP}/apps/cli/dist"
-touch "${BS_TMP}/apps/cli/dist/tau.js"
+touch "${BS_TMP}/apps/cli/dist/ficus.js"
 expect_eq 'build_outputs_present: core + CLI outputs present, serve_web=false -> true' \
   "$(build_outputs_present "${BS_TMP}" false && echo yes || echo no)" 'yes'
 # The migration bundle is a build OUTPUT: the artifact path runs it directly,
@@ -4666,7 +4666,7 @@ git -C "${BS_GIT}" init -q -b main
 git -C "${BS_GIT}" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 head1=$(git -C "${BS_GIT}" rev-parse HEAD)
 mkdir -p "${BS_GIT}/apps/core/dist" "${BS_GIT}/apps/cli/dist" "${BS_GIT}/apps/web/dist"
-touch "${BS_GIT}/apps/core/dist/index.js" "${BS_GIT}/apps/core/dist/worker.js" "${BS_GIT}/apps/core/dist/migrate.js" "${BS_GIT}/apps/cli/dist/tau.js" "${BS_GIT}/apps/web/dist/index.html"
+touch "${BS_GIT}/apps/core/dist/index.js" "${BS_GIT}/apps/core/dist/worker.js" "${BS_GIT}/apps/core/dist/migrate.js" "${BS_GIT}/apps/cli/dist/ficus.js" "${BS_GIT}/apps/web/dist/index.html"
 printf 'lock-v1' >"${BS_GIT}/bun.lock"
 
 expect_eq 'build_stamp_is_current: no stamp on disk -> not current' \
@@ -4699,10 +4699,10 @@ expect_eq 'build_stamp_is_current: a build output was deleted after the stamp ->
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'no'
 touch "${BS_GIT}/apps/core/dist/worker.js"
 
-rm -f "${BS_GIT}/apps/cli/dist/tau.js"
+rm -f "${BS_GIT}/apps/cli/dist/ficus.js"
 expect_eq 'build_stamp_is_current: CLI bundle deleted after the stamp -> NOT current (no skip)' \
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'no'
-touch "${BS_GIT}/apps/cli/dist/tau.js"
+touch "${BS_GIT}/apps/cli/dist/ficus.js"
 
 rm -f "${BS_GIT}/apps/core/dist/migrate.js"
 expect_eq 'build_stamp_is_current: migrate bundle deleted after the stamp -> NOT current (no skip)' \
@@ -4723,6 +4723,25 @@ mv "${BS_GIT}/.stamp.legacy" "$(build_stamp_path "${BS_GIT}")"
 expect_eq 'build_stamp_is_current: a legacy stamp with no migrate hash -> NOT current (fails closed)' \
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'no'
 build_stamp_write "${BS_GIT}" true
+# The CLI bundle is apps/cli/dist/ficus.js, stamped as FICUS_BUILD_HASH_CLI_FICUS.
+expect_eq 'build_stamp_write: stamps the ficus.js CLI bundle under FICUS_BUILD_HASH_CLI_FICUS' \
+  "$(envfile_get "$(build_stamp_path "${BS_GIT}")" FICUS_BUILD_HASH_CLI_FICUS)" \
+  "$(build_output_hash "${BS_GIT}/apps/cli/dist/ficus.js")"
+expect_eq 'build_stamp_write: the stamp carries exactly one CLI hash field' \
+  "$(grep -c '^FICUS_BUILD_HASH_CLI_' "$(build_stamp_path "${BS_GIT}")")" '1'
+# A stamp written before the CLI rename names the CLI hash differently, so it
+# has no FICUS_BUILD_HASH_CLI_FICUS field: the first run after the rename must
+# rebuild once rather than trust it.
+grep -v '^FICUS_BUILD_HASH_CLI_FICUS=' "$(build_stamp_path "${BS_GIT}")" >"${BS_GIT}/.stamp.legacy"
+mv "${BS_GIT}/.stamp.legacy" "$(build_stamp_path "${BS_GIT}")"
+expect_eq 'build_stamp_is_current: a stamp without FICUS_BUILD_HASH_CLI_FICUS -> NOT current (rebuilds once)' \
+  "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'no'
+build_stamp_write "${BS_GIT}" true
+# Only ficus.js counts as the CLI bundle.
+mv "${BS_GIT}/apps/cli/dist/ficus.js" "${BS_GIT}/apps/cli/dist/renamed.js"
+expect_eq 'build_outputs_present: no apps/cli/dist/ficus.js -> false' \
+  "$(build_outputs_present "${BS_GIT}" false && echo yes || echo no)" 'no'
+mv "${BS_GIT}/apps/cli/dist/renamed.js" "${BS_GIT}/apps/cli/dist/ficus.js"
 
 build_stamp_clear "${BS_GIT}"
 expect_eq 'build_stamp_clear: removes the stamp file' \
@@ -4747,7 +4766,7 @@ if [ "$1 $2" = "run build" ]; then
   printf 'built\n' >dist/index.js
   printf 'built\n' >dist/worker.js
   printf 'built\n' >dist/migrate.js
-  printf 'built\n' >dist/tau.js
+  printf 'built\n' >dist/ficus.js
 elif [ "$1 $2" = "run build:web" ]; then
   mkdir -p apps/web/dist
   printf 'built\n' >apps/web/dist/index.html
@@ -4823,7 +4842,7 @@ git -C "${BA_TMP2}" init -q -b main
 git -C "${BA_TMP2}" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 printf 'lock-v1' >"${BA_TMP2}/bun.lock"
 mkdir -p "${BA_TMP2}/apps/core/dist" "${BA_TMP2}/apps/cli/dist" "${BA_TMP2}/apps/web/dist"
-touch "${BA_TMP2}/apps/core/dist/index.js" "${BA_TMP2}/apps/core/dist/worker.js" "${BA_TMP2}/apps/core/dist/migrate.js" "${BA_TMP2}/apps/cli/dist/tau.js" "${BA_TMP2}/apps/web/dist/index.html"
+touch "${BA_TMP2}/apps/core/dist/index.js" "${BA_TMP2}/apps/core/dist/worker.js" "${BA_TMP2}/apps/core/dist/migrate.js" "${BA_TMP2}/apps/cli/dist/ficus.js" "${BA_TMP2}/apps/web/dist/index.html"
 build_stamp_write "${BA_TMP2}" true
 git -C "${BA_TMP2}" -c user.email=t@t -c user.name=t commit -q --allow-empty -m 'new commit, stamp now stale'
 mtime_stale_before=$(file_mtime "${BA_TMP2}/apps/core/dist/index.js")
@@ -4851,7 +4870,7 @@ git -C "${BA_TMP3}" init -q -b main
 git -C "${BA_TMP3}" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 printf 'lock-v1' >"${BA_TMP3}/bun.lock"
 mkdir -p "${BA_TMP3}/apps/core/dist" "${BA_TMP3}/apps/cli/dist" "${BA_TMP3}/apps/web/dist"
-touch "${BA_TMP3}/apps/core/dist/index.js" "${BA_TMP3}/apps/core/dist/worker.js" "${BA_TMP3}/apps/core/dist/migrate.js" "${BA_TMP3}/apps/cli/dist/tau.js" "${BA_TMP3}/apps/web/dist/index.html"
+touch "${BA_TMP3}/apps/core/dist/index.js" "${BA_TMP3}/apps/core/dist/worker.js" "${BA_TMP3}/apps/core/dist/migrate.js" "${BA_TMP3}/apps/cli/dist/ficus.js" "${BA_TMP3}/apps/web/dist/index.html"
 build_stamp_write "${BA_TMP3}" true
 printf 'lock-v2' >"${BA_TMP3}/bun.lock" # invalidates the stamp -> a real build will be attempted
 : >"${BA_LOG}"

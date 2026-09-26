@@ -25,16 +25,16 @@ function summarizeIntrospection(result: {
 }
 
 export function registerAuthCommands(program: Command): void {
-  const auth = program.command('auth').description('Manage Tau CLI authentication backends')
+  const auth = program.command('auth').description('Manage Ficus CLI authentication backends')
 
   auth
     .command('login [label]')
-    .description('Add or update a labeled Tau backend')
+    .description('Add or update a labeled Ficus backend')
     .option('--label <label>', 'Backend label (alternative to positional label)')
-    .option('--api-url <url>', 'Tau Core base URL')
+    .option('--api-url <url>', 'Ficus Core base URL')
     .option(
       '--password <password>',
-      'Tau password/bearer token (prefer FICUS_PASSWORD or prompt to avoid shell history)'
+      'Ficus password/bearer token (prefer FICUS_PASSWORD or prompt to avoid shell history)'
     )
     .option('--no-switch', 'Do not set this backend as active')
     .action(async (positionalLabel, options) => {
@@ -58,7 +58,7 @@ export function registerAuthCommands(program: Command): void {
           try {
             const result = await loginWithDeviceAuthorization({
               apiUrl,
-              name: `Tau CLI on ${hostname()}`,
+              name: `Ficus CLI on ${hostname()}`,
               signal: controller.signal,
               onVerification: (verificationUri, opened) => {
                 output(
@@ -81,7 +81,7 @@ export function registerAuthCommands(program: Command): void {
         saveAuthStore(store)
         output(
           { label, apiUrl, active: store.active === label, password: '<redacted>', account },
-          `Logged in Tau backend '${label}'${account ? ` as ${account}` : ''}${store.active === label ? ' and set it active' : ''}.`
+          `Logged in Ficus backend '${label}'${account ? ` as ${account}` : ''}${store.active === label ? ' and set it active' : ''}.`
         )
       } catch (error) {
         console.error(`Error: ${(error as Error).message}`)
@@ -91,14 +91,14 @@ export function registerAuthCommands(program: Command): void {
 
   auth
     .command('switch <label>')
-    .description('Set the active Tau backend')
+    .description('Set the active Ficus backend')
     .action((label) => {
       try {
         const store = loadAuthStore()
-        if (!store.backends[label]) throw new Error(`Unknown Tau backend '${label}'`)
+        if (!store.backends[label]) throw new Error(`Unknown Ficus backend '${label}'`)
         store.active = label
         saveAuthStore(store)
-        output({ active: label }, `Switched active Tau backend to '${label}'.`)
+        output({ active: label }, `Switched active Ficus backend to '${label}'.`)
       } catch (error) {
         console.error(`Error: ${(error as Error).message}`)
         process.exit(1)
@@ -107,7 +107,7 @@ export function registerAuthCommands(program: Command): void {
 
   auth
     .command('logout [label]')
-    .description('Remove a Tau backend (defaults to active backend)')
+    .description('Remove a Ficus backend (defaults to active backend)')
     .option('--local-only', 'Remove local credentials without revoking the paired device')
     .action(async (label, options) => {
       try {
@@ -115,7 +115,7 @@ export function registerAuthCommands(program: Command): void {
         const target = label || store.active
         if (!target) throw new Error('No backend label provided and no active backend is set')
         const backend = store.backends[target]
-        if (!backend) throw new Error(`Unknown Tau backend '${target}'`)
+        if (!backend) throw new Error(`Unknown Ficus backend '${target}'`)
         if (backend.deviceId && !options.localOnly) {
           try {
             await revokeDeviceAuthorization({
@@ -137,7 +137,7 @@ export function registerAuthCommands(program: Command): void {
           store.active = next
         }
         saveAuthStore(store)
-        output({ removed: target, active: store.active }, `Logged out Tau backend '${target}'.`)
+        output({ removed: target, active: store.active }, `Logged out Ficus backend '${target}'.`)
       } catch (error) {
         console.error(`Error: ${(error as Error).message}`)
         process.exit(1)
@@ -146,7 +146,7 @@ export function registerAuthCommands(program: Command): void {
 
   auth
     .command('list')
-    .description('List configured Tau backends')
+    .description('List configured Ficus backends')
     .action(() => {
       try {
         const store = loadAuthStore()
@@ -177,7 +177,7 @@ export function registerAuthCommands(program: Command): void {
 
   auth
     .command('status')
-    .description('Show how tau is authenticating (env token, stored backend, …) and against which API')
+    .description('Show how ficus is authenticating (env token, stored backend, …) and against which API')
     .action(() => {
       try {
         const resolved = resolveAuth()
@@ -194,7 +194,7 @@ export function registerAuthCommands(program: Command): void {
     })
 }
 
-/** One-line human summary of the effective credential for `tau auth status`. */
+/** One-line human summary of the effective credential for `ficus auth status`. */
 export function describeAuth(resolved: ResolvedAuth): string {
   switch (resolved.source) {
     case 'webhook-context':
@@ -203,11 +203,11 @@ export function describeAuth(resolved: ResolvedAuth): string {
       return `Webhook script: authenticated with its injected credential against ${resolved.apiUrl}.`
     case 'agent-context':
       if (resolved.missing?.length)
-        return `Agent shell, but incomplete: ${resolved.missing.join(' and ')} not set, so tau cannot act as this agent (it will not fall back to a human login).`
+        return `Agent shell, but incomplete: ${resolved.missing.join(' and ')} not set, so ficus cannot act as this agent (it will not fall back to a human login).`
       return `Agent shell: authenticated as the injected agent identity${resolved.agentId ? ` (${resolved.agentId})` : ''} against ${resolved.apiUrl}.`
     case 'selected-backend':
     case 'auth-store':
-      return `Active Tau backend: ${resolved.label} (${resolved.apiUrl})`
+      return `Active Ficus backend: ${resolved.label} (${resolved.apiUrl})`
     case 'env-token':
       return `Authenticated via agent token (FICUS_TOKEN) against ${resolved.apiUrl} — no stored backend needed.`
     case 'env-password':
@@ -217,6 +217,6 @@ export function describeAuth(resolved: ResolvedAuth): string {
     case 'secret-file':
       return `Authenticated via the mounted /etc/tau/password secret against ${resolved.apiUrl}.`
     case 'none':
-      return 'No active Tau backend configured. Run tau auth login <label> --api-url <url>.'
+      return 'No active Ficus backend configured. Run ficus auth login <label> --api-url <url>.'
   }
 }

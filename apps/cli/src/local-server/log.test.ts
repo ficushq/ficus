@@ -18,8 +18,8 @@ describe('styleNarration', () => {
     expect(styleNarration('  warning: tmux is not installed', true)).toBe(
       `${YELLOW}  warning: tmux is not installed${RESET}`
     )
-    expect(styleNarration('Tau is running at http://localhost:3000', true)).toBe(
-      'Tau is running at http://localhost:3000'
+    expect(styleNarration('Ficus is running at http://localhost:3000', true)).toBe(
+      'Ficus is running at http://localhost:3000'
     )
     expect(styleNarration('', true)).toBe('')
   })

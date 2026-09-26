@@ -20,6 +20,17 @@ describe('setup helper CI gate', () => {
     expect(step).not.toContain('if:')
   })
 
+  test('runs the CLI installer suite, gated on its summary line', () => {
+    const start = workflow.indexOf('- name: Run CLI installer suite')
+    expect(start).toBeGreaterThan(-1)
+    const nextStep = workflow.indexOf('\n      - name:', start + 1)
+    const step = workflow.slice(start, nextStep === -1 ? undefined : nextStep)
+    expect(step).toContain('bash scripts/install.test.sh')
+    expect(step).toContain('passed, 0 failed')
+    expect(step).not.toContain('continue-on-error')
+    expect(step).not.toContain('if:')
+  })
+
   test('runs the setup shell suite AS ROOT so the root-install assertions execute, gated on its summary line', () => {
     const start = workflow.indexOf('- name: Run setup helper suite (root install)')
     expect(start).toBeGreaterThan(-1)

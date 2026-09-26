@@ -52,9 +52,9 @@ describe('CLI publish gate', () => {
     expect(steps[indexOfStep('Collect release assets')].run).toContain('find dist/packages')
   })
 
-  // `tau skill install <name>` resolves from the archive's skills/ directory,
+  // `ficus skill install <name>` resolves from the archive's skills/ directory,
   // so every bundled skill under external/skills must be copied — a per-skill
-  // `cp` silently ships an archive on which `tau skill install tau` fails.
+  // `cp` silently ships an archive on which `ficus skill install ficus` fails.
   test('every compile step bundles the whole external/skills directory', () => {
     const compileSteps = steps.filter((step) => step.run?.includes('--compile'))
     expect(compileSteps.length).toBe(5)
@@ -63,7 +63,7 @@ describe('CLI publish gate', () => {
         name: step.name,
         bundlesAllSkills: true,
       })
-      expect(step.run).not.toContain('external/skills/tau-memory')
+      expect(step.run).not.toContain('external/skills/ficus-memory')
     }
   })
 
@@ -111,6 +111,58 @@ describe('CLI publish gate', () => {
     expect(run).not.toContain('hiretau.ai')
     expect(run).toContain('"baseUrl": "https://ficus.sh/cli"')
     expect(JSON.stringify(workflow)).not.toContain('hiretau.ai')
+  })
+
+  // The host's publisher (Platform's CLI-publish unit) reads manifest.json's
+  // `commit` and the five `assets` keys, and requires each value to be a plain
+  // .tar.gz/.zip file name that the release actually carries. Only the names
+  // change with the rename; the contract does not.
+  test('the manifest lists the five ficus-* archives under the platform keys the host publisher requires', () => {
+    const run = String(steps[indexOfStep('Collect release assets')]?.run ?? '')
+    const manifestText = run.slice(run.indexOf('cat > dist/release/manifest.json <<EOF'), run.indexOf('\nEOF\n'))
+    const json = manifestText.slice(manifestText.indexOf('{'))
+    const manifest = JSON.parse(json.replace(/\$[A-Z_]+|\$\([^)]*\)/g, 'x')) as {
+      commit: string
+      assets: Record<string, string>
+    }
+    expect(manifest.commit).toBe('x')
+    expect(manifest.assets).toEqual({
+      'macos-arm64': 'ficus-macos-arm64.tar.gz',
+      'macos-x64': 'ficus-macos-x64.tar.gz',
+      'linux-arm64': 'ficus-linux-arm64.tar.gz',
+      'linux-x64': 'ficus-linux-x64.tar.gz',
+      'windows-x64': 'ficus-windows-x64.zip',
+    })
+    // Each listed archive is one a package step actually writes.
+    const packaged = steps
+      .filter((step) => /^(tar -czf|cd dist\/)/.test(step.run ?? ''))
+      .map((step) => /packages\/([\w.-]+\.(?:tar\.gz|zip))/.exec(step.run ?? '')?.[1])
+    expect(packaged.sort()).toEqual(Object.values(manifest.assets).sort())
+  })
+
+  test('every archive holds only the ficus binary and the skills, and no step names the old binary', () => {
+    const unix = steps.filter((step) => step.run?.startsWith('tar -czf'))
+    expect(unix.length).toBe(4)
+    for (const step of unix)
+      expect(step.run).toMatch(/^tar -czf dist\/packages\/ficus-[\w-]+\.tar\.gz -C dist\/ficus-[\w-]+ ficus skills$/)
+    const windows = steps.filter((step) => step.run?.includes('zip -r'))
+    expect(windows.map((step) => step.run)).toEqual([
+      'cd dist/ficus-windows-x64 && zip -r ../packages/ficus-windows-x64.zip ficus.exe skills',
+    ])
+    for (const step of steps.filter((candidate) => candidate.run?.includes('--compile'))) {
+      expect(step.run).toMatch(/--outfile=dist\/ficus-[\w-]+\/ficus(\.exe)?\n/)
+    }
+    const oldName = /\btau(\.exe)?\b|\btau-(macos|linux|windows)/
+    const offenders = steps
+      .filter((step) => oldName.test(`${step.name ?? ''} ${step.run ?? ''}`))
+      .map((step) => step.name)
+    expect(offenders).toEqual([])
+  })
+
+  test('the Linux smoke test runs the ficus binary', () => {
+    const smoke = steps.find((step) => step.name?.includes('Smoke test'))
+    expect(smoke?.run).toContain('./dist/ficus-linux-x64/ficus --help')
+    expect(smoke?.run).toContain('./dist/ficus-linux-x64/ficus --version')
   })
 
   test('Collect release assets copies install.sh and setup.sh into the published set', () => {

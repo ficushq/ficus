@@ -27,7 +27,7 @@ function formatSecretValidation(validation?: SecretValidation): string {
 export function registerSecretCommands(program: Command) {
   const secret = program.command('secret').description('Manage secrets')
 
-  // tau secret list
+  // ficus secret list
   secret
     .command('list')
     .description('List all secrets (names only, no values)')
@@ -48,7 +48,7 @@ export function registerSecretCommands(program: Command) {
       }
     })
 
-  // tau secret get <key>
+  // ficus secret get <key>
   secret
     .command('get <key>')
     .description('Get a secret value')
@@ -65,7 +65,7 @@ export function registerSecretCommands(program: Command) {
       }
     })
 
-  // tau secret set <key> <value>
+  // ficus secret set <key> <value>
   secret
     .command('set <key> <value>')
     .description('Set a secret value')
@@ -83,7 +83,7 @@ export function registerSecretCommands(program: Command) {
       }
     })
 
-  // tau secret delete <key>
+  // ficus secret delete <key>
   secret
     .command('delete <key>')
     .alias('rm')

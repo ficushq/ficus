@@ -84,7 +84,7 @@ describe('update apply offline fallback', () => {
     expect(offline).not.toHaveBeenCalled()
     const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
     expect(error.message).toContain('https://demo.hiretau.ai is unreachable')
-    expect(error.message).toContain('tau server update')
+    expect(error.message).toContain('ficus server update')
   })
   it("never falls back when the loopback port is not the checkout's port", async () => {
     ;(apiPost as ReturnType<typeof mock>).mockImplementationOnce(() => Promise.reject(new TypeError('fetch failed')))

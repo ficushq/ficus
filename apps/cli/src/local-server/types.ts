@@ -59,7 +59,7 @@ export interface SetupOptions {
   instance: string
   /** PostgreSQL host port; undefined means "probe for a free one". */
   dbPort?: number
-  /** Make this the instance `tau server` commands act on without --instance. */
+  /** Make this the instance `ficus server` commands act on without --instance. */
   makeDefault: boolean
   start: boolean
   dryRun: boolean

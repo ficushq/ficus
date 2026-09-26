@@ -42,7 +42,7 @@ export function defaultUpdateDeps(): UpdateDeps {
     offlineUpdate: (args) => {
       const registered = findInstanceByRoot(args.root, getStatePath())
       if (!registered)
-        throw new Error(`checkout ${args.root} is not registered; run tau server setup --root ${args.root}`)
+        throw new Error(`checkout ${args.root} is not registered; run ficus server setup --root ${args.root}`)
       const context = makeSupervisorContext({
         supervisor: registered.record.supervisor,
         root: args.root,
@@ -97,7 +97,7 @@ export async function applyUpdate(opts: { offline?: boolean; ref?: string }, dep
       }
       if (!localRoot || !isLocalTarget(target, deps.localPort(localRoot))) {
         throw new Error(
-          `${target} is unreachable (${(error as Error).message}). To update the checkout on this machine instead, run \`tau server update\` (or \`tau update apply --offline\`).`
+          `${target} is unreachable (${(error as Error).message}). To update the checkout on this machine instead, run \`ficus server update\` (or \`ficus update apply --offline\`).`
         )
       }
       deps.log(`${target} is unreachable (${(error as Error).message}) — updating its checkout offline`)
@@ -114,7 +114,7 @@ export async function applyUpdate(opts: { offline?: boolean; ref?: string }, dep
 }
 
 export function registerUpdateCommands(program: Command, deps: UpdateDeps = defaultUpdateDeps()) {
-  const update = program.command('update').description('Update this tau instance (API first, offline fallback)')
+  const update = program.command('update').description('Update this Ficus instance (API first, offline fallback)')
   update
     .command('check')
     .description('Check for updates (needs the API)')

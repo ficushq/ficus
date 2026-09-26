@@ -5,7 +5,7 @@ import { outputTable, outputError } from '../output'
 export function registerActionCommands(program: Command) {
   const action = program.command('action').description('View pending actions')
 
-  // tau action list [--type <type>]
+  // ficus action list [--type <type>]
   action
     .command('list')
     .description('List pending actions requiring attention')

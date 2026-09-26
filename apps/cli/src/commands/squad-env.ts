@@ -5,7 +5,7 @@ import { output, outputError, isJsonMode, outputTable } from '../output'
 export function registerSquadEnvCommands(program: Command) {
   const env = program.command('squad-env').description('Manage squad environment variables')
 
-  // tau squad-env get <squadId>
+  // ficus squad-env get <squadId>
   env
     .command('get <squadId>')
     .description('Get .tau/.env content for a squad')
@@ -22,7 +22,7 @@ export function registerSquadEnvCommands(program: Command) {
       }
     })
 
-  // tau squad-env set <squadId> <content>
+  // ficus squad-env set <squadId> <content>
   env
     .command('set <squadId> <content>')
     .description('Set .tau/.env content for a squad (use quotes for multi-line)')
@@ -35,7 +35,7 @@ export function registerSquadEnvCommands(program: Command) {
       }
     })
 
-  // tau squad-env set-file <squadId> <path>
+  // ficus squad-env set-file <squadId> <path>
   env
     .command('set-file <squadId> <path>')
     .description('Set .tau/.env content from a file')
@@ -50,7 +50,7 @@ export function registerSquadEnvCommands(program: Command) {
       }
     })
 
-  // tau squad-env global-secrets
+  // ficus squad-env global-secrets
   env
     .command('global-secrets')
     .description('List Secret Store keys globally exposed to all squad sandboxes (no values)')
@@ -63,7 +63,7 @@ export function registerSquadEnvCommands(program: Command) {
       }
     })
 
-  // tau squad-env expose-global <keys...>
+  // ficus squad-env expose-global <keys...>
   env
     .command('expose-global <keys...>')
     .description('Admin/operator: append Secret Store keys globally exposed to all squad sandboxes (no values)')
@@ -79,7 +79,7 @@ export function registerSquadEnvCommands(program: Command) {
       }
     })
 
-  // tau squad-env unexpose-global <keys...>
+  // ficus squad-env unexpose-global <keys...>
   env
     .command('unexpose-global <keys...>')
     .description('Admin/operator: remove Secret Store keys globally exposed to all squad sandboxes (no values)')
@@ -95,7 +95,7 @@ export function registerSquadEnvCommands(program: Command) {
       }
     })
 
-  // tau squad-env secrets <squadId>
+  // ficus squad-env secrets <squadId>
   env
     .command('secrets <squadId>')
     .description('List Secret Store keys and whether they are exposed to a squad (no values)')
@@ -120,7 +120,7 @@ export function registerSquadEnvCommands(program: Command) {
       }
     })
 
-  // tau squad-env expose-secrets <squadId> <keys...>
+  // ficus squad-env expose-secrets <squadId> <keys...>
   env
     .command('expose-secrets <squadId> <keys...>')
     .description('Admin/operator: append Secret Store keys exposed to this squad sandbox (no values)')
@@ -136,7 +136,7 @@ export function registerSquadEnvCommands(program: Command) {
       }
     })
 
-  // tau squad-env unexpose-secrets <squadId> <keys...>
+  // ficus squad-env unexpose-secrets <squadId> <keys...>
   env
     .command('unexpose-secrets <squadId> <keys...>')
     .description('Admin/operator: remove Secret Store keys exposed to this squad sandbox (no values)')

@@ -1,5 +1,5 @@
 ---
-name: tau
+name: ficus
 description: Operate a Tau instance as a manager/operator — CLI auth, the work-stream lifecycle, squad-manager coordination, answering agent questions, and the operating doctrine that avoids known failure modes. Use whenever supervising Tau squads, unblocking/reviewing work streams, or directing work on a Tau deployment via the `tau` CLI.
 ---
 
@@ -27,7 +27,7 @@ export PATH="$HOME/.tau/bin:$PATH"   # add to the shell profile too
 tau --version                        # verify
 ```
 
-The installer writes the binary to `~/.tau/bin/tau` and bundled assets to
+The installer writes the binary to `~/.tau/bin/ficus` and bundled assets to
 `~/.tau/share`. Upgrade or reinstall later with `tau install`. If `tau` is
 on PATH but misbehaving after an instance upgrade, run `tau install` before
 debugging further — version skew between CLI and server is a common cause.
@@ -194,7 +194,6 @@ to prevent.
   with `tau ws handoff <id> --to <agentId> -m "<context>"` (and `-f` file
   attachments reviewable in the UI). Opening a verdict review wait is a
   separate act (`request-review`) — never a handoff side effect.
-
 
 ### Message delivery: steer vs follow-up
 

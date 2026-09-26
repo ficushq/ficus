@@ -259,7 +259,7 @@ export function registerRemoteCommands(program: Command): void {
       try {
         const status = await apiGet<AmtpMeStatus>('/api/amtp/agents/me/status')
         if (!status.registered || !status.handle) {
-          throw new Error('Not registered — run `tau remote register <handle>` first.')
+          throw new Error('Not registered — run `ficus remote register <handle>` first.')
         }
         const name: string | undefined = options.name ?? status.agentName ?? undefined
         const description: string | undefined = options.description ?? status.agentDescription ?? undefined
@@ -301,7 +301,7 @@ export function registerRemoteCommands(program: Command): void {
         if (!status.card) {
           output(
             { handle: status.handle, card: null },
-            'No card published yet — run `tau remote card set` to publish one.'
+            'No card published yet — run `ficus remote card set` to publish one.'
           )
           return
         }

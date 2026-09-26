@@ -47,7 +47,7 @@ async function runWhoami(responses: Record<string, unknown | (() => never)>) {
   return { calls, result: printed[0]!.data, message: printed[0]!.message }
 }
 
-describe('tau whoami', () => {
+describe('ficus whoami', () => {
   it('reports server capabilities without a separate request', async () => {
     process.env.FICUS_API_URL = 'http://127.0.0.1:3000'
     process.env.FICUS_TOKEN = 'test-token'
@@ -63,7 +63,7 @@ describe('tau whoami', () => {
     })
     expect(calls).toEqual(['/api/auth/introspect'])
     expect(result.instance.server).toEqual(server)
-    expect(message).toContain('Server: Tau 0.2.0 · API 1 · aaaaaaaaaaaa')
+    expect(message).toContain('Server: Ficus 0.2.0 · API 1 · aaaaaaaaaaaa')
   })
 
   it('reports the injected agent identity in an agent shell, without the token', async () => {

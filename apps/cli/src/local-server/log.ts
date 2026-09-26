@@ -1,5 +1,5 @@
 /**
- * Narration for the local installer and `tau server` / `tau update`.
+ * Narration for the local installer and `ficus server` / `ficus update`.
  *
  * Progress lines are not errors, so they go to STDOUT (some terminals paint
  * everything on stderr red) and get a light-blue tint on a colour-capable

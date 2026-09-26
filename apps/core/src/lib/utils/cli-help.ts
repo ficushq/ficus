@@ -14,7 +14,7 @@ export function setCliPathOverrideForTests(path: string | null): void {
  * Used for volume-mounting into sandbox containers and generating help output.
  */
 export function getCliHostPath(): string {
-  return cliPathOverride ?? join(MONOREPO_ROOT, 'apps/cli/dist/tau.js')
+  return cliPathOverride ?? join(MONOREPO_ROOT, 'apps/cli/dist/ficus.js')
 }
 
 const CLI_ERROR = `[ERROR] The tau CLI is not installed or not accessible. Tell the user that the CLI could not be found and ask them to install it (e.g. run "bun run build:cli" in the project root and ensure the "tau" binary is on the PATH). You cannot execute any tau commands until this is resolved.`
@@ -25,7 +25,7 @@ const CLI_ERROR = `[ERROR] The tau CLI is not installed or not accessible. Tell 
  */
 async function generateHelpFor(subcommands: string[]): Promise<string> {
   const tauPath = getCliHostPath()
-  // Rely solely on the built CLI at apps/cli/dist/tau.js. A shipped artifact
+  // Rely solely on the built CLI at apps/cli/dist/ficus.js. A shipped artifact
   // has no `apps/cli/src/`, so the old `bun apps/cli/src/index.ts` source
   // fallback would silently vanish there; when the dist bundle is missing we
   // surface the actionable CLI_ERROR instead of spawning a nonexistent file.
@@ -71,7 +71,7 @@ export function resetCliHelpCacheForTests(): void {
 
 /**
  * Cache ONLY successful help. The error sentinel is returned but never stored:
- * a worker that boots one second before apps/cli/dist/tau.js lands (artifact
+ * a worker that boots one second before apps/cli/dist/ficus.js lands (artifact
  * activation, first build) must not bake "CLI not installed" into every agent
  * prompt for the life of the process.
  */

@@ -162,7 +162,7 @@ describe('auth CLI commands', () => {
     expect(config.password).toBe('override-secret')
   })
 
-  // Regression: a stale repo .env made `tau auth login` skip the browser device flow entirely
+  // Regression: a stale repo .env made `ficus auth login` skip the browser device flow entirely
   // and write the dotenv value into auth.json as the backend password. Bun auto-loads ./.env
   // into process.env before any user code runs, so seed process.env exactly as Bun would.
   it('login runs the device flow rather than storing a dotenv password', async () => {
@@ -226,7 +226,7 @@ describe('auth CLI commands', () => {
 
   it('status reports the injected agent token as the effective credential (sandbox case)', async () => {
     // No auth-store backend at all — exactly a sandbox, where every command
-    // works via FICUS_TOKEN. Status must not claim "No active Tau backend".
+    // works via FICUS_TOKEN. Status must not claim "No active Ficus backend".
     process.env.FICUS_TOKEN = 'agent-token'
     process.env.FICUS_API_URL = 'https://demo.hiretau.ai'
     const program = createProgram()
@@ -248,7 +248,7 @@ describe('auth CLI commands', () => {
     expect(data.source).toBe('auth-store')
     expect(data.label).toBe('work')
     expect(data.backend.password).toBe('<redacted>')
-    expect(summary).toBe('Active Tau backend: work (https://work.example.com)')
+    expect(summary).toBe('Active Ficus backend: work (https://work.example.com)')
 
     saveAuthStore({ active: null, backends: {} })
     program = createProgram()
@@ -256,7 +256,7 @@ describe('auth CLI commands', () => {
     ;[data, summary] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [any, string]
     expect(data.source).toBe('none')
     expect(data.authenticated).toBe(false)
-    expect(summary).toContain('No active Tau backend configured')
+    expect(summary).toContain('No active Ficus backend configured')
   })
 
   it('redacts passwords for list/status output', () => {

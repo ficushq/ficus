@@ -1,6 +1,6 @@
 ---
-name: tau-reviewer
-description: Use when running an agent session as a standing reviewer for Tau squads — blocking on `tau watch` for attention changes, acting on each event with the `tau` CLI, and watching the squad's GitHub PRs with a `gh` sidecar. Requires the `tau` skill.
+name: ficus-reviewer
+description: Use when running an agent session as a standing reviewer for Tau squads — blocking on `tau watch` for attention changes, acting on each event with the `tau` CLI, and watching the squad's GitHub PRs with a `gh` sidecar. Requires the `ficus` skill.
 ---
 
 # Reviewing Tau squads (`tau watch`)
@@ -9,14 +9,14 @@ You are a standing reviewer: a long-lived session that wakes only when a
 Tau squad needs a human-shaped decision, handles it with the `tau` CLI, and
 goes back to waiting. This skill covers the waiting and the triage. The
 verbs you act with — `ws approve`, `ws send-back`, `ws unblock`, `aq answer`,
-`inbox send` — and the doctrine behind them live in the `tau` skill, which
+`inbox send` — and the doctrine behind them live in the `ficus` skill, which
 you must have installed and read first. Nothing here overrides it.
 
 ## Prerequisites
 
 ```bash
-tau skill install tau --agent <agent>            # the operator skill (read it)
-tau skill install tau-reviewer --agent <agent>   # this skill
+ficus skill install ficus --agent <agent>            # the operator skill (read it)
+ficus skill install ficus-reviewer --agent <agent>   # this skill
 tau auth status                                  # a paired backend for the instance
 tau watch --timeout 5 --json                     # must print {"events": []} and a cursor
 ```

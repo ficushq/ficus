@@ -95,7 +95,7 @@ function cloningRunner(installRoot: string) {
   return { runner, calls: rec.calls }
 }
 
-describe('tau server', () => {
+describe('ficus server', () => {
   it('start brings up the managed postgres container and pm2 from the state-file root', async () => {
     const { run, calls } = make({ 'docker inspect': { stdout: 'true\n' } })
     await run(['server', 'start'])
@@ -784,7 +784,7 @@ describe('tau server', () => {
   })
 })
 
-describe('tau server list', () => {
+describe('ficus server list', () => {
   /** A second registered instance, in its own checkout. */
   function secondInstance() {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
@@ -911,7 +911,7 @@ describe('tau server list', () => {
   })
 })
 
-describe('tau server <cmd> --instance', () => {
+describe('ficus server <cmd> --instance', () => {
   /** A second registered instance in its own checkout, labelled smoke. */
   function smokeCheckout(): string {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))

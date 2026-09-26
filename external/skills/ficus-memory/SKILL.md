@@ -1,5 +1,5 @@
 ---
-name: tau-memory
+name: ficus-memory
 description: Use when an agent needs to retrieve, preserve, or maintain durable organization or project knowledge across sessions using Tau memory.
 ---
 
@@ -39,19 +39,19 @@ Do **not** use Tau memory for:
 
 Before reading, searching, writing, patching, appending, or deleting memory:
 
-1. Use the Tau CLI path shown in the generated **Installed Tau CLI** section below.
+1. Use the Ficus CLI path shown in the generated **Installed Ficus CLI** section below.
    - If no installed path is documented, use `tau` when it is on `PATH`; otherwise ask the human to install/configure Tau CLI.
-2. Run `<tau-cli> squad list`.
+2. Run `<ficus-cli> squad list`.
 3. Select the squad UUID:
    - If exactly one squad is listed, use that squad automatically.
    - If multiple squads are listed, confirm the intended company, human, project, and squad name before proceeding.
 4. Copy the squad UUID.
-5. Use `--squad <squad-id>` on **every** `<tau-cli> memory ...` command.
+5. Use `--squad <squad-id>` on **every** `<ficus-cli> memory ...` command.
 6. Read the squad's routing and context files before any search/write/update/delete:
 
    ```bash
-   <tau-cli> memory get /memory/map.md --squad <squad-id>
-   <tau-cli> memory get /memory/context.md --squad <squad-id>
+   <ficus-cli> memory get /memory/map.md --squad <squad-id>
+   <ficus-cli> memory get /memory/context.md --squad <squad-id>
    ```
 
 7. Search/read related memory before answering from memory or modifying memory.
@@ -102,13 +102,13 @@ See [[API Error Handling Pattern]] and [[Deploy Runbook#Rollback]].
 
 ## Safe Operations
 
-- **Search first:** `<tau-cli> memory search "authentication flow" --squad <squad-id> --limit 5`
-- **List directories:** `<tau-cli> memory list /memory/patterns --squad <squad-id>`
-- **Read complete files:** `<tau-cli> memory get /memory/patterns/api-errors.md --squad <squad-id>`
-- **Create/write only intentionally:** `<tau-cli> memory write /memory/patterns/api-errors.md --squad <squad-id> < api-errors.md`
-- **Append additive notes:** `<tau-cli> memory append /memory/runbooks/deploy.md --squad <squad-id> --newline --content "..."`
-- **Patch exact matches:** `<tau-cli> memory patch /memory/patterns/api-errors.md --squad <squad-id> --match "old exact text" --replace "new text"`
-- **Check backlinks before destructive edits:** `<tau-cli> memory backlinks /memory/patterns/api-errors.md --squad <squad-id>`
+- **Search first:** `<ficus-cli> memory search "authentication flow" --squad <squad-id> --limit 5`
+- **List directories:** `<ficus-cli> memory list /memory/patterns --squad <squad-id>`
+- **Read complete files:** `<ficus-cli> memory get /memory/patterns/api-errors.md --squad <squad-id>`
+- **Create/write only intentionally:** `<ficus-cli> memory write /memory/patterns/api-errors.md --squad <squad-id> < api-errors.md`
+- **Append additive notes:** `<ficus-cli> memory append /memory/runbooks/deploy.md --squad <squad-id> --newline --content "..."`
+- **Patch exact matches:** `<ficus-cli> memory patch /memory/patterns/api-errors.md --squad <squad-id> --match "old exact text" --replace "new text"`
+- **Check backlinks before destructive edits:** `<ficus-cli> memory backlinks /memory/patterns/api-errors.md --squad <squad-id>`
 
 For detailed CLI examples, see `CLI_REFERENCE.md`. For HTTP fallback examples, see `HTTP_REFERENCE.md`.
 
@@ -125,6 +125,6 @@ Memory writes are not immediately searchable through hybrid/vector search. `writ
 
 ## Setup Boundary
 
-This skill assumes Tau CLI or HTTP access is already configured. Do not turn normal memory tasks into installation work unless the human explicitly asks for setup help. To install the skill into a project, use `tau skill install tau-memory --agent <pi|claude-code|codex>` from the project root.
+This skill assumes Tau CLI or HTTP access is already configured. Do not turn normal memory tasks into installation work unless the human explicitly asks for setup help. To install the skill into a project, use `ficus skill install ficus-memory --agent <pi|claude-code|codex>` from the project root.
 
 Never print, commit, or write `FICUS_PASSWORD` or `$HOME/.tau/cli/auth.json` contents into memory.

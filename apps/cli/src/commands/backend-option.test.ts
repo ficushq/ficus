@@ -76,7 +76,7 @@ describe('selected backend config', () => {
 
   // The production shape: Bun auto-loads ./.env into process.env before any user code runs,
   // so by the time loadEnv() executes the keys are already set. A stale repo .env must not
-  // outrank the active stored backend — that made `tau squad list` fail with an expired token.
+  // outrank the active stored backend — that made `ficus squad list` fail with an expired token.
   it('keeps the active backend ahead of a dotenv value Bun auto-loaded into the process', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'tau-backend-dotenv-'))
     tempDirs.push(dir)

@@ -28,7 +28,7 @@ describe('device login client', () => {
     const opened: string[] = []
     const result = await loginWithDeviceAuthorization({
       apiUrl: 'https://tau.test',
-      name: 'Tau CLI on atlas',
+      name: 'Ficus CLI on atlas',
       fetchImpl,
       sleep: async () => {},
       open: async (url) => {

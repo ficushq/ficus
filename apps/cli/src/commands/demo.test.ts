@@ -16,7 +16,7 @@ const summary: DemoSeedSummary = {
   created: ['user demo-reviewer@demo.invalid', 'squad Growth'],
 }
 
-describe('tau demo', () => {
+describe('ficus demo', () => {
   it('seed posts to the demo endpoint and prints the summary', async () => {
     const apiPost = mock(async () => summary)
     const output = mock(() => {})

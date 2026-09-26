@@ -258,7 +258,7 @@ describe('the config-files step', () => {
       await expect(step.run()).rejects.toThrow(SetupFailure)
       // The message must be the recipe: uninstall alone does not clear the label.
       await expect(step.run()).rejects.toThrow(
-        `this checkout is instance "smoke"; to relabel it, remove FICUS_INSTANCE from .env (after unregistering its supervisor with tau server uninstall --root ${root}) — or set up a fresh checkout`
+        `this checkout is instance "smoke"; to relabel it, remove FICUS_INSTANCE from .env (after unregistering its supervisor with ficus server uninstall --root ${root}) — or set up a fresh checkout`
       )
       // A re-run without --instance is not a relabel attempt: it must go through.
       await stepOf(opts({ root, instance: 'tau', explicit: new Set() }), deps).run()

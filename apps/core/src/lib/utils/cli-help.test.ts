@@ -13,7 +13,7 @@ import {
 } from './cli-help'
 import { MONOREPO_ROOT } from '../paths'
 
-// cli-help now relies SOLELY on the built CLI at apps/cli/dist/tau.js — the
+// cli-help now relies SOLELY on the built CLI at apps/cli/dist/ficus.js — the
 // `bun apps/cli/src/index.ts` source fallback was removed (a shipped artifact
 // has no apps/cli/src). CI builds the CLI before running these tests (ci.yml's
 // "Build CLI" step precedes apps/core `bun test`); locally, build it here if
@@ -22,7 +22,7 @@ beforeAll(() => {
   if (existsSync(getCliHostPath())) return
   const res = Bun.spawnSync(['bun', 'run', 'build:cli'], { cwd: MONOREPO_ROOT, stdout: 'pipe', stderr: 'pipe' })
   if (res.exitCode !== 0) {
-    throw new Error(`failed to build the tau CLI for cli-help tests: ${new TextDecoder().decode(res.stderr)}`)
+    throw new Error(`failed to build the ficus CLI for cli-help tests: ${new TextDecoder().decode(res.stderr)}`)
   }
 })
 
@@ -39,7 +39,7 @@ describe('getTaskWorkflowCliHelp', () => {
   test('includes task subcommands', async () => {
     clearCliHelpCache()
     const help = await getTaskWorkflowCliHelp()
-    expect(help).toContain('tau')
+    expect(help).toContain('Usage: ficus')
     expect(help).toContain('task')
     expect(help).toContain('schedule')
   })
@@ -91,7 +91,7 @@ describe('cache never stores the CLI-missing error sentinel', () => {
     setCliPathOverrideForTests(null)
     const realHelp = await getSystemManagerCliHelp()
     expect(realHelp).not.toContain('[ERROR]')
-    expect(realHelp).toContain('tau')
+    expect(realHelp).toContain('Usage: ficus')
   })
 })
 

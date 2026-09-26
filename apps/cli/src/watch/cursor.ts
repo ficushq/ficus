@@ -10,12 +10,12 @@ export function decodeCursor(cursor: string): Snapshot {
   try {
     value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))
   } catch {
-    throw new Error('Invalid --cursor: not a tau watch cursor')
+    throw new Error('Invalid --cursor: not a ficus watch cursor')
   }
   const v = value as Partial<Snapshot> | null
   const isMap = (x: unknown) => typeof x === 'object' && x !== null && !Array.isArray(x)
   if (!v || v.v !== 1 || !isMap(v.streams) || !isMap(v.actions) || !isMap(v.inbox)) {
-    throw new Error('Invalid --cursor: unsupported version or shape (get a fresh one from tau watch output)')
+    throw new Error('Invalid --cursor: unsupported version or shape (get a fresh one from ficus watch output)')
   }
   return v as Snapshot
 }

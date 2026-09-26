@@ -5,7 +5,7 @@ import { output, outputError } from '../output'
 export function registerNotificationConfigCommands(program: Command) {
   const notif = program.command('notification-config').alias('notif').description('Manage notification config')
 
-  // tau notification-config me — the caller's own notification preferences (self-service)
+  // ficus notification-config me — the caller's own notification preferences (self-service)
   notif
     .command('me')
     .description('Show your own notification preferences (push toggle + muted events)')
@@ -20,7 +20,7 @@ export function registerNotificationConfigCommands(program: Command) {
       }
     })
 
-  // tau notification-config set-mine [--push-enabled <bool>] [--muted <events>]
+  // ficus notification-config set-mine [--push-enabled <bool>] [--muted <events>]
   notif
     .command('set-mine')
     .description('Update your own notification preferences')
@@ -45,7 +45,7 @@ export function registerNotificationConfigCommands(program: Command) {
       }
     })
 
-  // tau notification-config get
+  // ficus notification-config get
   notif
     .command('get')
     .description('Get current notification config')
@@ -58,7 +58,7 @@ export function registerNotificationConfigCommands(program: Command) {
       }
     })
 
-  // tau notification-config set
+  // ficus notification-config set
   notif
     .command('set')
     .description('Update notification config from JSON file')
@@ -74,7 +74,7 @@ export function registerNotificationConfigCommands(program: Command) {
       }
     })
 
-  // tau notification-config template-diff
+  // ficus notification-config template-diff
   notif
     .command('template-diff')
     .description('Show diff between current config and YAML template')
@@ -87,7 +87,7 @@ export function registerNotificationConfigCommands(program: Command) {
       }
     })
 
-  // tau notification-config revert
+  // ficus notification-config revert
   notif
     .command('revert')
     .description('Revert notification config to YAML template')
@@ -100,7 +100,7 @@ export function registerNotificationConfigCommands(program: Command) {
       }
     })
 
-  // tau notification-config disable
+  // ficus notification-config disable
   notif
     .command('disable')
     .description('Disable notification config')
@@ -113,7 +113,7 @@ export function registerNotificationConfigCommands(program: Command) {
       }
     })
 
-  // tau notification-config enable
+  // ficus notification-config enable
   notif
     .command('enable')
     .description('Enable notification config')
@@ -126,7 +126,7 @@ export function registerNotificationConfigCommands(program: Command) {
       }
     })
 
-  // tau notification-config export
+  // ficus notification-config export
   notif
     .command('export')
     .description('Export notification config as YAML')

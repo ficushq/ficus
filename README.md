@@ -54,10 +54,10 @@ The CLI is installed to `~/.tau/bin`. See [CLI setup](docs/wiki/cli/README.md)
 for authentication and usage.
 
 **Operate Tau from an AI coding agent:** the CLI bundles the
-[Tau operator skill](external/skills/tau/SKILL.md). Install it for your agent with
+[Tau operator skill](external/skills/ficus/SKILL.md). Install it for your agent with
 
 ```bash
-tau skill install tau --agent claude-code --global   # or --agent pi | codex
+ficus skill install ficus --agent claude-code --global   # or --agent pi | codex
 ```
 
 </details>

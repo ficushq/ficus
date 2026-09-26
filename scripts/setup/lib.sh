@@ -2623,7 +2623,7 @@ build_outputs_present() { # SRC_DEST SERVE_WEB
   # Custom webhook commands and host agents can run this CLI bundle;
   # a deploy that built core but not the CLI left every webhook notification
   # silently no-opping (2026-08-23). The CLI is now a first-class build output.
-  [[ -f ${src_dest}/apps/cli/dist/tau.js ]] || return 1
+  [[ -f ${src_dest}/apps/cli/dist/ficus.js ]] || return 1
   if [[ ${serve_web} == true ]]; then
     [[ -f ${src_dest}/apps/web/dist/index.html ]] || return 1
   fi
@@ -2655,8 +2655,8 @@ build_stamp_is_current() { # SRC_DEST SERVE_WEB
   [[ -n ${stamp_hash} && ${stamp_hash} == "$(build_output_hash "${src_dest}/apps/core/dist/worker.js")" ]] || return 1
   stamp_hash=$(envfile_get "${stamp}" FICUS_BUILD_HASH_CORE_MIGRATE)
   [[ -n ${stamp_hash} && ${stamp_hash} == "$(build_output_hash "${src_dest}/apps/core/dist/migrate.js")" ]] || return 1
-  stamp_hash=$(envfile_get "${stamp}" FICUS_BUILD_HASH_CLI_TAU)
-  [[ -n ${stamp_hash} && ${stamp_hash} == "$(build_output_hash "${src_dest}/apps/cli/dist/tau.js")" ]] || return 1
+  stamp_hash=$(envfile_get "${stamp}" FICUS_BUILD_HASH_CLI_FICUS)
+  [[ -n ${stamp_hash} && ${stamp_hash} == "$(build_output_hash "${src_dest}/apps/cli/dist/ficus.js")" ]] || return 1
   if [[ ${serve_web} == true ]]; then
     stamp_hash=$(envfile_get "${stamp}" FICUS_BUILD_HASH_WEB_INDEX)
     [[ -n ${stamp_hash} && ${stamp_hash} == "$(build_output_hash "${src_dest}/apps/web/dist/index.html")" ]] || return 1
@@ -2685,7 +2685,7 @@ build_stamp_write() { # SRC_DEST SERVE_WEB
     printf 'FICUS_BUILD_HASH_CORE_INDEX=%s\n' "$(build_output_hash "${src_dest}/apps/core/dist/index.js")"
     printf 'FICUS_BUILD_HASH_CORE_WORKER=%s\n' "$(build_output_hash "${src_dest}/apps/core/dist/worker.js")"
     printf 'FICUS_BUILD_HASH_CORE_MIGRATE=%s\n' "$(build_output_hash "${src_dest}/apps/core/dist/migrate.js")"
-    printf 'FICUS_BUILD_HASH_CLI_TAU=%s\n' "$(build_output_hash "${src_dest}/apps/cli/dist/tau.js")"
+    printf 'FICUS_BUILD_HASH_CLI_FICUS=%s\n' "$(build_output_hash "${src_dest}/apps/cli/dist/ficus.js")"
     if [[ ${serve_web} == true ]]; then
       printf 'FICUS_BUILD_HASH_WEB_INDEX=%s\n' "$(build_output_hash "${src_dest}/apps/web/dist/index.html")"
     fi
@@ -2711,7 +2711,7 @@ build_app() { # SRC_DEST SERVE_WEB(true|false)
     log_info "build current for ${stamp_commit:0:12} (bun.lock unchanged, outputs present) — skipping rebuild"
     # See the big comment above: honestly re-asserting "these outputs are
     # current" for the upgrade path's external mtime probe.
-    touch apps/core/dist/index.js apps/core/dist/worker.js apps/core/dist/migrate.js apps/cli/dist/tau.js
+    touch apps/core/dist/index.js apps/core/dist/worker.js apps/core/dist/migrate.js apps/cli/dist/ficus.js
     [[ ${serve_web} == true ]] && touch apps/web/dist/index.html
     _tau_build_skipped=true
     return 0
@@ -2737,7 +2737,7 @@ build_app() { # SRC_DEST SERVE_WEB(true|false)
   # webhook notification silently no-ops (2026-08-23 incident) — so a missing
   # CLI bundle is a failed deploy, not a green one.
   (cd apps/cli && bun run build)
-  [[ -f apps/cli/dist/tau.js ]] || die "build did not produce apps/cli/dist/tau.js"
+  [[ -f apps/cli/dist/ficus.js ]] || die "build did not produce apps/cli/dist/ficus.js"
   if [[ ${serve_web} == true ]]; then
     bun run build:web
     [[ -f apps/web/dist/index.html ]] || die "web build did not produce apps/web/dist/index.html"

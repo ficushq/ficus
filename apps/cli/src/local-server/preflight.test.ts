@@ -122,7 +122,7 @@ describe('runPreflight', () => {
       responses: { 'docker info --format': { stdout: '{"runc":{}}' } },
     })
     const failures = (await runPreflight(opts({ runtime: 'docker-sysbox' }), d)).failures.join('\n')
-    expect(failures).toMatch(/tau server bootstrap-sysbox/)
+    expect(failures).toMatch(/ficus server bootstrap-sysbox/)
     expect(failures).toMatch(/docs\/wiki\/sandbox-runtimes\.md#installing-sysbox/)
   })
   it('gives WSL hosts without systemd the /etc/wsl.conf recipe before the runtime probe', async () => {

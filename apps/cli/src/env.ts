@@ -16,7 +16,7 @@ export function loadEnv(options: { cwd?: string; env?: NodeJS.ProcessEnv } = {})
     contents = readFileSync(envPath, 'utf-8')
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : String(error)
-    process.stderr.write(`tau: could not read .env in ${cwd} (${code}); continuing without it\n`)
+    process.stderr.write(`ficus: could not read .env in ${cwd} (${code}); continuing without it\n`)
     return
   }
 
@@ -42,7 +42,7 @@ export function loadEnv(options: { cwd?: string; env?: NodeJS.ProcessEnv } = {})
   for (const [key, value] of Object.entries(parsed)) {
     if (value === undefined) continue
     // Record EVERY key parsed from the file, not just the ones we inject. Bun auto-loads
-    // ./.env into process.env before any user code runs (the shipped CLI is dist/tau.js under
+    // ./.env into process.env before any user code runs (the shipped CLI is dist/ficus.js under
     // `#!/usr/bin/env bun`), so by the time we get here the key is usually already set and we
     // inject nothing. A process value identical to the file's is indistinguishable from one we
     // injected, so it must be treated as implicit too — otherwise a stale repo .env outranks

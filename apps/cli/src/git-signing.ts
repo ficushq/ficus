@@ -1,8 +1,8 @@
 /**
- * `tau` as git's `gpg.ssh.program`. Squad sandboxes point git at `tau` when
+ * `ficus` as git's `gpg.ssh.program`. Squad sandboxes point git at `ficus` when
  * commit signing is on, so git runs it exactly like `ssh-keygen`:
  *
- *   tau -Y sign -n git -f <public key file> [-U] <buffer file>
+ *   ficus -Y sign -n git -f <public key file> [-U] <buffer file>
  *
  * Signing is forwarded to Core, which holds the private key and returns the
  * armored signature; it is written to `<buffer file>.sig` as ssh-keygen would.
@@ -20,7 +20,7 @@ export interface GitSigningDependencies {
   stderr(line: string): void
 }
 
-/** True when argv (after `tau`) is an ssh-keygen invocation git made. */
+/** True when argv (after `ficus`) is an ssh-keygen invocation git made. */
 export function isSshKeygenInvocation(args: readonly string[]): boolean {
   return args[0] === '-Y'
 }
@@ -40,13 +40,13 @@ export async function runSshKeygenCompat(args: string[], deps: GitSigningDepende
     else files.push(arg)
   }
   if (namespace !== 'git' || files.length !== 1) {
-    deps.stderr('tau: only git commit and tag signing is supported (expected -Y sign -n git ... <file>)')
+    deps.stderr('ficus: only git commit and tag signing is supported (expected -Y sign -n git ... <file>)')
     return 1
   }
   const squadId = deps.env.FICUS_GIT_SIGNING_SQUAD
   if (!squadId) {
     deps.stderr(
-      'tau: commit signing is only available through the squad git wrapper (FICUS_GIT_SIGNING_SQUAD is unset)'
+      'ficus: commit signing is only available through the squad git wrapper (FICUS_GIT_SIGNING_SQUAD is unset)'
     )
     return 1
   }
@@ -56,7 +56,7 @@ export async function runSshKeygenCompat(args: string[], deps: GitSigningDepende
     await deps.writeFile(`${file}.sig`, signature)
     return 0
   } catch (error) {
-    deps.stderr(`tau: commit signing failed: ${(error as Error).message}`)
+    deps.stderr(`ficus: commit signing failed: ${(error as Error).message}`)
     return 1
   }
 }
@@ -79,7 +79,7 @@ export function defaultGitSigningDependencies(): GitSigningDependencies {
     passthrough: async (args) => {
       const sshKeygen = Bun.which('ssh-keygen')
       if (!sshKeygen) {
-        process.stderr.write('tau: ssh-keygen is not installed; only signing works without it\n')
+        process.stderr.write('ficus: ssh-keygen is not installed; only signing works without it\n')
         return 127
       }
       const child = Bun.spawn([sshKeygen, ...args], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' })

@@ -10,7 +10,7 @@ export function setSelectedBackend(label: string | undefined) {
 }
 
 /**
- * True inside a shell the Tau runtime built for an agent (the sandbox/host
+ * True inside a shell the Ficus runtime built for an agent (the sandbox/host
  * runtime injects FICUS_AGENT_CONTEXT=1 alongside the agent's own FICUS_API_URL,
  * FICUS_TOKEN and FICUS_AUTH_STORE).
  *
@@ -34,7 +34,7 @@ function getSelectedBackend() {
   if (!selectedBackendLabel) return undefined
   const store = loadAuthStore()
   const backend = store.backends[selectedBackendLabel]
-  if (!backend) throw new Error(`Unknown Tau backend '${selectedBackendLabel}'`)
+  if (!backend) throw new Error(`Unknown Ficus backend '${selectedBackendLabel}'`)
   return { label: selectedBackendLabel, backend }
 }
 
@@ -54,7 +54,7 @@ function requireAgentToken(): string {
   if (!token)
     throw new Error(
       'This is an agent shell (FICUS_AGENT_CONTEXT=1) but the agent token FICUS_TOKEN is absent; ' +
-        'tau will not fall back to a human login.'
+        'ficus will not fall back to a human login.'
     )
   return token
 }
@@ -91,7 +91,7 @@ function getPassword(): string {
     return requireAgentToken()
   }
   // A per-agent scoped token (injected into the sandbox bash environment as
-  // FICUS_TOKEN) takes precedence so an agent's `tau` commands authenticate AS that
+  // FICUS_TOKEN) takes precedence so an agent's `ficus` commands authenticate AS that
   // agent (RBAC squad-scoped) rather than via the shared FICUS_PASSWORD.
   const selectedBackend = getSelectedBackend()
   if (selectedBackend) return selectedBackend.backend.password
@@ -135,7 +135,7 @@ export type AuthSource =
   | 'selected-backend' // --backend <label>
   | 'env-token' // FICUS_TOKEN (per-agent scoped token injected into a sandbox)
   | 'env-password' // FICUS_PASSWORD set explicitly in the environment
-  | 'auth-store' // the active `tau auth login` backend
+  | 'auth-store' // the active `ficus auth login` backend
   | 'dotenv' // FICUS_PASSWORD from a .env file
   | 'secret-file' // /etc/tau/password (mounted K8s Secret)
   | 'none'
@@ -148,7 +148,7 @@ export interface ResolvedAuth {
   agentId?: string
   /**
    * Identity variables an agent shell is missing. Reporting is deliberately
-   * non-throwing: `tau whoami` / `tau auth status` exist to diagnose exactly this
+   * non-throwing: `ficus whoami` / `ficus auth status` exist to diagnose exactly this
    * state, so they must be able to describe a broken agent shell rather than
    * exit on it. Applying the credential (config.apiUrl/config.password) still throws.
    */
@@ -158,10 +158,10 @@ export interface ResolvedAuth {
 }
 
 /**
- * Which credential `tau` is ACTUALLY using — the same precedence as
- * `config.password`, reported rather than applied. Lets `tau auth status` be
+ * Which credential `ficus` is ACTUALLY using — the same precedence as
+ * `config.password`, reported rather than applied. Lets `ficus auth status` be
  * truthful inside sandboxes, where agents authenticate via the injected
- * FICUS_TOKEN and have no auth-store backend at all (the old "No active Tau
+ * FICUS_TOKEN and have no auth-store backend at all (the old "No active Ficus
  * backend configured" there read as "not logged in" while every command worked).
  */
 export function resolveAuth(): ResolvedAuth {

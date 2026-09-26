@@ -250,7 +250,7 @@ test('history passes the complete server page to output unchanged', async () => 
 
   expect(received).toBe(response)
   expect(human).toContain('claim claim-id')
-  expect(human).toContain('More: tau slot history tests --squad squad --limit 50 --cursor opaque')
+  expect(human).toContain('More: ficus slot history tests --squad squad --limit 50 --cursor opaque')
 })
 
 test('passes the complete server object to output unchanged', async () => {
@@ -338,13 +338,13 @@ test('renders actionable acquire outcomes with mandatory release guidance', () =
     )
   ).toContain('YOU MUST RELEASE THIS CLAIM AS SOON AS YOU ARE DONE.')
   expect(renderSlotAcquire({ outcome: 'unavailable', message: 'unavailable', pool }, 'squad-id')).toContain(
-    'tau slot subscribe tests --squad squad-id'
+    'ficus slot subscribe tests --squad squad-id'
   )
   const queued = renderSlotAcquire(
     { outcome: 'queued', message: 'queued', pool, waiter: { id: 'waiter-id' } },
     'squad-id'
   )
-  expect(queued).toContain('tau slot unsubscribe waiter-id')
+  expect(queued).toContain('ficus slot unsubscribe waiter-id')
   // Queued is NOT ownership: the merged claim flow makes this the common
   // outcome, so it has to say so as loudly as the granted case says the opposite.
   expect(queued).toContain('YOU DO NOT OWN CAPACITY YET.')
@@ -401,9 +401,9 @@ test('renders compact actionable slot list and detail output', () => {
       },
       'squad-id'
     )
-  ).toContain('Release: tau slot release claim-id')
+  ).toContain('Release: ficus slot release claim-id')
   expect(renderSlotPools({ ...summary, callerWaiter: { id: 'waiter-id' } }, 'squad-id')).toContain(
-    'Unsubscribe: tau slot unsubscribe waiter-id'
+    'Unsubscribe: ficus slot unsubscribe waiter-id'
   )
 })
 
@@ -450,7 +450,7 @@ test('warns about a live claim only while that claim is actually active', () => 
       claimStatus: 'active',
     })
   ).toBe(
-    'waiter was promoted\nYOU OWN A LIVE CLAIM AND MUST RELEASE IT AS SOON AS YOU ARE DONE.\nClaim ID: claim-id\nRelease: tau slot release claim-id'
+    'waiter was promoted\nYOU OWN A LIVE CLAIM AND MUST RELEASE IT AS SOON AS YOU ARE DONE.\nClaim ID: claim-id\nRelease: ficus slot release claim-id'
   )
 
   // The bug this fixes: a granted waiter whose claim has since ended was still
@@ -465,7 +465,7 @@ test('warns about a live claim only while that claim is actually active', () => 
     })
     expect(text).toBe(`claim is ${claimStatus}\nYOU NO LONGER OWN THIS SLOT CAPACITY.`)
     expect(text).not.toContain('YOU OWN A LIVE CLAIM')
-    expect(text).not.toContain('tau slot release')
+    expect(text).not.toContain('ficus slot release')
   }
 
   // An older server omits claimStatus; never drop the warning in that case.
@@ -515,12 +515,12 @@ test('list rendering surfaces the caller recovery state for every pool', () => {
   expect(text).toContain('tests: 1/1 active, 0 available, 0 queued')
   expect(text).toContain('Your claim: claim-id')
   expect(text).toContain('Expires: 2026-09-03T03:00:00Z')
-  expect(text).toContain('Release: tau slot release claim-id')
-  expect(text).toContain('Renew: tau slot renew claim-id')
+  expect(text).toContain('Release: ficus slot release claim-id')
+  expect(text).toContain('Renew: ficus slot renew claim-id')
   expect(text).toContain('deploys: 2/2 active, 0 available, 1 queued')
   expect(text).toContain('Your waiter: waiter-id')
   expect(text).toContain('Queued: 2026-09-03T02:00:00Z')
-  expect(text).toContain('Unsubscribe: tau slot unsubscribe waiter-id')
+  expect(text).toContain('Unsubscribe: ficus slot unsubscribe waiter-id')
   // Foreign holder identity is never surfaced in human output.
   expect(text).not.toContain('abcd1234')
 })

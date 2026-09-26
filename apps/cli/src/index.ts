@@ -50,12 +50,12 @@ import { registerWorkflowCommands } from './commands/workflow'
 const program = new Command()
 
 program
-  .name('tau')
-  .description('Tau CLI - AI-powered task management')
+  .name('ficus')
+  .description('Ficus CLI - AI-powered task management')
   .version(`${buildInfo.version} (${buildInfo.commit}, ${buildInfo.buildDate})`)
   .option('--json', 'Output in JSON format')
   .option('--quiet', 'Minimal output')
-  .option('--backend <label>', 'Use a labeled Tau auth backend for this command only')
+  .option('--backend <label>', 'Use a labeled Ficus auth backend for this command only')
   .hook('preAction', (_thisCommand, actionCommand) => {
     const opts = actionCommand.optsWithGlobals()
     setOutputOptions({ json: opts.json, quiet: opts.quiet })
@@ -105,7 +105,7 @@ registerWorkerCommands(program)
 registerWorkstreamCommands(program)
 registerWorkflowCommands(program)
 
-// git runs `tau` as its gpg.ssh.program (squad commit signing) with ssh-keygen's argv.
+// git runs `ficus` as its gpg.ssh.program (squad commit signing) with ssh-keygen's argv.
 const args = process.argv.slice(2)
 if (isSshKeygenInvocation(args)) {
   void runSshKeygenCompat(args, defaultGitSigningDependencies()).then((code) => {

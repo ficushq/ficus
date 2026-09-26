@@ -19,7 +19,7 @@ function makeRunner(register: (program: Command) => void) {
 
 const run = makeRunner(registerProviderAuthCommands)
 
-describe('tau provider-auth reset', () => {
+describe('ficus provider-auth reset', () => {
   const summary = { provider: 'anthropic', health: 'available', retryAt: undefined, accounts: [] }
 
   beforeEach(() => {

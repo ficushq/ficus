@@ -47,7 +47,7 @@ export function registerSquadPresetCommands(program: Command) {
       }
     })
 
-  // tau squad-preset create
+  // ficus squad-preset create
   squadPreset
     .command('create')
     .description('Create a new squad preset')
@@ -73,7 +73,7 @@ export function registerSquadPresetCommands(program: Command) {
       }
     })
 
-  // tau squad-preset update <id>
+  // ficus squad-preset update <id>
   squadPreset
     .command('update <id>')
     .description('Update a squad preset')
@@ -96,7 +96,7 @@ export function registerSquadPresetCommands(program: Command) {
       }
     })
 
-  // tau squad-preset delete <id>
+  // ficus squad-preset delete <id>
   squadPreset
     .command('delete <id>')
     .alias('rm')
@@ -110,7 +110,7 @@ export function registerSquadPresetCommands(program: Command) {
       }
     })
 
-  // tau squad-preset template-diff <id>
+  // ficus squad-preset template-diff <id>
   squadPreset
     .command('template-diff <id>')
     .description('Show diff between current config and YAML template')
@@ -123,7 +123,7 @@ export function registerSquadPresetCommands(program: Command) {
       }
     })
 
-  // tau squad-preset revert <id>
+  // ficus squad-preset revert <id>
   squadPreset
     .command('revert <id>')
     .description('Revert squad preset to its YAML template')
@@ -136,7 +136,7 @@ export function registerSquadPresetCommands(program: Command) {
       }
     })
 
-  // tau squad-preset disable <id>
+  // ficus squad-preset disable <id>
   squadPreset
     .command('disable <id>')
     .description('Disable a squad preset')
@@ -149,7 +149,7 @@ export function registerSquadPresetCommands(program: Command) {
       }
     })
 
-  // tau squad-preset enable <id>
+  // ficus squad-preset enable <id>
   squadPreset
     .command('enable <id>')
     .description('Enable a squad preset')
@@ -162,7 +162,7 @@ export function registerSquadPresetCommands(program: Command) {
       }
     })
 
-  // tau squad-preset export <id>
+  // ficus squad-preset export <id>
   squadPreset
     .command('export <id>')
     .description('Export squad preset as YAML')

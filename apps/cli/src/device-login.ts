@@ -13,7 +13,7 @@ function validateApiUrl(apiUrl: string): string {
   const url = new URL(apiUrl)
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
-    throw new Error('HTTPS is required for non-loopback Tau API URLs')
+    throw new Error('HTTPS is required for non-loopback Ficus API URLs')
   }
   return apiUrl.replace(/\/+$/, '')
 }
