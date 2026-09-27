@@ -112,7 +112,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Frontend Team"
-            className="tau-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
+            className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
             autoFocus
           />
         </div>
@@ -125,7 +125,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
               <button
                 type="button"
                 onClick={() => avatarInputRef.current?.click()}
-                className="tau-button px-3 py-1.5 text-sm rounded-md font-medium bg-surface-secondary text-secondary border border-th-border hover:bg-surface-hover"
+                className="ficus-button px-3 py-1.5 text-sm rounded-md font-medium bg-surface-secondary text-secondary border border-th-border hover:bg-surface-hover"
               >
                 {avatarPreview ? 'Change image' : 'Choose image'}
               </button>
@@ -159,7 +159,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
             onChange={(e) => setPurpose(e.target.value)}
             placeholder="Software development for the company"
             rows={3}
-            className="tau-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
+            className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
           />
           <p id="squad-purpose-help" className="mt-1 text-xs text-muted">
             Strongly encouraged: describe what this squad is responsible for. The assistant and other agents use its
@@ -177,7 +177,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
             onChange={(e) => setContext(e.target.value)}
             placeholder="Additional information to include in all squad agents' system prompts..."
             rows={6}
-            className="tau-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
+            className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
           />
         </div>
 
@@ -191,7 +191,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
             onChange={(e) => handleTypeChange(e.target.value)}
             disabled={squadPresetsLoading}
             aria-busy={squadPresetsLoading || undefined}
-            className="tau-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
+            className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
           >
             <option value="">Build your own squad</option>
             {squadPresets
@@ -247,7 +247,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="tau-button px-4 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
+            className="ficus-button px-4 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
           >
             Cancel
           </button>
@@ -256,7 +256,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
             disabled={
               mutation.isPending || !name.trim() || createHostWorkspacePathError(hostWorkspacePath.trim()) !== null
             }
-            className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+            className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
           >
             {mutation.isPending ? 'Creating...' : 'Create Squad'}
           </button>

@@ -11,7 +11,7 @@ export function RecommendationCard({ item, onOpen }: { item: OperationsRecommend
   return (
     <button
       onClick={onOpen}
-      className="tau-button w-full rounded-lg px-3 py-4 text-left transition-colors hover:bg-surface-hover  focus:ring-2 focus:ring-accent"
+      className="ficus-button w-full rounded-lg px-3 py-4 text-left transition-colors hover:bg-surface-hover  focus:ring-2 focus:ring-accent"
     >
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-medium text-primary">{item.title}</h3>

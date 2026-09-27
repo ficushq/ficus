@@ -229,7 +229,7 @@ function StandardHumanMessageContent({
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="tau-button mt-1 text-xs font-medium underline underline-offset-2 opacity-85 hover:opacity-100"
+          className="ficus-button mt-1 text-xs font-medium underline underline-offset-2 opacity-85 hover:opacity-100"
           aria-expanded={expanded}
         >
           {expanded ? 'Show less' : 'Show more'}
@@ -348,7 +348,7 @@ function MonitorMessageRow({
       <div className="border border-th-border rounded-md text-xs">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="tau-button w-full flex items-center gap-1.5 px-2.5 py-1.5 text-secondary hover:bg-surface-hover transition-colors text-left min-w-0 rounded-md"
+          className="ficus-button w-full flex items-center gap-1.5 px-2.5 py-1.5 text-secondary hover:bg-surface-hover transition-colors text-left min-w-0 rounded-md"
         >
           <span className={clsx('text-[10px] transition-transform shrink-0', expanded && 'rotate-90')}>&#9654;</span>
           <span className="shrink-0" aria-label="Monitor">
@@ -454,7 +454,7 @@ function InboxDeliveryMessageCard({
                   <button
                     type="button"
                     onClick={() => setWsOpen({ workStreamId: summary.workStreamId!, squadId: summary.squadId! })}
-                    className="tau-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-status-progress-700 hover:text-status-progress-900 dark:text-status-progress-300 dark:hover:text-status-progress-200"
+                    className="ficus-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-status-progress-700 hover:text-status-progress-900 dark:text-status-progress-300 dark:hover:text-status-progress-200"
                   >
                     <WorkStreamIcon className="h-3.5 w-3.5 shrink-0" />
                     View work stream
@@ -500,7 +500,7 @@ function InboxCardBody({ body, className }: { body: string; className?: string }
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="tau-button mt-1 text-xs font-medium text-status-progress-700 underline decoration-status-progress-700/30 underline-offset-2 hover:text-status-progress-900 hover:decoration-status-progress-700/70 dark:text-status-progress-300 dark:hover:text-status-progress-200"
+          className="ficus-button mt-1 text-xs font-medium text-status-progress-700 underline decoration-status-progress-700/30 underline-offset-2 hover:text-status-progress-900 hover:decoration-status-progress-700/70 dark:text-status-progress-300 dark:hover:text-status-progress-200"
         >
           {expanded ? 'Show less' : 'Show more'}
         </button>
@@ -599,7 +599,7 @@ export function SingleToolCallSection({
       <button
         data-tool-call-row={toolCall.toolCallId}
         onClick={() => setExpanded(!expanded)}
-        className="tau-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
+        className="ficus-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
       >
         {isError ? (
           <span className="text-status-danger-500 dark:text-status-danger-400 shrink-0 inline-block w-3 text-center">
@@ -688,7 +688,7 @@ export function ThinkingSection({
     <div className="text-xs">
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="tau-button w-full flex items-center gap-1.5 py-0.5 text-status-human-wait-600 dark:text-status-human-wait-400 hover:text-status-human-wait-800 dark:hover:text-status-human-wait-300 transition-colors"
+        className="ficus-button w-full flex items-center gap-1.5 py-0.5 text-status-human-wait-600 dark:text-status-human-wait-400 hover:text-status-human-wait-800 dark:hover:text-status-human-wait-300 transition-colors"
       >
         {isStreaming ? (
           <span className="inline-block w-3 h-3 border-2 border-status-human-wait-300 dark:border-status-human-wait-700 border-t-status-human-wait-600 dark:border-t-status-human-wait-300 rounded-full animate-spin shrink-0" />
@@ -738,7 +738,7 @@ function BlockGroupSection({
     <div className="text-xs">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="tau-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
+        className="ficus-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
       >
         <ChevronRightIcon
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}

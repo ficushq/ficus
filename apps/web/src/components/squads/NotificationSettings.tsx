@@ -150,7 +150,7 @@ export function NotificationSettings({ squadId }: Props) {
             onClick={handleSave}
             disabled={updateMutation.isPending || hasValidationErrors}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'px-3 py-1.5 text-sm rounded-md',
               hasValidationErrors
                 ? 'bg-surface-secondary text-muted cursor-not-allowed'
@@ -182,7 +182,7 @@ export function NotificationSettings({ squadId }: Props) {
                 {cfg?.instanceId && (
                   <button
                     onClick={() => clearProvider(provider.key)}
-                    className="tau-button text-xs text-muted hover:text-status-danger-500"
+                    className="ficus-button text-xs text-muted hover:text-status-danger-500"
                   >
                     Clear
                   </button>
@@ -198,7 +198,7 @@ export function NotificationSettings({ squadId }: Props) {
                     <select
                       value={cfg?.instanceId || ''}
                       onChange={(e) => updateProvider(provider.key, 'instanceId', e.target.value)}
-                      className="tau-field w-full px-2 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
+                      className="ficus-field w-full px-2 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
                     >
                       <option value="">Select instance...</option>
                       {providerInstances.map((inst) => (
@@ -220,7 +220,7 @@ export function NotificationSettings({ squadId }: Props) {
                         onChange={(e) => updateProvider(provider.key, 'channelId', e.target.value)}
                         placeholder={`Enter ${provider.idLabel.toLowerCase()}`}
                         className={clsx(
-                          'tau-field',
+                          'ficus-field',
                           'w-full px-2 py-1.5 text-sm rounded border bg-surface text-primary  focus:ring-1',
                           error
                             ? 'border-status-danger-500 focus:ring-status-danger-500/50'

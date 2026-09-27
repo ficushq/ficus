@@ -27,7 +27,7 @@ export function CreateHostWorkspaceField({
         placeholder={defaultPath}
         aria-invalid={error !== null}
         aria-describedby={helpId}
-        className="tau-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md font-mono  focus:ring-2 focus:ring-accent"
+        className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md font-mono  focus:ring-2 focus:ring-accent"
       />
       <p id={helpId} className="mt-1 text-xs text-muted">
         Default: <span className="font-mono">{defaultPath}</span>. Enter an absolute path to override it. Tau will

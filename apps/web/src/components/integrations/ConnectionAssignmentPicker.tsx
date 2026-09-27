@@ -94,7 +94,7 @@ export function ConnectionAssignmentPicker({
               type="button"
               disabled={!canWrite || inheritMutation.isPending}
               onClick={() => inheritMutation.mutate()}
-              className="tau-button text-accent-light"
+              className="ficus-button text-accent-light"
             >
               Use global default
             </button>
@@ -134,7 +134,7 @@ export function ConnectionAssignmentPicker({
                     canWrite && (
                       <button
                         type="button"
-                        className="tau-button text-xs"
+                        className="ficus-button text-xs"
                         disabled={accountMutation.isPending || !connection.enabled}
                         onClick={() => accountMutation.mutate({ id: connection.id, action: 'default' })}
                       >
@@ -152,7 +152,7 @@ export function ConnectionAssignmentPicker({
       ) : canWrite ? (
         <select
           aria-label={`${label} connection for this squad`}
-          className="tau-field mt-3 block w-full rounded-md border border-th-border bg-surface px-3 py-2 text-primary"
+          className="ficus-field mt-3 block w-full rounded-md border border-th-border bg-surface px-3 py-2 text-primary"
           value={value.assignment?.id ?? ''}
           disabled={mutation.isPending}
           onChange={(event) => mutation.mutate(event.target.value)}
@@ -181,7 +181,7 @@ export function ConnectionAssignmentPicker({
           <span>Projection: {projectionLabel}</span>
           {canWrite && projectionLabel === 'degraded' && value.assignment && (
             <button
-              className="tau-button"
+              className="ficus-button"
               type="button"
               disabled={retryMutation.isPending}
               onClick={() => retryMutation.mutate()}

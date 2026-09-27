@@ -223,7 +223,7 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
       <div className="space-y-4">
         <select
           aria-label="Choose an AI provider"
-          className="tau-field block w-64 max-w-full px-3 py-2 text-sm"
+          className="ficus-field block w-64 max-w-full px-3 py-2 text-sm"
           value={selectedProvider}
           onChange={(event) => setSelectedProvider(event.target.value)}
         >
@@ -264,7 +264,7 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
           placeholder="Search providers…"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="tau-field w-full rounded-lg border border-panel-border bg-surface py-2.5 pl-10 pr-3 text-sm text-primary"
+          className="ficus-field w-full rounded-lg border border-panel-border bg-surface py-2.5 pl-10 pr-3 text-sm text-primary"
         />
       </div>
       {([true, false] as const).map((connected) => {
@@ -436,7 +436,7 @@ export function AddProviderSection({ options }: { options: ProviderCatalogEntry[
             aria-label="Select a provider"
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
-            className="tau-field w-full shrink-0 rounded border border-th-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-accent-light  focus:ring-1 focus:ring-accent sm:w-auto sm:max-w-xs"
+            className="ficus-field w-full shrink-0 rounded border border-th-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-accent-light  focus:ring-1 focus:ring-accent sm:w-auto sm:max-w-xs"
           >
             <option value="">Select a provider…</option>
             {options.map((provider) => (
@@ -523,7 +523,7 @@ function ProviderGroupStatus({
                 onClick={() => resetMutation.mutate()}
                 disabled={resetMutation.isPending}
                 aria-label={`Reset health for ${entry.provider}`}
-                className="tau-button hover:text-primary disabled:opacity-50"
+                className="ficus-button hover:text-primary disabled:opacity-50"
               >
                 Reset
               </button>
@@ -600,7 +600,7 @@ export function ProviderRow({
       {canWrite && !hasAnyAccounts && addMode === 'closed' && (
         <button
           onClick={() => setAddMode(oauthAvailable ? 'choose' : 'api-key')}
-          className="tau-button tau-button-primary rounded-lg px-3 py-2 text-sm"
+          className="ficus-button ficus-button-primary rounded-lg px-3 py-2 text-sm"
         >
           Connect account
         </button>
@@ -629,7 +629,7 @@ export function ProviderRow({
           {canWrite && hasAnyAccounts && addMode === 'closed' && (
             <button
               onClick={() => setAddMode(oauthAvailable ? 'choose' : 'api-key')}
-              className="tau-button text-sm text-accent-light hover:text-accent-hover"
+              className="ficus-button text-sm text-accent-light hover:text-accent-hover"
             >
               Connect another account
             </button>
@@ -684,25 +684,25 @@ export function AddAccountChooser({
         <button
           type="button"
           onClick={onChooseOAuth}
-          className="tau-button tau-button-primary rounded-lg px-4 py-2.5 text-sm font-medium"
+          className="ficus-button ficus-button-primary rounded-lg px-4 py-2.5 text-sm font-medium"
         >
           Login with {oauthLabel}
         </button>
         <button
           type="button"
           onClick={onChooseApiKey}
-          className="tau-button rounded-lg border border-th-border px-4 py-2.5 text-sm font-medium text-primary hover:bg-surface-hover"
+          className="ficus-button rounded-lg border border-th-border px-4 py-2.5 text-sm font-medium text-primary hover:bg-surface-hover"
         >
           API key
         </button>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         {onChooseBrowser && (
-          <button type="button" onClick={onChooseBrowser} className="tau-button text-xs text-muted hover:text-primary">
+          <button type="button" onClick={onChooseBrowser} className="ficus-button text-xs text-muted hover:text-primary">
             Browser login (fallback)
           </button>
         )}
-        <button type="button" onClick={onCancel} className="tau-button ml-auto text-sm text-muted hover:text-primary">
+        <button type="button" onClick={onCancel} className="ficus-button ml-auto text-sm text-muted hover:text-primary">
           Cancel
         </button>
       </div>
@@ -744,7 +744,7 @@ export function AddAccountForm({
             onChange={(e) => setLabelValue(e.target.value)}
             placeholder="e.g. Work"
             disabled={addMutation.isPending}
-            className="tau-field w-full rounded-lg px-3 py-2 text-sm"
+            className="ficus-field w-full rounded-lg px-3 py-2 text-sm"
           />
         </label>
         <label className="min-w-0 space-y-2 text-sm text-secondary">
@@ -755,7 +755,7 @@ export function AddAccountForm({
             onChange={(e) => setKeyValue(e.target.value)}
             placeholder="Enter API key"
             disabled={addMutation.isPending}
-            className="tau-field w-full rounded-lg px-3 py-2 text-sm"
+            className="ficus-field w-full rounded-lg px-3 py-2 text-sm"
           />
         </label>
       </div>
@@ -769,7 +769,7 @@ export function AddAccountForm({
           type="button"
           onClick={() => addMutation.mutate()}
           disabled={!keyValue || addMutation.isPending}
-          className="tau-button tau-button-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+          className="ficus-button ficus-button-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
         >
           {addMutation.isPending ? 'Saving…' : 'Save'}
         </button>
@@ -777,7 +777,7 @@ export function AddAccountForm({
           type="button"
           onClick={onCancel}
           disabled={addMutation.isPending}
-          className="tau-button text-sm text-muted hover:text-primary disabled:opacity-50"
+          className="ficus-button text-sm text-muted hover:text-primary disabled:opacity-50"
         >
           Cancel
         </button>
@@ -851,7 +851,7 @@ export function ProviderAccountsList({
                     onClick={() => moveAccount(index, -1)}
                     disabled={index === 0 || reorderMutation.isPending}
                     aria-label="Move up"
-                    className="tau-button leading-none hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="ficus-button leading-none hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     ▲
                   </button>
@@ -859,7 +859,7 @@ export function ProviderAccountsList({
                     onClick={() => moveAccount(index, 1)}
                     disabled={index === accounts.length - 1 || reorderMutation.isPending}
                     aria-label="Move down"
-                    className="tau-button leading-none hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="ficus-button leading-none hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     ▼
                   </button>
@@ -871,7 +871,7 @@ export function ProviderAccountsList({
                     value={editLabelValue}
                     onChange={(e) => setEditLabelValue(e.target.value)}
                     aria-label="Account label"
-                    className="tau-field w-full rounded-lg px-3 py-2 text-sm"
+                    className="ficus-field w-full rounded-lg px-3 py-2 text-sm"
                     autoFocus
                   />
                 ) : (
@@ -928,7 +928,7 @@ export function ProviderAccountsList({
                     <>
                       <button
                         onClick={() => updateMutation.mutate({ id: account.id, patch: { label: editLabelValue } })}
-                        className="tau-button hover:text-primary"
+                        className="ficus-button hover:text-primary"
                       >
                         Save label
                       </button>
@@ -937,7 +937,7 @@ export function ProviderAccountsList({
                           setEditingAccountId(null)
                           setEditLabelValue('')
                         }}
-                        className="tau-button hover:text-primary"
+                        className="ficus-button hover:text-primary"
                       >
                         Cancel
                       </button>
@@ -953,7 +953,7 @@ export function ProviderAccountsList({
                             onClick={() => resetHealthMutation.mutate(account.id)}
                             disabled={resetHealthMutation.isPending}
                             aria-label={`Reset health for ${account.label || account.id}`}
-                            className="tau-button hover:text-primary disabled:opacity-50"
+                            className="ficus-button hover:text-primary disabled:opacity-50"
                           >
                             Reset
                           </button>
@@ -964,14 +964,14 @@ export function ProviderAccountsList({
                             setEditingAccountId(account.id)
                             setEditLabelValue(account.label ?? '')
                           }}
-                          className="tau-button hover:text-primary"
+                          className="ficus-button hover:text-primary"
                         >
                           Edit label
                         </button>
                         {account.type === 'oauth' && (
                           <button
                             onClick={() => setReloginAccountId(account.id)}
-                            className="tau-button hover:text-primary"
+                            className="ficus-button hover:text-primary"
                           >
                             Re-authorize
                           </button>
@@ -980,7 +980,7 @@ export function ProviderAccountsList({
                           onClick={() =>
                             updateMutation.mutate({ id: account.id, patch: { enabled: !account.enabled } })
                           }
-                          className="tau-button hover:text-primary"
+                          className="ficus-button hover:text-primary"
                         >
                           {account.enabled ? 'Disable' : 'Enable'}
                         </button>
@@ -989,7 +989,7 @@ export function ProviderAccountsList({
                             if (confirm(`Delete account ${account.label || account.id}?`))
                               deleteMutation.mutate(account.id)
                           }}
-                          className="tau-button text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300"
+                          className="ficus-button text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300"
                         >
                           Delete
                         </button>
@@ -1049,17 +1049,17 @@ function ApiKeyForm({
           if (e.key === 'Escape') onCancel()
         }}
         placeholder="Enter API key..."
-        className="tau-field flex-1 text-sm bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+        className="ficus-field flex-1 text-sm bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
         autoFocus
       />
       <button
         onClick={() => mutation.mutate(value)}
         disabled={!value || mutation.isPending}
-        className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+        className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
       >
         {mutation.isPending ? 'Saving...' : 'Save'}
       </button>
-      <button onClick={onCancel} className="tau-button text-xs text-muted hover:text-primary">
+      <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
         Cancel
       </button>
       {mutation.isError && (
@@ -1270,7 +1270,7 @@ export function SelectStep({
         <button
           onClick={() => onSelect(deviceOption.id)}
           disabled={isPending}
-          className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           Device code login (recommended)
         </button>
@@ -1281,11 +1281,11 @@ export function SelectStep({
           <button
             onClick={() => onSelect(browserOption.id)}
             disabled={isPending}
-            className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+            className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
           >
             Use browser login instead
           </button>
-          <button onClick={onCancel} className="tau-button text-xs text-muted hover:text-primary">
+          <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
             Cancel
           </button>
         </div>
@@ -1306,12 +1306,12 @@ export function SelectStep({
             key={option.id}
             onClick={() => onSelect(option.id)}
             disabled={isPending}
-            className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
           >
             {option.label}
           </button>
         ))}
-        <button onClick={onCancel} className="tau-button text-xs text-muted hover:text-primary">
+        <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
           Cancel
         </button>
       </div>
@@ -1362,17 +1362,17 @@ export function CodeStep({
             if (e.key === 'Escape') onCancel()
           }}
           placeholder="Paste authorization code or redirect URL here..."
-          className="tau-field flex-1 text-sm bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent font-mono"
+          className="ficus-field flex-1 text-sm bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent font-mono"
           autoFocus
         />
         <button
           onClick={onSubmit}
           disabled={!code.trim() || isSubmitting}
-          className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {isSubmitting ? 'Submitting...' : 'Submit'}
         </button>
-        <button onClick={onCancel} className="tau-button text-xs text-muted hover:text-primary">
+        <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
           Cancel
         </button>
       </div>
@@ -1441,7 +1441,7 @@ export function DeviceCodeStep({
         <button
           onClick={copyCode}
           disabled={!need}
-          className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium shrink-0 disabled:opacity-50"
+          className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium shrink-0 disabled:opacity-50"
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
@@ -1483,7 +1483,7 @@ export function DeviceCodeStep({
         <button
           onClick={onCancel}
           disabled={!need}
-          className="tau-button text-xs text-muted hover:text-primary disabled:opacity-50"
+          className="ficus-button text-xs text-muted hover:text-primary disabled:opacity-50"
         >
           Cancel
         </button>
@@ -1505,10 +1505,10 @@ export function ErrorStep({
     <div className="space-y-2">
       <p className="text-sm text-status-danger-600 dark:text-status-danger-400">Login failed: {message}</p>
       <div className="flex gap-2">
-        <button onClick={onRetry} className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium">
+        <button onClick={onRetry} className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium">
           Try Again
         </button>
-        <button onClick={onCancel} className="tau-button text-xs text-muted hover:text-primary">
+        <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
           Cancel
         </button>
       </div>
@@ -1607,7 +1607,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
     }
   }
   return (
-    <section className="tau-section min-w-0 space-y-4 overflow-hidden p-4">
+    <section className="ficus-section min-w-0 space-y-4 overflow-hidden p-4">
       <div>
         <h4 data-setting-target="local-openai-compatible" className="font-medium text-primary">
           Local / OpenAI-compatible
@@ -1626,14 +1626,14 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder="http://localhost:8080/v1"
-            className="tau-field w-full min-w-0 rounded border border-th-border bg-surface px-3 py-2 text-primary"
+            className="ficus-field w-full min-w-0 rounded border border-th-border bg-surface px-3 py-2 text-primary"
           />
           <span className="block text-xs text-muted">The base URL of the server&apos;s OpenAI-compatible API.</span>
         </label>
         <button
           disabled={!canWrite}
           onClick={detect}
-          className="tau-button w-fit whitespace-nowrap rounded bg-surface-secondary px-3 py-2 text-sm text-primary disabled:opacity-50"
+          className="ficus-button w-fit whitespace-nowrap rounded bg-surface-secondary px-3 py-2 text-sm text-primary disabled:opacity-50"
         >
           Detect local servers
         </button>
@@ -1648,7 +1648,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
             value={providerId}
             onChange={(e) => setProviderId(e.target.value)}
             placeholder="local"
-            className="tau-field w-full min-w-0 rounded border border-th-border bg-surface px-3 py-2 text-primary"
+            className="ficus-field w-full min-w-0 rounded border border-th-border bg-surface px-3 py-2 text-primary"
           />
           <span className="block text-xs text-muted">Short prefix used in model specs, such as local:qwen.</span>
         </label>
@@ -1662,7 +1662,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder="qwen2.5-coder:latest"
-            className="tau-field w-full min-w-0 rounded border border-th-border bg-surface px-3 py-2 text-primary"
+            className="ficus-field w-full min-w-0 rounded border border-th-border bg-surface px-3 py-2 text-primary"
           />
           <span className="block text-xs text-muted">The exact model name exposed by the server.</span>
           <datalist id="compatible-models">
@@ -1681,7 +1681,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="Not required for most local servers"
-            className="tau-field w-full min-w-0 rounded border border-th-border bg-surface px-3 py-2 text-primary"
+            className="ficus-field w-full min-w-0 rounded border border-th-border bg-surface px-3 py-2 text-primary"
           />
           <span className="block text-xs text-muted">Only needed when the server requires authentication.</span>
         </label>
@@ -1690,7 +1690,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
         <button
           disabled={!baseUrl || !providerId || !model || !canWrite}
           onClick={verify}
-          className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
+          className="ficus-button ficus-button-primary rounded bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
         >
           Verify capabilities
         </button>
@@ -1755,7 +1755,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
           <button
             onClick={save}
             disabled={!selectedTiers.length || !canWrite}
-            className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-on-accent disabled:opacity-50"
+            className="ficus-button ficus-button-primary rounded bg-accent px-3 py-2 text-on-accent disabled:opacity-50"
           >
             Add provider and assign tiers
           </button>

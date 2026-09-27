@@ -54,7 +54,7 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
 
   return (
     <div className="h-full flex items-center justify-center bg-page px-4">
-      <div className="tau-section w-full max-w-sm p-6">
+      <div className="ficus-section w-full max-w-sm p-6">
         <h1 className="text-lg font-semibold text-primary mb-1">Review Tau</h1>
         <p className="text-sm text-secondary mb-4">
           Enter the reviewer access code to pair the Tau app with the demo workspace. The pairing code is single-use and
@@ -83,7 +83,7 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
               autoFocus
               aria-invalid={!!error}
               aria-describedby={error ? 'demo-access-error' : undefined}
-              className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
+              className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
             />
             {error && (
               <p id="demo-access-error" className="text-sm text-status-danger-600 dark:text-status-danger-400 mt-2">
@@ -93,7 +93,7 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
             <button
               type="submit"
               disabled={loading || !secret}
-              className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+              className="ficus-button ficus-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
             >
               {loading ? 'Generating…' : 'Generate pairing code'}
             </button>

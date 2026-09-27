@@ -117,14 +117,14 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
         autoComplete="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className={clsx('tau-field', inputClasses)}
+        className={clsx('ficus-field', inputClasses)}
         disabled={step !== 'email'}
       />
       {step === 'email' && (
         <button
           type="submit"
           disabled={!email || loading}
-          className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+          className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
         >
           {loading ? 'Sending...' : isBootstrap ? 'Create Admin Account' : 'Send Verification Code'}
         </button>
@@ -155,7 +155,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
                 autoComplete="one-time-code"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                className={clsx('tau-field', `${inputClasses} text-center text-2xl tracking-widest`)}
+                className={clsx('ficus-field', `${inputClasses} text-center text-2xl tracking-widest`)}
                 maxLength={6}
               />
             </>
@@ -174,7 +174,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
             autoComplete="name"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className={clsx('tau-field', inputClasses)}
+            className={clsx('ficus-field', inputClasses)}
           />
           {/* No helper line here: the placeholder already says "User display
               name", and the passkey-name field immediately below carries its
@@ -188,7 +188,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
             placeholder="Passkey name (optional)"
             value={credentialName}
             onChange={(e) => setCredentialName(e.target.value)}
-            className={clsx('tau-field', inputClasses)}
+            className={clsx('ficus-field', inputClasses)}
           />
           <p className="text-xs text-secondary">
             Names this passkey — for example “MacBook Touch ID” or “YubiKey”. Left blank, it is named after the device
@@ -197,7 +197,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
           <button
             type="submit"
             disabled={!code || !email || loading}
-            className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Registering...' : 'Register with Passkey'}
           </button>

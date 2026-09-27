@@ -84,7 +84,7 @@ const CONNECTION_STATS_SAMPLE_MS = 10_000
 // These public modules are not content-hashed by Vite. Version both URLs so
 // existing browsers do not reuse the previously broken CommonJS module.
 const DTLN_WORKLET_PATH = 'voice/dtln/processor.js?v=3'
-const DTLN_PROCESSOR_NAME = 'tau-dtln-denoiser'
+const DTLN_PROCESSOR_NAME = 'ficus-dtln-denoiser'
 
 export function resolveDtlnWorkletUrl(baseUrl = import.meta.env.BASE_URL): string {
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`

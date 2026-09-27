@@ -190,7 +190,7 @@ export function PageEditorAssistant({
           {useRealtime && (
             <button
               type="button"
-              className="tau-button flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-accent-light hover:bg-surface-hover disabled:opacity-50"
+              className="ficus-button flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-accent-light hover:bg-surface-hover disabled:opacity-50"
               aria-label={
                 controls?.connecting ? 'Connecting microphone' : controls?.live ? 'Microphone on' : 'Enable microphone'
               }

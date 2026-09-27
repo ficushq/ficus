@@ -54,7 +54,7 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
             <label className="block text-sm text-primary">
               Webhook secret
               <input
-                className="tau-field mt-1 block h-10 w-full px-3 py-2 text-sm"
+                className="ficus-field mt-1 block h-10 w-full px-3 py-2 text-sm"
                 placeholder={
                   settings.data.configured
                     ? 'Enter a new secret to replace the saved one'
@@ -71,7 +71,7 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                className="tau-button"
+                className="ficus-button"
                 disabled={save.isPending}
                 onClick={() => {
                   setSecret(
@@ -86,7 +86,7 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
               </button>
               <button
                 type="button"
-                className="tau-button"
+                className="ficus-button"
                 disabled={!secret || save.isPending}
                 onClick={async () => {
                   try {
@@ -99,13 +99,13 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
               >
                 Copy new secret
               </button>
-              <button className="tau-button" disabled={!secret.trim() || save.isPending}>
+              <button className="ficus-button" disabled={!secret.trim() || save.isPending}>
                 {settings.data.configured ? 'Save webhook secret' : 'Enable direct webhooks'}
               </button>
               {settings.data.configured && (
                 <button
                   type="button"
-                  className="tau-button"
+                  className="ficus-button"
                   disabled={save.isPending}
                   onClick={() => save.mutate(null)}
                 >

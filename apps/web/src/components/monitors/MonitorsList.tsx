@@ -42,7 +42,7 @@ export function MonitorsList({
 
   return (
     <div className="border-b border-panel-border last:border-b-0 overflow-hidden">
-      <table className="tau-table min-w-full divide-y divide-th-border text-sm">
+      <table className="ficus-table min-w-full divide-y divide-th-border text-sm">
         <thead className="text-left text-xs text-muted">
           <tr>
             <th className="px-3 py-2 font-semibold">Label</th>
@@ -59,7 +59,7 @@ export function MonitorsList({
             <tr key={m.id} className="hover:bg-surface-hover transition-colors">
               <td className="px-3 py-2">
                 <button
-                  className="tau-button font-medium text-accent-light hover:underline"
+                  className="ficus-button font-medium text-accent-light hover:underline"
                   onClick={() => onSelect(m)}
                 >
                   {m.label}
@@ -85,7 +85,7 @@ export function MonitorsList({
                     onConfirm={() => onCancel(m.id)}
                     disabled={!canCancel}
                     title={canCancel ? 'Cancel monitor' : 'You do not have permission to cancel monitors'}
-                    className="tau-button rounded-md px-2 py-1 text-xs font-medium text-status-danger-600 hover:bg-status-danger-50 dark:text-status-danger-400 dark:hover:bg-status-danger-900/30 transition-colors"
+                    className="ficus-button rounded-md px-2 py-1 text-xs font-medium text-status-danger-600 hover:bg-status-danger-50 dark:text-status-danger-400 dark:hover:bg-status-danger-900/30 transition-colors"
                     confirmClassName="rounded-md bg-status-danger-50 px-2 py-1 text-xs font-medium text-status-danger-700 hover:bg-status-danger-100 dark:bg-status-danger-900/30 dark:text-status-danger-300 dark:hover:bg-status-danger-900/50 transition-colors"
                   />
                 )}

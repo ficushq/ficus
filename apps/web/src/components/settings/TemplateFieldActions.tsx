@@ -77,7 +77,7 @@ export function TemplateFieldActions({
         <button
           type="button"
           onClick={() => setIsDiffOpen(true)}
-          className="tau-button text-[11px] text-accent-light hover:text-accent-hover"
+          className="ficus-button text-[11px] text-accent-light hover:text-accent-hover"
         >
           Diff
         </button>
@@ -87,7 +87,7 @@ export function TemplateFieldActions({
           type="button"
           onClick={handleRevert}
           disabled={isReverting}
-          className="tau-button text-[11px] text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 disabled:opacity-50"
+          className="ficus-button text-[11px] text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 disabled:opacity-50"
         >
           Revert
         </button>
@@ -95,12 +95,12 @@ export function TemplateFieldActions({
       {isDiffOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-chrome-scrim/50" onClick={() => setIsDiffOpen(false)} />
-          <div className="tau-overlay relative bg-surface rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[75vh] flex flex-col">
+          <div className="ficus-overlay relative bg-surface rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[75vh] flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">
               <h3 className="text-base font-semibold text-primary">Template Diff — {field}</h3>
               <button
                 onClick={() => setIsDiffOpen(false)}
-                className="tau-button text-muted hover:text-primary text-xl leading-none"
+                className="ficus-button text-muted hover:text-primary text-xl leading-none"
               >
                 ✕
               </button>
@@ -128,14 +128,14 @@ export function TemplateFieldActions({
                 <button
                   onClick={handleRevert}
                   disabled={isReverting}
-                  className="tau-button text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
+                  className="ficus-button text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
                 >
                   Revert Field
                 </button>
               )}
               <button
                 onClick={() => setIsDiffOpen(false)}
-                className="tau-button text-sm text-muted hover:text-primary px-3 py-1.5"
+                className="ficus-button text-sm text-muted hover:text-primary px-3 py-1.5"
               >
                 Close
               </button>

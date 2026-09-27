@@ -171,7 +171,7 @@ function OpenTauLink({ createdSquad }: { createdSquad: Squad | null }) {
     ? `/squads/${encodeURIComponent(slug!)}/agents?agent=${encodeURIComponent(target.managerAgentId)}`
     : '/squads'
   return (
-    <Link to={to} className="tau-button tau-button-primary rounded-lg px-4 py-2 text-sm font-medium">
+    <Link to={to} className="ficus-button ficus-button-primary rounded-lg px-4 py-2 text-sm font-medium">
       Open Tau
     </Link>
   )
@@ -242,7 +242,7 @@ function SetupSteps({
                 <div className="mt-5 flex justify-end">
                   <button
                     type="button"
-                    className="tau-button text-sm text-accent-light"
+                    className="ficus-button text-sm text-accent-light"
                     onClick={() => reveal(core[index + 1]?.id ?? null)}
                   >
                     Continue →
@@ -316,7 +316,7 @@ function SetupStepHeader({
         aria-controls={`setup-step-${id}`}
         data-onboarding-step
         onClick={onToggle}
-        className="tau-button flex min-w-0 flex-1 items-center gap-3 text-left"
+        className="ficus-button flex min-w-0 flex-1 items-center gap-3 text-left"
       >
         <span
           aria-hidden="true"
@@ -339,7 +339,7 @@ function SetupStepHeader({
         )}
       </button>
       {onSkip && (
-        <button type="button" disabled={pending} onClick={onSkip} className="tau-button px-2 py-1 text-xs text-muted">
+        <button type="button" disabled={pending} onClick={onSkip} className="ficus-button px-2 py-1 text-xs text-muted">
           {state === 'skipped' ? 'Unskip' : 'Skip'}
         </button>
       )}
@@ -349,7 +349,7 @@ function SetupStepHeader({
         aria-expanded={expanded}
         aria-controls={`setup-step-${id}`}
         onClick={onToggle}
-        className="tau-button p-1 text-muted"
+        className="ficus-button p-1 text-muted"
       >
         <ChevronDownIcon className={clsx('h-4 w-4', expanded && 'rotate-180')} />
       </button>
@@ -430,7 +430,7 @@ function DeepLinkItemRow({ meta, item, onSkip, onUnskip, pending, embedded }: It
           type="button"
           onClick={item.state === 'skipped' ? onUnskip : onSkip}
           disabled={pending}
-          className="tau-button shrink-0 px-3 py-1.5 text-sm rounded-md border border-th-border text-secondary hover:bg-surface-hover disabled:opacity-50"
+          className="ficus-button shrink-0 px-3 py-1.5 text-sm rounded-md border border-th-border text-secondary hover:bg-surface-hover disabled:opacity-50"
         >
           {item.state === 'skipped' ? 'Unskip' : 'Skip'}
         </button>
@@ -461,7 +461,7 @@ function ConnectionStep({ meta, item, onSkip, onUnskip, pending, embedded }: Ite
               type="button"
               onClick={item.state === 'skipped' ? onUnskip : onSkip}
               disabled={pending}
-              className="tau-button shrink-0 px-3 py-1.5 text-sm text-secondary disabled:opacity-50"
+              className="ficus-button shrink-0 px-3 py-1.5 text-sm text-secondary disabled:opacity-50"
             >
               {item.state === 'skipped' ? 'Unskip' : 'Skip'}
             </button>
@@ -469,7 +469,7 @@ function ConnectionStep({ meta, item, onSkip, onUnskip, pending, embedded }: Ite
         </div>
       )}
       {item.state === 'done' && meta.id !== 'github' && (
-        <button type="button" className="tau-button text-sm text-accent-light" onClick={() => setEditing(!editing)}>
+        <button type="button" className="ficus-button text-sm text-accent-light" onClick={() => setEditing(!editing)}>
           {editing ? 'Close setup' : 'Manage connection'}
         </button>
       )}

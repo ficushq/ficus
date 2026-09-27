@@ -88,7 +88,7 @@ export function WorkStreamViewToggle({
           aria-pressed={view === option}
           onClick={() => setView(option)}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-2.5 py-1.5 text-xs font-medium capitalize transition-colors',
             option !== modes[0] && 'border-l border-th-border',
             view === option ? 'bg-accent text-on-accent' : 'bg-surface text-secondary hover:bg-surface-hover'

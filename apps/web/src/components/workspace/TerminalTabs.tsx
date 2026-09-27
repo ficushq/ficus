@@ -231,7 +231,7 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
                   e.stopPropagation()
                   handleCloseTab(tab.id)
                 }}
-                className="tau-button w-4 h-4 flex items-center justify-center rounded hover:bg-surface-hover text-muted hover:text-primary"
+                className="ficus-button w-4 h-4 flex items-center justify-center rounded hover:bg-surface-hover text-muted hover:text-primary"
                 title="Close"
               >
                 ×
@@ -242,7 +242,7 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
         {!disabled && (
           <button
             onClick={handleAddTab}
-            className="tau-button px-3 py-2 text-muted hover:text-primary hover:bg-surface-hover"
+            className="ficus-button px-3 py-2 text-muted hover:text-primary hover:bg-surface-hover"
             title="New terminal"
           >
             +

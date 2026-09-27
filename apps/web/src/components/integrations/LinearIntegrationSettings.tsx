@@ -12,8 +12,8 @@ import { integrationQueryKeys } from '../../queryKeys'
 import { ConfirmButton } from '../ConfirmButton'
 
 const field =
-  'tau-field w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 text-sm text-primary'
-const button = 'tau-button rounded-md border border-panel-border px-3 py-2 text-sm disabled:opacity-50'
+  'ficus-field w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 text-sm text-primary'
+const button = 'ficus-button rounded-md border border-panel-border px-3 py-2 text-sm disabled:opacity-50'
 export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
   const client = useQueryClient()
   const pool = useQuery(integrationQueries.pool('linear'))

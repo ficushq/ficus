@@ -106,7 +106,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
                   <button
                     type="button"
                     aria-label={`Mark ${label} as delivery`}
-                    className="tau-button text-muted hover:text-primary"
+                    className="ficus-button text-muted hover:text-primary"
                     disabled={designate.isPending}
                     onClick={() => designate.mutate(resource)}
                   >
@@ -117,7 +117,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
                   <button
                     type="button"
                     aria-label={`Stop tracking ${label}`}
-                    className="tau-button text-muted hover:text-primary"
+                    className="ficus-button text-muted hover:text-primary"
                     disabled={remove.isPending}
                     onClick={() => remove.mutate(resource)}
                   >
@@ -148,7 +148,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
         >
           <input
             type="text"
-            className="tau-field min-w-0 flex-1 px-2 py-1 text-xs"
+            className="ficus-field min-w-0 flex-1 px-2 py-1 text-xs"
             placeholder="https://github.com/owner/repo/issues/12 or https://linear.app/team/issue/KEY-123"
             aria-label="Link to track"
             value={url}
@@ -163,7 +163,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
             />
             Counts toward delivery
           </label>
-          <button type="submit" className="tau-button text-xs" disabled={add.isPending || !url.trim()}>
+          <button type="submit" className="ficus-button text-xs" disabled={add.isPending || !url.trim()}>
             Add
           </button>
         </form>

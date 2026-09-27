@@ -140,7 +140,7 @@ export function IntegrationDirectoryCard({
               data-setting-reveal={`integration-${entry.key}`}
               aria-controls={`integration-settings-${entry.key}`}
               onClick={() => setExpanded(!expanded)}
-              className="tau-button mt-4 flex items-center gap-2 text-sm text-primary"
+              className="ficus-button mt-4 flex items-center gap-2 text-sm text-primary"
             >
               Settings
               <ChevronDownIcon className={clsx('h-4 w-4 transition-transform', showSettings && 'rotate-180')} />
@@ -255,7 +255,7 @@ export function IntegrationsSection() {
           placeholder="Search integrations…"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="tau-field w-full rounded-lg border border-panel-border bg-surface py-2.5 pl-10 pr-3 text-sm text-primary"
+          className="ficus-field w-full rounded-lg border border-panel-border bg-surface py-2.5 pl-10 pr-3 text-sm text-primary"
         />
       </div>
       {permissions.isLoading || catalog.isPending ? (

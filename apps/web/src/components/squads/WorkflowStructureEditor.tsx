@@ -9,7 +9,7 @@ import {
   type WorkflowStep,
 } from '@ficus/shared'
 
-const field = 'tau-field w-full px-3 py-2 border border-th-border rounded-md bg-surface text-primary'
+const field = 'ficus-field w-full px-3 py-2 border border-th-border rounded-md bg-surface text-primary'
 function Help({ children }: { children: ReactNode }) {
   return <span className="block mt-1 text-xs font-normal text-muted">{children}</span>
 }
@@ -423,7 +423,7 @@ export function WorkflowStructureEditor({
                       </p>
                       <button
                         type="button"
-                        className="tau-button text-sm text-danger"
+                        className="ficus-button text-sm text-danger"
                         onClick={() => {
                           if (connectionRemoval) {
                             connectionRemoval.onRemove()

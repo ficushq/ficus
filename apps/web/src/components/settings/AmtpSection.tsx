@@ -57,7 +57,7 @@ export function AmtpSection() {
         <p className="mt-1 text-sm text-muted">View this instance's identity and manage federation peers.</p>
       </div>
 
-      <div className="tau-section py-5">
+      <div className="ficus-section py-5">
         <h4 data-setting-target="this-instance" className="text-md mb-4 font-medium text-primary">
           This Instance
         </h4>
@@ -86,7 +86,7 @@ export function AmtpSection() {
         </div>
       </div>
 
-      <div className="tau-section overflow-hidden">
+      <div className="ficus-section overflow-hidden">
         <div className="border-b border-th-border px-4 py-3">
           <h4 data-setting-target="peers" className="text-sm font-medium text-secondary">
             Peers
@@ -123,20 +123,20 @@ export function AmtpSection() {
                   value={editForm.localAlias}
                   onChange={(e) => setEditForm({ ...editForm, localAlias: e.target.value })}
                   aria-label="Alias"
-                  className="tau-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary  focus:ring-1 focus:ring-accent"
+                  className="ficus-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary  focus:ring-1 focus:ring-accent"
                 />
                 <input
                   type="url"
                   value={editForm.baseUrl}
                   onChange={(e) => setEditForm({ ...editForm, baseUrl: e.target.value })}
                   aria-label="Base URL"
-                  className="tau-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary  focus:ring-1 focus:ring-accent"
+                  className="ficus-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary  focus:ring-1 focus:ring-accent"
                 />
                 <select
                   value={editForm.status}
                   onChange={(e) => setEditForm({ ...editForm, status: e.target.value as 'active' | 'disabled' })}
                   aria-label="Status"
-                  className="tau-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary  focus:ring-1 focus:ring-accent"
+                  className="ficus-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary  focus:ring-1 focus:ring-accent"
                 >
                   <option value="active">active</option>
                   <option value="disabled">disabled</option>
@@ -145,14 +145,14 @@ export function AmtpSection() {
                   <button
                     type="submit"
                     disabled={edit.isPending}
-                    className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+                    className="ficus-button ficus-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
                   >
                     {edit.isPending ? 'Saving…' : 'Save'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setEditingId(null)}
-                    className="tau-button px-3 py-1 text-xs text-muted hover:text-primary"
+                    className="ficus-button px-3 py-1 text-xs text-muted hover:text-primary"
                   >
                     Cancel
                   </button>
@@ -176,7 +176,7 @@ export function AmtpSection() {
                           status: p.status === 'disabled' ? 'disabled' : 'active',
                         })
                       }}
-                      className="tau-button text-sm font-medium text-accent-light hover:text-accent-hover"
+                      className="ficus-button text-sm font-medium text-accent-light hover:text-accent-hover"
                     >
                       Edit
                     </button>
@@ -186,7 +186,7 @@ export function AmtpSection() {
                         if (confirm(`Remove peer ${p.localAlias}? This cannot be undone.`)) remove.mutate(p.id)
                       }}
                       disabled={remove.isPending}
-                      className="tau-button text-sm font-medium text-status-danger-600 hover:text-status-danger-800 disabled:opacity-50 dark:text-status-danger-400 dark:hover:text-status-danger-300"
+                      className="ficus-button text-sm font-medium text-status-danger-600 hover:text-status-danger-800 disabled:opacity-50 dark:text-status-danger-400 dark:hover:text-status-danger-300"
                     >
                       Remove
                     </button>
@@ -199,7 +199,7 @@ export function AmtpSection() {
       </div>
 
       {canWrite && (
-        <div className="tau-section overflow-hidden">
+        <div className="ficus-section overflow-hidden">
           <div className="border-b border-th-border px-4 py-3">
             <h4 className="text-sm font-medium text-secondary">Add Peer</h4>
           </div>
@@ -218,7 +218,7 @@ export function AmtpSection() {
                   value={form.localAlias}
                   onChange={(e) => setForm({ ...form, localAlias: e.target.value })}
                   placeholder="e.g. acme"
-                  className="tau-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+                  className="ficus-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
                 />
               </div>
               <div>
@@ -228,7 +228,7 @@ export function AmtpSection() {
                   value={form.instanceId}
                   onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
                   placeholder="Remote instance ID"
-                  className="tau-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+                  className="ficus-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
                 />
               </div>
               <div>
@@ -238,7 +238,7 @@ export function AmtpSection() {
                   value={form.baseUrl}
                   onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
                   placeholder="https://peer.example.com/api"
-                  className="tau-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+                  className="ficus-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
                 />
               </div>
             </div>
@@ -249,14 +249,14 @@ export function AmtpSection() {
                 onChange={(e) => setForm({ ...form, publicKeyPem: e.target.value })}
                 placeholder="-----BEGIN PUBLIC KEY-----"
                 rows={4}
-                className="tau-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 font-mono text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+                className="ficus-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 font-mono text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
               />
             </div>
             {addError && <p className="text-xs text-status-danger-600 dark:text-status-danger-400">{addError}</p>}
             <button
               type="submit"
               disabled={add.isPending || !form.localAlias || !form.instanceId || !form.baseUrl || !form.publicKeyPem}
-              className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+              className="ficus-button ficus-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {add.isPending ? 'Adding…' : 'Add Peer'}
             </button>

@@ -232,7 +232,7 @@ function BashCodeBlock({
             setLocalAutoScroll(true)
             if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
           }}
-          className="tau-button absolute bottom-2 right-2 p-1 rounded bg-accent/90 hover:bg-accent text-on-accent text-[10px] shadow-sm"
+          className="ficus-button absolute bottom-2 right-2 p-1 rounded bg-accent/90 hover:bg-accent text-on-accent text-[10px] shadow-sm"
           title="Resume auto-scroll"
         >
           ↓ Follow

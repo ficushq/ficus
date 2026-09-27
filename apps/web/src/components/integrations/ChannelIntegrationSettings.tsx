@@ -181,7 +181,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
               {canWrite && (
                 <button
                   type="button"
-                  className="tau-button tau-button-primary px-3 py-2 text-sm"
+                  className="ficus-button ficus-button-primary px-3 py-2 text-sm"
                   disabled={authorizeManaged.isPending}
                   onClick={() => authorizeManaged.mutate(undefined)}
                 >
@@ -208,7 +208,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
                   {managedReconnectNeeded && (
                     <button
                       type="button"
-                      className="tau-button text-xs"
+                      className="ficus-button text-xs"
                       disabled={authorizeManaged.isPending}
                       onClick={() => authorizeManaged.mutate(managedConnection.id)}
                     >
@@ -217,7 +217,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
                   )}
                   <button
                     type="button"
-                    className="tau-button text-xs"
+                    className="ficus-button text-xs"
                     disabled={disconnectManaged.isPending}
                     onClick={() => {
                       if (!disconnectArmed) {
@@ -241,7 +241,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
               {canWrite && (
                 <button
                   type="button"
-                  className="tau-button px-3 py-1.5 text-xs"
+                  className="ficus-button px-3 py-1.5 text-xs"
                   disabled={authorizeManaged.isPending}
                   onClick={() => authorizeManaged.mutate(authorizeManaged.variables)}
                 >
@@ -277,7 +277,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
               </label>
               <select
                 id={`${provider}-guild`}
-                className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary"
+                className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary"
                 value={guildId}
                 disabled={!canWrite || setRouting.isPending}
                 onChange={(event) => {
@@ -304,7 +304,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
               </label>
               <select
                 id={`${provider}-default-squad`}
-                className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary"
+                className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary"
                 value={data.routing?.defaultSquadId ?? ''}
                 disabled={!canWrite || setRouting.isPending}
                 onChange={(event) => setRouting.mutate({ defaultSquadId: event.target.value || null })}

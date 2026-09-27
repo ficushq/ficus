@@ -97,7 +97,7 @@ export function VoiceMicButton({
         onTouchEnd={() => endPress()}
         disabled={disabled || state === 'transcribing'}
         className={clsx(
-          'tau-button',
+          'ficus-button',
           'relative z-10 flex flex-row items-center gap-1 rounded transition-colors disabled:opacity-50 focus:ring-2',
           sizes.padding,
           colors.focusRing,

@@ -75,4 +75,4 @@ class TauDtlnDenoiser extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('tau-dtln-denoiser', TauDtlnDenoiser)
+registerProcessor('ficus-dtln-denoiser', TauDtlnDenoiser)

@@ -354,13 +354,13 @@ export function WorkStreamDetailModal({
                   value={response}
                   onChange={(e) => setResponse(e.target.value)}
                   placeholder="Your response..."
-                  className={clsx('tau-field', WORKSTREAM_RESPONSE_CONTROL_CLASS)}
+                  className={clsx('ficus-field', WORKSTREAM_RESPONSE_CONTROL_CLASS)}
                 />
                 <div className="flex gap-1 mt-2">
                   <button
                     onClick={handleSubmit}
                     disabled={respondMutation.isPending || !canRespondToWait || !response.trim()}
-                    className="tau-button tau-button-primary px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded hover:bg-accent-hover disabled:opacity-50"
+                    className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded hover:bg-accent-hover disabled:opacity-50"
                     title={
                       canRespondToWait ? 'Submit response' : 'You do not have permission to respond to this work stream'
                     }
@@ -369,7 +369,7 @@ export function WorkStreamDetailModal({
                   </button>
                   <button
                     onClick={() => setIsResponding(false)}
-                    className="tau-button px-2 py-1 text-xs font-medium text-secondary border border-th-border rounded hover:bg-surface-hover"
+                    className="ficus-button px-2 py-1 text-xs font-medium text-secondary border border-th-border rounded hover:bg-surface-hover"
                   >
                     Cancel
                   </button>
@@ -380,7 +380,7 @@ export function WorkStreamDetailModal({
                 <button
                   onClick={() => setShowApprovalConfirmation(true)}
                   disabled={respondMutation.isPending || !canRespondToWait}
-                  className="tau-button px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
                   title={
                     canRespondToWait ? 'Approve review' : 'You do not have permission to respond to this work stream'
                   }
@@ -393,7 +393,7 @@ export function WorkStreamDetailModal({
                     setResponse('')
                   }}
                   disabled={!canRespondToWait}
-                  className="tau-button px-2 py-1 text-xs font-medium text-secondary bg-surface-hover rounded-lg hover:bg-surface disabled:opacity-50"
+                  className="ficus-button px-2 py-1 text-xs font-medium text-secondary bg-surface-hover rounded-lg hover:bg-surface disabled:opacity-50"
                   title={
                     canRespondToWait ? 'Request changes' : 'You do not have permission to respond to this work stream'
                   }
@@ -405,7 +405,7 @@ export function WorkStreamDetailModal({
               <button
                 onClick={() => setIsResponding(true)}
                 disabled={!canRespondToWait}
-                className="tau-button mt-2 px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button mt-2 px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
                 title={canRespondToWait ? 'Respond' : 'You do not have permission to respond to this work stream'}
               >
                 Respond
@@ -625,7 +625,7 @@ export function WorkStreamDetailModal({
               {/* Per-agent breakdown */}
               {Object.keys(metrics.byAgent).length > 0 && (
                 <div className="mt-3 pt-3 border-t border-th-border">
-                  <table className="tau-table w-full text-xs">
+                  <table className="ficus-table w-full text-xs">
                     <thead>
                       <tr className="text-muted">
                         <th className="text-left font-medium pb-1">Agent</th>
@@ -732,7 +732,7 @@ export function WorkStreamDetailModal({
                       aria-label={`Open dependency ${label}`}
                       onClick={() => onSelectWorkStream?.(depId)}
                       disabled={!onSelectWorkStream}
-                      className="tau-button inline-flex items-center gap-1.5 text-accent-light hover:underline disabled:text-secondary disabled:no-underline"
+                      className="ficus-button inline-flex items-center gap-1.5 text-accent-light hover:underline disabled:text-secondary disabled:no-underline"
                     >
                       <span
                         aria-label={dependencyState ? `${WS_STATUS_LABELS[dependencyState]} status` : 'Unknown status'}

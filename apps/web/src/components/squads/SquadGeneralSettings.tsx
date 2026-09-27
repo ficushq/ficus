@@ -197,7 +197,7 @@ export function SquadGeneralSettings({
                 onKeyDown={handleKeyDown}
                 placeholder="Squad name"
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   'w-full px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -223,7 +223,7 @@ export function SquadGeneralSettings({
                 placeholder="What is this squad's purpose?"
                 rows={3}
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   'w-full px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'leading-relaxed resize-y',
                   'placeholder:text-placeholder',
@@ -265,7 +265,7 @@ export function SquadGeneralSettings({
                   }
                 }}
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   'w-32 px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -302,7 +302,7 @@ export function SquadGeneralSettings({
                 aria-invalid={graceError !== null}
                 aria-describedby="squad-blocked-grace-minutes-help"
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   'w-32 px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -343,7 +343,7 @@ export function SquadGeneralSettings({
               aria-invalid={hostError !== null}
               aria-describedby="squad-host-workspace-path-help"
               className={clsx(
-                'tau-field',
+                'ficus-field',
                 'w-full px-3 py-2 rounded-lg border bg-surface text-primary text-sm font-mono',
                 'placeholder:text-placeholder',
                 ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -399,7 +399,7 @@ export function SquadGeneralSettings({
           onClick={handleSave}
           disabled={!dirty || !isValid || mutation.isPending || !canUpdateSquad}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
             dirty && isValid && canUpdateSquad
               ? 'bg-accent text-on-accent hover:bg-accent/90'

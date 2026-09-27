@@ -128,7 +128,7 @@ export function DirectMergePolicySettings({ squadId }: Props) {
           onClick={handleSave}
           disabled={!dirty || mutation.isPending}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
             dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}

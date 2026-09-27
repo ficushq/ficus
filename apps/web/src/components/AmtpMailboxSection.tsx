@@ -101,7 +101,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                 <button
                   onClick={() => revoke.mutate()}
                   disabled={isBusy}
-                  className="tau-button rounded bg-status-danger-600/15 px-2 py-0.5 text-xs font-medium text-status-danger-600 hover:bg-status-danger-600/25 disabled:opacity-50 dark:text-status-danger-400"
+                  className="ficus-button rounded bg-status-danger-600/15 px-2 py-0.5 text-xs font-medium text-status-danger-600 hover:bg-status-danger-600/25 disabled:opacity-50 dark:text-status-danger-400"
                 >
                   Revoke
                 </button>
@@ -119,12 +119,12 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                     onChange={(e) => setHandle(e.target.value)}
                     placeholder="handle"
                     aria-label="Federation handle"
-                    className="tau-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-xs text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+                    className="ficus-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-xs text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
                   />
                   <button
                     type="submit"
                     disabled={!handle || isBusy}
-                    className="tau-button tau-button-primary rounded bg-accent px-2 py-0.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+                    className="ficus-button ficus-button-primary rounded bg-accent px-2 py-0.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
                   >
                     Register
                   </button>
@@ -136,7 +136,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     onClick={() => close.mutate()}
                     disabled={isBusy}
-                    className="tau-button rounded bg-surface-secondary px-2 py-0.5 text-xs font-medium text-secondary hover:text-primary disabled:opacity-50"
+                    className="ficus-button rounded bg-surface-secondary px-2 py-0.5 text-xs font-medium text-secondary hover:text-primary disabled:opacity-50"
                   >
                     Close
                   </button>
@@ -144,7 +144,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     onClick={() => open.mutate()}
                     disabled={isBusy}
-                    className="tau-button rounded bg-status-progress-600/15 px-2 py-0.5 text-xs font-medium text-status-progress-600 hover:bg-status-progress-600/25 disabled:opacity-50 dark:text-status-progress-400"
+                    className="ficus-button rounded bg-status-progress-600/15 px-2 py-0.5 text-xs font-medium text-status-progress-600 hover:bg-status-progress-600/25 disabled:opacity-50 dark:text-status-progress-400"
                   >
                     Open
                   </button>

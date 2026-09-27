@@ -13,7 +13,7 @@ export function SkeletonLine({ className }: { className?: string }) {
 
 export function SkeletonCard({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div aria-hidden="true" className={clsx('tau-panel p-4', className)}>
+    <div aria-hidden="true" className={clsx('ficus-panel p-4', className)}>
       {children}
     </div>
   )

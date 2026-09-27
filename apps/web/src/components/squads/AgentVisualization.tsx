@@ -224,11 +224,11 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
       <div className="flex-1 min-w-0">
         <div className="relative">
           {/* 2D/3D Toggle */}
-          <div className="tau-panel tau-glass absolute top-2 right-2 z-10 flex gap-1 p-1">
+          <div className="ficus-panel ficus-glass absolute top-2 right-2 z-10 flex gap-1 p-1">
             <button
               onClick={() => setIs3D(false)}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
               )}
             >
@@ -237,7 +237,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
             <button
               onClick={() => setIs3D(true)}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
               )}
             >
@@ -364,7 +364,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
           <div className="mt-4 space-y-2">
             <button
               onClick={() => setShowInbox(true)}
-              className="tau-button tau-button-primary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
+              className="ficus-button ficus-button-primary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
             >
               <InboxIcon className="w-4 h-4" />
               View Inbox
@@ -378,7 +378,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
                   return next
                 })
               }}
-              className="tau-button w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
+              className="ficus-button w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
             >
               Open Chat
             </button>

@@ -157,7 +157,7 @@ self.addEventListener('push', (event) => {
     badge: p('/icons/icon-96x96.png'),
     data: { url: targetUrl },
     vibrate: [100, 50, 100],
-    tag: data.tag || 'tau-notification',
+    tag: data.tag || 'ficus-notification',
     renotify: Boolean(data.renotify),
     requireInteraction: Boolean(data.requireInteraction),
     actions: data.actions || [],

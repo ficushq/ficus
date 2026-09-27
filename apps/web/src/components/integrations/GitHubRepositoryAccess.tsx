@@ -71,7 +71,7 @@ export function GitHubRepositoryAccess({
       )}
       <div className="flex flex-wrap items-center gap-3">
         <a
-          className={needsAccess ? 'tau-button tau-button-primary px-3 py-1.5' : 'text-accent-light hover:underline'}
+          className={needsAccess ? 'ficus-button ficus-button-primary px-3 py-1.5' : 'text-accent-light hover:underline'}
           href={installationUrl}
           target="_blank"
           rel="noreferrer"
@@ -80,7 +80,7 @@ export function GitHubRepositoryAccess({
         </a>
         <button
           type="button"
-          className="tau-button text-accent-light"
+          className="ficus-button text-accent-light"
           disabled={access.isFetching}
           onClick={() => void access.refetch()}
         >

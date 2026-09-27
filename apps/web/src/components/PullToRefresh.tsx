@@ -141,7 +141,7 @@ export function PullToRefresh({ onRefresh, label, children, className, style, ..
         )}
         style={{ transform: `translateY(${Math.max(0, pullDistance - PULL_THRESHOLD_PX) / 4}px)` }}
       >
-        <div className="tau-panel flex items-center gap-2 rounded-full bg-surface px-3 py-2">
+        <div className="ficus-panel flex items-center gap-2 rounded-full bg-surface px-3 py-2">
           <span className="text-[rgb(var(--brand-gradient-to))]">
             <SpinnerIcon
               className={clsx('h-4 w-4', isRefreshing ? 'animate-spin' : readyToRefresh ? 'rotate-180' : '')}

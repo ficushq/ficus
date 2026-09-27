@@ -236,7 +236,7 @@ describe('SettingsPage RBAC tabs', () => {
     // safe-area doctrine — see AgentInfoPanel/SquadDetailPage's identical
     // `h-full overflow-y-auto` idiom for a bounded sibling panel) so a tall
     // 20+ item nav scrolls in place instead of spilling past the viewport.
-    expect(html).toContain('class="tau-panel tau-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3"')
+    expect(html).toContain('class="ficus-panel ficus-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3"')
     expect(html).not.toContain('100vh')
     expect(html).not.toContain('100dvh')
   })

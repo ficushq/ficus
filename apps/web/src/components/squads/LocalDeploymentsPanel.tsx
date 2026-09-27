@@ -161,7 +161,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
 
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="tau-section-title text-xs    text-muted">Active</h3>
+          <h3 className="ficus-section-title text-xs    text-muted">Active</h3>
           <span className="text-xs text-muted">{activeLocalDeployments.length}</span>
         </div>
         {activeLocalDeployments.length > 0 ? (
@@ -191,7 +191,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
           <button
             type="button"
             onClick={() => setShowDone((value) => !value)}
-            className="tau-button w-full flex items-center justify-between text-left py-1 text-xs font-semibold uppercase tracking-wide text-muted hover:text-primary transition-colors"
+            className="ficus-button w-full flex items-center justify-between text-left py-1 text-xs font-semibold uppercase tracking-wide text-muted hover:text-primary transition-colors"
           >
             <span className="flex items-center gap-1.5">
               <ChevronDownIcon className={clsx('h-4 w-4 transition-transform', !showDone && '-rotate-90')} />
@@ -299,7 +299,7 @@ function LocalDeploymentRows({
                   <button
                     type="button"
                     onClick={() => onCopy(localDeployment)}
-                    className="tau-button p-1.5 rounded text-muted hover:text-primary transition-colors"
+                    className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors"
                     title="Copy local app URL"
                   >
                     <ClipboardIcon className="h-4 w-4" />
@@ -310,7 +310,7 @@ function LocalDeploymentRows({
                   <button
                     type="button"
                     onClick={() => onOpen(localDeployment)}
-                    className="tau-button p-1.5 rounded text-muted hover:text-primary transition-colors"
+                    className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors"
                     title="Open local app"
                   >
                     <LinkIcon className="h-4 w-4" />
@@ -319,7 +319,7 @@ function LocalDeploymentRows({
                     type="button"
                     onClick={() => onRestart(localDeployment)}
                     disabled={!canWriteDeployments || !canRestart}
-                    className="tau-button p-1.5 rounded text-muted hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Restart local app"
                   >
                     <RefreshIcon className="h-4 w-4" />
@@ -327,7 +327,7 @@ function LocalDeploymentRows({
                   <button
                     type="button"
                     onClick={() => onShowLogs(localDeployment)}
-                    className="tau-button p-1.5 rounded text-muted hover:text-primary transition-colors"
+                    className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors"
                     title="View logs"
                   >
                     <LogsIcon className="h-4 w-4" />
@@ -336,7 +336,7 @@ function LocalDeploymentRows({
                     type="button"
                     onClick={() => onStop(localDeployment)}
                     disabled={!canWriteDeployments || !canStop}
-                    className="tau-button p-1.5 rounded text-status-danger-600 dark:text-status-danger-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="ficus-button p-1.5 rounded text-status-danger-600 dark:text-status-danger-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Stop local app"
                   >
                     <StopIcon className="h-4 w-4" />
@@ -346,7 +346,7 @@ function LocalDeploymentRows({
                     onClick={() => onArchive(localDeployment)}
                     disabled={!canDeleteDeployments || isBusy}
                     className={clsx(
-                      'tau-button',
+                      'ficus-button',
                       'p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                       confirmArchiveLocalDeploymentId === localDeployment.id
                         ? 'text-status-danger-700 dark:text-status-danger-300'
@@ -457,7 +457,7 @@ function LocalDeploymentLogsModal({
             if (next) scrollToBottom()
           }}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-2 py-1 rounded text-xs border transition-colors',
             autoScroll
               ? 'border-accent bg-accent/10 text-accent-light'

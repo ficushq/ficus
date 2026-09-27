@@ -95,7 +95,7 @@ export function ProviderChannelRouting({
           <TrustedChannelsField value={trusted} onChange={setTrusted} />
           {canWrite && (
             <button
-              className="tau-button tau-button-primary px-3 py-2"
+              className="ficus-button ficus-button-primary px-3 py-2"
               onClick={() => {
                 if (invalidOverrideRowIndexes(rows).length) {
                   setError('Complete each override or remove its row.')

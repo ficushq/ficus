@@ -206,7 +206,7 @@ export function VoiceCompanionButton({
       className={clsx(
         embedded
           ? 'p-2 overflow-y-auto min-h-0'
-          : 'tau-overlay tau-voice-panel fixed right-3 sm:right-6 z-50 p-2 overflow-y-auto max-h-[calc(100dvh-10rem)] max-w-[calc(100vw-1.5rem)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
+          : 'ficus-overlay tau-voice-panel fixed right-3 sm:right-6 z-50 p-2 overflow-y-auto max-h-[calc(100dvh-10rem)] max-w-[calc(100vw-1.5rem)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
         !embedded && (live && compact ? 'w-72' : 'w-[calc(100vw-1.5rem)] sm:w-96')
       )}
     >
@@ -223,7 +223,7 @@ export function VoiceCompanionButton({
               aria-label={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
               title={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
               className={clsx(
-                'tau-button relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+                'ficus-button relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
                 isMicMuted ? 'bg-surface-secondary text-muted' : 'bg-selection text-accent-light'
               )}
             >
@@ -259,7 +259,7 @@ export function VoiceCompanionButton({
               disabled={resetting}
               aria-label="Reset voice conversation"
               title="Reset voice conversation"
-              className="tau-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover"
+              className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover"
             >
               <RefreshIcon className={clsx('h-4 w-4', resetting && 'motion-safe:animate-spin')} />
             </button>
@@ -270,7 +270,7 @@ export function VoiceCompanionButton({
               onClick={handleDisconnect}
               aria-label="End chat"
               title="End chat"
-              className="tau-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-status-danger-500/10 hover:text-status-danger-500"
+              className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-status-danger-500/10 hover:text-status-danger-500"
             >
               <StopIcon className="h-4 w-4" />
             </button>
@@ -280,7 +280,7 @@ export function VoiceCompanionButton({
               onClick={onExpand}
               aria-label="Expand assistant"
               title="Expand assistant"
-              className="tau-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover"
+              className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover"
             >
               <ExpandIcon className="h-4 w-4" />
             </button>
@@ -297,7 +297,7 @@ export function VoiceCompanionButton({
               aria-label={
                 isConnected ? (compact ? 'Expand voice assistant' : 'Compact voice assistant') : 'Close voice assistant'
               }
-              className="tau-button rounded-lg p-2 text-muted hover:bg-surface-hover hover:text-primary"
+              className="ficus-button rounded-lg p-2 text-muted hover:bg-surface-hover hover:text-primary"
             >
               {isConnected ? (
                 compact ? (
@@ -331,7 +331,7 @@ export function VoiceCompanionButton({
             }}
             disabled={status === 'connecting'}
             aria-busy={status === 'connecting'}
-            className="tau-button tau-button-primary flex w-full items-center justify-center gap-2 px-3 py-2.5 text-sm disabled:opacity-70"
+            className="ficus-button ficus-button-primary flex w-full items-center justify-center gap-2 px-3 py-2.5 text-sm disabled:opacity-70"
           >
             <MicIcon className={clsx('h-4 w-4', status === 'connecting' && 'motion-safe:animate-pulse')} />
             {status === 'connecting' ? 'Starting voice chat…' : status === 'error' ? 'Try again' : 'Start voice chat'}
@@ -341,7 +341,7 @@ export function VoiceCompanionButton({
               onClick={() => {
                 void toggle()
               }}
-              className="tau-button mt-2 w-full rounded-lg py-2 text-xs text-muted hover:bg-surface-hover"
+              className="ficus-button mt-2 w-full rounded-lg py-2 text-xs text-muted hover:bg-surface-hover"
             >
               Cancel
             </button>
@@ -393,7 +393,7 @@ export function VoiceCompanionButton({
           aria-describedby={unavailableReason ? unavailableHintId : undefined}
           aria-label="Voice assistant"
           className={clsx(
-            'tau-button relative flex items-center justify-center p-2 rounded-md transition-colors',
+            'ficus-button relative flex items-center justify-center p-2 rounded-md transition-colors',
             unavailableReason
               ? 'text-muted opacity-50 cursor-not-allowed'
               : 'text-muted hover:text-primary hover:bg-surface-hover'
@@ -408,7 +408,7 @@ export function VoiceCompanionButton({
         <div
           id={unavailableHintId}
           role="tooltip"
-          className="tau-overlay pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-64 p-3 text-xs text-secondary group-hover/voice:block group-focus-within/voice:block"
+          className="ficus-overlay pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-64 p-3 text-xs text-secondary group-hover/voice:block group-focus-within/voice:block"
         >
           {unavailableReason}
         </div>

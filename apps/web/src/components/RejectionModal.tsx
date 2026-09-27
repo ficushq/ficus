@@ -153,7 +153,7 @@ export function RejectionModal({
               handleConfirm()
             }
           }}
-          className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border"
+          className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border"
           rows={5}
           placeholder={placeholder}
         />
@@ -170,7 +170,7 @@ export function RejectionModal({
           type="button"
           onClick={handleClose}
           disabled={isLoading}
-          className="tau-button px-4 py-2 text-sm font-medium text-secondary bg-surface-secondary rounded-md hover:bg-surface-hover disabled:opacity-50"
+          className="ficus-button px-4 py-2 text-sm font-medium text-secondary bg-surface-secondary rounded-md hover:bg-surface-hover disabled:opacity-50"
         >
           Cancel
         </button>
@@ -178,7 +178,7 @@ export function RejectionModal({
           type="button"
           onClick={handleConfirm}
           disabled={!reason.trim() || isLoading}
-          className="tau-button tau-button-primary min-h-10 px-4 py-2 text-sm disabled:opacity-50"
+          className="ficus-button ficus-button-primary min-h-10 px-4 py-2 text-sm disabled:opacity-50"
         >
           {isLoading ? loadingLabel : confirmLabel}
         </button>

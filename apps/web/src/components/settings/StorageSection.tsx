@@ -76,7 +76,7 @@ export function StorageSection() {
           <p className="mt-1 text-sm text-secondary">Find the squads and project folders using the most disk space.</p>
         </div>
         <button
-          className="tau-button shrink-0 px-3 py-2 text-sm"
+          className="ficus-button shrink-0 px-3 py-2 text-sm"
           disabled={query.isPending || data?.scanning || refresh.isPending || data?.supported === false}
           onClick={() => refresh.mutate()}
         >

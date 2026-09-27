@@ -42,7 +42,7 @@ export function TierFilterChip({ tierFilter, onClear }: { tierFilter?: string; o
       <span className="text-muted">Filtered to model tier:</span>
       <button
         onClick={onClear}
-        className="tau-button inline-flex items-center gap-1 rounded-full bg-accent/10 text-accent-light px-2.5 py-0.5 font-medium hover:bg-accent/20"
+        className="ficus-button inline-flex items-center gap-1 rounded-full bg-accent/10 text-accent-light px-2.5 py-0.5 font-medium hover:bg-accent/20"
         title="Clear tier filter"
       >
         <span className="capitalize">{tierFilter}</span>
@@ -110,7 +110,7 @@ function AgentTypesTab({ tierFilter, onClearTierFilter }: { tierFilter?: string;
           <button
             onClick={() => setIsAdding(true)}
             disabled={isAdding}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
           >
             New agent type
           </button>
@@ -242,7 +242,7 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
         <select
           value={form.tier}
           onChange={(event) => setForm({ ...form, tier: event.target.value })}
-          className="tau-field mt-1 w-full border border-th-border bg-surface px-3 py-2"
+          className="ficus-field mt-1 w-full border border-th-border bg-surface px-3 py-2"
         >
           <option value="">None</option>
           {modelTiers.map((tier) => (
@@ -305,11 +305,11 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
         <button
           onClick={handleCreate}
           disabled={createMutation.isPending}
-          className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
         </button>
-        <button onClick={onClose} className="tau-button text-sm text-muted hover:text-primary px-3 py-1.5">
+        <button onClick={onClose} className="ficus-button text-sm text-muted hover:text-primary px-3 py-1.5">
           Cancel
         </button>
         {createMutation.isError && (
@@ -447,7 +447,7 @@ function AgentTypeRow({
           type="button"
           onClick={onToggle}
           aria-label={`${canUpdate ? 'Edit' : 'View'} ${agentType.name}`}
-          className="tau-button shrink-0 text-sm text-accent-light"
+          className="ficus-button shrink-0 text-sm text-accent-light"
         >
           {canUpdate ? 'Edit' : 'View'}
         </button>
@@ -493,14 +493,14 @@ function AgentTypeRow({
               {agentType.hasTemplate && agentType.yamlFieldOverrides.length > 0 && (
                 <button
                   onClick={onShowDiff}
-                  className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                  className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
                 >
                   Compare to Template
                 </button>
               )}
               <button
                 onClick={handleExport}
-                className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
               >
                 {copyMsg || 'Export YAML'}
               </button>
@@ -508,7 +508,7 @@ function AgentTypeRow({
                 <button
                   onClick={() => toggleDisableMutation.mutate()}
                   disabled={toggleDisableMutation.isPending}
-                  className="tau-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
+                  className="ficus-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
                 >
                   {agentType.disabled ? 'Enable' : 'Disable'}
                 </button>
@@ -517,7 +517,7 @@ function AgentTypeRow({
                 <button
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
-                  className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
+                  className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
                 >
                   Delete
                 </button>
@@ -538,7 +538,7 @@ function AgentTypeRow({
                   aria-label="Model tier"
                   value={form.tier}
                   onChange={(event) => setForm({ ...form, tier: event.target.value })}
-                  className="tau-field mt-1 w-full border border-th-border bg-surface px-3 py-2"
+                  className="ficus-field mt-1 w-full border border-th-border bg-surface px-3 py-2"
                 >
                   <option value="">Instance default</option>
                   {modelTiers.map((tier) => (
@@ -608,7 +608,7 @@ function AgentTypeRow({
                 <button
                   onClick={handleSave}
                   disabled={!canUpdate || updateMutation.isPending}
-                  className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button ficus-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
                 >
                   {updateMutation.isPending ? 'Saving…' : 'Save'}
                 </button>
@@ -668,7 +668,7 @@ function ResolvedPromptPreview({ agentTypeId }: { agentTypeId: string }) {
             type="button"
             onClick={handleCopy}
             disabled={!resolved}
-            className="tau-button shrink-0 text-xs text-accent-light hover:text-accent-hover disabled:opacity-50"
+            className="ficus-button shrink-0 text-xs text-accent-light hover:text-accent-hover disabled:opacity-50"
           >
             {copyMsg || 'Copy'}
           </button>
@@ -678,7 +678,7 @@ function ResolvedPromptPreview({ agentTypeId }: { agentTypeId: string }) {
             Couldn&apos;t load the resolved prompt: {(error as Error).message}
           </p>
         ) : (
-          <pre className="tau-field whitespace-pre-wrap font-mono text-xs max-h-96 overflow-auto">
+          <pre className="ficus-field whitespace-pre-wrap font-mono text-xs max-h-96 overflow-auto">
             {isLoading ? 'Loading…' : resolved}
           </pre>
         )}
@@ -768,13 +768,13 @@ function ModelSpecListEditor({
               value={spec}
               onChange={(e) => updateSpec(i, e.target.value)}
               placeholder="provider:model-id[:thinking-level]"
-              className="tau-field flex-1 text-sm bg-surface-secondary border border-th-border px-2 py-1 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+              className="ficus-field flex-1 text-sm bg-surface-secondary border border-th-border px-2 py-1 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
             />
             <button
               type="button"
               onClick={() => moveSpec(i, 'up')}
               disabled={i === 0}
-              className="tau-button text-muted hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed shrink-0 px-1"
+              className="ficus-button text-muted hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed shrink-0 px-1"
               title="Move up"
             >
               ▲
@@ -783,7 +783,7 @@ function ModelSpecListEditor({
               type="button"
               onClick={() => moveSpec(i, 'down')}
               disabled={i === specs.length - 1}
-              className="tau-button text-muted hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed shrink-0 px-1"
+              className="ficus-button text-muted hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed shrink-0 px-1"
               title="Move down"
             >
               ▼
@@ -791,7 +791,7 @@ function ModelSpecListEditor({
             <button
               type="button"
               onClick={() => removeSpec(i)}
-              className="tau-button text-muted hover:text-status-danger-500 dark:hover:text-status-danger-400 shrink-0 px-1"
+              className="ficus-button text-muted hover:text-status-danger-500 dark:hover:text-status-danger-400 shrink-0 px-1"
               title="Remove"
             >
               <TrashIcon className="w-4 h-4" />
@@ -801,7 +801,7 @@ function ModelSpecListEditor({
         <button
           type="button"
           onClick={addSpec}
-          className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium flex items-center gap-1"
+          className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium flex items-center gap-1"
         >
           <PlusIcon className="w-3.5 h-3.5" />
           Add model
@@ -862,7 +862,7 @@ function FormField({
           rows={rows ?? 3}
           readOnly={readOnly}
           placeholder={placeholder}
-          className={clsx('tau-field', cls, 'resize-y font-mono')}
+          className={clsx('ficus-field', cls, 'resize-y font-mono')}
         />
       ) : (
         <input
@@ -871,7 +871,7 @@ function FormField({
           onChange={(e) => onChange(e.target.value)}
           readOnly={readOnly}
           placeholder={placeholder}
-          className={clsx('tau-field', cls)}
+          className={clsx('ficus-field', cls)}
         />
       )}
     </div>
@@ -1144,7 +1144,7 @@ export function TierChainEditor({
                   disabled={disabled || index === 0}
                   aria-label={`Move ${tier.label} model ${index + 1} up`}
                   onClick={() => move(index - 1)}
-                  className="tau-button px-2 text-muted disabled:opacity-30"
+                  className="ficus-button px-2 text-muted disabled:opacity-30"
                 >
                   ↑
                 </button>
@@ -1153,14 +1153,14 @@ export function TierChainEditor({
                   disabled={disabled || index === entries.length - 1}
                   aria-label={`Move ${tier.label} model ${index + 1} down`}
                   onClick={() => move(index + 1)}
-                  className="tau-button px-2 text-muted disabled:opacity-30"
+                  className="ficus-button px-2 text-muted disabled:opacity-30"
                 >
                   ↓
                 </button>
                 <button
                   type="button"
                   aria-label={`Remove ${tier.label} model ${index + 1}`}
-                  className="tau-button px-2 text-xs text-muted hover:text-danger"
+                  className="ficus-button px-2 text-xs text-muted hover:text-danger"
                   onClick={() => commit(entries.filter((_, i) => i !== index))}
                 >
                   Remove
@@ -1174,7 +1174,7 @@ export function TierChainEditor({
                   aria-label={`${tier.label} provider position ${index + 1}`}
                   value={parsed.provider}
                   onChange={(event) => updatePart(index, 'provider', event.target.value, true)}
-                  className="tau-field w-full min-w-0 bg-surface p-2 text-sm"
+                  className="ficus-field w-full min-w-0 bg-surface p-2 text-sm"
                 >
                   {providerOptions.map((provider) => (
                     <option key={provider} value={provider}>
@@ -1189,7 +1189,7 @@ export function TierChainEditor({
                   <select
                     aria-label={`${tier.label} model selection position ${index + 1}`}
                     value={custom ? '__custom__' : parsed.model}
-                    className="tau-field w-full min-w-0 bg-surface p-2 text-sm"
+                    className="ficus-field w-full min-w-0 bg-surface p-2 text-sm"
                     onChange={(event) => {
                       const value = event.target.value
                       setCustomRows((previous) => {
@@ -1216,7 +1216,7 @@ export function TierChainEditor({
                     onChange={(event) => updatePart(index, 'model', event.target.value)}
                     onBlur={() => commit(entries)}
                     placeholder="Enter model ID"
-                    className="tau-field w-full min-w-0 bg-surface p-2 font-mono text-sm"
+                    className="ficus-field w-full min-w-0 bg-surface p-2 font-mono text-sm"
                   />
                 )}
                 {metadata && (
@@ -1235,7 +1235,7 @@ export function TierChainEditor({
                   onChange={(event) => {
                     updatePart(index, 'effort', event.target.value, true)
                   }}
-                  className="tau-field w-full min-w-0 bg-surface p-2 text-sm"
+                  className="ficus-field w-full min-w-0 bg-surface p-2 text-sm"
                 >
                   {EFFORTS.map((effort) => (
                     <option key={effort}>{effort}</option>
@@ -1255,7 +1255,7 @@ export function TierChainEditor({
       ))}
       <button
         onClick={() => setEntries([...entries, `${providers[0] ?? 'provider'}:model:medium`])}
-        className="tau-button text-sm text-accent-light"
+        className="ficus-button text-sm text-accent-light"
       >
         + Add provider position
       </button>
@@ -1309,13 +1309,13 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <strong>{tier.label}</strong>
             <span>
-              <button className="tau-button text-sm text-accent-light" onClick={() => onUsedBy(tier.slug)}>
+              <button className="ficus-button text-sm text-accent-light" onClick={() => onUsedBy(tier.slug)}>
                 Used by {tier.usedByCount} types
               </button>{' '}
               <button
                 disabled={!can('agent-types:update') || tier.usedByCount > 0 || remove.isPending}
                 onClick={() => remove.mutate(tier.slug)}
-                className="tau-button ml-3 text-sm text-danger"
+                className="ficus-button ml-3 text-sm text-danger"
               >
                 Remove tier
               </button>
@@ -1350,7 +1350,7 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
               usedByCount: 0,
             })
         }}
-        className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-on-accent"
+        className="ficus-button ficus-button-primary rounded bg-accent px-3 py-2 text-on-accent"
       >
         Add custom tier
       </button>
@@ -1377,7 +1377,7 @@ export function AgentTypesSection() {
               setTab('types')
             }}
             className={clsx(
-              'tau-nav-item rounded-full px-4 py-2 text-sm',
+              'ficus-nav-item rounded-full px-4 py-2 text-sm',
               tab === 'types' ? 'bg-accent/10 text-accent-light' : 'text-muted hover:bg-surface-secondary'
             )}
           >
@@ -1388,7 +1388,7 @@ export function AgentTypesSection() {
             aria-selected={tab === 'tiers'}
             onClick={() => setTab('tiers')}
             className={clsx(
-              'tau-nav-item rounded-full px-4 py-2 text-sm',
+              'ficus-nav-item rounded-full px-4 py-2 text-sm',
               tab === 'tiers' ? 'bg-accent/10 text-accent-light' : 'text-muted hover:bg-surface-secondary'
             )}
           >
@@ -1399,7 +1399,7 @@ export function AgentTypesSection() {
             aria-selected={tab === 'includes'}
             onClick={() => setTab('includes')}
             className={clsx(
-              'tau-nav-item rounded-full px-4 py-2 text-sm',
+              'ficus-nav-item rounded-full px-4 py-2 text-sm',
               tab === 'includes' ? 'bg-accent/10 text-accent-light' : 'text-muted hover:bg-surface-secondary'
             )}
           >

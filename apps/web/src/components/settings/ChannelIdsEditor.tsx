@@ -37,13 +37,13 @@ export function ChannelIdsEditor({
                 autoCapitalize="none"
                 spellCheck={false}
                 maxLength={200}
-                className="tau-field flex-1 min-w-0 text-sm px-2 py-1"
+                className="ficus-field flex-1 min-w-0 text-sm px-2 py-1"
               />
               <button
                 type="button"
                 onClick={() => onChange(value.filter((_, i) => i !== index))}
                 aria-label={`Remove ${kind.toLowerCase()} channel ${index + 1}`}
-                className="tau-button text-xs text-muted hover:text-danger px-1 shrink-0"
+                className="ficus-button text-xs text-muted hover:text-danger px-1 shrink-0"
               >
                 ✕
               </button>
@@ -54,7 +54,7 @@ export function ChannelIdsEditor({
       <button
         type="button"
         onClick={() => onChange([...value, ''])}
-        className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+        className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
       >
         + Add {kind.toLowerCase()} channel
       </button>

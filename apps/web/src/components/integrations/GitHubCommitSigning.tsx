@@ -87,7 +87,7 @@ export function GitHubCommitSigning({
           {code === 'permission_missing' && (
             <button
               type="button"
-              className="tau-button tau-button-primary px-3 py-1.5"
+              className="ficus-button ficus-button-primary px-3 py-1.5"
               disabled={reconnectPending}
               onClick={onReconnect}
             >
@@ -98,7 +98,7 @@ export function GitHubCommitSigning({
             <button
               type="button"
               className={
-                code === 'permission_missing' ? 'tau-button text-xs' : 'tau-button tau-button-primary px-3 py-1.5'
+                code === 'permission_missing' ? 'ficus-button text-xs' : 'ficus-button ficus-button-primary px-3 py-1.5'
               }
               disabled={change.isPending}
               onClick={() => change.mutate(true)}
@@ -109,7 +109,7 @@ export function GitHubCommitSigning({
           {on && (
             <button
               type="button"
-              className="tau-button text-xs"
+              className="ficus-button text-xs"
               disabled={change.isPending}
               onClick={() => change.mutate(false)}
             >

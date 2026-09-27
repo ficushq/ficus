@@ -86,7 +86,7 @@ export function VoiceTranscriptInspector({
               onClick={onInterrupt}
               aria-label="Stop response"
               title="Stop response"
-              className="tau-button ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-primary"
+              className="ficus-button ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-primary"
             >
               <StopIcon className="h-3.5 w-3.5" />
             </button>
@@ -147,7 +147,7 @@ function TranscriptBubble({
           onClick={onInterrupt}
           aria-label="Stop response"
           title="Stop response"
-          className="tau-button ml-auto mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-primary"
+          className="ficus-button ml-auto mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-primary"
         >
           <StopIcon className="h-3.5 w-3.5" />
         </button>
@@ -178,7 +178,7 @@ function ToolTranscriptEntry({
         <button
           type="button"
           onClick={() => hasDetails && setExpanded((value) => !value)}
-          className="tau-button flex w-full min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-hover disabled:hover:bg-transparent"
+          className="ficus-button flex w-full min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-hover disabled:hover:bg-transparent"
           disabled={!hasDetails}
           aria-expanded={hasDetails ? expanded : undefined}
         >

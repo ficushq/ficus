@@ -111,7 +111,7 @@ function GitUpdateSection() {
         <label data-setting-target="remote" className="text-sm">
           Remote
           <input
-            className="tau-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
+            className="ficus-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
             value={settings.remote}
             disabled={!canWriteUpdates}
             onChange={(e) => canWriteUpdates && patch.mutate({ remote: e.target.value })}
@@ -120,7 +120,7 @@ function GitUpdateSection() {
         <label data-setting-target="branch" className="text-sm">
           Branch
           <input
-            className="tau-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
+            className="ficus-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
             value={settings.branch}
             disabled={!canWriteUpdates}
             onChange={(e) => canWriteUpdates && patch.mutate({ branch: e.target.value })}
@@ -131,7 +131,7 @@ function GitUpdateSection() {
           <input
             type="number"
             min={1}
-            className="tau-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
+            className="ficus-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
             value={settings.intervalMinutes}
             disabled={!canWriteUpdates}
             onChange={(e) => canWriteUpdates && patch.mutate({ intervalMinutes: Number(e.target.value) })}
@@ -147,7 +147,7 @@ function GitUpdateSection() {
       <div className="flex gap-2">
         <button
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             'bg-surface border border-th-border text-primary hover:bg-surface-hover',
             'disabled:opacity-50 disabled:cursor-not-allowed'
@@ -159,7 +159,7 @@ function GitUpdateSection() {
         </button>
         <button
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             'disabled:opacity-50 disabled:cursor-not-allowed'
@@ -192,7 +192,7 @@ function GitUpdateSection() {
         </div>
         <button
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             'disabled:opacity-50 disabled:cursor-not-allowed'

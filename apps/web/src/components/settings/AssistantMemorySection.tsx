@@ -154,7 +154,7 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
           <div className="space-y-4">
             {configured && (
               <button
-                className="tau-button tau-button-primary rounded-lg px-3 py-2 text-sm"
+                className="ficus-button ficus-button-primary rounded-lg px-3 py-2 text-sm"
                 disabled={!canWriteServices || enable.isPending}
                 onClick={() => enable.mutate()}
               >

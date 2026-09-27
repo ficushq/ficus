@@ -52,7 +52,7 @@ test('off: explains what turning it on does and offers one primary action', asyn
   const container = await render({ state: 'off' })
   expect(container.textContent).toContain('Agents’ commits are not signed')
   expect(container.textContent).toContain('the private key stays on this Tau server')
-  expect(button(container, 'Turn on signing').className).toContain('tau-button-primary')
+  expect(button(container, 'Turn on signing').className).toContain('ficus-button-primary')
 })
 
 test('on: shows just the key fingerprint and Turn off, with no status sentence', async () => {
@@ -106,9 +106,9 @@ test('a missing App permission explains the fix and offers Reconnect', async () 
   })
   await waitFor(() => expect(container.textContent).toContain('Tau needs permission to manage SSH signing keys'))
   const reconnect = button(container, 'Reconnect')
-  expect(reconnect.className).toContain('tau-button-primary')
+  expect(reconnect.className).toContain('ficus-button-primary')
   // Only one filled action at a time: turning on steps back while Reconnect leads.
-  expect(button(container, 'Turn on signing').className).not.toContain('tau-button-primary')
+  expect(button(container, 'Turn on signing').className).not.toContain('ficus-button-primary')
   await harness.act(async () => {
     fireEvent.click(reconnect)
   })

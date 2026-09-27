@@ -475,7 +475,7 @@ export default defineConfig(({ mode, command }) => {
       // (apps/core/src/lib/web-serve.ts). The dev server serves the file itself,
       // so blank it there: relative og:* values are harmless in development.
       {
-        name: 'tau-origin-placeholder',
+        name: 'ficus-origin-placeholder',
         transformIndexHtml: {
           order: 'pre' as const,
           handler(html: string, ctx: { server?: unknown }) {

@@ -98,7 +98,7 @@ function SshConfigEditor({ squadId }: { squadId: string }) {
         onKeyDown={handleKeyDown}
         placeholder="# Example:&#10;Host github.com&#10;  IdentityFile ~/.ssh/my-deploy-key&#10;  StrictHostKeyChecking accept-new"
         className={clsx(
-          'tau-field',
+          'ficus-field',
           'w-full h-40 p-3 rounded-lg border bg-surface text-primary text-sm',
           'font-mono leading-relaxed resize-y',
           'placeholder:text-placeholder',
@@ -113,7 +113,7 @@ function SshConfigEditor({ squadId }: { squadId: string }) {
           onClick={handleSave}
           disabled={!canWriteSsh || !dirty || mutation.isPending}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-3 py-1 text-sm rounded-md font-medium transition-colors',
             dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}
@@ -215,7 +215,7 @@ function KnownHostsEditor({ squadId }: { squadId: string }) {
         onKeyDown={handleKeyDown}
         placeholder="# Example:&#10;github.com ssh-ed25519 AAAAC3NzaC1lZDI1..."
         className={clsx(
-          'tau-field',
+          'ficus-field',
           'w-full h-32 p-3 rounded-lg border bg-surface text-primary text-sm',
           'font-mono leading-relaxed resize-y',
           'placeholder:text-placeholder',
@@ -230,7 +230,7 @@ function KnownHostsEditor({ squadId }: { squadId: string }) {
           onClick={handleSave}
           disabled={!canWriteSsh || !dirty || mutation.isPending}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-3 py-1 text-sm rounded-md font-medium transition-colors',
             dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}

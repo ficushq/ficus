@@ -222,7 +222,7 @@ export function GitHubIntegrationSettings({
         {canConnect && !hasAccounts && (
           <button
             type="button"
-            className="tau-button tau-button-primary px-3 py-2 text-sm"
+            className="ficus-button ficus-button-primary px-3 py-2 text-sm"
             disabled={authorize.isPending || !!device}
             onClick={() => authorize.mutate(undefined)}
           >
@@ -263,12 +263,12 @@ export function GitHubIntegrationSettings({
         </p>
       )}
       {device && (
-        <div className="tau-inset my-3 space-y-2 p-3" role="status">
+        <div className="ficus-inset my-3 space-y-2 p-3" role="status">
           <p className="text-sm">Enter this code on GitHub:</p>
           <GitHubDeviceCode key={device.id} code={device.userCode} />
           <div className="flex gap-3">
             <a
-              className="tau-button tau-button-primary px-3 py-2 text-sm"
+              className="ficus-button ficus-button-primary px-3 py-2 text-sm"
               href={device.verificationUri}
               target="_blank"
               rel="noreferrer"
@@ -277,7 +277,7 @@ export function GitHubIntegrationSettings({
             </a>
             <button
               type="button"
-              className="tau-button px-3 py-2 text-sm"
+              className="ficus-button px-3 py-2 text-sm"
               disabled={cancel.isPending}
               onClick={() => cancel.mutate()}
             >
@@ -337,7 +337,7 @@ export function GitHubIntegrationSettings({
               {!connection.isGlobalDefault && connection.enabled && (
                 <button
                   type="button"
-                  className="tau-button text-xs"
+                  className="ficus-button text-xs"
                   disabled={defaultMutation.isPending}
                   onClick={() => defaultMutation.mutate(connection.id)}
                 >
@@ -346,7 +346,7 @@ export function GitHubIntegrationSettings({
               )}
               <button
                 type="button"
-                className="tau-button text-xs"
+                className="ficus-button text-xs"
                 disabled={authorize.isPending || !!device}
                 onClick={() => authorize.mutate(connection.id)}
               >
@@ -360,7 +360,7 @@ export function GitHubIntegrationSettings({
                   <button
                     key={kind}
                     type="button"
-                    className="tau-button text-xs"
+                    className="ficus-button text-xs"
                     disabled={lifecycle.isPending}
                     onClick={() => {
                       if (assigned && confirmation !== key) {
@@ -396,7 +396,7 @@ export function GitHubIntegrationSettings({
               type="button"
               onClick={() => useConnected.mutate()}
               disabled={useConnected.isPending}
-              className="tau-button tau-button-primary mt-3 rounded-lg px-3 py-2 text-sm"
+              className="ficus-button ficus-button-primary mt-3 rounded-lg px-3 py-2 text-sm"
             >
               Use GitHub
             </button>
@@ -404,7 +404,7 @@ export function GitHubIntegrationSettings({
         {canConnect && hasAccounts && (
           <button
             type="button"
-            className="tau-button mt-3 text-sm text-accent-light hover:text-accent-hover disabled:opacity-50"
+            className="ficus-button mt-3 text-sm text-accent-light hover:text-accent-hover disabled:opacity-50"
             disabled={authorize.isPending || !!device}
             onClick={() => authorize.mutate(undefined)}
           >
@@ -433,7 +433,7 @@ export function GitHubIntegrationSettings({
             <label className="block text-sm text-primary">
               Client ID
               <input
-                className="tau-field mt-1 block h-10 w-full px-3 py-2 text-sm"
+                className="ficus-field mt-1 block h-10 w-full px-3 py-2 text-sm"
                 aria-label="GitHub App client ID"
                 placeholder="Iv23li…"
                 value={clientId}
@@ -444,7 +444,7 @@ export function GitHubIntegrationSettings({
             <label className="block text-sm text-primary">
               Client secret <span className="text-muted">(optional)</span>
               <input
-                className="tau-field mt-1 block h-10 w-full px-3 py-2 text-sm"
+                className="ficus-field mt-1 block h-10 w-full px-3 py-2 text-sm"
                 aria-label="GitHub App client secret (optional)"
                 placeholder="Enter a client secret for browser login"
                 type="password"
@@ -459,14 +459,14 @@ export function GitHubIntegrationSettings({
             </label>
             <div className="flex gap-3">
               <button
-                className="tau-button text-sm"
+                className="ficus-button text-sm"
                 disabled={!clientId.trim() || !acknowledged || configure.isPending || !!device}
               >
                 Save app
               </button>
               <button
                 type="button"
-                className="tau-button text-sm"
+                className="ficus-button text-sm"
                 disabled={configure.isPending || !!device}
                 onClick={() => configure.mutate(true)}
               >
@@ -490,7 +490,7 @@ export function GitHubIntegrationSettings({
           {adminSetupRequired && finishAdminSetup ? (
             <button
               type="button"
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm"
               onClick={finishAdminSetup}
             >
               Finish admin setup
@@ -500,7 +500,7 @@ export function GitHubIntegrationSettings({
             canWrite && (
               <button
                 type="button"
-                className="tau-button px-3 py-1.5 text-sm"
+                className="ficus-button px-3 py-1.5 text-sm"
                 disabled={authorize.isPending || !!device}
                 onClick={() => authorize.mutate(authorize.variables)}
               >
@@ -529,7 +529,7 @@ function GitHubDeviceCode({ code }: { code: string }) {
         type="button"
         aria-label="Copy GitHub device code"
         title={copied ? 'Copied' : 'Copy code'}
-        className="tau-button rounded-md p-1.5 text-muted hover:text-primary"
+        className="ficus-button rounded-md p-1.5 text-muted hover:text-primary"
         onClick={async () => {
           setCopyFailed(false)
           try {

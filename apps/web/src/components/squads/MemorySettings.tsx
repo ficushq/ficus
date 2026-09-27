@@ -129,7 +129,7 @@ export function MemorySettings({ squadId }: Props) {
           onClick={handleToggleEnabled}
           disabled={updateMutation.isPending || !canWriteMemory}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out  focus:ring-2 focus:ring-accent focus:ring-offset-2',
             memoryConfig.enabled ? 'bg-accent' : 'bg-status-neutral-200 dark:bg-status-neutral-700'
           )}
@@ -154,7 +154,7 @@ export function MemorySettings({ squadId }: Props) {
               {!isEditing && canWriteMemory && (
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="tau-button text-xs text-accent-light hover:underline"
+                  className="ficus-button text-xs text-accent-light hover:underline"
                 >
                   Edit
                 </button>
@@ -165,7 +165,7 @@ export function MemorySettings({ squadId }: Props) {
                 <select
                   value={embeddingModel}
                   onChange={(e) => setEmbeddingModel(e.target.value)}
-                  className="tau-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary  focus:ring-2 focus:ring-accent/50"
+                  className="ficus-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary  focus:ring-2 focus:ring-accent/50"
                 >
                   {EMBEDDING_MODELS.map((model) => (
                     <option key={model.value} value={model.value}>
@@ -179,14 +179,14 @@ export function MemorySettings({ squadId }: Props) {
                       setIsEditing(false)
                       setEmbeddingModel(memoryConfig.embeddingModel || 'text-embedding-3-small')
                     }}
-                    className="tau-button px-3 py-1.5 text-sm rounded-md text-secondary hover:bg-surface-hover"
+                    className="ficus-button px-3 py-1.5 text-sm rounded-md text-secondary hover:bg-surface-hover"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={updateMutation.isPending || !canWriteMemory}
-                    className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
+                    className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
                   >
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </button>
@@ -204,7 +204,7 @@ export function MemorySettings({ squadId }: Props) {
           <div className="border-b border-panel-border last:border-b-0 p-3 mb-4">
             <button
               onClick={() => setShowWeights(!showWeights)}
-              className="tau-button flex items-center justify-between w-full text-left"
+              className="ficus-button flex items-center justify-between w-full text-left"
             >
               <span className="text-sm font-medium text-primary">Ranking Weights</span>
               <svg
@@ -241,7 +241,7 @@ export function MemorySettings({ squadId }: Props) {
                 onClick={() => reindexMutation.mutate()}
                 disabled={reindexMutation.isPending || !canWriteMemory}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
                   reindexMutation.isPending || !canWriteMemory
                     ? 'bg-surface-secondary text-muted cursor-not-allowed'

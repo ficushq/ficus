@@ -1406,13 +1406,13 @@
    window controls sit over the top-left of the page, so the app header becomes
    the title bar: exactly 56px tall, a window drag region, with a compact logo 24px after
    the window controls. Browsers and mobile never get the attribute. */
-:root[data-desktop-shell='inset'] .tau-app-header {
+:root[data-desktop-shell='inset'] .ficus-app-header {
   height: 56px;
   padding-top: 0;
   -webkit-app-region: drag;
 }
 
-:root[data-desktop-shell='inset'] .tau-app-header-bar {
+:root[data-desktop-shell='inset'] .ficus-app-header-bar {
   height: 100%;
   padding-top: 0;
   padding-bottom: 0;
@@ -1425,13 +1425,13 @@
 }
 
 /* A compact app mark rather than a web page masthead. */
-:root[data-desktop-shell='inset'] .tau-app-header-logo {
+:root[data-desktop-shell='inset'] .ficus-app-header-logo {
   font-size: 1rem;
   line-height: 1.5rem;
   font-weight: 600;
 }
 
-:root[data-desktop-shell='inset'] .tau-app-header-logo svg {
+:root[data-desktop-shell='inset'] .ficus-app-header-logo svg {
   width: 1.375rem;
   height: 1.375rem;
 }
@@ -1439,18 +1439,18 @@
 /* The instance label (which Desktop instance this window shows) only makes
    sense next to the compact inset title-bar logo; a full-width web masthead
    never needs it. */
-.tau-app-header-instance {
+.ficus-app-header-instance {
   display: none;
 }
 
-:root[data-desktop-shell='inset'] .tau-app-header-instance {
+:root[data-desktop-shell='inset'] .ficus-app-header-instance {
   display: inline;
 }
 
 /* Everything interactive in the title bar, and any overlay that can cover it,
    must stay clickable rather than drag the window. */
 :root[data-desktop-shell='inset']
-  .tau-app-header
+  .ficus-app-header
   :is(
     a,
     button,
@@ -1467,6 +1467,6 @@
     [role='dialog'],
     [tabindex]
   ),
-:root[data-desktop-shell='inset'] :is([role='dialog'], [aria-modal='true'], .tau-overlay, .fixed.inset-0) {
+:root[data-desktop-shell='inset'] :is([role='dialog'], [aria-modal='true'], .ficus-overlay, .fixed.inset-0) {
   -webkit-app-region: no-drag;
 }

@@ -211,7 +211,7 @@ export function NotificationsConfigSection() {
         <button
           onClick={() => createMutation.mutate()}
           disabled={!canWrite || createMutation.isPending}
-          className="tau-button tau-button-primary px-4 py-2 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 font-medium"
+          className="ficus-button ficus-button-primary px-4 py-2 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 font-medium"
         >
           {createMutation.isPending ? 'Creating…' : 'Set up notifications'}
         </button>
@@ -295,7 +295,7 @@ export function NotificationsConfigSection() {
                         type="button"
                         onClick={() => removeRule(index)}
                         aria-label={`Remove rule: ${label}`}
-                        className="tau-button text-xs text-muted hover:text-danger"
+                        className="ficus-button text-xs text-muted hover:text-danger"
                       >
                         Remove
                       </button>
@@ -335,7 +335,7 @@ export function NotificationsConfigSection() {
               onChange={(event) => {
                 if (event.target.value) addRule(event.target.value)
               }}
-              className="tau-field w-full sm:w-auto rounded-lg px-3 py-2 text-sm"
+              className="ficus-field w-full sm:w-auto rounded-lg px-3 py-2 text-sm"
             >
               <option value="">Add a notification rule…</option>
               {unusedEvents.map((event) => (
@@ -351,7 +351,7 @@ export function NotificationsConfigSection() {
             <button
               onClick={handleSave}
               disabled={!dirty || updateMutation.isPending}
-              className="tau-button tau-button-primary rounded-lg px-4 py-2 text-sm"
+              className="ficus-button ficus-button-primary rounded-lg px-4 py-2 text-sm"
             >
               {updateMutation.isPending ? 'Saving…' : 'Save changes'}
             </button>
@@ -361,7 +361,7 @@ export function NotificationsConfigSection() {
                   setRules(null)
                   setChannels(null)
                 }}
-                className="tau-button text-sm text-muted"
+                className="ficus-button text-sm text-muted"
               >
                 Discard changes
               </button>
@@ -388,11 +388,11 @@ export function NotificationsConfigSection() {
         </p>
         <div className="my-4 flex flex-wrap items-center gap-4">
           {config.yamlFieldOverrides.length > 0 && (
-            <button onClick={() => setShowDiff(true)} className="tau-button text-sm text-accent-light">
+            <button onClick={() => setShowDiff(true)} className="ficus-button text-sm text-accent-light">
               Compare to template
             </button>
           )}
-          <button onClick={handleExport} className="tau-button text-sm text-accent-light">
+          <button onClick={handleExport} className="ficus-button text-sm text-accent-light">
             {copyMsg || 'Export YAML'}
           </button>
         </div>

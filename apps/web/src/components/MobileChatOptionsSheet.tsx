@@ -78,7 +78,7 @@ export function MobileChatOptionsSheet({
     >
       <div
         ref={panelRef}
-        className="mobile-chat-options-panel tau-overlay relative w-full max-h-full overflow-y-auto overscroll-contain rounded-t-2xl border border-th-border bg-surface p-3 outline-none"
+        className="mobile-chat-options-panel ficus-overlay relative w-full max-h-full overflow-y-auto overscroll-contain rounded-t-2xl border border-th-border bg-surface p-3 outline-none"
         role="dialog"
         aria-modal="true"
         aria-label="Attach or change controls"
@@ -90,7 +90,7 @@ export function MobileChatOptionsSheet({
             type="button"
             onClick={onClose}
             aria-label="Close chat options"
-            className="tau-button flex items-center justify-center w-11 h-11 rounded-md text-muted hover:bg-surface-hover"
+            className="ficus-button flex items-center justify-center w-11 h-11 rounded-md text-muted hover:bg-surface-hover"
           >
             <CloseIcon className="w-5 h-5" />
           </button>

@@ -153,13 +153,13 @@ export function SystemLogsSection() {
         <p className="text-sm text-muted mt-1">Live tail of Tau's own server logs (read-only).</p>
       </div>
 
-      <div className="tau-section py-5">
+      <div className="ficus-section py-5">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <select
               value={component}
               onChange={(event) => setComponent(event.target.value as Component)}
-              className="tau-field px-2 py-1 text-xs rounded border border-th-border bg-surface text-primary"
+              className="ficus-field px-2 py-1 text-xs rounded border border-th-border bg-surface text-primary"
             >
               <option value="all">All Components</option>
               <option value="api">API</option>
@@ -173,7 +173,7 @@ export function SystemLogsSection() {
                 max={5000}
                 value={tailLines}
                 onChange={(event) => setTailLines(Math.min(Math.max(1, Number(event.target.value) || 500), 5000))}
-                className="tau-field w-20 px-2 py-1 text-xs rounded border border-th-border bg-surface text-primary"
+                className="ficus-field w-20 px-2 py-1 text-xs rounded border border-th-border bg-surface text-primary"
               />
               lines
             </label>
@@ -188,11 +188,11 @@ export function SystemLogsSection() {
               onChange={(event) => setSearch(event.target.value)}
               onKeyDown={onSearchKey}
               placeholder="Search…"
-              className="tau-field w-40 px-2 py-1 text-xs rounded border border-th-border bg-surface text-primary"
+              className="ficus-field w-40 px-2 py-1 text-xs rounded border border-th-border bg-surface text-primary"
             />
             <button
               onClick={() => searchRef.current?.findNext(search)}
-              className="tau-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+              className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
             >
               Next
             </button>
@@ -200,13 +200,13 @@ export function SystemLogsSection() {
               <>
                 <button
                   onClick={connect}
-                  className="tau-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+                  className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
                 >
                   Reconnect
                 </button>
                 <button
                   onClick={disconnect}
-                  className="tau-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+                  className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
                 >
                   Disconnect
                 </button>
@@ -214,7 +214,7 @@ export function SystemLogsSection() {
             ) : (
               <button
                 onClick={connect}
-                className="tau-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+                className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
               >
                 Connect
               </button>

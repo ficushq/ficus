@@ -82,7 +82,7 @@ export function DevBackendBarContent({
               value={state.selectedLabel}
               disabled={pending}
               onChange={(event) => onSwitchBackend(event.target.value)}
-              className="tau-field rounded border border-current/25 bg-transparent px-1.5 py-0.5 font-medium outline-none disabled:opacity-50"
+              className="ficus-field rounded border border-current/25 bg-transparent px-1.5 py-0.5 font-medium outline-none disabled:opacity-50"
               aria-label="Development backend"
             >
               {state.backends.map((backend) => (

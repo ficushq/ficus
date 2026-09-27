@@ -63,7 +63,7 @@ export function PermissionPicker({ value, onChange, disabled = false }: Props) {
           placeholder="Search permissions…"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="tau-field w-full rounded-lg py-2 pl-9 pr-3 text-sm"
+          className="ficus-field w-full rounded-lg py-2 pl-9 pr-3 text-sm"
         />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
@@ -98,7 +98,7 @@ export function PermissionPicker({ value, onChange, disabled = false }: Props) {
                     return next
                   })
                 }
-                className="tau-button flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-hover"
+                className="ficus-button flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-hover"
               >
                 <span className="flex-1 text-sm font-medium text-primary">{group.label}</span>
                 {count > 0 && (
@@ -165,7 +165,7 @@ export function PermissionPicker({ value, onChange, disabled = false }: Props) {
                 type="button"
                 aria-label={`Remove ${permission}`}
                 onClick={() => onChange(value.filter((held) => held !== permission))}
-                className="tau-button shrink-0 text-xs text-muted hover:text-danger"
+                className="ficus-button shrink-0 text-xs text-muted hover:text-danger"
               >
                 Remove
               </button>

@@ -165,7 +165,7 @@ export function WorkflowRunPanel({
         <label className="block text-sm">
           Active step
           <select
-            className="tau-field w-full p-2 border border-th-border rounded-md"
+            className="ficus-field w-full p-2 border border-th-border rounded-md"
             value={attempt?.id}
             onChange={(event) => setSelectedAttempt(Number(event.target.value))}
           >
@@ -296,7 +296,7 @@ export function WorkflowRunPanel({
               <label className="block text-sm">
                 Reason
                 <input
-                  className="tau-field w-full p-2 border border-th-border rounded-md"
+                  className="ficus-field w-full p-2 border border-th-border rounded-md"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                 />
@@ -337,7 +337,7 @@ export function WorkflowRunPanel({
             <input
               aria-label="New preset ID"
               placeholder="my-workflow"
-              className="tau-field p-2 border border-th-border rounded-md"
+              className="ficus-field p-2 border border-th-border rounded-md"
               value={presetId}
               onChange={(e) => setPresetId(e.target.value)}
             />

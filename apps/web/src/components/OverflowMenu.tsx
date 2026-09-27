@@ -66,13 +66,13 @@ export function OverflowMenu({
         aria-label={label}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="tau-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-primary"
+        className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-primary"
       >
         <MoreIcon className="h-4 w-4" />
       </button>
       <Presence
         open={open}
-        className="tau-overlay absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
+        className="ficus-overlay absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
       >
         <div
           {...{ [itemsMarker]: '' }}

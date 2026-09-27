@@ -21,7 +21,7 @@ export function AssistantPageLinkRow({ path, onOpen }: { path: string; onOpen: (
     <button
       type="button"
       onClick={() => onOpen(path)}
-      className="tau-button my-1 flex w-full min-w-0 items-center gap-3 rounded-xl bg-surface-secondary px-3 py-2.5 text-left hover:bg-selection"
+      className="ficus-button my-1 flex w-full min-w-0 items-center gap-3 rounded-xl bg-surface-secondary px-3 py-2.5 text-left hover:bg-selection"
       aria-label={`Go to ${page.title}${squad.data?.name ? ` in ${squad.data.name}` : ''}`}
     >
       <Icon className="h-4 w-4 shrink-0 text-muted" />

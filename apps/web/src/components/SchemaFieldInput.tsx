@@ -64,7 +64,7 @@ export function SchemaFieldInput({
             const val = e.target.value
             onChange(val === '' ? '' : Number(val))
           }}
-          className={clsx('tau-field', inputClasses)}
+          className={clsx('ficus-field', inputClasses)}
           placeholder={schema.description || `Enter ${name}`}
           required={schema.required}
           list={suggestions.length > 0 ? datalistId : undefined}
@@ -92,7 +92,7 @@ export function SchemaFieldInput({
         type="text"
         value={String(value)}
         onChange={(e) => onChange(e.target.value)}
-        className={clsx('tau-field', inputClasses)}
+        className={clsx('ficus-field', inputClasses)}
         placeholder={schema.description || `Enter ${name}`}
         required={schema.required}
         list={suggestions.length > 0 ? datalistId : undefined}

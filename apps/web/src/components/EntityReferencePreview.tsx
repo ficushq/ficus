@@ -113,7 +113,7 @@ export function EntityReferencePreview({
       }}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
-      className="tau-overlay fixed z-[80] w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto p-3 text-[13px] leading-5 text-primary"
+      className="ficus-overlay fixed z-[80] w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto p-3 text-[13px] leading-5 text-primary"
       style={{ ...position, visibility: position ? 'visible' : 'hidden' }}
     >
       {reference.kind === 'ws' ? (

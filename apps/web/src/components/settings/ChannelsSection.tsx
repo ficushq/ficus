@@ -80,7 +80,7 @@ export function ChannelsSection({ provider }: { provider?: ProviderId } = {}) {
           <button
             onClick={() => setIsAdding(true)}
             disabled={isAdding}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
           >
             + Add New
           </button>
@@ -97,7 +97,7 @@ export function ChannelsSection({ provider }: { provider?: ProviderId } = {}) {
         />
       )}
 
-      <div className="tau-section overflow-hidden">
+      <div className="ficus-section overflow-hidden">
         <div className="divide-y divide-th-border">
           {channels.length === 0 ? (
             <div className="px-4 py-8 text-center text-muted">No channels configured.</div>
@@ -172,7 +172,7 @@ function SquadDropdown({
       aria-invalid={invalid || undefined}
       aria-describedby={describedBy}
       aria-label={ariaLabel}
-      className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary  focus:ring-1 focus:ring-accent"
+      className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary  focus:ring-1 focus:ring-accent"
     >
       <option value="" disabled={required}>
         {placeholder ?? 'Select a squad…'}
@@ -341,7 +341,7 @@ export function SquadOverridesEditor({
                     onInput={(e) => updateRow(i, { key: e.currentTarget.value })}
                     placeholder={meta.overrideIdField.placeholder}
                     aria-label={meta.overrideIdField.label}
-                    className="tau-field flex-1 min-w-0 text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+                    className="ficus-field flex-1 min-w-0 text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
                   />
                   <div className="flex-1 min-w-0">
                     <SquadDropdown
@@ -356,7 +356,7 @@ export function SquadOverridesEditor({
                     type="button"
                     onClick={() => removeRow(i)}
                     aria-label={`Remove override row ${i + 1}`}
-                    className="tau-button text-xs text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 px-1 shrink-0"
+                    className="ficus-button text-xs text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 px-1 shrink-0"
                   >
                     ✕
                   </button>
@@ -380,7 +380,7 @@ export function SquadOverridesEditor({
       <button
         type="button"
         onClick={addRow}
-        className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+        className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
       >
         + Add override
       </button>
@@ -486,11 +486,11 @@ export function AddChannelForm({
         <button
           onClick={handleCreate}
           disabled={!provider || createMutation.isPending}
-          className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
         </button>
-        <button onClick={onClose} className="tau-button text-sm text-muted hover:text-primary px-3 py-1.5">
+        <button onClick={onClose} className="ficus-button text-sm text-muted hover:text-primary px-3 py-1.5">
           Cancel
         </button>
         {validationError && (
@@ -629,7 +629,7 @@ export function ChannelRow({
         type="button"
         aria-expanded={isExpanded}
         aria-controls={panelId}
-        className="tau-button w-full text-left flex items-start gap-2"
+        className="ficus-button w-full text-left flex items-start gap-2"
         onClick={onToggle}
       >
         <span className="flex-1 min-w-0">
@@ -674,14 +674,14 @@ export function ChannelRow({
             {channel.hasTemplate && channel.yamlFieldOverrides.length > 0 && (
               <button
                 onClick={onShowDiff}
-                className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
               >
                 Compare to Template
               </button>
             )}
             <button
               onClick={handleExport}
-              className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+              className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
             >
               {copyMsg || 'Export YAML'}
             </button>
@@ -689,7 +689,7 @@ export function ChannelRow({
               <button
                 onClick={() => toggleDisableMutation.mutate()}
                 disabled={toggleDisableMutation.isPending}
-                className="tau-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
+                className="ficus-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
               >
                 {channel.disabled ? 'Enable' : 'Disable'}
               </button>
@@ -698,7 +698,7 @@ export function ChannelRow({
               <button
                 onClick={handleDelete}
                 disabled={deleteMutation.isPending}
-                className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
+                className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
               >
                 Delete
               </button>
@@ -747,7 +747,7 @@ export function ChannelRow({
               <button
                 onClick={handleSave}
                 disabled={!canUpdate || updateMutation.isPending}
-                className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
               >
                 {updateMutation.isPending ? 'Saving…' : 'Save'}
               </button>
@@ -804,7 +804,7 @@ function FormField({
         readOnly={readOnly}
         placeholder={placeholder}
         aria-label={label}
-        className={clsx('tau-field', cls, readOnly && 'opacity-60')}
+        className={clsx('ficus-field', cls, readOnly && 'opacity-60')}
       />
     </div>
   )

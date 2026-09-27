@@ -38,7 +38,7 @@ test('missing installation gives a prominent grant-access action and explicit pe
   expect(container.textContent).toContain('Setup needs repository access')
   expect(container.textContent).toContain('The App is not installed on example')
   const link = container.querySelector('a')!
-  expect(link.className).toContain('tau-button-primary')
+  expect(link.className).toContain('ficus-button-primary')
   expect(link.href).toBe('https://github.com/apps/tau-integration/installations/new')
   expect(link.target).toBe('_blank')
 })

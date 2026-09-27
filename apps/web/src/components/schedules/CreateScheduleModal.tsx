@@ -182,7 +182,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               </code>
               <button
                 onClick={() => copyToClipboard(webhookResult.token)}
-                className="tau-button p-1.5 text-muted hover:text-primary bg-chrome-toggle-thumb dark:bg-status-neutral-900 rounded border border-status-review-200 dark:border-status-review-800"
+                className="ficus-button p-1.5 text-muted hover:text-primary bg-chrome-toggle-thumb dark:bg-status-neutral-900 rounded border border-status-review-200 dark:border-status-review-800"
                 title="Copy token"
               >
                 <ClipboardIcon className="w-4 h-4" />
@@ -199,7 +199,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               </code>
               <button
                 onClick={() => copyToClipboard(webhookResult.webhookUrl)}
-                className="tau-button p-1.5 text-muted hover:text-primary bg-surface-secondary rounded border border-th-border"
+                className="ficus-button p-1.5 text-muted hover:text-primary bg-surface-secondary rounded border border-th-border"
                 title="Copy URL"
               >
                 <ClipboardIcon className="w-4 h-4" />
@@ -220,7 +220,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <div className="flex justify-end pt-2">
             <button
               onClick={onClose}
-              className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover transition-colors"
+              className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover transition-colors"
             >
               Done
             </button>
@@ -240,7 +240,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary placeholder:text-muted"
+            className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary placeholder:text-muted"
             placeholder="Daily standup reminder"
             required
           />
@@ -257,7 +257,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
                   setScopeType(e.target.value as ScheduleScopeType)
                   setScopeId('')
                 }}
-                className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
+                className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
               >
                 <option value="squad">Squad</option>
                 <option value="agent">Agent</option>
@@ -271,7 +271,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
                 <select
                   value={scopeId}
                   onChange={(e) => setScopeId(e.target.value)}
-                  className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
+                  className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
                   required
                 >
                   <option value="">Select a squad...</option>
@@ -286,7 +286,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
                   type="text"
                   value={scopeId}
                   onChange={(e) => setScopeId(e.target.value)}
-                  className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary placeholder:text-muted"
+                  className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary placeholder:text-muted"
                   placeholder="Agent ID"
                   required
                 />
@@ -301,7 +301,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <select
             value={scheduleType}
             onChange={(e) => setScheduleType(e.target.value as ScheduleType)}
-            className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
+            className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
           >
             <option value="interval">Interval</option>
             <option value="cron">Cron</option>
@@ -322,7 +322,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               type="text"
               value={interval}
               onChange={(e) => setInterval(e.target.value)}
-              className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary placeholder:text-muted"
+              className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary placeholder:text-muted"
               placeholder="1h, 30m, 1d"
               required
             />
@@ -337,7 +337,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               type="text"
               value={cron}
               onChange={(e) => setCron(e.target.value)}
-              className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary placeholder:text-muted"
+              className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary placeholder:text-muted"
               placeholder="0 9 * * *"
               required
             />
@@ -352,7 +352,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               type="datetime-local"
               value={runAt}
               onChange={(e) => setRunAt(e.target.value)}
-              className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
+              className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
               required
             />
           </div>
@@ -364,7 +364,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
             type="datetime-local"
             value={expiresAt}
             onChange={(e) => setExpiresAt(e.target.value)}
-            className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
+            className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
           />
         </div>
 
@@ -374,7 +374,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <select
             value={actionType}
             onChange={(e) => setActionType(e.target.value as ScheduleActionType)}
-            className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
+            className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface-secondary text-primary"
           >
             <option value="inbox_message">Send Inbox Message</option>
             {isSquadScope && <option value="spawn_agent">Spawn Agent</option>}
@@ -403,7 +403,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
                   type="text"
                   value={targetAgentId}
                   onChange={(e) => setTargetAgentId(e.target.value)}
-                  className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted"
+                  className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted"
                   required={!targetManager}
                 />
               </div>
@@ -414,7 +414,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
                 type="text"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted"
+                className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted"
               />
             </div>
             <div>
@@ -422,7 +422,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted min-h-[80px]"
+                className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted min-h-[80px]"
                 required
               />
             </div>
@@ -436,7 +436,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               <select
                 value={agentTypeId}
                 onChange={(e) => setAgentTypeId(e.target.value)}
-                className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary"
+                className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary"
                 required
               >
                 <option value="">Select agent type...</option>
@@ -452,7 +452,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted min-h-[80px]"
+                className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted min-h-[80px]"
                 required
               />
             </div>
@@ -467,7 +467,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
                 type="text"
                 value={wsTitle}
                 onChange={(e) => setWsTitle(e.target.value)}
-                className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted"
+                className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted"
                 required
               />
             </div>
@@ -476,7 +476,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               <textarea
                 value={wsDescription}
                 onChange={(e) => setWsDescription(e.target.value)}
-                className="tau-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted min-h-[60px]"
+                className="ficus-field w-full px-3 py-2 border border-th-border rounded bg-surface text-primary placeholder:text-muted min-h-[60px]"
               />
             </div>
             <WorkflowPicker
@@ -534,14 +534,14 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="tau-button px-4 py-2 text-secondary hover:text-primary rounded hover:bg-surface-hover transition-colors"
+            className="ficus-button px-4 py-2 text-secondary hover:text-primary rounded hover:bg-surface-hover transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-50 transition-colors"
+            className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
             {createMutation.isPending ? 'Creating...' : 'Create Schedule'}
           </button>

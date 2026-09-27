@@ -39,7 +39,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
   const openHere = invite.forAdmin && token !== null && (desktopSupportsOpenHere || viewerIsBootstrap)
 
   return (
-    <div className="tau-section py-4 space-y-2 border-status-success-300 dark:border-status-success-700">
+    <div className="ficus-section py-4 space-y-2 border-status-success-300 dark:border-status-success-700">
       <p className="text-sm font-medium text-primary">Invite link created</p>
       <p className="text-xs text-muted">
         Email isn’t configured, so share this one-time link with the invitee. It takes them straight to passkey setup
@@ -51,7 +51,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
         </code>
         <button
           onClick={() => navigator.clipboard?.writeText(invite.url)}
-          className="tau-button px-2 py-1.5 text-xs font-medium text-secondary bg-surface-secondary rounded hover:bg-surface-hover shrink-0"
+          className="ficus-button px-2 py-1.5 text-xs font-medium text-secondary bg-surface-secondary rounded hover:bg-surface-hover shrink-0"
         >
           Copy
         </button>
@@ -61,7 +61,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
           <button
             type="button"
             onClick={() => navigate(`/register?token=${encodeURIComponent(token)}`)}
-            className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover shrink-0"
+            className="ficus-button ficus-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover shrink-0"
           >
             Open in Tau
           </button>
@@ -72,7 +72,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
           </p>
         </div>
       )}
-      <button onClick={onDone} className="tau-button text-xs text-muted hover:text-primary">
+      <button onClick={onDone} className="ficus-button text-xs text-muted hover:text-primary">
         Done
       </button>
     </div>

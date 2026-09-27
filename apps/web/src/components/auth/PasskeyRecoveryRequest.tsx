@@ -46,7 +46,7 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
           account and signs out its other sessions.
         </p>
         <p className="text-xs text-secondary text-center">
-          <button type="button" onClick={onBack} className="tau-button text-accent-light hover:underline">
+          <button type="button" onClick={onBack} className="ficus-button text-accent-light hover:underline">
             Back to login
           </button>
         </p>
@@ -70,12 +70,12 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
         autoFocus
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
+        className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
       />
       <button
         type="submit"
         disabled={!email.trim() || loading}
-        className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+        className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
       >
         {loading ? 'Sending…' : 'Send recovery link'}
       </button>
@@ -85,7 +85,7 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
         </p>
       )}
       <p className="text-xs text-secondary text-center">
-        <button type="button" onClick={onBack} className="tau-button text-accent-light hover:underline">
+        <button type="button" onClick={onBack} className="ficus-button text-accent-light hover:underline">
           Back to login
         </button>
       </p>

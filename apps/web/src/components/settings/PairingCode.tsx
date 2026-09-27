@@ -43,7 +43,7 @@ export function PairingCode({
       <div className="flex items-center gap-2">
         <code className="rounded bg-surface-hover px-2 py-1 text-xs select-all">{pairing.code}</code>
         <button
-          className="tau-button text-xs text-secondary"
+          className="ficus-button text-xs text-secondary"
           onClick={() => navigator.clipboard.writeText(pairing.code)}
         >
           Copy code
@@ -60,7 +60,7 @@ export function PairingCode({
       <button
         onClick={onRegenerate}
         disabled={regenerating}
-        className="tau-button text-xs text-secondary hover:text-primary"
+        className="ficus-button text-xs text-secondary hover:text-primary"
       >
         Regenerate
       </button>
