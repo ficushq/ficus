@@ -8,6 +8,15 @@ describe('garden settings patches', () => {
     expect(validateGardenSettingsPatch({})).toEqual({ ok: true, patch: {} })
   })
 
+  test('accept sound on or off, together with a style', () => {
+    expect(validateGardenSettingsPatch({ sound: true })).toEqual({ ok: true, patch: { sound: true } })
+    expect(validateGardenSettingsPatch({ style: 'futurist', sound: false })).toEqual({
+      ok: true,
+      patch: { style: 'futurist', sound: false },
+    })
+    for (const sound of ['on', 1, null, {}]) expect(validateGardenSettingsPatch({ sound }).ok).toBe(false)
+  })
+
   test('reject unknown keys, invalid values and non-objects', () => {
     for (const style of ['grid', 'farm', '', 'NOSTALGIC', null, 1, {}])
       expect(validateGardenSettingsPatch({ style }).ok).toBe(false)
@@ -22,6 +31,8 @@ describe('reading stored settings', () => {
     expect(readGardenSettings({ style: 'sketchbook' })).toEqual({ style: 'sketchbook' })
     expect(readGardenSettings({ style: 'sketchbook', retired: true })).toEqual({ style: 'sketchbook' })
     expect(readGardenSettings({ style: 'grid' })).toEqual({})
+    expect(readGardenSettings({ sound: false, style: 'blueprint' })).toEqual({ sound: false, style: 'blueprint' })
+    expect(readGardenSettings({ sound: 'on' })).toEqual({})
     expect(readGardenSettings(null)).toEqual({})
     expect(readGardenSettings('style')).toEqual({})
   })

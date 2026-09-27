@@ -51,6 +51,13 @@ test('a change leaves the settings it does not name as they were', async () => {
   expect((await patch(a, { expectedUserId: a.id, settings: { style: 'futurist' } })).status).toBe(200)
   const unchanged = await patch(a, { expectedUserId: a.id, settings: {} })
   expect(await unchanged.json()).toEqual({ userId: a.id, settings: { style: 'futurist' } })
+  // Two clients saving different settings: neither undoes the other.
+  expect((await patch(a, { expectedUserId: a.id, settings: { sound: true } })).status).toBe(200)
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, settings: { style: 'futurist', sound: true } })
+  expect((await patch(a, { expectedUserId: a.id, settings: { style: 'blueprint' } })).status).toBe(200)
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, settings: { style: 'blueprint', sound: true } })
+  expect((await patch(a, { expectedUserId: a.id, settings: { sound: false } })).status).toBe(200)
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, settings: { style: 'blueprint', sound: false } })
 })
 
 test('stored keys the current code does not know are not returned', async () => {
@@ -84,6 +91,7 @@ test('rejects unknown settings, invalid values, malformed and oversized bodies w
     { style: '' },
     { style: null },
     { style: 'blueprint', zoom: 2 },
+    { sound: 'on' },
     null,
     'blueprint',
     ['style'],

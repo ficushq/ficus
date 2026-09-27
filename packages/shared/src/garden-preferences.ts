@@ -13,6 +13,8 @@ export type GardenStyle = (typeof GARDEN_STYLES)[number]
 
 export interface GardenSettings {
   style?: GardenStyle
+  /** Chimes when the farm changes (off unless turned on). */
+  sound?: boolean
 }
 
 export interface MyGardenPreferences {
@@ -27,6 +29,7 @@ export function isGardenStyle(value: unknown): value is GardenStyle {
 /** Each setting's check: a new setting is a new entry here (and in GardenSettings). */
 const CHECKS: { [K in keyof Required<GardenSettings>]: (value: unknown) => value is GardenSettings[K] } = {
   style: isGardenStyle,
+  sound: (value): value is boolean => typeof value === 'boolean',
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>

@@ -1,6 +1,7 @@
 /**
  * Tiny synthesized chimes (Web Audio, no asset files). Off unless the player
- * turns sound on; the choice is remembered under the garden's own prefix.
+ * turns sound on; the choice is remembered in this browser under the garden's
+ * own prefix, and on the account (see useFarmSounds.ts).
  */
 export type Chime = 'needsYou' | 'planted' | 'harvested'
 
