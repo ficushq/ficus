@@ -29,7 +29,7 @@ export function FarmList({
   const robotsOf = (y: FarmLayout['yards'][number]): RobotPlacement[] => [
     ...(y.farmer ? [y.farmer] : []),
     ...y.plots.flatMap((p) => (p.tender ? [p.tender] : [])),
-    ...y.bench.robots,
+    ...y.stand.robots,
   ]
 
   return (

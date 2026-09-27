@@ -755,3 +755,9 @@ a.g-pr-link:focus-visible {
   width: 15px;
   height: 15px;
 }
+
+.g-yard-places {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 2px dashed #d9c7a3;
+}

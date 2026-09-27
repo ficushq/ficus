@@ -13,7 +13,7 @@ export function findRobot(layout: FarmLayout, agentId: string): RobotPlacement |
     if (yard.farmer?.agent.id === agentId) return yard.farmer
     for (const p of yard.plots) if (p.tender?.agent.id === agentId) return p.tender
     // Hut robots aren't on the field (one only peeks out of the doorway).
-    for (const r of yard.bench.robots) if (r.agent.id === agentId) return r
+    for (const r of yard.stand.robots) if (r.agent.id === agentId) return r
   }
   return layout.porch.robots.find((r) => r.agent.id === agentId) ?? null
 }

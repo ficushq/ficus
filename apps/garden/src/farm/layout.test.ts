@@ -84,7 +84,7 @@ function busyFarm(squadCount: number, streamsPerSquad: number, agentsPerSquad: n
 function allRobots(layout: FarmLayout): RobotPlacement[] {
   const robots = [...layout.porch.robots]
   for (const yard of layout.yards) {
-    robots.push(...yard.dock.robots, ...yard.bench.robots)
+    robots.push(...yard.dock.robots, ...yard.stand.robots)
     if (yard.farmer) robots.push(yard.farmer)
     for (const plot of yard.plots) if (plot.tender) robots.push(plot.tender)
   }
@@ -290,7 +290,7 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.farmer!.i).toBeGreaterThan(yard!.sign.i)
     expect(yard!.farmer!.j).toBeGreaterThan(yard!.j0 + yard!.h)
     expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 1.0, j: yard!.j0 + 0.45 })
-    expect(yard!.bench.i).toBeLessThan(yard!.i0)
+    expect(yard!.stand.i).toBeLessThan(yard!.i0)
   })
 
   it('falls back to a manager-typed agent in the squad', () => {
@@ -318,24 +318,32 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.dock.j).toBeLessThan(yard!.j0 + 1)
   })
 
-  it('benches up to two recent consultants', () => {
-    const consultant = (id: string, status: Agent['status'], updatedAt = at(0)) =>
-      makeAgent({ id, squadId: 'sq', agentTypeId: 'consultant', status, updatedAt })
+  it('lists the consultant chats people started at the stand, with one on duty behind the counter', () => {
+    const consultant = (id: string, status: Agent['status'], origin?: string) =>
+      makeAgent({
+        id,
+        squadId: 'sq',
+        agentTypeId: 'consultant',
+        status,
+        context: { scope: { type: 'consultant', id: 'sq' }, ...(origin ? { origin } : {}) },
+      })
     const agents = [
       boss,
-      consultant('c1', 'idle'),
-      consultant('c2', 'active'),
-      consultant('c3', 'idle'),
-      consultant('nap-recent', 'dormant', new Date(NOW - 60 * 60 * 1000)),
-      consultant('nap-old', 'dormant', new Date(NOW - 3 * 24 * 60 * 60 * 1000)),
+      consultant('c1', 'idle', 'user'),
+      consultant('c2', 'active', 'user'),
+      consultant('legacy', 'idle'),
+      consultant('asleep', 'dormant', 'user'),
+      consultant('gone', 'terminated', 'user'),
+      consultant('slack', 'idle', 'channel'),
+      consultant('task', 'idle', 'assistant'),
+      consultant('event', 'idle', 'integration'),
     ]
     const [yard] = layoutFarm(farm({ squads: [squad], agents })).yards
-    expect(yard!.bench.robots.map((r) => [r.agent.id, r.role, r.prop])).toEqual([
-      ['c1', 'consultant', 'clip'],
-      ['c2', 'consultant', 'clip'],
-    ])
-    // c3 plus the consultant who dozed off within the last day; the long-dormant one is gone.
-    expect(yard!.bench.overflow).toBe(2)
+    expect([...yard!.stand.ids!].sort()).toEqual(['asleep', 'c1', 'c2', 'legacy'])
+    expect(yard!.stand.robots).toHaveLength(1)
+    expect(yard!.stand.robots[0]).toMatchObject({ role: 'consultant', prop: 'clip' })
+    expect(yard!.stand.robots[0]!.agent.status).not.toBe('dormant')
+    expect(yard!.stand.overflow).toBe(3)
   })
 })
 
@@ -379,20 +387,9 @@ describe('who is drawn', () => {
     expect(allRobots(layout).some((r) => r.agent.parentAgentId)).toBe(false)
   })
 
-  it('puts up to three live assistants on the porch', () => {
-    const assistants = ['d', 'b', 'a', 'e', 'c'].map((id) => makeAgent({ id, squadId: null, agentTypeId: 'assistant' }))
-    assistants.push(makeAgent({ id: 'zz', squadId: null, status: 'dormant' }))
-    const { porch } = layoutFarm(farm({ assistants }))
-    expect(porch.robots.map((r) => [r.agent.id, r.role, r.look.antenna])).toEqual([
-      ['a', 'assistant', 'bulb'],
-      ['b', 'assistant', 'bulb'],
-      ['c', 'assistant', 'bulb'],
-    ])
-    expect(porch.overflow).toBe(2)
-    for (const robot of porch.robots) {
-      expect(Math.floor(robot.i)).toBeGreaterThanOrEqual(HOMESTEAD.minI)
-      expect(Math.floor(robot.i)).toBeLessThanOrEqual(HOMESTEAD.maxI)
-    }
+  it('leaves the porch empty: the Assistant lives in the toolbar', () => {
+    const assistants = ['a', 'b'].map((id) => makeAgent({ id, squadId: null, agentTypeId: 'assistant' }))
+    expect(layoutFarm(farm({ assistants })).porch.robots).toEqual([])
   })
 })
 
@@ -534,8 +531,8 @@ describe('performance', () => {
   })
 })
 
-describe('bench order', () => {
-  it('seats consultants waiting on you first, then the most recently active', () => {
+describe('stand order', () => {
+  it('lists consultants waiting on you first, then the most recently active', () => {
     const sq = makeSquad({ id: 'sq', managerAgentId: null })
     const consultant = (id: string, minutes: number, status: Agent['status'] = 'idle') =>
       makeAgent({ id, squadId: 'sq', agentTypeId: 'consultant', status, updatedAt: at(minutes), lastMessageAt: null })
@@ -555,7 +552,7 @@ describe('bench order', () => {
       pendingActions: [],
       now: at(60).getTime(),
     }).yards
-    expect(yard!.bench.robots.map((r) => r.agent.id)).toEqual(['asking', 'newest'])
-    expect(yard!.bench.overflow).toBe(2)
+    expect(yard!.stand.ids).toEqual(['asking', 'newest', 'mid', 'old'])
+    expect(yard!.stand.robots.map((r) => r.agent.id)).toEqual(['asking'])
   })
 })

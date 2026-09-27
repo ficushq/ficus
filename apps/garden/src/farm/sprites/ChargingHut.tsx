@@ -20,7 +20,7 @@ function p(i: number, j: number, up = 0): string {
 /**
  * A little charging hut where a yard's idle robots rest: solar panels on the
  * roof, a battery gauge that fills with how many are
- * charging, a plug cable, and (when anyone's in) a glowing doorway with one
+ * charging (it runs on sunshine), and (when anyone's in) a glowing doorway with one
  * robot peeking out. It's the same size whatever the count; the roof shows it.
  * Anchored at the centre of its footprint on the ground.
  */
@@ -36,26 +36,6 @@ export function ChargingHut({ count, peek }: { count: number; peek?: RobotLook }
   return (
     <g>
       <Shadow rx={62} ry={22} />
-      {/* plug cable snaking out to the grass */}
-      <path
-        d={`M${iso(W, 0.2)[0]} ${iso(W, 0.2)[1] - 6} q18 10 10 22 q-6 10 12 12`}
-        fill="none"
-        stroke={INK}
-        strokeWidth={3.6}
-        strokeLinecap="round"
-      />
-      <path
-        d={`M${iso(W, 0.2)[0]} ${iso(W, 0.2)[1] - 6} q18 10 10 22 q-6 10 12 12`}
-        fill="none"
-        stroke="#4a4f55"
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-      <g transform={`translate(${iso(W, 0.2)[0] + 22} ${iso(W, 0.2)[1] + 28})`}>
-        <rect x={-4} y={-5} width={9} height={7} rx={2} fill="#e0a93b" className="g-ol2" />
-        <path d="M5 -3.5 h3 M5 0 h3" stroke={INK} strokeWidth={1.4} strokeLinecap="round" />
-      </g>
-
       {/* walls */}
       <polygon points={[p(-W, D), p(W, D), p(W, D, WALL), p(-W, D, WALL)].join(' ')} fill="#eef3e4" className="g-ol" />
       <polygon points={[p(W, D), p(W, -D), p(W, -D, WALL), p(W, D, WALL)].join(' ')} fill="#cfdac0" className="g-ol" />

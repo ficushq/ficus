@@ -9,7 +9,7 @@ const layout = {
       squad: { id: 'sq' },
       plots: [],
       farmer: null,
-      bench: { i: 0, j: 0, robots: [], overflow: 0 },
+      stand: { i: 0, j: 0, robots: [], overflow: 0 },
       dock: { i: 7, j: 2, robots: [], overflow: 0, ids: ['resting'] },
       sign: { i: 3, j: 5 },
     },

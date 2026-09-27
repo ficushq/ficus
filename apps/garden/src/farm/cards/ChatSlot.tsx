@@ -28,7 +28,7 @@ function Portrait({ agentId }: { agentId: string }) {
       type="button"
       className="g-chat-avatar"
       aria-label={`Open ${agentLabel(agent).primary}'s card`}
-      onClick={() => env.select({ kind: 'robot', agentId })}
+      onClick={() => env.select(agentId === PORCH_ASSISTANT_ID ? { kind: 'assistant' } : { kind: 'robot', agentId })}
     >
       <RobotAvatar
         agent={agent}

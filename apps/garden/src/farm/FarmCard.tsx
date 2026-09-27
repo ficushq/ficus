@@ -9,6 +9,8 @@ import { PlotCard } from './cards/PlotCard'
 import { RobotCard } from './cards/RobotCard'
 import { YardCard } from './cards/YardCard'
 import { HutCard } from './cards/HutCard'
+import { StandCard } from './cards/StandCard'
+import { AssistantCard } from './cards/AssistantCard'
 import { SeedShedCard } from './cards/SeedShedCard'
 import { MailboxCard } from './cards/MailboxCard'
 import { webAppUrl } from '../api/base'
@@ -24,9 +26,11 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
     case 'robot': {
       const r = findRobot(layout, s.agentId)
       if (r) return iso(r.i, r.j)
-      // Resting robots aren't on the field; their card opens by the charging hut.
+      // Resting robots and consultants aren't on the field; their card opens by the hut or the stand.
       const hut = layout.yards.find((y) => y.dock.ids?.includes(s.agentId))
-      return hut ? iso(hut.dock.i, hut.dock.j) : null
+      if (hut) return iso(hut.dock.i, hut.dock.j)
+      const stand = layout.yards.find((y) => y.stand.ids?.includes(s.agentId))
+      return stand ? iso(stand.stand.i, stand.stand.j) : null
     }
     case 'yard': {
       const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
@@ -36,6 +40,13 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
       const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
       return y ? iso(y.dock.i, y.dock.j) : null
     }
+    case 'stand': {
+      const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
+      return y ? iso(y.stand.i, y.stand.j) : null
+    }
+    case 'assistant':
+      // Opens from the toolbar, not a spot on the farm (FarmScreen places it).
+      return null
     case 'mailbox':
       return iso(layout.mailbox.i, layout.mailbox.j)
     case 'farmhouse':
@@ -56,6 +67,8 @@ interface FarmCardProps {
   selection: Selection
   screen: readonly [number, number]
   viewport: { width: number; height: number }
+  /** Open beside the toolbar instead of next to something on the farm. */
+  dock?: 'tools'
   onClose: () => void
 }
 
@@ -63,7 +76,7 @@ interface FarmCardProps {
  * The wooden card that pops up next to whatever was clicked. On narrow
  * screens it becomes a bottom sheet.
  */
-export function FarmCard({ selection, screen, viewport, onClose }: FarmCardProps) {
+export function FarmCard({ selection, screen, viewport, onClose, dock }: FarmCardProps) {
   const ref = useRef<HTMLElement>(null)
   useEffect(() => {
     ref.current?.focus({ preventScroll: true })
@@ -74,17 +87,22 @@ export function FarmCard({ selection, screen, viewport, onClose }: FarmCardProps
   const top = Math.min(Math.max(72, screen[1] - 120), Math.max(72, viewport.height - 420))
   const style = narrow
     ? undefined
-    : {
-        left: right ? screen[0] + 44 : Math.max(16, screen[0] - 44 - CARD_W),
-        top,
-        maxHeight: viewport.height - top - 16,
-      }
+    : dock === 'tools'
+      ? { right: 14, bottom: 104, maxHeight: viewport.height - 104 - 72 }
+      : {
+          left: right ? screen[0] + 44 : Math.max(16, screen[0] - 44 - CARD_W),
+          top,
+          maxHeight: viewport.height - top - 16,
+        }
 
   return (
     <section
       ref={ref}
       tabIndex={-1}
-      className={clsx('g-card g-farm-card', narrow ? 'g-sheet' : right ? 'g-point-left' : 'g-point-right')}
+      className={clsx(
+        'g-card g-farm-card',
+        narrow ? 'g-sheet' : dock ? 'g-docked' : right ? 'g-point-left' : 'g-point-right'
+      )}
       style={style}
       aria-label="Details"
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
@@ -108,6 +126,10 @@ function CardBody({ selection }: { selection: Selection }) {
       return <YardCard squadId={selection.squadId} />
     case 'hut':
       return <HutCard squadId={selection.squadId} />
+    case 'stand':
+      return <StandCard squadId={selection.squadId} />
+    case 'assistant':
+      return <AssistantCard />
     case 'seedShed':
       return <SeedShedCard />
     case 'mailbox':

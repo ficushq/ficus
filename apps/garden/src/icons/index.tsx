@@ -1,3 +1,4 @@
+export { AssistantIcon } from './AssistantIcon'
 export { BasketIcon } from './BasketIcon'
 export { CloseIcon } from './CloseIcon'
 export { EnvelopeIcon } from './EnvelopeIcon'

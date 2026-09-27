@@ -17,6 +17,7 @@ import { useDesktopShellChrome } from '../desktop/shell'
 import type { Selection } from './selection'
 import type { LiveStatus } from '../live/LiveUpdates'
 import {
+  AssistantIcon,
   BasketIcon,
   EnvelopeIcon,
   FitIcon,
@@ -114,15 +115,21 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   }, [selection, layout, focus, selectionRef, sizeRef, cameraRef])
 
   const needsYou = input.pendingActions.length
+  const assistantTotals = input.assistantActivity?.totals
+  // Assistant conversations with a question for you or updates you haven't read.
+  const assistantNews = (assistantTotals?.needsInputTasks ?? 0) + (assistantTotals?.unreadUpdates ?? 0)
   const sound = useFarmSounds(layout, needsYou)
   const [listOpen, setListOpen] = useState(false)
   const growing = layout.yards.reduce((n, y) => n + y.plots.length, 0)
   // A robot reached from a list or a chat may not stand anywhere on the farm (finished, asleep):
   // its card opens where the previous card was, else mid-screen, rather than not at all.
   const lastAnchor = useRef<readonly [number, number] | null>(null)
-  const anchor = selection
-    ? (selectionAnchor(layout, selection) ?? lastAnchor.current ?? ([camera.x, camera.y] as const))
-    : null
+  const anchor =
+    selection?.kind === 'assistant'
+      ? ([camera.x, camera.y] as const)
+      : selection
+        ? (selectionAnchor(layout, selection) ?? lastAnchor.current ?? ([camera.x, camera.y] as const))
+        : null
   if (anchor) lastAnchor.current = anchor
   const toScreen = (x: number, y: number) =>
     [(x - camera.x) * camera.zoom + size.width / 2, (y - camera.y) * camera.zoom + size.height / 2] as const
@@ -140,13 +147,6 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
               mailboxCount={needsYou}
               onSelect={onSelect}
               onReveal={reveal}
-              porchBadge={
-                (input.assistantActivity?.totals.needsInputTasks ?? 0) > 0
-                  ? 'question'
-                  : (input.assistantActivity?.totals.unreadUpdates ?? 0) > 0
-                    ? 'news'
-                    : null
-              }
             />
           </g>
         </svg>
@@ -167,6 +167,14 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       </header>
 
       <nav className="g-tools" aria-label="Garden tools">
+        <ToolButton
+          label="Assistant"
+          badge={assistantNews || undefined}
+          badgeLabel="waiting"
+          onClick={() => setSelection({ kind: 'assistant' })}
+        >
+          <AssistantIcon />
+        </ToolButton>
         <ToolButton label="Mail" badge={needsYou} onClick={() => setSelection({ kind: 'mailbox' })}>
           <MailboxIcon />
         </ToolButton>
@@ -215,6 +223,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
           <FarmCard
             selection={selection}
             screen={toScreen(anchor[0], anchor[1])}
+            dock={selection.kind === 'assistant' ? 'tools' : undefined}
             viewport={size}
             onClose={() => setSelection(null)}
           />
@@ -253,6 +262,7 @@ function ToolButton({
   label,
   short,
   badge,
+  badgeLabel = 'need you',
   wideOnly,
   onClick,
   children,
@@ -260,6 +270,8 @@ function ToolButton({
   label: string
   short?: string
   badge?: number
+  /** How the badge count reads to screen readers ("3 need you"). */
+  badgeLabel?: string
   /** Hidden on phones, where pinch does the job. */
   wideOnly?: boolean
   onClick: () => void
@@ -269,7 +281,7 @@ function ToolButton({
     <button
       type="button"
       className={clsx('g-tool', wideOnly && 'g-tool-wide-only')}
-      aria-label={badge ? `${label}, ${badge} need you` : label}
+      aria-label={badge ? `${label}, ${badge} ${badgeLabel}` : label}
       onClick={onClick}
     >
       {children}

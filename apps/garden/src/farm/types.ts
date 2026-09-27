@@ -101,8 +101,8 @@ export interface YardLayout {
    * the first is placed (it peeks out of the doorway); `ids` has them all.
    */
   dock: CrowdSpot
-  /** Recent consultants on the bench. */
-  bench: CrowdSpot
+  /** The consulting stand: `ids` has every consultant chat started for the squad; one stands behind the counter. */
+  stand: CrowdSpot
   needsYou: number
 }
 

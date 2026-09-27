@@ -1,12 +1,12 @@
 import { memo, useMemo, type KeyboardEvent, type ReactNode } from 'react'
 import { depth, iso } from './iso'
-import type { BadgeKind, CrowdSpot, FarmLayout, PlotLayout, RobotPlacement } from './types'
+import type { FarmLayout, PlotLayout, RobotPlacement } from './types'
 import { plantStateLabel, roleLabel, selectionKey, type Selection } from './selection'
 import { agentLabel } from './agentLabels'
 import {
   Badge,
   badgeLift,
-  Bench,
+  ConsultingStand,
   Bush,
   ChargingHut,
   Compost,
@@ -42,8 +42,6 @@ interface SceneProps {
   onSelect: (selection: Selection) => void
   /** Keyboard focus landed on a sprite at this world point: bring it into view. */
   onReveal: (x: number, y: number) => void
-  /** What the porch assistant has waiting: a question for you, or unread updates. */
-  porchBadge: BadgeKind | null
 }
 
 /** Wraps a sprite at a world position as a keyboard- and screen-reader-reachable button. */
@@ -117,8 +115,7 @@ function buildDrawables(
   selected: string | null,
   mailboxCount: number,
   onSelect: (s: Selection) => void,
-  onReveal: (x: number, y: number) => void,
-  porchBadge: BadgeKind | null
+  onReveal: (x: number, y: number) => void
 ): { ground: ReactNode[]; items: Drawable[]; badges: ReactNode[] } {
   const yardGround: ReactNode[] = []
   const ground: ReactNode[] = []
@@ -146,10 +143,6 @@ function buildDrawables(
         </Hit>
       ),
     })
-  }
-
-  const crowd = (spot: CrowdSpot, keyPrefix: string) => {
-    spot.robots.forEach((r, n) => robot(r, n === spot.robots.length - 1 ? spot.overflow : 0, keyPrefix))
   }
 
   const plot = (p: PlotLayout, squadName: string) => {
@@ -239,19 +232,27 @@ function buildDrawables(
         </Hit>
       ),
     })
-    if (yard.bench.robots.length) {
-      const [bx, by] = iso(yard.bench.i, yard.bench.j)
-      items.push({
-        key: `bench:${squad.id}`,
-        depth: depth(yard.bench.i, yard.bench.j) - 0.01,
-        node: (
-          <g key={`bench:${squad.id}`} transform={`translate(${bx} ${by})`} aria-hidden="true">
-            <Bench />
-          </g>
-        ),
-      })
-      crowd(yard.bench, 'bench')
-    }
+    // The consulting stand: one sprite whatever the count; its card lists the squad's consultant chats.
+    const chats = yard.stand.ids?.length ?? 0
+    const [sx2, sy2] = iso(yard.stand.i, yard.stand.j)
+    items.push({
+      key: `stand:${squad.id}`,
+      depth: depth(yard.stand.i, yard.stand.j),
+      node: (
+        <Hit
+          onReveal={onReveal}
+          key={`stand:${squad.id}`}
+          x={sx2}
+          y={sy2}
+          label={`Consulting stand, ${chats ? `${chats} consultant chat${chats === 1 ? '' : 's'}` : 'no consultant chats yet'}`}
+          selected={selected === `stand:${squad.id}`}
+          box={[-58, -100, 116, 118]}
+          onActivate={() => onSelect({ kind: 'stand', squadId: squad.id })}
+        >
+          <ConsultingStand count={chats} host={yard.stand.robots[0]?.look} />
+        </Hit>
+      ),
+    })
   }
 
   const place = (
@@ -331,16 +332,6 @@ function buildDrawables(
       <Compost count={compost.count} />,
       [-30, -30, 60, 40]
     )
-  crowd(layout.porch, 'porch')
-  const porchRobot = layout.porch.robots[0]
-  if (porchRobot && porchBadge) {
-    const [px, py] = iso(porchRobot.i, porchRobot.j)
-    badges.push(
-      <g key="porch:badge" transform={`translate(${px} ${py - 62})`} aria-hidden="true">
-        <Badge kind={porchBadge} />
-      </g>
-    )
-  }
 
   for (const d of layout.decor) {
     const [x, y] = iso(d.i, d.j)
@@ -376,12 +367,11 @@ export const SceneWorld = memo(function SceneWorld({
   mailboxCount,
   onSelect,
   onReveal,
-  porchBadge,
 }: SceneProps) {
   const selected = selectionKey(selection)
   const { ground, items, badges } = useMemo(
-    () => buildDrawables(layout, selected, mailboxCount, onSelect, onReveal, porchBadge),
-    [layout, selected, mailboxCount, onSelect, onReveal, porchBadge]
+    () => buildDrawables(layout, selected, mailboxCount, onSelect, onReveal),
+    [layout, selected, mailboxCount, onSelect, onReveal]
   )
   const { bounds } = layout
   return (

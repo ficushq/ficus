@@ -7,6 +7,7 @@ import type {
   WorkStream,
 } from '@ficus/shared'
 import { cropFor, hash, propFor, robotLookFor, roleFor } from './appearance'
+import { isUserStartedConsultant } from './consultants'
 import { badgeFor, faceFor, haltedAgentIds, isAsleep, isRunning, plantStateFor } from './state'
 import type {
   CrowdSpot,
@@ -60,22 +61,9 @@ export const PLOT_PITCH = 1.5
 const PLOT_INSET = 0.25
 export const BOUNDS_MARGIN = 3
 export const MAX_DOCKED = 3
-export const MAX_BENCHED = 2
-export const MAX_PORCH = 3
 export const MAX_DECOR = 40
 /** Roughly one decor per this many free tiles. */
 export const FREE_TILES_PER_DECOR = 12
-
-const DAY_MS = 24 * 60 * 60 * 1000
-const BENCH_OFFSETS = [
-  [0, -0.3],
-  [0, 0.3],
-] as const
-const PORCH_OFFSETS = [
-  [-0.6, 0.1],
-  [0, 0],
-  [0.6, 0.1],
-] as const
 
 /** Yard size in tiles for n live streams: roughly 1.6:1, 3–6 columns, at least 2 rows. */
 export function yardSize(n: number): { w: number; h: number } {
@@ -113,14 +101,14 @@ export function occupiedTiles(layout: Omit<FarmLayout, 'decor' | 'bounds'>): Set
     fill(gate - 2, gate + 1, yard.j0 + yard.h, yard.j0 + yard.h + 1)
     around(yard.sign.i, yard.sign.j, 0)
     around(yard.dock.i, yard.dock.j, 1)
-    around(yard.bench.i, yard.bench.j, 0)
+    around(yard.stand.i, yard.stand.j, 0)
     for (const robot of robotsOfYard(yard)) around(robot.i, robot.j, 0)
   }
   return occupied
 }
 
 function robotsOfYard(yard: YardLayout): RobotPlacement[] {
-  const robots: RobotPlacement[] = [...yard.dock.robots, ...yard.bench.robots]
+  const robots: RobotPlacement[] = [...yard.dock.robots, ...yard.stand.robots]
   if (yard.farmer) robots.push(yard.farmer)
   for (const plot of yard.plots) if (plot.tender) robots.push(plot.tender)
   return robots
@@ -167,7 +155,6 @@ interface LiveStream {
 }
 
 export function layoutFarm(input: FarmInput): FarmLayout {
-  const now = input.now ?? Date.now()
   const halted = haltedAgentIds(input.pendingActions)
 
   // --- Lookup maps (one pass each) ---
@@ -319,47 +306,33 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       ids: docked.map((agent) => agent.id),
     }
 
-    const benchAt = { i: i0 - 1.1, j: j0 + h - 0.6 }
-    const recent = members.filter(
-      (agent) =>
-        agent.id !== managerId &&
-        roleFor(agent, squad) === 'consultant' &&
-        (!isAsleep(agent) || now - Math.max(toMs(agent.updatedAt), toMs(agent.lastMessageAt)) <= DAY_MS)
-    )
-    // Who sits: consultants waiting on you first, then the most recently active (ties by id, for stability).
+    // The consulting stand, outside the front-left corner: every consultant chat someone started for this
+    // squad (not channel or Assistant-task consultants), waiting-on-you first, then most recently active.
+    const standAt = { i: i0 - 1.25, j: j0 + h - 0.8 }
     const lastActive = (agent: Agent) => Math.max(toMs(agent.updatedAt), toMs(agent.lastMessageAt))
-    const seated = recent
-      .filter((agent) => !isAsleep(agent))
+    const consultants = members
+      .filter((agent) => agent.id !== managerId && agent.status !== 'terminated' && isUserStartedConsultant(agent))
       .sort(
         (a, b) =>
           Number(b.status === 'waiting-input') - Number(a.status === 'waiting-input') ||
           lastActive(b) - lastActive(a) ||
           byId(a, b)
       )
-      .slice(0, MAX_BENCHED)
-    const bench: CrowdSpot = {
-      ...benchAt,
-      robots: seated.map((agent, n) =>
-        place(agent, 'consultant', benchAt.i + BENCH_OFFSETS[n]![0], benchAt.j + BENCH_OFFSETS[n]![1])
-      ),
-      overflow: recent.length - seated.length,
+    // One awake consultant stands behind the counter; the stand's card lists them all.
+    const host = consultants.find((agent) => !isAsleep(agent))
+    const stand: CrowdSpot = {
+      ...standAt,
+      robots: host ? [place(host, 'consultant', standAt.i, standAt.j)] : [],
+      overflow: Math.max(0, consultants.length - (host ? 1 : 0)),
+      ids: consultants.map((agent) => agent.id),
     }
-    for (const robot of [...dock.robots, ...bench.robots]) drawn.add(robot.agent.id)
+    for (const robot of [...dock.robots, ...stand.robots]) drawn.add(robot.agent.id)
 
-    return { squad, i0, j0, w, h, plots, sign, farmer, dock, bench, needsYou }
+    return { squad, i0, j0, w, h, plots, sign, farmer, dock, stand, needsYou }
   })
 
-  // --- Porch ---
-  const assistants = [...new Map(input.assistants.map((agent) => [agent.id, agent])).values()]
-    .filter((agent) => !isAsleep(agent))
-    .sort(byId)
-  const porch: CrowdSpot = {
-    ...PORCH,
-    robots: assistants
-      .slice(0, MAX_PORCH)
-      .map((agent, n) => place(agent, 'assistant', PORCH.i + PORCH_OFFSETS[n]![0], PORCH.j + PORCH_OFFSETS[n]![1])),
-    overflow: Math.max(0, assistants.length - MAX_PORCH),
-  }
+  // The Assistant lives in the toolbar now, not on the farm; the porch stays empty.
+  const porch: CrowdSpot = { ...PORCH, robots: [], overflow: 0 }
 
   // --- Crates and compost along the bottom edge ---
   const bottomJ = yards.reduce((max, yard) => Math.max(max, yard.j0 + yard.h), HOMESTEAD.maxJ + 1)
@@ -396,7 +369,7 @@ export function layoutFarm(input: FarmInput): FarmLayout {
     include(yard.i0 + yard.w, yard.j0 + yard.h)
     include(yard.sign.i, yard.sign.j)
     include(yard.dock.i, yard.dock.j)
-    include(yard.bench.i, yard.bench.j)
+    include(yard.stand.i, yard.stand.j)
     for (const robot of robotsOfYard(yard)) include(robot.i, robot.j)
   }
   const used = { minI, maxI, minJ, maxJ }

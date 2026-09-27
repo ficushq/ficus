@@ -35,7 +35,7 @@ export function AssistantCard() {
       <div className="g-card-head">
         {agent && <RobotAvatar agent={agent} role="assistant" size={56} />}
         <div>
-          <p className="g-eyebrow">Porch</p>
+          <p className="g-eyebrow">Assistant</p>
           <h2 className="g-card-title">Your assistant</h2>
         </div>
       </div>
