@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { isHttpResponseError } from '@ficus/client-core'
 import { gardenQueries } from '../api/queries'
@@ -5,7 +6,21 @@ import { webAppUrl } from '../api/base'
 import { useLiveUpdates } from '../live/LiveUpdates'
 import { Farm } from './Farm'
 
+const DemoFarm = import.meta.env.DEV ? lazy(() => import('../dev/DemoFarm')) : null
+const isDemo = !!DemoFarm && new URLSearchParams(window.location.search).has('demo')
+
 export function App() {
+  if (isDemo && DemoFarm) {
+    return (
+      <Suspense fallback={null}>
+        <DemoFarm />
+      </Suspense>
+    )
+  }
+  return <SignedInGarden />
+}
+
+function SignedInGarden() {
   const session = useQuery(gardenQueries.session())
   const signedIn = session.isSuccess
   const live = useLiveUpdates(signedIn)

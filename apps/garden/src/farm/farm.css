@@ -1,0 +1,314 @@
+.g-farm {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--g-grass);
+}
+
+.g-viewport {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.g-viewport:active {
+  cursor: grabbing;
+}
+
+.g-scene {
+  display: block;
+}
+
+/* Interactive sprites */
+.g-hit {
+  cursor: pointer;
+  outline: none;
+}
+
+.g-hit-area {
+  fill: transparent;
+}
+
+.g-focus-ring {
+  fill: none;
+  stroke: #fff6c2;
+  stroke-width: 3;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.g-hit:focus-visible .g-focus-ring {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .g-hit:hover > :not(.g-hit-area):not(.g-focus-ring) {
+    filter: brightness(1.06);
+  }
+}
+
+.g-badges {
+  pointer-events: none;
+}
+
+/* Wooden panels shared by the HUD */
+.g-panel {
+  background: linear-gradient(#fffaf1 0 50%, #f1e2c4 50%);
+  border: 3px solid var(--g-ink);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 var(--g-ink);
+}
+
+.g-hud {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.g-hud > * {
+  pointer-events: auto;
+}
+
+.g-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px 5px 8px;
+  border-radius: 16px;
+  font: 900 22px/1 var(--g-font-display);
+  color: var(--g-leaf);
+  background: linear-gradient(#fffaf1, #f1e2c4);
+}
+
+.g-counters {
+  display: flex;
+  gap: 22px;
+  padding-left: 18px;
+}
+
+.g-counter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 30px;
+  font: 800 16px var(--g-font-display);
+  white-space: nowrap;
+}
+
+.g-counter small {
+  font: 600 12px var(--g-font-body);
+  color: var(--g-ink-soft);
+}
+
+.g-counter .g-hot {
+  color: var(--g-terracotta);
+}
+
+.g-counter-icon {
+  position: absolute;
+  left: -18px;
+  top: 50%;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 3px solid var(--g-ink);
+  border-radius: 50%;
+  color: var(--g-ink);
+  background-image: radial-gradient(circle at 35% 28%, rgb(255 255 255 / 0.6) 0 16%, transparent 17%);
+}
+
+.g-counter-icon .g-icon {
+  width: 20px;
+  height: 18px;
+}
+
+.g-tools {
+  position: absolute;
+  right: 14px;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 8px));
+  display: flex;
+  gap: 10px;
+}
+
+.g-tool {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: 3px solid var(--g-ink);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, #fffaf1, #efd9ad);
+  box-shadow: 0 4px 0 var(--g-ink);
+  color: var(--g-ink);
+  cursor: pointer;
+}
+
+.g-tool::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 6px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.55);
+  pointer-events: none;
+}
+
+.g-tool:active {
+  translate: 0 3px;
+  box-shadow: 0 1px 0 var(--g-ink);
+}
+
+.g-tool:focus-visible {
+  outline: 3px solid #fff3a8;
+  outline-offset: 3px;
+}
+
+.g-tool .g-icon {
+  width: 28px;
+  height: 26px;
+}
+
+.g-tool-label {
+  position: absolute;
+  bottom: -19px;
+  font: 800 11px var(--g-font-display);
+  color: #fffaf1;
+  text-shadow:
+    0 1.5px 0 var(--g-ink),
+    1.5px 0 0 var(--g-ink),
+    -1.5px 0 0 var(--g-ink),
+    0 -1.5px 0 var(--g-ink);
+  white-space: nowrap;
+}
+
+.g-tool-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  border: 2.5px solid var(--g-ink);
+  border-radius: 12px;
+  background: linear-gradient(#d86d3b, var(--g-terracotta));
+  color: #fff;
+  font: 900 13px/19px var(--g-font-display);
+  text-align: center;
+}
+
+.g-live-note {
+  position: absolute;
+  left: 14px;
+  bottom: 18px;
+  margin: 0;
+  padding: 6px 12px;
+  font: 600 13px var(--g-font-body);
+}
+
+/* The pop-up card */
+.g-farm-card {
+  position: absolute;
+  width: 320px;
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  padding: 16px 16px 14px;
+  outline: none;
+}
+
+.g-farm-card.g-sheet {
+  left: 8px;
+  right: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  width: auto;
+  max-height: 70%;
+  border-radius: 18px 18px 14px 14px;
+}
+
+.g-card-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 3px solid var(--g-ink);
+  border-radius: 50%;
+  background: linear-gradient(#d9743f, var(--g-terracotta));
+  color: #fff;
+  box-shadow: 0 3px 0 var(--g-ink);
+  cursor: pointer;
+}
+
+.g-card-close .g-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.g-eyebrow {
+  margin: 0 40px 2px 0;
+  font: 700 11px var(--g-font-body);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a5a33;
+}
+
+.g-card-title {
+  margin: 0 40px 8px 0;
+  font: 900 19px/1.15 var(--g-font-display);
+}
+
+.g-card-text {
+  margin: 8px 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #4a3524;
+}
+
+.g-state-tag {
+  display: inline-block;
+  margin: 0;
+  padding: 3px 10px;
+  border: 2px solid var(--g-ink);
+  border-radius: 999px;
+  background: #e9f3d6;
+  font: 700 12.5px var(--g-font-body);
+  color: #2e5238;
+}
+
+@media (max-width: 640px) {
+  .g-counters {
+    gap: 18px;
+  }
+
+  .g-counter small {
+    display: none;
+  }
+
+  .g-logo span {
+    display: none;
+  }
+
+  .g-tool {
+    width: 52px;
+    height: 52px;
+  }
+}

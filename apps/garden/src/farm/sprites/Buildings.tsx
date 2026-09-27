@@ -1,0 +1,350 @@
+import { iso, pt } from '../iso'
+import { FONT_DISPLAY, INK, Shadow } from './shared'
+
+/** Farmhouse footprint in tiles (w along i, d along j). Origin is its centre. */
+export const FARMHOUSE_FOOTPRINT = { w: 2.4, d: 2 } as const
+/** Seed shed footprint in tiles (w along i, d along j). Origin is its centre. */
+export const SEED_SHED_FOOTPRINT = { w: 1.5, d: 1.3 } as const
+
+/** Local point helper for a footprint whose corner (0,0) sits at (-w/2, -d/2) tiles from the origin. */
+function footprint(w: number, d: number) {
+  const i0 = -w / 2
+  const j0 = -d / 2
+  return {
+    p: (a: number, b: number, dy = 0) => pt(i0 + a, j0 + b, dy),
+    xy: (a: number, b: number) => iso(i0 + a, j0 + b),
+  }
+}
+
+/** Farmhouse with chimney smoke. Anchored at the footprint's centre ground point. */
+export function Farmhouse() {
+  const { w, d } = FARMHOUSE_FOOTPRINT
+  const h = 66
+  const { p, xy } = footprint(w, d)
+  const [px, py] = xy(w / 2, d / 2)
+  const peak = `${px},${py - h - 58}`
+  const [cx, cy] = xy(w * 0.72, d * 0.35)
+  const [bx0, by0] = xy(0, d)
+  const [bx1, by1] = xy(w, d)
+  const [kx, ky] = xy(1.38, d)
+  const [fx, fy] = xy(0.52, d)
+  const win = (a: number) => [p(a, d, -24), p(a + 0.45, d, -24), p(a + 0.45, d, -46), p(a, d, -46)].join(' ')
+  const sideWin = (b: number) => [p(w, b, -24), p(w, b + 0.45, -24), p(w, b + 0.45, -46), p(w, b, -46)].join(' ')
+  return (
+    <g>
+      <polygon points={`${p(0, d)} ${p(w, d)} ${p(w, d, -h)} ${p(0, d, -h)}`} fill="url(#g-wall)" className="g-ol" />
+      <polygon points={`${p(w, d)} ${p(w, 0)} ${p(w, 0, -h)} ${p(w, d, -h)}`} fill="#dccaa3" className="g-ol" />
+      {[1, 2, 3, 4].map((k) => (
+        <path key={k} d={`M${bx0} ${by0 - k * 13} L${bx1} ${by1 - k * 13}`} stroke="#d8c39a" strokeWidth={1.2} />
+      ))}
+      <polygon
+        points={`${p(-0.15, d + 0.15, -h)} ${p(w + 0.15, d + 0.15, -h)} ${peak}`}
+        fill="url(#g-roof)"
+        className="g-ol"
+      />
+      <polygon
+        points={`${p(w + 0.15, d + 0.15, -h)} ${p(w + 0.15, -0.15, -h)} ${peak}`}
+        fill="#8e4524"
+        className="g-ol"
+      />
+      <g transform={`translate(${cx} ${cy - h - 40})`}>
+        <rect x={-7} y={-26} width={14} height={30} fill="url(#g-brick)" className="g-ol" />
+        <rect x={-9} y={-30} width={18} height={6} fill="#7a3a1f" className="g-ol2" />
+        <g className="g-smoke">
+          <circle cy={-34} r={7} fill="#fff" opacity={0.85} />
+          <circle cy={-34} r={6} fill="#fff" opacity={0.85} />
+          <circle cy={-34} r={5} fill="#fff" opacity={0.85} />
+        </g>
+      </g>
+      <polygon
+        points={`${p(1, d)} ${p(1.45, d)} ${p(1.45, d, -34)} ${p(1, d, -34)}`}
+        fill="url(#g-door)"
+        className="g-ol"
+      />
+      <circle cx={kx} cy={ky - 17} r={1.8} fill="#e0a93b" />
+      <polygon points={win(0.3)} fill="url(#g-glass)" className="g-ol" />
+      <polygon points={win(1.8)} fill="url(#g-glass)" className="g-ol" />
+      <polygon points={sideWin(0.4)} fill="url(#g-glass)" className="g-ol" />
+      <polygon points={sideWin(1.2)} fill="url(#g-glass)" className="g-ol" />
+      <polygon
+        points={`${p(0.25, d, -22)} ${p(0.8, d, -22)} ${p(0.8, d, -17)} ${p(0.25, d, -17)}`}
+        fill="#b0582f"
+        className="g-ol2"
+      />
+      {[-12, -5, 2, 9].map((o, k) => (
+        <circle
+          key={o}
+          cx={fx + o}
+          cy={fy - 25 + o * 0.5}
+          r={3}
+          fill={['#f2c14e', '#e8897a', '#fffaf1', '#f2c14e'][k]}
+          className="g-ol2"
+        />
+      ))}
+    </g>
+  )
+}
+
+const PACKET_COLORS = ['#b0582f', '#e0a93b', '#8a9a5b']
+
+/** Seed shed with a crate of packets out front. Anchored at the footprint's centre ground point. */
+export function SeedShed() {
+  const { w, d } = SEED_SHED_FOOTPRINT
+  const h = 40
+  const { p, xy } = footprint(w, d)
+  const [px, py] = xy(w / 2, d / 2)
+  const peak = `${px},${py - h - 34}`
+  const [sx, sy] = xy(0.72, d)
+  const [cx, cy] = xy(1.25, d + 0.35)
+  return (
+    <g>
+      <polygon points={`${p(0, d)} ${p(w, d)} ${p(w, d, -h)} ${p(0, d, -h)}`} fill="url(#g-wood)" className="g-ol" />
+      <polygon points={`${p(w, d)} ${p(w, 0)} ${p(w, 0, -h)} ${p(w, d, -h)}`} fill="#94643a" className="g-ol" />
+      {[1, 2, 3].map((k) => {
+        const f = k / 4
+        const [x1, y1] = xy(w * f, d)
+        const [x2, y2] = xy(w, d * f)
+        return (
+          <g key={k}>
+            <path d={`M${x1} ${y1} v${-h}`} stroke="#8a5a33" strokeWidth={1} />
+            <path d={`M${x2} ${y2} v${-h}`} stroke="#744a2a" strokeWidth={1} />
+          </g>
+        )
+      })}
+      <polygon
+        points={`${p(-0.12, d + 0.12, -h)} ${p(w + 0.12, d + 0.12, -h)} ${peak}`}
+        fill="url(#g-roof-green)"
+        className="g-ol"
+      />
+      <polygon
+        points={`${p(w + 0.12, d + 0.12, -h)} ${p(w + 0.12, -0.12, -h)} ${peak}`}
+        fill="#2f5540"
+        className="g-ol"
+      />
+      <polygon points={`${p(0.45, d)} ${p(1, d)} ${p(1, d, -30)} ${p(0.45, d, -30)}`} fill="#4a3120" className="g-ol" />
+      <polygon
+        points={`${p(w, 0.35, -18)} ${p(w, 0.9, -18)} ${p(w, 0.9, -32)} ${p(w, 0.35, -32)}`}
+        fill="url(#g-glass)"
+        className="g-ol"
+      />
+      <g transform={`translate(${sx} ${sy - 40})`}>
+        <rect x={-19} y={-8} width={38} height={13} rx={3} fill="#fffaf1" className="g-ol2" />
+        <text y={2.6} textAnchor="middle" fontFamily={FONT_DISPLAY} fontWeight={900} fontSize={9} fill="#3f6b4f">
+          SEEDS
+        </text>
+      </g>
+      <g transform={`translate(${cx} ${cy})`}>
+        <Shadow rx={14} ry={4} />
+        <path d="M-12 0 V-9 H12 V0Z" fill="url(#g-wood)" className="g-ol" />
+        <path d="M-12 -4.5 H12" stroke="#8a5a33" strokeWidth={1.2} />
+        {PACKET_COLORS.map((c, k) => (
+          <g key={c} transform={`translate(${k * 7 - 10} ${-19 + (k % 2)}) rotate(${-8 + k * 8})`}>
+            <rect width={7} height={10} rx={1.2} fill="#fffaf1" className="g-ol2" />
+            <circle cx={3.5} cy={5.5} r={2.2} fill={c} />
+          </g>
+        ))}
+      </g>
+    </g>
+  )
+}
+
+/** Mailbox; the flag is up and a count badge shows only when there's mail. Anchored at the post's foot. */
+export function Mailbox({ count }: { count: number }) {
+  const has = count > 0
+  return (
+    <g>
+      <Shadow rx={16} ry={5} />
+      <rect x={-3.5} y={-40} width={7} height={40} fill="url(#g-wood)" className="g-ol" />
+      <g transform="translate(0 -40)">
+        {!has && <MailFlag up={false} />}
+        <path d="M-18 0 V-16 a12 12 0 0 1 12 -12 h12 a12 12 0 0 1 12 12 V0Z" fill="url(#g-terra)" className="g-ol" />
+        <path
+          d="M-12 -18 a8 8 0 0 1 8 -8"
+          stroke="#fff"
+          strokeOpacity={0.45}
+          strokeWidth={3}
+          fill="none"
+          strokeLinecap="round"
+        />
+        {has && <MailFlag up />}
+      </g>
+      {has && (
+        <g transform="translate(-20 -74)">
+          <circle r={13} fill="url(#g-badge-mail)" className="g-ol" />
+          <ellipse cx={-3} cy={-6} rx={6} ry={2.6} fill="#fff" opacity={0.5} />
+          <text
+            y={6}
+            textAnchor="middle"
+            fontFamily={FONT_DISPLAY}
+            fontWeight={900}
+            fontSize={count > 9 ? 13 : 16}
+            fill="#fff"
+            stroke={INK}
+            strokeWidth={2.4}
+            paintOrder="stroke"
+          >
+            {count > 99 ? '99+' : count}
+          </text>
+        </g>
+      )}
+    </g>
+  )
+}
+
+function MailFlag({ up }: { up: boolean }) {
+  // Pivot at the arm's foot; lowered, it lies flat along the box's side.
+  return (
+    <g transform={up ? undefined : 'rotate(90 19.5 -9)'}>
+      <rect x={18} y={-30} width={3} height={22} fill="#5e3f27" className="g-ol2" />
+      <path className={up ? 'g-flagwave g-ol2' : 'g-ol2'} d="M21 -30 h13 v9 h-13z" fill="#5d9a58" />
+    </g>
+  )
+}
+
+/** Harvest crates: up to 3 filled crates (one empty crate when count is 0). Anchored at the middle crate's foot. */
+export function Crates({ count }: { count: number }) {
+  const n = Math.max(1, Math.min(3, count))
+  const empty = count <= 0
+  return (
+    <g>
+      {Array.from({ length: n }, (_, k) => (
+        <g key={k} transform={`translate(${k * 20 - (n - 1) * 10} ${k % 2 ? -3 : 0})`}>
+          <Shadow rx={12} ry={4} />
+          {!empty &&
+            (k === 1 ? (
+              <>
+                <circle cx={-4} cy={-15} r={4.4} fill="url(#g-pumpkin)" className="g-ol2" />
+                <circle cx={4} cy={-15} r={4.4} fill="url(#g-pumpkin)" className="g-ol2" />
+              </>
+            ) : (
+              <>
+                <circle cx={-4} cy={-15} r={4} fill="url(#g-fruit)" className="g-ol2" />
+                <circle cx={4} cy={-15} r={4} fill="url(#g-fruit)" className="g-ol2" />
+                <circle cx={0} cy={-19} r={4} fill="url(#g-fruit)" className="g-ol2" />
+              </>
+            ))}
+          <path d="M-10 0 V-13 H10 V0Z" fill="url(#g-wood)" className="g-ol" />
+          <path d="M-10 -7 H10" stroke="#8a5a33" strokeWidth={1.4} />
+        </g>
+      ))}
+    </g>
+  )
+}
+
+/** Compost heap for canceled work; grows a little with the count. Anchored at the heap's centre. */
+export function Compost({ count }: { count: number }) {
+  const s = count <= 0 ? 0.72 : count < 3 ? 0.88 : 1
+  return (
+    <g>
+      <Shadow rx={22 * s} ry={6 * s} />
+      <g transform={`scale(${s})`}>
+        <path d="M-20 0 Q-16 -18 0 -20 Q16 -18 20 0Z" fill="url(#g-compost)" className="g-ol" />
+        {count > 0 && (
+          <path
+            d="M-8 -10 l4 -3 M4 -14 l4 2 M-2 -6 l3 -3 M8 -6 l3 -2"
+            stroke="#8a9a5b"
+            strokeWidth={2}
+            strokeLinecap="round"
+          />
+        )}
+      </g>
+    </g>
+  )
+}
+
+/**
+ * Solar charging pad where idle robots dock. Anchored at the pad's centre;
+ * the solar post stands behind it (up-right).
+ */
+export function ChargingDock({ count }: { count: number }) {
+  const on = count > 0
+  const lit = Math.min(3, Math.max(0, count))
+  return (
+    <g>
+      <Shadow rx={30} ry={11} />
+      {/* solar post, behind the pad */}
+      <g transform="translate(24 -12)">
+        <rect x={-2.5} y={-30} width={5} height={30} fill="url(#g-metal)" className="g-ol" />
+        {[0, 1, 2].map((k) => (
+          <circle key={k} cy={-8 - k * 6} r={1.8} fill={k < lit ? '#9ff0c8' : '#4a4f55'} className="g-ol2" />
+        ))}
+        <g transform="translate(0 -32) scale(1.15)">
+          <path d="M-16 -2 L4 -12 L18 -4 L-2 6Z" fill="url(#g-solar)" className="g-ol" />
+          <path
+            d="M-9 -5.5 L11 2.5 M-6 2 L11 -8 M1 -1 L-3 -7"
+            stroke="#cfe3f5"
+            strokeOpacity={0.55}
+            strokeWidth={0.9}
+          />
+          <path d="M-12 -2.5 L2 -9.5" stroke="#fff" strokeOpacity={0.5} strokeWidth={1.6} strokeLinecap="round" />
+        </g>
+      </g>
+      {/* pad: a thick rounded diamond */}
+      <ellipse cy={0} rx={26} ry={12} fill="#6f777e" className="g-ol" />
+      <ellipse cy={-4} rx={26} ry={12} fill="url(#g-metal)" className="g-ol" />
+      <ellipse cy={-4} rx={18} ry={8} fill="#23282c" className="g-ol2" />
+      {on && (
+        <g className="g-glow">
+          <ellipse cy={-4} rx={15} ry={6.5} fill="#9ff0c8" opacity={0.35} />
+        </g>
+      )}
+      <path d="M2 -10 L-6 -3.5 H-0.5 L-3 2 L6 -5 H0.5Z" fill={on ? '#f2c14e' : '#8a8f94'} className="g-ol2" />
+    </g>
+  )
+}
+
+/** Wooden bench for visiting consultants; seat runs along j, back on the -i side. Anchored at the seat's centre. */
+export function Bench() {
+  const seatY = -12
+  const q = (a: number, b: number, dy: number) => {
+    const [x, y] = iso(a, b)
+    return `${x},${y + dy}`
+  }
+  const leg = (a: number, b: number) => {
+    const [x, y] = iso(a, b)
+    return (
+      <rect key={`${a},${b}`} x={x - 1.8} y={y + seatY} width={3.6} height={-seatY} fill="#7c5232" className="g-ol2" />
+    )
+  }
+  const A = 0.13
+  const L = 0.42
+  return (
+    <g>
+      <Shadow rx={28} ry={9} opacity={0.18} />
+      {leg(-A, -L + 0.06)}
+      {leg(A, -L + 0.06)}
+      {leg(-A, L - 0.06)}
+      {leg(A, L - 0.06)}
+      {/* backrest */}
+      {[-30, -22].map((dy) => (
+        <polygon
+          key={dy}
+          points={`${q(-A - 0.02, -L, dy)} ${q(-A - 0.02, L, dy)} ${q(-A - 0.02, L, dy + 5)} ${q(-A - 0.02, -L, dy + 5)}`}
+          fill="url(#g-wood)"
+          className="g-ol2"
+        />
+      ))}
+      {[-L + 0.06, L - 0.06].map((b) => {
+        const [x, y] = iso(-A - 0.02, b)
+        return <rect key={b} x={x - 1.6} y={y - 31} width={3.2} height={19} fill="#8a5a33" className="g-ol2" />
+      })}
+      {/* seat: top face then front edge */}
+      <polygon
+        points={`${q(-A, -L, seatY)} ${q(-A, L, seatY)} ${q(A, L, seatY)} ${q(A, -L, seatY)}`}
+        fill="#d09a5f"
+        className="g-ol2"
+      />
+      <polygon
+        points={`${q(A, -L, seatY)} ${q(A, L, seatY)} ${q(A, L, seatY + 3.5)} ${q(A, -L, seatY + 3.5)}`}
+        fill="#a06e40"
+        className="g-ol2"
+      />
+      <polygon
+        points={`${q(-A, L, seatY)} ${q(A, L, seatY)} ${q(A, L, seatY + 3.5)} ${q(-A, L, seatY + 3.5)}`}
+        fill="#8a5a33"
+        className="g-ol2"
+      />
+      <path d={`M${q(0, -L, seatY)} L${q(0, L, seatY)}`} stroke="#a06e40" strokeWidth={1} />
+    </g>
+  )
+}
