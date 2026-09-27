@@ -12,6 +12,10 @@ describe('requestHasDevAccess', () => {
     expect(requestHasDevAccess({ cookie: 'tau_dev_access=secret-token' }, 'secret-token')).toBe(false)
   })
 
+  test('the dev access header is x-ficus-dev-access-token', () => {
+    expect(DEV_ACCESS_HEADER).toBe('x-ficus-dev-access-token')
+  })
+
   test('rejects missing, malformed, and partial tokens', () => {
     expect(requestHasDevAccess({}, 'secret-token')).toBe(false)
     expect(requestHasDevAccess({ cookie: `${DEV_ACCESS_COOKIE}=secret` }, 'secret-token')).toBe(false)

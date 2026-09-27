@@ -1,4 +1,5 @@
 import { apiFetch, apiUrl } from './client'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 export interface AgentFileUpload {
   id: string
@@ -19,7 +20,7 @@ export function uploadAgentFile(
     const xhr = new XMLHttpRequest()
     xhr.open('POST', apiUrl(`/agents/${agentId}/files`))
     xhr.withCredentials = true
-    xhr.setRequestHeader('X-Tau-Csrf', '1')
+    xhr.setRequestHeader(CSRF_HEADER, '1')
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) options.onProgress?.(event.loaded / event.total)
     }

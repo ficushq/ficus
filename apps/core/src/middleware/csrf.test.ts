@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { Hono } from 'hono'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { csrfProtection } from './csrf'
 
 function app() {
@@ -24,9 +25,23 @@ describe('csrfProtection', () => {
   test('cookie-authed mutation WITH the CSRF header → allowed', async () => {
     const res = await app().request('/api/thing', {
       method: 'POST',
-      headers: { Cookie: 'ficus_session=t', 'X-Tau-Csrf': '1' },
+      headers: { Cookie: 'ficus_session=t', 'X-Ficus-Csrf': '1' },
     })
     expect(res.status).toBe(200)
+  })
+
+  test('the CSRF header is x-ficus-csrf', () => {
+    expect(CSRF_HEADER).toBe('x-ficus-csrf')
+  })
+
+  // The web app and the server ship together, so the pre-Ficus spelling is not
+  // read: a stale cached bundle fails one write, then reloads.
+  test('cookie-authed mutation carrying only the pre-Ficus CSRF header spelling → 403', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { Cookie: 'ficus_session=t', 'X-Tau-Csrf': '1' }, // D14
+    })
+    expect(res.status).toBe(403)
   })
 
   test('bearer-authed mutation is exempt (CLI/agents not cookie-driven)', async () => {
@@ -124,7 +139,7 @@ describe('csrfProtection', () => {
   test('cookie-authed mutation WITH the CSRF header, with a foreign Origin → allowed (cookie path unchanged)', async () => {
     const res = await app().request('/api/thing', {
       method: 'POST',
-      headers: { Cookie: 'ficus_session=t', 'X-Tau-Csrf': '1', Origin: 'https://evil.example.com' },
+      headers: { Cookie: 'ficus_session=t', 'X-Ficus-Csrf': '1', Origin: 'https://evil.example.com' },
     })
     expect(res.status).toBe(200)
   })

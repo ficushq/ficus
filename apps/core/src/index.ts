@@ -7,6 +7,7 @@ import {
   OPENAI_SERVICES_ENABLED_KEY,
 } from './services/integrations/openai-services/settings'
 import { Hono } from 'hono'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { upgradeWebSocket, websocket } from 'hono/bun'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -235,7 +236,7 @@ app.use(
     },
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Auth-Token', 'X-Tau-Csrf'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Auth-Token', CSRF_HEADER],
   })
 )
 

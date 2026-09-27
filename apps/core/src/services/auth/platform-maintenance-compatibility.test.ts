@@ -24,6 +24,33 @@ describe('legacy upgrade policy', () => {
   })
 })
 
+describe('platform maintenance header names', () => {
+  const wire = {
+    'x-ficus-maintenance-protocol': '1',
+    'x-ficus-caller-version': complete.callerVersion,
+    'x-ficus-instance-id': complete.instanceId,
+    'x-ficus-correlation-id': complete.correlationId,
+  }
+  const preFicusSpelling = (name: string) => name.replace(/^x-ficus-/, 'x-tau-') // D16
+
+  test('the four x-ficus-* headers parse to a complete context', () => {
+    expect(parsed(wire)).toEqual({ valid: true, allAbsent: false, context: complete })
+  })
+
+  // No bridge: the control plane upgrades first and sends only x-ficus-*. A
+  // not-yet-upgraded Core sees all four absent, which `observe` allows; this
+  // pins the mirror case, in which the new Core reads no pre-Ficus spelling.
+  test('the pre-Ficus spellings are not read: all four count as absent, which observe allows', () => {
+    const legacy = Object.fromEntries(Object.entries(wire).map(([name, value]) => [preFicusSpelling(name), value]))
+    const result = parsed(legacy)
+    expect(result).toMatchObject({ valid: true, allAbsent: true })
+    expect(decidePlatformMaintenanceCompatibility('observe', result)).toMatchObject({
+      allowed: true,
+      legacyUnknown: true,
+    })
+  })
+})
+
 describe('platform maintenance compatibility decision', () => {
   test('observe accepts wholly absent legacy context', () => {
     expect(decidePlatformMaintenanceCompatibility('observe', parsed())).toEqual({

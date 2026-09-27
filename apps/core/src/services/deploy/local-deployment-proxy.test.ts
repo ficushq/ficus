@@ -60,7 +60,7 @@ describe('localDeployment proxy', () => {
     )
 
     expect(response.status).toBe(404)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(fetchCalls).toHaveLength(0)
   })
 
@@ -76,7 +76,7 @@ describe('localDeployment proxy', () => {
     )
 
     expect(response.status).toBe(404)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(fetchCalls).toHaveLength(0)
   })
 
@@ -98,8 +98,8 @@ describe('localDeployment proxy', () => {
 
     expect(missing.status).toBe(401)
     expect(invalid.status).toBe(401)
-    expect(missing.headers.get('x-tau-app-proxy')).toBe('error')
-    expect(invalid.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(missing.headers.get('x-ficus-app-proxy')).toBe('error')
+    expect(invalid.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(fetchCalls).toHaveLength(0)
   })
 
@@ -169,7 +169,7 @@ describe('localDeployment proxy', () => {
         async () =>
           new Response('app-owned error', {
             status: 500,
-            headers: { 'x-tau-app-proxy': 'error', 'x-ficus-app-proxy': 'error', 'content-type': 'text/plain' },
+            headers: { 'x-tau-app-proxy': 'error', 'x-ficus-app-proxy': 'error', 'content-type': 'text/plain' }, // K4
           })
       ) as unknown as typeof fetch,
     })
@@ -181,7 +181,7 @@ describe('localDeployment proxy', () => {
     )
 
     expect(response.status).toBe(500)
-    expect(response.headers.get('x-tau-app-proxy')).toBeNull()
+    expect(response.headers.get('x-tau-app-proxy')).toBeNull() // K4
     // The control plane honours either spelling during the Ficus rename, so an app must not forge either.
     expect(response.headers.get('x-ficus-app-proxy')).toBeNull()
     expect(await response.text()).toBe('app-owned error')

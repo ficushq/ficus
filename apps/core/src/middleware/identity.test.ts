@@ -66,7 +66,7 @@ describe('identityMiddleware', () => {
 
     const wrong = await app.request(`/api/app/${prefix}/?_tau_token=wrong`)
     expect(wrong.status).toBe(401)
-    expect(wrong.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(wrong.headers.get('x-ficus-app-proxy')).toBe('error')
 
     const response = await app.request(`/api/app/${prefix}/?_tau_token=${encodeURIComponent(token)}`)
     expect(response.status).toBe(200)
@@ -112,7 +112,7 @@ describe('identityMiddleware', () => {
     const response = await app.request(`/api/app/${prefix}/?_tau_token=irrelevant`)
 
     expect(response.status).toBe(409)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(await response.json()).toEqual({ error: 'This app link is no longer unique — get a fresh URL.' })
 
     const wildcard = await app.request('/api/app/_/?_tau_token=irrelevant')

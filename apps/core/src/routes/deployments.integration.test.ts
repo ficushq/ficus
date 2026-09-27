@@ -120,7 +120,7 @@ describe('deployments localDeployment integration', () => {
     const response = await app.request(`/api/app/${prefix}/?_tau_token=irrelevant`)
 
     expect(response.status).toBe(409)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(await response.json()).toEqual({ error: 'This app link is no longer unique — get a fresh URL.' })
     expect(resolveLocalDeploymentTarget).not.toHaveBeenCalled()
   })
@@ -142,7 +142,7 @@ describe('deployments localDeployment integration', () => {
     const response = await app.request(localDeployment.urlPathOrHost)
 
     expect(response.status).toBe(409)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(await response.json()).toEqual({ error: 'This app link is no longer unique — get a fresh URL.' })
     expect(resolveLocalDeploymentTarget).not.toHaveBeenCalled()
   })

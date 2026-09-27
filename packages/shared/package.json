@@ -42,7 +42,9 @@
     "./platform-usage": "./src/platform-usage.ts",
     "./testDbUp": "./src/testDbUp.ts",
     "./identity": "./src/identity.ts",
-    "./legacy-env": "./src/legacy-env.ts"
+    "./legacy-env": "./src/legacy-env.ts",
+    "./box-user": "./src/box-user.ts",
+    "./http-headers": "./src/http-headers.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

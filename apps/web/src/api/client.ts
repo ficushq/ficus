@@ -1,4 +1,5 @@
 import { readApiErrorMessage } from '@ficus/client-core'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 export { readApiErrorMessage } from '@ficus/client-core'
 
 const BASE_URL = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '')
@@ -68,9 +69,7 @@ export function clearStoredToken(): void {
 // Auth now travels in an HttpOnly session cookie (sent via credentials: 'include');
 // the bearer-header path stays for CLI/agents. Mutating requests carry a CSRF header
 // — a cross-site caller can't set a custom header without a gated CORS preflight, so
-// it can't ride the ambient cookie.
-const CSRF_HEADER = 'X-Tau-Csrf'
-
+// it can't ride the ambient cookie. Its name is CSRF_HEADER (@ficus/shared/http-headers).
 /**
  * Fetch with the session cookie (credentials) + a CSRF header on mutations. Resolves
  * API paths (e.g. '/agents/123') against API_BASE; full URLs pass through.

@@ -3,6 +3,7 @@
 import { apiUrl } from './client'
 import { client } from './clientInstance'
 import type { ImageContent, ImageUploadTarget, UploadProgress } from '@ficus/client-core'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 export type { ImageContent, UploadProgress } from '@ficus/client-core'
 
@@ -74,7 +75,7 @@ function uploadSingleImage(
     xhr.open('POST', apiUrl('/images'))
     xhr.withCredentials = true // send the HttpOnly session cookie cross-origin
     xhr.setRequestHeader('Content-Type', 'application/json')
-    xhr.setRequestHeader('X-Tau-Csrf', '1')
+    xhr.setRequestHeader(CSRF_HEADER, '1')
 
     xhr.send(
       JSON.stringify({
