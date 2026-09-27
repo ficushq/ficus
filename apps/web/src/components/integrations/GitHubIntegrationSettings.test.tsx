@@ -177,7 +177,7 @@ test('Tau app users can grant repository access during onboarding and after conn
       })
       await waitFor(() => {
         const link = container.querySelector<HTMLAnchorElement>(
-          'a[href="https://github.com/apps/tau-integration/installations/new"]'
+          'a[href="https://github.com/apps/ficus-integration/installations/new"]'
         )
         expect(link?.textContent).toBe('Grant repository access')
         expect(link?.target).toBe('_blank')
@@ -198,7 +198,7 @@ test('custom GitHub Apps are not sent to install the Tau app', async () => {
       </QueryClientProvider>
     )
   )
-  expect(container.querySelector('a[href="https://github.com/apps/tau-integration/installations/new"]')).toBeNull()
+  expect(container.querySelector('a[href="https://github.com/apps/ficus-integration/installations/new"]')).toBeNull()
   expect(container.textContent).toContain('Install your GitHub App')
   expect(container.querySelector('a[href="https://github.com/settings/installations"]')).not.toBeNull()
 })

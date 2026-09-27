@@ -249,7 +249,7 @@ export function GitHubIntegrationSettings({
       </p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-accent-light">
         {usesTauApp && (
-          <a href="https://github.com/apps/tau-integration/installations/new" target="_blank" rel="noreferrer">
+          <a href="https://github.com/apps/ficus-integration/installations/new" target="_blank" rel="noreferrer">
             Grant repository access
           </a>
         )}
