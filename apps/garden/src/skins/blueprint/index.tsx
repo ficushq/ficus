@@ -1,0 +1,63 @@
+import '../line/motion.css'
+import './theme.css'
+import type { FarmSkin } from '../types'
+import { LineBadge } from '../line/sprites'
+import {
+  BlueprintAvatar,
+  BlueprintCompost,
+  BlueprintCrates,
+  BlueprintDecor,
+  BlueprintDefs,
+  BlueprintFarmhouse,
+  BlueprintGround,
+  BlueprintHut,
+  BlueprintMailbox,
+  BlueprintPlant,
+  BlueprintPlot,
+  BlueprintRobot,
+  BlueprintSeedShed,
+  BlueprintSign,
+  BlueprintStand,
+  BlueprintYard,
+} from './sprites'
+
+/** The farm as a drafting sheet: white line drawings on cyanotype blue, marked up in highlighter. */
+export const blueprintSkin: FarmSkin = {
+  id: 'blueprint',
+  label: 'Blueprint',
+  className: 'g-skin-blueprint',
+  Defs: BlueprintDefs,
+  Ground: BlueprintGround,
+  YardBack: BlueprintYard,
+  yardFront: () => [],
+  Sign: BlueprintSign,
+  PlotGround: BlueprintPlot,
+  Plant: BlueprintPlant,
+  // A ringed glyph on a stalk is already a drawing's detail callout.
+  Badge: LineBadge,
+  badgeLift: (plot) => (plot.state === 'review' ? -42 : -34),
+  Robot: BlueprintRobot,
+  Avatar: BlueprintAvatar,
+  avatarViewBox: '-21 -52 42 42',
+  Hut: BlueprintHut,
+  Stand: BlueprintStand,
+  Farmhouse: BlueprintFarmhouse,
+  SeedShed: BlueprintSeedShed,
+  Mailbox: BlueprintMailbox,
+  Crates: BlueprintCrates,
+  Compost: BlueprintCompost,
+  Decor: BlueprintDecor,
+  boxes: {
+    robot: [-20, -54, 40, 60],
+    plant: [-26, -44, 52, 56],
+    sign: [-150, -36, 160, 42],
+    hut: [-44, -50, 96, 70],
+    stand: [-44, -72, 88, 88],
+    farmhouse: [-92, -104, 184, 150],
+    seedShed: [-56, -58, 112, 90],
+    mailbox: [-24, -62, 96, 76],
+    crates: [-40, -40, 80, 56],
+    compost: [-30, -26, 60, 44],
+  },
+  worldPad: { top: 90, side: 40, bottom: 60 },
+}

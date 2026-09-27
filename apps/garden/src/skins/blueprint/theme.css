@@ -1,0 +1,203 @@
+/*
+ * Interface tokens for the Blueprint style: a drafting sheet in three fixed
+ * colours (cyanotype blue, white ink, a yellow highlighter), derived the same
+ * way as Futurist's, but flat — paper shadows, dashed rules, no glow.
+ */
+.g-skin-blueprint {
+  --bp-bg: #1d4e8f;
+  --bp-fg: #eaf2fc;
+  --bp-accent: #ffd45c;
+  /* The line kit's colours */
+  --ln-bg: var(--bp-bg);
+  --ln-fg: var(--bp-fg);
+  --ln-accent: var(--bp-accent);
+
+  color-scheme: dark;
+
+  /* Brand palette names still exist for anything that reads them. */
+  --g-leaf: var(--bp-accent);
+  --g-terracotta: var(--bp-accent);
+  --g-moss: var(--bp-fg);
+  --g-sage: var(--bp-fg);
+  --g-linen: var(--bp-bg);
+  --g-soil: var(--bp-bg);
+
+  /* Ink and text */
+  --g-ink: color-mix(in srgb, var(--bp-fg) 55%, transparent);
+  --g-ink-soft: color-mix(in srgb, var(--bp-fg) 55%, var(--bp-bg));
+  --g-text: var(--bp-fg);
+  --g-text-soft: color-mix(in srgb, var(--bp-fg) 62%, var(--bp-bg));
+  --g-eyebrow: var(--bp-accent);
+
+  /* Surfaces: sheets of the same blue paper with inked edges */
+  --g-page: var(--bp-bg);
+  --g-grass: var(--bp-bg);
+  --g-card: color-mix(in srgb, var(--bp-bg) 90%, var(--bp-fg));
+  --g-card-alt: color-mix(in srgb, var(--bp-bg) 94%, var(--bp-fg));
+  --g-paper: color-mix(in srgb, var(--bp-bg) 86%, var(--bp-fg));
+  --g-field: color-mix(in srgb, var(--bp-bg) 96%, var(--bp-fg));
+  --g-field-inset: inset 0 0 0 1px color-mix(in srgb, var(--bp-fg) 12%, transparent);
+  --g-rule: color-mix(in srgb, var(--bp-fg) 22%, transparent);
+  --g-panel-fill: color-mix(in srgb, var(--bp-bg) 80%, transparent);
+  --g-button-fill: transparent;
+  --g-button-gloss: transparent;
+
+  /* Accents: outlined in highlighter, never filled solid */
+  --g-accent: var(--bp-accent);
+  --g-accent-fill: color-mix(in srgb, var(--bp-accent) 16%, transparent);
+  --g-on-accent: var(--bp-accent);
+  --g-danger: var(--bp-accent);
+  --g-danger-fill: transparent;
+  --g-on-danger: var(--bp-accent);
+  --g-highlight: var(--bp-accent);
+
+  /* Status tints */
+  --g-good-tint: color-mix(in srgb, var(--bp-fg) 12%, transparent);
+  --g-good-text: var(--bp-fg);
+  --g-warn-tint: color-mix(in srgb, var(--bp-accent) 16%, transparent);
+  --g-warn-text: var(--bp-accent);
+  --g-bad-tint: color-mix(in srgb, var(--bp-accent) 16%, transparent);
+  --g-bad-text: var(--bp-accent);
+  --g-quiet-tint: color-mix(in srgb, var(--bp-fg) 8%, transparent);
+
+  /* Shape: hairlines, square corners, flat paper shadows */
+  --g-border: 1px;
+  --g-border-thin: 1px;
+  --g-radius: 2px;
+  --g-radius-sm: 2px;
+  --g-radius-pill: 2px;
+  --g-lift: 0 0 0 1px transparent;
+  --g-lift-sm: 0 0 0 1px transparent;
+  --g-drop: 0 10px 24px -12px rgb(0 0 0 / 0.45);
+
+  /* Type: mono, uppercase, tracked */
+  --g-font-display: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --g-font-body: 'Instrument Sans Variable', system-ui, sans-serif;
+  --g-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --g-display-weight: 500;
+  --g-display-transform: uppercase;
+  --g-display-tracking: 0.08em;
+
+  /* ---- Everything else the interface reads, in three colours ---- */
+  --bp-line: color-mix(in srgb, var(--bp-fg) 28%, transparent);
+  --bp-line-strong: color-mix(in srgb, var(--bp-fg) 55%, transparent);
+  --bp-glass: color-mix(in srgb, var(--bp-bg) 88%, var(--bp-fg));
+  --bp-accent-wash: color-mix(in srgb, var(--bp-accent) 14%, transparent);
+
+  /* Text */
+  --g-placeholder: color-mix(in srgb, var(--bp-fg) 40%, var(--bp-bg));
+  --g-label-text: var(--bp-fg);
+  --g-label-outline: 0 0 4px var(--bp-bg);
+  --g-text-emboss: none;
+  --g-thought: color-mix(in srgb, var(--bp-fg) 55%, var(--bp-bg));
+  --g-alert-text: var(--bp-accent);
+  --g-danger-text: var(--bp-accent);
+  --g-caution-text: var(--bp-accent);
+
+  /* Surfaces */
+  --g-field-disabled: var(--bp-bg);
+  --g-rule-style: dashed;
+  --g-divider: var(--bp-line);
+  --g-mail-divider: var(--bp-line);
+  --g-quote-rule: var(--bp-line-strong);
+  --g-option-border: var(--bp-line);
+  --g-quiet-border: var(--bp-line);
+  --g-plank-fill: var(--bp-glass);
+  --g-decision-fill: var(--bp-glass);
+  --g-tool-fill: color-mix(in srgb, var(--bp-bg) 86%, transparent);
+  --g-counter-gloss: none;
+  --g-avatar-fill: var(--bp-bg);
+  --g-quiet-fill: transparent;
+  --g-row-hover: color-mix(in srgb, var(--bp-fg) 7%, transparent);
+  --g-mail-hover: color-mix(in srgb, var(--bp-fg) 7%, transparent);
+
+  /* Accents */
+  --g-accent-soft: var(--bp-fg);
+  --g-highlight-strong: var(--bp-accent);
+  --g-highlight-soft: var(--bp-accent);
+  --g-badge-fill: var(--bp-accent);
+  --g-harvest-fill: var(--bp-accent-wash);
+  --g-prune-fill: transparent;
+  --g-follow-fill: color-mix(in srgb, var(--bp-fg) 12%, transparent);
+
+  /* Status tints */
+  --g-confirm-tint: var(--bp-accent-wash);
+  --g-danger-tint: var(--bp-accent-wash);
+  --g-danger-tint-strong: color-mix(in srgb, var(--bp-accent) 24%, transparent);
+  --g-caution-tint: var(--bp-accent-wash);
+
+  /* Mail dots: the accent for what needs you, lines for the rest */
+  --g-mail-dot-default: var(--bp-fg);
+  --g-mail-dot-halted: var(--bp-accent);
+  --g-mail-dot-questions: var(--bp-accent);
+  --g-mail-dot-assistant: var(--bp-fg);
+  --g-mail-dot-harvest: var(--bp-accent);
+  --g-mail-dot-weeds: var(--bp-accent);
+  --g-mail-dot-other: var(--bp-line-strong);
+
+  /* HUD counters */
+  --g-counter-mail: var(--bp-accent-wash);
+  --g-counter-growing: color-mix(in srgb, var(--bp-fg) 12%, transparent);
+  --g-counter-harvested: color-mix(in srgb, var(--bp-fg) 12%, transparent);
+
+  /* Chat */
+  --g-chat-paper: var(--bp-glass);
+  --g-chat-linen: var(--bp-bg);
+  --g-chat-line: var(--bp-line);
+  --g-chat-danger: var(--bp-accent);
+  --g-chat-backdrop: var(--bp-bg);
+  --g-chat-composer-fill: var(--bp-bg);
+  --g-chat-intro-fill: transparent;
+  --g-chat-mail-fill: var(--bp-glass);
+  --g-bubble-human: var(--bp-accent-wash);
+  --g-bubble-human-failed: color-mix(in srgb, var(--bp-accent) 24%, transparent);
+  --g-on-bubble-human: var(--bp-fg);
+  --g-bubble-human-link: var(--bp-accent);
+  --g-bubble-human-note: color-mix(in srgb, var(--bp-fg) 70%, transparent);
+  --g-bubble-agent: transparent;
+  --g-bubble-system: transparent;
+  --g-code-inline-bg: color-mix(in srgb, var(--bp-fg) 10%, transparent);
+  --g-code-bg: color-mix(in srgb, var(--bp-bg) 80%, black);
+  --g-code-bg-failed: color-mix(in srgb, var(--bp-accent) 18%, var(--bp-bg));
+  --g-code-text: var(--bp-fg);
+  --g-tag-interrupt: var(--bp-accent-wash);
+  --g-tag-follow: color-mix(in srgb, var(--bp-fg) 12%, transparent);
+  --g-ask-fill: var(--bp-accent-wash);
+  --g-delivery-divider: var(--bp-line);
+
+  /* Icons: lines in the foreground, the accent where it matters */
+  --g-icon-paper: transparent;
+  --g-icon-accent: var(--bp-accent);
+  --g-icon-accent-soft: var(--bp-fg);
+  --g-icon-warm: var(--bp-accent);
+  --g-icon-wood: transparent;
+  --g-icon-gold: var(--bp-accent);
+  --g-icon-seed: var(--bp-accent);
+  --g-icon-face: transparent;
+  --g-icon-detail: var(--bp-fg);
+  --g-icon-visor: var(--bp-bg);
+  --g-icon-glow: var(--bp-accent);
+
+  /* Shape */
+  --g-border-mid: 1px;
+  --g-border-hair: 1px;
+  --g-focus-width: 1px;
+  --g-radius-lg: 2px;
+  --g-radius-md: 2px;
+  --g-radius-tile: 2px;
+  --g-radius-xs: 2px;
+  --g-radius-inline: 2px;
+  --g-radius-tail: 0;
+  --g-radius-round: 50%;
+  --g-lift-md: 0 0 0 1px transparent;
+  --g-lift-pressed: 0 0 0 1px transparent;
+  --g-press: 0 0;
+  --g-press-sm: 0 0;
+  --g-card-shadow: 0 0 0 1px var(--bp-line-strong), 0 14px 32px -18px rgb(0 0 0 / 0.55);
+  --g-window-shadow: 0 0 0 1px var(--bp-line-strong), 0 20px 44px -20px rgb(0 0 0 / 0.6);
+  --g-sheet-shadow: 0 -1px 0 var(--bp-line);
+
+  /* Type */
+  --g-display-weight-soft: 500;
+  --g-on-badge: var(--bp-bg);
+}

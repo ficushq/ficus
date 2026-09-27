@@ -7,6 +7,10 @@
   --fu-bg: #05070a;
   --fu-fg: #8fe3ff;
   --fu-accent: #ff4fd8;
+  /* The line kit's colours */
+  --ln-bg: var(--fu-bg);
+  --ln-fg: var(--fu-fg);
+  --ln-accent: var(--fu-accent);
 
   color-scheme: dark;
 

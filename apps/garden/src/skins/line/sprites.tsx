@@ -1,4 +1,4 @@
-import { memo, useId } from 'react'
+import { memo } from 'react'
 import type { Agent } from '@ficus/shared'
 import { iso } from '../../farm/iso'
 import type {
@@ -11,72 +11,49 @@ import type {
   RobotRole,
 } from '../../farm/types'
 import type { YardRect } from '../types'
-import { at, boxEdges, diamond } from './draw'
+import { at, boxEdges, diamond, gridLines } from './draw'
 
 /*
- * The Futurist style: everything is thin strokes in three colours, read from CSS
- * variables so it can follow a theme — --fu-bg (the void), --fu-fg (lines and
- * text) and --fu-accent (what's alive or needs you).
+ * The line kit: sprites drawn as thin strokes in three colours, shared by the
+ * styles that draw in lines (Futurist, Blueprint). Colours come from CSS
+ * variables the style sets — --ln-bg (the ground), --ln-fg (lines and text)
+ * and --ln-accent (what's alive or needs you) — and #ln-glow is a filter each
+ * style defines its own way (a soft glow, or nothing at all).
  */
-const FG = 'var(--fu-fg)'
-const BG = 'var(--fu-bg)'
-const ACCENT = 'var(--fu-accent)'
+const FG = 'var(--ln-fg)'
+const BG = 'var(--ln-bg)'
+const ACCENT = 'var(--ln-accent)'
 const MONO = 'var(--g-font-mono)'
 
-export function FuturistDefs() {
+export function LineDefs({ glow = true }: { glow?: boolean }) {
   return (
     <defs>
-      <filter id="fu-glow" x="-50%" y="-50%" width="200%" height="200%">
-        <feGaussianBlur stdDeviation="2.2" result="blur" />
+      <filter id="ln-glow" x="-50%" y="-50%" width="200%" height="200%">
+        {glow && <feGaussianBlur stdDeviation="2.2" result="blur" />}
         <feMerge>
-          <feMergeNode in="blur" />
+          {glow && <feMergeNode in="blur" />}
           <feMergeNode in="SourceGraphic" />
         </feMerge>
       </filter>
-      <radialGradient id="fu-fade" cx="50%" cy="50%" r="50%">
+      <radialGradient id="ln-fade" cx="50%" cy="50%" r="50%">
         <stop offset="0" stopColor="#fff" stopOpacity="1" />
         <stop offset="0.7" stopColor="#fff" stopOpacity="0.55" />
         <stop offset="1" stopColor="#fff" stopOpacity="0" />
       </radialGradient>
-      <mask id="fu-fade-mask" maskContentUnits="objectBoundingBox">
-        <rect width="1" height="1" fill="url(#fu-fade)" />
+      <mask id="ln-fade-mask" maskContentUnits="objectBoundingBox">
+        <rect width="1" height="1" fill="url(#ln-fade)" />
       </mask>
     </defs>
   )
 }
 
 /** The infinite grid: minor lines every tile, major every four, fading out toward the edges. */
-export const FuturistGround = memo(function FuturistGround({ bounds }: { bounds: FarmLayout['bounds'] }) {
-  const pad = 12
-  const minI = Math.floor(bounds.minI) - pad
-  const maxI = Math.ceil(bounds.maxI) + pad
-  const minJ = Math.floor(bounds.minJ) - pad
-  const maxJ = Math.ceil(bounds.maxJ) + pad
-  let minor = ''
-  let major = ''
-  for (let i = minI; i <= maxI; i++) {
-    const seg = `M${at(i, minJ)} L${at(i, maxJ)} `
-    if (i % 4 === 0) major += seg
-    else minor += seg
-  }
-  for (let j = minJ; j <= maxJ; j++) {
-    const seg = `M${at(minI, j)} L${at(maxI, j)} `
-    if (j % 4 === 0) major += seg
-    else minor += seg
-  }
-  const corners = [iso(minI, minJ), iso(maxI, minJ), iso(maxI, maxJ), iso(minI, maxJ)]
-  const xs = corners.map((c) => c[0])
-  const ys = corners.map((c) => c[1])
-  const box = {
-    x: Math.min(...xs),
-    y: Math.min(...ys),
-    w: Math.max(...xs) - Math.min(...xs),
-    h: Math.max(...ys) - Math.min(...ys),
-  }
+export const LineGround = memo(function LineGround({ bounds }: { bounds: FarmLayout['bounds'] }) {
+  const { minor, major, box } = gridLines(bounds)
   return (
     <g>
       <rect x={box.x - 2000} y={box.y - 2000} width={box.w + 4000} height={box.h + 4000} fill={BG} />
-      <g mask="url(#fu-fade-mask)">
+      <g mask="url(#ln-fade-mask)">
         <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="none" />
         <path
           d={minor}
@@ -93,7 +70,7 @@ export const FuturistGround = memo(function FuturistGround({ bounds }: { bounds:
 })
 
 /** A yard: a faint field with a dashed boundary and corner brackets. */
-export function FuturistYard({ i0, j0, w, h }: YardRect) {
+export function LineYard({ i0, j0, w, h }: YardRect) {
   const bracket = (i: number, j: number, di: number, dj: number) =>
     `M${at(i + di * 0.5, j)} L${at(i, j)} L${at(i, j + dj * 0.5)}`
   return (
@@ -123,7 +100,7 @@ export function FuturistYard({ i0, j0, w, h }: YardRect) {
 }
 
 /** The squad's name as a small uppercase label, with an accent tick when something needs you. */
-export function FuturistSign({ name, flag }: { name: string; flag: boolean }) {
+export function LineSign({ name, flag }: { name: string; flag: boolean }) {
   const label = name.length > 24 ? `${name.slice(0, 23)}…` : name
   return (
     <g>
@@ -140,13 +117,13 @@ export function FuturistSign({ name, flag }: { name: string; flag: boolean }) {
       >
         {label}
       </text>
-      {flag && <circle cx={0} cy={-22} r={3} fill={ACCENT} className="fu-pulse" />}
+      {flag && <circle cx={0} cy={-22} r={3} fill={ACCENT} className="ln-pulse" />}
     </g>
   )
 }
 
 /** A plant's patch: a thin inset tile, lit when selected. */
-export function FuturistPlot({ i, j, selected }: { i: number; j: number; selected: boolean }) {
+export function LinePlot({ i, j, selected }: { i: number; j: number; selected: boolean }) {
   return (
     <path
       d={diamond(i, j, 1, 1, 0.14)}
@@ -155,13 +132,13 @@ export function FuturistPlot({ i, j, selected }: { i: number; j: number; selecte
       stroke={selected ? ACCENT : FG}
       strokeOpacity={selected ? 1 : 0.35}
       strokeWidth={selected ? 1.5 : 1}
-      filter={selected ? 'url(#fu-glow)' : undefined}
+      filter={selected ? 'url(#ln-glow)' : undefined}
     />
   )
 }
 
 /** Line-art plants: a stem and a few chevron leaves, drawn by state. */
-export function FuturistPlant({ plot }: { plot: PlotLayout }) {
+export function LinePlant({ plot }: { plot: PlotLayout }) {
   const s = plot.state
   const needs = plot.badge !== null
   const stroke = needs ? ACCENT : FG
@@ -188,11 +165,11 @@ export function FuturistPlant({ plot }: { plot: PlotLayout }) {
     )
   const tall = s === 'review' ? 30 : s === 'waiting' ? 16 : 24
   return (
-    <g className={s === 'growing' ? 'fu-sway' : undefined}>
+    <g className={s === 'growing' ? 'ln-sway' : undefined}>
       <path d={`M0 0 V${-tall}`} stroke={stroke} strokeDasharray={s === 'waiting' ? '2 3' : undefined} />
       <path d={leaves(tall, s === 'review' ? 4 : 3)} fill="none" stroke={stroke} strokeOpacity={0.9} />
       {s === 'review' && (
-        <g filter="url(#fu-glow)">
+        <g filter="url(#ln-glow)">
           {[
             [-7, -12],
             [7, -18],
@@ -202,7 +179,7 @@ export function FuturistPlant({ plot }: { plot: PlotLayout }) {
           ))}
         </g>
       )}
-      {s === 'growing' && <circle cy={-tall - 2} r={2} fill={ACCENT} className="fu-pulse" />}
+      {s === 'growing' && <circle cy={-tall - 2} r={2} fill={ACCENT} className="ln-pulse" />}
       {s === 'blocked' && (
         <path d={`M-9 ${-tall + 2} L9 -4 M9 ${-tall + 2} L-9 -4`} stroke={ACCENT} strokeWidth={1.4} />
       )}
@@ -221,11 +198,11 @@ export function FuturistPlant({ plot }: { plot: PlotLayout }) {
 const GLYPHS: Record<BadgeKind, string> = { question: '?', blocked: '!', harvest: '✓' }
 
 /** A ring with a glyph, anchored at the bottom of its stalk. */
-export function FuturistBadge({ kind }: { kind: BadgeKind }) {
+export function LineBadge({ kind }: { kind: BadgeKind }) {
   return (
-    <g className="fu-float">
+    <g className="ln-float">
       <path d="M0 0 V-6" stroke={ACCENT} />
-      <circle cy={-16} r={10} fill={BG} stroke={ACCENT} strokeWidth={1.4} filter="url(#fu-glow)" />
+      <circle cy={-16} r={10} fill={BG} stroke={ACCENT} strokeWidth={1.4} filter="url(#ln-glow)" />
       <text y={-12} textAnchor="middle" fontFamily={MONO} fontSize={12} fontWeight={700} fill={ACCENT}>
         {GLYPHS[kind]}
       </text>
@@ -236,11 +213,11 @@ export function FuturistBadge({ kind }: { kind: BadgeKind }) {
 function faceStyle(face: RobotFace): { core: string; opacity: number; className?: string } {
   switch (face) {
     case 'happy':
-      return { core: ACCENT, opacity: 1, className: 'fu-pulse' }
+      return { core: ACCENT, opacity: 1, className: 'ln-pulse' }
     case 'question':
-      return { core: ACCENT, opacity: 1, className: 'fu-blink' }
+      return { core: ACCENT, opacity: 1, className: 'ln-blink' }
     case 'error':
-      return { core: ACCENT, opacity: 1, className: 'fu-flicker' }
+      return { core: ACCENT, opacity: 1, className: 'ln-flicker' }
     case 'sleepy':
       return { core: FG, opacity: 0.25 }
     case 'normal':
@@ -276,7 +253,7 @@ function Orb({ role, face, r = 9 }: { role: RobotRole; face: RobotFace; r?: numb
         fill={look.core}
         opacity={look.opacity}
         className={look.className}
-        filter={look.core === ACCENT ? 'url(#fu-glow)' : undefined}
+        filter={look.core === ACCENT ? 'url(#ln-glow)' : undefined}
       />
       {face === 'question' && (
         <text y={-r - 4} textAnchor="middle" fontFamily={MONO} fontSize={9} fill={ACCENT}>
@@ -294,12 +271,12 @@ function Orb({ role, face, r = 9 }: { role: RobotRole; face: RobotFace; r?: numb
   )
 }
 
-export function FuturistRobot({ placement, extra }: { placement: RobotPlacement; extra?: number }) {
+export function LineRobot({ placement, extra }: { placement: RobotPlacement; extra?: number }) {
   const { role, face, helpers } = placement
   return (
     <g>
       <ellipse rx={8} ry={3} fill="none" stroke={FG} strokeOpacity={0.3} />
-      <g className={face === 'sleepy' ? undefined : 'fu-float'}>
+      <g className={face === 'sleepy' ? undefined : 'ln-float'}>
         <g transform="translate(0 -26)">
           <Orb role={role} face={face} />
           {helpers > 0 &&
@@ -317,11 +294,11 @@ export function FuturistRobot({ placement, extra }: { placement: RobotPlacement;
   )
 }
 
-export function FuturistAvatar({ role, face }: { agent: Agent; role: RobotRole; face: RobotFace }) {
+export function LineAvatar({ role, face }: { agent: Agent; role: RobotRole; face: RobotFace }) {
   return <Orb role={role} face={face} r={11} />
 }
 
-/** A labelled wireframe box: Futurist's stand-in for every building. */
+/** A labelled wireframe box: Line's stand-in for every building. */
 function Node({
   w,
   d,
@@ -351,7 +328,7 @@ function Node({
         stroke={lit ? ACCENT : FG}
         strokeOpacity={lit ? 1 : 0.75}
         strokeWidth={1.2}
-        filter={lit ? 'url(#fu-glow)' : undefined}
+        filter={lit ? 'url(#ln-glow)' : undefined}
       />
       {glyph && (
         <text y={top - h / 2 + 4} textAnchor="middle" fontFamily={MONO} fontSize={12} fill={lit ? ACCENT : FG}>
@@ -374,7 +351,7 @@ function Node({
   )
 }
 
-export function FuturistHut({ count, peek }: { count: number; peek?: RobotPlacement }) {
+export function LineHut({ count, peek }: { count: number; peek?: RobotPlacement }) {
   return (
     <g>
       <Node w={0.9} d={0.7} h={14} label="IDLE" count={count} lit={false} />
@@ -387,7 +364,7 @@ export function FuturistHut({ count, peek }: { count: number; peek?: RobotPlacem
   )
 }
 
-export function FuturistStand({ count, host }: { count: number; host?: RobotPlacement }) {
+export function LineStand({ count, host }: { count: number; host?: RobotPlacement }) {
   return (
     <g>
       <Node w={0.7} d={0.7} h={10} label="CONSULT" count={count} />
@@ -400,25 +377,18 @@ export function FuturistStand({ count, host }: { count: number; host?: RobotPlac
   )
 }
 
-export const FuturistFarmhouse = () => <Node w={2} d={1.6} h={48} label="SETTINGS" glyph="◇" />
-export const FuturistSeedShed = () => <Node w={1.1} d={1} h={24} label="NEW" glyph="+" />
-export const FuturistMailbox = ({ count }: { count: number }) => (
+export const LineFarmhouse = () => <Node w={2} d={1.6} h={48} label="SETTINGS" glyph="◇" />
+export const LineSeedShed = () => <Node w={1.1} d={1} h={24} label="NEW" glyph="+" />
+export const LineMailbox = ({ count }: { count: number }) => (
   <Node w={0.5} d={0.5} h={26} label="INBOX" count={count} lit={count > 0} glyph={count ? '•' : undefined} />
 )
-export const FuturistCrates = ({ count }: { count: number }) => (
-  <Node w={0.9} d={0.6} h={8} label="DONE" count={count} />
-)
-export const FuturistCompost = ({ count }: { count: number }) => (
+export const LineCrates = ({ count }: { count: number }) => <Node w={0.9} d={0.6} h={8} label="DONE" count={count} />
+export const LineCompost = ({ count }: { count: number }) => (
   <Node w={0.6} d={0.6} h={4} label="CANCELED" count={count} />
 )
 
 /** Scenery is reduced to faint survey marks. */
-export function FuturistDecor({ decor }: { decor: DecorPlacement }) {
+export function LineDecor({ decor }: { decor: DecorPlacement }) {
   const big = decor.kind === 'tree' || decor.kind === 'fruitTree'
   return <path d={big ? 'M-4 0 H4 M0 -4 V4' : 'M-2 0 H2'} stroke={FG} strokeOpacity={0.3} />
-}
-
-/** Stable id helper for callers that need a per-instance gradient. */
-export function useFuturistId(prefix: string): string {
-  return `${prefix}-${useId().replace(/:/g, '')}`
 }
