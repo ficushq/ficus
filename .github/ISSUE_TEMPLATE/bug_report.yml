@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in Tau does not work the way it should.
+description: Something in Ficus does not work the way it should.
 labels: [bug]
 body:
   - type: textarea
@@ -21,19 +21,19 @@ body:
   - type: input
     id: version
     attributes:
-      label: Tau version or commit
-      description: '`tau --version`, or the commit shown in Settings → About.'
+      label: Ficus version or commit
+      description: '`ficus --version`, or the commit shown in Settings → About.'
     validations:
       required: true
   - type: dropdown
     id: install
     attributes:
-      label: How is Tau installed
+      label: How is Ficus installed
       options:
         - Self-hosted via setup.sh
         - Self-hosted from source
         - Docker image
-        - Tau Cloud (hiretau.ai)
+        - Ficus Cloud (ficus.sh)
     validations:
       required: true
   - type: textarea

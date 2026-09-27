@@ -1,6 +1,6 @@
 # Code of conduct
 
-Tau's community is for people who want to build and run autonomous agent
+Ficus's community is for people who want to build and run autonomous agent
 teams. We expect everyone taking part, in issues, pull requests, discussions
 and any other project space, to be considerate, honest and constructive.
 

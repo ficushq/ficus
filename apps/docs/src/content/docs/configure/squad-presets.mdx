@@ -5,18 +5,18 @@ description: Create reusable starting points while keeping every squad independe
 
 A squad preset supplies the starting configuration for a new squad. Manage them in **Settings → Administration → Squad Presets**, then select one when creating a squad. Onboarding preselects **Engineering**.
 
-Once created, a squad owns its settings. Editing, disabling, reverting, or deleting its original preset does not change the squad. Tau keeps `squadPresetId` as provenance, including after the preset is deleted.
+Once created, a squad owns its settings. Editing, disabling, reverting, or deleting its original preset does not change the squad. Ficus keeps `squadPresetId` as provenance, including after the preset is deleted.
 
 ## What gets copied
 
-| Preset setting | New squad behavior |
-| --- | --- |
-| Purpose | Suggested in the creation form; describe the squad's actual responsibility. |
-| Default agents | Initial persistent members. Explicitly choosing an empty list leaves only the manager. |
+| Preset setting       | New squad behavior                                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Purpose              | Suggested in the creation form; describe the squad's actual responsibility.                                                                     |
+| Default agents       | Initial persistent members. Explicitly choosing an empty list leaves only the manager.                                                          |
 | Manager instructions | Copied into `typeContext.manager`, editable under **Squad Settings → Context**. An explicit manager context at creation overrides this default. |
-| Default workflow | Copied into `metadata.workflow`. Engineering starts with Solo Coding. Without a saved default, Tau uses Solo. |
-| Guidance and choices | Copied into `metadata.workflowSetup`. The manager reads these recommendations when choosing a flow; they are not automatic matching rules. |
-| Schedule templates | Provisioned once after the manager and persistent members exist. The resulting schedules belong to the squad. |
+| Default workflow     | Copied into `metadata.workflow`. Engineering starts with Solo Coding. Without a saved default, Ficus uses Solo.                                 |
+| Guidance and choices | Copied into `metadata.workflowSetup`. The manager reads these recommendations when choosing a flow; they are not automatic matching rules.      |
+| Schedule templates   | Provisioned once after the manager and persistent members exist. The resulting schedules belong to the squad.                                   |
 
 Worker instructions belong in [agent expertise](/configure/agents/) and [workflows](/use/workflows/), not squad presets. Presets have no `workerInstructions` field.
 
@@ -29,11 +29,11 @@ For example, two squads can use **Reviewed Coding**. Updating that global style 
 ## Configure with the CLI or YAML
 
 ```sh
-tau squad-preset list
-tau squad-preset get engineering
-tau squad create "Platform" --preset engineering --purpose "Maintain our platform"
+ficus squad-preset list
+ficus squad-preset get engineering
+ficus squad create "Platform" --preset engineering --purpose "Maintain our platform"
 ```
 
 Self-hosted preset YAML lives in `config/squad-presets/`. The catalog API uses `/api/squad-presets`; its permissions are `squad-presets:read`, `create`, `update`, and `delete`.
 
-The upgrade from squad types renames stored preset IDs and permission grants, copies previously inherited defaults and manager context into existing squads, and removes worker instructions. Move custom configuration files from `config/squad-types/` into `config/squad-presets/`, remove `workerInstructions`, and update scripts using `tau squad-type` or `tau squad create --type` to the commands above. Update custom role and agent YAML permissions from `squad-types:*` to `squad-presets:*` too; persisted grants are migrated automatically. Existing squads retain their own members, schedules, and work preferences.
+The upgrade from squad types renames stored preset IDs and permission grants, copies previously inherited defaults and manager context into existing squads, and removes worker instructions. Move custom configuration files from `config/squad-types/` into `config/squad-presets/`, remove `workerInstructions`, and update scripts using `ficus squad-type` or `ficus squad create --type` to the commands above. Update custom role and agent YAML permissions from `squad-types:*` to `squad-presets:*` too; persisted grants are migrated automatically. Existing squads retain their own members, schedules, and work preferences.

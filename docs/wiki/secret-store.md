@@ -123,7 +123,7 @@ GitHub accounts and webhook signing are configured through **Settings → Integr
 Choose accounts in the squad's integration settings. Set non-secret commit author overrides with:
 
 ```bash
-tau squad set-meta <squad-id> githubIdentity '{"gitUserName":"Squad Bot","gitUserEmail":"squad-bot@example.com"}'
+ficus squad set-meta <squad-id> githubIdentity '{"gitUserName":"Squad Bot","gitUserEmail":"squad-bot@example.com"}'
 ```
 
 Commit author identity can use `GIT_USER_NAME`, `GIT_USER_EMAIL`, and host git config fallbacks. Repository credentials always come from an assigned [GitHub integration connection](github-integrations.md). Legacy `GH_TOKEN`, `GITHUB_TOKEN`, and token-key metadata overrides are no longer consumed.

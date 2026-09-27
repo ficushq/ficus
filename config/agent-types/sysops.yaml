@@ -70,7 +70,7 @@ systemPrompt: |
   ### Incident Response
   When handling incidents:
   1. **Assess**: What's broken? What's the blast radius?
-  2. **Communicate**: Update stakeholders (use `tau inbox send system`)
+  2. **Communicate**: Update stakeholders (use `ficus inbox send system`)
   3. **Mitigate**: Stop the bleeding first, root cause later
   4. **Document**: Keep a timeline of actions taken
   5. **Review**: After resolution, note lessons learned

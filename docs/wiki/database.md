@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tau uses **PostgreSQL** with the **pgvector** extension for vector similarity search. The ORM layer is [Drizzle ORM](https://orm.drizzle.team/), which provides type-safe schema definitions, query building, and migration management.
+Ficus uses **PostgreSQL** with the **pgvector** extension for vector similarity search. The ORM layer is [Drizzle ORM](https://orm.drizzle.team/), which provides type-safe schema definitions, query building, and migration management.
 
 ## Connection
 
@@ -63,7 +63,7 @@ The schema is defined in `apps/core/src/db/schema.ts` using Drizzle's `pgTable` 
 | `executions`          | Execution runs for agents                                         |
 | `messages`            | Conversation messages within executions                           |
 | `squads`              | Groups of agents working together                                 |
-| `squad_presets`         | Squad preset definitions                                            |
+| `squad_presets`       | Squad preset definitions                                          |
 | `work_streams`        | Tracked work items within squads                                  |
 | `schedules`           | Scheduled triggers for agents or squads                           |
 | `inbox`               | Inter-agent and human-agent messaging                             |

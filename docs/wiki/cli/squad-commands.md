@@ -1,11 +1,11 @@
 # Squad CLI Commands
 
-The `tau squad` command manages squads: teams of agents that work together on work streams. This page covers common commands; run `tau squad --help` for additional workspace, memory, subscription, and administration commands.
+The `ficus squad` command manages squads: teams of agents that work together on work streams. This page covers common commands; run `ficus squad --help` for additional workspace, memory, subscription, and administration commands.
 
 ## Overview
 
 ```bash
-tau squad [command] [options]
+ficus squad [command] [options]
 ```
 
 ## Commands
@@ -15,7 +15,7 @@ tau squad [command] [options]
 List all squads.
 
 ```bash
-tau squad list [options]
+ficus squad list [options]
 ```
 
 **Options:**
@@ -28,13 +28,13 @@ tau squad list [options]
 
 ```bash
 # List visible squads (soft-deleted squads are excluded)
-tau squad list
+ficus squad list
 
 # List only paused squads
-tau squad list --status paused
+ficus squad list --status paused
 
 # Include anonymous squads
-tau squad list --include-anonymous
+ficus squad list --include-anonymous
 ```
 
 ---
@@ -44,7 +44,7 @@ tau squad list --include-anonymous
 Create a new squad.
 
 ```bash
-tau squad create|new [options] <name>
+ficus squad create|new [options] <name>
 ```
 
 **Arguments:**
@@ -63,13 +63,13 @@ tau squad create|new [options] <name>
 
 ```bash
 # Create a basic squad
-tau squad create "Frontend Team"
+ficus squad create "Frontend Team"
 
 # Create an engineering squad with purpose
-tau squad create "API Development" --preset engineering --purpose "Build and maintain REST APIs"
+ficus squad create "API Development" --preset engineering --purpose "Build and maintain REST APIs"
 
 # Legacy manual default staffing; workflow participants are normally created lazily
-tau squad create "Full Stack Team" -a architect -a engineer -a reviewer
+ficus squad create "Full Stack Team" -a architect -a engineer -a reviewer
 ```
 
 ---
@@ -79,7 +79,7 @@ tau squad create "Full Stack Team" -a architect -a engineer -a reviewer
 Get detailed information about a squad.
 
 ```bash
-tau squad get|info <id>
+ficus squad get|info <id>
 ```
 
 **Arguments:**
@@ -91,10 +91,10 @@ tau squad get|info <id>
 
 ```bash
 # Get squad details
-tau squad get abc123
+ficus squad get abc123
 
 # Using alias
-tau squad info abc123
+ficus squad info abc123
 ```
 
 ---
@@ -104,7 +104,7 @@ tau squad info abc123
 Update an existing squad.
 
 ```bash
-tau squad update|edit [options] <id>
+ficus squad update|edit [options] <id>
 ```
 
 **Arguments:**
@@ -125,16 +125,16 @@ tau squad update|edit [options] <id>
 
 ```bash
 # Rename a squad
-tau squad update abc123 --name "New Team Name"
+ficus squad update abc123 --name "New Team Name"
 
 # Pause a squad
-tau squad update abc123 --status paused
+ficus squad update abc123 --status paused
 
 # Add a reviewer agent to the squad
-tau squad update abc123 --add-default-agent reviewer
+ficus squad update abc123 --add-default-agent reviewer
 
 # Multiple updates at once
-tau squad update abc123 --name "Updated Team" --purpose "New mission"
+ficus squad update abc123 --name "Updated Team" --purpose "New mission"
 ```
 
 ---
@@ -146,7 +146,7 @@ Archive a squad (soft delete), preserving its agents, work streams, messages, an
 Workspace and SSH files are retained by default. `--delete-workspace` also permanently removes the managed storage workspace and squad SSH directory; a host workspace override is never deleted.
 
 ```bash
-tau squad delete|rm|archive [--delete-workspace] <id>
+ficus squad delete|rm|archive [--delete-workspace] <id>
 ```
 
 **Arguments:**
@@ -158,13 +158,13 @@ tau squad delete|rm|archive [--delete-workspace] <id>
 
 ```bash
 # Archive a squad and keep workspace files
-tau squad delete abc123
+ficus squad delete abc123
 
 # Using an alias
-tau squad archive abc123
+ficus squad archive abc123
 
 # Archive and permanently remove managed workspace and SSH files
-tau squad delete abc123 --delete-workspace
+ficus squad delete abc123 --delete-workspace
 ```
 
 ---
@@ -174,7 +174,7 @@ tau squad delete abc123 --delete-workspace
 Show the workspace directory tree for a squad.
 
 ```bash
-tau squad workspace|ws <id>
+ficus squad workspace|ws <id>
 ```
 
 **Arguments:**
@@ -186,10 +186,10 @@ tau squad workspace|ws <id>
 
 ```bash
 # View squad workspace structure
-tau squad workspace abc123
+ficus squad workspace abc123
 
 # Using alias
-tau squad ws abc123
+ficus squad ws abc123
 ```
 
 ---
@@ -199,7 +199,7 @@ tau squad ws abc123
 Show file contents from a squad's workspace.
 
 ```bash
-tau squad file|cat <id> <path>
+ficus squad file|cat <id> <path>
 ```
 
 **Arguments:**
@@ -212,10 +212,10 @@ tau squad file|cat <id> <path>
 
 ```bash
 # View a file from squad workspace
-tau squad file abc123 src/index.js
+ficus squad file abc123 src/index.js
 
 # Using alias
-tau squad cat abc123 README.md
+ficus squad cat abc123 README.md
 ```
 
 ---
@@ -225,7 +225,7 @@ tau squad cat abc123 README.md
 Create a relationship between two squads.
 
 ```bash
-tau squad link [options] <source> <target>
+ficus squad link [options] <source> <target>
 ```
 
 **Arguments:**
@@ -243,13 +243,13 @@ tau squad link [options] <source> <target>
 
 ```bash
 # Create a reporting relationship
-tau squad link team-a team-b --type reports_to
+ficus squad link team-a team-b --type reports_to
 
 # Create a collaboration relationship
-tau squad link frontend backend --type collaborates
+ficus squad link frontend backend --type collaborates
 
 # Create a dependency relationship
-tau squad link api database --type depends_on
+ficus squad link api database --type depends_on
 ```
 
 ---
@@ -259,7 +259,7 @@ tau squad link api database --type depends_on
 Remove a relationship between squads.
 
 ```bash
-tau squad unlink <relationshipId>
+ficus squad unlink <relationshipId>
 ```
 
 **Arguments:**
@@ -271,7 +271,7 @@ tau squad unlink <relationshipId>
 
 ```bash
 # Remove a relationship
-tau squad unlink rel-123
+ficus squad unlink rel-123
 ```
 
 ---
@@ -281,7 +281,7 @@ tau squad unlink rel-123
 List all relationships for a squad.
 
 ```bash
-tau squad relationships|rels <id>
+ficus squad relationships|rels <id>
 ```
 
 **Arguments:**
@@ -293,10 +293,10 @@ tau squad relationships|rels <id>
 
 ```bash
 # List squad relationships
-tau squad relationships abc123
+ficus squad relationships abc123
 
 # Using alias
-tau squad rels abc123
+ficus squad rels abc123
 ```
 
 ---
@@ -306,7 +306,7 @@ tau squad rels abc123
 Check if two squads can communicate with each other.
 
 ```bash
-tau squad can-communicate|can-comm <squadA> <squadB>
+ficus squad can-communicate|can-comm <squadA> <squadB>
 ```
 
 **Arguments:**
@@ -319,10 +319,10 @@ tau squad can-communicate|can-comm <squadA> <squadB>
 
 ```bash
 # Check communication capability
-tau squad can-communicate team-a team-b
+ficus squad can-communicate team-a team-b
 
 # Using alias
-tau squad can-comm frontend backend
+ficus squad can-comm frontend backend
 ```
 
 ---
@@ -332,7 +332,7 @@ tau squad can-comm frontend backend
 List all agents in a squad.
 
 ```bash
-tau squad agents <id>
+ficus squad agents <id>
 ```
 
 **Arguments:**
@@ -344,7 +344,7 @@ tau squad agents <id>
 
 ```bash
 # List squad agents
-tau squad agents abc123
+ficus squad agents abc123
 ```
 
 ---
@@ -354,10 +354,10 @@ tau squad agents abc123
 Use the work-stream command group:
 
 ```bash
-tau workstream list --squad abc123
+ficus workstream list --squad abc123
 ```
 
-`tau squad tasks` is not a command. `--squad <squadId>` filters the work-stream list by squad.
+`ficus squad tasks` is not a command. `--squad <squadId>` filters the work-stream list by squad.
 
 ---
 
@@ -366,7 +366,7 @@ tau workstream list --squad abc123
 Spawn a new agent in a squad.
 
 ```bash
-tau squad spawn [options] <agentType> <squadId>
+ficus squad spawn [options] <agentType> <squadId>
 ```
 
 **Arguments:**
@@ -384,10 +384,10 @@ tau squad spawn [options] <agentType> <squadId>
 
 ```bash
 # Spawn an engineer in a squad
-tau squad spawn engineer abc123
+ficus squad spawn engineer abc123
 
 # Spawn and assign to a work stream
-tau squad spawn architect abc123 --workstream ws-456
+ficus squad spawn architect abc123 --workstream ws-456
 ```
 
 ---
@@ -397,7 +397,7 @@ tau squad spawn architect abc123 --workstream ws-456
 Terminate a flex agent.
 
 ```bash
-tau squad unspawn <agentId>
+ficus squad unspawn <agentId>
 ```
 
 **Arguments:**
@@ -409,7 +409,7 @@ tau squad unspawn <agentId>
 
 ```bash
 # Terminate a flex agent
-tau squad unspawn agent-789
+ficus squad unspawn agent-789
 ```
 
 ---
@@ -419,11 +419,11 @@ tau squad unspawn agent-789
 Watching a squad sets two independent attention levels for it: `decisions` (questions, reviews, blockers) and `progress` (active work and completions). Each is `mute` (hidden from your Action Center and feed), `show` (listed, never interrupts), or `notify` (listed, plus an inbox message and push).
 
 ```bash
-tau squad subscription SQUAD_ID          # your levels + watcher count
-tau squad watch SQUAD_ID                 # both kinds at notify (alias of subscribe)
-tau squad watch SQUAD_ID --progress mute # keep decisions as-is, stop completion notices
-tau squad watch SQUAD_ID --decisions mute --progress mute
-tau squad unwatch SQUAD_ID               # remove the row; back to show/show
+ficus squad subscription SQUAD_ID          # your levels + watcher count
+ficus squad watch SQUAD_ID                 # both kinds at notify (alias of subscribe)
+ficus squad watch SQUAD_ID --progress mute # keep decisions as-is, stop completion notices
+ficus squad watch SQUAD_ID --decisions mute --progress mute
+ficus squad unwatch SQUAD_ID               # remove the row; back to show/show
 ```
 
 An omitted flag keeps the kind at its current EFFECTIVE level — the level stored on your row if you have one, otherwise the default `show`. Changing one kind never turns the other one up. A per-work-stream row overrides these levels for that one stream.
@@ -434,14 +434,14 @@ Configure the default source in squad `metadata.workflow`. Store selection guida
 
 ## Squad Presets
 
-Use `tau squad-preset` to view available squad presets:
+Use `ficus squad-preset` to view available squad presets:
 
 ```bash
 # List all squad presets
-tau squad-preset list
+ficus squad-preset list
 
 # Get details about a specific type
-tau squad-preset get engineering
+ficus squad-preset get engineering
 ```
 
 Available squad presets:
@@ -455,20 +455,20 @@ Available squad presets:
 
 ```bash
 # Create an engineering squad
-tau squad create "Backend API Team" \
+ficus squad create "Backend API Team" \
   --preset engineering \
   --purpose "Develop and maintain the REST API"
 
 # Link it to the platform team
-tau squad link backend-team platform-team --type collaborates
+ficus squad link backend-team platform-team --type collaborates
 ```
 
 ### Managing metadata
 
 ```bash
-tau squad set-meta <id> ledger.current.sequence 7
-tau squad get-meta <id> ledger.current.sequence
-tau squad unset-meta <id> ledger.current.sequence
+ficus squad set-meta <id> ledger.current.sequence 7
+ficus squad get-meta <id> ledger.current.sequence
+ficus squad unset-meta <id> ledger.current.sequence
 ```
 
 `set-meta` and `unset-meta` send only the requested dot-path delta. The server recursively merges objects, deletes keys set to `null`, and serializes concurrent updates so unrelated keys are preserved. Arrays replace the whole array; changing one element requires `get-meta`, local modification, and `set-meta` of the entire array key. Concurrent writers to the same key are last-serialized-writer-wins. Empty path segments and `__proto__`, `prototype`, or `constructor` segments are rejected. `get-meta` uses one entity GET, extracts the value client-side, and reports missing paths as errors.
@@ -477,13 +477,13 @@ tau squad unset-meta <id> ledger.current.sequence
 
 ```bash
 # Pause a squad (e.g., during reorganization)
-tau squad update abc123 --status paused
+ficus squad update abc123 --status paused
 
 # Archive a completed squad with the full archive lifecycle
-tau squad archive abc123
+ficus squad archive abc123
 
 # Reactivate a paused squad
-tau squad update abc123 --status active
+ficus squad update abc123 --status active
 ```
 
 Use `archive` (or `delete`) for the full archive lifecycle. The legacy `update --status archived` option remains accepted but only changes status; it does not perform the soft-delete cleanup above. `--status active` reactivates a paused squad, not a soft-deleted squad.
@@ -492,10 +492,10 @@ Use `archive` (or `delete`) for the full archive lifecycle. The legacy `update -
 
 ```bash
 # Spawn additional engineers for a sprint
-tau squad spawn engineer abc123 --workstream ws-sprint-1
-tau squad spawn engineer abc123 --workstream ws-sprint-2
+ficus squad spawn engineer abc123 --workstream ws-sprint-1
+ficus squad spawn engineer abc123 --workstream ws-sprint-2
 
 # Clean up after sprint
-tau squad unspawn agent-1
-tau squad unspawn agent-2
+ficus squad unspawn agent-1
+ficus squad unspawn agent-2
 ```

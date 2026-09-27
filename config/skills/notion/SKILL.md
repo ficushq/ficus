@@ -1,11 +1,11 @@
 ---
 name: notion
-description: Safely use Tau's authenticated Notion CLI
+description: Safely use Ficus's authenticated Notion CLI
 ---
 
 # Notion CLI
 
-Use Tau's authenticated `ntn` CLI to work with the Notion workspace assigned to the current squad.
+Use Ficus's authenticated `ntn` CLI to work with the Notion workspace assigned to the current squad.
 
 ## Discover before acting
 
@@ -17,6 +17,6 @@ Prefer JSON and stdin. Build structured requests with `jq ... | ntn api ...`. Us
 
 Get explicit confirmation immediately before trashing or archiving content, using `pages edit --allow-deleting-content`, attaching/detaching workers or databases, or any broad mutation.
 
-## Tau owns authentication
+## Ficus owns authentication
 
-Never run `ntn login`, `ntn logout`, or `ntn workers oauth token`. Tau owns OAuth, refresh, reconnect, and revocation. Never print or echo `NOTION_API_TOKEN`, dump the environment, inspect or copy auth files, or use `--unsafe-verbose`. Do not expose tokens in commands, logs, output, files, or messages. If authentication requires attention, report that the Notion connection must be reconnected in Tau Settings.
+Never run `ntn login`, `ntn logout`, or `ntn workers oauth token`. Ficus owns OAuth, refresh, reconnect, and revocation. Never print or echo `NOTION_API_TOKEN`, dump the environment, inspect or copy auth files, or use `--unsafe-verbose`. Do not expose tokens in commands, logs, output, files, or messages. If authentication requires attention, report that the Notion connection must be reconnected in Ficus Settings.

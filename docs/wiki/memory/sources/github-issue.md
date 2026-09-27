@@ -9,14 +9,14 @@ The source indexes GitHub issues and pull requests through the Issues API. Issue
 Source IDs use `owner/repo#number`:
 
 ```text
-tau-app/tau#248
+ficus-app/ficus#248
 ```
 
 GitHub URLs are resolved from issue and pull-request links:
 
 ```text
-https://github.com/tau-app/tau/issues/248
-https://github.com/tau-app/tau/pull/248
+https://github.com/ficus-app/ficus/issues/248
+https://github.com/ficus-app/ficus/pull/248
 ```
 
 ## Frontmatter
@@ -26,8 +26,8 @@ Each issue or PR is one `memory_documents` row with frontmatter like:
 ```yaml
 kind: pull_request
 sourceLinks:
-  - https://github.com/tau-app/tau/pull/248
-repo: tau-app/tau
+  - https://github.com/ficus-app/ficus/pull/248
+repo: ficus-app/ficus
 number: 248
 state: closed
 labels:
@@ -42,7 +42,7 @@ The document body contains the issue/PR body plus comments. Chunks include paren
 ```json
 {
   "sourceType": "github_issue",
-  "parent": { "repo": "tau-app/tau", "number": 248 },
+  "parent": { "repo": "ficus-app/ficus", "number": 248 },
   "event": { "actor": "octocat", "ts": "2026-05-18T12:34:56Z" }
 }
 ```
@@ -57,7 +57,7 @@ The document body contains the issue/PR body plus comments. Chunks include paren
   "policy": {
     "timeWindowDays": 30,
     "scope": {
-      "repos": ["tau-app/tau"],
+      "repos": ["ficus-app/ficus"],
       "labels": ["memory"]
     }
   }

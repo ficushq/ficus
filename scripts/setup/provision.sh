@@ -104,7 +104,7 @@ DEPLOY_KEY=$(expand_tilde "$(cfg_get '.source.deploy_key_path')")
 # Origin TLS (ingress.caddy) — the Cloudflare Origin CA cert+key pair, on THIS
 # control machine. Delivered to the VM exactly like the deploy key above: scp
 # into ${REMOTE_DIR}/keys (0600), config paths rewritten to match. ONE pair
-# covers hiretau.ai and *.hiretau.ai, so the same private key lands on every
+# covers ficus.sh and *.ficus.sh, so the same private key lands on every
 # tenant VM — an accepted operator decision: an origin certificate only
 # authenticates an origin TO Cloudflare, and is worthless to a browser.
 CADDY_ENABLE=$(cfg_bool '.ingress.caddy' 'false')

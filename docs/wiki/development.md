@@ -1,6 +1,6 @@
-# Developing Tau
+# Developing Ficus
 
-Working **on** tau, not just running it. Installing tau is a different job —
+Working **on** ficus, not just running it. Installing ficus is a different job —
 [docs/wiki/setup.md](setup.md#local-setup) covers that, and `bun run setup` gets a
 checkout from nothing to a running instance in one command. Everything here
 assumes that already happened.
@@ -13,7 +13,7 @@ For code conventions (Bun, monorepo layout, React Query, migrations), read
 
 Use Node.js 24 LTS (minimum 22.19.0) for Node-based build tools, including Astro and Pi. Bun remains the package manager and application runtime.
 
-Beyond what setup installs, developing tau wants:
+Beyond what setup installs, developing ficus wants:
 
 - [Bun](https://bun.sh) — the runtime and package manager (`curl -fsSL https://bun.sh/install | bash`). The pinned version is in `.bun-version`; `bun upgrade` if preflight complains.
 - [Docker](https://docs.docker.com/get-docker/) — for the PostgreSQL containers, the `docker-socket`/`docker-sysbox` runtimes, and k3d.
@@ -79,16 +79,16 @@ git config --global --list | grep -E '(sign|gpg)'
 ## The dev loop
 
 `bun run setup` builds Core and the web app, then starts the API and worker
-under the installation's recorded supervisor. Use `tau server status` to see
+under the installation's recorded supervisor. Use `ficus server status` to see
 that supervisor and the local instance being managed.
 
 For hot-reload development, stop those installed services before starting
 source processes on the same ports. Keep the instance's configured PostgreSQL
-running. `tau server stop` stops the API and worker without deleting or
+running. `ficus server stop` stops the API and worker without deleting or
 stopping their database:
 
 ```bash
-tau server stop
+ficus server stop
 bun run dev:core        # terminal 1: API + worker, both in watch mode
 ```
 
@@ -115,7 +115,7 @@ To iterate on the local web UI against a paired remote instance, first add that
 instance to the CLI auth store, then select its label when starting Vite:
 
 ```bash
-tau auth login cloud --api-url https://your-instance.ficus.sh
+ficus auth login cloud --api-url https://your-instance.ficus.sh
 FICUS_DEV_BACKEND=cloud bun run dev:web
 ```
 
@@ -139,10 +139,10 @@ the core with `FICUS_SERVE_WEB=1`; the app, `/api/*` and `/ws` are then all on
 `PORT` (this is what setup configures).
 
 The installed services and the foreground dev processes are separate.
-`tau server status` and `tau server logs -f` describe the registered
+`ficus server status` and `ficus server logs -f` describe the registered
 installation; the dev processes write to their own terminals. To return to
 the installed build, stop both foreground dev commands, rebuild the changed
-packages, then run `tau server start`. Do not run both copies on the same
+packages, then run `ficus server start`. Do not run both copies on the same
 ports.
 
 ## Scripts
@@ -289,7 +289,7 @@ FICUS_K8S_RUNTIME_CLASS=
 # FICUS_SANDBOX_MEMORY_LIMIT=8Gi
 
 # Installed build: restart using its recorded supervisor
-tau server restart
+ficus server restart
 # For source development, use the dev loop above instead
 ```
 

@@ -8,8 +8,8 @@ Point a squad at a channel the bot is already in (`instanceId` from
 `config/channels/`, `channelId` from the chat platform):
 
 ```bash
-tau squad set-meta <squad-id> notifications.discord.instanceId "<instance-id>"
-tau squad set-meta <squad-id> notifications.discord.channelId "<discord-channel-id>"
+ficus squad set-meta <squad-id> notifications.discord.instanceId "<instance-id>"
+ficus squad set-meta <squad-id> notifications.discord.channelId "<discord-channel-id>"
 ```
 
 Slash-command, web-UI and per-platform variants, plus the events that fire, are
@@ -53,7 +53,7 @@ NotificationService.notify()   (matches event/data rule, resolves recipients)
 | `apps/core/src/services/push/vapid.ts`                    | VAPID key management                                                            |
 | `apps/core/src/services/push/apns.ts`                     | Direct APNs sender (HTTP/2 + ES256 provider JWT)                                |
 | `apps/core/src/services/push/apns-devices.ts`             | APNs device-token registration (database)                                       |
-| `apps/core/src/services/push/desktop.ts`                  | Desktop alert feed, deduplication, retention, and preference checks              |
+| `apps/core/src/services/push/desktop.ts`                  | Desktop alert feed, deduplication, retention, and preference checks             |
 | `apps/core/src/routes/push.ts`                            | HTTP endpoints for Web Push + native device registration                        |
 
 ## Initialization
@@ -132,8 +132,8 @@ External channels send notifications to chat platforms via their bot APIs. They 
 **Quick setup via slash commands:**
 
 ```
-/tau notify <squad-name>     # Subscribe channel to squad notifications
-/tau unnotify <squad-name>   # Unsubscribe
+/ficus notify <squad-name>     # Subscribe channel to squad notifications
+/ficus unnotify <squad-name>   # Unsubscribe
 ```
 
 **How it works:**
@@ -164,7 +164,7 @@ Browsers register for push notifications via the Settings page in the web UI:
 
 ### VAPID Keys
 
-VAPID (Voluntary Application Server Identification) keys are loaded on demand, with SecretStore keys `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` taking precedence. If absent, Tau reads the legacy file (`config/vapid.json`, or `VAPID_KEYS_PATH`) and attempts to migrate its keys to SecretStore. If neither source provides keys, Tau generates them and attempts to persist them in SecretStore; it also writes the compatibility file. Store/file persistence is best effort, so the legacy file can remain the source when SecretStore writes fail. The public key is served to browsers for subscription creation; the private key signs push messages.
+VAPID (Voluntary Application Server Identification) keys are loaded on demand, with SecretStore keys `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` taking precedence. If absent, Ficus reads the legacy file (`config/vapid.json`, or `VAPID_KEYS_PATH`) and attempts to migrate its keys to SecretStore. If neither source provides keys, Ficus generates them and attempts to persist them in SecretStore; it also writes the compatibility file. Store/file persistence is best effort, so the legacy file can remain the source when SecretStore writes fail. The public key is served to browsers for subscription creation; the private key signs push messages.
 
 ## Rules Configuration
 

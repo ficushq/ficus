@@ -1,14 +1,14 @@
 # Channel Notifications (Discord/Slack/Telegram)
 
-Send bundled high-signal notifications to Discord, Slack, and Telegram when key events occur in Tau. Notifications reuse the same channel instance bots configured for slash commands. Blocked events remain supported through explicit custom rules.
+Send bundled high-signal notifications to Discord, Slack, and Telegram when key events occur in Ficus. Notifications reuse the same channel instance bots configured for slash commands. Blocked events remain supported through explicit custom rules.
 
 ## Quick Setup
 
 The easiest way to configure notifications is via slash commands from the target channel:
 
 ```
-/tau notify <squad-name>     # Subscribe this channel to squad notifications
-/tau unnotify <squad-name>   # Unsubscribe
+/ficus notify <squad-name>     # Subscribe this channel to squad notifications
+/ficus unnotify <squad-name>   # Unsubscribe
 ```
 
 ## Configuration
@@ -23,19 +23,19 @@ The easiest way to configure notifications is via slash commands from the target
 
 ```bash
 # Discord
-tau squad set-meta <squad-id> notifications.discord.instanceId "<instance-id>"
-tau squad set-meta <squad-id> notifications.discord.channelId "<channel-id>"
+ficus squad set-meta <squad-id> notifications.discord.instanceId "<instance-id>"
+ficus squad set-meta <squad-id> notifications.discord.channelId "<channel-id>"
 
 # Slack
-tau squad set-meta <squad-id> notifications.slack.instanceId "<instance-id>"
-tau squad set-meta <squad-id> notifications.slack.channelId "<channel-id>"
+ficus squad set-meta <squad-id> notifications.slack.instanceId "<instance-id>"
+ficus squad set-meta <squad-id> notifications.slack.channelId "<channel-id>"
 
 # Telegram
-tau squad set-meta <squad-id> notifications.telegram.instanceId "<instance-id>"
-tau squad set-meta <squad-id> notifications.telegram.channelId "<chat-id>"
+ficus squad set-meta <squad-id> notifications.telegram.instanceId "<instance-id>"
+ficus squad set-meta <squad-id> notifications.telegram.channelId "<chat-id>"
 
 # Remove notifications
-tau squad set-meta <squad-id> notifications.discord null
+ficus squad set-meta <squad-id> notifications.discord null
 ```
 
 ## Supported Events

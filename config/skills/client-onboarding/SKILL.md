@@ -7,7 +7,7 @@ description: 'End-to-end guide for onboarding a new client — configure secrets
 
 ## Overview
 
-This skill guides you through setting up a new Tau instance for a client. It
+This skill guides you through setting up a new Ficus instance for a client. It
 covers secrets, squads, integrations, and verification. Each section references
 a dedicated skill with detailed instructions — read the relevant skill when you
 reach that step.
@@ -16,7 +16,7 @@ reach that step.
 
 Before starting, confirm with the human:
 
-1. **Tau is deployed and running** — API, worker, and web are healthy
+1. **Ficus is deployed and running** — API, worker, and web are healthy
 2. **Platform URLs are available** — your system prompt includes the Web UI and API URLs (auto-configured in K8s)
 3. **Database is connected** — `DATABASE_URL` and `FICUS_ENCRYPTION_KEY` are set
 4. The human has access to the platforms they want to integrate (GitHub, Linear,
@@ -25,9 +25,9 @@ Before starting, confirm with the human:
 Quick health check:
 
 ```bash
-tau system restart  # Ensure clean state
+ficus system restart  # Ensure clean state
 # Verify API is healthy (check from the system manager's perspective)
-tau squad list      # Should return empty or existing squads
+ficus squad list      # Should return empty or existing squads
 ```
 
 ## Phase 1: Secrets & Credentials
@@ -42,7 +42,7 @@ Configure the essential secrets first, since everything else depends on them.
   **the matching Settings → Integrations card or AI Providers form**. Never ask them to paste secrets in chat. If
   they volunteer a value, you can set it for them via CLI.
 - For **auto-generated secrets** (webhook secrets): generate and set via CLI
-  (`tau secret set KEY "$(openssl rand -hex 32)"`). Don't read the value back —
+  (`ficus secret set KEY "$(openssl rand -hex 32)"`). Don't read the value back —
   tell the human they can view/copy it in the Settings UI.
 
 **Minimum required:**
@@ -69,16 +69,16 @@ details on creating squads, setting context, and configuring integrations.
 
 ```bash
 # Create an engineering squad
-tau squad create "Engineering" -p "Software development and code maintenance" -t engineering
+ficus squad create "Engineering" -p "Software development and code maintenance" -t engineering
 
 # Create a general-purpose squad
-tau squad create "Operations" -p "General operations and support" -t general
+ficus squad create "Operations" -p "General operations and support" -t general
 ```
 
 Note the squad UUIDs — you'll need them for channel linking and webhook routing.
 
 ```bash
-tau squad list
+ficus squad list
 ```
 
 ## Phase 3: GitHub Integration
@@ -87,15 +87,15 @@ tau squad list
 
 **Ask the human:**
 
-- Which GitHub repositories should Tau watch?
+- Which GitHub repositories should Ficus watch?
 - Should issues be routed by labels, or should all issues go to one squad?
 
 Steps:
 
 1. Configure direct webhook delivery in **Settings → Integrations → GitHub → Webhook delivery** (optional when managed relay or polling is sufficient)
 2. Create the webhook on each repo via `gh` CLI
-3. Configure squad metadata for routing (`tau squad set-meta ... github`)
-4. Verify with `tau webhook status github`
+3. Configure squad metadata for routing (`ficus squad set-meta ... github`)
+4. Verify with `ficus webhook status github`
 
 ## Phase 4: Linear Integration (Optional)
 
@@ -111,7 +111,7 @@ Steps:
 1. Set the webhook signing secret in Settings → Integrations → Linear → Webhook delivery (`PUT /api/integrations/providers/linear/webhook`); the `LINEAR_WEBHOOK_SECRET` env var is legacy and imported only once
 2. Walk the human through creating the webhook in Linear's UI
 3. Configure squad metadata for team routing
-4. Verify with `tau webhook status linear`
+4. Verify with `ficus webhook status linear`
 
 ## Phase 5: Channel Integrations (Optional)
 
@@ -125,9 +125,9 @@ Steps:
 2. Configure secrets (`DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN`)
 3. Set the interactions endpoint URL
 4. Invite the bot to the server
-5. Register slash commands: `tau discord register`
+5. Register slash commands: `ficus discord register`
 6. Create the channel instance and link to squads
-7. Verify with `/tau help` in Discord
+7. Verify with `/ficus help` in Discord
 
 ### Slack
 
@@ -136,7 +136,7 @@ Steps:
 1. Walk the human through creating the Slack app (manifest is fastest)
 2. Configure secrets (`SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`)
 3. Create the channel instance and link to squads
-4. Verify with `/tau help` in Slack
+4. Verify with `/ficus help` in Slack
 
 ### Telegram
 
@@ -153,7 +153,7 @@ Steps:
 
 Configure where each squad sends notifications (blocked, review, done events).
 
-**Easiest method:** If channel bots are set up, use `/tau notify <squad-name>`
+**Easiest method:** If channel bots are set up, use `/ficus notify <squad-name>`
 from the target channel.
 
 **CLI method:** Set notification metadata on each squad with the channel instance
@@ -168,23 +168,23 @@ Run through each integration to confirm everything works:
 
 ```bash
 # Core
-tau squad list                        # Squads exist
-tau provider-auth list                # AI providers configured
+ficus squad list                        # Squads exist
+ficus provider-auth list                # AI providers configured
 
 # Webhooks
-tau webhook status github             # If configured
-tau webhook status linear             # If configured
+ficus webhook status github             # If configured
+ficus webhook status linear             # If configured
 
 # Channels
-tau channel list                      # Channel instances exist
+ficus channel list                      # Channel instances exist
 ```
 
 **Manual tests (ask the human to perform):**
 
 - [ ] Log into the web UI with the configured password
 - [ ] Open a chat with the system manager and send a message
-- [ ] (Discord) Run `/tau help` in the Discord server
-- [ ] (Slack) Run `/tau help` in the Slack workspace
+- [ ] (Discord) Run `/ficus help` in the Discord server
+- [ ] (Slack) Run `/ficus help` in the Slack workspace
 - [ ] (Telegram) Send `/help` to the bot
 - [ ] (GitHub) Assign a test issue → verify the squad manager receives it
 - [ ] (Linear) Assign a test issue → verify the squad manager receives it

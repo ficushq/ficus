@@ -1,6 +1,6 @@
 ---
 name: deploy-netlify
-description: Deploy static sites and SPAs to Netlify after Tau local app, tests, and explicit human consent.
+description: Deploy static sites and SPAs to Netlify after Ficus local app, tests, and explicit human consent.
 ---
 
 # Deploying with Netlify
@@ -18,8 +18,8 @@ For squad project work, invoke the following project-directory commands through 
 ## Guardrails
 
 - Ask before site creation, production deploy, domain/DNS changes, paid add-ons, or public exposure.
-- Required Tau secret: `DEPLOY_NETLIFY_TOKEN`. Do not paste tokens into chat.
-- Ask a human admin/operator to expose only this secret in squad Environment settings or with `tau squad-env expose-secrets <squad-id> DEPLOY_NETLIFY_TOKEN` before running provider CLI commands.
+- Required Ficus secret: `DEPLOY_NETLIFY_TOKEN`. Do not paste tokens into chat.
+- Ask a human admin/operator to expose only this secret in squad Environment settings or with `ficus squad-env expose-secrets <squad-id> DEPLOY_NETLIFY_TOKEN` before running provider CLI commands.
 
 ## If `DEPLOY_NETLIFY_TOKEN` is not set
 
@@ -28,16 +28,16 @@ Walk the human through account/token setup before attempting CLI commands:
 1. Ask them to sign in or create a Netlify account at https://app.netlify.com/signup.
 2. Ask them to choose or create the Netlify team that should own the site. Mention that team features/add-ons can affect billing.
 3. Direct them to User Settings → Applications → Personal access tokens: https://app.netlify.com/user/applications#personal-access-tokens.
-4. Ask them to create a token named `tau-deploy`.
-5. Do **not** ask them to paste the token in chat. Open Tau **Settings → Integrations → Netlify**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
+4. Ask them to create a token named `ficus-deploy`.
+5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Netlify**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
 
 6. Ask an admin/operator to expose only `DEPLOY_NETLIFY_TOKEN` to this squad from the Squad Settings tab → Environment section. CLI fallback:
 
 ```bash
-tau squad-env expose-secrets <squad-id> DEPLOY_NETLIFY_TOKEN
+ficus squad-env expose-secrets <squad-id> DEPLOY_NETLIFY_TOKEN
 ```
 
-7. Verify non-secret access with `tau squad-env secrets <squad-id>` and then `NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify status` or `netlify sites:list`.
+7. Verify non-secret access with `ficus squad-env secrets <squad-id>` and then `NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify status` or `netlify sites:list`.
 
 ## Project directory and upload hygiene
 
@@ -82,12 +82,12 @@ NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify open:admin
 - Netlify CLI command reference: https://cli.netlify.com/
 - Manage deploys and rollbacks: https://docs.netlify.com/deploy/manage-deploys/manage-deploys-overview/
 
-## Tau deployment record
+## Ficus deployment record
 
 After deploying, record the external deployment and keep it updated. Do not put secrets in metadata. Archive old or superseded external deployment records once they are no longer useful; archived records move out of the active Apps tab list while preserving history.
 
 ```bash
-tau deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
-tau deploy external update <deployment-id> --status failed
-tau deploy external archive <deployment-id>
+ficus deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
+ficus deploy external update <deployment-id> --status failed
+ficus deploy external archive <deployment-id>
 ```

@@ -1,9 +1,9 @@
 ---
 title: Configuration reference
-description: Understand which settings belong in Tau's UI, the local environment, and CLI backend configuration.
+description: Understand which settings belong in Ficus's UI, the local environment, and CLI backend configuration.
 ---
 
-Tau stores different kinds of configuration in different places. Most people should connect models and integrations in the app. Self-hosted operators also manage the environment used by the API and worker.
+Ficus stores different kinds of configuration in different places. Most people should connect models and integrations in the app. Self-hosted operators also manage the environment used by the API and worker.
 
 import ModeContent from '../../../components/ModeContent.astro'
 
@@ -14,12 +14,12 @@ import ModeContent from '../../../components/ModeContent.astro'
 | Agent model accounts and credentials                    | **Settings → AI Providers**; see [models](/configure/models/).                                      |
 | GitHub and other service connections                    | **Settings → Integrations**, then select or inherit the connection for the squad where appropriate. |
 | Instance execution concurrency                          | **Settings → System → Agent Execution**.                                                            |
-| Which instance a CLI command calls                      | `tau auth` backend configuration; see the [CLI reference](/reference/cli/).                         |
+| Which instance a CLI command calls                      | `ficus auth` backend configuration; see the [CLI reference](/reference/cli/).                       |
 | A self-hosted port, database, data directory or runtime | The instance checkout's `.env`, normally written by setup.                                          |
 
 <ModeContent mode="cloud">
 
-Tau Cloud manages the server environment. Use the app's settings for the controls available to your account. The environment variables below describe self-hosted installations; they are not values you need to supply to start using Cloud.
+Ficus Cloud manages the server environment. Use the app's settings for the controls available to your account. The environment variables below describe self-hosted installations; they are not values you need to supply to start using Cloud.
 
 </ModeContent>
 
@@ -27,7 +27,7 @@ Tau Cloud manages the server environment. Use the app's settings for the control
 
 `bun run setup` creates and merges `.env` for you. Keep that file with the instance whose services read it. Setup preserves existing secrets and values unless a corresponding explicit setup option replaces a managed value.
 
-After changing server environment settings, restart the local installation with `tau server restart`. The UI concurrency setting and API-service credential changes have their own live update behavior and do not require editing `.env`.
+After changing server environment settings, restart the local installation with `ficus server restart`. The UI concurrency setting and API-service credential changes have their own live update behavior and do not require editing `.env`.
 
 </ModeContent>
 
@@ -36,7 +36,7 @@ After changing server environment settings, restart the local installation with 
 | Setting                      | Meaning                                                                                                                                 |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`               | PostgreSQL connection for this instance. Setup writes the connection for its managed container, or uses your explicit `--database-url`. |
-| `HOME_DIR`                   | Root for Tau's local data. Normally `~/.tau`; named installs default to `~/.tau-<label>`. Prefer an absolute path.                      |
+| `HOME_DIR`                   | Root for Ficus's local data. Normally `~/.tau`; named installs default to `~/.tau-<label>`. Prefer an absolute path.                    |
 | `FICUS_SANDBOX_RUNTIME`      | Required: `host`, `docker-socket`, `docker-sysbox`, `vm` or `k8s`. No implicit default.                                                 |
 | `FICUS_ENCRYPTION_KEY`       | A 32-byte hex key used to encrypt credentials in the database. Setup generates it only when missing. Preserve it with backups.          |
 | `FICUS_INTERNAL_EVENT_TOKEN` | Shared authentication for communication between the API and worker. Setup writes a matching value for the instance.                     |
@@ -53,7 +53,7 @@ Changing `HOME_DIR` or `DATABASE_URL` selects different storage; it does not mov
 | `WORKER_PORT`             | Worker HTTP port; setup derives the API port plus 2. Not the browser entrypoint.                                                              |
 | `FICUS_WORKER_BIND`       | Worker bind address. Overrides `HOST`; otherwise the worker defaults to loopback outside Kubernetes.                                          |
 | `FICUS_WORKER_EVENT_PORT` | Internal event port; setup derives the API port plus 3.                                                                                       |
-| `APP_URL`                 | User-facing application URL, including links Tau generates. Local setup uses `http://localhost:<port>`.                                       |
+| `APP_URL`                 | User-facing application URL, including links Ficus generates. Local setup uses `http://localhost:<port>`.                                     |
 | `FICUS_WEB_ORIGIN`        | Exact browser origin for passkeys and browser access policy: `scheme://host[:port]`, with no path.                                            |
 | `FICUS_API_URL`           | API address used by clients and runtime connections. Keep it reachable from the components that use it.                                       |
 | `FICUS_SERVE_WEB`         | `1`, `true` or `yes` serves the built web app from Core. `0`, `false` or `no` disables it. If unset, Core serves it only when a build exists. |
@@ -61,8 +61,8 @@ Changing `HOME_DIR` or `DATABASE_URL` selects different storage; it does not mov
 Example for a same-machine HTTPS proxy, with the API still on its local port:
 
 ```dotenv
-APP_URL=https://tau.example.com
-FICUS_WEB_ORIGIN=https://tau.example.com
+APP_URL=https://ficus.example.com
+FICUS_WEB_ORIGIN=https://ficus.example.com
 FICUS_SERVE_WEB=1
 ```
 
@@ -72,7 +72,7 @@ This example does not install a proxy or certificate. Follow [configure access](
 
 `FICUS_PASSWORD` is the initial bootstrap/legacy password. Setup generates it so you can create the first administrator. Once an administrator has a passkey, password login and password bearer authentication stop being accepted. Emptying the variable does not disable account authentication.
 
-`WEBAUTHN_RP_ID` optionally pins the passkey relying-party domain. It is a hostname without scheme, port or path; the default comes from the web origin. Leave it alone unless you are deliberately configuring the domain used by passkeys. `WEBAUTHN_RP_NAME` controls the name shown in the passkey prompt and defaults to `Tau`.
+`WEBAUTHN_RP_ID` optionally pins the passkey relying-party domain. It is a hostname without scheme, port or path; the default comes from the web origin. Leave it alone unless you are deliberately configuring the domain used by passkeys. `WEBAUTHN_RP_NAME` controls the name shown in the passkey prompt and defaults to `Ficus`.
 
 Browser sessions, CLI device credentials and model-provider credentials are separate. A successful CLI login does not connect a model provider. Use [first installation](/start/self-host/#create-the-first-administrator) and [model setup](/configure/models/) for those steps.
 

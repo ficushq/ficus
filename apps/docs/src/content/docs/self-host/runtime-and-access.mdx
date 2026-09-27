@@ -1,21 +1,21 @@
 ---
 title: Choose a runtime and configure access
-description: Decide where agent commands run and make a self-hosted Tau instance reachable from your browser.
+description: Decide where agent commands run and make a self-hosted Ficus instance reachable from your browser.
 ---
 
-There are two separate choices when hosting Tau: where its API and worker run, and where agents execute commands. Installing the app on a server does not automatically choose a safe agent runtime or make the browser interface publicly reachable.
+There are two separate choices when hosting Ficus: where its API and worker run, and where agents execute commands. Installing the app on a server does not automatically choose a safe agent runtime or make the browser interface publicly reachable.
 
 ## Choose an agent runtime
 
-Every instance needs `FICUS_SANDBOX_RUNTIME`. Tau refuses to start if it is missing or invalid. The current choice applies to the instance; per-squad runtime switching is not part of this setup flow.
+Every instance needs `FICUS_SANDBOX_RUNTIME`. Ficus refuses to start if it is missing or invalid. The current choice applies to the instance; per-squad runtime switching is not part of this setup flow.
 
-| Runtime         | Agent environment                                                                                              | What you need                                                                        |
-| --------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `host`          | Commands run as Tau's user on its own machine. There is no isolation from that user's files or network access. | Bash; a local Chromium-family browser for browser tools; tmux for local deployments. |
-| `docker-socket` | Container workspaces with the host's Docker socket available inside. Docker access can control the host.       | A working Docker daemon and sandbox image.                                           |
-| `docker-sysbox` | Containers with user namespaces and their own Docker daemon.                                                   | Linux, Docker and the Sysbox runtime.                                                |
-| `vm`            | A box runs as a dedicated Unix user on a registered machine. Multiple boxes can share one machine.             | An SSH-accessible machine fleet, bootstrap and box provisioning.                     |
-| `k8s`           | Sandboxes run as Kubernetes pods.                                                                              | A configured cluster, storage and sandbox deployment resources.                      |
+| Runtime         | Agent environment                                                                                                | What you need                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `host`          | Commands run as Ficus's user on its own machine. There is no isolation from that user's files or network access. | Bash; a local Chromium-family browser for browser tools; tmux for local deployments. |
+| `docker-socket` | Container workspaces with the host's Docker socket available inside. Docker access can control the host.         | A working Docker daemon and sandbox image.                                           |
+| `docker-sysbox` | Containers with user namespaces and their own Docker daemon.                                                     | Linux, Docker and the Sysbox runtime.                                                |
+| `vm`            | A box runs as a dedicated Unix user on a registered machine. Multiple boxes can share one machine.               | An SSH-accessible machine fleet, bootstrap and box provisioning.                     |
+| `k8s`           | Sandboxes run as Kubernetes pods.                                                                                | A configured cluster, storage and sandbox deployment resources.                      |
 
 The [local installer](/start/self-host/) prepares `host`, `docker-socket`, `docker-sysbox` or local `k3d`. Its `k3d` choice writes `k8s` as the runtime and configures local cluster access. VM fleets and existing Kubernetes clusters are advanced deployments; selecting their environment value alone does not create the infrastructure.
 
@@ -30,31 +30,31 @@ Fresh local setup uses one browser address, normally `http://localhost:3000`. Co
 Check the actual address and runtime with:
 
 ```sh
-tau server status
+ficus server status
 ```
 
 Use the URL from setup consistently when registering and using passkeys. A different hostname is a different browser origin, even when it reaches the same computer.
 
 ## Put a remote instance behind HTTPS
 
-For browser access from another device, use a hostname you control and an HTTPS reverse proxy. This example assumes the proxy and Tau run on the same machine, with Core listening on port 3000.
+For browser access from another device, use a hostname you control and an HTTPS reverse proxy. This example assumes the proxy and Ficus run on the same machine, with Core listening on port 3000.
 
 1. Point your hostname at the server and arrange an HTTPS certificate with your proxy.
-2. Set these values in the Tau checkout's `.env`, substituting your own hostname:
+2. Set these values in the Ficus checkout's `.env`, substituting your own hostname:
 
    ```dotenv
-   APP_URL=https://tau.example.com
-   FICUS_WEB_ORIGIN=https://tau.example.com
+   APP_URL=https://ficus.example.com
+   FICUS_WEB_ORIGIN=https://ficus.example.com
    FICUS_SERVE_WEB=1
    ```
 
 3. Proxy the whole hostname to `http://127.0.0.1:3000`. Forward ordinary HTTP requests and WebSocket upgrades for both `/ws` and `/ws/*`, including terminal connections.
-4. Restart Tau with `tau server restart`, then open the HTTPS address and test login, live task updates and a terminal session.
+4. Restart Ficus with `ficus server restart`, then open the HTTPS address and test login, live task updates and a terminal session.
 
 With Caddy, the single-origin proxy portion is:
 
 ```text
-tau.example.com {
+ficus.example.com {
   reverse_proxy 127.0.0.1:3000
 }
 ```

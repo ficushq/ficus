@@ -1,6 +1,6 @@
 # Sandbox
 
-The sandbox is an HTTP service that runs inside each sandbox pod. It provides command execution, file operations, and interactive shells. Agent intelligence stays in Tau Core — the sandbox only executes operations.
+The sandbox is an HTTP service that runs inside each sandbox pod. It provides command execution, file operations, and interactive shells. Agent intelligence stays in Ficus Core — the sandbox only executes operations.
 
 **Source:** `packages/k8s-sandbox/`
 
@@ -255,7 +255,7 @@ The Dockerfile (`packages/k8s-sandbox/Dockerfile`) builds a multi-stage image:
 2. **Default packages:** A `devbox.json` with common tools is baked in and `devbox install` is run at build time (~2.5GB of nix packages). This makes runtime `devbox install` a fast no-op.
 3. **Entrypoint:** `sandbox/entrypoint.sh`
 
-The image does not bundle the Tau CLI. Tau Core copies the built CLI into the shared `tau-core-data` volume at `cli/ficus.js` and mounts it read-only at `/usr/local/bin/ficus` when creating pods. Recreate a sandbox pod after CLI changes to pick up the newly staged file; no sandbox image rebuild/import is required for CLI-only changes.
+The image does not bundle the Ficus CLI. Ficus Core copies the built CLI into the shared `tau-core-data` volume at `cli/ficus.js` and mounts it read-only at `/usr/local/bin/ficus` when creating pods. Recreate a sandbox pod after CLI changes to pick up the newly staged file; no sandbox image rebuild/import is required for CLI-only changes.
 
 Build with:
 
@@ -302,7 +302,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | `WORKSPACE_PATH`   | `/workspace`  | Primary working directory   |
 | `FICUS_SANDBOX_ID` | (set by Core) | Sandbox identifier          |
 | `FICUS_SQUAD_ID`   | (set by Core) | Squad identifier            |
-| `FICUS_API_URL`    | (set by Core) | Core API URL for Tau CLI    |
+| `FICUS_API_URL`    | (set by Core) | Core API URL for Ficus CLI  |
 | `GITHUB_TOKEN`     | (optional)    | Git credential helper token |
 | `GIT_USER_NAME`    | (optional)    | Git commit author name      |
 | `GIT_USER_EMAIL`   | (optional)    | Git commit author email     |
@@ -315,7 +315,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 ## First-class squad toolchains
 
-Squads may declare a Tau-managed package set and inline setup script with `tau squad toolchain set`. Tau realizes this isolated Devbox before squad and squad-agent sandboxes are reported ready, retains its per-sandbox lock/cache state, and reconciles a changed fingerprint without modifying the repository's `devbox.json` or `.tau/setup.sh`. Provisioning status and safe fixed failure reasons are included in sandbox status responses.
+Squads may declare a Ficus-managed package set and inline setup script with `ficus squad toolchain set`. Ficus realizes this isolated Devbox before squad and squad-agent sandboxes are reported ready, retains its per-sandbox lock/cache state, and reconciles a changed fingerprint without modifying the repository's `devbox.json` or `.tau/setup.sh`. Provisioning status and safe fixed failure reasons are included in sandbox status responses.
 
 Before each turn Core confirms the toolchain is active in the sandbox server. The server reuses its cached environment when the fingerprint is unchanged, and otherwise resolves it with a 20-second limit, below Core's 30-second request budget. A sandbox too loaded to answer in time reports "Toolchain provisioning timed out; the sandbox may be overloaded" rather than "Toolchain provisioning failed", and Core logs the underlying error for every toolchain failure.
 

@@ -7,9 +7,9 @@
 # 3. Copy Public Key → DISCORD_PUBLIC_KEY env var
 # 4. Create bot, copy token → DISCORD_BOT_TOKEN env var
 # 5. Set Interactions URL: https://your-domain/api/webhooks/channels/discord
-# 6. Register commands: tau discord register
-# 7. Check status: tau discord status
-# 8. Fix duplicates: tau discord clear --scope global
+# 6. Register commands: ficus discord register
+# 7. Check status: ficus discord status
+# 8. Fix duplicates: ficus discord clear --scope global
 
 id: example-discord
 name: Example Discord Server
@@ -17,13 +17,13 @@ provider: discord
 
 # Provider-specific configuration
 providerConfig:
-  guildId: "123456789012345678"
+  guildId: '123456789012345678'
 
 # Optional: Map specific Discord channels to specific squads
 # Discord channel ID → Squad UUID
 channelSquadMap:
-  "111111111111111111": "a1b2c3d4-1234-5678-9abc-def012345678"  # #frontend
-  "222222222222222222": "b2c3d4e5-2345-6789-abcd-ef0123456789"  # #backend
+  '111111111111111111': 'a1b2c3d4-1234-5678-9abc-def012345678' # #frontend
+  '222222222222222222': 'b2c3d4e5-2345-6789-abcd-ef0123456789' # #backend
 
 # Default squad for requests not matching a channel mapping
-defaultSquadId: "a1b2c3d4-1234-5678-9abc-def012345678"
+defaultSquadId: 'a1b2c3d4-1234-5678-9abc-def012345678'

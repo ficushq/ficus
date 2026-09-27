@@ -1,6 +1,6 @@
 # Single-origin and reverse proxy deployment
 
-Tau can run behind one public hostname in two ways:
+Ficus can run behind one public hostname in two ways:
 
 | Mode                                         | Pick this when                                                                                                                 |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -167,7 +167,7 @@ For split-port deployments, create separate routers: `/api/*`, `/ws`, and `/ws/*
 
 ## Tailscale Serve
 
-If you use [Tailscale](https://tailscale.com/), it can expose tau over your
+If you use [Tailscale](https://tailscale.com/), it can expose ficus over your
 tailnet with automatic HTTPS and no public DNS at all. With the built-in
 single-origin mode (`FICUS_SERVE_WEB=1`), point it at Core:
 
@@ -175,7 +175,7 @@ single-origin mode (`FICUS_SERVE_WEB=1`), point it at Core:
 tailscale serve --bg --set-path=/tau http://localhost:3000
 ```
 
-Tau is then reachable at `https://<your-machine>.<tailnet>/tau`. Because that
+Ficus is then reachable at `https://<your-machine>.<tailnet>/tau`. Because that
 URL carries a path, set the base path and the WebAuthn origin explicitly, or
 passkeys break:
 

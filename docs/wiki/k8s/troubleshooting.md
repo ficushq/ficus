@@ -1,6 +1,6 @@
 # K8s Troubleshooting
 
-Common issues and debugging techniques for Tau's K8s sandbox system in **production**. For local k3d development issues, see [local-dev-k3d.md](local-dev-k3d.md#troubleshooting).
+Common issues and debugging techniques for Ficus's K8s sandbox system in **production**. For local k3d development issues, see [local-dev-k3d.md](local-dev-k3d.md#troubleshooting).
 
 ## Quick Diagnostics
 
@@ -111,7 +111,7 @@ kubectl -n tau-sandboxes get networkpolicy -o yaml
 
 ### Sandbox Cannot Reach Core API
 
-**Symptoms:** Tau CLI commands inside sandbox fail with connection errors.
+**Symptoms:** Ficus CLI commands inside sandbox fail with connection errors.
 
 ```bash
 # From inside the sandbox pod
@@ -176,7 +176,7 @@ Expected GitHub auth failures use exit code 1 with a message from GitHub. Timeou
 
 ## Auth Issues
 
-### Tau CLI Auth Failure Inside Sandbox
+### Ficus CLI Auth Failure Inside Sandbox
 
 ```bash
 # Check the mounted secret
@@ -255,6 +255,6 @@ kubectl -n tau-sandboxes exec -it <pod-name> -- bash
 
 ## Provisioning circuit is open
 
-Sandbox start/restart may return HTTP 503 with a stable `SANDBOX_PROVISION_*` code and a `Retry-After` header when the Kubernetes control plane or scheduler is unhealthy. Check pod scheduling events, API-server reachability, authorization, node/image/storage capacity, and the provisioning diagnostics in the K8s sandbox status response. Do not restart Tau merely to reset the circuit: state is persisted in PostgreSQL and restart intentionally preserves the cooldown. Fully ready existing sandboxes continue to operate; after the cooldown, one request becomes the recovery probe.
+Sandbox start/restart may return HTTP 503 with a stable `SANDBOX_PROVISION_*` code and a `Retry-After` header when the Kubernetes control plane or scheduler is unhealthy. Check pod scheduling events, API-server reachability, authorization, node/image/storage capacity, and the provisioning diagnostics in the K8s sandbox status response. Do not restart Ficus merely to reset the circuit: state is persisted in PostgreSQL and restart intentionally preserves the cooldown. Fully ready existing sandboxes continue to operate; after the cooldown, one request becomes the recovery probe.
 
 Agent turns refused for recoverable capacity, storage substrate, coordination, or control-plane conditions show `waiting-sandbox` and retry automatically on the same execution. Retries use bounded exponential backoff, at most eight wake attempts, and a 15-minute deadline. Diagnostics report waiting/leased/exhausted counts, oldest wait age, and process outcomes. Authorization, invalid image/specification, application startup, and other permanent failures remain terminal and require operator correction.

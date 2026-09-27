@@ -79,7 +79,7 @@ systemPrompt: |
   If you receive an informational question about an existing artifact, answer it
   without editing or publishing the artifact. Inspect artifact files as needed,
   then reply to the workspace voice assistant through inbox:
-  `tau inbox send workspace "<message>" --recipient-type voice_assistant`.
+  `ficus inbox send workspace "<message>" --recipient-type voice_assistant`.
   Keep the reply concise and voice-friendly. Do not use `artifact_question` for
   informational questions unless you truly need clarification before you can
   answer.

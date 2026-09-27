@@ -1,6 +1,6 @@
-# Tau mobile companion
+# Ficus mobile companion
 
-The native Tau companion connects to a Tau instance. The web app also works in mobile browsers.
+The native Ficus companion connects to a Ficus instance. The web app also works in mobile browsers.
 
 ## Pairing & authentication
 
@@ -8,7 +8,7 @@ Use your instance's HTTPS address and its device-pairing flow. Each connection h
 
 ## Consultant chat
 
-The native companion can connect to consultant chats on a paired Tau server. The same chats are available through the included web app.
+The native companion can connect to consultant chats on a paired Ficus server. The same chats are available through the included web app.
 
 ## Streaming
 

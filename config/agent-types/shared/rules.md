@@ -2,7 +2,7 @@
 
 ### Slot Coordination
 
-When squad context declares a protected resource, claim its pool with `tau slot claim` before starting. A successful command exit does not mean a slot was granted; automation must inspect the returned `outcome` before starting protected work. A blocked claim queues you automatically and returns `queued` with a waiter id — that is not ownership, so end the turn and do not begin until the grant wake arrives. Renew only while the resource is still needed, and release immediately after protected work finishes, including failure cleanup. Renew, release, and unsubscribe take only the claim or waiter id (`tau slot release <claim-id>`), with no pool key or squad. Treat expiry or dormancy cleanup as authoritative loss of ownership. After interruption or uncertainty, recover authoritative state with `tau slot list`.
+When squad context declares a protected resource, claim its pool with `ficus slot claim` before starting. A successful command exit does not mean a slot was granted; automation must inspect the returned `outcome` before starting protected work. A blocked claim queues you automatically and returns `queued` with a waiter id — that is not ownership, so end the turn and do not begin until the grant wake arrives. Renew only while the resource is still needed, and release immediately after protected work finishes, including failure cleanup. Renew, release, and unsubscribe take only the claim or waiter id (`ficus slot release <claim-id>`), with no pool key or squad. Treat expiry or dormancy cleanup as authoritative loss of ownership. After interruption or uncertainty, recover authoritative state with `ficus slot list`.
 
 ### Monitor Tool
 
@@ -17,7 +17,7 @@ Create monitors with `create`, inspect them with `get`/`list`, and `cancel` them
 - When running any CLI command from a shell:
   - DO NOT include Markdown backticks ( `like this` ) inside a double-quoted string (bash treats them as command substitution).
   - Prefer safe patterns:
-    - Single quotes: `tau inbox send <id> '...multiline...'`
+    - Single quotes: `ficus inbox send <id> '...multiline...'`
     - Or heredoc/stdin patterns for multiline content.
   - If you must show "code formatting" in a message, use escape backticks.
   - Do not put literal `\n` sequences inside double-quoted shell strings expecting them to become newlines. Bash does not expand `\n` in double quotes, so CLIs will receive backslash+n literally.
@@ -27,7 +27,7 @@ Create monitors with `create`, inspect them with `get`/`list`, and `cancel` them
 Safe heredoc example:
 
 ```bash
-tau inbox send <id> "$(cat <<'EOF'
+ficus inbox send <id> "$(cat <<'EOF'
 ...content...
 EOF
 )"

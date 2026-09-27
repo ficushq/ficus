@@ -1,13 +1,13 @@
 ---
 name: setup-slack
-description: "Set up Slack app integration — create the Slack app (via manifest or manually), configure OAuth, event subscriptions, and create the channel instance."
+description: 'Set up Slack app integration — create the Slack app (via manifest or manually), configure OAuth, event subscriptions, and create the channel instance.'
 ---
 
 # Setting Up Slack Integration
 
 ## Overview
 
-Slack integration gives users slash commands (`/tau status`, `/tau ask`, etc.)
+Slack integration gives users slash commands (`/ficus status`, `/ficus ask`, etc.)
 and thread-based conversations in their Slack workspace. A consultant agent
 handles incoming messages.
 
@@ -21,10 +21,10 @@ need this — squad linking is configured in the channel instance (Step 3).
 
 ```bash
 # Check if Slack secrets exist
-tau secret list | grep SLACK
+ficus secret list | grep SLACK
 
 # Check if channel instances exist
-tau channel list
+ficus channel list
 ```
 
 If Slack is already set up, you only need to update the channel instance
@@ -35,7 +35,7 @@ to link additional squads.
 - **User-provided secrets** (Signing Secret, Bot Token): Direct the human to
   enter them in **Settings → Integrations → Slack**. Do not ask them to paste secrets
   in chat. If they offer to paste a value and want you to set it, you can use
-  `tau secret set`.
+  `ficus secret set`.
 
 ## Prerequisites
 
@@ -60,17 +60,17 @@ The fastest method. Walk the human through:
 
 ```yaml
 display_information:
-  name: Tau
+  name: Ficus
   description: AI development assistant
   background_color: '#0a0a0a'
 features:
   bot_user:
-    display_name: Tau
+    display_name: Ficus
     always_online: true
   slash_commands:
-    - command: /tau
+    - command: /ficus
       url: https://YOUR_API_URL/api/webhooks/channels/slack
-      description: Interact with Tau AI assistant
+      description: Interact with Ficus AI assistant
       usage_hint: '[status|ask|help|notify|unnotify] [message]'
       should_escape: false
 oauth_config:
@@ -117,15 +117,17 @@ settings:
 If the human prefers manual configuration:
 
 1. Go to [Slack API](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Name it "Tau" and select the workspace
+2. Name it "Ficus" and select the workspace
 
 **Slash Command:**
+
 - Go to **Slash Commands** → **Create New Command**
-- Command: `/tau`
+- Command: `/ficus`
 - Request URL: `<API_URL>/api/webhooks/channels/slack`
-- Description: "Interact with Tau AI assistant"
+- Description: "Interact with Ficus AI assistant"
 
 **OAuth Scopes** (under OAuth & Permissions → Bot Token Scopes):
+
 - `commands`, `chat:write`, `chat:write.public`
 - `channels:history`, `groups:history`, `im:history`, `mpim:history`
 - `channels:read`, `channels:join`, `groups:read`, `im:read`, `mpim:read`
@@ -133,6 +135,7 @@ If the human prefers manual configuration:
 - `files:write`, `files:read`, `im:write`, `app_mentions:read`
 
 **Event Subscriptions:**
+
 - Toggle **Enable Events** on
 - Request URL: `<API_URL>/api/webhooks/channels/slack`
 - Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim`, `app_mention`
@@ -147,22 +150,23 @@ Direct the human to enter the following in **Settings → Integrations → Slack
 - `SLACK_BOT_TOKEN` — from OAuth & Permissions → Bot User OAuth Token (starts with `xoxb-`)
 
 If the human pastes a value in chat and wants you to set it, use
-`tau secret set <key> "<value>"`.
+`ficus secret set <key> "<value>"`.
 
 Restart the API:
 
 ```bash
-tau system restart
+ficus system restart
 ```
 
 ## Step 3: Create Channel Instance
 
 Find the Slack Team ID (workspace ID). The human can find it by:
+
 - Opening Slack in a browser — the URL looks like `https://app.slack.com/client/T0123ABCD/...`
 - The Team ID is the part starting with `T` (e.g., `T0123ABCD`)
 
 ```bash
-tau channel create \
+ficus channel create \
   --id "client-slack" \
   --name "Client Slack Workspace" \
   --provider slack \
@@ -174,16 +178,16 @@ tau channel create \
 To link additional squads later:
 
 ```bash
-tau channel link-squad client-slack <squad-uuid>
+ficus channel link-squad client-slack <squad-uuid>
 ```
 
 ## Step 4: Verify
 
 Ask the human to test in their Slack workspace:
 
-1. Type `/tau help` in any channel — should show available commands
-2. Type `/tau status` — should show active work streams
-3. Type `/tau ask How are you?` — should get a response from the consultant
+1. Type `/ficus help` in any channel — should show available commands
+2. Type `/ficus status` — should show active work streams
+3. Type `/ficus ask How are you?` — should get a response from the consultant
 4. Reply to the bot's message in a thread — should continue the conversation
 
 > **Slack note:** Slash commands inside threads start new conversations.
@@ -197,10 +201,10 @@ scroll to bottom).
 
 ## Troubleshooting
 
-| Problem                          | Solution                                                           |
-| -------------------------------- | ------------------------------------------------------------------ |
-| Slash command returns error      | Verify `SLACK_SIGNING_SECRET` matches the app's signing secret     |
-| Event subscriptions fail         | Check the events URL ends with `/events`, API is reachable         |
-| Bot doesn't respond to threads   | Verify event subscriptions are enabled and `message.*` events added |
-| "dispatch_failed" in Slack       | API didn't respond in 3s — check API health and logs               |
-| Bot can't post in channel        | Invite the bot to the channel, or use `chat:write.public` scope    |
+| Problem                        | Solution                                                            |
+| ------------------------------ | ------------------------------------------------------------------- |
+| Slash command returns error    | Verify `SLACK_SIGNING_SECRET` matches the app's signing secret      |
+| Event subscriptions fail       | Check the events URL ends with `/events`, API is reachable          |
+| Bot doesn't respond to threads | Verify event subscriptions are enabled and `message.*` events added |
+| "dispatch_failed" in Slack     | API didn't respond in 3s — check API health and logs                |
+| Bot can't post in channel      | Invite the bot to the channel, or use `chat:write.public` scope     |

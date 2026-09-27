@@ -55,7 +55,7 @@ research phases need no worktree; changes to plan documents in a repository do.
    links to the roadmap, but do not leave essential instructions only in a chat.
 4. For repository changes, prepare and verify the phase branch/worktree and
    record `git.branch`, `git.worktree`, and `git.baseBranch`.
-5. Create the work with `tau workstream create` and `--workflow <preset-id>`
+5. Create the work with `ficus workstream create` and `--workflow <preset-id>`
    or `--flow-content '<JSON source>'` for short payloads; use `--flow-stdin`
    with a quoted heredoc for longer JSON/YAML. Saved definitions can still use `--flow`. Set dependencies with `--depends-on` and record the
    initiative and phase identifiers in metadata.
@@ -63,7 +63,7 @@ research phases need no worktree; changes to plan documents in a repository do.
    lazily when needed. Do not pre-spawn a crew, manually assign phase handoffs,
    or create separate reminder schedules to bypass waits or pauses.
 7. At completion-ready, the delivery owner follows the configured policy and
-   finishes through `tau workstream finish`. A passing review does not prove a
+   finishes through `ficus workstream finish`. A passing review does not prove a
    merge. For `pr-merge`, wait for the verified human merge; auto/direct merge
    require their explicit policy authorization and may not bypass protections.
 

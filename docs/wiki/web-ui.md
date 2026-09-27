@@ -1,10 +1,10 @@
-# Tau webapp visual design guide
+# Ficus webapp visual design guide
 
 Approved direction, September 5, 2026. This guide covers `apps/web`; the coverage ledger distinguishes source changes from browser verification.
 
 ## Direction
 
-Tau is a focused workspace with flat content, frosted framing, softly rounded controls, restrained purple accents, and quiet supporting information. Keep useful density for work, settings, and diagnostics. Give conversations and page sections room to breathe. Information should be grouped by headings, spacing, and occasional separators rather than stacks of raised cards.
+Ficus is a focused workspace with flat content, frosted framing, softly rounded controls, restrained purple accents, and quiet supporting information. Keep useful density for work, settings, and diagnostics. Give conversations and page sections room to breathe. Information should be grouped by headings, spacing, and occasional separators rather than stacks of raised cards.
 
 Local layout improvements are authorized. Broader navigation changes require a concrete proposal; the approved changes are recorded in information architecture.
 
@@ -26,7 +26,7 @@ Glass belongs on app framing and sidebars. Use an approximately 88% surface fill
 
 Colors are theme tokens. `packages/shared/src/theme-schema.ts` lists them; `src/index.css` and `src/theme/builtins.css` define them for every built-in theme and appearance; `tailwind.config.js` exposes them to components; `src/design-system.css` contains explicit shared component roles. Add or change a token before introducing a color; palette utilities and literal colors fail `src/no-raw-colors.test.ts`. See [web themes](theme/README.md).
 
-In the default Tau theme the light canvas is nearly white, with a white reading surface and muted lavender-neutral secondary fill. Dark mode uses a near-black canvas, a subtle navy-neutral surface, and lighter control fills. Purple is Tau's primary action and selection color; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`.
+In the default Ficus theme the light canvas is nearly white, with a white reading surface and muted lavender-neutral secondary fill. Dark mode uses a near-black canvas, a subtle navy-neutral surface, and lighter control fills. Purple is Ficus's primary action and selection color; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`.
 
 Use `ficus-field`, `ficus-button`, `ficus-button-primary`, `ficus-nav-item`, and `ficus-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
 

@@ -11,10 +11,10 @@ A squad defines a purpose, shared workspace, permissions, integrations, and opti
 Use the squad manager conversation and the `setup-workflows` skill to describe recurring work, cost preferences, approval needs, and delivery expectations. The manager can configure a default and alternatives without creating workers. Squad settings also expose these choices. Manage reusable definitions in **Administration → Workflows**, with search, previews, and an edit modal. Squad settings select workflows and usage guidance; they do not edit the shared definitions. New squads created through the UI start with **Solo** unless their selected squad preset specifies a default (Engineering selects **Solo Coding**). Solo uses one general-purpose worker without delegation. Every new stream resolves its explicit source, then the saved squad default, and finally Solo. Squad presets are copied once at creation. The upgrade snapshots defaults for older squads so they no longer inherit live preset changes. Invalid or disabled defaults produce a setup error, not an unstyled stream. Existing streams retain their flow or manual assignment behavior.
 
 ```sh
-tau workflow list
-tau workflow get solo
-tau workstream create "Investigate the issue" --squad SQUAD_ID --workflow solo
-tau workstream create "Build the feature" --squad SQUAD_ID --workflow engineering
+ficus workflow list
+ficus workflow get solo
+ficus workstream create "Investigate the issue" --squad SQUAD_ID --workflow solo
+ficus workstream create "Build the feature" --squad SQUAD_ID --workflow engineering
 ```
 
 A squad's `metadata.workflow` is its default source for new streams. `metadata.workflowSetup` contains human-readable selection guidance and alternatives. The manager uses that guidance; it is not an automatic classifier. Existing legacy streams are not retroactively converted.
@@ -31,15 +31,15 @@ Valid assistant edits apply directly to the draft — there is no separate Apply
 
 A saved preset has an ID, visibility scope, revision, and definition. Scopes are instance, squad, or private user. Presets participate in configuration synchronization and explicit overrides. Editing a preset does not rewrite a running stream: creation resolves a durable snapshot of the definition and participant settings.
 
-An inline source contains `{ kind: inline, definition: ... }`. It is durable within its stream but does not add a catalog preset. Managers can author one for a single job, inspect it with `tau workflow resolve --content '<JSON source>' --squad SQUAD_ID`, then use `tau workstream create "Title" --squad SQUAD_ID --flow-content '<JSON source>'`. For longer JSON/YAML, prefer `--stdin` on resolve and `--flow-stdin` on create with quoted heredocs; no temporary file is required. Saved presets can also be customized at creation. The web and mobile interfaces support selecting presets and supplying inline definitions; web includes structured editing and a graph preview.
+An inline source contains `{ kind: inline, definition: ... }`. It is durable within its stream but does not add a catalog preset. Managers can author one for a single job, inspect it with `ficus workflow resolve --content '<JSON source>' --squad SQUAD_ID`, then use `ficus workstream create "Title" --squad SQUAD_ID --flow-content '<JSON source>'`. For longer JSON/YAML, prefer `--stdin` on resolve and `--flow-stdin` on create with quoted heredocs; no temporary file is required. Saved presets can also be customized at creation. The web and mobile interfaces support selecting presets and supplying inline definitions; web includes structured editing and a graph preview.
 
 ```sh
-tau workflow create --content '<JSON preset>'
-tau workflow update PRESET_ID --content '<JSON preset>' --revision REVISION_FROM_GET
-tau workflow export PRESET_ID
-tau workflow template-diff PRESET_ID
-tau workflow revert PRESET_ID --revision REVISION_FROM_GET
-tau workflow disable PRESET_ID --revision REVISION_FROM_GET
+ficus workflow create --content '<JSON preset>'
+ficus workflow update PRESET_ID --content '<JSON preset>' --revision REVISION_FROM_GET
+ficus workflow export PRESET_ID
+ficus workflow template-diff PRESET_ID
+ficus workflow revert PRESET_ID --revision REVISION_FROM_GET
+ficus workflow disable PRESET_ID --revision REVISION_FROM_GET
 ```
 
 ## Structured CLI input
@@ -64,8 +64,8 @@ with `id` and `definition`, not a source. Update still requires the inspected
 retry `--request-id`. `--json` only controls output.
 
 ```bash
-tau workflow resolve --squad SQUAD_ID --content '{"kind":"preset","id":"solo"}'
-tau workflow resolve --squad SQUAD_ID --stdin <<'FICUS_FLOW'
+ficus workflow resolve --squad SQUAD_ID --content '{"kind":"preset","id":"solo"}'
+ficus workflow resolve --squad SQUAD_ID --stdin <<'FICUS_FLOW'
 kind: preset
 id: solo
 customizations:
@@ -73,7 +73,7 @@ customizations:
     name: Daily audit
 FICUS_FLOW
 
-printf '%s\n' '{"kind":"preset","id":"solo"}' | tau schedule update SCHEDULE_ID --flow-stdin
+printf '%s\n' '{"kind":"preset","id":"solo"}' | ficus schedule update SCHEDULE_ID --flow-stdin
 ```
 
 All sources are bounded to 1 MiB of UTF-8 and must contain one JSON/YAML object.
@@ -94,11 +94,11 @@ A participant can keep `agentTypeId: engineer` while selecting `tier: deep` or `
 
 Steps define instructions, expected output, outcomes, and whether they are required. Outcomes can move to another step, fork parallel branches, or reach delivery. Routing policies govern explicit returns and tracked delegation. Agents advance using the current run version and attempt ID; stale commands fail rather than silently advancing a different attempt.
 
-A return records feedback and where work must resume. Earlier reviews remain in history; Tau does not automatically invalidate every downstream check. Request re-review explicitly when the changes need it. Parallel branches have independent attempts and sessions, but share the stream workspace, so agents must coordinate file ownership. Convergence is inferred from forward connections: the first shared destination waits for its active branches and runs once. Its card shows a small wait indicator; there is no separate join card. A second output connection creates parallel branches, while removing all but one restores an ordinary handoff. Tracks with no shared step run separately until Delivery. Internally `join` stores the inferred boundary for durable execution. A concurrency limit queues branch starts without creating their agents early.
+A return records feedback and where work must resume. Earlier reviews remain in history; Ficus does not automatically invalidate every downstream check. Request re-review explicitly when the changes need it. Parallel branches have independent attempts and sessions, but share the stream workspace, so agents must coordinate file ownership. Convergence is inferred from forward connections: the first shared destination waits for its active branches and runs once. Its card shows a small wait indicator; there is no separate join card. A second output connection creates parallel branches, while removing all but one restores an ordinary handoff. Tracks with no shared step run separately until Delivery. Internally `join` stores the inferred boundary for durable execution. A concurrency limit queues branch starts without creating their agents early.
 
 ```sh
-tau workstream flow STREAM_ID
-tau workstream advance STREAM_ID --content '{"expectedVersion":1,"attemptId":1,"action":"complete","outcome":"completed","evidence":"Tests passed"}' --request-id REQUEST_UUID
+ficus workstream flow STREAM_ID
+ficus workstream advance STREAM_ID --content '{"expectedVersion":1,"attemptId":1,"action":"complete","outcome":"completed","evidence":"Tests passed"}' --request-id REQUEST_UUID
 ```
 
 Commands can complete, return, delegate, request completion-ready rework, or revise according to the flow and caller's permission. Authorized revisions may keep current attempt snapshots or restart with a new attempt/session. Retrying the same command uses the same request ID. Do not use legacy assignee/status edits to bypass a flow.
@@ -112,9 +112,9 @@ A relevant open wait prevents advancement and automatic continuance nudges for t
 Use a whole-stream wait for shared blockers. The async question tool accepts `waitScope: stream`; a manual request accepts `--scope stream`. Human/operator manual requests default to whole-stream unless an attempt is selected explicitly.
 
 ```sh
-tau workstream request-input STREAM_ID -m "Confirm the threat model" --scope attempt --attempt ATTEMPT_ID
-tau workstream request-input STREAM_ID -m "Wait for the release freeze to end" --scope stream
-tau workstream unblock STREAM_ID --wait WAIT_ID -m "Use the published threat model"
+ficus workstream request-input STREAM_ID -m "Confirm the threat model" --scope attempt --attempt ATTEMPT_ID
+ficus workstream request-input STREAM_ID -m "Wait for the release freeze to end" --scope stream
+ficus workstream unblock STREAM_ID --wait WAIT_ID -m "Use the published threat model"
 ```
 
 Resolve questions through their question-answer interface. Dependency waits remain whole-stream and are system-resolved. Human-approval flow steps own their decision waits: use the flow's decision controls, not generic unblock. In the web app these controls sit at the top of the work stream detail, with the step's instructions, the handoff being reviewed, and the pull request. Each outcome shows where it sends the work. Final delivery approval offers **Approve and complete** and **Send back**, which requests tracked rework with your feedback. An open human-approval gate shows the stream as **In Review**, not Blocked. In parallel flows a human gate holds its branch while unrelated branches continue.
@@ -123,26 +123,26 @@ Automatic parking applies only when the whole stream is blocked: either a whole-
 
 ## Pause, park, and resume
 
-Pause means stop current work and wait for explicit resume. Tau requests cancellation of current executions, cancels queued work, and prevents assigned flow agents from receiving automatic continuance. Cancellation must settle before resumed work can start; an external side effect already completed is not undone. Inbox messages remain durable while paused.
+Pause means stop current work and wait for explicit resume. Ficus requests cancellation of current executions, cancels queued work, and prevents assigned flow agents from receiving automatic continuance. Cancellation must settle before resumed work can start; an external side effect already completed is not undone. Inbox messages remain durable while paused.
 
 Pause retains the admission slot unless the stream is parked. Park releases capacity; it is separate from the pause flag. A paused parked stream cannot start merely because capacity becomes available. Optional pause auto-parking releases the slot after the configured delay without resuming work.
 
 ```sh
-tau workstream pause STREAM_ID --reason "Hold while I check the result"
-tau workstream resume STREAM_ID
+ficus workstream pause STREAM_ID --reason "Hold while I check the result"
+ficus workstream resume STREAM_ID
 ```
 
 ## Delivery policy
 
-Settling all active graph paths and direct-return requests puts the flow at `completion-ready`. Unchosen paths do not block Finish; there is no per-step required flag. Delivery is a separate condition, enforced by `tau workstream finish STREAM_ID --version VERSION_FROM_RUN`.
+Settling all active graph paths and direct-return requests puts the flow at `completion-ready`. Unchosen paths do not block Finish; there is no per-step required flag. Delivery is a separate condition, enforced by `ficus workstream finish STREAM_ID --version VERSION_FROM_RUN`.
 
-| Mode              | Delivery condition                                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `deliverable`     | Required work/returns are satisfied and blocking waits are resolved; no intrinsic PR or extra reviewer.                       |
-| `review-approval` | A human approves delivery through flow finish.                                                                                |
-| `pr-merge`        | The human merges the PR; Tau independently verifies it is merged.                                                             |
-| `pr-auto-merge`   | The agent may enable GitHub auto-merge only when the current squad explicitly allows it; Tau still verifies the PR is merged. |
-| `direct-merge`    | Explicit squad permission allows direct merge; Tau checks the recorded commit is included in the remote base branch.          |
+| Mode              | Delivery condition                                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `deliverable`     | Required work/returns are satisfied and blocking waits are resolved; no intrinsic PR or extra reviewer.                         |
+| `review-approval` | A human approves delivery through flow finish.                                                                                  |
+| `pr-merge`        | The human merges the PR; Ficus independently verifies it is merged.                                                             |
+| `pr-auto-merge`   | The agent may enable GitHub auto-merge only when the current squad explicitly allows it; Ficus still verifies the PR is merged. |
+| `direct-merge`    | Explicit squad permission allows direct merge; Ficus checks the recorded commit is included in the remote base branch.          |
 
 These modes preserve the earlier PR policies. `pr-merge` does not mean auto-merge. Denied direct merge requires an authorized policy/flow change; it does not silently bypass the configured policy. Shared instructions explain delivery to every flow participant; completion does not belong intrinsically to a reviewer agent type.
 
@@ -150,7 +150,7 @@ Record repository and PR/commit metadata on the stream for verification and exte
 
 ## Integration updates and new-work triggers
 
-Use `tau integration outputs` to list the versioned output catalog. Subscriptions belong to a workflow definition and work equally in saved presets and inline flows. For example, a solo flow can receive PR feedback in its existing worker:
+Use `ficus integration outputs` to list the versioned output catalog. Subscriptions belong to a workflow definition and work equally in saved presets and inline flows. For example, a solo flow can receive PR feedback in its existing worker:
 
 ```yaml
 subscriptions:
@@ -176,7 +176,7 @@ integrationTriggers:
     source: { integration: github, output: issue.assigned, version: 1 }
     match:
       repository: { value: acme/project }
-      assignee: { value: tau-bot }
+      assignee: { value: ficus-bot }
     create:
       workflow: { kind: preset, id: solo }
       titlePrefix: 'Investigate: '
@@ -184,7 +184,7 @@ integrationTriggers:
         github.repo: { event: repository }
 ```
 
-When the triggering event names an issue or pull request, Tau records it
+When the triggering event names an issue or pull request, Ficus records it
 in `metadata.tracked[0]` for connection-authority events (all GitHub events)
 with a server-stamped `origin` automatically; an instance-authority event has
 no squad connection to pin on the entry, so it records none. Do not
@@ -208,15 +208,15 @@ Flow graphs show integrations with dotted connections. Select an integration to 
 
 Attaching a PR to stream metadata automatically establishes a polling watch: use the
 delivery PR (`codeHost.changeRequest`, or legacy `github.repo`/`github.pr.number`), a
-tracked PR (`tau workstream track --pr`/`--event`/`--url`), a PR URL, or custom paths
+tracked PR (`ficus workstream track --pr`/`--event`/`--url`), a PR URL, or custom paths
 referenced by a GitHub subscription's repository and PR-number bindings. Tracked
 issues get a repository-scoped issue-events poll instead of a per-resource watch.
 Watches track current nonterminal streams and disappear when their bindings are
 removed or the streams end.
 
-Issue-assignment triggers can discover work before a stream exists. Specify an exact repository in the trigger's match, as above. If a trigger only matches an assignee, exact repositories in the squad's existing `metadata.github` configuration provide its polling scope. Tau does not expand wildcard repository patterns or scan every repository accessible to the token. The first poll establishes a baseline; subsequent assignments are routed to the chosen workflow. Active watches normally poll every 1–2 minutes, subject to the shared budget and provider failures. A large event backlog may require several bounded page scans.
+Issue-assignment triggers can discover work before a stream exists. Specify an exact repository in the trigger's match, as above. If a trigger only matches an assignee, exact repositories in the squad's existing `metadata.github` configuration provide its polling scope. Ficus does not expand wildcard repository patterns or scan every repository accessible to the token. The first poll establishes a baseline; subsequent assignments are routed to the chosen workflow. Active watches normally poll every 1–2 minutes, subject to the shared budget and provider failures. A large event backlog may require several bounded page scans.
 
-Polling uses the squad's authorized GitHub integration connection. Set `github.connectionId` on work-stream metadata or `source.connectionId` on a subscription/trigger to select an attached account; otherwise Tau resolves the squad default. Resource metadata establishes polling interest, not repository authorization. See [GitHub integration accounts](github-integrations.md) for connection setup and migration from retired token secrets. Issue comments still require webhooks. Polling notifications remain subject to the same pause, current-attempt, and deduplication rules as webhooks.
+Polling uses the squad's authorized GitHub integration connection. Set `github.connectionId` on work-stream metadata or `source.connectionId` on a subscription/trigger to select an attached account; otherwise Ficus resolves the squad default. Resource metadata establishes polling interest, not repository authorization. See [GitHub integration accounts](github-integrations.md) for connection setup and migration from retired token secrets. Issue comments still require webhooks. Polling notifications remain subject to the same pause, current-attempt, and deduplication rules as webhooks.
 
 ## Built-in workflow collection and squad-preset recommendations
 
@@ -256,9 +256,9 @@ New work streams use this resource binding:
 }
 ```
 
-An optional `codeHost.connectionId` selects an authorized account; omission uses the squad default. Existing `github.repo`, `github.pr`, and `github.connectionId` are compatibility inputs for the delivery PR binding. A stale `github.repo`/`github.issue` pair (the old way of following one issue) is converted automatically at startup into a `tracked` issue entry and is never read afterward — use `tracked`/`tau workstream track` going forward. An explicit invalid or unsupported `codeHost` binding fails closed rather than falling back to a different provider or account.
+An optional `codeHost.connectionId` selects an authorized account; omission uses the squad default. Existing `github.repo`, `github.pr`, and `github.connectionId` are compatibility inputs for the delivery PR binding. A stale `github.repo`/`github.issue` pair (the old way of following one issue) is converted automatically at startup into a `tracked` issue entry and is never read afterward — use `tracked`/`ficus workstream track` going forward. An explicit invalid or unsupported `codeHost` binding fails closed rather than falling back to a different provider or account.
 
-**Code hosting** (`completion.followChanges: true`) derives subscriptions for every resource in the work stream's canonical tracked set targeting `delivery-owner` by default: the primary delivery PR (`codeHost.changeRequest`) and every entry in `metadata.tracked[]`, including any pull request flagged `delivery: true` (see [Work streams](work-streams.md#tracked-issues-and-pull-requests)). This includes PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes, for as many issues and PRs as the stream tracks. Attach resources with `tau workstream track` (or `workstream create --from-event`) rather than hand-writing metadata; legacy `github.repo`/`github.pr.number` is still recognized for the delivery PR only. Set `completion.changeEventsTo: { step: engineer }` to route the entire bundle to a specific agent step instead. This does not change explicit subscriptions for custom events. The effective subscriptions are used by matching, durable delivery validation, polling discovery, and hosted relay interests. Resource/account changes invalidate queued deliveries. The `code-host-` and `tracked-` subscription ID prefixes are reserved when this option is enabled; there is no `code-host-issue-` prefix. No binding means no automatic subscription; adding one does not replay historical events. Existing definitions without this option keep their explicit subscriptions. Only the primary delivery PR's merge/completion evidence sets the delivered head for `pr-merge`/`pr-auto-merge`, though every flagged delivery PR must also be verified merged before finish succeeds; activity on any other tracked resource, including an issue closing, never finishes the stream, clears a wait, or bypasses admission and pauses.
+**Code hosting** (`completion.followChanges: true`) derives subscriptions for every resource in the work stream's canonical tracked set targeting `delivery-owner` by default: the primary delivery PR (`codeHost.changeRequest`) and every entry in `metadata.tracked[]`, including any pull request flagged `delivery: true` (see [Work streams](work-streams.md#tracked-issues-and-pull-requests)). This includes PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes, for as many issues and PRs as the stream tracks. Attach resources with `ficus workstream track` (or `workstream create --from-event`) rather than hand-writing metadata; legacy `github.repo`/`github.pr.number` is still recognized for the delivery PR only. Set `completion.changeEventsTo: { step: engineer }` to route the entire bundle to a specific agent step instead. This does not change explicit subscriptions for custom events. The effective subscriptions are used by matching, durable delivery validation, polling discovery, and hosted relay interests. Resource/account changes invalidate queued deliveries. The `code-host-` and `tracked-` subscription ID prefixes are reserved when this option is enabled; there is no `code-host-issue-` prefix. No binding means no automatic subscription; adding one does not replay historical events. Existing definitions without this option keep their explicit subscriptions. Only the primary delivery PR's merge/completion evidence sets the delivered head for `pr-merge`/`pr-auto-merge`, though every flagged delivery PR must also be verified merged before finish succeeds; activity on any other tracked resource, including an issue closing, never finishes the stream, clears a wait, or bypasses admission and pauses.
 
 `pr-merge` and `pr-auto-merge` retain their serialized names but verify normalized change-request evidence through the selected adapter. `direct-merge` verifies the full `git.commit` SHA is contained in `git.baseBranch`. GitHub-specific link displays and activity rendering can remain provider-specific; the flow engine does not choose credentials or call GitHub directly.
 
@@ -267,9 +267,9 @@ An optional `codeHost.connectionId` selects an authorized account; omission uses
 In a work stream, use **Assigned reviewers** to choose eligible people. Each person needs `workstreams:review` for the squad. Any one assigned reviewer can decide. With no one assigned, the filter allows any user with review permission.
 
 ```bash
-tau workstream reviewers --squad <squad-id>
-tau workstream update <stream-id> --reviewer <user-id> --reviewer <another-user-id>
-tau workstream update <stream-id> --clear-reviewers
+ficus workstream reviewers --squad <squad-id>
+ficus workstream update <stream-id> --reviewer <user-id> --reviewer <another-user-id>
+ficus workstream update <stream-id> --clear-reviewers
 ```
 
 `--reviewer` replaces the list on update and can also be passed to `workstream create`. Assignment requires `workstreams:update` on existing streams. Admin and Operator roles have this permission; custom roles can grant it separately from reviewing.
@@ -331,7 +331,7 @@ because hardlinked dependencies can make summed sizes misleading.
 
 ### Inspecting and recovering mismatched worktrees
 
-`tau workstream cleanup inspect <id> --json` (GET
+`ficus workstream cleanup inspect <id> --json` (GET
 `/api/workstreams/:id/worktree-cleanup`, requiring squad `workstreams:read`)
 returns the original `owned` creation receipt, `current` Git bindings,
 `bindingsMatch`, cleanup status, and a snapshot `recovery` state. It performs
@@ -348,7 +348,7 @@ work stream; the original ownership receipt is never silently transferred.
 For a historical duplicate-folder mismatch:
 
 1. Inspect original ownership and current bindings for each affected stream.
-2. Run `tau workstream cleanup retain <id>`. This uses the existing permission-checked
+2. Run `ficus workstream cleanup retain <id>`. This uses the existing permission-checked
    PATCH with `autoCleanupWorktree: false`. The lifecycle transaction invalidates
    stale cleanup claims, including after delivery. If removal already started, it
    returns a conflict instead; never clear that operation's markers manually.

@@ -3,9 +3,9 @@ interface Props {
   mode: 'cloud' | 'self-hosted'
 }
 const { mode } = Astro.props
-const label = mode === 'cloud' ? 'Tau Cloud' : 'Self-hosted'
+const label = mode === 'cloud' ? 'Ficus Cloud' : 'Self-hosted'
 const otherMode = mode === 'cloud' ? 'self-hosted' : 'cloud'
-const otherLabel = mode === 'cloud' ? 'Self-hosted' : 'Tau Cloud'
+const otherLabel = mode === 'cloud' ? 'Self-hosted' : 'Ficus Cloud'
 ---
 
 <section class="docs-mode-content" data-docs-only={mode} aria-label={`${label} instructions`} data-pagefind-ignore>

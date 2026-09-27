@@ -1,6 +1,6 @@
 # K8s Monitoring
 
-What to monitor for Tau's K8s sandbox system, health check schemas, and recommended alerts.
+What to monitor for Ficus's K8s sandbox system, health check schemas, and recommended alerts.
 
 ## Health Endpoints
 

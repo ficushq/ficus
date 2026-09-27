@@ -1,25 +1,25 @@
 # GitHub account connections
 
-GitHub accounts live in the integration connection pool. Open **Settings → Integrations → GitHub → Settings → Connect account**. Authorize the account, and install the GitHub App on the repositories that Tau should access. Account authorization alone does not give the app repository access.
+GitHub accounts live in the integration connection pool. Open **Settings → Integrations → GitHub → Settings → Connect account**. Authorize the account, and install the GitHub App on the repositories that Ficus should access. Account authorization alone does not give the app repository access.
 
-For Tau's app, choose **Grant repository access** in the same settings card, or open the [public installation page](https://github.com/apps/ficus-integration/installations/new). Select your personal account or organization and the repositories to grant access to. You do not need access to the app's developer settings. If GitHub offers **Request** instead of **Install**, an organization owner must approve the request before private repository access works. Existing installations can be changed through **Manage GitHub App installations**. If using a custom GitHub App, install that app instead.
+For Ficus's app, choose **Grant repository access** in the same settings card, or open the [public installation page](https://github.com/apps/ficus-integration/installations/new). Select your personal account or organization and the repositories to grant access to. You do not need access to the app's developer settings. If GitHub offers **Request** instead of **Install**, an organization owner must approve the request before private repository access works. Existing installations can be changed through **Manage GitHub App installations**. If using a custom GitHub App, install that app instead.
 
-Standalone instances use device login with Tau's public app client ID. Enter the displayed code at GitHub; Tau stores the resulting credential locally, encrypted in its secret store. No private app credential or manual personal access token is needed. Hosted instances use the Platform OAuth broker and return to the tenant after authorization.
+Standalone instances use device login with Ficus's public app client ID. Enter the displayed code at GitHub; Ficus stores the resulting credential locally, encrypted in its secret store. No private app credential or manual personal access token is needed. Hosted instances use the Platform OAuth broker and return to the tenant after authorization.
 
 ## Squad accounts and operation selection
 
 In a squad's **Integrations** settings, attach the accounts it can use and choose a default. Changing the default retains the other attached accounts. Detaching the default does not silently select another identity.
 
 ```sh
-tau integration connect github
-tau integration list --provider github
-tau integration assign github --squad <squad-id> --connection <connection-id>
-tau integration assign github --squad <squad-id> --connection <another-id> --additional
-tau integration exec github --squad <squad-id> --connection <another-id> -- gh pr list
-tau integration unassign github --squad <squad-id> --connection <connection-id>
+ficus integration connect github
+ficus integration list --provider github
+ficus integration assign github --squad <squad-id> --connection <connection-id>
+ficus integration assign github --squad <squad-id> --connection <another-id> --additional
+ficus integration exec github --squad <squad-id> --connection <another-id> -- gh pr list
+ficus integration unassign github --squad <squad-id> --connection <connection-id>
 ```
 
-Squad shells resolve the default account when `gh` runs or Git requests HTTPS credentials for github.com. Credentials are fetched for each operation, so refresh, disable, and detach take effect without restarting an agent. Local Git operations such as status, diff, and commit do not require a connection. Scripts that intentionally bypass shell functions can use `tau integration exec` explicitly.
+Squad shells resolve the default account when `gh` runs or Git requests HTTPS credentials for github.com. Credentials are fetched for each operation, so refresh, disable, and detach take effect without restarting an agent. Local Git operations such as status, diff, and commit do not require a connection. Scripts that intentionally bypass shell functions can use `ficus integration exec` explicitly.
 
 The execution endpoint requires squad-scoped `integrations:use` permission. Connection IDs do not grant access: the requested account must be attached to that squad, enabled, and currently authenticated. Ordinary list/settings responses never contain credentials.
 
@@ -27,20 +27,20 @@ For completion checks, set `github.connectionId` in work-stream metadata to sele
 
 ## Refresh and disconnect
 
-Tau refreshes expiring user tokens centrally. GitHub refresh invalidates the previous pair, so Tau saves the replacement before validating account identity. A failed identity check disables access; a transient provider failure preserves the replacement refresh token for recovery. Each connection remains bound to its issuing app configuration even after an operator changes the default app.
+Ficus refreshes expiring user tokens centrally. GitHub refresh invalidates the previous pair, so Ficus saves the replacement before validating account identity. A failed identity check disables access; a transient provider failure preserves the replacement refresh token for recovery. Each connection remains bound to its issuing app configuration even after an operator changes the default app.
 
-Disconnect removes access in Tau. GitHub requires a client secret for remote revocation; public-client device logins cannot perform that step automatically. To revoke the authorization on GitHub, open **GitHub Settings → Applications → Authorized GitHub Apps**. Removing an installation affects its repository access separately.
+Disconnect removes access in Ficus. GitHub requires a client secret for remote revocation; public-client device logins cannot perform that step automatically. To revoke the authorization on GitHub, open **GitHub Settings → Applications → Authorized GitHub Apps**. Removing an installation affects its repository access separately.
 
 Legacy `GH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN_*`, `GITHUB_TOKEN_*`, `GITHUB_USER`, and squad `githubTokenSecretKey` configuration are retired. Reconnect accounts through Integrations. Stored historical values are not automatically deleted. Git commit author overrides remain separate from the account used to authenticate.
 
 ## Commit signing
 
-Agents' commits and annotated tags are signed with an SSH key Tau registers on the connected GitHub account, so GitHub shows them as **Verified**. The GitHub card shows the state per account and turns it on or off; connecting an account turns it on automatically unless it was turned off for that account before.
+Agents' commits and annotated tags are signed with an SSH key Ficus registers on the connected GitHub account, so GitHub shows them as **Verified**. The GitHub card shows the state per account and turns it on or off; connecting an account turns it on automatically unless it was turned off for that account before.
 
-- **Key custody.** Core generates an ed25519 key per connection, registers the public half with `POST /user/ssh_signing_keys` (the App's **SSH signing keys** account permission) and keeps the private half in the secret store under `__integration-github-signing:<connectionId>`. The private key never enters a sandbox. Turning signing off or disconnecting the account deletes the key from GitHub and from Tau; an explicit off is remembered so connect-time setup does not re-enable it.
+- **Key custody.** Core generates an ed25519 key per connection, registers the public half with `POST /user/ssh_signing_keys` (the App's **SSH signing keys** account permission) and keeps the private half in the secret store under `__integration-github-signing:<connectionId>`. The private key never enters a sandbox. Turning signing off or disconnecting the account deletes the key from GitHub and from Ficus; an explicit off is remembered so connect-time setup does not re-enable it.
 - **How git signs.** When signing is on for a squad's default GitHub connection, the squad env's `git` wrapper adds `-c gpg.format=ssh -c commit.gpgsign=true -c tag.gpgsign=true -c user.signingkey=key::<public key> -c gpg.ssh.program=ficus`. Command-line settings outrank repository config. Git runs `ficus -Y sign …`, which sends the object git is signing to `POST /api/squads/:squadId/integrations/github/sign` with the agent's own token and writes the returned signature. Other `-Y` operations (`git verify-commit`, `git log --show-signature`) pass through to the real `ssh-keygen`.
 - **What Core signs.** Only for agent identities with `integrations:use` on the squad, only git commit or tag objects, and only when the committer (or tagger) email is the squad's configured git identity or the account's `users.noreply.github.com` address. GitHub marks a signature Verified only when that email is verified on the account, which the noreply address always is.
-- **Where it applies.** Everywhere Tau already provides GitHub credentials: agent commands in squad shells on every sandbox runtime. Shells without an agent token (human terminals) keep committing unsigned rather than failing.
+- **Where it applies.** Everywhere Ficus already provides GitHub credentials: agent commands in squad shells on every sandbox runtime. Shells without an agent token (human terminals) keep committing unsigned rather than failing.
 
 ## App configuration
 
@@ -48,11 +48,11 @@ The default public client ID is `Iv23liN16iuEh5lT1PYV`. In a standalone instance
 
 Failed authorization requests return a stable `code` and a user-safe `error` message, and Core logs each rejection at warn with its code (never provider bodies, tokens, or secrets). GitHub failures map as follows: `provider_unavailable` 502 and `provider_timeout` 504 (GitHub unreachable from the instance), `rate_limited` 429 with `Retry-After`, `device_flow_disabled` 400, `incorrect_client_credentials` and `invalid_auth` 400, `capability_or_resource_denied` 502 (GitHub refused the app, for example an unknown client ID), and `invalid_response` or other provider errors 502. Authorization flow rejections keep their code in `error`, for example `oauth_app_unconfigured`.
 
-Enable device flow and expiring user authorization tokens. Leave “Request user authorization during installation” unchecked so Tau initiates authorization with bound state. Configure repository permissions: Contents, Pull requests, Issues, Actions, and Workflows read/write; Checks, Commit statuses, and Metadata read-only. Configure the account permission **SSH signing keys** read/write for commit signing. Users choose which repositories to install the app on.
+Enable device flow and expiring user authorization tokens. Leave “Request user authorization during installation” unchecked so Ficus initiates authorization with bound state. Configure repository permissions: Contents, Pull requests, Issues, Actions, and Workflows read/write; Checks, Commit statuses, and Metadata read-only. Configure the account permission **SSH signing keys** read/write for commit signing. Users choose which repositories to install the app on.
 
-Tau uses user access tokens. GitHub App ownership still permits the owner to generate a private key and obtain installation tokens independently; this design does not remove that GitHub capability. Operators who want to control the app themselves can use the custom-app option.
+Ficus uses user access tokens. GitHub App ownership still permits the owner to generate a private key and obtain installation tokens independently; this design does not remove that GitHub capability. Operators who want to control the app themselves can use the custom-app option.
 
-App-level webhooks are optional: Tau continues polling repositories referenced by flow bindings and work-stream metadata. Existing tenant-specific signed webhooks remain supported.
+App-level webhooks are optional: Ficus continues polling repositories referenced by flow bindings and work-stream metadata. Existing tenant-specific signed webhooks remain supported.
 
 ### Automatic delivery for managed cloud instances
 
@@ -68,20 +68,20 @@ GitHub does not automatically retry a failed webhook request to Platform. Operat
 
 GitHub Pages uses the same squad connection; the old `DEPLOY_GITHUB_PAGES_TOKEN` is retired. Pages API configuration requires Pages write permission on the app, or a human can configure Pages directly in GitHub. Actions workflows can deploy with their own repository-scoped workflow token.
 
-For privileged local Tau updates, the updater uses the sole usable GitHub connection. With multiple accounts, set `githubConnectionId` in the update settings API to select one explicitly. It never falls back to the host's `gh auth login` credentials.
+For privileged local Ficus updates, the updater uses the sole usable GitHub connection. With multiple accounts, set `githubConnectionId` in the update settings API to select one explicitly. It never falls back to the host's `gh auth login` credentials.
 
 ## Direct webhook delivery
 
 In **Settings → Integrations → GitHub → Webhook delivery**, copy the webhook
 URL and generate or enter a signing secret. Copy the new secret into your own
-GitHub App's webhook settings (or a repository webhook), then save it in Tau.
+GitHub App's webhook settings (or a repository webhook), then save it in Ficus.
 Use JSON delivery and subscribe to the events your flows consume. Your public
 `APP_URL` must point to this instance; path prefixes are included in the displayed
 URL. The receiver is `/api/webhooks/github` beneath that public base path.
 
 Signing secrets are encrypted under integration-owned storage, never returned
 by the settings API or exposed to squads. You can replace the secret or disable
-direct webhooks here without restarting Tau. Disabled direct delivery does not
+direct webhooks here without restarting Ficus. Disabled direct delivery does not
 disable polling or a managed platform relay.
 
 Existing `GITHUB_WEBHOOK_SECRET` database/environment values are imported on
@@ -125,7 +125,7 @@ The **Shared repository scope** is a reusable filter, not an action. A rule with
 
 With any account selected, one attached account matching is enough. **Notify manager**, **Notify new consultant**, and **Create work stream** accept optional **Instructions**, included as instructions from the squad’s event rule alongside the external event details. For example, tell the manager to create an engineering workflow for the issue, prepare an isolated worktree, and then start it. Updating instructions affects future events, not previously delivered messages or existing work streams.
 
-**Create work stream** saves the chosen workflow in a queued, paused stream and notifies its owner (the squad manager). No worker agents are spawned and no admission slot is consumed during preparation. The owner reviews the event, attaches a workspace if needed using `tau workstream update <id> --repository <checkout-path>`, and runs `tau workstream resume <id>` to start it under the normal concurrency limits. Tasks without a Git workspace can be resumed after review. If the squad has no manager, an operator must prepare and resume the stream. Repository replacement after workflow agents have started remains prohibited.
+**Create work stream** saves the chosen workflow in a queued, paused stream and notifies its owner (the squad manager). No worker agents are spawned and no admission slot is consumed during preparation. The owner reviews the event, attaches a workspace if needed using `ficus workstream update <id> --repository <checkout-path>`, and runs `ficus workstream resume <id>` to start it under the normal concurrency limits. Tasks without a Git workspace can be resumed after review. If the squad has no manager, an operator must prepare and resume the stream. Repository replacement after workflow agents have started remains prohibited.
 
 The first matching enabled rule wins. Move rules up or down to set priority. Deleting every rule disables squad actions for that provider. Events already bound to a work stream still follow its own subscriptions, including pause and wait behavior; squad rules do not override them. Changing rules does not replay already handled events.
 
@@ -180,18 +180,18 @@ hand-writing metadata:
 ```bash
 # Attach the resource an integration event observed (idempotent; the squad
 # must own the connection that observed it)
-tau workstream track <ws-id> --event <event-id>
+ficus workstream track <ws-id> --event <event-id>
 
 # Attach by explicit reference
-tau workstream track <ws-id> --issue owner/repo#12
-tau workstream track <ws-id> --pr owner/repo#34
+ficus workstream track <ws-id> --issue owner/repo#12
+ficus workstream track <ws-id> --pr owner/repo#34
 
 # Attach a PR and flag it as an additional delivery pull request — it must
 # also be merged before the stream can complete
-tau workstream track <ws-id> --pr owner/repo#35 --delivery
+ficus workstream track <ws-id> --pr owner/repo#35 --delivery
 
 # Attach by resource URL
-tau workstream track <ws-id> --url https://github.com/owner/repo/issues/12
+ficus workstream track <ws-id> --url https://github.com/owner/repo/issues/12
 ```
 
 `--delivery` is rejected together with `--issue` or `--event` — only a pull
@@ -199,10 +199,10 @@ request can be a delivery change request.
 
 A URL merely mentioned in the description, or attached with `create --from-url`,
 is reference material only — it is not tracked and receives no updates. Use
-`tau workstream tracked <ws-id>` (alias `links`) to see what a stream tracks, its
+`ficus workstream tracked <ws-id>` (alias `links`) to see what a stream tracks, its
 source (delivery PR or tracked), whether a tracked PR is flagged for delivery,
 its observed merge state, and whether each has an active subscription.
-`tau workstream untrack <ws-id>` removes one (the delivery PR itself
+`ficus workstream untrack <ws-id>` removes one (the delivery PR itself
 cannot be untracked this way — change `codeHost.changeRequest` instead).
 
 A stale `metadata.github.repo` + `metadata.github.issue` pair — the old way of
@@ -215,7 +215,7 @@ Issue events use the same recipient setting and retained-delivery rules as PR ev
 An issue closing, or any non-delivery tracked resource's activity, is
 information only — it never completes the work stream, clears an open wait, or
 bypasses admission and pauses. Only the delivery PR(s)' own merge/completion
-evidence, verified live at `tau workstream finish`, does that — the primary
+evidence, verified live at `ficus workstream finish`, does that — the primary
 delivery PR plus any tracked PR flagged `delivery: true` must all be merged.
 
 Comments, review line comments, and submitted reviews authored by the connected GitHub account are recorded but do not notify agents or start work streams. This echo protection applies to Code hosting, explicit workflow subscriptions, and squad rules (including **Any matching event**), and is rechecked before queued delivery. Other accounts' comments still reach linked work streams, including review bots. Assignment, merge, and CI events are unaffected. Legacy instance-level ingress without a connected account cannot identify self-authored events.

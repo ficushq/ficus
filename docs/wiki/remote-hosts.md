@@ -2,9 +2,9 @@
 
 Remote hosts let a squad reach a team-owned box over SSH — a staging server,
 a build machine, a Mac with Xcode, a Windows box with `sshd` — **without**
-tau installing anything on it. This is deliberately the opposite of
-`machines` (`docs/wiki/machines/runtime.md`): a machine is substrate tau
-bootstraps and runs agent sandboxes on; a remote host is a target tau's
+ficus installing anything on it. This is deliberately the opposite of
+`machines` (`docs/wiki/machines/runtime.md`): a machine is substrate ficus
+bootstraps and runs agent sandboxes on; a remote host is a target ficus's
 agents merely SSH _into_. See § Motivation of
 `docs/history/superpowers/specs/2026-07-14-remote-hosts-design.md` for the full
 rationale and the agent-facing `config/skills/remote-hosts/SKILL.md` for the
@@ -16,10 +16,10 @@ in-agent usage guide this document backs.
    or via the CLI directly):
 
    ```bash
-   tau remote-hosts add --name staging --host 10.1.2.3 --user deploy
+   ficus remote-hosts add --name staging --host 10.1.2.3 --user deploy
    ```
 
-   This mints a fresh tau-owned ed25519 keypair, inserts a `remote_hosts`
+   This mints a fresh ficus-owned ed25519 keypair, inserts a `remote_hosts`
    row, grants the calling squad (`FICUS_SQUAD_ID`, or `--squad <id>`) access,
    materializes the squad's SSH directory, and prints the **public** key
    plus install instructions. Use `--global` to register without granting
@@ -32,10 +32,10 @@ in-agent usage guide this document backs.
    ```
    ssh-ed25519 AAAA... tau-remote-host-<id>
    Ask the owner of 10.1.2.3 to append the line above to ~/.ssh/authorized_keys for user deploy.
-   Then verify with: tau remote-hosts check staging.
+   Then verify with: ficus remote-hosts check staging.
    ```
 
-   tau never asks for or accepts an uploaded private key for a remote host
+   ficus never asks for or accepts an uploaded private key for a remote host
    — it only ever mints its own and shows the public half. There is no way
    to skip this step; the host is unusable until a human with access to it
    appends the key.
@@ -43,7 +43,7 @@ in-agent usage guide this document backs.
 3. **Verify connectivity**:
 
    ```bash
-   tau remote-hosts check staging
+   ficus remote-hosts check staging
    ```
 
    Runs a server-side `ssh` probe using the minted key and reports
@@ -55,7 +55,7 @@ in-agent usage guide this document backs.
 4. **Grant additional squads** (global write only):
 
    ```bash
-   tau remote-hosts grant staging --squad <other-squad-id>
+   ficus remote-hosts grant staging --squad <other-squad-id>
    ```
 
 5. **Agent usage.** Every agent in a granted squad gets an SSH config entry
@@ -65,19 +65,19 @@ in-agent usage guide this document backs.
    refresh:
 
    ```bash
-   tau remote-hosts sync
+   ficus remote-hosts sync
    ```
 
    On the `host` runtime there is no `~/.ssh` mount at all: agents get
    `GIT_SSH_COMMAND` pointed at the squad's SSH config (and `known_hosts`),
-   and `ssh`/`scp`/`rsync` on the agent PATH are tau shims that use the same
-   config whenever every remote destination is a tau-managed alias and no
+   and `ssh`/`scp`/`rsync` on the agent PATH are ficus shims that use the same
+   config whenever every remote destination is a ficus-managed alias and no
    explicit `-F`/`-e`/`--rsh` was passed — so the plain commands below reach
    granted hosts too. Anything naming an operator destination runs untouched
-   against the operator's own ssh. Tau re-materializes the SSH config of
+   against the operator's own ssh. Ficus re-materializes the SSH config of
    every granted squad once at worker boot (idempotently), so grants made
    before a host-mode switch come current without waiting for another grant
-   mutation. The one remaining limitation: only aliases inside tau's managed
+   mutation. The one remaining limitation: only aliases inside ficus's managed
    block are shimmed — a user-added alias in the squad config's user section
    still needs `ssh -F "$FICUS_SQUAD_SSH_DIR/config" <alias>`. See
    [host-runtime.md](host-runtime.md).
@@ -95,10 +95,10 @@ in-agent usage guide this document backs.
 
 ## Security Model
 
-- **Key minting, not upload.** Every remote host gets its own tau-minted
+- **Key minting, not upload.** Every remote host gets its own ficus-minted
   ed25519 keypair (`generateRemoteHostKeypair`, sharing the mint/store
   mechanism `apps/core/src/services/machines/keys.ts` uses for machines).
-  tau never accepts a user-supplied private key for a remote host.
+  ficus never accepts a user-supplied private key for a remote host.
 - **Custody.** The private key lives in the secret store at rest, under
   `remote-host-ssh:<hostId>`. Deleting a host deletes its secret —
   revoking one host revokes exactly one credential; no shared blast
@@ -123,7 +123,7 @@ in-agent usage guide this document backs.
     (see [host-runtime.md](host-runtime.md)). The shims only ever ADD the
     squad config (`-F`) and pinned `known_hosts` — never weakening host-key
     checking — and pass through any command whose destination is not a
-    tau-managed alias.
+    ficus-managed alias.
 - **Grant semantics are squad-wide by design.** A grant gives _every_ agent
   in that squad SSH access to the host — there is no per-agent grant.
   Revoking a squad's grant removes its key file from that squad's SSH
@@ -180,21 +180,21 @@ their squad's SSH config — is taught to preserve the managed block in both
 directions: it strips any managed block from the incoming content (so a
 caller can't forge one), writes the user's content, then re-appends the
 _current_ managed block computed from the DB. User edits can never clobber
-tau-managed entries, and tau's writes can never clobber user content outside
+ficus-managed entries, and ficus's writes can never clobber user content outside
 the markers.
 
 ## CLI Reference
 
-| Command                                                                                                            | Surface                                             | Permission           | Notes                                                                                                                          |
-| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `tau remote-hosts list [--all] [--squad <id>]`                                                                     | squad (default) / global (`--all`)                  | `remote-hosts:read`  | Squad defaults to `FICUS_SQUAD_ID`.                                                                                            |
-| `tau remote-hosts show <name> [--all] [--squad <id>]`                                                              | squad / global                                      | `remote-hosts:read`  | Re-prints install instructions.                                                                                                |
-| `tau remote-hosts add --name <n> --host <h> --user <u> [--port <p>] [--description <d>] [--squad <id>] [--global]` | squad add-and-grant (default) / global (`--global`) | `remote-hosts:write` | Prints the public key + install block.                                                                                         |
-| `tau remote-hosts grant <name> --squad <id>`                                                                       | global                                              | `remote-hosts:write` | Grant a squad access to an existing host.                                                                                      |
-| `tau remote-hosts revoke <name> [--squad <id>]`                                                                    | squad (default, own squad) / global (`--squad`)     | `remote-hosts:write` | Never deletes the host.                                                                                                        |
-| `tau remote-hosts remove <name>`                                                                                   | global                                              | `remote-hosts:write` | Deletes the host + its secret entirely.                                                                                        |
-| `tau remote-hosts check <name> [--all] [--squad <id>]`                                                             | squad (default) / global (`--all`)                  | `remote-hosts:write` | Server-side `ssh` reachability probe.                                                                                          |
-| `tau remote-hosts sync`                                                                                            | squad (own squad only)                              | `remote-hosts:read`  | Re-pushes SSH artifacts to the calling agent's VM box; no-op hint (`live-mount`) on docker/k8s, and on host (nothing to push). |
+| Command                                                                                                              | Surface                                             | Permission           | Notes                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `ficus remote-hosts list [--all] [--squad <id>]`                                                                     | squad (default) / global (`--all`)                  | `remote-hosts:read`  | Squad defaults to `FICUS_SQUAD_ID`.                                                                                            |
+| `ficus remote-hosts show <name> [--all] [--squad <id>]`                                                              | squad / global                                      | `remote-hosts:read`  | Re-prints install instructions.                                                                                                |
+| `ficus remote-hosts add --name <n> --host <h> --user <u> [--port <p>] [--description <d>] [--squad <id>] [--global]` | squad add-and-grant (default) / global (`--global`) | `remote-hosts:write` | Prints the public key + install block.                                                                                         |
+| `ficus remote-hosts grant <name> --squad <id>`                                                                       | global                                              | `remote-hosts:write` | Grant a squad access to an existing host.                                                                                      |
+| `ficus remote-hosts revoke <name> [--squad <id>]`                                                                    | squad (default, own squad) / global (`--squad`)     | `remote-hosts:write` | Never deletes the host.                                                                                                        |
+| `ficus remote-hosts remove <name>`                                                                                   | global                                              | `remote-hosts:write` | Deletes the host + its secret entirely.                                                                                        |
+| `ficus remote-hosts check <name> [--all] [--squad <id>]`                                                             | squad (default) / global (`--all`)                  | `remote-hosts:write` | Server-side `ssh` reachability probe.                                                                                          |
+| `ficus remote-hosts sync`                                                                                            | squad (own squad only)                              | `remote-hosts:read`  | Re-pushes SSH artifacts to the calling agent's VM box; no-op hint (`live-mount`) on docker/k8s, and on host (nothing to push). |
 
 Underlying routes: `apps/core/src/routes/remote-hosts.ts`, mounted at
 `/api/remote-hosts` (global surface) and `/api/remote-hosts/squad/:squadId`
@@ -219,5 +219,5 @@ Underlying routes: `apps/core/src/routes/remote-hosts.ts`, mounted at
 - Agent-facing skill: `config/skills/remote-hosts/SKILL.md` (granted to
   `manager` and `system-manager` agent types).
 - Design doc: `docs/history/superpowers/specs/2026-07-14-remote-hosts-design.md`.
-- Contrast: `docs/wiki/machines/runtime.md` (`machines` = substrate tau
-  bootstraps; remote hosts = targets tau never touches).
+- Contrast: `docs/wiki/machines/runtime.md` (`machines` = substrate ficus
+  bootstraps; remote hosts = targets ficus never touches).

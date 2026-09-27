@@ -1,6 +1,6 @@
 # Distributed Event Emitter
 
-Tau has an in-process typed event emitter in both the API and worker. The two emitters are joined by the authenticated, best-effort local-events HTTP transport on the `app_events` channel.
+Ficus has an in-process typed event emitter in both the API and worker. The two emitters are joined by the authenticated, best-effort local-events HTTP transport on the `app_events` channel.
 
 ## Architecture
 

@@ -23,10 +23,10 @@ For squad project work, invoke the following project-directory commands through 
 
 ## GitHub account setup
 
-1. In Tau Settings → Integrations → GitHub, connect the account and install the GitHub App for the approved repository.
+1. In Ficus Settings → Integrations → GitHub, connect the account and install the GitHub App for the approved repository.
 2. In Squad Settings → Integrations, attach that connection and choose the default account.
 3. For Pages API administration, the installed app needs Pages read/write permission. If unavailable on the shared app, use a custom GitHub App with that permission or ask the human to configure Pages in GitHub. Actions-based deployment uses the workflow's scoped `GITHUB_TOKEN` and `pages: write` / `id-token: write` permissions.
-4. Verify access with `gh auth status` and `gh repo view`. Tau resolves the current integration credential for each command. For another attached account, use `tau integration exec github --squad <squad-id> --connection <connection-id> -- gh ...`.
+4. Verify access with `gh auth status` and `gh repo view`. Ficus resolves the current integration credential for each command. For another attached account, use `ficus integration exec github --squad <squad-id> --connection <connection-id> -- gh ...`.
 
 ## Project directory and upload hygiene
 
@@ -67,12 +67,12 @@ gh run list --limit 10
 - GitHub Pages with GitHub Actions: https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages
 - GitHub CLI manual and environment variables: https://cli.github.com/manual/ and https://cli.github.com/manual/gh_help_environment
 
-## Tau deployment record
+## Ficus deployment record
 
 After deploying, record the external deployment and keep it updated. Do not put secrets in metadata. Archive old or superseded external deployment records once they are no longer useful; archived records move out of the active Apps tab list while preserving history.
 
 ```bash
-tau deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
-tau deploy external update <deployment-id> --status failed
-tau deploy external archive <deployment-id>
+ficus deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
+ficus deploy external update <deployment-id> --status failed
+ficus deploy external archive <deployment-id>
 ```

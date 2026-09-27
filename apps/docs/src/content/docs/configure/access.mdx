@@ -5,7 +5,7 @@ description: Invite people, assign roles, and manage account and automation cred
 
 import ModeContent from '../../../components/ModeContent.astro'
 
-Tau uses roles to control what people can do and where they can do it. A role contains permissions; a role assignment gives those permissions to a person at an instance-wide or squad scope. Configuration pages and actions appear according to your permissions.
+Ficus uses roles to control what people can do and where they can do it. A role contains permissions; a role assignment gives those permissions to a person at an instance-wide or squad scope. Configuration pages and actions appear according to your permissions.
 
 ## Invite a person
 
@@ -17,7 +17,7 @@ Open **Settings → Users** in the workspace you want the person to join. You ne
 
 <ModeContent mode="self-hosted">
 
-Open **Settings → Users** on your instance. If invitation email is not configured, Tau can display an invite link for you to share directly with the intended person. For account setup and server access, see [Runtime and access](/self-host/runtime-and-access/).
+Open **Settings → Users** on your instance. If invitation email is not configured, Ficus can display an invite link for you to share directly with the intended person. For account setup and server access, see [Runtime and access](/self-host/runtime-and-access/).
 
 </ModeContent>
 
@@ -48,7 +48,7 @@ In **Settings → Users**, choose **Manage Roles** for the person, select a role
 
 System permissions still apply when a squad-specific role is present. Adding a narrow squad role does not reduce a broad system grant. For access limited to one squad, review and remove broader assignments that would otherwise grant access elsewhere.
 
-Use the remove control beside a role assignment to remove that assignment. Tau prevents removing the last admin assignment or disabling the last active admin, so someone can still manage the instance.
+Use the remove control beside a role assignment to remove that assignment. Ficus prevents removing the last admin assignment or disabling the last active admin, so someone can still manage the instance.
 
 ## Create a custom role
 
@@ -63,15 +63,15 @@ Use **Settings → Sessions** for browser sessions and **Settings → Paired Dev
 The CLI can show your effective permissions for a squad:
 
 ```sh
-tau auth introspect --squad "$SQUAD_ID"
+ficus auth introspect --squad "$SQUAD_ID"
 ```
 
-Set `SQUAD_ID` to an actual squad ID from `tau squad list`. See [CLI login](/reference/cli/#log-in-to-an-instance) if you have not connected the CLI.
+Set `SQUAD_ID` to an actual squad ID from `ficus squad list`. See [CLI login](/reference/cli/#log-in-to-an-instance) if you have not connected the CLI.
 
 ## Give automation its own credential
 
-Use **Settings → System Tokens** for automation that should not depend on a person's login. Choose a descriptive name and explicit permission scopes, then save the token in the automation's secret storage. Tau displays the token value only once at creation.
+Use **Settings → System Tokens** for automation that should not depend on a person's login. Choose a descriptive name and explicit permission scopes, then save the token in the automation's secret storage. Ficus displays the token value only once at creation.
 
 System token permissions apply across the instance; they are not assignments to a single squad. Resource and ownership checks still apply. Select only the actions the automation needs, and revoke the token when you retire it. A wildcard also grants future actions within its resource.
 
-Agent shells receive their own scoped identity from Tau. They do not need an operator's saved CLI login. For differences in runtime isolation and host access, see [Runtime and access](/self-host/runtime-and-access/).
+Agent shells receive their own scoped identity from Ficus. They do not need an operator's saved CLI login. For differences in runtime isolation and host access, see [Runtime and access](/self-host/runtime-and-access/).

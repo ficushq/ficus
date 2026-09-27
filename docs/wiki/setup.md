@@ -1,10 +1,10 @@
-# Tau Setup Guide
+# Ficus Setup Guide
 
-How to get a running Tau. Pick your path:
+How to get a running Ficus. Pick your path:
 
 | Path                    | Best for                                                                              | Where                                          |
 | ----------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| **Local install**       | Your laptop or a dev box — nothing → running tau in one command, no root              | [Local setup](#local-setup) below              |
+| **Local install**       | Your laptop or a dev box — nothing → running ficus in one command, no root            | [Local setup](#local-setup) below              |
 | **Production Linux VM** | A fresh Ubuntu 24.04 host you own (root + systemd), or a cloud VM provisioned for you | [Setup toolkit](../../scripts/setup/README.md) |
 | **Kubernetes**          | Multi-tenant cluster deployments                                                      | [K8s Deployment Guide](k8s/deployment.md)      |
 | **Hosted**              | Let us run it                                                                         | [ficus.sh](https://ficus.sh)                   |
@@ -12,13 +12,13 @@ How to get a running Tau. Pick your path:
 Every path needs a sandbox runtime (`FICUS_SANDBOX_RUNTIME`, required, no
 default) — [docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md) compares them.
 
-Developing tau itself (git identity, commit signing, `bun run dev`) is a
+Developing ficus itself (git identity, commit signing, `bun run dev`) is a
 different job from installing it; that material lives in
 [docs/wiki/development.md](development.md).
 
 ## Local setup
 
-`bun run setup` takes a checkout from nothing → a running tau: `.env` written,
+`bun run setup` takes a checkout from nothing → a running ficus: `.env` written,
 PostgreSQL up, database migrated, core/CLI/web built, the sandbox runtime
 prepared, and api + worker running under the selected local supervisor with a URL to open. It is
 idempotent — re-running it never regenerates secrets, and it keeps values you
@@ -37,19 +37,19 @@ Fully headless (no prompt at all):
 curl -fsSL https://ficus.sh/cli/setup.sh | bash -s -- --runtime host --yes
 ```
 
-Everything after `bash -s --` goes to `tau server install`. It consumes
+Everything after `bash -s --` goes to `ficus server install`. It consumes
 `--root` (where to clone), `--repo` and `--ref` — which must come first — and
 forwards everything else verbatim to setup, so any other flag from the
 [table below](#flags) works there.
 
 What the one-liner does, in order:
 
-1. Installs the `tau` CLI into `~/.tau/bin` — `FICUS_INSTALL_DIR` overrides that
+1. Installs the `ficus` CLI into `~/.tau/bin` — `FICUS_INSTALL_DIR` overrides that
    directory (both the one-liner and the CLI installer honour it). The install
-   is skipped when `~/.tau/bin/tau` already exists **and**
+   is skipped when `~/.tau/bin/ficus` already exists **and**
    `FICUS_SETUP_SKIP_CLI_INSTALL=1`; the installer URL comes from
    `FICUS_INSTALL_URL`, default `https://ficus.sh/cli/install.sh`.
-2. Runs `tau server install`, which installs bun with the official installer if
+2. Runs `ficus server install`, which installs bun with the official installer if
    it is missing, then clones `https://github.com/ficushq/tau.git` into
    `~/.tau/tau` (`--root <dir>` to clone elsewhere; an existing checkout there
    is reused untouched, and a non-empty directory that is not a checkout is an
@@ -66,8 +66,8 @@ else, `sudo apt install unzip` first. Under `curl … | bash` the installer
 reattaches stdin from `/dev/tty` so the runtime prompt still works; with no
 terminal at all it exits with the "no terminal and no runtime chosen" error.
 
-`tau server install` can also be run directly, e.g.
-`tau server install --root /srv/tau --ref main -- --runtime docker-socket --yes`
+`ficus server install` can also be run directly, e.g.
+`ficus server install --root /srv/ficus --ref main -- --runtime docker-socket --yes`
 (`--root`, `--repo` and `--ref` must come **before** the pass-through setup
 flags).
 
@@ -80,7 +80,7 @@ bun install
 bun run setup
 ```
 
-`bun run setup` is `tau server setup` run from the source
+`bun run setup` is `ficus server setup` run from the source
 (`bun apps/cli/src/index.ts server setup`). Pass flags after `--`:
 
 ```bash
@@ -133,14 +133,14 @@ headless use; the flag wins when both are set.
 | `--database-url <dsn>`                                | `FICUS_SETUP_DATABASE_URL` | the managed container                                            | use an existing PostgreSQL; no container is then created or started                                                                  |
 | `--db-name <name>`                                    | `FICUS_SETUP_DB_NAME`      | `tau`                                                            | managed container only, created if missing; mutually exclusive with `--database-url`                                                 |
 | `--db-port <n>`                                       | `FICUS_SETUP_DB_PORT`      | `5432` for `tau`, else the first free port from 5433             | host port the managed PostgreSQL container publishes on loopback                                                                     |
-| `--default`                                           | —                          | off                                                              | make this instance the fallback for bare `tau server …` commands run outside any checkout (inside a checkout, that checkout wins)    |
+| `--default`                                           | —                          | off                                                              | make this instance the fallback for bare `ficus server …` commands run outside any checkout (inside a checkout, that checkout wins)  |
 | `--no-start`                                          | —                          | starts                                                           | write configuration/registry only; do not register or start a supervisor                                                             |
 | `--dry-run`                                           | —                          | off                                                              | print the plan (secrets redacted), change nothing, exit 0                                                                            |
 | `--yes`                                               | —                          | off                                                              | skip the plan confirmation (the runtime question is still asked on a TTY)                                                            |
 | `--rebuild-image`                                     | —                          | off                                                              | rebuild `tau-sandbox:latest` even if it already exists                                                                               |
 | `--root <dir>`                                        | `FICUS_SERVER_ROOT`        | resolved (see below)                                             | the checkout to operate on                                                                                                           |
 
-The checkout a `tau server` management command (`start`, `stop`, `restart`,
+The checkout a `ficus server` management command (`start`, `stop`, `restart`,
 `status`, `logs`, `update`, `uninstall`) acts on is resolved in this order:
 `--root` > `FICUS_SERVER_ROOT` > `--instance <label>` (or `FICUS_INSTANCE` in the
 environment) looked up in the registry > the checkout you are standing in >
@@ -157,11 +157,11 @@ Three things, in the checkout and in your home directory:
 - **`.env`** — copied from `.env.example` if missing, then merged key by key and
   `chmod 600`. Comments, ordering and every key setup does not manage are
   preserved; managed keys that are missing are appended under a single
-  `# --- added by tau setup ---` comment.
+  `# --- added by ficus setup ---` comment.
 - **Supervisor definition** — PM2 installs generate `ecosystem.config.js`. Native installs create paired definitions when started: `~/Library/LaunchAgents/ai.hiretau.<process>.plist` on macOS or `${XDG_CONFIG_HOME:-~/.config}/systemd/user/<process>.service` on Linux. Native setup leaves any existing ecosystem file untouched.
 - **`~/.tau/cli/local-server.json`** — the instance registry:
   `{ "version": 3, "default": "<label>", "instances": { "<label>": { root, port, supervisor, createdAt, updatedAt } } }`,
-  so `tau server …` finds every install from anywhere. Version-1 and version-2 records migrate in memory to `supervisor: "pm2"`; malformed version-3 or future-version state fails closed. Setup adds its
+  so `ficus server …` finds every install from anywhere. Version-1 and version-2 records migrate in memory to `supervisor: "pm2"`; malformed version-3 or future-version state fails closed. Setup adds its
   instance and takes the default when it is the first one or `--default` is
   passed.
 
@@ -197,7 +197,7 @@ never regenerated — re-running setup on a working install cannot lock you out.
 The steps, in order: preflight → config files → `.env` → PostgreSQL → migrate
 (`FICUS_MIGRATE_LIVE=1`) → build core, CLI and web → sandbox image or k3d cluster
 → start worker first and API last under the selected supervisor and wait for the API → handoff. The registry entry is written
-**before** the start step — so `tau server logs` can reach the instance even if
+**before** the start step — so `ficus server logs` can reach the instance even if
 the health wait fails — and refreshed after it. Each step
 checks before acting: an existing `tau-sandbox:latest` image or `tau-dev` k3d
 cluster is left alone (`--rebuild-image` forces the image), builds are
@@ -235,50 +235,50 @@ that also means the API is up, but `/health` is the direct check.)
 None of these need the API, an account, or a network:
 
 ```bash
-tau server list              # every instance on this machine: label, supervisor, root, URL, default, process states
-tau server status            # instance, supervisor, root, port, runtime, commit, process states, health (--json for machines)
-tau server logs -f           # recorded-supervisor logs; -c api|worker to narrow, -n N for history
-tau server restart           # also: start, stop
-tau server use smoke         # make `smoke` the instance bare commands act on
-tau server uninstall         # remove supervisor registration + registry entry; deletes no data
-tau server bootstrap-sysbox  # (Linux host) install the sysbox runtime docker-sysbox needs; --dry-run to preview
+ficus server list              # every instance on this machine: label, supervisor, root, URL, default, process states
+ficus server status            # instance, supervisor, root, port, runtime, commit, process states, health (--json for machines)
+ficus server logs -f           # recorded-supervisor logs; -c api|worker to narrow, -n N for history
+ficus server restart           # also: start, stop
+ficus server use smoke         # make `smoke` the instance bare commands act on
+ficus server uninstall         # remove supervisor registration + registry entry; deletes no data
+ficus server bootstrap-sysbox  # (Linux host) install the sysbox runtime docker-sysbox needs; --dry-run to preview
 ```
 
 Each one acts on a single instance — add `--instance <label>` to the subcommand
-(`tau server logs --instance smoke -f`) to pick another one; see
-[Multiple instances](#multiple-instances). (`tau server list` needs no label: it
+(`ficus server logs --instance smoke -f`) to pick another one; see
+[Multiple instances](#multiple-instances). (`ficus server list` needs no label: it
 prints every instance.)
 
-`tau server use <label>` changes which instance the bare commands act on, the
-way `tau auth use` switches backends. It only moves the registry's `default`,
+`ficus server use <label>` changes which instance the bare commands act on, the
+way `ficus auth use` switches backends. It only moves the registry's `default`,
 so it matters when you are outside any checkout — inside a checkout, that
 checkout still wins — and `--instance` overrides both. It is also the repair
 for a registry whose `default` was lost or points at a label that no longer
 exists.
 
-`tau server uninstall` asks for confirmation first — pass `--yes` to skip the
+`ficus server uninstall` asks for confirmation first — pass `--yes` to skip the
 prompt, which is required when there is no terminal (it refuses to run
 unattended otherwise). It prints what it deliberately left behind (the
 checkout, the instance's PostgreSQL container and volume, and `HOME_DIR`) with
 the commands to remove them by hand, and says which registry entry it dropped.
 If the checkout itself is already gone (a deleted worktree, a scratch
-directory), `tau server uninstall --instance <label>` still retires the
+directory), `ficus server uninstall --instance <label>` still retires the
 registration: it cleans the supervisor up as far as it can, drops the registry
 entry, and lists the container, volume and data directory it left behind.
 
 To update:
 
 ```bash
-tau server update            # this checkout: git pull + rebuild, then restart the recorded supervisor (works with the API down)
-tau update apply             # the instance the CLI is pointed at, through its API
-tau update status --offline  # read the checkout's local update status file
+ficus server update            # this checkout: git pull + rebuild, then restart the recorded supervisor (works with the API down)
+ficus update apply             # the instance the CLI is pointed at, through its API
+ficus update status --offline  # read the checkout's local update status file
 ```
 
-The two commands target different things. `tau server update` always acts on
+The two commands target different things. `ficus server update` always acts on
 the checkout on this machine (`--root`, `FICUS_SERVER_ROOT`, the local-server
 record, or the checkout you are in) and never needs the API — use it for a
-local install. `tau update apply` posts to `/api/updates/apply` on whatever
-backend the CLI is pointed at (`--backend`, the active `tau auth login`
+local install. `ficus update apply` posts to `/api/updates/apply` on whatever
+backend the CLI is pointed at (`--backend`, the active `ficus auth login`
 backend, `FICUS_API_URL`), which may be a cloud instance; it announces the
 target first. It falls back to the offline path only when that target is
 unreachable at the transport level **and** is the local instance itself (a
@@ -301,11 +301,11 @@ Native persistence behavior:
 - systemd user units start with the user manager. Setup checks linger, attempts `loginctl enable-linger <user>` without sudo, and warns with the exact `sudo loginctl enable-linger <user>` command when policy prevents it.
 - PM2 remains explicit. Setup runs `pm2 save`; for optional reboot startup, run `cd <checkout> && bunx pm2 startup` and then the privileged command PM2 prints.
 
-To change supervisors safely, first run `tau server uninstall --root <checkout>`, then rerun `bun run setup -- --supervisor <new>`. Setup refuses an in-place supervisor change so two managers cannot bind the same ports.
+To change supervisors safely, first run `ficus server uninstall --root <checkout>`, then rerun `bun run setup -- --supervisor <new>`. Setup refuses an in-place supervisor change so two managers cannot bind the same ports.
 
 ### Multiple instances
 
-Several tau installs can run on one machine at once. Each one is an **instance**
+Several ficus installs can run on one machine at once. Each one is an **instance**
 with a label, and the label names every resource the instance owns, so nothing
 is shared by accident. The label of an existing install is `tau`, and the `tau`
 label keeps today's names exactly — installing a second instance changes nothing
@@ -315,8 +315,8 @@ An instance is a checkout: `.env` and `ecosystem.config.js` belong to one label,
 so give the second instance its own clone.
 
 ```bash
-git clone --recurse-submodules https://github.com/ficushq/tau.git tau-smoke
-cd tau-smoke && bun install
+git clone --recurse-submodules https://github.com/ficushq/tau.git ficus-smoke
+cd ficus-smoke && bun install
 bun run setup -- --instance smoke --runtime host --port 3100
 ```
 
@@ -356,18 +356,18 @@ and reused from then on.
 **Managing them**
 
 ```bash
-tau server list                          # label, root, URL, default marker, supervisor states
-tau server status --instance smoke       # --instance belongs to the subcommand
-tau server logs --instance smoke -f
-tau server uninstall --instance smoke
+ficus server list                          # label, root, URL, default marker, supervisor states
+ficus server status --instance smoke       # --instance belongs to the subcommand
+ficus server logs --instance smoke -f
+ficus server uninstall --instance smoke
 ```
 
-`tau server list` reads `~/.tau/cli/local-server.json`, the registry setup
+`ficus server list` reads `~/.tau/cli/local-server.json`, the registry setup
 writes an entry into (`{ root, port, createdAt, updatedAt }` per label). Which
 instance a command acts on is decided in this order: `--root` >
 `FICUS_SERVER_ROOT` > `--instance` (or `FICUS_INSTANCE`) > the checkout you are
 standing in > the registry's default instance — the first one installed, or
-whichever passed `--default` (also in [Flags](#flags)). `tau server uninstall`
+whichever passed `--default` (also in [Flags](#flags)). `ficus server uninstall`
 drops the entry and hands the default to a remaining instance; it deletes no
 data.
 
@@ -379,12 +379,12 @@ its label and its port come from its own `.env` unless `--instance` / `--port`
 `--instance` is refused —
 
 ```
-this checkout is instance "tau"; to relabel it, remove FICUS_INSTANCE from .env (after unregistering its supervisor with tau server uninstall --root /path/to/checkout) — or set up a fresh checkout
+this checkout is instance "tau"; to relabel it, remove FICUS_INSTANCE from .env (after unregistering its supervisor with ficus server uninstall --root /path/to/checkout) — or set up a fresh checkout
 ```
 
 — because relabelling would orphan the supervisor registrations, container,
 database and data directory the old label owns. The message is the whole recipe:
-`tau server uninstall` unregisters the supervisor but does **not**
+`ficus server uninstall` unregisters the supervisor but does **not**
 clear the label, so removing `FICUS_INSTANCE` from `.env` is the part that
 actually relabels the checkout. A checkout with **no** label yet — an
 install made before labels existed, or a hand-copied `.env` — may take one: setup
@@ -399,7 +399,7 @@ starting: if pm2 already runs this instance's apps **online** from a different
 checkout, it stops with
 
 ```
-pm2 already runs tau-api for instance "tau" from another checkout (/path/to/other). Give this checkout its own label with --instance <other-label>, or tau server uninstall --root /path/to/other the other one
+pm2 already runs tau-api for instance "tau" from another checkout (/path/to/other). Give this checkout its own label with --instance <other-label>, or ficus server uninstall --root /path/to/other the other one
 ```
 
 Both ways out are in the message: a label of its own for this checkout, or
@@ -450,22 +450,22 @@ access logs.
    login — human sign-in is passkeys only from then on.
 
 If the passkey step fails, the account is created but has no passkey. The
-browser is still signed in with the instance password. Tau then shows **Finish
+browser is still signed in with the instance password. Ficus then shows **Finish
 creating your admin account** instead of the app. Choose **Create passkey** or
 **Retry** to register the passkey in the same window. You do not need a new
-verification code. Tau then signs you in to that account. See
+verification code. Ficus then signs you in to that account. See
 [Finishing first-admin setup](core-auth.md#finishing-first-admin-setup).
 
 Then point the CLI at it:
 
 ```bash
-tau auth login local --api-url http://localhost:3000
+ficus auth login local --api-url http://localhost:3000
 ```
 
-Until an admin has a passkey, `tau` can authenticate from inside the checkout
+Until an admin has a passkey, `ficus` can authenticate from inside the checkout
 using the bootstrap password in `.env`. After that, use browser-authorized CLI
 login. If you exported `FICUS_PASSWORD` in your shell, unset it first so it does
-not override browser authorization. `tau auth status` shows the active source.
+not override browser authorization. `ficus auth status` shows the active source.
 
 ### AI provider
 
@@ -474,7 +474,7 @@ keys, or the OAuth logins for Claude Pro/Max, ChatGPT Plus/Pro and GitHub
 Copilot subscriptions. This needs `FICUS_ENCRYPTION_KEY`, which setup wrote for
 you; without it saving credentials in AI Providers or Integrations fails with
 `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`.
-From the CLI, `tau provider-auth set <provider> <key>` stores an API key
+From the CLI, `ficus provider-auth set <provider> <key>` stores an API key
 (`list`, `get`, `delete` and `oauth-providers` round out the command); the OAuth
 subscription logins are web-UI only.
 
@@ -531,7 +531,7 @@ Google Cloud integration must still be enabled.
 There is no **Secrets & Keys** page. Saved integration secrets stay hidden;
 enter a replacement to rotate them. OpenAI API-service and Google speech
 credential changes apply to new requests without a restart. Restart with
-`tau server restart` after changing server environment settings.
+`ficus server restart` after changing server environment settings.
 
 ### Browser tools
 
@@ -636,11 +636,11 @@ differently, or debug a step that failed:
 ## Verification checklist
 
 ```bash
-# 1. The instance as tau sees it: instance, supervisor, root, port, runtime, commit, process states, health
-tau server status
+# 1. The instance as ficus sees it: instance, supervisor, root, port, runtime, commit, process states, health
+ficus server status
 
 #    Every instance installed here (the other commands take --instance <label>)
-tau server list
+ficus server list
 
 # 2. API health — /health is public and returns 200 ({"status":"ok"})
 curl -i http://localhost:3000/health
@@ -649,11 +649,11 @@ curl -i http://localhost:3000/health
 curl -i http://localhost:3000/api/health
 
 # 3. Nothing crashing on boot
-tau server logs -n 50
+ficus server logs -n 50
 
 # 4. The CLI talks to it (after the first admin exists)
-tau auth login local --api-url http://localhost:3000
-tau squad list
+ficus auth login local --api-url http://localhost:3000
+ficus squad list
 
 # 5. Integrations, if you configured them. These routes need the `webhooks:read`
 #    permission: the bootstrap FICUS_PASSWORD works as a bearer token only until an
@@ -668,32 +668,32 @@ end-to-end proof.
 
 ## Troubleshooting
 
-| Problem                                                                             | Solution                                                                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bun is not installed and its installer needs unzip`                                | bun's installer unpacks a zip and stock Ubuntu/Debian images ship without `unzip`: `sudo apt install unzip` (Fedora: `sudo dnf install unzip`) and re-run, or install bun yourself first with `curl -fsSL https://bun.sh/install \| bash`.                                                                                                |
-| `Docker is required for …` (preflight)                                              | Install it — macOS: [Docker Desktop](https://docs.docker.com/get-docker/); Linux: `curl -fsSL https://get.docker.com \| sh`, then `sudo usermod -aG docker $USER` and log out and back in for the group change to take effect.                                                                                                            |
-| `Preflight failed: docker info failed`                                              | Docker is installed but the daemon is not running — start Docker Desktop, or `sudo systemctl start docker`. Docker is only needed for the managed PostgreSQL container and the container runtimes; `--runtime host` with `--database-url` pointing at an existing PostgreSQL needs none.                                                  |
-| `pm2 already runs tau-api for instance "<label>" from another checkout`             | Another checkout is running this instance's pm2 apps. Give this one its own label (`--instance <other-label>`), or unregister the other (`tau server uninstall --root <that checkout>`). Only online pm2 apps block; stopped ones are ignored. See [Multiple instances](#multiple-instances).                                             |
-| `this checkout is instance "<x>"; to relabel it, remove FICUS_INSTANCE from .env`   | A checkout belongs to one instance. Re-run without `--instance` to keep it as it is, use a fresh checkout for the new label, or genuinely relabel this one: `tau server uninstall --root <root>` (supervisor registration + registry entry), then delete `FICUS_INSTANCE` from its `.env`. See [Multiple instances](#multiple-instances). |
-| `this checkout's DATABASE_URL points at a Postgres the installer does not manage …` | The DSN in `.env` is on loopback but is not this instance's container (its credentials differ), so `--db-port` / `--db-name` cannot apply to it. Pass `--database-url` to point at the database you want, or remove `DATABASE_URL` from `.env` and let setup manage a container.                                                          |
-| `unknown instance "<label>" — known instances: …`                                   | `--instance` (or `FICUS_INSTANCE`) names a label the registry does not hold. `tau server list` shows the labels it knows; run setup in that checkout to register it, or address it with `--root <dir>`. See [Multiple instances](#multiple-instances).                                                                                    |
-| `port <n> is in use but is not container postgres-tau…`                             | The port this checkout's `DATABASE_URL` names is taken by something that is not this instance's container. Stop that listener, pass the `--db-port <n>` the message suggests, or point `--database-url` at the database you actually want.                                                                                                |
-| `container postgres-tau… publishes <x>, not <y>`                                    | A container's port mapping is fixed when it is created, so `--db-port` cannot move it. Re-run with `--db-port <x>`, or remove the container (`docker rm -f <container>`, keeping the volume) and let setup recreate it on the port you want.                                                                                              |
-| `FICUS_SANDBOX_RUNTIME must be one of …`                                            | The value is unset or an old spelling. Old spellings were removed, not aliased: `sysbox` → `docker-sysbox`, `socket` → `docker-socket`, `auto` / `docker` → choose `docker-sysbox` or `docker-socket` explicitly. Fix `.env`, then `tau server restart`.                                                                                  |
-| `bun: command not found`                                                            | `curl -fsSL https://bun.sh/install \| bash`, then re-open the shell.                                                                                                                                                                                                                                                                      |
-| Preflight says bun is older than the pinned version                                 | `bun upgrade` (the pin is the checkout's `.bun-version`).                                                                                                                                                                                                                                                                                 |
-| `This installer supports macOS or Linux (got win32)`                                | Windows runs through WSL 2: from PowerShell run `wsl --install -d Ubuntu-24.04`, reboot, then inside WSL run the installer (`curl -fsSL https://ficus.sh/cli/setup.sh \| bash`).                                                                                                                                                          |
-| Warning: `tmux is not installed — agents cannot run local deployments until it is`  | A `host`-runtime warning, not a failure: setup continues, but agents cannot run local deployments until tmux is installed (macOS: `brew install tmux`; Debian/Ubuntu: `sudo apt install tmux`).                                                                                                                                           |
-| `docker-sysbox requested but the sysbox runtime is not installed`                   | Run `tau server bootstrap-sysbox` (consent-gated automation; inside WSL enable systemd first — see [docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md#installing-sysbox)), or choose `docker-socket`.                                                                                                                                    |
-| `k3d is required for the k3d runtime`                                               | `brew install k3d kubectl` (or see [k3d.io](https://k3d.io)), then re-run setup.                                                                                                                                                                                                                                                          |
-| The API did not answer `/health` within 60s                                         | `tau server logs -c api -n 100` — a missing `.env` value or a failed migration is the usual cause.                                                                                                                                                                                                                                        |
-| Database connection error                                                           | `docker ps --filter name=postgres-tau` — this instance's container (`postgres-tau`, or `postgres-tau-<label>`) must be up on the port `DATABASE_URL` names. `tau server start` starts it for you when the DSN is one the installer wrote.                                                                                                 |
-| Collation version mismatch                                                          | `docker exec postgres-tau psql -U postgres -d tau -c "ALTER DATABASE tau REFRESH COLLATION VERSION;"` (`postgres-tau-<label>` for a labelled instance) — happens when the Docker image updates glibc.                                                                                                                                     |
-| Migration fails                                                                     | PostgreSQL must be reachable and `DATABASE_URL` correct; migrating the root `.env` database needs `FICUS_MIGRATE_LIVE=1`.                                                                                                                                                                                                                 |
-| `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`                        | `.env` has no encryption key: `echo "FICUS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env`, then `tau server restart`.                                                                                                                                                                                                                   |
-| API returns 401 from the CLI                                                        | Run `tau auth status`, then `tau auth login local --api-url http://localhost:<port>`. Clear a stale shell `FICUS_PASSWORD` for browser login; the checkout password works only before an admin has a passkey.                                                                                                                             |
-| Passkey registration returns 500                                                    | `FICUS_WEB_ORIGIN` contains a path, or `WEBAUTHN_RP_ID` is wrong — see [Exposing it publicly](#exposing-it-publicly).                                                                                                                                                                                                                     |
-| `<root> has uncommitted changes` from `tau update`                                  | The offline updater refuses a dirty tree. Commit or discard the changes, then retry.                                                                                                                                                                                                                                                      |
-| Webhook 401 / 404                                                                   | 401: the secret in `.env` and the one on the provider differ. 404: the provider is not registered — check that the api started cleanly.                                                                                                                                                                                                   |
-| Voice, memory search, or TTS not working                                            | Check Integrations > OpenAI API services and Assistant & Memory feature switches for voice/embeddings; check Integrations > Google Cloud and its JSON/ADC credentials for message read-aloud.                                                                                                                                             |
-| Agent runs fail immediately                                                         | Sign in to a provider under **Settings > AI Providers**, or install and authenticate Pi (`bun add -g @earendil-works/pi-coding-agent`, then `pi` and `/login`).                                                                                                                                                                           |
+| Problem                                                                             | Solution                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun is not installed and its installer needs unzip`                                | bun's installer unpacks a zip and stock Ubuntu/Debian images ship without `unzip`: `sudo apt install unzip` (Fedora: `sudo dnf install unzip`) and re-run, or install bun yourself first with `curl -fsSL https://bun.sh/install \| bash`.                                                                                                  |
+| `Docker is required for …` (preflight)                                              | Install it — macOS: [Docker Desktop](https://docs.docker.com/get-docker/); Linux: `curl -fsSL https://get.docker.com \| sh`, then `sudo usermod -aG docker $USER` and log out and back in for the group change to take effect.                                                                                                              |
+| `Preflight failed: docker info failed`                                              | Docker is installed but the daemon is not running — start Docker Desktop, or `sudo systemctl start docker`. Docker is only needed for the managed PostgreSQL container and the container runtimes; `--runtime host` with `--database-url` pointing at an existing PostgreSQL needs none.                                                    |
+| `pm2 already runs tau-api for instance "<label>" from another checkout`             | Another checkout is running this instance's pm2 apps. Give this one its own label (`--instance <other-label>`), or unregister the other (`ficus server uninstall --root <that checkout>`). Only online pm2 apps block; stopped ones are ignored. See [Multiple instances](#multiple-instances).                                             |
+| `this checkout is instance "<x>"; to relabel it, remove FICUS_INSTANCE from .env`   | A checkout belongs to one instance. Re-run without `--instance` to keep it as it is, use a fresh checkout for the new label, or genuinely relabel this one: `ficus server uninstall --root <root>` (supervisor registration + registry entry), then delete `FICUS_INSTANCE` from its `.env`. See [Multiple instances](#multiple-instances). |
+| `this checkout's DATABASE_URL points at a Postgres the installer does not manage …` | The DSN in `.env` is on loopback but is not this instance's container (its credentials differ), so `--db-port` / `--db-name` cannot apply to it. Pass `--database-url` to point at the database you want, or remove `DATABASE_URL` from `.env` and let setup manage a container.                                                            |
+| `unknown instance "<label>" — known instances: …`                                   | `--instance` (or `FICUS_INSTANCE`) names a label the registry does not hold. `ficus server list` shows the labels it knows; run setup in that checkout to register it, or address it with `--root <dir>`. See [Multiple instances](#multiple-instances).                                                                                    |
+| `port <n> is in use but is not container postgres-tau…`                             | The port this checkout's `DATABASE_URL` names is taken by something that is not this instance's container. Stop that listener, pass the `--db-port <n>` the message suggests, or point `--database-url` at the database you actually want.                                                                                                  |
+| `container postgres-tau… publishes <x>, not <y>`                                    | A container's port mapping is fixed when it is created, so `--db-port` cannot move it. Re-run with `--db-port <x>`, or remove the container (`docker rm -f <container>`, keeping the volume) and let setup recreate it on the port you want.                                                                                                |
+| `FICUS_SANDBOX_RUNTIME must be one of …`                                            | The value is unset or an old spelling. Old spellings were removed, not aliased: `sysbox` → `docker-sysbox`, `socket` → `docker-socket`, `auto` / `docker` → choose `docker-sysbox` or `docker-socket` explicitly. Fix `.env`, then `ficus server restart`.                                                                                  |
+| `bun: command not found`                                                            | `curl -fsSL https://bun.sh/install \| bash`, then re-open the shell.                                                                                                                                                                                                                                                                        |
+| Preflight says bun is older than the pinned version                                 | `bun upgrade` (the pin is the checkout's `.bun-version`).                                                                                                                                                                                                                                                                                   |
+| `This installer supports macOS or Linux (got win32)`                                | Windows runs through WSL 2: from PowerShell run `wsl --install -d Ubuntu-24.04`, reboot, then inside WSL run the installer (`curl -fsSL https://ficus.sh/cli/setup.sh \| bash`).                                                                                                                                                            |
+| Warning: `tmux is not installed — agents cannot run local deployments until it is`  | A `host`-runtime warning, not a failure: setup continues, but agents cannot run local deployments until tmux is installed (macOS: `brew install tmux`; Debian/Ubuntu: `sudo apt install tmux`).                                                                                                                                             |
+| `docker-sysbox requested but the sysbox runtime is not installed`                   | Run `ficus server bootstrap-sysbox` (consent-gated automation; inside WSL enable systemd first — see [docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md#installing-sysbox)), or choose `docker-socket`.                                                                                                                                    |
+| `k3d is required for the k3d runtime`                                               | `brew install k3d kubectl` (or see [k3d.io](https://k3d.io)), then re-run setup.                                                                                                                                                                                                                                                            |
+| The API did not answer `/health` within 60s                                         | `ficus server logs -c api -n 100` — a missing `.env` value or a failed migration is the usual cause.                                                                                                                                                                                                                                        |
+| Database connection error                                                           | `docker ps --filter name=postgres-tau` — this instance's container (`postgres-tau`, or `postgres-tau-<label>`) must be up on the port `DATABASE_URL` names. `ficus server start` starts it for you when the DSN is one the installer wrote.                                                                                                 |
+| Collation version mismatch                                                          | `docker exec postgres-tau psql -U postgres -d tau -c "ALTER DATABASE tau REFRESH COLLATION VERSION;"` (`postgres-tau-<label>` for a labelled instance) — happens when the Docker image updates glibc.                                                                                                                                       |
+| Migration fails                                                                     | PostgreSQL must be reachable and `DATABASE_URL` correct; migrating the root `.env` database needs `FICUS_MIGRATE_LIVE=1`.                                                                                                                                                                                                                   |
+| `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`                        | `.env` has no encryption key: `echo "FICUS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env`, then `ficus server restart`.                                                                                                                                                                                                                   |
+| API returns 401 from the CLI                                                        | Run `ficus auth status`, then `ficus auth login local --api-url http://localhost:<port>`. Clear a stale shell `FICUS_PASSWORD` for browser login; the checkout password works only before an admin has a passkey.                                                                                                                           |
+| Passkey registration returns 500                                                    | `FICUS_WEB_ORIGIN` contains a path, or `WEBAUTHN_RP_ID` is wrong — see [Exposing it publicly](#exposing-it-publicly).                                                                                                                                                                                                                       |
+| `<root> has uncommitted changes` from `ficus update`                                | The offline updater refuses a dirty tree. Commit or discard the changes, then retry.                                                                                                                                                                                                                                                        |
+| Webhook 401 / 404                                                                   | 401: the secret in `.env` and the one on the provider differ. 404: the provider is not registered — check that the api started cleanly.                                                                                                                                                                                                     |
+| Voice, memory search, or TTS not working                                            | Check Integrations > OpenAI API services and Assistant & Memory feature switches for voice/embeddings; check Integrations > Google Cloud and its JSON/ADC credentials for message read-aloud.                                                                                                                                               |
+| Agent runs fail immediately                                                         | Sign in to a provider under **Settings > AI Providers**, or install and authenticate Pi (`bun add -g @earendil-works/pi-coding-agent`, then `pi` and `/login`).                                                                                                                                                                             |

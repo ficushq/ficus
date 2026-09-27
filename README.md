@@ -1,4 +1,4 @@
-# Tau
+# Ficus
 
 **A workspace for teams of AI agents.**
 
@@ -6,7 +6,7 @@ Give a squad a goal. Its manager coordinates specialized agents, tracks work,
 and brings you in for decisions and review. Follow the conversation, steer a
 running agent, or let the squad continue while you're away.
 
-Run Tau on your own machine or server, or use [Tau Cloud](https://ficus.sh).
+Run Ficus on your own machine or server, or use [Ficus Cloud](https://ficus.sh).
 Your squads can work across repositories, tools, and services from the web app
 or CLI.
 
@@ -14,7 +14,7 @@ or CLI.
 
 ## Quick start
 
-Install and run Tau locally on macOS or Linux:
+Install and run Ficus locally on macOS or Linux:
 
 ```bash
 curl -fsSL https://ficus.sh/cli/setup.sh | bash
@@ -30,7 +30,7 @@ where agents should run, and starts your instance.
 
 See the [setup guide](docs/wiki/setup.md#local-setup) for requirements, runtime
 choices, headless installation, and troubleshooting. Prefer managed hosting?
-[Get started with Tau Cloud](https://ficus.sh).
+[Get started with Ficus Cloud](https://ficus.sh).
 
 <details>
 <summary>Other installation options</summary>
@@ -53,8 +53,8 @@ curl -fsSL https://ficus.sh/cli/install.sh | bash
 The CLI is installed to `~/.tau/bin`. See [CLI setup](docs/wiki/cli/README.md)
 for authentication and usage.
 
-**Operate Tau from an AI coding agent:** the CLI bundles the
-[Tau operator skill](external/skills/ficus/SKILL.md). Install it for your agent with
+**Operate Ficus from an AI coding agent:** the CLI bundles the
+[Ficus operator skill](external/skills/ficus/SKILL.md). Install it for your agent with
 
 ```bash
 ficus skill install ficus --agent claude-code --global   # or --agent pi | codex
@@ -76,26 +76,26 @@ ficus skill install ficus --agent claude-code --global   # or --agent pi | codex
 - **Connect your tools.** Work with GitHub, Linear, chat channels, browser tools,
   webhooks, and app previews. The CLI and REST API support scripted workflows.
 - **Collaborate across people and instances.** Multi-user permissions control
-  access; AMTP connects agents across Tau instances and other compatible nodes.
+  access; AMTP connects agents across Ficus instances and other compatible nodes.
 
 Explore the [user guides](https://docs.ficus.sh) or the
 [technical documentation](docs/wiki/README.md) for the full feature set.
 
 ## Run it your way
 
-| Run Tau         | Best for                                                                                                      |
+| Run Ficus       | Best for                                                                                                      |
 | --------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Local**       | Run on your computer and use the web app or CLI. [Local setup](docs/wiki/setup.md#local-setup)                |
 | **Self-hosted** | Deploy on your own infrastructure and choose where agent workloads run. [Hosting guide](docs/wiki/hosting.md) |
-| **Tau Cloud**   | Use managed hosting at [ficus.sh](https://ficus.sh).                                                          |
+| **Ficus Cloud** | Use managed hosting at [ficus.sh](https://ficus.sh).                                                          |
 
 This repository includes the server, worker, web app, CLI, sandbox runtimes,
 and shared client libraries. Instance documentation is also available at
-`/docs/` on your Tau server.
+`/docs/` on your Ficus server.
 
-## Developing Tau
+## Developing Ficus
 
-Tau is built with **Bun, TypeScript, Hono, and React**. The API and worker run as
+Ficus is built with **Bun, TypeScript, Hono, and React**. The API and worker run as
 separate processes; agents use the same CLI and APIs available to people.
 
 - [Development guide](docs/wiki/development.md) — run from source, test changes, and work on the codebase.
@@ -111,7 +111,7 @@ a pull request. The **CLA Check** guides contributors through the
 
 ## License
 
-Tau is licensed under [AGPL-3.0-only](LICENSE). Contributors retain their
+Ficus is licensed under [AGPL-3.0-only](LICENSE). Contributors retain their
 copyright; the [CLA](CLA.md) grants Intentional Design LLC permission to offer
 contributions under additional licenses, including commercial licenses.
 
