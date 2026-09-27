@@ -806,7 +806,7 @@ describe('WebSocketManager', () => {
         agentTypeId: 'engineer',
         kind: 'workstream',
         summary: '[ws-abcd created] See #241',
-        preview: [{ text: '[ws-abcd created] See ' }, { text: '#241', bold: true, href: 'tau:ws:241' }],
+        preview: [{ text: '[ws-abcd created] See ' }, { text: '#241', bold: true, href: 'ficus:ws:241' }],
         ref: { type: 'workstream', workStreamId: crypto.randomUUID() },
       },
       quietEligible: true,
@@ -819,7 +819,7 @@ describe('WebSocketManager', () => {
     expect(delivered.data.item.summary).toBe('[ws-abcd created] See #241')
     expect(delivered.data.item.preview).toEqual([
       { text: '[ws-abcd created] See ' },
-      { text: '#241', bold: true, href: 'tau:ws:241' },
+      { text: '#241', bold: true, href: 'ficus:ws:241' },
     ])
 
     identity.scopes.splice(0)

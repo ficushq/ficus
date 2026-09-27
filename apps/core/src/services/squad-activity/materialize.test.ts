@@ -122,7 +122,7 @@ describe('Activity materialization', () => {
     await db.insert(messages).values({
       agentId: agent.id,
       role: 'assistant',
-      content: '  Building [#241](tau:ws:241)\n**ready**',
+      content: '  Building [#241](ficus:ws:241)\n**ready**',
       metadata: { executionId: execution.id },
       createdAt: new Date(runStartedAt.getTime() + 30_000),
     })
@@ -146,7 +146,7 @@ describe('Activity materialization', () => {
     const [repaired] = await db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))
     expect(repaired.preview).toEqual([
       { text: 'Building ' },
-      { text: '#241', href: 'tau:ws:241' },
+      { text: '#241', href: 'ficus:ws:241' },
       { text: ' ' },
       { text: 'ready', bold: true },
     ])

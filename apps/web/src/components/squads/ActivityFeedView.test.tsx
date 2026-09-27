@@ -26,7 +26,7 @@ test('global and squad previews keep links separate from the source anchor', asy
                   kind: 'message',
                   summary: '#241 docs bold',
                   preview: [
-                    { text: '#241', href: 'tau:ws:241' },
+                    { text: '#241', href: 'ficus:ws:241' },
                     { text: ' docs', href: 'https://example.com' },
                     { text: ' bold', bold: true },
                     { text: 'bad', href: 'javascript:alert(1)' },
@@ -86,7 +86,7 @@ test('activity references do not fetch entity sources merely by scrolling into v
   } as unknown as typeof IntersectionObserver
   try {
     const view = dom.createRoot()
-    await dom.act(() => view.root.render(<ActivityPreview spans={[{ text: '#241', href: 'tau:ws:241' }]} />))
+    await dom.act(() => view.root.render(<ActivityPreview spans={[{ text: '#241', href: 'ficus:ws:241' }]} />))
     expect(observers).toBe(0)
   } finally {
     await dom.cleanup()

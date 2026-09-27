@@ -95,7 +95,7 @@ function headings(file: string): Set<string> {
 
 /** Validate one link target the way inline and reference links both must pass. */
 function checkTarget(file: string, target: string): string | undefined {
-  if (/^(https?:|mailto:|tau:)/.test(target)) return undefined
+  if (/^(https?:|mailto:|ficus:)/.test(target)) return undefined
   const [path, anchor] = target.split('#')
   const abs = path ? resolve(dirname(file), path) : file
   if (!existsSync(abs)) return `${target} → missing file ${abs}`

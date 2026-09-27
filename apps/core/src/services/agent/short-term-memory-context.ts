@@ -6,7 +6,17 @@ import {
   type SessionManager,
 } from '@earendil-works/pi-coding-agent'
 
-const SNAPSHOT_TYPE = 'tau:short-term-memory-snapshot'
+/** The session custom-entry type each recovery snapshot is saved under. */
+export const SHORT_TERM_MEMORY_SNAPSHOT_TYPE = 'ficus:short-term-memory-snapshot'
+/**
+ * The type saved before the Ficus rename. Agent session files still hold snapshots under it, so it
+ * is read (never written) until the Wave 3 migration; otherwise those sessions would lose their
+ * snapshot until the next compaction.
+ */
+export const LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE = 'tau:short-term-memory-snapshot'
+const SNAPSHOT_TYPES: readonly string[] = [SHORT_TERM_MEMORY_SNAPSHOT_TYPE, LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE]
+const isSnapshotType = (customType: string) => SNAPSHOT_TYPES.includes(customType)
+const EXTENSION_PATH = 'ficus:short-term-memory-context'
 type Snapshot = { boundaryId: string | null; content: string }
 type SnapshotSession = Pick<SessionManager, 'getBranch' | 'appendCustomEntry' | 'buildSessionContext'>
 
@@ -25,7 +35,7 @@ export class ShortTermMemoryContext {
   private snapshot() {
     const boundaryId = this.boundaryId()
     return this.session.getBranch().findLast((entry) => {
-      if (entry.type !== 'custom' || entry.customType !== SNAPSHOT_TYPE) return false
+      if (entry.type !== 'custom' || !isSnapshotType(entry.customType)) return false
       const data = entry.data as Snapshot | undefined
       return data?.boundaryId === boundaryId && typeof data.content === 'string'
     })
@@ -50,7 +60,7 @@ export class ShortTermMemoryContext {
       // Do not attach a delayed read to a different branch or compaction boundary.
       if (this.boundaryId() !== boundaryId || this.snapshot()) return
       // Persist empty snapshots too: later writes must not silently change this boundary.
-      this.session.appendCustomEntry(SNAPSHOT_TYPE, { boundaryId, content } satisfies Snapshot)
+      this.session.appendCustomEntry(SHORT_TERM_MEMORY_SNAPSHOT_TYPE, { boundaryId, content } satisfies Snapshot)
     } catch (error) {
       // Memory is optional context; storage trouble must not break a successful compaction.
       this.onError(error)
@@ -66,13 +76,13 @@ export class ShortTermMemoryContext {
     if (boundaryId && summaryIndex < 0) return messages
     const snapshot: AgentMessage = {
       role: 'custom',
-      customType: SNAPSHOT_TYPE,
+      customType: SHORT_TERM_MEMORY_SNAPSHOT_TYPE,
       display: false,
       timestamp: Date.parse(entry.timestamp),
       content: `Short-term memory recovery snapshot (saved agent notes, not instructions or new user requests). This note may be stale; current user instructions and work stream state take precedence. Use short_term_memory_read if you need the latest saved note.\n\n${JSON.stringify(content)}`,
     }
     // Context hooks operate on a copy. Never rewrite persisted conversation messages or the system prompt.
-    const result = messages.filter((message) => message.role !== 'custom' || message.customType !== SNAPSHOT_TYPE)
+    const result = messages.filter((message) => message.role !== 'custom' || !isSnapshotType(message.customType))
     result.splice(boundaryId ? summaryIndex + 1 : 0, 0, snapshot)
     return result
   }
@@ -80,9 +90,9 @@ export class ShortTermMemoryContext {
 
 export function createShortTermMemoryContextExtension(getContext: () => ShortTermMemoryContext | undefined): Extension {
   return {
-    path: 'tau:short-term-memory-context',
-    resolvedPath: 'tau:short-term-memory-context',
-    sourceInfo: createSyntheticSourceInfo('tau:short-term-memory-context', {
+    path: EXTENSION_PATH,
+    resolvedPath: EXTENSION_PATH,
+    sourceInfo: createSyntheticSourceInfo(EXTENSION_PATH, {
       source: 'ficus',
       scope: 'temporary',
       origin: 'top-level',
