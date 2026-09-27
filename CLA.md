@@ -1,6 +1,6 @@
-# Tau Contributor License Agreement
+# Ficus Contributor License Agreement
 
-Thank you for your interest in contributing to **Tau** (the "Project"), maintained by **Intentional Design LLC** ("Project Owner"). To clarify the intellectual property license granted with Contributions from any person or entity, the Project Owner must have a Contributor License Agreement ("CLA") on file that has been signed by each Contributor, indicating agreement to the license terms below.
+Thank you for your interest in contributing to **Ficus** (the "Project"), maintained by **Intentional Design LLC** ("Project Owner"). To clarify the intellectual property license granted with Contributions from any person or entity, the Project Owner must have a Contributor License Agreement ("CLA") on file that has been signed by each Contributor, indicating agreement to the license terms below.
 
 This agreement is for your protection as a Contributor as well as the protection of the Project Owner and its users; it does not change your rights to use your own Contributions for any other purpose. If you have not already done so, please complete and sign this CLA by following the instructions in [CONTRIBUTING.md](CONTRIBUTING.md).
 

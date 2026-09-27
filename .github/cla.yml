@@ -35,7 +35,7 @@ templates:
     commit_message: 'chore: record CLA signature for {{github_login}} from {{source_repo}}#{{source_pr_number}}'
   pr:
     missing_comment: |
-      Thanks for your pull request! Before this can be merged, each missing contributor must read and sign the [Tau Contributor License Agreement]({{cla_document_url}}).
+      Thanks for your pull request! Before this can be merged, each missing contributor must read and sign the [Ficus Contributor License Agreement]({{cla_document_url}}).
 
       Missing signatures:
 
