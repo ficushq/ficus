@@ -81,7 +81,7 @@ test('denial and network errors are redacted and never retry', async () => {
   ).toEqual({ accepted: false, reason: 'pro_required' })
 })
 test('account tokens and malformed credentials cannot configure the relay', () => {
-  expect(() => pushRelayConfig({ FICUS_PUSH_RELAY_TOKEN: 'tau_pat_account-token' })).toThrow('push-only')
+  expect(() => pushRelayConfig({ FICUS_PUSH_RELAY_TOKEN: 'ficus_pat_account-token' })).toThrow('push-only')
   expect(pushRelayConfig({})).toBeNull()
   expect(config.instanceId).toHaveLength(36)
 })

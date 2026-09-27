@@ -132,9 +132,9 @@ describe('syncBoxFiles', () => {
       `${home}/memory/context.md`,
       `${home}/memory/map.md`,
       `${home}/.ssh/config`,
-      `${home}/.ssh/known_hosts`,
       `${home}/.ssh/ficus_remote_prod`,
       `${home}/.ssh/ficus_remote_prod.pub`,
+      `${home}/.ssh/known_hosts`,
     ])
     // Squad boxes are shared → no per-agent identity key pushed.
     expect(client.writePaths().some((p) => p.includes('identity.pem'))).toBe(false)
@@ -255,9 +255,9 @@ describe('syncBoxFiles', () => {
       syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
     ).rejects.toThrow()
 
-    // config/known_hosts and the key ('ficus_remote_prod', sorted before its
-    // failing .pub sibling) were written before the throw, so the key gets
-    // cleaned up but the non-secret config/known_hosts do not.
+    // config and the key ('ficus_remote_prod', sorted before its failing .pub
+    // sibling) were written before the throw, so the key gets cleaned up but
+    // the non-secret config/known_hosts do not.
     const bashCmds = client.bashes().map((b) => b.command)
     expect(bashCmds).toContain(`rm -f '${home}/.ssh/ficus_remote_prod'`)
     expect(bashCmds.some((c) => c.includes('known_hosts') && c.startsWith('rm -f'))).toBe(false)
@@ -563,6 +563,58 @@ describe('syncBoxFiles content-hash skip', () => {
     expect(sshProgress).toEqual(['started', 'finished'])
   })
 
+  test('prunes pre-rename tau_remote_ key files from the prior manifest once ficus_remote_ replaces them', async () => {
+    const client = new FakeClient()
+    const home = HOME('squad_11111111-1111-4111-8111-111111111111')
+    const stamp = recordingStamp()
+    await syncBoxFiles(
+      client as any,
+      'squad_11111111-1111-4111-8111-111111111111',
+      squadOpts,
+      fullDeps({
+        box: syncBox({ 'squad-ssh': { hash: 'old', files: ['config', 'tau_remote_prod'] } }),
+        stampBoxSyncedHash: stamp.fn,
+        listSkillFiles: async () => [],
+        readSquadEnv: () => null,
+        listMemoryFiles: async () => [],
+        listSquadSshFiles: async () => [
+          { relPath: 'config', content: Buffer.from('Host prod') },
+          { relPath: 'ficus_remote_prod', content: Buffer.from('KEY') },
+        ],
+      })
+    )
+    const prune = client
+      .bashes()
+      .map((b) => b.command)
+      .find((command) => command.startsWith('rm -f --') && command.includes('/.ssh/'))
+    expect(prune).toBe(`rm -f -- '${home}/.ssh/tau_remote_prod'`)
+    expect(stamp.stamped['squad-ssh']).toMatchObject({ files: ['config', 'ficus_remote_prod'] })
+  })
+
+  test('legacy SSH tree cleanup removes both ficus_remote_ and pre-rename tau_remote_ key files (K2)', async () => {
+    const client = new FakeClient()
+    await syncBoxFiles(
+      client as any,
+      'squad_11111111-1111-4111-8111-111111111111',
+      squadOpts,
+      fullDeps({
+        box: syncBox({ 'squad-ssh': 'legacy-hash' }),
+        stampBoxSyncedHash: async () => {},
+        listSkillFiles: async () => [],
+        readSquadEnv: () => null,
+        listMemoryFiles: async () => [],
+        listSquadSshFiles: async () => [{ relPath: 'ficus_remote_prod', content: Buffer.from('NEW') }],
+      })
+    )
+    const cleanup =
+      client
+        .bashes()
+        .map((b) => b.command)
+        .find((command) => command.includes('-delete') && command.includes('/.ssh')) ?? ''
+    expect(cleanup).toContain("-name 'ficus_remote_*'")
+    expect(cleanup).toContain("-name 'tau_remote_*'")
+  })
+
   test('removes prior squad-scoped secrets when an agent loses squad scope', async () => {
     const client = new FakeClient()
     const home = HOME('agent_a1')
@@ -834,9 +886,9 @@ describe('syncBoxFiles golden master', () => {
       // squad ssh — mkdir/chmod 0700 first, then sorted files with per-file mode
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
-      W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
       W(`${home}/.ssh/ficus_remote_prod`, 'PRIVATE', '0600'),
       W(`${home}/.ssh/ficus_remote_prod.pub`, 'PUBLIC', '0644'),
+      W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
     ])
   })
 
@@ -870,9 +922,9 @@ describe('syncBoxFiles golden master', () => {
       W(`${home}/.private/identity.pem`, PEM, '0600'),
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
-      W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
       W(`${home}/.ssh/ficus_remote_prod`, 'PRIVATE', '0600'),
       W(`${home}/.ssh/ficus_remote_prod.pub`, 'PUBLIC', '0644'),
+      W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
     ])
   })
 
@@ -903,7 +955,6 @@ describe('syncBoxFiles golden master', () => {
       W(`${home}/memory/map.md`, '# map'),
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
-      W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
       W(`${home}/.ssh/ficus_remote_prod`, 'PRIVATE', '0600'),
       // .pub write throws → the ssh asset's own cleanup removes the one 0600 key
       // it wrote (config/known_hosts, not secret, are left). The COMPLETE .env
@@ -1070,6 +1121,20 @@ describe('pushSquadSshToBox', () => {
     expect(client.bashes()[cleanup].command).not.toContain('known_hosts')
     expect(client.bashes()[cleanup].command).not.toContain('id_rsa')
     expect(client.bashes()[cleanup].command).toContain(`${home}/.ssh/config`)
+  })
+
+  test('on-demand legacy SSH cleanup removes both ficus_remote_ and pre-rename tau_remote_ key files (K2)', async () => {
+    const client = new FakeClient()
+    await pushSquadSshToBox('11111111-1111-4111-8111-111111111111', 'agent_a1', {
+      getMachineBox: async () => makeBox({ syncedHashes: { 'squad-ssh': 'legacy-hash' } }),
+      getClient: async () => client as any,
+      materializeSquadRemoteHosts: async () => {},
+      listSquadSshFiles: async () => [],
+      stampBoxSyncedHash: async () => {},
+    })
+    const cleanup = client.bashes().find((b) => b.command.includes('-delete'))?.command ?? ''
+    expect(cleanup).toContain("-name 'ficus_remote_*'")
+    expect(cleanup).toContain("-name 'tau_remote_*'")
   })
 
   test('on-demand legacy final-host revoke cleans generated SSH names and stamps empty', async () => {

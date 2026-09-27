@@ -4,7 +4,7 @@ import { join } from 'path'
 import { createLogger } from '../../lib/infra/logger'
 import { getSecretStore } from '../secrets'
 import { isHostRuntime } from '../sandbox/runtime'
-import { ensureSquadSshDir, getSquadSshPath, REMOTE_HOST_KEY_PREFIX } from '../squad/ssh'
+import { ensureSquadSshDir, getSquadSshPath, LEGACY_REMOTE_HOST_KEY_PREFIX, REMOTE_HOST_KEY_PREFIX } from '../squad/ssh'
 import { listHostsGrantedToSquad, type RemoteHost } from './queries'
 
 /**
@@ -298,9 +298,15 @@ export async function materializeSquadRemoteHosts(squadId: string): Promise<void
     materializedNames.add(host.name)
   }
 
-  // Remove stale key files for hosts no longer granted (or no longer valid).
+  // Remove stale key files for hosts no longer granted (or no longer valid),
+  // and every key file written under the pre-rename prefix (K2): the current
+  // grants were just re-written under KEY_FILE_PREFIX above.
   const existingFiles = fs.existsSync(sshPath) ? fs.readdirSync(sshPath) : []
   for (const file of existingFiles) {
+    if (file.startsWith(LEGACY_REMOTE_HOST_KEY_PREFIX)) {
+      fs.unlinkSync(join(sshPath, file))
+      continue
+    }
     if (!file.startsWith(KEY_FILE_PREFIX)) continue
     const name = file.slice(KEY_FILE_PREFIX.length)
     if (!materializedNames.has(name)) {

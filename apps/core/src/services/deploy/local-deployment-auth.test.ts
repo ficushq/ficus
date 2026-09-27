@@ -21,6 +21,17 @@ describe('local deployment browser auth', () => {
     }
   })
 
+  it('names the per-deployment cookie ficus_app_<id>', () => {
+    expect(localDeploymentCookieName(ID)).toBe(`ficus_app_${ID}`)
+  })
+
+  it('never reads the pre-rename tau_app_<id> cookie', () => {
+    const request = new Request(`https://t.example/api/app/${ID}/assets/index-abc.js`, {
+      headers: { cookie: `tau_app_${ID}=abc` },
+    })
+    expect(presentedLocalDeploymentToken(request, ID).token).toBeNull()
+  })
+
   it('prefers the URL token and reports that a cookie must be set', () => {
     const request = new Request(`https://t.example/api/app/${ID}/?_tau_token=abc`)
     expect(presentedLocalDeploymentToken(request, ID)).toEqual({ token: 'abc', fromQuery: true })

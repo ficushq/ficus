@@ -12,6 +12,9 @@ import { Schedule } from '../entities/Schedule'
 import { hashWebhookToken } from '../lib/utils'
 import { eq, sql } from 'drizzle-orm'
 import * as activityMaterialize from '../services/squad-activity/materialize'
+import { systemTokens } from '../db/schema'
+import { getSecretStore, resetSecretStore } from '../services/secrets'
+import { SYSTEM_TOKEN_PREFIX, webhookScriptAuthEnv } from '../services/auth/system-tokens'
 
 function createApp() {
   return new Hono()
@@ -263,6 +266,57 @@ describe('webhooks channel routes', () => {
       expect(projection).not.toHaveBeenCalled()
     } finally {
       projection.mockRestore()
+    }
+  })
+
+  it('an unsigned webhook cannot trigger the webhook-token self-heal; a verified one does', async () => {
+    const priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+    resetSecretStore()
+    await getSecretStore().initialize()
+    const legacy = 'tau_sys_' + 'd'.repeat(43)
+    await getSecretStore().set('__SYSTEM_WEBHOOK_TOKEN', legacy, 'system')
+    let verified = false
+    let handled!: () => void
+    const ran = new Promise<void>((resolve) => (handled = resolve))
+    let handlerCalls = 0
+    webhookRegistry.registerProcessor({
+      provider: 'selfheal-provider',
+      verifySignature: async () => verified,
+      getEventType: () => 'Thing',
+      getSecret: () => 'configured',
+    })
+    // Real handlers reach the self-heal only through webhookScriptAuthEnv().
+    webhookRegistry.registerHandler('selfheal-provider', 'Thing', async () => {
+      handlerCalls++
+      await webhookScriptAuthEnv()
+      handled()
+    })
+    const post = () =>
+      app.request('/api/webhooks/selfheal-provider', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ hello: 'world' }),
+      })
+    try {
+      const unsigned = await post()
+      expect(unsigned.status).toBe(401)
+      await Bun.sleep(10)
+      expect(handlerCalls).toBe(0)
+      expect(getSecretStore().get('__SYSTEM_WEBHOOK_TOKEN')).toBe(legacy)
+
+      verified = true
+      expect((await post()).status).toBe(200)
+      await ran
+      expect(getSecretStore().get('__SYSTEM_WEBHOOK_TOKEN')?.startsWith(SYSTEM_TOKEN_PREFIX)).toBe(true)
+    } finally {
+      await getSecretStore()
+        .delete('__SYSTEM_WEBHOOK_TOKEN')
+        .catch(() => {})
+      await db.delete(systemTokens).where(eq(systemTokens.kind, 'webhook'))
+      if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+      else process.env.FICUS_ENCRYPTION_KEY = priorKey
+      resetSecretStore()
     }
   })
 

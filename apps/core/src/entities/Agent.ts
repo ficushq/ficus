@@ -53,6 +53,7 @@ import { BaseEntity } from './base'
 import { splitModelPriorityList, supportsImageInput, validateModelSpecList } from '../lib/utils/model-spec'
 import { randomUUID, createHash } from 'crypto'
 import { cacheAgentToken, getCachedAgentToken, removeCachedAgentToken } from '../services/rbac/token-cache'
+import { AGENT_TOKEN_PREFIX } from '../services/auth/token-prefixes'
 import * as pendingDelivery from '../services/agent/pending-delivery'
 import { maintenanceStore } from '../services/maintenance/store'
 import { decodeMessageCursor, encodeMessageCursor, InvalidMessageCursorError } from '../services/agent/message-cursor'
@@ -1353,7 +1354,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * the plaintext token (only returned to the caller; never persisted).
    */
   async createAgentToken({ userId }: { userId?: string } = {}): Promise<{ id: string; token: string }> {
-    const token = `ficus_agent_${randomUUID()}`
+    const token = `${AGENT_TOKEN_PREFIX}${randomUUID()}`
     const tokenHash = createHash('sha256').update(token).digest('hex')
     const accepted = await this.persistAgentTokenUnderLifecycleLock({ tokenHash, userId })
     if (!accepted?.id) throw new Error(`Agent ${this.id} cannot issue an agent token in its current lifecycle state.`)
@@ -1373,7 +1374,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   async getOrCreateToken(options: { expectedResourceGeneration?: string } = {}): Promise<string | undefined> {
     if (!this.squadId && !this.ownerUserId) return undefined
     const cached = getCachedAgentToken(this.id)
-    const replacement = `ficus_agent_${randomUUID()}`
+    const replacement = `${AGENT_TOKEN_PREFIX}${randomUUID()}`
     const accepted = await this.persistAgentTokenUnderLifecycleLock({
       tokenHash: createHash('sha256').update(replacement).digest('hex'),
       cachedTokenHash: cached ? createHash('sha256').update(cached).digest('hex') : undefined,

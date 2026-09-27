@@ -184,7 +184,9 @@ describe('git signing through the real ficus entrypoint', () => {
     )
     expect(commit.stderr).toBe('')
     expect(commit.code).toBe(0)
-    expect(requests).toEqual([{ path: '/api/squads/squad-e2e/integrations/github/sign', auth: 'Bearer ficus_agent_e2e' }])
+    expect(requests).toEqual([
+      { path: '/api/squads/squad-e2e/integrations/github/sign', auth: 'Bearer ficus_agent_e2e' },
+    ])
 
     const verify = await runAsync(['git', ...signing, 'verify-commit', 'HEAD'], repo, env)
     expect(verify.stderr).toContain('Good "git" signature for agent@example.com')

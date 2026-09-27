@@ -4,6 +4,7 @@ import { db } from '../../db'
 import { users, wsTickets } from '../../db/schema'
 import { findActiveDeviceTokenIds } from './device-tokens'
 import type { AuthContext } from './resolve-token'
+import { WS_TICKET_PREFIX } from './token-prefixes'
 
 const WS_TICKET_TTL_MS = 60_000
 
@@ -13,7 +14,7 @@ function hashTicket(raw: string): string {
 
 /** Mint a single-use, short-lived ticket for a user session (used as the WS URL token). */
 export async function createWsTicket(userId: string, deviceTokenId: string | null = null): Promise<string> {
-  const raw = `ficus_wst_${randomUUID()}${randomUUID().replace(/-/g, '')}`
+  const raw = `${WS_TICKET_PREFIX}${randomUUID()}${randomUUID().replace(/-/g, '')}`
   await db.insert(wsTickets).values({
     tokenHash: hashTicket(raw),
     userId,
@@ -29,6 +30,7 @@ export async function createWsTicket(userId: string, deviceTokenId: string | nul
  * minting user's identity, or null if the ticket is unknown/expired/already used.
  */
 export async function consumeWsTicket(raw: string): Promise<AuthContext | null> {
+  if (!raw.startsWith(WS_TICKET_PREFIX)) return null
   const consumed = await db
     .update(wsTickets)
     .set({ usedAt: new Date() })

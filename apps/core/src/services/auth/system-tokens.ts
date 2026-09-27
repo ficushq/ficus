@@ -11,7 +11,8 @@ import {
 
 const log = createLogger('system-tokens')
 
-const TOKEN_PREFIX = 'ficus_sys_'
+/** Every system token carries this prefix; resolveSystemToken rejects anything else before any lookup. */
+export const SYSTEM_TOKEN_PREFIX = 'ficus_sys_'
 // The auto-provisioned webhook token's raw value, kept encrypted in the secret store so the webhook
 // processors can present it. The `__` prefix marks it internal (hidden from the secrets UI list).
 const WEBHOOK_TOKEN_SECRET_KEY = '__SYSTEM_WEBHOOK_TOKEN'
@@ -85,7 +86,7 @@ export async function createSystemToken(input: {
   scopes: string[]
   kind?: 'manual' | 'webhook'
 }): Promise<{ token: string; record: SystemTokenRecord }> {
-  const token = `${TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
+  const token = `${SYSTEM_TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
   const [row] = await db
     .insert(systemTokens)
     .values({ name: input.name, tokenHash: hashToken(token), scopes: input.scopes, kind: input.kind ?? 'manual' })
@@ -231,7 +232,7 @@ export async function revokeSystemToken(id: string): Promise<boolean> {
 export async function resolveSystemToken(
   token: string
 ): Promise<{ id: string; name: string; scopes: string[] } | null> {
-  if (!token.startsWith(TOKEN_PREFIX)) return null
+  if (!token.startsWith(SYSTEM_TOKEN_PREFIX)) return null
   const [row] = await db
     .select()
     .from(systemTokens)
@@ -246,10 +247,18 @@ export async function resolveSystemToken(
  * Ensure the long-lived webhook automation token exists and return its raw value. Self-heals: if the
  * stored secret is missing/stale/revoked, a fresh token is minted and persisted. Returns null if the
  * secret store can't persist it (e.g. no FICUS_ENCRYPTION_KEY) — callers fall back to legacy auth.
+ *
+ * A stored value without the current prefix (minted before a prefix change) can never authenticate,
+ * so it is replaced by a fresh token and its row is revoked once the replacement is persisted. The
+ * function takes no input: only verified webhook handlers reach it, and it never returns the token
+ * to an HTTP caller.
  */
 export async function ensureWebhookToken(): Promise<string | null> {
   const store = getSecretStore()
   const existing = store.get(WEBHOOK_TOKEN_SECRET_KEY)
+  if (existing && !existing.startsWith(SYSTEM_TOKEN_PREFIX)) {
+    return replaceWebhookToken(existing)
+  }
   if (existing) {
     const [row] = await db
       .select()
@@ -272,17 +281,31 @@ export async function ensureWebhookToken(): Promise<string | null> {
     }
   }
 
+  return replaceWebhookToken(null)
+}
+
+/** Mint and persist a fresh webhook token, then revoke the row of the stale value it replaces. */
+async function replaceWebhookToken(stale: string | null): Promise<string | null> {
+  let token: string
   try {
-    const { token } = await createSystemToken({
+    ;({ token } = await createSystemToken({
       name: WEBHOOK_TOKEN_NAME,
       scopes: DEFAULT_WEBHOOK_SCOPES,
       kind: 'webhook',
-    })
-    await store.set(WEBHOOK_TOKEN_SECRET_KEY, token, 'system')
-    log.info('Provisioned webhook automation system token')
-    return token
+    }))
+    await getSecretStore().set(WEBHOOK_TOKEN_SECRET_KEY, token, 'system')
   } catch (err) {
     log.warn('Could not provision webhook system token (secret store unavailable):', err)
     return null
   }
+  if (stale) {
+    await db
+      .update(systemTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(systemTokens.tokenHash, hashToken(stale)), isNull(systemTokens.revokedAt)))
+    log.info('Replaced a webhook automation system token that lacked the current prefix')
+  } else {
+    log.info('Provisioned webhook automation system token')
+  }
+  return token
 }

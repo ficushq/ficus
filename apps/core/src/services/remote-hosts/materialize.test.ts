@@ -387,6 +387,45 @@ describe('materializeSquadRemoteHosts', () => {
     expect(config).not.toContain(`Host ${host.name}`)
   })
 
+  it('writes ficus_remote_<name> key files', async () => {
+    const squadId = `${prefix}-squad-ficus-prefix`
+    const host = await createGrantedHost('ficus-prefix', squadId, 'PRIVATE-KEY-CONTENT')
+
+    await materializeSquadRemoteHosts(squadId)
+
+    const sshPath = getSquadSshPath(squadId)
+    expect(readFileSync(join(sshPath, `ficus_remote_${host.name}`), 'utf-8')).toBe('PRIVATE-KEY-CONTENT')
+    expect(readFileSync(join(sshPath, 'config'), 'utf-8')).toContain(`IdentityFile ~/.ssh/ficus_remote_${host.name}`)
+  })
+
+  it('removes every stale pre-rename tau_remote_ key file, granted host or not (K2)', async () => {
+    const squadId = `${prefix}-squad-legacy-sweep`
+    const host = await createGrantedHost('legacy-sweep', squadId)
+    const sshPath = ensureSquadSshDir(squadId)
+    // Key files a pre-rename Core materialized: one for a host still granted, one for a
+    // grant revoked since. Neither may survive, or a revoked private key stays on disk.
+    writeFileSync(join(sshPath, `tau_remote_${host.name}`), 'OLD-KEY', { mode: 0o600 })
+    writeFileSync(join(sshPath, 'tau_remote_old'), 'REVOKED-KEY', { mode: 0o600 })
+    await addSshKey(squadId, 'my-real-key', VALID_TEST_KEY)
+
+    await materializeSquadRemoteHosts(squadId)
+
+    expect(existsSync(join(sshPath, `tau_remote_${host.name}`))).toBe(false)
+    expect(existsSync(join(sshPath, 'tau_remote_old'))).toBe(false)
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(true)
+    expect(existsSync(join(sshPath, 'my-real-key'))).toBe(true)
+    expect(readFileSync(join(sshPath, 'config'), 'utf-8')).not.toContain('tau_remote_')
+  })
+
+  it('listSshKeys never lists a stale pre-rename tau_remote_ file as an uploaded key', async () => {
+    const squadId = `${prefix}-squad-legacy-list`
+    const sshPath = ensureSquadSshDir(squadId)
+    writeFileSync(join(sshPath, 'tau_remote_old'), 'REVOKED-KEY', { mode: 0o600 })
+    await addSshKey(squadId, 'my-real-key', VALID_TEST_KEY)
+
+    expect((await listSshKeys(squadId)).map((k) => k.name)).toEqual(['my-real-key'])
+  })
+
   it('listSshKeys excludes the materialized ficus_remote_ key file but still lists a genuinely uploaded key', async () => {
     const squadId = `${prefix}-squad-listkeys`
     const host = await createGrantedHost('listkeys', squadId)

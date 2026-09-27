@@ -16,7 +16,7 @@ describe('ws-ticket', () => {
   it('mints a ticket that consumes once to the minting user', async () => {
     const user = await createTestUser({ prefix: PREFIX })
     const ticket = await createWsTicket(user.id)
-    expect(typeof ticket).toBe('string')
+    expect(ticket.startsWith('ficus_wst_')).toBe(true)
     expect(await consumeWsTicket(ticket)).toEqual({
       identity: { type: 'user', userId: user.id },
       deviceTokenId: null,
@@ -45,6 +45,17 @@ describe('ws-ticket', () => {
     const ticket = await createWsTicket(user.id)
     await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, user.id))
     expect(await consumeWsTicket(ticket)).toBeNull()
+  })
+
+  it('rejects a live pre-rename tau_wst_ ticket row (no dual-accept)', async () => {
+    const user = await createTestUser({ prefix: PREFIX })
+    const legacy = `tau_wst_${'a'.repeat(64)}`
+    await db.insert(wsTickets).values({
+      tokenHash: createHash('sha256').update(legacy).digest('hex'),
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+    expect(await consumeWsTicket(legacy)).toBeNull()
   })
 
   it('rejects an unknown ticket', async () => {
