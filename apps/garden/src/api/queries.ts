@@ -48,6 +48,12 @@ export const gardenQueries = {
       queryFn: async () => (await assistantApi.list()).conversations,
       staleTime: 60_000,
     }),
+  assistantActivity: () =>
+    queryOptions({
+      queryKey: ['garden', 'assistant', 'activity'],
+      queryFn: () => assistantApi.activity(6),
+      staleTime: 30_000,
+    }),
   agent: (agentId: string) =>
     queryOptions({
       queryKey: queryKeys.agents.detail(agentId),

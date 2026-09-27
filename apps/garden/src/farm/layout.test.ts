@@ -289,7 +289,7 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.farmer?.prop).toBe('hoe')
     expect(yard!.farmer!.i).toBeGreaterThan(yard!.sign.i)
     expect(yard!.farmer!.j).toBeGreaterThan(yard!.j0 + yard!.h)
-    expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 0.6, j: yard!.j0 + yard!.h - 0.4 })
+    expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 1.05, j: yard!.j0 + yard!.h - 0.55 })
     expect(yard!.bench.i).toBeLessThan(yard!.i0)
   })
 
@@ -312,6 +312,11 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.dock.robots.map((r) => r.agent.id)).toEqual(['a', 'b', 'c'])
     expect(yard!.dock.robots.every((r) => r.face === 'normal' && r.prop === null)).toBe(true)
     expect(yard!.dock.overflow).toBe(2)
+    // One pad each, in a row along the right fence, a tile apart: no robot stands on another.
+    const spots = yard!.dock.robots.map((r) => [r.i, r.j])
+    expect(new Set(spots.map((s) => s[0])).size).toBe(1)
+    for (let n = 1; n < spots.length; n++) expect(spots[n - 1]![1] - spots[n]![1]).toBeCloseTo(1)
+    expect(spots.every(([i]) => i > yard!.i0 + yard!.w + 0.5)).toBe(true)
   })
 
   it('benches up to two recent consultants', () => {
@@ -527,5 +532,31 @@ describe('performance', () => {
     for (let n = 0; n < runs; n++) layoutFarm(input)
     const perRun = (performance.now() - start) / runs
     expect(perRun).toBeLessThan(50)
+  })
+})
+
+describe('bench order', () => {
+  it('seats consultants waiting on you first, then the most recently active', () => {
+    const sq = makeSquad({ id: 'sq', managerAgentId: null })
+    const consultant = (id: string, minutes: number, status: Agent['status'] = 'idle') =>
+      makeAgent({ id, squadId: 'sq', agentTypeId: 'consultant', status, updatedAt: at(minutes), lastMessageAt: null })
+    const agents = [
+      consultant('old', 1),
+      consultant('newest', 30),
+      consultant('asking', 2, 'waiting-input'),
+      consultant('mid', 10),
+    ]
+    const [yard] = layoutFarm({
+      squads: [sq],
+      streams: [],
+      doneCount: 0,
+      canceledCount: 0,
+      agents,
+      assistants: [],
+      pendingActions: [],
+      now: at(60).getTime(),
+    }).yards
+    expect(yard!.bench.robots.map((r) => r.agent.id)).toEqual(['asking', 'newest'])
+    expect(yard!.bench.overflow).toBe(2)
   })
 })

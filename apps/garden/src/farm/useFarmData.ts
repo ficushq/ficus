@@ -4,8 +4,6 @@ import type { Agent } from '@ficus/shared'
 import { gardenQueries } from '../api/queries'
 import type { FarmInput } from './layout'
 
-const MAX_PORCH_ASSISTANTS = 3
-
 /** Everything the farm draws, gathered from the garden query layer. */
 export function useFarmData(): { input: FarmInput | null; error: unknown } {
   const squads = useQuery(gardenQueries.squads())
@@ -13,20 +11,13 @@ export function useFarmData(): { input: FarmInput | null; error: unknown } {
   const pending = useQuery(gardenQueries.pendingActions())
   const done = useQuery(gardenQueries.finishedCount('done'))
   const canceled = useQuery(gardenQueries.finishedCount('canceled'))
-  const conversations = useQuery(gardenQueries.assistants())
+  const assistant = useQuery(gardenQueries.assistantActivity())
 
   const squadAgents = useQueries({
     queries: (squads.data ?? []).map((squad) => gardenQueries.squadAgents(squad.id)),
   })
-  const assistantAgentIds = (conversations.data ?? [])
-    .map((c) => c.agentId)
-    .filter((id): id is string => !!id)
-    .slice(0, MAX_PORCH_ASSISTANTS + 1)
-  const assistantAgents = useQueries({ queries: assistantAgentIds.map((id) => gardenQueries.agent(id)) })
-
   const agentsReady = squadAgents.every((q) => !q.isPending)
   const agentsKey = squadAgents.map((q) => q.dataUpdatedAt).join(',')
-  const assistantsKey = assistantAgents.map((q) => q.dataUpdatedAt).join(',')
 
   const input = useMemo<FarmInput | null>(() => {
     if (!squads.data || !streams.data || !agentsReady) return null
@@ -36,47 +27,47 @@ export function useFarmData(): { input: FarmInput | null; error: unknown } {
       doneCount: done.data ?? 0,
       canceledCount: canceled.data ?? 0,
       agents: squadAgents.flatMap((q) => q.data ?? []),
-      assistants: withPorchAssistant(assistantAgents.map((q) => q.data).filter((a): a is Agent => !!a)),
+      // One assistant on the porch however many conversations there are; its card lists the recent ones.
+      assistants: [porchAssistant((assistant.data?.totals.needsInputTasks ?? 0) > 0)],
+      assistantActivity: assistant.data,
       pendingActions: pending.data ?? [],
     }
-    // squadAgents/assistantAgents are new arrays every render; their update stamps are the real deps.
-  }, [squads.data, streams.data, pending.data, done.data, canceled.data, agentsReady, agentsKey, assistantsKey])
+    // squadAgents is a new array every render; its update stamps are the real dep.
+  }, [squads.data, streams.data, pending.data, done.data, canceled.data, assistant.data, agentsReady, agentsKey])
 
   return { input, error: squads.error ?? streams.error ?? null }
 }
 
 /**
- * The assistant is always on the porch, even before its conversation has an
- * agent: talking to it opens (or starts) the assistant conversation.
+ * The porch assistant: one robot standing for the Assistant as a whole (not a
+ * particular conversation's agent), so it's there even before any exists.
  */
 export const PORCH_ASSISTANT_ID = 'garden:assistant'
 
-function withPorchAssistant(agents: Agent[]): Agent[] {
-  if (agents.length) return agents
-  const now = new Date()
-  return [
-    {
-      id: PORCH_ASSISTANT_ID,
-      agentTypeId: 'assistant',
-      squadId: null,
-      parentAgentId: null,
-      status: 'idle',
-      persist: true,
-      modelOverride: null,
-      metadata: { name: 'Assistant' },
-      context: {},
-      questionData: null,
-      sessionUsage: null,
-      dormantAt: null,
-      terminatedAt: null,
-      lastMessageAt: null,
-      lastHumanMessageAt: null,
-      lastMessagePreview: null,
-      createdAt: now,
-      updatedAt: now,
-      amtpHandle: null,
-      identityPublicKey: null,
-      inboundOpen: false,
-    },
-  ]
+function porchAssistant(waiting: boolean): Agent {
+  const now = new Date(0)
+  return {
+    id: PORCH_ASSISTANT_ID,
+    agentTypeId: 'assistant',
+    squadId: null,
+    parentAgentId: null,
+    // A task waiting on you shows as the robot's "?" face.
+    status: waiting ? 'waiting-input' : 'idle',
+    persist: true,
+    modelOverride: null,
+    metadata: { name: 'Assistant' },
+    context: {},
+    questionData: null,
+    sessionUsage: null,
+    dormantAt: null,
+    terminatedAt: null,
+    lastMessageAt: null,
+    lastHumanMessageAt: null,
+    lastMessagePreview: null,
+    createdAt: now,
+    updatedAt: now,
+    amtpHandle: null,
+    identityPublicKey: null,
+    inboundOpen: false,
+  }
 }

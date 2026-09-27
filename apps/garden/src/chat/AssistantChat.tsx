@@ -10,6 +10,8 @@ import { Markdown } from './Markdown'
 export interface AssistantChatProps {
   /** An existing assistant conversation; omitted → the most recent one, or a new one if there are none. */
   conversationId?: string
+  /** Start a new conversation instead of reopening the most recent one. */
+  fresh?: boolean
   onClose: () => void
   /** Test seam; defaults to the assistant routes over the conversation client's transport. */
   api?: AssistantApi
@@ -26,8 +28,14 @@ interface Opened {
 }
 
 /** Which conversation to open: the given one, else the latest saved Assistant chat, else a fresh id to create. */
-async function pickConversation(api: AssistantApi, conversationId: string | undefined, newId: () => string) {
+async function pickConversation(
+  api: AssistantApi,
+  conversationId: string | undefined,
+  newId: () => string,
+  fresh = false
+) {
   if (conversationId) return { id: conversationId, existing: true }
+  if (fresh) return { id: newId(), existing: false }
   const { conversations } = await api.list()
   const latest = conversations.find((c) => c.kind === 'assistant')
   return latest ? { id: latest.id, existing: true } : { id: newId(), existing: false }
@@ -40,7 +48,7 @@ async function pickConversation(api: AssistantApi, conversationId: string | unde
  * message is a plain agent send; `assistantApi.message` is only for replies to
  * task updates, which the garden doesn't surface yet).
  */
-export function AssistantChat({ conversationId, onClose, api: apiProp, newId }: AssistantChatProps) {
+export function AssistantChat({ conversationId, fresh, onClose, api: apiProp, newId }: AssistantChatProps) {
   const client = useConversationClient()
   const queryClient = useQueryClient()
   const api = useMemo(() => apiProp ?? createAssistantApi(client.transport), [apiProp, client])
@@ -53,7 +61,7 @@ export function AssistantChat({ conversationId, onClose, api: apiProp, newId }: 
     let active = true
     setError(undefined)
     void (async () => {
-      const target = await pickConversation(api, conversationId, newId ?? (() => crypto.randomUUID()))
+      const target = await pickConversation(api, conversationId, newId ?? (() => crypto.randomUUID()), fresh)
       if (!target.existing) await api.create(target.id, undefined, 'assistant')
       const history = await api.history(target.id)
       const binding = await api.ensureAgent(target.id)
@@ -73,7 +81,7 @@ export function AssistantChat({ conversationId, onClose, api: apiProp, newId }: 
     return () => {
       active = false
     }
-  }, [api, conversationId, newId, attempt, queryClient])
+  }, [api, conversationId, fresh, newId, attempt, queryClient])
 
   const loadEarlier = async () => {
     if (!opened || loadingEarlier) return

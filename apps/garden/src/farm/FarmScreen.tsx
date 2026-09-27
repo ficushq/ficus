@@ -96,6 +96,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       openChat: (agentId) => openChatRef.current({ kind: 'agent', agentId } satisfies ChatTarget),
       startConsultant: (squadId) => openChatRef.current({ kind: 'consultant', squadId }),
       openAssistant: (conversationId) => openChatRef.current({ kind: 'assistant', conversationId }),
+      startAssistant: () => openChatRef.current({ kind: 'assistant', fresh: crypto.randomUUID() }),
     }),
     [layout, input]
   )
@@ -133,6 +134,13 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
               mailboxCount={needsYou}
               onSelect={onSelect}
               onReveal={reveal}
+              porchBadge={
+                (input.assistantActivity?.totals.needsInputTasks ?? 0) > 0
+                  ? 'question'
+                  : (input.assistantActivity?.totals.unreadUpdates ?? 0) > 0
+                    ? 'news'
+                    : null
+              }
             />
           </g>
         </svg>

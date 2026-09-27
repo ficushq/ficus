@@ -128,14 +128,14 @@ describe('MailboxList', () => {
 })
 
 describe('StreamActions', () => {
-  it('offers the review of a plain stream plus the cloche', async () => {
+  it('offers the review of a plain stream plus pausing', async () => {
     const api = fakeApi({
       workflowRun: () => Promise.resolve(null),
       getWorkStream: () => Promise.resolve(stream()),
     })
     const { container } = await render(<StreamActions stream={stream({ openWaits: [wait()] })} />, api)
     expect(hasButton(container, 'Harvest')).toBe(true)
-    expect(hasButton(container, 'Cover with cloche')).toBe(true)
+    expect(hasButton(container, 'Pause')).toBe(true)
   })
 
   it('shows workflow decisions for a flow-driven stream', async () => {
@@ -145,6 +145,6 @@ describe('StreamActions', () => {
     })
     const { container } = await render(<StreamActions stream={stream()} showPauseControls={false} />, api)
     expect(hasButton(container, 'Harvest')).toBe(true)
-    expect(hasButton(container, 'Cover with cloche')).toBe(false)
+    expect(hasButton(container, 'Pause')).toBe(false)
   })
 })

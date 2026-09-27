@@ -7,6 +7,7 @@ import { roleFor } from '../appearance'
 import { roleLabel } from '../selection'
 import { useFarmCard } from './context'
 import { RobotActions } from './slots'
+import { AssistantCard } from './AssistantCard'
 import { PORCH_ASSISTANT_ID } from '../useFarmData'
 
 export function RobotCard({ agentId }: { agentId: string }) {
@@ -25,6 +26,7 @@ export function RobotCard({ agentId }: { agentId: string }) {
   const squad = agent.squadId ? env.squadsById.get(agent.squadId) : undefined
   const role =
     placed?.role ?? (env.input.assistants.some((a) => a.id === agentId) ? 'assistant' : roleFor(agent, squad))
+  if (role === 'assistant') return <AssistantCard />
   const label = agentLabel(agent)
   const halted = env.halted.has(agentId)
   const working = env.layout.yards
@@ -45,13 +47,9 @@ export function RobotCard({ agentId }: { agentId: string }) {
       </div>
       {label.secondary && <p className="g-card-text">{label.secondary}</p>}
       <p className="g-state-tag">{halted ? 'Halted — needs a nudge' : AGENT_STATUS_LABELS[agent.status]}</p>
-      {role !== 'assistant' && <RobotActions agentId={agentId} />}
-      <button
-        type="button"
-        className="g-button g-button-primary g-card-wide"
-        onClick={() => (role === 'assistant' ? env.openAssistant() : env.openChat(agentId))}
-      >
-        Talk to {label.primary}
+      <RobotActions agentId={agentId} />
+      <button type="button" className="g-button g-button-primary g-card-wide" onClick={() => env.openChat(agentId)}>
+        {role === 'manager' ? 'Talk to farmer' : 'Talk to robot'}
       </button>
       {working.length > 0 && (
         <>

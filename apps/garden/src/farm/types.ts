@@ -19,7 +19,7 @@ export type PlantState =
   | 'failed' // withered + crow
 
 /** The only badges; shown only when the human can act. */
-export type BadgeKind = 'question' | 'blocked' | 'harvest'
+export type BadgeKind = 'question' | 'blocked' | 'harvest' | 'news'
 
 /** Robot screen faces, driven by agent status. */
 export type RobotFace = 'happy' | 'normal' | 'question' | 'sleepy' | 'error'

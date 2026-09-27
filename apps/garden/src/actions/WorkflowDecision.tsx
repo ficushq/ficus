@@ -121,7 +121,7 @@ export function WorkflowDecision({
       <div className="g-action">
         <p className="g-action-note">
           {stream.pause
-            ? 'This plot is under the cloche (paused). Lift the cloche to make this decision.'
+            ? 'This work is paused. Resume it to make this decision.'
             : run.state.status === 'paused'
               ? 'The flow hit a limit and needs a flow revision, which you can make in the Ficus web app.'
               : 'The flow owns this step. Review it in the Ficus web app.'}

@@ -40,7 +40,7 @@ export function PauseControls({ stream }: { stream: WorkStream }) {
     <section className="g-action g-cloche" aria-label="Pause controls">
       {stream.pause && (
         <p className="g-action-note">
-          Under the cloche (paused) · {stream.status === 'queued' ? 'Parked; no slot held' : 'Holding its slot'}
+          Paused · {stream.status === 'queued' ? 'Parked; no slot held' : 'Holding its slot'}
           {stream.pause.reason ? ` · ${stream.pause.reason}` : ''}
           {stream.pause.parkAt && stream.status === 'active'
             ? ` · Parks itself at ${new Date(stream.pause.parkAt).toLocaleString()}`
@@ -53,9 +53,9 @@ export function PauseControls({ stream }: { stream: WorkStream }) {
             {stream.pause ? (
               <>
                 <VerbButton
-                  verb="Lift the cloche"
-                  busyVerb="Lifting…"
-                  help="Resume work"
+                  verb="Resume"
+                  busyVerb="Resuming…"
+                  help="Start work again"
                   tone="primary"
                   busy={busy('resume')}
                   disabled={command.isPending}
@@ -74,8 +74,8 @@ export function PauseControls({ stream }: { stream: WorkStream }) {
               </>
             ) : (
               <VerbButton
-                verb={editing ? 'Keep growing' : 'Cover with cloche'}
-                help={editing ? 'Close without pausing' : 'Pause work'}
+                verb={editing ? 'Keep growing' : 'Pause'}
+                help={editing ? 'Close without pausing' : 'Stop work for now'}
                 tone={editing ? 'quiet' : 'plain'}
                 onClick={() => setEditing(!editing)}
               />
@@ -90,7 +90,7 @@ export function PauseControls({ stream }: { stream: WorkStream }) {
               }}
             >
               <p className="g-action-note">
-                Stops the robots on this plot until you lift the cloche. It keeps its slot, or can release it after a
+                Stops the robots working on this until you resume it. It keeps its slot, or can release it after a
                 delay.
               </p>
               <label className="g-field" htmlFor={`${fieldId}-reason`}>

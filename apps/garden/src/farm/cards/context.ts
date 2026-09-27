@@ -15,6 +15,8 @@ export interface FarmCardEnv {
   openChat: (agentId: string) => void
   startConsultant: (squadId: string) => void
   openAssistant: (conversationId?: string) => void
+  /** A brand-new Assistant conversation. */
+  startAssistant: () => void
 }
 
 export const FarmCardContext = createContext<FarmCardEnv | null>(null)

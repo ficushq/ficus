@@ -26,6 +26,13 @@ const ICONS: Record<BadgeKind, ReactNode> = {
       !
     </text>
   ),
+  // New updates waiting (the porch assistant): a little letter.
+  news: (
+    <g transform="translate(0 1)">
+      <rect x={-8.5} y={-6} width={17} height={12} rx={2} fill="#fffaf1" className="g-ol2" />
+      <path d="M-7.5 -5 L0 1 L7.5 -5" fill="none" stroke={INK} strokeWidth={1.6} strokeLinejoin="round" />
+    </g>
+  ),
   harvest: (
     <g transform="translate(0 2)">
       <path d="M-9 -2 H9 L7 8 H-7Z" fill="#c98f52" className="g-ol2" />

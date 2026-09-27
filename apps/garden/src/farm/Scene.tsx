@@ -1,6 +1,6 @@
 import { memo, useMemo, type KeyboardEvent, type ReactNode } from 'react'
 import { depth, iso } from './iso'
-import type { CrowdSpot, FarmLayout, PlotLayout, RobotPlacement } from './types'
+import type { BadgeKind, CrowdSpot, FarmLayout, PlotLayout, RobotPlacement } from './types'
 import { plantStateLabel, roleLabel, selectionKey, type Selection } from './selection'
 import { agentLabel } from './agentLabels'
 import {
@@ -42,6 +42,8 @@ interface SceneProps {
   onSelect: (selection: Selection) => void
   /** Keyboard focus landed on a sprite at this world point: bring it into view. */
   onReveal: (x: number, y: number) => void
+  /** What the porch assistant has waiting: a question for you, or unread updates. */
+  porchBadge: BadgeKind | null
 }
 
 /** Wraps a sprite at a world position as a keyboard- and screen-reader-reachable button. */
@@ -114,7 +116,8 @@ function buildDrawables(
   selected: string | null,
   mailboxCount: number,
   onSelect: (s: Selection) => void,
-  onReveal: (x: number, y: number) => void
+  onReveal: (x: number, y: number) => void,
+  porchBadge: BadgeKind | null
 ): { ground: ReactNode[]; items: Drawable[]; badges: ReactNode[] } {
   const yardGround: ReactNode[] = []
   const ground: ReactNode[] = []
@@ -214,15 +217,19 @@ function buildDrawables(
     })
     for (const p of yard.plots) plot(p, squad.name)
     if (yard.farmer) robot(yard.farmer)
-    const [dx, dy] = iso(yard.dock.i, yard.dock.j)
-    items.push({
-      key: `dock:${squad.id}`,
-      depth: depth(yard.dock.i, yard.dock.j) - 0.01,
-      node: (
-        <g key={`dock:${squad.id}`} transform={`translate(${dx} ${dy})`} aria-hidden="true">
-          <ChargingDock count={yard.dock.robots.length + yard.dock.overflow} />
-        </g>
-      ),
+    // One charging pad per docked robot (an empty station still shows its front pad and solar post).
+    const pads = yard.dock.robots.length ? yard.dock.robots.map((r) => ({ i: r.i, j: r.j })) : [yard.dock]
+    pads.forEach((pad, n) => {
+      const [px, py] = iso(pad.i, pad.j)
+      items.push({
+        key: `dock:${squad.id}:${n}`,
+        depth: depth(pad.i, pad.j) - 0.01,
+        node: (
+          <g key={`dock:${squad.id}:${n}`} transform={`translate(${px} ${py})`} aria-hidden="true">
+            <ChargingDock count={n === 0 ? yard.dock.robots.length + yard.dock.overflow : 1} panel={n === 0} />
+          </g>
+        ),
+      })
     })
     crowd(yard.dock, 'dock')
     if (yard.bench.robots.length) {
@@ -318,6 +325,15 @@ function buildDrawables(
       [-30, -30, 60, 40]
     )
   crowd(layout.porch, 'porch')
+  const porchRobot = layout.porch.robots[0]
+  if (porchRobot && porchBadge) {
+    const [px, py] = iso(porchRobot.i, porchRobot.j)
+    badges.push(
+      <g key="porch:badge" transform={`translate(${px} ${py - 62})`} aria-hidden="true">
+        <Badge kind={porchBadge} />
+      </g>
+    )
+  }
 
   for (const d of layout.decor) {
     const [x, y] = iso(d.i, d.j)
@@ -353,11 +369,12 @@ export const SceneWorld = memo(function SceneWorld({
   mailboxCount,
   onSelect,
   onReveal,
+  porchBadge,
 }: SceneProps) {
   const selected = selectionKey(selection)
   const { ground, items, badges } = useMemo(
-    () => buildDrawables(layout, selected, mailboxCount, onSelect, onReveal),
-    [layout, selected, mailboxCount, onSelect, onReveal]
+    () => buildDrawables(layout, selected, mailboxCount, onSelect, onReveal, porchBadge),
+    [layout, selected, mailboxCount, onSelect, onReveal, porchBadge]
   )
   const { bounds } = layout
   return (

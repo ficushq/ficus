@@ -20,6 +20,11 @@
 
 .g-scene {
   display: block;
+  -webkit-user-drag: none;
+}
+
+.g-scene * {
+  -webkit-user-drag: none;
 }
 
 /* Interactive sprites */
@@ -491,6 +496,7 @@
 
 .g-seed {
   display: flex;
+  text-align: left;
   align-items: center;
   gap: 10px;
   width: 100%;

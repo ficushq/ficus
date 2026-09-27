@@ -87,7 +87,7 @@ describe('PauseControls', () => {
   it('pauses with a reason and an auto-park delay', async () => {
     const api = fakeApi({ pauseWorkStream: () => Promise.resolve(stream()) })
     const { container, invalidated } = await render(<PauseControls stream={stream()} />, api)
-    await click(button(container, 'Cover with cloche'))
+    await click(button(container, 'Pause'))
     await typeInto(byLabel(container, 'Reason (optional)'), 'Frost tonight')
     await typeInto(byLabel(container, 'Park after minutes (optional)'), '30')
     await click(button(container, 'Pause now'))
@@ -100,7 +100,7 @@ describe('PauseControls', () => {
   it('pauses without a park delay when none is given', async () => {
     const api = fakeApi({ pauseWorkStream: () => Promise.resolve(stream()) })
     const { container } = await render(<PauseControls stream={stream()} />, api)
-    await click(button(container, 'Cover with cloche'))
+    await click(button(container, 'Pause'))
     await click(button(container, 'Pause now'))
     expect(api.pauseWorkStream).toHaveBeenCalledWith('ws-1', { reason: '' })
   })
@@ -113,17 +113,17 @@ describe('PauseControls', () => {
       parkWorkStream: () => Promise.resolve(stream()),
     })
     const { container } = await render(<PauseControls stream={stream({ pause: paused })} />, api)
-    expect(container.textContent).toContain('Under the cloche (paused) · Holding its slot · Frost')
+    expect(container.textContent).toContain('Paused · Holding its slot · Frost')
     await click(button(container, 'Park'))
     expect(api.parkWorkStream).toHaveBeenCalledWith('ws-1')
-    await click(button(container, 'Lift the cloche'))
+    await click(button(container, 'Resume'))
     expect(api.resumeWorkStream).toHaveBeenCalledWith('ws-1')
   })
 
   it('offers no park once the stream is already parked (queued)', async () => {
     const api = fakeApi()
     const { container } = await render(<PauseControls stream={stream({ pause: paused, status: 'queued' })} />, api)
-    expect(hasButton(container, 'Lift the cloche')).toBe(true)
+    expect(hasButton(container, 'Resume')).toBe(true)
     expect(hasButton(container, 'Park')).toBe(false)
   })
 
@@ -135,7 +135,7 @@ describe('PauseControls', () => {
     const { container } = await render(<PauseControls stream={stream({ pause: paused })} />, api)
     expect(api.getMyPermissions).toHaveBeenCalledWith('squad-1')
     expect(container.querySelector('button')).toBeNull()
-    expect(container.textContent).toContain('Under the cloche')
+    expect(container.textContent).toContain('Paused')
   })
 
   it('renders nothing for finished streams', async () => {

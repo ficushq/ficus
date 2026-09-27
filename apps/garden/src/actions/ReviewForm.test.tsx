@@ -257,7 +257,7 @@ describe('WorkflowDecision · human-approval gate', () => {
     const quiet = await render(<WorkflowDecision workStreamId="ws-1" />, api)
     expect(quiet.container.textContent).toBe('')
     const explained = await render(<WorkflowDecision workStreamId="ws-1" explainWhenIdle />, api)
-    expect(explained.container.textContent).toContain('under the cloche')
+    expect(explained.container.textContent).toContain('This work is paused')
     expect(explained.container.querySelector('a')?.getAttribute('href')).toBe('/squads/squad-1/work?ws=ws-1')
   })
 })

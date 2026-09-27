@@ -30,7 +30,7 @@ const PLANT_LABELS: Record<PlantState, string> = {
   question: 'Has a question for you',
   review: 'Ready to harvest (needs your review)',
   blocked: 'Blocked, needs you to clear it',
-  paused: 'Paused under a cloche',
+  paused: 'Paused',
   waiting: 'Waiting on another plant',
   idle: 'Wilting, nobody is tending it',
   failed: 'Withered, a run failed',

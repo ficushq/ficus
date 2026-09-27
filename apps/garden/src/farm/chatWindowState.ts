@@ -41,7 +41,7 @@ export function chatKey(target: ChatTarget): string {
     case 'consultant':
       return `consultant:${target.squadId}`
     case 'assistant':
-      return `assistant:${target.conversationId ?? 'latest'}`
+      return target.fresh ? `assistant:new:${target.fresh}` : `assistant:${target.conversationId ?? 'latest'}`
   }
 }
 

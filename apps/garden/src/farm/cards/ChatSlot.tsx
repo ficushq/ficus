@@ -7,7 +7,8 @@ import { useFarmCard } from './context'
 export type ChatTarget =
   | { kind: 'agent'; agentId: string }
   | { kind: 'consultant'; squadId: string }
-  | { kind: 'assistant'; conversationId?: string }
+  /** `fresh` starts a new Assistant conversation (a token so each start gets its own window). */
+  | { kind: 'assistant'; conversationId?: string; fresh?: string }
 
 /** The one open conversation: a robot, a new consultant from a seed packet, or the assistant. */
 export function ChatSlot({ target, onClose }: { target: ChatTarget; onClose: () => void }) {
@@ -41,8 +42,9 @@ export function ChatSlot({ target, onClose }: { target: ChatTarget; onClose: () 
     case 'assistant':
       return (
         <AssistantChat
-          key={target.conversationId ?? 'latest'}
+          key={target.conversationId ?? target.fresh ?? 'latest'}
           conversationId={target.conversationId}
+          fresh={!!target.fresh}
           onClose={onClose}
         />
       )

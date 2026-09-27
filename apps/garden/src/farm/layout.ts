@@ -1,4 +1,11 @@
-import type { Agent, AgentErrorActionData, PendingAction, Squad, WorkStream } from '@ficus/shared'
+import type {
+  Agent,
+  AgentErrorActionData,
+  AssistantActivityPage,
+  PendingAction,
+  Squad,
+  WorkStream,
+} from '@ficus/shared'
 import { cropFor, hash, propFor, robotLookFor, roleFor } from './appearance'
 import { badgeFor, faceFor, haltedAgentIds, isAsleep, isRunning, plantStateFor } from './state'
 import type {
@@ -25,6 +32,8 @@ export interface FarmInput {
   agents: Agent[]
   /** The user's assistant agents (porch). */
   assistants: Agent[]
+  /** Recent Assistant conversations and what's waiting in them (the porch robot's card). */
+  assistantActivity?: AssistantActivityPage
   /** For halted detection and needs-you counts. */
   pendingActions: PendingAction[]
   /** ms, for "recent consultant" (default Date.now()). */
@@ -56,11 +65,8 @@ export const MAX_DECOR = 40
 export const FREE_TILES_PER_DECOR = 12
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const DOCK_OFFSETS = [
-  [0, -0.5],
-  [0.3, 0],
-  [0, 0.5],
-] as const
+/** Docked robots line up outside the right fence, one charging pad each, front to back. */
+const DOCK_GAP = 1.0
 const BENCH_OFFSETS = [
   [0, -0.3],
   [0, 0.3],
@@ -301,15 +307,13 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       }
     })
 
-    const dockAt = { i: i0 + w + 0.6, j: j0 + h - 0.4 }
+    const dockAt = { i: i0 + w + 1.05, j: j0 + h - 0.55 }
     const docked = members.filter(
       (agent) => agent.status === 'idle' && !halted.has(agent.id) && !drawn.has(agent.id) && isWorker(agent)
     )
     const dock: CrowdSpot = {
       ...dockAt,
-      robots: docked
-        .slice(0, MAX_DOCKED)
-        .map((agent, n) => place(agent, 'worker', dockAt.i + DOCK_OFFSETS[n]![0], dockAt.j + DOCK_OFFSETS[n]![1])),
+      robots: docked.slice(0, MAX_DOCKED).map((agent, n) => place(agent, 'worker', dockAt.i, dockAt.j - n * DOCK_GAP)),
       overflow: Math.max(0, docked.length - MAX_DOCKED),
     }
 
@@ -320,7 +324,17 @@ export function layoutFarm(input: FarmInput): FarmLayout {
         roleFor(agent, squad) === 'consultant' &&
         (!isAsleep(agent) || now - Math.max(toMs(agent.updatedAt), toMs(agent.lastMessageAt)) <= DAY_MS)
     )
-    const seated = recent.filter((agent) => !isAsleep(agent)).slice(0, MAX_BENCHED)
+    // Who sits: consultants waiting on you first, then the most recently active (ties by id, for stability).
+    const lastActive = (agent: Agent) => Math.max(toMs(agent.updatedAt), toMs(agent.lastMessageAt))
+    const seated = recent
+      .filter((agent) => !isAsleep(agent))
+      .sort(
+        (a, b) =>
+          Number(b.status === 'waiting-input') - Number(a.status === 'waiting-input') ||
+          lastActive(b) - lastActive(a) ||
+          byId(a, b)
+      )
+      .slice(0, MAX_BENCHED)
     const bench: CrowdSpot = {
       ...benchAt,
       robots: seated.map((agent, n) =>

@@ -108,6 +108,9 @@ export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldB
       update((c) => zoomAround(c, factor, dx, dy))
     }
     const onDown = (e: PointerEvent) => {
+      // Without this a mouse drag over the drawing can start the browser's own drag of the
+      // SVG (Safari shows a ghost image of the scene) instead of panning. Clicks still fire.
+      if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
       if (pointers.current.size === 1) dragDistance.current = 0
     }
@@ -144,6 +147,8 @@ export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldB
       dragDistance.current = 0
     }
 
+    const onDragStart = (e: DragEvent) => e.preventDefault()
+    el.addEventListener('dragstart', onDragStart)
     el.addEventListener('wheel', onWheel, { passive: false })
     el.addEventListener('pointerdown', onDown)
     el.addEventListener('pointermove', onMove)
@@ -151,6 +156,7 @@ export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldB
     el.addEventListener('pointercancel', onUp)
     el.addEventListener('click', onClickCapture, true)
     return () => {
+      el.removeEventListener('dragstart', onDragStart)
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('pointerdown', onDown)
       el.removeEventListener('pointermove', onMove)
