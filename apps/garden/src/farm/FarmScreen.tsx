@@ -13,7 +13,7 @@ import { ChatWindows, useChatWindows } from './ChatWindows'
 import { haltedAgentIds } from './state'
 import { useStableRef } from '../hooks/useStableRef'
 import { useDesktopShellChrome } from '../desktop/shell'
-import { useSkin } from '../skins'
+import { SKINS, useSkin } from '../skins'
 import type { Selection } from './selection'
 import type { LiveStatus } from '../live/LiveUpdates'
 import {
@@ -28,6 +28,7 @@ import {
   PlusIcon,
   SeedPacketIcon,
   SpeakerIcon,
+  StyleIcon,
 } from '../icons'
 import { FarmList } from './FarmList'
 import { useFarmSounds } from '../sound/useFarmSounds'
@@ -35,7 +36,7 @@ import { webAppUrl } from '../api/base'
 
 export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus }) {
   useDesktopShellChrome()
-  const { skin } = useSkin()
+  const { skin, setSkin } = useSkin()
   const layout = useMemo(() => layoutFarm(input), [input])
   const viewport = useRef<HTMLDivElement>(null)
   const size = useViewportSize(viewport)
@@ -114,6 +115,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   }, [selection, layout, focus, selectionRef, sizeRef, cameraRef])
 
   const needsYou = input.pendingActions.length
+  const nextSkin = SKINS[(SKINS.indexOf(skin) + 1) % SKINS.length]!
   const assistantTotals = input.assistantActivity?.totals
   // Assistant conversations with a question for you or updates you haven't read.
   const assistantNews = (assistantTotals?.needsInputTasks ?? 0) + (assistantTotals?.unreadUpdates ?? 0)
@@ -159,9 +161,20 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
           <span>ficus garden</span>
         </div>
         <div className="g-counters" aria-live="polite">
-          <Counter icon={<EnvelopeIcon />} tint="#b0582f" value={needsYou} label="need you" hot={needsYou > 0} />
-          <Counter icon={<LeafIcon />} tint="#5d9a58" value={growing} label="growing" />
-          <Counter icon={<BasketIcon />} tint="#e0a93b" value={layout.crates.count} label="harvested" />
+          <Counter
+            icon={<EnvelopeIcon />}
+            tint="var(--g-counter-mail)"
+            value={needsYou}
+            label="need you"
+            hot={needsYou > 0}
+          />
+          <Counter icon={<LeafIcon />} tint="var(--g-counter-growing)" value={growing} label="growing" />
+          <Counter
+            icon={<BasketIcon />}
+            tint="var(--g-counter-harvested)"
+            value={layout.crates.count}
+            label="harvested"
+          />
         </div>
       </header>
 
@@ -191,6 +204,13 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         </ToolButton>
         <ToolButton label="List everything on the farm" short="List" onClick={() => setListOpen((o) => !o)}>
           <ListIcon />
+        </ToolButton>
+        <ToolButton
+          label={`Style: ${skin.label}. Switch to ${nextSkin.label}`}
+          short={skin.label}
+          onClick={() => setSkin(nextSkin.id)}
+        >
+          <StyleIcon />
         </ToolButton>
         <ToolButton label={sound.on ? 'Sound on, turn off' : 'Sound off, turn on'} short="Sound" onClick={sound.toggle}>
           <SpeakerIcon muted={!sound.on} />

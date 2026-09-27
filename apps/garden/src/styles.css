@@ -1,24 +1,7 @@
 /*
  * The garden has its own art direction and does not read the web app's theme
- * tokens: brand palette plus game-specific ink, grass and wood tones.
+ * tokens. Each style defines the interface tokens in its own theme.css.
  */
-:root {
-  --g-leaf: #3f6b4f;
-  --g-terracotta: #b0582f;
-  --g-moss: #8a9a5b;
-  --g-sage: #9fb57f;
-  --g-linen: #f1e9db;
-  --g-soil: #1c1a17;
-  --g-ink: #3b2415;
-  --g-ink-soft: #6e5b3f;
-  --g-card: #fbf4e4;
-  --g-grass: #a3bb5d;
-  --g-font-display: 'Fraunces Variable', Georgia, serif;
-  --g-font-body: 'Instrument Sans Variable', system-ui, sans-serif;
-  --g-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
-  color-scheme: light;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -32,7 +15,7 @@ body,
 
 body {
   overflow: hidden;
-  background: var(--g-grass);
+  background: var(--g-page);
   color: var(--g-ink);
   font-family: var(--g-font-body);
   -webkit-font-smoothing: antialiased;
@@ -41,17 +24,17 @@ body {
 
 .g-card {
   background: var(--g-card);
-  border: 3px solid var(--g-ink);
-  border-radius: 16px;
-  box-shadow:
-    0 5px 0 var(--g-ink),
-    0 18px 30px -12px rgb(0 0 0 / 0.35);
+  border: var(--g-border) solid var(--g-ink);
+  border-radius: var(--g-radius);
+  box-shadow: var(--g-card-shadow);
 }
 
 .g-wordmark {
   margin: 0;
-  font: 900 28px/1 var(--g-font-display);
-  color: var(--g-leaf);
+  font: var(--g-display-weight) 28px/1 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  color: var(--g-accent);
 }
 
 .g-muted {
@@ -82,30 +65,32 @@ body {
   justify-content: center;
   min-height: 44px;
   padding: 0 20px;
-  border: 3px solid var(--g-ink);
-  border-radius: 14px;
-  background: linear-gradient(#fffaf1, #efd9ad);
-  box-shadow: 0 4px 0 var(--g-ink);
+  border: var(--g-border) solid var(--g-ink);
+  border-radius: var(--g-radius-md);
+  background: var(--g-button-fill);
+  box-shadow: var(--g-lift);
   color: var(--g-ink);
-  font: 900 17px var(--g-font-display);
+  font: var(--g-display-weight) 17px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
   text-decoration: none;
   cursor: pointer;
 }
 
 .g-button:active {
-  translate: 0 3px;
-  box-shadow: 0 1px 0 var(--g-ink);
+  translate: var(--g-press);
+  box-shadow: var(--g-lift-pressed);
 }
 
 .g-button:focus-visible {
-  outline: 3px solid #fff3a8;
+  outline: var(--g-focus-width) solid var(--g-highlight);
   outline-offset: 3px;
 }
 
 .g-button-primary {
-  background: linear-gradient(#64a35c, var(--g-leaf));
-  color: #fff;
-  text-shadow: 0 2px 0 rgb(0 0 0 / 0.25);
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+  text-shadow: var(--g-text-emboss);
 }
 
 @media (prefers-reduced-motion: reduce) {

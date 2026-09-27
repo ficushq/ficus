@@ -13,7 +13,7 @@ export function FitIcon({ className = 'g-icon' }: IconProps) {
       strokeLinejoin="round"
     >
       <path d="M3 9 V3 H9 M17 3 H23 V9 M23 17 V23 H17 M9 23 H3 V17" />
-      <path d="M13 8 L18 13 L13 18 L8 13Z" fill="#9fb57f" />
+      <path d="M13 8 L18 13 L13 18 L8 13Z" fill="var(--g-icon-accent-soft)" />
     </svg>
   )
 }

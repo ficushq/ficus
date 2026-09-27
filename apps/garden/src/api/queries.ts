@@ -54,6 +54,14 @@ export const gardenQueries = {
       queryFn: () => assistantApi.activity(6),
       staleTime: 30_000,
     }),
+  /** The account's web-app theme choice (the Futurist style follows its colours). */
+  themePreference: () =>
+    queryOptions({
+      queryKey: ['garden', 'themePreference'],
+      queryFn: () => client.userPreferences.getMine(),
+      staleTime: 5 * 60_000,
+      retry: false,
+    }),
   agent: (agentId: string) =>
     queryOptions({
       queryKey: queryKeys.agents.detail(agentId),

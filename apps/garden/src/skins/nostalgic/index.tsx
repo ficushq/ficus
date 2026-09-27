@@ -28,10 +28,10 @@ import {
 } from './sprites'
 
 /** The nostalgic farm: soil squares, crops, fences, cottage and robots in overalls. */
-export const farmSkin: FarmSkin = {
-  id: 'farm',
-  label: 'Farm',
-  className: 'g-skin-farm',
+export const nostalgicSkin: FarmSkin = {
+  id: 'nostalgic',
+  label: 'Nostalgic',
+  className: 'g-skin-nostalgic',
   Defs: SceneDefs,
   Ground: ({ bounds }) => <Grass minI={bounds.minI} maxI={bounds.maxI} minJ={bounds.minJ} maxJ={bounds.maxJ} />,
   YardBack,

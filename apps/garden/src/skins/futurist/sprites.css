@@ -1,0 +1,75 @@
+/* Futurist style motion: slow floats and pulses; nothing bounces. */
+.fu-float {
+  animation: fu-float 3.6s ease-in-out infinite;
+}
+
+.fu-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: fu-pulse 2.4s ease-in-out infinite;
+}
+
+.fu-blink {
+  animation: fu-blink 1.2s steps(2, jump-none) infinite;
+}
+
+.fu-flicker {
+  animation: fu-flicker 0.9s linear infinite;
+}
+
+.fu-sway {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: fu-sway 5s ease-in-out infinite;
+}
+
+@keyframes fu-float {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes fu-pulse {
+  50% {
+    opacity: 0.45;
+    scale: 0.8;
+  }
+}
+
+@keyframes fu-blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@keyframes fu-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.3;
+  }
+  45% {
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes fu-sway {
+  50% {
+    rotate: 2deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fu-float,
+  .fu-pulse,
+  .fu-blink,
+  .fu-flicker,
+  .fu-sway {
+    animation: none;
+  }
+}

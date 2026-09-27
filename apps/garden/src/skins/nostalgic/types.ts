@@ -1,4 +1,4 @@
-/** The farm style's own vocabulary: crops, and what each robot wears. */
+/** The Nostalgic style's own vocabulary: crops, and what each robot wears. */
 
 /** Crops vary by work stream (stable per id) so a yard isn't a field of clones. */
 export type CropKind = 'tomato' | 'sunflower' | 'pumpkin'

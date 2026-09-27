@@ -27,7 +27,7 @@ export interface FencePiece {
   node: ReactNode
 }
 
-export type SkinId = 'farm' | 'grid'
+export type SkinId = 'nostalgic' | 'futurist'
 
 /**
  * Everything that decides how the farm looks, and nothing about what's on it.

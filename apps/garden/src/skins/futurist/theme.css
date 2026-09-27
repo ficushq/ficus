@@ -1,0 +1,199 @@
+/*
+ * Interface tokens for the Futurist style. Everything derives from three colours
+ * (the same shape as the web app's three-colour themes), so following a theme
+ * only means setting --fu-bg, --fu-fg and --fu-accent.
+ */
+.g-skin-futurist {
+  --fu-bg: #05070a;
+  --fu-fg: #8fe3ff;
+  --fu-accent: #ff4fd8;
+
+  color-scheme: dark;
+
+  /* Brand palette names still exist for anything that reads them. */
+  --g-leaf: var(--fu-accent);
+  --g-terracotta: var(--fu-accent);
+  --g-moss: var(--fu-fg);
+  --g-sage: var(--fu-fg);
+  --g-linen: var(--fu-bg);
+  --g-soil: var(--fu-bg);
+
+  /* Ink and text */
+  --g-ink: color-mix(in srgb, var(--fu-fg) 55%, transparent);
+  --g-ink-soft: color-mix(in srgb, var(--fu-fg) 55%, var(--fu-bg));
+  --g-text: var(--fu-fg);
+  --g-text-soft: color-mix(in srgb, var(--fu-fg) 62%, var(--fu-bg));
+  --g-eyebrow: var(--fu-accent);
+
+  /* Surfaces: near-black glass panels with hairline edges */
+  --g-page: var(--fu-bg);
+  --g-grass: var(--fu-bg);
+  --g-card: color-mix(in srgb, var(--fu-bg) 90%, var(--fu-fg));
+  --g-card-alt: color-mix(in srgb, var(--fu-bg) 94%, var(--fu-fg));
+  --g-paper: color-mix(in srgb, var(--fu-bg) 86%, var(--fu-fg));
+  --g-field: color-mix(in srgb, var(--fu-bg) 96%, var(--fu-fg));
+  --g-field-inset: inset 0 0 0 1px color-mix(in srgb, var(--fu-fg) 12%, transparent);
+  --g-rule: color-mix(in srgb, var(--fu-fg) 22%, transparent);
+  --g-panel-fill: color-mix(in srgb, var(--fu-bg) 80%, transparent);
+  --g-button-fill: transparent;
+  --g-button-gloss: transparent;
+
+  /* Accents: outlined, glowing, never filled solid */
+  --g-accent: var(--fu-accent);
+  --g-accent-fill: color-mix(in srgb, var(--fu-accent) 16%, transparent);
+  --g-on-accent: var(--fu-accent);
+  --g-danger: var(--fu-accent);
+  --g-danger-fill: transparent;
+  --g-on-danger: var(--fu-accent);
+  --g-highlight: var(--fu-accent);
+
+  /* Status tints */
+  --g-good-tint: color-mix(in srgb, var(--fu-fg) 12%, transparent);
+  --g-good-text: var(--fu-fg);
+  --g-warn-tint: color-mix(in srgb, var(--fu-accent) 16%, transparent);
+  --g-warn-text: var(--fu-accent);
+  --g-bad-tint: color-mix(in srgb, var(--fu-accent) 16%, transparent);
+  --g-bad-text: var(--fu-accent);
+  --g-quiet-tint: color-mix(in srgb, var(--fu-fg) 8%, transparent);
+
+  /* Shape: hairlines, square corners, glow instead of drop shadows */
+  --g-border: 1px;
+  --g-border-thin: 1px;
+  --g-radius: 2px;
+  --g-radius-sm: 2px;
+  --g-radius-pill: 2px;
+  --g-lift: 0 0 0 1px transparent;
+  --g-lift-sm: 0 0 0 1px transparent;
+  --g-drop: 0 0 32px -8px color-mix(in srgb, var(--fu-accent) 35%, transparent);
+
+  /* Type: mono, uppercase, tracked */
+  --g-font-display: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --g-font-body: 'Instrument Sans Variable', system-ui, sans-serif;
+  --g-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --g-display-weight: 500;
+  --g-display-transform: uppercase;
+  --g-display-tracking: 0.08em;
+
+  /* ---- Everything else the interface reads, in three colours ---- */
+  --fu-line: color-mix(in srgb, var(--fu-fg) 28%, transparent);
+  --fu-line-strong: color-mix(in srgb, var(--fu-fg) 55%, transparent);
+  --fu-glass: color-mix(in srgb, var(--fu-bg) 82%, var(--fu-fg));
+  --fu-accent-wash: color-mix(in srgb, var(--fu-accent) 14%, transparent);
+
+  /* Text */
+  --g-placeholder: color-mix(in srgb, var(--fu-fg) 40%, var(--fu-bg));
+  --g-label-text: var(--fu-fg);
+  --g-label-outline: 0 0 6px var(--fu-bg);
+  --g-text-emboss: none;
+  --g-thought: color-mix(in srgb, var(--fu-fg) 55%, var(--fu-bg));
+  --g-alert-text: var(--fu-accent);
+  --g-danger-text: var(--fu-accent);
+  --g-caution-text: var(--fu-accent);
+
+  /* Surfaces */
+  --g-field-disabled: var(--fu-bg);
+  --g-rule-style: solid;
+  --g-divider: var(--fu-line);
+  --g-mail-divider: var(--fu-line);
+  --g-quote-rule: var(--fu-line-strong);
+  --g-option-border: var(--fu-line);
+  --g-quiet-border: var(--fu-line);
+  --g-plank-fill: var(--fu-glass);
+  --g-decision-fill: var(--fu-glass);
+  --g-tool-fill: color-mix(in srgb, var(--fu-bg) 86%, transparent);
+  --g-counter-gloss: none;
+  --g-avatar-fill: var(--fu-bg);
+  --g-quiet-fill: transparent;
+  --g-row-hover: color-mix(in srgb, var(--fu-fg) 7%, transparent);
+  --g-mail-hover: color-mix(in srgb, var(--fu-fg) 7%, transparent);
+
+  /* Accents */
+  --g-accent-soft: var(--fu-fg);
+  --g-highlight-strong: var(--fu-accent);
+  --g-highlight-soft: var(--fu-accent);
+  --g-badge-fill: var(--fu-accent);
+  --g-harvest-fill: var(--fu-accent-wash);
+  --g-prune-fill: transparent;
+  --g-follow-fill: color-mix(in srgb, var(--fu-fg) 12%, transparent);
+
+  /* Status tints */
+  --g-confirm-tint: var(--fu-accent-wash);
+  --g-danger-tint: var(--fu-accent-wash);
+  --g-danger-tint-strong: color-mix(in srgb, var(--fu-accent) 24%, transparent);
+  --g-caution-tint: var(--fu-accent-wash);
+
+  /* Mail dots: the accent for what needs you, lines for the rest */
+  --g-mail-dot-default: var(--fu-fg);
+  --g-mail-dot-halted: var(--fu-accent);
+  --g-mail-dot-questions: var(--fu-accent);
+  --g-mail-dot-assistant: var(--fu-fg);
+  --g-mail-dot-harvest: var(--fu-accent);
+  --g-mail-dot-weeds: var(--fu-accent);
+  --g-mail-dot-other: var(--fu-line-strong);
+
+  /* HUD counters */
+  --g-counter-mail: var(--fu-accent-wash);
+  --g-counter-growing: color-mix(in srgb, var(--fu-fg) 12%, transparent);
+  --g-counter-harvested: color-mix(in srgb, var(--fu-fg) 12%, transparent);
+
+  /* Chat */
+  --g-chat-paper: var(--fu-glass);
+  --g-chat-linen: var(--fu-bg);
+  --g-chat-line: var(--fu-line);
+  --g-chat-danger: var(--fu-accent);
+  --g-chat-backdrop: var(--fu-bg);
+  --g-chat-composer-fill: var(--fu-bg);
+  --g-chat-intro-fill: transparent;
+  --g-chat-mail-fill: var(--fu-glass);
+  --g-bubble-human: var(--fu-accent-wash);
+  --g-bubble-human-failed: color-mix(in srgb, var(--fu-accent) 24%, transparent);
+  --g-on-bubble-human: var(--fu-fg);
+  --g-bubble-human-link: var(--fu-accent);
+  --g-bubble-human-note: color-mix(in srgb, var(--fu-fg) 70%, transparent);
+  --g-bubble-agent: transparent;
+  --g-bubble-system: transparent;
+  --g-code-inline-bg: color-mix(in srgb, var(--fu-fg) 10%, transparent);
+  --g-code-bg: color-mix(in srgb, var(--fu-bg) 70%, black);
+  --g-code-bg-failed: color-mix(in srgb, var(--fu-accent) 18%, var(--fu-bg));
+  --g-code-text: var(--fu-fg);
+  --g-tag-interrupt: var(--fu-accent-wash);
+  --g-tag-follow: color-mix(in srgb, var(--fu-fg) 12%, transparent);
+  --g-ask-fill: var(--fu-accent-wash);
+  --g-delivery-divider: var(--fu-line);
+
+  /* Icons: lines in the foreground, the accent where it matters */
+  --g-icon-paper: transparent;
+  --g-icon-accent: var(--fu-accent);
+  --g-icon-accent-soft: var(--fu-fg);
+  --g-icon-warm: var(--fu-accent);
+  --g-icon-wood: transparent;
+  --g-icon-gold: var(--fu-accent);
+  --g-icon-seed: var(--fu-accent);
+  --g-icon-face: transparent;
+  --g-icon-detail: var(--fu-fg);
+  --g-icon-visor: var(--fu-bg);
+  --g-icon-glow: var(--fu-accent);
+
+  /* Shape */
+  --g-border-mid: 1px;
+  --g-border-hair: 1px;
+  --g-focus-width: 1px;
+  --g-radius-lg: 2px;
+  --g-radius-md: 2px;
+  --g-radius-tile: 2px;
+  --g-radius-xs: 2px;
+  --g-radius-inline: 2px;
+  --g-radius-tail: 0;
+  --g-radius-round: 50%;
+  --g-lift-md: 0 0 0 1px transparent;
+  --g-lift-pressed: 0 0 0 1px transparent;
+  --g-press: 0 0;
+  --g-press-sm: 0 0;
+  --g-card-shadow: 0 0 0 1px var(--fu-line), 0 0 40px -12px color-mix(in srgb, var(--fu-accent) 40%, transparent);
+  --g-window-shadow: 0 0 0 1px var(--fu-line), 0 0 60px -16px color-mix(in srgb, var(--fu-accent) 45%, transparent);
+  --g-sheet-shadow: 0 -1px 0 var(--fu-line);
+
+  /* Type */
+  --g-display-weight-soft: 500;
+  --g-on-badge: var(--fu-bg);
+}

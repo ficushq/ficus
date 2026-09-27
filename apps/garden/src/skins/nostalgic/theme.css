@@ -1,0 +1,199 @@
+/*
+ * Interface tokens for the Nostalgic style: wood, linen and ink, chunky outlines,
+ * glossy buttons and the Fraunces display face. Every interface stylesheet
+ * (styles.css, farm.css, actions.css, chat.css) and icon reads only these;
+ * another style redefines the same names on its own root class.
+ *
+ * Tokens that point at other tokens (var(--g-…)) are resolved where they are
+ * declared, so another style must declare every name here, aliases included.
+ */
+:root,
+.g-skin-nostalgic {
+  color-scheme: light;
+
+  /* Brand palette (also used by the farm art) */
+  --g-leaf: #3f6b4f;
+  --g-terracotta: #b0582f;
+  --g-moss: #8a9a5b;
+  --g-sage: #9fb57f;
+  --g-linen: #f1e9db;
+  --g-soil: #1c1a17;
+
+  /* Ink and text */
+  --g-ink: #3b2415;
+  --g-ink-soft: #6e5b3f;
+  --g-text: #4a3524;
+  --g-text-soft: #6e5b3f;
+  --g-eyebrow: #8a5a33;
+  --g-placeholder: #9a8466;
+  /* Tool labels under the HUD buttons: light text with an ink outline */
+  --g-label-text: var(--g-paper);
+  --g-label-outline: 0 1.5px 0 var(--g-ink), 1.5px 0 0 var(--g-ink), -1.5px 0 0 var(--g-ink), 0 -1.5px 0 var(--g-ink);
+  /* Pressed-in text on filled (accent, danger, harvest…) buttons */
+  --g-text-emboss: 0 2px 0 rgb(0 0 0 / 0.25);
+
+  /* Surfaces */
+  --g-page: #a3bb5d;
+  --g-grass: var(--g-page);
+  --g-card: #fbf4e4;
+  --g-card-alt: #f6eedd;
+  --g-paper: #fffaf1;
+  --g-field: #fffdf7;
+  --g-field-inset: inset 0 2px 0 rgb(59 36 21 / 0.12);
+  --g-field-disabled: #f3ead8;
+  --g-rule: #d9c7a3;
+  /* Line style of separators, quiet buttons and dashed frames */
+  --g-rule-style: dashed;
+  /* Ink-tinted separators and frames, lightest to strongest */
+  --g-divider: rgb(59 36 21 / 0.22);
+  --g-mail-divider: rgb(59 36 21 / 0.25);
+  --g-quote-rule: rgb(59 36 21 / 0.28);
+  --g-option-border: rgb(59 36 21 / 0.35);
+  --g-quiet-border: rgb(59 36 21 / 0.55);
+  /* Painted planks: split panel (HUD, chat header), soft plank (logo, seed rows) */
+  --g-panel-fill: linear-gradient(#fffaf1 0 50%, #f1e2c4 50%);
+  --g-plank-fill: linear-gradient(#fffaf1, #f1e2c4);
+  --g-decision-fill: linear-gradient(#fffaf1, #f4e7cc);
+  --g-button-fill: linear-gradient(#fffaf1, #efd9ad);
+  --g-tool-fill: radial-gradient(circle at 50% 30%, #fffaf1, #efd9ad);
+  --g-button-gloss: rgb(255 255 255 / 0.55);
+  --g-counter-gloss: radial-gradient(circle at 35% 28%, rgb(255 255 255 / 0.6) 0 16%, transparent 17%);
+  --g-avatar-fill: radial-gradient(circle at 50% 35%, #fffdf7, #e9f3d6);
+  /* Dashed "quiet" button: see-through paper */
+  --g-quiet-fill: rgb(255 250 241 / 0.6);
+
+  /* Accents */
+  --g-accent: var(--g-leaf);
+  --g-accent-soft: var(--g-sage);
+  --g-accent-fill: linear-gradient(#64a35c, var(--g-leaf));
+  --g-on-accent: #fff;
+  --g-danger: var(--g-terracotta);
+  --g-danger-fill: linear-gradient(#d9743f, var(--g-terracotta));
+  --g-on-danger: #fff;
+  --g-highlight: #fff3a8;
+  /* Focus rings: on busy chat paper (strong) and around farm sprites (soft) */
+  --g-highlight-strong: #e7c75a;
+  --g-highlight-soft: #fff6c2;
+  /* Count badges on tools and mailbox sections */
+  --g-badge-fill: linear-gradient(#d86d3b, var(--g-terracotta));
+  /* Verb buttons: harvest (approve) and prune (cut back) */
+  --g-harvest-fill: linear-gradient(#9ccf6f, #4f8a3f);
+  --g-prune-fill: linear-gradient(#e38b5c, var(--g-terracotta));
+
+  /* Status tints (tag backgrounds) and their text */
+  --g-good-tint: #e9f3d6;
+  --g-good-text: #2e5238;
+  --g-warn-tint: #ffe3cf;
+  --g-warn-text: var(--g-terracotta);
+  --g-bad-tint: #f6dccf;
+  --g-bad-text: #8e3f1e;
+  --g-quiet-tint: #ece3cf;
+  --g-confirm-tint: #f1f7e6;
+  /* Error banners: form alerts (alert-text), chat errors and confirm-clear (danger-text) */
+  --g-danger-tint: #fbe3d6;
+  --g-danger-tint-strong: #fbd3c0;
+  --g-alert-text: #7a2f12;
+  --g-danger-text: #6f230b;
+  /* Maintenance notices and the clear-chat button */
+  --g-caution-tint: #fbe6c2;
+  --g-caution-text: #7a4a14;
+
+  /* Mailbox letters */
+  --g-mail-hover: #fdf1d8;
+  --g-mail-dot-default: var(--g-sage);
+  --g-mail-dot-halted: var(--g-terracotta);
+  --g-mail-dot-questions: #f2c14e;
+  --g-mail-dot-assistant: #9bb7d4;
+  --g-mail-dot-harvest: #8cc56a;
+  --g-mail-dot-weeds: var(--g-moss);
+  --g-mail-dot-other: #d8cbb3;
+
+  /* Chat */
+  --g-chat-paper: var(--g-paper);
+  --g-chat-linen: var(--g-card-alt);
+  --g-chat-line: var(--g-rule);
+  --g-chat-danger: #a8401d;
+  --g-chat-backdrop:
+    radial-gradient(circle at 1px 1px, rgb(59 36 21 / 0.07) 1px, transparent 1.5px) 0 0 / 14px 14px, var(--g-chat-linen);
+  --g-chat-composer-fill: linear-gradient(#f7ead0, #efd9ad);
+  --g-bubble-human: var(--g-accent-fill);
+  --g-bubble-human-failed: var(--g-danger-fill);
+  --g-on-bubble-human: var(--g-on-accent);
+  --g-bubble-human-link: var(--g-highlight);
+  --g-bubble-human-note: rgb(255 255 255 / 0.85);
+  --g-bubble-agent: var(--g-chat-paper);
+  --g-bubble-system: rgb(255 250 241 / 0.8);
+  --g-chat-intro-fill: rgb(255 250 241 / 0.85);
+  --g-row-hover: rgb(59 36 21 / 0.06);
+  --g-thought: #9a6a2a;
+  --g-code-inline-bg: rgb(59 36 21 / 0.08);
+  --g-code-bg: #2b2118;
+  --g-code-bg-failed: #4a1d10;
+  --g-code-text: #f6eedd;
+  --g-chat-mail-fill: repeating-linear-gradient(135deg, #f7e2b8 0 8px, #fbf0d6 8px 16px);
+  --g-tag-interrupt: #f6c9a8;
+  --g-tag-follow: #d8e8c4;
+  --g-ask-fill: linear-gradient(#fff6d8, #fbe7b0);
+  /* "Follow up" send mode (amber) and the divider before the mode picker */
+  --g-follow-fill: linear-gradient(#e0a24a, #b87a1f);
+  --g-delivery-divider: rgb(59 36 21 / 0.55);
+
+  /* Icons: outlines use currentColor; these are the fills */
+  --g-icon-paper: var(--g-paper);
+  --g-icon-accent: var(--g-leaf);
+  --g-icon-accent-soft: var(--g-sage);
+  --g-icon-warm: var(--g-terracotta);
+  --g-icon-wood: #7c5232;
+  --g-icon-gold: #f2c14e;
+  --g-icon-seed: #e0a93b;
+  --g-icon-face: var(--g-card);
+  --g-icon-detail: var(--g-moss);
+  --g-icon-visor: #23282c;
+  --g-icon-glow: #ffd76a;
+
+  /* Shape: outline widths */
+  --g-border: 3px;
+  --g-border-mid: 2.5px;
+  --g-border-thin: 2px;
+  --g-border-hair: 1.5px;
+  --g-focus-width: 3px;
+  /* Shape: corner radii, largest to smallest */
+  --g-radius-lg: 18px;
+  --g-radius: 16px;
+  --g-radius-md: 14px;
+  --g-radius-tile: 12px;
+  --g-radius-sm: 10px;
+  --g-radius-xs: 8px;
+  --g-radius-inline: 5px;
+  --g-radius-tail: 4px;
+  --g-radius-round: 50%;
+  --g-radius-pill: 999px;
+  /* Shape: chunky offset shadows and the press that squashes them */
+  --g-lift: 0 4px 0 var(--g-ink);
+  --g-lift-md: 0 3px 0 var(--g-ink);
+  --g-lift-sm: 0 2px 0 var(--g-ink);
+  --g-lift-pressed: 0 1px 0 var(--g-ink);
+  --g-press: 0 3px;
+  --g-press-sm: 0 2px;
+  --g-drop: 0 18px 30px -12px rgb(0 0 0 / 0.35);
+  /* Whole-object shadows: cards, floating chat windows, phone chat sheets */
+  --g-card-shadow: 0 5px 0 var(--g-ink), var(--g-drop);
+  --g-window-shadow: 0 5px 0 var(--g-ink), 0 24px 40px -16px rgb(0 0 0 / 0.45);
+  --g-sheet-shadow: 0 -8px 30px rgb(0 0 0 / 0.35);
+
+  /* Type */
+  --g-font-display: 'Fraunces Variable', Georgia, serif;
+  --g-font-body: 'Instrument Sans Variable', system-ui, sans-serif;
+  --g-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --g-display-weight: 900;
+  /* Display face at label size (counters, seeds, subheadings, form labels) */
+  --g-display-weight-soft: 800;
+  --g-display-transform: none;
+  --g-display-tracking: normal;
+
+  /* HUD counter badges */
+  --g-counter-mail: #b0582f;
+  --g-counter-growing: #5d9a58;
+  --g-counter-harvested: #e0a93b;
+  --g-on-badge: #fff;
+}
