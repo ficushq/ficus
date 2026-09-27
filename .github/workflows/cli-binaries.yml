@@ -86,6 +86,8 @@ jobs:
         run: |
           set -euo pipefail
           keep=$(cd dist/release && ls -1A)
+          # An empty build would match nothing and delete every asset; refuse instead.
+          [ -n "$keep" ] || { echo "dist/release is empty; refusing to prune the nightly release" >&2; exit 1; }
           gh release view nightly --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' >"$RUNNER_TEMP/nightly-assets.txt"
           while IFS= read -r asset; do
             [ -n "$asset" ] || continue
