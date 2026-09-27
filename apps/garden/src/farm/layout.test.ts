@@ -11,6 +11,7 @@ import {
   PLOT_PITCH,
 } from './layout'
 import type { FarmLayout, RobotPlacement } from './types'
+import { iso } from './iso'
 import { at, makeAgent, makeAgentError, makeSquad, makeStream, makeWait, shuffled } from './testFixtures'
 
 const NOW = at(60 * 24 * 10).getTime()
@@ -286,8 +287,38 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.farmer?.role).toBe('manager')
     expect(yard!.farmer!.i).toBeGreaterThan(yard!.sign.i)
     expect(yard!.farmer!.j).toBeGreaterThan(yard!.j0 + yard!.h)
-    expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 1.0, j: yard!.j0 + 0.45 })
+    expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 0.1, j: yard!.j0 - 0.75 })
     expect(yard!.stand.i).toBeLessThan(yard!.i0)
+  })
+
+  it('keeps every charging hut clear of the consulting stands and farmers of neighbouring yards', () => {
+    // Yards of mixed sizes on a 3×3 grid, so huts meet stands and farmers across every kind of lane.
+    const counts = [2, 14, 5, 30, 1, 9, 20, 3, 7]
+    const squads = counts.map((_, s) => makeSquad({ id: `sq-${s}`, name: `Squad ${s}`, managerAgentId: `boss-${s}` }))
+    const streams = counts.flatMap((n, s) =>
+      Array.from({ length: n }, (_, k) => makeStream({ id: `ws-${s}-${k}`, squadId: `sq-${s}` }))
+    )
+    const agents = counts.map((_, s) => makeAgent({ id: `boss-${s}`, squadId: `sq-${s}`, agentTypeId: 'manager' }))
+    const { yards } = layoutFarm(farm({ squads, streams, agents }))
+    // Screen boxes [left, top, width, height] around the anchor: the largest style's (Nostalgic) sprites.
+    type Box = readonly [number, number, number, number]
+    const HUT: Box = [-64, -96, 128, 118]
+    const STAND: Box = [-58, -100, 116, 118]
+    const ROBOT: Box = [-22, -74, 44, 80]
+    const place = (i: number, j: number, [l, t, w, h]: Box) => {
+      const [x, y] = iso(i, j)
+      return { x0: x + l, y0: y + t, x1: x + l + w, y1: y + t + h }
+    }
+    const overlaps = (a: ReturnType<typeof place>, b: ReturnType<typeof place>) =>
+      a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+    for (const yard of yards) {
+      const hut = place(yard.dock.i, yard.dock.j, HUT)
+      for (const other of yards) {
+        expect(overlaps(hut, place(other.stand.i, other.stand.j, STAND))).toBe(false)
+        if (other !== yard && other.farmer)
+          expect(overlaps(hut, place(other.farmer.i, other.farmer.j, ROBOT))).toBe(false)
+      }
+    }
   })
 
   it('falls back to a manager-typed agent in the squad', () => {
@@ -310,9 +341,9 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.dock.robots.map((r) => r.agent.id)).toEqual(['a'])
     expect(yard!.dock.robots[0]).toMatchObject({ face: 'normal', i: yard!.dock.i, j: yard!.dock.j })
     expect(yard!.dock.overflow).toBe(4)
-    // One hut whatever the count, outside the back-right corner.
-    expect(yard!.dock.i).toBeGreaterThan(yard!.i0 + yard!.w)
-    expect(yard!.dock.j).toBeLessThan(yard!.j0 + 1)
+    // One hut whatever the count, out behind the back fence at the right end.
+    expect(yard!.dock.i).toBeGreaterThan(yard!.i0 + yard!.w - 1)
+    expect(yard!.dock.j).toBeLessThan(yard!.j0)
   })
 
   it('lists the consultant chats people started at the stand, with one on duty behind the counter', () => {

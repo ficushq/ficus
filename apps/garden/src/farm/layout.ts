@@ -291,8 +291,9 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       }
     })
 
-    // The charging hut sits outside the back-right corner, clear of the gate, the sign and the next yard's bench.
-    const dockAt = { i: i0 + w + 1.0, j: j0 + 0.45 }
+    // The charging hut sits out back, behind the fence at the right end. Not in the lane beside the yard:
+    // on screen that lane runs straight down, so the next yard's consulting stand would land under it.
+    const dockAt = { i: i0 + w + 0.1, j: j0 - 0.75 }
     const docked = members.filter(
       (agent) => agent.status === 'idle' && !halted.has(agent.id) && !drawn.has(agent.id) && isWorker(agent)
     )
