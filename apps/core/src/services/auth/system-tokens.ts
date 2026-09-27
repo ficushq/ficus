@@ -268,6 +268,7 @@ export async function reissuePlatformOrchestratorToken(): Promise<{ token: strin
       .where(
         and(
           eq(systemTokens.name, PLATFORM_ORCHESTRATOR_TOKEN_NAME),
+          eq(systemTokens.kind, 'manual'),
           isNull(systemTokens.revokedAt),
           ne(systemTokens.id, row.id)
         )

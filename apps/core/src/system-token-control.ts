@@ -47,9 +47,10 @@ export function parseSystemTokenControlRequest(
 
 /**
  * Why this process must not run, or null. The shipped bundle (`.js`) runs only
- * for root: it mints a privileged credential, and on a tenant host only root can
- * read the database URL anyway. The TypeScript source is ungated so tests and
- * dev checkouts can run it; artifacts ship no `src/`.
+ * for root. This is defence in depth, not the security boundary: the boundary is
+ * the database credential, which only root can read on a tenant host (anyone who
+ * has it could insert a token row directly). The TypeScript source is ungated so
+ * tests and dev checkouts can run it; artifacts ship no `src/`.
  */
 export function rootRefusal(entryPath: string, euid: number | undefined): string | null {
   if (entryPath.endsWith('.ts')) return null
