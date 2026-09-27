@@ -1,4 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin, ProxyOptions } from 'vite'
 
@@ -10,7 +12,7 @@ type Env = Record<string, string | undefined>
  * - Default: local Core on :3000 with the browser's own session cookie (sign
  *   in once on the web app; cookies ignore the port).
  * - `FICUS_GARDEN_BACKEND=<label>`: a backend from the CLI auth store
- *   (`FICUS_DEV_AUTH_STORE_PATH`), authenticated with its device token the
+ *   (the CLI's own path, or `FICUS_DEV_AUTH_STORE_PATH`), authenticated with its device token the
  *   way `dev:web` does for remote backends. Such backends are READ-ONLY
  *   unless `FICUS_GARDEN_ALLOW_WRITES=1`, so pointing the garden at a real
  *   instance can't approve, answer or message anything by accident.
@@ -28,9 +30,9 @@ export function resolveDevBackend(env: Env): DevBackend {
   if (!label) {
     return { label: 'local', target: trimSlash(env.FICUS_API_URL || 'http://localhost:3000'), writes: true }
   }
-  const storePath = env.FICUS_DEV_AUTH_STORE_PATH
-  if (!storePath || !existsSync(storePath)) {
-    throw new Error(`FICUS_GARDEN_BACKEND=${label} needs FICUS_DEV_AUTH_STORE_PATH pointing at the CLI auth store`)
+  const storePath = cliAuthStorePath(env)
+  if (!existsSync(storePath)) {
+    throw new Error(`FICUS_GARDEN_BACKEND=${label}: no CLI auth store at ${storePath} (set FICUS_DEV_AUTH_STORE_PATH)`)
   }
   const store = JSON.parse(readFileSync(storePath, 'utf8')) as {
     backends?: Record<string, { apiUrl?: unknown; password?: unknown }>
@@ -45,6 +47,13 @@ export function resolveDevBackend(env: Env): DevBackend {
     bearer: backend.password,
     writes: env.FICUS_GARDEN_ALLOW_WRITES === '1',
   }
+}
+
+/** Same resolution as the CLI (apps/cli/src/auth-store.ts): FICUS_AUTH_STORE, else ~/.tau/cli/auth.json. */
+export function cliAuthStorePath(env: Env): string {
+  const explicit = env.FICUS_DEV_AUTH_STORE_PATH || env.FICUS_AUTH_STORE
+  const path = explicit || join(homedir(), '.tau', 'cli', 'auth.json')
+  return path.startsWith('~/') ? join(homedir(), path.slice(2)) : path
 }
 
 /** The origin Core already trusts for browser WebSocket handshakes (cookie mode only). */
