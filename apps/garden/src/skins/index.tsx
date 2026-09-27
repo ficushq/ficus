@@ -2,12 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { nostalgicSkin } from './nostalgic'
 import { futuristSkin } from './futurist'
 import { blueprintSkin } from './blueprint'
+import { sketchbookSkin } from './sketchbook'
 import { useFuturistTheme } from './futurist/useFuturistTheme'
 import type { FarmSkin, SkinId } from './types'
 
 export type { FarmSkin, SkinId } from './types'
 
-export const SKINS: readonly FarmSkin[] = [nostalgicSkin, futuristSkin, blueprintSkin]
+export const SKINS: readonly FarmSkin[] = [nostalgicSkin, futuristSkin, blueprintSkin, sketchbookSkin]
 
 const STORAGE_KEY = 'ficus-garden:skin'
 

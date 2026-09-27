@@ -1,0 +1,229 @@
+/*
+ * Interface tokens for the Sketchbook style: graphite on cream graph paper,
+ * red pencil for what needs you, cards as white notes taped to the page and
+ * handwritten titles. Derived from three colours like the other line styles;
+ * surfaces are lighter than the page rather than darker.
+ */
+.g-skin-sketchbook {
+  --sk-bg: #f7f2e6;
+  --sk-fg: #3a3733;
+  --sk-accent: #d2452f;
+  /* The line kit's colours */
+  --ln-bg: var(--sk-bg);
+  --ln-fg: var(--sk-fg);
+  --ln-accent: var(--sk-accent);
+  --ln-letter: 'Caveat Variable', 'Bradley Hand', cursive;
+  --ln-letter-case: none;
+  --ln-letter-tracking: 0.02em;
+  /* Graph-paper rules, the green-pencil wash and ripe fruit */
+  --sk-grid: #8fbad6;
+  --sk-leaf: #9cc47f;
+  --sk-leaf-ink: #4d7a3c;
+  --sk-fruit: color-mix(in srgb, var(--sk-accent) 45%, var(--sk-bg));
+  --sk-note: #fffdf8;
+  --sk-tape: rgb(236 226 190 / 0.85);
+
+  color-scheme: light;
+
+  /* Brand palette names still exist for anything that reads them. */
+  --g-leaf: var(--sk-accent);
+  --g-terracotta: var(--sk-accent);
+  --g-moss: var(--sk-fg);
+  --g-sage: var(--sk-fg);
+  --g-linen: var(--sk-bg);
+  --g-soil: var(--sk-bg);
+
+  /* Ink and text */
+  --g-ink: color-mix(in srgb, var(--sk-fg) 55%, transparent);
+  --g-ink-soft: color-mix(in srgb, var(--sk-fg) 55%, var(--sk-bg));
+  --g-text: var(--sk-fg);
+  --g-text-soft: color-mix(in srgb, var(--sk-fg) 62%, var(--sk-bg));
+  --g-eyebrow: var(--sk-accent);
+
+  /* Surfaces: white notes on the cream page, pencilled edges */
+  --g-page: var(--sk-bg);
+  --g-grass: var(--sk-bg);
+  --g-card: var(--sk-note);
+  --g-card-alt: color-mix(in srgb, var(--sk-note) 70%, var(--sk-bg));
+  --g-paper: var(--sk-note);
+  --g-field: #fff;
+  --g-field-inset: inset 0 0 0 1px color-mix(in srgb, var(--sk-fg) 12%, transparent);
+  --g-rule: color-mix(in srgb, var(--sk-fg) 22%, transparent);
+  --g-panel-fill: color-mix(in srgb, var(--sk-note) 88%, transparent);
+  --g-button-fill: transparent;
+  --g-button-gloss: transparent;
+
+  /* Accents: outlined in red pencil, never filled solid */
+  --g-accent: var(--sk-accent);
+  --g-accent-fill: color-mix(in srgb, var(--sk-accent) 16%, transparent);
+  --g-on-accent: var(--sk-accent);
+  --g-danger: var(--sk-accent);
+  --g-danger-fill: transparent;
+  --g-on-danger: var(--sk-accent);
+  --g-highlight: var(--sk-accent);
+
+  /* Status tints */
+  --g-good-tint: color-mix(in srgb, var(--sk-fg) 12%, transparent);
+  --g-good-text: var(--sk-fg);
+  --g-warn-tint: color-mix(in srgb, var(--sk-accent) 16%, transparent);
+  --g-warn-text: var(--sk-accent);
+  --g-bad-tint: color-mix(in srgb, var(--sk-accent) 16%, transparent);
+  --g-bad-text: var(--sk-accent);
+  --g-quiet-tint: color-mix(in srgb, var(--sk-fg) 8%, transparent);
+
+  /* Shape: hairlines, square corners, flat paper shadows */
+  --g-border: 1px;
+  --g-border-thin: 1px;
+  --g-radius: 3px;
+  --g-radius-sm: 2px;
+  --g-radius-pill: 2px;
+  --g-lift: 0 0 0 1px transparent;
+  --g-lift-sm: 0 0 0 1px transparent;
+  --g-drop: 0 8px 20px -12px rgb(60 50 30 / 0.3);
+
+  /* Type: handwritten titles, plain body */
+  --g-font-display: 'Caveat Variable', 'Bradley Hand', cursive;
+  --g-font-body: 'Instrument Sans Variable', system-ui, sans-serif;
+  --g-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --g-display-weight: 650;
+  --g-display-transform: none;
+  --g-display-tracking: 0.01em;
+
+  /* ---- Everything else the interface reads, in three colours ---- */
+  --sk-line: color-mix(in srgb, var(--sk-fg) 28%, transparent);
+  --sk-line-strong: color-mix(in srgb, var(--sk-fg) 55%, transparent);
+  --sk-glass: var(--sk-note);
+  --sk-accent-wash: color-mix(in srgb, var(--sk-accent) 14%, transparent);
+
+  /* Text */
+  --g-placeholder: color-mix(in srgb, var(--sk-fg) 40%, var(--sk-bg));
+  --g-label-text: var(--sk-fg);
+  --g-label-outline: 0 0 3px var(--sk-bg), 0 0 6px var(--sk-bg);
+  --g-text-emboss: none;
+  --g-thought: color-mix(in srgb, var(--sk-fg) 55%, var(--sk-bg));
+  --g-alert-text: var(--sk-accent);
+  --g-danger-text: var(--sk-accent);
+  --g-caution-text: var(--sk-accent);
+
+  /* Surfaces */
+  --g-field-disabled: var(--sk-bg);
+  --g-rule-style: dashed;
+  --g-divider: var(--sk-line);
+  --g-mail-divider: var(--sk-line);
+  --g-quote-rule: var(--sk-line-strong);
+  --g-option-border: var(--sk-line);
+  --g-quiet-border: var(--sk-line);
+  --g-plank-fill: var(--sk-glass);
+  --g-decision-fill: var(--sk-glass);
+  --g-tool-fill: color-mix(in srgb, var(--sk-note) 92%, transparent);
+  --g-counter-gloss: none;
+  --g-avatar-fill: var(--sk-bg);
+  --g-quiet-fill: transparent;
+  --g-row-hover: color-mix(in srgb, var(--sk-fg) 7%, transparent);
+  --g-mail-hover: color-mix(in srgb, var(--sk-fg) 7%, transparent);
+
+  /* Accents */
+  --g-accent-soft: var(--sk-fg);
+  --g-highlight-strong: var(--sk-accent);
+  --g-highlight-soft: var(--sk-accent);
+  --g-badge-fill: var(--sk-accent);
+  --g-harvest-fill: var(--sk-accent-wash);
+  --g-prune-fill: transparent;
+  --g-follow-fill: color-mix(in srgb, var(--sk-fg) 12%, transparent);
+
+  /* Status tints */
+  --g-confirm-tint: var(--sk-accent-wash);
+  --g-danger-tint: var(--sk-accent-wash);
+  --g-danger-tint-strong: color-mix(in srgb, var(--sk-accent) 24%, transparent);
+  --g-caution-tint: var(--sk-accent-wash);
+
+  /* Mail dots: the accent for what needs you, lines for the rest */
+  --g-mail-dot-default: var(--sk-fg);
+  --g-mail-dot-halted: var(--sk-accent);
+  --g-mail-dot-questions: var(--sk-accent);
+  --g-mail-dot-assistant: var(--sk-fg);
+  --g-mail-dot-harvest: var(--sk-accent);
+  --g-mail-dot-weeds: var(--sk-accent);
+  --g-mail-dot-other: var(--sk-line-strong);
+
+  /* HUD counters */
+  --g-counter-mail: var(--sk-accent-wash);
+  --g-counter-growing: color-mix(in srgb, var(--sk-fg) 12%, transparent);
+  --g-counter-harvested: color-mix(in srgb, var(--sk-fg) 12%, transparent);
+
+  /* Chat */
+  --g-chat-paper: var(--sk-glass);
+  --g-chat-linen: var(--sk-bg);
+  --g-chat-line: var(--sk-line);
+  --g-chat-danger: var(--sk-accent);
+  --g-chat-backdrop: var(--sk-bg);
+  --g-chat-composer-fill: var(--sk-bg);
+  --g-chat-intro-fill: transparent;
+  --g-chat-mail-fill: var(--sk-glass);
+  --g-bubble-human: var(--sk-accent-wash);
+  --g-bubble-human-failed: color-mix(in srgb, var(--sk-accent) 24%, transparent);
+  --g-on-bubble-human: var(--sk-fg);
+  --g-bubble-human-link: var(--sk-accent);
+  --g-bubble-human-note: color-mix(in srgb, var(--sk-fg) 70%, transparent);
+  --g-bubble-agent: transparent;
+  --g-bubble-system: transparent;
+  --g-code-inline-bg: color-mix(in srgb, var(--sk-fg) 10%, transparent);
+  --g-code-bg: color-mix(in srgb, var(--sk-bg) 92%, var(--sk-fg));
+  --g-code-bg-failed: color-mix(in srgb, var(--sk-accent) 18%, var(--sk-bg));
+  --g-code-text: var(--sk-fg);
+  --g-tag-interrupt: var(--sk-accent-wash);
+  --g-tag-follow: color-mix(in srgb, var(--sk-fg) 12%, transparent);
+  --g-ask-fill: var(--sk-accent-wash);
+  --g-delivery-divider: var(--sk-line);
+
+  /* Icons: lines in the foreground, the accent where it matters */
+  --g-icon-paper: transparent;
+  --g-icon-accent: var(--sk-accent);
+  --g-icon-accent-soft: var(--sk-fg);
+  --g-icon-warm: var(--sk-accent);
+  --g-icon-wood: transparent;
+  --g-icon-gold: var(--sk-accent);
+  --g-icon-seed: var(--sk-accent);
+  --g-icon-face: transparent;
+  --g-icon-detail: var(--sk-fg);
+  --g-icon-visor: var(--sk-bg);
+  --g-icon-glow: var(--sk-accent);
+
+  /* Shape */
+  --g-border-mid: 1px;
+  --g-border-hair: 1px;
+  --g-focus-width: 1px;
+  --g-radius-lg: 2px;
+  --g-radius-md: 2px;
+  --g-radius-tile: 2px;
+  --g-radius-xs: 2px;
+  --g-radius-inline: 2px;
+  --g-radius-tail: 0;
+  --g-radius-round: 50%;
+  --g-lift-md: 0 0 0 1px transparent;
+  --g-lift-pressed: 0 0 0 1px transparent;
+  --g-press: 0 0;
+  --g-press-sm: 0 0;
+  --g-card-shadow: 0 0 0 1px var(--sk-line-strong), 2px 10px 22px -14px rgb(60 50 30 / 0.35);
+  --g-window-shadow: 0 0 0 1px var(--sk-line-strong), 2px 16px 36px -18px rgb(60 50 30 / 0.4);
+  --g-sheet-shadow: 0 -1px 0 var(--sk-line);
+
+  /* Type */
+  --g-display-weight-soft: 600;
+  --g-on-badge: var(--sk-bg);
+}
+
+/*
+ * Handwriting runs small: titles a size up. Cards are notes with a strip of
+ * tape across the top, painted into the background so it stays put while the
+ * card scrolls.
+ */
+.g-skin-sketchbook .g-card-title {
+  font-size: 25px;
+}
+
+.g-skin-sketchbook .g-card {
+  background:
+    linear-gradient(var(--sk-tape), var(--sk-tape)) top center / 88px 14px no-repeat,
+    var(--g-card);
+}

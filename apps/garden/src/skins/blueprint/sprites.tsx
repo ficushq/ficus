@@ -5,6 +5,7 @@ import type { DecorPlacement, FarmLayout, PlotLayout, RobotFace, RobotPlacement,
 import type { YardRect } from '../types'
 import { at, diamond, gridLines, poly, type TilePoint } from '../line/draw'
 import { LineDefs } from '../line/sprites'
+import { Circle, Ellipse, Path, Rect, useDrafting } from './drafting'
 
 /*
  * The Blueprint style: the farm as a drafting sheet. Pale lines on cyanotype
@@ -16,7 +17,8 @@ import { LineDefs } from '../line/sprites'
 const FG = 'var(--ln-fg)'
 const BG = 'var(--ln-bg)'
 const ACCENT = 'var(--ln-accent)'
-const MONO = 'var(--g-font-mono)'
+/** The lettering face: Blueprint's mono unless a style sets its own hand. */
+const LETTER = 'var(--ln-letter, var(--g-font-mono))'
 
 /** How opaque a drawn face is: solid enough to read as a surface, faint enough to feel like paper. */
 const FACE = 0.9
@@ -55,20 +57,23 @@ function Lettering({
   opacity?: number
   children: ReactNode
 }) {
+  const { letterScale } = useDrafting()
   return (
     <text
       x={x}
       y={y}
       textAnchor={anchor}
-      fontFamily={MONO}
-      fontSize={size}
-      letterSpacing="0.14em"
+      fontFamily={LETTER}
+      fontSize={size * letterScale}
       fill={fill}
       fillOpacity={opacity}
       stroke={BG}
       strokeWidth={3}
       paintOrder="stroke"
-      style={{ textTransform: 'uppercase' }}
+      style={{
+        textTransform: 'var(--ln-letter-case, uppercase)' as 'uppercase',
+        letterSpacing: 'var(--ln-letter-tracking, 0.14em)',
+      }}
     >
       {children}
     </text>
@@ -131,7 +136,7 @@ function Dimension({ from, to, di, dj }: { from: TilePoint; to: TilePoint; di: n
   const length = Math.hypot(to[0] - from[0], to[1] - from[1])
   return (
     <g aria-hidden="true">
-      <path
+      <Path
         d={`${ext(from, a)} ${ext(to, b)} M${ax} ${ay} L${bx} ${by} ${tick(ax, ay)} ${tick(bx, by)}`}
         stroke={FG}
         strokeOpacity={0.5}
@@ -144,11 +149,12 @@ function Dimension({ from, to, di, dj }: { from: TilePoint; to: TilePoint; di: n
   )
 }
 
-/** A yard: a drafted boundary, a dash-dot setback line and dimensions along the two near edges. */
+/** A yard: a drafted boundary and, on technical drawings, a dash-dot setback line and dimensions along the near edges. */
 export function BlueprintYard({ i0, j0, w, h }: YardRect) {
+  const { technical } = useDrafting()
   return (
     <g>
-      <path
+      <Path
         d={diamond(i0, j0, w, h)}
         fill={FG}
         fillOpacity={0.035}
@@ -156,9 +162,19 @@ export function BlueprintYard({ i0, j0, w, h }: YardRect) {
         strokeOpacity={0.85}
         strokeWidth={1.4}
       />
-      <path d={diamond(i0, j0, w, h, 0.22)} fill="none" stroke={FG} strokeOpacity={0.3} strokeDasharray="10 3 2 3" />
-      <Dimension from={[i0, j0 + h]} to={[i0 + w, j0 + h]} di={0} dj={0.7} />
-      <Dimension from={[i0 + w, j0]} to={[i0 + w, j0 + h]} di={0.7} dj={0} />
+      {technical && (
+        <>
+          <Path
+            d={diamond(i0, j0, w, h, 0.22)}
+            fill="none"
+            stroke={FG}
+            strokeOpacity={0.3}
+            strokeDasharray="10 3 2 3"
+          />
+          <Dimension from={[i0, j0 + h]} to={[i0 + w, j0 + h]} di={0} dj={0.7} />
+          <Dimension from={[i0 + w, j0]} to={[i0 + w, j0 + h]} di={0.7} dj={0} />
+        </>
+      )}
     </g>
   )
 }
@@ -173,15 +189,15 @@ export function BlueprintSign({ name, flag }: { name: string; flag: boolean }) {
   const width = label.length * 8.2
   return (
     <g>
-      <circle r={2} fill={FG} />
-      <path d={`M0 0 L-10 -14 H${-14 - width}`} fill="none" stroke={FG} strokeOpacity={0.7} />
+      <Circle r={2} fill={FG} />
+      <Path d={`M0 0 L-10 -14 H${-14 - width}`} fill="none" stroke={FG} strokeOpacity={0.7} />
       <Lettering x={-13} y={-18} size={11} anchor="end" opacity={1}>
         {label}
       </Lettering>
       {flag && (
         <g transform={`translate(${-26 - width} -18)`} className="ln-pulse">
-          <path d="M0 -8 L8 6 H-8 Z" fill={BG} stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />
-          <text y={4} textAnchor="middle" fontFamily={MONO} fontSize={9} fontWeight={700} fill={ACCENT}>
+          <Path d="M0 -8 L8 6 H-8 Z" fill={BG} stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />
+          <text y={4} textAnchor="middle" fontFamily={LETTER} fontSize={9} fontWeight={700} fill={ACCENT}>
             !
           </text>
         </g>
@@ -193,7 +209,7 @@ export function BlueprintSign({ name, flag }: { name: string; flag: boolean }) {
 /** A plant's bed: a thin inset tile, hatched in highlighter when selected. */
 export function BlueprintPlot({ i, j, selected }: { i: number; j: number; selected: boolean }) {
   return (
-    <path
+    <Path
       d={diamond(i, j, 1, 1, 0.14)}
       fill={selected ? 'url(#bp-hatch)' : 'none'}
       stroke={selected ? ACCENT : FG}
@@ -215,41 +231,42 @@ function leaf(y: number, dir: 1 | -1, s: number): string {
 
 /** Botanical line drawings, one per state. */
 export function BlueprintPlant({ plot }: { plot: PlotLayout }) {
+  const { leafWash, leafInk, fruitWash } = useDrafting()
   const s = plot.state
-  const stroke = plot.badge ? ACCENT : FG
+  const stroke = plot.badge ? ACCENT : (leafInk ?? FG)
   if (s === 'queued')
     return (
       <g>
-        <ellipse rx={8} ry={3.5} fill="none" stroke={FG} strokeOpacity={0.5} strokeDasharray="2 2" />
-        <path d="M0 0 V-16 M0 -16 H9 V-10 H0" fill={BG} stroke={FG} />
-        <path d="M2.5 -13 H6.5" stroke={FG} strokeOpacity={0.6} />
+        <Ellipse rx={8} ry={3.5} fill="none" stroke={FG} strokeOpacity={0.5} strokeDasharray="2 2" />
+        <Path d="M0 0 V-16 M0 -16 H9 V-10 H0" fill={BG} stroke={FG} />
+        <Path d="M2.5 -13 H6.5" stroke={FG} strokeOpacity={0.6} />
       </g>
     )
   if (s === 'idle' || s === 'failed')
     return (
       <g opacity={s === 'idle' ? 0.5 : 0.85}>
-        <path
+        <Path
           d="M0 0 Q1 -12 9 -13 Q12 -12 12 -8"
           fill="none"
           stroke={FG}
           strokeDasharray={s === 'failed' ? '3 2' : undefined}
         />
-        <path d={leaf(-6, -1, 7)} fill="none" stroke={FG} transform="rotate(25 0 -6)" />
-        {s === 'failed' && <path d="M8 -26 L16 -18 M16 -26 L8 -18" stroke={ACCENT} strokeWidth={1.6} />}
+        <Path d={leaf(-6, -1, 7)} fill="none" stroke={FG} transform="rotate(25 0 -6)" />
+        {s === 'failed' && <Path d="M8 -26 L16 -18 M16 -26 L8 -18" stroke={ACCENT} strokeWidth={1.6} />}
       </g>
     )
   if (s === 'paused')
     return (
       <g>
-        <path d={`M0 0 V-14 ${leaf(-8, 1, 6)} ${leaf(-11, -1, 5)}`} fill="none" stroke={FG} strokeOpacity={0.8} />
-        <path
+        <Path d={`M0 0 V-14 ${leaf(-8, 1, 6)} ${leaf(-11, -1, 5)}`} fill="none" stroke={FG} strokeOpacity={0.8} />
+        <Path
           d="M-12 0 V-16 A12 12 0 0 1 12 -16 V0 M-2 -28 H2"
           fill="none"
           stroke={FG}
           strokeOpacity={0.75}
           strokeDasharray="4 2"
         />
-        <path d="M-15 0 H15" stroke={FG} strokeOpacity={0.6} />
+        <Path d="M-15 0 H15" stroke={FG} strokeOpacity={0.6} />
       </g>
     )
   const tall = s === 'review' ? 30 : s === 'waiting' ? 15 : 24
@@ -261,13 +278,14 @@ export function BlueprintPlant({ plot }: { plot: PlotLayout }) {
   }).join(' ')
   return (
     <g className={s === 'growing' || s === 'question' ? 'ln-sway' : undefined}>
-      <path
+      <Path
         d={`M0 0 V${-tall} ${leaves}`}
-        fill="none"
+        fill={leafWash ?? 'none'}
+        fillOpacity={0.55}
         stroke={stroke}
         strokeDasharray={s === 'waiting' ? '3 2' : undefined}
       />
-      {s !== 'review' && <circle cy={-tall - 2} r={2} fill={BG} stroke={stroke} />}
+      {s !== 'review' && <Circle cy={-tall - 2} r={2} fill={BG} stroke={stroke} />}
       {s === 'review' &&
         [
           [-8, -13],
@@ -275,13 +293,13 @@ export function BlueprintPlant({ plot }: { plot: PlotLayout }) {
           [0, -tall - 4],
         ].map(([x, y]) => (
           <g key={`${x}${y}`}>
-            <circle cx={x} cy={y} r={4} fill={BG} stroke={ACCENT} strokeWidth={1.4} />
-            <path d={`M${x! - 1.8} ${y! - 1.2} q1 -1.4 2.6 -1.2`} fill="none" stroke={ACCENT} strokeOpacity={0.8} />
+            <Circle cx={x} cy={y} r={4} fill={fruitWash ?? BG} stroke={ACCENT} strokeWidth={1.4} />
+            <Path d={`M${x! - 1.8} ${y! - 1.2} q1 -1.4 2.6 -1.2`} fill="none" stroke={ACCENT} strokeOpacity={0.8} />
           </g>
         ))}
-      {s === 'growing' && <circle cy={-tall - 2} r={1.2} fill={ACCENT} className="ln-pulse" />}
+      {s === 'growing' && <Circle cy={-tall - 2} r={1.2} fill={ACCENT} className="ln-pulse" />}
       {s === 'blocked' && (
-        <path d={`M-10 ${-tall + 2} L10 -4 M10 ${-tall + 2} L-10 -4`} stroke={ACCENT} strokeWidth={1.6} />
+        <Path d={`M-10 ${-tall + 2} L10 -4 M10 ${-tall + 2} L-10 -4`} stroke={ACCENT} strokeWidth={1.6} />
       )}
     </g>
   )
@@ -290,17 +308,17 @@ export function BlueprintPlant({ plot }: { plot: PlotLayout }) {
 function Eyes({ face }: { face: RobotFace }) {
   switch (face) {
     case 'happy':
-      return <path d="M-6.5 -28.5 q2.5 -3.5 5 0 M1.5 -28.5 q2.5 -3.5 5 0" fill="none" stroke={FG} strokeWidth={1.3} />
+      return <Path d="M-6.5 -28.5 q2.5 -3.5 5 0 M1.5 -28.5 q2.5 -3.5 5 0" fill="none" stroke={FG} strokeWidth={1.3} />
     case 'question':
       return (
         <g fill={ACCENT}>
-          <circle cx={-4} cy={-29.5} r={1.8} />
-          <circle cx={4} cy={-30.5} r={2.4} />
+          <Circle cx={-4} cy={-29.5} r={1.8} />
+          <Circle cx={4} cy={-30.5} r={2.4} />
         </g>
       )
     case 'error':
       return (
-        <path
+        <Path
           d="M-6 -32 l3.5 3.5 m0 -3.5 l-3.5 3.5 M2.5 -32 l3.5 3.5 m0 -3.5 l-3.5 3.5"
           stroke={ACCENT}
           strokeWidth={1.4}
@@ -308,12 +326,12 @@ function Eyes({ face }: { face: RobotFace }) {
         />
       )
     case 'sleepy':
-      return <path d="M-6 -29.5 H-2 M2 -29.5 H6" stroke={FG} strokeWidth={1.3} />
+      return <Path d="M-6 -29.5 H-2 M2 -29.5 H6" stroke={FG} strokeWidth={1.3} />
     case 'normal':
       return (
         <g fill={FG}>
-          <circle cx={-4} cy={-29.5} r={1.7} />
-          <circle cx={4} cy={-29.5} r={1.7} />
+          <Circle cx={-4} cy={-29.5} r={1.7} />
+          <Circle cx={4} cy={-29.5} r={1.7} />
         </g>
       )
   }
@@ -326,36 +344,36 @@ function Kit({ role }: { role: RobotRole }) {
     case 'manager':
       return (
         <g>
-          <path d="M-9 -38 V-45 Q0 -50 9 -45 V-38" {...ink} />
-          <path d="M-9 -41 H9" stroke={FG} strokeOpacity={0.6} />
-          <ellipse cy={-38} rx={18} ry={3.5} {...ink} />
+          <Path d="M-9 -38 V-45 Q0 -50 9 -45 V-38" {...ink} />
+          <Path d="M-9 -41 H9" stroke={FG} strokeOpacity={0.6} />
+          <Ellipse cy={-38} rx={18} ry={3.5} {...ink} />
         </g>
       )
     case 'worker':
       return (
         <g>
-          <path d="M0 -44 V-49" stroke={FG} />
-          <circle cy={-50.5} r={1.8} {...ink} />
-          <path d="M-11.5 -36 Q-11.5 -45 0 -45 Q11.5 -45 11.5 -36 Z" {...ink} />
-          <path d="M8 -36.5 L19 -35 L11.5 -34" {...ink} />
+          <Path d="M0 -44 V-49" stroke={FG} />
+          <Circle cy={-50.5} r={1.8} {...ink} />
+          <Path d="M-11.5 -36 Q-11.5 -45 0 -45 Q11.5 -45 11.5 -36 Z" {...ink} />
+          <Path d="M8 -36.5 L19 -35 L11.5 -34" {...ink} />
         </g>
       )
     case 'consultant':
       return (
         <g>
-          <path d="M0 -38 V-44" stroke={FG} />
-          <circle cy={-45.5} r={1.8} {...ink} />
-          <path d="M0 -19 L-5.5 -22 V-16 Z M0 -19 L5.5 -22 V-16 Z" {...ink} />
+          <Path d="M0 -38 V-44" stroke={FG} />
+          <Circle cy={-45.5} r={1.8} {...ink} />
+          <Path d="M0 -19 L-5.5 -22 V-16 Z M0 -19 L5.5 -22 V-16 Z" {...ink} />
         </g>
       )
     case 'assistant':
       return (
         <g>
-          <path d="M-13.5 -30 A13.5 13.5 0 0 1 13.5 -30" fill="none" stroke={FG} strokeWidth={1.4} />
-          <rect x={-15.5} y={-33} width={4} height={8} rx={1.5} {...ink} />
-          <rect x={11.5} y={-33} width={4} height={8} rx={1.5} {...ink} />
-          <path d="M-13.5 -25 Q-12 -21 -6 -22" fill="none" stroke={FG} />
-          <circle cx={-5.5} cy={-22} r={1.3} fill={ACCENT} />
+          <Path d="M-13.5 -30 A13.5 13.5 0 0 1 13.5 -30" fill="none" stroke={FG} strokeWidth={1.4} />
+          <Rect x={-15.5} y={-33} width={4} height={8} rx={1.5} {...ink} />
+          <Rect x={11.5} y={-33} width={4} height={8} rx={1.5} {...ink} />
+          <Path d="M-13.5 -25 Q-12 -21 -6 -22" fill="none" stroke={FG} />
+          <Circle cx={-5.5} cy={-22} r={1.3} fill={ACCENT} />
         </g>
       )
   }
@@ -367,16 +385,16 @@ function Figure({ role, face, ground = true }: { role: RobotRole; face: RobotFac
   const working = face === 'happy'
   return (
     <g opacity={face === 'sleepy' ? 0.6 : 1}>
-      {ground && <ellipse rx={12} ry={4} fill="none" stroke={FG} strokeOpacity={0.3} strokeDasharray="2 2" />}
-      <path d="M-8 -17 L-13 -11 M8 -17 L13 -11" stroke={FG} />
-      <circle cx={-13.5} cy={-10.5} r={1.6} {...ink} />
-      <circle cx={13.5} cy={-10.5} r={1.6} {...ink} />
-      <rect x={-11} y={-7} width={22} height={7} rx={3.5} {...ink} />
+      {ground && <Ellipse rx={12} ry={4} fill="none" stroke={FG} strokeOpacity={0.3} strokeDasharray="2 2" />}
+      <Path d="M-8 -17 L-13 -11 M8 -17 L13 -11" stroke={FG} />
+      <Circle cx={-13.5} cy={-10.5} r={1.6} {...ink} />
+      <Circle cx={13.5} cy={-10.5} r={1.6} {...ink} />
+      <Rect x={-11} y={-7} width={22} height={7} rx={3.5} {...ink} />
       {[-6.5, 0, 6.5].map((x) => (
-        <circle key={x} cx={x} cy={-3.5} r={1.8} fill="none" stroke={FG} strokeOpacity={0.7} />
+        <Circle key={x} cx={x} cy={-3.5} r={1.8} fill="none" stroke={FG} strokeOpacity={0.7} />
       ))}
-      <rect x={-8} y={-20} width={16} height={13} rx={2} {...ink} />
-      <circle
+      <Rect x={-8} y={-20} width={16} height={13} rx={2} {...ink} />
+      <Circle
         cy={-13.5}
         r={2}
         fill={working ? ACCENT : 'none'}
@@ -384,17 +402,17 @@ function Figure({ role, face, ground = true }: { role: RobotRole; face: RobotFac
         strokeOpacity={working ? 1 : 0.6}
         className={working ? 'ln-pulse' : undefined}
       />
-      <rect x={-12} y={-38} width={24} height={17} rx={5} {...ink} />
-      <rect x={-9} y={-35} width={18} height={11} rx={3} fill="none" stroke={FG} strokeOpacity={0.55} />
+      <Rect x={-12} y={-38} width={24} height={17} rx={5} {...ink} />
+      <Rect x={-9} y={-35} width={18} height={11} rx={3} fill="none" stroke={FG} strokeOpacity={0.55} />
       <Eyes face={face} />
       <Kit role={role} />
       {face === 'question' && (
-        <text x={16} y={-40} fontFamily={MONO} fontSize={11} fontWeight={700} fill={ACCENT} className="ln-blink">
+        <text x={16} y={-40} fontFamily={LETTER} fontSize={11} fontWeight={700} fill={ACCENT} className="ln-blink">
           ?
         </text>
       )}
       {face === 'sleepy' && (
-        <text x={14} y={-40} fontFamily={MONO} fontSize={9} fill={FG}>
+        <text x={14} y={-40} fontFamily={LETTER} fontSize={9} fill={FG}>
           z
         </text>
       )}
@@ -409,10 +427,10 @@ export function BlueprintRobot({ placement, extra }: { placement: RobotPlacement
       <Figure role={role} face={face} />
       {helpers > 0 && (
         <g transform="translate(20 -36)" className="ln-float">
-          <path d="M-5 -4 H5 M0 -4 V-1.5" stroke={FG} />
-          <circle r={2.6} fill={BG} stroke={FG} />
+          <Path d="M-5 -4 H5 M0 -4 V-1.5" stroke={FG} />
+          <Circle r={2.6} fill={BG} stroke={FG} />
           {helpers > 1 && (
-            <text x={5} y={3} fontFamily={MONO} fontSize={8} fill={FG}>
+            <text x={5} y={3} fontFamily={LETTER} fontSize={8} fill={FG}>
               ×{helpers}
             </text>
           )}
@@ -433,12 +451,13 @@ export function BlueprintAvatar({ role, face }: { agent: Agent; role: RobotRole;
 
 /* ---- Buildings: faces filled with paper, hidden edges dashed ---- */
 
-/** Filled faces, then the edges behind them as dashed hidden lines. */
+/** Filled faces, the shaded one shaded, then (on technical drawings) the edges behind them as dashed hidden lines. */
 function Solid({ faces, hidden, lit }: { faces: string[]; hidden?: string; lit?: boolean }) {
+  const { technical, shade } = useDrafting()
   return (
     <g>
       {faces.map((d, k) => (
-        <path
+        <Path
           key={k}
           d={d}
           fill={BG}
@@ -448,7 +467,9 @@ function Solid({ faces, hidden, lit }: { faces: string[]; hidden?: string; lit?:
           strokeLinejoin="round"
         />
       ))}
-      {hidden && <path d={hidden} fill="none" stroke={FG} strokeOpacity={0.3} strokeDasharray="3 3" />}
+      {/* With light from the upper left, the second face of a solid (its right-hand wall) is in shade. */}
+      {shade && faces[1] && <Path d={faces[1]} fill={shade} stroke="none" />}
+      {technical && hidden && <Path d={hidden} fill="none" stroke={FG} strokeOpacity={0.3} strokeDasharray="3 3" />}
     </g>
   )
 }
@@ -560,16 +581,16 @@ export function BlueprintFarmhouse() {
       <Solid faces={chimney.faces} />
       <Solid faces={house.walls} hidden={house.hidden} />
       <Solid faces={[house.roof]} />
-      <path d={`${onLeft(e, a + 0.2, a + 0.55, 14, 26)} ${onLeft(e, b - 0.55, b - 0.2, 14, 26)}`} {...detail} />
-      <path
+      <Path d={`${onLeft(e, a + 0.2, a + 0.55, 14, 26)} ${onLeft(e, b - 0.55, b - 0.2, 14, 26)}`} {...detail} />
+      <Path
         d={`M${at(a + 0.375, e, 14)} L${at(a + 0.375, e, 26)} M${at(b - 0.375, e, 14)} L${at(b - 0.375, e, 26)}`}
         {...detail}
       />
-      <path d={onLeft(e, -0.18, 0.18, 4, 24)} {...detail} />
-      <path d={`${onRight(b, -0.45, -0.1, 14, 26)} ${onRight(b, 0.1, 0.45, 14, 26)}`} {...detail} />
-      <path d={onRight(b, -0.12, 0.12, 40, 50)} {...detail} />
+      <Path d={onLeft(e, -0.18, 0.18, 4, 24)} {...detail} />
+      <Path d={`${onRight(b, -0.45, -0.1, 14, 26)} ${onRight(b, 0.1, 0.45, 14, 26)}`} {...detail} />
+      <Path d={onRight(b, -0.12, 0.12, 40, 50)} {...detail} />
       <Solid faces={porch.faces} />
-      <path
+      <Path
         d={`M${at(a + 0.2, e + 0.45, 4)} L${at(a + 0.2, e + 0.45, 26)} M${at(b - 0.2, e + 0.45, 4)} L${at(b - 0.2, e + 0.45, 26)}`}
         stroke={FG}
         strokeOpacity={0.85}
@@ -597,9 +618,9 @@ export function BlueprintSeedShed() {
       <Solid faces={[shed.back]} />
       <Solid faces={shed.walls} hidden={shed.hidden} />
       <Solid faces={[shed.roof]} />
-      <path d={`${onRight(b, -0.3, 0.3, 0, 16)} M${at(b, 0, 0)} L${at(b, 0, 16)}`} {...detail} />
-      <path d={onLeft(e, -0.3, 0.1, 8, 16)} {...detail} />
-      <path d={`M${at(-0.1, e, 10)} L${at(-0.1, e, 14)} M${at(-0.16, e, 12)} L${at(-0.04, e, 12)}`} {...detail} />
+      <Path d={`${onRight(b, -0.3, 0.3, 0, 16)} M${at(b, 0, 0)} L${at(b, 0, 16)}`} {...detail} />
+      <Path d={onLeft(e, -0.3, 0.1, 8, 16)} {...detail} />
+      <Path d={`M${at(-0.1, e, 10)} L${at(-0.1, e, 14)} M${at(-0.16, e, 12)} L${at(-0.04, e, 12)}`} {...detail} />
       <Title below={[b, e]} text="Seed shed" />
     </g>
   )
@@ -610,14 +631,14 @@ export function BlueprintMailbox({ count }: { count: number }) {
   const [fx, fy] = iso(0.2, 0.02)
   return (
     <g>
-      <path d="M0 0 V-22" stroke={FG} strokeWidth={1.6} />
+      <Path d="M0 0 V-22" stroke={FG} strokeWidth={1.6} />
       <Solid faces={box.faces} hidden={box.hidden} lit={count > 0} />
       {count > 0 ? (
         <g className="ln-pulse">
-          <path d={`M${fx} ${fy - 24} V${fy - 44} H${fx + 12} V${fy - 37} H${fx}`} fill={ACCENT} stroke={ACCENT} />
+          <Path d={`M${fx} ${fy - 24} V${fy - 44} H${fx + 12} V${fy - 37} H${fx}`} fill={ACCENT} stroke={ACCENT} />
         </g>
       ) : (
-        <path d={`M${fx} ${fy - 26} H${fx + 14} V${fy - 30} H${fx}`} fill="none" stroke={FG} strokeOpacity={0.7} />
+        <Path d={`M${fx} ${fy - 26} H${fx + 14} V${fy - 30} H${fx}`} fill="none" stroke={FG} strokeOpacity={0.7} />
       )}
       {/* Beside the post rather than under it: a neighbouring stand often covers the ground below. */}
       <Lettering x={fx + 16} y={fy - 12} anchor="start" fill={count ? ACCENT : FG} opacity={count ? 1 : 0.85}>
@@ -633,7 +654,7 @@ export function BlueprintCrates({ count }: { count: number }) {
     return (
       <g key={`${i}${j}${z}`}>
         <Solid faces={b.faces} />
-        <path
+        <Path
           d={`M${at(i - 0.17, j + 0.17, z + 6)} L${at(i + 0.17, j + 0.17, z + 6)} L${at(i + 0.17, j - 0.17, z + 6)}`}
           {...detail}
         />
@@ -654,8 +675,8 @@ export function BlueprintCompost({ count }: { count: number }) {
   const mound = 'M-24 0 Q-16 -18 0 -18 Q16 -18 24 0 Q0 8 -24 0 Z'
   return (
     <g>
-      <path d={mound} fill={BG} fillOpacity={FACE} stroke={FG} strokeOpacity={0.85} />
-      <path d={mound} fill="url(#bp-hatch-ink)" />
+      <Path d={mound} fill={BG} fillOpacity={FACE} stroke={FG} strokeOpacity={0.85} />
+      <Path d={mound} fill="url(#bp-hatch-ink)" />
       <Title below={[0.3, 0.3]} text="Compost" count={count} />
     </g>
   )
@@ -665,8 +686,8 @@ export function BlueprintCompost({ count }: { count: number }) {
 function Head({ face }: { face: RobotFace }) {
   return (
     <g>
-      <rect x={-12} y={-38} width={24} height={17} rx={5} fill={BG} stroke={FG} />
-      <rect x={-9} y={-35} width={18} height={11} rx={3} fill="none" stroke={FG} strokeOpacity={0.55} />
+      <Rect x={-12} y={-38} width={24} height={17} rx={5} fill={BG} stroke={FG} />
+      <Rect x={-9} y={-35} width={18} height={11} rx={3} fill="none" stroke={FG} strokeOpacity={0.55} />
       <Eyes face={face} />
     </g>
   )
@@ -712,7 +733,7 @@ export function BlueprintHut({ count, peek }: { count: number; peek?: RobotPlace
         ]}
         hidden={`M${at(a, c, 0)} L${at(b, c, 0)} M${at(a, c, 0)} L${at(a, e, 0)} M${at(a, c, 0)} L${at(a, c, hi)}`}
       />
-      <path
+      <Path
         d={poly([
           roofAt(a + 0.08, c + 0.08),
           roofAt(b - 0.08, c + 0.08),
@@ -723,15 +744,15 @@ export function BlueprintHut({ count, peek }: { count: number; peek?: RobotPlace
         fillOpacity={0.1}
         stroke="none"
       />
-      <path d={panels} fill="none" stroke={FG} strokeOpacity={0.6} />
-      <path d={onLeft(e, -0.17, 0.17, 0, 12)} fill={BG} stroke={FG} strokeOpacity={0.8} />
+      <Path d={panels} fill="none" stroke={FG} strokeOpacity={0.6} />
+      <Path d={onLeft(e, -0.17, 0.17, 0, 12)} fill={BG} stroke={FG} strokeOpacity={0.8} />
       {peek && (
         <g transform={`translate(${dx} ${dy + 7}) scale(0.42)`}>
           <Head face={peek.face} />
         </g>
       )}
-      <path d={`M${at(b, 0.1, 4)} Q${px - 4} ${py + 2} ${px} ${py - 4}`} fill="none" stroke={FG} strokeOpacity={0.7} />
-      <rect x={px - 3} y={py - 10} width={6} height={10} fill={BG} stroke={FG} strokeOpacity={0.8} />
+      <Path d={`M${at(b, 0.1, 4)} Q${px - 4} ${py + 2} ${px} ${py - 4}`} fill="none" stroke={FG} strokeOpacity={0.7} />
+      <Rect x={px - 3} y={py - 10} width={6} height={10} fill={BG} stroke={FG} strokeOpacity={0.8} />
       <Title below={[b, e]} text="Charging" count={count} />
     </g>
   )
@@ -754,14 +775,14 @@ export function BlueprintStand({ count, host }: { count: number; host?: RobotPla
   const stripes = [1, 2, 3, 4].map((k) => `M${at(f + k * 0.2, -0.4, 56)} L${at(f + k * 0.2, 0.3, 50)}`).join(' ')
   return (
     <g>
-      <path d={`${post(a, -0.35, 0)} ${post(b, -0.35, 0)}`} stroke={FG} strokeOpacity={0.5} />
+      <Path d={`${post(a, -0.35, 0)} ${post(b, -0.35, 0)}`} stroke={FG} strokeOpacity={0.5} />
       {host && (
         <g transform={`translate(${hx} ${hy}) scale(0.8)`}>
           <Figure role="consultant" face={host.face} ground={false} />
         </g>
       )}
       <Solid faces={counter.faces} hidden={counter.hidden} />
-      <path d={`${post(a, e, 12)} ${post(b, e, 12)}`} stroke={FG} strokeOpacity={0.85} />
+      <Path d={`${post(a, e, 12)} ${post(b, e, 12)}`} stroke={FG} strokeOpacity={0.85} />
       <Solid
         faces={[
           poly([
@@ -772,7 +793,7 @@ export function BlueprintStand({ count, host }: { count: number; host?: RobotPla
           ]),
         ]}
       />
-      <path d={`${stripes} ${scallops}`} fill="none" stroke={FG} strokeOpacity={0.6} />
+      <Path d={`${stripes} ${scallops}`} fill="none" stroke={FG} strokeOpacity={0.6} />
       <Title below={[b, e]} text="Consulting" count={count} />
     </g>
   )
@@ -780,6 +801,9 @@ export function BlueprintStand({ count, host }: { count: number; host?: RobotPla
 
 /** Scenery as architect's symbols: trees in plan-circle elevation, bushes as clouds, hay as a bale. */
 export function BlueprintDecor({ decor }: { decor: DecorPlacement }) {
+  const { leafWash } = useDrafting()
+  // A wash lets the paper through; a plain face covers what's behind it.
+  const foliage = leafWash ? { fill: leafWash, fillOpacity: 0.45 } : { fill: BG, fillOpacity: FACE }
   switch (decor.kind) {
     case 'tree':
     case 'fruitTree': {
@@ -789,28 +813,27 @@ export function BlueprintDecor({ decor }: { decor: DecorPlacement }) {
       }).join(' ')
       return (
         <g>
-          <ellipse rx={14} ry={5} fill="none" stroke={FG} strokeOpacity={0.25} strokeDasharray="2 3" />
-          <path d="M0 0 V-15" stroke={FG} strokeOpacity={0.7} strokeWidth={1.4} />
-          <circle cy={-30} r={16} fill={BG} fillOpacity={FACE} stroke={FG} strokeOpacity={0.7} />
-          <path d={spokes} stroke={FG} strokeOpacity={0.35} />
-          <circle cy={-30} r={1.5} fill={FG} fillOpacity={0.6} />
+          <Ellipse rx={14} ry={5} fill="none" stroke={FG} strokeOpacity={0.25} strokeDasharray="2 3" />
+          <Path d="M0 0 V-15" stroke={FG} strokeOpacity={0.7} strokeWidth={1.4} />
+          <Circle cy={-30} r={16} {...foliage} stroke={FG} strokeOpacity={0.7} />
+          <Path d={spokes} stroke={FG} strokeOpacity={0.35} />
+          <Circle cy={-30} r={1.5} fill={FG} fillOpacity={0.6} />
           {decor.kind === 'fruitTree' &&
             [
               [-8, -36],
               [7, -24],
               [9, -38],
             ].map(([x, y]) => (
-              <circle key={`${x}${y}`} cx={x} cy={y} r={2.4} fill={BG} stroke={FG} strokeOpacity={0.8} />
+              <Circle key={`${x}${y}`} cx={x} cy={y} r={2.4} fill={BG} stroke={FG} strokeOpacity={0.8} />
             ))}
         </g>
       )
     }
     case 'bush':
       return (
-        <path
+        <Path
           d="M-13 0 a6 6 0 0 1 2 -10 a7 7 0 0 1 12 -4 a6 6 0 0 1 11 6 a5 5 0 0 1 1 8 Z"
-          fill={BG}
-          fillOpacity={FACE}
+          {...foliage}
           stroke={FG}
           strokeOpacity={0.6}
         />
@@ -824,8 +847,8 @@ export function BlueprintDecor({ decor }: { decor: DecorPlacement }) {
             [7, -1],
           ].map(([x, y]) => (
             <g key={`${x}${y}`}>
-              <path d={`M${x} ${y! + 6} V${y}`} />
-              <circle cx={x} cy={y! - 2} r={2.5} />
+              <Path d={`M${x} ${y! + 6} V${y}`} />
+              <Circle cx={x} cy={y! - 2} r={2.5} />
             </g>
           ))}
         </g>
@@ -835,7 +858,7 @@ export function BlueprintDecor({ decor }: { decor: DecorPlacement }) {
       return (
         <g>
           <Solid faces={bale.faces} />
-          <path
+          <Path
             d={`M${at(-0.08, 0.18, 0)} L${at(-0.08, 0.18, 12)} L${at(-0.08, -0.18, 12)} M${at(0.08, 0.18, 0)} L${at(0.08, 0.18, 12)} L${at(0.08, -0.18, 12)}`}
             {...detail}
           />
