@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@ficus/client-core'
 import { useAgentConversation } from '@ficus/client-react'
@@ -14,6 +14,7 @@ export interface NewConsultantChatProps {
   squadName: string
   onClose: () => void
   onStarted?: (agentId: string) => void
+  leading?: ReactNode
 }
 
 /**
@@ -91,7 +92,7 @@ function Compose({
  * off to the normal agent conversation so the first message and the streaming
  * reply stay on screen throughout.
  */
-export function NewConsultantChat({ squadId, squadName, onClose, onStarted }: NewConsultantChatProps) {
+export function NewConsultantChat({ squadId, squadName, onClose, onStarted, leading }: NewConsultantChatProps) {
   const queryClient = useQueryClient()
   const onStartedRef = useStableRef(onStarted)
   const [agentId, setAgentId] = useState<string | null>(null)
@@ -108,7 +109,12 @@ export function NewConsultantChat({ squadId, squadName, onClose, onStarted }: Ne
   )
 
   return (
-    <ChatShell title={agentId ? 'Consultant' : 'New consultant'} subtitle={squadName} onClose={onClose}>
+    <ChatShell
+      title={agentId ? 'Consultant' : 'New consultant'}
+      subtitle={squadName}
+      leading={leading}
+      onClose={onClose}
+    >
       {agentId && ready ? (
         <AgentConversation agentId={agentId} />
       ) : (

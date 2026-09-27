@@ -82,7 +82,10 @@ describe('AssistantChat', () => {
     mounted.push(view.unmount)
     await waitFor(() => expect(composer(view.container)).not.toBeNull())
     expect(fake.requests.some((r) => r.path === '/assistant' && r.options?.method === 'POST')).toBe(false)
-    expect(view.container.querySelector('details.g-chat-archive')?.textContent).toContain('Earlier question')
+    // Earlier messages are simply the top of the conversation, not tucked away.
+    const log = view.container.querySelector('[role="log"]')
+    expect(log?.textContent).toContain('Earlier question')
+    expect(view.container.querySelector('details')).toBeNull()
   })
 
   it('shows a retryable error when the conversation cannot load', async () => {

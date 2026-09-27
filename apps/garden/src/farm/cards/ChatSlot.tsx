@@ -1,7 +1,12 @@
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AssistantChat, ChatPanel, NewConsultantChat } from '../../chat'
+import { gardenQueries } from '../../api/queries'
 import { agentLabel } from '../agentLabels'
 import { roleLabel } from '../selection'
 import { roleFor } from '../appearance'
+import { RobotAvatar } from '../RobotAvatar'
+import { PORCH_ASSISTANT_ID } from '../useFarmData'
 import { useFarmCard } from './context'
 
 export type ChatTarget =
@@ -10,9 +15,37 @@ export type ChatTarget =
   /** `fresh` starts a new Assistant conversation (a token so each start gets its own window). */
   | { kind: 'assistant'; conversationId?: string; fresh?: string }
 
+/** The robot's animated portrait in a chat's title bar; clicking it opens the robot's card. */
+function Portrait({ agentId }: { agentId: string }) {
+  const env = useFarmCard()
+  const known = env.agentsById.get(agentId)
+  const fetched = useQuery({ ...gardenQueries.agent(agentId), enabled: !known && agentId !== PORCH_ASSISTANT_ID })
+  const agent = known ?? fetched.data
+  if (!agent) return null
+  const squad = agent.squadId ? env.squadsById.get(agent.squadId) : undefined
+  return (
+    <button
+      type="button"
+      className="g-chat-avatar"
+      aria-label={`Open ${agentLabel(agent).primary}'s card`}
+      onClick={() => env.select({ kind: 'robot', agentId })}
+    >
+      <RobotAvatar
+        agent={agent}
+        squad={squad}
+        role={agentId === PORCH_ASSISTANT_ID ? 'assistant' : undefined}
+        halted={env.halted.has(agentId)}
+        size={44}
+      />
+    </button>
+  )
+}
+
 /** The one open conversation: a robot, a new consultant from a seed packet, or the assistant. */
 export function ChatSlot({ target, onClose }: { target: ChatTarget; onClose: () => void }) {
   const env = useFarmCard()
+  // A new consultant has no agent until its first message is answered.
+  const [consultantId, setConsultantId] = useState<string>()
   switch (target.kind) {
     case 'agent': {
       const agent = env.agentsById.get(target.agentId)
@@ -24,6 +57,7 @@ export function ChatSlot({ target, onClose }: { target: ChatTarget; onClose: () 
           agentId={target.agentId}
           title={label?.primary ?? 'Robot'}
           subtitle={agent ? `${roleLabel(roleFor(agent, squad))}${squad ? ` · ${squad.name}` : ''}` : undefined}
+          leading={<Portrait agentId={target.agentId} />}
           onClose={onClose}
         />
       )
@@ -35,6 +69,8 @@ export function ChatSlot({ target, onClose }: { target: ChatTarget; onClose: () 
           key={target.squadId}
           squadId={target.squadId}
           squadName={squad?.name ?? 'this plot'}
+          onStarted={setConsultantId}
+          leading={consultantId ? <Portrait agentId={consultantId} /> : undefined}
           onClose={onClose}
         />
       )
@@ -45,6 +81,7 @@ export function ChatSlot({ target, onClose }: { target: ChatTarget; onClose: () 
           key={target.conversationId ?? target.fresh ?? 'latest'}
           conversationId={target.conversationId}
           fresh={!!target.fresh}
+          leading={<Portrait agentId={PORCH_ASSISTANT_ID} />}
           onClose={onClose}
         />
       )

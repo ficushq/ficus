@@ -415,7 +415,7 @@ describe('the whole farm', () => {
   it('keeps the homestead, mailbox and crates where they belong', () => {
     const layout = layoutFarm(busyFarm(4, 8, 6))
     expect(layout.farmhouse).toEqual({ i: -4.5, j: -2 })
-    expect(layout.seedShed).toEqual({ i: -5.5, j: 1.5 })
+    expect(layout.seedShed).toEqual({ i: -7, j: 2 })
     expect(layout.mailbox).toEqual({ i: -1.2, j: 3.5 })
     expect(layout.porch).toMatchObject({ i: -4.15, j: 0.35 })
     const lastFront = Math.max(...layout.yards.map((y) => y.j0 + y.h))

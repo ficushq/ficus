@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useConversationClient } from '@ficus/client-react'
 import type { AssistantEntry } from '@ficus/shared'
@@ -12,6 +12,7 @@ export interface AssistantChatProps {
   conversationId?: string
   /** Start a new conversation instead of reopening the most recent one. */
   fresh?: boolean
+  leading?: ReactNode
   onClose: () => void
   /** Test seam; defaults to the assistant routes over the conversation client's transport. */
   api?: AssistantApi
@@ -48,7 +49,7 @@ async function pickConversation(
  * message is a plain agent send; `assistantApi.message` is only for replies to
  * task updates, which the garden doesn't surface yet).
  */
-export function AssistantChat({ conversationId, fresh, onClose, api: apiProp, newId }: AssistantChatProps) {
+export function AssistantChat({ conversationId, fresh, leading, onClose, api: apiProp, newId }: AssistantChatProps) {
   const client = useConversationClient()
   const queryClient = useQueryClient()
   const api = useMemo(() => apiProp ?? createAssistantApi(client.transport), [apiProp, client])
@@ -107,7 +108,7 @@ export function AssistantChat({ conversationId, fresh, onClose, api: apiProp, ne
   }
 
   return (
-    <ChatShell title="Assistant" subtitle="Your helper" onClose={onClose}>
+    <ChatShell title="Assistant" subtitle="Your helper" leading={leading} onClose={onClose}>
       {error && (
         <div className="g-chat-error" role="alert">
           {error}{' '}
@@ -120,33 +121,43 @@ export function AssistantChat({ conversationId, fresh, onClose, api: apiProp, ne
       )}
       {opened ? (
         <>
-          {(opened.archive.length > 0 || opened.hasMore) && (
-            <details className="g-chat-archive">
-              <summary>Earlier conversation</summary>
-              {opened.hasMore && (
-                <button
-                  type="button"
-                  className="g-chat-link"
-                  disabled={loadingEarlier}
-                  onClick={() => void loadEarlier()}
-                >
-                  {loadingEarlier ? 'Loading…' : 'Load earlier messages'}
-                </button>
-              )}
-              {opened.archive.map((entry) => (
-                <div key={entry.id} className="g-chat-archive-entry">
-                  <p className="g-chat-sender">{entry.role}</p>
-                  <Markdown>{entry.text}</Markdown>
-                </div>
-              ))}
-            </details>
-          )}
           <AgentConversation
             key={opened.agentId}
             agentId={opened.agentId}
             hideInboxMessages
             placeholder="Ask anything…"
             draftKey={`assistant:${opened.id}`}
+            beforeConversation={
+              opened.archive.length > 0 || opened.hasMore ? (
+                <>
+                  {opened.hasMore && (
+                    <button
+                      type="button"
+                      className="g-chat-older"
+                      disabled={loadingEarlier}
+                      onClick={() => void loadEarlier()}
+                    >
+                      {loadingEarlier ? 'Loading older messages…' : 'Load older messages'}
+                    </button>
+                  )}
+                  {opened.archive
+                    .filter((entry) => entry.role !== 'tool' && entry.text.trim())
+                    .map((entry) =>
+                      entry.role === 'user' ? (
+                        <div key={entry.id} className="g-chat-msg g-chat-human">
+                          <div className="g-chat-bubble">
+                            <Markdown>{entry.text}</Markdown>
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={entry.id} className="g-chat-msg g-chat-agent">
+                          <Markdown>{entry.text}</Markdown>
+                        </div>
+                      )
+                    )}
+                </>
+              ) : undefined
+            }
           />
         </>
       ) : (

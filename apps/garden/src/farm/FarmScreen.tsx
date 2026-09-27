@@ -117,7 +117,13 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   const sound = useFarmSounds(layout, needsYou)
   const [listOpen, setListOpen] = useState(false)
   const growing = layout.yards.reduce((n, y) => n + y.plots.length, 0)
-  const anchor = selection ? selectionAnchor(layout, selection) : null
+  // A robot reached from a list or a chat may not stand anywhere on the farm (finished, asleep):
+  // its card opens where the previous card was, else mid-screen, rather than not at all.
+  const lastAnchor = useRef<readonly [number, number] | null>(null)
+  const anchor = selection
+    ? (selectionAnchor(layout, selection) ?? lastAnchor.current ?? ([camera.x, camera.y] as const))
+    : null
+  if (anchor) lastAnchor.current = anchor
   const toScreen = (x: number, y: number) =>
     [(x - camera.x) * camera.zoom + size.width / 2, (y - camera.y) * camera.zoom + size.height / 2] as const
 

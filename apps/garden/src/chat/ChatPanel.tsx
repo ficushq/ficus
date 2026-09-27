@@ -11,6 +11,7 @@ export interface AgentConversationProps {
   placeholder?: string
   draftKey?: string
   afterConversation?: ReactNode
+  beforeConversation?: ReactNode
 }
 
 /** A live conversation with an existing agent (manager, worker, consultant or the assistant's agent). */
@@ -20,6 +21,7 @@ export function AgentConversation({
   placeholder,
   draftKey,
   afterConversation,
+  beforeConversation,
 }: AgentConversationProps) {
   const client = useConversationClient()
   const conv = useAgentConversation({ agentId })
@@ -34,6 +36,7 @@ export function AgentConversation({
       placeholder={placeholder}
       draftKey={draftKey ?? `manager:${agentId}`}
       afterConversation={afterConversation}
+      beforeConversation={beforeConversation}
     />
   )
 }
@@ -44,12 +47,13 @@ export interface ChatPanelProps {
   subtitle?: string
   onClose: () => void
   header?: ReactNode
+  leading?: ReactNode
 }
 
 /** Talk to a robot: the farmer (squad manager), a gardener (worker) or a consultant. */
-export function ChatPanel({ agentId, title, subtitle, onClose, header }: ChatPanelProps) {
+export function ChatPanel({ agentId, title, subtitle, onClose, header, leading }: ChatPanelProps) {
   return (
-    <ChatShell title={title} subtitle={subtitle} header={header} onClose={onClose}>
+    <ChatShell title={title} subtitle={subtitle} header={header} leading={leading} onClose={onClose}>
       <AgentConversation key={agentId} agentId={agentId} />
     </ChatShell>
   )

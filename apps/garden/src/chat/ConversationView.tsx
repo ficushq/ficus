@@ -30,6 +30,8 @@ export interface ConversationViewProps {
   draftKey?: string
   composerLabel?: string
   afterConversation?: ReactNode
+  /** Messages from before this agent (an Assistant conversation's earlier sessions), drawn as the top of the log. */
+  beforeConversation?: ReactNode
   autoFocus?: boolean
 }
 
@@ -46,6 +48,7 @@ export function ConversationView({
   draftKey,
   composerLabel = 'Message',
   afterConversation,
+  beforeConversation,
   autoFocus = true,
 }: ConversationViewProps) {
   const client = useConversationClient()
@@ -160,7 +163,8 @@ export function ConversationView({
         )}
         <div className="g-chat-log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation">
           {conv.isLoading && conv.agentId && <p className="g-chat-system">Loading the conversation…</p>}
-          {empty && (intro ?? <p className="g-chat-system">Send a message to start chatting</p>)}
+          {beforeConversation}
+          {empty && !beforeConversation && (intro ?? <p className="g-chat-system">Send a message to start chatting</p>)}
           <Transcript
             items={conv.items}
             viewingUserId={me?.id}

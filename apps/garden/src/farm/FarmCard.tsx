@@ -23,7 +23,10 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
     }
     case 'robot': {
       const r = findRobot(layout, s.agentId)
-      return r ? iso(r.i, r.j) : null
+      if (r) return iso(r.i, r.j)
+      // Resting robots aren't on the field; their card opens by the charging hut.
+      const hut = layout.yards.find((y) => y.dock.ids?.includes(s.agentId))
+      return hut ? iso(hut.dock.i, hut.dock.j) : null
     }
     case 'yard': {
       const y = layout.yards.find((yard) => yard.squad.id === s.squadId)

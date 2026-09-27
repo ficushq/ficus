@@ -96,7 +96,8 @@ export function Farmhouse() {
   const canopyHigh = DECK + 50
   const [knobX, knobY] = xy(door1 - 0.07, D, DECK + 18)
   const [wreathX, wreathY] = xy(FARMHOUSE_DOOR_I, D, DECK + 30)
-  const [atticX, atticY] = xy(W, 0, WALL + 18)
+  // The front roof slope overhangs the gable's near half, so the window sits in the part you can see.
+  const [atticX, atticY] = xy(W, -0.32, WALL + 15)
   const [chimX, chimY] = xy(0.35, -0.35, WALL + RIDGE - 14)
   const [vaneX, vaneY] = xy(-0.75, 0, WALL + RIDGE)
   const [lampX, lampY] = xy(door0 - 0.14, D, DECK + 30)
@@ -111,9 +112,9 @@ export function Farmhouse() {
       ))}
       {/* right gable end, with a round attic window */}
       <polygon points={poly(p(W, D, WALL), p(W, -D, WALL), p(W, 0, WALL + RIDGE))} fill="#f1e2c2" className="g-ol" />
-      <circle cx={atticX} cy={atticY} r={8} fill="url(#g-glass)" className="g-ol" />
+      <circle cx={atticX} cy={atticY} r={7} fill="url(#g-glass)" className="g-ol" />
       <path
-        d={`M${atticX - 8} ${atticY} H${atticX + 8} M${atticX} ${atticY - 8} V${atticY + 8}`}
+        d={`M${atticX - 7} ${atticY} H${atticX + 7} M${atticX} ${atticY - 7} V${atticY + 7}`}
         stroke="#fffaf1"
         strokeWidth={1.4}
       />

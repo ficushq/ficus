@@ -42,6 +42,9 @@
 /* Header: a painted plank */
 .g-chat-header {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex: none;
   min-height: 60px;
   padding: 10px 60px 10px 16px;
@@ -963,4 +966,31 @@
   .g-chat-msg {
     max-width: 92%;
   }
+}
+
+.g-chat-leading {
+  flex: none;
+}
+
+.g-chat-heading {
+  min-width: 0;
+}
+
+.g-chat-avatar {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.g-chat-avatar:hover .g-avatar,
+.g-chat-avatar:focus-visible .g-avatar {
+  box-shadow: 0 0 0 3px #fff3a8;
+}
+
+.g-chat-avatar:focus-visible {
+  outline: none;
 }

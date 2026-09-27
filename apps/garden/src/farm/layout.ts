@@ -41,9 +41,10 @@ export interface FarmInput {
 }
 
 /** Tile indices (inclusive) reserved for the farmhouse, seed shed and porch. */
-export const HOMESTEAD = { minI: -6, maxI: -1, minJ: -4, maxJ: 2 } as const
+export const HOMESTEAD = { minI: -8, maxI: -1, minJ: -4, maxJ: 3 } as const
 export const FARMHOUSE = { i: -4.5, j: -2 } as const
-export const SEED_SHED = { i: -5.5, j: 1.5 } as const
+// Out to the left of the porch, with room between them.
+export const SEED_SHED = { i: -7, j: 2 } as const
 /** At the foot of the farmhouse porch steps (house centre + door offset, front wall + porch + steps). */
 export const PORCH = { i: -4.15, j: 0.35 } as const
 export const MAILBOX = { i: -1.2, j: 3.5 } as const

@@ -11,12 +11,15 @@ export function ChatShell({
   title,
   subtitle,
   header,
+  leading,
   onClose,
   children,
 }: {
   title: string
   subtitle?: string
   header?: ReactNode
+  /** Shown left of the title, e.g. the robot's portrait that opens its card. */
+  leading?: ReactNode
   onClose: () => void
   children: ReactNode
 }) {
@@ -50,6 +53,7 @@ export function ChatShell({
       }}
     >
       <header className="g-chat-header">
+        {leading && <div className="g-chat-leading">{leading}</div>}
         <div className="g-chat-heading">
           {subtitle && <p className="g-eyebrow g-chat-subtitle">{subtitle}</p>}
           <h2 id={titleId} className="g-chat-title">
