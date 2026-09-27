@@ -146,7 +146,7 @@ A remote host is the **team's** box, not tau's. Before doing anything on it:
   (`registerRemoteHostsCommands`).
 - Materialized into the squad's SSH directory as one `ficus_remote_<name>`
   private key file (mode `0600`) plus a managed block in `config` delimited
-  by `# >>> tau remote hosts >>>` / `# <<< tau remote hosts <<<`
+  by `# >>> ficus remote hosts >>>` / `# <<< ficus remote hosts <<<`
   (`apps/core/src/services/remote-hosts/materialize.ts`). User-added config
   outside the managed block is always preserved.
 - Full walkthrough + security model: `docs/wiki/remote-hosts.md`.
