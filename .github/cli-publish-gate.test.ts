@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 // CLI releases must publish the complete archive and installer set without
@@ -15,7 +16,8 @@ interface Step {
 }
 
 interface Workflow {
-  jobs?: Record<string, { steps?: Step[] }>
+  permissions?: Record<string, string>
+  jobs?: Record<string, { steps?: Step[]; permissions?: Record<string, string> }>
 }
 
 const workflowPath = join(import.meta.dir, 'workflows/cli-binaries.yml')
@@ -178,5 +180,63 @@ describe('CLI publish gate', () => {
     for (const { step, index } of releaseStepIndexes) {
       expect({ name: step.name, after: index > collect }).toEqual({ name: step.name, after: true })
     }
+  })
+
+  // softprops/action-gh-release reuses the `nightly` release and only adds or
+  // overwrites same-named files, and the host publisher mirrors EVERY release
+  // asset. Without a prune, an archive the build stopped producing (the
+  // pre-rename binary's) would be served from /cli forever.
+  describe('nightly prune', () => {
+    const pruneIndex = () => indexOfStep('Prune stale nightly assets')
+    const prune = () => steps[pruneIndex()]
+
+    test('runs on main, after the nightly upload, with the job token and contents: write', () => {
+      const nightly = steps.findIndex((step) => step.with?.tag_name === 'nightly')
+      expect(nightly).toBeGreaterThan(-1)
+      expect(pruneIndex()).toBeGreaterThan(nightly)
+      expect(prune().if).toBe(steps[nightly].if)
+      expect(prune().env?.GH_TOKEN).toBe('${{ github.token }}')
+      const job = workflow.jobs?.['publish-cli-release']
+      expect(job?.permissions?.contents ?? workflow.permissions?.contents).toBe('write')
+      expect(prune().run).toContain('gh release view nightly')
+      expect(prune().run).toContain('--json assets')
+      expect(prune().run).toContain('gh release delete-asset nightly')
+      expect(prune().run).not.toMatch(/\btau\b|tau-/)
+    })
+
+    test('deletes exactly the nightly assets that are not in dist/release (run against a stub gh)', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'cli-prune-'))
+      try {
+        const current = ['ficus-linux-x64.tar.gz', 'ficus-windows-x64.zip', 'manifest.json', 'install.sh', 'setup.sh']
+        mkdirSync(join(dir, 'dist/release'), { recursive: true })
+        for (const name of current) writeFileSync(join(dir, 'dist/release', name), 'x')
+        const onRelease = [...current, 'old-linux-x64.tar.gz', 'old-windows-x64.zip', 'notes with space.txt']
+        mkdirSync(join(dir, 'bin'))
+        const log = join(dir, 'gh.log')
+        writeFileSync(
+          join(dir, 'bin/gh'),
+          `#!/bin/sh\nprintf '%s\\n' "$*" >>'${log}'\nif [ "$2" = view ]; then printf '%s\\n' ${onRelease
+            .map((name) => `'${name}'`)
+            .join(' ')}; fi\n`
+        )
+        chmodSync(join(dir, 'bin/gh'), 0o755)
+        const result = Bun.spawnSync(['bash', '-c', String(prune().run)], {
+          cwd: dir,
+          env: { PATH: `${join(dir, 'bin')}:/usr/bin:/bin`, GITHUB_REPOSITORY: 'owner/repo', RUNNER_TEMP: dir },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+        expect({ code: result.exitCode, stderr: result.stderr.toString() }).toEqual({ code: 0, stderr: '' })
+        const calls = readFileSync(log, 'utf8').trim().split('\n')
+        expect(calls[0]).toBe('release view nightly --repo owner/repo --json assets --jq .assets[].name')
+        expect(calls.slice(1)).toEqual([
+          'release delete-asset nightly old-linux-x64.tar.gz --repo owner/repo --yes',
+          'release delete-asset nightly old-windows-x64.zip --repo owner/repo --yes',
+          'release delete-asset nightly notes with space.txt --repo owner/repo --yes',
+        ])
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
   })
 })

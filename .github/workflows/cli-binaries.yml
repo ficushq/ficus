@@ -74,6 +74,26 @@ jobs:
           files: dist/release/*
           fail_on_unmatched_files: true
           overwrite_files: true
+      # The nightly release is reused on every main push, and the upload above
+      # only adds or replaces files. An asset this build no longer produces (a
+      # renamed or dropped archive) would stay on the release for good, and
+      # the host publisher mirrors every release asset to /cli. So the release
+      # keeps exactly dist/release/*. Needs contents: write (granted above).
+      - name: Prune stale nightly assets
+        if: "github.ref == 'refs/heads/main'"
+        env:
+          GH_TOKEN: "${{ github.token }}"
+        run: |
+          set -euo pipefail
+          keep=$(cd dist/release && ls -1A)
+          gh release view nightly --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' >"$RUNNER_TEMP/nightly-assets.txt"
+          while IFS= read -r asset; do
+            [ -n "$asset" ] || continue
+            if ! printf '%s\n' "$keep" | grep -Fxq -- "$asset"; then
+              echo "Deleting stale nightly asset: $asset"
+              gh release delete-asset nightly "$asset" --repo "$GITHUB_REPOSITORY" --yes
+            fi
+          done <"$RUNNER_TEMP/nightly-assets.txt"
       - name: Publish tagged release
         if: "github.ref_type == 'tag'"
         uses: softprops/action-gh-release@v3
