@@ -24,7 +24,7 @@ Multi-stage build producing a single image that runs as any of 3 services via CM
 - Downloads Amazon RDS CA bundle for SSL connections
 - Production-only `bun install`
 - Copies built artifacts from builder
-- Symlinks CLI to `/usr/local/bin/tau`
+- Symlinks CLI to `/usr/local/bin/ficus`
 
 ### Run Modes
 
@@ -54,16 +54,16 @@ Single-stage build from `ubuntu:24.04` with nix, devbox, and all development pac
 
 ### What's Installed
 
-| Layer                 | Contents                                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| System packages       | bash, git, ssh, curl, wget, sudo, docker.io, unzip, xz-utils                                                 |
-| Nix                   | Single-user mode, filter-syscalls disabled (for sysbox), flakes enabled                                      |
-| Devbox                | Installed from jetpack.io, default `devbox.json` pre-installed                                               |
-| Devbox packages       | All packages from `packages/k8s-sandbox/sandbox/devbox.json` baked into `/nix/store` (~1.2GB)                |
-| Bun                   | Installed to `/usr/local`                                                                                    |
-| Tau CLI               | Not bundled; Core stages `cli/tau.js` into the shared core-data volume and mounts it at `/usr/local/bin/tau` |
-| Tool executor         | HTTP service at `/opt/sandbox/` using bun-pty for shell sessions                                             |
-| Git credential helper | `git-credential-github-token` for repo access                                                                |
+| Layer                 | Contents                                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| System packages       | bash, git, ssh, curl, wget, sudo, docker.io, unzip, xz-utils                                                     |
+| Nix                   | Single-user mode, filter-syscalls disabled (for sysbox), flakes enabled                                          |
+| Devbox                | Installed from jetpack.io, default `devbox.json` pre-installed                                                   |
+| Devbox packages       | All packages from `packages/k8s-sandbox/sandbox/devbox.json` baked into `/nix/store` (~1.2GB)                    |
+| Bun                   | Installed to `/usr/local`                                                                                        |
+| Tau CLI               | Not bundled; Core stages `cli/ficus.js` into the shared core-data volume and mounts it at `/usr/local/bin/ficus` |
+| Tool executor         | HTTP service at `/opt/sandbox/` using bun-pty for shell sessions                                                 |
+| Git credential helper | `git-credential-github-token` for repo access                                                                    |
 
 ### Runtime
 
@@ -71,7 +71,7 @@ Single-stage build from `ubuntu:24.04` with nix, devbox, and all development pac
 - **Runtime class:** `sysbox-runc` for secure container isolation
 - **Healthcheck:** `GET /healthz` on port 50051
 - **Directories:** `/workspace` (code), `/memory` (memory files), `/home/tau`
-- **Tau CLI:** mounted read-only from the shared core-data PVC at `/usr/local/bin/tau`; rebuild the CLI and recreate pods after CLI-only changes, without rebuilding the sandbox image.
+- **Tau CLI:** mounted read-only from the shared core-data PVC at `/usr/local/bin/ficus`; rebuild the CLI and recreate pods after CLI-only changes, without rebuilding the sandbox image.
 
 ### Nix/Devbox Design Decision
 

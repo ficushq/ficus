@@ -1,5 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
+import { createHash } from 'crypto'
 import {
+  SANDBOX_EXECUTOR_PROTOCOL_VERSION,
   buildSandboxPodSpec,
   getSandboxImage,
   getSandboxImagePullPolicy,
@@ -9,6 +11,7 @@ import {
   sandboxPodName,
   sanitizeLabelValue,
   type BuildPodSpecInput,
+  type SquadSandboxConfig,
 } from './pod-spec'
 import { getSandboxSkillsDir } from '../../agent/skill-materializer'
 import * as workspaceLayoutModule from '../workspace-layout'
@@ -167,6 +170,31 @@ describe('reconcilableSpecHash', () => {
     )
   })
 
+  test('a pod stamped by a Core that predates the /usr/local/bin/ficus mount drifts (recreated when idle)', () => {
+    // The hash a pre-ficus Core stamped on every pod it created: the same three fields, no CLI mount.
+    // The CLI mount is immutable on a running pod, so a pod without the `ficus` mount must never be
+    // adopted as current; the spec-drift path recreates it once it is idle.
+    const preFicusStamp = (config?: SquadSandboxConfig) =>
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            executorProtocolVersion: SANDBOX_EXECUTOR_PROTOCOL_VERSION,
+            ephemeralStorage: resolveEphemeralStorageLimit(config?.ephemeralStorageLimitGi),
+            squadIds: config?.squadId ? [config.squadId] : [],
+          })
+        )
+        .digest('hex')
+        .slice(0, 16)
+    for (const config of [
+      undefined,
+      { ephemeralStorageLimitGi: 25 },
+      { squadId: '11111111-1111-4111-8111-111111111111', sandboxType: 'squad' as const },
+    ]) {
+      expect(reconcilableSpecHash(config)).not.toBe(preFicusStamp(config))
+      expect(reconcilableSpecHash(config)).toBe(reconcilableSpecHash(config))
+    }
+  })
+
   test('differs by squadId — a solo box must not be adopted for a squad member (drives recreation)', () => {
     // squadId determines the squad-scoped mounts (/workspace/<id>, /memory/<id>),
     // immutable on a running pod. A solo box (no squadId) and a squad box must
@@ -185,7 +213,7 @@ describe('reconcilableSpecHash', () => {
 })
 
 describe('buildSandboxPodSpec', () => {
-  test('mounts staged CLI from core-data at the tau executable path', async () => {
+  test('mounts staged CLI from core-data at the ficus executable path', async () => {
     const podSpec = await buildSpec({
       sandboxId: 'squad_11111111-1111-4111-8111-111111111111',
       podName: 'tau-sb-squad-11111111-1111-4111-8111-111111111111',
@@ -195,11 +223,30 @@ describe('buildSandboxPodSpec', () => {
 
     expect(container?.volumeMounts).toContainEqual({
       name: 'core-data',
-      mountPath: '/usr/local/bin/tau',
-      subPath: 'cli/tau.js',
+      mountPath: '/usr/local/bin/ficus',
+      subPath: 'cli/ficus.js',
       readOnly: true,
     })
     expect(podSpec.spec?.volumes?.filter((volume: { name?: string }) => volume.name === 'core-data')).toHaveLength(1)
+  })
+
+  test('the ficus mount is the only CLI on the PATH dirs, for squad, member and solo boxes', async () => {
+    for (const input of [
+      { sandboxId: 'squad_11111111-1111-4111-8111-111111111111', config: { sandboxType: 'squad' as const } },
+      {
+        sandboxId: 'agent_member',
+        config: { sandboxType: 'agent' as const, squadId: '11111111-1111-4111-8111-111111111111' },
+      },
+      { sandboxId: 'agent_solo', config: { sandboxType: 'agent' as const, privateStorageKey: 'agent_solo' } },
+    ]) {
+      const podSpec = await buildSpec({ ...input, podName: `pod-${input.sandboxId.replace(/_/g, '-')}` })
+      const onPath = (podSpec.spec?.containers?.[0]?.volumeMounts ?? []).filter((mount) =>
+        /^\/usr\/(local\/)?s?bin\//.test(mount.mountPath)
+      )
+      expect(onPath).toEqual([
+        { name: 'core-data', mountPath: '/usr/local/bin/ficus', subPath: 'cli/ficus.js', readOnly: true },
+      ])
+    }
   })
 
   test('mounts sandbox-scoped materialized skills from core-data', async () => {

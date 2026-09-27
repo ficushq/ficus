@@ -336,7 +336,7 @@ export function renderSshShimScript(tool: SshFamilyTool): string {
 
 /**
  * Write the `ssh`, `scp`, and `rsync` shims into `<HOME_DIR>/host/bin` with
- * the same atomic write `ensureTauShim` uses (scratch file in the same
+ * the same atomic write `ensureCliShim` uses (scratch file in the same
  * directory, chmod before it becomes visible, atomic rename) — all three
  * are on every agent's PATH, so a concurrent exec must never observe a
  * half-written file. Returns the written paths.

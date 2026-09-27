@@ -98,7 +98,7 @@ What is actually enforced for an agent shell:
 - **The shim directory is re-prepended to `PATH`** after the squad env is
   applied. Squad-env PATH additions are honoured — `PATH=$PATH:/opt/toolchain`
   is a supported thing to write — but they cannot displace `tau`, which always
-  resolves to `<HOME_DIR>/host/bin/tau`.
+  resolves to `<HOME_DIR>/host/bin/ficus`.
 - **Reserved keys are rejected at write time** — see
   [Reserved squad env keys](#reserved-squad-env-keys) — and are also filtered
   out of Secret Store rendering, so a Secret Store key literally named

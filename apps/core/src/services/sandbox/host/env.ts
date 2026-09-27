@@ -177,27 +177,29 @@ function shellQuote(value: string): string {
 }
 
 /**
- * Write `<HOME_DIR>/host/bin/tau`, a shim that runs the built CLI with the
- * same bun binary the core runs under. Returns the shim path, or null (and
- * logs) when the CLI build is absent.
+ * Write `<HOME_DIR>/host/bin/ficus`, a shim that runs the built CLI with the
+ * same bun binary the core runs under (both absolute paths). Returns the shim
+ * path, or null (and logs) when the CLI build is absent. It writes that one
+ * file only: any other file in the directory, such as a wrapper an older Core
+ * left there, is never created, refreshed or deleted.
  */
-export function ensureTauShim(opts: { cliHostPath?: string; bunPath?: string } = {}): string | null {
+export function ensureCliShim(opts: { cliHostPath?: string; bunPath?: string } = {}): string | null {
   const cliHostPath = opts.cliHostPath ?? getCliHostPath()
   if (!existsSync(cliHostPath)) {
     log.warn(
-      `Host runtime: tau CLI build not found at ${cliHostPath}; agents will not have \`tau\` on PATH (bun run build:cli)`
+      `Host runtime: ficus CLI build not found at ${cliHostPath}; agents will not have \`ficus\` on PATH (bun run build:cli)`
     )
     return null
   }
   const bunPath = opts.bunPath ?? process.execPath
   const dir = hostBinDir()
   mkdirSync(dir, { recursive: true })
-  const shim = join(dir, 'tau')
-  // Atomic replace: `tau` is on every agent's PATH, so a concurrent exec must
+  const shim = join(dir, 'ficus')
+  // Atomic replace: `ficus` is on every agent's PATH, so a concurrent exec must
   // never observe the truncated/partial file a plain overwrite exposes. Write a
   // scratch file in the SAME directory (same filesystem, so the rename is
-  // atomic), chmod it before it becomes visible, then rename over `tau`.
-  const tmpShim = join(dir, `.tau.tmp-${randomUUID()}`)
+  // atomic), chmod it before it becomes visible, then rename over `ficus`.
+  const tmpShim = join(dir, `.ficus.tmp-${randomUUID()}`)
   writeFileSync(tmpShim, `#!/bin/sh\nexec ${shellQuote(bunPath)} ${shellQuote(cliHostPath)} "$@"\n`)
   chmodSync(tmpShim, 0o755)
   renameSync(tmpShim, shim)

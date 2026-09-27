@@ -19,6 +19,7 @@ import { getHomeDir } from '../../../lib/utils/home'
 import { getSandboxSkillsDir } from '../../agent/skill-materializer'
 import { resolveSandboxAssets } from '../asset-manifest'
 import { containerWorkspaceLayout } from '../workspace-layout'
+import { K8S_STAGED_CLI_SUBPATH, SANDBOX_CLI_PATH } from '../cli-path'
 import { isLocalK8sMode } from '../runtime'
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
@@ -183,8 +184,9 @@ export const SANDBOX_EXECUTOR_PROTOCOL_VERSION = 'write-verified-v1'
 
 /**
  * Hash of the pod-spec fields that are immutable on a running pod and therefore
- * require recreation to change (the resolved ephemeral-storage limit and the
- * squad membership that determines the squad-scoped mounts). When a sandbox's
+ * require recreation to change (the resolved ephemeral-storage limit, the
+ * squad membership that determines the squad-scoped mounts, and where the CLI
+ * is mounted). When a sandbox's
  * config changes, the desired hash diverges from the running pod's annotation,
  * which drift detection uses to recreate it instead of adopting a stale pod.
  */
@@ -202,6 +204,11 @@ export function reconcilableSpecHash(
     // (future: an agent in several squads) extends without changing the hash
     // shape or churning existing single-squad pods — today it's [] or [squadId].
     squadIds: config?.squadId ? [config.squadId] : [],
+    // The CLI's mount path. A pod created before the CLI was `ficus` carries a
+    // stamp without this field, so it drifts and is recreated once idle (the
+    // spec-drift gates: no active agent session / an idle squad); a busy one is
+    // kept until then. Changing the path later recreates pods the same way.
+    cliMountPath: SANDBOX_CLI_PATH,
   }
   return createHash('sha256').update(JSON.stringify(reconcilable)).digest('hex').slice(0, 16)
 }
@@ -442,8 +449,8 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
   volumeMounts.push(
     {
       name: 'core-data',
-      mountPath: '/usr/local/bin/tau',
-      subPath: 'cli/tau.js',
+      mountPath: SANDBOX_CLI_PATH,
+      subPath: K8S_STAGED_CLI_SUBPATH,
       readOnly: true,
     },
     {

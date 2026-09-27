@@ -62,7 +62,7 @@ export interface PrebuiltReadOpts {
 }
 
 /**
- * Read one prebuilt machine file (`server.js`, `librust_pty.so`, `tau.js`,
+ * Read one prebuilt machine file (`server.js`, `librust_pty.so`, `ficus.js`,
  * `bootstrap.sh`, `box-provision.sh`).
  *
  * - Explicit `dir`: read `<dir>/<name>`; missing → null, empty → throw.

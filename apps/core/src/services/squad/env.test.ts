@@ -91,7 +91,7 @@ describe('squad-env', () => {
       const envPath = join(workspacePath, '.tau', '.env')
       expect(existsSync(envPath)).toBe(true)
       expect(readFileSync(envPath, 'utf-8')).toContain(content)
-      expect(readFileSync(envPath, 'utf-8')).toContain('tau integration exec github')
+      expect(readFileSync(envPath, 'utf-8')).toContain('ficus integration exec github')
     })
 
     it('creates .env file with restricted owner or group-only permissions', async () => {

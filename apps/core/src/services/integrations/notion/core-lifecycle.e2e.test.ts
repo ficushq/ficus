@@ -38,8 +38,8 @@ test('GitHub bindings work in POSIX sh and remain inherited by child Bash shells
   const bindings = githubCommandBindings(squadId)
   try {
     // Own the executable so this regression needs no provider or installed CLI.
-    const tau = join(root, 'tau')
-    writeFileSync(tau, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o700 })
+    const ficus = join(root, 'ficus')
+    writeFileSync(ficus, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o700 })
     for (const [shell, command] of [
       ['sh', 'gh pr list'],
       ['bash', "bash -c 'gh pr list'"],
@@ -70,7 +70,7 @@ test('Git credential operations reach the squad integration with their operation
   const root = mkdtempSync(join(tmpdir(), 'tau-git-credential-'))
   try {
     writeFileSync(
-      join(root, 'tau'),
+      join(root, 'ficus'),
       '#!/bin/sh\nfor arg; do operation="$arg"; done\nprintf "%s\\n" "$@" >> "$FICUS_TEST_ARGS"\ncat >/dev/null\nif [ "$operation" = get ]; then printf "username=fixture\\npassword=fixture-token\\n"; fi\n',
       { mode: 0o700 }
     )

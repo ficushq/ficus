@@ -77,7 +77,7 @@ describe('docker per-asset volume golden master', () => {
       {
         isK8sRuntime: () => false,
         getSandboxManager: () => manager as any,
-        getCliHostPath: () => '/tmp/tau.js',
+        getCliHostPath: () => '/tmp/ficus.js',
         getHomeDir: () => tmp,
         ensureSquadWorkspace: () => '/unused',
         isSessionActive: () => false,
@@ -85,7 +85,7 @@ describe('docker per-asset volume golden master', () => {
     )
 
     expect(captured.options.volumes).toEqual([
-      '/tmp/tau.js:/usr/local/bin/tau:ro',
+      '/tmp/ficus.js:/usr/local/bin/ficus:ro',
       `${skillsParent}:${skillsParent}:ro`,
     ])
     // The mount source is pre-created so docker never auto-creates it root-owned.
@@ -108,7 +108,7 @@ describe('docker per-asset volume golden master', () => {
       {
         isK8sRuntime: () => false,
         getSandboxManager: () => manager as any,
-        getCliHostPath: () => '/tmp/tau.js',
+        getCliHostPath: () => '/tmp/ficus.js',
         getHomeDir: () => tmp,
         ensureSquadWorkspace: () => `/mock/workspace/${squadId}`,
         isSessionActive: () => false,
@@ -119,7 +119,7 @@ describe('docker per-asset volume golden master', () => {
     // `${home}/memory/${squadId}:/memory/${squadId}:ro` entry anymore — squad
     // memory is delivered only to the squad box, per the manifest scope.
     expect(captured.options.volumes).toEqual([
-      '/tmp/tau.js:/usr/local/bin/tau:ro',
+      '/tmp/ficus.js:/usr/local/bin/ficus:ro',
       `${EXTENSIONS_DIR}:${EXTENSIONS_DIR}:ro`,
       `${skillsParent}:${skillsParent}:ro`,
       `${home}/ssh/${squadId}:/home/tau/.ssh`,
@@ -151,7 +151,7 @@ describe('docker per-asset volume golden master', () => {
 
     const cliHostPath = cliHelp.getCliHostPath()
     expect(captured.options.volumes).toEqual([
-      `${cliHostPath}:/usr/local/bin/tau:ro`,
+      `${cliHostPath}:/usr/local/bin/ficus:ro`,
       `${EXTENSIONS_DIR}:${EXTENSIONS_DIR}:ro`,
       `${skillsParent}:${skillsParent}:ro`,
       // Manifest order: memory before squad-ssh (secrets last), previously

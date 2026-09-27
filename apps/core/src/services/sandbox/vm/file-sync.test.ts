@@ -146,7 +146,7 @@ describe('syncBoxFiles', () => {
     for (const w of client.writes()) expect(w.createDirs).toBe(true)
   })
 
-  test('no CLI push: never writes ~/bin/tau (the machine-level /usr/local/bin/tau supersedes it)', async () => {
+  test('no CLI push: never writes ~/bin/tau (the machine-level /usr/local/bin/ficus supersedes it)', async () => {
     const client = new FakeClient()
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     await syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
@@ -159,8 +159,8 @@ describe('syncBoxFiles', () => {
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     await syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
 
-    // Existing boxes carry a stale per-box CLI at ~/bin/tau which SHADOWS the
-    // machine-level /usr/local/bin/tau on PATH — the ensure sync clears it.
+    // Existing boxes carry a stale per-box CLI at ~/bin/tau which shadowed the
+    // machine-level CLI on PATH — the ensure sync still clears it.
     expect(client.bashes().map((b) => b.command)).toContain(`rm -f '${home}/bin/tau'`)
   })
 
