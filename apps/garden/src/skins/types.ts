@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import type { Agent } from '@ficus/shared'
+import type { Agent, GardenStyle } from '@ficus/shared'
 import type {
   BadgeKind,
   DecorPlacement,
@@ -27,7 +27,8 @@ export interface FencePiece {
   node: ReactNode
 }
 
-export type SkinId = 'nostalgic' | 'futurist' | 'blueprint' | 'sketchbook'
+/** A style's id: exactly the styles an account can save (@ficus/shared GARDEN_STYLES). */
+export type SkinId = GardenStyle
 
 /**
  * Everything that decides how the farm looks, and nothing about what's on it.

@@ -6,8 +6,9 @@ import { webAppUrl } from '../api/base'
 import { useLiveUpdates } from '../live/LiveUpdates'
 import { Farm } from './Farm'
 
+import { isDemo } from './demo'
+
 const DemoFarm = import.meta.env.DEV ? lazy(() => import('../dev/DemoFarm')) : null
-const isDemo = !!DemoFarm && new URLSearchParams(window.location.search).has('demo')
 
 export function App() {
   if (isDemo && DemoFarm) {

@@ -5,13 +5,23 @@ import { blueprintSkin } from './blueprint'
 import { sketchbookSkin } from './sketchbook'
 import { useFuturistTheme } from './futurist/useFuturistTheme'
 import type { FarmSkin, SkinId } from './types'
-import { initialSkin, STORAGE_KEY, withoutStyle } from './choice'
+import { initialSkin, knownSkin, STORAGE_KEY, withoutStyle } from './choice'
+import { useAccountStyle } from './useAccountStyle'
 
 export type { FarmSkin, SkinId } from './types'
 
 export const SKINS: readonly FarmSkin[] = [nostalgicSkin, futuristSkin, blueprintSkin, sketchbookSkin]
 
 const IDS = SKINS.map((s) => s.id)
+
+/** A style this visit arrived with by ?style= link, if any. */
+function linkedSkinId(): SkinId | null {
+  try {
+    return knownSkin(new URLSearchParams(window.location.search).get('style'), IDS)
+  } catch {
+    return null
+  }
+}
 
 function readSkinId(): SkinId {
   try {
@@ -40,14 +50,27 @@ interface SkinContextValue {
 
 const SkinContext = createContext<SkinContextValue>({ skin: nostalgicSkin, setSkin: () => {} })
 
-/** The chosen style, remembered per browser under the garden's own storage prefix (see choice.ts). */
+/**
+ * The chosen style: saved on the signed-in account so it follows you (see
+ * useAccountStyle.ts), and remembered in this browser under the garden's own
+ * storage prefix (see choice.ts) for an instant start and for signed-out or
+ * offline visits.
+ */
 export function SkinProvider({ children, initial }: { children: ReactNode; initial?: SkinId }) {
   const [id, setId] = useState<SkinId>(() => initial ?? readSkinId())
-  // Every choice is saved, including one that arrived by ?style= link, whose parameter then goes.
+  const [linked] = useState(() => (initial ? null : linkedSkinId()))
+  // This browser remembers every style shown, including one that arrived by link, whose ?style= then goes.
   useEffect(() => {
     if (!initial) remember(id)
   }, [id, initial])
-  const setSkin = useCallback((next: SkinId) => setId(next), [])
+  const saveToAccount = useAccountStyle(setId, linked)
+  const setSkin = useCallback(
+    (next: SkinId) => {
+      setId(next)
+      void saveToAccount(next)
+    },
+    [saveToAccount]
+  )
   const value = useMemo(() => ({ skin: SKINS.find((s) => s.id === id) ?? nostalgicSkin, setSkin }), [id, setSkin])
   // The style's class on <html>, so everything (splash, cards, chat windows) reads its tokens.
   const className = value.skin.className

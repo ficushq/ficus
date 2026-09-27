@@ -54,6 +54,14 @@ export const gardenQueries = {
       queryFn: () => assistantApi.activity(6),
       staleTime: 30_000,
     }),
+  /** The account's garden style, when it has one (see skins/useAccountStyle.ts). */
+  gardenPreference: () =>
+    queryOptions({
+      queryKey: ['garden', 'gardenPreference'],
+      queryFn: () => client.gardenPreferences.getMine(),
+      staleTime: 5 * 60_000,
+      retry: false,
+    }),
   /** The account's web-app theme choice (the Futurist style follows its colours). */
   themePreference: () =>
     queryOptions({
