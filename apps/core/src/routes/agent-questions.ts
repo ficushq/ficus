@@ -10,6 +10,10 @@ import {
   retryAgentQuestionAnswerDelivery,
   setQuestionBlocking,
 } from '../services/agents/questions'
+import { reconcileAcceptedQuestionAnswerFailuresOnce } from '../services/agents/question-answer-delivery'
+import { acknowledgeQuestionDeliveryFailure } from '../services/agents/question-delivery-acknowledgement'
+import { canReceiveAgentQuestionAttention } from '../services/agents/pending-action-policy'
+import { loadUserAttention } from '../services/attention/resolver'
 import { canAnswerAgentQuestion } from '../services/agents/question-authorization'
 
 export const agentQuestionsRouter = new Hono()
@@ -116,17 +120,46 @@ export const agentQuestionsRouter = new Hono()
     const question = await getAgentQuestion(id)
     if (!question) return c.json({ error: 'Question not found' }, 404)
     const target = await Agent.find(question.agentId)
+    if (!target || !(await canAnswerAgentQuestion(identity, question, { allowTerminatedAgent: true, target }))) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    c.set('authzChecked', true)
+    // Trust an accepted receipt before rejecting a now-terminated target or resending.
+    if (await reconcileAcceptedQuestionAnswerFailuresOnce(id)) return c.json(await getAgentQuestion(id))
     if (!target || target.status === 'terminated' || target.pendingDormancyAt) {
       return c.json({ error: 'Asking agent is terminating or terminated' }, 409)
     }
-    if (!(await canAnswerAgentQuestion(identity, question))) return c.json({ error: 'Forbidden' }, 403)
-    c.set('authzChecked', true)
 
     const updated = await retryAgentQuestionAnswerDelivery(id, {
       expectedAgentScope: { ownerUserId: target.ownerUserId, squadId: target.squadId },
     })
     if (!updated) return c.json({ error: 'Answer delivery is not failed', code: 'delivery_not_failed' }, 409)
     return c.json(updated)
+  })
+
+  // Acknowledge the current failed-delivery action only for the acting user. Never dismiss the
+  // question itself (answer history and work-stream waits are independent of this attention row).
+  .post('/:id/dismiss-delivery-failure', async (c) => {
+    const identity = await resolveActingUser(c.get('identity'))
+    if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+    const question = await getAgentQuestion(c.req.param('id'))
+    if (!question) return c.json({ error: 'Question not found' }, 404)
+    const attention = await loadUserAttention(identity.userId)
+    if (!(await canReceiveAgentQuestionAttention(identity, question, { attention }))) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    c.set('authzChecked', true)
+    const body = await c.req.json<{ generation?: unknown }>()
+    if (!Number.isSafeInteger(body?.generation) || (body?.generation as number) < 1) {
+      return c.json({ error: 'generation (positive integer) is required' }, 400)
+    }
+    const acknowledged = await acknowledgeQuestionDeliveryFailure(
+      question.id,
+      identity.userId,
+      body!.generation as number
+    )
+    if (!acknowledged) return c.json({ error: 'Delivery failure generation is no longer current' }, 409)
+    return c.json({ acknowledged: true })
   })
 
   // POST /api/agent-questions/:id/blocking { blocking } — convert an open question to blocking

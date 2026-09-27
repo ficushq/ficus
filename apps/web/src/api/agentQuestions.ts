@@ -6,3 +6,5 @@ export const answerAgentQuestion = client.agentQuestions.answerAgentQuestion
 export const dismissAgentQuestion = client.agentQuestions.dismissAgentQuestion
 
 export const retryAgentQuestionAnswerDelivery = client.agentQuestions.retryAgentQuestionAnswerDelivery
+
+export const dismissAgentQuestionDeliveryFailure = client.agentQuestions.dismissAgentQuestionDeliveryFailure

@@ -32,6 +32,15 @@ describe('agentQuestionsResource', () => {
     expect(calls[1]).toEqual({ path: '/agent-questions/question-2', options: { method: 'DELETE' } })
   })
 
+  test('acknowledges a specific failed generation without affecting the answer', async () => {
+    const { transport, calls } = mockTransport()
+    await agentQuestionsResource(transport).dismissAgentQuestionDeliveryFailure('question-1', 2)
+    expect(calls[0]).toEqual({
+      path: '/agent-questions/question-1/dismiss-delivery-failure',
+      options: { method: 'POST', body: { generation: 2 } },
+    })
+  })
+
   test('retries failed answer delivery through the exact question route', async () => {
     const { transport, calls } = mockTransport()
 

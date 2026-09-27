@@ -52,6 +52,7 @@ import {
 import { BaseEntity } from './base'
 import { splitModelPriorityList, supportsImageInput, validateModelSpecList } from '../lib/utils/model-spec'
 import { randomUUID, createHash } from 'crypto'
+import { chatSendRequestHashes } from '../services/agents/chat-send-request-hash'
 import { cacheAgentToken, getCachedAgentToken, removeCachedAgentToken } from '../services/rbac/token-cache'
 import * as pendingDelivery from '../services/agent/pending-delivery'
 import { maintenanceStore } from '../services/maintenance/store'
@@ -1661,33 +1662,17 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     }
 
     const clientId = metadata?.clientId
-    const requestHash = clientId
-      ? createHash('sha256')
-          .update(
-            JSON.stringify({
-              v: 3,
-              agentId: this.id,
-              clientId,
-              content: message ?? '',
-              imageIds: imageIds ?? [],
-              deliveryMode: metadata?.deliveryMode ?? 'steer',
-            })
-          )
-          .digest('hex')
-      : undefined
-    const legacyRequestHash = clientId
-      ? createHash('sha256')
-          .update(
-            JSON.stringify({
-              v: 2,
-              agentId: this.id,
-              content: message ?? '',
-              imageIds: imageIds ?? [],
-              deliveryMode: metadata?.deliveryMode ?? 'steer',
-            })
-          )
-          .digest('hex')
-      : undefined
+    const hashes = clientId
+      ? chatSendRequestHashes({
+          agentId: this.id,
+          clientId,
+          content: message ?? '',
+          imageIds,
+          deliveryMode: metadata?.deliveryMode ?? 'steer',
+        })
+      : null
+    const requestHash = hashes?.current
+    const legacyRequestHash = hashes?.legacy
     if (clientId && requestHash) {
       const [insertedReceipt] = await tx
         .insert(chatSendReceipts)
@@ -1902,16 +1887,11 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       )
     }
     const clientId = metadata?.clientId
-    const requestHash = clientId
-      ? createHash('sha256')
-          .update(JSON.stringify({ v: 3, agentId: this.id, clientId, content, imageIds: imageIds ?? [], deliveryMode }))
-          .digest('hex')
-      : undefined
-    const legacyRequestHash = clientId
-      ? createHash('sha256')
-          .update(JSON.stringify({ v: 2, agentId: this.id, content, imageIds: imageIds ?? [], deliveryMode }))
-          .digest('hex')
-      : undefined
+    const hashes = clientId
+      ? chatSendRequestHashes({ agentId: this.id, clientId, content, imageIds, deliveryMode })
+      : null
+    const requestHash = hashes?.current
+    const legacyRequestHash = hashes?.legacy
     const afterCommit: AfterCommitCallback[] = []
     // Pool reads (agent ancestry) — must happen before the transaction opens.
     const attachmentScope = imageIds?.length ? await resolveAttachmentScope(this) : undefined
