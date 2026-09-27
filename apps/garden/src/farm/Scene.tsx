@@ -8,7 +8,7 @@ import {
   badgeLift,
   Bench,
   Bush,
-  ChargingDock,
+  ChargingHut,
   Compost,
   Crates,
   Crop,
@@ -217,21 +217,27 @@ function buildDrawables(
     })
     for (const p of yard.plots) plot(p, squad.name)
     if (yard.farmer) robot(yard.farmer)
-    // One charging pad per docked robot (an empty station still shows its front pad and solar post).
-    const pads = yard.dock.robots.length ? yard.dock.robots.map((r) => ({ i: r.i, j: r.j })) : [yard.dock]
-    pads.forEach((pad, n) => {
-      const [px, py] = iso(pad.i, pad.j)
-      items.push({
-        key: `dock:${squad.id}:${n}`,
-        depth: depth(pad.i, pad.j) - 0.01,
-        node: (
-          <g key={`dock:${squad.id}:${n}`} transform={`translate(${px} ${py})`} aria-hidden="true">
-            <ChargingDock count={n === 0 ? yard.dock.robots.length + yard.dock.overflow : 1} panel={n === 0} />
-          </g>
-        ),
-      })
+    // The charging hut: one sprite whatever the count; its card lists who's resting.
+    const resting = yard.dock.ids?.length ?? 0
+    const [hx, hy] = iso(yard.dock.i, yard.dock.j)
+    items.push({
+      key: `hut:${squad.id}`,
+      depth: depth(yard.dock.i, yard.dock.j),
+      node: (
+        <Hit
+          onReveal={onReveal}
+          key={`hut:${squad.id}`}
+          x={hx}
+          y={hy}
+          label={`Charging hut, ${resting ? `${resting} robot${resting === 1 ? '' : 's'} resting` : 'empty'}`}
+          selected={selected === `hut:${squad.id}`}
+          box={[-64, -96, 128, 118]}
+          onActivate={() => onSelect({ kind: 'hut', squadId: squad.id })}
+        >
+          <ChargingHut count={resting} peek={yard.dock.robots[0]?.look} />
+        </Hit>
+      ),
     })
-    crowd(yard.dock, 'dock')
     if (yard.bench.robots.length) {
       const [bx, by] = iso(yard.bench.i, yard.bench.j)
       items.push({

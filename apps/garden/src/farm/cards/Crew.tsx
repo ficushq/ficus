@@ -15,8 +15,14 @@ export function Crew({
   halted,
   onOpenAgent,
   empty = 'Nobody has worked on this yet.',
+  notes = {},
+  onTalk,
 }: {
   agentIds: string[]
+  /** A short label per agent, e.g. "Owner", shown before its status. */
+  notes?: Record<string, string>
+  /** Adds a Talk button to each row. */
+  onTalk?: (agentId: string) => void
   known: ReadonlyMap<string, Agent>
   squad?: Squad
   halted: ReadonlySet<string>
@@ -37,16 +43,24 @@ export function Crew({
         const isHalted = halted.has(agent.id)
         return (
           <li key={agent.id}>
-            <button type="button" className="g-crew-row" onClick={() => onOpenAgent(agent.id)}>
-              <RobotAvatar agent={agent} squad={squad} halted={isHalted} size={38} />
-              <span className="g-crew-text">
-                <span className="g-crew-name">{label.primary}</span>
-                <span className="g-crew-meta">
-                  {label.secondary ? `${label.secondary} · ` : ''}
-                  {isHalted ? 'Halted' : AGENT_STATUS_LABELS[agent.status]}
+            <div className="g-crew-line">
+              <button type="button" className="g-crew-row" onClick={() => onOpenAgent(agent.id)}>
+                <RobotAvatar agent={agent} squad={squad} halted={isHalted} size={38} />
+                <span className="g-crew-text">
+                  <span className="g-crew-name">{label.primary}</span>
+                  <span className="g-crew-meta">
+                    {notes[agent.id] ? `${notes[agent.id]} · ` : ''}
+                    {label.secondary ? `${label.secondary} · ` : ''}
+                    {isHalted ? 'Halted' : AGENT_STATUS_LABELS[agent.status]}
+                  </span>
                 </span>
-              </span>
-            </button>
+              </button>
+              {onTalk && (
+                <button type="button" className="g-crew-talk" onClick={() => onTalk(agent.id)}>
+                  Talk
+                </button>
+              )}
+            </div>
           </li>
         )
       })}

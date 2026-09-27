@@ -8,6 +8,7 @@ import { useFarmCard } from './cards/context'
 import { PlotCard } from './cards/PlotCard'
 import { RobotCard } from './cards/RobotCard'
 import { YardCard } from './cards/YardCard'
+import { HutCard } from './cards/HutCard'
 import { SeedShedCard } from './cards/SeedShedCard'
 import { MailboxCard } from './cards/MailboxCard'
 import { webAppUrl } from '../api/base'
@@ -27,6 +28,10 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
     case 'yard': {
       const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
       return y ? iso(y.sign.i, y.sign.j) : null
+    }
+    case 'hut': {
+      const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
+      return y ? iso(y.dock.i, y.dock.j) : null
     }
     case 'mailbox':
       return iso(layout.mailbox.i, layout.mailbox.j)
@@ -98,6 +103,8 @@ function CardBody({ selection }: { selection: Selection }) {
       return <RobotCard agentId={selection.agentId} />
     case 'yard':
       return <YardCard squadId={selection.squadId} />
+    case 'hut':
+      return <HutCard squadId={selection.squadId} />
     case 'seedShed':
       return <SeedShedCard />
     case 'mailbox':

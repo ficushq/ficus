@@ -65,8 +65,6 @@ export const MAX_DECOR = 40
 export const FREE_TILES_PER_DECOR = 12
 
 const DAY_MS = 24 * 60 * 60 * 1000
-/** Docked robots line up outside the right fence, one charging pad each, front to back. */
-const DOCK_GAP = 1.0
 const BENCH_OFFSETS = [
   [0, -0.3],
   [0, 0.3],
@@ -112,7 +110,7 @@ export function occupiedTiles(layout: Omit<FarmLayout, 'decor' | 'bounds'>): Set
     const gate = Math.floor(yard.i0 + yard.w / 2)
     fill(gate - 2, gate + 1, yard.j0 + yard.h, yard.j0 + yard.h + 1)
     around(yard.sign.i, yard.sign.j, 0)
-    around(yard.dock.i, yard.dock.j, 0)
+    around(yard.dock.i, yard.dock.j, 1)
     around(yard.bench.i, yard.bench.j, 0)
     for (const robot of robotsOfYard(yard)) around(robot.i, robot.j, 0)
   }
@@ -307,14 +305,16 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       }
     })
 
-    const dockAt = { i: i0 + w + 1.05, j: j0 + h - 0.55 }
+    // The charging hut sits outside the back-right corner, clear of the gate, the sign and the next yard's bench.
+    const dockAt = { i: i0 + w + 1.0, j: j0 + 0.45 }
     const docked = members.filter(
       (agent) => agent.status === 'idle' && !halted.has(agent.id) && !drawn.has(agent.id) && isWorker(agent)
     )
     const dock: CrowdSpot = {
       ...dockAt,
-      robots: docked.slice(0, MAX_DOCKED).map((agent, n) => place(agent, 'worker', dockAt.i, dockAt.j - n * DOCK_GAP)),
-      overflow: Math.max(0, docked.length - MAX_DOCKED),
+      robots: docked.slice(0, 1).map((agent) => place(agent, 'worker', dockAt.i, dockAt.j)),
+      overflow: Math.max(0, docked.length - 1),
+      ids: docked.map((agent) => agent.id),
     }
 
     const benchAt = { i: i0 - 1.1, j: j0 + h - 0.6 }

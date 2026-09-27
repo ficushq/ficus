@@ -80,6 +80,8 @@ export interface CrowdSpot {
   robots: RobotPlacement[]
   /** Robots that belong here but aren't drawn (shown as "+N"). */
   overflow: number
+  /** Everyone at this spot, drawn or not (the charging hut lists them). */
+  ids?: string[]
 }
 
 export interface YardLayout {
@@ -94,7 +96,10 @@ export interface YardLayout {
   sign: { i: number; j: number }
   /** The squad manager, standing outside the gate. */
   farmer: RobotPlacement | null
-  /** Idle workers docked at the charging station. */
+  /**
+   * The charging hut at the yard's back corner, where idle workers rest. Only
+   * the first is placed (it peeks out of the doorway); `ids` has them all.
+   */
   dock: CrowdSpot
   /** Recent consultants on the bench. */
   bench: CrowdSpot

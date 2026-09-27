@@ -252,49 +252,6 @@ export function Compost({ count }: { count: number }) {
   )
 }
 
-/**
- * Solar charging pad where idle robots dock. Anchored at the pad's centre;
- * the solar post stands behind it (up-right).
- */
-export function ChargingDock({ count, panel = true }: { count: number; panel?: boolean }) {
-  const on = count > 0
-  const lit = Math.min(3, Math.max(0, count))
-  return (
-    <g>
-      <Shadow rx={30} ry={11} />
-      {/* solar post, behind the pad (only on the front pad of a row) */}
-      {panel && (
-        <g transform="translate(24 -12)">
-          <rect x={-2.5} y={-30} width={5} height={30} fill="url(#g-metal)" className="g-ol" />
-          {[0, 1, 2].map((k) => (
-            <circle key={k} cy={-8 - k * 6} r={1.8} fill={k < lit ? '#9ff0c8' : '#4a4f55'} className="g-ol2" />
-          ))}
-          <g transform="translate(0 -32) scale(1.15)">
-            <path d="M-16 -2 L4 -12 L18 -4 L-2 6Z" fill="url(#g-solar)" className="g-ol" />
-            <path
-              d="M-9 -5.5 L11 2.5 M-6 2 L11 -8 M1 -1 L-3 -7"
-              stroke="#cfe3f5"
-              strokeOpacity={0.55}
-              strokeWidth={0.9}
-            />
-            <path d="M-12 -2.5 L2 -9.5" stroke="#fff" strokeOpacity={0.5} strokeWidth={1.6} strokeLinecap="round" />
-          </g>
-        </g>
-      )}
-      {/* pad: a thick rounded diamond */}
-      <ellipse cy={0} rx={26} ry={12} fill="#6f777e" className="g-ol" />
-      <ellipse cy={-4} rx={26} ry={12} fill="url(#g-metal)" className="g-ol" />
-      <ellipse cy={-4} rx={18} ry={8} fill="#23282c" className="g-ol2" />
-      {on && (
-        <g className="g-glow">
-          <ellipse cy={-4} rx={15} ry={6.5} fill="#9ff0c8" opacity={0.35} />
-        </g>
-      )}
-      <path d="M2 -10 L-6 -3.5 H-0.5 L-3 2 L6 -5 H0.5Z" fill={on ? '#f2c14e' : '#8a8f94'} className="g-ol2" />
-    </g>
-  )
-}
-
 /** Wooden bench for visiting consultants; seat runs along j, back on the -i side. Anchored at the seat's centre. */
 export function Bench() {
   const seatY = -12

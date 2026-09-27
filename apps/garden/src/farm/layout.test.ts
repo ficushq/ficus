@@ -289,7 +289,7 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.farmer?.prop).toBe('hoe')
     expect(yard!.farmer!.i).toBeGreaterThan(yard!.sign.i)
     expect(yard!.farmer!.j).toBeGreaterThan(yard!.j0 + yard!.h)
-    expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 1.05, j: yard!.j0 + yard!.h - 0.55 })
+    expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 1.0, j: yard!.j0 + 0.45 })
     expect(yard!.bench.i).toBeLessThan(yard!.i0)
   })
 
@@ -299,7 +299,7 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.farmer?.agent.id).toBe('boss')
   })
 
-  it('docks up to three idle workers and counts the rest', () => {
+  it('rests every idle worker in the charging hut, one peeking out', () => {
     const agents = [
       boss,
       ...['e', 'a', 'd', 'b', 'c'].map((id) => makeAgent({ id, squadId: 'sq', status: 'idle' })),
@@ -309,14 +309,13 @@ describe('farmer, sign, dock and bench', () => {
       makeAgent({ id: 'con', squadId: 'sq', agentTypeId: 'consultant', status: 'idle' }),
     ]
     const [yard] = layoutFarm(farm({ squads: [squad], agents, pendingActions: [makeAgentError('halted')] })).yards
-    expect(yard!.dock.robots.map((r) => r.agent.id)).toEqual(['a', 'b', 'c'])
-    expect(yard!.dock.robots.every((r) => r.face === 'normal' && r.prop === null)).toBe(true)
-    expect(yard!.dock.overflow).toBe(2)
-    // One pad each, in a row along the right fence, a tile apart: no robot stands on another.
-    const spots = yard!.dock.robots.map((r) => [r.i, r.j])
-    expect(new Set(spots.map((s) => s[0])).size).toBe(1)
-    for (let n = 1; n < spots.length; n++) expect(spots[n - 1]![1] - spots[n]![1]).toBeCloseTo(1)
-    expect(spots.every(([i]) => i > yard!.i0 + yard!.w + 0.5)).toBe(true)
+    expect(yard!.dock.ids).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(yard!.dock.robots.map((r) => r.agent.id)).toEqual(['a'])
+    expect(yard!.dock.robots[0]).toMatchObject({ face: 'normal', prop: null, i: yard!.dock.i, j: yard!.dock.j })
+    expect(yard!.dock.overflow).toBe(4)
+    // One hut whatever the count, outside the back-right corner.
+    expect(yard!.dock.i).toBeGreaterThan(yard!.i0 + yard!.w)
+    expect(yard!.dock.j).toBeLessThan(yard!.j0 + 1)
   })
 
   it('benches up to two recent consultants', () => {

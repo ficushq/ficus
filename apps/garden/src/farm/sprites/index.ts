@@ -12,8 +12,8 @@ export {
   Mailbox,
   Crates,
   Compost,
-  ChargingDock,
   Bench,
 } from './Buildings'
 export { Tree, Bush, Flowers, HayBale, Butterfly } from './Decor'
 export { Grass } from './Terrain'
+export { ChargingHut, CHARGING_HUT_FOOTPRINT } from './ChargingHut'

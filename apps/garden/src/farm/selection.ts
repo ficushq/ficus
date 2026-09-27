@@ -4,6 +4,7 @@ export type Selection =
   | { kind: 'plot'; streamId: string }
   | { kind: 'robot'; agentId: string }
   | { kind: 'yard'; squadId: string }
+  | { kind: 'hut'; squadId: string }
   | { kind: 'mailbox' }
   | { kind: 'farmhouse' }
   | { kind: 'seedShed' }
@@ -19,6 +20,8 @@ export function selectionKey(s: Selection | null): string | null {
       return `robot:${s.agentId}`
     case 'yard':
       return `yard:${s.squadId}`
+    case 'hut':
+      return `hut:${s.squadId}`
     default:
       return s.kind
   }
