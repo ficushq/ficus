@@ -99,6 +99,29 @@ describe('telegramProvider.sendNotification', () => {
   })
 })
 
+describe('Telegram command word', () => {
+  it('ignores the pre-rename command word in groups (Ruling 39)', async () => {
+    const bot = spyOn(telegramProvider, 'getBotUserId').mockResolvedValue('99')
+    try {
+      const parsed = await telegramProvider.parseWebhook(
+        {
+          update_id: 1,
+          message: {
+            message_id: 3,
+            chat: { id: -100, type: 'group' },
+            from: { id: 7, first_name: 'U' },
+            text: '/tau help',
+          },
+        },
+        {}
+      )
+      expect(parsed).toBeNull()
+    } finally {
+      bot.mockRestore()
+    }
+  })
+})
+
 describe('Telegram private squad switching', () => {
   it('marks private chats distinctly from group replies', async () => {
     const bot = spyOn(telegramProvider, 'getBotUserId').mockResolvedValue('99')

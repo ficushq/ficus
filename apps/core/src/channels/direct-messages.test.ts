@@ -92,12 +92,12 @@ describe('private squad conversations', () => {
       '/ficus@FicusBot squad team-2',
       '@Ficus squad team-2',
       'ficus squad team-2',
-      // Typed before the rename: still understood.
-      '/tau squad team-2',
-      'tau squad team-2',
     ])
       expect(parseDirectCommand(text)).toEqual({ command: 'squad', text: 'team-2' })
     expect(parseDirectCommand('please switch squad team-2')).toBeNull()
+    // Only the Ficus command word is a command (Ruling 39): the pre-rename word is ordinary prose.
+    for (const text of ['/tau squad team-2', 'tau squad team-2', '@tau squad team-2'])
+      expect(parseDirectCommand(text)).toBeNull()
   })
   test('lists only authorized squads using exactly the URL slug collision rules', async () => {
     const result = await resolve({ command: 'squad', text: '' })

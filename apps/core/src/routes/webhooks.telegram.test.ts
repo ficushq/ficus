@@ -232,7 +232,7 @@ describe('Telegram private-chat access', () => {
     expect(findAgent).not.toHaveBeenCalled()
   })
 
-  for (const command of ['/help', '/help@FicusBot', '/ficus help', '/ficus@FicusBot help', '/ficus', '/tau help']) {
+  for (const command of ['/help', '/help@FicusBot', '/ficus help', '/ficus@FicusBot help', '/ficus']) {
     it(`shows the full menu for ${command} without linkage or a selected squad`, async () => {
       expect((await receive(update(command))).status).toBe(200)
       expect(requests[0]?.body.text).toContain('Commands:')

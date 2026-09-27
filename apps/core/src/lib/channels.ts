@@ -26,11 +26,8 @@ export function isTauSyncCommand(cmd: string): cmd is TauSyncCommand {
   return (FICUS_SYNC_COMMANDS as readonly string[]).includes(cmd)
 }
 
-/**
- * The command word users type or mention: `ficus`. `tau` is the pre-rename word, still read so a
- * command typed from habit (or an unchanged chat-app registration) keeps working; Wave 3 drops it.
- */
-export const COMMAND_WORD = String.raw`(?:ficus|tau)`
+/** The command word users type or mention in chat: `/ficus …`, `@Ficus …`, `ficus …`. */
+export const COMMAND_WORD = 'ficus'
 
 /** Text commands also work in bot DMs without provider slash-command registration. */
 export function parseDirectCommand(text: string): { command: string; text: string } | null {
