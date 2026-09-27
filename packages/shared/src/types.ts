@@ -554,7 +554,7 @@ export interface AgentTypeIntegrationPolicyV1 {
 
 // Agent type definition
 export interface AgentType {
-  /** Reserved for a Tau-managed role, not a work-flow participant. */
+  /** Reserved for a Ficus-managed role, not a work-flow participant. */
   systemOnly?: boolean
   id: string
   model: string
@@ -901,7 +901,7 @@ export interface LocalDeployment {
   keepSandboxAlive: boolean
   command?: string | null
   cwd?: string | null
-  /** Absolute sandbox-side path of the log file Tau tails for attached deployments. Null for managed (launcher owns logging) and for attached deployments registered without one. */
+  /** Absolute sandbox-side path of the log file Ficus tails for attached deployments. Null for managed (launcher owns logging) and for attached deployments registered without one. */
   logPath?: string | null
   envSecretRefs?: string[] | null
   processId?: string | null
@@ -917,7 +917,7 @@ export interface LocalDeployment {
 export interface CreateLocalDeploymentInput {
   name: string
   /**
-   * OMIT THIS. Tau assigns a free port and passes it to the app as `$PORT`,
+   * OMIT THIS. Ficus assigns a free port and passes it to the app as `$PORT`,
    * which is the only way it can guarantee the port is actually free.
    *
    * A VM machine runs every squad's box as a user on ONE host, sharing one

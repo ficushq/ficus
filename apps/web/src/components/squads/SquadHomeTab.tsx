@@ -80,7 +80,7 @@ export function SquadHomeTab({
           </div>
           <Link
             to={`${base}/agents?newConsultant=1`}
-            className="tau-button tau-button-primary inline-flex shrink-0 items-center gap-2 px-3 py-2 text-sm"
+            className="ficus-button ficus-button-primary inline-flex shrink-0 items-center gap-2 px-3 py-2 text-sm"
           >
             <ChatIcon className="h-4 w-4" />
             New chat
@@ -121,7 +121,7 @@ export function SquadHomeTab({
             <Link
               key={agent.id}
               to={`${base}/agents?agent=${encodeURIComponent(agent.id)}`}
-              className="tau-nav-item flex items-center justify-between gap-2 px-3 py-3 text-sm text-secondary"
+              className="ficus-nav-item flex items-center justify-between gap-2 px-3 py-3 text-sm text-secondary"
             >
               <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                 <AgentActivityDot status={agent.status} />
@@ -140,7 +140,7 @@ export function SquadHomeTab({
         >
           <Link
             to={managerAgent ? `${base}/agents?agent=${encodeURIComponent(managerAgent.id)}` : `${base}/manager`}
-            className="tau-nav-item mt-2 flex items-center gap-2 px-3 py-3 text-sm text-secondary"
+            className="ficus-nav-item mt-2 flex items-center gap-2 px-3 py-3 text-sm text-secondary"
           >
             <span className="flex h-4 w-4 shrink-0 items-center justify-center">
               {managerAgent && <AgentActivityDot status={managerAgent.status} />}

@@ -233,7 +233,7 @@ export function MemorySyncSettings({ squadId }: Props) {
         {!showAddProvider && editingIndex === null && canWriteMemory && (
           <button
             onClick={() => setShowAddProvider(true)}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
           >
             Add Provider
           </button>
@@ -261,14 +261,14 @@ export function MemorySyncSettings({ squadId }: Props) {
                   <button
                     onClick={() => startEditing(index)}
                     disabled={editingIndex !== null || showAddProvider || !canWriteMemory}
-                    className="tau-button text-xs text-accent-light hover:underline disabled:opacity-50"
+                    className="ficus-button text-xs text-accent-light hover:underline disabled:opacity-50"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => removeProviderMutation.mutate(index)}
                     disabled={removeProviderMutation.isPending || !canWriteMemory}
-                    className="tau-button text-xs text-status-danger-500 hover:underline"
+                    className="ficus-button text-xs text-status-danger-500 hover:underline"
                   >
                     Remove
                   </button>
@@ -288,7 +288,7 @@ export function MemorySyncSettings({ squadId }: Props) {
               onClick={() => pullMutation.mutate()}
               disabled={pullMutation.isPending || !canWriteMemory}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 'flex-1 px-3 py-2 text-sm rounded-md font-medium transition-colors border',
                 pullMutation.isPending || !canWriteMemory
                   ? 'bg-surface-secondary text-muted cursor-not-allowed border-th-border'
@@ -301,7 +301,7 @@ export function MemorySyncSettings({ squadId }: Props) {
               onClick={() => pushMutation.mutate()}
               disabled={pushMutation.isPending || !canWriteMemory}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 'flex-1 px-3 py-2 text-sm rounded-md font-medium transition-colors border',
                 pushMutation.isPending || !canWriteMemory
                   ? 'bg-surface-secondary text-muted cursor-not-allowed border-th-border'
@@ -349,7 +349,7 @@ export function MemorySyncSettings({ squadId }: Props) {
               <button
                 onClick={() => setProviderType('git')}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
                   providerType === 'git'
                     ? 'bg-accent text-on-accent'
@@ -361,7 +361,7 @@ export function MemorySyncSettings({ squadId }: Props) {
               <button
                 onClick={() => setProviderType('s3')}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
                   providerType === 's3'
                     ? 'bg-accent text-on-accent'
@@ -384,7 +384,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                   value={gitRepoUrl}
                   onChange={(e) => setGitRepoUrl(e.target.value)}
                   placeholder="git@github.com:org/repo.git"
-                  className="tau-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50"
+                  className="ficus-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50"
                 />
               </div>
 
@@ -395,7 +395,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                   value={gitBranch}
                   onChange={(e) => setGitBranch(e.target.value)}
                   placeholder="main"
-                  className="tau-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50"
+                  className="ficus-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50"
                 />
               </div>
 
@@ -407,7 +407,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                   <select
                     value={gitSshKeyName}
                     onChange={(e) => setGitSshKeyName(e.target.value)}
-                    className="tau-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary  focus:ring-2 focus:ring-accent/50"
+                    className="ficus-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary  focus:ring-2 focus:ring-accent/50"
                   >
                     <option value="">Select SSH key...</option>
                     {sshKeys.map((key) => (
@@ -451,7 +451,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                     setShowAddProvider(false)
                     resetForm()
                   }}
-                  className="tau-button px-3 py-1.5 text-sm rounded-md font-medium text-secondary hover:bg-surface-hover"
+                  className="ficus-button px-3 py-1.5 text-sm rounded-md font-medium text-secondary hover:bg-surface-hover"
                 >
                   Cancel
                 </button>
@@ -465,7 +465,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                     !canWriteMemory
                   }
                   className={clsx(
-                    'tau-button',
+                    'ficus-button',
                     'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
                     gitRepoUrl && gitSshKeyName && canWriteMemory
                       ? 'bg-accent text-on-accent hover:bg-accent/90'

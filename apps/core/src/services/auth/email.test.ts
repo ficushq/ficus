@@ -90,7 +90,7 @@ describe('verification email names the instance', () => {
     process.env.APP_URL = 'https://demo.hiretau.ai'
     await sendVerificationEmail('who@example.com')
     const message = lastSentMessage()
-    expect(message.Subject.Data).toBe('Your Tau verification code for demo.hiretau.ai')
+    expect(message.Subject.Data).toBe('Your Ficus verification code for demo.hiretau.ai')
     expect(message.Body.Text.Data).toContain('https://demo.hiretau.ai')
     expect(message.Body.Html.Data).toContain('https://demo.hiretau.ai')
   })
@@ -106,7 +106,7 @@ describe('verification email names the instance', () => {
     delete process.env.APP_URL
     await sendVerificationEmail('who@example.com')
     const message = lastSentMessage()
-    expect(message.Subject.Data).toBe('Tau — Verify your email')
+    expect(message.Subject.Data).toBe('Ficus — Verify your email')
     expect(message.Subject.Data).not.toContain('undefined')
     expect(message.Body.Text.Data).not.toContain('undefined')
     expect(message.Body.Html.Data).not.toContain('undefined')
@@ -116,7 +116,7 @@ describe('verification email names the instance', () => {
   it('degrades when APP_URL is unparseable rather than printing garbage', async () => {
     process.env.APP_URL = 'not a url'
     await sendVerificationEmail('who@example.com')
-    expect(lastSentMessage().Subject.Data).toBe('Tau — Verify your email')
+    expect(lastSentMessage().Subject.Data).toBe('Ficus — Verify your email')
   })
 
   it('instanceIdentity strips a trailing slash and reports the bare host', () => {
@@ -386,5 +386,33 @@ describe('passkey-recovery email is link-only too', () => {
     }
     expect(text).not.toMatch(/\b\d{6}\b/)
     expect(html).not.toContain('letter-spacing:4px')
+  })
+})
+
+describe('email copy names Ficus', () => {
+  const instance = { host: 'demo.example.com', url: 'https://demo.example.com' }
+  const link = 'https://demo.example.com/register?token=abc123'
+
+  it('invite subject and bodies', () => {
+    const message = buildInviteMessage(link, instance, INVITE_CHALLENGE_TTL_MS)
+    expect(message.Subject.Data).toBe('You have been invited to Ficus at demo.example.com')
+    expect(message.Body.Text.Data).toContain('You have been invited to the Ficus instance at https://demo.example.com.')
+    expect(buildInviteMessage(link, null, INVITE_CHALLENGE_TTL_MS).Subject.Data).toBe('Ficus — You have been invited')
+    expect(buildInviteMessage(link, null, INVITE_CHALLENGE_TTL_MS).Body.Text.Data).toContain(
+      'You have been invited to join Ficus.'
+    )
+  })
+
+  it('passkey-recovery subject and bodies', () => {
+    const message = buildPasskeyRecoveryMessage(link, instance, 3600000)
+    expect(message.Subject.Data).toBe('Register a new passkey for Ficus at demo.example.com')
+    expect(message.Body.Text.Data).toContain('on the Ficus instance at https://demo.example.com.')
+    expect(buildPasskeyRecoveryMessage(link, null, 3600000).Subject.Data).toBe('Ficus — Register a new passkey')
+  })
+
+  it('verification bodies', () => {
+    const message = buildVerificationMessage('123456', instance, DEFAULT_VERIFICATION_TTL_MS)
+    expect(message.Body.Text.Data).toContain('Your Ficus verification code is: 123456')
+    expect(message.Body.Html.Data).toContain('This code is for the Ficus instance at https://demo.example.com.')
   })
 })

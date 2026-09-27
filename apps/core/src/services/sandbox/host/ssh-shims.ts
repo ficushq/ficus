@@ -2,7 +2,7 @@
  * Host-runtime `ssh`/`scp`/`rsync` shims (issue #1331).
  *
  * On the host runtime there is no `~/.ssh` mount: plain SSH-family commands
- * run as the operator and read the operator's own ssh config, so tau-granted
+ * run as the operator and read the operator's own ssh config, so Ficus-granted
  * remote-host aliases do not resolve — only git does, via
  * `GIT_SSH_COMMAND`. These PATH shims (written into `<HOME_DIR>/host/bin`,
  * which `buildHostCommandEnv` already prepends to every agent PATH) close
@@ -10,7 +10,7 @@
  * the operator's own ssh configuration or weakening host-key checking:
  *
  * - Pass-through unless EVERY remote destination is an alias inside the
- *   squad config's `# >>> tau remote hosts >>>` managed block (see
+ *   squad config's `# >>> ficus remote hosts >>>` managed block (see
  *   `remote-hosts/materialize.ts`) and the user passed no `-F` (ssh/scp) of
  *   their own. For rsync, `RSYNC_RSH` is exported instead of parsing
  *   `-e`/`--rsh`: rsync gives an explicit `-e`/`--rsh` precedence over the
@@ -25,7 +25,7 @@
  *   the shim's "user `-F` wins → pass through" rule and stays byte-identical
  *   (pinned by a regression test).
  *
- * The scripts are POSIX `/bin/sh` (like the `tau` shim) and deliberately
+ * The scripts are POSIX `/bin/sh` (like the other host shims) and deliberately
  * dependency-free: the squad ssh dir is read from `FICUS_SQUAD_SSH_DIR` at
  * run time (exported by `buildHostCommandEnv`), so solo agents — which have
  * no squad ssh config — get a plain pass-through. Line arrays are used
@@ -48,22 +48,26 @@ export const SSH_FAMILY_TOOLS: readonly SshFamilyTool[] = ['ssh', 'scp', 'rsync'
 // never drags the DB client into a process or test that has no database.
 // Drift is failure-safe (the shim finds no aliases and passes through), and
 // the functional test suite pins the fixtures to these exact markers.
-const MANAGED_BLOCK_BEGIN = '# >>> tau remote hosts >>>'
-const MANAGED_BLOCK_END = '# <<< tau remote hosts <<<'
+export const MANAGED_BLOCK_BEGIN = '# >>> ficus remote hosts >>>'
+export const MANAGED_BLOCK_END = '# <<< ficus remote hosts <<<'
+// A squad config not yet re-materialized (the host runtime re-materializes every granted squad at
+// worker boot) may still carry the pre-rename markers; read them too until Wave 3.
+export const LEGACY_MANAGED_BLOCK_BEGIN = '# >>> tau remote hosts >>>'
+export const LEGACY_MANAGED_BLOCK_END = '# <<< tau remote hosts <<<'
 
 const TOOL_COMMENTS: Record<SshFamilyTool, string> = {
-  ssh: `# tau host-runtime ssh shim. When the destination is an alias managed by
-# tau in the squad SSH config, prepend that config (-F + pinned
+  ssh: `# Ficus host-runtime ssh shim. When the destination is an alias managed by
+# Ficus in the squad SSH config, prepend that config (-F + pinned
 # UserKnownHostsFile) so the alias resolves. Anything else — including any
 # invocation that already passes -F — runs untouched against the operator's
 # own ssh.`,
-  scp: `# tau host-runtime scp shim. When every remote destination is an alias
-# managed by tau in the squad SSH config, prepend that config (-F + pinned
+  scp: `# Ficus host-runtime scp shim. When every remote destination is an alias
+# managed by Ficus in the squad SSH config, prepend that config (-F + pinned
 # UserKnownHostsFile) so the aliases resolve. Anything else — including any
 # invocation that already passes -F, or a command that also names an
 # operator host — runs untouched against the operator's own scp.`,
-  rsync: `# tau host-runtime rsync shim. When the remote destination is an alias
-# managed by tau in the squad SSH config, export RSYNC_RSH=ssh -F <squad
+  rsync: `# Ficus host-runtime rsync shim. When the remote destination is an alias
+# managed by Ficus in the squad SSH config, export RSYNC_RSH=ssh -F <squad
 # config> so the alias resolves. Anything else runs untouched against the
 # operator's own rsync; an explicit -e/--rsh beats RSYNC_RSH by rsync's own
 # precedence, so user-configured commands behave exactly as before.`,
@@ -104,7 +108,7 @@ function resolveRealLines(tool: SshFamilyTool): string[] {
     '  fi',
     'done',
     'IFS=$ifs',
-    `[ -n "$REAL" ] || { echo "${tool}: not found (tau host shim)" >&2; exit 127; }`,
+    `[ -n "$REAL" ] || { echo "${tool}: not found (ficus host shim)" >&2; exit 127; }`,
   ]
 }
 
@@ -122,14 +126,14 @@ function aliasScanLines(): string[] {
     '# No squad ssh dir / no config (solo agents, fresh squads): plain pass-through.',
     '[ -n "$SQUAD_DIR" ] && [ -f "$CFG" ] || exec "$REAL" "$@"',
     '',
-    "# Managed aliases: only names inside tau's managed block are tau's to resolve.",
+    "# Managed aliases: only names inside the Ficus managed block are Ficus's to resolve.",
     'ALIASES=',
     'in=0',
     'while IFS= read -r line || [ -n "$line" ]; do',
     '  line=${line#"${line%%[!\t ]*}"}',
     '  case $line in',
-    `    '${MANAGED_BLOCK_BEGIN}') in=1 ;;`,
-    `    '${MANAGED_BLOCK_END}') in=0 ;;`,
+    `    '${MANAGED_BLOCK_BEGIN}'|'${LEGACY_MANAGED_BLOCK_BEGIN}') in=1 ;;`,
+    `    '${MANAGED_BLOCK_END}'|'${LEGACY_MANAGED_BLOCK_END}') in=0 ;;`,
     '    Host\\ *)',
     '      if [ "$in" = 1 ]; then',
     '        name=${line#Host }',
@@ -286,7 +290,7 @@ function rsyncTailLines(): string[] {
     '}',
     '',
     '# Check one bare operand as a candidate remote spec: [user@]host:path over',
-    "# rsh/ssh. rsync:// URLs and host::module daemon specs are never tau's to",
+    "# rsh/ssh. rsync:// URLs and host::module daemon specs are never Ficus's to",
     '# resolve; anything without a colon is a local path.',
     'check_spec() {',
     '  case $1 in',

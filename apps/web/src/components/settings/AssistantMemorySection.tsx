@@ -64,7 +64,7 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
     <div className="space-y-6" data-setting-target="memory-embeddings">
       <header>
         <h3 className="text-lg font-semibold text-primary">
-          {onboarding ? 'Make Tau your own' : 'Assistant & Memory'}
+          {onboarding ? 'Make Ficus your own' : 'Assistant & Memory'}
         </h3>
         <p className="mt-1 text-sm text-muted">
           {onboarding
@@ -129,7 +129,7 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
           <p className="mt-1 text-sm text-muted">
             {onboarding
               ? 'These features need an OpenAI API key, separate from a ChatGPT subscription. API usage is billed by OpenAI.'
-              : 'Use an OpenAI API key for realtime sessions, dictation, and embeddings. Tau’s ChatGPT subscription login under AI Providers does not supply this key. These features use your API account and incur API usage charges.'}
+              : 'Use an OpenAI API key for realtime sessions, dictation, and embeddings. Ficus’s ChatGPT subscription login under AI Providers does not supply this key. These features use your API account and incur API usage charges.'}
           </p>
           {!onboarding && (
             <p className="mt-2 text-xs text-muted">
@@ -154,7 +154,7 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
           <div className="space-y-4">
             {configured && (
               <button
-                className="tau-button tau-button-primary rounded-lg px-3 py-2 text-sm"
+                className="ficus-button ficus-button-primary rounded-lg px-3 py-2 text-sm"
                 disabled={!canWriteServices || enable.isPending}
                 onClick={() => enable.mutate()}
               >

@@ -54,7 +54,7 @@ export function SquadChatActions({
           onClick={onNewChat}
           aria-label="New consultant chat"
           title="New consultant chat"
-          className="tau-button tau-button-primary flex h-[26px] items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-on-accent hover:bg-accent-hover"
+          className="ficus-button ficus-button-primary flex h-[26px] items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-on-accent hover:bg-accent-hover"
         >
           <PlusIcon className="h-3.5 w-3.5" />
           New chat
@@ -74,13 +74,13 @@ export function SquadChatActions({
             aria-label="Chat options"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
-            className="tau-button flex h-[26px] w-[26px] items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary"
+            className="ficus-button flex h-[26px] w-[26px] items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary"
           >
             <MoreIcon className="h-4 w-4" />
           </button>
           <Presence
             open={menuOpen}
-            className="tau-overlay squad-chat-options absolute right-0 top-full z-30 mt-1 w-40 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
+            className="ficus-overlay squad-chat-options absolute right-0 top-full z-30 mt-1 w-40 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
           >
             {canManageChats && (
               <button
@@ -90,7 +90,7 @@ export function SquadChatActions({
                   onManageChats()
                   triggerRef.current?.focus()
                 }}
-                className="tau-button flex w-full rounded-md px-2 py-2 text-left text-xs text-primary hover:bg-surface-hover"
+                className="ficus-button flex w-full rounded-md px-2 py-2 text-left text-xs text-primary hover:bg-surface-hover"
               >
                 {managingChats ? 'Done managing chats' : 'Manage chats'}
               </button>
@@ -102,7 +102,7 @@ export function SquadChatActions({
                   setMenuOpen(false)
                   onSpawnAgent()
                 }}
-                className="tau-button flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-primary hover:bg-surface-hover"
+                className="ficus-button flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-primary hover:bg-surface-hover"
               >
                 <PlusIcon className="h-3.5 w-3.5" />
                 Spawn agent…

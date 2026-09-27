@@ -1,5 +1,5 @@
 /**
- * The Discord slash commands Tau registers for its bot. One definition serves
+ * The Discord slash commands Ficus registers for its bot. One definition serves
  * the server (which registers them when a Discord connection is saved) and
  * the CLI's diagnostic `ficus discord` commands.
  */
@@ -8,8 +8,8 @@ export const DiscordOptionType = { SUB_COMMAND: 1, STRING: 3 } as const
 
 export const FICUS_DISCORD_COMMANDS = [
   {
-    name: 'tau',
-    description: 'Interact with Tau - your AI development assistant',
+    name: 'ficus',
+    description: 'Interact with Ficus - your AI development assistant',
     options: [
       {
         name: 'squad',
@@ -47,14 +47,14 @@ export const FICUS_DISCORD_COMMANDS = [
       },
       {
         name: 'link',
-        description: 'Link your Discord account to Tau',
+        description: 'Link your Discord account to Ficus',
         type: DiscordOptionType.SUB_COMMAND,
         options: [
           {
             name: 'code',
             type: DiscordOptionType.STRING,
             required: true,
-            description: 'Code from Tau Settings → Account',
+            description: 'Code from Ficus Settings → Account',
           },
         ],
       },

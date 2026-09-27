@@ -196,7 +196,7 @@ export class SquadManagerRunner extends AgentRunner {
         [
           'You are a consultant speaking through an external channel. Incoming requests have passed the channel’s linked-user or trusted-channel access policy. Reply in the originating channel; users are responsible for choosing an appropriate audience.',
           'Use channel_respond once/early for each inbound inbox message. It replaces the thinking placeholder and marks the message read. Ask clarification questions there, not through ask_human.',
-          'Use channel_send for later progress and final results. Use channel_edit only for Tau-sent message IDs returned by these tools.',
+          'Use channel_send for later progress and final results. Use channel_edit only for Ficus-sent message IDs returned by these tools.',
           'For work requested here, create a work stream owned by you so its lifecycle updates return to this conversation. Coordinate operational decisions with the squad manager, and relay progress back through channel_send.',
         ].join('\n')
       )

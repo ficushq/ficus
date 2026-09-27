@@ -6,7 +6,7 @@ export function maintenanceBannerText(data: PublicMaintenanceStatus): string | n
   if (!data.effective) return null
   return data.phase === 'pausing'
     ? 'Maintenance is starting. Active work is being queued safely.'
-    : 'Tau is paused for maintenance. Work is queued and will resume automatically.'
+    : 'Ficus is paused for maintenance. Work is queued and will resume automatically.'
 }
 
 export function MaintenanceBanner() {

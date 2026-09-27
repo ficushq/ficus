@@ -129,7 +129,7 @@ describe('channel plugins', () => {
         header(init, 'authorization') === 'Bot good'
           ? Response.json({ id: 'bot-user' })
           : new Response('{"message":"401: Unauthorized"}', { status: 401 }),
-      '/applications/@me': Response.json({ id: 'app-1', verify_key: 'pk-1', name: 'Tau' }),
+      '/applications/@me': Response.json({ id: 'app-1', verify_key: 'pk-1', name: 'Ficus' }),
     })
     const { discord } = createChannelPlugins({ fetch: fetchImpl })
     const good = discord.connection.credential.serialize({ botToken: 'good' })

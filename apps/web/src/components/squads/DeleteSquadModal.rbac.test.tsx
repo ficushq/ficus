@@ -19,7 +19,7 @@ async function renderModal() {
       rendered.root.render(
         <MemoryRouter>
           <QueryClientProvider client={queryClient}>
-            <DeleteSquadModal isOpen onClose={() => undefined} squadId="squad-1" squadName="Tau" />
+            <DeleteSquadModal isOpen onClose={() => undefined} squadId="squad-1" squadName="Ficus" />
           </QueryClientProvider>
         </MemoryRouter>
       )

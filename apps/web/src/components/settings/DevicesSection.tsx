@@ -84,7 +84,7 @@ export function DevicesSection() {
       <div>
         <h2 className="text-lg font-semibold text-primary">Paired Devices</h2>
         <p className="text-sm text-muted mt-1">
-          Connect the Tau CLI or mobile app. Each paired client gets its own access token you can revoke here.
+          Connect the Ficus CLI or mobile app. Each paired client gets its own access token you can revoke here.
         </p>
       </div>
 
@@ -106,18 +106,18 @@ export function DevicesSection() {
 
       <div className="border-b border-panel-border last:border-b-0 p-4 space-y-2">
         <h3 data-setting-target="connect-the-tau-cli" className="text-sm font-medium text-primary">
-          Connect the Tau CLI
+          Connect the Ficus CLI
         </h3>
         <p className="text-sm text-muted">Run this command, then approve the request opened in your browser.</p>
         <code className="block rounded bg-surface-hover p-2 text-xs select-all">
-          tau auth login --api-url {getApiUrl()}
+          ficus auth login --api-url {getApiUrl()}
         </code>
       </div>
 
       {/* Pair */}
       <div className="border-b border-panel-border last:border-b-0 p-4 space-y-3">
         <h3 data-setting-target="pair-the-tau-mobile-app" className="text-sm font-medium text-primary">
-          Pair the Tau mobile app
+          Pair the Ficus mobile app
         </h3>
         {qr ? (
           <PairingCode
@@ -130,7 +130,7 @@ export function DevicesSection() {
           <button
             onClick={() => startMutation.mutate()}
             disabled={startMutation.isPending}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
           >
             {startMutation.isPending ? 'Generating…' : 'Generate pairing QR'}
           </button>
@@ -165,7 +165,7 @@ export function DevicesSection() {
                 <button
                   onClick={() => revokeMutation.mutate(d.id)}
                   disabled={revokeMutation.isPending}
-                  className="tau-button px-2 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
+                  className="ficus-button px-2 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
                 >
                   Revoke
                 </button>

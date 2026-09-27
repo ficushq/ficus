@@ -36,7 +36,7 @@ const now = new Date('2026-01-01T00:00:00Z')
 
 const squad: Squad = {
   id: 'squad-1',
-  name: 'Tau Routing Squad',
+  name: 'Ficus Routing Squad',
   purpose: 'Route agent deep links by device',
   status: 'active',
   squadPresetId: null,
@@ -274,14 +274,14 @@ async function renderAtPath(initialPath: string, width = 1280) {
 
 describe('SquadDetailPage slug resolution', () => {
   test('resolves a slug param to the squad', async () => {
-    // 'Tau Routing Squad' slugifies to 'tau-routing-squad'.
-    const { dom, window, cleanup } = await renderAtPath('/squads/tau-routing-squad')
-    expect(window.document.body.textContent).toContain('Tau Routing Squad')
+    // 'Ficus Routing Squad' slugifies to 'ficus-routing-squad'.
+    const { dom, window, cleanup } = await renderAtPath('/squads/ficus-routing-squad')
+    expect(window.document.body.textContent).toContain('Ficus Routing Squad')
   })
 
   test('normalizes a UUID URL to the slug', async () => {
     const { dom, locations, cleanup } = await renderAtPath('/squads/squad-1')
-    expect(locations.at(-1)).toBe('/squads/tau-routing-squad')
+    expect(locations.at(-1)).toBe('/squads/ficus-routing-squad')
   })
 })
 
@@ -523,7 +523,7 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
 describe('SquadDetailPage path-based tabs', () => {
   test('legacy ?tab= deep links redirect to the tab subpath', async () => {
     const { locations, cleanup } = await renderSquadDetail(1280, '?tab=work')
-    expect(locations.at(-1)).toBe('/squads/tau-routing-squad/work')
+    expect(locations.at(-1)).toBe('/squads/ficus-routing-squad/work')
   })
 
   test('an explicit tab subpath survives refresh with an agent param present', async () => {

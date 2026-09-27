@@ -464,7 +464,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
   // Drive the REAL factory runtime predicates off FICUS_SANDBOX_RUNTIME=vm, faking
   // only the manager — this proves the vm env selects the remote manager flow.
   // getCliHostPath points at a non-existent build on purpose: if the vm path
-  // wrongly ran the k8s CLI subPath staging it would throw "Tau CLI build not
+  // wrongly ran the k8s CLI subPath staging it would throw "Ficus CLI build not
   // found" (vm boxes receive the CLI via syncBoxFiles, not a host subPath mount).
   function vmDeps(manager: any, tmp: string): any {
     return {

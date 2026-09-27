@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { separateWorkflowParticipant } from '../../lib/workflowEditing'
 import { isWorkerAgentType, type WorkflowDefinition } from '@ficus/shared'
 
-const field = 'tau-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
+const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
 
 export function WorkflowParticipantEditor({
   definition,
@@ -45,7 +45,7 @@ export function WorkflowParticipantEditor({
               type="button"
               aria-pressed={active === id}
               className={clsx(
-                'tau-button flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm',
+                'ficus-button flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm',
                 active === id && 'bg-surface-hover text-accent-light'
               )}
               onClick={() => onSelect(id)}
@@ -106,7 +106,7 @@ export function WorkflowParticipantEditor({
                   <button
                     type="button"
                     aria-label={`Make ${step.name ?? step.id} separate`}
-                    className="tau-button shrink-0 text-accent-light disabled:opacity-40"
+                    className="ficus-button shrink-0 text-accent-light disabled:opacity-40"
                     disabled={ids.length >= 64}
                     onClick={() => {
                       const next = separateWorkflowParticipant(definition, step.id)
@@ -131,7 +131,7 @@ export function WorkflowParticipantEditor({
           />
           <button
             type="button"
-            className="tau-button rounded-md px-3 py-2 text-sm text-danger disabled:opacity-40"
+            className="ficus-button rounded-md px-3 py-2 text-sm text-danger disabled:opacity-40"
             disabled={
               usedBy.length > 0 ||
               definition.subscriptions?.some(
@@ -163,7 +163,7 @@ export function WorkflowParticipantEditor({
         </label>
         <button
           type="button"
-          className="tau-button rounded-md border border-th-border px-3 py-2 text-sm disabled:opacity-40"
+          className="ficus-button rounded-md border border-th-border px-3 py-2 text-sm disabled:opacity-40"
           disabled={!validId(newId) || !!definition.participants[newId] || ids.length >= 64}
           onClick={() => {
             edit((draft) => {

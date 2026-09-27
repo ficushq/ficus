@@ -278,13 +278,13 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   {
     section: 'devices',
     id: 'connect-the-tau-cli',
-    label: 'Connect the Tau CLI',
+    label: 'Connect the Ficus CLI',
     keywords: 'pair command line device authorization',
   },
   {
     section: 'devices',
     id: 'pair-the-tau-mobile-app',
-    label: 'Pair the Tau mobile app',
+    label: 'Pair the Ficus mobile app',
     keywords: 'pairing phone device authorization',
   },
 ]

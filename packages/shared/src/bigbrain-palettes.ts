@@ -1,6 +1,6 @@
 /**
  * Six palettes ported from the BigBrain project's own design tokens
- * (`web/ui/src/design/tokens.css`), each becoming a genuine Tau built-in
+ * (`web/ui/src/design/tokens.css`), each becoming a genuine Ficus built-in
  * theme (see `apps/web/src/theme/registry.ts`'s `BUILT_IN_THEMES` and the
  * generator at `apps/web/scripts/generate-bigbrain-builtins.ts`). Each entry
  * names three base colors — a background, a foreground/text color, and an
@@ -25,7 +25,7 @@ export interface BigBrainPalette {
   /** Activity/accent base color (`#rrggbb`). */
   readonly activity: string
   /** The appearance BigBrain itself pairs this palette with; the generated
-   * built-in is unified (constant), starting from Tau's own tokens for this
+   * built-in is unified (constant), starting from Ficus's own tokens for this
    * scheme. */
   readonly scheme: 'light' | 'dark'
 }

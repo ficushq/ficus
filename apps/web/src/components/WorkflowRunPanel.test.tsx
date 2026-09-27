@@ -518,8 +518,8 @@ test('a human gate shows the handoff it reviews and labels each outcome with whe
       'ApproveFinishes the flow',
     ])
     // The forward outcome is the primary action even when a rework outcome is declared first.
-    expect(buttons[1]!.className).toContain('tau-button-primary')
-    expect(buttons[0]!.className).not.toContain('tau-button-primary')
+    expect(buttons[1]!.className).toContain('ficus-button-primary')
+    expect(buttons[0]!.className).not.toContain('ficus-button-primary')
   } finally {
     await f.cleanup()
   }

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { assistantSearch } from './assistantSearch'
 import { isSectionAllowed } from '../components/settings/settingsSections'
 
-const squads = [{ id: 'squad-uuid', name: 'Tau', purpose: 'Agent orchestration platform' }]
+const squads = [{ id: 'squad-uuid', name: 'Ficus', purpose: 'Agent orchestration platform' }]
 const streams = [
   { id: 'stream-uuid', squadId: 'squad-uuid', title: 'Fix OAuth recovery', status: 'active' as const },
   { id: 'done-uuid', squadId: 'squad-uuid', title: 'Old OAuth work', status: 'done' as const },

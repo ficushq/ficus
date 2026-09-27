@@ -195,7 +195,7 @@ export function OrgGraph({ squads, relationships }: Props) {
         <button
           onClick={() => setIs3D(false)}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
           )}
         >
@@ -204,7 +204,7 @@ export function OrgGraph({ squads, relationships }: Props) {
         <button
           onClick={() => setIs3D(true)}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
           )}
         >

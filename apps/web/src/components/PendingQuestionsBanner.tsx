@@ -52,7 +52,7 @@ export function PendingQuestionsBanner({ questions, agentName, dependencies }: P
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="tau-button flex w-full items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-surface-hover"
+            className="ficus-button flex w-full items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-surface-hover"
             aria-label={`${label}; open details`}
           >
             <span aria-hidden="true">?</span>
@@ -63,14 +63,14 @@ export function PendingQuestionsBanner({ questions, agentName, dependencies }: P
             <button
               type="button"
               onClick={() => setIsOpen(true)}
-              className="tau-button min-w-0 flex-1 rounded-l-lg px-3 py-2 text-left text-sm font-medium hover:bg-surface-hover"
+              className="ficus-button min-w-0 flex-1 rounded-l-lg px-3 py-2 text-left text-sm font-medium hover:bg-surface-hover"
             >
               {label}
             </button>
             <button
               type="button"
               onClick={() => setCollapsed(true)}
-              className="tau-button m-1 rounded-md p-1.5 text-muted hover:text-primary hover:bg-surface-hover"
+              className="ficus-button m-1 rounded-md p-1.5 text-muted hover:text-primary hover:bg-surface-hover"
               aria-label="Collapse pending questions"
               title="Collapse pending questions"
             >

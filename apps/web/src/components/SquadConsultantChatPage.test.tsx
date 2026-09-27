@@ -13,7 +13,7 @@ const ThreadsStub = (props: Record<string, unknown>) => {
   return <div data-testid="agent-threads">threads</div>
 }
 
-const squad = { id: 'squad-1', name: 'Tau' } as Squad
+const squad = { id: 'squad-1', name: 'Ficus' } as Squad
 
 function renderPage() {
   capturedProps = null

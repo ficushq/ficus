@@ -12,7 +12,7 @@ export function formatNotification(event: NotificationEvent): { text: string; pa
   }
 
   if (event.url) {
-    lines.push('', `[View in Tau](${event.url})`)
+    lines.push('', `[View in Ficus](${event.url})`)
   }
 
   return {

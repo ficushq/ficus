@@ -38,7 +38,7 @@ describe('ModelFailoverCoordinator', () => {
     expect(await c.attempt('some random unrelated failure')).toBe(false)
   })
 
-  it('guards Tau internal errors at the failover site before session access or mutation', async () => {
+  it('guards Ficus internal errors at the failover site before session access or mutation', async () => {
     let sessionRead = false
     const c = new ModelFailoverCoordinator(
       makeDeps({

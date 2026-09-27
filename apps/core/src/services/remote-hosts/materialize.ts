@@ -24,8 +24,16 @@ import { listHostsGrantedToSquad, type RemoteHost } from './queries'
 
 const log = createLogger('remote-hosts-materialize')
 
-export const MANAGED_BLOCK_BEGIN = '# >>> tau remote hosts >>>'
-export const MANAGED_BLOCK_END = '# <<< tau remote hosts <<<'
+export const MANAGED_BLOCK_BEGIN = '# >>> ficus remote hosts >>>'
+export const MANAGED_BLOCK_END = '# <<< ficus remote hosts <<<'
+/**
+ * The markers a pre-rename Core wrote. Never written; stripped like the current ones, so the next
+ * materialization replaces an old block instead of leaving two managed blocks. Wave 3 drops them.
+ */
+export const LEGACY_MANAGED_BLOCK_BEGIN = '# >>> tau remote hosts >>>'
+export const LEGACY_MANAGED_BLOCK_END = '# <<< tau remote hosts <<<'
+const BLOCK_BEGIN_MARKERS: readonly string[] = [MANAGED_BLOCK_BEGIN, LEGACY_MANAGED_BLOCK_BEGIN]
+const BLOCK_END_MARKERS: readonly string[] = [MANAGED_BLOCK_END, LEGACY_MANAGED_BLOCK_END]
 
 // `KEY_FILE_PREFIX` is exported from `squad/ssh.ts` (as `REMOTE_HOST_KEY_PREFIX`)
 // rather than defined here, so `validateKeyName` there can reserve the same
@@ -172,13 +180,13 @@ export function stripManagedBlock(config: string): string {
 
   for (const line of lines) {
     const trimmed = line.trim()
-    if (trimmed === MANAGED_BLOCK_BEGIN) {
+    if (BLOCK_BEGIN_MARKERS.includes(trimmed)) {
       inBlock = true
       droppedAny = true
       dropping = true
       continue
     }
-    if (trimmed === MANAGED_BLOCK_END) {
+    if (BLOCK_END_MARKERS.includes(trimmed)) {
       inBlock = false
       droppedAny = true
       dropping = true

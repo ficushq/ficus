@@ -35,7 +35,7 @@ export function LinkedChatAccounts() {
   })
   const error = query.error ?? start.error ?? confirm.error ?? remove.error
   return (
-    <section className="tau-section py-5 space-y-4" aria-labelledby="linked-chat-accounts">
+    <section className="ficus-section py-5 space-y-4" aria-labelledby="linked-chat-accounts">
       <div>
         <h4
           id="linked-chat-accounts"
@@ -45,7 +45,7 @@ export function LinkedChatAccounts() {
           Linked chat accounts
         </h4>
         <p className="text-sm text-muted mt-1">
-          Use Discord, Slack, or Telegram with your Tau account’s squad chat permissions. Linking does not grant
+          Use Discord, Slack, or Telegram with your Ficus account’s squad chat permissions. Linking does not grant
           additional access. Answers are posted in the channel where you ask.
         </p>
       </div>
@@ -61,7 +61,7 @@ export function LinkedChatAccounts() {
             </p>
           </div>
           <button
-            className="tau-button px-3 py-2 text-sm shrink-0"
+            className="ficus-button px-3 py-2 text-sm shrink-0"
             disabled={remove.isPending}
             onClick={() => remove.mutate(link.id)}
           >
@@ -70,7 +70,7 @@ export function LinkedChatAccounts() {
         </div>
       ))}
       {query.data?.pending.map((pending) => (
-        <div key={pending.id} className="tau-inset p-4 space-y-3">
+        <div key={pending.id} className="ficus-inset p-4 space-y-3">
           {pending.externalUserId ? (
             <>
               <p className="text-sm text-primary">
@@ -80,7 +80,7 @@ export function LinkedChatAccounts() {
               <p className="text-xs text-muted break-all">Account ID: {pending.externalUserId}</p>
               <p className="text-sm text-muted">Only confirm if you sent the code from this account.</p>
               <button
-                className="tau-button tau-button-primary px-3 py-2 text-sm"
+                className="ficus-button ficus-button-primary px-3 py-2 text-sm"
                 disabled={confirm.isPending}
                 onClick={() => confirm.mutate(pending.id)}
               >
@@ -89,7 +89,7 @@ export function LinkedChatAccounts() {
             </>
           ) : (
             <>
-              <p className="text-sm text-primary">Send this to Tau from the account you want to link:</p>
+              <p className="text-sm text-primary">Send this to Ficus from the account you want to link:</p>
               {code?.id === pending.id ? (
                 <ChannelLinkCommand key={code.id} code={code.code} />
               ) : (
@@ -104,7 +104,7 @@ export function LinkedChatAccounts() {
             </>
           )}
           <button
-            className="tau-button px-3 py-2 text-sm"
+            className="ficus-button px-3 py-2 text-sm"
             disabled={remove.isPending}
             onClick={() => remove.mutate(pending.id)}
           >
@@ -113,7 +113,7 @@ export function LinkedChatAccounts() {
         </div>
       ))}
       <button
-        className="tau-button px-3 py-2 text-sm"
+        className="ficus-button px-3 py-2 text-sm"
         onClick={() => start.mutate()}
         disabled={start.isPending || query.isPending || query.isError || !!query.data?.pending.length}
       >
@@ -129,7 +129,7 @@ export function LinkedChatAccounts() {
 }
 
 export function ChannelLinkCommand({ code }: { code: string }) {
-  const command = `/tau link ${code}`
+  const command = `/ficus link ${code}`
   const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copy = async () => {
     try {
@@ -147,7 +147,7 @@ export function ChannelLinkCommand({ code }: { code: string }) {
           type="button"
           onClick={copy}
           aria-label="Copy account linking command"
-          className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium shrink-0 px-2 py-1"
+          className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium shrink-0 px-2 py-1"
         >
           <span role="status">{status === 'copied' ? 'Copied' : 'Copy'}</span>
         </button>

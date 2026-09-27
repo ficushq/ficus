@@ -93,7 +93,7 @@ export function InboxPage() {
           <button
             onClick={() => markAllAsReadMutation.mutate()}
             disabled={markAllAsReadMutation.isPending}
-            className="tau-button px-3 py-2 text-sm text-accent-light shrink-0 disabled:opacity-50"
+            className="ficus-button px-3 py-2 text-sm text-accent-light shrink-0 disabled:opacity-50"
           >
             Mark all as read
           </button>
@@ -119,12 +119,12 @@ export function InboxPage() {
           </div>
         </LoadingSurface>
       ) : isEmpty ? (
-        <div className="tau-section text-muted p-6 text-center">No messages</div>
+        <div className="ficus-section text-muted p-6 text-center">No messages</div>
       ) : (
         <div className="flex flex-col gap-4">
           {/* Unread Section */}
           {hasUnread && (
-            <section className="tau-section overflow-hidden">
+            <section className="ficus-section overflow-hidden">
               <SectionHeader title="Unread" count={unreadMessages.length} />
               <div className="divide-y divide-th-border">
                 {unreadMessages.map((message) => (
@@ -141,7 +141,7 @@ export function InboxPage() {
 
           {/* Read Section */}
           {hasRead && (
-            <section className="tau-section overflow-hidden">
+            <section className="ficus-section overflow-hidden">
               <SectionHeader
                 title="Read"
                 count={readMessages.length}

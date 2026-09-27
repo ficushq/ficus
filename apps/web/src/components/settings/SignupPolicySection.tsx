@@ -80,7 +80,7 @@ export function SignupPolicySection() {
         <p className="mt-1 text-sm text-muted">Who is allowed to create an account on this instance.</p>
       </div>
 
-      <div className="tau-section py-5 space-y-4">
+      <div className="ficus-section py-5 space-y-4">
         {isLoading ? (
           <div className="h-24 animate-pulse rounded bg-surface-secondary" />
         ) : (
@@ -142,7 +142,7 @@ export function SignupPolicySection() {
                     setDraftDomains(e.target.value)
                   }}
                   placeholder={'acme.com\npartner.example'}
-                  className="tau-field w-full rounded-md border border-input-border bg-input-bg px-3 py-2 font-mono text-sm text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent disabled:opacity-60"
+                  className="ficus-field w-full rounded-md border border-input-border bg-input-bg px-3 py-2 font-mono text-sm text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent disabled:opacity-60"
                 />
                 {domainsEmpty ? (
                   <p className="text-xs text-status-attention-600 dark:text-status-attention-400">
@@ -171,7 +171,7 @@ export function SignupPolicySection() {
                   value={roleId ?? ''}
                   disabled={!canWrite}
                   onChange={(event) => setDraftRoleId(event.target.value || null)}
-                  className="tau-field w-full rounded-md border border-input-border bg-input-bg px-3 py-2 text-sm text-primary disabled:opacity-60"
+                  className="ficus-field w-full rounded-md border border-input-border bg-input-bg px-3 py-2 text-sm text-primary disabled:opacity-60"
                 >
                   <option value="">No role</option>
                   {roleId && !selectedRole && <option value={roleId}>Configured role (details unavailable)</option>}
@@ -213,7 +213,7 @@ export function SignupPolicySection() {
                   type="button"
                   onClick={() => save.mutate()}
                   disabled={!canSave}
-                  className="tau-button tau-button-primary rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button ficus-button-primary rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
                 >
                   {save.isPending ? 'Saving…' : 'Save policy'}
                 </button>
@@ -226,7 +226,7 @@ export function SignupPolicySection() {
                       setDraftDomains(null)
                       setDraftRoleId(undefined)
                     }}
-                    className="tau-button text-sm text-secondary hover:underline"
+                    className="ficus-button text-sm text-secondary hover:underline"
                   >
                     Cancel
                   </button>

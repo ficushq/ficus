@@ -1,16 +1,16 @@
 /* Portals live outside the keyboard-sized app shell. Every modal must track the
    visible viewport, not just full-screen chat dialogs. */
-.tau-modal-backdrop {
+.ficus-modal-backdrop {
   top: var(--modal-viewport-top, 0px);
   bottom: auto;
   height: var(--modal-viewport-height, 100dvh);
 }
 
-.tau-modal-backdrop > [data-modal-size='default'] {
+.ficus-modal-backdrop > [data-modal-size='default'] {
   max-height: calc(var(--modal-viewport-height, 100dvh) * 0.9 - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
 
-.tau-modal-backdrop > [data-modal-size='editor'] {
+.ficus-modal-backdrop > [data-modal-size='editor'] {
   height: calc(var(--modal-viewport-height, 100dvh) * 0.9);
   max-height: calc(var(--modal-viewport-height, 100dvh) * 0.9);
 }

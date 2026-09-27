@@ -9,7 +9,7 @@ import {
   type WorkflowStep,
 } from '@ficus/shared'
 
-const field = 'tau-field w-full px-3 py-2 border border-th-border rounded-md bg-surface text-primary'
+const field = 'ficus-field w-full px-3 py-2 border border-th-border rounded-md bg-surface text-primary'
 function Help({ children }: { children: ReactNode }) {
   return <span className="block mt-1 text-xs font-normal text-muted">{children}</span>
 }
@@ -423,7 +423,7 @@ export function WorkflowStructureEditor({
                       </p>
                       <button
                         type="button"
-                        className="tau-button text-sm text-danger"
+                        className="ficus-button text-sm text-danger"
                         onClick={() => {
                           if (connectionRemoval) {
                             connectionRemoval.onRemove()
@@ -642,11 +642,11 @@ export function WorkflowCompletionEditor({
             deliverable:
               'Finish when all active paths, direct-return requests, and blocking waits are settled. No extra review or merge is implied.',
             'review-approval': 'A human must approve final delivery, even after all agent steps finish.',
-            'pr-merge': 'Wait for a human to merge the change request. Tau verifies the merge independently.',
+            'pr-merge': 'Wait for a human to merge the change request. Ficus verifies the merge independently.',
             'pr-auto-merge':
-              'The squad must explicitly allow automatic merge. Tau still waits for a verified merge before completion.',
+              'The squad must explicitly allow automatic merge. Ficus still waits for a verified merge before completion.',
             'direct-merge':
-              'The squad must explicitly allow direct merge. Tau verifies the recorded commit is in the remote base branch.',
+              'The squad must explicitly allow direct merge. Ficus verifies the recorded commit is in the remote base branch.',
           }[definition.completion.mode]
         }
       </p>

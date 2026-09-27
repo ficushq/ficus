@@ -73,7 +73,7 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
               }}
               disabled={deleteRule.isPending}
               aria-label="Delete allow rule"
-              className="tau-button shrink-0 text-xs font-medium text-status-danger-600 hover:text-status-danger-800 disabled:opacity-50 dark:text-status-danger-400 dark:hover:text-status-danger-300"
+              className="ficus-button shrink-0 text-xs font-medium text-status-danger-600 hover:text-status-danger-800 disabled:opacity-50 dark:text-status-danger-400 dark:hover:text-status-danger-300"
             >
               Delete
             </button>
@@ -90,7 +90,7 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
             value={peerInstanceId}
             onChange={(e) => setPeerInstanceId(e.target.value)}
             aria-label="Peer instance"
-            className="tau-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-xs text-primary  focus:ring-1 focus:ring-accent"
+            className="ficus-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-xs text-primary  focus:ring-1 focus:ring-accent"
           >
             <option value="">Select peer…</option>
             {peers.map((p) => (
@@ -103,7 +103,7 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
             value={principalKind}
             onChange={(e) => setPrincipalKind(e.target.value as 'any' | 'handle')}
             aria-label="Principal kind"
-            className="tau-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-xs text-primary  focus:ring-1 focus:ring-accent"
+            className="ficus-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-xs text-primary  focus:ring-1 focus:ring-accent"
           >
             <option value="any">Any sender</option>
             <option value="handle">Specific handle</option>
@@ -115,13 +115,13 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
               onChange={(e) => setPrincipalValue(e.target.value)}
               placeholder="handle"
               aria-label="Principal handle"
-              className="tau-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-xs text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+              className="ficus-field rounded border border-th-border bg-surface-secondary px-2 py-1 text-xs text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
             />
           )}
           <button
             type="submit"
             disabled={!canSubmit}
-            className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="ficus-button ficus-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {addRule.isPending ? 'Adding…' : 'Add rule'}
           </button>

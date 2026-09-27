@@ -19,7 +19,7 @@ import { localDeployments } from '../../db/schema'
  * forward to a DIFFERENT squad's app, which is precisely what the per-deployment
  * token exists to prevent.
  *
- * So Tau assigns by default and the app reads `$PORT`. An explicit port is still
+ * So Ficus assigns by default and the app reads `$PORT`. An explicit port is still
  * accepted (some apps genuinely cannot be told where to listen) but is rejected
  * when another live deployment holds it.
  *
@@ -35,7 +35,7 @@ export const LOCAL_DEPLOYMENT_PORT_MAX = 65535
 /**
  * Assigned ports live high, above the range apps conventionally default to, so
  * an assigned port rarely lands on something an unmanaged process already holds.
- * Tau cannot see the machine's real listeners, so this is a probability
+ * Ficus cannot see the machine's real listeners, so this is a probability
  * argument, not a guarantee — a genuinely occupied port surfaces as the app
  * failing to bind, which the health poller already reports.
  */
@@ -45,7 +45,7 @@ export const ASSIGNED_PORT_MAX = 29_999
 export class LocalDeploymentPortInUseError extends Error {
   constructor(readonly port: number) {
     super(
-      `Port ${port} is already held by another live local deployment. Omit "port" to let Tau assign a free one ` +
+      `Port ${port} is already held by another live local deployment. Omit "port" to let Ficus assign a free one ` +
         `and read it from $PORT, or choose a different port.`
     )
     this.name = 'LocalDeploymentPortInUseError'

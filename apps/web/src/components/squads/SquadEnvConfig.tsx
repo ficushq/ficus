@@ -139,7 +139,7 @@ export function SquadEnvConfig({ squadId }: Props) {
         onKeyDown={handleKeyDown}
         placeholder="# Example:&#10;ANSIBLE_VAULT_PASSWORD=secret&#10;AWS_ACCESS_KEY_ID=AKIA...&#10;MY_API_KEY=xxx"
         className={clsx(
-          'tau-field',
+          'ficus-field',
           'w-full h-40 p-3 rounded-lg border bg-surface text-primary text-sm',
           'font-mono leading-relaxed resize-y',
           'placeholder:text-placeholder',
@@ -154,7 +154,7 @@ export function SquadEnvConfig({ squadId }: Props) {
           onClick={handleSave}
           disabled={!canWriteEnv || !dirty || mutation.isPending}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-3 py-1 text-sm rounded-md font-medium transition-colors',
             dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}
@@ -222,7 +222,7 @@ export function SquadEnvConfig({ squadId }: Props) {
             onClick={handleSaveSecrets}
             disabled={!canWriteEnv || !secretsDirty || secretsMutation.isPending}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'px-3 py-1 text-sm rounded-md font-medium transition-colors',
               secretsDirty
                 ? 'bg-accent text-on-accent hover:bg-accent/90'

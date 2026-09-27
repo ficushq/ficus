@@ -167,11 +167,11 @@ export function SkillsSection() {
         </div>
         {canWriteSkills && (
           <div className="flex items-center gap-3 shrink-0">
-            <button type="button" onClick={() => setImporting(true)} className="tau-button text-sm text-secondary">
+            <button type="button" onClick={() => setImporting(true)} className="ficus-button text-sm text-secondary">
               Import
             </button>
             <button
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
               onClick={() =>
                 editSkill({
                   id: '',
@@ -202,13 +202,13 @@ export function SkillsSection() {
           >
             <h4 className="text-sm font-medium text-primary">Import Markdown</h4>
             <textarea
-              className="tau-field w-full min-h-24 px-3 py-2 font-mono text-sm bg-input border border-th-border"
+              className="ficus-field w-full min-h-24 px-3 py-2 font-mono text-sm bg-input border border-th-border"
               placeholder="# Skill Name\n\nSkill content..."
               value={importContent}
               onChange={(e) => setImportContent(e.target.value)}
             />
             <button
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
               disabled={!importContent.trim() || importer.isPending}
               onClick={() => importer.mutate()}
             >
@@ -244,7 +244,7 @@ export function SkillsSection() {
             }}
           >
             <input
-              className="tau-field w-full px-3 py-2 bg-input border border-th-border"
+              className="ficus-field w-full px-3 py-2 bg-input border border-th-border"
               aria-label="Skill ID"
               required
               placeholder="skill-id"
@@ -258,7 +258,7 @@ export function SkillsSection() {
                 {skillFieldActions('name')}
               </label>
               <input
-                className="tau-field w-full px-3 py-2 bg-input border border-th-border"
+                className="ficus-field w-full px-3 py-2 bg-input border border-th-border"
                 aria-label="Name"
                 required
                 placeholder="Name"
@@ -272,7 +272,7 @@ export function SkillsSection() {
                 {skillFieldActions('description')}
               </label>
               <input
-                className="tau-field w-full px-3 py-2 bg-input border border-th-border"
+                className="ficus-field w-full px-3 py-2 bg-input border border-th-border"
                 aria-label="Description"
                 placeholder="Description"
                 value={editing.description ?? ''}
@@ -285,7 +285,7 @@ export function SkillsSection() {
                 {skillFieldActions('content')}
               </label>
               <textarea
-                className="tau-field w-full min-h-64 px-3 py-2 font-mono text-sm bg-input border border-th-border"
+                className="ficus-field w-full min-h-64 px-3 py-2 font-mono text-sm bg-input border border-th-border"
                 aria-label="Content"
                 required
                 value={editing.content ?? ''}
@@ -304,7 +304,7 @@ export function SkillsSection() {
                 </div>
                 <button
                   type="button"
-                  className="tau-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
+                  className="ficus-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
                   onClick={addSupportFile}
                 >
                   Add file
@@ -317,21 +317,21 @@ export function SkillsSection() {
                   <div key={path} className="space-y-2 rounded-md bg-background p-3">
                     <div className="flex items-center gap-2">
                       <input
-                        className="tau-field flex-1 px-3 py-2 font-mono text-sm bg-input border border-th-border"
+                        className="ficus-field flex-1 px-3 py-2 font-mono text-sm bg-input border border-th-border"
                         placeholder="helper.md"
                         value={path}
                         onChange={(e) => updateSupportFilePath(path, e.target.value)}
                       />
                       <button
                         type="button"
-                        className="tau-button text-sm text-status-danger-600"
+                        className="ficus-button text-sm text-status-danger-600"
                         onClick={() => removeSupportFile(path)}
                       >
                         Remove
                       </button>
                     </div>
                     <textarea
-                      className="tau-field w-full min-h-32 px-3 py-2 font-mono text-sm bg-input border border-th-border"
+                      className="ficus-field w-full min-h-32 px-3 py-2 font-mono text-sm bg-input border border-th-border"
                       value={content}
                       onChange={(e) => updateSupportFileContent(path, e.target.value)}
                     />
@@ -342,14 +342,14 @@ export function SkillsSection() {
 
             <div className="flex items-center gap-2">
               <button
-                className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
+                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
                 disabled={save.isPending}
               >
                 Save
               </button>
               <button
                 type="button"
-                className="tau-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
+                className="ficus-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
                 onClick={() => setEditing(null)}
               >
                 Cancel
@@ -386,25 +386,25 @@ export function SkillsSection() {
             </div>
             <div className="flex gap-2 shrink-0 flex-wrap justify-end">
               {canWriteSkills && (
-                <button className="tau-button text-sm text-accent-light" onClick={() => editSkill(skill)}>
+                <button className="ficus-button text-sm text-accent-light" onClick={() => editSkill(skill)}>
                   Edit
                 </button>
               )}
-              <button className="tau-button text-sm text-accent-light" onClick={() => exportMarkdown(skill.id)}>
+              <button className="ficus-button text-sm text-accent-light" onClick={() => exportMarkdown(skill.id)}>
                 Export
               </button>
               {skill.hasTemplate && (
-                <button className="tau-button text-sm text-accent-light" onClick={() => setDiffId(skill.id)}>
+                <button className="ficus-button text-sm text-accent-light" onClick={() => setDiffId(skill.id)}>
                   Diff
                 </button>
               )}
               {canWriteSkills && (
-                <button className="tau-button text-sm text-muted" onClick={() => toggle.mutate(skill)}>
+                <button className="ficus-button text-sm text-muted" onClick={() => toggle.mutate(skill)}>
                   {skill.disabled ? 'Enable' : 'Disable'}
                 </button>
               )}
               {canWriteSkills && !skill.hasTemplate && (
-                <button className="tau-button text-sm text-status-danger-600" onClick={() => remove.mutate(skill.id)}>
+                <button className="ficus-button text-sm text-status-danger-600" onClick={() => remove.mutate(skill.id)}>
                   Delete
                 </button>
               )}

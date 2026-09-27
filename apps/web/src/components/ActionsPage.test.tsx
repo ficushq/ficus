@@ -101,12 +101,12 @@ function manualWaitAction(waitId: string, message: string): PendingAction {
     createdAt: '2026-08-28T00:00:00.000Z',
     canRespond: true,
     squadId: 'squad-1',
-    squadName: 'Tau',
+    squadName: 'Ficus',
     data: {
       workStreamId: 'ws-1',
       workStreamTitle: 'Concurrent input',
       squadId: 'squad-1',
-      squadName: 'Tau',
+      squadName: 'Ficus',
       waitId: `legacy-${waitId}`,
       wait: {
         id: waitId,

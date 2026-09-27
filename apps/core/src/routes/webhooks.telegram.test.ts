@@ -128,7 +128,7 @@ function routedUpdate(text = 'hello') {
 }
 
 describe('Telegram shared-chat received-message routing', () => {
-  for (const text of ['hello', '/tau ask hello', '/tau status']) {
+  for (const text of ['hello', '/ficus ask hello', '/ficus status']) {
     it(`replies with a safe configuration error, not Thinking, for an unmapped new chat (${text})`, async () => {
       instance.channelSquadMap = { 'different-chat': 'other-squad' }
       const response = await receive(routedUpdate(text))
@@ -150,7 +150,7 @@ describe('Telegram shared-chat received-message routing', () => {
     expectConfigurationReply(groupChatId)
   })
 
-  for (const text of ['hello', '/tau ask hello']) {
+  for (const text of ['hello', '/ficus ask hello']) {
     for (const route of ['default', 'override', 'override-without-default']) {
       it(`preserves ${route} routing for ${text}`, async () => {
         instance.defaultSquadId = route === 'override-without-default' ? null : 'default-squad'
@@ -190,14 +190,14 @@ describe('Telegram shared-chat received-message routing', () => {
   })
 
   it('keeps help available without a default', async () => {
-    expect((await receive(routedUpdate('/tau help'))).status).toBe(200)
+    expect((await receive(routedUpdate('/ficus help'))).status).toBe(200)
     expect(requests[0]!.body.text).toContain('Commands:')
     expect(queue).not.toHaveBeenCalled()
   })
 
   it('does not reuse an old chat when current routing is missing', async () => {
     findAgent.mockResolvedValue({ id: 'existing-agent', squadId: 'old-squad' } as Agent)
-    expect((await receive(routedUpdate('/tau ask hello'))).status).toBe(200)
+    expect((await receive(routedUpdate('/ficus ask hello'))).status).toBe(200)
     expectConfigurationReply(groupChatId)
     expect(inbox).not.toHaveBeenCalled()
   })
@@ -232,13 +232,13 @@ describe('Telegram private-chat access', () => {
     expect(findAgent).not.toHaveBeenCalled()
   })
 
-  for (const command of ['/help', '/help@TauBot', '/tau help', '/tau@TauBot help', '/tau']) {
+  for (const command of ['/help', '/help@FicusBot', '/ficus help', '/ficus@FicusBot help', '/ficus']) {
     it(`shows the full menu for ${command} without linkage or a selected squad`, async () => {
       expect((await receive(update(command))).status).toBe(200)
       expect(requests[0]?.body.text).toContain('Commands:')
-      expect(requests[0]?.body.text).toContain('/tau status')
-      expect(requests[0]?.body.text).toContain('/tau ask')
-      expect(requests[0]?.body.text).toContain('/tau link')
+      expect(requests[0]?.body.text).toContain('/ficus status')
+      expect(requests[0]?.body.text).toContain('/ficus ask')
+      expect(requests[0]?.body.text).toContain('/ficus link')
       expect(linkedUser).not.toHaveBeenCalled()
       expect(queue).not.toHaveBeenCalled()
       expect(inbox).not.toHaveBeenCalled()
@@ -283,7 +283,7 @@ describe('Telegram silence before Thinking', () => {
   })
 
   for (const [name, payload] of [
-    ['command', update('/tau ask hello', 'group')],
+    ['command', update('/ficus ask hello', 'group')],
     ['reply', update('hello', 'group', { reply_to_message: { message_id: 10, from: { id: 42, is_bot: true } } })],
   ] as const) {
     it(`responds to a group ${name} when routing is missing`, async () => {

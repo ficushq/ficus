@@ -36,8 +36,8 @@ test('desktop alerts are user scoped, bounded by retention, and obey current pri
   expect(await listDesktopNotifications(user.id)).toHaveLength(1)
   await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
   expect((await listDesktopNotifications(user.id))[0]).toMatchObject({
-    title: 'Tau update',
-    body: 'Open Tau to see your update.',
+    title: 'Ficus update',
+    body: 'Open Ficus to see your update.',
   })
   await UserNotificationPreferences.upsert(user.id, { mutedEvents: ['message'] })
   expect(await listDesktopNotifications(user.id)).toEqual([])

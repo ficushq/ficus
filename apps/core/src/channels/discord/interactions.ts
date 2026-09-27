@@ -48,7 +48,7 @@ export async function handleDiscordInteraction(
       await editInteractionResponse(
         applicationId,
         token,
-        'Configure this bot connection and its default squad in Tau’s integration settings.'
+        'Configure this bot connection and its default squad in Ficus’s integration settings.'
       )
       return
     }
@@ -70,7 +70,7 @@ export async function handleDiscordInteraction(
       if (!removed.ok) throw new Error('Discord interaction cleanup failed')
     }
   } catch {
-    await editInteractionResponse(applicationId, token, 'Tau could not complete this command. Please try again.')
+    await editInteractionResponse(applicationId, token, 'Ficus could not complete this command. Please try again.')
     throw new Error('Discord interaction processing failed')
   }
 }

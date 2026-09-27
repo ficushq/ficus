@@ -61,14 +61,14 @@ test('a sustained disconnected peer is detected even if the microphone is muted'
 test('recovery restores completed spoken turns without replaying tools, unfinished speech, or response requests', () => {
   const sendEvent = mock()
   restoreVoiceConversation({ sendEvent }, [
-    { role: 'user', text: 'What is Tau doing?', final: true },
+    { role: 'user', text: 'What is Ficus doing?', final: true },
     { role: 'tool', text: 'get_status', final: true, toolArgs: '{"id":"tau"}' },
     { role: 'assistant', text: 'The squad is idle.', final: true },
     { role: 'assistant', text: 'unfinished', final: false },
     { role: 'assistant', text: 'interrupted', final: true, interrupted: true },
   ])
   expect(sendEvent.mock.calls.map(([event]) => [event.type, event.item.role, event.item.content[0]])).toEqual([
-    ['conversation.item.create', 'user', { type: 'input_text', text: 'What is Tau doing?' }],
+    ['conversation.item.create', 'user', { type: 'input_text', text: 'What is Ficus doing?' }],
     ['conversation.item.create', 'assistant', { type: 'output_text', text: 'The squad is idle.' }],
   ])
 })

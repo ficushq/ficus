@@ -22,7 +22,7 @@ const STANDARD_SIZES = [72, 96, 128, 144, 152, 192, 384, 512]
 const MASKABLE_SIZES = [192, 512]
 const SHORTCUT_SIZE = 96
 
-// Tau logo SVG - blue gradient with tau symbol
+// Ficus logo SVG - blue gradient with tau symbol
 const LOGO_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>

@@ -125,7 +125,7 @@ test('Rename shows an inline form and sends a PUT with the current revision', as
     const { container } = await render([mine])
     await openActions(container)
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Rename' })))
-    const input = container.querySelector('input.tau-field') as HTMLInputElement
+    const input = container.querySelector('input.ficus-field') as HTMLInputElement
     await act(async () => fireEvent.change(input, { target: { value: 'Renamed' } }))
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Save' })))
     expect(update).toHaveBeenCalledWith('preset-1', 1, expect.objectContaining({ name: 'Renamed' }))
@@ -189,7 +189,7 @@ test('the row overflow menu (narrow widths) exposes aria-haspopup/expanded and i
     window.confirm = () => true
     const menu = container.querySelector('[data-theme-preset-actions]')!
     // Menu items are plain rows, not bordered secondary buttons.
-    expect(menu.querySelectorAll('button.tau-button-secondary')).toHaveLength(0)
+    expect(menu.querySelectorAll('button.ficus-button-secondary')).toHaveLength(0)
     await act(async () => fireEvent.click(getByRole(menu, 'button', { name: 'Delete' })))
     expect(remove).toHaveBeenCalledWith('preset-1', 1)
     // Selecting an action closes the menu and returns focus to the trigger.

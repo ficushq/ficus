@@ -783,7 +783,7 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     // The target is intentionally outside this squad's roster and belongs to another squad.
     const target = { ...agent, id: 'abc12345-1234-1234-1234-123456789abc', squadId: 'other-squad' }
-    const item = { ...messageItem, preview: [{ text: 'Review agent', href: `tau:agent:${reference}` }] }
+    const item = { ...messageItem, preview: [{ text: 'Review agent', href: `ficus:agent:${reference}` }] }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     const allowed = new Set(['agents:read'])
     for (const selected of [filters, { ...filters, kinds: ['message', 'subagent'] as const }])

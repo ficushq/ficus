@@ -129,7 +129,7 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
   LOCAL_AUTO_UPDATE_ENABLED: {
     type: 'boolean',
     default: String(DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS.enabled),
-    description: 'Enable automatic updates for local k3d Tau installs',
+    description: 'Enable automatic updates for local k3d Ficus installs',
   },
   LOCAL_AUTO_UPDATE_INTERVAL_MINUTES: {
     type: 'number',

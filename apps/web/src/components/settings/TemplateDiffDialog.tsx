@@ -82,7 +82,7 @@ export function TemplateDiffDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-chrome-scrim/50" onClick={onClose} />
-      <div className="tau-overlay relative bg-surface rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
+      <div className="ficus-overlay relative bg-surface rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">
           <h3 className="text-lg font-semibold text-primary">{title}</h3>
@@ -97,7 +97,7 @@ export function TemplateDiffDialog({
                 Current
               </span>
             </div>
-            <button onClick={onClose} className="tau-button text-muted hover:text-primary text-xl leading-none">
+            <button onClick={onClose} className="ficus-button text-muted hover:text-primary text-xl leading-none">
               ✕
             </button>
           </div>
@@ -114,7 +114,7 @@ export function TemplateDiffDialog({
                     key={field}
                     onClick={() => handleRevertField(field)}
                     disabled={isReverting}
-                    className="tau-button text-xs px-2 py-1 rounded bg-status-attention-100 dark:bg-status-attention-900/30 text-status-attention-800 dark:text-status-attention-300 hover:bg-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50 font-mono"
+                    className="ficus-button text-xs px-2 py-1 rounded bg-status-attention-100 dark:bg-status-attention-900/30 text-status-attention-800 dark:text-status-attention-300 hover:bg-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50 font-mono"
                   >
                     Revert {field}
                   </button>
@@ -189,14 +189,14 @@ export function TemplateDiffDialog({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-th-border">
-          <button onClick={onClose} className="tau-button text-sm text-muted hover:text-primary px-3 py-1.5">
+          <button onClick={onClose} className="ficus-button text-sm text-muted hover:text-primary px-3 py-1.5">
             Close
           </button>
           {template !== null && (
             <button
               onClick={handleRevert}
               disabled={isReverting || !hasDiff}
-              className="tau-button text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
+              className="ficus-button text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
             >
               {isReverting ? 'Reverting…' : 'Revert to Template'}
             </button>

@@ -124,7 +124,7 @@ export function Modal({
       ref={overlayRef}
       tabIndex={-1}
       className={clsx(
-        'tau-modal-backdrop fixed inset-x-0 z-[60] bg-chrome-scrim/50 flex items-center justify-center outline-none',
+        'ficus-modal-backdrop fixed inset-x-0 z-[60] bg-chrome-scrim/50 flex items-center justify-center outline-none',
         mobileFullscreen && 'mobile-chat-modal',
         overlayClassName
       )}
@@ -139,7 +139,7 @@ export function Modal({
         data-modal-size={size}
         style={MODAL_SIZE_STYLE[size]}
         className={clsx(
-          'tau-overlay relative w-full mx-4 flex flex-col overflow-hidden min-h-0',
+          'ficus-overlay relative w-full mx-4 flex flex-col overflow-hidden min-h-0',
           size === 'editor' && 'max-w-[92vw]',
           size === 'default' && {
             'max-w-lg': maxWidth === 'default',
@@ -159,7 +159,7 @@ export function Modal({
               {headerActions}
               <button
                 onClick={onClose}
-                className="tau-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors shrink-0"
+                className="ficus-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors shrink-0"
                 aria-label="Close"
                 title="Close (Escape)"
               >

@@ -207,7 +207,7 @@ export const githubCommitSigning = new GitHubCommitSigning({
     } catch {
       host = undefined
     }
-    return `Tau commit signing${host ? ` (${host})` : ''}`
+    return `Ficus commit signing${host ? ` (${host})` : ''}`
   },
   now: () => new Date(),
 })

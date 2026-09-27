@@ -1,4 +1,4 @@
-// Tau's DeliveryHooks implementation for amtp-engine (docs/superpowers/specs/
+// Ficus's DeliveryHooks implementation for amtp-engine (docs/superpowers/specs/
 // 2026-07-08-amtp-engine-design.md §7.2/§7.3). All normative receive/outbox
 // ordering lives in the engine; this module owns only the tau-specific
 // presentation (senderType 'remote', deliveryMode, metadata.remote shape,

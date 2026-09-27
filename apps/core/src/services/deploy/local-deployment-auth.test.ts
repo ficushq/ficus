@@ -53,7 +53,7 @@ describe('local deployment browser auth', () => {
     expect(presentedLocalDeploymentToken(request, ID).token).toBeNull()
   })
 
-  it('ignores the Tau session cookie riding the same request', () => {
+  it('ignores the Ficus session cookie riding the same request', () => {
     // ficus_session is Path=/ so it IS sent here. It must never be mistaken for a
     // deployment credential.
     const request = new Request(`https://t.example/api/app/${ID}/x`, {
@@ -70,7 +70,7 @@ describe('local deployment browser auth', () => {
     })
     expect(header).toContain(`Path=${localDeploymentProxyPath(ID)}`)
     // Path scoping is the security boundary: it is what keeps this credential
-    // off Tau's own API and off other deployments.
+    // off Ficus's own API and off other deployments.
     expect(header).toContain('HttpOnly')
     expect(header).toContain('SameSite=Lax')
     expect(header).toContain('Secure')

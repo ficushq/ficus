@@ -41,7 +41,7 @@ const EXACT_ALLOW = new Set<string>([
   'LANG',
   'LC_ALL',
   'TZ',
-  // Tau-injected, agent-facing
+  // Ficus-injected, agent-facing
   'APP_URL',
   // Git/GitHub auth (pod-injected)
   'GITHUB_TOKEN',

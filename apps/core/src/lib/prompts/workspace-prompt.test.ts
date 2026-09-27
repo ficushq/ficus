@@ -244,7 +244,7 @@ describe('buildWorkspacePrompt — host runtime', () => {
 
   it('says tools run directly on the host, never "inside authorized sandboxes"', () => {
     const p = buildWorkspacePrompt({ squadId: 'S1', sandboxId: 'agent_a1', hasSquadBash: true })
-    expect(p).toContain('directly on the Tau host machine')
+    expect(p).toContain('directly on the Ficus host machine')
     expect(p).not.toContain('authorized sandboxes')
   })
 

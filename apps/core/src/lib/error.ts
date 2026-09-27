@@ -54,7 +54,7 @@ const PLAN_CREDIT_COOLDOWN_MS = 30 * 60_000
 const RATE_LIMIT_COOLDOWN_MS = 60_000
 
 /**
- * The two shapes a codex usage limit reaches Tau in. BOTH are AMBIGUOUS — a
+ * The two shapes a codex usage limit reaches Ficus in. BOTH are AMBIGUOUS — a
  * transient throttle and an exhausted weekly plan window arrive as the same
  * wording — so the announced window is what decides (see
  * {@link classifyCodexUsageLimit}), never the wording alone.
@@ -139,7 +139,7 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
  *
  * The classifiers below match bare substrings, so any text containing
  * `capacity`, `429` or `quota` is attributed to the model provider no matter who
- * produced it. Tau's own admission vocabulary collides directly: "Execution
+ * produced it. Ficus's own admission vocabulary collides directly: "Execution
  * session capacity reservation was refused" contains `capacity`, so an internal
  * reservation failure was reported to agents as "[System] Rate limit or plan
  * credit exhaustion. Execution stopped." and classified as provider exhaustion —
@@ -433,7 +433,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * whether to mark the active provider exhausted and fail over to the next
  * candidate. Pi retries transient errors (`maxRetries: 5`) internally, so for
  * those this only acts once the error settles. Hard plan limits (`limit
- * exhausted` / `limit will reset`) are made non-retryable in the SDK by the Tau
+ * exhausted` / `limit will reset`) are made non-retryable in the SDK by the Ficus
  * patch (patches/@earendil-works%2Fpi-ai@0.87.1.patch, extending both
  * `retry.js`'s NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN and
  * `openai-codex-responses.js`'s isTerminalRateLimitError; guarded by

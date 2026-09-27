@@ -47,14 +47,14 @@ export function SessionsSection() {
               }
             }}
             disabled={revokeAllMutation.isPending}
-            className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50"
+            className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50"
           >
             {revokeAllMutation.isPending ? 'Revoking...' : 'Revoke All'}
           </button>
         )}
       </div>
 
-      <div className="tau-section overflow-hidden">
+      <div className="ficus-section overflow-hidden">
         {sessions.length === 0 ? (
           <div className="px-4 py-8 text-center text-muted text-sm">No active sessions.</div>
         ) : (
@@ -86,7 +86,7 @@ export function SessionsSection() {
                     onClick={() => revokeMutation.mutate(session.id)}
                     disabled={revokeMutation.isPending}
                     aria-label={`Revoke session on ${session.userAgent ? parseUserAgent(session.userAgent) : 'unknown device'}`}
-                    className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium shrink-0 sm:ml-4 min-h-[44px] sm:min-h-0 disabled:opacity-50"
+                    className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium shrink-0 sm:ml-4 min-h-[44px] sm:min-h-0 disabled:opacity-50"
                   >
                     Revoke
                   </button>

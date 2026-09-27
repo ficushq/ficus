@@ -44,7 +44,7 @@ export const SECRET_REGISTRY: SecretRegistryEntry[] = [
     key: 'exe-provider-ssh-key',
     name: 'exe.dev account SSH private key',
     description:
-      'The SSH PRIVATE key registered to your exe.dev account (Settings → SSH keys). tau uses it to run the exe.dev lobby API and to reach provisioned VMs. Leave unset for BYO-SSH only.',
+      'The SSH PRIVATE key registered to your exe.dev account (Settings → SSH keys). Ficus uses it to run the exe.dev lobby API and to reach provisioned VMs. Leave unset for BYO-SSH only.',
     category: 'Machines',
     sensitive: true,
     hideWhenHosted: true,

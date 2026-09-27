@@ -1,7 +1,7 @@
 /**
  * Workspace File Watcher
  *
- * Watches the workspace directory for file changes and sends updates to Tau Core.
+ * Watches the workspace directory for file changes and sends updates to Ficus Core.
  * Uses chokidar for FS watching and micromatch for glob filtering.
  */
 

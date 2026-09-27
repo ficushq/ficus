@@ -104,7 +104,7 @@ export function TokenRegisterPage({ onSuccess }: Props) {
 
   return (
     <div className="h-full flex items-center justify-center bg-page px-4">
-      <div className="tau-section w-full max-w-sm p-6">
+      <div className="ficus-section w-full max-w-sm p-6">
         <h1 className="text-lg font-semibold text-primary mb-4">
           {isRecovery ? 'Register a new passkey' : 'Set up your passkey'}
         </h1>
@@ -154,7 +154,7 @@ export function TokenRegisterPage({ onSuccess }: Props) {
                   autoComplete="name"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className={clsx('tau-field', inputClasses)}
+                  className={clsx('ficus-field', inputClasses)}
                 />
               </>
             )}
@@ -167,7 +167,7 @@ export function TokenRegisterPage({ onSuccess }: Props) {
               placeholder="Passkey name (optional)"
               value={credentialName}
               onChange={(e) => setCredentialName(e.target.value)}
-              className={clsx('tau-field', inputClasses)}
+              className={clsx('ficus-field', inputClasses)}
             />
             <p className="text-xs text-secondary">
               Names this passkey — for example “MacBook Touch ID” or “YubiKey”. Left blank, it is named after the device
@@ -176,7 +176,7 @@ export function TokenRegisterPage({ onSuccess }: Props) {
             <button
               type="submit"
               disabled={loading}
-              className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+              className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
             >
               {loading ? 'Registering…' : isRecovery ? 'Replace my passkey' : 'Register with Passkey'}
             </button>

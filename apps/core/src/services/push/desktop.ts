@@ -6,7 +6,7 @@ import { db, desktopNotifications } from '../../db'
 import { deviceTokens } from '../../db/schema'
 import { UserNotificationPreferences } from '../../entities/UserNotificationPreferences'
 
-/** Managed desktop homes get every alert; everyone else only gets one once they've paired a Tau Desktop device. */
+/** Managed desktop homes get every alert; everyone else only gets one once they've paired a Ficus Desktop device. */
 async function desktopRecipients(userIds: string[]): Promise<string[]> {
   const unique = [...new Set(userIds)]
   if (!unique.length || process.env.FICUS_DESKTOP_MANAGED === '1') return unique
@@ -20,7 +20,7 @@ async function desktopRecipients(userIds: string[]): Promise<string[]> {
 }
 
 /** OS alerts are a bounded view of durable work/inbox state; reading never acknowledges the underlying work.
- *  Queued for Desktop-managed homes and for users who have paired a Tau Desktop device. */
+ *  Queued for Desktop-managed homes and for users who have paired a Ficus Desktop device. */
 export async function enqueueDesktopNotifications(
   userIds: string[],
   event: NotificationEvent,
@@ -75,7 +75,7 @@ export async function listDesktopNotifications(userId: string) {
       id: row.id,
       createdAt: row.createdAt.toISOString(),
       url: row.url,
-      title: preferences.showPreviews ? row.title : 'Tau update',
-      body: preferences.showPreviews ? row.body : 'Open Tau to see your update.',
+      title: preferences.showPreviews ? row.title : 'Ficus update',
+      body: preferences.showPreviews ? row.body : 'Open Ficus to see your update.',
     }))
 }

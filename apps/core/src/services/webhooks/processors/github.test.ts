@@ -246,7 +246,7 @@ describe('webhooks/processors/github', () => {
         rawBody: '{}',
         payload: {
           action: 'review_requested',
-          requested_team: { slug: 'tau-reviewers', name: 'Tau Reviewers' },
+          requested_team: { slug: 'tau-reviewers', name: 'Ficus Reviewers' },
           pull_request: { number: 43, title: 'Team PR', html_url: 'https://github.com/owner/repo/pull/43' },
           repository: { full_name: 'owner/repo' },
         },

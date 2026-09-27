@@ -5,7 +5,7 @@ import { useStableRef } from '../hooks/useStableRef'
 import { AssistantConversationSwitcher } from './AssistantConversations'
 import { VoiceCompanionButton } from '../voice/VoiceCompanionWidget'
 import { useRealtimeEnabled } from '../hooks/useVoiceEnabled'
-import { TauAssistantStart } from './TauAssistantStart'
+import { FicusAssistantStart } from './FicusAssistantStart'
 import { usePermissions } from '../hooks/usePermissions'
 import { useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
@@ -303,7 +303,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
           data-voice-current-agent-source="system-manager-chat-drawer"
           data-voice-current-agent-id={isOpen && mode === 'text' && conversation ? effectiveAgentId : undefined}
           className={clsx(
-            'tau-assistant-panel fixed z-[60] flex flex-col tau-glass shadow-theme-lg rounded-2xl overflow-hidden transition-all duration-200 motion-reduce:transition-none',
+            'ficus-assistant-panel fixed z-[60] flex flex-col ficus-glass shadow-theme-lg rounded-2xl overflow-hidden transition-all duration-200 motion-reduce:transition-none',
             compactVoice && 'touch-none select-none cursor-grab active:cursor-grabbing',
             compactVoice
               ? 'top-20 right-4 w-64 max-sm:top-[calc(var(--chat-viewport-top,0px)+0.5rem)] max-sm:right-2 max-w-[calc(100vw-1rem)]'
@@ -369,7 +369,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                       aria-label="Agent actions"
                       aria-expanded={agentActionsOpen}
                       onClick={() => setAgentActionsOpen((open) => !open)}
-                      className="tau-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
+                      className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
                     >
                       <MoreIcon className="w-4 h-4" />
                     </button>
@@ -382,7 +382,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                           }}
                           disabled={compactMutation.isPending}
                           label="Compact"
-                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
+                          className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
                           confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-700 dark:text-status-progress-300 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 rounded transition-colors"
                         />
                         <ConfirmButton
@@ -392,7 +392,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                           }}
                           disabled={resetMutation.isPending}
                           label="Reset"
-                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
+                          className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
                           confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-700 dark:text-status-external-wait-300 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 hover:bg-status-external-wait-100 dark:hover:bg-status-external-wait-900/50 rounded transition-colors"
                         />
                         <ConfirmButton
@@ -402,7 +402,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                           }}
                           disabled={deleteMutation.isPending}
                           label="Delete"
-                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
+                          className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
                           confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-danger-700 dark:text-status-danger-300 bg-status-danger-50 dark:bg-status-danger-900/30 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50 rounded transition-colors"
                         />
                       </div>
@@ -413,7 +413,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
               {isOpen && conversation && mode === 'text' && (
                 <button
                   onClick={() => setDrawerState(isExpanded ? 'open' : 'expanded')}
-                  className="tau-button text-placeholder hover:text-secondary p-1.5 rounded-md hover:bg-surface-hover transition-colors hidden sm:flex shrink-0"
+                  className="ficus-button text-placeholder hover:text-secondary p-1.5 rounded-md hover:bg-surface-hover transition-colors hidden sm:flex shrink-0"
                   title={isExpanded ? 'Compact' : 'Expand'}
                 >
                   {isExpanded ? <MinimizeIcon className="w-4 h-4" /> : <MaximizeIcon className="w-4 h-4" />}
@@ -427,7 +427,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                     setDrawerState('open')
                   } else setDrawerState(isOpen ? 'closed' : 'open')
                 }}
-                className="tau-button text-placeholder hover:text-secondary p-1.5 rounded-md hover:bg-surface-hover transition-colors shrink-0"
+                className="ficus-button text-placeholder hover:text-secondary p-1.5 rounded-md hover:bg-surface-hover transition-colors shrink-0"
                 title={
                   compactVoice || !isOpen ? 'Expand assistant' : voiceActive ? 'Collapse assistant' : 'Close (Esc)'
                 }
@@ -448,7 +448,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
               <button
                 role="tab"
                 aria-selected={mode === 'text'}
-                className="tau-nav-item px-3 py-1.5 text-sm text-muted"
+                className="ficus-nav-item px-3 py-1.5 text-sm text-muted"
                 onClick={() => setMode('text')}
               >
                 Text
@@ -461,7 +461,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                   voiceUnavailableReason ??
                   'Live tools for navigation, status, and messaging. A separate conversation from Text.'
                 }
-                className="tau-nav-item px-3 py-1.5 text-sm text-muted disabled:opacity-40"
+                className="ficus-nav-item px-3 py-1.5 text-sm text-muted disabled:opacity-40"
                 onClick={() => setMode('voice')}
               >
                 Voice{voiceActive ? ' · Live' : ''}
@@ -469,7 +469,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
               {conversation && mode === 'text' && (
                 <button
                   onClick={backToAssistant}
-                  className="tau-button ml-auto text-xs text-muted hover:text-primary px-2 py-1.5"
+                  className="ficus-button ml-auto text-xs text-muted hover:text-primary px-2 py-1.5"
                 >
                   ← Back to search
                 </button>
@@ -477,7 +477,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
             </div>
           )}
           <div hidden={!isOpen || mode !== 'text' || conversation} className="min-h-0 overflow-y-auto">
-            <TauAssistantStart
+            <FicusAssistantStart
               active={isOpen && mode === 'text' && !conversation}
               onAsk={ask}
               recentChats={agents ?? []}

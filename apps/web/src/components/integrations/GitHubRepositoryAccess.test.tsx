@@ -21,13 +21,13 @@ afterEach(async () => {
   globalThis.fetch = originalFetch
 })
 const missing: Access = { status: 'missing', complete: true, personalAccountInstalled: false, installations: [] }
-async function render(data: Access, usesTauApp = true) {
+async function render(data: Access, usesFicusApp = true) {
   client.setQueryData(integrationQueryKeys.githubRepositoryAccess('account'), data)
   const { root, container } = harness.createRoot()
   await harness.act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <GitHubRepositoryAccess connectionId="account" login="example" usesTauApp={usesTauApp} />
+        <GitHubRepositoryAccess connectionId="account" login="example" usesFicusApp={usesFicusApp} />
       </QueryClientProvider>
     )
   )
@@ -38,8 +38,8 @@ test('missing installation gives a prominent grant-access action and explicit pe
   expect(container.textContent).toContain('Setup needs repository access')
   expect(container.textContent).toContain('The App is not installed on example')
   const link = container.querySelector('a')!
-  expect(link.className).toContain('tau-button-primary')
-  expect(link.href).toBe('https://github.com/apps/tau-integration/installations/new')
+  expect(link.className).toContain('ficus-button-primary')
+  expect(link.href).toBe('https://github.com/apps/ficus-integration/installations/new')
   expect(link.target).toBe('_blank')
 })
 test('organization access does not hide missing access to personal forks', async () => {
@@ -59,7 +59,7 @@ test('unknown results prompt retry without falsely reporting a missing installat
   expect(container.textContent).toContain('Could not fully verify')
   expect(container.textContent).not.toContain('The App is not installed')
 })
-test('custom Apps link to installation management instead of installing the Tau App', async () => {
+test('custom Apps link to installation management instead of installing the Ficus App', async () => {
   const container = await render(missing, false)
   expect(container.querySelector('a')!.href).toBe('https://github.com/settings/installations')
 })

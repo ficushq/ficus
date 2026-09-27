@@ -467,7 +467,7 @@ describe('artifact voice tools', () => {
       artifactId: 'artifact-1',
       title: 'Existing artifact',
       requestReceipt:
-        'Background artifact work has started. Tell the user only that Tau is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
+        'Background artifact work has started. Tell the user only that Ficus is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
     })
     expect(calls.request).toEqual([
       {
@@ -497,7 +497,7 @@ describe('artifact voice tools', () => {
       artifactId: 'artifact-1',
       title: 'Existing artifact',
       requestReceipt:
-        'Tau is checking the artifact details. Tell the user only that you are checking and will let them know. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not answer until a separate inbox response arrives.',
+        'Ficus is checking the artifact details. Tell the user only that you are checking and will let them know. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not answer until a separate inbox response arrives.',
     })
 
     expect(calls.request).toEqual([
@@ -531,7 +531,7 @@ describe('artifact voice tools', () => {
       artifactId: 'artifact-1',
       title: 'Existing artifact',
       requestReceipt:
-        'Background artifact work has started. Tell the user only that Tau is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
+        'Background artifact work has started. Tell the user only that Ficus is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
     })
 
     expect(calls.request).toEqual([
@@ -629,7 +629,7 @@ describe('artifact voice tools', () => {
       message:
         'Artifact request was recorded, but agent notification failed. Do not retry the full request; check artifact status/context or ask to notify/wake the builder separately.',
       requestReceipt:
-        'Background artifact work has started. Tell the user only that Tau is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
+        'Background artifact work has started. Tell the user only that Ficus is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
     })
     expect(calls.request).toEqual([
       {
@@ -673,7 +673,7 @@ describe('artifact voice tools', () => {
       artifactId: 'new-artifact',
       title: 'Launch Dashboard',
       requestReceipt:
-        'Background artifact work has started. Tell the user only that Tau is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
+        'Background artifact work has started. Tell the user only that Ficus is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
     })
     expect(calls.request[0]).toMatchObject({
       title: 'Launch Dashboard',

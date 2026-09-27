@@ -32,7 +32,7 @@ export function AgentMonitorsPanel({ agent }: { agent: Agent }) {
             override.
           </p>
         </div>
-        <button className="tau-button rounded border px-3 py-1 text-sm" onClick={() => setShowAll(!showAll)}>
+        <button className="ficus-button rounded border px-3 py-1 text-sm" onClick={() => setShowAll(!showAll)}>
           {showAll ? 'Active' : 'All'}
         </button>
       </div>

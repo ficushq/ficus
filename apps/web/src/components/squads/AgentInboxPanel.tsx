@@ -56,7 +56,7 @@ export function AgentInboxPanel({ agent, onClose, fullWidth }: Props) {
           </div>
           <button
             onClick={onClose}
-            className="tau-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded"
+            className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded"
           >
             <CloseIcon className="w-4 h-4" />
           </button>

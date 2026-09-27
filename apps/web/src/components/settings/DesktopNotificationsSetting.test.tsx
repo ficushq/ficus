@@ -60,7 +60,7 @@ test('the desktop notifications switch reads and writes the desktop preference',
   const toggle = () => container.querySelector<HTMLInputElement>('[data-setting-target="desktop-notifications"] input')!
 
   expect(container.textContent).toContain('Desktop notifications')
-  expect(container.textContent).toContain('macOS alerts for inbox updates while Tau is in the background.')
+  expect(container.textContent).toContain('macOS alerts for inbox updates while Ficus is in the background.')
   await harness.act(async () => waitFor(() => expect(toggle().disabled).toBe(false)))
   expect(toggle().getAttribute('role')).toBe('switch')
   expect(toggle().checked).toBe(false)

@@ -33,7 +33,7 @@ describe('userSessionRequired', () => {
     const agent = await respond({ type: 'agent', agentId: 'agent-1', squadId: null })
     expect(agent).toEqual({
       status: 403,
-      body: { error: 'Sign in with your Tau account to connect GitHub.', code: USER_SESSION_REQUIRED },
+      body: { error: 'Sign in with your Ficus account to connect GitHub.', code: USER_SESSION_REQUIRED },
     })
     const system = await respond({ type: 'system', systemTokenId: 'token-1', name: 'ci', scopes: [] })
     expect(system.body.code).toBe(USER_SESSION_REQUIRED)

@@ -36,7 +36,7 @@ describe('device authorization grants', () => {
 
   it('creates distinct high-entropy capabilities and stores only their hashes', async () => {
     const before = Date.now()
-    const grant = await createDeviceAuthorization({ name: 'Tau CLI on atlas' })
+    const grant = await createDeviceAuthorization({ name: 'Ficus CLI on atlas' })
     grantHashes.push(hash(grant.deviceCode))
     expect(Buffer.from(grant.deviceCode, 'base64url')).toHaveLength(32)
     expect(Buffer.from(grant.verificationCode, 'base64url')).toHaveLength(32)
@@ -54,10 +54,10 @@ describe('device authorization grants', () => {
 
   it('requires approval and exchanges an approved grant exactly once', async () => {
     const userId = await makeUser('device-auth@test.local')
-    const grant = await createDeviceAuthorization({ name: 'Tau CLI on atlas' })
+    const grant = await createDeviceAuthorization({ name: 'Ficus CLI on atlas' })
     grantHashes.push(hash(grant.deviceCode))
     expect(await inspectDeviceAuthorization(grant.verificationCode)).toMatchObject({
-      name: 'Tau CLI on atlas',
+      name: 'Ficus CLI on atlas',
       platform: 'cli',
     })
     expect(await exchangeDeviceAuthorization(grant.deviceCode)).toEqual({
@@ -103,7 +103,7 @@ describe('device authorization grants', () => {
     expect(result.status).toBe('authorized')
     const devices = await listDeviceTokens(user.id)
     expect(devices.find((d) => d.id === (result as { deviceId: string }).deviceId)).toMatchObject({
-      name: 'Tau Desktop',
+      name: 'Ficus Desktop',
       platform: 'desktop',
     })
   })
@@ -111,6 +111,9 @@ describe('device authorization grants', () => {
   test('an unspecified platform stays a CLI grant', async () => {
     const grant = await createDeviceAuthorization({ name: '' })
     grantHashes.push(hash(grant.deviceCode))
-    expect(await inspectDeviceAuthorization(grant.verificationCode)).toMatchObject({ name: 'Tau CLI', platform: 'cli' })
+    expect(await inspectDeviceAuthorization(grant.verificationCode)).toMatchObject({
+      name: 'Ficus CLI',
+      platform: 'cli',
+    })
   })
 })

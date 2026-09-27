@@ -4,7 +4,7 @@ import { deriveThemeOverrides, suggestPaletteSeeds, validateThemePalette, type T
 import { STATUS_ROLES, STATUS_TOKENS } from './theme-schema'
 import { srgbToOklch } from './color-oklch'
 
-// A representative subset of a real base theme's resolved token values (Tau
+// A representative subset of a real base theme's resolved token values (Ficus
 // light/dark, taken from apps/web/src/index.css), enough to exercise every
 // derivation bucket without needing the full 431-token registry.
 const TAU_LIGHT: Record<string, string> = {
@@ -57,7 +57,7 @@ for (const [role, solid, fg, surface] of [
   TAU_LIGHT[`--status-${role}-badge-hover`] = surface
 }
 
-// The dark-appearance counterpart of TAU_LIGHT (same real base theme, Tau
+// The dark-appearance counterpart of TAU_LIGHT (same real base theme, Ficus
 // dark, taken from apps/web/src/index.css's [data-appearance='dark'] block).
 const TAU_DARK: Record<string, string> = {
   '--color-bg-page': '9 10 18',

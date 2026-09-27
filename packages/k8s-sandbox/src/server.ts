@@ -15,7 +15,7 @@
  * 1. Start HTTP server on configured port (so /healthz is up immediately)
  * 2. Start dockerd in the background if running under sysbox (no socket mounted)
  *
- * Agent intelligence stays in Tau Core — this service only executes tools.
+ * Agent intelligence stays in Ficus Core — this service only executes tools.
  */
 
 import './boot/legacy-env'

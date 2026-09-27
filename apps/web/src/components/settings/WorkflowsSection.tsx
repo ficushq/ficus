@@ -16,7 +16,7 @@ import { WorkflowEditor } from '../squads/WorkflowEditor'
 import { useURLState } from '../../hooks/useURLState'
 import { readWorkflowDraft, workflowDraftKey, type WorkflowDraft } from '../../lib/workflowDraftStorage'
 
-const field = 'tau-field w-full min-w-0 border border-th-border bg-surface px-3 py-2 text-sm'
+const field = 'ficus-field w-full min-w-0 border border-th-border bg-surface px-3 py-2 text-sm'
 
 export function WorkflowsSection() {
   const permissions = usePermissions()
@@ -66,7 +66,7 @@ export function WorkflowsSection() {
         </div>
         {canCreate && (
           <button
-            className="tau-button tau-button-primary shrink-0 rounded-md px-3 py-2 text-sm"
+            className="ficus-button ficus-button-primary shrink-0 rounded-md px-3 py-2 text-sm"
             onClick={() => openModal('newWorkflow', '1')}
           >
             New workflow
@@ -157,18 +157,18 @@ function WorkflowCard({
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {canUpdate && (
-            <button className="tau-button text-accent-light" onClick={onEdit}>
+            <button className="ficus-button text-accent-light" onClick={onEdit}>
               Edit
             </button>
           )}
           {canCreate && (
-            <button className="tau-button text-muted" onClick={onDuplicate}>
+            <button className="ficus-button text-muted" onClick={onDuplicate}>
               Duplicate
             </button>
           )}
           {canUpdate && (
             <button
-              className="tau-button text-muted"
+              className="ficus-button text-muted"
               disabled={mutation.isPending}
               onClick={() => mutation.mutate('toggle')}
             >
@@ -187,7 +187,7 @@ function WorkflowCard({
       </div>
       {entry.description && <p className="break-words text-sm text-muted">{entry.description}</p>}
       <button
-        className="tau-button text-sm text-secondary"
+        className="ficus-button text-sm text-secondary"
         aria-expanded={preview}
         onClick={() => setPreview(!preview)}
       >
@@ -317,15 +317,15 @@ function WorkflowModal({
               />
             </div>
           )}
-          <button className="tau-button text-sm text-muted" disabled={save.isPending} onClick={onClose}>
+          <button className="ficus-button text-sm text-muted" disabled={save.isPending} onClick={onClose}>
             {updating ? 'Cancel' : 'Close'}
           </button>
           <button
             className={clsx(
-              'tau-button rounded-md px-3 py-2 text-sm',
+              'ficus-button rounded-md px-3 py-2 text-sm',
               !allowed || !valid || save.isPending
                 ? 'border border-th-border bg-surface-hover text-muted'
-                : 'tau-button-primary'
+                : 'ficus-button-primary'
             )}
             disabled={!allowed || !valid || save.isPending}
             onClick={() => save.mutate()}

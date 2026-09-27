@@ -555,7 +555,7 @@ export function SquadAgentThreads({
         }}
         disabled={isTerminating}
         className={clsx(
-          'tau-button',
+          'ficus-button',
           'ml-2 shrink-0 rounded p-1 transition-colors',
           isConfirming
             ? 'bg-status-danger-100 text-status-danger-600 hover:bg-status-danger-200 dark:bg-status-danger-900/40 dark:text-status-danger-400 dark:hover:bg-status-danger-900/60'
@@ -587,7 +587,7 @@ export function SquadAgentThreads({
           onClick={() => handleAgentRowSelect(agent.id)}
           title={`${stableName} · ${agent.agentTypeId} · ${agent.id}`}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'block w-full rounded-lg px-2 text-left',
             compact ? 'py-1.5 md:py-2' : 'py-2',
             mayTerminateAgent && 'pr-10'
@@ -622,7 +622,7 @@ export function SquadAgentThreads({
             }}
             disabled={terminateMutation.isPending}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-2 text-secondary transition-opacity hover:bg-surface-hover hover:text-primary focus-visible:opacity-100',
               isConfirmingThis &&
                 'bg-status-danger-100 text-status-danger-600 dark:bg-status-danger-900/40 dark:text-status-danger-400'
@@ -660,7 +660,7 @@ export function SquadAgentThreads({
               aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${sectionName}`}
               aria-expanded={!isCollapsed}
               disabled={!collapsible}
-              className="tau-button squad-chat-category flex w-full items-center gap-1 rounded-md px-2 py-2 text-left enabled:hover:bg-surface-hover"
+              className="ficus-button squad-chat-category flex w-full items-center gap-1 rounded-md px-2 py-2 text-left enabled:hover:bg-surface-hover"
             >
               {collapsible &&
                 (isCollapsed ? (
@@ -711,7 +711,7 @@ export function SquadAgentThreads({
             onInput={(e) => setAgentSearch(e.currentTarget.value)}
             placeholder="Search conversations…"
             aria-label="Search conversations"
-            className="tau-field h-9 md:h-[26px] min-w-0 flex-1 px-2 py-1 text-base md:text-xs rounded border border-th-border bg-surface text-primary placeholder:text-placeholder"
+            className="ficus-field h-9 md:h-[26px] min-w-0 flex-1 px-2 py-1 text-base md:text-xs rounded border border-th-border bg-surface text-primary placeholder:text-placeholder"
           />
           <button
             type="button"
@@ -724,7 +724,7 @@ export function SquadAgentThreads({
             }
             onClick={() => setActiveAgentsOnly(!activeAgentsOnly)}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'squad-chat-filter flex h-9 w-9 md:h-[26px] md:w-[26px] shrink-0 items-center justify-center rounded border transition-colors',
               activeAgentsOnly
                 ? 'border-accent'
@@ -757,7 +757,7 @@ export function SquadAgentThreads({
                     event.currentTarget.focus()
                     toggleType('consultant')
                   }}
-                  className="tau-button squad-chat-category flex w-full items-center gap-1 rounded-md px-2 py-2 text-left enabled:hover:bg-surface-hover"
+                  className="ficus-button squad-chat-category flex w-full items-center gap-1 rounded-md px-2 py-2 text-left enabled:hover:bg-surface-hover"
                 >
                   {consultantsCollapsed ? (
                     <ChevronRightIcon className="h-3.5 w-3.5" />
@@ -779,7 +779,7 @@ export function SquadAgentThreads({
                 <button
                   type="button"
                   onClick={() => setShowAllConsultants(!showAllConsultants)}
-                  className="tau-button px-2 py-1.5 text-xs text-secondary hover:text-primary"
+                  className="ficus-button px-2 py-1.5 text-xs text-secondary hover:text-primary"
                 >
                   {showAllConsultants ? 'Show recent' : `View all (${consultantAgents.length})`}
                 </button>
@@ -808,7 +808,7 @@ export function SquadAgentThreads({
               type="button"
               aria-expanded={!effectiveTerminatedCollapsed}
               onClick={() => setTerminatedCollapsed((collapsed) => !collapsed)}
-              className="tau-button w-full rounded-md px-2 py-2 flex items-center justify-between text-left hover:bg-surface-hover"
+              className="ficus-button w-full rounded-md px-2 py-2 flex items-center justify-between text-left hover:bg-surface-hover"
             >
               <span className="squad-chat-category">
                 Recently Completed ({activeAgentsOnly ? visibleCompletedAgents.length : recentlyCompletedCount})
@@ -834,7 +834,7 @@ export function SquadAgentThreads({
                   type="button"
                   key={agent.id}
                   className={clsx(
-                    'tau-button',
+                    'ficus-button',
                     'squad-chat-agent block w-full rounded-lg px-2 py-2 text-left',
                     isSelected && 'is-selected'
                   )}
@@ -861,7 +861,7 @@ export function SquadAgentThreads({
                   type="button"
                   onClick={onLoadMoreRecentlyTerminated}
                   disabled={isFetchingMoreRecentlyTerminated}
-                  className="tau-button w-full rounded-md px-2 py-1.5 text-xs font-medium text-muted hover:bg-surface-hover disabled:opacity-60"
+                  className="ficus-button w-full rounded-md px-2 py-1.5 text-xs font-medium text-muted hover:bg-surface-hover disabled:opacity-60"
                 >
                   {isFetchingMoreRecentlyTerminated ? 'Loading more completed agents…' : 'Load more completed agents'}
                 </button>
@@ -881,7 +881,7 @@ export function SquadAgentThreads({
         type="button"
         data-testid="agent-picker-trigger"
         onClick={() => setShowMobilePicker(true)}
-        className={clsx('tau-button', 'flex items-center gap-1 min-w-0 text-left', !isPage && 'md:hidden')}
+        className={clsx('ficus-button', 'flex items-center gap-1 min-w-0 text-left', !isPage && 'md:hidden')}
         aria-label={ariaLabel}
         aria-haspopup="dialog"
         aria-expanded={showMobilePicker}
@@ -1074,7 +1074,7 @@ export function SquadAgentThreads({
                     {!composing && (
                       <button
                         onClick={toggleFullscreen}
-                        className="tau-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors"
+                        className="ficus-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors"
                         aria-label="Fullscreen"
                         title="Fullscreen"
                       >
@@ -1094,7 +1094,7 @@ export function SquadAgentThreads({
                 <button
                   type="button"
                   onClick={() => setShowMobilePicker(true)}
-                  className="tau-button tau-button-primary md:hidden mt-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent"
+                  className="ficus-button ficus-button-primary md:hidden mt-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent"
                 >
                   Choose agent
                 </button>

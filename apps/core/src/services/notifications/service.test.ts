@@ -814,7 +814,7 @@ describe('NotificationService', () => {
         })
         expect(JSON.parse(sendSpy.mock.calls[1][1] as string)).toMatchObject({
           title: 'Work #42 needs your answer',
-          body: 'Open Tau to see details.',
+          body: 'Open Ficus to see details.',
           workStreamId: '42',
         })
       } finally {
@@ -1041,7 +1041,7 @@ describe('NotificationService', () => {
         const withoutPreview = sendSpy.mock.calls[1][1]
         expect(withoutPreview).toMatchObject({
           title: 'Work #197 has a new message',
-          body: 'Open Tau to see details.',
+          body: 'Open Ficus to see details.',
           collapseId: 'ws:abc',
           threadId: 'squad:def',
           interruptionLevel: 'passive',
@@ -1062,13 +1062,13 @@ describe('NotificationService', () => {
       })
       const sendSpy = spyOn(apnsModule, 'sendApnsNotification').mockResolvedValue({ ok: true, status: 200 })
       const previousAppUrl = process.env.APP_URL
-      process.env.APP_URL = 'https://Tau.Example.com/'
+      process.env.APP_URL = 'https://Ficus.Example.com/'
 
       try {
         await callSendApnsPush(service, [user.id], { title: 'Hello', body: 'World', url: '/inbox' })
 
         expect(sendSpy).toHaveBeenCalledTimes(1)
-        expect(sendSpy.mock.calls[0][1].data).toMatchObject({ origin: 'https://tau.example.com' })
+        expect(sendSpy.mock.calls[0][1].data).toMatchObject({ origin: 'https://ficus.example.com' })
       } finally {
         if (previousAppUrl === undefined) delete process.env.APP_URL
         else process.env.APP_URL = previousAppUrl

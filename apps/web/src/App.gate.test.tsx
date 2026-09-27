@@ -132,7 +132,7 @@ describe('App auth gate', () => {
     validSession = true
     await render()
 
-    expect(container.textContent).toContain('Set up Tau')
+    expect(container.textContent).toContain('Set up Ficus')
     expect(container.textContent).toContain('Create the first admin account')
     // The bootstrap password was already accepted — don't ask for it again.
     expect(container.textContent).not.toContain('Enter the instance password')
@@ -145,7 +145,7 @@ describe('App auth gate', () => {
     await render()
 
     expect(container.querySelector('[data-testid="app-shell"]')).not.toBeNull()
-    expect(container.textContent).not.toContain('Set up Tau')
+    expect(container.textContent).not.toContain('Set up Ficus')
   })
 
   test('unauthenticated with zero users keeps the bootstrap password step', async () => {
@@ -153,7 +153,7 @@ describe('App auth gate', () => {
     validSession = false
     await render()
 
-    expect(container.textContent).toContain('Set up Tau')
+    expect(container.textContent).toContain('Set up Ficus')
     expect(container.textContent).toContain('Enter the instance password')
     expect(container.querySelector('[data-testid="app-shell"]')).toBeNull()
   })
@@ -164,7 +164,7 @@ describe('App auth gate', () => {
     await render()
 
     expect(container.querySelector('[data-testid="app-shell"]')).not.toBeNull()
-    expect(container.textContent).not.toContain('Set up Tau')
+    expect(container.textContent).not.toContain('Set up Ficus')
   })
 
   // The invite / recovery deep link is opened by someone with NO session — the gate

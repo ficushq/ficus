@@ -95,7 +95,7 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
             <button
               key={ws.id}
               onClick={() => setSelectedWorkStream(ws)}
-              className="tau-button w-full text-left p-4 rounded-xl border-0 bg-transparent hover:bg-surface-hover transition-colors cursor-pointer"
+              className="ficus-button w-full text-left p-4 rounded-xl border-0 bg-transparent hover:bg-surface-hover transition-colors cursor-pointer"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">

@@ -350,7 +350,7 @@ export function AgentChat({
             <div role="alert">
               {preparationError}
               {!initialMessageSent.current && initialMessage && (
-                <button className="tau-button" onClick={() => setInitialPreparationAttempt((value) => value + 1)}>
+                <button className="ficus-button" onClick={() => setInitialPreparationAttempt((value) => value + 1)}>
                   Retry sending
                 </button>
               )}

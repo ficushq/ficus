@@ -350,7 +350,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                 key={f.value}
                 onClick={() => handleUserFilterChange(f.value)}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-2.5 py-0.5 rounded-full text-xs whitespace-nowrap',
                   scopeFilter === f.value
                     ? 'bg-accent text-on-accent'
@@ -367,7 +367,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
         <div className="hidden md:block p-3 border-b border-th-border space-y-3">
           <button
             onClick={handleNewChat}
-            className="tau-button tau-button-primary w-full bg-accent text-on-accent px-4 py-2 rounded-md hover:bg-accent-hover text-sm font-medium"
+            className="ficus-button ficus-button-primary w-full bg-accent text-on-accent px-4 py-2 rounded-md hover:bg-accent-hover text-sm font-medium"
           >
             New System Chat
           </button>
@@ -377,7 +377,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                 key={f.value}
                 onClick={() => handleUserFilterChange(f.value)}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-2 py-0.5 rounded-full text-xs',
                   scopeFilter === f.value
                     ? 'bg-accent text-on-accent'
@@ -419,7 +419,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                 key={agent.id}
                 onClick={() => handleSelectAgent(agent.id)}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'w-full text-left px-3 py-3 md:py-2.5 border-b border-th-border hover:bg-surface-hover group',
                   agentId === agent.id && 'bg-status-progress-50 dark:bg-status-progress-900/20'
                 )}
@@ -460,7 +460,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
             onExitFullscreen={toggleFullscreen}
             title={chatSubtitle ? `${chatTitle} (${chatSubtitle})` : chatTitle}
             headerExtra={tabToggle}
-            className="tau-panel flex flex-col grow min-h-0 bg-surface md:rounded-lg overflow-hidden"
+            className="ficus-panel flex flex-col grow min-h-0 bg-surface md:rounded-lg overflow-hidden"
             inlineHeader={
               <>
                 <div className="md:hidden shrink-0 px-3 py-2 border-b border-th-border">
@@ -483,7 +483,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                     {tabToggle}
                     <button
                       onClick={toggleFullscreen}
-                      className="tau-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors"
+                      className="ficus-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors"
                       aria-label="Fullscreen"
                       title="Fullscreen"
                     >
@@ -497,7 +497,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
             {chatContent}
           </ExpandableChatPanel>
         ) : (
-          <div className="tau-panel grow flex items-center justify-center bg-surface rounded-lg px-4 text-center">
+          <div className="ficus-panel grow flex items-center justify-center bg-surface rounded-lg px-4 text-center">
             <p className="text-placeholder text-sm">
               {scopeFilter === 'task'
                 ? 'Task chats are created from the task detail page'

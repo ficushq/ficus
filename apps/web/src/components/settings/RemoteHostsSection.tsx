@@ -76,7 +76,7 @@ export function RemoteHostsSection() {
         </p>
       </div>
 
-      <div className="tau-section overflow-hidden">
+      <div className="ficus-section overflow-hidden">
         {hosts.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted">No remote hosts registered yet.</div>
         ) : (
@@ -159,7 +159,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setExpanded((v) => !v)}
-              className="tau-button text-sm font-medium text-primary hover:text-accent-light"
+              className="ficus-button text-sm font-medium text-primary hover:text-accent-light"
               aria-expanded={expanded}
             >
               {expanded ? '▾' : '▸'} {host.name}
@@ -191,7 +191,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
             <button
               onClick={() => checkMutation.mutate()}
               disabled={isMutating}
-              className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+              className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
             >
               {checkMutation.isPending ? 'Checking…' : 'Check'}
             </button>
@@ -200,7 +200,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
               onConfirm={() => deleteMutation.mutate()}
               label="Delete"
               confirmLabel="Confirm?"
-              className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
+              className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
               confirmClassName="text-xs text-status-danger-700 dark:text-status-danger-300 font-medium"
               disabled={isMutating}
             />
@@ -247,7 +247,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
                       <button
                         onClick={() => revokeGrantMutation.mutate(squadId)}
                         disabled={revokeGrantMutation.isPending}
-                        className="tau-button text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 disabled:opacity-50"
+                        className="ficus-button text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 disabled:opacity-50"
                         title={`Revoke ${squadName(squadId)}'s access`}
                       >
                         ×
@@ -263,7 +263,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
                 <select
                   value={pickedSquadId}
                   onChange={(e) => setPickedSquadId(e.target.value)}
-                  className="tau-field text-xs bg-surface border border-th-border rounded px-2 py-1 text-primary  focus:ring-1 focus:ring-accent"
+                  className="ficus-field text-xs bg-surface border border-th-border rounded px-2 py-1 text-primary  focus:ring-1 focus:ring-accent"
                 >
                   <option value="">Grant a squad…</option>
                   {grantableSquads.map((squad) => (
@@ -275,7 +275,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
                 <button
                   onClick={() => pickedSquadId && grantMutation.mutate(pickedSquadId)}
                   disabled={!pickedSquadId || grantMutation.isPending}
-                  className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+                  className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
                 >
                   {grantMutation.isPending ? 'Granting…' : 'Grant'}
                 </button>
@@ -333,11 +333,11 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
     'text-sm bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent'
 
   return (
-    <div className="tau-section overflow-hidden">
+    <div className="ficus-section overflow-hidden">
       <div className="px-4 py-3 border-b border-th-border">
         <h4 className="text-sm font-medium text-secondary">Register a remote host</h4>
         <p className="text-xs text-muted mt-0.5">
-          Add a team-owned SSH target. Tau mints a dedicated keypair — you'll install its public half on the host.
+          Add a team-owned SSH target. Ficus mints a dedicated keypair — you'll install its public half on the host.
         </p>
       </div>
       <div className="px-4 py-4 space-y-3">
@@ -346,13 +346,13 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Name"
-            className={clsx('tau-field', inputClass, 'flex-1 min-w-[10rem]')}
+            className={clsx('ficus-field', inputClass, 'flex-1 min-w-[10rem]')}
           />
           <input
             value={sshHost}
             onChange={(e) => setSshHost(e.target.value)}
             placeholder="Host"
-            className={clsx('tau-field', inputClass, 'flex-1 min-w-[10rem]')}
+            className={clsx('ficus-field', inputClass, 'flex-1 min-w-[10rem]')}
           />
           <input
             value={sshPort}
@@ -360,7 +360,7 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
             placeholder="Port"
             inputMode="numeric"
             className={clsx(
-              'tau-field',
+              'ficus-field',
               inputClass,
               'w-24',
               sshPort && !isPortValid(sshPort) && 'border-status-danger-500'
@@ -370,7 +370,7 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
             value={sshUser}
             onChange={(e) => setSshUser(e.target.value)}
             placeholder="User"
-            className={clsx('tau-field', inputClass, 'w-32')}
+            className={clsx('ficus-field', inputClass, 'w-32')}
           />
         </div>
         <div className="flex flex-wrap gap-2">
@@ -378,12 +378,12 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Description (optional)"
-            className={clsx('tau-field', inputClass, 'flex-1 min-w-[12rem]')}
+            className={clsx('ficus-field', inputClass, 'flex-1 min-w-[12rem]')}
           />
           <button
             onClick={() => registerMutation.mutate()}
             disabled={!canSubmit}
-            className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
           >
             {registerMutation.isPending ? 'Registering…' : 'Register'}
           </button>

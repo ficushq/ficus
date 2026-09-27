@@ -226,7 +226,7 @@ export function FileMentionAutocomplete({
     return (
       <div
         ref={containerRef}
-        className="tau-overlay fixed z-50 bg-surface border border-th-border rounded-lg shadow-lg p-3 text-sm text-muted"
+        className="ficus-overlay fixed z-50 bg-surface border border-th-border rounded-lg shadow-lg p-3 text-sm text-muted"
         style={{
           bottom: `calc(100vh - ${position.top}px)`,
           left: position.left,
@@ -242,7 +242,7 @@ export function FileMentionAutocomplete({
   return (
     <div
       ref={containerRef}
-      className="tau-overlay fixed z-50 bg-surface border border-th-border rounded-lg shadow-lg overflow-hidden"
+      className="ficus-overlay fixed z-50 bg-surface border border-th-border rounded-lg shadow-lg overflow-hidden"
       style={{
         bottom: `calc(100vh - ${position.top}px)`,
         left: position.left,
@@ -261,7 +261,7 @@ export function FileMentionAutocomplete({
             data-selected={index === selectedIndex}
             onClick={() => onSelect(file)}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'w-full text-left px-3 py-2 text-sm font-mono truncate transition-colors',
               index === selectedIndex ? 'bg-accent/10 text-accent-light' : 'text-primary hover:bg-surface-hover'
             )}

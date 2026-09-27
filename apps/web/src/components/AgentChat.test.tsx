@@ -14,7 +14,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChatApiProvider } from '../api/ChatApiProvider'
 import { queryKeys } from '../queryKeys'
-import type { TauClient } from '@ficus/client-core'
+import type { FicusClient } from '@ficus/client-core'
 import { ConversationClientProvider } from '@ficus/client-react'
 import type { RenderItem } from '@ficus/client-react'
 import { acquireDomHarness } from '../test/domHarness'
@@ -109,8 +109,8 @@ let _agentQuestionFetchCount = 0
 // Types
 // ---------------------------------------------------------------------------
 
-type StreamCb = Parameters<TauClient['agents']['subscribeToAgentStream']>[1]
-type ChatCb = Parameters<TauClient['chat']['sendChatMessage']>[1]
+type StreamCb = Parameters<FicusClient['agents']['subscribeToAgentStream']>[1]
+type ChatCb = Parameters<FicusClient['chat']['sendChatMessage']>[1]
 
 // ---------------------------------------------------------------------------
 // Mock client
@@ -144,7 +144,7 @@ function makeMockClient() {
         chatCb = cb
       },
     },
-  } as unknown as TauClient
+  } as unknown as FicusClient
 
   return {
     client,
@@ -182,7 +182,7 @@ async function installDom() {
 
 const queryClients = new Set<QueryClient>()
 
-function makeProviders(client: TauClient) {
+function makeProviders(client: FicusClient) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClients.add(qc)
   function Providers({ children }: { children: React.ReactNode }) {

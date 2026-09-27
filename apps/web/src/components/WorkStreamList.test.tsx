@@ -14,8 +14,8 @@ const now = new Date('2026-01-01T00:00:00Z')
 
 const squad: Squad = {
   id: 'squad-1',
-  name: 'Tau',
-  purpose: 'Build Tau',
+  name: 'Ficus',
+  purpose: 'Build Ficus',
   status: 'active',
   squadPresetId: null,
   defaultAgents: [],
@@ -145,7 +145,7 @@ function renderWorkStreamList(
 
 describe('WorkStreamList', () => {
   test.each([
-    ['Tau', '/squads/squad-1'],
+    ['Ficus', '/squads/squad-1'],
     ['Engineer', '/squads/squad-1/agents?agent=agent-1'],
   ])('feed metadata links open %s without opening the work stream', async (label, destination) => {
     const dom = await acquireDomHarness({ url: 'http://localhost/feed' })
@@ -300,7 +300,7 @@ describe('WorkStreamList', () => {
 
     expect(html).not.toContain('aria-label="Loading squad quick links"')
     expect(html).toContain('href="/squads/squad-1"')
-    expect(html).toContain('>Tau</span>')
+    expect(html).toContain('>Ficus</span>')
   })
 
   test('orders squad quick links by squad custom order', () => {
@@ -405,7 +405,7 @@ describe('WorkStreamList', () => {
       localStorage.setItem(storageKey, JSON.stringify([beta.id]))
       await dom.act(async () => rendered.root.render(render()))
       expect(links()).toEqual(['/squads/squad-1'])
-      expect(section().querySelector('[aria-label="Tau: Agents working"]')).not.toBeNull()
+      expect(section().querySelector('[aria-label="Ficus: Agents working"]')).not.toBeNull()
       expect(section().querySelector('.tabular-nums')).toBeNull()
       expect(section().querySelectorAll('button')).toHaveLength(1)
       expect(section().textContent).not.toContain('Hidden from quick links')
@@ -413,7 +413,7 @@ describe('WorkStreamList', () => {
       await click('Customize squad quick links')
       expect(links()).toEqual(['/squads/squad-1', '/squads/beta'])
       expect(section().querySelector('[aria-label="Beta: No active agents"]')).not.toBeNull()
-      await click('Hide Tau from quick links')
+      await click('Hide Ficus from quick links')
       expect(links()).toEqual(['/squads/squad-1', '/squads/beta'])
       expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual(['beta', 'squad-1'])
       await click('Finish customizing squad quick links')
@@ -430,13 +430,13 @@ describe('WorkStreamList', () => {
       await dom.act(async () => rendered.root.render(render()))
       expect(links()).toEqual(['/squads/beta'])
       await click('Customize squad quick links')
-      await click('Unhide Tau in quick links')
+      await click('Unhide Ficus in quick links')
       expect(localStorage.getItem(storageKey)).toBeNull()
       await click('Finish customizing squad quick links')
       expect(links()).toEqual(['/squads/squad-1', '/squads/beta'])
       await dom.act(async () => rendered.root.render(render('idle')))
-      expect(section().querySelector('[aria-label="Tau: Agents working"]')).toBeNull()
-      expect(section().querySelector('[aria-label="Tau: No active agents"]')).not.toBeNull()
+      expect(section().querySelector('[aria-label="Ficus: Agents working"]')).toBeNull()
+      expect(section().querySelector('[aria-label="Ficus: No active agents"]')).not.toBeNull()
     } finally {
       client.clear()
       await dom.cleanup()
@@ -582,20 +582,20 @@ describe('WorkStreamList', () => {
       expect(button('In Progress').getAttribute('aria-pressed')).toBe('false')
       expect(button('Waiting').getAttribute('aria-pressed')).toBe('false')
 
-      await dom.act(async () => button('Tau').click())
+      await dom.act(async () => button('Ficus').click())
       expect(button('All squads').getAttribute('aria-pressed')).toBe('false')
       expect(pageText()).toContain('Progress Alpha')
       expect(pageText()).not.toContain('Waiting Beta')
 
       await dom.act(async () => button('Beta').click())
-      expect(button('Tau').getAttribute('aria-pressed')).toBe('true')
+      expect(button('Ficus').getAttribute('aria-pressed')).toBe('true')
       expect(button('Beta').getAttribute('aria-pressed')).toBe('true')
       expect(pageText()).toContain('Progress Alpha')
       expect(pageText()).toContain('Waiting Beta')
 
       await dom.act(async () => button('All squads').click())
       expect(button('All squads').getAttribute('aria-pressed')).toBe('true')
-      expect(button('Tau').getAttribute('aria-pressed')).toBe('false')
+      expect(button('Ficus').getAttribute('aria-pressed')).toBe('false')
       expect(button('Beta').getAttribute('aria-pressed')).toBe('false')
     } finally {
       await dom.cleanup()
@@ -610,11 +610,11 @@ describe('WorkStreamList', () => {
     const secondSquad = { ...squad, id: 'squad-2', name: 'Beta' }
     const queryClient = createTestQueryClient()
     const active = [
-      workStream({ id: 'active-tau', title: 'Active Tau' }),
+      workStream({ id: 'active-tau', title: 'Active Ficus' }),
       workStream({ id: 'active-beta', title: 'Active Beta', squadId: secondSquad.id }),
     ]
     const done = [
-      workStream({ id: 'done-tau', title: 'Done Tau', status: 'done' }),
+      workStream({ id: 'done-tau', title: 'Done Ficus', status: 'done' }),
       workStream({ id: 'done-beta', title: 'Done Beta', status: 'done', squadId: secondSquad.id }),
     ]
 
@@ -648,23 +648,23 @@ describe('WorkStreamList', () => {
       expect(dom.window.document.activeElement).toBe(button('All'))
       expect(header.contains(dom.window.document.querySelector('[aria-label="Work stream filters"]'))).toBe(true)
 
-      await dom.act(async () => button('Tau').click())
-      expect(pageText()).toContain('Active Tau')
-      expect(pageText()).toContain('Done Tau')
+      await dom.act(async () => button('Ficus').click())
+      expect(pageText()).toContain('Active Ficus')
+      expect(pageText()).toContain('Done Ficus')
       expect(pageText()).not.toContain('Active Beta')
       expect(pageText()).not.toContain('Done Beta')
       expect(trigger.textContent).toBe('Filters1')
 
       await dom.act(async () => button('Done').click())
-      expect(pageText()).not.toContain('Active Tau')
-      expect(pageText()).toContain('Done Tau')
+      expect(pageText()).not.toContain('Active Ficus')
+      expect(pageText()).toContain('Done Ficus')
       expect(trigger.textContent).toBe('Filters2')
       await dom.act(async () =>
         dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       )
       expect(panel()).toBeNull()
       expect(dom.window.document.activeElement).toBe(trigger)
-      expect(pageText()).toContain('Done Tau')
+      expect(pageText()).toContain('Done Ficus')
 
       await dom.act(async () => trigger.click())
       expect(button('Done').getAttribute('aria-pressed')).toBe('true')
@@ -728,8 +728,8 @@ describe('WorkStreamList', () => {
     })
 
     expect(html).toContain('href="/squads/squad-1"')
-    expect(html).toContain('title="Open Tau squad"')
-    expect(html).toContain('>Tau</a>')
+    expect(html).toContain('title="Open Ficus squad"')
+    expect(html).toContain('>Ficus</a>')
   })
 
   test('does not render an assigned agent pill for unassigned work streams', () => {

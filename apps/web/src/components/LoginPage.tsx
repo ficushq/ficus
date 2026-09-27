@@ -113,7 +113,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
       setBootstrapAuthed(true)
       return true
     } catch {
-      setError('Unable to reach Tau. Please try again.')
+      setError('Unable to reach Ficus. Please try again.')
       return false
     } finally {
       setLoading(false)
@@ -206,8 +206,8 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
   if (authStatus && !authStatus.hasUsers) {
     return (
       <div className="h-full flex items-center justify-center bg-page px-4">
-        <div className="tau-section w-full max-w-sm p-6">
-          <h1 className="text-lg font-semibold text-primary mb-4">Set up Tau</h1>
+        <div className="ficus-section w-full max-w-sm p-6">
+          <h1 className="text-lg font-semibold text-primary mb-4">Set up Ficus</h1>
           {needsBootstrapPassword ? (
             autoLoginPending ? (
               <p className="text-sm text-secondary mb-4">Signing you in…</p>
@@ -229,7 +229,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                   autoFocus
                   aria-invalid={!!error}
                   aria-describedby={error ? 'bootstrap-error' : undefined}
-                  className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
+                  className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
                 />
                 {error && (
                   <p
@@ -243,7 +243,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                 <button
                   type="submit"
                   disabled={loading || !password.trim()}
-                  className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+                  className="ficus-button ficus-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
                 >
                   {loading ? 'Verifying...' : 'Continue'}
                 </button>
@@ -279,7 +279,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
     const heading = showRecovery ? 'Lost your passkey?' : registering ? 'Create Account' : 'Login'
     return (
       <div className="h-full flex items-center justify-center bg-page px-4">
-        <div className="tau-section w-full max-w-sm p-6">
+        <div className="ficus-section w-full max-w-sm p-6">
           <h1 className="text-lg font-semibold text-primary mb-4">{heading}</h1>
           {showRecovery ? (
             <PasskeyRecoveryRequest onBack={() => setShowRecovery(false)} />
@@ -290,7 +290,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                 <button
                   type="button"
                   onClick={() => setShowRegister(false)}
-                  className="tau-button text-accent-light hover:underline"
+                  className="ficus-button text-accent-light hover:underline"
                 >
                   Back to login
                 </button>
@@ -308,7 +308,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                   <button
                     type="button"
                     onClick={() => setShowRegister(true)}
-                    className="tau-button text-accent-light hover:underline"
+                    className="ficus-button text-accent-light hover:underline"
                   >
                     Create account
                   </button>
@@ -321,7 +321,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                 <button
                   type="button"
                   onClick={() => setShowRecovery(true)}
-                  className="tau-button text-accent-light hover:underline"
+                  className="ficus-button text-accent-light hover:underline"
                 >
                   Lost your passkey?
                 </button>
@@ -335,7 +335,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
 
   return (
     <div className="h-full flex items-center justify-center bg-page px-4">
-      <div className="tau-section w-full max-w-sm p-6">
+      <div className="ficus-section w-full max-w-sm p-6">
         <h1 className="text-lg font-semibold text-primary mb-4">Login</h1>
         <form onSubmit={handleSubmit}>
           <label htmlFor="login-password" className="sr-only">
@@ -351,7 +351,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
             autoFocus
             aria-invalid={!!error}
             aria-describedby={error ? 'login-error' : undefined}
-            className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
+            className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
           />
           {error && (
             <p
@@ -365,7 +365,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
           <button
             type="submit"
             disabled={loading || !password.trim()}
-            className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>

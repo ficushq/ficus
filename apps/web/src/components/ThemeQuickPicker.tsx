@@ -156,7 +156,7 @@ export function ThemeQuickPicker({
           id={panelId}
           role="dialog"
           aria-label="Theme"
-          className="tau-overlay absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-3rem)] rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
+          className="ficus-overlay absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-3rem)] rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
         >
           {/* The cells touch, so sweeping between circles never crosses a gap that would restore the app for a
               frame; the padding inside each cell keeps the circles apart. */}

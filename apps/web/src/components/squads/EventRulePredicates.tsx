@@ -43,7 +43,7 @@ export function EventRulePredicates({
               Field
               <select
                 aria-label={`${prefix} field`}
-                className="tau-field block max-w-full"
+                className="ficus-field block max-w-full"
                 value={predicate.field}
                 onChange={(event) => update(index, initial(event.target.value))}
               >
@@ -58,7 +58,7 @@ export function EventRulePredicates({
               Operator
               <select
                 aria-label={`${prefix} operator`}
-                className="tau-field block"
+                className="ficus-field block"
                 value={predicate.op}
                 onChange={(event) => {
                   const op = event.target.value as EventPredicate['op']
@@ -84,7 +84,7 @@ export function EventRulePredicates({
               {boolean ? (
                 <select
                   aria-label={`${prefix} value`}
-                  className="tau-field block w-full"
+                  className="ficus-field block w-full"
                   value={String(predicate.value)}
                   onChange={(event) => update(index, { ...predicate, value: event.target.value === 'true' })}
                 >
@@ -94,7 +94,7 @@ export function EventRulePredicates({
               ) : (
                 <input
                   aria-label={`${prefix} value`}
-                  className="tau-field block w-full"
+                  className="ficus-field block w-full"
                   type={field?.type === 'number' && predicate.op !== 'in' ? 'number' : 'text'}
                   value={Array.isArray(predicate.value) ? JSON.stringify(predicate.value) : String(predicate.value)}
                   onChange={(event) => {
@@ -114,7 +114,7 @@ export function EventRulePredicates({
             <button
               type="button"
               aria-label={`Remove ${prefix.toLowerCase()}`}
-              className="tau-button text-xs"
+              className="ficus-button text-xs"
               onClick={() => onChange(predicates.filter((_, i) => i !== index))}
             >
               Remove condition
@@ -135,7 +135,7 @@ export function EventRulePredicates({
       )}
       <button
         type="button"
-        className="tau-button text-sm disabled:opacity-40"
+        className="ficus-button text-sm disabled:opacity-40"
         disabled={!Object.keys(fields).length || predicates.length >= 16}
         onClick={() => onChange([...predicates, initial(Object.keys(fields)[0]!)])}
       >

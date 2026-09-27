@@ -628,7 +628,7 @@ describe('integration routes', () => {
     })
     expect(response.status).toBe(403)
     expect(await response.json()).toEqual({
-      error: 'Sign in with your Tau account to connect Notion.',
+      error: 'Sign in with your Ficus account to connect Notion.',
       code: 'user_session_required',
     })
     expect(calls.authorizationStart).not.toHaveBeenCalled()

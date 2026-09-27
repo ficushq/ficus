@@ -9,7 +9,7 @@
 // neutral seeds, the same shape a user's own custom theme uses), so no
 // explicit-token layer is needed:
 //
-// 1. Parse Tau's own `:root`/`.dark` blocks in index.css into a token->value
+// 1. Parse Ficus's own `:root`/`.dark` blocks in index.css into a token->value
 //    map per appearance (the derivation BASE — built-ins still involve no
 //    runtime color generation; this script bakes the CSS once).
 // 2. Run the shared palette derivation (`deriveThemeOverrides`, the same pure
@@ -20,7 +20,7 @@
 //    `--on-accent-fg` vary between built-ins; every other family — status,
 //    agent-type, badge-decoration, voice-material, utility-decoration/
 //    -chrome, log-terminal, ansi, brand, most of syntax/terminal/graph — is
-//    copied verbatim from Tau, matching Harbor/Ember/every BigBrain-ported
+//    copied verbatim from Ficus, matching Harbor/Ember/every BigBrain-ported
 //    built-in).
 // 3. Run the same strict-gate contrast repair pass
 //    (`repairContrastPairs`, shared with generate-bigbrain-builtins.ts)
@@ -28,7 +28,7 @@
 //
 // Status mode: `utilityParity.test.ts`'s legacy-utility-colors fixture
 // freezes every built-in's `--status-ROLE-{50..950}` ramp tokens
-// byte-identical to Tau's own (they share the STATUS_TOKENS family with the
+// byte-identical to Ficus's own (they share the STATUS_TOKENS family with the
 // semantic fg/surface/badge slots, and `deriveThemeOverrides`'s harmonized
 // mode moves every token sharing a role's `--status-ROLE-` prefix, ramp steps
 // included). So even where a source preset requests `status: 'harmonized'`,
@@ -113,7 +113,7 @@ function buildThemeTokens(palette: ThemePalette, baseTokens: Record<string, stri
     if (token.startsWith('--opacity-')) {
       // Intrinsic-alpha metadata is independent of the color token's own
       // stored channels (see generate-bigbrain-builtins.ts's doc comment
-      // step 6); Forest keeps Tau's own translucent values, like Harbor/Ember.
+      // step 6); Forest keeps Ficus's own translucent values, like Harbor/Ember.
       combined[token] = baseTokens[token]!
       continue
     }

@@ -5,13 +5,13 @@ import type { DesktopUpdates, DesktopUpdateState } from '../../lib/desktop'
 const BUSY_PHASES = new Set<DesktopUpdateState['phase']>(['checking', 'downloading', 'installing'])
 
 const secondaryButton = clsx(
-  'tau-button',
+  'ficus-button',
   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
   'bg-surface border border-th-border text-primary hover:bg-surface-hover',
   'disabled:opacity-50 disabled:cursor-not-allowed'
 )
 const primaryButton = clsx(
-  'tau-button',
+  'ficus-button',
   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
   'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
   'disabled:opacity-50 disabled:cursor-not-allowed'
@@ -33,7 +33,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Native update controls for the Tau Desktop app, which owns the bundled Core's upgrades. */
+/** Native update controls for the Ficus Desktop app, which owns the bundled Core's upgrades. */
 export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpdates; canWrite: boolean }) {
   const [state, setState] = useState<DesktopUpdateState | null>(null)
   const [bridgeError, setBridgeError] = useState<string | null>(null)
@@ -77,9 +77,9 @@ export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpda
   return (
     <section className="space-y-6 text-primary" data-testid="desktop-update-panel">
       <div>
-        <h2 className="text-xl font-semibold text-primary">Tau Desktop updates</h2>
+        <h2 className="text-xl font-semibold text-primary">Ficus Desktop updates</h2>
         <p className="text-sm text-muted mt-1">
-          The desktop app updates itself and the Tau Core it bundles together, then restarts to finish.
+          The desktop app updates itself and the Ficus Core it bundles together, then restarts to finish.
         </p>
       </div>
       {!state ? (
@@ -102,7 +102,7 @@ export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpda
           </dl>
           {!state.supported && (
             <div className="p-3 rounded bg-warning/10 text-warning text-sm">
-              This build of Tau Desktop doesn’t receive automatic updates.
+              This build of Ficus Desktop doesn’t receive automatic updates.
             </div>
           )}
           <div className="space-y-3" data-setting-target="desktop-update-status">
@@ -148,7 +148,7 @@ function DesktopUpdateStatus({
   onRestart: () => void
   onRetry: () => void
 }) {
-  const version = state.availableVersion ? `Tau ${state.availableVersion}` : 'the update'
+  const version = state.availableVersion ? `Ficus ${state.availableVersion}` : 'the update'
   switch (state.phase) {
     case 'checking':
       return (

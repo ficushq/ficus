@@ -23,7 +23,7 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
     expect(html).toContain('Create the first admin account')
     expect(html).toContain('Create Admin Account')
     expect(html).not.toContain('Register with Passkey')
@@ -37,7 +37,7 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
     expect(html).toContain('Enter the instance password')
     expect(html).toContain('type="password"')
     // Passkey registration must not be reachable until the password step is satisfied.
@@ -53,7 +53,7 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
     expect(html).toContain('Create the first admin account')
     expect(html).not.toContain('Enter the instance password')
   })
@@ -102,7 +102,7 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
     expect(html).toContain('Create the first admin account')
     expect(html).not.toContain('invite-only')
   })

@@ -47,7 +47,7 @@ const authModes = [
     name: 'bootstrap ignores policy',
     status: { authEnabled: true, mode: 'passkey', hasUsers: false, hasAdminUser: false, canSelfRegister: false },
     authenticated: false,
-    marker: 'Set up Tau',
+    marker: 'Set up Ficus',
   },
   {
     name: 'legacy password',

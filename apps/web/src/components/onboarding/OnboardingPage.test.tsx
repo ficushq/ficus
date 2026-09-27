@@ -59,7 +59,7 @@ function renderStatic(queryClient: QueryClient, entry = '/onboarding'): string {
 }
 
 describe('OnboardingPage — static rendering', () => {
-  test('Open Tau links to the newest squad manager chat after onboarding', () => {
+  test('Open Ficus links to the newest squad manager chat after onboarding', () => {
     const client = seededQueryClient(['settings:read'], coreSettledStatus())
     client.setQueryData(queryKeys.squads.list(), [
       { id: 'old', name: 'Older', managerAgentId: 'old-manager', createdAt: '2026-01-01' },
@@ -682,7 +682,7 @@ describe('OnboardingPage — appearance control', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 
-  test('inside Tau Desktop with no stored choice, System is selected and follows the OS', async () => {
+  test('inside Ficus Desktop with no stored choice, System is selected and follows the OS', async () => {
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)', media: query }),

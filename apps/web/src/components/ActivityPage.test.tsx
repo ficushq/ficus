@@ -520,7 +520,7 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
     await import('./EntityReferenceModal')
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     const target = { id: 'abc12345-1234-1234-1234-123456789abc', squadId: squadAId, agentTypeId: 'reviewer' }
-    const item = { ...messageItem, preview: [{ text: 'Review agent', href: `tau:agent:${reference}` }] }
+    const item = { ...messageItem, preview: [{ text: 'Review agent', href: `ficus:agent:${reference}` }] }
     const client = seedClient([item])
     client.setQueryData(queryKeys.activity.globalInfinite({ ...filters, kinds: ['message', 'subagent'] }), {
       pages: [{ items: [item], hasMore: false, nextCursor: null, squads: { [squadBId]: { name: 'Bravo' } } }],

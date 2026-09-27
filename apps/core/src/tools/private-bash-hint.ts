@@ -26,7 +26,7 @@ const PERMISSION_DENIED = /permission denied/i
 
 export function buildSharedWorkspaceHint(workspaceMount: string): string {
   return (
-    `[Tau] \`${workspaceMount}\` is the SHARED squad workspace. Private \`bash\` runs in your own box and cannot see it; ` +
+    `[Ficus] \`${workspaceMount}\` is the SHARED squad workspace. Private \`bash\` runs in your own box and cannot see it; ` +
     `run this command with \`squad_bash\` instead (it starts in \`${workspaceMount}\`). ` +
     '`read`/`write`/`edit` reach shared paths by absolute path.'
   )

@@ -122,7 +122,7 @@ function Code({ className, children, ...props }: ComponentProps<'code'>) {
 // Scroll tables horizontally if necessary.
 const Table: Components['table'] = ({ children, className, ...props }) => (
   <div className="overflow-x-auto px-2">
-    <table {...props} className={clsx('tau-table', '!min-w-max !my-2', className)}>
+    <table {...props} className={clsx('ficus-table', '!min-w-max !my-2', className)}>
       {children}
     </table>
   </div>

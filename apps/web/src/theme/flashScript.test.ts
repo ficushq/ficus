@@ -49,7 +49,7 @@ interface FlashScenario {
   systemPrefersDark?: boolean
   /** Pre-seeds a stale dark class, as a bfcache-restored document may carry. */
   staleDarkClass?: boolean
-  /** Runs inside Tau Desktop, whose preload defines window.tauDesktopApp first. */
+  /** Runs inside Ficus Desktop, whose preload defines window.tauDesktopApp first. */
   desktop?: boolean
 }
 
@@ -118,7 +118,7 @@ test('the pre-paint script reads only the ficus theme keys', () => {
 })
 
 describe('pre-paint flash script: default appearance by host', () => {
-  test('Tau Desktop with no stored choice follows the OS appearance', async () => {
+  test('Ficus Desktop with no stored choice follows the OS appearance', async () => {
     expect((await runFlashScript({ desktop: true, systemPrefersDark: true })).dataAppearance).toBe('dark')
     expect((await runFlashScript({ desktop: true, systemPrefersDark: false })).dataAppearance).toBe('light')
   })

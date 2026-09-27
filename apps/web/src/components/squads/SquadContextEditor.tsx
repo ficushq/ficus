@@ -62,7 +62,7 @@ export function SquadContextEditor({ squadId, context }: Props) {
         onKeyDown={handleKeyDown}
         placeholder="Add context for this squad's agents...&#10;&#10;e.g. project conventions, repo structure, coding standards, deployment notes..."
         className={clsx(
-          'tau-field',
+          'ficus-field',
           'w-full h-80 p-3 rounded-lg border bg-surface text-primary text-sm',
           'font-mono leading-relaxed resize-y',
           'placeholder:text-placeholder',
@@ -77,7 +77,7 @@ export function SquadContextEditor({ squadId, context }: Props) {
           onClick={handleSave}
           disabled={!dirty || mutation.isPending}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
             dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}

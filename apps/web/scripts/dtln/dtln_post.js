@@ -1,5 +1,5 @@
 /* global Module, HEAPF32, runtimeInitialized, module, console */
-// Replacement for upstream dtln-rs's dtln_post.js, overlaid by the Tau
+// Replacement for upstream dtln-rs's dtln_post.js, overlaid by the Ficus
 // denoiser build (apps/web/scripts/dtln/Dockerfile). Emscripten appends it to
 // the generated glue, so it runs in the module's scope. Differences from
 // upstream, all needed by apps/web/public/voice/dtln/processor.js:

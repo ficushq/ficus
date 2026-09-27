@@ -38,9 +38,9 @@ import {
   isWorkflowTextTarget,
 } from '../../lib/workflowEditing'
 
-const field = 'tau-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
+const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
 const button =
-  'tau-button flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40'
+  'ficus-button flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40'
 
 export function WorkflowBuilder({
   definition,
@@ -300,7 +300,7 @@ export function WorkflowBuilder({
                   inspecting && (panel === 'inspector' ? tab !== 'settings' && tab !== 'participants' : tab === panel)
                 }
                 className={clsx(
-                  'tau-button flex items-center gap-2 rounded-md px-2 sm:px-3 py-1.5 text-sm',
+                  'ficus-button flex items-center gap-2 rounded-md px-2 sm:px-3 py-1.5 text-sm',
                   inspecting && (panel === 'inspector' ? tab !== 'settings' && tab !== 'participants' : tab === panel)
                     ? 'bg-surface-hover text-accent-light'
                     : 'text-secondary'
@@ -518,7 +518,7 @@ export function WorkflowBuilder({
                   <button
                     type="button"
                     aria-label="Close inspector"
-                    className="tau-button p-1.5 text-muted hover:text-primary"
+                    className="ficus-button p-1.5 text-muted hover:text-primary"
                     onClick={() => setInspecting(false)}
                   >
                     <CloseIcon className="h-4 w-4" />
@@ -540,7 +540,7 @@ export function WorkflowBuilder({
                               role="tab"
                               aria-selected={selectedStep.kind === kind}
                               className={clsx(
-                                'tau-button flex-1 rounded px-2 py-1.5 text-sm',
+                                'ficus-button flex-1 rounded px-2 py-1.5 text-sm',
                                 selectedStep.kind === kind && 'bg-surface-hover text-accent-light'
                               )}
                               onClick={() => {
@@ -657,7 +657,7 @@ export function WorkflowBuilder({
                             </p>
                             <button
                               type="button"
-                              className="tau-button text-sm text-accent-light"
+                              className="ficus-button text-sm text-accent-light"
                               onClick={() => {
                                 setSelectedParticipant(selectedStep.participant)
                                 setTab('participants')
@@ -670,7 +670,7 @@ export function WorkflowBuilder({
                             ).length > 1 && (
                               <button
                                 type="button"
-                                className="tau-button ml-3 text-sm text-accent-light disabled:opacity-40"
+                                className="ficus-button ml-3 text-sm text-accent-light disabled:opacity-40"
                                 disabled={Object.keys(definition.participants).length >= 64}
                                 onClick={() =>
                                   onChange(separateWorkflowParticipant(definition, selectedStep.id).definition)

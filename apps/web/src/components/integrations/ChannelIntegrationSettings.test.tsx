@@ -99,7 +99,7 @@ test('self-hosted Slack looks and behaves exactly as before: manual form visible
   await renderCard('slack', slackView({ managedApp: { available: false, connection: null, active: false } }))
   await flushEffects()
 
-  expect(container.textContent).not.toContain('Tau Slack app')
+  expect(container.textContent).not.toContain('Ficus Slack app')
   expect(container.textContent).not.toContain('Add to Slack')
   expect(container.textContent).not.toContain('Use your own Slack app')
   expect(container.querySelector('details')).toBeNull()
@@ -121,7 +121,7 @@ test('hosted with no managed connection shows Add to Slack and starts managed au
   await renderCard('slack', slackView({ managedApp: { available: true, connection: null, active: false } }))
   await flushEffects()
 
-  expect(container.textContent).toContain('Tau Slack app')
+  expect(container.textContent).toContain('Ficus Slack app')
   // Manual setup is now a secondary, collapsed disclosure.
   const details = container.querySelector('details')!
   expect(details).not.toBeNull()
@@ -174,7 +174,7 @@ test('hosted with an active managed connection shows workspace, hides the reques
   expect(container.textContent).toContain('T0123')
   expect(container.textContent).toContain('healthy')
   expect(container.querySelector('code')).toBeNull()
-  expect(container.textContent).toContain('Events arrive through Tau Cloud')
+  expect(container.textContent).toContain('Events arrive through Ficus Cloud')
   expect(container.textContent).toContain("Your own app's credentials are kept but unused")
   expect(container.textContent).toContain('Turn off')
   expect(container.textContent).toContain('event subscriptions')
@@ -326,7 +326,7 @@ test('Telegram is unaffected: no managed UI, no disclosure wrapper', async () =>
   })
   await flushEffects()
 
-  expect(container.textContent).not.toContain('Tau Slack app')
+  expect(container.textContent).not.toContain('Ficus Slack app')
   expect(container.textContent).not.toContain('Add to Slack')
   expect(container.querySelector('details')).toBeNull()
 })
@@ -352,6 +352,6 @@ test('Discord is unaffected: no managed UI, no disclosure wrapper', async () => 
   })
   await flushEffects()
 
-  expect(container.textContent).not.toContain('Tau Slack app')
+  expect(container.textContent).not.toContain('Ficus Slack app')
   expect(container.querySelector('details')).toBeNull()
 })

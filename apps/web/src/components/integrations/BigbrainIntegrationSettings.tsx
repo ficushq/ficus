@@ -337,7 +337,7 @@ export function BigbrainIntegrationSettings({
                   <button
                     disabled={pending}
                     onClick={() => action.mutate({ connectionId: connection.id, action: 'validate' })}
-                    className="tau-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
+                    className="ficus-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
                   >
                     {actionPending && action.variables?.action === 'validate' ? 'Validating…' : 'Validate'}
                   </button>
@@ -346,7 +346,7 @@ export function BigbrainIntegrationSettings({
                     onClick={() =>
                       action.mutate({ connectionId: connection.id, action: connection.enabled ? 'disable' : 'enable' })
                     }
-                    className="tau-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
+                    className="ficus-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
                   >
                     {actionPending && action.variables?.action !== 'validate'
                       ? connection.enabled
@@ -366,12 +366,12 @@ export function BigbrainIntegrationSettings({
                       setNextCredential('')
                       setConfirmation(null)
                     }}
-                    className="tau-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
+                    className="ficus-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
                   >
                     Replace credential
                   </button>
                   <ConfirmButton
-                    className="tau-button"
+                    className="ficus-button"
                     key={`${connectionIds}:${connection.id}`}
                     label="Remove"
                     confirmLabel="Confirm remove"
@@ -396,7 +396,7 @@ export function BigbrainIntegrationSettings({
                     New credential
                     <input
                       aria-label={`Replacement Bigbrain credential for ${connection.displayName}`}
-                      className="tau-field rounded-md border border-th-border bg-surface px-3 py-2 text-primary"
+                      className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2 text-primary"
                       type="password"
                       autoComplete="off"
                       value={nextCredential}
@@ -413,7 +413,7 @@ export function BigbrainIntegrationSettings({
                     <button
                       type="submit"
                       disabled={pending}
-                      className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+                      className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
                     >
                       {replacePending ? 'Replacing…' : 'Save credential'}
                     </button>
@@ -427,7 +427,7 @@ export function BigbrainIntegrationSettings({
                         setReplacingId(null)
                         setConfirmation(null)
                       }}
-                      className="tau-button rounded-md border border-th-border px-3 py-2 text-sm"
+                      className="ficus-button rounded-md border border-th-border px-3 py-2 text-sm"
                     >
                       Cancel
                     </button>
@@ -447,7 +447,7 @@ export function BigbrainIntegrationSettings({
                     <p className="mt-1 text-xs">{confirming.usage.squads.map((squad) => squad.name).join(', ')}</p>
                   )}
                   <button
-                    className="tau-button mt-2 rounded-md border border-status-attention-600 px-3 py-1.5"
+                    className="ficus-button mt-2 rounded-md border border-status-attention-600 px-3 py-1.5"
                     onClick={() => {
                       if (confirming.operation === 'disable')
                         action.mutate({ connectionId: connection.id, action: 'disable', confirmAssigned: true })
@@ -482,7 +482,7 @@ export function BigbrainIntegrationSettings({
             Display name
             <input
               aria-label="Bigbrain display name"
-              className="tau-field rounded-md border border-th-border bg-surface px-3 py-2"
+              className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               disabled={create.isPending}
@@ -493,7 +493,7 @@ export function BigbrainIntegrationSettings({
             API base
             <input
               aria-label="Bigbrain API base"
-              className="tau-field rounded-md border border-th-border bg-surface px-3 py-2"
+              className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2"
               type="url"
               value={apiBase}
               onChange={(event) => setApiBase(event.target.value)}
@@ -505,7 +505,7 @@ export function BigbrainIntegrationSettings({
             Credential
             <input
               aria-label="Bigbrain credential"
-              className="tau-field rounded-md border border-th-border bg-surface px-3 py-2"
+              className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2"
               type="password"
               autoComplete="off"
               value={credential}
@@ -516,7 +516,7 @@ export function BigbrainIntegrationSettings({
           </label>
           <button
             type="submit"
-            className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+            className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
             disabled={create.isPending}
           >
             {create.isPending ? 'Creating and validating…' : 'Create and validate'}

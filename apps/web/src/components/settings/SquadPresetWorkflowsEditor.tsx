@@ -54,7 +54,7 @@ export function SquadPresetWorkflowsEditor({
           <label className="block text-sm font-medium">
             Guidance for choosing a flow
             <textarea
-              className="tau-field mt-1 w-full"
+              className="ficus-field mt-1 w-full"
               rows={3}
               value={value.guidance}
               onChange={(event) => onChange({ ...value, guidance: event.target.value })}
@@ -79,7 +79,7 @@ export function SquadPresetWorkflowsEditor({
                   </div>
                   <button
                     type="button"
-                    className="tau-button text-sm text-muted"
+                    className="ficus-button text-sm text-muted"
                     onClick={() => onChange({ ...value, choices: value.choices.filter((_, i) => i !== index) })}
                   >
                     Remove
@@ -88,7 +88,7 @@ export function SquadPresetWorkflowsEditor({
                 <label className="block text-sm">
                   When to use this flow
                   <input
-                    className="tau-field mt-1 w-full"
+                    className="ficus-field mt-1 w-full"
                     required
                     value={choice.when}
                     onChange={(event) =>
@@ -106,7 +106,7 @@ export function SquadPresetWorkflowsEditor({
             <button
               type="button"
               disabled={!entries.length || value.choices.length >= 32}
-              className="tau-button text-sm text-accent-light"
+              className="ficus-button text-sm text-accent-light"
               onClick={() =>
                 onChange({
                   ...value,

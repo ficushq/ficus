@@ -12,7 +12,7 @@ import { SparklesIcon } from './icons'
 
 const examples = ['What needs my attention?', 'Summarize progress across my squads', 'Help me set up a new project']
 
-export function TauAssistantStart({
+export function FicusAssistantStart({
   onAsk,
   recentChats = [],
   onSelectChat,
@@ -80,13 +80,13 @@ export function TauAssistantStart({
           ref={input}
           role="combobox"
           aria-expanded={Boolean(query.trim())}
-          aria-controls="tau-search-results"
+          aria-controls="ficus-search-results"
           aria-activedescendant={
-            query.trim() && visibleResults[selectedIndex] ? `tau-search-result-${selectedIndex}` : undefined
+            query.trim() && visibleResults[selectedIndex] ? `ficus-search-result-${selectedIndex}` : undefined
           }
           aria-autocomplete="list"
-          aria-label="Search Tau or ask anything"
-          placeholder="Search Tau or ask anything…"
+          aria-label="Search Ficus or ask anything"
+          placeholder="Search Ficus or ask anything…"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value)
@@ -100,7 +100,7 @@ export function TauAssistantStart({
               )
             }
           }}
-          className="tau-field tau-assistant-search w-full min-w-0 rounded-xl px-3 py-2.5 text-base sm:text-sm"
+          className="ficus-field ficus-assistant-search w-full min-w-0 rounded-xl px-3 py-2.5 text-base sm:text-sm"
         />
         <button
           type="button"
@@ -108,16 +108,16 @@ export function TauAssistantStart({
             if (query.trim()) onAsk(query.trim())
           }}
           disabled={!canAsk || !query.trim()}
-          className="tau-button tau-button-primary px-3 text-sm shrink-0 disabled:opacity-40"
+          className="ficus-button ficus-button-primary px-3 text-sm shrink-0 disabled:opacity-40"
         >
-          Ask Tau
+          Ask Ficus
         </button>
       </form>
       {query.trim() ? (
         <div>
           <div
             ref={resultsRef}
-            id="tau-search-results"
+            id="ficus-search-results"
             role="listbox"
             aria-label="Search results"
             className="max-h-72 overflow-y-auto space-y-1"
@@ -127,12 +127,12 @@ export function TauAssistantStart({
                 type="button"
                 role="option"
                 aria-selected={index === selectedIndex}
-                id={`tau-search-result-${index}`}
+                id={`ficus-search-result-${index}`}
                 data-index={index}
                 key={item.id}
                 onClick={() => go(item)}
                 className={clsx(
-                  'tau-button w-full text-left px-3 py-2.5 text-sm hover:bg-surface-secondary',
+                  'ficus-button w-full text-left px-3 py-2.5 text-sm hover:bg-surface-secondary',
                   index === selectedIndex && 'bg-surface-secondary'
                 )}
               >
@@ -151,7 +151,7 @@ export function TauAssistantStart({
           )}
           {!loading && !results.length && (
             <p role="status" className="text-sm text-muted px-3 py-2">
-              No matching destinations. {canAsk && 'Ask Tau for help with this request.'}
+              No matching destinations. {canAsk && 'Ask Ficus for help with this request.'}
             </p>
           )}
           {partialError && (
@@ -165,7 +165,7 @@ export function TauAssistantStart({
             </p>
           )}
           <p className="text-xs text-muted px-3 pt-2">
-            ↑ ↓ to choose · Enter to open · Ask Tau to start a conversation
+            ↑ ↓ to choose · Enter to open · Ask Ficus to start a conversation
           </p>
         </div>
       ) : (
@@ -176,7 +176,7 @@ export function TauAssistantStart({
               key={example}
               disabled={!canAsk}
               onClick={() => onAsk(example)}
-              className="tau-button flex items-center gap-2 w-full text-left px-3 py-2.5 text-sm text-secondary hover:bg-surface-secondary disabled:opacity-40"
+              className="ficus-button flex items-center gap-2 w-full text-left px-3 py-2.5 text-sm text-secondary hover:bg-surface-secondary disabled:opacity-40"
             >
               <SparklesIcon className="w-4 h-4 text-accent-light shrink-0" />
               {example}
@@ -189,7 +189,7 @@ export function TauAssistantStart({
           <div className="mb-1 px-3 flex items-center justify-between">
             <h4 className="text-xs font-medium text-muted">Recent chats</h4>
             {recentChats.length > 5 && (
-              <button onClick={onViewAllChats} className="tau-button text-xs text-muted hover:text-accent-light py-1">
+              <button onClick={onViewAllChats} className="ficus-button text-xs text-muted hover:text-accent-light py-1">
                 View all
               </button>
             )}

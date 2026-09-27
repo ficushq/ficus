@@ -101,7 +101,7 @@ export function EntityReferenceLink({
           }
         }}
         className={clsx(
-          'tau-button inline text-accent-light underline underline-offset-2',
+          'ficus-button inline text-accent-light underline underline-offset-2',
           loading && 'motion-safe:animate-pulse motion-reduce:opacity-60'
         )}
         onMouseEnter={() => {

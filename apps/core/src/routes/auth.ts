@@ -777,7 +777,7 @@ authRouter.post('/pair/claim', async (c) => {
   const body = await c.req.json<{ code?: string; name?: string; platform?: string }>()
   if (!body.code) return c.json({ error: 'Pairing code required' }, 400)
   const platform = body.platform === 'android' ? 'android' : body.platform === 'cli' ? 'cli' : 'ios'
-  const defaultName = platform === 'cli' ? 'Tau CLI' : platform === 'android' ? 'Android device' : 'iOS device'
+  const defaultName = platform === 'cli' ? 'Ficus CLI' : platform === 'android' ? 'Android device' : 'iOS device'
   const name = (body.name?.trim() || defaultName).slice(0, 200)
   const result = await claimPairingCode({ code: body.code, name, platform })
   if (!result) return c.json({ error: 'Invalid or expired pairing code' }, 401)

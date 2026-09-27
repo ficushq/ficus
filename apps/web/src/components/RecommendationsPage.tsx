@@ -85,7 +85,7 @@ export function RecommendationsPage() {
         <h2 className="text-lg font-semibold text-primary">Ops Insights</h2>
         <p className="text-sm text-secondary">
           Operational recommendations distilled from completed executions.{' '}
-          <span className="text-muted">Recommendation only — Tau never applies these changes automatically.</span>
+          <span className="text-muted">Recommendation only — Ficus never applies these changes automatically.</span>
         </p>
       </header>
 
@@ -102,7 +102,7 @@ export function RecommendationsPage() {
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as OperationsRecommendationStatus)}
-              className={clsx('tau-field', `${SELECT_CLASSES} capitalize`)}
+              className={clsx('ficus-field', `${SELECT_CLASSES} capitalize`)}
             >
               {STATUS_OPTIONS.map((s) => (
                 <option key={s}>{s}</option>
@@ -122,7 +122,7 @@ export function RecommendationsPage() {
                   setSelected(null)
                 }}
                 aria-label="Filter recommendations by squad"
-                className={clsx('tau-field', `${SELECT_CLASSES} max-w-56 truncate`)}
+                className={clsx('ficus-field', `${SELECT_CLASSES} max-w-56 truncate`)}
               >
                 <option value="">All authorized squads</option>
                 {(squadsQuery.data ?? []).map((squad) => (
@@ -144,7 +144,7 @@ export function RecommendationsPage() {
           Your recommendation access changed. Restart results to continue.{' '}
           <button
             onClick={() => qc.resetQueries({ queryKey: recommendationOptions.queryKey, exact: true })}
-            className="tau-button rounded-md border border-th-border px-2.5 py-1 text-sm text-primary hover:bg-surface-hover"
+            className="ficus-button rounded-md border border-th-border px-2.5 py-1 text-sm text-primary hover:bg-surface-hover"
           >
             Restart results
           </button>
@@ -168,7 +168,7 @@ export function RecommendationsPage() {
         <button
           onClick={() => query.fetchNextPage()}
           disabled={query.isFetchingNextPage}
-          className="tau-button rounded-md border border-th-border px-3 py-1.5 text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
+          className="ficus-button rounded-md border border-th-border px-3 py-1.5 text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
         >
           {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </button>

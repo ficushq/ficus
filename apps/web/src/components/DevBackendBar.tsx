@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { DEV_BACKEND_SHAPE_SCOPE_KEY } from '../lib/loadingShapeStorage'
 
-const DEV_BACKEND_CONTROL_PATH = '/__tau_dev'
+const DEV_BACKEND_CONTROL_PATH = '/__ficus_dev'
 
 export interface DevBackendSummary {
   label: string
@@ -82,7 +82,7 @@ export function DevBackendBarContent({
               value={state.selectedLabel}
               disabled={pending}
               onChange={(event) => onSwitchBackend(event.target.value)}
-              className="tau-field rounded border border-current/25 bg-transparent px-1.5 py-0.5 font-medium outline-none disabled:opacity-50"
+              className="ficus-field rounded border border-current/25 bg-transparent px-1.5 py-0.5 font-medium outline-none disabled:opacity-50"
               aria-label="Development backend"
             >
               {state.backends.map((backend) => (
@@ -123,7 +123,7 @@ export function DevBackendBarContent({
 }
 
 export function DevBackendBar() {
-  const enabled = typeof __TAU_DEV_BACKEND_BAR__ !== 'undefined' && __TAU_DEV_BACKEND_BAR__
+  const enabled = typeof __FICUS_DEV_BACKEND_BAR__ !== 'undefined' && __FICUS_DEV_BACKEND_BAR__
   const [state, setState] = useState<DevBackendState | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -78,7 +78,7 @@ export function UsersSection() {
         </div>
         <button
           onClick={() => setShowInvite(!showInvite)}
-          className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover"
+          className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover"
         >
           Invite User
         </button>
@@ -96,7 +96,7 @@ export function UsersSection() {
         />
       )}
 
-      <div className="tau-section overflow-hidden">
+      <div className="ficus-section overflow-hidden">
         {users.length === 0 ? (
           <div className="px-4 py-8 text-center text-muted text-sm">No users yet. Invite someone to get started.</div>
         ) : (
@@ -257,7 +257,7 @@ function UserRow({
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             onClick={onToggleExpand}
-            className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+            className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
           >
             {isExpanded ? 'Hide Roles' : 'Manage Roles'}
           </button>
@@ -271,7 +271,7 @@ function UserRow({
               <button
                 onClick={() => resendMutation.mutate()}
                 disabled={resendMutation.isPending}
-                className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+                className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
               >
                 {resendMutation.isPending ? 'Resending...' : 'Resend Invite'}
               </button>
@@ -281,7 +281,7 @@ function UserRow({
           <button
             onClick={onToggleDisable}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'text-xs font-medium',
               isDisabled
                 ? 'text-status-success-600 dark:text-status-success-400 hover:text-status-success-800 dark:hover:text-status-success-300'
@@ -294,7 +294,7 @@ function UserRow({
           <button
             onClick={onDelete}
             disabled={isDeleting}
-            className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
+            className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
           >
             Delete
           </button>
@@ -338,7 +338,7 @@ function UserRow({
                       )}
                       <button
                         onClick={() => removeMutation.mutate(assignment.id)}
-                        className="tau-button ml-0.5 text-accent-light hover:text-status-danger-500 font-bold"
+                        className="ficus-button ml-0.5 text-accent-light hover:text-status-danger-500 font-bold"
                         title={`Remove ${assignment.roleName || assignment.roleSlug || 'role'}`}
                         aria-label={`Remove ${assignment.roleName || assignment.roleSlug || 'role'}`}
                       >
@@ -357,7 +357,7 @@ function UserRow({
                   id={`assign-role-${user.id}`}
                   value={assignRoleId}
                   onChange={(e) => setAssignRoleId(e.target.value)}
-                  className="tau-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent"
+                  className="ficus-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent"
                 >
                   <option value="">Select role...</option>
                   {roles.map((role) => (
@@ -373,7 +373,7 @@ function UserRow({
                   id={`assign-scope-${user.id}`}
                   value={assignScope}
                   onChange={(e) => setAssignScope(e.target.value as 'system' | 'squad')}
-                  className="tau-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent"
+                  className="ficus-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent"
                 >
                   <option value="system">System</option>
                   <option value="squad">Squad</option>
@@ -387,7 +387,7 @@ function UserRow({
                       id={`assign-squad-${user.id}`}
                       value={assignSquadId}
                       onChange={(e) => setAssignSquadId(e.target.value)}
-                      className="tau-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent max-w-44"
+                      className="ficus-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent max-w-44"
                     >
                       <option value="">Select squad…</option>
                       {assignableSquads.map((squad) => (
@@ -401,7 +401,7 @@ function UserRow({
                 <button
                   onClick={() => assignMutation.mutate()}
                   disabled={!assignRoleId || assignMutation.isPending || (assignScope === 'squad' && !assignSquadId)}
-                  className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
                 >
                   {assignMutation.isPending ? 'Assigning...' : 'Assign'}
                 </button>

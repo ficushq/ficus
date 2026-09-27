@@ -640,7 +640,7 @@ describe('syncBoxFiles content-hash skip', () => {
     expect(stamps.stamped['squad-ssh']).toMatchObject({ files: [] })
   })
 
-  test('legacy tree hash mismatch clears only the declared Tau-managed root before rewriting', async () => {
+  test('legacy tree hash mismatch clears only the declared Ficus-managed root before rewriting', async () => {
     const client = new FakeClient()
     const home = HOME('agent_a1')
     await syncBoxFiles(
@@ -668,7 +668,7 @@ describe('syncBoxFiles content-hash skip', () => {
     ).not.toContain(`${home}/workspace`)
   })
 
-  test('legacy SSH hash cleanup removes only Tau-managed names before rewriting current hosts', async () => {
+  test('legacy SSH hash cleanup removes only Ficus-managed names before rewriting current hosts', async () => {
     const client = new FakeClient()
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     await syncBoxFiles(

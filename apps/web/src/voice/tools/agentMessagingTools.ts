@@ -14,7 +14,7 @@ function createMessageAgentDefinition(options: { allowStop: boolean }) {
     'Also use this to answer an artifact builder only when that artifact builder is already in waiting-input state after asking for human input. Do not use for normal artifact creation or iteration; use request_artifact instead.'
   const routing = options.allowStop
     ? 'Instance-wide or squad work goes through delegate_task; use message_agent only for an explicitly requested or visible agent.'
-    : 'Global or personal Tau settings, environment variables, secrets, and integration accounts go through message_agent to the user assistant using the user’s permissions. Unscoped settings requests go to the user assistant via message_agent for scope resolution.'
+    : 'Global or personal Ficus settings, environment variables, secrets, and integration accounts go through message_agent to the user assistant using the user’s permissions. Unscoped settings requests go to the user assistant via message_agent for scope resolution.'
   const ownership =
     'Use a squad manager only for clearly squad-owned project work; viewing a squad page does not establish that ownership.'
   const delivery =

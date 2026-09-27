@@ -15,7 +15,7 @@ describe('web theme registry', () => {
   test('enables the picker after the built-in contrast and cold-load gates', () => {
     expect(THEME_PICKER_ENABLED).toBe(true)
   })
-  test('ships Tau, three dual recolors, a constant high-contrast theme, and six BigBrain-ported constants', () => {
+  test('ships Ficus, three dual recolors, a constant high-contrast theme, and six BigBrain-ported constants', () => {
     expect(BUILT_IN_THEMES).toHaveLength(11)
     expect(findWebTheme('high-contrast').kind).toBe('unified')
     expect(TAU_THEME.kind).toBe('dual')

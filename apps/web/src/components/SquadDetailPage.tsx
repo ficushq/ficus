@@ -333,7 +333,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           <button
             onClick={() => setHeaderExpanded((expanded) => !expanded)}
             aria-label={headerExpanded ? 'Collapse details' : 'Expand details'}
-            className="tau-button p-1 text-muted hover:text-primary rounded-md hover:bg-surface-hover transition-colors"
+            className="ficus-button p-1 text-muted hover:text-primary rounded-md hover:bg-surface-hover transition-colors"
           >
             {headerExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
           </button>
@@ -343,7 +343,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                 onClick={() => setHeaderMenuOpen((open) => !open)}
                 aria-label="Squad actions"
                 aria-expanded={headerMenuOpen}
-                className="tau-button p-1 text-muted hover:text-primary rounded-md hover:bg-surface-hover transition-colors"
+                className="ficus-button p-1 text-muted hover:text-primary rounded-md hover:bg-surface-hover transition-colors"
               >
                 <MoreIcon className="w-4 h-4" />
               </button>
@@ -354,7 +354,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                       setHeaderMenuOpen(false)
                       setShowDeleteModal(true)
                     }}
-                    className="tau-button w-full px-3 py-2 text-left text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20"
+                    className="ficus-button w-full px-3 py-2 text-left text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20"
                   >
                     Archive
                   </button>
@@ -413,7 +413,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           {canDeleteSquad && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="tau-button shrink-0 px-2.5 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 rounded-md transition-colors"
+              className="ficus-button shrink-0 px-2.5 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 rounded-md transition-colors"
             >
               Archive
             </button>

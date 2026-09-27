@@ -49,7 +49,7 @@ ${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/startedAt" || true
 cd "$FICUS_LOCAL_DEPLOYMENT_CWD"
 set +e
 {
-  echo "[tau] starting localDeployment $FICUS_LOCAL_DEPLOYMENT_ID on port $FICUS_LOCAL_DEPLOYMENT_PORT"
+  echo "[ficus] starting localDeployment $FICUS_LOCAL_DEPLOYMENT_ID on port $FICUS_LOCAL_DEPLOYMENT_PORT"
   bash -lc "$FICUS_LOCAL_DEPLOYMENT_COMMAND"
 } 2>&1 | tee -a "$FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log"
 status=\${PIPESTATUS[0]}
@@ -75,7 +75,7 @@ export class LocalDeploymentProcessSupervisor {
       {
         FICUS_LOCAL_DEPLOYMENT_ID: args.localDeploymentId,
         FICUS_LOCAL_DEPLOYMENT_PORT: String(args.port),
-        // The conventional name. Tau assigns the port now, so an app that reads
+        // The conventional name. Ficus assigns the port now, so an app that reads
         // $PORT needs no configuration and cannot collide with a sibling box on
         // the same machine; FICUS_LOCAL_DEPLOYMENT_PORT stays for existing commands.
         PORT: String(args.port),
@@ -198,7 +198,7 @@ export class LocalDeploymentProcessSupervisor {
   /**
    * Bounded read of an attached deployment's log file. `unavailable` (not an
    * exception) when the file is missing or cannot be read — the route renders
-   * a `[tau]` notice for that instead of failing the request.
+   * a `[ficus]` notice for that instead of failing the request.
    */
   async tailAttachedLogs(
     sandboxId: string,

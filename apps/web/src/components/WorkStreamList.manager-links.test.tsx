@@ -8,7 +8,7 @@ import { WorkStreamList } from './WorkStreamList'
 function squad(overrides: Partial<Squad> = {}): Squad {
   return {
     id: 'squad-1',
-    name: 'Tau',
+    name: 'Ficus',
     purpose: 'Coordinate work',
     status: 'active',
     squadPresetId: null,
@@ -81,7 +81,7 @@ describe('WorkStreamList squad quick links', () => {
     expect(section).not.toContain('Open squad home')
     expect(section).toContain('Coordinate work')
     expect(section).toContain('Customize squad quick links')
-    expect(section).not.toContain('Hide Tau from quick links')
+    expect(section).not.toContain('Hide Ficus from quick links')
   })
 
   test('keeps squad quick links visible without a disclosure control', () => {

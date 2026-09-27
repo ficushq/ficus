@@ -110,7 +110,7 @@ export function buildWorkspacePrompt(opts: WorkspacePromptOptions = {}): string 
       .join(', ')
     out.push(
       host
-        ? `Your available filesystem and shell tools (${available}) execute directly on the Tau host machine (no sandbox).`
+        ? `Your available filesystem and shell tools (${available}) execute directly on the Ficus host machine (no sandbox).`
         : `Your available filesystem and shell tools (${available}) execute inside authorized sandboxes.`
     )
     if (fileTools.length > 0) {
@@ -251,7 +251,7 @@ export function buildWorkspacePrompt(opts: WorkspacePromptOptions = {}): string 
     out.push(
       '## Host runtime',
       '',
-      `You are running directly on the Tau host machine as user \`${userInfo().username}\` with no sandbox or isolation. Use the tools already installed on this machine; do not attempt \`devbox\`, \`apk\`, or \`apt\` unless the user has asked you to install software. Be careful: commands affect the real machine.`
+      `You are running directly on the Ficus host machine as user \`${userInfo().username}\` with no sandbox or isolation. Use the tools already installed on this machine; do not attempt \`devbox\`, \`apk\`, or \`apt\` unless the user has asked you to install software. Be careful: commands affect the real machine.`
     )
   } else if (hasBash || hasSquadBash) {
     out.push(

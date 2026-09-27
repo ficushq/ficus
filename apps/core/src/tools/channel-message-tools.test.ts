@@ -154,7 +154,7 @@ describe('channel message tools', () => {
     }
   })
 
-  it('channel_edit edits a tracked Tau-sent message', async () => {
+  it('channel_edit edits a tracked Ficus-sent message', async () => {
     const editMessage = mock(async () => undefined)
     registerTestProvider({ editMessage })
     const agent = await createTestAgent({

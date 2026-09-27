@@ -111,7 +111,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
   const error = dryRun.error ?? apply.error
 
   return (
-    <div className="tau-section overflow-hidden">
+    <div className="ficus-section overflow-hidden">
       <div className="px-4 py-3 flex items-start justify-between gap-3">
         <div>
           <h4 className="text-sm font-medium text-secondary">Fleet rebalance</h4>
@@ -122,7 +122,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
         <button
           onClick={() => dryRun.mutate()}
           disabled={busy}
-          className="tau-button tau-button-primary shrink-0 text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary shrink-0 text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {dryRun.isPending ? 'Planning…' : 'Rebalance'}
         </button>
@@ -142,7 +142,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
               <button
                 onClick={() => apply.mutate()}
                 disabled={busy}
-                className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
               >
                 {apply.isPending ? 'Applying…' : 'Confirm'}
               </button>
@@ -150,7 +150,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
             <button
               onClick={() => setPlan(null)}
               disabled={busy}
-              className="tau-button text-xs text-muted hover:text-primary font-medium disabled:opacity-50"
+              className="ficus-button text-xs text-muted hover:text-primary font-medium disabled:opacity-50"
             >
               {plan.moves.length > 0 ? 'Cancel' : 'Dismiss'}
             </button>
@@ -163,7 +163,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
           <AppliedResultsView plan={applied} />
           <button
             onClick={() => setApplied(null)}
-            className="tau-button text-xs text-muted hover:text-primary font-medium"
+            className="ficus-button text-xs text-muted hover:text-primary font-medium"
           >
             Dismiss
           </button>

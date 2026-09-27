@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { SessionManager, type Extension, type ContextEvent } from '@earendil-works/pi-coding-agent'
-import { ShortTermMemoryContext, createShortTermMemoryContextExtension } from './short-term-memory-context'
+import {
+  LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE,
+  SHORT_TERM_MEMORY_SNAPSHOT_TYPE,
+  ShortTermMemoryContext,
+  createShortTermMemoryContextExtension,
+} from './short-term-memory-context'
 import { TauResourceLoader } from './resource-loader'
 
 function fixture() {
@@ -132,7 +137,7 @@ describe('short-term memory recovery context', () => {
     const f = fixture()
     const loader = await TauResourceLoader.create('stable system prompt')
     loader.setShortTermMemoryContext(f.context)
-    const extension = loader.getExtensions().extensions.find((e) => e.path === 'tau:short-term-memory-context')!
+    const extension = loader.getExtensions().extensions.find((e) => e.path === 'ficus:short-term-memory-context')!
     const keepId = f.keep()
     f.session.appendCompaction('summary', keepId, 100)
     await invoke(extension, 'session_compact')
@@ -141,5 +146,38 @@ describe('short-term memory recovery context', () => {
     expect(result).toEqual({ messages: f.messages() })
     expect(event.messages).toHaveLength(2)
     expect(loader.getSystemPrompt()).toBe('stable system prompt')
+  })
+})
+
+describe('short-term memory snapshot identifiers', () => {
+  test('writes ficus: snapshots and names the extension ficus:', async () => {
+    expect(SHORT_TERM_MEMORY_SNAPSHOT_TYPE).toBe('ficus:short-term-memory-snapshot')
+    const f = fixture()
+    await f.context.captureInitial()
+    const custom = f.session.getBranch().flatMap((entry) => (entry.type === 'custom' ? [entry.customType] : []))
+    expect(custom).toEqual(['ficus:short-term-memory-snapshot'])
+    const extension = createShortTermMemoryContextExtension(() => f.context)
+    expect(extension.path).toBe('ficus:short-term-memory-context')
+    expect(extension.sourceInfo.source).toBe('ficus')
+  })
+
+  test('uses a snapshot stored in the session before the rename instead of taking a new one', async () => {
+    const f = fixture()
+    f.session.appendCustomEntry(LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE, { boundaryId: null, content: 'saved before' })
+    f.keep()
+    await f.context.captureInitial()
+    expect(f.reads()).toBe(0)
+    expect(f.messages().map((m) => m.role)).toEqual(['custom', 'user'])
+    expect(JSON.stringify(f.messages())).toContain('saved before')
+
+    const boundaryId = f.session.appendCompaction('summary', f.keep(), 100)
+    f.session.appendCustomEntry(LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE, { boundaryId, content: 'saved at boundary' })
+    await f.context.captureAfterCompaction()
+    expect(f.reads()).toBe(0)
+    const messages = f.messages()
+    expect(messages.map((m) => m.role)).toEqual(['compactionSummary', 'custom', 'user'])
+    expect(JSON.stringify(messages)).toContain('saved at boundary')
+    // An injected legacy snapshot is replaced, never duplicated, on the next pass.
+    expect(f.context.context(messages)).toEqual(messages)
   })
 })

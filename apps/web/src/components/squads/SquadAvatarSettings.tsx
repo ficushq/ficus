@@ -61,7 +61,7 @@ export function SquadAvatarSettings({ squadId, name }: { squadId: string; name: 
             onClick={() => fileRef.current?.click()}
             disabled={!canUpdate || busy}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'px-3 py-1.5 text-sm rounded-md font-medium',
               canUpdate && !busy
                 ? 'bg-accent text-on-accent hover:bg-accent/90'
@@ -74,7 +74,7 @@ export function SquadAvatarSettings({ squadId, name }: { squadId: string; name: 
             <button
               onClick={() => removeMutation.mutate()}
               disabled={!canUpdate || busy}
-              className="tau-button px-3 py-1.5 text-sm rounded-md font-medium bg-surface-secondary text-secondary border border-th-border hover:bg-surface-hover disabled:opacity-50"
+              className="ficus-button px-3 py-1.5 text-sm rounded-md font-medium bg-surface-secondary text-secondary border border-th-border hover:bg-surface-hover disabled:opacity-50"
             >
               Remove
             </button>

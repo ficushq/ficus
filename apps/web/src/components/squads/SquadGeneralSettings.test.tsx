@@ -25,8 +25,8 @@ type Props = Parameters<typeof SquadGeneralSettings>[0]
 const baseProps: Props = {
   section: 'workflows',
   squadId: 'squad-1',
-  name: 'Tau',
-  purpose: 'Build Tau',
+  name: 'Ficus',
+  purpose: 'Build Ficus',
   globalCollaborationEnabled: false,
   maxConcurrentWorkStreams: null,
   blockedGraceMinutes: null,
@@ -119,8 +119,8 @@ describe('SquadGeneralSettings', () => {
 
   test('the shared save payload preserves empty as null and accepts zero', () => {
     const common = {
-      name: ' Tau ',
-      purpose: ' Build Tau ',
+      name: ' Ficus ',
+      purpose: ' Build Ficus ',
       globalCollaborationEnabled: false,
       maxConcurrentWorkStreams: 2,
     }
@@ -128,8 +128,8 @@ describe('SquadGeneralSettings', () => {
     expect(parseBlockedGraceMinutes('')).toBeNull()
     expect(parseBlockedGraceMinutes('0')).toBe(0)
     expect(buildSquadGeneralSettingsUpdate({ ...common, blockedGraceMinutes: null })).toMatchObject({
-      name: 'Tau',
-      purpose: 'Build Tau',
+      name: 'Ficus',
+      purpose: 'Build Ficus',
       maxConcurrentWorkStreams: 2,
       blockedGraceMinutes: null,
     })
@@ -200,7 +200,7 @@ describe('SquadGeneralSettings', () => {
     expect(hostWorkspacePathError('repo')).toContain('absolute')
   })
 
-  // The browser cannot know the Tau host's home directory, so `~` reaches the
+  // The browser cannot know the Ficus host's home directory, so `~` reaches the
   // server verbatim — say that, instead of the generic "must be absolute".
   test('hostWorkspacePathError explains that ~ is not expanded in the browser', () => {
     expect(hostWorkspacePathError('~/repo')).toBe('Enter the full absolute path; `~` is not expanded here.')

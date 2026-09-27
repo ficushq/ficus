@@ -39,7 +39,7 @@ export function IntegrationSettings({ squadId }: { squadId: string }) {
         placeholder="Search integrations…"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
-        className="tau-field w-full rounded-lg border border-panel-border bg-surface px-3 py-2.5 text-sm"
+        className="ficus-field w-full rounded-lg border border-panel-border bg-surface px-3 py-2.5 text-sm"
       />
       {catalog.isPending || permissions.isLoading ? (
         <FormSkeleton label="Loading integrations" sections={1} />
@@ -167,7 +167,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                     value={entry.repo}
                     onChange={(e) => updateGithubEntry(index, { repo: e.target.value })}
                     placeholder="owner/repo or owner/*"
-                    className="tau-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
+                    className="ficus-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
                   />
                 </div>
                 <div>
@@ -179,7 +179,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                     value={entry.labelsText}
                     onChange={(e) => updateGithubEntry(index, { labelsText: e.target.value })}
                     placeholder="backend, api (optional; blank matches all issues)"
-                    className="tau-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
+                    className="ficus-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
                   />
                 </div>
                 {githubEntries.length > 1 && (
@@ -189,7 +189,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                       setGithubEntries((prev) => prev.filter((_, i) => i !== index))
                       setHasChanges(true)
                     }}
-                    className="tau-button text-xs text-status-danger-500 hover:underline"
+                    className="ficus-button text-xs text-status-danger-500 hover:underline"
                   >
                     Remove repository
                   </button>
@@ -204,7 +204,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
               setGithubEntries((prev) => [...prev, { repo: '', labelsText: '' }])
               setHasChanges(true)
             }}
-            className="tau-button mt-3 px-3 py-1.5 text-sm rounded-md border border-th-border text-primary hover:bg-surface-hover"
+            className="ficus-button mt-3 px-3 py-1.5 text-sm rounded-md border border-th-border text-primary hover:bg-surface-hover"
           >
             Add repository
           </button>
@@ -235,7 +235,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                     value={entry.teamId}
                     onChange={(e) => updateLinearEntry(index, { teamId: e.target.value })}
                     placeholder="team-uuid"
-                    className="tau-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
+                    className="ficus-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
                   />
                 </div>
                 {linearEntries.length > 1 && (
@@ -245,7 +245,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                       setLinearEntries((prev) => prev.filter((_, i) => i !== index))
                       setHasChanges(true)
                     }}
-                    className="tau-button text-xs text-status-danger-500 hover:underline"
+                    className="ficus-button text-xs text-status-danger-500 hover:underline"
                   >
                     Remove team
                   </button>
@@ -260,7 +260,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
               setLinearEntries((prev) => [...prev, { teamId: '' }])
               setHasChanges(true)
             }}
-            className="tau-button mt-3 px-3 py-1.5 text-sm rounded-md border border-th-border text-primary hover:bg-surface-hover"
+            className="ficus-button mt-3 px-3 py-1.5 text-sm rounded-md border border-th-border text-primary hover:bg-surface-hover"
           >
             Add Linear team
           </button>
@@ -286,7 +286,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
           type="button"
           onClick={() => updateMutation.mutate({ github: githubEntries, linear: linearEntries, rules: eventRules })}
           disabled={updateMutation.isPending || !squadEventRulesSchema.safeParse({ [provider]: eventRules }).success}
-          className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
+          className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
         >
           {updateMutation.isPending ? 'Saving…' : 'Save settings'}
         </button>

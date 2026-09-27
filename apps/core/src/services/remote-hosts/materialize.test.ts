@@ -14,6 +14,8 @@ import {
   type RemoteHost,
 } from './queries'
 import {
+  LEGACY_MANAGED_BLOCK_BEGIN,
+  LEGACY_MANAGED_BLOCK_END,
   MANAGED_BLOCK_BEGIN,
   MANAGED_BLOCK_END,
   composeManagedConfig,
@@ -22,6 +24,7 @@ import {
   renderManagedBlock,
   stripManagedBlock,
 } from './materialize'
+import * as shimMarkers from '../sandbox/host/ssh-shims'
 import { addSshKey, ensureSquadSshDir, getSquadSshPath, listSshKeys, setSshConfig } from '../squad/ssh'
 
 const prefix = `mtest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -445,7 +448,7 @@ describe('materializeSquadRemoteHosts', () => {
     // The managed block a pre-rename Core wrote, naming the legacy key file.
     writeFileSync(
       join(sshPath, 'config'),
-      `${MANAGED_BLOCK_BEGIN}\nHost ${host.name}\n  IdentityFile ~/.ssh/tau_remote_${host.name}\n${MANAGED_BLOCK_END}\n`
+      `${LEGACY_MANAGED_BLOCK_BEGIN}\nHost ${host.name}\n  IdentityFile ~/.ssh/tau_remote_${host.name}\n${LEGACY_MANAGED_BLOCK_END}\n`
     )
     const realUnlink = fs.unlinkSync
     const unlink = spyOn(fs, 'unlinkSync').mockImplementation((path: fs.PathLike) => {
@@ -560,5 +563,45 @@ describe('setSshConfig managed-block preservation', () => {
     expect(config).toContain(`Host ${host.name}`)
     // Exactly one pair of markers survives (the real, recomputed block).
     expect(config.match(new RegExp(MANAGED_BLOCK_BEGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))?.length).toBe(1)
+  })
+})
+
+describe('managed block markers across the Ficus rename', () => {
+  const count = (config: string, marker: string) => config.split('\n').filter((line) => line.trim() === marker).length
+
+  it('writes the ficus markers', () => {
+    expect(MANAGED_BLOCK_BEGIN).toBe('# >>> ficus remote hosts >>>')
+    expect(MANAGED_BLOCK_END).toBe('# <<< ficus remote hosts <<<')
+    expect(LEGACY_MANAGED_BLOCK_BEGIN).not.toBe(MANAGED_BLOCK_BEGIN)
+    // The host-runtime ssh shims scan for the same markers (kept as local literals there).
+    expect(shimMarkers.MANAGED_BLOCK_BEGIN).toBe(MANAGED_BLOCK_BEGIN)
+    expect(shimMarkers.MANAGED_BLOCK_END).toBe(MANAGED_BLOCK_END)
+    expect(shimMarkers.LEGACY_MANAGED_BLOCK_BEGIN).toBe(LEGACY_MANAGED_BLOCK_BEGIN)
+    expect(shimMarkers.LEGACY_MANAGED_BLOCK_END).toBe(LEGACY_MANAGED_BLOCK_END)
+  })
+
+  it('stripManagedBlock removes a block written before the rename', () => {
+    const config = `Host github.com\n  User git\n\n${LEGACY_MANAGED_BLOCK_BEGIN}\nHost old\n  HostName y\n${LEGACY_MANAGED_BLOCK_END}\n\nHost after\n  User z`
+    expect(stripManagedBlock(config)).toBe('Host github.com\n  User git\n\nHost after\n  User z')
+  })
+
+  it('upgrading a config that has only the old block leaves exactly one (ficus) managed block', async () => {
+    const squadId = `${prefix}-squad-marker-upgrade`
+    const host = await createGrantedHost('marker-upgrade', squadId)
+    const sshPath = ensureSquadSshDir(squadId)
+    writeFileSync(
+      join(sshPath, 'config'),
+      `Host github.com\n  User git\n\n${LEGACY_MANAGED_BLOCK_BEGIN}\nHost ${host.name}\n  HostName 10.0.0.1\n${LEGACY_MANAGED_BLOCK_END}\n`
+    )
+
+    await materializeSquadRemoteHosts(squadId)
+
+    const config = readFileSync(join(sshPath, 'config'), 'utf-8')
+    expect(count(config, LEGACY_MANAGED_BLOCK_BEGIN)).toBe(0)
+    expect(count(config, LEGACY_MANAGED_BLOCK_END)).toBe(0)
+    expect(count(config, MANAGED_BLOCK_BEGIN)).toBe(1)
+    expect(count(config, MANAGED_BLOCK_END)).toBe(1)
+    expect(config.split(`Host ${host.name}\n`).length - 1).toBe(1)
+    expect(config).toContain('Host github.com')
   })
 })

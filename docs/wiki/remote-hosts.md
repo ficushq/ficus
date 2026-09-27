@@ -158,7 +158,7 @@ Materialization writes into each granted squad's SSH directory
 - A block in `config` delimited by markers:
 
   ```
-  # >>> tau remote hosts >>>
+  # >>> ficus remote hosts >>>
   Host staging
     HostName 10.1.2.3
     Port 22
@@ -166,7 +166,7 @@ Materialization writes into each granted squad's SSH directory
     IdentityFile ~/.ssh/ficus_remote_staging
     IdentitiesOnly yes
     StrictHostKeyChecking accept-new
-  # <<< tau remote hosts <<<
+  # <<< ficus remote hosts <<<
   ```
 
 `materializeSquadRemoteHosts(squadId)` is **idempotent and complete**: every

@@ -27,8 +27,8 @@ describe('createPrecompactionExtension', () => {
 
   it('carries identifying source metadata', () => {
     const ext = createPrecompactionExtension(() => undefined)
-    expect(ext.path).toBe('tau:precompaction')
-    expect(ext.sourceInfo.source).toBe('tau')
+    expect(ext.path).toBe('ficus:precompaction')
+    expect(ext.sourceInfo.source).toBe('ficus')
     // empty maps so pi treats it as a no-op except for the handler
     expect(ext.tools.size).toBe(0)
     expect(ext.commands.size).toBe(0)

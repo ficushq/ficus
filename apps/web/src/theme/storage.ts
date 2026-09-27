@@ -82,7 +82,7 @@ export function readThemeSelection(storage: ThemeStorage | null): StoredThemeSel
 }
 
 /**
- * The appearance before anyone chooses one. Tau Desktop's own setup and startup
+ * The appearance before anyone chooses one. Ficus Desktop's own setup and startup
  * screens follow the OS appearance, so inside it the app does too instead of
  * flashing to light (its preload defines `window.tauDesktopApp` before page
  * scripts run, so the pre-paint script sees it). Browsers keep the light default.

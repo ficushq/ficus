@@ -152,7 +152,7 @@ export function buildPreamble(opts: { sourceEnv: boolean; activateDevbox: boolea
     preamble += vmDevboxRouting + '\n'
   }
 
-  // Apply Tau's runtime normalization after devbox activation so Nix Python
+  // Apply Ficus's runtime normalization after devbox activation so Nix Python
   // native wheels see Nix runtime libraries and browser tooling uses /tmp.
   preamble += '[ -f /opt/sandbox/runtime-env.sh ] && . /opt/sandbox/runtime-env.sh\n'
 

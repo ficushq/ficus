@@ -277,7 +277,7 @@ test('live custom surface alpha is serialized consistently for root, metadata an
   }
   await act(async () => {
     // `resetTheme` was removed with the Settings "Reset to default" button —
-    // selecting the Tau built-in (setThemeId) covers the same "return to
+    // selecting the Ficus built-in (setThemeId) covers the same "return to
     // default" surface path this test exercises.
     theme.setThemeId('tau')
   })

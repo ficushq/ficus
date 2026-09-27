@@ -4,18 +4,18 @@ import { integrationQueries } from '../../queryOptions'
 export function GitHubRepositoryAccess({
   connectionId,
   login,
-  usesTauApp,
+  usesFicusApp,
 }: {
   connectionId: string
   login: string
-  usesTauApp: boolean
+  usesFicusApp: boolean
 }) {
   const access = useQuery(integrationQueries.githubRepositoryAccess(connectionId))
   const result = access.isError ? undefined : access.data
   const uncertain = access.isError || result?.status === 'unknown'
   const needsAccess = result?.status === 'missing' || result?.personalAccountInstalled === false
-  const installationUrl = usesTauApp
-    ? 'https://github.com/apps/tau-integration/installations/new'
+  const installationUrl = usesFicusApp
+    ? 'https://github.com/apps/ficus-integration/installations/new'
     : 'https://github.com/settings/installations'
   return (
     <div className="mt-2 space-y-2 text-xs" aria-label={`Repository access for ${login}`}>
@@ -33,7 +33,7 @@ export function GitHubRepositoryAccess({
           )}
           {result?.status === 'missing' && (
             <p role="status" className="text-status-attention-600 dark:text-status-attention-400">
-              Setup needs repository access. Install the App and choose the repositories Tau can use.
+              Setup needs repository access. Install the App and choose the repositories Ficus can use.
             </p>
           )}
           {result?.personalAccountInstalled === false && (
@@ -71,7 +71,9 @@ export function GitHubRepositoryAccess({
       )}
       <div className="flex flex-wrap items-center gap-3">
         <a
-          className={needsAccess ? 'tau-button tau-button-primary px-3 py-1.5' : 'text-accent-light hover:underline'}
+          className={
+            needsAccess ? 'ficus-button ficus-button-primary px-3 py-1.5' : 'text-accent-light hover:underline'
+          }
           href={installationUrl}
           target="_blank"
           rel="noreferrer"
@@ -80,7 +82,7 @@ export function GitHubRepositoryAccess({
         </a>
         <button
           type="button"
-          className="tau-button text-accent-light"
+          className="ficus-button text-accent-light"
           disabled={access.isFetching}
           onClick={() => void access.refetch()}
         >

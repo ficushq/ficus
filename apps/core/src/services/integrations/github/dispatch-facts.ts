@@ -35,7 +35,7 @@ const watchRepository = (configuration: Record<string, unknown>) => {
 
 /**
  * An issue-events watch is scoped to a whole repository, not to one resource:
- * it discovers issues that have no Tau stream yet, so the repository is the
+ * it discovers issues that have no Ficus stream yet, so the repository is the
  * only identity the watch can assert. A PR watch, by contrast, names its exact
  * change request, so its facts are matched on repository AND number.
  */

@@ -1,5 +1,5 @@
 /**
- * Tau slash command names shared across channel providers (Discord, Slack, Telegram).
+ * Ficus slash command names shared across channel providers (Discord, Slack, Telegram).
  */
 
 /** All known slash command subcommands. Used for parsing user input. */
@@ -26,10 +26,18 @@ export function isTauSyncCommand(cmd: string): cmd is TauSyncCommand {
   return (FICUS_SYNC_COMMANDS as readonly string[]).includes(cmd)
 }
 
+/** The command word users type or mention in chat: `/ficus …`, `@Ficus …`, `ficus …`. */
+export const COMMAND_WORD = 'ficus'
+
 /** Text commands also work in bot DMs without provider slash-command registration. */
 export function parseDirectCommand(text: string): { command: string; text: string } | null {
   const match = text
     .trim()
-    .match(/^(?:\/(?:tau(?:@\w+)?\s+)?|@?tau\s+)(squad|help|status|link|ask|notify|unnotify)(?:@\w+)?(?:\s+(.*))?$/is)
+    .match(
+      new RegExp(
+        String.raw`^(?:\/(?:${COMMAND_WORD}(?:@\w+)?\s+)?|@?${COMMAND_WORD}\s+)(squad|help|status|link|ask|notify|unnotify)(?:@\w+)?(?:\s+(.*))?$`,
+        'is'
+      )
+    )
   return match ? { command: match[1].toLowerCase(), text: match[2]?.trim() ?? '' } : null
 }

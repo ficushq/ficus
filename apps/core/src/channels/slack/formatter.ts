@@ -10,7 +10,7 @@ export function formatNotification(event: NotificationEvent): { blocks: SlackBlo
   // Build body text, include link if URL is set
   let bodyText = event.body
   if (event.url) {
-    bodyText += `\n\n<${event.url}|View in Tau>`
+    bodyText += `\n\n<${event.url}|View in Ficus>`
   }
 
   const blocks: SlackBlock[] = [

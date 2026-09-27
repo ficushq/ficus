@@ -112,13 +112,13 @@ export function NotionIntegrationSettings({
           }}
         >
           <input
-            className="tau-field"
+            className="ficus-field"
             aria-label="Notion OAuth client ID"
             value={clientId}
             onChange={(e) => setClientId(e.target.value)}
           />
           <input
-            className="tau-field"
+            className="ficus-field"
             aria-label="Notion OAuth client secret"
             type="password"
             autoComplete="off"
@@ -134,7 +134,7 @@ export function NotionIntegrationSettings({
             I configured Read content, Insert content, and Update content in the Notion Developer Portal.
           </label>
           <button
-            className="tau-button"
+            className="ficus-button"
             type="submit"
             disabled={!clientId || !clientSecret || !capabilitiesAcknowledged || configure.isPending}
           >
@@ -187,16 +187,16 @@ export function NotionIntegrationSettings({
                 </div>
                 {canWrite && (
                   <div className="flex flex-wrap gap-1">
-                    <button className="tau-button" type="button" onClick={() => authorize.mutate(connection.id)}>
+                    <button className="ficus-button" type="button" onClick={() => authorize.mutate(connection.id)}>
                       Reconnect
                     </button>
                     {!reconnect && connection.enabled && connection.refreshAvailable && (
-                      <button className="tau-button" type="button" onClick={() => runLifecycle('refresh')}>
+                      <button className="ficus-button" type="button" onClick={() => runLifecycle('refresh')}>
                         Refresh
                       </button>
                     )}
                     <button
-                      className="tau-button"
+                      className="ficus-button"
                       type="button"
                       onClick={() => runLifecycle(connection.enabled ? 'disable' : 'enable')}
                     >
@@ -206,7 +206,7 @@ export function NotionIntegrationSettings({
                           ? 'Disable'
                           : 'Enable'}
                     </button>
-                    <button className="tau-button" type="button" onClick={() => runLifecycle('remove')}>
+                    <button className="ficus-button" type="button" onClick={() => runLifecycle('remove')}>
                       {confirmation?.id === connection.id && confirmation.action === 'remove'
                         ? `Confirm remove from ${connection.usage.squadCount} squads`
                         : 'Remove'}
@@ -221,7 +221,7 @@ export function NotionIntegrationSettings({
       {canWrite && settings?.configured && (
         <button
           type="button"
-          className="tau-button tau-button-primary mt-3 rounded bg-accent px-3 py-2 text-sm text-on-accent"
+          className="ficus-button ficus-button-primary mt-3 rounded bg-accent px-3 py-2 text-sm text-on-accent"
           disabled={authorize.isPending}
           onClick={() => authorize.mutate(undefined)}
         >

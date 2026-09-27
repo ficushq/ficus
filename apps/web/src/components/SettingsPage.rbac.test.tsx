@@ -236,18 +236,20 @@ describe('SettingsPage RBAC tabs', () => {
     // safe-area doctrine — see AgentInfoPanel/SquadDetailPage's identical
     // `h-full overflow-y-auto` idiom for a bounded sibling panel) so a tall
     // 20+ item nav scrolls in place instead of spilling past the viewport.
-    expect(html).toContain('class="tau-panel tau-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3"')
+    expect(html).toContain(
+      'class="ficus-panel ficus-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3"'
+    )
     expect(html).not.toContain('100vh')
     expect(html).not.toContain('100dvh')
   })
 })
 
 describe('SettingsPage onboarding link', () => {
-  test('shows a "Set up Tau" link back to /onboarding at the top level for settings:read holders', async () => {
+  test('shows a "Set up Ficus" link back to /onboarding at the top level for settings:read holders', async () => {
     const html = await renderSettings('/settings?section=features', ['settings:read'])
 
     expect(html).toContain('href="/onboarding"')
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
   })
 
   test('hides the onboarding link for viewers without settings:read — same gate OnboardingPage itself uses', async () => {

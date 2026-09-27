@@ -72,7 +72,7 @@ function MemoryFileHeader({
         <button
           onClick={handleDownload}
           disabled={size === undefined}
-          className="tau-button p-1 text-muted hover:text-primary rounded hover:bg-surface-hover transition-colors"
+          className="ficus-button p-1 text-muted hover:text-primary rounded hover:bg-surface-hover transition-colors"
           title="Download memory file"
         >
           <DownloadIcon className="w-4 h-4" />

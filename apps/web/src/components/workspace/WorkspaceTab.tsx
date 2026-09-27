@@ -91,7 +91,7 @@ export function WorkspaceTab({ squadId, isTaskTerminal = false }: WorkspaceTabPr
         <button
           onClick={() => setMobilePane('files')}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'flex-1 px-4 py-2 text-sm font-medium transition-colors',
             mobilePane === 'files'
               ? 'bg-selection text-accent-light'
@@ -103,7 +103,7 @@ export function WorkspaceTab({ squadId, isTaskTerminal = false }: WorkspaceTabPr
         <button
           onClick={() => setMobilePane('terminal')}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'flex-1 px-4 py-2 text-sm font-medium transition-colors',
             mobilePane === 'terminal'
               ? 'bg-selection text-accent-light'
@@ -120,7 +120,7 @@ export function WorkspaceTab({ squadId, isTaskTerminal = false }: WorkspaceTabPr
           <>
             <button
               onClick={() => setSelectedFile(null)}
-              className="tau-button shrink-0 px-3 py-2 text-sm text-accent-light hover:text-accent-hover border-b border-th-border bg-surface text-left"
+              className="ficus-button shrink-0 px-3 py-2 text-sm text-accent-light hover:text-accent-hover border-b border-th-border bg-surface text-left"
             >
               ← Back to files
             </button>

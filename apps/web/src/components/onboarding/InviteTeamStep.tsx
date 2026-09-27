@@ -28,7 +28,7 @@ export function InviteTeamStep() {
           {members.isError && (
             <div role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
               Could not load teammates.{' '}
-              <button className="tau-button underline" onClick={() => members.refetch()}>
+              <button className="ficus-button underline" onClick={() => members.refetch()}>
                 Retry
               </button>
             </div>
@@ -104,7 +104,7 @@ function InvitedMember({
             <button
               type="button"
               aria-label={`Copy invite link for ${user.email}`}
-              className="tau-button text-sm text-accent-light"
+              className="ficus-button text-sm text-accent-light"
               onClick={async () => {
                 try {
                   if (!navigator.clipboard) throw new Error('Clipboard unavailable')
@@ -122,7 +122,7 @@ function InvitedMember({
               type="button"
               disabled={mutation.isPending}
               aria-label={`Create invite link for ${user.email}`}
-              className="tau-button text-sm text-accent-light disabled:opacity-50"
+              className="ficus-button text-sm text-accent-light disabled:opacity-50"
               onClick={() => mutation.mutate('link')}
             >
               {mutation.isPending ? 'Creating…' : 'Create invite link'}
@@ -140,7 +140,7 @@ function InvitedMember({
           {canInvite && (
             <button
               type="button"
-              className="tau-button text-accent-light"
+              className="ficus-button text-accent-light"
               disabled={mutation.isPending}
               onClick={() => mutation.mutate('email')}
             >
@@ -163,7 +163,7 @@ function InvitedMember({
             aria-label={`Invitation link for ${user.email}`}
             readOnly
             value={link}
-            className="tau-field w-full px-3 py-2 text-xs"
+            className="ficus-field w-full px-3 py-2 text-xs"
           />
         </div>
       )}

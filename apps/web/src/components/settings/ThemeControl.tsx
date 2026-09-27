@@ -76,7 +76,7 @@ export function ThemeControl({
   const showAppearance = selected.kind === 'dual' || (!!previewing && hasAppearances(previewing))
 
   return (
-    <section data-setting-target="appearance" aria-label="Theme" className="tau-section py-5">
+    <section data-setting-target="appearance" aria-label="Theme" className="ficus-section py-5">
       <h3 data-setting-target="dark-mode" className="font-medium text-primary">
         Theme
       </h3>
@@ -104,7 +104,7 @@ export function ThemeControl({
           )}
         </div>
       ) : (
-        <button className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary mt-3" onClick={toggleTheme}>
+        <button className="ficus-button min-h-[44px] px-3 py-2 ficus-button-secondary mt-3" onClick={toggleTheme}>
           {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
         </button>
       )}

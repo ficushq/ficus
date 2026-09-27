@@ -12,7 +12,7 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
 }
 
 describe('notionPlugin', () => {
-  test('is registered as a first-party catalog plugin without native Tau capabilities', () => {
+  test('is registered as a first-party catalog plugin without native Ficus capabilities', () => {
     expect(integrationRegistry.catalog().map((entry) => entry.key)).toContain('notion')
     expect(integrationRegistry.require('notion', 1).capabilities).toEqual({})
   })
@@ -124,7 +124,7 @@ describe('notionPlugin', () => {
     ).toThrow(new NotionClientError('workspace_identity_mismatch'))
   })
 
-  test('classifies only fixed Tau-observed provider outcomes', () => {
+  test('classifies only fixed Ficus-observed provider outcomes', () => {
     const plugin = createPlugin()
     expect(plugin.classifyError(new NotionClientError('restricted_resource', 403))).toEqual({
       code: 'capability_or_resource_denied',

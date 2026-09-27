@@ -11,7 +11,7 @@ function digest(value: unknown) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
-/** The adapter describes GitHub facts. It knows nothing about Tau agents or flow routing. */
+/** The adapter describes GitHub facts. It knows nothing about Ficus agents or flow routing. */
 export const githubOutputAdapter: IntegrationOutputAdapter = {
   integration: 'github',
   catalog: githubOutputCatalog,

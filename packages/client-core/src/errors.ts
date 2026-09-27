@@ -28,7 +28,7 @@ export async function readApiErrorMessage(response: Response): Promise<string> {
     const text = (await response.clone().text()).trim()
     if (contentType.includes('text/html') || /<(?:!doctype|html|head|body)\b/i.test(text)) {
       return response.status >= 500
-        ? `Tau is temporarily unavailable (${response.status}). Please try again shortly.`
+        ? `Ficus is temporarily unavailable (${response.status}). Please try again shortly.`
         : fallback
     }
     return text ? `${fallback}: ${text}` : fallback

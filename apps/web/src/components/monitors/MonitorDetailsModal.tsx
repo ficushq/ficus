@@ -62,7 +62,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
             <p>Unable to load monitor details.</p>
             <button
               type="button"
-              className="tau-button font-medium text-accent-light hover:underline"
+              className="ficus-button font-medium text-accent-light hover:underline"
               onClick={() => detailQuery.refetch()}
             >
               Retry
@@ -133,7 +133,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
             <div className="flex items-center gap-2">
               {tail < 500 && (
                 <button
-                  className="tau-button rounded-md px-2 py-1 text-sm font-medium text-accent-light hover:bg-surface-hover transition-colors"
+                  className="ficus-button rounded-md px-2 py-1 text-sm font-medium text-accent-light hover:bg-surface-hover transition-colors"
                   onClick={() => setTail(500)}
                 >
                   Load 500
@@ -145,7 +145,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
                   onConfirm={() => cancel.mutate(detail.id)}
                   disabled={!canWriteMonitors || cancel.isPending}
                   title={canWriteMonitors ? 'Cancel monitor' : 'You do not have permission to cancel monitors'}
-                  className="tau-button rounded-md px-2 py-1 text-xs font-medium text-status-danger-600 hover:bg-status-danger-50 dark:text-status-danger-400 dark:hover:bg-status-danger-900/30 transition-colors"
+                  className="ficus-button rounded-md px-2 py-1 text-xs font-medium text-status-danger-600 hover:bg-status-danger-50 dark:text-status-danger-400 dark:hover:bg-status-danger-900/30 transition-colors"
                   confirmClassName="rounded-md bg-status-danger-50 px-2 py-1 text-xs font-medium text-status-danger-700 hover:bg-status-danger-100 dark:bg-status-danger-900/30 dark:text-status-danger-300 dark:hover:bg-status-danger-900/50 transition-colors"
                 />
               )}

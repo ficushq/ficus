@@ -46,7 +46,7 @@ test('explains person-only codes that arrive without a message', () => {
   const unfinished = new ApiError(403, 'API error: 403', { code: 'first_admin_incomplete' })
   expect(integrationErrorMessage(unfinished, fallback)).toBe('Finish setting up your admin account to continue.')
   const nobody = new ApiError(403, 'API error: 403', { error: 'user_session_required' })
-  expect(integrationErrorMessage(nobody, fallback)).toBe('Sign in with your Tau account to continue.')
+  expect(integrationErrorMessage(nobody, fallback)).toBe('Sign in with your Ficus account to continue.')
   expect(isFirstAdminIncomplete(nobody)).toBe(false)
   expect(isFirstAdminIncomplete(new Error('first_admin_incomplete'))).toBe(false)
 })

@@ -173,7 +173,7 @@ describe('ArtifactRenderer', () => {
     expect(html).toContain('ficus:presentation-html-height')
     expect(html).toContain('sandbox="allow-scripts"')
     expect(html).not.toContain('allow-same-origin')
-    expect(html).toContain('tau-presentation-html-content')
+    expect(html).toContain('ficus-presentation-html-content')
     expect(html).not.toContain('min-height:100%')
     expect(html).not.toContain('documentElement.scrollHeight')
     expect(html).not.toContain('min-h-[360px]')
@@ -196,7 +196,7 @@ describe('ArtifactRenderer', () => {
 
     expect(html).toContain('style="height:240px"')
     expect(html).toContain('ficus:presentation-html-height')
-    expect(html).toContain('tau-presentation-html-content')
+    expect(html).toContain('ficus-presentation-html-content')
   })
 
   test('presentation HTML blocks honor explicit fixed height metadata', () => {

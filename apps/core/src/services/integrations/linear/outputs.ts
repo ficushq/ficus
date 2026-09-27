@@ -22,7 +22,7 @@ function when(...values: unknown[]) {
   return ''
 }
 
-/** The adapter describes Linear facts. It knows nothing about Tau agents or flow routing. */
+/** The adapter describes Linear facts. It knows nothing about Ficus agents or flow routing. */
 export const linearOutputAdapter: IntegrationOutputAdapter = {
   integration: 'linear',
   catalog: linearOutputCatalog,

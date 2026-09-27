@@ -316,7 +316,7 @@ export function createMemoryTools(callerSquadId: string, options?: CreateMemoryT
           .join('\n')
 
         // HTML comment is invisible in chat/channel markdown but parseable by web tool traces.
-        const provenanceBlock = `\n<!--tau:memory-provenance ${JSON.stringify(provenance)} -->`
+        const provenanceBlock = `\n<!--ficus:memory-provenance ${JSON.stringify(provenance)} -->`
 
         return {
           content: [

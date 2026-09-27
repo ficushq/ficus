@@ -74,14 +74,14 @@ describe('SystemUpdateSection deployment flavor', () => {
 
     expect(html).toContain('Auto-update this instance')
     expect(html).toContain('Manual rebuild')
-    expect(html).not.toContain('managed by Tau Desktop')
+    expect(html).not.toContain('managed by Ficus Desktop')
   })
 
-  test('shows a read-only Tau Desktop note instead of git controls when opened outside the desktop app', () => {
+  test('shows a read-only Ficus Desktop note instead of git controls when opened outside the desktop app', () => {
     const html = renderSystemUpdateSection(null, { source: 'artifact', supervisor: 'desktop', sandboxRuntime: 'host' })
 
-    expect(html).toContain('This instance is managed by Tau Desktop')
-    expect(html).toContain('Tau → Check for Updates…')
+    expect(html).toContain('This instance is managed by Ficus Desktop')
+    expect(html).toContain('Ficus → Check for Updates…')
     expect(html).not.toContain('Auto-update this instance')
     expect(html).not.toContain('Manual rebuild')
     expect(html).not.toContain('Update now')
@@ -105,7 +105,7 @@ describe('SystemUpdateSection instance kind', () => {
     const html = renderSystemUpdateSection(null, { source: 'git-checkout', supervisor: 'pm2', sandboxRuntime: 'k3d' })
 
     expect(html).toContain('Auto-update this instance')
-    expect(html).not.toContain('Tau Desktop updates')
+    expect(html).not.toContain('Ficus Desktop updates')
   })
 
   test('an attached instance updates like a server, not with the app', () => {
@@ -120,7 +120,7 @@ describe('SystemUpdateSection instance kind', () => {
     const html = renderSystemUpdateSection(null, { source: 'git-checkout', supervisor: 'pm2', sandboxRuntime: 'k3d' })
 
     expect(html).toContain('Auto-update this instance')
-    expect(html).not.toContain('Tau Desktop updates')
+    expect(html).not.toContain('Ficus Desktop updates')
   })
 
   test('the bundled local instance keeps native Desktop update controls', () => {
@@ -134,7 +134,7 @@ describe('SystemUpdateSection instance kind', () => {
 
     const html = renderSystemUpdateSection()
 
-    expect(html).toContain('Tau Desktop updates')
+    expect(html).toContain('Ficus Desktop updates')
     expect(html).not.toContain('Auto-update this instance')
   })
 
@@ -148,7 +148,7 @@ describe('SystemUpdateSection instance kind', () => {
 
     const html = renderSystemUpdateSection()
 
-    expect(html).toContain('Tau Desktop updates')
+    expect(html).toContain('Ficus Desktop updates')
     expect(html).not.toContain('Auto-update this instance')
   })
 })

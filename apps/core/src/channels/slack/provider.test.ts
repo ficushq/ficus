@@ -232,7 +232,7 @@ describe('slackProvider.parseWebhook', () => {
         messageId: '1710000001.000200',
         userId: 'U789',
         userName: 'Katherine Johnson (@katherine, <@U789>)',
-        text: 'Second message for @Tau',
+        text: 'Second message for @Ficus',
         timestamp: '1710000001.000200',
         isBotMessage: false,
       },
@@ -299,7 +299,7 @@ describe('slackProvider.postMentionThinkingIndicator', () => {
 
     const result = await slackProvider.postMentionThinkingIndicator!({
       type: 'mention',
-      text: '@Tau can you help?',
+      text: '@Ficus can you help?',
       channelId: 'C123',
       user: { id: 'U123', name: 'U123' },
       messageId: '1710000000.000100',

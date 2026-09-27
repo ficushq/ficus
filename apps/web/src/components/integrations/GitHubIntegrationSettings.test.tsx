@@ -158,7 +158,7 @@ test.each(['local', 'platform_broker'] as const)(
   }
 )
 
-test('Tau app users can grant repository access during onboarding and after connecting an account', async () => {
+test('Ficus app users can grant repository access during onboarding and after connecting an account', async () => {
   const { root, container } = harness.createRoot()
   for (const authority of ['local', 'platform_broker'] as const) {
     for (const onboarding of [true, false]) {
@@ -177,7 +177,7 @@ test('Tau app users can grant repository access during onboarding and after conn
       })
       await waitFor(() => {
         const link = container.querySelector<HTMLAnchorElement>(
-          'a[href="https://github.com/apps/tau-integration/installations/new"]'
+          'a[href="https://github.com/apps/ficus-integration/installations/new"]'
         )
         expect(link?.textContent).toBe('Grant repository access')
         expect(link?.target).toBe('_blank')
@@ -189,7 +189,7 @@ test('Tau app users can grant repository access during onboarding and after conn
   }
 })
 
-test('custom GitHub Apps are not sent to install the Tau app', async () => {
+test('custom GitHub Apps are not sent to install the Ficus app', async () => {
   const { root, container } = harness.createRoot()
   await harness.act(async () =>
     root.render(
@@ -198,7 +198,7 @@ test('custom GitHub Apps are not sent to install the Tau app', async () => {
       </QueryClientProvider>
     )
   )
-  expect(container.querySelector('a[href="https://github.com/apps/tau-integration/installations/new"]')).toBeNull()
+  expect(container.querySelector('a[href="https://github.com/apps/ficus-integration/installations/new"]')).toBeNull()
   expect(container.textContent).toContain('Install your GitHub App')
   expect(container.querySelector('a[href="https://github.com/settings/installations"]')).not.toBeNull()
 })
@@ -501,7 +501,7 @@ test('failed app settings and account changes report the server reason instead o
   )
   const button = (text: string) => [...container.querySelectorAll('button')].find((item) => item.textContent === text)!
   await harness.act(async () => {
-    fireEvent.click(button('Use Tau app'))
+    fireEvent.click(button('Use Ficus app'))
   })
   await waitFor(() =>
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('OAuth application configuration failed')
@@ -515,7 +515,7 @@ test('failed app settings and account changes report the server reason instead o
   )
 })
 
-test("Tau's default app explains that login needs no setup", async () => {
+test("Ficus's default app explains that login needs no setup", async () => {
   client.setQueryData([...integrationQueryKeys.all, 'oauth-app', 'github'], {
     authority: 'local',
     configured: true,
@@ -533,7 +533,7 @@ test("Tau's default app explains that login needs no setup", async () => {
     )
   )
   expect(container.textContent).toContain(
-    "Uses Tau's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
+    "Uses Ficus's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
   )
   expect(container.textContent).toContain('no public URL is needed')
   expect(container.textContent).toContain('http://localhost/settings/integrations/oauth/callback/github')

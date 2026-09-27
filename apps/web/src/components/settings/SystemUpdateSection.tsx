@@ -20,7 +20,7 @@ import { desktopInstance, desktopUpdates } from '../../lib/desktop'
 import { DesktopUpdatePanel } from './DesktopUpdatePanel'
 
 export function SystemUpdateSection() {
-  // Inside Tau Desktop the bundled local instance owns updates natively; the git
+  // Inside Ficus Desktop the bundled local instance owns updates natively; the git
   // updater endpoints refuse all actions there. An attached or remote instance
   // still updates like any other server, so it keeps the git updater section.
   const updates = desktopUpdates()
@@ -80,7 +80,7 @@ function GitUpdateSection() {
         <p className="text-sm text-muted mt-1">
           Self-updater for git-based installs (pm2 local and systemd server installs). Uses git fast-forward pulls and
           hardcoded build commands. Automatic updates are disabled by default; enable them only for installs you want
-          Tau to update on its own.
+          Ficus to update on its own.
         </p>
       </div>
       {latest?.supported === false && (
@@ -111,7 +111,7 @@ function GitUpdateSection() {
         <label data-setting-target="remote" className="text-sm">
           Remote
           <input
-            className="tau-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
+            className="ficus-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
             value={settings.remote}
             disabled={!canWriteUpdates}
             onChange={(e) => canWriteUpdates && patch.mutate({ remote: e.target.value })}
@@ -120,7 +120,7 @@ function GitUpdateSection() {
         <label data-setting-target="branch" className="text-sm">
           Branch
           <input
-            className="tau-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
+            className="ficus-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
             value={settings.branch}
             disabled={!canWriteUpdates}
             onChange={(e) => canWriteUpdates && patch.mutate({ branch: e.target.value })}
@@ -131,7 +131,7 @@ function GitUpdateSection() {
           <input
             type="number"
             min={1}
-            className="tau-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
+            className="ficus-field mt-1 w-full rounded border border-th-border bg-surface px-2 py-1 text-primary"
             value={settings.intervalMinutes}
             disabled={!canWriteUpdates}
             onChange={(e) => canWriteUpdates && patch.mutate({ intervalMinutes: Number(e.target.value) })}
@@ -147,7 +147,7 @@ function GitUpdateSection() {
       <div className="flex gap-2">
         <button
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             'bg-surface border border-th-border text-primary hover:bg-surface-hover',
             'disabled:opacity-50 disabled:cursor-not-allowed'
@@ -159,7 +159,7 @@ function GitUpdateSection() {
         </button>
         <button
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             'disabled:opacity-50 disabled:cursor-not-allowed'
@@ -192,7 +192,7 @@ function GitUpdateSection() {
         </div>
         <button
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             'disabled:opacity-50 disabled:cursor-not-allowed'
@@ -245,7 +245,7 @@ function DesktopManagedNotice() {
     <section className="space-y-3 text-primary" data-testid="desktop-managed-notice">
       <h2 className="text-xl font-semibold text-primary">System Updates</h2>
       <p className="text-sm text-muted">
-        This instance is managed by Tau Desktop. Update it from the app: choose Tau → Check for Updates… in the menu
+        This instance is managed by Ficus Desktop. Update it from the app: choose Ficus → Check for Updates… in the menu
         bar.
       </p>
     </section>

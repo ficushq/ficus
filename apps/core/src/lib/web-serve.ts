@@ -24,7 +24,7 @@ const HASHED_ASSET = /\/assets\/[^/]+\.[0-9a-f]{8,}\./i
  * URLs (og:url, og:image): link crawlers ignore relative ones, and a built
  * index.html cannot know which origin it will be served from.
  */
-export const ORIGIN_PLACEHOLDER = '__TAU_ORIGIN__'
+export const ORIGIN_PLACEHOLDER = '__FICUS_ORIGIN__'
 
 export function renderIndexHtml(html: string, origin: string): string {
   return html.replaceAll(ORIGIN_PLACEHOLDER, origin.replace(/\/+$/, ''))

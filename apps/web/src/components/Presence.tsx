@@ -27,7 +27,7 @@ export function Presence({
   return (
     <div
       {...props}
-      className={clsx('tau-presence', className)}
+      className={clsx('ficus-presence', className)}
       data-state={open ? 'open' : 'closed'}
       inert={!open || undefined}
       aria-hidden={!open || undefined}

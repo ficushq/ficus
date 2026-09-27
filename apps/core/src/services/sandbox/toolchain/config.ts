@@ -50,7 +50,7 @@ export function fingerprintToolchain(config: ManagedToolchainConfig): string {
     .digest('hex')
 }
 
-/** The isolated Devbox configuration Tau writes without touching project files. */
+/** The isolated Devbox configuration Ficus writes without touching project files. */
 export function renderManagedDevbox(config: ManagedToolchainConfig): string {
   const normalized = normalizeToolchain(config)
   return `${JSON.stringify(

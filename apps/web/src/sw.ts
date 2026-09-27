@@ -4,7 +4,7 @@ import { resolveNotificationTarget } from './lib/notificationTarget'
 import { runtimeServiceWorkerCaches, serviceWorkerCacheNames, staleServiceWorkerCaches } from './swCaches'
 import { bypassesServiceWorker } from './swRoutes'
 
-// Tau Service Worker
+// Ficus Service Worker
 // Provides offline caching and push notification support.
 // PWA updates are prompt-controlled: the app checks on resume/focus/online/pageshow
 // (plus hourly while visible) and only auto-applies on open/resume before interaction.
@@ -145,7 +145,7 @@ self.addEventListener('push', (event) => {
     data = event.data.json()
   } catch (err) {
     console.error('[SW] Failed to parse push data:', err)
-    data = { title: 'Tau', body: event.data.text() }
+    data = { title: 'Ficus', body: event.data.text() }
   }
 
   // Same-origin only: a saved Assistant conversation link keeps its query string and base path.
@@ -157,13 +157,13 @@ self.addEventListener('push', (event) => {
     badge: p('/icons/icon-96x96.png'),
     data: { url: targetUrl },
     vibrate: [100, 50, 100],
-    tag: data.tag || 'tau-notification',
+    tag: data.tag || 'ficus-notification',
     renotify: Boolean(data.renotify),
     requireInteraction: Boolean(data.requireInteraction),
     actions: data.actions || [],
   }
 
-  event.waitUntil(self.registration.showNotification(data.title || 'Tau', options))
+  event.waitUntil(self.registration.showNotification(data.title || 'Ficus', options))
 })
 
 // Notification click event

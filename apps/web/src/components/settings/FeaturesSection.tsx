@@ -20,7 +20,7 @@ export function AgentExecutionSection() {
   const setting = settings?.find((item) => item.key === 'MAX_CONCURRENT_AGENTS')
   if (!setting) return null
   return (
-    <div data-setting-target="execution" className="tau-section py-5">
+    <div data-setting-target="execution" className="ficus-section py-5">
       <div data-setting-target="max-concurrent-agents">
         <NumberSetting setting={setting} label="Maximum active agents" canWrite={can('settings:write')} />
       </div>
@@ -147,12 +147,12 @@ export function NumberSettingFields({
           aria-disabled={disabled}
           disabled={disabled}
           onInput={(e) => onDraftChange(e.currentTarget.value)}
-          className="tau-field w-28 rounded-md bg-surface-secondary px-3 py-1.5 text-sm text-primary  focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
+          className="ficus-field w-28 rounded-md bg-surface-secondary px-3 py-1.5 text-sm text-primary  focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <button
           onClick={onSave}
           disabled={disabled || !isDirty}
-          className="tau-button tau-button-primary rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent disabled:opacity-50 disabled:cursor-not-allowed"
+          className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSaving ? 'Saving…' : 'Save'}
         </button>
@@ -160,7 +160,7 @@ export function NumberSettingFields({
           <button
             onClick={onReset}
             disabled={disabled}
-            className="tau-button rounded-md bg-surface-secondary px-3 py-1.5 text-sm text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ficus-button rounded-md bg-surface-secondary px-3 py-1.5 text-sm text-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isResetting ? 'Resetting…' : 'Reset to default'}
           </button>
