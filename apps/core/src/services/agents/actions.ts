@@ -31,6 +31,7 @@ import type { Identity } from '../rbac'
 import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
 import { evaluatePendingAction, loadQuestionWorkStreamOrigins } from './pending-action-policy'
 import { toWaitJson } from '../work-streams/waits'
+import { agentQuestionDeliveryAcknowledgements } from '../../db/schema'
 
 // Priority: lower number = higher priority
 const PRIORITY: Record<PendingActionType, number> = {
@@ -321,9 +322,38 @@ export async function listPendingActionsForIdentity(identity: Identity): Promise
             .filter((action) => action.type === 'agent-question')
             .map((action) => (action.data as AgentQuestionActionData).questionId)
         )
+  const failedIds = userId
+    ? actions
+        .filter(
+          (action) =>
+            action.type === 'agent-question' &&
+            (action.data as AgentQuestionActionData).answerDelivery?.status === 'failed'
+        )
+        .map((action) => (action.data as AgentQuestionActionData).questionId)
+    : []
+  const acknowledgements = failedIds.length
+    ? await db
+        .select()
+        .from(agentQuestionDeliveryAcknowledgements)
+        .where(
+          and(
+            eq(agentQuestionDeliveryAcknowledgements.userId, userId!),
+            inArray(agentQuestionDeliveryAcknowledgements.questionId, failedIds)
+          )
+        )
+    : []
+  const acknowledged = new Map(acknowledgements.map((row) => [row.questionId, row.generation]))
   const context = { attention, questionOrigins }
   const visible: PendingAction[] = []
   for (const action of actions) {
+    if (action.type === 'agent-question') {
+      const data = action.data as AgentQuestionActionData
+      if (
+        data.answerDelivery?.status === 'failed' &&
+        acknowledged.get(data.questionId) === data.answerDelivery.generation
+      )
+        continue
+    }
     const decision = await evaluatePendingAction(identity, action, context)
     if (decision.visible) {
       if (action.type === 'agent-question') {

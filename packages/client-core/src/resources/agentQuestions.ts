@@ -17,6 +17,8 @@ export function agentQuestionsResource(t: Transport) {
         method: 'DELETE',
         ...(reason ? { body: { reason } } : {}),
       }),
+    dismissAgentQuestionDeliveryFailure: (id: string, generation: number): Promise<{ acknowledged: true }> =>
+      t.request(`/agent-questions/${id}/dismiss-delivery-failure`, { method: 'POST', body: { generation } }),
     retryAgentQuestionAnswerDelivery: (id: string): Promise<AgentQuestion> =>
       t.request(`/agent-questions/${id}/retry-delivery`, { method: 'POST' }),
   }

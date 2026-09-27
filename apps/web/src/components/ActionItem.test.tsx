@@ -321,6 +321,48 @@ function failedDeliveryAction(canRespond = true): PendingAction {
   }
 }
 
+describe('ActionItem failed delivery acknowledgement', () => {
+  test('offers dismiss without retry permission and acknowledges only the current generation', async () => {
+    const item = failedDeliveryAction(false)
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; body: unknown }> = []
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: init?.body && JSON.parse(String(init.body)) })
+      return new dom.window.Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }) as Response
+    }) as typeof fetch
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(queryKeys.actions.pending(), [item])
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={queryClient}>
+              <ActionItem action={item} defaultExpanded />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect(document.body.textContent).toContain('confirmation')
+      expect(document.body.textContent).not.toContain('delivery to the agent failed')
+      expect(document.body.textContent).not.toContain('Retry delivery')
+      const dismiss = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Dismiss notice')
+      expect(dismiss).toBeDefined()
+      await dom.act(async () => dismiss?.click())
+      expect(calls).toContainEqual({
+        url: expect.stringContaining('/agent-questions/question-failed/dismiss-delivery-failure'),
+        body: { generation: 1 },
+      })
+      expect(calls.some((call) => call.url.includes('retry-delivery'))).toBe(false)
+      expect(queryClient.getQueryData(queryKeys.actions.pending())).toEqual([])
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
+})
+
 describe('ActionItem exact mutation behavior', () => {
   test('sends back the exact review wait with its note', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })

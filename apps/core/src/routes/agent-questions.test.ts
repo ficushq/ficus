@@ -15,6 +15,7 @@ import { Agent } from '../entities/Agent'
 import { AgentType } from '../entities/AgentType'
 import { Squad } from '../entities/Squad'
 import { identityMiddleware } from '../middleware/identity'
+import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
 import {
   assignRole,
   authHeaders,
@@ -32,7 +33,9 @@ import { actionsRouter } from './actions'
 import { agentQuestionsRouter } from './agent-questions'
 
 const app = new Hono()
+app.use('*', jsonBodyErrorMiddleware)
 app.use('*', identityMiddleware)
+app.onError(jsonBodyErrorHandler)
 app.route('/api/agent-questions', agentQuestionsRouter)
 app.route('/api/actions', actionsRouter)
 
@@ -388,6 +391,67 @@ describe('agent question chat visibility, attention, and response authority', ()
     // Raw revoke bypasses the route, which is what clears the user-permission
     // cache in production — mirror it so the next test sees the revocation.
     invalidatePermissionCache()
+  })
+
+  test('acknowledges only the acting user and failed generation without changing history or retries', async () => {
+    await subscribeToSquad(squad.id, agentReader.id, { decisions: 'show', progress: 'show' })
+    await db
+      .update(agentQuestions)
+      .set({
+        status: 'answered',
+        answer: 'accepted answer',
+        answeredByUserId: direct.id,
+        answeredAt: new Date(),
+        answerDeliveryStatus: 'failed',
+        answerDeliveryGeneration: 1,
+      })
+      .where(eq(agentQuestions.id, questionId))
+    const url = `/api/agent-questions/${questionId}/dismiss-delivery-failure`
+    const pendingFor = async (token: string) =>
+      (await (
+        await app.request('/api/actions/pending', {
+          headers: authHeaders(token),
+        })
+      ).json()) as Array<{ id: string }>
+    expect((await pendingFor(direct.token)).some((a) => a.id === `agent-question:${questionId}`)).toBe(true)
+    expect((await pendingFor(agentReader.token)).some((a) => a.id === `agent-question:${questionId}`)).toBe(true)
+    const dismiss = (token: string, generation = 1) =>
+      app.request(url, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ generation }),
+      })
+    const malformed = await app.request(url, {
+      method: 'POST',
+      headers: authHeaders(direct.token),
+      body: '{broken-json',
+    })
+    expect(malformed.status).toBe(400)
+    expect(await malformed.json()).toEqual({ error: 'Invalid JSON body' })
+    expect((await dismiss(outsider.token)).status).toBe(403)
+    expect((await dismiss(direct.token)).status).toBe(200)
+    expect((await dismiss(direct.token)).status).toBe(200)
+    expect((await pendingFor(direct.token)).some((a) => a.id === `agent-question:${questionId}`)).toBe(false)
+    expect((await pendingFor(agentReader.token)).some((a) => a.id === `agent-question:${questionId}`)).toBe(true)
+    let [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
+    expect(row).toMatchObject({
+      status: 'answered',
+      answer: 'accepted answer',
+      answerDeliveryStatus: 'failed',
+      answerDeliveryGeneration: 1,
+    })
+    expect(row.dismissedAt).toBeNull()
+    await db
+      .update(agentQuestions)
+      .set({ answerDeliveryStatus: 'pending', answerDeliveryGeneration: 2 })
+      .where(eq(agentQuestions.id, questionId))
+    await db.update(agentQuestions).set({ answerDeliveryStatus: 'failed' }).where(eq(agentQuestions.id, questionId))
+    expect((await dismiss(direct.token, 1)).status).toBe(409)
+    expect((await pendingFor(direct.token)).some((a) => a.id === `agent-question:${questionId}`)).toBe(true)
+    expect((await dismiss(direct.token, 2)).status).toBe(200)
+    expect((await pendingFor(direct.token)).some((a) => a.id === `agent-question:${questionId}`)).toBe(false)
+    ;[row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
+    expect(row.answerDeliveryStatus).toBe('failed')
   })
 
   test('answer authority needs current agents:run, not ownership metadata or chat visibility', async () => {

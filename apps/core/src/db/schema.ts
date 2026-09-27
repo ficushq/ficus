@@ -1917,6 +1917,22 @@ export const agentQuestionRecipients = pgTable(
   ]
 )
 
+// Acknowledges one failed delivery generation for one user; does not modify the answer or waits.
+export const agentQuestionDeliveryAcknowledgements = pgTable(
+  'agent_question_delivery_acknowledgements',
+  {
+    questionId: uuid('question_id')
+      .notNull()
+      .references(() => agentQuestions.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    generation: integer('generation').notNull(),
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.questionId, table.userId] })]
+)
+
 export const agentQuestionWorkStreamOrigins = pgTable(
   'agent_question_work_stream_origins',
   {
