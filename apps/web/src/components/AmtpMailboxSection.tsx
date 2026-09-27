@@ -88,7 +88,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
             <p className="text-xs text-muted">
               Agents publish their card in-sandbox:{' '}
               <code className="rounded bg-surface-secondary px-1 py-0.5 font-mono">
-                tau remote card set --name … --description …
+                ficus remote card set --name … --description …
               </code>
             </p>
           )

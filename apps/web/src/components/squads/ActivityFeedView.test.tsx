@@ -42,7 +42,7 @@ test('global and squad previews keep links separate from the source anchor', asy
               onOpen={() => {
                 opened++
               }}
-              squadChipFor={global ? () => ({ label: 'Tau', href: '/squads/tau' }) : undefined}
+              squadChipFor={global ? () => ({ label: 'Ficus', href: '/squads/tau' }) : undefined}
               hasNextPage={false}
               isFetchingNextPage={false}
               onLoadMore={() => {}}

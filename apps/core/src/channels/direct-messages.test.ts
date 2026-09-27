@@ -86,7 +86,16 @@ afterAll(async () => {
 
 describe('private squad conversations', () => {
   test('parses native commands and Slack thread mentions without treating ordinary prose as a switch', () => {
-    for (const text of ['/squad team-2', '/tau squad team-2', '@Tau squad team-2', 'tau squad team-2'])
+    for (const text of [
+      '/squad team-2',
+      '/ficus squad team-2',
+      '/ficus@FicusBot squad team-2',
+      '@Ficus squad team-2',
+      'ficus squad team-2',
+      // Typed before the rename: still understood.
+      '/tau squad team-2',
+      'tau squad team-2',
+    ])
       expect(parseDirectCommand(text)).toEqual({ command: 'squad', text: 'team-2' })
     expect(parseDirectCommand('please switch squad team-2')).toBeNull()
   })

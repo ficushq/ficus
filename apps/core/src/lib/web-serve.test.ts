@@ -21,7 +21,7 @@ function buildFixture(): string {
     '<!doctype html><html><head><meta property="og:image" content="__TAU_ORIGIN__/social-preview.png" /></head><body>app</body></html>'
   )
   writeFileSync(join(dir, 'sw.js'), 'self.addEventListener("fetch", () => {})')
-  writeFileSync(join(dir, 'manifest.webmanifest'), '{"name":"Tau"}')
+  writeFileSync(join(dir, 'manifest.webmanifest'), '{"name":"Ficus"}')
   mkdirSync(join(dir, 'assets'), { recursive: true })
   writeFileSync(join(dir, 'assets', 'app.abc12345.js'), 'console.log("ok")')
   return dir

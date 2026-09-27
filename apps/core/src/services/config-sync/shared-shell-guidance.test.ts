@@ -14,7 +14,7 @@ describe('local app deployment guidance', () => {
    * the page itself returns 200. Agents read the skill, not CLI flag help, so
    * the guidance is the thing that has to be right.
    */
-  test('deploy-app tells agents to let Tau assign the port and to set the base path', async () => {
+  test('deploy-app tells agents to let Ficus assign the port and to set the base path', async () => {
     const skill = await readRepoFile('config/skills/deploy-app/SKILL.md')
 
     expect(skill).toContain('FICUS_APP_BASE_PATH')
@@ -40,7 +40,7 @@ describe('local app deployment guidance', () => {
     expect(skill).toMatch(/SSE|polling/)
   })
 
-  test('visual review uses a Tau-managed app with an assigned port', async () => {
+  test('visual review uses a Ficus-managed app with an assigned port', async () => {
     const skill = await readRepoFile('config/skills/frontend-visual-review/SKILL.md')
     expect(skill).toContain('tau deploy local start')
     expect(skill).toContain('$PORT')
@@ -100,7 +100,7 @@ describe('shared-first shell guidance', () => {
     expect(worktrees).toContain('do not create a second worktree')
   })
 
-  test('active Tau instruction sources are shared-first', async () => {
+  test('active Ficus instruction sources are shared-first', async () => {
     for (const path of [
       'docs/wiki/agent-runners.md',
       'config/agent-types/manager.yaml',

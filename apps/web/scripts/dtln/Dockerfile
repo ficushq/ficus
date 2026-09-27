@@ -11,7 +11,7 @@
 # Three files are overlaid on the checkout (see the comments in each):
 #   build.rs     — upstream's only defines `main` for macOS/Windows hosts
 #   config.toml  — upstream's quoted ENVIRONMENT link flag is rejected by emcc 4.x
-#   dtln_post.js — Tau's wrapper additions (`ready`, `postRun`); build.sh then
+#   dtln_post.js — Ficus's wrapper additions (`ready`, `postRun`); build.sh then
 #                  appends the ES-module default export after the link
 #
 # Everything that determines the output is an ARG below, recorded into

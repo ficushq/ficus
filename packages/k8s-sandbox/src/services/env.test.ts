@@ -19,7 +19,7 @@ describe('buildSandboxChildEnv', () => {
       APP_URL: 'https://tau.example',
       GITHUB_TOKEN: 'ghs_xxx',
       GH_TOKEN: 'ghs_xxx',
-      GIT_USER_NAME: 'Tau Bot',
+      GIT_USER_NAME: 'Ficus Bot',
       GIT_USER_EMAIL: 'bot@tau',
       SSL_CERT_FILE: '/etc/ssl/cert.pem',
     })
@@ -29,7 +29,7 @@ describe('buildSandboxChildEnv', () => {
     expect(env.APP_URL).toBe('https://tau.example')
     expect(env.GITHUB_TOKEN).toBe('ghs_xxx')
     expect(env.GH_TOKEN).toBe('ghs_xxx')
-    expect(env.GIT_USER_NAME).toBe('Tau Bot')
+    expect(env.GIT_USER_NAME).toBe('Ficus Bot')
     expect(env.GIT_USER_EMAIL).toBe('bot@tau')
     expect(env.SSL_CERT_FILE).toBe('/etc/ssl/cert.pem')
   })

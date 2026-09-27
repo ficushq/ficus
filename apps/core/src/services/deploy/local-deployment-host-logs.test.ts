@@ -115,13 +115,13 @@ describe('local deployment logs on the host runtime', () => {
       (e) => errors.push(e.message)
     )
     try {
-      await waitFor(() => lines.some((l) => l.includes('[tau] starting')) && lines.some((l) => l.includes('hello')))
+      await waitFor(() => lines.some((l) => l.includes('[ficus] starting')) && lines.some((l) => l.includes('hello')))
     } finally {
       tail.cancel()
       await supervisor.stopLocalDeployment(SANDBOX, `tau-local-deployment-${id.slice(0, 8)}`)
     }
     expect(errors).toEqual([])
-    expect(lines.some((l) => l.includes('[tau] starting'))).toBe(true)
+    expect(lines.some((l) => l.includes('[ficus] starting'))).toBe(true)
     expect(lines).toContain('hello')
   }, 20000)
 

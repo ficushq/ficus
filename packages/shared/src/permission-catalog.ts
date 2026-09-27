@@ -36,7 +36,7 @@ export const PERMISSION_DESCRIPTIONS = {
   'env:write': 'Set squad environment variables and manage which secrets are exposed to agents.',
   'integrations:read': 'View integration configuration and connections across providers. Does not reveal credentials.',
   'integrations:use':
-    'Use connected integration accounts through Tau, subject to squad access and provider permissions.',
+    'Use connected integration accounts through Ficus, subject to squad access and provider permissions.',
   'integrations:write':
     'Enable integrations, configure credentials and webhooks, and manage accounts and squad connections.',
   'integrations:export': 'Send conversation content to connected external services. Does not export credentials.',
@@ -48,7 +48,7 @@ export const PERMISSION_DESCRIPTIONS = {
   'inbox:read-squad': 'Read other agents’ inboxes within an accessible squad.',
   'amtp:read': 'View federation identity, peers, remote agents, and delivery information.',
   'amtp:write': 'Manage federation peers, agent registrations, and federation configuration.',
-  'amtp:send': 'Discover and message agents on connected Tau instances.',
+  'amtp:send': 'Discover and message agents on connected Ficus instances.',
   'amtp:register': 'Register or update the calling agent’s federation identity.',
   'workspace:read': 'Browse, search, read, and download squad workspace files.',
   'workspace:write': 'Upload files into squad workspaces.',
@@ -77,9 +77,9 @@ export const PERMISSION_DESCRIPTIONS = {
   'secrets:read:notification': 'Read remaining secrets in the notification group.',
   'secrets:write:notification': 'Set or delete remaining secrets in the notification group.',
   'secrets:read:system':
-    'Read system-group secrets, such as Tau credentials and encryption keys, except protected keys.',
+    'Read system-group secrets, such as Ficus credentials and encryption keys, except protected keys.',
   'secrets:write:system':
-    'Set or delete system-group secrets, such as Tau credentials and encryption keys, except protected keys.',
+    'Set or delete system-group secrets, such as Ficus credentials and encryption keys, except protected keys.',
   'roles:read': 'View roles and the permissions they grant.',
   'roles:create': 'Create custom roles and choose their permissions.',
   'roles:update': 'Edit custom roles and change their permissions.',
@@ -112,8 +112,8 @@ export const PERMISSION_DESCRIPTIONS = {
   'artifacts:write': 'Manage artifact files and prepare artifact preview environments.',
   'grants:read': 'View resource access grants between squads.',
   'grants:write': 'Create or revoke resource access grants between squads.',
-  'updates:read': 'Check for Tau updates and view update settings and status.',
-  'updates:write': 'Change update settings and apply Tau updates.',
+  'updates:read': 'Check for Ficus updates and view update settings and status.',
+  'updates:write': 'Change update settings and apply Ficus updates.',
   'routing:read': 'Request squad-routing suggestions for a question.',
   'agent-types:read': 'View and export agent types, model tiers, and the model catalog.',
   'agent-types:create': 'Create agent types.',
@@ -131,9 +131,9 @@ export const PERMISSION_DESCRIPTIONS = {
   'provider-auth:write': 'Connect and manage AI provider accounts, credentials, priority, and model routing.',
   'webhooks:read': 'View webhook setup and delivery status.',
   'system:pause': 'View and manage instance-wide execution pauses and maintenance leases.',
-  'system:restart': 'Restart Tau services.',
+  'system:restart': 'Restart Ficus services.',
   'system:cleanup': 'Clean up inactive agents and run workspace or package-store garbage collection.',
-  'system:logs': 'Read system diagnostics and stream Tau service logs.',
+  'system:logs': 'Read system diagnostics and stream Ficus service logs.',
   'system:demo': 'Seed and manage the app-store reviewer demo account on a designated demo instance.',
   'system-tokens:manage': 'Create, list, and revoke system API tokens, including choosing their permission scopes.',
   'theme-presets:moderate':

@@ -9,7 +9,7 @@ describe('source activity previews', () => {
       preview: [{ text: 'hel', bold: true, href }, { text: '…' }],
     })
   })
-  test('preserves labels and explicit Tau references but not bare numbers', () => {
+  test('preserves labels and explicit Ficus references but not bare numbers', () => {
     expect(activityPreview('[#241](tau:ws:241) [Ada](tau:agent:deadbeef) #242').preview).toEqual([
       { text: '#241', href: 'tau:ws:241' },
       { text: ' ' },
@@ -90,7 +90,7 @@ test('clips before, at and after link labels and bounds oversized inputs', () =>
   expect(activityPreview('x'.repeat(600), 1000).summary.endsWith('…')).toBe(true)
 })
 
-test('validates Tau references using the shared client grammar', () => {
+test('validates Ficus references using the shared client grammar', () => {
   for (const href of ['tau:ws:241', 'tau:ws:deadbeef', 'tau:agent:deadbeef-1234-1234-1234-123456789abc'])
     expect(activityPreview(`[label](${href})`).preview).toEqual([{ text: 'label', href }])
   for (const href of ['tau:ws:abc-def', 'tau:agent:xyz', 'tau:other:241'])

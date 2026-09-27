@@ -1,6 +1,6 @@
 import { observeTerminalTheme, readTerminalTheme } from '../../theme/terminal'
 /**
- * SystemLogsSection — read-only live tail of Tau's system logs (API/worker).
+ * SystemLogsSection — read-only live tail of Ficus's system logs (API/worker).
  *
  * Streams from /ws/system/logs. Binary frames are log chunks; JSON frames are
  * control messages. Connection is manual: the stream only opens when the user
@@ -150,7 +150,7 @@ export function SystemLogsSection() {
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-primary">Logs</h3>
-        <p className="text-sm text-muted mt-1">Live tail of Tau's own server logs (read-only).</p>
+        <p className="text-sm text-muted mt-1">Live tail of Ficus's own server logs (read-only).</p>
       </div>
 
       <div className="ficus-section py-5">

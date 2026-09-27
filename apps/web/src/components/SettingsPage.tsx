@@ -387,13 +387,15 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
           {pwa.isStandalone ? (
             <div className="flex items-center gap-3 text-status-success-700 dark:text-status-success-400">
               <CheckIcon />
-              <span>Tau is installed on your device</span>
+              <span>Ficus is installed on your device</span>
             </div>
           ) : pwa.canInstall ? (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="font-medium text-primary">Install Tau</p>
-                <p className="text-sm text-muted">Add Tau to your home screen for quick access and offline support.</p>
+                <p className="font-medium text-primary">Install Ficus</p>
+                <p className="text-sm text-muted">
+                  Add Ficus to your home screen for quick access and offline support.
+                </p>
               </div>
               <button
                 onClick={pwa.promptInstall}
@@ -407,7 +409,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               <p className="font-medium text-primary mb-2">Install on iOS</p>
               <p className="text-sm text-muted">
                 Tap the share button <ShareIcon className="w-4 h-4 inline-block align-text-bottom" /> then "Add to Home
-                Screen" to install Tau.
+                Screen" to install Ficus.
               </p>
             </div>
           ) : (
@@ -423,7 +425,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               <div>
                 <p className="font-medium text-status-progress-900 dark:text-status-progress-200">Update Available</p>
                 <p className="text-sm text-status-progress-700 dark:text-status-progress-300">
-                  A new version of Tau is ready to install.
+                  A new version of Ficus is ready to install.
                 </p>
               </div>
               <button

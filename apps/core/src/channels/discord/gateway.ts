@@ -234,9 +234,9 @@ export class DiscordGateway {
     let agent = await Agent.findByThreadId('discord', threadId, channelInstance.id, message.channel_id)
     if (agent?.squadId !== targetSquad) agent = null
 
-    // Replace bot mentions with @Tau
+    // Replace bot mentions with @Ficus
     const cleanedContent = this.botUserId
-      ? message.content.replace(new RegExp(`<@!?${this.botUserId}>`, 'g'), '@Tau').trim()
+      ? message.content.replace(new RegExp(`<@!?${this.botUserId}>`, 'g'), '@Ficus').trim()
       : message.content
 
     const linking = await channelLinkReply(
@@ -254,7 +254,7 @@ export class DiscordGateway {
     }
 
     // Threaded Discord conversations only respond to explicit mentions, even
-    // when Tau created the thread.
+    // when Ficus created the thread.
     if (!isBotMentioned) {
       if (agent) {
         log.info(`Discord: regular thread message without mention in ${threadId}, ignoring`)
@@ -327,7 +327,7 @@ export class DiscordGateway {
               routingChannelId,
               channelId: threadId,
               messageToEdit: thinkingMsg.messageId,
-              tauInitiated: false, // User created this thread, not Tau
+              tauInitiated: false, // User created this thread, not Ficus
             },
           })
         }
@@ -338,7 +338,7 @@ export class DiscordGateway {
       log.info(`Discord: creating thread for mention`)
 
       // Create thread on user's message
-      const thread = await this.createThreadOnMessage(message.channel_id, message.id, 'Tau Response')
+      const thread = await this.createThreadOnMessage(message.channel_id, message.id, 'Ficus Response')
 
       // Post "Thinking..." in thread
       const thinkingMsg = await provider.postMessage({
@@ -406,13 +406,13 @@ export class DiscordGateway {
       const formatted = allowedMessages
         .filter((m) => m.text && m.text.trim()) // Skip empty messages
         .map((m) => {
-          const label = m.isBotMessage ? '@Tau' : `<@${m.userId}>`
+          const label = m.isBotMessage ? '@Ficus' : `<@${m.userId}>`
           return `${label}: ${m.text}`
         })
         .join('\n\n')
 
       if (formatted) {
-        return `**Thread history** (you are referenced as @Tau):\n\n${formatted}`
+        return `**Thread history** (you are referenced as @Ficus):\n\n${formatted}`
       }
     } catch (e) {
       log.warn(`Failed to fetch thread history: ${e}`)
@@ -488,8 +488,8 @@ export class DiscordGateway {
           intents,
           properties: {
             os: 'linux',
-            browser: 'tau',
-            device: 'tau',
+            browser: 'ficus',
+            device: 'ficus',
           },
         },
       })

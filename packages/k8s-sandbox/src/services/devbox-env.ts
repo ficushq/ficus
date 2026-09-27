@@ -41,7 +41,7 @@ export function devboxHasPackages(devboxJson: string): boolean {
  * How many packages a devbox.json `packages` value declares, or `null` when the
  * value is not a package collection at all.
  *
- * devbox accepts TWO shapes and both are real environments: the list form Tau
+ * devbox accepts TWO shapes and both are real environments: the list form Ficus
  * seeds (`["nodejs_24@latest", …]`) and the map form
  * (`{"nodejs_24": "latest", "zlib": {"version": "latest", "outputs": ["dev"]}}`)
  * that devbox itself rewrites the file into as soon as any package carries
@@ -132,7 +132,7 @@ export function getDevboxShellEnv(): string {
   ].join('\n')
 }
 
-/** Clear only Tau's managed toolchain activation, preserving the comfort/project cache. */
+/** Clear only Ficus's managed toolchain activation, preserving the comfort/project cache. */
 export function clearManagedToolchainEnv(): void {
   cachedManagedToolchainEnv = null
   cachedManagedToolchainFingerprint = null
@@ -174,7 +174,7 @@ function runManagedShellenv(cwd: string): Promise<string> {
 }
 
 /**
- * Refresh or clear Tau's managed toolchain activation. Failures are observable
+ * Refresh or clear Ficus's managed toolchain activation. Failures are observable
  * to Core. A request carrying the fingerprint that is already active reuses
  * the cached environment: Core confirms readiness before every turn, and
  * re-resolving an unchanged toolchain on a busy box is what turns load into

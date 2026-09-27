@@ -99,7 +99,7 @@ export function renderSlotNotification(claim: SlotNotificationClaim): string {
     // overload the shared box, so the owner must clean up explicitly.
     return [
       `Your claim ${claim.claimId} on slot pool "${claim.poolKey}" expired at ${claim.expiresAt.toISOString()} because it was not released or renewed. You no longer hold this capacity.`,
-      'Tau did not stop any work you started under this claim. Clean up now:',
+      'Ficus did not stop any work you started under this claim. Clean up now:',
       "- Stop every heavy process, container and test database you started under it: run the repository's project-scoped test:db:down (for example `bun run test:db:down`), docker stop the containers you started, and kill your background jobs.",
       `- Claim again before resuming heavy work: ficus slot claim ${claim.poolKey} --squad ${claim.squadId}`,
       '- Release claims as soon as the work is done: ficus slot release <claim-id>',

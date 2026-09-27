@@ -105,7 +105,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
           <h1 className="ficus-app-header-logo text-xl md:text-2xl font-bold text-primary">
             <Link to="/" className="flex items-center gap-2 hover:text-status-progress-600 transition-colors">
               <TauLogo />
-              Tau
+              Ficus
               {instance && (
                 <span
                   data-testid="desktop-instance-label"

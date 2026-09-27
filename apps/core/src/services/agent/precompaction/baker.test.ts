@@ -181,7 +181,7 @@ describe('createPiCompactionBaker', () => {
     expect(providerHealth.getRecord('anthropic')).toBeUndefined()
   })
 
-  it('guards Tau internal compaction errors before classification and mutation', async () => {
+  it('guards Ficus internal compaction errors before classification and mutation', async () => {
     prepareCompaction.mockReturnValueOnce({
       firstKeptEntryId: 'keep',
       messagesToSummarize: [],

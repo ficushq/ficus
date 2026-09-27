@@ -198,7 +198,7 @@ export function GitHubIntegrationSettings({
       setConfirmation(null)
       if (input.action === 'remove')
         setNotice(
-          'Account disconnected from Tau. To revoke its GitHub authorization too, open GitHub settings → Applications → Authorized GitHub Apps.'
+          'Account disconnected from Ficus. To revoke its GitHub authorization too, open GitHub settings → Applications → Authorized GitHub Apps.'
         )
       await refresh()
     },
@@ -233,8 +233,8 @@ export function GitHubIntegrationSettings({
       {canConnect && !hasAccounts && usesTauApp && (
         <p className="mt-2 text-xs text-muted">
           {app.data?.authority === 'local' && app.data.authorizationMode !== 'browser'
-            ? "Uses Tau's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
-            : "Uses Tau's GitHub App, so no setup is needed. You'll sign in on github.com."}
+            ? "Uses Ficus's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
+            : "Uses Ficus's GitHub App, so no setup is needed. You'll sign in on github.com."}
         </p>
       )}
       <p className="mt-2 text-sm text-muted">
@@ -244,7 +244,7 @@ export function GitHubIntegrationSettings({
       </p>
       <p className="mt-2 text-xs text-muted">
         Connecting an account does not grant repository access. Install{' '}
-        {usesTauApp ? 'Tau Integration' : 'your GitHub App'} on your personal account or organization and choose its
+        {usesTauApp ? 'Ficus Integration' : 'your GitHub App'} on your personal account or organization and choose its
         repositories. Organization access may require an owner's approval.
       </p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-accent-light">
@@ -425,9 +425,9 @@ export function GitHubIntegrationSettings({
             }}
           >
             <p className="text-xs text-muted">
-              Enable expiring user tokens in the app's settings. With only a client ID, Tau uses device login: enable
+              Enable expiring user tokens in the app's settings. With only a client ID, Ficus uses device login: enable
               device flow, and no public URL is needed. Adding a client secret switches to browser login, which
-              redirects back to Tau, so set the app's callback URL to{' '}
+              redirects back to Ficus, so set the app's callback URL to{' '}
               <span className="break-all">{app.data.callbackUrl}</span>.
             </p>
             <label className="block text-sm text-primary">
@@ -470,7 +470,7 @@ export function GitHubIntegrationSettings({
                 disabled={configure.isPending || !!device}
                 onClick={() => configure.mutate(true)}
               >
-                Use Tau app
+                Use Ficus app
               </button>
             </div>
           </form>

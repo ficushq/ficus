@@ -375,7 +375,7 @@
     --status-neutral-badge-hover: 229 231 235;
     --opacity-status-neutral-badge-hover: 1;
 
-    /* Graph scenes stay dark in both Tau appearances. Links are contrast-corrected
+    /* Graph scenes stay dark in both Ficus appearances. Links are contrast-corrected
        (see docs/wiki/theme/graph-colors.md); all other graph/chart colors retain parity. */
     --graph-bg: 17 24 39;
     --graph-loading-bg: 15 23 42;
@@ -888,7 +888,7 @@
     --status-neutral-badge-hover: 55 65 81;
     --opacity-status-neutral-badge-hover: 1;
 
-    /* Graph scenes stay dark in both Tau appearances. Links are contrast-corrected
+    /* Graph scenes stay dark in both Ficus appearances. Links are contrast-corrected
        (see docs/wiki/theme/graph-colors.md); all other graph/chart colors retain parity. */
     --graph-bg: 17 24 39;
     --graph-loading-bg: 15 23 42;
@@ -1208,7 +1208,7 @@
   }
 }
 
-/* xterm 5.5 uses native scrollbars. Leave them native for Tau (auto tokens),
+/* xterm 5.5 uses native scrollbars. Leave them native for Ficus (auto tokens),
    but allow later themes to supply the complete thumb/hover/active palette. */
 .ficus-terminal[data-terminal-scrollbar] .xterm-viewport {
   scrollbar-color: rgb(var(--term-scrollbar-thumb)) rgb(var(--term-bg));
@@ -1401,7 +1401,7 @@
   }
 }
 
-/* Tau Desktop inset title bar (html[data-desktop-shell='inset'], set by
+/* Ficus Desktop inset title bar (html[data-desktop-shell='inset'], set by
    useDesktopShellChrome only inside the desktop app while windowed). The macOS
    window controls sit over the top-left of the page, so the app header becomes
    the title bar: exactly 56px tall, a window drag region, with a compact logo 24px after

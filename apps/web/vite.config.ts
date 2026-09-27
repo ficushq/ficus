@@ -47,7 +47,7 @@ function readCliBackends(): Record<string, CliBackend> {
   try {
     parsed = JSON.parse(readFileSync(authPath, 'utf8'))
   } catch (error) {
-    throw new Error(`Could not read Tau CLI auth store at ${authPath}: ${(error as Error).message}`)
+    throw new Error(`Could not read Ficus CLI auth store at ${authPath}: ${(error as Error).message}`)
   }
 
   if (!parsed || typeof parsed !== 'object') return {}
@@ -84,7 +84,7 @@ function selectedDevBackend(state: MutableDevProxyState): DevBackend {
   }
 
   const backend = readCliBackends()[state.selectedLabel]
-  if (!backend) throw new Error(`Unknown Tau CLI backend '${state.selectedLabel}'`)
+  if (!backend) throw new Error(`Unknown Ficus CLI backend '${state.selectedLabel}'`)
   return {
     label: state.selectedLabel,
     ...backend,
@@ -170,7 +170,7 @@ function devAccessLoginPage(invalid = false): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tau Dev Access</title>
+    <title>Ficus Dev Access</title>
     <style>
       :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
       body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #09090b; color: #fafafa; }
@@ -185,7 +185,7 @@ function devAccessLoginPage(invalid = false): string {
   </head>
   <body>
     <main>
-      <h1>Tau dev access</h1>
+      <h1>Ficus dev access</h1>
       <p>Enter the access token printed by <code>bun run dev:web</code>.</p>
       ${invalid ? '<p class="error" role="alert">That token is not valid.</p>' : ''}
       <form method="post" action="${DEV_ACCESS_LOGIN_PATH}">
@@ -256,7 +256,7 @@ function devAccessPlugin(accessToken: string): Plugin {
               res.setHeader('Location', DEV_ACCESS_LOGIN_PATH)
               return res.end()
             }
-            return endJson(res, 401, { error: 'Tau dev access token required' })
+            return endJson(res, 401, { error: 'Ficus dev access token required' })
           }
 
           stripDevAccessCredential(req)
@@ -503,8 +503,8 @@ export default defineConfig(({ mode, command }) => {
         srcDir: 'src',
         filename: 'sw.ts',
         manifest: {
-          name: 'Tau - AI Task Management',
-          short_name: 'Tau',
+          name: 'Ficus - AI Task Management',
+          short_name: 'Ficus',
           description: 'A workspace for teams of AI agents.',
           start_url: base,
           scope: base,

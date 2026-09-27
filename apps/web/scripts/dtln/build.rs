@@ -1,4 +1,4 @@
-// Replacement for upstream dtln-rs's build.rs, overlaid by the Tau denoiser
+// Replacement for upstream dtln-rs's build.rs, overlaid by the Ficus denoiser
 // build (apps/web/scripts/dtln/Dockerfile). Upstream only defines `main` for
 // macOS and Windows hosts, so a Linux container cannot build the WebAssembly
 // target at all. The logic is upstream's: unpack the prebuilt TensorFlow Lite

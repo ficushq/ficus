@@ -85,8 +85,8 @@ export function TauAssistantStart({
             query.trim() && visibleResults[selectedIndex] ? `ficus-search-result-${selectedIndex}` : undefined
           }
           aria-autocomplete="list"
-          aria-label="Search Tau or ask anything"
-          placeholder="Search Tau or ask anything…"
+          aria-label="Search Ficus or ask anything"
+          placeholder="Search Ficus or ask anything…"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value)
@@ -110,7 +110,7 @@ export function TauAssistantStart({
           disabled={!canAsk || !query.trim()}
           className="ficus-button ficus-button-primary px-3 text-sm shrink-0 disabled:opacity-40"
         >
-          Ask Tau
+          Ask Ficus
         </button>
       </form>
       {query.trim() ? (
@@ -151,7 +151,7 @@ export function TauAssistantStart({
           )}
           {!loading && !results.length && (
             <p role="status" className="text-sm text-muted px-3 py-2">
-              No matching destinations. {canAsk && 'Ask Tau for help with this request.'}
+              No matching destinations. {canAsk && 'Ask Ficus for help with this request.'}
             </p>
           )}
           {partialError && (
@@ -165,7 +165,7 @@ export function TauAssistantStart({
             </p>
           )}
           <p className="text-xs text-muted px-3 pt-2">
-            ↑ ↓ to choose · Enter to open · Ask Tau to start a conversation
+            ↑ ↓ to choose · Enter to open · Ask Ficus to start a conversation
           </p>
         </div>
       ) : (

@@ -1,8 +1,8 @@
 export function devicePlatformLabel(platform: string): string {
   if (platform === 'ios') return 'iOS'
   if (platform === 'android') return 'Android'
-  if (platform === 'cli') return 'Tau CLI'
-  if (platform === 'desktop') return 'Tau Desktop'
+  if (platform === 'cli') return 'Ficus CLI'
+  if (platform === 'desktop') return 'Ficus Desktop'
   return 'Device'
 }
 
@@ -27,6 +27,6 @@ export async function approveDeviceRequest(input: {
 
 export function deviceApprovalErrorMessage(_error: unknown, platform?: string): string {
   const retry =
-    platform === 'desktop' ? 'Start again from Tau Desktop.' : 'Run tau auth login again to create a new request.'
+    platform === 'desktop' ? 'Start again from Ficus Desktop.' : 'Run ficus auth login again to create a new request.'
   return `Approval failed because this request is expired or already used. ${retry}`
 }

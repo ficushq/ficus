@@ -81,7 +81,7 @@ describe('telegramProvider.sendNotification', () => {
             message_id: 42,
             from: { id: 123, first_name: 'Ada', is_bot: false },
             chat: { id: -100123, type: 'supergroup' },
-            text: '/tau@example_bot link abcdef0123456789abcdef0123456789',
+            text: '/ficus@example_bot link abcdef0123456789abcdef0123456789',
           },
         },
         {}
@@ -111,7 +111,7 @@ describe('Telegram private squad switching', () => {
               message_id: 2,
               chat: { id: 123, type },
               from: { id: 7, first_name: 'User' },
-              text: '/tau squad my-squad',
+              text: '/ficus squad my-squad',
             },
           },
           {}

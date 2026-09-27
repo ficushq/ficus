@@ -134,7 +134,10 @@ function detectSandboxRuntime(env: Record<string, string | undefined>): SandboxR
 
 export function supportsAutoUpdate(flavor: DeploymentFlavor): { ok: boolean; reason?: string } {
   if (flavor.supervisor === 'desktop')
-    return { ok: false, reason: 'This instance is managed by Tau Desktop. Update it through the desktop application.' }
+    return {
+      ok: false,
+      reason: 'This instance is managed by Ficus Desktop. Update it through the desktop application.',
+    }
   if (flavor.source === 'artifact') {
     return {
       ok: false,

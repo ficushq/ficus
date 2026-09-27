@@ -19,12 +19,12 @@ describe('parseLaunchdJobIdentity', () => {
   // Captured shape of real `launchctl print` output: the binary on its own
   // `program =` line, argv in a separate `arguments = { ... }` block, then the
   // working directory and stderr path lines this guard keys on.
-  const REAL_PRINT = `\n\tprogram = /Users/me/My Bun/bin/bun\n\targuments = {\n\t\t/Users/me/My Bun/bin/bun\n\t\trun\n\t\tapps/core/dist/worker.js\n\t}\n\tworking directory = /Users/me/Tau repo\n\tstderr path = /Users/me/.tau/logs/tau-api.log\n\n`
+  const REAL_PRINT = `\n\tprogram = /Users/me/My Bun/bin/bun\n\targuments = {\n\t\t/Users/me/My Bun/bin/bun\n\t\trun\n\t\tapps/core/dist/worker.js\n\t}\n\tworking directory = /Users/me/Ficus repo\n\tstderr path = /Users/me/.tau/logs/tau-api.log\n\n`
 
   it('resolves the binary from real launchctl print output', () => {
     expect(parseLaunchdJobIdentity(REAL_PRINT)).toEqual({
       program: '/Users/me/My Bun/bin/bun',
-      workingDirectory: '/Users/me/Tau repo',
+      workingDirectory: '/Users/me/Ficus repo',
       stderrPath: '/Users/me/.tau/logs/tau-api.log',
     })
   })
@@ -32,11 +32,11 @@ describe('parseLaunchdJobIdentity', () => {
   it('still accepts the combined program-arguments spelling and leaves absent fields unknown', () => {
     expect(
       parseLaunchdJobIdentity(
-        'program arguments = {\n  /Users/me/My Bun/bin/bun\n}\nworking directory = /Users/me/Tau repo\nstderr path = /Users/me/.tau/logs/tau-api.log\n'
+        'program arguments = {\n  /Users/me/My Bun/bin/bun\n}\nworking directory = /Users/me/Ficus repo\nstderr path = /Users/me/.tau/logs/tau-api.log\n'
       )
     ).toEqual({
       program: '/Users/me/My Bun/bin/bun',
-      workingDirectory: '/Users/me/Tau repo',
+      workingDirectory: '/Users/me/Ficus repo',
       stderrPath: '/Users/me/.tau/logs/tau-api.log',
     })
     expect(parseLaunchdJobIdentity('state = running\npid = 42\n')).toEqual({

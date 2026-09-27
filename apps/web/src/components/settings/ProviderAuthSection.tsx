@@ -698,7 +698,11 @@ export function AddAccountChooser({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         {onChooseBrowser && (
-          <button type="button" onClick={onChooseBrowser} className="ficus-button text-xs text-muted hover:text-primary">
+          <button
+            type="button"
+            onClick={onChooseBrowser}
+            className="ficus-button text-xs text-muted hover:text-primary"
+          >
             Browser login (fallback)
           </button>
         )}
@@ -1254,7 +1258,7 @@ export function SelectStep({
   // it offers exactly these two methods (ids fixed by the vendored OAuth
   // library — see @earendil-works/pi-ai's auth/oauth/openai-codex.js, where
   // "browser" is hardcoded first/"(default)"). Device code works headlessly
-  // and tau detects completion automatically, while browser login redirects
+  // and Ficus detects completion automatically, while browser login redirects
   // to a localhost URL that fails to load outside a local CLI — worse for a
   // hosted instance. We can't relabel/reorder the vendored options, so
   // present device code as the primary action here and demote browser login
@@ -1275,7 +1279,7 @@ export function SelectStep({
           Device code login (recommended)
         </button>
         <p className="text-xs text-muted">
-          Enter a short code on OpenAI&apos;s site — tau detects completion automatically, no local redirect needed.
+          Enter a short code on OpenAI&apos;s site — Ficus detects completion automatically, no local redirect needed.
         </p>
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <button
@@ -1505,7 +1509,10 @@ export function ErrorStep({
     <div className="space-y-2">
       <p className="text-sm text-status-danger-600 dark:text-status-danger-400">Login failed: {message}</p>
       <div className="flex gap-2">
-        <button onClick={onRetry} className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium">
+        <button
+          onClick={onRetry}
+          className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+        >
           Try Again
         </button>
         <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
@@ -1530,7 +1537,7 @@ export function CompatibleCapabilityWarnings({
     <>
       {!tools && (
         <p role="alert" className="text-danger">
-          This tool-less model cannot be Primary; tau agents require tools.
+          This tool-less model cannot be Primary; Ficus agents require tools.
         </p>
       )}
       {contextWindow != null && contextWindow < contextFloor && (

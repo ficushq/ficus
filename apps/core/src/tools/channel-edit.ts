@@ -17,7 +17,7 @@ export function createChannelEditTool(agentId: string): ToolDefinition {
     name: 'channel_edit',
     label: 'Channel Edit',
     description:
-      'Edit a previously Tau-sent channel message by provider message ID. Only tracked Tau messages are allowed.',
+      'Edit a previously Ficus-sent channel message by provider message ID. Only tracked Ficus messages are allowed.',
     parameters: ChannelEditSchema,
     async execute(
       _toolCallId: string,

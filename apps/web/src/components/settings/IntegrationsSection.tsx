@@ -165,7 +165,7 @@ export function IntegrationDirectoryCard({
               <p className="text-sm text-muted">
                 {entry.key === 'apple-push'
                   ? 'Configure an APNs key from Apple Developer for native iOS notifications. Hosted credentials are managed by your platform.'
-                  : 'Tau generates and stores browser push signing keys automatically. Set an email address or HTTPS contact URL for the push service. Devices subscribe in personal Notifications settings.'}
+                  : 'Ficus generates and stores browser push signing keys automatically. Set an email address or HTTPS contact URL for the push service. Devices subscribe in personal Notifications settings.'}
               </p>
             </div>
           )}
@@ -183,7 +183,7 @@ export function IntegrationDirectoryCard({
               <IntegrationCredentialSettings provider={entry.key} kind="service" canWrite={canWrite} />
               <p className="text-sm text-muted">
                 Used for reading messages aloud. Enable the Text-to-Speech API in your Google Cloud project, then paste
-                its service account JSON key above. Changes apply to new speech requests without restarting Tau.
+                its service account JSON key above. Changes apply to new speech requests without restarting Ficus.
               </p>
               <p className="text-xs text-muted">
                 Administrators can also configure Application Default Credentials on the server. Transcription uses the
@@ -243,7 +243,7 @@ export function IntegrationsSection() {
       <header>
         <h3 className="text-lg font-semibold text-primary">Integrations</h3>
         <p className="mt-1 text-sm text-muted">
-          Connect the apps your squads use. Enable or disable them across Tau without losing their settings.
+          Connect the apps your squads use. Enable or disable them across Ficus without losing their settings.
         </p>
       </header>
       <div className="relative">

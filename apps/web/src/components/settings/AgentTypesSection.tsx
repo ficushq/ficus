@@ -266,7 +266,7 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
         <span>
           System-only type
           <span className="block text-xs text-muted">
-            Reserved for a Tau-managed role. Excluded from worker choices.
+            Reserved for a Ficus-managed role. Excluded from worker choices.
           </span>
         </span>
       </label>
@@ -483,7 +483,7 @@ function AgentTypeRow({
               <span>
                 System-only type
                 <span className="block text-xs text-muted">
-                  Reserved for a Tau-managed role. Excluded from worker choices.
+                  Reserved for a Ficus-managed role. Excluded from worker choices.
                 </span>
               </span>
               {fieldActions('systemOnly')}

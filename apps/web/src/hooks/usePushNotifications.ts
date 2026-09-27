@@ -57,7 +57,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     if (!isSupported) {
       setError(
         desktopBridge()
-          ? 'Enable desktop notifications from the Tau application menu.'
+          ? 'Enable desktop notifications from the Ficus application menu.'
           : 'Push notifications not supported'
       )
       return

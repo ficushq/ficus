@@ -300,7 +300,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       if (!service.channelSettings?.manifest) return c.json({ error: 'Unknown integration' }, 404)
       c.header('Cache-Control', 'no-store')
       c.header('Content-Type', 'application/yaml; charset=utf-8')
-      c.header('Content-Disposition', 'attachment; filename="tau-slack-app-manifest.yaml"')
+      c.header('Content-Disposition', 'attachment; filename="ficus-slack-app-manifest.yaml"')
       return c.body(service.channelSettings.manifest())
     })
     .put(
@@ -697,7 +697,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       async (c) => {
         const identity = c.get('identity')
         // Signatures vouch for the connected account; only the squad's agents commit through this path.
-        if (identity?.type !== 'agent') return c.json({ error: 'Only agents sign commits through Tau' }, 403)
+        if (identity?.type !== 'agent') return c.json({ error: 'Only agents sign commits through Ficus' }, 403)
         if (!service.signGitObject) return c.json({ error: 'Commit signing is unavailable' }, 404)
         c.header('Cache-Control', 'no-store')
         try {

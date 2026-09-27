@@ -69,7 +69,7 @@ test('shows the installed app version, short Core commit, up-to-date status, and
   const lastCheckedAt = new Date(Date.now() - 5 * 60_000).toISOString()
   const { container } = await renderPanel(fakeUpdates({ ...baseState, lastCheckedAt }))
 
-  expect(container.textContent).toContain('Tau Desktop updates')
+  expect(container.textContent).toContain('Ficus Desktop updates')
   expect(container.textContent).toContain('1.4.0')
   expect(container.textContent).toContain('0123456')
   expect(container.textContent).not.toContain('0123456789abcdef')
@@ -119,7 +119,7 @@ test('a ready update offers Restart to update, which installs it', async () => {
   const updates = fakeUpdates({ ...baseState, phase: 'ready', availableVersion: '1.5.0' })
   const { container } = await renderPanel(updates)
 
-  expect(container.textContent).toContain('Tau 1.5.0 is ready')
+  expect(container.textContent).toContain('Ficus 1.5.0 is ready')
   await harness.act(async () => fireEvent.click(button(container, 'Restart to update')))
   expect(updates.calls.install).toBe(1)
 })
@@ -127,7 +127,7 @@ test('a ready update offers Restart to update, which installs it', async () => {
 test('installing disables Check now', async () => {
   const { container } = await renderPanel(fakeUpdates({ ...baseState, phase: 'installing', availableVersion: '1.5.0' }))
 
-  expect(container.textContent).toContain('Restarting to install Tau 1.5.0')
+  expect(container.textContent).toContain('Restarting to install Ficus 1.5.0')
   expect(button(container, 'Check now').disabled).toBe(true)
 })
 
@@ -154,7 +154,7 @@ test('without update permission, status is visible but Check now and Restart to 
     false
   )
 
-  expect(container.textContent).toContain('Tau 1.5.0 is ready')
+  expect(container.textContent).toContain('Ficus 1.5.0 is ready')
   expect(container.textContent).not.toContain('Restart to update')
   expect(container.textContent).not.toContain('Check now')
 })
@@ -196,7 +196,7 @@ test('inside the desktop app, the Updates page uses native updates without polli
         </QueryClientProvider>
       )
     )
-    expect(container.textContent).toContain('Tau Desktop updates')
+    expect(container.textContent).toContain('Ficus Desktop updates')
     expect(container.textContent).not.toContain('Auto-update this instance')
     expect(requests.filter((url) => url.includes('/updates/'))).toEqual([])
   } finally {

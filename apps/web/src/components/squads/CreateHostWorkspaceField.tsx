@@ -30,7 +30,7 @@ export function CreateHostWorkspaceField({
         className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md font-mono  focus:ring-2 focus:ring-accent"
       />
       <p id={helpId} className="mt-1 text-xs text-muted">
-        Default: <span className="font-mono">{defaultPath}</span>. Enter an absolute path to override it. Tau will
+        Default: <span className="font-mono">{defaultPath}</span>. Enter an absolute path to override it. Ficus will
         create the directory if needed.
       </p>
       {error && <p className="mt-1 text-xs text-status-danger-600 dark:text-status-danger-400">{error}</p>}

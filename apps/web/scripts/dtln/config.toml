@@ -1,4 +1,4 @@
-# Replacement for upstream dtln-rs's .cargo/config.toml, overlaid by the Tau
+# Replacement for upstream dtln-rs's .cargo/config.toml, overlaid by the Ficus
 # denoiser build (apps/web/scripts/dtln/Dockerfile). Identical to upstream
 # except `ENVIRONMENT=web,worker` is unquoted: Emscripten 4.x parses the quoted
 # form as a string and refuses it ("setting `ENVIRONMENT` expects `list`").

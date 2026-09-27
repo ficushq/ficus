@@ -56,7 +56,7 @@ describe('Discord verified HTTP interactions', () => {
               ? undefined
               : { type: scope === 'thread' ? 11 : 0, parent_id: scope === 'thread' ? 'parent' : undefined },
           user: { id: 'user', username: 'User' },
-          data: { name: 'tau', options: [{ name: scope === 'dm' ? 'help' : 'squad', type: 1 }] },
+          data: { name: 'ficus', options: [{ name: scope === 'dm' ? 'help' : 'squad', type: 1 }] },
         }),
       })
       expect(res.status).toBe(202)

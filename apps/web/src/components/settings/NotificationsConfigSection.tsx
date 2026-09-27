@@ -228,7 +228,7 @@ export function NotificationsConfigSection() {
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-primary">Notification Rules</h3>
-        <p className="text-sm text-muted mt-1">Decide which updates Tau sends to people across your workspace.</p>
+        <p className="text-sm text-muted mt-1">Decide which updates Ficus sends to people across your workspace.</p>
       </div>
       <DesktopNotificationsSetting />
 

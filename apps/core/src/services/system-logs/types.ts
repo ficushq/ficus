@@ -1,7 +1,7 @@
 /**
  * System Log Provider Abstraction
  *
- * Provides read-only streaming of Tau's own system logs (API/core and worker
+ * Provides read-only streaming of Ficus's own system logs (API/core and worker
  * instances). Different runtimes (Kubernetes, PM2, bare-metal) implement the
  * same SystemLogProvider interface.
  *
@@ -56,7 +56,7 @@ export interface SystemLogProviderDescriptor {
 }
 
 /**
- * A provider streams log lines for logical Tau components.
+ * A provider streams log lines for logical Ficus components.
  * Each provider maps logical component names to concrete targets using
  * server-side configuration only.
  */

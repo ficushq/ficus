@@ -3,7 +3,7 @@ import { validateCustomTheme, type CustomThemeDocument } from './custom-theme'
 
 /** Cross-platform metadata only; palettes and variant classes remain web-owned. */
 export const SYNC_THEME_DESCRIPTORS: readonly ThemeDescriptor[] = [
-  { id: 'tau', label: 'Tau', kind: 'dual' },
+  { id: 'tau', label: 'Ficus', kind: 'dual' },
   { id: 'harbor', label: 'Harbor', kind: 'dual' },
   { id: 'forest', label: 'Forest', kind: 'dual' },
   { id: 'ember', label: 'Ember', kind: 'dual' },

@@ -252,7 +252,7 @@ export function AssistantCommandCenter({
           ref={searchInput}
           role="combobox"
           aria-label={
-            squadScope ? `Search ${destination?.label} or start a conversation` : 'Search Tau or ask anything'
+            squadScope ? `Search ${destination?.label} or start a conversation` : 'Search Ficus or ask anything'
           }
           aria-expanded={!squadScope || Boolean(query.trim())}
           aria-controls="command-center-results"

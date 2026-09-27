@@ -1,4 +1,4 @@
-# Tau Sandbox — multi-stage build (3 stages, 2 published images)
+# Ficus Sandbox — multi-stage build (3 stages, 2 published images)
 #
 #   base   — shared minimal core. Internal build stage; never run as a pod.
 #   agent  — minimal per-agent light box  → tau-sandbox-agent  (sandboxType: agent)

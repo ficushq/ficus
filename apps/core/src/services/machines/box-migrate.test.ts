@@ -65,7 +65,7 @@ function makeBox(overrides: Partial<MachineBox> = {}): MachineBox {
  *  caller var plus the machine-derived vars a migrate must re-bake, not copy. */
 const OLD_SERVER_ENV = [
   'FICUS_SANDBOX_ID=' + SANDBOX_ID,
-  'GIT_USER_NAME=Tau Test',
+  'GIT_USER_NAME=Ficus Test',
   'EXECUTOR_PORT=50100',
   'EXECUTOR_AUTH_TOKEN=tok-old',
   'EXECUTOR_BIND=127.0.0.1',
@@ -504,7 +504,7 @@ describe('migrateBox', () => {
     const env = h.installs[0].env
     // Carried caller vars survive.
     expect(env.FICUS_SANDBOX_ID).toBe(h.sandboxId)
-    expect(env.GIT_USER_NAME).toBe('Tau Test')
+    expect(env.GIT_USER_NAME).toBe('Ficus Test')
     // FICUS_API_URL is ALWAYS re-resolved for the TARGET machine (the reverse
     // tunnel is the default box→core path, and a tunnel URL is machine-specific)
     // — even when the carried value looks like a public URL.

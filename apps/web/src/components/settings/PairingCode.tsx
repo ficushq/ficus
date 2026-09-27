@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { RenderedPairing } from './pairingQr'
 
-// The deep link only resolves on a phone with the Tau app installed; hide it on desktop.
+// The deep link only resolves on a phone with the Ficus app installed; hide it on desktop.
 const IS_MOBILE = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
 
 /**
@@ -14,7 +14,7 @@ export function PairingCode({
   onExpired,
   onRegenerate,
   regenerating,
-  hint = 'Scan with the Tau app.',
+  hint = 'Scan with the Ficus app.',
 }: {
   pairing: RenderedPairing & { code: string }
   onExpired: () => void
@@ -54,7 +54,7 @@ export function PairingCode({
           href={pairing.deepLink}
           className="px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
         >
-          Open in the Tau app
+          Open in the Ficus app
         </a>
       )}
       <button

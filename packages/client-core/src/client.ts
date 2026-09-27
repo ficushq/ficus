@@ -18,7 +18,7 @@ import { notificationConfigResource } from './resources/notificationConfig'
 import { systemResource } from './resources/system'
 
 /**
- * Assemble the full Tau API client over a host-provided transport.
+ * Assemble the full Ficus API client over a host-provided transport.
  * Web injects a cookie+CSRF transport; mobile injects a bearer-token transport.
  *
  * Resources cover the surface shared by web and mobile. Web-only modules

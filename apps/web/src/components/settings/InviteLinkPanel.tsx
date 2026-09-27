@@ -20,7 +20,7 @@ function inviteToken(url: string): string | null {
  * The one-time invite link a no-email instance hands to the admin.
  *
  * Normally it is copied and sent to the invitee. A pending ADMIN is different
- * inside Tau Desktop (or when the viewer is the instance-password session setting
+ * inside Ficus Desktop (or when the viewer is the instance-password session setting
  * up its own admin): the passkey belongs where that admin will sign in, and one
  * created in an external browser can't be used in the desktop app. There the
  * panel offers to open the link in this window, through the app's own route.
@@ -63,11 +63,11 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
             onClick={() => navigate(`/register?token=${encodeURIComponent(token)}`)}
             className="ficus-button ficus-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover shrink-0"
           >
-            Open in Tau
+            Open in Ficus
           </button>
           <p className="text-xs text-muted">
             {inDesktop
-              ? 'Sets up this admin’s passkey here and signs this window in as them. A passkey created in another browser can’t be used in Tau Desktop.'
+              ? 'Sets up this admin’s passkey here and signs this window in as them. A passkey created in another browser can’t be used in Ficus Desktop.'
               : 'Sets up this admin’s passkey here and signs this window in as them.'}
           </p>
         </div>

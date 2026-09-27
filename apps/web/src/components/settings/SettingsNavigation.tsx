@@ -136,7 +136,8 @@ export function SettingsNavigation({
     onSectionChange(id)
     setSearch('')
   }
-  const showSetupResult = showOnboardingLink && !!search.trim() && matchesSetting(search, 'Set up Tau onboarding setup')
+  const showSetupResult =
+    showOnboardingLink && !!search.trim() && matchesSetting(search, 'Set up Ficus onboarding setup')
   const resultCount = results.length + Number(showSetupResult)
   const resultKey = JSON.stringify([search, results.map((result) => [result.section, result.id]), showSetupResult])
   const selectedIndex = selection.key === resultKey ? Math.min(selection.index, resultCount - 1) : 0
@@ -285,7 +286,7 @@ export function SettingsNavigation({
           </p>
         )}
         {showOnboardingLink &&
-          (search.trim() ? matchesSetting(search, 'Set up Tau onboarding setup') : inAdministration) && (
+          (search.trim() ? matchesSetting(search, 'Set up Ficus onboarding setup') : inAdministration) && (
             <Link
               to="/onboarding"
               id={`${searchId}-${surface}-result-${results.length}`}
@@ -300,7 +301,7 @@ export function SettingsNavigation({
               )}
             >
               <SettingsIcon className="h-4 w-4" />
-              Set up Tau
+              Set up Ficus
             </Link>
           )}
       </nav>

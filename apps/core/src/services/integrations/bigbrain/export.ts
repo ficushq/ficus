@@ -23,7 +23,7 @@ export async function sendBigbrainSession(input: {
     fetch: input.fetch,
   })
   await client.sendSession(input.payload, {
-    session: 'tau',
+    session: 'ficus',
     cwd: '.',
     stream: input.streamId,
     fromLine: input.fromLine,

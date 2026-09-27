@@ -8,7 +8,7 @@ const entity: EntitySearchResult = {
   label: 'Feed cleanup',
   detail: '',
   squadId: 'squad-id',
-  squadName: 'Tau',
+  squadName: 'Ficus',
   status: 'active',
   updatedAt: '2026-09-06',
   score: 80,

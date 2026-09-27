@@ -9,7 +9,7 @@ import {
 } from './custom-theme'
 
 const builtins = [
-  { id: 'tau', label: 'Tau', kind: 'dual' as const },
+  { id: 'tau', label: 'Ficus', kind: 'dual' as const },
   { id: 'high-contrast', label: 'High contrast', kind: 'unified' as const },
 ]
 // v1 input: one concrete appearance per document.

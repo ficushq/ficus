@@ -54,8 +54,8 @@ export function VoiceWorkspacePage({
     return (
       <main className="min-h-[100dvh] bg-chrome-paper text-status-neutral-950 flex items-center justify-center p-8">
         <p className="max-w-md text-center text-sm text-status-neutral-500">
-          Voice workspace requires microphone support in a secure browser context. Open Tau over HTTPS or localhost in a
-          browser that supports WebRTC.
+          Voice workspace requires microphone support in a secure browser context. Open Ficus over HTTPS or localhost in
+          a browser that supports WebRTC.
         </p>
       </main>
     )

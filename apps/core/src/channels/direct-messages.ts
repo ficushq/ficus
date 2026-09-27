@@ -12,7 +12,7 @@ import type { ChannelEvent, ChannelProvider, InboundMessage } from './provider'
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 const linkRequired =
-  'Link your account in Tau → Settings → Account → Linked chat accounts, then send /tau squad. Private squad switching requires a linked account with chat access.'
+  'Link your account in Ficus → Settings → Account → Linked chat accounts, then send /ficus squad. Private squad switching requires a linked account with chat access.'
 
 /** The chat lock serializes selection and first-agent creation across all API replicas.
  * Never use global-pool entity helpers under it; publish created events only after commit. */
@@ -70,13 +70,13 @@ export async function resolveDirectChat(instance: ChannelInstance, event: Channe
     }
     const picker = () =>
       accessible.length
-        ? `Choose a squad with ${instance.provider === 'slack' ? '@Tau squad' : '/tau squad'} <slug, name or ID>:\n${accessible
+        ? `Choose a squad with ${instance.provider === 'slack' ? '@Ficus squad' : '/ficus squad'} <slug, name or ID>:\n${accessible
             .slice(0, 10)
             .map((s) => `${s.name} — ${idToSlug[s.id]}`)
             .join(
               '\n'
             )}${accessible.length > 10 ? '\nShowing the first 10. You can also enter another squad’s full slug, name or ID.' : ''}`
-        : 'Your Tau account has no accessible active squads. Ask an administrator for chat access.'
+        : 'Your Ficus account has no accessible active squads. Ask an administrator for chat access.'
     if (event.command === 'squad') {
       const query = event.text.trim().toLowerCase()
       if (!query) {
@@ -90,7 +90,7 @@ export async function resolveDirectChat(instance: ChannelInstance, event: Channe
       const selected = matches[0]!
       await tx.update(channelDirectChats).set({ squadId: selected.id }).where(eq(channelDirectChats.id, chat.id))
       return {
-        reply: `Now talking to ${selected.name}. Messages go to this squad until you switch again${instance.provider === 'slack' ? ' in this thread with @Tau squad <slug>' : ' with /tau squad'}. Earlier work may still reply here.`,
+        reply: `Now talking to ${selected.name}. Messages go to this squad until you switch again${instance.provider === 'slack' ? ' in this thread with @Ficus squad <slug>' : ' with /ficus squad'}. Earlier work may still reply here.`,
       }
     }
     const target = chat.squadId
@@ -175,19 +175,19 @@ export async function handleDirectMessage(provider: ChannelProvider, event: Chan
     return reply(
       [
         'Commands:',
-        '/tau help — Show this menu',
-        '/tau link <code> — Link your Tau account',
-        '/tau squad — List available squads and the current selection',
-        '/tau squad <slug, name or ID> — Switch squads',
-        '/tau status — Show the selected squad’s active and queued work',
-        '/tau ask <message> — Send a request to the selected squad',
+        '/ficus help — Show this menu',
+        '/ficus link <code> — Link your Ficus account',
+        '/ficus squad — List available squads and the current selection',
+        '/ficus squad <slug, name or ID> — Switch squads',
+        '/ficus status — Show the selected squad’s active and queued work',
+        '/ficus ask <message> — Send a request to the selected squad',
         '',
-        'You can also send ordinary messages. Help and linking do not require a selected squad. Set up account linking in Tau → Settings → Account → Linked chat accounts.',
+        'You can also send ordinary messages. Help and linking do not require a selected squad. Set up account linking in Ficus → Settings → Account → Linked chat accounts.',
       ].join('\n')
     )
   if (event.command === 'notify' || event.command === 'unnotify')
     return reply(
-      'Configure notification destinations in Tau Settings. Squad switching here only changes this conversation.'
+      'Configure notification destinations in Ficus Settings. Squad switching here only changes this conversation.'
     )
   const result = await resolveDirectChat(instance, event)
   if (result.reply !== undefined) return reply(result.reply)

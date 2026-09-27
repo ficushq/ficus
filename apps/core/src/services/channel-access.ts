@@ -5,6 +5,7 @@ import { HTTPException } from 'hono/http-exception'
 import { db, channelIdentityLinks, channelLinkChallenges, channelInstances, users } from '../db'
 import { ChannelInstance } from '../entities/ChannelInstance'
 import { hasUserPermissionWithExecutor } from './rbac/permissions'
+import { COMMAND_WORD } from '../lib/channels'
 
 const identityScope = (instance: ChannelInstance) => JSON.stringify([instance.provider, instance.platformId])
 
@@ -148,7 +149,7 @@ export async function confirmChannelLink(userId: string, id: string) {
         )
       )
     if (link.userId !== userId)
-      throw new HTTPException(409, { message: 'This external account is already linked to another Tau account.' })
+      throw new HTTPException(409, { message: 'This external account is already linked to another Ficus account.' })
     await tx.delete(channelLinkChallenges).where(eq(channelLinkChallenges.id, id))
     return { id: link.id }
   })
@@ -162,14 +163,14 @@ export async function channelLinkReply(
 ): Promise<string | null> {
   const match = text
     .trim()
-    .replace(/^@Tau\s*/i, '')
+    .replace(new RegExp(String.raw`^@${COMMAND_WORD}\s*`, 'i'), '')
     .match(/^link\s+([a-f0-9]{32})$/i)
   if (!match) return null
   if (instance.disabled) return 'This channel connection is disabled.'
   return (await claimChannelLink(instance.id, user.id, user.name, match[1].toLowerCase()))
-    ? 'Account verified. Return to Tau → Settings → Account → Linked chat accounts and confirm this account. Linking does not grant squad access.'
-    : 'This link code is invalid, expired, or already used. Start a new request in Tau → Settings → Account → Linked chat accounts.'
+    ? 'Account verified. Return to Ficus → Settings → Account → Linked chat accounts and confirm this account. Linking does not grant squad access.'
+    : 'This link code is invalid, expired, or already used. Start a new request in Ficus → Settings → Account → Linked chat accounts.'
 }
 
 export const CHANNEL_ACCESS_DENIED =
-  'Link your account in Tau → Settings → Account → Linked chat accounts. Your Tau account must have permission to chat in this squad. An administrator can also explicitly trust this channel.'
+  'Link your account in Ficus → Settings → Account → Linked chat accounts. Your Ficus account must have permission to chat in this squad. An administrator can also explicitly trust this channel.'

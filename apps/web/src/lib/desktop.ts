@@ -39,7 +39,7 @@ export interface DesktopInstance {
   disconnect?(): Promise<void>
 }
 /**
- * The Tau Desktop preload bridge. Members added after the first release are
+ * The Ficus Desktop preload bridge. Members added after the first release are
  * optional: older and newer desktop builds keep `version: 1`, so feature-detect
  * each optional member rather than the version.
  */

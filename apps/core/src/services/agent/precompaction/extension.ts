@@ -50,7 +50,7 @@ export function createPrecompactionExtension(
     path: 'tau:precompaction',
     resolvedPath: 'tau:precompaction',
     sourceInfo: createSyntheticSourceInfo('tau:precompaction', {
-      source: 'tau',
+      source: 'ficus',
       scope: 'temporary',
       origin: 'top-level',
     }),

@@ -18,7 +18,7 @@ export type DeviceTokenPollResult =
   | { status: 'authorized'; token: string; deviceId: string; user: PairedUser }
 
 export type DeviceAuthorizationPlatform = 'cli' | 'desktop'
-const DEFAULT_NAMES: Record<DeviceAuthorizationPlatform, string> = { cli: 'Tau CLI', desktop: 'Tau Desktop' }
+const DEFAULT_NAMES: Record<DeviceAuthorizationPlatform, string> = { cli: 'Ficus CLI', desktop: 'Ficus Desktop' }
 
 export async function createDeviceAuthorization(input: { name: string; platform?: DeviceAuthorizationPlatform }) {
   const platform = input.platform ?? 'cli'

@@ -15,6 +15,7 @@ import {
   claimChannelLink,
   confirmChannelLink,
   canUseChannel,
+  channelLinkReply,
   parseTrustedChannelIds,
 } from './channel-access'
 import { createTestUser, createTestRole, assignRole, cleanupTestRbac, type TestUser } from '../test-utils'
@@ -57,7 +58,7 @@ afterAll(async () => {
 })
 
 describe('channel identity proof and authorization', () => {
-  test('requires both external proof and Tau confirmation; enforces squad scope', async () => {
+  test('requires both external proof and Ficus confirmation; enforces squad scope', async () => {
     expect(await canUseChannel(instance, 'C1', 'U1', squadId)).toBe(false)
     const challenge = await startChannelLink(user.id)
     await expect(confirmChannelLink(user.id, challenge.id)).rejects.toThrow()
@@ -147,5 +148,15 @@ describe('channel identity proof and authorization', () => {
   test('rejects blanket trust and malformed lists', () => {
     for (const value of ['C1', ['*'], [' * '], [''], [null], {}]) expect(() => parseTrustedChannelIds(value)).toThrow()
     expect(parseTrustedChannelIds([' C1 ', 'C1'])).toEqual(['C1'])
+  })
+})
+
+describe('link command text', () => {
+  test('a bot-mention link command (@Ficus link <code>) claims the proof', async () => {
+    const linker = await createTestUser({ prefix })
+    const challenge = await startChannelLink(linker.id)
+    expect(
+      await channelLinkReply(instance, { id: 'U-mention', name: 'Mention' }, `@Ficus link ${challenge.code}`)
+    ).toStartWith('Account verified.')
   })
 })

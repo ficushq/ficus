@@ -59,7 +59,7 @@ test('unknown results prompt retry without falsely reporting a missing installat
   expect(container.textContent).toContain('Could not fully verify')
   expect(container.textContent).not.toContain('The App is not installed')
 })
-test('custom Apps link to installation management instead of installing the Tau App', async () => {
+test('custom Apps link to installation management instead of installing the Ficus App', async () => {
   const container = await render(missing, false)
   expect(container.querySelector('a')!.href).toBe('https://github.com/settings/installations')
 })

@@ -90,7 +90,7 @@ test('proxy HTML errors are concise through both API clients without losing JSON
       status: 502,
       headers: { 'Content-Type': contentType },
     })
-    expect(await shared(response)).toBe('Tau is temporarily unavailable (502). Please try again shortly.')
+    expect(await shared(response)).toBe('Ficus is temporarily unavailable (502). Please try again shortly.')
   }
   const details = JSON.stringify([
     { code: 'invalid_literal', path: ['schemaVersion'], expected: 1, message: 'Expected 1' },

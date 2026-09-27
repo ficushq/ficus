@@ -22,7 +22,7 @@ HTTP service that runs inside each K8s sandbox pod, providing command execution,
 bun run sandbox:build:k8s    # builds tau-sandbox Docker image
 ```
 
-The K8s sandbox image does not bundle the Tau CLI. Tau Core stages the built CLI into the shared core-data volume and mounts it read-only at `/usr/local/bin/ficus` when creating sandbox pods. Run `bun run build:cli` before starting or recreating K8s sandboxes after CLI changes; local auto-update does this without running `k3d:import`.
+The K8s sandbox image does not bundle the Ficus CLI. Ficus Core stages the built CLI into the shared core-data volume and mounts it read-only at `/usr/local/bin/ficus` when creating sandbox pods. Run `bun run build:cli` before starting or recreating K8s sandboxes after CLI changes; local auto-update does this without running `k3d:import`.
 
 ### Browser smoke test
 

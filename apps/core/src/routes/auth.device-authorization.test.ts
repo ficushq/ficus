@@ -27,7 +27,7 @@ describe('device authorization routes', () => {
     const start = await app.request('/api/auth/device/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
-      body: JSON.stringify({ name: ' Tau CLI on atlas ' }),
+      body: JSON.stringify({ name: ' Ficus CLI on atlas ' }),
     })
     expect(start.status).toBe(200)
     expect(start.headers.get('cache-control')).toBe('no-store')
@@ -50,7 +50,7 @@ describe('device authorization routes', () => {
       body: JSON.stringify({ verificationCode }),
     })
     expect(inspect.status).toBe(200)
-    expect(await inspect.json()).toMatchObject({ name: 'Tau CLI on atlas', platform: 'cli' })
+    expect(await inspect.json()).toMatchObject({ name: 'Ficus CLI on atlas', platform: 'cli' })
     const approve = await app.request('/api/auth/device/approve', {
       method: 'POST',
       headers,
@@ -83,7 +83,7 @@ describe('device authorization routes', () => {
     const listed = await app.request('/api/auth/devices', { headers: authHeaders(minted.token) })
     expect(listed.status).toBe(200)
     expect((await listed.json()) as Array<{ id: string; platform: string; name: string }>).toContainEqual(
-      expect.objectContaining({ id: minted.deviceId, platform: 'cli', name: 'Tau CLI on atlas' })
+      expect.objectContaining({ id: minted.deviceId, platform: 'cli', name: 'Ficus CLI on atlas' })
     )
 
     const revoked = await app.request(`/api/auth/devices/${minted.deviceId}`, {
@@ -155,7 +155,7 @@ describe('device authorization routes', () => {
           host: 'tau.example.com',
           'x-forwarded-proto': 'https',
         },
-        body: JSON.stringify({ name: 'Tau CLI on atlas' }),
+        body: JSON.stringify({ name: 'Ficus CLI on atlas' }),
       })
       expect(response.status).toBe(200)
       const grant = (await response.json()) as { verificationUri: string }

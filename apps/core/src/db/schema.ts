@@ -937,7 +937,7 @@ export const squads = pgTable('squads', {
   machineId: uuid('machine_id').references((): AnyPgColumn => machines.id, { onDelete: 'set null' }),
   // Host sandbox runtime only: absolute directory on the core's machine this
   // squad's workspace lives in (NULL = <HOME_DIR>/workspaces/squads/<id>).
-  // Stored on any runtime, honoured only by FICUS_SANDBOX_RUNTIME=host. Tau never
+  // Stored on any runtime, honoured only by FICUS_SANDBOX_RUNTIME=host. Ficus never
   // deletes this directory.
   hostWorkspacePath: text('host_workspace_path'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -1044,7 +1044,7 @@ export const localDeployments = pgTable(
     keepSandboxAlive: boolean('keep_sandbox_alive').notNull().default(true),
     command: text('command'),
     cwd: text('cwd'),
-    /** Attached deployments only: absolute sandbox-side log file Tau tails. */
+    /** Attached deployments only: absolute sandbox-side log file Ficus tails. */
     logPath: text('log_path'),
     envSecretRefs: text('env_secret_refs').array(),
     processId: varchar('process_id', { length: 255 }),
@@ -2067,7 +2067,7 @@ export const instanceIdentity = pgTable('instance_identity', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 
-// Federation Peers - known remote Tau instances this instance can route to
+// Federation Peers - known remote Ficus instances this instance can route to
 export const peers = pgTable('peers', {
   id: uuid('id').primaryKey().defaultRandom(),
   localAlias: varchar('local_alias', { length: 200 }).notNull().unique(),
@@ -2328,7 +2328,7 @@ export const channelDirectAgents = pgTable(
   (table) => [unique('channel_direct_agent_scope_unique').on(table.chatId, table.squadId)]
 )
 
-// The user starts in Tau, proves control in the provider, then confirms the sender in Tau.
+// The user starts in Ficus, proves control in the provider, then confirms the sender in Ficus.
 export const channelLinkChallenges = pgTable('channel_link_challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
@@ -2480,7 +2480,7 @@ export const deviceTokens = pgTable('device_tokens', {
   revokedAt: timestamp('revoked_at'),
 })
 
-// Short-lived browser-approved grants used to bootstrap an unauthenticated CLI or Tau Desktop instance.
+// Short-lived browser-approved grants used to bootstrap an unauthenticated CLI or Ficus Desktop instance.
 export const deviceAuthorizations = pgTable(
   'device_authorizations',
   {

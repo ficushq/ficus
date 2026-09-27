@@ -68,7 +68,7 @@ describe('reviewer access page', () => {
 
   test('turns the access code into a pairing QR without signing the browser in', async () => {
     await render(true)
-    expect(container.textContent).toContain('Review Tau')
+    expect(container.textContent).toContain('Review Ficus')
     await submit('reviewer-secret')
     expect(demoPair).toHaveBeenCalledWith('reviewer-secret')
     expect(container.querySelector('img[alt="Pairing QR code"]')?.getAttribute('src')).toBe('data:image/png;base64,QR')
@@ -85,6 +85,6 @@ describe('reviewer access page', () => {
 
     demoPair.mockRejectedValueOnce(new Error('demo_not_seeded'))
     await submit('reviewer-secret')
-    expect(container.textContent).toContain('tau demo seed')
+    expect(container.textContent).toContain('ficus demo seed')
   })
 })

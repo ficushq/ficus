@@ -85,7 +85,7 @@ export function RecommendationsPage() {
         <h2 className="text-lg font-semibold text-primary">Ops Insights</h2>
         <p className="text-sm text-secondary">
           Operational recommendations distilled from completed executions.{' '}
-          <span className="text-muted">Recommendation only — Tau never applies these changes automatically.</span>
+          <span className="text-muted">Recommendation only — Ficus never applies these changes automatically.</span>
         </p>
       </header>
 

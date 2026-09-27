@@ -143,7 +143,7 @@ export interface ISandboxManager {
   ensureSandbox(sandboxId: string, opts: SandboxOptions): Promise<string>
   /** Adopt a physically existing sandbox without creating or recreating it. */
   attachExistingSandbox?(sandboxId: string, opts: SandboxOptions): Promise<boolean>
-  /** Reconcile Tau's isolated managed toolchain after the physical sandbox is ready. */
+  /** Reconcile Ficus's isolated managed toolchain after the physical sandbox is ready. */
   reconcileToolchain?(
     sandboxId: string,
     opts: SandboxOptions,

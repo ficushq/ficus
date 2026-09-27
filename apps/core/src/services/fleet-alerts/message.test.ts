@@ -43,12 +43,12 @@ describe('fleet incident messages', () => {
   test('a stalled squad is named, with readable waiting time instead of raw minutes', () => {
     const message = renderFleetIncidentMessage(
       claim({ details: { demandCount: 1, oldestDemandAt: ago(4070).toISOString() } }),
-      { squadName: 'Tau Core' },
+      { squadName: 'Ficus Core' },
       NOW
     )
-    expect(message.subject).toBe('Squad Tau Core stalled')
+    expect(message.subject).toBe('Squad Ficus Core stalled')
     expect(message.content).toBe(
-      'Work in squad Tau Core has been stalled for 45m.\n\n' +
+      'Work in squad Ficus Core has been stalled for 45m.\n\n' +
         'Cause: No agent run has started, and no provider or sandbox problem explains it.\n' +
         'Waiting: 1 work item, the oldest for 2d 19h\n' +
         'Fix: Check machine + sandbox health first (`ficus machines list`), then worker pickup (`ficus worker status`).'
@@ -56,9 +56,9 @@ describe('fleet incident messages', () => {
     expect(message.content).not.toContain(SQUAD_ID)
     expect(message.content).not.toContain('4070m')
     expect(message.push).toEqual({
-      title: 'Squad Tau Core stalled',
-      body: 'Work in squad Tau Core has been stalled for 45m.',
-      subtitle: 'Tau Core',
+      title: 'Squad Ficus Core stalled',
+      body: 'Work in squad Ficus Core has been stalled for 45m.',
+      subtitle: 'Ficus Core',
       collapseKey: 'fleet:incident',
       threadKey: 'fleet',
       interruptionLevel: 'active',
@@ -73,10 +73,10 @@ describe('fleet incident messages', () => {
         remediation: undefined,
         details: { demandCount: 2, provider: 'openai-codex' },
       }),
-      { squadName: 'Tau Core' },
+      { squadName: 'Ficus Core' },
       NOW
     )
-    expect(message.subject).toBe('Squad Tau Core stalled: OpenAI Codex out of plan credits')
+    expect(message.subject).toBe('Squad Ficus Core stalled: OpenAI Codex out of plan credits')
     expect(message.content).toContain('Cause: OpenAI Codex plan credits are unavailable.')
     expect(message.content).toContain('Waiting: 2 work items')
   })
@@ -84,12 +84,12 @@ describe('fleet incident messages', () => {
   test('a recovery reports how long it lasted and the earlier cause, without remediation', () => {
     const message = renderFleetIncidentMessage(
       claim({ phase: 'recovery', incidentStartedAt: ago(190), incidentResolvedAt: ago(0) }),
-      { squadName: 'Tau Core' },
+      { squadName: 'Ficus Core' },
       NOW
     )
-    expect(message.subject).toBe('Squad Tau Core is running again')
+    expect(message.subject).toBe('Squad Ficus Core is running again')
     expect(message.content).toBe(
-      'Work in squad Tau Core is running again after being stalled for 3h 10m.\n\n' +
+      'Work in squad Ficus Core is running again after being stalled for 3h 10m.\n\n' +
         'Earlier cause: No agent run has started, and no provider or sandbox problem explains it.'
     )
     expect(message.push.interruptionLevel).toBe('passive')
@@ -138,10 +138,10 @@ describe('fleet incident messages', () => {
           reasons: ['callback_transport_degraded', 'devbox_unavailable', 'future_reason'],
         },
       }),
-      { agentName: 'reviewer', squadName: 'Tau Core' },
+      { agentName: 'reviewer', squadName: 'Ficus Core' },
       NOW
     )
-    expect(message.subject).toBe('The sandbox for reviewer in squad Tau Core is degraded')
+    expect(message.subject).toBe('The sandbox for reviewer in squad Ficus Core is degraded')
     expect(message.content).toContain(
       'Cause: VM sandbox setup is degraded: callback connection degraded, devbox unavailable.'
     )
@@ -187,18 +187,18 @@ describe('fleet incident messages', () => {
       })
 
     test('a squad sandbox alert gives the load, its duration, the effect, and how to find the job', () => {
-      const message = renderFleetIncidentMessage(overload({}), { squadName: 'Tau Core' }, NOW)
-      expect(message.subject).toBe('The sandbox for squad Tau Core is overloaded')
+      const message = renderFleetIncidentMessage(overload({}), { squadName: 'Ficus Core' }, NOW)
+      expect(message.subject).toBe('The sandbox for squad Ficus Core is overloaded')
       expect(message.content).toBe(
-        'The sandbox for squad Tau Core is overloaded: load 31.9 on 4 CPUs for 12m (463 MB free). ' +
+        'The sandbox for squad Ficus Core is overloaded: load 31.9 on 4 CPUs for 12m (463 MB free). ' +
           'Agents’ tool calls and toolchain checks time out while it lasts.\n\n' +
           `Cause: ${cause}\n` +
           'Peak load: 40.2\n' +
           `Fix: ${squadRemediation}`
       )
       expect(message.push).toMatchObject({
-        title: 'The sandbox for squad Tau Core is overloaded',
-        subtitle: 'Tau Core',
+        title: 'The sandbox for squad Ficus Core is overloaded',
+        subtitle: 'Ficus Core',
         interruptionLevel: 'active',
       })
     })
@@ -238,12 +238,12 @@ describe('fleet incident messages', () => {
           incidentResolvedAt: ago(0),
           details: { cpus: 4, load: [2.1, 6, 9], peakLoad: 40.2, memAvailableMb: 9_000, resolvedBy: 'load' },
         }),
-        { squadName: 'Tau Core' },
+        { squadName: 'Ficus Core' },
         NOW
       )
-      expect(message.subject).toBe('The sandbox for squad Tau Core recovered')
+      expect(message.subject).toBe('The sandbox for squad Ficus Core recovered')
       expect(message.content).toBe(
-        'The sandbox for squad Tau Core is no longer overloaded after 26m: load 2.1 on 4 CPUs.\n\n' +
+        'The sandbox for squad Ficus Core is no longer overloaded after 26m: load 2.1 on 4 CPUs.\n\n' +
           `Earlier cause: ${cause}`
       )
       expect(message.push.interruptionLevel).toBe('passive')
@@ -255,12 +255,12 @@ describe('fleet incident messages', () => {
           incidentResolvedAt: ago(0),
           details: { cpus: 2, load: [1.5, 3, 3], resolvedBy: 'load' },
         }),
-        { agentName: 'reviewer', squadName: 'Tau Core' },
+        { agentName: 'reviewer', squadName: 'Ficus Core' },
         NOW
       )
-      expect(agent.subject).toBe('The sandbox for reviewer in squad Tau Core recovered')
+      expect(agent.subject).toBe('The sandbox for reviewer in squad Ficus Core recovered')
       expect(agent.content).toStartWith(
-        'The sandbox for reviewer in squad Tau Core is no longer overloaded after 12m: load 1.5 on 2 CPUs.'
+        'The sandbox for reviewer in squad Ficus Core is no longer overloaded after 12m: load 1.5 on 2 CPUs.'
       )
     })
 
@@ -272,12 +272,12 @@ describe('fleet incident messages', () => {
           incidentResolvedAt: ago(0),
           details: { cpus: 4, load: [31.9, 28.7, 25.5], resolvedBy: 'unobserved' },
         }),
-        { squadName: 'Tau Core' },
+        { squadName: 'Ficus Core' },
         NOW
       )
-      expect(message.subject).toBe('The sandbox for squad Tau Core: overload alert closed')
+      expect(message.subject).toBe('The sandbox for squad Ficus Core: overload alert closed')
       expect(message.content).toStartWith(
-        'The sandbox for squad Tau Core has had no load reading for 10m (no agent is running in it, or it isn’t answering), so its overload alert is closed after 40m.'
+        'The sandbox for squad Ficus Core has had no load reading for 10m (no agent is running in it, or it isn’t answering), so its overload alert is closed after 40m.'
       )
     })
 

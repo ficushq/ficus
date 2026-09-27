@@ -38,7 +38,7 @@ export function blockedGraceMinutesError(value: number | null): string | null {
 export function hostWorkspacePathError(value: string | null): string | null {
   const parsed = updateSquadSchema.safeParse({ hostWorkspacePath: value })
   if (parsed.success) return null
-  // Nothing expands `~` on this path: the browser cannot know the Tau host's
+  // Nothing expands `~` on this path: the browser cannot know the Ficus host's
   // home directory, so the literal characters would reach the server. Say
   // that, rather than the schema's generic "must be an absolute path".
   if (value?.startsWith('~')) return 'Enter the full absolute path; `~` is not expanded here.'
@@ -173,7 +173,7 @@ export function SquadGeneralSettings({
             ? 'The squad’s identity and how other squads discover it.'
             : section === 'workflows'
               ? 'Control how much work runs at once and when waiting work frees a slot.'
-              : 'Choose where this squad works on the Tau host.'}
+              : 'Choose where this squad works on the Ficus host.'}
         </p>
       </div>
 
@@ -365,8 +365,8 @@ export function SquadGeneralSettings({
               </p>
             )}
             <p id="squad-host-workspace-path-help" className="text-xs text-muted mt-1">
-              Absolute directory on the Tau host this squad works in. Takes effect on the squad&apos;s next sandbox
-              start. Tau never deletes this directory.
+              Absolute directory on the Ficus host this squad works in. Takes effect on the squad&apos;s next sandbox
+              start. Ficus never deletes this directory.
             </p>
             {hostError && <p className="text-xs text-status-danger-500 mt-1">{hostError}</p>}
           </div>

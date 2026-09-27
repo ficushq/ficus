@@ -167,7 +167,7 @@ export function workerEventBindHost(): string {
   if (!configured || configured === '127.0.0.1') return '127.0.0.1'
   log.warn(
     `FICUS_WORKER_EVENT_BIND='${configured}' — the internal event listener is bound beyond loopback. ` +
-      'Ensure it is reachable ONLY from the paired tau process (private network / container network).'
+      'Ensure it is reachable ONLY from the paired Ficus process (private network / container network).'
   )
   return configured
 }

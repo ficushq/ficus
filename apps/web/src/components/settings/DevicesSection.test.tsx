@@ -8,35 +8,35 @@ describe('Paired Devices platform labels', () => {
     expect(['ios', 'android', 'cli', 'desktop', 'future'].map(devicePlatformLabel)).toEqual([
       'iOS',
       'Android',
-      'Tau CLI',
-      'Tau Desktop',
+      'Ficus CLI',
+      'Ficus Desktop',
       'Device',
     ])
   })
 
   it('labels desktop devices and phrases approval by platform', () => {
-    expect(devicePlatformLabel('desktop')).toBe('Tau Desktop')
+    expect(devicePlatformLabel('desktop')).toBe('Ficus Desktop')
     expect(deviceApprovalErrorMessage(new Error(), 'desktop')).toBe(
-      'Approval failed because this request is expired or already used. Start again from Tau Desktop.'
+      'Approval failed because this request is expired or already used. Start again from Ficus Desktop.'
     )
-    expect(deviceApprovalErrorMessage(new Error(), 'cli')).toContain('tau auth login')
+    expect(deviceApprovalErrorMessage(new Error(), 'cli')).toContain('ficus auth login')
   })
 })
 
 describe('DeviceAuthorizationApproval heading by platform', () => {
   const expiresAt = '2030-01-01T12:00:00.000Z'
 
-  it('renders the Tau Desktop heading for a desktop pairing request', () => {
+  it('renders the Ficus Desktop heading for a desktop pairing request', () => {
     const html = renderToStaticMarkup(
       <DeviceAuthorizationApproval preview={{ name: 'MacBook', platform: 'desktop', expiresAt }} onApprove={() => {}} />
     )
-    expect(html).toContain('Approve Tau Desktop sign-in')
+    expect(html).toContain('Approve Ficus Desktop sign-in')
   })
 
-  it('renders the Tau CLI heading for a cli pairing request', () => {
+  it('renders the Ficus CLI heading for a cli pairing request', () => {
     const html = renderToStaticMarkup(
       <DeviceAuthorizationApproval preview={{ name: 'atlas', platform: 'cli', expiresAt }} onApprove={() => {}} />
     )
-    expect(html).toContain('Approve Tau CLI login')
+    expect(html).toContain('Approve Ficus CLI login')
   })
 })

@@ -13,7 +13,7 @@ export function DeviceAuthorizationApproval(props: {
   return (
     <div className="rounded-lg border border-accent bg-surface p-4 space-y-2">
       <h3 className="text-sm font-medium text-primary">
-        {props.preview?.platform === 'desktop' ? 'Approve Tau Desktop sign-in' : 'Approve Tau CLI login'}
+        {props.preview?.platform === 'desktop' ? 'Approve Ficus Desktop sign-in' : 'Approve Ficus CLI login'}
       </h3>
       {props.isLoading ? (
         <LoadingSurface label="Loading authorization request" className="space-y-3 py-1">

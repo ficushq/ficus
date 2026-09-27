@@ -141,7 +141,7 @@ describe('AgentSandboxControls (host runtime)', () => {
       controllable: true,
       runtime: 'host',
     })
-    expect(html).toContain('Agents run directly on this machine as the Tau process user')
+    expect(html).toContain('Agents run directly on this machine as the Ficus process user')
     expect(html).not.toContain('>Stop<')
     expect(html).not.toContain('>Restart<')
     expect(html).not.toContain('>Start<')

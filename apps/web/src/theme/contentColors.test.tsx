@@ -77,7 +77,7 @@ function normalizeColors(value: string): string {
 
 const samples = {
   javascript: 'const n = 12; // note\nfunction greet(name) { return `hi ${name}`; }\nlet ok = true; const x = /a+/g;',
-  typescript: 'interface Person { name: string; age?: number }\nexport const user: Person = { name: "Tau" };',
+  typescript: 'interface Person { name: string; age?: number }\nexport const user: Person = { name: "Ficus" };',
   jsx: 'export function View() { return <div title="sample">{value + 1}</div> }',
   python: '# note\nclass Widget:\n  def run(self):\n    return True and 1.25',
   bash: '# comment\necho "$HOME" && cat file.txt | grep --color "hi"',

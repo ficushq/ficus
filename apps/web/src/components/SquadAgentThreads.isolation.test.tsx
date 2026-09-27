@@ -12,7 +12,7 @@ import type { SquadAgentThreadsProps } from './squads/SquadAgentThreads'
 import { acquireDomHarness, DOM_GLOBAL_NAMES, installDomHarness, withDomOwnership } from '../test/domHarness'
 
 const now = new Date('2026-01-01T00:00:00Z')
-const squad = { id: 'squad-1', name: 'Tau' } as Squad
+const squad = { id: 'squad-1', name: 'Ficus' } as Squad
 const manager = {
   id: 'manager-1',
   squadId: squad.id,

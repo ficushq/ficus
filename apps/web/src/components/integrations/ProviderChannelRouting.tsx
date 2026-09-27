@@ -75,20 +75,20 @@ export function ProviderChannelRouting({
               Allow private chats
             </label>
             <p className="text-muted mt-1">
-              Let linked users talk to Tau and choose squads in bot DMs. Turn off to ignore private messages, including
-              commands and account linking, and stop replies to existing private chats.
+              Let linked users talk to Ficus and choose squads in bot DMs. Turn off to ignore private messages,
+              including commands and account linking, and stop replies to existing private chats.
             </p>
           </div>
           <SquadOverridesEditor provider={provider} rows={rows} onChange={setRows} />
           {(provider === 'slack' || provider === 'discord') && (
             <div className="space-y-4">
               <ChannelIdsEditor kind="Allowed" value={allowed} onChange={setAllowed}>
-                Leave empty to allow all channels. Add channels to limit where Tau can interact.
+                Leave empty to allow all channels. Add channels to limit where Ficus can interact.
               </ChannelIdsEditor>
               <ChannelIdsEditor kind="Denied" value={denied} onChange={setDenied}>
                 Denied channels always win, including for linked users and trusted channels. Leave empty to deny none.
-                Threads inherit their parent channel’s policy. Tau ignores messages in excluded channels, including help
-                and account linking.
+                Threads inherit their parent channel’s policy. Ficus ignores messages in excluded channels, including
+                help and account linking.
               </ChannelIdsEditor>
             </div>
           )}

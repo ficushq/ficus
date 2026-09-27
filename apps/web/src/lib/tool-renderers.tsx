@@ -974,7 +974,7 @@ const taskUpdateRenderer: ToolRenderer = {
 }
 
 const searchTauRenderer: ToolRenderer = {
-  summary: (args) => `Searched Tau for “${truncate(args.query ?? args.q ?? '', 40)}”`,
+  summary: (args) => `Searched Ficus for “${truncate(args.query ?? args.q ?? '', 40)}”`,
   ArgsView: ({ args }) => <InlineCode>{args.query ?? args.q ?? ''}</InlineCode>,
   ResultView: ({ result, isError }) => <CodeBlock isError={isError}>{extractResultText(result)}</CodeBlock>,
 }

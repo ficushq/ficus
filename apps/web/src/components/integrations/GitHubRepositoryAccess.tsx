@@ -33,7 +33,7 @@ export function GitHubRepositoryAccess({
           )}
           {result?.status === 'missing' && (
             <p role="status" className="text-status-attention-600 dark:text-status-attention-400">
-              Setup needs repository access. Install the App and choose the repositories Tau can use.
+              Setup needs repository access. Install the App and choose the repositories Ficus can use.
             </p>
           )}
           {result?.personalAccountInstalled === false && (

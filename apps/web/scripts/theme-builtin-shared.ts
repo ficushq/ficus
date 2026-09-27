@@ -39,7 +39,7 @@ export function cssBlockDeclarations(css: string, selector: string): Record<stri
  * built-in theme (docs/wiki/theme/builtins.md's Generation section):
  * verified against the actual CSS, only the `chrome` token family plus
  * `--swatch-secondary`/`-tertiary`/`--on-accent-fg` actually vary between
- * built-ins — every other family is copied verbatim from Tau. */
+ * built-ins — every other family is copied verbatim from Ficus. */
 export const DERIVABLE_TOKENS = new Set<string>([
   ...THEME_TOKEN_FAMILIES.find((family) => family.family === 'chrome')!.tokens,
   '--swatch-secondary',
@@ -50,7 +50,7 @@ export const DERIVABLE_TOKENS = new Set<string>([
 /**
  * Final corrective pass: the strict built-in contrast gate
  * (`apps/web/src/theme/builtins.test.ts`, `contrastPairs`) checks every
- * foreground — including tokens copied verbatim from Tau — against EVERY
+ * foreground — including tokens copied verbatim from Ficus — against EVERY
  * chrome surface this theme now has, a broader check than the shared
  * derivation engine's own internal contrast pass. This nudges ONLY a
  * failing token's LIGHTNESS (hue/chroma held fixed, the identical bisection

@@ -16,7 +16,7 @@ describe('social preview metadata', () => {
     expect(meta('property', 'og:url')).toBe('__TAU_ORIGIN__/')
     expect(meta('property', 'og:image:width')).toBe('1280')
     expect(meta('property', 'og:image:height')).toBe('640')
-    expect(meta('property', 'og:title')).toBe('Tau')
+    expect(meta('property', 'og:title')).toBe('Ficus')
     expect(meta('name', 'twitter:card')).toBe('summary_large_image')
     expect(meta('name', 'twitter:image')).toBe('__TAU_ORIGIN__/social-preview.png')
     expect(html).not.toMatch(/https?:\/\/[^"]*social-preview\.png/)

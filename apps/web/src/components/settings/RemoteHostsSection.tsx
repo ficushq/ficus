@@ -337,7 +337,7 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
       <div className="px-4 py-3 border-b border-th-border">
         <h4 className="text-sm font-medium text-secondary">Register a remote host</h4>
         <p className="text-xs text-muted mt-0.5">
-          Add a team-owned SSH target. Tau mints a dedicated keypair — you'll install its public half on the host.
+          Add a team-owned SSH target. Ficus mints a dedicated keypair — you'll install its public half on the host.
         </p>
       </div>
       <div className="px-4 py-4 space-y-3">

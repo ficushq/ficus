@@ -152,7 +152,7 @@ export function VoiceCompanionButton({
 
   const unavailableReason =
     typeof window !== 'undefined' && window.isSecureContext === false
-      ? 'Voice needs a secure connection. Open Tau using HTTPS or localhost.'
+      ? 'Voice needs a secure connection. Open Ficus using HTTPS or localhost.'
       : typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia
         ? 'This browser does not support microphone access.'
         : null
@@ -244,7 +244,7 @@ export function VoiceCompanionButton({
                 : rateLimitRetry
                   ? `Retrying in ${Math.ceil(rateLimitRetry.remainingMs / 1000)}s`
                   : status === 'idle'
-                    ? 'Talk to Tau'
+                    ? 'Talk to Ficus'
                     : isMicMuted
                       ? 'Mic muted'
                       : statusLabel}

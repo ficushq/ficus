@@ -43,7 +43,7 @@ export function coerceSquadActivityRef(raw: unknown): SquadActivityRef {
 }
 
 /** Flat, source-generated inline spans. No HTML or Markdown parsing on clients.
- * Links are absolute HTTP(S) or explicit Tau references; code is always literal.
+ * Links are absolute HTTP(S) or explicit Ficus references; code is always literal.
  * The visible budget includes ellipsis, not destinations. Regenerate old rows
  * from source before rollout; summary is plain text, not a rendering fallback.
  */

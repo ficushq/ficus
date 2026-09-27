@@ -181,7 +181,7 @@ test('Enter and Space activate a dot exactly like a click', async () => {
 test('arrow keys rove within the grid, wrapping at both ends, and select as they move', async () => {
   const container = await renderControl('tau', 'light')
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
-  const tau = getByRole(grid, 'radio', { name: 'Tau' })
+  const tau = getByRole(grid, 'radio', { name: 'Ficus' })
   const harbor = getByRole(grid, 'radio', { name: 'Harbor' })
   // Wrapping lands on the last dot: High contrast, which every picker lists
   // last (see registry.ts's highContrastLast).
@@ -208,7 +208,7 @@ function pointer(type: 'mouseover' | 'mouseout', element: Element, relatedTarget
 test('hovering a dot previews the whole app without saving; sweeping to the next never restores in between', async () => {
   const container = await renderControl('tau', 'light')
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
-  const tau = getByRole(grid, 'radio', { name: 'Tau' })
+  const tau = getByRole(grid, 'radio', { name: 'Ficus' })
   const harbor = getByRole(grid, 'radio', { name: 'Harbor' })
   const ember = getByRole(grid, 'radio', { name: 'Ember' })
   const hover = useHoverTimer()

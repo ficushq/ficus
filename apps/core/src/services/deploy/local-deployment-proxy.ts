@@ -67,7 +67,7 @@ export async function proxyLocalDeploymentRequest(
   // script and stylesheet a deployed app loaded came back 401.
   const presented = presentedLocalDeploymentToken(request, localDeployment.id)
   // Always require a valid per-deployment browser token, even when the request
-  // carries a Tau session/agent identity. Otherwise any logged-in principal
+  // carries a Ficus session/agent identity. Otherwise any logged-in principal
   // (including a wrong-squad agent) could proxy into any squad's deployed app.
   // Inbound auth headers are stripped before forwarding (stripUnsafeProxyHeaders).
   if (!(await isValidLocalDeploymentBrowserToken(localDeployment.id, presented.token))) {

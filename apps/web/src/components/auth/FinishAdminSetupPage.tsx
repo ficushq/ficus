@@ -83,7 +83,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
     try {
       if (!token) {
         token = tokenFromInviteUrl((await createInviteLink(account.id)).inviteUrl)
-        if (!token) throw new Error('Tau could not create a passkey setup link. Try again.')
+        if (!token) throw new Error('Ficus could not create a passkey setup link. Try again.')
         setLink({ accountId: account.id, token })
       }
       const context = await getTokenRegistrationOptions(token)

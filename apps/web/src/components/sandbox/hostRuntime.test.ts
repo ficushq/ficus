@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { HOST_RUNTIME_NOTE } from './hostRuntime'
 
 describe('host runtime copy', () => {
-  // This paragraph is shown to people USING Tau (agent panel, settings), not to
+  // This paragraph is shown to people USING Ficus (agent panel, settings), not to
   // people reading the repository — a source path is an instruction they cannot
   // follow.
   test('the note points at documentation without citing a repo file path', () => {
@@ -12,7 +12,7 @@ describe('host runtime copy', () => {
   })
 
   test('the note still explains what the host runtime means', () => {
-    expect(HOST_RUNTIME_NOTE).toContain('Agents run directly on this machine as the Tau process user')
+    expect(HOST_RUNTIME_NOTE).toContain('Agents run directly on this machine as the Ficus process user')
     expect(HOST_RUNTIME_NOTE).toContain('no sandbox to start or stop')
   })
 })

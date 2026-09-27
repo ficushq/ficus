@@ -32,16 +32,16 @@ const identityLabels: Record<string, string> = {
 const providerHints: Record<ProviderId, { where: string; what: string }> = {
   telegram: {
     where: 'Message @BotFather, send /newbot, and paste the token it gives you.',
-    what: 'Tau registers the webhook with Telegram itself — no secrets to generate, no URLs to paste.',
+    what: 'Ficus registers the webhook with Telegram itself — no secrets to generate, no URLs to paste.',
   },
   slack: {
     where:
       'Create the app from the manifest below, install it to your workspace, then paste the bot token and signing secret from its settings.',
-    what: 'The manifest already carries this instance’s URLs; commands and events reach Tau as soon as the app is installed.',
+    what: 'The manifest already carries this instance’s URLs; commands and events reach Ficus as soon as the app is installed.',
   },
   discord: {
     where: 'In the Discord Developer Portal create an application, reset its bot token, and paste it here.',
-    what: 'Tau discovers the application and its public key, registers the /tau commands, and connects the gateway. Slash commands work through the gateway. Optionally set the Interactions Endpoint URL below for HTTP delivery.',
+    what: 'Ficus discovers the application and its public key, registers the /ficus commands, and connects the gateway. Slash commands work through the gateway. Optionally set the Interactions Endpoint URL below for HTTP delivery.',
   },
 }
 
@@ -108,7 +108,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
         <p className="text-muted">{hint.where}</p>
         <p className="text-muted">{hint.what}</p>
         {provider === 'slack' && (
-          <a className="text-accent underline" href={slackAppManifestUrl} download="tau-slack-app-manifest.yaml">
+          <a className="text-accent underline" href={slackAppManifestUrl} download="ficus-slack-app-manifest.yaml">
             Download the Slack app manifest for this instance
           </a>
         )}
@@ -116,9 +116,9 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
 
       {managedActive && (
         <p className="text-sm text-muted">
-          Tau's Slack app is connected and handling messages. Your own app's credentials are kept but unused while it's
-          connected. Turn off your own app's event subscriptions and slash command while Tau's app is connected — Slack
-          will still send it signed requests, and they'll be rejected.
+          Ficus's Slack app is connected and handling messages. Your own app's credentials are kept but unused while
+          it's connected. Turn off your own app's event subscriptions and slash command while Ficus's app is connected —
+          Slack will still send it signed requests, and they'll be rejected.
         </p>
       )}
 
@@ -157,7 +157,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
                 {provider === 'discord' ? 'Interactions Endpoint URL' : 'Request URL (slash commands and events)'}
               </div>
               {data.webhook.delivery === 'relay' ? (
-                <p className="text-muted">Events arrive through Tau Cloud while the Tau Slack app is connected.</p>
+                <p className="text-muted">Events arrive through Ficus Cloud while the Ficus Slack app is connected.</p>
               ) : (
                 <code className="block font-mono text-xs text-primary break-all select-all">{data.webhook.url}</code>
               )}
@@ -171,12 +171,12 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
   return (
     <div className="space-y-6">
       {provider === 'slack' && managedAvailable && (
-        <section className="space-y-3 text-sm" aria-label="Tau Slack app">
-          <h4 className="font-medium text-primary">Tau Slack app</h4>
+        <section className="space-y-3 text-sm" aria-label="Ficus Slack app">
+          <h4 className="font-medium text-primary">Ficus Slack app</h4>
           {!managedConnection ? (
             <>
               <p className="text-muted">
-                Connect Tau's Slack app to your workspace — no app to create, no secrets to paste.
+                Connect Ficus's Slack app to your workspace — no app to create, no secrets to paste.
               </p>
               {canWrite && (
                 <button

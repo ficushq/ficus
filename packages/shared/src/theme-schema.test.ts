@@ -19,7 +19,7 @@ import {
   type ThemeDescriptor,
 } from './theme-schema'
 
-const TAU: ThemeDescriptor = { id: 'tau', label: 'Tau', kind: 'dual' }
+const TAU: ThemeDescriptor = { id: 'tau', label: 'Ficus', kind: 'dual' }
 const NORD: ThemeDescriptor = { id: 'nord', label: 'Nord', kind: 'dual' }
 const CONTRAST: ThemeDescriptor = { id: 'high-contrast', label: 'High Contrast', kind: 'unified' }
 
@@ -124,7 +124,7 @@ describe('theme registry validation', () => {
   test('rejects duplicate ids, malformed ids, empty labels, and bad kinds', () => {
     const issues = validateThemeRegistry([
       { ...TAU },
-      { ...TAU, label: 'Tau again' },
+      { ...TAU, label: 'Ficus again' },
       { id: 'Bad Id', label: 'x', kind: 'dual' },
       { id: 'empty-label', label: '', kind: 'dual' },
       { id: 'bad-kind', label: 'x', kind: 'recolor' as unknown as 'dual' },

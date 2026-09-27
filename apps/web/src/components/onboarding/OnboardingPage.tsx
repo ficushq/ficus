@@ -111,7 +111,7 @@ export function OnboardingPage() {
     <div className="mx-auto w-full min-w-0 max-w-2xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-primary">Set up Tau</h1>
+          <h1 className="text-lg font-semibold text-primary">Set up Ficus</h1>
           <p className="text-sm text-muted mt-1">
             {status.ready
               ? 'Your workspace is ready. You can revisit any step below.'
@@ -147,7 +147,7 @@ export function OnboardingPage() {
             )}
             <section className="border-t border-th-border pt-5">
               <h2 className="text-sm font-medium text-secondary">Optional setup</h2>
-              <p className="mt-1 text-xs text-muted">Make Tau your own. You can also set these up later in Settings.</p>
+              <p className="mt-1 text-xs text-muted">Make Ficus your own. You can also set these up later in Settings.</p>
               <OptionalSetup />
             </section>
           </div>
@@ -172,7 +172,7 @@ function OpenTauLink({ createdSquad }: { createdSquad: Squad | null }) {
     : '/squads'
   return (
     <Link to={to} className="ficus-button ficus-button-primary rounded-lg px-4 py-2 text-sm font-medium">
-      Open Tau
+      Open Ficus
     </Link>
   )
 }

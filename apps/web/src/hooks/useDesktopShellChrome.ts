@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { desktopShell } from '../lib/desktop'
 
 /**
- * Marks the document while Tau Desktop draws its window controls over the page
+ * Marks the document while Ficus Desktop draws its window controls over the page
  * (an inset title bar), so the app header can become the window's title bar.
  * Fullscreen windows hide those controls, so the mark is removed there.
  */

@@ -20,7 +20,7 @@ export interface ChannelEvent {
   /** Subcommand (e.g., 'ask', 'status', 'help') */
   command?: string
 
-  /** Message content (with bot mentions replaced by @Tau) */
+  /** Message content (with bot mentions replaced by @Ficus) */
   text: string
 
   /** Channel/conversation ID */
@@ -91,7 +91,7 @@ export interface ThreadContext {
   id: string
   channelId: string
   originalMessageId: string
-  /** true if Tau created this thread; threaded providers still require @mentions for follow-ups. */
+  /** true if Ficus created this thread; threaded providers still require @mentions for follow-ups. */
   tauCreated: boolean
 }
 
@@ -120,7 +120,7 @@ export interface ResponseContext {
   threadId?: string
   /** Message ID to edit (e.g., "Thinking..." message) */
   messageToEdit?: string
-  /** Whether Tau initiated this thread */
+  /** Whether Ficus initiated this thread */
   tauInitiated?: boolean
   /** Provider-specific extras */
   extras?: Record<string, unknown>
@@ -341,7 +341,7 @@ export interface ChannelProvider {
   formatMarkdown(text: string): string
 
   /**
-   * Replace bot mentions with @Tau in text.
+   * Replace bot mentions with @Ficus in text.
    */
   replaceBotMention(text: string, botUserId: string): string
 

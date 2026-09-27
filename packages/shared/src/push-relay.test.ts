@@ -36,8 +36,13 @@ describe('relay routing presentation keys', () => {
     ).toEqual({ title: 'T', body: 'B', subtitle: 'S' })
     expect(pushAlertText({ eventType: 'done', workStreamNumber: 197 })).toEqual({
       title: 'Work #197 completed',
-      body: 'Open Tau to see details.',
+      body: 'Open Ficus to see details.',
     })
+    expect(pushAlertText({ eventType: 'update' })).toEqual({
+      title: 'Ficus update',
+      body: 'Open Ficus to see details.',
+    })
+    expect(pushAlertText({ eventType: 'done' }).title).toBe('Work completed')
   })
 })
 

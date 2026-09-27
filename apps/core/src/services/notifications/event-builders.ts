@@ -101,7 +101,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: question.squadId ?? undefined,
       squadName: squad?.name,
       title: `❓ ${agentLabel} has a question`,
-      body: questionText || 'Open Tau to respond',
+      body: questionText || 'Open Ficus to respond',
       url: question.squadId ? buildUrl(`/squads/${question.squadId}?agent=${agent.id}`) : buildUrl(`/chat/${agent.id}`),
       timestamp: new Date(),
     }

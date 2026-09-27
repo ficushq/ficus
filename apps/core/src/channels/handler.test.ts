@@ -102,7 +102,7 @@ describe('handleChannelEvent mention routing', () => {
       provider,
       {
         type: 'mention',
-        text: '@Tau can you help?',
+        text: '@Ficus can you help?',
         channelId: 'C123',
         user: { id: 'U123', name: 'U123' },
         messageId: '1710000000.000100',
@@ -115,7 +115,7 @@ describe('handleChannelEvent mention routing', () => {
     expect(findByProviderSpy).toHaveBeenCalledWith('slack', 'T123')
     expect(postMentionThinkingIndicator).toHaveBeenCalledWith({
       type: 'mention',
-      text: '@Tau can you help?',
+      text: '@Ficus can you help?',
       channelId: 'C123',
       user: { id: 'U123', name: 'U123' },
       messageId: '1710000000.000100',
@@ -125,7 +125,7 @@ describe('handleChannelEvent mention routing', () => {
     expect(postMessage).not.toHaveBeenCalled()
     expect(queueForConsultant).toHaveBeenCalledWith({
       command: 'mention',
-      content: '@Tau can you help?',
+      content: '@Ficus can you help?',
       user: { id: 'U123', name: 'U123' },
       responseContext: {
         provider: 'slack',
@@ -139,7 +139,7 @@ describe('handleChannelEvent mention routing', () => {
     expect(result).toEqual({ response: { ok: true } })
   })
 
-  it('processes a mention in a Tau-created Slack thread instead of relying on regular message handling', async () => {
+  it('processes a mention in a Ficus-created Slack thread instead of relying on regular message handling', async () => {
     const channelInstance = trustedInstance()
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
@@ -161,7 +161,7 @@ describe('handleChannelEvent mention routing', () => {
       name: 'slack',
       formatErrorResponse: (message: string) => ({ text: message }),
       formatUserMention: (userId: string) => `<@${userId}>`,
-      replaceBotMention: (text: string) => text.replace(/<@UBOT>/g, '@Tau'),
+      replaceBotMention: (text: string) => text.replace(/<@UBOT>/g, '@Ficus'),
       getBotUserId: mock(() => Promise.resolve('UBOT')),
       getThreadHistory: mock(() =>
         Promise.resolve([
@@ -182,7 +182,7 @@ describe('handleChannelEvent mention routing', () => {
       provider,
       {
         type: 'mention',
-        text: '@Tau current follow-up',
+        text: '@Ficus current follow-up',
         channelId: 'C123',
         user: { id: 'U123', name: 'Countess (Ada Lovelace, @ada, <@U123>)' },
         threadId: '1710000000.000100',
@@ -199,7 +199,7 @@ describe('handleChannelEvent mention routing', () => {
       threadId: '1710000000.000100',
     })
     const sent = inboxSendSpy.mock.calls[0]?.[0] as any
-    expect(sent.content).toContain('Countess (Ada Lovelace, @ada, <@U123>): @Tau current follow-up')
+    expect(sent.content).toContain('Countess (Ada Lovelace, @ada, <@U123>): @Ficus current follow-up')
     expect(sent).toMatchObject({
       recipientId: 'agent-1',
       senderType: 'system',
@@ -221,7 +221,7 @@ describe('handleChannelEvent mention routing', () => {
     })
   })
 
-  it('ignores a regular message in a Tau-created Slack thread when Tau is not mentioned', async () => {
+  it('ignores a regular message in a Ficus-created Slack thread when Ficus is not mentioned', async () => {
     const channelInstance = trustedInstance()
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
@@ -250,7 +250,7 @@ describe('handleChannelEvent mention routing', () => {
       provider,
       {
         type: 'message',
-        text: 'regular follow-up with no Tau mention',
+        text: 'regular follow-up with no Ficus mention',
         channelId: 'C123',
         user: { id: 'U123', name: 'Countess (Ada Lovelace, @ada, <@U123>)' },
         threadId: '1710000000.000100',
@@ -266,7 +266,7 @@ describe('handleChannelEvent mention routing', () => {
     expect(result).toEqual({ response: { ok: true } })
   })
 
-  it('routes active consultant mentions with history only since the latest Tau response', async () => {
+  it('routes active consultant mentions with history only since the latest Ficus response', async () => {
     const channelInstance = trustedInstance()
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
@@ -288,15 +288,15 @@ describe('handleChannelEvent mention routing', () => {
             messageId: '1',
             userId: 'U1',
             userName: 'Before',
-            text: 'before latest Tau',
+            text: 'before latest Ficus',
             timestamp: '1',
             isBotMessage: false,
           },
           {
             messageId: '2',
             userId: 'UBOT',
-            userName: 'Tau',
-            text: 'latest Tau response',
+            userName: 'Ficus',
+            text: 'latest Ficus response',
             timestamp: '2',
             isBotMessage: true,
           },
@@ -304,7 +304,7 @@ describe('handleChannelEvent mention routing', () => {
             messageId: '3',
             userId: 'U2',
             userName: 'After',
-            text: 'after latest Tau',
+            text: 'after latest Ficus',
             timestamp: '3',
             isBotMessage: false,
           },
@@ -317,7 +317,7 @@ describe('handleChannelEvent mention routing', () => {
       provider,
       {
         type: 'mention',
-        text: '@Tau current',
+        text: '@Ficus current',
         channelId: 'C123',
         user: { id: 'U3', name: 'Current' },
         threadId: 'thread-1',
@@ -329,10 +329,10 @@ describe('handleChannelEvent mention routing', () => {
     )
 
     const sent = inboxSendSpy.mock.calls[0]?.[0] as any
-    expect(sent.content).not.toContain('before latest Tau')
-    expect(sent.content).toContain('@Tau: latest Tau response')
-    expect(sent.content).toContain('After: after latest Tau')
-    expect(sent.content).toContain('Current: @Tau current')
+    expect(sent.content).not.toContain('before latest Ficus')
+    expect(sent.content).toContain('@Ficus: latest Ficus response')
+    expect(sent.content).toContain('After: after latest Ficus')
+    expect(sent.content).toContain('Current: @Ficus current')
   })
 
   it('spawns a replacement consultant with full thread history when no active thread agent exists', async () => {
@@ -357,15 +357,15 @@ describe('handleChannelEvent mention routing', () => {
             messageId: '1',
             userId: 'U1',
             userName: 'Before',
-            text: 'before latest Tau',
+            text: 'before latest Ficus',
             timestamp: '1',
             isBotMessage: false,
           },
           {
             messageId: '2',
             userId: 'UBOT',
-            userName: 'Tau',
-            text: 'latest Tau response',
+            userName: 'Ficus',
+            text: 'latest Ficus response',
             timestamp: '2',
             isBotMessage: true,
           },
@@ -373,7 +373,7 @@ describe('handleChannelEvent mention routing', () => {
             messageId: '3',
             userId: 'U2',
             userName: 'After',
-            text: 'after latest Tau',
+            text: 'after latest Ficus',
             timestamp: '3',
             isBotMessage: false,
           },
@@ -386,7 +386,7 @@ describe('handleChannelEvent mention routing', () => {
       provider,
       {
         type: 'mention',
-        text: '@Tau current',
+        text: '@Ficus current',
         channelId: 'C123',
         user: { id: 'U3', name: 'Current' },
         threadId: 'thread-1',
@@ -398,10 +398,10 @@ describe('handleChannelEvent mention routing', () => {
     )
 
     expect(queueForConsultant).toHaveBeenCalledTimes(1)
-    expect(queued?.content).toContain('Before: before latest Tau')
-    expect(queued?.content).toContain('@Tau: latest Tau response')
-    expect(queued?.content).toContain('After: after latest Tau')
-    expect(queued?.content).toContain('Current: @Tau current')
+    expect(queued?.content).toContain('Before: before latest Ficus')
+    expect(queued?.content).toContain('@Ficus: latest Ficus response')
+    expect(queued?.content).toContain('After: after latest Ficus')
+    expect(queued?.content).toContain('Current: @Ficus current')
   })
 
   it('preserves the enriched current Slack sender label in joined thread history', async () => {
@@ -418,7 +418,7 @@ describe('handleChannelEvent mention routing', () => {
       name: 'slack',
       formatErrorResponse: (message: string) => ({ text: message }),
       formatUserMention: (userId: string) => `<@${userId}>`,
-      replaceBotMention: (text: string) => text.replace(/<@UBOT>/g, '@Tau'),
+      replaceBotMention: (text: string) => text.replace(/<@UBOT>/g, '@Ficus'),
       getBotUserId: mock(() => Promise.resolve('UBOT')),
       getThreadHistory: mock(() =>
         Promise.resolve([
@@ -447,7 +447,7 @@ describe('handleChannelEvent mention routing', () => {
       provider,
       {
         type: 'mention',
-        text: '@Tau current follow-up',
+        text: '@Ficus current follow-up',
         channelId: 'C123',
         user: { id: 'U123', name: 'Countess (Ada Lovelace, @ada, <@U123>)' },
         threadId: '1710000000.000100',
@@ -459,10 +459,10 @@ describe('handleChannelEvent mention routing', () => {
     )
 
     expect(queueForConsultant).toHaveBeenCalledTimes(1)
-    expect(queued?.content).toContain('Grace (Grace Hopper, @grace, <@U456>): Earlier context for @Tau')
+    expect(queued?.content).toContain('Grace (Grace Hopper, @grace, <@U456>): Earlier context for @Ficus')
     expect(queued?.content).toContain('Katherine Johnson (@katherine, <@U789>): Additional historical context')
-    expect(queued?.content).toContain('Countess (Ada Lovelace, @ada, <@U123>): @Tau current follow-up')
-    expect(queued?.content).not.toContain('<@U123>: @Tau current follow-up')
+    expect(queued?.content).toContain('Countess (Ada Lovelace, @ada, <@U123>): @Ficus current follow-up')
+    expect(queued?.content).not.toContain('<@U123>: @Ficus current follow-up')
   })
 })
 

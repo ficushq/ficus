@@ -162,7 +162,7 @@ export async function setProviderEnabled(provider: string, enabled: boolean): Pr
 
 /**
  * Clear an exhaustion record early, for when the provider's limit window reset
- * ahead of the `retryAt` Tau recorded. Asserts nothing about upstream state —
+ * ahead of the `retryAt` Ficus recorded. Asserts nothing about upstream state —
  * the next failure re-marks exhaustion.
  */
 export async function resetProviderHealth(provider: string, accountId?: string): Promise<ProviderAuthEntry> {

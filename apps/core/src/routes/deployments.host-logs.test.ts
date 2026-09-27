@@ -176,7 +176,7 @@ describe('local deployment logs over HTTP on the host runtime', () => {
     await getSandboxManager().cleanup?.()
   }, 15000)
 
-  // Attached apps are processes Tau did NOT start, so nothing ever writes the
+  // Attached apps are processes Ficus did NOT start, so nothing ever writes the
   // managed launcher's current.log. Tailing it followed a permanently empty
   // file: the viewer sat on "Waiting for logs…" forever with an SSE connection
   // and a `tail -F` child leaking per viewer.
@@ -189,7 +189,7 @@ describe('local deployment logs over HTTP on the host runtime', () => {
     const body = (await response.json()) as { lines: string[] }
     expect(body.lines).toHaveLength(1)
     expect(body.lines[0]).toContain('attached')
-    expect(body.lines[0]).toContain('Tau did not start it')
+    expect(body.lines[0]).toContain('Ficus did not start it')
   })
 
   it('GET /logs/stream tells an attached app viewer why there are no logs, then ends', async () => {
@@ -200,7 +200,7 @@ describe('local deployment logs over HTTP on the host runtime', () => {
     expect(response.status).toBe(200)
     const { text, ended } = await readSSE(response, () => false, 3000)
     expect(text).toContain('event: lines')
-    expect(text).toContain('Tau did not start it')
+    expect(text).toContain('Ficus did not start it')
     expect(ended).toBe(true)
   }, 15000)
 
@@ -280,7 +280,7 @@ describe('local deployment logs over HTTP on the host runtime', () => {
     expect(logs.status).toBe(200)
     const body = (await logs.json()) as { lines: string[] }
     expect(body.lines).toHaveLength(1)
-    expect(body.lines[0]).toContain('[tau]')
+    expect(body.lines[0]).toContain('[ficus]')
     expect(body.lines[0]).toContain('my-app/never-written.log')
 
     const stream = await app.request(`/api/local-deployments/${id}/logs/stream`, {

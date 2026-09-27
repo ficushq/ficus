@@ -127,7 +127,7 @@ export async function createLocalDeployment(squad: Squad, input: CreateLocalDepl
   // live row. A bad operator value must not leave an unreachable orphan behind.
   validateHostedAppsConfig()
   const normalized = normalizeLocalDeploymentInput(input, { squadId: squad.id })
-  // Absent port => Tau assigns one (the default, and the only way to guarantee
+  // Absent port => Ficus assigns one (the default, and the only way to guarantee
   // it is free); explicit port => rejected if another live deployment in the
   // same network scope holds it.
   const sandboxId = Squad.getSandboxId(squad.id)

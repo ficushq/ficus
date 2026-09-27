@@ -831,7 +831,7 @@ export function TrustedChannelsField({
 }) {
   return (
     <ChannelIdsEditor kind="Trusted" value={value} onChange={onChange} actions={actions}>
-      By default, senders must link a Tau account with squad chat access. Everyone who can message Tau in a trusted
+      By default, senders must link a Ficus account with squad chat access. Everyone who can message Ficus in a trusted
       channel can direct its squad’s agents, including through the manager. Add only channels whose participants you
       trust. Leave empty to require linked users everywhere.
     </ChannelIdsEditor>

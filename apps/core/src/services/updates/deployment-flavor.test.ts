@@ -181,6 +181,6 @@ it('desktop-owned runtimes cannot invoke the checkout updater', () => {
   expect(flavor.supervisor).toBe('desktop')
   expect(supportsAutoUpdate(flavor)).toEqual({
     ok: false,
-    reason: 'This instance is managed by Tau Desktop. Update it through the desktop application.',
+    reason: 'This instance is managed by Ficus Desktop. Update it through the desktop application.',
   })
 })

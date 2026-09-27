@@ -76,7 +76,7 @@ function shortId(id: string | undefined): string {
   return id ? id.slice(0, 8) : 'unknown'
 }
 
-/** "the sandbox for reviewer in squad Tau Core", from names resolved at delivery time. */
+/** "the sandbox for reviewer in squad Ficus Core", from names resolved at delivery time. */
 function sandboxScope(claim: FleetIncidentNotificationClaim, names: FleetIncidentNames): string {
   if (names.agentName)
     return `the sandbox for ${names.agentName}${names.squadName ? ` in squad ${names.squadName}` : ''}`

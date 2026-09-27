@@ -20,7 +20,7 @@ import { desktopInstance, desktopUpdates } from '../../lib/desktop'
 import { DesktopUpdatePanel } from './DesktopUpdatePanel'
 
 export function SystemUpdateSection() {
-  // Inside Tau Desktop the bundled local instance owns updates natively; the git
+  // Inside Ficus Desktop the bundled local instance owns updates natively; the git
   // updater endpoints refuse all actions there. An attached or remote instance
   // still updates like any other server, so it keeps the git updater section.
   const updates = desktopUpdates()
@@ -80,7 +80,7 @@ function GitUpdateSection() {
         <p className="text-sm text-muted mt-1">
           Self-updater for git-based installs (pm2 local and systemd server installs). Uses git fast-forward pulls and
           hardcoded build commands. Automatic updates are disabled by default; enable them only for installs you want
-          Tau to update on its own.
+          Ficus to update on its own.
         </p>
       </div>
       {latest?.supported === false && (
@@ -245,7 +245,7 @@ function DesktopManagedNotice() {
     <section className="space-y-3 text-primary" data-testid="desktop-managed-notice">
       <h2 className="text-xl font-semibold text-primary">System Updates</h2>
       <p className="text-sm text-muted">
-        This instance is managed by Tau Desktop. Update it from the app: choose Tau → Check for Updates… in the menu
+        This instance is managed by Ficus Desktop. Update it from the app: choose Ficus → Check for Updates… in the menu
         bar.
       </p>
     </section>

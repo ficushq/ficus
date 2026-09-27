@@ -270,7 +270,7 @@ test('only contacted agents can reply; inReplyTo stays local and cannot cross co
     (
       await request(`/${id}/messages`, {
         agentId: allowed.id,
-        request: 'Tau',
+        request: 'Ficus',
         clientId: randomUUID(),
         inReplyTo: reply.id,
       })

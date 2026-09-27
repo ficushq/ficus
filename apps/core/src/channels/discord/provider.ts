@@ -425,7 +425,7 @@ export const discordProvider: ChannelProvider = {
 
     // Get message and create thread
     const message = await getInteractionMessage(applicationId, interactionToken)
-    const thread = await createThread(message.channel_id, message.id, 'Tau Response')
+    const thread = await createThread(message.channel_id, message.id, 'Ficus Response')
 
     // Post in thread
     await this.postMessage({
@@ -460,7 +460,7 @@ export const discordProvider: ChannelProvider = {
 
   replaceBotMention(text: string, botUserId: string): string {
     // Discord mentions can be <@123> or <@!123>
-    return text.replace(new RegExp(`<@!?${botUserId}>`, 'g'), '@Tau')
+    return text.replace(new RegExp(`<@!?${botUserId}>`, 'g'), '@Ficus')
   },
 
   formatUserMention(userId: string): string {

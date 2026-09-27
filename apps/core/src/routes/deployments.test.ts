@@ -943,7 +943,7 @@ describe('deployments routes', () => {
     const body = await res.json()
     expect(body.lines).toHaveLength(1)
     expect(body.lines[0]).toContain('my-app/app.log')
-    expect(body.lines[0]).toContain('[tau]')
+    expect(body.lines[0]).toContain('[ficus]')
   })
 
   it('GET /logs/stream emits SSE lines for an attached log path', async () => {
@@ -1009,7 +1009,7 @@ describe('deployments routes', () => {
     expect(response.status).toBe(200)
     const text = await response.text()
     expect(text).toContain('event: lines')
-    expect(text).toContain('Tau did not start it')
+    expect(text).toContain('Ficus did not start it')
     expect(ensureSquadSandbox).not.toHaveBeenCalled()
   })
 })

@@ -41,7 +41,7 @@ interface InstanceIdentity {
 /**
  * Which tau instance this process IS, for naming in outbound mail. A person can
  * own several instances (hosted tenants all mail from the same platform), and a
- * bare "Tau — Verify your email" gives them no way to tell which one asked.
+ * bare "Ficus — Verify your email" gives them no way to tell which one asked.
  *
  * Derived from APP_URL, the public origin every hosted tenant and most
  * self-hosts already set. Returns null when it is unset or unparseable — a bare
@@ -134,17 +134,17 @@ function escapeHtml(s: string): string {
  * and a manual break makes every line wrap AGAIN on narrow screens.
  */
 export function buildVerificationMessage(code: string, instance: InstanceIdentity | null, ttlMs: number) {
-  const subject = instance ? `Your Tau verification code for ${instance.host}` : 'Tau — Verify your email'
+  const subject = instance ? `Your Ficus verification code for ${instance.host}` : 'Ficus — Verify your email'
   const expiry = `This code expires in ${formatCodeLifetime(ttlMs)}.`
   const text = [
-    `Your Tau verification code is: ${code}`,
+    `Your Ficus verification code is: ${code}`,
     '',
-    ...(instance ? [`This code is for the Tau instance at ${instance.url}.`, ''] : []),
+    ...(instance ? [`This code is for the Ficus instance at ${instance.url}.`, ''] : []),
     expiry,
   ].join('\n')
-  const heading = instance ? `Tau — Verify your email for ${escapeHtml(instance.host)}` : 'Tau — Email Verification'
+  const heading = instance ? `Ficus — Verify your email for ${escapeHtml(instance.host)}` : 'Ficus — Email Verification'
   const instanceLine = instance
-    ? `<p style="color:#6b7280;font-size:14px;">This code is for the Tau instance at ${escapeHtml(instance.url)}.</p>`
+    ? `<p style="color:#6b7280;font-size:14px;">This code is for the Ficus instance at ${escapeHtml(instance.url)}.</p>`
     : ''
   const html =
     `<div style="font-family:sans-serif;max-width:400px;margin:0 auto;"><h2>${heading}</h2>` +
@@ -433,10 +433,12 @@ export async function recentVerificationCount(email: string): Promise<number> {
  * which has only ever surfaced the link for out-of-band handover.
  */
 export function buildInviteMessage(link: string, instance: InstanceIdentity | null, ttlMs: number) {
-  const subject = instance ? `You have been invited to Tau at ${instance.host}` : 'Tau — You have been invited'
+  const subject = instance ? `You have been invited to Ficus at ${instance.host}` : 'Ficus — You have been invited'
   const expiry = `This invitation expires in ${formatCodeLifetime(ttlMs)}.`
   const text = [
-    instance ? `You have been invited to the Tau instance at ${instance.url}.` : 'You have been invited to join Tau.',
+    instance
+      ? `You have been invited to the Ficus instance at ${instance.url}.`
+      : 'You have been invited to join Ficus.',
     '',
     'Open this link to set up your passkey:',
     '',
@@ -447,8 +449,8 @@ export function buildInviteMessage(link: string, instance: InstanceIdentity | nu
     expiry,
   ].join('\n')
   const heading = instance
-    ? `You have been invited to Tau at ${escapeHtml(instance.host)}`
-    : 'You have been invited to Tau'
+    ? `You have been invited to Ficus at ${escapeHtml(instance.host)}`
+    : 'You have been invited to Ficus'
   const html =
     `<div style="font-family:sans-serif;max-width:400px;margin:0 auto;"><h2>${heading}</h2>` +
     `<p>Set up your passkey to finish creating your account:</p>` +
@@ -467,12 +469,12 @@ export function buildInviteMessage(link: string, instance: InstanceIdentity | nu
  * old credentials), and `verifyEmailCode` refuses purpose 'recovery' rows.
  */
 export function buildPasskeyRecoveryMessage(link: string, instance: InstanceIdentity | null, ttlMs: number) {
-  const subject = instance ? `Register a new passkey for Tau at ${instance.host}` : 'Tau — Register a new passkey'
+  const subject = instance ? `Register a new passkey for Ficus at ${instance.host}` : 'Ficus — Register a new passkey'
   const expiry = `This link expires in ${formatCodeLifetime(ttlMs)} and can only be used once.`
   const text = [
     instance
-      ? `Someone asked to register a new passkey for your account on the Tau instance at ${instance.url}.`
-      : 'Someone asked to register a new passkey for your Tau account.',
+      ? `Someone asked to register a new passkey for your account on the Ficus instance at ${instance.url}.`
+      : 'Someone asked to register a new passkey for your Ficus account.',
     '',
     'Open this link to register a new passkey:',
     '',
@@ -484,7 +486,7 @@ export function buildPasskeyRecoveryMessage(link: string, instance: InstanceIden
     '',
     'If this was not you, ignore this email — nothing changes until the link is used.',
   ].join('\n')
-  const heading = instance ? `Register a new passkey for ${escapeHtml(instance.host)}` : 'Register a new Tau passkey'
+  const heading = instance ? `Register a new passkey for ${escapeHtml(instance.host)}` : 'Register a new Ficus passkey'
   const html =
     `<div style="font-family:sans-serif;max-width:400px;margin:0 auto;"><h2>${heading}</h2>` +
     `<p>Someone asked to register a new passkey for your account.</p>` +

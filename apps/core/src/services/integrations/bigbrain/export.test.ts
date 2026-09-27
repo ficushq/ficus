@@ -32,7 +32,7 @@ test('session wire contains only role and text with a fixed protocol-safe cwd', 
       return new Response(null, { status: 204 })
     },
   })
-  expect(request?.headers.get('x-bigbrain-session')).toBe('tau')
+  expect(request?.headers.get('x-bigbrain-session')).toBe('ficus')
   expect(request?.headers.get('x-bigbrain-cwd')).toBe('.')
   expect(request?.headers.get('x-bigbrain-cwd')).not.toContain('private')
 })

@@ -114,7 +114,7 @@ function defaultListDir(path: string): string[] {
  * Candidate binaries, most-preferred first. Deliberately excludes
  * `/snap/bin/chromium`: snap confinement denies Chromium access to the
  * temporary profile directory Playwright hands it, so it fails at launch in a
- * way that looks like a Tau bug.
+ * way that looks like a Ficus bug.
  */
 function probeCandidates(platform: NodeJS.Platform, home: string, listDir: (p: string) => string[]): string[] {
   if (platform === 'darwin') {
@@ -509,7 +509,7 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
       // on the user's own machine with exactly the reach the agent's `bash`
       // already has, so the guard protects nothing while breaking the primary
       // use case: screenshotting the agent's own local deployment (including
-      // Tau's own proxied http://localhost:<port>/api/app/<id>/... URLs).
+      // Ficus's own proxied http://localhost:<port>/api/app/<id>/... URLs).
       isBlockedHost: () => false,
       // The engine's production disconnect policy is process.exit(1) (for the
       // systemd unit it restarts). In-process in the core that would kill the

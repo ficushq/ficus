@@ -13,8 +13,8 @@ const { WorkStreamDetailModal } = await import('./WorkStreamDetailModal')
 const now = new Date('2026-01-01T00:00:00Z')
 const squad: Squad = {
   id: 'squad-1',
-  name: 'Tau',
-  purpose: 'Build Tau',
+  name: 'Ficus',
+  purpose: 'Build Ficus',
   status: 'active',
   squadPresetId: null,
   defaultAgents: [],

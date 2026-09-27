@@ -11,7 +11,7 @@ type Pairing = Awaited<ReturnType<typeof renderPairing>> & { code: string }
  *
  * Rendered before the auth gate because the visitor has no account: the private
  * access code they were given yields an ordinary 90-second, single-use pairing
- * code for the shared demo account, which the Tau app scans (or opens through
+ * code for the shared demo account, which the Ficus app scans (or opens through
  * the deep link on the same phone). Nothing here signs the browser in.
  */
 export function DemoAccessPage({ enabled }: { enabled: boolean }) {
@@ -32,7 +32,7 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
       const message = err instanceof Error ? err.message : ''
       setError(
         /demo_not_seeded/.test(message)
-          ? 'This instance has not been set up for review yet. Ask the team to run `tau demo seed`.'
+          ? 'This instance has not been set up for review yet. Ask the team to run `ficus demo seed`.'
           : /rate_limited|429/.test(message)
             ? 'Too many attempts. Wait a minute and try again.'
             : 'That access code was not accepted.'
@@ -55,10 +55,10 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
   return (
     <div className="h-full flex items-center justify-center bg-page px-4">
       <div className="ficus-section w-full max-w-sm p-6">
-        <h1 className="text-lg font-semibold text-primary mb-1">Review Tau</h1>
+        <h1 className="text-lg font-semibold text-primary mb-1">Review Ficus</h1>
         <p className="text-sm text-secondary mb-4">
-          Enter the reviewer access code to pair the Tau app with the demo workspace. The pairing code is single-use and
-          expires in 90 seconds; generate another for each device.
+          Enter the reviewer access code to pair the Ficus app with the demo workspace. The pairing code is single-use
+          and expires in 90 seconds; generate another for each device.
         </p>
         {pairing ? (
           <PairingCode
@@ -66,7 +66,7 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
             onExpired={clearPairing}
             onRegenerate={() => void pair()}
             regenerating={loading}
-            hint="Scan with the Tau app, or open the link on this phone."
+            hint="Scan with the Ficus app, or open the link on this phone."
           />
         ) : (
           <form onSubmit={submit}>

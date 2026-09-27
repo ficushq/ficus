@@ -442,7 +442,7 @@ describe('host browser backend', () => {
   // On the host runtime the browser runs on the user's own machine with the
   // same network reach the agent's `bash` already has, so the machine-host
   // SSRF blocklist protects nothing — and blocking loopback breaks the primary
-  // use case (screenshotting the agent's own local deployment, including Tau's
+  // use case (screenshotting the agent's own local deployment, including Ficus's
   // own http://localhost:<port>/api/app/... proxied URLs).
   test('allows a loopback URL — the host browser has the same reach as bash', async () => {
     const browser = new FakeBrowser()
@@ -777,7 +777,7 @@ describe('real local browser', () => {
         hostname: '127.0.0.1',
         port: 0,
         fetch: () =>
-          new Response('<!doctype html><html><head><title>Tau Host Smoke</title></head><body>hi</body></html>', {
+          new Response('<!doctype html><html><head><title>Ficus Host Smoke</title></head><body>hi</body></html>', {
             headers: { 'content-type': 'text/html' },
           }),
       })
@@ -785,7 +785,7 @@ describe('real local browser', () => {
       const engine = createHostBrowserBackend({ tokensDir: dir, installExitHooks: false })
       try {
         const opened = await engine.forSandbox('agent_real').browserOpen('run-1', `http://127.0.0.1:${server.port}/`)
-        expect(opened.title).toBe('Tau Host Smoke')
+        expect(opened.title).toBe('Ficus Host Smoke')
         expect(Buffer.from(opened.screenshotBase64, 'base64').subarray(0, 8)).toEqual(
           Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
         )

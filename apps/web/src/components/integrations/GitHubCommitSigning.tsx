@@ -13,8 +13,8 @@ function failureCode(error: unknown): GitHubCommitSigningErrorCode | undefined {
 
 /**
  * Commit signing for one GitHub account: agents' commits and tags are signed
- * with a key Tau registers on the account, so GitHub marks them Verified.
- * One button turns it on; the private key never leaves this Tau server.
+ * with a key Ficus registers on the account, so GitHub marks them Verified.
+ * One button turns it on; the private key never leaves this Ficus server.
  */
 export function GitHubCommitSigning({
   connectionId,
@@ -62,7 +62,7 @@ export function GitHubCommitSigning({
       ) : (
         <p className="text-muted">
           Off. Agents’ commits are not signed. Turning it on adds a signing key to @{login} on GitHub; the private key
-          stays on this Tau server and agents never see it.
+          stays on this Ficus server and agents never see it.
         </p>
       )}
       {on && status.fingerprint && <p className="font-mono text-muted">{status.fingerprint}</p>}
@@ -73,7 +73,7 @@ export function GitHubCommitSigning({
       {change.isError &&
         (code === 'permission_missing' ? (
           <p role="alert" className="text-status-attention-600 dark:text-status-attention-400">
-            Tau needs permission to manage SSH signing keys on @{login}. Reconnect the account and approve the updated
+            Ficus needs permission to manage SSH signing keys on @{login}. Reconnect the account and approve the updated
             permissions on GitHub, then turn signing on.
           </p>
         ) : (

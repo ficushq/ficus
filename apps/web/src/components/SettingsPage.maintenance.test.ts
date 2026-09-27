@@ -16,7 +16,7 @@ describe('maintenanceStatusText', () => {
 
   it('reports unknown execution status when the maintenance query fails', () => {
     const text = maintenanceStatusText(undefined, false, true)
-    expect(text).toBe('Maintenance state is unavailable. Tau execution status is unknown.')
+    expect(text).toBe('Maintenance state is unavailable. Ficus execution status is unknown.')
     expect(text).not.toContain('accepting agent work normally')
   })
 
@@ -25,7 +25,7 @@ describe('maintenanceStatusText', () => {
   // would tell an operator work is flowing during a real pause.
   it('reports unknown execution status when state is absent without an explicit error', () => {
     expect(maintenanceStatusText(undefined, false, false)).toBe(
-      'Maintenance state is unavailable. Tau execution status is unknown.'
+      'Maintenance state is unavailable. Ficus execution status is unknown.'
     )
   })
 })

@@ -6,10 +6,10 @@ const MAX_MESSAGE_LENGTH = 300
 /** Friendly text for authorization codes that Core returns without a message. */
 const CODE_MESSAGES: Record<string, string> = {
   oauth_app_unconfigured:
-    'No GitHub App is configured for this instance. Add your own app or switch back to the Tau app.',
+    'No GitHub App is configured for this instance. Add your own app or switch back to the Ficus app.',
   client_authority_mismatch: "This instance's sign-in settings changed. Reload the page, then try again.",
   invalid_or_expired_state: 'This login expired. Start a new login.',
-  broker_unconfigured: "Tau's hosted sign-in isn't available for this instance yet. Try again later.",
+  broker_unconfigured: "Ficus's hosted sign-in isn't available for this instance yet. Try again later.",
 }
 
 /**
@@ -19,7 +19,7 @@ const CODE_MESSAGES: Record<string, string> = {
  */
 const SESSION_CODE_MESSAGES: Record<string, string> = {
   first_admin_incomplete: 'Finish setting up your admin account to continue.',
-  user_session_required: 'Sign in with your Tau account to continue.',
+  user_session_required: 'Sign in with your Ficus account to continue.',
 }
 
 function errorCode(error: unknown): string | undefined {

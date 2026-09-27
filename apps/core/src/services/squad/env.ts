@@ -10,7 +10,7 @@ import { getSquadWorkspacePath } from './workspace'
 
 const USER_ENV_FILE = 'env.user'
 const GENERATED_ENV_FILE = '.env'
-const GENERATED_SECRET_MARKER = '# Generated from Tau Secret Store allowlist. Do not edit values here.'
+const GENERATED_SECRET_MARKER = '# Generated from Ficus Secret Store allowlist. Do not edit values here.'
 const GENERATED_INTEGRATION_MARKER = '# Generated protected integration bindings. Do not edit values here.'
 
 /**
@@ -31,7 +31,7 @@ function ensureTauDir(squadId: string): string {
   }
 
   // K8s sandboxes can write to the same workspace from container-root. Keep
-  // Tau's private workspace dir group-writable/setgid when Core owns it so
+  // Ficus's private workspace dir group-writable/setgid when Core owns it so
   // local k3d shared-volume files remain writable by the Core process.
   try {
     chmodSync(tauDir, 0o2775)

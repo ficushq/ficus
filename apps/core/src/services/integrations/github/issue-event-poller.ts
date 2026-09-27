@@ -16,7 +16,7 @@ interface Cursor extends Record<string, unknown> {
 
 type Native = Record<string, any>
 
-/** Repository assignment discovery, including issues that do not yet have a Tau stream. */
+/** Repository assignment discovery, including issues that do not yet have a Ficus stream. */
 export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssueEventPollingConfig> {
   constructor(
     private readonly credential: (

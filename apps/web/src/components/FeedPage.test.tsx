@@ -128,7 +128,7 @@ function action(overrides: Partial<PendingAction> = {}): PendingAction {
       workStreamId: 'ws-1',
       workStreamTitle: 'Review mobile behavior',
       squadId: 'squad-1',
-      squadName: 'Tau',
+      squadName: 'Ficus',
       assigneeAgentId: null,
       assigneeName: null,
       completionMode: 'pr-merge',

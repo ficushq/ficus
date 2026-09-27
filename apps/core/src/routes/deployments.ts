@@ -89,10 +89,10 @@ interface DeploymentsRouteDependencies {
 const log = createLogger('deployments')
 
 /**
- * Only a MANAGED local deployment has logs: Tau starts it through the launcher
+ * Only a MANAGED local deployment has logs: Ficus starts it through the launcher
  * script, which tees the app's combined output into
  * `<workspace>/.tau/local-deployments/<id>/logs/current.log`. An ATTACHED one
- * is a process Tau never started — the agent ran it itself and only registered
+ * is a process Ficus never started — the agent ran it itself and only registered
  * the port — so that file is never written by anything.
  *
  * Both log endpoints used to read it regardless of mode, and `streamLogs` even
@@ -100,22 +100,22 @@ const log = createLogger('deployments')
  * that stayed open forever emitting nothing: the web viewer sat on "Waiting for
  * logs…" indefinitely (no error to show, because nothing failed), while every
  * open viewer leaked a connection and a `tail -F` child following an empty file.
- * Answer with the reason instead, in the same `[tau] ` channel the launcher
+ * Answer with the reason instead, in the same `[ficus] ` channel the launcher
  * banner and the `[stderr] ` notices already use, so every client (web, CLI,
  * agents) renders it as the first log line rather than waiting on nothing.
  */
 const ATTACHED_LOGS_NOTICE =
-  '[tau] No logs are captured for this app: it is attached — Tau did not start it, so it never sees its output. ' +
+  '[ficus] No logs are captured for this app: it is attached — Ficus did not start it, so it never sees its output. ' +
   'Its output is wherever the process was started (its terminal, tmux session, or a log file it writes itself). ' +
-  'To have Tau capture logs, register the app as managed so Tau runs the command.'
+  'To have Ficus capture logs, register the app as managed so Ficus runs the command.'
 
 /**
  * An attached app DID register a log path, but the file is not there / not
- * readable in its sandbox (yet). Same one-line `[tau]` channel so the viewer
+ * readable in its sandbox (yet). Same one-line `[ficus]` channel so the viewer
  * gets a reason instead of silence, without failing the request.
  */
 const ATTACHED_LOG_UNAVAILABLE_NOTICE = (logPath: string) =>
-  `[tau] No logs yet: the registered log file does not exist or could not be read in the sandbox: ${logPath}`
+  `[ficus] No logs yet: the registered log file does not exist or could not be read in the sandbox: ${logPath}`
 
 let dependencyOverrides: Partial<DeploymentsRouteDependencies> = {}
 
@@ -269,13 +269,13 @@ export const deploymentsRouter = new Hono()
       if (err instanceof AmbiguousPrefixError) {
         return localDeploymentProxyJsonError(AMBIGUOUS_LOCAL_DEPLOYMENT_LINK_ERROR, 409)
       }
-      // Reaching the app can fail for reasons that are not a Tau crash: a cold
+      // Reaching the app can fail for reasons that are not a Ficus crash: a cold
       // machine, a dropped SSH forward, a runtime with no target support. A bare
       // 500 told an operator nothing — which is how the VM gap presented — so
       // name the layer that failed and keep the cause in the log only.
       log.error(`Local app proxy failed for ${localDeploymentId}`, err)
       return localDeploymentProxyJsonError(
-        'Local app is not reachable from Tau right now. Check the deployment health.',
+        'Local app is not reachable from Ficus right now. Check the deployment health.',
         502
       )
     }

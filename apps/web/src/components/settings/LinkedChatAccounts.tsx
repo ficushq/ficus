@@ -45,7 +45,7 @@ export function LinkedChatAccounts() {
           Linked chat accounts
         </h4>
         <p className="text-sm text-muted mt-1">
-          Use Discord, Slack, or Telegram with your Tau account’s squad chat permissions. Linking does not grant
+          Use Discord, Slack, or Telegram with your Ficus account’s squad chat permissions. Linking does not grant
           additional access. Answers are posted in the channel where you ask.
         </p>
       </div>
@@ -89,7 +89,7 @@ export function LinkedChatAccounts() {
             </>
           ) : (
             <>
-              <p className="text-sm text-primary">Send this to Tau from the account you want to link:</p>
+              <p className="text-sm text-primary">Send this to Ficus from the account you want to link:</p>
               {code?.id === pending.id ? (
                 <ChannelLinkCommand key={code.id} code={code.code} />
               ) : (
@@ -129,7 +129,7 @@ export function LinkedChatAccounts() {
 }
 
 export function ChannelLinkCommand({ code }: { code: string }) {
-  const command = `/tau link ${code}`
+  const command = `/ficus link ${code}`
   const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copy = async () => {
     try {

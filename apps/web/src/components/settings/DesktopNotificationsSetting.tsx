@@ -3,7 +3,7 @@ import { desktopNotificationToggle } from '../../lib/desktop'
 import { desktopQueryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'
 
-/** Tau Desktop's own OS-alert preference; renders only when the desktop build lets the web app change it. */
+/** Ficus Desktop's own OS-alert preference; renders only when the desktop build lets the web app change it. */
 export function DesktopNotificationsSetting() {
   const setEnabled = desktopNotificationToggle()
   const queryClient = useQueryClient()
@@ -27,7 +27,7 @@ export function DesktopNotificationsSetting() {
           onChange={(event) => update.mutate(event.target.checked)}
         />
       </label>
-      <p className="text-sm text-muted">macOS alerts for inbox updates while Tau is in the background.</p>
+      <p className="text-sm text-muted">macOS alerts for inbox updates while Ficus is in the background.</p>
       {update.isError && (
         <p role="alert" className="text-sm text-danger">
           {update.error instanceof Error ? update.error.message : String(update.error)}

@@ -27,7 +27,7 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
         <p>
           {managed
             ? 'The shared GitHub App can deliver events through your platform when its webhook relay is configured. You can also configure direct delivery below.'
-            : 'Polling is automatic. For immediate events, configure your own GitHub App or a repository webhook to deliver directly to Tau.'}
+            : 'Polling is automatic. For immediate events, configure your own GitHub App or a repository webhook to deliver directly to Ficus.'}
         </p>
         {settings.data && (
           <>

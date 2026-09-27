@@ -83,7 +83,7 @@ export function createShortTermMemoryContextExtension(getContext: () => ShortTer
     path: 'tau:short-term-memory-context',
     resolvedPath: 'tau:short-term-memory-context',
     sourceInfo: createSyntheticSourceInfo('tau:short-term-memory-context', {
-      source: 'tau',
+      source: 'ficus',
       scope: 'temporary',
       origin: 'top-level',
     }),

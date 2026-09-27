@@ -94,7 +94,7 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
             />
           </label>
           <p className="text-xs text-muted">
-            Create a key in Linear’s Security & Access settings. Give it read access to the teams you want Tau to use.
+            Create a key in Linear’s Security & Access settings. Give it read access to the teams you want Ficus to use.
           </p>
           <button className={button} disabled={create.isPending}>
             {create.isPending ? 'Connecting…' : 'Create and validate'}

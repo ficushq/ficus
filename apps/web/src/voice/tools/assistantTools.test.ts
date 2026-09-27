@@ -5,7 +5,7 @@ import { createAssistantTools } from './assistantTools'
 const id = '11111111-1111-4111-8111-111111111111'
 const squadDeps = {
   ...squads,
-  listSquads: async () => [{ id, name: 'Tau', createdAt: '2026-01-01', purpose: 'Development' }] as any,
+  listSquads: async () => [{ id, name: 'Ficus', createdAt: '2026-01-01', purpose: 'Development' }] as any,
 }
 const env = { navigate() {}, can: () => true }
 function find(tools: ReturnType<typeof createAssistantTools>, name: string) {
@@ -27,21 +27,21 @@ test('memory, files, activity, and subscriptions resolve route slugs before call
     searchMemory: memory as any,
     workspace: { ...workspace, getSquadMemoryFile: file },
   })
-  await find(tools, 'read_squad_files').execute({ squadId: 'tau', source: 'memory', query: 'context' }, env)
+  await find(tools, 'read_squad_files').execute({ squadId: 'ficus', source: 'memory', query: 'context' }, env)
   expect(memory.mock.calls).toEqual([[id, { query: 'context', limit: 10 }]])
-  await find(tools, 'read_activity').execute({ squadId: 'tau', limit: 3 }, env)
+  await find(tools, 'read_activity').execute({ squadId: 'ficus', limit: 3 }, env)
   expect(activity.mock.calls).toEqual([[id, { limit: 3 }]])
-  await find(tools, 'set_subscription').execute({ scope: 'squad', id: 'tau', watching: true }, env)
+  await find(tools, 'set_subscription').execute({ scope: 'squad', id: 'ficus', watching: true }, env)
   expect(subscribe.mock.calls).toEqual([[id]])
   const result = (await find(tools, 'read_squad_files').execute(
-    { squadId: 'tau', source: 'memory', path: '/context.md' },
+    { squadId: 'ficus', source: 'memory', path: '/context.md' },
     env
   )) as any
   expect(file.mock.calls).toEqual([[id, '/context.md']])
   expect(result.content.length).toBe(12000)
   expect(result.nextOffset).toBe(12000)
   await expect(
-    find(tools, 'read_squad_files').execute({ squadId: 'tau', source: 'workspace', query: 'x' }, env)
+    find(tools, 'read_squad_files').execute({ squadId: 'ficus', source: 'workspace', query: 'x' }, env)
   ).rejects.toThrow()
   expect(memory).toHaveBeenCalledTimes(1)
 })
@@ -73,11 +73,11 @@ test('delegate_task runs instance-wide without a squad and resolves squad slugs 
     ],
   ])
   await find(tools, 'delegate_task').execute(
-    { label: 'Pause deploy stream', request: 'Pause work stream Ship Tau', squadId: 'tau', mode: 'follow-up' },
+    { label: 'Pause deploy stream', request: 'Pause work stream Ship Ficus', squadId: 'ficus', mode: 'follow-up' },
     { ...env, delegateTask }
   )
   expect(delegateTask.mock.calls[1]).toEqual([
-    'Pause work stream Ship Tau',
+    'Pause work stream Ship Ficus',
     { label: 'Pause deploy stream', squadId: id, mode: 'follow-up', inReplyTo: undefined },
   ])
 })
@@ -102,10 +102,10 @@ test('search requests bounded backend results and retains explicit work context'
       {
         id,
         kind: 'work_stream' as const,
-        label: 'Ship Tau',
+        label: 'Ship Ficus',
         detail: '',
         squadId: id,
-        squadName: 'Tau',
+        squadName: 'Ficus',
         status: 'active',
         updatedAt: '2026-01-01',
         score: 100,
@@ -114,14 +114,14 @@ test('search requests bounded backend results and retains explicit work context'
   }))
   const listAllWorkStreams = mock(async () => [])
   const tools = createAssistantTools({ searchEntities, squads: { ...squadDeps, listAllWorkStreams } })
-  const result = (await find(tools, 'search_tau').execute({ query: 'Ship Tau', limit: 3 }, env)) as any
-  expect(searchEntities.mock.calls).toEqual([['Ship Tau', 3]])
+  const result = (await find(tools, 'search_tau').execute({ query: 'Ship Ficus', limit: 3 }, env)) as any
+  expect(searchEntities.mock.calls).toEqual([['Ship Ficus', 3]])
   expect(listAllWorkStreams).not.toHaveBeenCalled()
   expect(result.results[0]).toMatchObject({
     id,
     workStreamId: id,
     squadId: id,
-    squadName: 'Tau',
+    squadName: 'Ficus',
     path: `/squads/${id}/work?ws=${id}`,
   })
 })
@@ -182,8 +182,8 @@ test('navigate takes exactly one of path, agentId, or drawer', async () => {
   const tools = createAssistantTools({ getAgent })
   const nav = find(tools, 'navigate')
   const envWith = { navigate, openConversation, getCurrentPath: () => '/settings?section=providers' }
-  expect(await nav.execute({ path: '/squads/tau' }, envWith)).toEqual({ ok: true, navigatedTo: '/squads/tau' })
-  expect(navigate.mock.calls).toEqual([['/squads/tau']])
+  expect(await nav.execute({ path: '/squads/ficus' }, envWith)).toEqual({ ok: true, navigatedTo: '/squads/ficus' })
+  expect(navigate.mock.calls).toEqual([['/squads/ficus']])
   const offered = (await nav.execute({ agentId: 'manager' }, envWith)) as any
   expect(offered.conversation).toMatchObject({ agentId: 'manager', squadId: 'squad', label: 'Morgan' })
   expect(openConversation).not.toHaveBeenCalled()

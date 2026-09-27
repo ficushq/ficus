@@ -29,5 +29,5 @@ export async function userSessionRequired(
   if (identity?.type === 'legacy' && !(await adminHasPasskey())) {
     return c.json({ error: `Finish setting up your admin account to ${action}.`, code: FIRST_ADMIN_INCOMPLETE }, 403)
   }
-  return c.json({ error: `Sign in with your Tau account to ${action}.`, code: USER_SESSION_REQUIRED }, 403)
+  return c.json({ error: `Sign in with your Ficus account to ${action}.`, code: USER_SESSION_REQUIRED }, 403)
 }

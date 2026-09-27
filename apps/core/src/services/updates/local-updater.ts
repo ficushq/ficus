@@ -643,8 +643,8 @@ export class LocalUpdateManager {
         recipientId: SYSTEM_RECIPIENT_ID,
         senderType: 'system',
         wakeEligible: false,
-        subject: 'Local Tau update failed',
-        content: `Local Tau update ${run.id} failed: ${run.error ?? 'unknown error'}`,
+        subject: 'Local Ficus update failed',
+        content: `Local Ficus update ${run.id} failed: ${run.error ?? 'unknown error'}`,
         metadata: { runId: run.id, source: 'local-updater' },
       })
     } catch {

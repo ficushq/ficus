@@ -358,6 +358,6 @@ describe('site assistant task renderers', () => {
       renderToStaticMarkup(
         <ToolSummary renderers={siteAssistantToolRenderers} toolName="search_tau" args='{"query":"schedules"}' />
       )
-    ).toContain('Searched Tau for “schedules”')
+    ).toContain('Searched Ficus for “schedules”')
   })
 })

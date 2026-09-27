@@ -113,7 +113,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
       setBootstrapAuthed(true)
       return true
     } catch {
-      setError('Unable to reach Tau. Please try again.')
+      setError('Unable to reach Ficus. Please try again.')
       return false
     } finally {
       setLoading(false)
@@ -207,7 +207,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
     return (
       <div className="h-full flex items-center justify-center bg-page px-4">
         <div className="ficus-section w-full max-w-sm p-6">
-          <h1 className="text-lg font-semibold text-primary mb-4">Set up Tau</h1>
+          <h1 className="text-lg font-semibold text-primary mb-4">Set up Ficus</h1>
           {needsBootstrapPassword ? (
             autoLoginPending ? (
               <p className="text-sm text-secondary mb-4">Signing you in…</p>

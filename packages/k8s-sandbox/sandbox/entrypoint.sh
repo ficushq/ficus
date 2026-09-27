@@ -9,7 +9,7 @@
 
 set -e
 
-# Shared PVC mounts are also read/written by Tau Core. In local k3d that
+# Shared PVC mounts are also read/written by Ficus Core. In local k3d that
 # usually means container root and host user share the same underlying files.
 # Keep new sandbox-created files group-writable when FICUS_SHARED_GID is provided
 # by Core; this is harmless on CSI drivers that ignore chmod/chgrp failures.

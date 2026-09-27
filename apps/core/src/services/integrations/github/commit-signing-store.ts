@@ -76,7 +76,7 @@ export async function defaultGitHubConnectionId(squadId: string): Promise<string
   return row?.id
 }
 
-/** Enabled, authenticated GitHub connections this Tau user connected or last reconnected. */
+/** Enabled, authenticated GitHub connections this Ficus user connected or last reconnected. */
 export async function githubConnectionIdsForUser(userId: string): Promise<string[]> {
   const rows = await db
     .select({ id: integrationConnections.id })

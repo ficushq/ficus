@@ -80,7 +80,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
       await supervisor.startManagedLocalDeployment({
         localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
         sandboxId: 'squad_1',
-        command: "bun run dev -- --title 'Tau app'",
+        command: "bun run dev -- --title 'Ficus app'",
         cwd: '/workspace/1/my app',
         port: 5173,
       })
@@ -102,14 +102,14 @@ describe('LocalDeploymentProcessSupervisor', () => {
           "FICUS_APP_BASE_PATH='/'",
           "FICUS_LOCAL_DEPLOYMENT_CWD='/workspace/1/my app'",
           "FICUS_LOCAL_DEPLOYMENT_DIR='/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
-          `FICUS_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Tau app'"'"''`,
+          `FICUS_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Ficus app'"'"''`,
           // One release (Ficus rename): user apps still get the legacy TAU_ spellings.
           "TAU_APP_BASE_PATH='/'",
           "TAU_LOCAL_DEPLOYMENT_ID='abcdef12-1234-1234-1234-123456789abc'",
           "TAU_LOCAL_DEPLOYMENT_PORT='5173'",
           "TAU_LOCAL_DEPLOYMENT_CWD='/workspace/1/my app'",
           "TAU_LOCAL_DEPLOYMENT_DIR='/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
-          `TAU_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Tau app'"'"''`,
+          `TAU_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Ficus app'"'"''`,
           "bash '/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc/run.sh'",
         ].join(' ')
       )

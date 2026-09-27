@@ -65,7 +65,7 @@ export function buildBashrcContent(
   if (opts.toolchainDir) {
     lines.push(
       '',
-      '# Activate Tau-managed toolchain after existing environments',
+      '# Activate Ficus-managed toolchain after existing environments',
       `[ -f ${opts.toolchainDir}/.ready ] && eval "$(cd ${opts.toolchainDir} && devbox shellenv --init-hook 2>/dev/null)" 2>/dev/null || true`
     )
   }

@@ -1,4 +1,4 @@
-/** Safe labels accepted for local Tau instances and supervisor targets. */
+/** Safe labels accepted for local Ficus instances and supervisor targets. */
 export const LOCAL_INSTANCE_LABEL_RE = /^[a-z0-9]([a-z0-9-]{0,29}[a-z0-9])?$/
 export const DEFAULT_LOCAL_INSTANCE = 'tau'
 
