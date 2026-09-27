@@ -9,7 +9,8 @@ import { useCamera } from './useCamera'
 import { useViewportSize } from './useViewportSize'
 import { FarmCard, selectionAnchor } from './FarmCard'
 import { FarmCardContext, type FarmCardEnv } from './cards/context'
-import { ChatSlot, type ChatTarget } from './cards/ChatSlot'
+import { type ChatTarget } from './cards/ChatSlot'
+import { ChatWindows, useChatWindows } from './ChatWindows'
 import { haltedAgentIds } from './state'
 import { useStableRef } from '../hooks/useStableRef'
 import { useDesktopShellChrome } from '../desktop/shell'
@@ -76,7 +77,12 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     [cameraRef, sizeRef, focus]
   )
   const [selection, setSelection] = useState<Selection | null>(null)
-  const [chat, setChat] = useState<ChatTarget | null>(null)
+  const chats = useChatWindows(size)
+  // Phones have room for one thing: a chat opened from a card replaces the card.
+  const openChatRef = useStableRef((target: ChatTarget) => {
+    if (size.width < 640) setSelection(null)
+    chats.open(target)
+  })
   const onSelect = useCallback((s: Selection) => setSelection(s), [])
 
   const env = useMemo<FarmCardEnv>(
@@ -87,9 +93,9 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       squadsById: new Map(input.squads.map((s) => [s.id, s])),
       halted: haltedAgentIds(input.pendingActions),
       select: setSelection,
-      openChat: (agentId) => setChat({ kind: 'agent', agentId }),
-      startConsultant: (squadId) => setChat({ kind: 'consultant', squadId }),
-      openAssistant: (conversationId) => setChat({ kind: 'assistant', conversationId }),
+      openChat: (agentId) => openChatRef.current({ kind: 'agent', agentId } satisfies ChatTarget),
+      startConsultant: (squadId) => openChatRef.current({ kind: 'consultant', squadId }),
+      openAssistant: (conversationId) => openChatRef.current({ kind: 'assistant', conversationId }),
     }),
     [layout, input]
   )
@@ -191,7 +197,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       {listOpen && <FarmList layout={layout} onSelect={setSelection} onClose={() => setListOpen(false)} />}
 
       <FarmCardContext.Provider value={env}>
-        {selection && anchor && !chat && (
+        {selection && anchor && (
           <FarmCard
             selection={selection}
             screen={toScreen(anchor[0], anchor[1])}
@@ -199,7 +205,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
             onClose={() => setSelection(null)}
           />
         )}
-        {chat && <ChatSlot target={chat} onClose={() => setChat(null)} />}
+        <ChatWindows chats={chats} narrow={size.width < 640} />
       </FarmCardContext.Provider>
     </div>
   )

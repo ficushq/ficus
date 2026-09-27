@@ -24,7 +24,8 @@ export default defineConfig(({ mode, command }) => {
     plugins: [react(), ...(backend ? [devWriteGuard(backend)] : [])],
     server: {
       host: '127.0.0.1',
-      port: 5174,
+      // FICUS_GARDEN_PORT runs a second dev server (e.g. against another backend) beside the first.
+      port: Number(process.env.FICUS_GARDEN_PORT) || 5174,
       strictPort: true,
       // Extra hostnames to answer to, e.g. a `tailscale serve` name (same variable the web dev server reads).
       allowedHosts: env.VITE_ALLOWED_HOSTS?.split(',').filter(Boolean) ?? [],
