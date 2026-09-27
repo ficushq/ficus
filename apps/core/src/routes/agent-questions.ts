@@ -149,7 +149,7 @@ export const agentQuestionsRouter = new Hono()
       return c.json({ error: 'Forbidden' }, 403)
     }
     c.set('authzChecked', true)
-    const body = (await c.req.json().catch(() => null)) as { generation?: unknown } | null
+    const body = await c.req.json<{ generation?: unknown }>()
     if (!Number.isSafeInteger(body?.generation) || (body?.generation as number) < 1) {
       return c.json({ error: 'generation (positive integer) is required' }, 400)
     }

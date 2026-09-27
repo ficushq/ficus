@@ -15,6 +15,7 @@ import { Agent } from '../entities/Agent'
 import { AgentType } from '../entities/AgentType'
 import { Squad } from '../entities/Squad'
 import { identityMiddleware } from '../middleware/identity'
+import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
 import {
   assignRole,
   authHeaders,
@@ -32,7 +33,9 @@ import { actionsRouter } from './actions'
 import { agentQuestionsRouter } from './agent-questions'
 
 const app = new Hono()
+app.use('*', jsonBodyErrorMiddleware)
 app.use('*', identityMiddleware)
+app.onError(jsonBodyErrorHandler)
 app.route('/api/agent-questions', agentQuestionsRouter)
 app.route('/api/actions', actionsRouter)
 
@@ -418,6 +421,13 @@ describe('agent question chat visibility, attention, and response authority', ()
         headers: authHeaders(token),
         body: JSON.stringify({ generation }),
       })
+    const malformed = await app.request(url, {
+      method: 'POST',
+      headers: authHeaders(direct.token),
+      body: '{broken-json',
+    })
+    expect(malformed.status).toBe(400)
+    expect(await malformed.json()).toEqual({ error: 'Invalid JSON body' })
     expect((await dismiss(outsider.token)).status).toBe(403)
     expect((await dismiss(direct.token)).status).toBe(200)
     expect((await dismiss(direct.token)).status).toBe(200)

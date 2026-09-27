@@ -1,14 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { and, eq, like } from 'drizzle-orm'
 import { db } from '../../db'
-import { agentQuestions, agents, agentTypes, chatSendReceipts, executions, inbox, squads, users } from '../../db/schema'
+import {
+  agentQuestions,
+  agents,
+  agentTypes,
+  chatSendReceipts,
+  executions,
+  inbox,
+  messages,
+  squads,
+  users,
+} from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { InboxMessage } from '../../entities/InboxMessage'
 import { AgentType } from '../../entities/AgentType'
 import { Squad } from '../../entities/Squad'
 import { User } from '../../entities/User'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import { QUESTION_ANSWER_DELIVERY_LEASE_MS, reconcileQuestionAnswerDeliveriesOnce } from './question-answer-delivery'
+import {
+  QUESTION_ANSWER_DELIVERY_LEASE_MS,
+  reconcileQuestionAnswerDeliveriesOnce,
+  waitForQuestionAnswerDeliveryDrains,
+} from './question-answer-delivery'
 import { retryAgentQuestionAnswerDelivery } from './questions'
 import { reconcileQuestionDeliveryFailureAlertsOnce } from './question-delivery-failure-alert'
 
@@ -280,6 +294,8 @@ describe('question answer delivery outbox', () => {
     })
     const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
     expect(row).toMatchObject({ status: 'answered', answer: 'Yes, ship it', answerDeliveryStatus: 'delivered' })
+    expect(await db.select().from(messages).where(eq(messages.agentId, agent.id))).toHaveLength(1)
+    expect(await db.select().from(executions).where(eq(executions.agentId, agent.id))).toHaveLength(1)
     expect(row.answerDeliveryMessageId).not.toBeNull()
     expect(row.answerDeliveryExecutionId).not.toBeNull()
     expect(
@@ -314,6 +330,50 @@ describe('question answer delivery outbox', () => {
         .from(chatSendReceipts)
         .where(eq(chatSendReceipts.clientId, `agent-question-answer:v1:${question.id}:inbox`))
     ).toHaveLength(1)
+  })
+
+  it('rejects an accepted receipt for a different payload despite a matching client ID and inbox row', async () => {
+    const { question, now } = await createPendingDelivery()
+    const clientId = `agent-question-answer:v1:${question.id}:inbox`
+    const unrelated = await agent.sendMessage('Unrelated chat content', {
+      deliveryMode: 'steer',
+      metadata: { clientId },
+    })
+    expect(unrelated.success).toBe(true)
+    const beforeMessages = await db.select().from(messages).where(eq(messages.agentId, agent.id))
+    const beforeExecutions = await db.select().from(executions).where(eq(executions.agentId, agent.id))
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 1,
+      delivered: 0,
+      failed: 0,
+    })
+    // The answer inbox exists, but Agent.sendMessage refused to accept this answer.
+    expect(
+      await db
+        .select()
+        .from(inbox)
+        .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}`))
+    ).toHaveLength(1)
+    await db
+      .update(agentQuestions)
+      .set({ answerDeliveryStatus: 'failed', answerDeliveryNextAttemptAt: null })
+      .where(eq(agentQuestions.id, question.id))
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 0,
+      delivered: 0,
+      failed: 0,
+    })
+    let [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(row.answerDeliveryStatus).toBe('failed')
+    expect(row.answerDeliveredAt).toBeNull()
+    expect((await retryAgentQuestionAnswerDelivery(question.id))?.answerDelivery?.status).toBe('pending')
+    await waitForQuestionAnswerDeliveryDrains()
+    ;[row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(row.answerDeliveryStatus).not.toBe('delivered')
+    expect(await db.select().from(messages).where(eq(messages.agentId, agent.id))).toHaveLength(beforeMessages.length)
+    expect(await db.select().from(executions).where(eq(executions.agentId, agent.id))).toHaveLength(
+      beforeExecutions.length
+    )
   })
 
   it('requires an accepted receipt, not only receipt identities, and never sends on a failed-row sweep', async () => {

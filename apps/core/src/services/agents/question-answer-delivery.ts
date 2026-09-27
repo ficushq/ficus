@@ -1,8 +1,9 @@
 import { FlowWaitSupersededError } from '../work-streams/wait-scope'
 import { and, eq, isNotNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { agentQuestions, agents, chatSendReceipts, inbox } from '../../db/schema'
+import { agentQuestions, agents, chatSendReceipts, executions, inbox, messages } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
+import { chatSendRequestHashes } from './chat-send-request-hash'
 import { InboxMessage } from '../../entities/InboxMessage'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { createLogger } from '../../lib/infra/logger'
@@ -267,9 +268,9 @@ export async function reconcileAcceptedQuestionAnswerFailuresOnce(
 ): Promise<number> {
   const candidates = await db
     .select({
-      id: agentQuestions.id,
-      generation: agentQuestions.answerDeliveryGeneration,
-      inboxId: inbox.id,
+      question: agentQuestions,
+      answerInbox: inbox,
+      requestHash: chatSendReceipts.requestHash,
       messageId: chatSendReceipts.messageId,
       executionId: chatSendReceipts.executionId,
     })
@@ -305,6 +306,54 @@ export async function reconcileAcceptedQuestionAnswerFailuresOnce(
     .limit(QUESTION_ANSWER_DELIVERY_BATCH_SIZE)
   let delivered = 0
   for (const candidate of candidates) {
+    const question = candidate.question
+    const answerInbox = candidate.answerInbox
+    // An accepted receipt for the same predictable client ID is not enough: bind the
+    // inbox contents, prepared prompt and request hash to the saved answer.
+    const metadata = answerInbox.metadata as { source?: string; questionId?: string } | null
+    if (
+      answerInbox.senderType !== 'user' ||
+      answerInbox.senderId !== question.answeredByUserId ||
+      answerInbox.subject !== 'Answer to your question' ||
+      answerInbox.content !== answerContent(question) ||
+      answerInbox.deliveryMode !== 'steer' ||
+      metadata?.source !== 'agent-question-answer' ||
+      metadata.questionId !== question.id
+    )
+      continue
+    const delivery = prepareInboxDelivery([new InboxMessage(answerInbox)], 'steer', 'steer')
+    const clientId = `agent-question-answer:v1:${question.id}:inbox`
+    const hashes = chatSendRequestHashes({
+      agentId: question.agentId,
+      clientId,
+      content: delivery.prompt,
+      imageIds: delivery.imageIds,
+      deliveryMode: 'steer',
+    })
+    if (candidate.requestHash !== hashes.current && candidate.requestHash !== hashes.legacy) continue
+    const [boundMessage] = await db
+      .select({ content: messages.content, metadata: messages.metadata })
+      .from(messages)
+      .where(and(eq(messages.id, candidate.messageId!), eq(messages.agentId, question.agentId)))
+    const [boundExecution] = await db
+      .select({ id: executions.id })
+      .from(executions)
+      .where(and(eq(executions.id, candidate.executionId!), eq(executions.agentId, question.agentId)))
+    const messageMetadata = boundMessage?.metadata as {
+      executionId?: string
+      inboxMessageIds?: string[]
+      imageIds?: string[]
+      deliveryMode?: string
+    } | null
+    if (
+      !boundExecution ||
+      boundMessage?.content !== delivery.prompt ||
+      messageMetadata?.executionId !== candidate.executionId ||
+      messageMetadata?.deliveryMode !== 'steer' ||
+      JSON.stringify(messageMetadata?.inboxMessageIds) !== JSON.stringify([answerInbox.id]) ||
+      JSON.stringify(messageMetadata?.imageIds ?? []) !== JSON.stringify(delivery.imageIds)
+    )
+      continue
     const updated = await db.transaction(async (tx) => {
       const [settled] = await tx
         .update(agentQuestions)
@@ -314,21 +363,21 @@ export async function reconcileAcceptedQuestionAnswerFailuresOnce(
           answerDeliveryClaimedAt: null,
           answerDeliveryNextAttemptAt: null,
           answerDeliveryLastError: null,
-          answerDeliveryInboxMessageId: candidate.inboxId,
+          answerDeliveryInboxMessageId: answerInbox.id,
           answerDeliveryMessageId: candidate.messageId,
           answerDeliveryExecutionId: candidate.executionId,
           answerDeliveredAt: now,
         })
         .where(
           and(
-            eq(agentQuestions.id, candidate.id),
+            eq(agentQuestions.id, question.id),
             eq(agentQuestions.status, 'answered'),
             eq(agentQuestions.answerDeliveryStatus, 'failed'),
-            eq(agentQuestions.answerDeliveryGeneration, candidate.generation)
+            eq(agentQuestions.answerDeliveryGeneration, question.answerDeliveryGeneration)
           )
         )
         .returning({ id: agentQuestions.id })
-      if (settled) await tx.update(inbox).set({ deliveredAt: now }).where(eq(inbox.id, candidate.inboxId))
+      if (settled) await tx.update(inbox).set({ deliveredAt: now }).where(eq(inbox.id, answerInbox.id))
       return Boolean(settled)
     })
     if (updated) delivered++
