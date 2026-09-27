@@ -16,9 +16,9 @@ app.onError(jsonBodyErrorHandler)
 app.use('*', identityMiddleware)
 app.route('/garden-preferences', gardenPreferencesRouter)
 const get = (user: TestUser) => app.request('/garden-preferences/me', { headers: authHeaders(user.token) })
-const put = (user: TestUser, body: unknown) =>
+const patch = (user: TestUser, body: unknown) =>
   app.request('/garden-preferences/me', {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { ...authHeaders(user.token), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
@@ -30,45 +30,74 @@ afterAll(async () => {
   await cleanupTestRbac(prefix)
 })
 
-test('anonymous access cannot read or change a garden preference', async () => {
-  for (const method of ['GET', 'PUT'])
+test('anonymous access cannot read or change garden settings', async () => {
+  for (const method of ['GET', 'PATCH'])
     expect((await app.request('/garden-preferences/me', { method })).status).toBe(401)
 })
 
-test('no choice is null; each caller reads and writes only their own style', async () => {
-  expect(await (await get(a)).json()).toEqual({ userId: a.id, style: null })
-  expect((await put(a, { expectedUserId: a.id, style: 'blueprint' })).status).toBe(200)
-  expect(await (await get(a)).json()).toEqual({ userId: a.id, style: 'blueprint' })
-  expect(await (await get(b)).json()).toEqual({ userId: b.id, style: null })
-  expect((await put(a, { expectedUserId: a.id, style: 'sketchbook' })).status).toBe(200)
-  expect(await (await get(a)).json()).toEqual({ userId: a.id, style: 'sketchbook' })
+test('no settings yet is empty; each caller reads and changes only their own', async () => {
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, settings: {} })
+  const saved = await patch(a, { expectedUserId: a.id, settings: { style: 'blueprint' } })
+  expect(saved.status).toBe(200)
+  expect(await saved.json()).toEqual({ userId: a.id, settings: { style: 'blueprint' } })
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, settings: { style: 'blueprint' } })
+  expect(await (await get(b)).json()).toEqual({ userId: b.id, settings: {} })
+  expect((await patch(a, { expectedUserId: a.id, settings: { style: 'sketchbook' } })).status).toBe(200)
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, settings: { style: 'sketchbook' } })
   expect(await db.select().from(gardenPreferences).where(eq(gardenPreferences.userId, a.id))).toHaveLength(1)
 })
 
-test('identity precondition rejects writes sent with a different account session', async () => {
-  expect((await put(b, { expectedUserId: a.id, style: 'futurist' })).status).toBe(409)
-  expect((await put(b, { style: 'futurist' })).status).toBe(409)
-  expect(await (await get(b)).json()).toEqual({ userId: b.id, style: null })
+test('a change leaves the settings it does not name as they were', async () => {
+  expect((await patch(a, { expectedUserId: a.id, settings: { style: 'futurist' } })).status).toBe(200)
+  const unchanged = await patch(a, { expectedUserId: a.id, settings: {} })
+  expect(await unchanged.json()).toEqual({ userId: a.id, settings: { style: 'futurist' } })
 })
 
-test('rejects unknown styles, malformed and oversized bodies without changing the choice', async () => {
+test('stored keys the current code does not know are not returned', async () => {
+  const legacy = await createTestUser({ prefix })
+  await db.insert(gardenPreferences).values({
+    userId: legacy.id,
+    settings: { style: 'nostalgic', retired: true } as never,
+  })
+  expect(await (await get(legacy)).json()).toEqual({ userId: legacy.id, settings: { style: 'nostalgic' } })
+  const changed = await patch(legacy, { expectedUserId: legacy.id, settings: { style: 'blueprint' } })
+  expect(await changed.json()).toEqual({ userId: legacy.id, settings: { style: 'blueprint' } })
+})
+
+test('identity precondition rejects writes sent with a different account session', async () => {
+  expect((await patch(b, { expectedUserId: a.id, settings: { style: 'futurist' } })).status).toBe(409)
+  expect((await patch(b, { settings: { style: 'futurist' } })).status).toBe(409)
+  expect(await (await get(b)).json()).toEqual({ userId: b.id, settings: {} })
+})
+
+test('rejects unknown settings, invalid values, malformed and oversized bodies without changing anything', async () => {
   const before = await (await get(a)).json()
   const malformed = await app.request('/garden-preferences/me', {
-    method: 'PUT',
+    method: 'PATCH',
     headers: authHeaders(a.token),
     body: '{',
   })
   expect(malformed.status).toBe(400)
-  // Old names are the garden's to map; the account only stores current style ids.
-  for (const style of ['grid', 'farm', '', null, 3, { id: 'blueprint' }])
-    expect((await put(a, { expectedUserId: a.id, style })).status).toBe(400)
-  expect((await put(a, { expectedUserId: a.id, style: 'futurist', padding: 'x'.repeat(2000) })).status).toBe(413)
+  // Old style names are the garden's to map; the account only stores current ids.
+  for (const settings of [
+    { style: 'grid' },
+    { style: '' },
+    { style: null },
+    { style: 'blueprint', zoom: 2 },
+    null,
+    'blueprint',
+    ['style'],
+  ])
+    expect((await patch(a, { expectedUserId: a.id, settings })).status).toBe(400)
+  expect(
+    (await patch(a, { expectedUserId: a.id, settings: { style: 'futurist' }, padding: 'x'.repeat(5000) })).status
+  ).toBe(413)
   expect(await (await get(a)).json()).toEqual(before)
 })
 
-test('user deletion cascades the garden preference row', async () => {
+test('user deletion cascades the garden settings row', async () => {
   const removable = await createTestUser({ prefix })
-  await put(removable, { expectedUserId: removable.id, style: 'futurist' })
+  await patch(removable, { expectedUserId: removable.id, settings: { style: 'futurist' } })
   await db.delete(users).where(eq(users.id, removable.id))
   expect(await db.select().from(gardenPreferences).where(eq(gardenPreferences.userId, removable.id))).toHaveLength(0)
 })

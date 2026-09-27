@@ -23,7 +23,7 @@ import {
 import type {
   ThemePreference,
   CustomThemeDocument,
-  GardenStyle,
+  GardenSettings,
   AmtpEnvelope,
   AmtpSignedAgentCard,
   Attention,
@@ -1780,13 +1780,14 @@ export const userPreferences = pgTable('user_preferences', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
-// The garden UI's per-account choices (its visual style), kept apart from
-// user_preferences so the web theme's row and migrations stay its own.
+// The garden UI's durable per-account state: one validated settings document
+// (@ficus/shared garden-preferences.ts), so a new setting needs no migration.
+// Kept apart from user_preferences so the web theme's row and migrations stay its own.
 export const gardenPreferences = pgTable('garden_preferences', {
   userId: uuid('user_id')
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
-  style: text('style').$type<GardenStyle>().notNull(),
+  settings: jsonb('settings').$type<GardenSettings>().notNull().default({}),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

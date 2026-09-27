@@ -20,7 +20,7 @@ export function useAccountStyle(adopt: (style: SkinId) => void, linked: SkinId |
   const session = useQuery({ ...gardenQueries.session(), enabled: !isDemo })
   const userId = session.data?.id
   const account = useQuery({ ...gardenQueries.gardenPreference(), enabled: !!userId })
-  const saved = account.data && account.data.userId === userId ? account.data.style : null
+  const saved = account.data && account.data.userId === userId ? (account.data.settings.style ?? null) : null
 
   const save = useCallback(
     async (style: SkinId) => {
@@ -28,9 +28,12 @@ export function useAccountStyle(adopt: (style: SkinId) => void, linked: SkinId |
       const { queryKey } = gardenQueries.gardenPreference()
       // Show the choice as the account's straight away, so a refetch in flight can't bounce it back.
       await queryClient.cancelQueries({ queryKey })
-      queryClient.setQueryData(queryKey, { userId, style })
+      queryClient.setQueryData(queryKey, (old) => ({ userId, settings: { ...old?.settings, style } }))
       try {
-        queryClient.setQueryData(queryKey, await client.gardenPreferences.updateMine({ expectedUserId: userId, style }))
+        queryClient.setQueryData(
+          queryKey,
+          await client.gardenPreferences.updateMine({ expectedUserId: userId, settings: { style } })
+        )
       } catch {
         // Couldn't save (offline, or the session changed): this browser still remembers it, and the
         // account's own choice comes back on the next refetch.
