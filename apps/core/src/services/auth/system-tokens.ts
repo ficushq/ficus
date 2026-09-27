@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'crypto'
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import {
   db,
   instanceMaintenanceAudit,
@@ -15,10 +15,12 @@ import {
   type PlatformMaintenanceCompatibilityDecision,
 } from './platform-maintenance-compatibility'
 
+import { SYSTEM_TOKEN_PREFIX } from './token-prefixes'
+
+export { SYSTEM_TOKEN_PREFIX }
+
 const log = createLogger('system-tokens')
 
-/** Every system token carries this prefix; resolveSystemToken rejects anything else before any lookup. */
-export const SYSTEM_TOKEN_PREFIX = 'ficus_sys_'
 // The auto-provisioned webhook token's raw value, kept encrypted in the secret store so the webhook
 // processors can present it. The `__` prefix marks it internal (hidden from the secrets UI list).
 const WEBHOOK_TOKEN_SECRET_KEY = '__SYSTEM_WEBHOOK_TOKEN'
@@ -26,6 +28,13 @@ const WEBHOOK_TOKEN_NAME = 'Webhook automation'
 // Serializes webhook-token replacement across calls and processes (hashed with
 // hashtextextended(key, 0), like the other string-keyed advisory locks).
 const WEBHOOK_TOKEN_LOCK_KEY = 'system-tokens:webhook-automation-replace'
+
+/** The system token the control plane (Platform) holds for resize and its maintenance lease. */
+export const PLATFORM_ORCHESTRATOR_TOKEN_NAME = 'platform-orchestrator'
+export const PLATFORM_ORCHESTRATOR_SCOPES = ['machines:write', 'machines:read', 'system:pause']
+// Serializes platform-orchestrator re-issues across processes, so concurrent runs cannot each
+// keep their own row alive (hashed with hashtextextended(key, 0), like the webhook lock).
+const PLATFORM_ORCHESTRATOR_REISSUE_LOCK_KEY = 'system-tokens:platform-orchestrator-reissue'
 
 /** Scopes the bundled webhook scripts need (inbox send-system, squad/agent get/list, workstream CRUD). */
 export const DEFAULT_WEBHOOK_SCOPES = [
@@ -226,6 +235,50 @@ export async function upgradePlatformMaintenanceToken(
     }
     return { ok: true, scopes: upgraded, outcome }
   })
+}
+
+/**
+ * Mint a fresh platform-orchestrator system token and revoke every other live row with that name,
+ * in one transaction under an advisory lock. Afterwards exactly one platform-orchestrator row is
+ * live: the one returned. Works when no such row exists (`revoked: 0`).
+ *
+ * Each call is a full re-issue. The raw value is never stored (only its hash), so a retry cannot
+ * return an earlier token: it mints a new one and revokes the earlier one, and the caller keeps the
+ * last value it received. Concurrent calls serialize on the lock, so the last to commit wins and
+ * nothing is left orphaned.
+ *
+ * Only the root-run `system-token-control` entry calls this. It takes no input and has no HTTP route.
+ */
+export async function reissuePlatformOrchestratorToken(): Promise<{ token: string; id: string; revoked: number }> {
+  const token = `${SYSTEM_TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
+  const { id, revoked } = await withDedicatedDbTransaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${PLATFORM_ORCHESTRATOR_REISSUE_LOCK_KEY}, 0))`)
+    const [row] = await tx
+      .insert(systemTokens)
+      .values({
+        name: PLATFORM_ORCHESTRATOR_TOKEN_NAME,
+        tokenHash: hashToken(token),
+        scopes: PLATFORM_ORCHESTRATOR_SCOPES,
+        kind: 'manual',
+      })
+      .returning({ id: systemTokens.id })
+    const revokedRows = await tx
+      .update(systemTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(systemTokens.name, PLATFORM_ORCHESTRATOR_TOKEN_NAME),
+          eq(systemTokens.kind, 'manual'),
+          isNull(systemTokens.revokedAt),
+          ne(systemTokens.id, row.id)
+        )
+      )
+      .returning({ id: systemTokens.id })
+    return { id: row.id, revoked: revokedRows.length }
+  })
+  // Never log the token itself.
+  log.info('Re-issued the platform-orchestrator system token', { id, revoked })
+  return { token, id, revoked }
 }
 
 export async function revokeSystemToken(id: string): Promise<boolean> {

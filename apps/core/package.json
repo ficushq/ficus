@@ -7,7 +7,7 @@
     "dev": "concurrently -n api,worker -c blue,magenta 'bun run dev:api' 'bun run dev:worker'",
     "dev:api": "bun run --env-file ../../.env --watch src/index.ts",
     "dev:worker": "bun run --env-file ../../.env --watch src/worker.ts",
-    "build": "bun build src/index.ts src/worker.ts src/smoke-configured-extensions.ts src/box-control.ts --outdir dist --target bun --external=bun-pty --external=jsdom --external=@silvia-odwyer/photon-node --external=@google-cloud/text-to-speech --external=@aws-sdk/client-ses --external=@aws-sdk/client-s3 --external=playwright-core --external=playwright && bun build src/db/run-migrations.ts --outfile dist/migrate.js --target bun --external=bun-pty --external=playwright-core --external=playwright && bun run build:docs",
+    "build": "bun build src/index.ts src/worker.ts src/smoke-configured-extensions.ts src/box-control.ts src/system-token-control.ts --outdir dist --target bun --external=bun-pty --external=jsdom --external=@silvia-odwyer/photon-node --external=@google-cloud/text-to-speech --external=@aws-sdk/client-ses --external=@aws-sdk/client-s3 --external=playwright-core --external=playwright && bun build src/db/run-migrations.ts --outfile dist/migrate.js --target bun --external=bun-pty --external=playwright-core --external=playwright && bun run build:docs",
     "start": "concurrently -n api,worker -c blue,magenta 'bun run start:api' 'bun run start:worker'",
     "start:api": "bun run dist/index.js",
     "start:worker": "bun run dist/worker.js",

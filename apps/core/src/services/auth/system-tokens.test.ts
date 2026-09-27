@@ -12,6 +12,7 @@ import {
   ensureWebhookToken,
   webhookScriptAuthEnv,
   DEFAULT_WEBHOOK_SCOPES,
+  reissuePlatformOrchestratorToken,
 } from './system-tokens'
 import { resolveToken } from './resolve-token'
 import { hasPermission } from '../rbac'
@@ -242,5 +243,139 @@ describe('system tokens', () => {
     // It is reachable only from verified webhook handlers, and it can only replace the
     // stored secret with a fresh token it never returns to an HTTP caller.
     expect(ensureWebhookToken.length).toBe(0)
+  })
+})
+
+describe('reissuePlatformOrchestratorToken', () => {
+  const ORCHESTRATOR = 'platform-orchestrator'
+
+  afterEach(async () => {
+    await db.delete(systemTokens)
+  })
+
+  async function liveOrchestratorRows() {
+    return (await db.select().from(systemTokens).where(eq(systemTokens.name, ORCHESTRATOR))).filter(
+      (row) => !row.revokedAt
+    )
+  }
+
+  it('reissue mints ficus_sys_ with orchestrator scopes and revokes older orchestrator rows', async () => {
+    const old = await createSystemToken({ name: 'platform-orchestrator', scopes: ['machines:read'] })
+    const out = await reissuePlatformOrchestratorToken()
+    expect(out.token.startsWith('ficus_sys_')).toBe(true)
+    expect(out.revoked).toBe(1)
+    expect(await resolveSystemToken(old.token)).toBeNull()
+    const resolved = await resolveSystemToken(out.token)
+    expect(resolved?.scopes.sort()).toEqual(['machines:read', 'machines:write', 'system:pause'])
+  })
+
+  it('reissue works when no orchestrator token exists yet', async () => {
+    expect((await reissuePlatformOrchestratorToken()).revoked).toBe(0)
+  })
+
+  it('leaves exactly one live platform-orchestrator row: the one it returned, stored only as a hash', async () => {
+    const out = await reissuePlatformOrchestratorToken()
+
+    const live = await liveOrchestratorRows()
+    expect(live).toHaveLength(1)
+    expect(live[0].id).toBe(out.id)
+    expect(live[0].kind).toBe('manual')
+    expect(live[0].tokenHash).toBe(createHash('sha256').update(out.token).digest('hex'))
+    // The raw value is never persisted in any column.
+    expect(JSON.stringify(live[0])).not.toContain(out.token)
+    expect((await resolveSystemToken(out.token))?.name).toBe(ORCHESTRATOR)
+  })
+
+  it('revokes every live orchestrator row whatever its prefix, and counts only rows it revoked', async () => {
+    await createSystemToken({ name: ORCHESTRATOR, scopes: ['machines:read', 'machines:write'] })
+    // A row minted under an older prefix (neutral stand-in): dead for auth, but still live in the table.
+    const legacy = await seedSystemTokenRow({ raw: 'old_sys_' + 'a'.repeat(43), name: ORCHESTRATOR, kind: 'manual' })
+    const alreadyRevoked = await seedSystemTokenRow({
+      raw: 'old_sys_' + 'b'.repeat(43),
+      name: ORCHESTRATOR,
+      kind: 'manual',
+    })
+    const revokedAt = new Date('2026-01-01T00:00:00Z')
+    await db.update(systemTokens).set({ revokedAt }).where(eq(systemTokens.id, alreadyRevoked.id))
+
+    const out = await reissuePlatformOrchestratorToken()
+
+    expect(out.revoked).toBe(2)
+    const rows = await db.select().from(systemTokens)
+    expect(rows.find((row) => row.id === legacy.id)?.revokedAt).not.toBeNull()
+    // An already-revoked row keeps its original revocation time.
+    expect(rows.find((row) => row.id === alreadyRevoked.id)?.revokedAt?.toISOString()).toBe(revokedAt.toISOString())
+    expect((await liveOrchestratorRows()).map((row) => row.id)).toEqual([out.id])
+  })
+
+  it('never touches tokens with another name', async () => {
+    const manual = await createSystemToken({ name: 'CI', scopes: ['inbox:system'] })
+    const webhook = await seedSystemTokenRow({
+      raw: SYSTEM_TOKEN_PREFIX + 'w'.repeat(43),
+      name: 'Webhook automation',
+      kind: 'webhook',
+    })
+
+    await reissuePlatformOrchestratorToken()
+
+    expect(await resolveSystemToken(manual.token)).not.toBeNull()
+    expect(await resolveSystemToken(SYSTEM_TOKEN_PREFIX + 'w'.repeat(43))).not.toBeNull()
+    const [webhookRow] = await db.select().from(systemTokens).where(eq(systemTokens.id, webhook.id))
+    expect(webhookRow.revokedAt).toBeNull()
+  })
+
+  it('a second run (a retry after a lost reply) supersedes the first: new token live, first revoked', async () => {
+    const first = await reissuePlatformOrchestratorToken()
+    const second = await reissuePlatformOrchestratorToken()
+
+    expect(second.token).not.toBe(first.token)
+    expect(second.revoked).toBe(1)
+    expect(await resolveSystemToken(first.token)).toBeNull()
+    expect(await resolveSystemToken(second.token)).not.toBeNull()
+    expect((await liveOrchestratorRows()).map((row) => row.id)).toEqual([second.id])
+  })
+
+  it('concurrent re-issues serialize: exactly one orchestrator token survives, and no orphans', async () => {
+    await createSystemToken({ name: ORCHESTRATOR, scopes: ['machines:read'] })
+
+    const results = await Promise.all(Array.from({ length: 5 }, () => reissuePlatformOrchestratorToken()))
+
+    const live = await liveOrchestratorRows()
+    expect(live).toHaveLength(1)
+    const survivors = []
+    for (const result of results) if (await resolveSystemToken(result.token)) survivors.push(result)
+    expect(survivors).toHaveLength(1)
+    expect(survivors[0].id).toBe(live[0].id)
+    // Serialized: each run revokes exactly the one live row it found (the pre-existing one, then each predecessor).
+    expect(results.map((result) => result.revoked)).toEqual([1, 1, 1, 1, 1])
+  })
+
+  it('never logs the raw token', async () => {
+    const captured: string[] = []
+    const originals = { log: console.log, info: console.info, warn: console.warn, error: console.error }
+    const capture =
+      (original: (...args: unknown[]) => void) =>
+      (...args: unknown[]) => {
+        captured.push(args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' '))
+        original(...args)
+      }
+    console.log = capture(originals.log)
+    console.info = capture(originals.info)
+    console.warn = capture(originals.warn)
+    console.error = capture(originals.error)
+    let token: string
+    try {
+      ;({ token } = await reissuePlatformOrchestratorToken())
+    } finally {
+      Object.assign(console, originals)
+    }
+
+    expect(captured.length).toBeGreaterThan(0)
+    expect(captured.join('\n')).not.toContain(token)
+    expect(captured.join('\n')).not.toContain(token.slice(SYSTEM_TOKEN_PREFIX.length))
+  })
+
+  it('takes no caller input', () => {
+    expect(reissuePlatformOrchestratorToken.length).toBe(0)
   })
 })
