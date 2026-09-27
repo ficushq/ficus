@@ -19,6 +19,7 @@ import {
   handleManualVoiceOrbPointerUp,
   setStoredVoiceInputMode,
 } from './voiceWorkspaceInputMode'
+import { VOICE_HOLD_KEYDOWN_MESSAGE, VOICE_HOLD_KEYUP_MESSAGE } from '@ficus/shared/browser-keys'
 
 export type VoiceWorkspaceEnvironment = {
   mediaDevices: Pick<MediaDevices, 'getUserMedia'> | undefined
@@ -249,14 +250,14 @@ function useManualHoldToSpeakShortcut({
     }
     const handleMessage = (event: MessageEvent) => {
       const data = event.data as { type?: string; repeat?: boolean } | null
-      if (data?.type === 'tau:voice-hold-keydown') {
+      if (data?.type === VOICE_HOLD_KEYDOWN_MESSAGE) {
         handleManualHoldKeyDown(
           { code: 'Space', repeat: data.repeat, target: null, preventDefault: () => undefined },
           isHoldingRef.current,
           onStartRef.current
         )
       }
-      if (data?.type === 'tau:voice-hold-keyup') {
+      if (data?.type === VOICE_HOLD_KEYUP_MESSAGE) {
         handleManualHoldKeyUp(
           { code: 'Space', target: null, preventDefault: () => undefined },
           isHoldingRef.current,

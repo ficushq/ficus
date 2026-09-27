@@ -219,7 +219,7 @@ This derivation-from-computed-style is unavailable in the **synchronous
 pre-paint flash script**, which cannot trust the cascade that early (the same
 reason it has always kept a small hardcoded surface-color fallback table
 instead of reading computed style). Instead, `ThemeProvider`'s own real root
-paint persists a **resolved snapshot** — `localStorage['tau-custom-theme-resolved']
+paint persists a **resolved snapshot** — `localStorage['ficus-custom-theme-resolved']
 = { docHash, fingerprint, sides }`. `docHash` is a deterministic (FNV-1a,
 staleness-detection only) hash of the exact document; `fingerprint` is a
 **build-time** FNV-1a hash of `index.css`'s + `builtins.css`'s own content,
@@ -311,7 +311,7 @@ it only ever won the race against the ONE repaint that happened to be
 in-flight at mount time, not against a repaint triggered later by something
 else entirely while the preview was still open.)
 
-The saved key is `tau-custom-theme`; a device-local `tau-theme-preset-id` key
+The saved key is `ficus-custom-theme`; a device-local `ficus-theme-preset-id` key
 remembers which library preset the active document came from (or is absent
 when detached — a built-in selection, a one-off import, or the preset's own
 row was later deleted; the applied document snapshot keeps working either

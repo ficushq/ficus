@@ -174,7 +174,7 @@ function readOtherSideDerivedVars(
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // The stored selection is read once, synchronously: legacy 'tau-theme'
+  // The stored selection is read once, synchronously: legacy 'ficus-theme'
   // values migrate here, unreadable values fall back to the defaults.
   const [store] = useState(() => new ThemeSyncStore(getThemeStorage()))
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)

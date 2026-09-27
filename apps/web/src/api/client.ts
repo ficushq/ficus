@@ -1,5 +1,6 @@
 import { readApiErrorMessage } from '@ficus/client-core'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
+import { AUTH_TOKEN_STORAGE_KEY } from '@ficus/shared/browser-keys'
 export { readApiErrorMessage } from '@ficus/client-core'
 
 const BASE_URL = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '')
@@ -52,18 +53,16 @@ export function apiUrl(path: string): string {
   return `${getApiUrl('/api')}${path}`
 }
 
-const AUTH_STORAGE_KEY = 'tau_password'
-
 export function getStoredToken(): string | null {
-  return localStorage.getItem(AUTH_STORAGE_KEY)
+  return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
 }
 
 export function setStoredToken(token: string): void {
-  localStorage.setItem(AUTH_STORAGE_KEY, token)
+  localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
 }
 
 export function clearStoredToken(): void {
-  localStorage.removeItem(AUTH_STORAGE_KEY)
+  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
 }
 
 // Auth now travels in an HttpOnly session cookie (sent via credentials: 'include');

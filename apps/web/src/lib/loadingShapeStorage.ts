@@ -1,6 +1,7 @@
-export const LOADING_SHAPE_STORAGE_PREFIX = 'tau.loadingShape.v1'
+import { DEV_BACKEND_SHAPE_SCOPE_STORAGE_KEY, LOADING_SHAPE_STORAGE_PREFIX } from '@ficus/shared/browser-keys'
+export { LOADING_SHAPE_STORAGE_PREFIX }
 export const LOADING_SHAPE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
-export const DEV_BACKEND_SHAPE_SCOPE_KEY = 'tau.devBackend.shapeScope'
+export const DEV_BACKEND_SHAPE_SCOPE_KEY = DEV_BACKEND_SHAPE_SCOPE_STORAGE_KEY
 
 export interface LoadingShapeRecord {
   count: number

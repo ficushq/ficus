@@ -54,7 +54,7 @@ describe('WorkStreamViewToggle', () => {
   })
 
   test('honors the specified persisted work-tab key', async () => {
-    window.localStorage.setItem('tau.wsView.one', 'kanban')
+    window.localStorage.setItem('ficus.wsView.one', 'kanban')
     await domHarness!.act(async () =>
       root.render(<WorkStreamViewToggle squadId="one" surface="work" modes={WORK_MODES} />)
     )
@@ -66,7 +66,7 @@ describe('WorkStreamViewToggle', () => {
   })
 
   test('reads the previously shipped surface-qualified work key as a migration fallback', async () => {
-    window.localStorage.setItem('tau.wsView.work.one', 'graph')
+    window.localStorage.setItem('ficus.wsView.work.one', 'graph')
     await domHarness!.act(async () =>
       root.render(<WorkStreamViewToggle squadId="one" surface="work" modes={WORK_MODES} />)
     )

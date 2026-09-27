@@ -1,3 +1,4 @@
+import { OAUTH_PROVIDER_HINT_SESSION_KEY } from '@ficus/shared/browser-keys'
 const CALLBACK_PATH_SUFFIX = '/settings/integrations/oauth/callback'
 const FLOW_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const OPAQUE_STATE_PATTERN = /^[A-Za-z0-9_-]{43}$/
@@ -5,7 +6,6 @@ const BROKER_STATE_KEY = 'tauOAuthCompletion'
 const LOCAL_STATE_KEY = 'tauOAuthLocalCallback'
 const OUTCOME_STATE_KEY = 'tauOAuthCallbackOutcome'
 const ROUTER_HISTORY_KEYS = new Set(['idx', 'key', 'usr'])
-const PROVIDER_HINT_KEY = 'tauOAuthProviderHint'
 const PROVIDER_STATE_KEY = 'tauOAuthCallbackProvider'
 
 export type BrokerCompletionPayload = { localFlowId: string; handle: string }
@@ -149,7 +149,7 @@ export function clearPreparedOAuthCallback(): void {
  */
 export function rememberOAuthProviderHint(provider: string): void {
   try {
-    window.sessionStorage.setItem(PROVIDER_HINT_KEY, provider)
+    window.sessionStorage.setItem(OAUTH_PROVIDER_HINT_SESSION_KEY, provider)
   } catch {
     // Storage may be unavailable (private browsing); the callback page falls back to its default.
   }
@@ -157,8 +157,8 @@ export function rememberOAuthProviderHint(provider: string): void {
 
 export function consumeOAuthProviderHint(): string | undefined {
   try {
-    const value = window.sessionStorage.getItem(PROVIDER_HINT_KEY)
-    window.sessionStorage.removeItem(PROVIDER_HINT_KEY)
+    const value = window.sessionStorage.getItem(OAUTH_PROVIDER_HINT_SESSION_KEY)
+    window.sessionStorage.removeItem(OAUTH_PROVIDER_HINT_SESSION_KEY)
     return value ?? undefined
   } catch {
     return undefined

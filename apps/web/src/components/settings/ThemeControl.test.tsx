@@ -60,11 +60,11 @@ async function renderControl(
     },
   })
   cleanup = () => dom.cleanup()
-  localStorage.setItem('tau-theme-id', themeId)
-  localStorage.setItem('tau-appearance', appearance)
+  localStorage.setItem('ficus-theme-id', themeId)
+  localStorage.setItem('ficus-appearance', appearance)
   if (custom.customTheme) {
     localStorage.setItem(
-      'tau-custom-theme',
+      'ficus-custom-theme',
       JSON.stringify({
         format: 'tau-custom-theme',
         version: 2,
@@ -74,8 +74,8 @@ async function renderControl(
       })
     )
   }
-  if (custom.presetId) localStorage.setItem('tau-theme-preset-id', custom.presetId)
-  if (custom.presetOwnerId) localStorage.setItem('tau-theme-preset-owner-id', custom.presetOwnerId)
+  if (custom.presetId) localStorage.setItem('ficus-theme-preset-id', custom.presetId)
+  if (custom.presetOwnerId) localStorage.setItem('ficus-theme-preset-owner-id', custom.presetOwnerId)
   const sheet = document.createElement('style')
   sheet.textContent = palettes
     .map((p) => {
@@ -147,9 +147,9 @@ test('clicking a built-in dot while a preset is active deactivates it (setThemeI
 
   await act(async () => fireEvent.click(getByRole(grid, 'radio', { name: 'Ember' })))
 
-  expect(localStorage.getItem('tau-theme-id')).toBe('ember')
-  expect(localStorage.getItem('tau-custom-theme')).toBeNull()
-  expect(localStorage.getItem('tau-theme-preset-id')).toBeNull()
+  expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
+  expect(localStorage.getItem('ficus-custom-theme')).toBeNull()
+  expect(localStorage.getItem('ficus-theme-preset-id')).toBeNull()
   expect(getByRole(grid, 'radio', { name: 'Ember' }).getAttribute('aria-checked')).toBe('true')
   // The library itself is untouched: no delete call is ever made from here,
   // this only clears the active selection (same as the quick picker).
@@ -161,8 +161,8 @@ test('an own preset dot applies it via applyPreset (same path as the quick picke
   })
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   await act(async () => fireEvent.click(getByRole(grid, 'radio', { name: 'Midnight' })))
-  expect(localStorage.getItem('tau-theme-preset-id')).toBe('p1')
-  expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
+  expect(localStorage.getItem('ficus-theme-preset-id')).toBe('p1')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
 })
 
 test('Enter and Space activate a dot exactly like a click', async () => {
@@ -172,10 +172,10 @@ test('Enter and Space activate a dot exactly like a click', async () => {
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   const dot = getByRole(grid, 'radio', { name: 'Midnight' })
   await act(async () => fireEvent.keyDown(dot, { key: 'Enter' }))
-  expect(localStorage.getItem('tau-theme-preset-id')).toBe('p1')
-  localStorage.removeItem('tau-theme-preset-id')
+  expect(localStorage.getItem('ficus-theme-preset-id')).toBe('p1')
+  localStorage.removeItem('ficus-theme-preset-id')
   await act(async () => fireEvent.keyDown(getByRole(grid, 'radio', { name: 'Ember' }), { key: ' ' }))
-  expect(localStorage.getItem('tau-theme-id')).toBe('ember')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
 })
 
 test('arrow keys rove within the grid, wrapping at both ends, and select as they move', async () => {
@@ -194,11 +194,11 @@ test('arrow keys rove within the grid, wrapping at both ends, and select as they
   expect(tau.tabIndex).toBe(-1)
   await act(async () => fireEvent.keyDown(harbor, { key: 'ArrowLeft' }))
   expect(document.activeElement).toBe(tau)
-  expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   // Wraps from the first dot backward to the last.
   await act(async () => fireEvent.keyDown(tau, { key: 'ArrowLeft' }))
   expect(document.activeElement).toBe(last)
-  expect(localStorage.getItem('tau-theme-id')).toBe('high-contrast')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('high-contrast')
 })
 
 function pointer(type: 'mouseover' | 'mouseout', element: Element, relatedTarget: Element | null = null) {
@@ -228,7 +228,7 @@ test('hovering a dot previews the whole app without saving; sweeping to the next
     await pointer('mouseout', ember)
     expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
     expect(tau.querySelector('[data-ring="on"]')).not.toBeNull()
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   } finally {
     hover.restore()
   }
@@ -244,7 +244,7 @@ test('clicking the previewed dot ends the preview and saves that theme', async (
     await hover.advance(100)
     await act(async () => fireEvent.click(ember))
     expect(hover.pending()).toBe(0)
-    expect(localStorage.getItem('tau-theme-id')).toBe('ember')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
     expect(ember.getAttribute('aria-checked')).toBe('true')
     await pointer('mouseout', ember)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
@@ -314,8 +314,8 @@ test('the appearance control applies light/dark/system, and is hidden while a on
 
   await act(async () => fireEvent.click(getByRole(appearanceGroup, 'radio', { name: 'Dark' })))
   expect(document.documentElement.classList.contains('dark')).toBe(true)
-  expect(localStorage.getItem('tau-appearance')).toBe('dark')
-  expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
+  expect(localStorage.getItem('ficus-appearance')).toBe('dark')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
 
   const colorGrid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   await act(async () => fireEvent.click(getByRole(colorGrid, 'radio', { name: 'High contrast' })))
@@ -349,7 +349,7 @@ for (const theme of BUILT_IN_THEMES)
         const surface = `rgb(${resolveToken(palette.tokens, '--color-bg-surface').split(/\s+/).join(', ')})`
         expect(document.documentElement.style.backgroundColor).toBe(surface)
         expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe(surface)
-        expect(JSON.parse(localStorage.getItem('tau-theme-surface')!)).toEqual({
+        expect(JSON.parse(localStorage.getItem('ficus-theme-surface')!)).toEqual({
           theme: theme.id,
           appearance: resolved,
           surface,
@@ -373,5 +373,5 @@ test('release flag rollback keeps a working legacy appearance toggle', async () 
     fireEvent.click(button)
   })
   expect(button.textContent).toBe('Light Mode')
-  expect(localStorage.getItem('tau-appearance')).toBe('dark')
+  expect(localStorage.getItem('ficus-appearance')).toBe('dark')
 })

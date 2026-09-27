@@ -210,7 +210,7 @@ describe('VoiceWorkspacePage artifacts', () => {
 
     setStoredVoiceInputMode({ setItem }, 'manual')
 
-    expect(setItem).toHaveBeenCalledWith('tau_voice_workspace_input_mode', 'manual')
+    expect(setItem).toHaveBeenCalledWith('ficus_voice_workspace_input_mode', 'manual')
   })
 
   test('uses stored manual voice mode as the workspace default', () => {
@@ -537,7 +537,7 @@ describe('VoiceWorkspacePage artifacts', () => {
     expect(html).toContain('First voice section')
     expect(html).toContain('Second voice section')
     expect(html).toContain('Auto-sized dashboard')
-    expect(html).toContain('tau:presentation-html-height')
+    expect(html).toContain('ficus:presentation-html-height')
     expect(html).toContain('<div class="w-full" data-artifact-type="presentation"')
     expect(html).not.toContain('data-artifact-type="presentation"><article class="h-full')
     expect(html).not.toContain('<section class="h-full min-h-0">')

@@ -85,7 +85,7 @@ test('dragging snaps to a corner and button interaction does not drag the assist
     expect(panel.dataset.corner).toBe('top-left')
     expect(panel.style.left).toBe('8px')
     expect(panel.style.top).toBe('8px')
-    expect(window.localStorage.getItem('tau-assistant-position')).toBe('top-left')
+    expect(window.localStorage.getItem('ficus-assistant-position')).toBe('top-left')
   } finally {
     await dom.cleanup()
   }
@@ -106,14 +106,14 @@ test('pin choices survive remounting and are restored when a mounted assistant r
   try {
     await dom.act(async () => root.render(<Panel visible />))
     expect(container.firstElementChild?.getAttribute('data-corner')).toBe('center')
-    expect(window.localStorage.getItem('tau-assistant-position')).toBeNull()
+    expect(window.localStorage.getItem('ficus-assistant-position')).toBeNull()
     await dom.act(async () => container.querySelector('button')!.click())
-    expect(window.localStorage.getItem('tau-assistant-position')).toBe('bottom-left')
+    expect(window.localStorage.getItem('ficus-assistant-position')).toBe('bottom-left')
     await dom.act(async () => root.render(null))
     await dom.act(async () => root.render(<Panel visible />))
     expect(container.firstElementChild?.getAttribute('data-corner')).toBe('bottom-left')
     await dom.act(async () => root.render(<Panel visible={false} />))
-    window.localStorage.setItem('tau-assistant-position', 'top-center')
+    window.localStorage.setItem('ficus-assistant-position', 'top-center')
     await dom.act(async () => root.render(<Panel visible />))
     expect(container.firstElementChild?.getAttribute('data-corner')).toBe('top-center')
   } finally {
@@ -136,7 +136,7 @@ test('invalid or unavailable position storage keeps the assistant usable', async
   let read: ReturnType<typeof spyOn> | undefined
   let write: ReturnType<typeof spyOn> | undefined
   try {
-    window.localStorage.setItem('tau-assistant-position', 'invalid')
+    window.localStorage.setItem('ficus-assistant-position', 'invalid')
     await dom.act(async () => root.render(<Panel />))
     expect(container.firstElementChild?.getAttribute('data-corner')).toBe('center')
     await dom.act(async () => root.render(null))
@@ -222,7 +222,7 @@ for (const corner of [
       height: 844,
     })
     Object.defineProperty(dom.window, 'visualViewport', { configurable: true, value: viewport })
-    dom.window.localStorage.setItem('tau-assistant-position', corner)
+    dom.window.localStorage.setItem('ficus-assistant-position', corner)
     const { root, container } = dom.createRoot()
     function Panel() {
       const ref = useRef<HTMLDivElement>(null)

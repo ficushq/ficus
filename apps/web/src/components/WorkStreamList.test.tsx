@@ -1037,7 +1037,7 @@ describe('squad WorkStreamList canonical ordering', () => {
 
   test('keeps canonical queue order inside the squad Work kanban column', async () => {
     const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}/work` })
-    dom.window.localStorage.setItem(`tau.wsView.${squad.id}`, 'kanban')
+    dom.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
     const rendered = dom.createRoot()
     const queryClient = createTestQueryClient()
     queryClient.setQueryData(queryKeys.squads.agents(squad.id), [])

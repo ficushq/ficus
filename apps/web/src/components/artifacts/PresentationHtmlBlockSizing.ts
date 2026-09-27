@@ -1,4 +1,4 @@
-const PRESENTATION_HTML_HEIGHT_MESSAGE = 'tau:presentation-html-height'
+import { PRESENTATION_HTML_HEIGHT_MESSAGE } from '@ficus/shared/browser-keys'
 
 export function getPresentationHtmlHeightMessageType(): string {
   return PRESENTATION_HTML_HEIGHT_MESSAGE

@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent, RefObject } from 'react'
+import { ASSISTANT_POSITION_STORAGE_KEY } from '@ficus/shared/browser-keys'
 
 export type AssistantCorner =
   | 'center'
@@ -10,7 +11,6 @@ export type AssistantCorner =
   | 'bottom-center'
   | 'bottom-right'
 
-const POSITION_STORAGE_KEY = 'tau-assistant-position'
 const corners: readonly AssistantCorner[] = [
   'center',
   'top-left',
@@ -23,7 +23,7 @@ const corners: readonly AssistantCorner[] = [
 
 function savedCorner(): AssistantCorner | undefined {
   try {
-    const value = window.localStorage.getItem(POSITION_STORAGE_KEY)
+    const value = window.localStorage.getItem(ASSISTANT_POSITION_STORAGE_KEY)
     return corners.find((corner) => corner === value)
   } catch {
     return undefined
@@ -86,7 +86,7 @@ export function useAssistantPosition(
   const setCorner = useCallback((next: AssistantCorner) => {
     updateCorner(next)
     try {
-      window.localStorage.setItem(POSITION_STORAGE_KEY, next)
+      window.localStorage.setItem(ASSISTANT_POSITION_STORAGE_KEY, next)
     } catch {
       // Keep positioning usable when browser storage is unavailable.
     }

@@ -7,6 +7,9 @@ import {
   applyCustomTheme,
   clearCustomTheme,
   CUSTOM_THEME_KEY,
+  PRESET_ID_KEY,
+  PRESET_OWNER_ID_KEY,
+  RESOLVED_SNAPSHOT_KEY,
   exportCustomTheme,
   importCustomTheme,
   loadCustomTheme,
@@ -35,9 +38,9 @@ export const custom: CustomThemeDocument = {
 }
 function storageFor(raw: string | null): ThemeStorage {
   const map = new Map<string, string>([
-    ['tau-theme-id', 'harbor'],
-    ['tau-appearance', 'dark'],
-    ['tau-theme-surface', 'stale'],
+    ['ficus-theme-id', 'harbor'],
+    ['ficus-appearance', 'dark'],
+    ['ficus-theme-surface', 'stale'],
   ])
   if (raw !== null) map.set(CUSTOM_THEME_KEY, raw)
   return {
@@ -46,6 +49,13 @@ function storageFor(raw: string | null): ThemeStorage {
     removeItem: (key) => void map.delete(key),
   }
 }
+
+test('custom theme storage keys are the ficus names', () => {
+  expect(CUSTOM_THEME_KEY).toBe('ficus-custom-theme')
+  expect(PRESET_ID_KEY).toBe('ficus-theme-preset-id')
+  expect(PRESET_OWNER_ID_KEY).toBe('ficus-theme-preset-owner-id')
+  expect(RESOLVED_SNAPSHOT_KEY).toBe('ficus-custom-theme-resolved')
+})
 
 test('every authored built-in scope also defines the nested preview base (no copied runtime palette)', () => {
   for (const p of palettes) {
@@ -80,7 +90,7 @@ test('recovery matrix: invalid documents clear storage/snapshots, retain a known
     expect(state.presetId).toBeNull()
     expect(state.error).toContain('Custom theme removed')
     expect(storage.getItem(CUSTOM_THEME_KEY)).toBeNull()
-    expect(storage.getItem('tau-theme-surface')).toBeNull()
+    expect(storage.getItem('ficus-theme-surface')).toBeNull()
     expect(state.selection.themeId).toBe(raw.includes('"base":"ember"') ? 'ember' : 'harbor')
     expect(loadCustomTheme(storage).error).toBeNull()
   }
@@ -311,7 +321,7 @@ test('shipped pre-paint custom matrix (v2 pair) and broken-document fallback run
             }
           : doc
         const storage = storageFor(JSON.stringify(brokenDoc))
-        storage.setItem('tau-appearance', p.appearance === 'constant' ? 'light' : p.appearance)
+        storage.setItem('ficus-appearance', p.appearance === 'constant' ? 'light' : p.appearance)
         removeCustomProperties(document.documentElement)
         document.head.innerHTML = '<meta name="msapplication-TileColor" content="#7c3aed" />'
         new Function('window', 'document', 'localStorage', script)(window, document, storage)
@@ -395,7 +405,7 @@ test('the pre-paint flash script skips palette derivation (no reliable computed 
       variants: { light: { '--color-primary': '#ff0000' }, dark: {} },
     }
     const storage = storageFor(JSON.stringify(doc))
-    storage.setItem('tau-appearance', 'light')
+    storage.setItem('ficus-appearance', 'light')
     new Function('window', 'document', 'localStorage', script)(window, document, storage)
     // The explicit override still applies synchronously, pre-paint.
     expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('255 0 0')
@@ -459,7 +469,7 @@ test('readResolvedSnapshot ignores a stale snapshot: edited document, or a diffe
   // No snapshot at all.
   expect(readResolvedSnapshot(memoryStorage(), paletteDoc, 'dark')).toBeNull()
   // Corrupt JSON never throws.
-  storage.setItem('tau-custom-theme-resolved', '{not json')
+  storage.setItem('ficus-custom-theme-resolved', '{not json')
   expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
 })
 
@@ -468,7 +478,7 @@ test('readResolvedSnapshot only applies known registry property names, dropping 
   const { BUILTIN_CSS_FINGERPRINT } = await import('./builtinFingerprint')
   const storage = memoryStorage()
   storage.setItem(
-    'tau-custom-theme-resolved',
+    'ficus-custom-theme-resolved',
     JSON.stringify({
       docHash: hashCustomThemeDocument(paletteDoc),
       fingerprint: BUILTIN_CSS_FINGERPRINT,
@@ -494,7 +504,7 @@ test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value i
   for (const hostile of hostileValues) {
     const storage = memoryStorage()
     storage.setItem(
-      'tau-custom-theme-resolved',
+      'ficus-custom-theme-resolved',
       JSON.stringify({
         docHash: hashCustomThemeDocument(paletteDoc),
         fingerprint: BUILTIN_CSS_FINGERPRINT,
@@ -507,7 +517,7 @@ test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value i
   for (const hostileAlpha of ['2', '-0.5', 'rgb(1,2,3)', '1e10', 'true', '']) {
     const storage = memoryStorage()
     storage.setItem(
-      'tau-custom-theme-resolved',
+      'ficus-custom-theme-resolved',
       JSON.stringify({
         docHash: hashCustomThemeDocument(paletteDoc),
         fingerprint: BUILTIN_CSS_FINGERPRINT,
@@ -519,7 +529,7 @@ test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value i
   // A fully well-formed snapshot (the control case) still round-trips.
   const storage = memoryStorage()
   storage.setItem(
-    'tau-custom-theme-resolved',
+    'ficus-custom-theme-resolved',
     JSON.stringify({
       docHash: hashCustomThemeDocument(paletteDoc),
       fingerprint: BUILTIN_CSS_FINGERPRINT,
@@ -545,7 +555,7 @@ test('readResolvedSnapshot rejects a snapshot from a different build (fingerprin
   const { readResolvedSnapshot, hashCustomThemeDocument } = await import('./custom')
   const storage = memoryStorage()
   storage.setItem(
-    'tau-custom-theme-resolved',
+    'ficus-custom-theme-resolved',
     JSON.stringify({
       docHash: hashCustomThemeDocument(paletteDoc),
       fingerprint: 'a-stale-build-that-had-different-builtin-tokens',
@@ -584,7 +594,7 @@ test('clearCustomTheme also clears the resolved snapshot', async () => {
   const storage = memoryStorage()
   persistResolvedSnapshot(storage, paletteDoc, 'dark', { '--color-primary': '1 2 3' })
   clearCustomTheme(storage)
-  expect(storage.getItem('tau-custom-theme-resolved')).toBeNull()
+  expect(storage.getItem('ficus-custom-theme-resolved')).toBeNull()
   expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
 })
 

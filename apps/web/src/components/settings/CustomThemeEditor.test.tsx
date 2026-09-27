@@ -84,14 +84,14 @@ async function render({
 } = {}) {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   cleanup = () => dom.cleanup()
-  localStorage.setItem('tau-appearance', appearance)
+  localStorage.setItem('ficus-appearance', appearance)
   if (preset) {
     // The preset being edited is also the ACTIVE applied theme, so "restore
     // on close" has something non-trivial (the preset's own unedited state)
     // to restore to, distinct from the in-editor draft.
-    localStorage.setItem('tau-theme-id', preset.document.base)
-    localStorage.setItem('tau-custom-theme', JSON.stringify(preset.document))
-    localStorage.setItem('tau-theme-preset-id', preset.id)
+    localStorage.setItem('ficus-theme-id', preset.document.base)
+    localStorage.setItem('ficus-custom-theme', JSON.stringify(preset.document))
+    localStorage.setItem('ficus-theme-preset-id', preset.id)
   }
   const sheet = document.createElement('style')
   sheet.textContent = palettes
@@ -158,7 +158,7 @@ test('a new theme editor previews the whole app live; Save as new creates a pres
       '#00ff00'
     )
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(localStorage.getItem('tau-theme-preset-id')).toBe('new-preset')
+    expect(localStorage.getItem('ficus-theme-preset-id')).toBe('new-preset')
   } finally {
     create.mockRestore()
   }
@@ -213,10 +213,10 @@ test('Cancel closes without touching the network; the caller unmounting the edit
 test('unmounting the editor (not just Cancel) also restores the saved selection', async () => {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   cleanup = () => dom.cleanup()
-  localStorage.setItem('tau-appearance', 'dark')
-  localStorage.setItem('tau-theme-id', existing.document.base)
-  localStorage.setItem('tau-custom-theme', JSON.stringify(existing.document))
-  localStorage.setItem('tau-theme-preset-id', existing.id)
+  localStorage.setItem('ficus-appearance', 'dark')
+  localStorage.setItem('ficus-theme-id', existing.document.base)
+  localStorage.setItem('ficus-custom-theme', JSON.stringify(existing.document))
+  localStorage.setItem('ficus-theme-preset-id', existing.id)
   const sheet = document.createElement('style')
   sheet.textContent = palettes
     .map((p) => {
@@ -459,7 +459,7 @@ test('the editor draft preview survives an appearance change made elsewhere whil
   // painter right after its own paint, every time it paints.
   await act(async () => value!.setAppearance('light'))
   // The REAL underlying selection did change...
-  expect(localStorage.getItem('tau-appearance')).toBe('light')
+  expect(localStorage.getItem('ficus-appearance')).toBe('light')
   // ...but the editor's own draft (still on its own independent 'Dark' tab)
   // is what's actually on screen, reapplied after that real repaint.
   expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
@@ -476,10 +476,10 @@ test('the editor draft preview survives a storage event from another tab while e
   // Simulate another tab/window changing the appearance: a real storage
   // event, exactly like the browser dispatches on a cross-document write.
   await act(async () => {
-    localStorage.setItem('tau-appearance', 'light')
-    window.dispatchEvent(new window.StorageEvent('storage', { key: 'tau-appearance', newValue: 'light' }))
+    localStorage.setItem('ficus-appearance', 'light')
+    window.dispatchEvent(new window.StorageEvent('storage', { key: 'ficus-appearance', newValue: 'light' }))
   })
-  expect(localStorage.getItem('tau-appearance')).toBe('light')
+  expect(localStorage.getItem('ficus-appearance')).toBe('light')
   expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
   expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
 })
@@ -609,7 +609,7 @@ test('redo replays a coalesced typed edit', async () => {
 test('the theme assistant panel proposes a live-previewing edit, shares undo/redo with manual edits, and cannot save', async () => {
   const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
-  localStorage.setItem('tau-appearance', 'dark')
+  localStorage.setItem('ficus-appearance', 'dark')
   const sheet = document.createElement('style')
   sheet.textContent = palettes
     .map((p) => {
@@ -725,7 +725,7 @@ test('the theme assistant panel proposes a live-previewing edit, shares undo/red
 test('typing bumps the revision every keystroke (stale assistant edits are still rejected) and an assistant proposal mid-typing is its own undo step', async () => {
   const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
-  localStorage.setItem('tau-appearance', 'dark')
+  localStorage.setItem('ficus-appearance', 'dark')
   const sheet = document.createElement('style')
   sheet.textContent = palettes
     .map((p) => {

@@ -106,6 +106,17 @@ async function runFlashScript(scenario: FlashScenario): Promise<FlashResult> {
   }
 }
 
+test('the pre-paint script reads only the ficus theme keys', () => {
+  for (const key of ['ficus-theme-id', 'ficus-appearance', 'ficus-theme-surface', 'ficus-custom-theme']) {
+    expect(flashScript).toContain(`"${key}"`)
+  }
+  // No other product prefix may name a theme key in the shipped script (`data-appearance` is the DOM attribute).
+  for (const suffix of ['theme-id', 'appearance', 'theme-surface', 'surface-color', 'custom-theme-resolved']) {
+    const names = new Set(flashScript.match(new RegExp(`[A-Za-z]+-${suffix}\\b`, 'g')) ?? [])
+    expect([...names].filter((name) => name !== 'data-appearance')).toEqual([`ficus-${suffix}`])
+  }
+})
+
 describe('pre-paint flash script: default appearance by host', () => {
   test('Tau Desktop with no stored choice follows the OS appearance', async () => {
     expect((await runFlashScript({ desktop: true, systemPrefersDark: true })).dataAppearance).toBe('dark')
@@ -284,7 +295,7 @@ describe('pre-paint flash script: custom theme documents (v1 still loads; v2 res
     const storage = memoryStorage({
       [THEME_ID_KEY]: 'harbor',
       [APPEARANCE_KEY]: 'dark',
-      'tau-custom-theme': JSON.stringify({
+      'ficus-custom-theme': JSON.stringify({
         format: 'tau-custom-theme',
         version: 1,
         name: 'Legacy',
@@ -321,7 +332,7 @@ describe('pre-paint flash script: custom theme documents (v1 still loads; v2 res
       const storage = memoryStorage({
         [THEME_ID_KEY]: 'harbor',
         [APPEARANCE_KEY]: appearance,
-        'tau-custom-theme': JSON.stringify(doc),
+        'ficus-custom-theme': JSON.stringify(doc),
       })
       const dom = installDomHarness({ url: 'http://localhost/' })
       try {
@@ -348,7 +359,7 @@ describe('pre-paint flash script: custom theme documents (v1 still loads; v2 res
     const storage = memoryStorage({
       [THEME_ID_KEY]: 'harbor',
       [APPEARANCE_KEY]: 'system',
-      'tau-custom-theme': JSON.stringify(doc),
+      'ficus-custom-theme': JSON.stringify(doc),
     })
     const dom = installDomHarness({
       url: 'http://localhost/',
@@ -391,8 +402,8 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     const storage = memoryStorage({
       [THEME_ID_KEY]: 'harbor',
       [APPEARANCE_KEY]: 'dark',
-      'tau-custom-theme': JSON.stringify(rawDoc),
-      'tau-custom-theme-resolved': JSON.stringify({
+      'ficus-custom-theme': JSON.stringify(rawDoc),
+      'ficus-custom-theme-resolved': JSON.stringify({
         docHash: hashCustomThemeDocument(validated.document),
         fingerprint: BUILTIN_CSS_FINGERPRINT,
         sides: {
@@ -454,8 +465,8 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
       const storage = memoryStorage({
         [THEME_ID_KEY]: 'harbor',
         [APPEARANCE_KEY]: 'dark',
-        'tau-custom-theme': JSON.stringify(doc),
-        'tau-custom-theme-resolved': badSnapshot,
+        'ficus-custom-theme': JSON.stringify(doc),
+        'ficus-custom-theme-resolved': badSnapshot,
       })
       const dom = installDomHarness({ url: 'http://localhost/' })
       try {

@@ -5,7 +5,7 @@ import { acquireDomHarness } from '../test/domHarness'
 
 // Provider-level coverage for phase 0: <html> data-theme/data-appearance
 // application (keeping the .dark migration class), localStorage migration of
-// the legacy 'tau-theme' key, and the live system-preference listener.
+// the legacy 'ficus-theme' key, and the live system-preference listener.
 
 let cleanupDom: (() => Promise<void>) | null = null
 
@@ -65,7 +65,7 @@ afterEach(async () => {
 describe('ThemeProvider (themeId × appearance application)', () => {
   test('applies data-theme/data-appearance and the .dark class for a stored dark choice', async () => {
     const { dom } = await installThemeDom()
-    localStorage.setItem('tau-theme', 'dark')
+    localStorage.setItem('ficus-theme', 'dark')
     const { root } = dom.createRoot()
 
     await act(async () => {
@@ -89,7 +89,7 @@ describe('ThemeProvider (themeId × appearance application)', () => {
 
   test('legacy tau-theme values migrate to the new keys and clear the legacy key', async () => {
     const { dom } = await installThemeDom()
-    localStorage.setItem('tau-theme', 'dark')
+    localStorage.setItem('ficus-theme', 'dark')
     const { root } = dom.createRoot()
 
     await act(async () => {
@@ -100,16 +100,16 @@ describe('ThemeProvider (themeId × appearance application)', () => {
       )
     })
 
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
-    expect(localStorage.getItem('tau-appearance')).toBe('dark')
-    expect(localStorage.getItem('tau-theme')).toBeNull()
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-appearance')).toBe('dark')
+    expect(localStorage.getItem('ficus-theme')).toBeNull()
   })
 
   test('unreadable stored values fall back to the default light pair', async () => {
     const { dom } = await installThemeDom()
-    localStorage.setItem('tau-theme', 'mauve')
-    localStorage.setItem('tau-theme-id', 'atlantis')
-    localStorage.setItem('tau-appearance', 'solarized')
+    localStorage.setItem('ficus-theme', 'mauve')
+    localStorage.setItem('ficus-theme-id', 'atlantis')
+    localStorage.setItem('ficus-appearance', 'solarized')
     const { root } = dom.createRoot()
 
     await act(async () => {
@@ -123,8 +123,8 @@ describe('ThemeProvider (themeId × appearance application)', () => {
     expect(document.documentElement.getAttribute('data-appearance')).toBe('light')
     expect(document.documentElement.classList.contains('dark')).toBe(false)
     // The normalized selection is persisted back, repairing the storage.
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
-    expect(localStorage.getItem('tau-appearance')).toBe('light')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-appearance')).toBe('light')
   })
 
   test('toggleTheme flips the resolved appearance and the .dark class', async () => {
@@ -144,19 +144,19 @@ describe('ThemeProvider (themeId × appearance application)', () => {
     })
     expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
-    expect(localStorage.getItem('tau-appearance')).toBe('dark')
+    expect(localStorage.getItem('ficus-appearance')).toBe('dark')
 
     await act(async () => {
       ;(document.querySelector('[data-testid="toggle-theme"]') as HTMLElement).click()
     })
     expect(document.documentElement.classList.contains('dark')).toBe(false)
-    expect(localStorage.getItem('tau-appearance')).toBe('light')
+    expect(localStorage.getItem('ficus-appearance')).toBe('light')
   })
 
   test("a 'system' appearance follows live OS scheme changes without a reload", async () => {
     const { dom, setSystemPrefersDark } = await installThemeDom()
-    localStorage.setItem('tau-theme-id', 'tau')
-    localStorage.setItem('tau-appearance', 'system')
+    localStorage.setItem('ficus-theme-id', 'tau')
+    localStorage.setItem('ficus-appearance', 'system')
     const { root } = dom.createRoot()
 
     await act(async () => {
@@ -183,7 +183,7 @@ describe('ThemeProvider (themeId × appearance application)', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(false)
 
     // The stored setting stays 'system' — only the resolution follows the OS.
-    expect(localStorage.getItem('tau-appearance')).toBe('system')
+    expect(localStorage.getItem('ficus-appearance')).toBe('system')
   })
 })
 
@@ -191,7 +191,7 @@ test('custom brand tile updates the OS tile metadata, not only the logo', async 
   const { dom } = await installThemeDom()
   document.head.innerHTML = '<meta name="msapplication-TileColor" content="#7c3aed" />'
   localStorage.setItem(
-    'tau-custom-theme',
+    'ficus-custom-theme',
     JSON.stringify({
       format: 'tau-custom-theme',
       version: 2,
@@ -215,9 +215,9 @@ test('custom brand tile updates the OS tile metadata, not only the logo', async 
 
 test('a storage-driven rerender never writes an older selection over another tab update', async () => {
   const { dom } = await installThemeDom()
-  localStorage.setItem('tau-theme-id', 'high-contrast')
-  localStorage.setItem('tau-appearance', 'light')
-  localStorage.setItem('tau-theme-local-override', '0')
+  localStorage.setItem('ficus-theme-id', 'high-contrast')
+  localStorage.setItem('ficus-appearance', 'light')
+  localStorage.setItem('ficus-theme-local-override', '0')
   const { root } = dom.createRoot()
   await act(async () => {
     root.render(
@@ -229,13 +229,15 @@ test('a storage-driven rerender never writes an older selection over another tab
   await act(async () => {
     // Another tab writes its override flag before its selection. This document
     // receives that first event while a later selection write is already queued.
-    localStorage.setItem('tau-theme-local-override', '1')
-    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'tau-theme-local-override', newValue: '1' }))
-    localStorage.setItem('tau-theme-id', 'tau')
+    localStorage.setItem('ficus-theme-local-override', '1')
+    dom.window.dispatchEvent(
+      new dom.window.StorageEvent('storage', { key: 'ficus-theme-local-override', newValue: '1' })
+    )
+    localStorage.setItem('ficus-theme-id', 'tau')
   })
-  expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   await act(async () => {
-    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'tau-theme-id', newValue: 'tau' }))
+    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'ficus-theme-id', newValue: 'tau' }))
   })
   expect(document.documentElement.dataset.theme).toBe('tau')
 })
@@ -270,7 +272,7 @@ test('live custom surface alpha is serialized consistently for root, metadata an
     })
     const expected = `rgba(10, 20, 30, ${alpha})`
     expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe(expected)
-    expect(JSON.parse(localStorage.getItem('tau-theme-surface')!).surface).toBe(expected)
+    expect(JSON.parse(localStorage.getItem('ficus-theme-surface')!).surface).toBe(expected)
     expect(document.documentElement.style.backgroundColor).not.toBe('rgb(255, 255, 255)')
   }
   await act(async () => {
@@ -280,8 +282,8 @@ test('live custom surface alpha is serialized consistently for root, metadata an
     theme.setThemeId('tau')
   })
   expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('rgb(255, 255, 255)')
-  expect(JSON.parse(localStorage.getItem('tau-theme-surface')!).surface).toBe('rgb(255, 255, 255)')
-  expect(localStorage.getItem('tau-custom-theme')).toBeNull()
+  expect(JSON.parse(localStorage.getItem('ficus-theme-surface')!).surface).toBe('rgb(255, 255, 255)')
+  expect(localStorage.getItem('ficus-custom-theme')).toBeNull()
 })
 
 test('setAppearance and toggleTheme keep the active custom theme and preset, resolving the other variant', async () => {
@@ -396,7 +398,7 @@ test('a real root paint persists a resolved pre-paint snapshot matching the appl
     theme.applyCustom(doc)
   })
   const { hashCustomThemeDocument } = await import('../theme/custom')
-  const stored = JSON.parse(localStorage.getItem('tau-custom-theme-resolved')!)
+  const stored = JSON.parse(localStorage.getItem('ficus-custom-theme-resolved')!)
   expect(stored.docHash).toBe(hashCustomThemeDocument(doc))
   // No palette here (explicit-only document): only the visible side is
   // snapshotted, not the other (see the 'system'-appearance both-sides test below).
@@ -406,13 +408,13 @@ test('a real root paint persists a resolved pre-paint snapshot matching the appl
   await act(async () => {
     theme.setThemeId('harbor')
   })
-  expect(localStorage.getItem('tau-custom-theme-resolved')).toBeNull()
+  expect(localStorage.getItem('ficus-custom-theme-resolved')).toBeNull()
 })
 
 test("the preview slot: last registrant wins, and a superseded registrant's clear never clobbers the current one", async () => {
   const { dom } = await installThemeDom()
-  localStorage.setItem('tau-theme-id', 'harbor')
-  localStorage.setItem('tau-appearance', 'dark')
+  localStorage.setItem('ficus-theme-id', 'harbor')
+  localStorage.setItem('ficus-appearance', 'dark')
   let api: ReturnType<typeof useThemePreview> | undefined
   function PreviewProbe() {
     api = useThemePreview()
@@ -476,8 +478,8 @@ test('a system-appearance palette preset snapshots BOTH resolved sides, not just
     }
   `
   document.head.append(sheet)
-  localStorage.setItem('tau-theme-id', 'harbor')
-  localStorage.setItem('tau-appearance', 'system')
+  localStorage.setItem('ficus-theme-id', 'harbor')
+  localStorage.setItem('ficus-appearance', 'system')
   await setSystemPrefersDark(false) // starts light
   let theme!: ReturnType<typeof useTheme>
   function Controls() {
@@ -503,7 +505,7 @@ test('a system-appearance palette preset snapshots BOTH resolved sides, not just
   await act(async () => {
     theme.applyCustom(doc)
   })
-  const stored = JSON.parse(localStorage.getItem('tau-custom-theme-resolved')!)
+  const stored = JSON.parse(localStorage.getItem('ficus-custom-theme-resolved')!)
   expect(Object.keys(stored.sides).sort()).toEqual(['dark', 'light'])
   expect(stored.sides.light['--color-primary']).toBeDefined()
   expect(stored.sides.dark['--color-primary']).toBeDefined()

@@ -54,7 +54,7 @@ See content coverage and remaining gaps, validation evidence, the historical-doc
 
 ## Cloud and self-hosted instructions
 
-The setup selector is beside the desktop theme control and in the mobile menu. It stores `tau-docs-mode` locally and carries `?mode=cloud` or `?mode=self-hosted` in documentation links. An explicit URL mode overrides a saved preference; the `/start/cloud/` and `/start/self-host/` setup entrypoints select their own mode. Invalid values default to the saved preference or Cloud. Storage failures do not prevent selection or navigation.
+The setup selector is beside the desktop theme control and in the mobile menu. It stores `ficus-docs-mode` locally and carries `?mode=cloud` or `?mode=self-hosted` in documentation links. An explicit URL mode overrides a saved preference; the `/start/cloud/` and `/start/self-host/` setup entrypoints select their own mode. Invalid values default to the saved preference or Cloud. Storage failures do not prevent selection or navigation.
 
 Write shared explanations once. In an MDX guide, wrap only differing instructions:
 

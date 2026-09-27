@@ -1,12 +1,14 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
+import { WORK_STREAM_VIEW_CHANGED_EVENT, WORK_STREAM_VIEW_STORAGE_PREFIX } from '@ficus/shared/browser-keys'
 
 export type WorkStreamViewMode = 'list' | 'kanban' | 'graph'
 export type WorkStreamViewSurface = 'work' | 'home'
-const VIEW_EVENT = 'tau:work-stream-view-changed'
 
 export function workStreamViewStorageKey(squadId: string, surface: WorkStreamViewSurface): string {
-  return surface === 'work' ? `tau.wsView.${squadId}` : `tau.wsView.home.${squadId}`
+  return surface === 'work'
+    ? `${WORK_STREAM_VIEW_STORAGE_PREFIX}${squadId}`
+    : `${WORK_STREAM_VIEW_STORAGE_PREFIX}home.${squadId}`
 }
 
 function readView(
@@ -18,7 +20,7 @@ function readView(
   try {
     const value = (window.localStorage.getItem(workStreamViewStorageKey(squadId, surface)) ??
       (surface === 'work'
-        ? window.localStorage.getItem(`tau.wsView.work.${squadId}`)
+        ? window.localStorage.getItem(`${WORK_STREAM_VIEW_STORAGE_PREFIX}work.${squadId}`)
         : null)) as WorkStreamViewMode | null
     return value && modes.includes(value) ? value : 'list'
   } catch {
@@ -41,10 +43,10 @@ export function useWorkStreamViewMode(
         if ((event as CustomEvent<string>).detail === `${surface}:${squadId}`) notify()
       }
       window.addEventListener('storage', onStorage)
-      window.addEventListener(VIEW_EVENT, onLocalChange)
+      window.addEventListener(WORK_STREAM_VIEW_CHANGED_EVENT, onLocalChange)
       return () => {
         window.removeEventListener('storage', onStorage)
-        window.removeEventListener(VIEW_EVENT, onLocalChange)
+        window.removeEventListener(WORK_STREAM_VIEW_CHANGED_EVENT, onLocalChange)
       }
     },
     [squadId, surface]
@@ -60,7 +62,7 @@ export function useWorkStreamViewMode(
       } catch {
         // Storage can be unavailable in private/locked-down browser contexts; the safe view remains List.
       }
-      window.dispatchEvent(new window.CustomEvent(VIEW_EVENT, { detail: `${surface}:${squadId}` }))
+      window.dispatchEvent(new window.CustomEvent(WORK_STREAM_VIEW_CHANGED_EVENT, { detail: `${surface}:${squadId}` }))
     },
     [squadId, surface]
   )

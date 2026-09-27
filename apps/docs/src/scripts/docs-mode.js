@@ -1,7 +1,7 @@
 /* global localStorage, location, document, HTMLAnchorElement, history, HTMLSelectElement, Element, MutationObserver, window, URL */
 // Runs in the head before paint. Keep this dependency-free: Head.astro embeds it inline.
 ;(() => {
-  const storageKey = 'tau-docs-mode'
+  const storageKey = 'ficus-docs-mode'
   const validMode = (value) => (value === 'cloud' || value === 'self-hosted' ? value : null)
   const embedded = /^\/docs(?:\/|$)/.test(location.pathname)
   const setupMode = (pathname) => {

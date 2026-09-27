@@ -74,7 +74,7 @@ for (const provider of ['github', 'notion'] as const) {
 }
 
 test('slack callback (hinted via sessionStorage at authorization start) completes against the slack provider', async () => {
-  window.sessionStorage.setItem('tauOAuthProviderHint', 'slack')
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'slack')
   let path = ''
   globalThis.fetch = (async (input) => {
     path = String(input)
@@ -86,7 +86,7 @@ test('slack callback (hinted via sessionStorage at authorization start) complete
     await flushEffects()
     expect(path).toContain('/integrations/providers/slack/authorization/complete')
     expect(redirect).toHaveBeenCalledWith('/settings?section=integrations&setting=integration-slack')
-    expect(window.sessionStorage.getItem('tauOAuthProviderHint')).toBeNull()
+    expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBeNull()
   } finally {
     redirect.mockRestore()
   }
@@ -94,7 +94,7 @@ test('slack callback (hinted via sessionStorage at authorization start) complete
 
 test('a github-suffixed path wins over a stale provider hint left by an abandoned flow', async () => {
   window.history.replaceState(null, '', CALLBACK.replace('/callback?', '/callback/github?'))
-  window.sessionStorage.setItem('tauOAuthProviderHint', 'slack')
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'slack')
   let path = ''
   globalThis.fetch = (async (input) => {
     path = String(input)
@@ -162,7 +162,7 @@ test('reload recovers the same completion payload after a retryable failure', as
 })
 
 test('a reload after a retryable failure keeps completing against the hinted provider (slack), not the notion default', async () => {
-  window.sessionStorage.setItem('tauOAuthProviderHint', 'slack')
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'slack')
   const paths: string[] = []
   globalThis.fetch = (async (input) => {
     paths.push(String(input))
@@ -174,7 +174,7 @@ test('a reload after a retryable failure keeps completing against the hinted pro
   await flushEffects()
   expect(container.textContent).toContain('try again')
   // The one-shot sessionStorage hint is gone after the first render...
-  expect(window.sessionStorage.getItem('tauOAuthProviderHint')).toBeNull()
+  expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBeNull()
 
   // ...but a reload (fresh mount, same persisted history state) must still
   // know this is the slack flow, not silently fall back to notion.

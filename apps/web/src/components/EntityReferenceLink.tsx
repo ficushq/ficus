@@ -3,6 +3,7 @@ import { QueryClientContext } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { lazy, Suspense, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { EntityReference } from '../lib/entityReference'
+import { REFERENCE_PREVIEW_OPEN_EVENT } from '@ficus/shared/browser-keys'
 
 const loadReference = () => import('./EntityReferenceModal')
 const EntityReferenceModal = lazy(() => loadReference().then((module) => ({ default: module.EntityReferenceModal })))
@@ -56,13 +57,13 @@ export function EntityReferenceLink({
   useEffect(() => {
     if (!preview) return
     // A new reference replaces an existing hover/focus preview instead of stacking cards.
-    window.dispatchEvent(new Event('tau:reference-preview-open'))
+    window.dispatchEvent(new Event(REFERENCE_PREVIEW_OPEN_EVENT))
     const close = () => {
       clearTimers()
       setPreview(false)
     }
-    window.addEventListener('tau:reference-preview-open', close)
-    return () => window.removeEventListener('tau:reference-preview-open', close)
+    window.addEventListener(REFERENCE_PREVIEW_OPEN_EVENT, close)
+    return () => window.removeEventListener(REFERENCE_PREVIEW_OPEN_EVENT, close)
   }, [preview, clearTimers])
   const preload = useCallback(() => {
     void loadReference()
