@@ -835,6 +835,7 @@ jobs:
           src/services/sandbox/k8s/kubeconfig.test.ts
           src/services/secrets/store-hermetic.test.ts
           src/boot/legacy-env.test.ts
+          src/system-token-control.test.ts
         working-directory: apps/core
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
