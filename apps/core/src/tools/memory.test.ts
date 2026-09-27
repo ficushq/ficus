@@ -313,7 +313,7 @@ Unique provenance needle text for structured search results.`
       const text = (result.content[0] as { text: string }).text
 
       expect(text).toContain(`1. /memory/${testSquadId}/provenance.md`)
-      const match = text.match(/<!--tau:memory-provenance\s+(\[.*\])\s*-->/s)
+      const match = text.match(/<!--ficus:memory-provenance\s+(\[.*\])\s*-->/s)
       expect(match).not.toBeNull()
       const parsed = JSON.parse(match![1]) as Array<{ sourceSquadId: string; path: string; sensitivity: string }>
       expect(parsed[0]).toMatchObject({ sourceSquadId: testSquadId, path: `/memory/${testSquadId}/provenance.md` })

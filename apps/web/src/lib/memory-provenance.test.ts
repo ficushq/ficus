@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'bun:test'
-import { parseMemoryProvenance, stripProvenanceBlock } from './memory-provenance'
+import {
+  LEGACY_MEMORY_PROVENANCE_MARKER,
+  MEMORY_PROVENANCE_MARKER,
+  parseMemoryProvenance,
+  stripProvenanceBlock,
+} from './memory-provenance'
 
 const block =
-  '<!--tau:memory-provenance [{"sourceSquadId":"squad-aaaa","path":"/memory/a.md","title":"A","sourceType":"memory_file","sensitivity":"internal","score":0.9,"documentId":"d1"}] -->'
+  '<!--ficus:memory-provenance [{"sourceSquadId":"squad-aaaa","path":"/memory/a.md","title":"A","sourceType":"memory_file","sensitivity":"internal","score":0.9,"documentId":"d1"}] -->'
 
 describe('parseMemoryProvenance', () => {
   it('extracts the provenance array', () => {
@@ -18,12 +23,27 @@ describe('parseMemoryProvenance', () => {
   })
 
   it('returns null on malformed JSON (fails closed)', () => {
-    expect(parseMemoryProvenance('<!--tau:memory-provenance [not json] -->')).toBeNull()
+    expect(parseMemoryProvenance('<!--ficus:memory-provenance [not json] -->')).toBeNull()
   })
 })
 
 describe('stripProvenanceBlock', () => {
   it('removes the comment so human text renders clean', () => {
     expect(stripProvenanceBlock(`hi\n${block}`).trim()).toBe('hi')
+  })
+})
+
+describe('provenance written before the rename', () => {
+  const legacy = block.replace(MEMORY_PROVENANCE_MARKER, LEGACY_MEMORY_PROVENANCE_MARKER)
+
+  it('writes the ficus marker', () => {
+    expect(MEMORY_PROVENANCE_MARKER).toBe('ficus:memory-provenance')
+    expect(block).toStartWith('<!--ficus:memory-provenance ')
+  })
+
+  it('stored tool results with the old marker still parse and strip', () => {
+    expect(legacy).not.toBe(block)
+    expect(parseMemoryProvenance(`Found 1 result(s):\n${legacy}`)![0].sourceSquadId).toBe('squad-aaaa')
+    expect(stripProvenanceBlock(`hi\n${legacy}`).trim()).toBe('hi')
   })
 })
