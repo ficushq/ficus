@@ -44,7 +44,7 @@ export function plantStateLabel(state: PlantState): string {
 }
 
 const ROLE_LABELS: Record<RobotRole, string> = {
-  manager: 'Farmer (squad manager)',
+  manager: 'Farmer',
   consultant: 'Consultant',
   assistant: 'Assistant',
   worker: 'Gardener',

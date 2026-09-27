@@ -19,7 +19,7 @@ function p(i: number, j: number, up = 0): string {
 
 /**
  * A little charging hut where a yard's idle robots rest: solar panels on the
- * roof, a lightning-bolt sign, a battery gauge that fills with how many are
+ * roof, a battery gauge that fills with how many are
  * charging, a plug cable, and (when anyone's in) a glowing doorway with one
  * robot peeking out. It's the same size whatever the count; the roof shows it.
  * Anchored at the centre of its footprint on the ground.
@@ -32,7 +32,6 @@ export function ChargingHut({ count, peek }: { count: number; peek?: RobotLook }
   const door = [p(-0.3, D), p(0.05, D), p(0.05, D, 25), p(-0.3, D, 25)].join(' ')
   const [dx, dy] = iso(-0.125, D)
   const [bx, by] = iso(0.3, D)
-  const [sx, sy] = iso(W, 0)
   const [rx, ry] = iso(0, 0)
   return (
     <g>
@@ -95,12 +94,6 @@ export function ChargingHut({ count, peek }: { count: number; peek?: RobotLook }
             className={k < cells ? 'g-glow' : undefined}
           />
         ))}
-      </g>
-
-      {/* big lightning-bolt sign on the side wall */}
-      <g transform={`translate(${sx} ${sy - 18})`}>
-        <circle r={9.5} fill={on ? '#f2c14e' : '#d9cfa8'} className="g-ol" />
-        <path d="M1.5 -6.5 L-4 1 H0 L-1.5 6.5 L4 -1 H0Z" fill={INK} />
       </g>
 
       {/* roof: an overhanging slab under a tilted bank of solar panels */}

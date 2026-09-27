@@ -108,7 +108,8 @@ function robotLabel(r: RobotPlacement): string {
           : r.face === 'sleepy'
             ? 'asleep'
             : 'idle'
-  return `${name}, ${roleLabel(r.role).toLowerCase()}, ${face}`
+  const role = r.role === 'manager' ? 'farmer (squad manager)' : roleLabel(r.role).toLowerCase()
+  return `${name}, ${role}, ${face}`
 }
 
 function buildDrawables(

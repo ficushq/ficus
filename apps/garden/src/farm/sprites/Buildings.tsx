@@ -1,8 +1,6 @@
 import { iso, pt } from '../iso'
 import { FONT_DISPLAY, INK, Shadow } from './shared'
 
-/** Farmhouse footprint in tiles (w along i, d along j). Origin is its centre. */
-export const FARMHOUSE_FOOTPRINT = { w: 2.4, d: 2 } as const
 /** Seed shed footprint in tiles (w along i, d along j). Origin is its centre. */
 export const SEED_SHED_FOOTPRINT = { w: 1.5, d: 1.3 } as const
 
@@ -14,75 +12,6 @@ function footprint(w: number, d: number) {
     p: (a: number, b: number, dy = 0) => pt(i0 + a, j0 + b, dy),
     xy: (a: number, b: number) => iso(i0 + a, j0 + b),
   }
-}
-
-/** Farmhouse with chimney smoke. Anchored at the footprint's centre ground point. */
-export function Farmhouse() {
-  const { w, d } = FARMHOUSE_FOOTPRINT
-  const h = 66
-  const { p, xy } = footprint(w, d)
-  const [px, py] = xy(w / 2, d / 2)
-  const peak = `${px},${py - h - 58}`
-  const [cx, cy] = xy(w * 0.72, d * 0.35)
-  const [bx0, by0] = xy(0, d)
-  const [bx1, by1] = xy(w, d)
-  const [kx, ky] = xy(1.38, d)
-  const [fx, fy] = xy(0.52, d)
-  const win = (a: number) => [p(a, d, -24), p(a + 0.45, d, -24), p(a + 0.45, d, -46), p(a, d, -46)].join(' ')
-  const sideWin = (b: number) => [p(w, b, -24), p(w, b + 0.45, -24), p(w, b + 0.45, -46), p(w, b, -46)].join(' ')
-  return (
-    <g>
-      <polygon points={`${p(0, d)} ${p(w, d)} ${p(w, d, -h)} ${p(0, d, -h)}`} fill="url(#g-wall)" className="g-ol" />
-      <polygon points={`${p(w, d)} ${p(w, 0)} ${p(w, 0, -h)} ${p(w, d, -h)}`} fill="#dccaa3" className="g-ol" />
-      {[1, 2, 3, 4].map((k) => (
-        <path key={k} d={`M${bx0} ${by0 - k * 13} L${bx1} ${by1 - k * 13}`} stroke="#d8c39a" strokeWidth={1.2} />
-      ))}
-      <polygon
-        points={`${p(-0.15, d + 0.15, -h)} ${p(w + 0.15, d + 0.15, -h)} ${peak}`}
-        fill="url(#g-roof)"
-        className="g-ol"
-      />
-      <polygon
-        points={`${p(w + 0.15, d + 0.15, -h)} ${p(w + 0.15, -0.15, -h)} ${peak}`}
-        fill="#8e4524"
-        className="g-ol"
-      />
-      <g transform={`translate(${cx} ${cy - h - 40})`}>
-        <rect x={-7} y={-26} width={14} height={30} fill="url(#g-brick)" className="g-ol" />
-        <rect x={-9} y={-30} width={18} height={6} fill="#7a3a1f" className="g-ol2" />
-        <g className="g-smoke">
-          <circle cy={-34} r={7} fill="#fff" opacity={0.85} />
-          <circle cy={-34} r={6} fill="#fff" opacity={0.85} />
-          <circle cy={-34} r={5} fill="#fff" opacity={0.85} />
-        </g>
-      </g>
-      <polygon
-        points={`${p(1, d)} ${p(1.45, d)} ${p(1.45, d, -34)} ${p(1, d, -34)}`}
-        fill="url(#g-door)"
-        className="g-ol"
-      />
-      <circle cx={kx} cy={ky - 17} r={1.8} fill="#e0a93b" />
-      <polygon points={win(0.3)} fill="url(#g-glass)" className="g-ol" />
-      <polygon points={win(1.8)} fill="url(#g-glass)" className="g-ol" />
-      <polygon points={sideWin(0.4)} fill="url(#g-glass)" className="g-ol" />
-      <polygon points={sideWin(1.2)} fill="url(#g-glass)" className="g-ol" />
-      <polygon
-        points={`${p(0.25, d, -22)} ${p(0.8, d, -22)} ${p(0.8, d, -17)} ${p(0.25, d, -17)}`}
-        fill="#b0582f"
-        className="g-ol2"
-      />
-      {[-12, -5, 2, 9].map((o, k) => (
-        <circle
-          key={o}
-          cx={fx + o}
-          cy={fy - 25 + o * 0.5}
-          r={3}
-          fill={['#f2c14e', '#e8897a', '#fffaf1', '#f2c14e'][k]}
-          className="g-ol2"
-        />
-      ))}
-    </g>
-  )
 }
 
 const PACKET_COLORS = ['#b0582f', '#e0a93b', '#8a9a5b']
