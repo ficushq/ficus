@@ -26,7 +26,7 @@ export interface ConversationViewProps {
   placeholder?: string
   /** Shown instead of the empty transcript (e.g. the seed-packet prompt). */
   intro?: ReactNode
-  /** localStorage draft key, shared with the web app's composer drafts. */
+  /** Draft key (stored under the garden's own `ficus-garden:` prefix). */
   draftKey?: string
   composerLabel?: string
   afterConversation?: ReactNode

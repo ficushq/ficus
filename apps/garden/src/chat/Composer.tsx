@@ -3,13 +3,18 @@ import clsx from 'clsx'
 import type { DeliveryMode } from '@ficus/shared'
 import { useStableRef } from '../hooks/useStableRef'
 
+/**
+ * Garden-only storage prefix. The garden shares the web app's origin, so it
+ * never writes the web app's own keys (see @ficus/shared/browser-keys).
+ */
+const DRAFT_PREFIX = 'ficus-garden:chat-draft:'
 const CLEAR_CONFIRM_MS = 3000
 const CLEAR_REVEAL_DELAY_MS = 5000
 
 function readDraft(key?: string): string {
   if (!key) return ''
   try {
-    return localStorage.getItem(`chat-draft:${key}`) ?? ''
+    return localStorage.getItem(`${DRAFT_PREFIX}${key}`) ?? ''
   } catch {
     return ''
   }
@@ -18,8 +23,8 @@ function readDraft(key?: string): string {
 function saveDraft(key: string | undefined, value: string) {
   if (!key) return
   try {
-    if (value) localStorage.setItem(`chat-draft:${key}`, value)
-    else localStorage.removeItem(`chat-draft:${key}`)
+    if (value) localStorage.setItem(`${DRAFT_PREFIX}${key}`, value)
+    else localStorage.removeItem(`${DRAFT_PREFIX}${key}`)
   } catch {
     // storage unavailable (private mode): drafts just don't persist
   }
