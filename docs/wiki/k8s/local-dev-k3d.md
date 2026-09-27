@@ -170,7 +170,7 @@ FICUS_K8S_RUNTIME_CLASS=
 
 ## Rebuilding the Sandbox Image
 
-CLI-only changes do not require `k3d:import`: build the CLI with `bun run build:cli`, then recreate sandbox pods if they need the refreshed `/usr/local/bin/tau` mount.
+CLI-only changes do not require `k3d:import`: build the CLI with `bun run build:cli`, then recreate sandbox pods if they need the refreshed `/usr/local/bin/ficus` mount.
 
 After changing code in `packages/k8s-sandbox/`:
 

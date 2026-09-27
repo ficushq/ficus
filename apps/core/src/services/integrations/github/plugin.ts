@@ -110,7 +110,7 @@ export function createGitHubPlugin(
       readiness: [],
       skills: [],
       extensions: [],
-      // Credentials are acquired by `tau integration exec` at invocation time.
+      // Credentials are acquired by `ficus integration exec` at invocation time.
       // Never project an access token into a persistent agent process environment.
       protectedBindings: [],
     },

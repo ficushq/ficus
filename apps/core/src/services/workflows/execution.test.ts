@@ -580,7 +580,7 @@ test('PR and direct-merge delivery require independently fetched merge evidence'
         const id = await create('active', definition)
         const [assignment] = await messages(id)
         expect(assignment!.content).not.toContain('Delivery policy:')
-        expect(assignment!.content).toContain(`tau workstream advance ${(await WorkStream.mustFind(id)).number}`)
+        expect(assignment!.content).toContain(`ficus workstream advance ${(await WorkStream.mustFind(id)).number}`)
         await advance(id, 'completed')
         await advance(id, 'approved')
         await db
@@ -860,7 +860,7 @@ describe('parallel dispatch and pause', () => {
       'Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion'
     )
     await expect(finishFlow(id, 2, actor)).rejects.toThrow(
-      `tau workstream set-meta ${id} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
+      `ficus workstream set-meta ${id} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
     )
   })
   test('finish names the exact repair for each delivery binding failure class', async () => {
@@ -886,9 +886,9 @@ describe('parallel dispatch and pause', () => {
       expect(missing).toContain('codeHost.changeRequest is not set')
       expect(missing).toContain('records no branch (metadata.git.branch)')
       expect(missing).toContain(
-        `tau workstream set-meta ${id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
+        `ficus workstream set-meta ${id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
       )
-      expect(missing).toContain(`tau workstream track ${id} --pr <owner/repo#n> --delivery`)
+      expect(missing).toContain(`ficus workstream track ${id} --pr <owner/repo#n> --delivery`)
       // (b) with a branch: an empty owner-namespace lookup and an ambiguous one both fail with
       // the exact repair, and the legacy shape gets a shape-matching command.
       await db
@@ -944,7 +944,7 @@ describe('parallel dispatch and pause', () => {
         .where(eq(workStreams.id, id))
       api.mockImplementation(((path: string) => Promise.resolve(path.includes('pulls?head=') ? [] : null)) as any)
       missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
-      expect(missing).toContain(`tau workstream set-meta ${id} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`)
+      expect(missing).toContain(`ficus workstream set-meta ${id} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`)
       // (c) the binding exists but cannot be verified at all, distinct from not-merged.
       await db
         .update(workStreams)

@@ -25,7 +25,7 @@ function claim(overrides: Partial<FleetIncidentNotificationClaim>): FleetInciden
     causeSummary:
       '1 pending work item remains; oldest is 4070m old. No execution run has started in the last 45m of pending demand, and no open provider or sandbox incident explains the delay.',
     remediation:
-      'Check machine + sandbox health first (`tau machines list`), then worker pickup (`tau worker status`).',
+      'Check machine + sandbox health first (`ficus machines list`), then worker pickup (`ficus worker status`).',
     details: {},
     ...overrides,
   }
@@ -51,7 +51,7 @@ describe('fleet incident messages', () => {
       'Work in squad Tau Core has been stalled for 45m.\n\n' +
         'Cause: No agent run has started, and no provider or sandbox problem explains it.\n' +
         'Waiting: 1 work item, the oldest for 2d 19h\n' +
-        'Fix: Check machine + sandbox health first (`tau machines list`), then worker pickup (`tau worker status`).'
+        'Fix: Check machine + sandbox health first (`ficus machines list`), then worker pickup (`ficus worker status`).'
     )
     expect(message.content).not.toContain(SQUAD_ID)
     expect(message.content).not.toContain('4070m')
@@ -103,7 +103,7 @@ describe('fleet incident messages', () => {
       scopeKey: 'provider:openai-codex:account:*',
       causeCode: 'expired-oauth',
       causeSummary: 'Provider OAuth credentials expired or were revoked.',
-      remediation: 'Run `tau pa login openai-codex` to authenticate again.',
+      remediation: 'Run `ficus pa login openai-codex` to authenticate again.',
     }
     const alert = renderFleetIncidentMessage(claim(base), {}, NOW)
     expect(alert.subject).toBe('OpenAI Codex: sign-in expired')
@@ -111,7 +111,7 @@ describe('fleet incident messages', () => {
       'Agents that use OpenAI Codex can’t run until this clears.\n\n' +
         'Cause: OpenAI Codex sign-in expired or was revoked.\n' +
         'Started: 45m ago\n' +
-        'Fix: Run `tau pa login openai-codex` to authenticate again.'
+        'Fix: Run `ficus pa login openai-codex` to authenticate again.'
     )
     expect(alert.push.subtitle).toBeUndefined()
     const recovery = renderFleetIncidentMessage(
@@ -163,8 +163,8 @@ describe('fleet incident messages', () => {
 
   describe('overloaded sandboxes', () => {
     const AGENT_ID = '8feeb6aa-7f95-4686-a92f-56095edd2660'
-    const squadRemediation = `Find and stop the runaway job with \`tau squad sandbox-ps ${SQUAD_ID}\` (or Workspace settings → Processes), then \`tau squad sandbox-kill\` / \`sandbox-stop-container\`.`
-    const agentRemediation = `Find and stop the runaway job with \`tau agent sandbox-ps ${AGENT_ID}\` (or the agent's sandbox controls → Processes), then \`tau agent sandbox-kill\` / \`sandbox-stop-container\`.`
+    const squadRemediation = `Find and stop the runaway job with \`ficus squad sandbox-ps ${SQUAD_ID}\` (or Workspace settings → Processes), then \`ficus squad sandbox-kill\` / \`sandbox-stop-container\`.`
+    const agentRemediation = `Find and stop the runaway job with \`ficus agent sandbox-ps ${AGENT_ID}\` (or the agent's sandbox controls → Processes), then \`ficus agent sandbox-kill\` / \`sandbox-stop-container\`.`
     const cause =
       'More work is running than the machine has CPUs for, often a detached build, test run, or container left behind. On a shared machine, another sandbox can cause it too.'
     const overload = (overrides: Partial<FleetIncidentNotificationClaim>) =>

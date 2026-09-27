@@ -322,7 +322,7 @@ describe('integration routes', () => {
     expect((await sign(noUse.app)).status).toBe(403)
 
     const [agent] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId }).returning()
-    // The same grant squad agents rely on for `tau integration exec github`.
+    // The same grant squad agents rely on for `ficus integration exec github`.
     await db.insert(agentExtraScopes).values({ agentId: agent.id, permission: 'integrations:use' })
     try {
       const { app, calls } = createApp({ type: 'agent', agentId: agent.id, squadId })

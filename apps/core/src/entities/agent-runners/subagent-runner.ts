@@ -228,7 +228,7 @@ export class SubagentRunner extends AgentRunner {
             '',
             `- For intermediate questions, progress, or discussion, message your parent with the Tau CLI via the ${parentShell} tool:`,
             '',
-            `    tau inbox send ${this.agent.parentAgentId} "your message" -s "Short subject" --steer`,
+            `    ficus inbox send ${this.agent.parentAgentId} "your message" -s "Short subject" --steer`,
             '',
             '  After sending, end your turn — you stay available and your parent will reply.',
             '- When you are finished or blocked, call `im_done` with your single, self-contained final result. `im_done` sends your parent the conclusory message and terminates you. Do NOT send your final conclusion yourself and then call `im_done` — that double-messages. Use plain inbox sends only for intermediate/conversational messages; use `im_done` for the terminal one.',

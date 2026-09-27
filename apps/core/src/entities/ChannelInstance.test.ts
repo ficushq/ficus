@@ -77,7 +77,9 @@ describe('ChannelInstance.buildChannelInboxMessage', () => {
     expect(content).toContain('channelId: `C123`')
     expect(content).toContain('thread_ts: `1710000000.000100`')
     expect(content).toContain('--from-slack https://acme.slack.com/archives/C123/p1710000000000100')
-    expect(content).toContain('tau squad memory ingest squad-1 https://acme.slack.com/archives/C123/p1710000000000100')
+    expect(content).toContain(
+      'ficus squad memory ingest squad-1 https://acme.slack.com/archives/C123/p1710000000000100'
+    )
   })
 
   it('omits Slack current-thread context for non-Slack inbound', async () => {

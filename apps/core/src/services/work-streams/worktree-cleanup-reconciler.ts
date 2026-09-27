@@ -92,7 +92,7 @@ export async function processWorktreeCleanup(
         await reschedule(
           job,
           'deferred',
-          'Current git bindings do not match the owned worktree. Use tau workstream cleanup inspect ' +
+          'Current git bindings do not match the owned worktree. Use ficus workstream cleanup inspect ' +
             id +
             '; cleanup retain can stop retries before any removal starts.'
         )
@@ -226,7 +226,7 @@ async function notifyCleanupBlocker(id: string): Promise<void> {
       senderType: 'system',
       wakeEligible: true,
       subject: `Worktree cleanup retained: ${row.stream.title.slice(0, 80)}`,
-      content: `Delivered work stream ${id} remains done.\nCleanup: ${row.job.status}. ${row.job.reason}\nInspect: tau workstream cleanup inspect ${id}\nRetain (no deletion; rejected while removal is in flight): tau workstream cleanup retain ${id}`,
+      content: `Delivered work stream ${id} remains done.\nCleanup: ${row.job.status}. ${row.job.reason}\nInspect: ficus workstream cleanup inspect ${id}\nRetain (no deletion; rejected while removal is in flight): ficus workstream cleanup retain ${id}`,
       metadata: { source: 'worktree-cleanup', workStreamId: id, squadId: row.stream.squadId },
     },
     `worktree-cleanup:${id}:${digest}`

@@ -7,8 +7,8 @@
  * shared volume, so Core pushes those same artifacts over the box's own
  * sandbox-server `/write` endpoint AT ENSURE TIME. Pushing through the server
  * (rather than ssh/root) matters: the box's unix user must OWN the files, and
- * the server writes as that user. The `tau` CLI is NOT pushed here: on vm it is
- * a MACHINE-level artifact (`/usr/local/bin/tau` → `/opt/tau/cli/tau.js`,
+ * the server writes as that user. The `ficus` CLI is NOT pushed here: on vm it is
+ * a MACHINE-level artifact (`/usr/local/bin/ficus` → `/opt/tau/cli/ficus.js`,
  * delivered + drift-updated by machine-artifact delivery), shared by every box
  * on the machine.
  *
@@ -26,9 +26,9 @@
  *     server ship together, so we rely on it unconditionally (no legacy fallback).
  *
  * ## push order (deterministic)
- *   0. best-effort `rm -f ~/bin/tau` — an earlier revision pushed a per-box CLI
- *      there, and `~/bin` precedes `/usr/local/bin` on the box PATH, so a stale
- *      leftover would SHADOW the machine-level CLI; idempotent when absent
+ *   0. best-effort `rm -f ~/bin/tau` — an earlier revision pushed a per-box copy
+ *      of the pre-ficus CLI there (`~/bin` precedes `/usr/local/bin` on the box
+ *      PATH); removing it keeps that stale copy off the box PATH. Idempotent when absent
  *   1. materialized skills tree → `~/.tau/skills/<materializer layout>`
  *   2. squad `.env` → `~/workspace/.tau/.env`   (mode 0600; squad-scoped only)
  *   3. identity key → `~/.private/identity.pem`  (mode 0600; per-agent only)
@@ -608,9 +608,9 @@ export async function syncBoxFiles(
   }
 
   // 0. Best-effort remove the legacy per-box CLI at ~/bin/tau. The CLI is now a
-  //    machine-level artifact (/usr/local/bin/tau), but ~/bin precedes
-  //    /usr/local/bin on the box PATH, so a stale leftover from an earlier
-  //    revision would SHADOW it. `rm -f` is idempotent when the file is absent,
+  //    machine-level artifact (/usr/local/bin/ficus); a stale per-box copy from an
+  //    earlier revision (~/bin precedes /usr/local/bin on the box PATH) would be a
+  //    second, outdated CLI. `rm -f` is idempotent when the file is absent,
   //    and a removal failure never fails the sync. Not an asset — unconditional.
   await bestEffortRemove(client, `${home}/bin/tau`, deps.bashFence)
 

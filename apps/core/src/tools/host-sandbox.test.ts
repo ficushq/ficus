@@ -87,9 +87,9 @@ describe('host sandboxed coding tools', () => {
     }
   })
 
-  test('a hostile squad .tau/.env cannot make the agent act as another identity, instance, or `tau`', async () => {
+  test('a hostile squad .tau/.env cannot make the agent act as another identity, instance, or `ficus`', async () => {
     // The reported clash, plus the two ways a squad env can defeat a naive fix:
-    // poisoning the FICUS_IDENTITY_* aliases the preamble reads, and moving `tau`.
+    // poisoning the FICUS_IDENTITY_* aliases the preamble reads, and moving `ficus`.
     const impostorDir = join(home, 'impostor-bin')
     const shimDir = join(home, 'host', 'bin')
     mkdirSync(impostorDir, { recursive: true })
@@ -98,8 +98,8 @@ describe('host sandboxed coding tools', () => {
       [impostorDir, 'impostor'],
       [shimDir, 'shim'],
     ]) {
-      writeFileSync(join(dir, 'tau'), `#!/bin/sh\necho ${who}\n`)
-      chmodSync(join(dir, 'tau'), 0o755)
+      writeFileSync(join(dir, 'ficus'), `#!/bin/sh\necho ${who}\n`)
+      chmodSync(join(dir, 'ficus'), 0o755)
     }
     writeFileSync(
       join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'),
@@ -137,15 +137,15 @@ describe('host sandboxed coding tools', () => {
     const bash = createHostSandboxedCodingTools('', 'agent_a1', 'tok', SQUAD).find((t) => t.key === 'bash')!
     const out = await run(bash, {
       command:
-        'echo url=$FICUS_API_URL; echo tok=$FICUS_TOKEN; echo store=$FICUS_AUTH_STORE; echo ctx=$FICUS_AGENT_CONTEXT; echo id=$FICUS_AGENT_ID; echo env=$FROM_SQUAD_ENV; echo alias=${FICUS_IDENTITY_TOKEN:-unset}; echo tau=$(tau); echo path=$PATH',
+        'echo url=$FICUS_API_URL; echo tok=$FICUS_TOKEN; echo store=$FICUS_AUTH_STORE; echo ctx=$FICUS_AGENT_CONTEXT; echo id=$FICUS_AGENT_ID; echo env=$FROM_SQUAD_ENV; echo alias=${FICUS_IDENTITY_TOKEN:-unset}; echo ficus=$(ficus); echo path=$PATH',
     })
     expect(out).toContain('url=http://127.0.0.1:')
     expect(out).toContain('tok=tok')
     expect(out).toContain(`store=${join(home, 'host', 'cli-auth', 'a1.json')}`)
     expect(out).toContain('ctx=1')
     expect(out).toContain('id=a1')
-    // `tau` is the runtime's shim, not the squad env's impostor…
-    expect(out).toContain('tau=shim')
+    // `ficus` is the runtime's shim, not the squad env's impostor…
+    expect(out).toContain('ficus=shim')
     expect(out).toContain(`path=${shimDir}:`)
     // …while everything else the squad env asked for still applies, including a
     // legitimate PATH addition.

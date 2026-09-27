@@ -201,7 +201,7 @@ export async function assertOwnedWorktreeBindingUnchanged(
   if (registered)
     throw new WorktreeCleanupConflictError(
       'Cannot change a platform-owned repository, worktree or branch through metadata edits. ' +
-        'Read metadata.git (not top-level git), then use tau workstream cleanup inspect ' +
+        'Read metadata.git (not top-level git), then use ficus workstream cleanup inspect ' +
         id +
         ' to inspect original ownership. Use the configured worktree or create a new work stream for different work. ' +
         'For an existing mismatch, cleanup retain stops automatic cleanup when no removal is in flight; it does not rewrite ownership.'

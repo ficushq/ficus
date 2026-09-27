@@ -1,7 +1,7 @@
 /**
  * The Discord slash commands Tau registers for its bot. One definition serves
  * the server (which registers them when a Discord connection is saved) and
- * the CLI's diagnostic `tau discord` commands.
+ * the CLI's diagnostic `ficus discord` commands.
  */
 
 export const DiscordOptionType = { SUB_COMMAND: 1, STRING: 3 } as const

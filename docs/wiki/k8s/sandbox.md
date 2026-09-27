@@ -255,7 +255,7 @@ The Dockerfile (`packages/k8s-sandbox/Dockerfile`) builds a multi-stage image:
 2. **Default packages:** A `devbox.json` with common tools is baked in and `devbox install` is run at build time (~2.5GB of nix packages). This makes runtime `devbox install` a fast no-op.
 3. **Entrypoint:** `sandbox/entrypoint.sh`
 
-The image does not bundle the Tau CLI. Tau Core copies the built CLI into the shared `tau-core-data` volume at `cli/tau.js` and mounts it read-only at `/usr/local/bin/tau` when creating pods. Recreate a sandbox pod after CLI changes to pick up the newly staged file; no sandbox image rebuild/import is required for CLI-only changes.
+The image does not bundle the Tau CLI. Tau Core copies the built CLI into the shared `tau-core-data` volume at `cli/ficus.js` and mounts it read-only at `/usr/local/bin/ficus` when creating pods. Recreate a sandbox pod after CLI changes to pick up the newly staged file; no sandbox image rebuild/import is required for CLI-only changes.
 
 Build with:
 

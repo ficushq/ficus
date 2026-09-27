@@ -14,7 +14,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
  *
  * With `attention`, the row is upserted to exactly those levels. Without it, a NEW row is created
  * at WATCH_ATTENTION and an EXISTING row is left alone (the requester auto-subscribe on stream
- * creation and a plain `tau workstream watch` both take this path).
+ * creation and a plain `ficus workstream watch` both take this path).
  */
 export async function subscribeToWorkStream(
   workStreamId: string,

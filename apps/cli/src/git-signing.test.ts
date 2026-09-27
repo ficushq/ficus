@@ -142,12 +142,12 @@ describe('git signing through the real ficus entrypoint', () => {
       },
     })
 
-    // Production puts `tau` on PATH and sets gpg.ssh.program=tau; mirror that.
+    // Production puts `ficus` on PATH and sets gpg.ssh.program=ficus; mirror that.
     writeFileSync(
-      join(bin, 'tau'),
+      join(bin, 'ficus'),
       `#!/bin/sh\nexec "${process.execPath}" "${join(import.meta.dir, 'index.ts')}" "$@"\n`
     )
-    chmodSync(join(bin, 'tau'), 0o755)
+    chmodSync(join(bin, 'ficus'), 0o755)
     writeFileSync(join(dir, 'allowed'), `agent@example.com ${publicKey}\n`)
     const env = {
       PATH: `${bin}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin`,
@@ -172,13 +172,13 @@ describe('git signing through the real ficus entrypoint', () => {
       '-c',
       `user.signingkey=key::${publicKey}`,
       '-c',
-      'gpg.ssh.program=tau',
+      'gpg.ssh.program=ficus',
       '-c',
       `gpg.ssh.allowedSignersFile=${join(dir, 'allowed')}`,
     ]
     expect(run(['git', 'init', '-q'], repo, env).code).toBe(0)
     const commit = await runAsync(
-      ['git', ...signing, 'commit', '-q', '--allow-empty', '-m', 'signed by tau'],
+      ['git', ...signing, 'commit', '-q', '--allow-empty', '-m', 'signed by ficus'],
       repo,
       env
     )

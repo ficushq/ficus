@@ -135,7 +135,7 @@ export const { directMessageAgentTool, workspaceInboxMessageAgentTool } = create
 export const messageAgentTool = directMessageAgentTool
 
 export const WORKSPACE_VOICE_REPLY_GUIDANCE =
-  'Reply to the workspace voice assistant through inbox: tau inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant.'
+  'Reply to the workspace voice assistant through inbox: ficus inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant.'
 
 function withWorkspaceVoiceReplyGuidance(content: string): string {
   return `${content}\n\n${WORKSPACE_VOICE_REPLY_GUIDANCE}`

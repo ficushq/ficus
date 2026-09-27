@@ -1,12 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   FALLBACK_PATH,
   buildHostCommandEnv,
   buildHostPreamble,
-  ensureTauShim,
+  ensureCliShim,
   getHostBaseEnv,
   hostBinDir,
   parseNulSeparatedEnv,
@@ -158,28 +168,65 @@ describe('host env', () => {
     expect(cached).not.toBe(succeeded)
   })
 
-  test('ensureTauShim writes an executable shim that execs bun with the CLI path', () => {
-    const cli = join(home, 'tau.js')
+  test('ensureCliShim writes an executable shim that execs bun with the CLI path', () => {
+    const cli = join(home, 'ficus.js')
     writeFileSync(cli, '')
-    const shim = ensureTauShim({ cliHostPath: cli, bunPath: '/opt/bun' })
-    expect(shim).toBe(join(hostBinDir(), 'tau'))
+    const shim = ensureCliShim({ cliHostPath: cli, bunPath: '/opt/bun' })
+    expect(shim).toBe(join(hostBinDir(), 'ficus'))
     expect(statSync(shim!).mode & 0o777).toBe(0o755)
     const body = readFileSync(shim!, 'utf8')
     expect(body).toContain('#!/bin/sh')
     expect(body).toContain(`exec '/opt/bun' '${cli}' "$@"`)
   })
 
-  test('ensureTauShim escapes single quotes in interpolated paths', () => {
+  test('ensureCliShim escapes single quotes in interpolated paths', () => {
     const cli = join(home, "weird'cli.js")
     writeFileSync(cli, '')
-    const shim = ensureTauShim({ cliHostPath: cli, bunPath: "/opt/it's/bun" })
+    const shim = ensureCliShim({ cliHostPath: cli, bunPath: "/opt/it's/bun" })
     const body = readFileSync(shim!, 'utf8')
     expect(body).toContain(`exec '/opt/it'\\''s/bun' '${home}/weird'\\''cli.js' "$@"`)
   })
 
-  test('ensureTauShim returns null and writes nothing when the CLI build is missing', () => {
-    expect(ensureTauShim({ cliHostPath: join(home, 'missing.js') })).toBeNull()
-    expect(existsSync(join(hostBinDir(), 'tau'))).toBe(false)
+  test('ensureCliShim returns null and writes nothing when the CLI build is missing', () => {
+    expect(ensureCliShim({ cliHostPath: join(home, 'missing.js') })).toBeNull()
+    expect(existsSync(join(hostBinDir(), 'ficus'))).toBe(false)
+  })
+
+  test('ensureCliShim writes only `ficus`, pointing at the absolute ficus.js, and never touches an older wrapper', () => {
+    const cliDir = join(home, 'checkout', 'apps', 'cli', 'dist')
+    mkdirSync(cliDir, { recursive: true })
+    const cli = join(cliDir, 'ficus.js')
+    writeFileSync(cli, '')
+    // A wrapper an older Core left behind (it points at a build that no longer exists).
+    mkdirSync(hostBinDir(), { recursive: true })
+    const older = join(hostBinDir(), 'tau')
+    const olderBody = '#!/bin/sh\nexec /old/bun /old/checkout/apps/cli/dist/old.js "$@"\n'
+    writeFileSync(older, olderBody)
+    chmodSync(older, 0o755)
+    const olderStat = statSync(older)
+
+    // Twice: the refresh path must leave the older wrapper alone too.
+    ensureCliShim({ cliHostPath: cli, bunPath: '/opt/bun' })
+    const shim = ensureCliShim({ cliHostPath: cli, bunPath: '/opt/bun' })
+
+    expect(shim).toBe(join(hostBinDir(), 'ficus'))
+    expect(readdirSync(hostBinDir()).sort()).toEqual(['ficus', 'tau'])
+    const body = readFileSync(shim!, 'utf8')
+    expect(body).toBe(`#!/bin/sh\nexec '/opt/bun' '${cli}' "$@"\n`)
+    expect(cli.startsWith('/')).toBe(true)
+    expect(readFileSync(older, 'utf8')).toBe(olderBody)
+    const after = statSync(older)
+    expect(after.ino).toBe(olderStat.ino)
+    expect(after.mtimeMs).toBe(olderStat.mtimeMs)
+    expect(after.mode).toBe(olderStat.mode)
+  })
+
+  test('ensureCliShim creates no other file when the CLI build is missing, even with an older wrapper present', () => {
+    mkdirSync(hostBinDir(), { recursive: true })
+    writeFileSync(join(hostBinDir(), 'tau'), 'old')
+    expect(ensureCliShim({ cliHostPath: join(home, 'missing.js') })).toBeNull()
+    expect(readdirSync(hostBinDir())).toEqual(['tau'])
+    expect(readFileSync(join(hostBinDir(), 'tau'), 'utf8')).toBe('old')
   })
 
   test('resolveHostApiUrl uses PORT', () => {

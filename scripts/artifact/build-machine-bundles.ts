@@ -34,7 +34,7 @@ export interface BuildMachineBundlesDeps {
 
 /**
  * Build the `machine/` directory of a core release artifact: the sandbox-server
- * bundle (`server.js` + `librust_pty.so`), the tau CLI bundle (`tau.js`), and
+ * bundle (`server.js` + `librust_pty.so`), the ficus CLI bundle (`ficus.js`), and
  * the two machine shell scripts (`bootstrap.sh`, `box-provision.sh`), all
  * written into `outDir`.
  *
@@ -71,7 +71,7 @@ export async function buildMachineBundles(outDir: string, deps: BuildMachineBund
 
     writeFileSync(join(outDir, 'server.js'), server.content)
     writeFileSync(join(outDir, 'librust_pty.so'), server.lib)
-    writeFileSync(join(outDir, 'tau.js'), cli.js)
+    writeFileSync(join(outDir, 'ficus.js'), cli.js)
 
     // Byte-for-byte copy: read + write the raw Buffer, no text decode/encode
     // round-trip that could normalize line endings or otherwise mutate the
@@ -80,7 +80,7 @@ export async function buildMachineBundles(outDir: string, deps: BuildMachineBund
       writeFileSync(join(outDir, script), readFileSync(join(MACHINE_SCRIPTS_DIR, script)))
     }
 
-    for (const name of ['server.js', 'librust_pty.so', 'tau.js', 'bootstrap.sh', 'box-provision.sh']) {
+    for (const name of ['server.js', 'librust_pty.so', 'ficus.js', 'bootstrap.sh', 'box-provision.sh']) {
       const path = join(outDir, name)
       if (!existsSync(path) || statSync(path).size === 0) {
         throw new Error(`machine bundle output ${name} is empty at ${path}`)

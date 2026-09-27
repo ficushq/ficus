@@ -88,7 +88,7 @@ async function makeCheckout(): Promise<string> {
   await mkdir(join(root, 'config/agent/extensions/code-ast/node_modules/.bin'), { recursive: true })
   await symlink('../typescript/package.json', join(root, 'config/agent/extensions/code-ast/node_modules/.bin/tsc-link'))
 
-  for (const name of ['server.js', 'librust_pty.so', 'tau.js', 'bootstrap.sh', 'box-provision.sh']) {
+  for (const name of ['server.js', 'librust_pty.so', 'ficus.js', 'bootstrap.sh', 'box-provision.sh']) {
     await write(join(root, 'machine', name), `machine ${name}\n`)
   }
 
@@ -230,7 +230,7 @@ describe('assembleCoreArtifact', () => {
         'machine/box-provision.sh',
         'machine/librust_pty.so',
         'machine/server.js',
-        'machine/tau.js',
+        'machine/ficus.js',
         'node_modules/bun-pty/index.js',
         'package.json',
       ].sort()
@@ -241,7 +241,7 @@ describe('assembleCoreArtifact', () => {
     expect(await (await app.request('/docs/')).text()).toBe('docs home')
     expect(await (await app.request('/docs/pagefind/pagefind.js')).text()).toBe('search')
     expect((await app.request('/docs/unknown/')).status).toBe(404)
-    // The executable bit survives the copy (tau.js is exec'd on the box).
+    // The executable bit survives the copy (ficus.js is exec'd on the box).
     expect((await stat(join(tree, 'apps/cli/dist/ficus.js'))).mode & 0o111).not.toBe(0)
   })
 

@@ -64,10 +64,10 @@ describe('getSquadWorkerCliHelp', () => {
   test('does not include task/schedule detailed subcommand help', async () => {
     clearCliHelpCache()
     const help = await getSquadWorkerCliHelp()
-    // Top-level `tau --help` lists all commands (including task, schedule, etc.)
+    // Top-level `ficus --help` lists all commands (including task, schedule, etc.)
     // but the detailed subcommand help sections should NOT be included
-    expect(help).not.toContain('Usage: tau task')
-    expect(help).not.toContain('Usage: tau schedule')
+    expect(help).not.toContain('Usage: ficus task')
+    expect(help).not.toContain('Usage: ficus schedule')
   })
 })
 
@@ -81,10 +81,32 @@ describe('getSquadManagerCliHelp', () => {
   })
 })
 
+describe('the CLI named in agent prompts', () => {
+  test('the help intro names the ficus CLI', async () => {
+    clearCliHelpCache()
+    const help = await getSquadWorkerCliHelp()
+    expect(help.startsWith('You have access to the `ficus` CLI.')).toBe(true)
+  })
+
+  test('the CLI-missing error names the ficus CLI and its build', async () => {
+    resetCliHelpCacheForTests()
+    setCliPathOverrideForTests('/nonexistent/ficus.js')
+    try {
+      const error = await getSquadManagerCliHelp()
+      expect(error).toContain('[ERROR] The ficus CLI is not installed')
+      expect(error).toContain('the "ficus" binary is on the PATH')
+      expect(error).toContain('You cannot execute any ficus commands')
+    } finally {
+      setCliPathOverrideForTests(null)
+      resetCliHelpCacheForTests()
+    }
+  })
+})
+
 describe('cache never stores the CLI-missing error sentinel', () => {
   test('a transient CLI-missing error is not cached and a later success is served', async () => {
     resetCliHelpCacheForTests()
-    setCliPathOverrideForTests('/nonexistent/tau.js')
+    setCliPathOverrideForTests('/nonexistent/ficus.js')
     const errorHelp = await getSystemManagerCliHelp()
     expect(errorHelp).toContain('[ERROR]')
 

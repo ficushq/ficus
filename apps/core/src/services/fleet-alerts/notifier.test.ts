@@ -66,7 +66,7 @@ describe('fleet incident notifier', () => {
         lastObservedAt: NOW,
         causeCode: 'expired-oauth',
         causeSummary: 'OAuth refresh credential expired or was revoked.',
-        remediation: 'Run `tau pa login openai-codex` to authenticate again.',
+        remediation: 'Run `ficus pa login openai-codex` to authenticate again.',
         details: input.details ?? {},
         updatedAt: NOW,
       })
@@ -861,7 +861,7 @@ describe('fleet incident notifier', () => {
     expect(alertRow.content).toBe(
       `Work in squad ${squadName} has been stalled for 1h.\n\n` +
         'Cause: OAuth refresh credential expired or was revoked.\n' +
-        'Fix: Run `tau pa login openai-codex` to authenticate again.'
+        'Fix: Run `ficus pa login openai-codex` to authenticate again.'
     )
     const recoveryRow = byKey.get(recovery.idempotencyKey)!
     expect(recoveryRow.subject).toBe(`Squad ${squadName} is running again`)
@@ -951,7 +951,7 @@ describe('fleet incident notifier', () => {
     expect(row!.content).toStartWith(
       `The sandbox for reviewer in squad ${prefix} squad is overloaded: load 31.9 on 4 CPUs for 12m (463 MB free).`
     )
-    expect(row!.content).toContain(`\`tau agent sandbox-ps ${agent!.id}\``)
+    expect(row!.content).toContain(`\`ficus agent sandbox-ps ${agent!.id}\``)
     expect(row!.metadata).toMatchObject({ source: 'fleet-alert', incidentKind: 'sandbox_overloaded', squadId })
   })
 })

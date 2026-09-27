@@ -373,7 +373,7 @@ export function renderEnvForSecrets(
  * Resolve credentials on each invocation so long-lived shells see rotation and detach.
  *
  * With `signingPublicKey`, agents' commits and tags are also signed: git calls
- * `tau` as its `gpg.ssh.program`, which has Core sign with the connection's key
+ * `ficus` as its `gpg.ssh.program`, which has Core sign with the connection's key
  * (the private half never enters the sandbox). Command-line `-c` outranks any
  * repo-local config. Signing applies only when `FICUS_TOKEN` is set, i.e. to agent
  * commands: a human terminal cannot reach the signer, and must not have every
@@ -381,14 +381,14 @@ export function renderEnvForSecrets(
  */
 export function githubCommandBindings(squadId: string, signingPublicKey?: string): string {
   const squad = shellQuote(squadId)
-  const credential = `-c credential.https://github.com.helper= -c ${shellQuote(`credential.https://github.com.helper=!f() { command tau integration exec github --squad ${squad} -- gh auth git-credential "$@"; }; f`)}`
+  const credential = `-c credential.https://github.com.helper= -c ${shellQuote(`credential.https://github.com.helper=!f() { command ficus integration exec github --squad ${squad} -- gh auth git-credential "$@"; }; f`)}`
   const signing = signingPublicKey
     ? [
         '-c gpg.format=ssh',
         '-c commit.gpgsign=true',
         '-c tag.gpgsign=true',
         `-c ${shellQuote(`user.signingkey=key::${signingPublicKey.trim()}`)}`,
-        '-c gpg.ssh.program=tau',
+        '-c gpg.ssh.program=ficus',
       ].join(' ')
     : undefined
   const git = signing
@@ -397,7 +397,7 @@ export function githubCommandBindings(squadId: string, signingPublicKey?: string
     : `git() { command git ${credential} "$@"; }`
   return (
     [
-      `gh() { command tau integration exec github --squad ${squad} -- gh "$@"; }`,
+      `gh() { command ficus integration exec github --squad ${squad} -- gh "$@"; }`,
       git,
       'if [ -n "${BASH_VERSION:-}" ]; then export -f gh git; fi',
     ].join('\n') + '\n'

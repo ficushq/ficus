@@ -309,7 +309,7 @@ describe('artifact voice request service', () => {
       expect(sentMessages[0].content).toContain('Informational artifact question')
       expect(sentMessages[0].content).toContain('Explain how the launch risk score is calculated.')
       expect(sentMessages[0].content).toContain(
-        'Reply to the workspace voice assistant through inbox: tau inbox send workspace "<message>" --recipient-type voice_assistant.'
+        'Reply to the workspace voice assistant through inbox: ficus inbox send workspace "<message>" --recipient-type voice_assistant.'
       )
       expect(sentMessages[0].content).toContain('do not edit artifact files')
       expect(sentMessages[0].metadata).toMatchObject({

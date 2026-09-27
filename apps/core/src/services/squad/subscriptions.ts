@@ -14,7 +14,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
  * Create or update the caller's squad attention row.
  *
  * With `attention`, the row is upserted to exactly those levels. Without it, a NEW row is created
- * at WATCH_ATTENTION and an EXISTING row is left alone — a plain `tau squad watch` must never
+ * at WATCH_ATTENTION and an EXISTING row is left alone — a plain `ficus squad watch` must never
  * silently reset levels the user configured.
  */
 export async function subscribeToSquad(squadId: string, userId: string, attention?: Attention): Promise<void> {

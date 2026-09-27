@@ -138,7 +138,7 @@ export const defaultLocalInstallEnv: LocalInstallEnvOps = {
 }
 
 /**
- * The supervisors of CLI-managed local installs (`tau server setup`). A `systemd` host is renamed
+ * The supervisors of CLI-managed local installs (`ficus server setup`). A `systemd` host is renamed
  * by the setup toolkit, which journals it together with the host's other env files.
  */
 const LOCAL_INSTALL_SUPERVISORS: readonly ProcessSupervisor[] = ['pm2', 'launchd', 'systemd-user']

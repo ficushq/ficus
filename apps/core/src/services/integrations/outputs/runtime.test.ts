@@ -796,9 +796,9 @@ test('native review requests create one bound flow and keep code-host delivery i
     expect(notices[0]!.content).toContain('an integration event (github)')
     expect(notices[0]!.content).toContain('paused before any workers start')
     expect(notices[0]!.content).toContain(
-      `tau workstream update ${(await WorkStream.mustFind(id)).number} --repository`
+      `ficus workstream update ${(await WorkStream.mustFind(id)).number} --repository`
     )
-    expect(notices[0]!.content).toContain(`tau workstream resume ${(await WorkStream.mustFind(id)).number}`)
+    expect(notices[0]!.content).toContain(`ficus workstream resume ${(await WorkStream.mustFind(id)).number}`)
     const repositorySetup = await import('../../work-streams/repository-setup')
     const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
       async (_squad, _input, _id, metadata) => ({
@@ -1210,7 +1210,7 @@ test('parked merge events notify the actual owner once, retain waits, and reach 
     expect(notices[0]!.recipientId).toBe(owner.id)
     expect(notices[0]!.recipientId).not.toBe(managerId)
     expect(notices[0]!.content).toContain('is parked; worker delivery is retained')
-    expect(notices[0]!.content).toContain(`tau workstream get ${id}`)
+    expect(notices[0]!.content).toContain(`ficus workstream get ${id}`)
     expect(await isCurrentFlowMessage(notices[0]!)).toBe(true)
     const { listOpenWaits } = await import('../../work-streams/waits')
     expect(await listOpenWaits(db, id)).toHaveLength(1)
@@ -2355,8 +2355,8 @@ test('squad-fallback notifications carry an actionable event reference; stream-s
     expect(message.metadata).toMatchObject({ source: 'integration-notification', integrationEventId: ids[0] })
     expect(message.content).toContain(`Event reference: ${ids[0]}`)
     expect(message.content).toContain(`Tracked resource: issue ${prefix}/repo#41`)
-    expect(message.content).toContain(`tau workstream create '<title>' --squad ${squadId} --from-event ${ids[0]}`)
-    expect(message.content).toContain(`tau workstream track <work-stream> --event ${ids[0]}`)
+    expect(message.content).toContain(`ficus workstream create '<title>' --squad ${squadId} --from-event ${ids[0]}`)
+    expect(message.content).toContain(`ficus workstream track <work-stream> --event ${ids[0]}`)
     expect(message.content).toContain('Do not hand-write github or codeHost metadata to track it')
 
     // A stream-scoped compatibility notice (workStreamId set) never carries the reference block.
@@ -2564,7 +2564,7 @@ test('a Linear comment reaches the stream that tracks its issue instead of the s
     expect(fallback.content).toContain(`Event reference: ${otherId}`)
     expect(fallback.content).toContain(`Tracked resource: issue ${issueId}-other`)
     expect(fallback.content).toContain(`--squad ${squadId} --from-event ${otherId}`)
-    expect(fallback.content).toContain(`tau workstream track <work-stream> --event ${otherId}`)
+    expect(fallback.content).toContain(`ficus workstream track <work-stream> --event ${otherId}`)
   }, 'linear')
 })
 

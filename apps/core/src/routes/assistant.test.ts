@@ -1509,7 +1509,7 @@ test('delegate status reports stay bound to the request generation they processe
   expect((await call(`/${randomUUID()}/status`, { status: 'failed' })).status).toBe(404)
   expect((await call(`/${receipt.taskId}/status`, { status: 'done' })).status).toBe(400)
   expect(formatInboxMessages([await InboxMessage.mustFind(receipt.id)])).toContain(
-    `tau assistant-task status ${receipt.taskId}`
+    `ficus assistant-task status ${receipt.taskId}`
   )
 })
 

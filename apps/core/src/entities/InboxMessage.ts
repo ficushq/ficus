@@ -1128,7 +1128,7 @@ function formatInboxMessageAttachments(message: InboxMessage): string {
   **Content type:** ${sanitizeAttachmentDisplayText(attachment.contentType)}
   **Size:** ${attachment.byteSize} bytes
   **SHA-256:** \`${attachment.sha256}\`
-  **Download:** \`tau inbox download ${attachment.id} --out '<save-path>'\``
+  **Download:** \`ficus inbox download ${attachment.id} --out '<save-path>'\``
     )
     .join('\n')
 
@@ -1145,7 +1145,7 @@ export function formatInboxMessages(messages: InboxMessage[]): string {
       const msgId = m.id
       const assistantReply =
         m.senderType === 'voice_assistant' && parseAssistantInboxConversationId(m.senderId)
-          ? `\n\nThis request came from a saved Assistant conversation. Ordinary chat output is not forwarded: report progress, questions, and results with tau assistant-task status ${typeof m.metadata?.assistantTaskId === 'string' ? m.metadata.assistantTaskId : '<taskId>'} --request-id ${m.id} --status <working|waiting|needs-input|completed|failed|cancelled> -m "<update>" (or tau inbox send ${m.senderId} "<update>" --recipient-type voice_assistant --in-reply-to ${m.id} --assistant-task-status <status>). ${(m.metadata?.[ASSISTANT_TASK_MUTATION_KEY] as AssistantTaskMutation | undefined)?.operation === 'cancel' ? 'This task is cancelled. Stop only its work and leave unrelated tasks running; report any work already performed or still stopping with status cancelled.' : 'You own this task until it is complete; see Assistant task reporting.'}\n`
+          ? `\n\nThis request came from a saved Assistant conversation. Ordinary chat output is not forwarded: report progress, questions, and results with ficus assistant-task status ${typeof m.metadata?.assistantTaskId === 'string' ? m.metadata.assistantTaskId : '<taskId>'} --request-id ${m.id} --status <working|waiting|needs-input|completed|failed|cancelled> -m "<update>" (or ficus inbox send ${m.senderId} "<update>" --recipient-type voice_assistant --in-reply-to ${m.id} --assistant-task-status <status>). ${(m.metadata?.[ASSISTANT_TASK_MUTATION_KEY] as AssistantTaskMutation | undefined)?.operation === 'cancel' ? 'This task is cancelled. Stop only its work and leave unrelated tasks running; report any work already performed or still stopping with status cancelled.' : 'You own this task until it is complete; see Assistant task reporting.'}\n`
           : ''
       return `### Message ${msgId}
 
@@ -1165,6 +1165,6 @@ ${formatted}
 
 **Mark one or more messages as read after processing:**
 \`\`\`
-tau inbox read <message-id> [<message-id>...]
+ficus inbox read <message-id> [<message-id>...]
 \`\`\``
 }

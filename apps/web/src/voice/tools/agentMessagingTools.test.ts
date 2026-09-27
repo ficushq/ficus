@@ -107,7 +107,7 @@ describe('message_agent voice tool', () => {
         recipientId: 'manager-agent',
         asVoiceAssistant: true,
         content:
-          'Check the launch plan\n\nReply to the workspace voice assistant through inbox: tau inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant.',
+          'Check the launch plan\n\nReply to the workspace voice assistant through inbox: ficus inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant.',
         deliveryMode: 'steer',
         metadata: {
           sourceTool: 'message_agent',

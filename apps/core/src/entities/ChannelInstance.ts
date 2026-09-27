@@ -351,7 +351,7 @@ When creating work from this request, attach this source with:
 \`--from-slack ${permalink}\`
 
 If the user asks to "index this thread" (or similar), ingest with:
-\`tau squad memory ingest ${targetSquad ?? '<your-squad-id>'} ${permalink}\``
+\`ficus squad memory ingest ${targetSquad ?? '<your-squad-id>'} ${permalink}\``
       }
     }
 

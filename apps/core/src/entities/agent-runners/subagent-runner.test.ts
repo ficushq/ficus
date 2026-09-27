@@ -140,7 +140,7 @@ describe('SubagentRunner result delivery', () => {
     const runner = new TestSubagentRunner(execution, child, agentType)
 
     const systemPrompt = await runner.systemPromptText()
-    expect(systemPrompt).toContain(`tau inbox send ${parent.id}`)
+    expect(systemPrompt).toContain(`ficus inbox send ${parent.id}`)
     expect(systemPrompt).toContain('"your message" -s "Short subject" --steer')
     expect(systemPrompt).toContain('Do NOT send your final conclusion yourself and then call `im_done`')
     // Current Time is removed from the system prompt — it changed every turn and
@@ -195,7 +195,7 @@ describe('SubagentRunner result delivery', () => {
     await child.update({ context: { shortTermMemory: 'private-recovery-marker' } })
     expect(await runner.systemPromptText()).toBe(systemPrompt)
     expect(systemPrompt).toContain('You do not have a shell tool')
-    expect(systemPrompt).not.toContain('tau inbox send')
+    expect(systemPrompt).not.toContain('ficus inbox send')
   })
 
   it('delivers one steer result to the parent with metadata and self-terminates', async () => {

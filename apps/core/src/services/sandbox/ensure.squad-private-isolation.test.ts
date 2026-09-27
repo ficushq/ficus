@@ -84,7 +84,7 @@ describe('warm squad box never mounts /private', () => {
   it('allows /private host sources and load-bearing source-target parity mounts', () => {
     expect(() =>
       expectNoPrivateVolumeTargets([
-        '/private/tmp/build:cache/apps/cli/dist/tau.js:/opt/tau/tau.js:ro',
+        '/private/tmp/build:cache/apps/cli/dist/ficus.js:/opt/tau/ficus.js:ro',
         '/private/tmp/checkout/config/agent/extensions:/private/tmp/checkout/config/agent/extensions:ro',
       ])
     ).not.toThrow()

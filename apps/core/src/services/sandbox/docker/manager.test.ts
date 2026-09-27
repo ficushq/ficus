@@ -512,7 +512,7 @@ describe('ensureSandbox spec-hash drift detection', () => {
 
   const opts: SandboxOptions = {
     workspacePath: '/host/ws',
-    volumes: ['/cli:/usr/local/bin/tau:ro'],
+    volumes: ['/cli:/usr/local/bin/ficus:ro'],
     env: { FICUS_API_URL: 'http://host.docker.internal:3000' },
   }
 
@@ -786,6 +786,92 @@ describe('ensureSandbox spec-hash drift detection', () => {
 
     // Idle (no active session): the deferred drift is now reconciled.
     await expect(ensure(self, 's', { ...opts, hasActiveSession: false })).rejects.toThrow('CREATE_SENTINEL')
+    expect(removed).toEqual(['s'])
+    expect(created).toEqual(['socket'])
+  })
+})
+
+describe('ensureSandbox: a container created without the /usr/local/bin/ficus mount', () => {
+  const original = process.env.FICUS_SANDBOX_RUNTIME
+  beforeEach(() => {
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
+    clearRuntimeCache()
+  })
+  afterEach(() => {
+    if (original === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = original
+    clearRuntimeCache()
+  })
+
+  // What ensure.ts asks for now, and the stamp of a container a pre-ficus Core created (its CLI
+  // mount lived elsewhere, so the ficus mount is absent from the stamped volume list).
+  const desired: SandboxOptions = {
+    workspacePath: '/host/ws',
+    volumes: ['/core/apps/cli/dist/ficus.js:/usr/local/bin/ficus:ro', '/ext:/ext:ro'],
+  }
+  const staleStamp = computeDockerSpecHash({
+    ...desired,
+    volumes: ['/core/apps/cli/dist/old.js:/usr/local/bin/old:ro', '/ext:/ext:ro'],
+  })
+
+  function fake(existing: { tracked?: boolean }) {
+    const created: string[] = []
+    const removed: string[] = []
+    const self = {
+      sandboxes: new Map<string, unknown>(existing.tracked ? [['s', { containerId: 'old', client: {} }]] : []),
+      containerName: (id: string) => `sandbox-${id}`,
+      isContainerRunning: () => true,
+      getExistingContainer: () => (existing.tracked ? null : 'old'),
+      getContainerSpecHash: () => staleStamp,
+      resolveImageContract: () => ({
+        imageReference: 'sandbox:latest',
+        imageId: 'unresolved:sandbox:latest',
+        runtimeContractVersion: 1,
+        executorProtocolVersion: 1,
+        commandContractVersion: 1,
+      }),
+      resetStaleSandboxStatus: async () => {},
+      tryAcquireSandboxLock: async () => true,
+      waitForSandboxReady: async () => {},
+      ensureBashrc: () => {},
+      connectExecutor: async () => {},
+      connectActiveDrift: async () => {},
+      markSandboxReady: async () => {},
+      removeSandbox: async (id: string) => void removed.push(id),
+      createSocketContainer: async () => {
+        created.push('socket')
+        throw new Error('CREATE_SENTINEL')
+      },
+      createSysboxContainer: async () => {
+        created.push('sysbox')
+        throw new Error('CREATE_SENTINEL')
+      },
+    }
+    return { self, created, removed }
+  }
+  const ensure = (self: unknown, o: SandboxOptions) =>
+    DockerSandboxManager.prototype.ensureSandbox.call(self as DockerSandboxManager, 's', o)
+
+  it('(g) is recreated with the ficus mount when idle (tracked or discovered after a Core restart)', async () => {
+    expect(staleStamp).not.toBe(computeDockerSpecHash(desired))
+    for (const tracked of [true, false]) {
+      const { self, created, removed } = fake({ tracked })
+      await expect(ensure(self, { ...desired, hasActiveSession: false })).rejects.toThrow('CREATE_SENTINEL')
+      expect(removed).toEqual(['s'])
+      expect(created).toEqual(['socket'])
+    }
+  })
+
+  it('(g) is kept as-is while a session is running, then recreated on the next idle ensure', async () => {
+    for (const tracked of [true, false]) {
+      const { self, created, removed } = fake({ tracked })
+      await expect(ensure(self, { ...desired, hasActiveSession: true })).resolves.toBe('old')
+      expect(removed).toEqual([])
+      expect(created).toEqual([])
+    }
+    const { self, created, removed } = fake({ tracked: true })
+    await ensure(self, { ...desired, hasActiveSession: true })
+    await expect(ensure(self, { ...desired, hasActiveSession: false })).rejects.toThrow('CREATE_SENTINEL')
     expect(removed).toEqual(['s'])
     expect(created).toEqual(['socket'])
   })
@@ -1279,7 +1365,7 @@ describe('docker-sandbox-manager', () => {
 
     it('injects the live Core URL so the `tau` CLI survives a Core port change', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath)
-      const result = hook!({ command: 'tau whoami', cwd: tmpWorkspacePath, env: {} })
+      const result = hook!({ command: 'ficus whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain(`-e FICUS_API_URL=${resolveDockerApiUrl()}`)
     })
 
@@ -1291,7 +1377,7 @@ describe('docker-sandbox-manager', () => {
 
     it('also injects the legacy TAU_ identity names for older CLIs in the container (one release)', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath, 'tau_agent_x')
-      const result = hook!({ command: 'tau whoami', cwd: tmpWorkspacePath, env: {} })
+      const result = hook!({ command: 'ficus whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain('-e FICUS_TOKEN=tau_agent_x')
       expect(result.command).toContain('-e TAU_TOKEN=tau_agent_x')
       expect(result.command).toContain(`-e TAU_API_URL=${resolveDockerApiUrl()}`)

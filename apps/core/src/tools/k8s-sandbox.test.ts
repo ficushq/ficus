@@ -1494,7 +1494,7 @@ describe('createHttpBashOperations', () => {
     const operations = createHttpBashOperations(manager, 'test-sandbox', 'tau_agent_xyz')
 
     // Caller passes a stale FICUS_API_URL; the live one must win.
-    const execPromise = operations.exec('tau whoami', '/private', {
+    const execPromise = operations.exec('ficus whoami', '/private', {
       onData: () => {},
       env: { FICUS_API_URL: 'http://host.k3d.internal:1' },
     })

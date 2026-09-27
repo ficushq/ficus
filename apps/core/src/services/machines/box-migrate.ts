@@ -249,7 +249,7 @@ export interface MigrateOptions {
   allowSquad?: boolean
   /**
    * Operator override for the ACTIVE-EXECUTION refusal only (`--force` on
-   * `tau machines migrate-box`) with an attributable actor and durable reason.
+   * `ficus machines migrate-box`) with an attributable actor and durable reason.
    *
    * Exists for one situation: a machine is dying and its boxes must be
    * evacuated NOW, even though the fence reports live work — a fence with no

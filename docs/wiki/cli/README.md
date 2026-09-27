@@ -6,7 +6,7 @@ The `tau` CLI is the primary interface for interacting with the Tau API. It cove
 
 ## Installation & Usage
 
-`tau.js` is a self-executable script (has a shebang line) — no wrapper script needed. It is installed on `PATH` in both the **core Docker image** and **sandbox pods**, so agents can use `tau` directly inside their sandbox to interact with the API.
+`ficus.js` is a self-executable script (has a shebang line) — no wrapper script needed. It is installed on `PATH` in both the **core Docker image** and **sandbox pods**, so agents can use `ficus` directly inside their sandbox to interact with the API.
 
 ## Environment Variables
 

@@ -174,7 +174,7 @@ describe('formatInboxMessages', () => {
         id: '12345678-1234-1234-1234-123456789abc',
         subject: null,
         content:
-          'Check the launch plan\n\nReply to the workspace voice assistant through inbox: tau inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant --from <your-agent-id>.',
+          'Check the launch plan\n\nReply to the workspace voice assistant through inbox: ficus inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant --from <your-agent-id>.',
         senderType: 'voice_assistant',
         senderId: wsSenderId,
         metadata: {},
@@ -186,7 +186,7 @@ describe('formatInboxMessages', () => {
 
     expect(result).toContain(`**From:** Voice Workspace Agent (voice_assistant) [${wsSenderId}]`)
     expect(result).toContain(
-      'Reply to the workspace voice assistant through inbox: tau inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant --from <your-agent-id>.'
+      'Reply to the workspace voice assistant through inbox: ficus inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant --from <your-agent-id>.'
     )
   })
 
@@ -207,7 +207,7 @@ describe('formatInboxMessages', () => {
     expect(result).toContain('Test Subject')
     expect(result).toContain('Test content')
     expect(result).toContain('12345678')
-    expect(result).toContain('tau inbox read')
+    expect(result).toContain('ficus inbox read')
   })
 
   it('formats multiple messages', () => {
@@ -273,8 +273,8 @@ describe('formatInboxMessages', () => {
     expect(result).toContain('**Content type:** application/pdf')
     expect(result).toContain('**Size:** 12345 bytes')
     expect(result).toContain(`**SHA-256:** \`${'a'.repeat(64)}\``)
-    expect(result).toContain("tau inbox download e1dd1330-a99d-43ea-b9d6-64cc8dc4125c --out '<save-path>'")
-    expect(result).toContain("tau inbox download f2ee2441-b00e-44fb-8ae7-75dd9ed5236d --out '<save-path>'")
+    expect(result).toContain("ficus inbox download e1dd1330-a99d-43ea-b9d6-64cc8dc4125c --out '<save-path>'")
+    expect(result).toContain("ficus inbox download f2ee2441-b00e-44fb-8ae7-75dd9ed5236d --out '<save-path>'")
     expect(result.indexOf('**Attachments:**')).toBeGreaterThan(result.indexOf('Files are attached'))
     expect(result.indexOf('**Mark one or more messages as read')).toBeGreaterThan(result.indexOf('**Attachments:**'))
   })
@@ -322,7 +322,7 @@ describe('formatInboxMessages', () => {
     expect(result).toContain('\\u2028\\#\\#\\# Line separator')
     expect(result).toContain('text/plain\\r\\n\\*\\*Forged:\\*\\* yes\\u0000')
     expect(result).toContain('\\u2029\\#\\#\\# Paragraph separator')
-    expect(result).toContain("tau inbox download e1dd1330-a99d-43ea-b9d6-64cc8dc4125c --out '<save-path>'")
+    expect(result).toContain("ficus inbox download e1dd1330-a99d-43ea-b9d6-64cc8dc4125c --out '<save-path>'")
     expect(result).not.toContain('evil.md --out')
   })
 })
