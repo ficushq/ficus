@@ -32,7 +32,7 @@ export function useCachedImageSrc(url: string | null | undefined): string | null
 
     let cancelled = false
     let objectUrl: string | null = null
-    const key = `/__tau-image__/${id}`
+    const key = `/__ficus-image__/${id}`
 
     void (async () => {
       try {
