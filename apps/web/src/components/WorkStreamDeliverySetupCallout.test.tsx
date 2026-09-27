@@ -117,7 +117,7 @@ test('an unbound stream shows the exact bind command as the next step', () => {
   expect(html).toContain('No delivery pull request is bound')
   expect(html).toContain('Next step')
   expect(html).toContain(
-    'tau workstream set-meta 234 codeHost &#x27;{&quot;integration&quot;:&quot;github&quot;,&quot;repository&quot;:&quot;&lt;owner/repo&gt;&quot;,&quot;changeRequest&quot;:{&quot;number&quot;:&lt;pr-number&gt;,&quot;url&quot;:&quot;&lt;pr-url&gt;&quot;}}&#x27;'
+    'ficus workstream set-meta 234 codeHost &#x27;{&quot;integration&quot;:&quot;github&quot;,&quot;repository&quot;:&quot;&lt;owner/repo&gt;&quot;,&quot;changeRequest&quot;:{&quot;number&quot;:&lt;pr-number&gt;,&quot;url&quot;:&quot;&lt;pr-url&gt;&quot;}}&#x27;'
   )
 })
 
