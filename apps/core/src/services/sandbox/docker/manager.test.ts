@@ -1365,7 +1365,7 @@ describe('docker-sandbox-manager', () => {
 
     it('injects the live Core URL so the `tau` CLI survives a Core port change', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath)
-      const result = hook!({ command: 'tau whoami', cwd: tmpWorkspacePath, env: {} })
+      const result = hook!({ command: 'ficus whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain(`-e FICUS_API_URL=${resolveDockerApiUrl()}`)
     })
 
@@ -1377,7 +1377,7 @@ describe('docker-sandbox-manager', () => {
 
     it('also injects the legacy TAU_ identity names for older CLIs in the container (one release)', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath, 'tau_agent_x')
-      const result = hook!({ command: 'tau whoami', cwd: tmpWorkspacePath, env: {} })
+      const result = hook!({ command: 'ficus whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain('-e FICUS_TOKEN=tau_agent_x')
       expect(result.command).toContain('-e TAU_TOKEN=tau_agent_x')
       expect(result.command).toContain(`-e TAU_API_URL=${resolveDockerApiUrl()}`)

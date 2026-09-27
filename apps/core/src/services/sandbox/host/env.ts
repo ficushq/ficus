@@ -273,7 +273,7 @@ export const IDENTITY_ENV_KEYS = [
   'FICUS_AGENT_CONTEXT',
   'FICUS_AGENT_ID',
   // Never granted to an agent shell, so it is always in the unset list. The CLI
-  // still accepts FICUS_PASSWORD as a human credential (`tau auth login`), so a
+  // still accepts FICUS_PASSWORD as a human credential (`ficus auth login`), so a
   // stale squad env — or an operator's own shell profile — would otherwise hand
   // the instance's admin password to every agent.
   'FICUS_PASSWORD',

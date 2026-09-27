@@ -512,7 +512,7 @@ describe('SandboxClient legacy env overrides (one release)', () => {
     try {
       const client = new SandboxClient('127.0.0.1:1234', 'tok-xyz')
       const stream = client.bash({
-        command: 'tau whoami',
+        command: 'ficus whoami',
         env: { FICUS_API_URL: 'http://core:3000', FICUS_TOKEN: 't' },
       })
       stream.on('error', () => {})

@@ -33,12 +33,12 @@ export function formatChannelWorkStreamStatus(
     const line = `${ICONS[stream.derivedState ?? 'idle'] ?? '📋'} **${stream.title}**`
     const shownAfterAdd = lines.length + 1
     const omitted = streams.length - shownAfterAdd
-    const suffix = omitted > 0 ? `\n_...${omitted} more not shown. Use \`tau workstream list\` to view all._` : ''
+    const suffix = omitted > 0 ? `\n_...${omitted} more not shown. Use \`ficus workstream list\` to view all._` : ''
     if (`${header}\n${[...lines, line].join('\n')}${suffix}`.length > budget) break
     lines.push(line)
   }
 
   const omitted = streams.length - lines.length
-  const suffix = omitted > 0 ? `_...${omitted} more not shown. Use \`tau workstream list\` to view all._` : undefined
+  const suffix = omitted > 0 ? `_...${omitted} more not shown. Use \`ficus workstream list\` to view all._` : undefined
   return [header, ...lines, suffix].filter((part): part is string => part !== undefined).join('\n')
 }

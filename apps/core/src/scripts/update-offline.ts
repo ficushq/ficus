@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Offline update — runs the in-app updater's task table WITHOUT the API or
- * the database, for `tau update apply --offline` / `tau server update`.
+ * the database, for `ficus update apply --offline` / `ficus server update`.
  *
  *   bun run update:offline -- --from <sha-before-pull>
  *

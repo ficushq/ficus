@@ -40,7 +40,7 @@ describe('formatChannelWorkStreamStatus', () => {
     )
     expect(result.match(/\*\*Work /g)?.length).toBe(10)
     expect(result).toContain('2 more not shown')
-    expect(result).toContain('tau workstream list')
+    expect(result).toContain('ficus workstream list')
   })
 
   test.each(['slack', 'discord'] as const)('%s preserves truthful omission within its provider budget', (provider) => {
@@ -51,6 +51,6 @@ describe('formatChannelWorkStreamStatus', () => {
     expect(result.length).toBeLessThanOrEqual(provider === 'discord' ? 2000 : 3000)
     const shown = result.match(/^💤 /gm)?.length ?? 0
     expect(result).toContain(`${12 - shown} more not shown`)
-    expect(result).toContain('tau workstream list')
+    expect(result).toContain('ficus workstream list')
   })
 })

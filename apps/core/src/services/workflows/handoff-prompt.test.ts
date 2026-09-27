@@ -21,7 +21,7 @@ test('handoffs retain requirements, show actual workspace, and provide a schema-
   expect(prompt).toContain('Worktree: /workspace/fix\nBranch: fix\nBase: main\nRepository: example/repo')
   expect(prompt).toContain('--content')
   expect(prompt).not.toContain('--file')
-  expect(prompt).toContain("tau workstream advance stream-1 --stdin <<'FICUS_COMMAND'")
+  expect(prompt).toContain("ficus workstream advance stream-1 --stdin <<'FICUS_COMMAND'")
   const command = JSON.parse(prompt.match(/<<'FICUS_COMMAND'\n([\s\S]*?)\nFICUS_COMMAND/)![1]!)
   expect(workflowCommandSchema.parse(command)).toMatchObject({
     action: 'complete',
@@ -97,7 +97,7 @@ test('delivery instructions are available only for current active completion wor
   const instructions = deliveryInstructionsForRun({ ...stream, status: 'active' }, state, 4)!
   expect(instructions).toContain('metadata.policies.allowAutoMerge')
   expect(instructions).toContain('Do not enable that policy yourself')
-  expect(instructions).toContain('tau workstream finish stream-1 --version 4')
+  expect(instructions).toContain('ficus workstream finish stream-1 --version 4')
   expect(instructions).toContain('existing codeHost binding')
   expect(instructions).not.toContain('"action":"rework"')
   expect(instructions).not.toContain('--file')

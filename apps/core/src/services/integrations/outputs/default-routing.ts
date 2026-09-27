@@ -200,8 +200,8 @@ async function send(
       ? [
           `Event reference: ${event.id}`,
           `Tracked resource: ${label} ${named}`,
-          `To start work that follows this ${label}: tau workstream create '<title>' --squad ${squadId} --from-event ${event.id} [--repository <checkout-path>] [--workflow <id>] [-d '<requirements>']. Tau records the ${label} link with the stream so later updates (closure, reopening, comments, assignment changes) route to it without extra squad rules.`,
-          `To attach it to existing work instead: tau workstream track <work-stream> --event ${event.id}`,
+          `To start work that follows this ${label}: ficus workstream create '<title>' --squad ${squadId} --from-event ${event.id} [--repository <checkout-path>] [--workflow <id>] [-d '<requirements>']. Tau records the ${label} link with the stream so later updates (closure, reopening, comments, assignment changes) route to it without extra squad rules.`,
+          `To attach it to existing work instead: ficus workstream track <work-stream> --event ${event.id}`,
           'Do not hand-write github or codeHost metadata to track it; source links (--from-url) are reference material only.',
         ].join('\n')
       : ''

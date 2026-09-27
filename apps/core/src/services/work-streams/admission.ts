@@ -225,11 +225,11 @@ Parking would discard its in-flight turn and stop its sandbox.
 To park this stream:
   1. Message ${agentId} asking it to stop at a safe point and confirm when it has stopped (commit/push anything in progress first).
   2. Wait for it to report that it has stopped and for its execution to end.
-  3. Retry \`tau workstream park ${workStreamId}\`.
+  3. Retry \`ficus workstream park ${workStreamId}\`.
 
 Alternatives that need no coordination: park a different stream to free the slot, or lower this stream's priority so the scheduler prefers the work you want admitted.
 
-Only if the work is genuinely abandonable: \`tau workstream park ${workStreamId} --preempt-running\` (discards the in-flight turn).`)
+Only if the work is genuinely abandonable: \`ficus workstream park ${workStreamId} --preempt-running\` (discards the in-flight turn).`)
     this.name = 'WorkStreamBusyError'
   }
 }

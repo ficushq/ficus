@@ -107,7 +107,7 @@ export class CodeHostingRegistry {
     return [
       `codeHost.changeRequest is not set: the delivery pull request for ${repository} is not bound to this work stream. ${outcome}`,
       `Bind it exactly: ${changeRequestBindCommand(streamId, metadata)}`,
-      `Additional pull requests that are part of the deliverable are designated with tau workstream track ${streamId} --pr <owner/repo#n> --delivery instead.`,
+      `Additional pull requests that are part of the deliverable are designated with ficus workstream track ${streamId} --pr <owner/repo#n> --delivery instead.`,
     ].join(' ')
   }
   subscriptions(definition: WorkflowDefinition, metadata: unknown): IntegrationSubscription[] {

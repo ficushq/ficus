@@ -414,7 +414,7 @@ describe('dead fleet reconciliation', () => {
         lastObservedAt: at(-2000),
         causeCode: 'expired-oauth',
         causeSummary: 'OAuth refresh credential expired or was revoked.',
-        remediation: 'Run `tau pa login openai-codex` to authenticate again.',
+        remediation: 'Run `ficus pa login openai-codex` to authenticate again.',
         details: { ignoredSecret: 'expected-secret' },
         updatedAt: at(-2000),
       },
@@ -442,7 +442,7 @@ describe('dead fleet reconciliation', () => {
     expect(deadFleet).toMatchObject({
       causeCode: 'expired-oauth',
       causeSummary: 'OAuth refresh credential expired or was revoked.',
-      remediation: 'Run `tau pa login openai-codex` to authenticate again.',
+      remediation: 'Run `ficus pa login openai-codex` to authenticate again.',
     })
     expect(deadFleet.details).toEqual({
       demandCount: 2,
@@ -587,7 +587,7 @@ describe('dead fleet reconciliation', () => {
     expect(incident).toMatchObject({
       causeCode: 'demand-not-served',
       remediation:
-        'Check machine + sandbox health first (`tau machines list`, then the box/tunnel logs for that machine), then worker pickup (`tau worker status`).',
+        'Check machine + sandbox health first (`ficus machines list`, then the box/tunnel logs for that machine), then worker pickup (`ficus worker status`).',
       details: { demandCount: 1 },
     })
     // Demand also includes inbox messages, schedules, and work streams.

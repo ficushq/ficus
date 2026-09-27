@@ -16,7 +16,7 @@ describe('delivery binding self-check', () => {
     const check = deliveryBindingSelfCheck(stream('11111111-1111-4111-8111-111111111111'), 'pr-merge')
     expect(check).toContain('codeHost is not configured for this work stream')
     expect(check).toContain(
-      `tau workstream set-meta 11111111-1111-4111-8111-111111111111 codeHost '{"integration":"github","repository":"<owner/repo>"}'`
+      `ficus workstream set-meta 11111111-1111-4111-8111-111111111111 codeHost '{"integration":"github","repository":"<owner/repo>"}'`
     )
   })
 
@@ -28,7 +28,7 @@ describe('delivery binding self-check', () => {
     )
     expect(check).toContain('codeHost.changeRequest is absent')
     expect(check).toContain(
-      `tau workstream set-meta ${id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
+      `ficus workstream set-meta ${id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
     )
     expect(check).toContain("stream's branch work/x")
     expect(check).toContain('never matches fork pull requests')
@@ -47,7 +47,7 @@ describe('delivery binding self-check', () => {
       stream(id, { github: { repo: 'owner/repo' }, git: { branch: 'work/x' } }),
       'pr-merge'
     )
-    expect(legacy).toContain(`tau workstream set-meta ${id} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`)
+    expect(legacy).toContain(`ficus workstream set-meta ${id} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`)
   })
 
   test('bound pull request is reported with its identity, and invalid metadata is named', () => {
@@ -84,7 +84,7 @@ describe('delivery instructions composition', () => {
     )
     expect(instructions).toContain('Delivery policy: pr-merge')
     expect(instructions).toContain('codeHost.changeRequest is absent')
-    expect(instructions).toContain(`When the condition is met: tau workstream finish ${id} --version 4.`)
+    expect(instructions).toContain(`When the condition is met: ficus workstream finish ${id} --version 4.`)
     expect(deliveryInstructionsForRun({ id, status: 'active', metadata: {} }, run('deliverable'), 4)).not.toContain(
       'Delivery binding self-check'
     )

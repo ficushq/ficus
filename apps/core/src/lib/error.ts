@@ -26,7 +26,7 @@ const AUTH_ERROR_MARKERS = [
   '/login',
 ]
 const AUTH_ERROR_SYSTEM_MESSAGE =
-  '[System] Authentication failed for this model provider. Re-authorize it in Settings → AI Providers, or run `tau provider-auth login <provider>`. Execution stopped.'
+  '[System] Authentication failed for this model provider. Re-authorize it in Settings → AI Providers, or run `ficus provider-auth login <provider>`. Execution stopped.'
 
 /**
  * Classification of a provider error as exhaustion, with the reason and a

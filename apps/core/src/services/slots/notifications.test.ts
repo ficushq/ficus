@@ -262,9 +262,9 @@ test('grant text gives the release and renew commands the CLI accepts', async ()
     attempts: 1,
     expiresAt: claim!.expiresAt,
   })
-  // `tau slot release|renew <claim-id>`: the pool and squad are not arguments.
-  expect(text).toContain(`Release: tau slot release ${notification.claimId}\n`)
-  expect(text).toMatch(new RegExp(`Renew: tau slot renew ${notification.claimId}$`))
+  // `ficus slot release|renew <claim-id>`: the pool and squad are not arguments.
+  expect(text).toContain(`Release: ficus slot release ${notification.claimId}\n`)
+  expect(text).toMatch(new RegExp(`Renew: ficus slot renew ${notification.claimId}$`))
 })
 
 test('delivery to a dormant recipient is durable and does not wake it', async () => {

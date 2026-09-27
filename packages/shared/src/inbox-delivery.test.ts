@@ -8,7 +8,7 @@ ${sections}
 
 **Mark one or more messages as read after processing:**
 \`\`\`
-tau inbox read <ids>
+ficus inbox read <ids>
 \`\`\``
 
 const section = (id: string, subject: string, body: string) =>

@@ -818,7 +818,7 @@ describe('sandbox overload fleet incident store', () => {
         memAvailableMb: 463,
       },
     })
-    expect(episode!.incident.remediation).toContain(`tau squad sandbox-ps ${squadId}`)
+    expect(episode!.incident.remediation).toContain(`ficus squad sandbox-ps ${squadId}`)
     expect(episode!.notifications).toEqual([])
     expect(await listOpenSandboxOverloadSandboxIds()).toContain(sandboxId)
   })
@@ -834,7 +834,7 @@ describe('sandbox overload fleet incident store', () => {
       await observeSandboxOverload({ status: 'sampled', sandboxId: lonerBox, pressure: pressure(9), now: START })
       expect((await episodes(memberBox))[0]!.incident.squadId).toBe(squadId)
       expect((await episodes(lonerBox))[0]!.incident.squadId).toBeNull()
-      expect((await episodes(lonerBox))[0]!.incident.remediation).toContain(`tau agent sandbox-ps ${loner!.id}`)
+      expect((await episodes(lonerBox))[0]!.incident.remediation).toContain(`ficus agent sandbox-ps ${loner!.id}`)
     } finally {
       await db.delete(agents).where(eq(agents.id, loner!.id))
     }

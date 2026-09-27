@@ -446,7 +446,7 @@ describe('work-stream admission', () => {
       expect(message).toContain('discard its in-flight turn and stop its sandbox')
       expect(message).toContain('asking it to stop at a safe point')
       expect(message).toContain('Wait for it to report that it has stopped')
-      expect(message).toContain(`tau workstream park ${active.id}`)
+      expect(message).toContain(`ficus workstream park ${active.id}`)
       expect(message).toContain('park a different stream')
       expect(message).toContain("lower this stream's priority")
       expect(message).toContain('--preempt-running')

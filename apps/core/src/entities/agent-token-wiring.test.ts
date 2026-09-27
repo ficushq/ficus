@@ -66,7 +66,7 @@ describe('per-agent token wiring', () => {
     const identity = await resolveToken((await agent.getOrCreateToken())!)
     expect(identity).not.toBeNull()
 
-    // workspace:read is now granted (tau squad workspace/file) — own squad only
+    // workspace:read is now granted (ficus squad workspace/file) — own squad only
     expect(await hasPermission(identity!, 'workspace:read', ownSquad)).toBe(true)
     expect(await hasPermission(identity!, 'memory:write', ownSquad)).toBe(true)
     // cross-squad is denied (ROOT squad gate)
@@ -87,7 +87,7 @@ describe('per-agent token wiring', () => {
     const identity = await resolveToken((await manager.getOrCreateToken())!)
     expect(identity).not.toBeNull()
 
-    // can unspawn (tau squad unspawn) + manage squad env (expose-secrets)...
+    // can unspawn (ficus squad unspawn) + manage squad env (expose-secrets)...
     expect(await hasPermission(identity!, 'agents:terminate', squadId)).toBe(true)
     expect(await hasPermission(identity!, 'env:write', squadId)).toBe(true)
     expect(await hasPermission(identity!, 'workspace:read', squadId)).toBe(true)

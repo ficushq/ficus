@@ -322,7 +322,7 @@ describe('InboxMessage', () => {
       expect(execs[0].message).toContain('unread message')
       expect(execs[0].message).toContain('Test wake message')
       expect(execs[0].message).toContain('system')
-      expect(execs[0].message).toContain('tau inbox read')
+      expect(execs[0].message).toContain('ficus inbox read')
 
       const messages = await InboxMessage.listUnread('agent', agentId)
       expect(messages).toHaveLength(1)

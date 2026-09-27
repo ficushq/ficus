@@ -96,15 +96,15 @@ export function changeRequestBindCommand(streamId: string, metadata?: unknown): 
   const record =
     metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? (metadata as Record<string, unknown>) : {}
   if (record.codeHost === undefined && record.github)
-    return `tau workstream set-meta ${streamId} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`
+    return `ficus workstream set-meta ${streamId} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`
   if (record.codeHost === undefined && record.github === undefined)
-    return `tau workstream set-meta ${streamId} codeHost '{"integration":"github","repository":"<owner/repo>","changeRequest":{"number":<pr-number>,"url":"<pr-url>"}}'`
-  return `tau workstream set-meta ${streamId} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
+    return `ficus workstream set-meta ${streamId} codeHost '{"integration":"github","repository":"<owner/repo>","changeRequest":{"number":<pr-number>,"url":"<pr-url>"}}'`
+  return `ficus workstream set-meta ${streamId} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
 }
 
 /** Same repair shape for the integration/repository half of the binding. */
 export function codeHostBindingCommand(streamId: string): string {
-  return `tau workstream set-meta ${streamId} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
+  return `ficus workstream set-meta ${streamId} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
 }
 
 /** One pull request a code host reported for a head branch, in provider-neutral form. */

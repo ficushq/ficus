@@ -238,14 +238,14 @@ export const workStreamStatusWriteSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "'blocked' is no longer a status — request input instead (tau ws request-input / POST /:id/request-input)",
+          "'blocked' is no longer a status — request input instead (ficus ws request-input / POST /:id/request-input)",
       })
     }
     if (value === 'review') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "'review' is no longer a status — request review instead (tau ws request-review / POST /:id/request-review)",
+          "'review' is no longer a status — request review instead (ficus ws request-review / POST /:id/request-review)",
       })
     }
   })
