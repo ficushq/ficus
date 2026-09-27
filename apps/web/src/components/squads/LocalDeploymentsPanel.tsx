@@ -46,8 +46,8 @@ const STATUS_FILTERS: LocalDeploymentStatusFilter[] = [
 function getLocalDeploymentBrowserUrl(urlPathOrHost: string): string {
   if (/^https?:\/\//i.test(urlPathOrHost)) return urlPathOrHost
 
-  const appUrl = __TAU_APP_URL__ || window.location.origin
-  const appBasePath = __TAU_APP_BASE_PATH__ || import.meta.env.BASE_URL || ''
+  const appUrl = __FICUS_APP_URL__ || window.location.origin
+  const appBasePath = __FICUS_APP_BASE_PATH__ || import.meta.env.BASE_URL || ''
   const base = new URL(appUrl)
   const existingPath = base.pathname.replace(/^\/+|\/+$/g, '')
   const basePath = appBasePath.replace(/^\/+|\/+$/g, '')

@@ -79,7 +79,7 @@ describe('host env', () => {
     // the agent's identity must still be the core user's, not whatever the profile sets.
     const fakeSpawnSync = (() => ({
       exitCode: 0,
-      stdout: Buffer.from(`__TAU_ENV__\0HOME=/elsewhere\0USER=other\0PATH=/p\0LANG=xx\0`),
+      stdout: Buffer.from(`__FICUS_ENV__\0HOME=/elsewhere\0USER=other\0PATH=/p\0LANG=xx\0`),
       stderr: Buffer.from(''),
     })) as unknown as typeof Bun.spawnSync
     const env = snapshotLoginEnv({
@@ -101,7 +101,7 @@ describe('host env', () => {
   test('snapshotLoginEnv drops shell-startup banner noise before the env sentinel', () => {
     const fakeSpawnSync = (() => ({
       exitCode: 0,
-      stdout: Buffer.from(`Welcome to bash!\nMessage of the day...\n__TAU_ENV__\0PATH=/good/bin\0HOME=${home}\0`),
+      stdout: Buffer.from(`Welcome to bash!\nMessage of the day...\n__FICUS_ENV__\0PATH=/good/bin\0HOME=${home}\0`),
       stderr: Buffer.from(''),
     })) as unknown as typeof Bun.spawnSync
     const env = snapshotLoginEnv({ seed: { HOME: home }, spawnSync: fakeSpawnSync })
@@ -117,7 +117,7 @@ describe('host env', () => {
       calls++
       return {
         exitCode: 0,
-        stdout: Buffer.from(`__TAU_ENV__\0PATH=/cached/bin\0HOME=${home}\0`),
+        stdout: Buffer.from(`__FICUS_ENV__\0PATH=/cached/bin\0HOME=${home}\0`),
         stderr: Buffer.from(''),
       }
     })
@@ -134,7 +134,7 @@ describe('host env', () => {
   test('getHostBaseEnv returns a fresh copy each call so callers cannot mutate the cache', () => {
     setSpawnSyncOverrideForTests(() => ({
       exitCode: 0,
-      stdout: Buffer.from(`__TAU_ENV__\0PATH=/fresh/bin\0HOME=${home}\0`),
+      stdout: Buffer.from(`__FICUS_ENV__\0PATH=/fresh/bin\0HOME=${home}\0`),
       stderr: Buffer.from(''),
     }))
     const first = getHostBaseEnv()
@@ -153,7 +153,7 @@ describe('host env', () => {
 
     setSpawnSyncOverrideForTests(() => ({
       exitCode: 0,
-      stdout: Buffer.from(`__TAU_ENV__\0PATH=/ok/bin\0HOME=${home}\0`),
+      stdout: Buffer.from(`__FICUS_ENV__\0PATH=/ok/bin\0HOME=${home}\0`),
       stderr: Buffer.from(''),
     }))
     const succeeded = getHostBaseEnv()

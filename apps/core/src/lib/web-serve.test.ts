@@ -18,7 +18,7 @@ function buildFixture(): string {
   const dir = mkdtempSync(join(tmpdir(), 'tau-web-fixture-'))
   writeFileSync(
     join(dir, 'index.html'),
-    '<!doctype html><html><head><meta property="og:image" content="__TAU_ORIGIN__/social-preview.png" /></head><body>app</body></html>'
+    '<!doctype html><html><head><meta property="og:image" content="__FICUS_ORIGIN__/social-preview.png" /></head><body>app</body></html>'
   )
   writeFileSync(join(dir, 'sw.js'), 'self.addEventListener("fetch", () => {})')
   writeFileSync(join(dir, 'manifest.webmanifest'), '{"name":"Ficus"}')
@@ -117,7 +117,7 @@ describe('maybeMountWebUi', () => {
         expect(res.status).toBe(200)
         const body = await res.text()
         expect(body).toContain('content="http://tau.local:8080/social-preview.png"')
-        expect(body).not.toContain('__TAU_ORIGIN__')
+        expect(body).not.toContain('__FICUS_ORIGIN__')
         expect(res.headers.get('Cache-Control')).toContain('no-cache')
       }
     })

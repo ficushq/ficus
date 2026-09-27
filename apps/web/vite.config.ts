@@ -8,7 +8,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { DEV_ACCESS_COOKIE, DEV_ACCESS_HEADER, requestHasDevAccess, stripDevAccessCookie } from './devAccess'
 import { fnv1a } from './src/theme/fnv'
 
-const DEV_BACKEND_CONTROL_PATH = '/__tau_dev'
+const DEV_BACKEND_CONTROL_PATH = '/__ficus_dev'
 const DEV_ACCESS_LOGIN_PATH = `${DEV_BACKEND_CONTROL_PATH}/login`
 const LOCAL_BACKEND_LABEL = '@local'
 const DEFAULT_LOCAL_API_URL = 'http://localhost:3000'
@@ -425,7 +425,7 @@ function resolveBuildId(): string {
 /**
  * Hash of index.css's + builtins.css's own content (the two files that
  * define every built-in theme's own token values), baked in as
- * __TAU_BUILTIN_CSS_FINGERPRINT__ (theme/builtinFingerprint.ts). Unlike
+ * __FICUS_BUILTIN_CSS_FINGERPRINT__ (theme/builtinFingerprint.ts). Unlike
  * resolveBuildId (which changes on every commit — right for SW cache
  * versioning, wrong here), this changes ONLY when these two files' content
  * changes, so a persisted resolved-theme snapshot (custom.ts) stays valid
@@ -462,16 +462,16 @@ export default defineConfig(({ mode, command }) => {
     base,
     define: {
       __FICUS_SW_CACHE_VERSION__: JSON.stringify(serviceWorkerCacheVersion),
-      __TAU_BUILTIN_CSS_FINGERPRINT__: JSON.stringify(builtinCssFingerprint),
-      __TAU_APP_URL__: JSON.stringify(env.APP_URL || ''),
-      __TAU_APP_BASE_PATH__: JSON.stringify(env.APP_BASE_PATH || ''),
-      __TAU_DEV_BACKEND_BAR__: JSON.stringify(isViteDev),
+      __FICUS_BUILTIN_CSS_FINGERPRINT__: JSON.stringify(builtinCssFingerprint),
+      __FICUS_APP_URL__: JSON.stringify(env.APP_URL || ''),
+      __FICUS_APP_BASE_PATH__: JSON.stringify(env.APP_BASE_PATH || ''),
+      __FICUS_DEV_BACKEND_BAR__: JSON.stringify(isViteDev),
     },
     plugins: [
       ...(devAccessToken ? [devAccessPlugin(devAccessToken)] : []),
       ...(isViteDev ? [devBackendControlPlugin(devBackendState)] : []),
       react(),
-      // The built index.html keeps __TAU_ORIGIN__ for the server to fill in
+      // The built index.html keeps __FICUS_ORIGIN__ for the server to fill in
       // (apps/core/src/lib/web-serve.ts). The dev server serves the file itself,
       // so blank it there: relative og:* values are harmless in development.
       {
@@ -479,7 +479,7 @@ export default defineConfig(({ mode, command }) => {
         transformIndexHtml: {
           order: 'pre' as const,
           handler(html: string, ctx: { server?: unknown }) {
-            return ctx.server ? html.replaceAll('__TAU_ORIGIN__', '') : html
+            return ctx.server ? html.replaceAll('__FICUS_ORIGIN__', '') : html
           },
         },
       },

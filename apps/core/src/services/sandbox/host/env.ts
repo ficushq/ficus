@@ -78,7 +78,7 @@ export function parseNulSeparatedEnv(output: string): Record<string, string> {
  * first parsed record — we slice everything up to and including the last
  * occurrence of `sentinel + NUL` before parsing.
  */
-const ENV_SENTINEL = '__TAU_ENV__'
+const ENV_SENTINEL = '__FICUS_ENV__'
 // `env -0` is GNU + macOS; fall back to newline-separated `env` if -0 is unsupported. The
 // leading printf's `\0` is a literal backslash-zero here — it's interpreted as a NUL escape
 // by the login shell's `printf`, not by this JS string.
