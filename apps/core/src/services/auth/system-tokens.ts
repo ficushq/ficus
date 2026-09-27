@@ -327,6 +327,9 @@ async function replaceWebhookToken(): Promise<string | null> {
           .where(and(eq(systemTokens.tokenHash, hashToken(current)), isNull(systemTokens.revokedAt)))
       }
       // Written last: if it throws, the transaction rolls back and nothing is minted or revoked.
+      // The secret store writes on the main pool, not this transaction, so the new value can
+      // be visible just before this commit, and a failed commit after it leaves the store
+      // naming a token with no row. Both self-heal: the next call finds no live row and mints.
       await store.set(WEBHOOK_TOKEN_SECRET_KEY, token, 'system')
       log.info(
         current && !current.startsWith(SYSTEM_TOKEN_PREFIX)
