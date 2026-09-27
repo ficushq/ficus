@@ -55,36 +55,60 @@ export function YardBack({ i0, j0, w, h }: YardRect) {
   )
 }
 
+export interface FencePiece {
+  key: string
+  /** Painter's-order key (i + j of the piece's middle), so robots in front of a stretch draw over it. */
+  depth: number
+  node: ReactNode
+}
+
+/** Splits [from, to] into stretches no longer than one tile, breaking at whole-tile offsets from `from`. */
+function stretches(from: number, to: number): Array<[number, number]> {
+  const out: Array<[number, number]> = []
+  for (let a = from; a < to - 1e-6; a = Math.min(to, Math.floor(a - from + 1e-6) + 1 + from)) {
+    out.push([a, Math.min(to, Math.floor(a - from + 1e-6) + 1 + from)])
+  }
+  return out
+}
+
 /**
- * The right fence and the front fence, with a gate gap in the middle third
- * of the front edge. Absolute world coords.
+ * The right fence and the front fence (with a gate gap in the middle third of
+ * the front edge), as short pieces in absolute world coords. One long fence
+ * sorted as a single sprite would paint over anyone standing just outside it,
+ * so each stretch of about a tile sorts on its own.
  */
-export function YardFront({ i0, j0, w, h }: YardRect) {
+export function yardFrontPieces({ i0, j0, w, h }: YardRect): FencePiece[] {
   const front = j0 + h
+  const right = i0 + w
   const gateA = i0 + w * GATE_FROM
   const gateB = i0 + w * GATE_TO
-  const right: ReactNode[] = []
-  for (let j = 0; j < h; j++) right.push(<Post key={`r${j}`} at={[i0 + w, j0 + j]} />)
-  const posts: ReactNode[] = []
-  for (let i = 0; i <= w; i++) {
-    const f = i / w
-    if (f <= GATE_FROM || f >= GATE_TO) posts.push(<Post key={`f${i}`} at={[i0 + i, front]} />)
+  const pieces: FencePiece[] = []
+  const piece = (key: string, a: Corner, b: Corner, posts: Corner[]) =>
+    pieces.push({
+      key,
+      depth: (a[0] + b[0]) / 2 + (a[1] + b[1]) / 2,
+      node: (
+        <g key={key}>
+          <Rails from={a} to={b} />
+          {posts.map((at) => (
+            <Post key={`${at[0]}:${at[1]}`} at={at} />
+          ))}
+        </g>
+      ),
+    })
+  for (const [a, b] of stretches(j0, front)) piece(`r${a}`, [right, a], [right, b], [[right, a]])
+  const frontRuns: Array<[number, number]> = [
+    [i0, gateA],
+    [gateB, right],
+  ]
+  for (const [from, to] of frontRuns) {
+    for (const [a, b] of stretches(from, to)) {
+      const posts: Corner[] = [[a, front]]
+      if (Math.abs(b - to) < 1e-6) posts.push([b, front])
+      piece(`f${a}`, [a, front], [b, front], posts)
+    }
   }
-  // Gate posts where the rails stop, unless a regular post already stands there.
-  const onGrid = (v: number) => Math.abs(v - Math.round(v)) < 0.05
-  const gatePosts = [gateA, gateB].filter((v) => !onGrid(v - i0))
-  return (
-    <g>
-      <Rails from={[i0 + w, j0]} to={[i0 + w, front]} />
-      {right}
-      <Rails from={[i0, front]} to={[gateA, front]} />
-      <Rails from={[gateB, front]} to={[i0 + w, front]} />
-      {posts}
-      {gatePosts.map((v) => (
-        <Post key={`g${v}`} at={[v, front]} />
-      ))}
-    </g>
-  )
+  return pieces
 }
 
 const SIGN_MAX_CHARS = 20

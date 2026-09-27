@@ -25,7 +25,7 @@ import {
   SeedShed,
   Tree,
   YardBack,
-  YardFront,
+  yardFrontPieces,
   YardSign,
 } from './sprites'
 
@@ -187,15 +187,16 @@ function buildDrawables(
     const { i0, j0, w, h, squad } = yard
     // The back fence and the yard's grass tint sit under everything inside the yard, soil included.
     yardGround.push(<YardBack key={`yb:${squad.id}`} i0={i0} j0={j0} w={w} h={h} />)
-    items.push({
-      key: `yard:${squad.id}:front`,
-      depth: i0 + w + j0 + h + 0.5,
-      node: <YardFront key={`yf:${squad.id}`} i0={i0} j0={j0} w={w} h={h} />,
-    })
+    for (const piece of yardFrontPieces({ i0, j0, w, h }))
+      items.push({
+        key: `yard:${squad.id}:${piece.key}`,
+        depth: piece.depth,
+        node: <g key={`yard:${squad.id}:${piece.key}`}>{piece.node}</g>,
+      })
     const [sx, sy] = iso(yard.sign.i, yard.sign.j)
     items.push({
       key: `yard:${squad.id}:sign`,
-      depth: i0 + w + j0 + h + 1,
+      depth: depth(yard.sign.i, yard.sign.j),
       node: (
         <Hit
           onReveal={onReveal}
