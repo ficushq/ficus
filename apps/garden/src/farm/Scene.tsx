@@ -40,6 +40,8 @@ interface SceneProps {
   selection: Selection | null
   mailboxCount: number
   onSelect: (selection: Selection) => void
+  /** Keyboard focus landed on a sprite at this world point: bring it into view. */
+  onReveal: (x: number, y: number) => void
 }
 
 /** Wraps a sprite at a world position as a keyboard- and screen-reader-reachable button. */
@@ -50,6 +52,7 @@ function Hit({
   selected,
   onActivate,
   box,
+  onReveal,
   children,
 }: {
   x: number
@@ -59,6 +62,7 @@ function Hit({
   onActivate: () => void
   /** Generous tap area around the anchor: [left, top, width, height]. */
   box: readonly [number, number, number, number]
+  onReveal: (x: number, y: number) => void
   children: ReactNode
 }) {
   const onKeyDown = (e: KeyboardEvent) => {
@@ -77,6 +81,7 @@ function Hit({
         aria-pressed={selected}
         onClick={onActivate}
         onKeyDown={onKeyDown}
+        onFocus={() => onReveal(x, y + box[1] / 2)}
       >
         <rect className="g-hit-area" x={box[0]} y={box[1]} width={box[2]} height={box[3]} rx={14} />
         {children}
@@ -108,7 +113,8 @@ function buildDrawables(
   layout: FarmLayout,
   selected: string | null,
   mailboxCount: number,
-  onSelect: (s: Selection) => void
+  onSelect: (s: Selection) => void,
+  onReveal: (x: number, y: number) => void
 ): { ground: ReactNode[]; items: Drawable[]; badges: ReactNode[] } {
   const yardGround: ReactNode[] = []
   const ground: ReactNode[] = []
@@ -123,6 +129,7 @@ function buildDrawables(
       depth: depth(r.i, r.j),
       node: (
         <Hit
+          onReveal={onReveal}
           key={`${keyPrefix}:${r.agent.id}`}
           x={x}
           y={y}
@@ -153,6 +160,7 @@ function buildDrawables(
       depth: depth(p.i + 0.5, p.j + 0.5),
       node: (
         <Hit
+          onReveal={onReveal}
           key={key}
           x={x}
           y={y + 2}
@@ -190,6 +198,7 @@ function buildDrawables(
       depth: i0 + w + j0 + h + 1,
       node: (
         <Hit
+          onReveal={onReveal}
           key={`sign:${squad.id}`}
           x={sx}
           y={sy}
@@ -245,6 +254,7 @@ function buildDrawables(
       depth: depth(i, j),
       node: (
         <Hit
+          onReveal={onReveal}
           key={key}
           x={x}
           y={y}
@@ -336,11 +346,17 @@ function buildDrawables(
 }
 
 /** The farm's world, drawn once per layout/selection change; the camera only moves the outer transform. */
-export const SceneWorld = memo(function SceneWorld({ layout, selection, mailboxCount, onSelect }: SceneProps) {
+export const SceneWorld = memo(function SceneWorld({
+  layout,
+  selection,
+  mailboxCount,
+  onSelect,
+  onReveal,
+}: SceneProps) {
   const selected = selectionKey(selection)
   const { ground, items, badges } = useMemo(
-    () => buildDrawables(layout, selected, mailboxCount, onSelect),
-    [layout, selected, mailboxCount, onSelect]
+    () => buildDrawables(layout, selected, mailboxCount, onSelect, onReveal),
+    [layout, selected, mailboxCount, onSelect, onReveal]
   )
   const { bounds } = layout
   return (

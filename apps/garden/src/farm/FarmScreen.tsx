@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './farm.css'
 import './sprites.css'
 import { screenBounds } from './iso'
@@ -7,6 +7,10 @@ import { SceneWorld } from './Scene'
 import { useCamera } from './useCamera'
 import { useViewportSize } from './useViewportSize'
 import { FarmCard, selectionAnchor } from './FarmCard'
+import { FarmCardContext, type FarmCardEnv } from './cards/context'
+import { ChatSlot, type ChatTarget } from './cards/ChatSlot'
+import { haltedAgentIds } from './state'
+import { useStableRef } from '../hooks/useStableRef'
 import type { Selection } from './selection'
 import type { LiveStatus } from '../live/LiveUpdates'
 import { BasketIcon, EnvelopeIcon, FitIcon, LeafIcon, MailboxIcon, MinusIcon, PlusIcon, SeedPacketIcon } from '../icons'
@@ -39,9 +43,51 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     const b = screenBounds(Math.min(...is), Math.max(...is), Math.min(...js), Math.max(...js))
     return { minX: b.minX, maxX: b.maxX, minY: b.minY - 120, maxY: b.maxY }
   }, [layout])
-  const { camera, fit, zoomBy } = useCamera(viewport, world, focusBox)
+  const { camera, fit, zoomBy, focus } = useCamera(viewport, world, focusBox)
+  const cameraRef = useStableRef(camera)
+  const sizeRef = useStableRef(size)
+  /** Pan just enough to bring a world point into the comfortable middle of the screen. */
+  const reveal = useCallback(
+    (x: number, y: number) => {
+      const c = cameraRef.current
+      const { width, height } = sizeRef.current
+      const sx = (x - c.x) * c.zoom + width / 2
+      const sy = (y - c.y) * c.zoom + height / 2
+      const margin = Math.min(width, height) * 0.18
+      if (sx < margin || sx > width - margin || sy < margin || sy > height - margin) focus(x, y, c.zoom)
+    },
+    [cameraRef, sizeRef, focus]
+  )
   const [selection, setSelection] = useState<Selection | null>(null)
+  const [chat, setChat] = useState<ChatTarget | null>(null)
   const onSelect = useCallback((s: Selection) => setSelection(s), [])
+
+  const env = useMemo<FarmCardEnv>(
+    () => ({
+      layout,
+      input,
+      agentsById: new Map([...input.agents, ...input.assistants].map((a) => [a.id, a])),
+      squadsById: new Map(input.squads.map((s) => [s.id, s])),
+      halted: haltedAgentIds(input.pendingActions),
+      select: setSelection,
+      openChat: (agentId) => setChat({ kind: 'agent', agentId }),
+      startConsultant: (squadId) => setChat({ kind: 'consultant', squadId }),
+      openAssistant: (conversationId) => setChat({ kind: 'assistant', conversationId }),
+    }),
+    [layout, input]
+  )
+
+  // On phones the card is a bottom sheet: lift the selected thing into the top of the screen.
+  const selectionRef = useStableRef(selection)
+  useEffect(() => {
+    const s = selectionRef.current
+    const { width, height } = sizeRef.current
+    if (!s || width >= 640) return
+    const point = selectionAnchor(layout, s)
+    if (!point) return
+    const zoom = cameraRef.current.zoom
+    focus(point[0], point[1] + (height * 0.5 - height * 0.18) / zoom, zoom)
+  }, [selection, layout, focus, selectionRef, sizeRef, cameraRef])
 
   const needsYou = input.pendingActions.length
   const growing = layout.yards.reduce((n, y) => n + y.plots.length, 0)
@@ -56,7 +102,13 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
           <g
             transform={`translate(${size.width / 2} ${size.height / 2}) scale(${camera.zoom}) translate(${-camera.x} ${-camera.y})`}
           >
-            <SceneWorld layout={layout} selection={selection} mailboxCount={needsYou} onSelect={onSelect} />
+            <SceneWorld
+              layout={layout}
+              selection={selection}
+              mailboxCount={needsYou}
+              onSelect={onSelect}
+              onReveal={reveal}
+            />
           </g>
         </svg>
       </div>
@@ -97,16 +149,17 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         </p>
       )}
 
-      {selection && anchor && (
-        <FarmCard
-          layout={layout}
-          input={input}
-          selection={selection}
-          screen={toScreen(anchor[0], anchor[1])}
-          viewport={size}
-          onClose={() => setSelection(null)}
-        />
-      )}
+      <FarmCardContext.Provider value={env}>
+        {selection && anchor && !chat && (
+          <FarmCard
+            selection={selection}
+            screen={toScreen(anchor[0], anchor[1])}
+            viewport={size}
+            onClose={() => setSelection(null)}
+          />
+        )}
+        {chat && <ChatSlot target={chat} onClose={() => setChat(null)} />}
+      </FarmCardContext.Provider>
     </div>
   )
 }

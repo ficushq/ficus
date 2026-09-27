@@ -1,6 +1,6 @@
 import { queryKeys } from '@ficus/client-core'
 import { queryOptions } from '@tanstack/react-query'
-import type { WorkStreamStatus } from '@ficus/shared'
+import type { Agent, WorkStreamStatus } from '@ficus/shared'
 import { client } from './client'
 import { assistantApi } from './assistant'
 
@@ -52,6 +52,20 @@ export const gardenQueries = {
     queryOptions({
       queryKey: queryKeys.agents.detail(agentId),
       queryFn: () => client.agents.getAgent(agentId),
+    }),
+  /** The squad's agents plus recently finished ones, for the roster (mirrors the web's agentsWithRecent). */
+  squadRoster: (squadId: string) =>
+    queryOptions({
+      queryKey: queryKeys.squads.agentsWithRecent(squadId),
+      queryFn: () =>
+        client.transport.request<{ agents: Agent[]; recentlyTerminated?: Agent[] }>(
+          `/squads/${encodeURIComponent(squadId)}/agents?includeRecentlyTerminated=true`
+        ),
+    }),
+  workStream: (id: string) =>
+    queryOptions({
+      queryKey: queryKeys.squads.workStreamDetail(id),
+      queryFn: () => client.squads.getWorkStream(id),
     }),
   pendingActions: () =>
     queryOptions({

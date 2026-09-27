@@ -1,10 +1,15 @@
 import { useEffect, useRef } from 'react'
 import clsx from 'clsx'
 import { iso } from './iso'
-import type { FarmInput } from './layout'
-import type { FarmLayout, PlotLayout, RobotPlacement } from './types'
-import { plantStateLabel, roleLabel, type Selection } from './selection'
-import { AGENT_STATUS_LABELS, agentLabel } from './agentLabels'
+import type { FarmLayout } from './types'
+import { findPlot, findRobot } from './find'
+import type { Selection } from './selection'
+import { useFarmCard } from './cards/context'
+import { PlotCard } from './cards/PlotCard'
+import { RobotCard } from './cards/RobotCard'
+import { YardCard } from './cards/YardCard'
+import { SeedShedCard } from './cards/SeedShedCard'
+import { MailboxCard } from './cards/MailboxCard'
 import { webAppUrl } from '../api/base'
 import { CloseIcon } from '../icons'
 
@@ -36,29 +41,10 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
   }
 }
 
-export function findPlot(layout: FarmLayout, streamId: string): (PlotLayout & { squadName: string }) | null {
-  for (const yard of layout.yards) {
-    const p = yard.plots.find((plot) => plot.stream.id === streamId)
-    if (p) return { ...p, squadName: yard.squad.name }
-  }
-  return null
-}
-
-export function findRobot(layout: FarmLayout, agentId: string): RobotPlacement | null {
-  for (const yard of layout.yards) {
-    if (yard.farmer?.agent.id === agentId) return yard.farmer
-    for (const p of yard.plots) if (p.tender?.agent.id === agentId) return p.tender
-    for (const r of [...yard.dock.robots, ...yard.bench.robots]) if (r.agent.id === agentId) return r
-  }
-  return layout.porch.robots.find((r) => r.agent.id === agentId) ?? null
-}
-
 const CARD_W = 320
 const NARROW = 640
 
 interface FarmCardProps {
-  layout: FarmLayout
-  input: FarmInput
   selection: Selection
   screen: readonly [number, number]
   viewport: { width: number; height: number }
@@ -67,22 +53,23 @@ interface FarmCardProps {
 
 /**
  * The wooden card that pops up next to whatever was clicked. On narrow
- * screens it becomes a bottom sheet. (Actions arrive in the next milestone;
- * this shows what the thing is.)
+ * screens it becomes a bottom sheet.
  */
-export function FarmCard({ layout, input, selection, screen, viewport, onClose }: FarmCardProps) {
+export function FarmCard({ selection, screen, viewport, onClose }: FarmCardProps) {
   const ref = useRef<HTMLElement>(null)
   useEffect(() => {
-    ref.current?.focus()
+    ref.current?.focus({ preventScroll: true })
   }, [selection])
 
   const narrow = viewport.width < NARROW
   const right = screen[0] + 44 + CARD_W < viewport.width - 16
+  const top = Math.min(Math.max(72, screen[1] - 120), Math.max(72, viewport.height - 420))
   const style = narrow
     ? undefined
     : {
         left: right ? screen[0] + 44 : Math.max(16, screen[0] - 44 - CARD_W),
-        top: Math.min(Math.max(16, screen[1] - 120), Math.max(16, viewport.height - 380)),
+        top,
+        maxHeight: viewport.height - top - 16,
       }
 
   return (
@@ -97,75 +84,33 @@ export function FarmCard({ layout, input, selection, screen, viewport, onClose }
       <button type="button" className="g-card-close" aria-label="Close" onClick={onClose}>
         <CloseIcon />
       </button>
-      <CardBody layout={layout} input={input} selection={selection} />
+      <CardBody selection={selection} />
     </section>
   )
 }
 
-function CardBody({ layout, input, selection }: { layout: FarmLayout; input: FarmInput; selection: Selection }) {
+function CardBody({ selection }: { selection: Selection }) {
+  const { layout, input } = useFarmCard()
   switch (selection.kind) {
-    case 'plot': {
-      const p = findPlot(layout, selection.streamId)
-      if (!p) return <p>This plant has moved on.</p>
-      return (
-        <>
-          <p className="g-eyebrow">{p.squadName}</p>
-          <h2 className="g-card-title">{p.stream.title}</h2>
-          <p className="g-state-tag">{plantStateLabel(p.state)}</p>
-          {p.stream.description && <p className="g-card-text">{p.stream.description}</p>}
-        </>
-      )
-    }
-    case 'robot': {
-      const r = findRobot(layout, selection.agentId)
-      if (!r) return <p>This robot has wandered off.</p>
-      return (
-        <>
-          <p className="g-eyebrow">{roleLabel(r.role)}</p>
-          <h2 className="g-card-title">{agentLabel(r.agent).primary}</h2>
-          <p className="g-state-tag">{AGENT_STATUS_LABELS[r.agent.status]}</p>
-        </>
-      )
-    }
-    case 'yard': {
-      const y = layout.yards.find((yard) => yard.squad.id === selection.squadId)
-      if (!y) return <p>This plot is gone.</p>
-      return (
-        <>
-          <p className="g-eyebrow">Squad plot</p>
-          <h2 className="g-card-title">{y.squad.name}</h2>
-          <p className="g-card-text">
-            {y.plots.length} growing{y.needsYou ? ` · ${y.needsYou} need you` : ''}
-          </p>
-        </>
-      )
-    }
+    case 'plot':
+      return <PlotCard streamId={selection.streamId} />
+    case 'robot':
+      return <RobotCard agentId={selection.agentId} />
+    case 'yard':
+      return <YardCard squadId={selection.squadId} />
+    case 'seedShed':
+      return <SeedShedCard />
     case 'mailbox':
-      return (
-        <>
-          <p className="g-eyebrow">Mailbox</p>
-          <h2 className="g-card-title">
-            {input.pendingActions.length ? `${input.pendingActions.length} need you` : 'Nothing needs you'}
-          </h2>
-        </>
-      )
+      return <MailboxCard />
     case 'farmhouse':
       return (
         <>
           <p className="g-eyebrow">Farmhouse</p>
           <h2 className="g-card-title">Settings and everything else</h2>
           <p className="g-card-text">Settings, integrations and schedules live in the regular Ficus app.</p>
-          <a className="g-button g-button-primary" href={webAppUrl('/')}>
+          <a className="g-button g-button-primary g-card-wide" href={webAppUrl('/')}>
             Open Ficus
           </a>
-        </>
-      )
-    case 'seedShed':
-      return (
-        <>
-          <p className="g-eyebrow">Seed shed</p>
-          <h2 className="g-card-title">What shall we grow?</h2>
-          <p className="g-card-text">Pick a plot and a consultant will talk it through with you.</p>
         </>
       )
     case 'crates':
@@ -173,6 +118,10 @@ function CardBody({ layout, input, selection }: { layout: FarmLayout; input: Far
         <>
           <p className="g-eyebrow">Harvest</p>
           <h2 className="g-card-title">{layout.crates.count} harvested</h2>
+          <p className="g-card-text">Finished work streams end up here.</p>
+          <a className="g-button g-card-wide" href={webAppUrl('/')}>
+            See them in Ficus
+          </a>
         </>
       )
     case 'compost':
@@ -182,5 +131,7 @@ function CardBody({ layout, input, selection }: { layout: FarmLayout; input: Far
           <h2 className="g-card-title">{layout.compost.count} canceled</h2>
         </>
       )
+    default:
+      return <p className="g-card-text">{input.squads.length} plots</p>
   }
 }
