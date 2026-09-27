@@ -775,3 +775,8 @@ a.g-pr-link:focus-visible {
   padding-top: 6px;
   border-top: var(--g-border-thin) var(--g-rule-style) var(--g-rule);
 }
+
+/* Phones: the tools behind More open as a second row above the toolbar. */
+.g-tools-more {
+  bottom: max(104px, calc(env(safe-area-inset-bottom) + 94px));
+}

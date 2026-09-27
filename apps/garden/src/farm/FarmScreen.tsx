@@ -26,6 +26,7 @@ import {
   MailboxIcon,
   MinusIcon,
   PlusIcon,
+  MoreIcon,
   SeedPacketIcon,
   SpeakerIcon,
   StyleIcon,
@@ -116,11 +117,31 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
 
   const needsYou = input.pendingActions.length
   const nextSkin = SKINS[(SKINS.indexOf(skin) + 1) % SKINS.length]!
+  const sound = useFarmSounds(layout, needsYou)
+  const [listOpen, setListOpen] = useState(false)
+  // Phones have room for four tools; the rest sit behind More.
+  const narrow = size.width > 0 && size.width < 640
+  const [moreOpen, setMoreOpen] = useState(false)
+  const extraTools = (
+    <>
+      <ToolButton label="List everything on the farm" short="List" onClick={() => setListOpen((o) => !o)}>
+        <ListIcon />
+      </ToolButton>
+      <ToolButton
+        label={`Style: ${skin.label}. Switch to ${nextSkin.label}`}
+        short={skin.label}
+        onClick={() => setSkin(nextSkin.id)}
+      >
+        <StyleIcon />
+      </ToolButton>
+      <ToolButton label={sound.on ? 'Sound on, turn off' : 'Sound off, turn on'} short="Sound" onClick={sound.toggle}>
+        <SpeakerIcon muted={!sound.on} />
+      </ToolButton>
+    </>
+  )
   const assistantTotals = input.assistantActivity?.totals
   // Assistant conversations with a question for you or updates you haven't read.
   const assistantNews = (assistantTotals?.needsInputTasks ?? 0) + (assistantTotals?.unreadUpdates ?? 0)
-  const sound = useFarmSounds(layout, needsYou)
-  const [listOpen, setListOpen] = useState(false)
   const growing = layout.yards.reduce((n, y) => n + y.plots.length, 0)
   // A robot reached from a list or a chat may not stand anywhere on the farm (finished, asleep):
   // its card opens where the previous card was, else mid-screen, rather than not at all.
@@ -202,20 +223,20 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         <ToolButton label="Show the whole farm" short="Fit" onClick={fit}>
           <FitIcon />
         </ToolButton>
-        <ToolButton label="List everything on the farm" short="List" onClick={() => setListOpen((o) => !o)}>
-          <ListIcon />
-        </ToolButton>
-        <ToolButton
-          label={`Style: ${skin.label}. Switch to ${nextSkin.label}`}
-          short={skin.label}
-          onClick={() => setSkin(nextSkin.id)}
-        >
-          <StyleIcon />
-        </ToolButton>
-        <ToolButton label={sound.on ? 'Sound on, turn off' : 'Sound off, turn on'} short="Sound" onClick={sound.toggle}>
-          <SpeakerIcon muted={!sound.on} />
-        </ToolButton>
+        {narrow ? (
+          <ToolButton label="More tools" short="More" expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
+            <MoreIcon />
+          </ToolButton>
+        ) : (
+          extraTools
+        )}
       </nav>
+
+      {narrow && moreOpen && (
+        <nav className="g-tools g-tools-more" aria-label="More tools" onClick={() => setMoreOpen(false)}>
+          {extraTools}
+        </nav>
+      )}
 
       {live !== 'live' && (
         <p className="g-live-note g-panel" role="status">
@@ -283,6 +304,7 @@ function ToolButton({
   badge,
   badgeLabel = 'need you',
   wideOnly,
+  expanded,
   onClick,
   children,
 }: {
@@ -293,6 +315,8 @@ function ToolButton({
   badgeLabel?: string
   /** Hidden on phones, where pinch does the job. */
   wideOnly?: boolean
+  /** For a button that opens a menu. */
+  expanded?: boolean
   onClick: () => void
   children: React.ReactNode
 }) {
@@ -301,6 +325,7 @@ function ToolButton({
       type="button"
       className={clsx('g-tool', wideOnly && 'g-tool-wide-only')}
       aria-label={badge ? `${label}, ${badge} ${badgeLabel}` : label}
+      aria-expanded={expanded}
       onClick={onClick}
     >
       {children}
