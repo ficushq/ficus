@@ -93,7 +93,7 @@ async function handleCacheableApiRequest(request: Request, url: URL): Promise<Re
 
       // Add timestamp header for cache freshness tracking
       const headers = new Headers(responseToCache.headers)
-      headers.set('X-Tau-Cached-At', Date.now().toString())
+      headers.set('X-Ficus-Cached-At', Date.now().toString())
 
       const cachedResponse = new Response(responseToCache.body, {
         status: responseToCache.status,
@@ -116,7 +116,7 @@ async function handleCacheableApiRequest(request: Request, url: URL): Promise<Re
 
       // Add header to indicate this is cached data
       const headers = new Headers(cachedResponse.headers)
-      headers.set('X-Tau-From-Cache', 'true')
+      headers.set('X-Ficus-From-Cache', 'true')
 
       return new Response(cachedResponse.body, {
         status: cachedResponse.status,
@@ -293,7 +293,7 @@ async function getApiCacheStats() {
         const blob = await response.clone().blob()
         totalSize += blob.size
 
-        const cachedAt = response.headers.get('X-Tau-Cached-At')
+        const cachedAt = response.headers.get('X-Ficus-Cached-At')
         if (cachedAt) {
           const timestamp = parseInt(cachedAt, 10)
           oldestTimestamp = Math.min(oldestTimestamp, timestamp)

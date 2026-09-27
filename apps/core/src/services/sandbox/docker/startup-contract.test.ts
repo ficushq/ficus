@@ -67,7 +67,7 @@ describe('Docker startup contract', () => {
 
   test('R-B17: seeds the digest at the proxy-sent user and exports FICUS_BROWSER_DEV_ALLOW_USER', () => {
     // The box server is not su-exec'd, so browser-proxy sends
-    // x-tau-box-user:<this script's OS user>. The service's prod box_<hex> gate
+    // x-ficus-box-user:<this script's OS user>. The service's prod box_<hex> gate
     // would 401 it, so FICUS_BROWSER_DEV_ALLOW_USER (prod NEVER sets it) admits
     // exactly that user — and the digest MUST be seeded under that same user, not
     // the (differing) command user, or auth still fails.

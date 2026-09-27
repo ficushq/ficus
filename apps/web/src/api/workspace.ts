@@ -6,6 +6,7 @@
 
 import type { LocalDeployment, SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@ficus/shared'
 import { apiFetch, apiUrl, authFetch } from './client'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 export type { LocalDeployment, LocalDeploymentStatus } from '@ficus/shared'
 
@@ -463,7 +464,7 @@ function uploadWithProgress(
 
     xhr.open('POST', apiUrl(`${url}${query}`))
     xhr.withCredentials = true // send the HttpOnly session cookie cross-origin
-    xhr.setRequestHeader('X-Tau-Csrf', '1')
+    xhr.setRequestHeader(CSRF_HEADER, '1')
 
     xhr.send(formData)
   })

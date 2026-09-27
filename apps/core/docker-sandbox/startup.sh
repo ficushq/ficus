@@ -148,7 +148,7 @@ EXECUTOR_PID=$!
 #
 # R-B17 dev auth: the box server (main executor above) is NOT su-exec'd, so it
 # runs as this script's user (root) and browser-proxy sends
-# `x-tau-box-user: <that user>` — which never matches the prod `box_<hex>` gate.
+# `x-ficus-box-user: <that user>` — which never matches the prod `box_<hex>` gate.
 # FICUS_BROWSER_DEV_ALLOW_USER (a docker-dev-only env prod NEVER sets) tells the
 # service to also accept exactly that user; the digest is therefore seeded at
 # <that user>.token, and the var is exported so BOTH the main server (env above,

@@ -74,7 +74,7 @@ The first tokenized request redirects to the validated HTTPS host, removes
 Secure, HttpOnly, SameSite=Lax cookie. Platform forwards its credential to Core;
 setting that cookie is not token validation. Core validates the deployment token
 and deployment state. Platform removes unrelated cookies, authorization headers,
-client-supplied `x-tau-*` headers, and hop-by-hop headers before forwarding. Its
+client-supplied `x-ficus-*` headers, and hop-by-hop headers before forwarding. Its
 transport is HTTP streaming: `Upgrade` is stripped, so this route does not provide
 WebSocket tunneling.
 

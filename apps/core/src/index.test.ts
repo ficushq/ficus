@@ -163,7 +163,7 @@ describe('api internal event route', () => {
   it('rejects a wrong token', async () => {
     const res = await app.request(INTERNAL_EVENTS_PATH, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-tau-internal-token': 'nope' },
+      headers: { 'content-type': 'application/json', 'x-ficus-internal-token': 'nope' },
       body,
     })
     expect(res.status).toBe(401)
@@ -175,7 +175,7 @@ describe('api internal event route', () => {
     try {
       const res = await app.request(INTERNAL_EVENTS_PATH, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-tau-internal-token': internalEventToken() },
+        headers: { 'content-type': 'application/json', 'x-ficus-internal-token': internalEventToken() },
         body,
       })
       expect(res.status).toBe(204)
@@ -188,6 +188,22 @@ describe('api internal event route', () => {
   it('is not exposed as a GET', async () => {
     const res = await app.request(INTERNAL_EVENTS_PATH)
     expect(res.status).toBe(404)
+  })
+})
+
+describe('CORS preflight', () => {
+  it('allows the x-ficus-csrf header, and only that spelling, from an allowlisted web origin', async () => {
+    const res = await app.request('/api/auth/me', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'http://localhost:5173',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'x-ficus-csrf',
+      },
+    })
+    const allowed = (res.headers.get('access-control-allow-headers') ?? '').toLowerCase().split(/\s*,\s*/)
+    expect(allowed).toContain('x-ficus-csrf')
+    expect(allowed).not.toContain('x-tau-csrf') // D14
   })
 })
 

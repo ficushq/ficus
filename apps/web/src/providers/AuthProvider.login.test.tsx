@@ -2,6 +2,7 @@ import { act, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { AuthStatus } from '../api/auth'
 import { acquireDomHarness } from '../test/domHarness'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 /**
  * Password login must carry the CSRF header. Browser cookies ignore ports, so a
@@ -95,7 +96,7 @@ describe('AuthProvider password login', () => {
     const login = captured.find((c) => c.url.includes('/auth/login'))
     expect(login).toBeDefined()
     const headers = login!.init?.headers as Record<string, string>
-    expect(headers['X-Tau-Csrf']).toBe('1')
+    expect(headers[CSRF_HEADER]).toBe('1')
     expect(login!.init?.credentials).toBe('include')
     expect(seen.isAuthenticated).toBe(true)
   })

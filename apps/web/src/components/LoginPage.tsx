@@ -4,6 +4,7 @@ import { apiUrl } from '../api/client'
 import { PasskeyLogin } from './auth/PasskeyLogin'
 import { PasskeyRegister } from './auth/PasskeyRegister'
 import { PasskeyRecoveryRequest } from './auth/PasskeyRecoveryRequest'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 // The managed-instance "Open instance" link
 // carries the tenant's bootstrap admin password as a URL FRAGMENT —
@@ -91,7 +92,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
       const res = await fetch(apiUrl('/auth/login'), {
         method: 'POST',
         // Another instance on this host may already have set ficus_session.
-        headers: { 'Content-Type': 'application/json', 'X-Tau-Csrf': '1' },
+        headers: { 'Content-Type': 'application/json', [CSRF_HEADER]: '1' },
         credentials: 'include',
         body: JSON.stringify({ password: pw }),
       })

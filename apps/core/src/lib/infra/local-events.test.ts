@@ -4,6 +4,7 @@ import { join } from 'path'
 import {
   LocalEventTransport,
   INTERNAL_EVENTS_PATH,
+  INTERNAL_EVENT_TOKEN_HEADER,
   LOCAL_EVENT_CHANNELS,
   workerEventPort,
   resolveInternalEventToken,
@@ -542,7 +543,7 @@ describe('local-events transport', () => {
       const wrong = 'x'.repeat(TOKEN.length)
 
       const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
-        'x-tau-internal-token': wrong,
+        'x-ficus-internal-token': wrong,
       })
       expect(res.status).toBe(401)
     })
@@ -555,7 +556,7 @@ describe('local-events transport', () => {
       const server = worker.serve({ port: 0 })
 
       const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
-        'x-tau-internal-token': 'short',
+        'x-ficus-internal-token': 'short',
       })
       expect(res.status).toBe(401)
     })
@@ -567,10 +568,26 @@ describe('local-events transport', () => {
       await worker.listen('agent_control', (p) => received.push(p))
 
       const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
-        'x-tau-internal-token': TOKEN,
+        'x-ficus-internal-token': TOKEN,
       })
       expect(res.status).toBe(204)
       expect(received).toEqual(['stop'])
+    })
+
+    test('reads the token from x-ficus-internal-token only', async () => {
+      expect(INTERNAL_EVENT_TOKEN_HEADER).toBe('x-ficus-internal-token')
+      // The api and the worker restart together from one release, so the
+      // pre-Ficus header name is not read.
+      const worker = transport({ token: TOKEN })
+      const server = worker.serve({ port: 0 })
+      const received: string[] = []
+      await worker.listen('agent_control', (p) => received.push(p))
+
+      const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
+        'x-tau-internal-token': TOKEN, // D15
+      })
+      expect(res.status).toBe(401)
+      expect(received).toEqual([])
     })
 
     test('rejects every request when no token is configured (fail closed)', async () => {
@@ -613,7 +630,7 @@ describe('local-events transport', () => {
 
       const res = await fetch(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
         method: 'POST',
-        headers: { 'x-tau-internal-token': TOKEN },
+        headers: { 'x-ficus-internal-token': TOKEN },
         body: 'not json',
       })
       expect(res.status).toBe(400)

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
 import { mock } from 'bun:test'
 import type { AuthStatus } from '../api/auth'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 /**
  * Pins the tenant-side half of the bootstrap-password prefill: the platform's
@@ -60,7 +61,7 @@ describe('LoginPage — bootstrap password prefill via URL fragment', () => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (url.includes('/auth/login')) {
         loginCalls.push({ url, body: init?.body ? JSON.parse(init.body as string) : undefined })
-        if (requireCsrf && new Headers(init?.headers).get('X-Tau-Csrf') !== '1') {
+        if (requireCsrf && new Headers(init?.headers).get(CSRF_HEADER) !== '1') {
           return Response.json({ error: 'Missing CSRF token' }, { status: 403 })
         }
         return loginShouldSucceed ? new Response(null, { status: 200 }) : new Response(null, { status: 401 })

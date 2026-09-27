@@ -31,7 +31,7 @@ const log = createLogger('local-events')
 export const INTERNAL_EVENTS_PATH = '/internal/events'
 
 /** Header carrying the shared secret. */
-export const INTERNAL_EVENT_TOKEN_HEADER = 'x-tau-internal-token'
+export const INTERNAL_EVENT_TOKEN_HEADER = 'x-ficus-internal-token'
 
 const DEFAULT_WORKER_EVENT_PORT = 3003
 const DEFAULT_API_PORT = 3000

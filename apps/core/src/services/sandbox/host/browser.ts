@@ -40,6 +40,7 @@ import type { Browser } from 'playwright-core'
 // @ts-expect-error no type declarations for this untyped machine script
 import { createService } from '../../../../../../scripts/machine/browser/tau-browser.js'
 import { expandTilde } from '@ficus/shared/node'
+import { boxUserHeaders } from '@ficus/shared/box-user'
 import { boxUnixUser } from '../../machines/box-paths'
 import { getHomeDir } from '../../../lib/utils/home'
 import { createLogger } from '../../../lib/infra/logger'
@@ -348,9 +349,11 @@ export interface HostBrowserOptions {
   installExitHooks?: boolean
   /** Whether this machine has a browser at all (default {@link resolveHostChromium}). */
   resolveBrowser?: () => HostChromium | null
+  /** Wraps the engine once it is built (default: none); tests use it to observe the requests it receives. */
+  wrapEngine?: (engine: BrowserService) => BrowserService
 }
 
-interface BrowserService {
+export interface BrowserService {
   fetch(request: Request): Promise<Response>
   shutdown(): Promise<unknown>
   /** Embedder-only close of one box user's context (the engine's new seam). */
@@ -514,6 +517,7 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
       // self-heals (resetState + relaunch on the next verb).
       onDisconnected: () => log.warn('Host browser disconnected (crash or shutdown); it will relaunch on next use'),
     })
+    if (opts.wrapEngine) service = opts.wrapEngine(service as BrowserService)
     if (opts.installExitHooks !== false) {
       // Best effort: both entrypoints install their own SIGTERM handler that
       // exits, so this only ever gets the chance to START closing. Safe to
@@ -548,7 +552,8 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-tau-box-user': boxUser,
+          // K3: every box-user name, like the machine hosts' box servers.
+          ...boxUserHeaders(boxUser),
           authorization: `Bearer ${bearer}`,
         },
         body: JSON.stringify(body),
