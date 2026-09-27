@@ -913,7 +913,7 @@ test('a new consultant rule opens one fresh chat per event and reuses it on conc
     const consultant = await Agent.mustFind(consultantId)
     expect(consultant.agentTypeId).toBe('consultant')
     expect(consultant.persist).toBe(false)
-    expect(consultant.context).toEqual({ scope: { type: 'consultant', id: squadId } })
+    expect(consultant.context).toEqual({ scope: { type: 'consultant', id: squadId }, origin: 'integration' })
     expect(await db.select().from(inbox).where(eq(inbox.recipientId, consultantId))).toHaveLength(1)
     expect(await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).toHaveLength(0)
     // A later settings change must not replay an already handled event into another chat.

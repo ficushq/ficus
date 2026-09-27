@@ -286,6 +286,7 @@ export class ChannelInstance implements ChannelInstanceRow {
       persist: true,
       context: {
         scope: { type: 'consultant' },
+        origin: 'channel',
         channelInstance: {
           id: this.id,
           provider: this.provider,

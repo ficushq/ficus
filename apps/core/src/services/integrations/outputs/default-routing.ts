@@ -165,7 +165,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
       squadId,
       clientId: logicalEventKey(event, rule.id),
     })
-    const consultant = await findOrCreateConsultant(id, squadId)
+    const consultant = await findOrCreateConsultant(id, squadId, 'integration')
     await send(event, consultant.id, undefined, rule.action.additionalContext, squadId)
   }
 }

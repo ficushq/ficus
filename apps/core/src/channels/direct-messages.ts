@@ -126,6 +126,7 @@ async function resolveDirectAgent(
       persist: true,
       context: {
         scope: { type: 'consultant' },
+        origin: 'channel',
         channelInstance: { id: instance.id, provider: instance.provider },
         directMessage: true,
         thread: {

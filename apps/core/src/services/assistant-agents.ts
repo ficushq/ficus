@@ -47,6 +47,7 @@ export async function resolveOwnedAgent(
       persist: false,
       context: {
         scope: target.squadId === null ? { type: 'system-manager' } : { type: 'consultant', id: target.squadId },
+        ...(target.squadId === null ? {} : { origin: 'assistant' }),
       },
       metadata: {
         name: target.squadId === null ? generateAgentName() : 'Assistant task',

@@ -112,6 +112,7 @@ describe('private squad conversations', () => {
     await resolve({ command: 'squad', text: slugs.idToSlug[scope[0]!.id]! })
     const first = await resolve()
     expect(first.agent?.squadId).toBe(scope[0]!.id)
+    expect(first.agent?.context).toMatchObject({ origin: 'channel', directMessage: true })
     await db.update(agents).set({ status: 'dormant' }).where(eq(agents.id, first.agent!.id))
     await resolve({ command: 'squad', text: slugs.idToSlug[scope[1]!.id]! })
     const second = await resolve()
