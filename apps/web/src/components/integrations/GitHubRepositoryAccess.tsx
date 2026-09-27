@@ -15,7 +15,7 @@ export function GitHubRepositoryAccess({
   const uncertain = access.isError || result?.status === 'unknown'
   const needsAccess = result?.status === 'missing' || result?.personalAccountInstalled === false
   const installationUrl = usesFicusApp
-    ? 'https://github.com/apps/tau-integration/installations/new'
+    ? 'https://github.com/apps/ficus-integration/installations/new'
     : 'https://github.com/settings/installations'
   return (
     <div className="mt-2 space-y-2 text-xs" aria-label={`Repository access for ${login}`}>
