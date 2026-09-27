@@ -32,7 +32,13 @@ function demoActionsApi(): ActionsApi {
 }
 
 export default function DemoFarm() {
-  const input = useMemo(() => sampleFarm(), [])
+  const input = useMemo(() => {
+    const farm = sampleFarm()
+    // ?demo=empty shows a brand-new instance with no squads yet.
+    if (new URLSearchParams(window.location.search).get('demo') === 'empty')
+      return { ...farm, squads: [], streams: [], agents: [], pendingActions: [], doneCount: 0, canceledCount: 0 }
+    return farm
+  }, [])
   const api = useMemo(() => demoActionsApi(), [])
   return (
     <ActionsApiProvider api={api}>

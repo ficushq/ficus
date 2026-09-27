@@ -311,6 +311,14 @@
     width: 52px;
     height: 52px;
   }
+
+  .g-tools {
+    gap: 8px;
+  }
+
+  .g-tool-wide-only {
+    display: none;
+  }
 }
 
 /* Card pointer toward the thing it describes */
@@ -505,4 +513,70 @@
 .g-seed:active {
   translate: 0 2px;
   box-shadow: 0 1px 0 var(--g-ink);
+}
+
+.g-farm-list {
+  position: absolute;
+  top: 72px;
+  left: 14px;
+  bottom: 96px;
+  width: min(380px, calc(100% - 28px));
+  overflow: auto;
+  padding: 16px;
+  outline: none;
+}
+
+.g-list-yard + .g-list-yard {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 2px dashed #d9c7a3;
+}
+
+.g-list-needs {
+  font: 700 12px var(--g-font-body);
+  color: var(--g-terracotta);
+}
+
+.g-list-row {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-list-row:hover,
+.g-list-row:focus-visible {
+  border-color: var(--g-ink);
+  background: #fffaf1;
+  outline: none;
+}
+
+.g-list-title {
+  font: 600 14px var(--g-font-body);
+}
+
+.g-crew-meta[data-needs='yes'] {
+  color: var(--g-terracotta);
+  font-weight: 700;
+}
+
+.g-list-robots {
+  margin: 6px 8px 0;
+}
+
+.g-empty-farm {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: min(360px, calc(100% - 32px));
+  padding: 20px;
+  text-align: center;
 }

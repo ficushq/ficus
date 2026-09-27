@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import clsx from 'clsx'
 import './farm.css'
 import './sprites.css'
 import { screenBounds } from './iso'
@@ -13,7 +14,21 @@ import { haltedAgentIds } from './state'
 import { useStableRef } from '../hooks/useStableRef'
 import type { Selection } from './selection'
 import type { LiveStatus } from '../live/LiveUpdates'
-import { BasketIcon, EnvelopeIcon, FitIcon, LeafIcon, MailboxIcon, MinusIcon, PlusIcon, SeedPacketIcon } from '../icons'
+import {
+  BasketIcon,
+  EnvelopeIcon,
+  FitIcon,
+  LeafIcon,
+  ListIcon,
+  MailboxIcon,
+  MinusIcon,
+  PlusIcon,
+  SeedPacketIcon,
+  SpeakerIcon,
+} from '../icons'
+import { FarmList } from './FarmList'
+import { useFarmSounds } from '../sound/useFarmSounds'
+import { webAppUrl } from '../api/base'
 
 /** How far sprites stick up above/out of their tiles (trees, the farmhouse roof). */
 const WORLD_PAD = { top: 200, side: 60, bottom: 40 }
@@ -90,6 +105,8 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   }, [selection, layout, focus, selectionRef, sizeRef, cameraRef])
 
   const needsYou = input.pendingActions.length
+  const sound = useFarmSounds(layout, needsYou)
+  const [listOpen, setListOpen] = useState(false)
   const growing = layout.yards.reduce((n, y) => n + y.plots.length, 0)
   const anchor = selection ? selectionAnchor(layout, selection) : null
   const toScreen = (x: number, y: number) =>
@@ -132,14 +149,20 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         <ToolButton label="Seeds" onClick={() => setSelection({ kind: 'seedShed' })}>
           <SeedPacketIcon />
         </ToolButton>
-        <ToolButton label="Zoom in" short="In" onClick={() => zoomBy(1.25)}>
+        <ToolButton label="Zoom in" short="In" wideOnly onClick={() => zoomBy(1.25)}>
           <PlusIcon />
         </ToolButton>
-        <ToolButton label="Zoom out" short="Out" onClick={() => zoomBy(0.8)}>
+        <ToolButton label="Zoom out" short="Out" wideOnly onClick={() => zoomBy(0.8)}>
           <MinusIcon />
         </ToolButton>
         <ToolButton label="Show the whole farm" short="Fit" onClick={fit}>
           <FitIcon />
+        </ToolButton>
+        <ToolButton label="List everything on the farm" short="List" onClick={() => setListOpen((o) => !o)}>
+          <ListIcon />
+        </ToolButton>
+        <ToolButton label={sound.on ? 'Sound on, turn off' : 'Sound off, turn on'} short="Sound" onClick={sound.toggle}>
+          <SpeakerIcon muted={!sound.on} />
         </ToolButton>
       </nav>
 
@@ -148,6 +171,20 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
           {live === 'connecting' ? 'Connecting…' : 'Offline, retrying'}
         </p>
       )}
+
+      {layout.yards.length === 0 && (
+        <div className="g-card g-empty-farm">
+          <h2 className="g-card-title">An empty field</h2>
+          <p className="g-card-text">
+            Plots are squads. Create your first squad in Ficus and it will appear here, fenced and ready to plant.
+          </p>
+          <a className="g-button g-button-primary g-card-wide" href={webAppUrl('/squads')}>
+            Create a squad
+          </a>
+        </div>
+      )}
+
+      {listOpen && <FarmList layout={layout} onSelect={setSelection} onClose={() => setListOpen(false)} />}
 
       <FarmCardContext.Provider value={env}>
         {selection && anchor && !chat && (
@@ -192,19 +229,22 @@ function ToolButton({
   label,
   short,
   badge,
+  wideOnly,
   onClick,
   children,
 }: {
   label: string
   short?: string
   badge?: number
+  /** Hidden on phones, where pinch does the job. */
+  wideOnly?: boolean
   onClick: () => void
   children: React.ReactNode
 }) {
   return (
     <button
       type="button"
-      className="g-tool"
+      className={clsx('g-tool', wideOnly && 'g-tool-wide-only')}
       aria-label={badge ? `${label}, ${badge} need you` : label}
       onClick={onClick}
     >

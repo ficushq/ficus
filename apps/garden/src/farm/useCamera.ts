@@ -19,6 +19,8 @@ const MIN_ZOOM = 0.35
 const MAX_ZOOM = 2.2
 /** Below this the robots' faces stop reading; pan instead of shrinking further. */
 const FIT_MIN_ZOOM = 0.6
+/** A small farm shouldn't be blown up to fill the screen. */
+const FIT_MAX_ZOOM = 1.25
 const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z))
 
 /** The zoom that fits a world box into a viewport, with a little padding. */
@@ -74,7 +76,7 @@ export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldB
     setCamera({
       x: (box.minX + box.maxX) / 2,
       y: (box.minY + box.maxY) / 2,
-      zoom: Math.max(FIT_MIN_ZOOM, fitZoom(box, el.clientWidth, el.clientHeight)),
+      zoom: Math.min(FIT_MAX_ZOOM, Math.max(FIT_MIN_ZOOM, fitZoom(box, el.clientWidth, el.clientHeight))),
     })
   }, [viewport, focusRef])
 
