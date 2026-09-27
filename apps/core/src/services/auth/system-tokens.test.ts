@@ -211,6 +211,33 @@ describe('system tokens', () => {
     expect(await resolveSystemToken(fresh!)).not.toBeNull()
   })
 
+  it('concurrent self-heals of a legacy webhook token mint exactly one replacement', async () => {
+    const legacy = 'tau_sys_' + 'e'.repeat(43)
+    const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
+    await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
+
+    const results = await Promise.all(Array.from({ length: 5 }, () => ensureWebhookToken()))
+
+    expect(new Set(results).size).toBe(1)
+    expect(results[0]?.startsWith(SYSTEM_TOKEN_PREFIX)).toBe(true)
+    expect(getSecretStore().get(WEBHOOK_SECRET_KEY)).toBe(results[0]!)
+    const rows = await db.select().from(systemTokens).where(eq(systemTokens.kind, 'webhook'))
+    const active = rows.filter((row) => !row.revokedAt)
+    expect(active).toHaveLength(1)
+    expect(active[0].id).toBe((await resolveSystemToken(results[0]!))!.id)
+    expect(rows.find((row) => row.id === stale.id)?.revokedAt).not.toBeNull()
+  })
+
+  it('concurrent first provisioning mints exactly one webhook token', async () => {
+    const results = await Promise.all(Array.from({ length: 5 }, () => ensureWebhookToken()))
+
+    expect(new Set(results).size).toBe(1)
+    const active = (await db.select().from(systemTokens).where(eq(systemTokens.kind, 'webhook'))).filter(
+      (row) => !row.revokedAt
+    )
+    expect(active).toHaveLength(1)
+  })
+
   it('the webhook self-heal takes no caller input', () => {
     // It is reachable only from verified webhook handlers, and it can only replace the
     // stored secret with a fresh token it never returns to an HTTP caller.
