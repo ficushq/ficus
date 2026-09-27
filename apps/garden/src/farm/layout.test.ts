@@ -287,7 +287,7 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.farmer?.role).toBe('manager')
     expect(yard!.farmer!.i).toBeGreaterThan(yard!.sign.i)
     expect(yard!.farmer!.j).toBeGreaterThan(yard!.j0 + yard!.h)
-    expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 0.1, j: yard!.j0 - 0.75 })
+    expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 0.75, j: yard!.j0 - 0.9 })
     expect(yard!.stand.i).toBeLessThan(yard!.i0)
   })
 
@@ -341,8 +341,8 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.dock.robots.map((r) => r.agent.id)).toEqual(['a'])
     expect(yard!.dock.robots[0]).toMatchObject({ face: 'normal', i: yard!.dock.i, j: yard!.dock.j })
     expect(yard!.dock.overflow).toBe(4)
-    // One hut whatever the count, out behind the back fence at the right end.
-    expect(yard!.dock.i).toBeGreaterThan(yard!.i0 + yard!.w - 1)
+    // One hut whatever the count, diagonally off the back-right corner.
+    expect(yard!.dock.i).toBeGreaterThan(yard!.i0 + yard!.w)
     expect(yard!.dock.j).toBeLessThan(yard!.j0)
   })
 
