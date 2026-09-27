@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { serveStatic } from 'hono/bun'
 import type { Hono } from 'hono'
-import { resolveWebDist } from './web-dist'
+import { resolveGardenDist, resolveWebDist } from './web-dist'
 import { primaryWebOrigin } from '../services/auth/web-origins'
 
 type Log = { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
@@ -100,6 +100,9 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
     return c.body(renderIndexHtml(await indexFile.text(), publicOrigin(c)))
   }
 
+  const garden = maybeMountGardenUi(app)
+  if (garden) log.info(`Serving garden UI from ${garden} at /garden`)
+
   // index.html is rendered, not streamed from disk, so the origin placeholder
   // never reaches a browser or a crawler. Registered ahead of serveStatic,
   // which would otherwise serve the raw file for '/' and '/index.html'.
@@ -122,4 +125,41 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
 
   log.info(`Serving web UI from ${distPath}`)
   return true
+}
+
+/**
+ * Mounts the garden UI (`apps/garden`) at `/garden` when a build exists. Only
+ * called from {@link maybeMountWebUi}, ahead of the web UI's static handler and
+ * SPA fallback, so `/garden/*` never falls through to the web app's index.
+ *
+ * Returns the served directory, or undefined when there is no garden build.
+ */
+function maybeMountGardenUi(app: Hono): string | undefined {
+  const dist = resolveGardenDist()
+  if (!dist || !existsSync(join(dist, 'index.html'))) return undefined
+
+  const staticHandler = serveStatic({
+    root: dist,
+    rewriteRequestPath: (path) => path.replace(/^\/garden/, '') || '/',
+    onFound: (path, c) => {
+      if (HASHED_ASSET.test(path)) c.header('Cache-Control', 'public, max-age=31536000, immutable')
+    },
+  })
+  const indexFile = Bun.file(join(dist, 'index.html'))
+  const serveIndex = async (c: Parameters<typeof staticHandler>[0]) => {
+    c.header('Cache-Control', 'no-cache')
+    c.header('Content-Type', 'text/html; charset=utf-8')
+    return c.body(await indexFile.text())
+  }
+
+  // Relative, so the redirect survives a reverse proxy that strips APP_BASE_PATH.
+  app.get('/garden', (c) => c.redirect('garden/', 301))
+  app.get('/garden/', (c) => serveIndex(c))
+  app.get('/garden/index.html', (c) => serveIndex(c))
+  app.use('/garden/*', (c, next) => staticHandler(c, next))
+  app.get('/garden/*', async (c, next) => {
+    if (!(c.req.header('accept') ?? '').includes('text/html')) return next()
+    return serveIndex(c)
+  })
+  return dist
 }

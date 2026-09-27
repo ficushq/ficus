@@ -30,11 +30,14 @@ function buildFixture(): string {
 describe('maybeMountWebUi', () => {
   const origEnv = process.env.FICUS_SERVE_WEB
   const origDist = process.env.FICUS_WEB_DIST
+  const origGardenDist = process.env.FICUS_GARDEN_DIST
   let dist: string
 
   beforeEach(() => {
     dist = buildFixture()
     process.env.FICUS_WEB_DIST = dist
+    // Never pick up a developer's real apps/garden/dist; garden cases opt in below.
+    process.env.FICUS_GARDEN_DIST = join(dist, '__no_garden__')
   })
 
   afterEach(() => {
@@ -42,6 +45,8 @@ describe('maybeMountWebUi', () => {
     else process.env.FICUS_SERVE_WEB = origEnv
     if (origDist === undefined) delete process.env.FICUS_WEB_DIST
     else process.env.FICUS_WEB_DIST = origDist
+    if (origGardenDist === undefined) delete process.env.FICUS_GARDEN_DIST
+    else process.env.FICUS_GARDEN_DIST = origGardenDist
     rmSync(dist, { recursive: true, force: true })
   })
 
@@ -186,5 +191,67 @@ describe('maybeMountWebUi', () => {
     const { mounted, log } = setupApp()
     expect(mounted).toBe(false)
     expect(log.calls.some((c) => c.level === 'warn')).toBe(true)
+  })
+
+  describe('garden UI at /garden', () => {
+    let garden: string
+
+    beforeEach(() => {
+      garden = mkdtempSync(join(tmpdir(), 'ficus-garden-fixture-'))
+      writeFileSync(join(garden, 'index.html'), '<!doctype html><html><body>garden</body></html>')
+      mkdirSync(join(garden, 'assets'), { recursive: true })
+      writeFileSync(join(garden, 'assets', 'garden.abc12345.js'), 'console.log("garden")')
+      process.env.FICUS_GARDEN_DIST = garden
+      process.env.FICUS_SERVE_WEB = '1'
+    })
+
+    afterEach(() => {
+      rmSync(garden, { recursive: true, force: true })
+    })
+
+    it('serves the garden index at /garden/ with no-cache', async () => {
+      const { app } = setupApp()
+      const res = await app.request('/garden/')
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Cache-Control')).toContain('no-cache')
+      expect(await res.text()).toContain('garden')
+    })
+
+    it('redirects /garden to the trailing-slash path relatively', async () => {
+      const { app } = setupApp()
+      const res = await app.request('/garden')
+      expect(res.status).toBe(301)
+      expect(res.headers.get('Location')).toBe('garden/')
+    })
+
+    it('serves garden hashed assets as immutable', async () => {
+      const { app } = setupApp()
+      const res = await app.request('/garden/assets/garden.abc12345.js')
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Cache-Control')).toContain('immutable')
+      expect(await res.text()).toContain('garden')
+    })
+
+    it('falls back to the garden index, not the web index, for garden client routes', async () => {
+      const { app } = setupApp()
+      const res = await app.request('/garden/plot/abc', { headers: { Accept: 'text/html' } })
+      expect(res.status).toBe(200)
+      const body = await res.text()
+      expect(body).toContain('garden')
+      expect(body).not.toContain('og:image')
+    })
+
+    it('still serves the web UI everywhere else', async () => {
+      const { app } = setupApp()
+      const res = await app.request('/squads/123', { headers: { Accept: 'text/html' } })
+      expect(await res.text()).toContain('app')
+    })
+
+    it('mounts nothing at /garden when there is no garden build', async () => {
+      process.env.FICUS_GARDEN_DIST = join(garden, '__missing__')
+      const { app } = setupApp()
+      const res = await app.request('/garden/', { headers: { Accept: 'text/html' } })
+      expect(await res.text()).not.toContain('garden')
+    })
   })
 })

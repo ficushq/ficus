@@ -61,6 +61,29 @@ export function resolveWebDist(searchFrom: string = import.meta.dir): string | u
   return undefined
 }
 
+/**
+ * Resolves the absolute path to the built garden UI (`apps/garden`), served at
+ * `/garden` beside the web UI. Same search order as {@link resolveWebDist}:
+ * `FICUS_GARDEN_DIST`, then the repo root found by walking up from
+ * `searchFrom`, then `<cwd>/apps/garden/dist`. Returns `undefined` if no
+ * candidate exists on disk.
+ */
+export function resolveGardenDist(searchFrom: string = import.meta.dir): string | undefined {
+  const explicit = process.env.FICUS_GARDEN_DIST
+  if (explicit) return resolve(expandTilde(explicit))
+
+  const repoRoot = findRepoRoot(searchFrom)
+  if (repoRoot) {
+    const candidate = join(repoRoot, 'apps', 'garden', 'dist')
+    if (existsSync(candidate)) return candidate
+  }
+
+  const cwdCandidate = resolve(process.cwd(), 'apps', 'garden', 'dist')
+  if (existsSync(cwdCandidate)) return cwdCandidate
+
+  return undefined
+}
+
 /** Embedded docs ship beside Core bundles in every release. */
 export function resolveCoreDocsDist(searchFrom: string = import.meta.dir): string | undefined {
   const root = findRepoRoot(searchFrom)

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import { resolveWebDist } from './web-dist'
+import { resolveGardenDist, resolveWebDist } from './web-dist'
 
 describe('resolveWebDist', () => {
   const origEnv = process.env.FICUS_WEB_DIST
@@ -79,5 +79,34 @@ describe('resolveWebDist', () => {
     delete process.env.FICUS_WEB_DIST
     process.chdir(tmp)
     expect(resolveWebDist(rootless)).toBeUndefined()
+  })
+})
+
+describe('resolveGardenDist', () => {
+  const origEnv = process.env.FICUS_GARDEN_DIST
+  let tmp: string
+
+  beforeEach(() => {
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-garden-dist-')))
+  })
+
+  afterEach(() => {
+    if (origEnv === undefined) delete process.env.FICUS_GARDEN_DIST
+    else process.env.FICUS_GARDEN_DIST = origEnv
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('honours FICUS_GARDEN_DIST when set', () => {
+    process.env.FICUS_GARDEN_DIST = join(tmp, 'custom')
+    expect(resolveGardenDist(tmp)).toBe(join(tmp, 'custom'))
+  })
+
+  it('finds apps/garden/dist under the discovered repo root', () => {
+    delete process.env.FICUS_GARDEN_DIST
+    const repoRoot = join(tmp, 'repo')
+    const dist = join(repoRoot, 'apps', 'garden', 'dist')
+    mkdirSync(dist, { recursive: true })
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
+    expect(resolveGardenDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
   })
 })
