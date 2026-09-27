@@ -1,0 +1,117 @@
+/*
+ * The garden has its own art direction and does not read the web app's theme
+ * tokens: brand palette plus game-specific ink, grass and wood tones.
+ */
+:root {
+  --g-leaf: #3f6b4f;
+  --g-terracotta: #b0582f;
+  --g-moss: #8a9a5b;
+  --g-sage: #9fb57f;
+  --g-linen: #f1e9db;
+  --g-soil: #1c1a17;
+  --g-ink: #3b2415;
+  --g-ink-soft: #6e5b3f;
+  --g-card: #fbf4e4;
+  --g-grass: #a3bb5d;
+  --g-font-display: 'Fraunces Variable', Georgia, serif;
+  --g-font-body: 'Instrument Sans Variable', system-ui, sans-serif;
+  --g-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--g-grass);
+  color: var(--g-ink);
+  font-family: var(--g-font-body);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+.g-card {
+  background: var(--g-card);
+  border: 3px solid var(--g-ink);
+  border-radius: 16px;
+  box-shadow:
+    0 5px 0 var(--g-ink),
+    0 18px 30px -12px rgb(0 0 0 / 0.35);
+}
+
+.g-wordmark {
+  margin: 0;
+  font: 900 28px/1 var(--g-font-display);
+  color: var(--g-leaf);
+}
+
+.g-muted {
+  color: var(--g-ink-soft);
+  font-size: 13px;
+}
+
+.g-splash {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 24px;
+}
+
+.g-splash-card {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  max-width: 360px;
+  padding: 24px 28px;
+  text-align: center;
+}
+
+.g-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 3px solid var(--g-ink);
+  border-radius: 14px;
+  background: linear-gradient(#fffaf1, #efd9ad);
+  box-shadow: 0 4px 0 var(--g-ink);
+  color: var(--g-ink);
+  font: 900 17px var(--g-font-display);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.g-button:active {
+  translate: 0 3px;
+  box-shadow: 0 1px 0 var(--g-ink);
+}
+
+.g-button:focus-visible {
+  outline: 3px solid #fff3a8;
+  outline-offset: 3px;
+}
+
+.g-button-primary {
+  background: linear-gradient(#64a35c, var(--g-leaf));
+  color: #fff;
+  text-shadow: 0 2px 0 rgb(0 0 0 / 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
