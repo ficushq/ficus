@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import type { CropKind, PlantState } from '../types'
+import type { PlantState } from '../../../farm/types'
+import type { CropKind } from '../types'
 import { At, Leaf, Spark } from './shared'
 
 type Stage = 'young' | 'ripe' | 'wither'

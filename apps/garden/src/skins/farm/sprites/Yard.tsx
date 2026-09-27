@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { iso, rect } from '../iso'
+import { iso, rect } from '../../../farm/iso'
 import { FONT_DISPLAY, INK, Shadow } from './shared'
 
 type Corner = readonly [i: number, j: number]

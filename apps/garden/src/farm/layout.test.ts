@@ -198,7 +198,6 @@ describe('plots', () => {
       farm({ squads: [squad], streams: [makeStream({ id: 'q', squadId: 'sq', openWaits: [makeWait('question')] })] })
     ).yards
     expect(yard!.plots[0]).toMatchObject({ state: 'question', badge: 'question' })
-    expect(['tomato', 'sunflower', 'pumpkin']).toContain(yard!.plots[0]!.crop)
   })
 })
 
@@ -232,7 +231,6 @@ describe('tenders', () => {
 
     plot = plotFor([worker('z-active', 'active'), worker('y-active', 'compacting'), worker('x-active', 'active')])
     expect(plot.tender?.agent.id).toBe('x-active')
-    expect(plot.tender?.prop).toBe('can')
     expect(plot.extraTenders).toBe(2)
   })
 
@@ -286,7 +284,6 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.sign).toEqual({ i: yard!.i0 + yard!.w / 2, j: yard!.j0 + yard!.h + 0.35 })
     expect(yard!.farmer?.agent.id).toBe('boss')
     expect(yard!.farmer?.role).toBe('manager')
-    expect(yard!.farmer?.prop).toBe('hoe')
     expect(yard!.farmer!.i).toBeGreaterThan(yard!.sign.i)
     expect(yard!.farmer!.j).toBeGreaterThan(yard!.j0 + yard!.h)
     expect(yard!.dock).toMatchObject({ i: yard!.i0 + yard!.w + 1.0, j: yard!.j0 + 0.45 })
@@ -311,7 +308,7 @@ describe('farmer, sign, dock and bench', () => {
     const [yard] = layoutFarm(farm({ squads: [squad], agents, pendingActions: [makeAgentError('halted')] })).yards
     expect(yard!.dock.ids).toEqual(['a', 'b', 'c', 'd', 'e'])
     expect(yard!.dock.robots.map((r) => r.agent.id)).toEqual(['a'])
-    expect(yard!.dock.robots[0]).toMatchObject({ face: 'normal', prop: null, i: yard!.dock.i, j: yard!.dock.j })
+    expect(yard!.dock.robots[0]).toMatchObject({ face: 'normal', i: yard!.dock.i, j: yard!.dock.j })
     expect(yard!.dock.overflow).toBe(4)
     // One hut whatever the count, outside the back-right corner.
     expect(yard!.dock.i).toBeGreaterThan(yard!.i0 + yard!.w)
@@ -341,7 +338,7 @@ describe('farmer, sign, dock and bench', () => {
     const [yard] = layoutFarm(farm({ squads: [squad], agents })).yards
     expect([...yard!.stand.ids!].sort()).toEqual(['asleep', 'c1', 'c2', 'legacy'])
     expect(yard!.stand.robots).toHaveLength(1)
-    expect(yard!.stand.robots[0]).toMatchObject({ role: 'consultant', prop: 'clip' })
+    expect(yard!.stand.robots[0]).toMatchObject({ role: 'consultant' })
     expect(yard!.stand.robots[0]!.agent.status).not.toBe('dormant')
     expect(yard!.stand.overflow).toBe(3)
   })

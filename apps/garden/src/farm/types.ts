@@ -1,8 +1,5 @@
 import type { Agent, Squad, WorkStream } from '@ficus/shared'
 
-/** Crops vary by work stream (stable per id) so a yard isn't a field of clones. */
-export type CropKind = 'tomato' | 'sunflower' | 'pumpkin'
-
 /**
  * What a work stream's plant looks like. Done and canceled streams are not
  * plants; they are counted into the harvest crates and the compost heap.
@@ -26,37 +23,13 @@ export type RobotFace = 'happy' | 'normal' | 'question' | 'sleepy' | 'error'
 
 export type RobotRole = 'manager' | 'consultant' | 'assistant' | 'worker'
 
-export type RobotHead = 'round' | 'box' | 'dome'
-export type RobotMove = 'wheel' | 'treads' | 'hover' | 'legs'
-export type RobotAntenna = 'sprout' | 'bulb' | 'twin' | 'none'
-export type RobotHat = 'straw' | 'sun' | 'cap' | 'bandana' | 'beanie' | 'bucket'
-export type RobotOutfit = 'overalls' | 'apron'
-export type RobotProp = 'can' | 'clip' | 'hoe'
-
-/** Everything that makes one robot look like itself. Stable per agent id. */
-export interface RobotLook {
-  shell: string
-  panel: string
-  glow: string
-  head: RobotHead
-  move: RobotMove
-  antenna: RobotAntenna
-  hat: RobotHat | null
-  hatColor: string
-  outfit: RobotOutfit | null
-  outfitColor: string
-  scarf: string | null
-}
-
 /** A robot standing somewhere on the farm. i/j may be fractional. */
 export interface RobotPlacement {
   agent: Agent
   role: RobotRole
   i: number
   j: number
-  look: RobotLook
   face: RobotFace
-  prop: RobotProp | null
   /** Live subagents of this agent (drawn as one helper drone with a count). */
   helpers: number
 }
@@ -65,7 +38,6 @@ export interface PlotLayout {
   stream: WorkStream
   i: number
   j: number
-  crop: CropKind
   state: PlantState
   badge: BadgeKind | null
   /** The one robot drawn at this plant (the most relevant running participant). */

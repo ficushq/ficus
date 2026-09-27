@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import './farm.css'
-import './sprites.css'
 import { screenBounds } from './iso'
 import { layoutFarm, type FarmInput } from './layout'
 import { SceneWorld } from './Scene'
@@ -14,6 +13,7 @@ import { ChatWindows, useChatWindows } from './ChatWindows'
 import { haltedAgentIds } from './state'
 import { useStableRef } from '../hooks/useStableRef'
 import { useDesktopShellChrome } from '../desktop/shell'
+import { useSkin } from '../skins'
 import type { Selection } from './selection'
 import type { LiveStatus } from '../live/LiveUpdates'
 import {
@@ -33,23 +33,22 @@ import { FarmList } from './FarmList'
 import { useFarmSounds } from '../sound/useFarmSounds'
 import { webAppUrl } from '../api/base'
 
-/** How far sprites stick up above/out of their tiles (trees, the farmhouse roof). */
-const WORLD_PAD = { top: 200, side: 60, bottom: 40 }
-
 export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus }) {
   useDesktopShellChrome()
+  const { skin } = useSkin()
   const layout = useMemo(() => layoutFarm(input), [input])
   const viewport = useRef<HTMLDivElement>(null)
   const size = useViewportSize(viewport)
   const world = useMemo(() => {
     const b = screenBounds(layout.bounds.minI, layout.bounds.maxI, layout.bounds.minJ, layout.bounds.maxJ)
     return {
-      minX: b.minX - WORLD_PAD.side,
-      maxX: b.maxX + WORLD_PAD.side,
-      minY: b.minY - WORLD_PAD.top,
-      maxY: b.maxY + WORLD_PAD.bottom,
+      // How far the style's art reaches past the tiles (trees, roofs).
+      minX: b.minX - skin.worldPad.side,
+      maxX: b.maxX + skin.worldPad.side,
+      minY: b.minY - skin.worldPad.top,
+      maxY: b.maxY + skin.worldPad.bottom,
     }
-  }, [layout.bounds])
+  }, [layout.bounds, skin.worldPad])
   const focusBox = useMemo(() => {
     const tiles: Array<[number, number]> = [
       [layout.farmhouse.i - 2, layout.farmhouse.j - 2],
@@ -135,7 +134,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     [(x - camera.x) * camera.zoom + size.width / 2, (y - camera.y) * camera.zoom + size.height / 2] as const
 
   return (
-    <div className="g-farm">
+    <div className={clsx('g-farm', skin.className)}>
       <div ref={viewport} className="g-viewport" onKeyDown={(e) => e.key === 'Escape' && setSelection(null)}>
         <svg className="g-scene" width={size.width} height={size.height} role="application" aria-label="Your farm">
           <g

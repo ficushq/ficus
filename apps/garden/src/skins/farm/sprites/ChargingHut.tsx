@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import { iso } from '../iso'
+import { iso } from '../../../farm/iso'
 import type { RobotLook } from '../types'
 import { Robot } from './Robot'
 import { FONT_DISPLAY, INK, Shadow } from './shared'

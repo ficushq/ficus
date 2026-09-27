@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { iso } from '../iso'
+import { iso } from '../../../farm/iso'
 import { hash } from './shared'
 
 const LIGHT = '#a8c064'

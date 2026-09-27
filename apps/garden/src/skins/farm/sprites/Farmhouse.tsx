@@ -1,4 +1,4 @@
-import { iso } from '../iso'
+import { iso } from '../../../farm/iso'
 import { INK, Shadow } from './shared'
 
 /** Farmhouse footprint in tiles (w along i, d along j), porch not included. Origin is its centre. */

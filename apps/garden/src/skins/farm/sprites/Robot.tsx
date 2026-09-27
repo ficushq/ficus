@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import type { RobotAntenna, RobotFace, RobotHat, RobotHead, RobotLook, RobotProp } from '../types'
+import type { RobotFace } from '../../../farm/types'
+import type { RobotAntenna, RobotHat, RobotHead, RobotLook, RobotProp } from '../types'
 import { shellFill } from './Defs'
 import { FONT_DISPLAY, INK, LEAF_PATH } from './shared'
 

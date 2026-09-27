@@ -1,4 +1,4 @@
-import { iso, pt } from '../iso'
+import { iso, pt } from '../../../farm/iso'
 
 const A = 0.1
 const B = 0.9

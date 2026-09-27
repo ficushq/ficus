@@ -1,4 +1,4 @@
-import { iso, pt } from '../iso'
+import { iso, pt } from '../../../farm/iso'
 import { FONT_DISPLAY, INK, Shadow } from './shared'
 
 /** Seed shed footprint in tiles (w along i, d along j). Origin is its centre. */

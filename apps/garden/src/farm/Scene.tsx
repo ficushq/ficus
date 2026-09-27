@@ -3,31 +3,8 @@ import { depth, iso } from './iso'
 import type { FarmLayout, PlotLayout, RobotPlacement } from './types'
 import { plantStateLabel, roleLabel, selectionKey, type Selection } from './selection'
 import { agentLabel } from './agentLabels'
-import {
-  Badge,
-  badgeLift,
-  ConsultingStand,
-  Bush,
-  ChargingHut,
-  Compost,
-  Crates,
-  Crop,
-  Farmhouse,
-  Flowers,
-  Grass,
-  HayBale,
-  Mailbox,
-  PlotSelectionGround,
-  PlotSelectionTint,
-  PlowedSoil,
-  Robot,
-  SceneDefs,
-  SeedShed,
-  Tree,
-  YardBack,
-  yardFrontPieces,
-  YardSign,
-} from './sprites'
+import type { FarmSkin, HitBox } from '../skins/types'
+import { useSkin } from '../skins'
 
 interface Drawable {
   key: string
@@ -61,7 +38,7 @@ function Hit({
   selected?: boolean
   onActivate: () => void
   /** Generous tap area around the anchor: [left, top, width, height]. */
-  box: readonly [number, number, number, number]
+  box: HitBox
   onReveal: (x: number, y: number) => void
   children: ReactNode
 }) {
@@ -91,9 +68,6 @@ function Hit({
   )
 }
 
-const ROBOT_BOX = [-22, -74, 44, 80] as const
-const PLANT_BOX = [-34, -78, 68, 92] as const
-
 function robotLabel(r: RobotPlacement): string {
   const name = agentLabel(r.agent).primary
   const face =
@@ -111,6 +85,7 @@ function robotLabel(r: RobotPlacement): string {
 }
 
 function buildDrawables(
+  skin: FarmSkin,
   layout: FarmLayout,
   selected: string | null,
   mailboxCount: number,
@@ -136,10 +111,10 @@ function buildDrawables(
           y={y}
           label={robotLabel(r)}
           selected={selected === key}
-          box={ROBOT_BOX}
+          box={skin.boxes.robot}
           onActivate={() => onSelect({ kind: 'robot', agentId: r.agent.id })}
         >
-          <Robot look={r.look} face={r.face} prop={r.prop} helpers={r.helpers} extra={extra} />
+          <skin.Robot placement={r} extra={extra} />
         </Hit>
       ),
     })
@@ -148,9 +123,7 @@ function buildDrawables(
   const plot = (p: PlotLayout, squadName: string) => {
     const key = `plot:${p.stream.id}`
     const isSelected = selected === key
-    if (isSelected) ground.push(<PlotSelectionGround key={`${key}:sel`} i={p.i} j={p.j} />)
-    ground.push(<PlowedSoil key={`${key}:soil`} i={p.i} j={p.j} />)
-    if (isSelected) ground.push(<PlotSelectionTint key={`${key}:tint`} i={p.i} j={p.j} />)
+    ground.push(<skin.PlotGround key={`${key}:ground`} i={p.i} j={p.j} selected={isSelected} />)
     const [x, y] = iso(p.i + 0.5, p.j + 0.5)
     items.push({
       key,
@@ -163,17 +136,17 @@ function buildDrawables(
           y={y + 2}
           label={`${p.stream.title}, ${squadName}: ${plantStateLabel(p.state)}`}
           selected={isSelected}
-          box={PLANT_BOX}
+          box={skin.boxes.plant}
           onActivate={() => onSelect({ kind: 'plot', streamId: p.stream.id })}
         >
-          <Crop kind={p.crop} state={p.state} />
+          <skin.Plant plot={p} />
         </Hit>
       ),
     })
     if (p.badge) {
       badges.push(
-        <g key={`${key}:badge`} transform={`translate(${x} ${y + 2 + badgeLift(p.crop)})`} aria-hidden="true">
-          <Badge kind={p.badge} />
+        <g key={`${key}:badge`} transform={`translate(${x} ${y + 2 + skin.badgeLift(p)})`} aria-hidden="true">
+          <skin.Badge kind={p.badge} />
         </g>
       )
     }
@@ -183,8 +156,8 @@ function buildDrawables(
   for (const yard of layout.yards) {
     const { i0, j0, w, h, squad } = yard
     // The back fence and the yard's grass tint sit under everything inside the yard, soil included.
-    yardGround.push(<YardBack key={`yb:${squad.id}`} i0={i0} j0={j0} w={w} h={h} />)
-    for (const piece of yardFrontPieces({ i0, j0, w, h }))
+    yardGround.push(<skin.YardBack key={`yb:${squad.id}`} i0={i0} j0={j0} w={w} h={h} />)
+    for (const piece of skin.yardFront({ i0, j0, w, h }))
       items.push({
         key: `yard:${squad.id}:${piece.key}`,
         depth: piece.depth,
@@ -202,10 +175,10 @@ function buildDrawables(
           y={sy}
           label={`${squad.name} plot${yard.needsYou ? `, ${yard.needsYou} need you` : ''}`}
           selected={selected === `yard:${squad.id}`}
-          box={[-60, -72, 120, 78]}
+          box={skin.boxes.sign}
           onActivate={() => onSelect({ kind: 'yard', squadId: squad.id })}
         >
-          <YardSign name={squad.name} flag={yard.needsYou > 0} />
+          <skin.Sign name={squad.name} flag={yard.needsYou > 0} />
         </Hit>
       ),
     })
@@ -225,10 +198,10 @@ function buildDrawables(
           y={hy}
           label={`Charging hut, ${resting ? `${resting} robot${resting === 1 ? '' : 's'} resting` : 'empty'}`}
           selected={selected === `hut:${squad.id}`}
-          box={[-64, -96, 128, 118]}
+          box={skin.boxes.hut}
           onActivate={() => onSelect({ kind: 'hut', squadId: squad.id })}
         >
-          <ChargingHut count={resting} peek={yard.dock.robots[0]?.look} />
+          <skin.Hut count={resting} peek={yard.dock.robots[0]} />
         </Hit>
       ),
     })
@@ -246,24 +219,16 @@ function buildDrawables(
           y={sy2}
           label={`Consulting stand, ${chats ? `${chats} consultant chat${chats === 1 ? '' : 's'}` : 'no consultant chats yet'}`}
           selected={selected === `stand:${squad.id}`}
-          box={[-58, -100, 116, 118]}
+          box={skin.boxes.stand}
           onActivate={() => onSelect({ kind: 'stand', squadId: squad.id })}
         >
-          <ConsultingStand count={chats} host={yard.stand.robots[0]?.look} />
+          <skin.Stand count={chats} host={yard.stand.robots[0]} />
         </Hit>
       ),
     })
   }
 
-  const place = (
-    key: string,
-    i: number,
-    j: number,
-    label: string,
-    s: Selection,
-    node: ReactNode,
-    box: readonly [number, number, number, number]
-  ) => {
+  const place = (key: string, i: number, j: number, label: string, s: Selection, node: ReactNode, box: HitBox) => {
     const [x, y] = iso(i, j)
     items.push({
       key,
@@ -291,8 +256,8 @@ function buildDrawables(
     farmhouse.j,
     'Farmhouse: open the Ficus web app',
     { kind: 'farmhouse' },
-    <Farmhouse />,
-    [-120, -190, 240, 220]
+    <skin.Farmhouse />,
+    skin.boxes.farmhouse
   )
   place(
     'seedShed',
@@ -300,8 +265,8 @@ function buildDrawables(
     seedShed.j,
     'Seed shed: start something new with a consultant',
     { kind: 'seedShed' },
-    <SeedShed />,
-    [-80, -120, 160, 150]
+    <skin.SeedShed />,
+    skin.boxes.seedShed
   )
   place(
     'mailbox',
@@ -309,8 +274,8 @@ function buildDrawables(
     mailbox.j,
     mailboxCount ? `Mailbox, ${mailboxCount} need you` : 'Mailbox, nothing needs you',
     { kind: 'mailbox' },
-    <Mailbox count={mailboxCount} />,
-    [-34, -96, 68, 104]
+    <skin.Mailbox count={mailboxCount} />,
+    skin.boxes.mailbox
   )
   if (crates.count)
     place(
@@ -319,8 +284,8 @@ function buildDrawables(
       crates.j,
       `Harvested: ${crates.count}`,
       { kind: 'crates' },
-      <Crates count={crates.count} />,
-      [-40, -40, 80, 50]
+      <skin.Crates count={crates.count} />,
+      skin.boxes.crates
     )
   if (compost.count)
     place(
@@ -329,28 +294,18 @@ function buildDrawables(
       compost.j,
       `Compost: ${compost.count} canceled`,
       { kind: 'compost' },
-      <Compost count={compost.count} />,
-      [-30, -30, 60, 40]
+      <skin.Compost count={compost.count} />,
+      skin.boxes.compost
     )
 
   for (const d of layout.decor) {
     const [x, y] = iso(d.i, d.j)
-    const node =
-      d.kind === 'tree' || d.kind === 'fruitTree' ? (
-        <Tree fruit={d.kind === 'fruitTree'} seed={d.seed} />
-      ) : d.kind === 'bush' ? (
-        <Bush seed={d.seed} />
-      ) : d.kind === 'flowers' ? (
-        <Flowers seed={d.seed} />
-      ) : (
-        <HayBale />
-      )
     items.push({
       key: `decor:${d.kind}:${d.i}:${d.j}`,
       depth: depth(d.i, d.j),
       node: (
         <g key={`decor:${d.kind}:${d.i}:${d.j}`} transform={`translate(${x} ${y})`} aria-hidden="true">
-          {node}
+          <skin.Decor decor={d} />
         </g>
       ),
     })
@@ -368,16 +323,17 @@ export const SceneWorld = memo(function SceneWorld({
   onSelect,
   onReveal,
 }: SceneProps) {
+  const { skin } = useSkin()
   const selected = selectionKey(selection)
   const { ground, items, badges } = useMemo(
-    () => buildDrawables(layout, selected, mailboxCount, onSelect, onReveal),
-    [layout, selected, mailboxCount, onSelect, onReveal]
+    () => buildDrawables(skin, layout, selected, mailboxCount, onSelect, onReveal),
+    [skin, layout, selected, mailboxCount, onSelect, onReveal]
   )
   const { bounds } = layout
   return (
     <>
-      <SceneDefs />
-      <Grass minI={bounds.minI} maxI={bounds.maxI} minJ={bounds.minJ} maxJ={bounds.maxJ} />
+      <skin.Defs />
+      <skin.Ground bounds={bounds} />
       <g aria-hidden="true">{ground}</g>
       {items.map((d) => d.node)}
       <g className="g-badges">{badges}</g>

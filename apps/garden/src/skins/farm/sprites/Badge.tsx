@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import type { BadgeKind, CropKind } from '../types'
+import type { BadgeKind } from '../../../farm/types'
+import type { CropKind } from '../types'
 import { FONT_DISPLAY, INK } from './shared'
 
 /** Distance from the bubble's centre down to its tail tip. */

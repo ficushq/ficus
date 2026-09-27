@@ -6,7 +6,7 @@ import type {
   Squad,
   WorkStream,
 } from '@ficus/shared'
-import { cropFor, hash, propFor, robotLookFor, roleFor } from './appearance'
+import { hash, roleFor } from './appearance'
 import { isUserStartedConsultant } from './consultants'
 import { badgeFor, faceFor, haltedAgentIds, isAsleep, isRunning, plantStateFor } from './state'
 import type {
@@ -205,9 +205,7 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       role,
       i,
       j,
-      look: robotLookFor(agent, role),
       face,
-      prop: propFor(role, face),
       helpers: helpers.get(agent.id) ?? 0,
     }
   }
@@ -286,7 +284,6 @@ export function layoutFarm(input: FarmInput): FarmLayout {
         stream,
         i,
         j,
-        crop: cropFor(stream.id),
         state,
         badge,
         tender,
