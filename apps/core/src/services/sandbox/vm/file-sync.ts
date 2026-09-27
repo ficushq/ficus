@@ -61,7 +61,7 @@
  * ## squad ssh delivery (step 5) + on-demand refresh
  * The squad ssh dir (`services/squad/ssh.ts` `getSquadSshPath`) is where
  * `services/remote-hosts/materialize.ts` renders granted remote hosts as
- * `tau_remote_<name>` key files + a managed `config` block (see the remote-hosts
+ * `ficus_remote_<name>` key files + a managed `config` block (see the remote-hosts
  * design doc § Delivery). Step 5 re-runs `materializeSquadRemoteHosts(squadId)`
  * immediately before reading the dir — cheap (a handful of local fs read/writes)
  * and idempotent, so it's unconditional here rather than trusting that every
@@ -556,7 +556,7 @@ export async function syncBoxFiles(
     if (name === 'squad-ssh') {
       await runBash(
         client,
-        `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f -name 'tau_remote_*' -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`,
+        `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f -name 'ficus_remote_*' -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`,
         'asset_prune',
         undefined,
         deps.bashFence
@@ -778,7 +778,7 @@ export async function pushSquadSshToBox(
   if (previous && !previous.files) {
     await runBash(
       client,
-      `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f -name 'tau_remote_*' -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`,
+      `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f -name 'ficus_remote_*' -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`,
       'asset_prune',
       undefined,
       deps.bashFence

@@ -30,10 +30,10 @@ describe('createSquadBashTool', () => {
     const docker = spyOn(dockerTools, 'createDockerSandboxedBashTool').mockImplementation(fakeBashTool)
     spies.push(docker)
 
-    const tool = createSquadBashTool('squad_S1', '/host/squads/S1', 'S1', 'tau_agent_tok')
+    const tool = createSquadBashTool('squad_S1', '/host/squads/S1', 'S1', 'ficus_agent_tok')
 
     // cwd + host workspace path are the squad host dir; sandboxId is the warm box; token threaded
-    expect(docker).toHaveBeenCalledWith('/host/squads/S1', '/host/squads/S1', 'squad_S1', 'tau_agent_tok')
+    expect(docker).toHaveBeenCalledWith('/host/squads/S1', '/host/squads/S1', 'squad_S1', 'ficus_agent_tok')
     expect(tool.name).toBe(SQUAD_BASH_TOOL_KEY)
     expect(tool.label).toBe(SQUAD_BASH_TOOL_KEY)
     expect(tool.key).toBe(SQUAD_BASH_TOOL_KEY)

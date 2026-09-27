@@ -221,7 +221,7 @@ describe('inbox delivery service', () => {
       })
       spyOn(Agent.prototype, 'getOrCreateToken').mockImplementation(async () => {
         if (injectFailure && failurePoint === 'token') throw new Error('injected token failure')
-        return 'tau_agent_test'
+        return 'ficus_agent_test'
       })
       await makeDormant(agent)
       const queuedEvents: string[] = []

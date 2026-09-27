@@ -13,7 +13,7 @@ function hashTicket(raw: string): string {
 
 /** Mint a single-use, short-lived ticket for a user session (used as the WS URL token). */
 export async function createWsTicket(userId: string, deviceTokenId: string | null = null): Promise<string> {
-  const raw = `tau_wst_${randomUUID()}${randomUUID().replace(/-/g, '')}`
+  const raw = `ficus_wst_${randomUUID()}${randomUUID().replace(/-/g, '')}`
   await db.insert(wsTickets).values({
     tokenHash: hashTicket(raw),
     userId,

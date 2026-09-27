@@ -853,7 +853,7 @@ describe('NotificationService', () => {
         platform: 'ios',
         environment: 'production',
       })
-      await db.update(apnsDevices).set({ relayBindingToken: 'tau_prd_test' }).where(eq(apnsDevices.userId, user.id))
+      await db.update(apnsDevices).set({ relayBindingToken: 'ficus_prd_test' }).where(eq(apnsDevices.userId, user.id))
       const stored = getSettingsStore().getStoredValue.bind(getSettingsStore())
       let enabled = false
       const settings = spyOn(getSettingsStore(), 'getStoredValue').mockImplementation((key) =>
@@ -895,7 +895,7 @@ describe('NotificationService', () => {
         platform: 'ios',
         environment: 'production',
       })
-      await db.update(apnsDevices).set({ relayBindingToken: 'tau_prd_test' }).where(eq(apnsDevices.userId, user.id))
+      await db.update(apnsDevices).set({ relayBindingToken: 'ficus_prd_test' }).where(eq(apnsDevices.userId, user.id))
       const relay = spyOn(relayModule, 'sendRelayAlert').mockResolvedValue({ accepted: true, reason: undefined })
       const config = spyOn(relayModule, 'pushRelayConfig').mockReturnValue({
         token: 'fixture',

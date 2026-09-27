@@ -24,7 +24,7 @@ Some routes act for one person, such as connecting accounts, subscriptions, sess
 
 1. `Authorization: Bearer <token>`
 2. `X-Auth-Token: <token>`
-3. The browser's `tau_session` HttpOnly cookie
+3. The browser's `ficus_session` HttpOnly cookie
 
 The resolver recognizes unexpired user sessions, unrevoked agent tokens, scoped system tokens, paired-device tokens, and the bootstrap password when eligible. Missing or invalid credentials return `401`, apart from explicitly supported public or independently authenticated routes. Route permission checks can return `403` for authenticated callers without access.
 
@@ -46,7 +46,7 @@ Passkey sessions store only the token hash in the database and expire after 30 d
 
 ## Device pairing & device tokens
 
-The mobile app authenticates with a **per-device bearer token** (prefix `tau_dev_`) rather than the shared password. Tokens are minted via a short-lived pairing handshake, stored hashed, resolve to the pairing user's identity, and are individually revocable — so losing a phone never means rotating the shared password.
+The mobile app authenticates with a **per-device bearer token** (prefix `ficus_dev_`) rather than the shared password. Tokens are minted via a short-lived pairing handshake, stored hashed, resolve to the pairing user's identity, and are individually revocable — so losing a phone never means rotating the shared password.
 
 | Method   | Endpoint                | Auth          | Purpose                                         |
 | -------- | ----------------------- | ------------- | ----------------------------------------------- |
@@ -68,7 +68,7 @@ The mobile-side UX — QR scan, the `tau://pair` deep link, web auto-detection, 
 | `POST` | `/api/auth/device/start`   | public, rate limited      | Create a pending CLI or Tau Desktop grant          |
 | `POST` | `/api/auth/device/inspect` | authenticated user        | Preview the requesting CLI or Tau Desktop instance |
 | `POST` | `/api/auth/device/approve` | authenticated user + CSRF | Explicitly approve the request                     |
-| `POST` | `/api/auth/device/token`   | polling capability        | Atomically mint and return one `tau_dev_` token    |
+| `POST` | `/api/auth/device/token`   | polling capability        | Atomically mint and return one `ficus_dev_` token    |
 
 `/device/start` accepts an optional `platform: 'cli' | 'desktop'` in its JSON body (default `cli`); any other value answers `400 invalid_platform`. The response echoes `platform` back, and it is a desktop-pairing support signal only when it comes back exactly `'desktop'` — an older server ignores `platform` in the request and always issues a CLI grant, so a caller must check the echoed value and discard the grant when it isn't `'desktop'` rather than treating its mere presence as support. A desktop-initiated grant defaults its device name to "Tau Desktop" when the caller sends none, the same way a CLI grant defaults to "Tau CLI".
 

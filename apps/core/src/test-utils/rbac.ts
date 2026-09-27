@@ -56,7 +56,7 @@ export async function createTestUser(opts?: {
     })
     .returning()
 
-  const token = `tau_sess_${randomUUID()}`
+  const token = `ficus_sess_${randomUUID()}`
   const [session] = await db
     .insert(sessions)
     .values({
@@ -230,7 +230,7 @@ export async function createTestAgentToken(opts: {
   squadId: string | null
   userId?: string
 }): Promise<TestAgentToken> {
-  const token = `tau_agent_${randomUUID()}`
+  const token = `ficus_agent_${randomUUID()}`
   const [row] = await db
     .insert(agentTokens)
     .values({

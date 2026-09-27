@@ -18,7 +18,7 @@ test('notifications distinguish events without private content, with explicit pr
   })
   const request = {
     version: 1,
-    bindingToken: `tau_prd_${'a'.repeat(43)}`,
+    bindingToken: `ficus_prd_${'a'.repeat(43)}`,
     eventId: crypto.randomUUID(),
     routing: { eventType: 'question', workStreamNumber: 42 },
   }

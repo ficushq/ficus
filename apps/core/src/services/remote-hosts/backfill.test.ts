@@ -114,7 +114,7 @@ describe('backfillSquadSshConfigs', () => {
       `    HostName ${host.sshHost}`,
       '    Port 22',
       `    User ${host.sshUser}`,
-      `    IdentityFile ~/.ssh/tau_remote_${host.name}`,
+      `    IdentityFile ~/.ssh/ficus_remote_${host.name}`,
       '    IdentitiesOnly yes',
       '    StrictHostKeyChecking accept-new',
       MANAGED_BLOCK_END,
@@ -125,13 +125,13 @@ describe('backfillSquadSshConfigs', () => {
     expect(await backfillSquadSshConfigs()).toBe(1)
 
     const config = readFileSync(join(sshDir, 'config'), 'utf-8')
-    expect(config).toContain(`IdentityFile ${join(sshDir, `tau_remote_${host.name}`)}`)
+    expect(config).toContain(`IdentityFile ${join(sshDir, `ficus_remote_${host.name}`)}`)
     expect(config).toContain(`UserKnownHostsFile ${join(sshDir, 'known_hosts')}`)
     expect(config).not.toContain('~/.ssh/')
     // The user's own stanza survives byte-for-byte outside the markers.
     expect(config.startsWith('Host mine\n  HostName my.example.com\n  User me\n')).toBe(true)
     // The key file the absolute path names was (re)written too.
-    expect(existsSync(join(sshDir, `tau_remote_${host.name}`))).toBe(true)
+    expect(existsSync(join(sshDir, `ficus_remote_${host.name}`))).toBe(true)
   })
 
   it('is idempotent: a second run rewrites nothing (byte-identical config)', async () => {

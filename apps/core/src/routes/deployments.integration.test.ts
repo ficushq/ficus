@@ -165,7 +165,7 @@ describe('deployments localDeployment integration', () => {
     const response = await app.request(`/api/app/${hyphenatedPrefix}/?_tau_token=${encodeURIComponent(token)}`)
     expect(response.status).toBe(200)
     expect(await response.text()).toBe('hello localDeployment')
-    expect(response.headers.get('set-cookie')).toContain(`tau_app_${localDeployment.id}=`)
+    expect(response.headers.get('set-cookie')).toContain(`ficus_app_${localDeployment.id}=`)
   })
 
   it('keeps the full UUID path cookie behavior and omits a Domain attribute', async () => {

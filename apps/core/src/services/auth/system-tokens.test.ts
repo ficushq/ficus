@@ -41,7 +41,7 @@ describe('system tokens', () => {
 
   it('creates a token that resolves to its scopes, and revoking invalidates it', async () => {
     const { token, record } = await createSystemToken({ name: 'CI', scopes: ['inbox:system', 'workstreams:read'] })
-    expect(token.startsWith('tau_sys_')).toBe(true)
+    expect(token.startsWith('ficus_sys_')).toBe(true)
 
     const resolved = await resolveSystemToken(token)
     expect(resolved).toMatchObject({

@@ -11,7 +11,7 @@ import {
 
 const log = createLogger('system-tokens')
 
-const TOKEN_PREFIX = 'tau_sys_'
+const TOKEN_PREFIX = 'ficus_sys_'
 // The auto-provisioned webhook token's raw value, kept encrypted in the secret store so the webhook
 // processors can present it. The `__` prefix marks it internal (hidden from the secrets UI list).
 const WEBHOOK_TOKEN_SECRET_KEY = '__SYSTEM_WEBHOOK_TOKEN'

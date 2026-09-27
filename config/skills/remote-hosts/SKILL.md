@@ -144,7 +144,7 @@ A remote host is the **team's** box, not tau's. Before doing anything on it:
   `apps/core/src/routes/remote-hosts.ts`.
 - CLI: `apps/cli/src/commands/remote-hosts.ts`
   (`registerRemoteHostsCommands`).
-- Materialized into the squad's SSH directory as one `tau_remote_<name>`
+- Materialized into the squad's SSH directory as one `ficus_remote_<name>`
   private key file (mode `0600`) plus a managed block in `config` delimited
   by `# >>> tau remote hosts >>>` / `# <<< tau remote hosts <<<`
   (`apps/core/src/services/remote-hosts/materialize.ts`). User-added config

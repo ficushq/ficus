@@ -48,7 +48,7 @@ describe('ws-ticket', () => {
   })
 
   it('rejects an unknown ticket', async () => {
-    expect(await consumeWsTicket('tau_wst_does-not-exist')).toBeNull()
+    expect(await consumeWsTicket('ficus_wst_does-not-exist')).toBeNull()
   })
 
   it('rejects an expired ticket', async () => {

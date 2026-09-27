@@ -57,7 +57,7 @@ describe('device tokens', () => {
   it('creates a token that resolves to the owning user; revoking invalidates it', async () => {
     const userId = await makeUser('dt-resolve@test.local')
     const { token, id } = await createDeviceToken({ userId, name: 'iPhone', platform: 'ios' })
-    expect(token.startsWith('tau_dev_')).toBe(true)
+    expect(token.startsWith('ficus_dev_')).toBe(true)
 
     expect(await resolveDeviceToken(token)).toEqual({ id, userId })
     // Integration: resolveToken retains its compatibility identity-only result,

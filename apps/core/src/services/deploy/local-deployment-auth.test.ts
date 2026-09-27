@@ -43,10 +43,10 @@ describe('local deployment browser auth', () => {
   })
 
   it('ignores the Tau session cookie riding the same request', () => {
-    // tau_session is Path=/ so it IS sent here. It must never be mistaken for a
+    // ficus_session is Path=/ so it IS sent here. It must never be mistaken for a
     // deployment credential.
     const request = new Request(`https://t.example/api/app/${ID}/x`, {
-      headers: { cookie: 'tau_session=a-real-session' },
+      headers: { cookie: 'ficus_session=a-real-session' },
     })
     expect(presentedLocalDeploymentToken(request, ID).token).toBeNull()
   })
@@ -78,7 +78,7 @@ describe('local deployment browser auth', () => {
   })
 
   it('parses a cookie surrounded by others and by whitespace', () => {
-    const header = `tau_session=x; ${localDeploymentCookieName(ID)}=abc ; other=y`
+    const header = `ficus_session=x; ${localDeploymentCookieName(ID)}=abc ; other=y`
     expect(readCookie(header, localDeploymentCookieName(ID))).toBe('abc')
     expect(readCookie(null, 'anything')).toBeNull()
     expect(readCookie('malformed', 'anything')).toBeNull()

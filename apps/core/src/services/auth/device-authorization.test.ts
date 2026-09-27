@@ -71,7 +71,7 @@ describe('device authorization grants', () => {
       .where(eq(deviceAuthorizations.deviceCodeHash, hash(grant.deviceCode)))
     const result = await exchangeDeviceAuthorization(grant.deviceCode)
     expect(result.status).toBe('authorized')
-    if (result.status === 'authorized') expect(result.token).toStartWith('tau_dev_')
+    if (result.status === 'authorized') expect(result.token).toStartWith('ficus_dev_')
     expect(await exchangeDeviceAuthorization(grant.deviceCode)).toEqual({ status: 'invalid' })
     expect(await approveDeviceAuthorization(grant.verificationCode, userId)).toBe(false)
   })

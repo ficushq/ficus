@@ -130,7 +130,7 @@ export function ensureSquadSshDir(squadId: string): string {
 
 /**
  * Prefix reserved for `apps/core/src/services/remote-hosts/materialize.ts`'s
- * `tau_remote_<hostName>` key files. That module's stale-sweep unlinks ANY
+ * `ficus_remote_<hostName>` key files. That module's stale-sweep unlinks ANY
  * file under this prefix that isn't in the squad's current grant set on
  * every materialize call (which runs on every VM box ensure) — so a
  * user-uploaded key sharing this prefix would be silently destroyed on the
@@ -138,7 +138,7 @@ export function ensureSquadSshDir(squadId: string): string {
  * constant is exported so `materialize.ts` derives its own filenames from
  * the same source instead of duplicating the literal.
  */
-export const REMOTE_HOST_KEY_PREFIX = 'tau_remote_'
+export const REMOTE_HOST_KEY_PREFIX = 'ficus_remote_'
 
 /**
  * Validate key name (alphanumeric with _ or -)

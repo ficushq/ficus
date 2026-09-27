@@ -256,7 +256,7 @@ describe('Subagent.dispatch', () => {
     expect(child.ownerUserId).toBe(owner.id)
     const parentToken = await parent.getOrCreateToken()
     const childToken = await child.getOrCreateToken()
-    expect(childToken).toMatch(/^tau_agent_/)
+    expect(childToken).toMatch(/^ficus_agent_/)
     expect(childToken).not.toBe(parentToken)
   })
 

@@ -90,7 +90,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
     try {
       const res = await fetch(apiUrl('/auth/login'), {
         method: 'POST',
-        // Another instance on this host may already have set tau_session.
+        // Another instance on this host may already have set ficus_session.
         headers: { 'Content-Type': 'application/json', 'X-Tau-Csrf': '1' },
         credentials: 'include',
         body: JSON.stringify({ password: pw }),

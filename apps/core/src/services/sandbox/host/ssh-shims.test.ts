@@ -70,7 +70,7 @@ describe('ssh-family shims (functional matrix)', () => {
     '    HostName 10.1.2.3',
     '    Port 22',
     '    User deploy',
-    '    IdentityFile /abs/tau_remote_staging',
+    '    IdentityFile /abs/ficus_remote_staging',
     '    IdentitiesOnly yes',
     '    UserKnownHostsFile /abs/known_hosts',
     '    StrictHostKeyChecking accept-new',

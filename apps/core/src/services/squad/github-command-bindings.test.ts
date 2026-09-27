@@ -61,14 +61,14 @@ describe('githubCommandBindings', () => {
   })
 
   it('without a signing key, git only gets the credential helper', () => {
-    const lines = runGit(githubCommandBindings('squad-1'), { FICUS_TOKEN: 'tau_agent_x' })
+    const lines = runGit(githubCommandBindings('squad-1'), { FICUS_TOKEN: 'ficus_agent_x' })
     expect(lines[0]).toBe('SQUAD=')
     expect(lines).not.toContain('commit.gpgsign=true')
     expect(lines.slice(-3)).toEqual(['commit', '-m', 'hi'])
   })
 
   it('signs agent commits through ficus with the squad key, outranking repo config', () => {
-    const lines = runGit(githubCommandBindings('squad-1', KEY), { FICUS_TOKEN: 'tau_agent_x' })
+    const lines = runGit(githubCommandBindings('squad-1', KEY), { FICUS_TOKEN: 'ficus_agent_x' })
     expect(lines[0]).toBe('SQUAD=squad-1')
     for (const setting of [
       'gpg.format=ssh',

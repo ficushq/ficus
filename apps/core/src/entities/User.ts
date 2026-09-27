@@ -208,7 +208,7 @@ export class User {
   }
 
   async createSession(opts?: { userAgent?: string; ipAddress?: string; expiresInMs?: number }): Promise<string> {
-    const token = `tau_sess_${randomUUID()}`
+    const token = `ficus_sess_${randomUUID()}`
     const tokenHash = createHash('sha256').update(token).digest('hex')
     const expiresAt = new Date(Date.now() + (opts?.expiresInMs ?? 30 * 24 * 60 * 60 * 1000))
 
