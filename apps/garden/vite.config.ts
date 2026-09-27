@@ -26,6 +26,8 @@ export default defineConfig(({ mode, command }) => {
       host: '127.0.0.1',
       port: 5174,
       strictPort: true,
+      // Extra hostnames to answer to, e.g. a `tailscale serve` name (same variable the web dev server reads).
+      allowedHosts: env.VITE_ALLOWED_HOSTS?.split(',').filter(Boolean) ?? [],
       proxy: backend ? devProxy({ ...env, ...process.env }, backend) : undefined,
     },
     build: { outDir: 'dist', emptyOutDir: true },
