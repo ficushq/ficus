@@ -262,8 +262,8 @@ describe('squad-ssh', () => {
       const { addSshKey, getSquadSshPath } = await getModule()
       const squadId = 'test-squad-123'
 
-      await expect(addSshKey(squadId, 'ficus_remote_x', VALID_TEST_KEY)).rejects.toThrow('reserved')
-      await expect(addSshKey(squadId, 'tau_remote_x', VALID_TEST_KEY)).rejects.toThrow('reserved')
+      await expect(addSshKey(squadId, 'ficus_remote_x', VALID_TEST_KEY)).rejects.toThrow('reserved "ficus_remote_"')
+      await expect(addSshKey(squadId, 'tau_remote_x', VALID_TEST_KEY)).rejects.toThrow('reserved "tau_remote_"')
       expect(existsSync(join(getSquadSshPath(squadId), 'ficus_remote_x'))).toBe(false)
       expect(existsSync(join(getSquadSshPath(squadId), 'tau_remote_x'))).toBe(false)
     })
