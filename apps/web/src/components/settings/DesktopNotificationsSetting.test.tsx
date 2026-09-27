@@ -21,7 +21,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await harness.cleanup()
-  delete window.tauDesktopApp
+  delete window.ficusDesktopApp
   client.clear()
 })
 
@@ -46,7 +46,7 @@ async function render() {
 test('the desktop notifications switch reads and writes the desktop preference', async () => {
   let desktopEnabled = false
   const writes: boolean[] = []
-  window.tauDesktopApp = {
+  window.ficusDesktopApp = {
     version: 1,
     notificationsEnabled: async () => desktopEnabled,
     deliverNotifications: async () => {},
@@ -78,7 +78,7 @@ test('the desktop notifications switch reads and writes the desktop preference',
 })
 
 test('older desktop builds and browsers show no desktop notifications switch', async () => {
-  window.tauDesktopApp = {
+  window.ficusDesktopApp = {
     version: 1,
     notificationsEnabled: async () => true,
     deliverNotifications: async () => {},
@@ -87,7 +87,7 @@ test('older desktop builds and browsers show no desktop notifications switch', a
   expect(withOldBridge.textContent).toContain('Notification Rules')
   expect(withOldBridge.textContent).not.toContain('Desktop notifications')
 
-  delete window.tauDesktopApp
+  delete window.ficusDesktopApp
   const inBrowser = await render()
   expect(inBrowser.textContent).not.toContain('Desktop notifications')
 })

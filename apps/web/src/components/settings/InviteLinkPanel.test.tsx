@@ -25,12 +25,12 @@ describe('InviteLinkPanel', () => {
   })
 
   afterEach(async () => {
-    delete window.tauDesktopApp
+    delete window.ficusDesktopApp
     await dom.cleanup()
   })
 
   function useDesktop() {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -38,7 +38,7 @@ describe('InviteLinkPanel', () => {
   }
 
   function useRemoteDesktop() {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},

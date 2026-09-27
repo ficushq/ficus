@@ -50,7 +50,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await harness.cleanup()
-  delete window.tauDesktopApp
+  delete window.ficusDesktopApp
 })
 
 async function renderPanel(updates: DesktopUpdates, canWrite = true) {
@@ -179,7 +179,7 @@ test('inside the desktop app, the Updates page uses native updates without polli
     deliverNotifications: async () => {},
     updates,
   }
-  window.tauDesktopApp = bridge
+  window.ficusDesktopApp = bridge
   const requests: string[] = []
   const previousFetch = globalThis.fetch
   globalThis.fetch = (async (input: RequestInfo | URL) => {

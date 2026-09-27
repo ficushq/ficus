@@ -90,11 +90,11 @@ describe('SystemUpdateSection deployment flavor', () => {
 
 describe('SystemUpdateSection instance kind', () => {
   afterEach(() => {
-    delete window.tauDesktopApp
+    delete window.ficusDesktopApp
   })
 
   test('a remote instance updates like a server, not with the app', () => {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -109,7 +109,7 @@ describe('SystemUpdateSection instance kind', () => {
   })
 
   test('an attached instance updates like a server, not with the app', () => {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -124,7 +124,7 @@ describe('SystemUpdateSection instance kind', () => {
   })
 
   test('the bundled local instance keeps native Desktop update controls', () => {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -139,7 +139,7 @@ describe('SystemUpdateSection instance kind', () => {
   })
 
   test('no instance reported (older Desktop builds) still gets native Desktop update controls', () => {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
