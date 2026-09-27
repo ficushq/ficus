@@ -2,6 +2,7 @@
 
 import { resolveNotificationTarget } from './lib/notificationTarget'
 import { runtimeServiceWorkerCaches, serviceWorkerCacheNames, staleServiceWorkerCaches } from './swCaches'
+import { bypassesServiceWorker } from './swRoutes'
 
 // Tau Service Worker
 // Provides offline caching and push notification support.
@@ -50,8 +51,8 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   if (url.origin !== self.location.origin) return
   if (url.pathname.startsWith(p('/ws'))) return
-  // Docs have their own HTML routes; never replace them with the cached app shell.
-  if (url.pathname === p('/docs') || url.pathname.startsWith(p('/docs/'))) return
+  // Docs and the garden have their own HTML routes; never replace them with the cached app shell.
+  if (bypassesServiceWorker(url.pathname, BASE_PATH)) return
 
   if (url.pathname.startsWith(p('/api/'))) {
     if (url.pathname.includes('/stream')) return

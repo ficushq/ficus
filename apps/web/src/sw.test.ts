@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { IMAGE_CACHE_NAME, SW_RUNTIME_CACHE_PREFIXES } from '@ficus/shared/browser-keys'
+import { bypassesServiceWorker } from './swRoutes'
 import {
   RETIRED_SW_CACHE_PREFIXES,
   runtimeServiceWorkerCaches,
@@ -49,5 +50,23 @@ describe('service-worker runtime caches', () => {
       'garden-cache-v1',
     ]
     expect(runtimeServiceWorkerCaches(keys)).toEqual([current.static, current.api, 'ficus-cache-old', ...retired])
+  })
+})
+
+describe('service-worker routes', () => {
+  test('sibling apps on the origin (docs, garden) bypass the service worker', () => {
+    for (const base of ['/', '/ficus/']) {
+      const at = (path: string) => base.replace(/\/$/, '') + path
+      for (const path of ['/docs', '/docs/', '/docs/start/cloud/', '/garden', '/garden/', '/garden/beds/1']) {
+        expect(bypassesServiceWorker(at(path), base)).toBe(true)
+      }
+      for (const path of ['/', '/gardening', '/docsearch', '/settings', '/api/garden']) {
+        expect(bypassesServiceWorker(at(path), base)).toBe(false)
+      }
+    }
+  })
+
+  test('a sibling path outside the registration scope is not matched', () => {
+    expect(bypassesServiceWorker('/garden/x', '/ficus/')).toBe(false)
   })
 })
