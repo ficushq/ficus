@@ -19,6 +19,7 @@ import type { CommandDestination } from '../lib/commandCenterSearch'
 import { AssistantConversationView, type AssistantViewControls } from './AssistantConversationView'
 import { AssistantPositionControl } from './AssistantPositionControl'
 import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon } from './icons'
+import { OPEN_ASSISTANT_EVENT, TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
 
 interface UnifiedAssistantProps {
   dependencies?: { ConversationComponent?: typeof AssistantConversationView; ChatComponent?: typeof AgentChat }
@@ -174,12 +175,12 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
         else navigationRef.current.close()
       }
     }
-    window.addEventListener('open-tau-assistant', show)
-    window.addEventListener('toggle-tau-assistant', toggle)
+    window.addEventListener(OPEN_ASSISTANT_EVENT, show)
+    window.addEventListener(TOGGLE_ASSISTANT_EVENT, toggle)
     document.addEventListener('keydown', key)
     return () => {
-      window.removeEventListener('open-tau-assistant', show)
-      window.removeEventListener('toggle-tau-assistant', toggle)
+      window.removeEventListener(OPEN_ASSISTANT_EVENT, show)
+      window.removeEventListener(TOGGLE_ASSISTANT_EVENT, toggle)
       document.removeEventListener('keydown', key)
     }
   }, [openRef, setState, navigationRef])

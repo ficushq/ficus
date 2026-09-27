@@ -1,12 +1,19 @@
-import { OAUTH_PROVIDER_HINT_SESSION_KEY } from '@ficus/shared/browser-keys'
+import {
+  OAUTH_CALLBACK_OUTCOME_STATE_KEY,
+  OAUTH_CALLBACK_PROVIDER_STATE_KEY,
+  OAUTH_COMPLETION_STATE_KEY,
+  OAUTH_LOCAL_CALLBACK_STATE_KEY,
+  OAUTH_PROVIDER_HINT_SESSION_KEY,
+} from '@ficus/shared/browser-keys'
+
 const CALLBACK_PATH_SUFFIX = '/settings/integrations/oauth/callback'
 const FLOW_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const OPAQUE_STATE_PATTERN = /^[A-Za-z0-9_-]{43}$/
-const BROKER_STATE_KEY = 'tauOAuthCompletion'
-const LOCAL_STATE_KEY = 'tauOAuthLocalCallback'
-const OUTCOME_STATE_KEY = 'tauOAuthCallbackOutcome'
+const BROKER_STATE_KEY = OAUTH_COMPLETION_STATE_KEY
+const LOCAL_STATE_KEY = OAUTH_LOCAL_CALLBACK_STATE_KEY
+const OUTCOME_STATE_KEY = OAUTH_CALLBACK_OUTCOME_STATE_KEY
 const ROUTER_HISTORY_KEYS = new Set(['idx', 'key', 'usr'])
-const PROVIDER_STATE_KEY = 'tauOAuthCallbackProvider'
+const PROVIDER_STATE_KEY = OAUTH_CALLBACK_PROVIDER_STATE_KEY
 
 export type BrokerCompletionPayload = { localFlowId: string; handle: string }
 export type LocalCallbackPayload = { state: string; code?: string; denied?: true }

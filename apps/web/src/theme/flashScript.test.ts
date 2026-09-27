@@ -24,8 +24,8 @@ const webRoot = join(import.meta.dir, '..', '..')
 const html = readFileSync(join(webRoot, 'index.html'), 'utf8')
 
 function extractFlashScript(): string {
-  const match = html.match(/<script data-tau-theme-flash>([\s\S]*?)<\/script>/)
-  if (!match) throw new Error('flash script marker <script data-tau-theme-flash> not found in index.html')
+  const match = html.match(/<script data-ficus-theme-flash>([\s\S]*?)<\/script>/)
+  if (!match) throw new Error('flash script marker <script data-ficus-theme-flash> not found in index.html')
   return match[1]!
 }
 

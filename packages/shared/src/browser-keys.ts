@@ -57,6 +57,14 @@ export const PWA_AUTO_APPLY_TRANSITION_STORAGE_KEY = 'ficus-pwa-auto-apply-trans
 /** Provider an OAuth flow started with, consumed once by the callback page. */
 export const OAUTH_PROVIDER_HINT_SESSION_KEY = 'ficusOAuthProviderHint'
 
+// --- history.state (OAuth callback page) ----------------------------------
+
+/** Keys the OAuth callback bootstrap writes into `history.state` before the app boots. */
+export const OAUTH_COMPLETION_STATE_KEY = 'ficusOAuthCompletion'
+export const OAUTH_LOCAL_CALLBACK_STATE_KEY = 'ficusOAuthLocalCallback'
+export const OAUTH_CALLBACK_OUTCOME_STATE_KEY = 'ficusOAuthCallbackOutcome'
+export const OAUTH_CALLBACK_PROVIDER_STATE_KEY = 'ficusOAuthCallbackProvider'
+
 // --- in-page events (window) and postMessage types ------------------------
 
 /** window Event: an entity reference preview opened, so other open previews close. */
@@ -68,6 +76,10 @@ export const VOICE_HOLD_KEYDOWN_MESSAGE = 'ficus:voice-hold-keydown'
 export const VOICE_HOLD_KEYUP_MESSAGE = 'ficus:voice-hold-keyup'
 /** postMessage `type` from a presentation HTML block frame reporting its content height. */
 export const PRESENTATION_HTML_HEIGHT_MESSAGE = 'ficus:presentation-html-height'
+/** window Events that open or toggle the assistant panel, and open the voice companion. */
+export const OPEN_ASSISTANT_EVENT = 'open-ficus-assistant'
+export const TOGGLE_ASSISTANT_EVENT = 'toggle-ficus-assistant'
+export const OPEN_VOICE_EVENT = 'open-ficus-voice'
 
 // --- service-worker Cache Storage -----------------------------------------
 
@@ -75,3 +87,5 @@ export const PRESENTATION_HTML_HEIGHT_MESSAGE = 'ficus:presentation-html-height'
 export const SW_CACHE_PREFIX = 'ficus-cache-'
 export const SW_API_CACHE_PREFIX = 'ficus-api-cache-'
 export const SW_RUNTIME_CACHE_PREFIXES = [SW_CACHE_PREFIX, SW_API_CACHE_PREFIX] as const
+/** Page-side cache of signed images, keyed by image id (not managed by the service worker). */
+export const IMAGE_CACHE_NAME = 'ficus-images-v1'

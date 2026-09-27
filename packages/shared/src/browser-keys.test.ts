@@ -32,18 +32,29 @@ test('in-page event and message names use the ficus names', () => {
   expect(keys.VOICE_HOLD_KEYDOWN_MESSAGE).toBe('ficus:voice-hold-keydown')
   expect(keys.VOICE_HOLD_KEYUP_MESSAGE).toBe('ficus:voice-hold-keyup')
   expect(keys.PRESENTATION_HTML_HEIGHT_MESSAGE).toBe('ficus:presentation-html-height')
+  expect(keys.OPEN_ASSISTANT_EVENT).toBe('open-ficus-assistant')
+  expect(keys.TOGGLE_ASSISTANT_EVENT).toBe('toggle-ficus-assistant')
+  expect(keys.OPEN_VOICE_EVENT).toBe('open-ficus-voice')
+})
+
+test('OAuth callback history-state keys use the ficus names', () => {
+  expect(keys.OAUTH_COMPLETION_STATE_KEY).toBe('ficusOAuthCompletion')
+  expect(keys.OAUTH_LOCAL_CALLBACK_STATE_KEY).toBe('ficusOAuthLocalCallback')
+  expect(keys.OAUTH_CALLBACK_OUTCOME_STATE_KEY).toBe('ficusOAuthCallbackOutcome')
+  expect(keys.OAUTH_CALLBACK_PROVIDER_STATE_KEY).toBe('ficusOAuthCallbackProvider')
 })
 
 test('service-worker runtime cache prefixes are exactly the two ficus prefixes', () => {
   expect(keys.SW_CACHE_PREFIX).toBe('ficus-cache-')
   expect(keys.SW_API_CACHE_PREFIX).toBe('ficus-api-cache-')
   expect([...keys.SW_RUNTIME_CACHE_PREFIXES]).toEqual(['ficus-cache-', 'ficus-api-cache-'])
+  expect(keys.IMAGE_CACHE_NAME).toBe('ficus-images-v1')
 })
 
 test('every exported name is a ficus name', () => {
   for (const value of Object.values(keys)) {
     for (const item of Array.isArray(value) ? value : [value]) {
-      expect(typeof item === 'string' && item.startsWith('ficus')).toBe(true)
+      expect(item).toMatch(/^ficus|-ficus-/)
     }
   }
 })

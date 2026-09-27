@@ -1,12 +1,13 @@
 import { SW_API_CACHE_PREFIX, SW_CACHE_PREFIX, SW_RUNTIME_CACHE_PREFIXES } from '@ficus/shared/browser-keys'
 
 /**
- * Runtime cache prefixes written by service workers built before the Ficus
- * rename. Nothing reads them any more; activation and CLEAR_CACHE delete them so
- * an installed PWA does not keep an old API-response cache forever. Remove with
- * the Wave 3 sweep.
+ * Cache prefixes written by builds before the Ficus rename (the service
+ * worker's runtime caches and the page-side image cache). Nothing reads them
+ * any more; activation and CLEAR_CACHE delete them so an installed PWA does not
+ * keep an old API-response or image cache forever.
  */
-export const RETIRED_SW_CACHE_PREFIXES = ['tau-cache-', 'tau-api-cache-'] as const
+// retired-cache cleanup: remove in Wave 3
+export const RETIRED_SW_CACHE_PREFIXES = ['tau-cache-', 'tau-api-cache-', 'tau-images-'] as const
 
 /** This build's runtime cache names. */
 export function serviceWorkerCacheNames(version: string): { static: string; api: string } {

@@ -189,7 +189,7 @@ test('a reload after a retryable failure keeps completing against the hinted pro
 
 test('BrowserRouter reload metadata preserves and resends the exact hosted completion payload', async () => {
   window.history.replaceState(
-    { tauOAuthCompletion: { localFlowId: FLOW, handle: HANDLE } },
+    { ficusOAuthCompletion: { localFlowId: FLOW, handle: HANDLE } },
     '',
     '/settings/integrations/oauth/callback'
   )
@@ -318,7 +318,7 @@ test('status=denied shows a cancelled message and never calls complete', async (
 
 test('a fresh malformed callback cannot fall back to a stale history payload', async () => {
   window.history.replaceState(
-    { tauOAuthCompletion: { localFlowId: FLOW, handle: HANDLE } },
+    { ficusOAuthCompletion: { localFlowId: FLOW, handle: HANDLE } },
     '',
     `/settings/integrations/oauth/callback?flow=${FLOW}&handle=bad`
   )
@@ -337,7 +337,7 @@ test('a fresh malformed callback cannot fall back to a stale history payload', a
 
 test('reload rejects history state with anything beyond the minimum completion payload', async () => {
   window.history.replaceState(
-    { tauOAuthCompletion: { localFlowId: FLOW, handle: HANDLE }, unrelated: true },
+    { ficusOAuthCompletion: { localFlowId: FLOW, handle: HANDLE }, unrelated: true },
     '',
     '/settings/integrations/oauth/callback'
   )

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-
-const CACHE_NAME = 'tau-images-v1'
+import { IMAGE_CACHE_NAME } from '@ficus/shared/browser-keys'
 
 /** Pull the stable image id out of a signed image path like `/api/images/<id>?exp=…&sig=…`. */
 function parseImageId(url: string): string | null {
@@ -37,7 +36,7 @@ export function useCachedImageSrc(url: string | null | undefined): string | null
 
     void (async () => {
       try {
-        const cache = await caches.open(CACHE_NAME)
+        const cache = await caches.open(IMAGE_CACHE_NAME)
         let res = await cache.match(key)
         if (!res) {
           const fetched = await fetch(url)

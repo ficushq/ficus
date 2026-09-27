@@ -21,6 +21,7 @@ import { formatTokens } from '../lib/format'
 import { useChatSession } from '../hooks/useChatSession'
 import { useURLStringState } from '../hooks/useURLState'
 import { MinimizeIcon, MaximizeIcon } from './icons'
+import { OPEN_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
 
 type ChatDrawerState = 'closed' | 'open' | 'expanded'
 const CHAT_STATES = ['closed', 'open', 'expanded'] as const
@@ -175,8 +176,8 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
       setConversation(false)
       setDrawerState('open')
     }
-    window.addEventListener('open-tau-assistant', open)
-    return () => window.removeEventListener('open-tau-assistant', open)
+    window.addEventListener(OPEN_ASSISTANT_EVENT, open)
+    return () => window.removeEventListener(OPEN_ASSISTANT_EVENT, open)
   }, [setDrawerState])
 
   useLayoutEffect(() => {

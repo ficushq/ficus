@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SW_RUNTIME_CACHE_PREFIXES } from '@ficus/shared/browser-keys'
+import { IMAGE_CACHE_NAME, SW_RUNTIME_CACHE_PREFIXES } from '@ficus/shared/browser-keys'
 import {
   RETIRED_SW_CACHE_PREFIXES,
   runtimeServiceWorkerCaches,
@@ -25,12 +25,13 @@ describe('service-worker runtime caches', () => {
       current.api,
       'workbox-precache-v2-https://example.test/',
       'garden-cache-v1',
+      IMAGE_CACHE_NAME,
     ]
     expect(staleServiceWorkerCaches(keys, 'v2')).toEqual(['ficus-cache-old', 'ficus-api-cache-old'])
   })
 
   test('activation deletes the runtime caches written before the rename, so none is stranded', () => {
-    expect(RETIRED_SW_CACHE_PREFIXES).toHaveLength(2)
+    expect(RETIRED_SW_CACHE_PREFIXES).toHaveLength(3)
     for (const prefix of RETIRED_SW_CACHE_PREFIXES) expect(prefix.startsWith('ficus')).toBe(false)
     const retired = RETIRED_SW_CACHE_PREFIXES.map((prefix) => `${prefix}old-build`)
     expect(staleServiceWorkerCaches([...retired, serviceWorkerCacheNames('v2').static], 'v2')).toEqual(retired)

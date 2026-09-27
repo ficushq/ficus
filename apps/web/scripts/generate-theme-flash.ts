@@ -32,7 +32,7 @@ if (import.meta.main) {
   await Bun.write(
     html,
     (await html.text()).replace(
-      /(<script data-tau-theme-flash>)[\s\S]*?(<\/script>)/,
+      /(<script data-ficus-theme-flash>)[\s\S]*?(<\/script>)/,
       (_, start, end) => `${start}${script}${end}`
     )
   )

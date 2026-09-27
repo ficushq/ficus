@@ -292,12 +292,12 @@ test('security contract: custom runtime never writes HTML/CSS text, inline boots
     expect(source).not.toMatch(/innerHTML|insertAdjacentHTML|cssText|textContent\s*=|createElement\(['"]style/)
   }
   const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
-  expect(html.match(/<script data-tau-theme-flash>([\s\S]*?)<\/script>/)![1]).toBe(await generateThemeFlash())
+  expect(html.match(/<script data-ficus-theme-flash>([\s\S]*?)<\/script>/)![1]).toBe(await generateThemeFlash())
 })
 
 test('shipped pre-paint custom matrix (v2 pair) and broken-document fallback run before React/CSS', async () => {
   const script = readFileSync(new URL('../../index.html', import.meta.url), 'utf8').match(
-    /<script data-tau-theme-flash>([\s\S]*?)<\/script>/
+    /<script data-ficus-theme-flash>([\s\S]*?)<\/script>/
   )![1]!
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   try {
@@ -392,7 +392,7 @@ test('a palette derives most tokens from the real built-in CSS cascade, explicit
 
 test('the pre-paint flash script skips palette derivation (no reliable computed style yet) but still applies explicit overrides', async () => {
   const script = readFileSync(new URL('../../index.html', import.meta.url), 'utf8').match(
-    /<script data-tau-theme-flash>([\s\S]*?)<\/script>/
+    /<script data-ficus-theme-flash>([\s\S]*?)<\/script>/
   )![1]!
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   try {
