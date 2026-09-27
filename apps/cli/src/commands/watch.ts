@@ -50,7 +50,7 @@ export function registerWatchCommands(program: Command, deps: WatchCommandDeps =
   const print = deps.print ?? ((line: string) => console.log(line))
   const openSocket = deps.openSocket ?? ((onHint, onError) => openAttentionSocket({ onHint, onError }))
 
-  // tau watch [-q <squadId>] [--cursor <c>] [--follow] [--poll <s>] [--timeout <s>]
+  // ficus watch [-q <squadId>] [--cursor <c>] [--follow] [--poll <s>] [--timeout <s>]
   program
     .command('watch')
     .description(
@@ -72,7 +72,7 @@ export function registerWatchCommands(program: Command, deps: WatchCommandDeps =
             const line = formatResult(result, { json, follow: parsed.follow })
             if (line !== null) print(line)
           },
-          warn: (message) => console.error(`tau watch: ${message}`),
+          warn: (message) => console.error(`ficus watch: ${message}`),
           now: () => Date.now(),
           follow: parsed.follow,
           pollMs: parsed.pollMs,

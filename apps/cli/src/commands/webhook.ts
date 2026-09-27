@@ -5,7 +5,7 @@ import { output, outputError } from '../output'
 export function registerWebhookCommands(program: Command) {
   const webhook = program.command('webhook').description('Manage webhooks')
 
-  // tau webhook status <provider>
+  // ficus webhook status <provider>
   webhook
     .command('status <provider>')
     .description('Check webhook provider configuration status')

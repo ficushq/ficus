@@ -24,7 +24,7 @@ describe('renderInstallInstructions', () => {
     expect(lines[1]).toBe(
       'Ask the owner of build.example.com to append the line above to ~/.ssh/authorized_keys for user ci.'
     )
-    expect(lines[2]).toBe('Then verify with: tau remote-hosts check build-box.')
+    expect(lines[2]).toBe('Then verify with: ficus remote-hosts check build-box.')
   })
 
   it('trims trailing newlines off the public key so no blank line is inserted', () => {
@@ -38,7 +38,7 @@ describe('renderInstallInstructions', () => {
   })
 })
 
-describe('tau remote-hosts commands', () => {
+describe('ficus remote-hosts commands', () => {
   const originalSquadId = process.env.FICUS_SQUAD_ID
 
   beforeEach(() => {
@@ -96,7 +96,7 @@ describe('tau remote-hosts commands', () => {
     expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1')
     expect(output).toHaveBeenCalledWith(
       HOST,
-      expect.stringContaining('Then verify with: tau remote-hosts check build-box.')
+      expect.stringContaining('Then verify with: ficus remote-hosts check build-box.')
     )
   })
 
@@ -111,7 +111,7 @@ describe('tau remote-hosts commands', () => {
     expect(output).toHaveBeenCalledWith(HOST, expect.stringContaining('Registered "build-box"'))
     expect(output).toHaveBeenCalledWith(
       HOST,
-      expect.stringContaining('Then verify with: tau remote-hosts check build-box.')
+      expect.stringContaining('Then verify with: ficus remote-hosts check build-box.')
     )
   })
 
@@ -330,7 +330,7 @@ describe('tau remote-hosts commands', () => {
     await run(['remote-hosts', 'sync'])
     expect(output).toHaveBeenCalledWith(
       { pushed: false, reason: 'box-unreachable' },
-      expect.stringContaining('try `tau remote-hosts sync` again')
+      expect.stringContaining('try `ficus remote-hosts sync` again')
     )
   })
 })

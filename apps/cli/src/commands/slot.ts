@@ -163,15 +163,15 @@ function callerStateLines(pool: SlotPoolProjection): string[] {
     lines.push(
       `Your claim: ${pool.callerClaim.id}`,
       `Expires: ${pool.callerClaim.expiresAt}`,
-      `Release: tau slot release ${pool.callerClaim.id}`,
-      `Renew: tau slot renew ${pool.callerClaim.id}`
+      `Release: ficus slot release ${pool.callerClaim.id}`,
+      `Renew: ficus slot renew ${pool.callerClaim.id}`
     )
   }
   if (pool.callerWaiter?.id) {
     lines.push(
       `Your waiter: ${pool.callerWaiter.id}`,
       ...(pool.callerWaiter.queuedAt ? [`Queued: ${pool.callerWaiter.queuedAt}`] : []),
-      `Unsubscribe: tau slot unsubscribe ${pool.callerWaiter.id}`
+      `Unsubscribe: ficus slot unsubscribe ${pool.callerWaiter.id}`
     )
   }
   return lines
@@ -186,21 +186,21 @@ export function renderSlotHistory(page: SlotHistoryPage, key: string, squadId: s
       }`
   )
   if (page.hasMore && page.nextCursor) {
-    lines.push(`More: tau slot history ${key} --squad ${squadId} --limit ${limit} --cursor ${page.nextCursor}`)
+    lines.push(`More: ficus slot history ${key} --squad ${squadId} --limit ${limit} --cursor ${page.nextCursor}`)
   }
   return lines.join('\n')
 }
 
 export function renderSlotAcquire(result: SlotAcquireResponse, squadId: string): string {
   if (result.outcome === 'unavailable') {
-    return `${result.message}\nSubscribe: tau slot subscribe ${result.pool.key} --squad ${squadId}`
+    return `${result.message}\nSubscribe: ficus slot subscribe ${result.pool.key} --squad ${squadId}`
   }
   if (result.outcome === 'queued') {
     return [
       result.message,
       'YOU DO NOT OWN CAPACITY YET. Wait for the grant before starting protected work.',
       `Waiter ID: ${result.waiter!.id}`,
-      `Unsubscribe: tau slot unsubscribe ${result.waiter!.id}`,
+      `Unsubscribe: ficus slot unsubscribe ${result.waiter!.id}`,
     ].join('\n')
   }
   return [
@@ -208,8 +208,8 @@ export function renderSlotAcquire(result: SlotAcquireResponse, squadId: string):
     'YOU MUST RELEASE THIS CLAIM AS SOON AS YOU ARE DONE.',
     `Claim ID: ${result.claim!.id}`,
     `Expires: ${result.claim!.expiresAt}`,
-    `Release: tau slot release ${result.claim!.id}`,
-    `Renew: tau slot renew ${result.claim!.id}`,
+    `Release: ficus slot release ${result.claim!.id}`,
+    `Renew: ficus slot renew ${result.claim!.id}`,
   ].join('\n')
 }
 
@@ -225,7 +225,7 @@ export function renderSlotRenew(result: SlotRenewResponse): string {
   return [
     `Renewed claim ${result.claimId}.`,
     `Expires: ${result.expiresAt}`,
-    `Release: tau slot release ${result.claimId}`,
+    `Release: ficus slot release ${result.claimId}`,
   ].join('\n')
 }
 
@@ -242,7 +242,7 @@ export function renderSlotUnsubscribe(result: SlotUnsubscribeResponse): string {
     result.message,
     'YOU OWN A LIVE CLAIM AND MUST RELEASE IT AS SOON AS YOU ARE DONE.',
     `Claim ID: ${result.claimId}`,
-    `Release: tau slot release ${result.claimId}`,
+    `Release: ficus slot release ${result.claimId}`,
   ].join('\n')
 }
 

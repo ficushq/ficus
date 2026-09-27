@@ -31,7 +31,7 @@ const sysops = {
   toolsDeny: null,
 }
 
-describe('tau agent-type update', () => {
+describe('ficus agent-type update', () => {
   beforeEach(() => {
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(existing)
     ;(apiPut as ReturnType<typeof mock>).mockClear()
@@ -75,7 +75,7 @@ describe('tau agent-type update', () => {
   })
 })
 
-describe('tau agent-type get --resolved', () => {
+describe('ficus agent-type get --resolved', () => {
   beforeEach(() => {
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(sysops)
   })
@@ -118,7 +118,7 @@ describe('tau agent-type get --resolved', () => {
   })
 })
 
-describe('tau agent-type list', () => {
+describe('ficus agent-type list', () => {
   beforeEach(() => {
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([existing, { ...sysops, includes: null }])
     ;(outputTable as ReturnType<typeof mock>).mockClear()

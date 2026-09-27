@@ -36,7 +36,7 @@ function formatSender(m: InboxMessage): string {
 async function resolveSelfIdentity(): Promise<{ address: string; privateKeyPem: string }> {
   const status = await apiGet<AgentFederationStatusResponse>('/api/amtp/agents/me/status')
   if (!status.registered || !status.federationReady || !status.address || status.signingIdentity.status !== 'ready') {
-    throw new Error(status.signingIdentity.message ?? 'You are not federation-ready. Run: tau remote whoami')
+    throw new Error(status.signingIdentity.message ?? 'You are not federation-ready. Run: ficus remote whoami')
   }
   const { privateKeyPem } = requireMatchingSigningIdentity(status.signingIdentity.identityPublicKey)
   return { address: status.address, privateKeyPem }
@@ -72,7 +72,7 @@ async function sendFederated(
 ): Promise<void> {
   if (options.attach && options.attach.length > 0) {
     throw new Error(
-      'Uploading new files to a remote recipient is not supported. Upload via "tau inbox send <local> --attach" first, then reference the attachment id here with --attachment-id.'
+      'Uploading new files to a remote recipient is not supported. Upload via "ficus inbox send <local> --attach" first, then reference the attachment id here with --attachment-id.'
     )
   }
   const { address: from, privateKeyPem } = await resolveSelfIdentity()
@@ -97,7 +97,7 @@ async function sendFederated(
 export function registerInboxCommands(program: Command): void {
   const inbox = program.command('inbox').description('Unified inbox for agents, humans, and voice assistants')
 
-  // tau inbox send <recipientId> <content> -s <subject>
+  // ficus inbox send <recipientId> <content> -s <subject>
   // The sender is your authenticated identity (your agent/user) — you always author as yourself.
   inbox
     .command('send <recipientId> <content>')
@@ -170,7 +170,7 @@ export function registerInboxCommands(program: Command): void {
       }
     })
 
-  // tau inbox send-system <recipientId> <content> -s <subject>
+  // ficus inbox send-system <recipientId> <content> -s <subject>
   // Authors as "system" (automation). Requires the inbox:system permission.
   inbox
     .command('send-system <recipientId> <content>')
@@ -201,7 +201,7 @@ export function registerInboxCommands(program: Command): void {
       }
     })
 
-  // tau inbox download <attachmentId> [--out <path>]
+  // ficus inbox download <attachmentId> [--out <path>]
   inbox
     .command('download <attachmentId>')
     .description('Download an inbox attachment to a file')
@@ -222,7 +222,7 @@ export function registerInboxCommands(program: Command): void {
       }
     })
 
-  // tau inbox list [agent|human|voice_assistant] [id] --include-read --limit N
+  // ficus inbox list [agent|human|voice_assistant] [id] --include-read --limit N
   inbox
     .command('list [type] [id]')
     .alias('ls')
@@ -272,7 +272,7 @@ export function registerInboxCommands(program: Command): void {
       }
     })
 
-  // tau inbox count [agent|human] [id]
+  // ficus inbox count [agent|human] [id]
   inbox
     .command('count [type] [id]')
     .description('Get unread message count')
@@ -295,7 +295,7 @@ export function registerInboxCommands(program: Command): void {
       }
     })
 
-  // tau inbox read <messageIds...>
+  // ficus inbox read <messageIds...>
   inbox
     .command('read <messageIds...>')
     .description('Mark one or more messages as read')
@@ -324,7 +324,7 @@ export function registerInboxCommands(program: Command): void {
       }
     })
 
-  // tau inbox read-all [agent|human] [id]
+  // ficus inbox read-all [agent|human] [id]
   inbox
     .command('read-all [type] [id]')
     .description('Mark all messages as read')

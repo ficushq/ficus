@@ -576,7 +576,7 @@ describe('runSetup', () => {
     })
     // Both ways out are named: relabel this checkout, or uninstall the other one.
     await expect(runSetup(opts(), d)).rejects.toThrow(
-      'pm2 already runs tau-api for instance "tau" from another checkout (/elsewhere). Give this checkout its own label with --instance <other-label>, or tau server uninstall --root /elsewhere the other one'
+      'pm2 already runs tau-api for instance "tau" from another checkout (/elsewhere). Give this checkout its own label with --instance <other-label>, or ficus server uninstall --root /elsewhere the other one'
     )
   })
   it('does not block start on a stopped pm2 row from another checkout', async () => {

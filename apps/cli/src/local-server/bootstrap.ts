@@ -75,7 +75,7 @@ export async function bootstrap(options: BootstrapOptions, deps: BootstrapDeps):
   if (isCheckout(root)) {
     deps.log(`Using existing checkout ${root}`)
   } else if (existsSync(root) && (!statSync(root).isDirectory() || readdirSync(root).length > 0)) {
-    throw new Error(`${root} exists and is not a tau checkout — choose another --root or remove it.`)
+    throw new Error(`${root} exists and is not a Ficus checkout — choose another --root or remove it.`)
   } else {
     deps.log(`Cloning ${options.repo} (${options.ref}) into ${root}`)
     const r = await deps.runner(['git', 'clone', '--recurse-submodules', '--branch', options.ref, options.repo, root], {

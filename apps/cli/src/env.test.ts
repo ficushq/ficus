@@ -68,7 +68,7 @@ describe('loadEnv', () => {
     expect(getDotenvEnv('FICUS_PASSWORD')).toBeUndefined()
   })
 
-  // The shipped CLI is dist/tau.js with `#!/usr/bin/env bun`, and Bun auto-loads ./.env into
+  // The shipped CLI is dist/ficus.js with `#!/usr/bin/env bun`, and Bun auto-loads ./.env into
   // process.env BEFORE any user code runs. loadEnv() therefore finds the key already set and
   // injects nothing — but the value is still the dotenv file's, not something the user chose.
   // Classifying it as "explicit" is what let a stale repo .env outrank the auth store.

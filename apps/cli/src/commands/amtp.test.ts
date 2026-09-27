@@ -29,7 +29,7 @@ describe('resolvePublicKey', () => {
   })
 })
 
-describe('tau remote commands', () => {
+describe('ficus remote commands', () => {
   let publicPem: string
   let privatePem: string
   beforeEach(async () => {
@@ -236,7 +236,7 @@ describe('remote handles command', () => {
   })
 })
 
-describe('tau remote card commands', () => {
+describe('ficus remote card commands', () => {
   let dir: string
   let priv: string
   let pub: string

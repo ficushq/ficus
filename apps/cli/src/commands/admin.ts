@@ -70,7 +70,7 @@ function formatBytes(bytes: number): string {
 export function registerAdminCommands(program: Command) {
   const admin = program.command('admin').description('Operator/admin maintenance actions')
 
-  // tau admin nix-gc [--apply]
+  // ficus admin nix-gc [--apply]
   admin
     .command('nix-gc')
     .description('Reclaim orphaned/terminated agent Nix stores; dry-run by default (--apply reclaims)')
@@ -137,7 +137,7 @@ export function registerAdminCommands(program: Command) {
         if (Object.keys(result.skipped).length > 0) console.log(`Skipped: ${JSON.stringify(result.skipped)}`)
         if (Object.keys(result.errors).length > 0) console.log(`Errors: ${JSON.stringify(result.errors)}`)
         if (result.hasMore && result.nextCursor) {
-          const continuation = ['tau admin workspace-gc']
+          const continuation = ['ficus admin workspace-gc']
           if (options.apply) continuation.push('--apply')
           if (options.limit) continuation.push(`--limit ${options.limit}`)
           continuation.push(`--cursor ${result.nextCursor}`)

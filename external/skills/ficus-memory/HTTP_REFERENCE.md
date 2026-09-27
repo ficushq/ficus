@@ -1,6 +1,6 @@
-# Tau Memory HTTP Reference
+# Ficus Memory HTTP Reference
 
-Use HTTP only when the Tau CLI is unavailable. Replace `<base-url>` and `<squad-id>` explicitly. URL-encode query parameters such as paths.
+Use HTTP only when the Ficus CLI is unavailable. Replace `<base-url>` and `<squad-id>` explicitly. URL-encode query parameters such as paths.
 
 All examples assume:
 

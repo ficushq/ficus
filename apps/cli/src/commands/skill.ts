@@ -9,7 +9,7 @@ import { isJsonMode, output, outputError, outputTable } from '../output'
 
 type AgentTarget = 'pi' | 'claude-code' | 'codex' | 'custom'
 
-const SUPPORTED_SKILLS = ['tau-memory', 'tau', 'tau-reviewer'] as const
+const SUPPORTED_SKILLS = ['ficus-memory', 'ficus', 'ficus-reviewer'] as const
 
 type SupportedSkill = (typeof SUPPORTED_SKILLS)[number]
 
@@ -85,13 +85,13 @@ function isSupportedSkill(skill: string): skill is SupportedSkill {
 
 function getBundledSkillDir(skill: SupportedSkill): string {
   const thisFile = fileURLToPath(import.meta.url)
-  const tauShareDir = process.env.FICUS_SHARE_DIR ?? join(process.env.HOME ?? '', '.tau/share')
+  const shareDir = process.env.FICUS_SHARE_DIR ?? join(process.env.HOME ?? '', '.tau/share')
   const sourceCandidates = [
     // Running installed CLI with bundled skills copied to ~/.tau/share/skills.
-    resolve(expandTilde(tauShareDir), 'skills', skill),
-    // Running installed CLI from ~/.tau/bin/tau with bundled skills copied to ~/.tau/share/skills.
+    resolve(expandTilde(shareDir), 'skills', skill),
+    // Running installed CLI from ~/.tau/bin/ficus with bundled skills copied to ~/.tau/share/skills.
     resolve(dirname(thisFile), '../share/skills', skill),
-    // Running bundled dev CLI from apps/cli/dist/tau.js with skills copied beside dist.
+    // Running bundled dev CLI from apps/cli/dist/ficus.js with skills copied beside dist.
     resolve(dirname(thisFile), '../skills', skill),
     // Backward-compatible/dev fallback for assets copied beside the binary.
     resolve(dirname(thisFile), 'skills', skill),
@@ -112,18 +112,18 @@ function shellQuoteIfNeeded(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`
 }
 
-async function installMarkdownFile(sourcePath: string, targetPath: string, tauCliPath: string) {
+async function installMarkdownFile(sourcePath: string, targetPath: string, cliPath: string) {
   const source = await readFile(sourcePath, 'utf8')
-  await writeFile(targetPath, source.replaceAll('<tau-cli>', shellQuoteIfNeeded(tauCliPath)))
+  await writeFile(targetPath, source.replaceAll('<ficus-cli>', shellQuoteIfNeeded(cliPath)))
 }
 
 function isBunVirtualPath(path: string | undefined): boolean {
   return !!path && (path.startsWith('/$bunfs/') || path.startsWith('\\$bunfs\\'))
 }
 
-function findOnPath(command: string): string | undefined {
-  const pathValue = process.env.PATH ?? ''
-  const extensions = process.platform === 'win32' ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';') : ['']
+function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const pathValue = env.PATH ?? ''
+  const extensions = process.platform === 'win32' ? (env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';') : ['']
   for (const dir of pathValue.split(delimiter)) {
     if (!dir) continue
     for (const ext of extensions) {
@@ -138,15 +138,26 @@ function normalizeInvokedPath(path: string): string {
   return isAbsolute(path) ? path : resolve(path)
 }
 
-function getCurrentTauCliPath(): string {
-  const invoked = process.env._
-  const argvPath = process.argv[1]
+/**
+ * How the installed skill should invoke this CLI: `ficus` when that is what
+ * the shell ran (the binary, or the built ficus.js with a `ficus` also on
+ * PATH), otherwise the absolute path of whatever ran, so the skill works even
+ * off PATH. There is no branch for the pre-rename name: a binary still called
+ * that is treated like any other path.
+ */
+export function invokedCliName(
+  process_: { env: NodeJS.ProcessEnv; argv: readonly string[] } = { env: process.env, argv: process.argv }
+): string {
+  const invoked = process_.env._
+  const argvPath = process_.argv[1]
+  const invokedName = basename(invoked ?? '')
 
-  if (basename(invoked ?? '') === 'tau') return 'tau'
+  if (invokedName === 'ficus') return 'ficus'
+  if (invokedName === 'ficus.js' && findOnPath('ficus', process_.env)) return 'ficus'
   if (argvPath && !isBunVirtualPath(argvPath)) return normalizeInvokedPath(argvPath)
-  if (findOnPath('tau')) return 'tau'
+  if (findOnPath('ficus', process_.env)) return 'ficus'
   if (invoked && !isBunVirtualPath(invoked)) return normalizeInvokedPath(invoked)
-  return 'tau'
+  return 'ficus'
 }
 
 function resolveTargetDir(skill: SupportedSkill, options: InstallOptions): string {
@@ -177,16 +188,16 @@ export async function installSkill(skill: string, options: InstallOptions = {}) 
 
   await mkdir(target, { recursive: true })
   const entries = await readdir(source, { withFileTypes: true })
-  const tauCliPath = getCurrentTauCliPath()
+  const cliPath = invokedCliName()
   await Promise.all(
     entries
       .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
-      .map((entry) => installMarkdownFile(join(source, entry.name), join(target, entry.name), tauCliPath))
+      .map((entry) => installMarkdownFile(join(source, entry.name), join(target, entry.name), cliPath))
   )
 
   await writeFile(
     join(target, 'SKILL.md'),
-    `${await readFile(join(target, 'SKILL.md'), 'utf8')}\n## Installed Tau CLI\n\nUse this exact Tau CLI path in every Tau command from this skill. Do not rely on shell variables persisting between commands.\n\n\`\`\`bash\n${shellQuoteIfNeeded(tauCliPath)}\n\`\`\`\n`
+    `${await readFile(join(target, 'SKILL.md'), 'utf8')}\n## Installed Ficus CLI\n\nUse this exact Ficus CLI path in every Ficus command from this skill. Do not rely on shell variables persisting between commands.\n\n\`\`\`bash\n${shellQuoteIfNeeded(cliPath)}\n\`\`\`\n`
   )
 
   output(
@@ -196,11 +207,11 @@ export async function installSkill(skill: string, options: InstallOptions = {}) 
 }
 
 export function registerSkillCommands(program: Command) {
-  const skill = program.command('skill').alias('skills').description('Manage bundled and dynamic Tau agent skills')
+  const skill = program.command('skill').alias('skills').description('Manage bundled and dynamic Ficus agent skills')
 
   skill
     .command('install')
-    .description('Install a bundled Tau skill into the current project for an agent')
+    .description('Install a bundled Ficus skill into the current project for an agent')
     .argument('<skill>', `Skill to install (${SUPPORTED_SKILLS.join(', ')})`)
     .requiredOption('--agent <agent>', 'Target agent: pi, claude-code, codex, or custom')
     .option('--cwd <dir>', 'Project directory. Defaults to current working directory')

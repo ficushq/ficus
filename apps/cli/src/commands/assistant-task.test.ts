@@ -17,7 +17,7 @@ const task = {
   updatedAt: '2026-09-15T00:05:00.000Z',
 }
 
-describe('tau assistant-task', () => {
+describe('ficus assistant-task', () => {
   beforeEach(() => {
     ;(apiPost as ReturnType<typeof mock>).mockClear()
     ;(apiGet as ReturnType<typeof mock>).mockClear()

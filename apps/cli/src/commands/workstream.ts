@@ -357,7 +357,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
   registerWorkstreamFlowCommands(ws, flowDependencies)
   registerWorkstreamCleanupCommands(ws)
 
-  // tau workstream list [--squad <id>] [--task <id>] [--status <status>]
+  // ficus workstream list [--squad <id>] [--task <id>] [--status <status>]
   ws.command('list')
     .description('List work streams')
     .option('-q, --squad <squadId>', 'Filter by squad ID')
@@ -402,7 +402,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream create <title> --squad <squadId> [options]
+  // ficus workstream create <title> --squad <squadId> [options]
   ws.command('reviewers')
     .description('List users eligible to review work streams in a squad')
     .requiredOption('-q, --squad <squadId>', 'Squad ID')
@@ -490,7 +490,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream get <id>
+  // ficus workstream get <id>
   ws.command('get <id>')
     .alias('info')
     .description('Get work stream details')
@@ -604,7 +604,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream update <id> [options]
+  // ficus workstream update <id> [options]
   ws.command('update <id>')
     .alias('edit')
     .description('Update a work stream')
@@ -664,7 +664,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           if (options.status === 'blocked' || options.status === 'review') {
             outputError(
               new Error(
-                `'${options.status}' is no longer a status. Use 'tau workstream ${options.status === 'blocked' ? 'request-input <id> -m "<why>"' : 'request-review <id> -m "<note>"'}' instead.`
+                `'${options.status}' is no longer a status. Use 'ficus workstream ${options.status === 'blocked' ? 'request-input <id> -m "<why>"' : 'request-review <id> -m "<note>"'}' instead.`
               )
             )
             return
@@ -722,7 +722,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     return { ws, wait }
   }
 
-  // tau workstream request-input <id> --message <msg> [--file <path>...]
+  // ficus workstream request-input <id> --message <msg> [--file <path>...]
   ws.command('request-input <id>')
     .description('Open a manual wait: the work stream needs input/action from the owner/operator')
     .requiredOption('-m, --message <msg>', 'What input/action is needed (the wait message)')
@@ -745,7 +745,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream unblock <id> [--message <note>] [--wait <waitId>]
+  // ficus workstream unblock <id> [--message <note>] [--wait <waitId>]
   ws.command('unblock <id>')
     .description("Clear the work stream's open manual wait (with several open, pass --wait <id>)")
     .option('-m, --message <note>', 'Resolution note recorded on the cleared wait and delivered to the assignee')
@@ -763,7 +763,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream approve <id> [-m <note>] [--wait <waitId>]
+  // ficus workstream approve <id> [-m <note>] [--wait <waitId>]
   ws.command('approve <id>')
     .description(
       'Approve the open review: completes the stream in one transaction (a --no-complete checkpoint review resolves the wait only)'
@@ -790,7 +790,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream send-back <id> -m <feedback> [--wait <waitId>] (alias: reject)
+  // ficus workstream send-back <id> -m <feedback> [--wait <waitId>] (alias: reject)
   ws.command('send-back <id>')
     .alias('reject')
     .description('Close the open review wait with required feedback; the stream stays schedulable')
@@ -816,7 +816,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream request-review <id> --message <msg> [--file <path>...]
+  // ficus workstream request-review <id> --message <msg> [--file <path>...]
   ws.command('request-review <id>')
     .description('Open the review wait: the work is ready for someone to review (idempotent while open)')
     .requiredOption('-m, --message <msg>', 'What to review (stored on the review wait)')
@@ -856,7 +856,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream handoff <id> --to <agentId> --message <msg> [options]
+  // ficus workstream handoff <id> --to <agentId> --message <msg> [options]
   // Reassignment only — opening a review wait is `request-review`.
   ws.command('handoff <id>')
     .description('Hand off the work stream to another agent (reassignment; use request-review to ask for review)')
@@ -869,7 +869,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           outputError(
             new Error(
               'handoff requires --to <agentId> (message-only handoff no longer opens a review — ' +
-                'use `tau workstream request-review <id> -m "<msg>"` to ask for review)'
+                'use `ficus workstream request-review <id> -m "<msg>"` to ask for review)'
             )
           )
           return
@@ -890,7 +890,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream done <id> [--next-steps <notes>]
+  // ficus workstream done <id> [--next-steps <notes>]
   ws.command('done <id>')
     .description('Mark work stream as done')
     .option(
@@ -941,7 +941,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream park <id>
+  // ficus workstream park <id>
   ws.command('park <id>')
     .description(
       'Park an admitted work stream. For running work, ask the running agent to stop at a safe point and ' +
@@ -973,7 +973,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream reopen <id>
+  // ficus workstream reopen <id>
   ws.command('reopen <id>')
     .description(
       'Reopen a done or canceled work stream: it re-enters admission (active if a slot is free, else queued)'
@@ -992,7 +992,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream cancel <id>
+  // ficus workstream cancel <id>
   ws.command('cancel <id>')
     .description('Cancel a work stream and stop assigned active executions where possible')
     .action(async (id) => {
@@ -1004,7 +1004,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream find-by-meta --match <path>=<value> [--match ...] [--status <status>] [--id-only] [--squad-id-only]
+  // ficus workstream find-by-meta --match <path>=<value> [--match ...] [--status <status>] [--id-only] [--squad-id-only]
   ws.command('find-by-meta')
     .description('Find work streams by metadata fields')
     .option('-m, --match <pathValue>', 'Match criterion in path=value format (repeatable)', collect, [])
@@ -1119,7 +1119,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream add-agent <workstreamId> <types...>
+  // ficus workstream add-agent <workstreamId> <types...>
   ws.command('add-agent <workstreamId> <types...>')
     .description('Spawn and bind agents to a work stream')
     .option(
@@ -1151,7 +1151,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream remove-agent <workstreamId> <agentId>
+  // ficus workstream remove-agent <workstreamId> <agentId>
   ws.command('remove-agent <workstreamId> <agentId>')
     .description('Remove an agent from a work stream')
     .action(async (workstreamId: string, agentId: string) => {
@@ -1163,7 +1163,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream delete <id>
+  // ficus workstream delete <id>
   ws.command('delete <id>')
     .alias('rm')
     .description('Delete a work stream')
@@ -1180,7 +1180,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
 
   // --- Tracked links (issues and pull requests this stream follows alongside its delivery) ---
 
-  // tau workstream tracked <id>
+  // ficus workstream tracked <id>
   ws.command('tracked <id>')
     .alias('links')
     .description('List issues and pull requests tracked by a work stream')
@@ -1211,7 +1211,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream track <id> [--event | --url | --issue | --pr] [--connection]
+  // ficus workstream track <id> [--event | --url | --issue | --pr] [--connection]
   ws.command('track <id>')
     .description('Track an issue or pull request alongside this work stream')
     .option('--event <eventId>', 'Track the resource observed by an integration event')
@@ -1230,7 +1230,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream untrack <id> [--url | --issue | --pr] [--connection]
+  // ficus workstream untrack <id> [--url | --issue | --pr] [--connection]
   ws.command('untrack <id>')
     .description('Stop tracking an issue or pull request on this work stream')
     .option('--url <url>', 'Untrack by code-host resource URL')
@@ -1250,7 +1250,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream subscription <id>
+  // ficus workstream subscription <id>
   ws.command('subscription <id>')
     .description('Show your attention levels for this work stream, and the watcher count')
     .action(async (id) => {
@@ -1265,7 +1265,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream subscribe <id> [--decisions <level>] [--progress <level>]
+  // ficus workstream subscribe <id> [--decisions <level>] [--progress <level>]
   ws.command('subscribe <id>')
     .alias('watch')
     .description('Watch a work stream. Levels: mute (hidden), show (listed), notify (inbox + push)')
@@ -1292,7 +1292,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  // tau workstream unsubscribe <id>
+  // ficus workstream unsubscribe <id>
   ws.command('unsubscribe <id>')
     .alias('unwatch')
     .description('Stop watching a work stream (back to inheriting the squad levels)')

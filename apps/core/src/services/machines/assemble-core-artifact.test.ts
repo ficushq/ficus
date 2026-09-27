@@ -74,9 +74,9 @@ async function makeCheckout(): Promise<string> {
   await write(join(root, 'apps/web/dist/assets/app.js'), 'console.log(1)\n')
   await write(join(root, 'apps/web/dist/.DS_Store'), 'finder junk')
 
-  await write(join(root, 'apps/cli/dist/tau.js'), '#!/usr/bin/env bun\n')
-  await chmod(join(root, 'apps/cli/dist/tau.js'), 0o755)
-  await write(join(root, 'apps/cli/dist/skills/tau-memory/SKILL.md'), '# memory\n')
+  await write(join(root, 'apps/cli/dist/ficus.js'), '#!/usr/bin/env bun\n')
+  await chmod(join(root, 'apps/cli/dist/ficus.js'), 0o755)
+  await write(join(root, 'apps/cli/dist/skills/ficus-memory/SKILL.md'), '# memory\n')
 
   await write(join(root, 'config/agent/agent.md'), '# agent\n')
   await write(
@@ -205,8 +205,8 @@ describe('assembleCoreArtifact', () => {
     const files = Object.keys(await computeFilesMap(tree)).sort()
     expect(files).toEqual(
       [
-        'apps/cli/dist/skills/tau-memory/SKILL.md',
-        'apps/cli/dist/tau.js',
+        'apps/cli/dist/skills/ficus-memory/SKILL.md',
+        'apps/cli/dist/ficus.js',
         'apps/core/dist/box-control.js',
         'apps/core/dist/index.js',
         'apps/core/dist/migrate.js',
@@ -242,7 +242,7 @@ describe('assembleCoreArtifact', () => {
     expect(await (await app.request('/docs/pagefind/pagefind.js')).text()).toBe('search')
     expect((await app.request('/docs/unknown/')).status).toBe(404)
     // The executable bit survives the copy (tau.js is exec'd on the box).
-    expect((await stat(join(tree, 'apps/cli/dist/tau.js'))).mode & 0o111).not.toBe(0)
+    expect((await stat(join(tree, 'apps/cli/dist/ficus.js'))).mode & 0o111).not.toBe(0)
   })
 
   it('names the tarball for the native build target and returns the trailer values', async () => {

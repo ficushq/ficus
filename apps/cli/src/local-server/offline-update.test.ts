@@ -437,7 +437,7 @@ async function createGitFixture(tags: string[] = []) {
   await git(root, 'init', '--bare', remote)
   await git(root, 'init', '--initial-branch=main', source)
   await git(source, 'config', 'user.email', 'test@example.com')
-  await git(source, 'config', 'user.name', 'Tau Test')
+  await git(source, 'config', 'user.name', 'Ficus Test')
   writeFileSync(join(source, 'version.txt'), 'one\n')
   await git(source, 'add', 'version.txt')
   await git(source, 'commit', '-m', 'one')

@@ -48,7 +48,7 @@ export function systemdUnit(context: SupervisorContext, component: NativeCompone
   }
   return `# ${marker(context.root)}
 [Unit]
-Description=Tau local ${component} (${escaped(localProcessNames(context.label).label)})
+Description=Ficus local ${component} (${escaped(localProcessNames(context.label).label)})
 StartLimitIntervalSec=0
 
 [Service]
@@ -146,7 +146,7 @@ function parseShow(context: SupervisorContext, component: NativeComponent, text:
       .filter((pair) => pair.length === 2)
   )
   // The shared process vocabulary is pm2's ('online'/'stopped'): every
-  // consumer — `tau server status`, `list`, and CI — compares against it, so
+  // consumer — `ficus server status`, `list`, and CI — compares against it, so
   // an active/running user unit must read as online, not as systemd prose.
   const status =
     props.LoadState === 'not-found' || !props.FragmentPath

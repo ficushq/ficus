@@ -33,7 +33,7 @@ function fakeDeps(overrides: Partial<GitSigningDependencies> = {}) {
   return { deps, calls, written }
 }
 
-describe('tau as gpg.ssh.program', () => {
+describe('ficus as gpg.ssh.program', () => {
   it('recognizes only ssh-keygen style invocations', () => {
     expect(isSshKeygenInvocation(['-Y', 'sign'])).toBe(true)
     expect(isSshKeygenInvocation(['ws', 'list'])).toBe(false)
@@ -80,12 +80,14 @@ describe('tau as gpg.ssh.program', () => {
       },
     })
     expect(await runSshKeygenCompat(['-Y', 'sign', '-n', 'git', '-f', 'k', '-U', 'buf'], deps)).toBe(1)
-    expect(calls.errors).toEqual(['tau: commit signing failed: Commit signing is off for this squad’s GitHub account.'])
+    expect(calls.errors).toEqual([
+      'ficus: commit signing failed: Commit signing is off for this squad’s GitHub account.',
+    ])
     expect(written.size).toBe(0)
   })
 })
 
-describe('git signing through the real tau entrypoint', () => {
+describe('git signing through the real ficus entrypoint', () => {
   const dirs: string[] = []
   let server: ReturnType<typeof Bun.serve> | undefined
   afterEach(async () => {

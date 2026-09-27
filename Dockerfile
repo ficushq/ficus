@@ -130,7 +130,7 @@ COPY apps/core/drizzle/ apps/core/drizzle/
 
 # Create data directory for sessions and symlink CLI to PATH
 RUN mkdir -p data/sessions && \
-    ln -s /app/apps/cli/dist/tau.js /usr/local/bin/tau
+    ln -s /app/apps/cli/dist/ficus.js /usr/local/bin/ficus
 
 # Default port (API server)
 EXPOSE 3000

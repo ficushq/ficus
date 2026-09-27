@@ -9,7 +9,7 @@ interface WorkerStatus {
 export function registerWorkerCommands(program: Command) {
   const worker = program.command('worker').description('Manage the worker process')
 
-  // tau worker status
+  // ficus worker status
   worker
     .command('status')
     .description('Check worker process status')

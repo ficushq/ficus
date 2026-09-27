@@ -16,7 +16,7 @@ export interface InstanceRecord {
 }
 
 /**
- * Every instance installed on this machine, plus the one `tau server`
+ * Every instance installed on this machine, plus the one `ficus server`
  * commands act on when nothing else says which. Version 1 was a single
  * bare record ({ root, port, … }) — it reads as the `tau` instance.
  */
@@ -36,7 +36,7 @@ export const REGISTRY_VERSION = 3
  */
 export class InvalidRegistryError extends Error {
   constructor(reason: string, path: string) {
-    super(`${reason} in ${path} — fix or remove the file (see \`tau server list\`) before changing instances`)
+    super(`${reason} in ${path} — fix or remove the file (see \`ficus server list\`) before changing instances`)
     this.name = 'InvalidRegistryError'
   }
 }
@@ -53,7 +53,7 @@ export function canonicalRoot(dir: string): string {
 export class NoRootError extends Error {
   constructor(detail: string) {
     super(
-      `No local tau checkout found (${detail}). Run \`tau server install\`, pass --root <dir>, set FICUS_SERVER_ROOT, or run from inside a checkout.`
+      `No local Ficus checkout found (${detail}). Run \`ficus server install\`, pass --root <dir>, set FICUS_SERVER_ROOT, or run from inside a checkout.`
     )
     this.name = 'NoRootError'
   }
@@ -64,7 +64,7 @@ export class UnknownInstanceError extends Error {
     super(
       `unknown instance "${label}" — ${
         known.length > 0 ? `known instances: ${known.join(', ')}` : 'no instances are registered'
-      } (see \`tau server list\`)`
+      } (see \`ficus server list\`)`
     )
     this.name = 'UnknownInstanceError'
   }
@@ -117,7 +117,7 @@ function validRegistryLabel(label: string): boolean {
 
 /**
  * The registry as it is on disk, migrated forward. A file this CLI cannot make
- * sense of reads as an empty registry rather than throwing: `tau server` must
+ * sense of reads as an empty registry rather than throwing: `ficus server` must
  * stay usable (with --root) when the registry is damaged. Mutating paths use
  * {@link readRegistryStrict}, which fails closed instead.
  */
@@ -207,7 +207,7 @@ function parseRegistryFile(path: string): { registry: LocalServerRegistry; stric
  * temporary name in the same directory and is renamed over the target. The
  * chmod comes after the rename so a file that already existed with looser
  * permissions is tightened too (it holds nothing secret, but it decides which
- * checkout `tau server` acts on).
+ * checkout `ficus server` acts on).
  */
 export function writeRegistry(registry: LocalServerRegistry, path = getStatePath()): void {
   mkdirSync(dirname(path), { recursive: true })
@@ -217,7 +217,7 @@ export function writeRegistry(registry: LocalServerRegistry, path = getStatePath
   chmodSync(path, 0o600)
 }
 
-/** The instance a bare `tau server` command acts on when nothing names one. */
+/** The instance a bare `ficus server` command acts on when nothing names one. */
 export function defaultLabel(registry: LocalServerRegistry): string | undefined {
   if (registry.default && registry.instances[registry.default]) return registry.default
   // A hand-edited file can lose its `default` line; the instances are still real.
@@ -301,7 +301,7 @@ function explicitRoot(flag: string | undefined, env: Record<string, string | und
     candidates.push({ source: 'FICUS_SERVER_ROOT', dir: resolve(expandTilde(env.FICUS_SERVER_ROOT)) })
   for (const c of candidates) {
     if (isCheckout(c.dir)) return canonicalRoot(c.dir)
-    throw new NoRootError(`${c.source}=${c.dir} is not a tau checkout`)
+    throw new NoRootError(`${c.source}=${c.dir} is not a Ficus checkout`)
   }
   return null
 }
@@ -367,5 +367,5 @@ export function resolveSetupRoot(options: {
   if (explicit) return explicit
   const walked = walkUp(options.cwd ?? process.cwd())
   if (walked) return canonicalRoot(walked)
-  throw new NoRootError('not inside a tau checkout')
+  throw new NoRootError('not inside a Ficus checkout')
 }

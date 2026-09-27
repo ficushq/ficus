@@ -62,7 +62,7 @@ describe('formatResult', () => {
   })
 })
 
-describe('tau watch command', () => {
+describe('ficus watch command', () => {
   beforeEach(() => {
     ;(apiGet as ReturnType<typeof mock>).mockReset()
   })

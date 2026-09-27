@@ -5,7 +5,7 @@ import { output, outputTable, outputError, isJsonMode } from '../output'
 export function registerProviderAuthCommands(program: Command) {
   const auth = program.command('provider-auth').alias('pa').description('Manage AI provider credentials')
 
-  // tau provider-auth list
+  // ficus provider-auth list
   auth
     .command('list')
     .description('List all configured providers')
@@ -26,7 +26,7 @@ export function registerProviderAuthCommands(program: Command) {
       }
     })
 
-  // tau provider-auth get <provider>
+  // ficus provider-auth get <provider>
   auth
     .command('get <provider>')
     .description('Check auth status for a provider')
@@ -39,7 +39,7 @@ export function registerProviderAuthCommands(program: Command) {
       }
     })
 
-  // tau provider-auth set <provider> <key>
+  // ficus provider-auth set <provider> <key>
   auth
     .command('set <provider> <key>')
     .description('Set an API key for a provider')
@@ -52,7 +52,7 @@ export function registerProviderAuthCommands(program: Command) {
       }
     })
 
-  // tau provider-auth delete <provider>
+  // ficus provider-auth delete <provider>
   auth
     .command('delete <provider>')
     .alias('rm')
@@ -66,7 +66,7 @@ export function registerProviderAuthCommands(program: Command) {
       }
     })
 
-  // tau provider-auth reset <provider> [--account <id>]
+  // ficus provider-auth reset <provider> [--account <id>]
   auth
     .command('reset <provider>')
     .description("Clear a provider's exhaustion cooldown (use when its limit window reset early)")
@@ -84,7 +84,7 @@ export function registerProviderAuthCommands(program: Command) {
       }
     })
 
-  // tau provider-auth oauth-providers
+  // ficus provider-auth oauth-providers
   auth
     .command('oauth-providers')
     .description('List available OAuth providers')

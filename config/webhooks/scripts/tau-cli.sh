@@ -10,7 +10,7 @@
 # globally installed tau happens to target.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-DIST="$ROOT/apps/cli/dist/tau.js"
+DIST="$ROOT/apps/cli/dist/ficus.js"
 SRC="$ROOT/apps/cli/src/index.ts"
 if [ -f "$DIST" ]; then
   exec bun "$DIST" "$@"

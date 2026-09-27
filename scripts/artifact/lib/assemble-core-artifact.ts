@@ -184,7 +184,7 @@ async function pathExists(path: string): Promise<boolean> {
 
 /**
  * Copy one file, following it if it is a symlink and preserving its mode —
- * `apps/cli/dist/tau.js`, the machine scripts and the `.bin` shims are all
+ * `apps/cli/dist/ficus.js`, the machine scripts and the `.bin` shims are all
  * executed on the box, so the exec bit is load-bearing.
  */
 async function copyRegularFile(src: string, dest: string): Promise<void> {

@@ -32,7 +32,7 @@ export function registerWorkstreamCleanupCommands(ws: Command): void {
         console.log(`Recovery: ${result.recovery}`)
         console.log(
           result.recovery === 'retain'
-            ? `Run tau workstream cleanup retain ${result.workStreamId} to stop automatic cleanup without deleting files or rewriting ownership.`
+            ? `Run ficus workstream cleanup retain ${result.workStreamId} to stop automatic cleanup without deleting files or rewriting ownership.`
             : result.recovery === 'retained'
               ? 'Automatic cleanup is disabled. Before manual removal, verify exact paths, live users, Git state and recoverable commits. Keep active worktrees and branches.'
               : 'Do not remove or reuse this path. Retention cannot clear an in-flight operation or undo a completed removal.'

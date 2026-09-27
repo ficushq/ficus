@@ -18,7 +18,7 @@ async function run(args: string[]) {
 // chunks it prints. Only `agent`, `chunk` and `done` carry data the CLI reads.
 const agentEvent = JSON.stringify({ type: 'agent', agentId: 'agent-1' })
 
-describe('tau chat', () => {
+describe('ficus chat', () => {
   beforeEach(() => {
     ;(apiPostSSE as AnyMock).mockClear()
     ;(outputError as AnyMock).mockClear()

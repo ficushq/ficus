@@ -10,7 +10,7 @@ function questionText(q: AgentQuestion): string {
 export function registerAgentQuestionCommands(program: Command) {
   const aq = program.command('agent-question').alias('aq').description('Manage async agent questions')
 
-  // tau agent-question list <agentId> [--status open|answered]
+  // ficus agent-question list <agentId> [--status open|answered]
   aq.command('list <agentId>')
     .description("List an agent's async questions")
     .option('-s, --status <status>', 'Filter by status (open, or the answered/dismissed history)')
@@ -42,7 +42,7 @@ export function registerAgentQuestionCommands(program: Command) {
       }
     })
 
-  // tau agent-question answer <id> <answer>
+  // ficus agent-question answer <id> <answer>
   aq.command('answer <id> <answer>')
     .description('Answer an open agent question (delivered to the agent, which wakes it)')
     .action(async (id, answer) => {
@@ -54,7 +54,7 @@ export function registerAgentQuestionCommands(program: Command) {
       }
     })
 
-  // tau agent-question dismiss <id> [--reason <text>]
+  // ficus agent-question dismiss <id> [--reason <text>]
   aq.command('dismiss <id>')
     .description('Dismiss an open question without answering it (the asking agent is NOT notified)')
     .option('-r, --reason <reason>', 'Short reason recorded with the dismissal')

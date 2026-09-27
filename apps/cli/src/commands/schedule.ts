@@ -64,7 +64,7 @@ interface WebhookEnableResult {
 export function registerScheduleCommands(program: Command) {
   const sched = program.command('schedule').description('Manage schedules')
 
-  // tau schedule list
+  // ficus schedule list
   sched
     .command('list')
     .description('List schedules')
@@ -116,7 +116,7 @@ export function registerScheduleCommands(program: Command) {
       }
     })
 
-  // tau schedule create
+  // ficus schedule create
   addStructuredInputOptions(sched.command('create'), true)
     .description('Create a schedule')
     .option('--squad <id>', 'Squad scope')
@@ -267,7 +267,7 @@ export function registerScheduleCommands(program: Command) {
       }
     })
 
-  // tau schedule update <id>
+  // ficus schedule update <id>
   addStructuredInputOptions(sched.command('update <id>'), true)
     .description('Update a schedule')
     .option('--name <name>', 'New name')
@@ -459,7 +459,7 @@ export function registerScheduleCommands(program: Command) {
       }
     })
 
-  // tau schedule delete <id>
+  // ficus schedule delete <id>
   sched
     .command('delete <id>')
     .description('Delete a schedule')
@@ -472,7 +472,7 @@ export function registerScheduleCommands(program: Command) {
       }
     })
 
-  // tau schedule trigger <id>
+  // ficus schedule trigger <id>
   sched
     .command('trigger <id>')
     .description('Manually trigger a schedule')
@@ -489,7 +489,7 @@ export function registerScheduleCommands(program: Command) {
       }
     })
 
-  // tau schedule enable <id>
+  // ficus schedule enable <id>
   sched
     .command('enable <id>')
     .description('Enable a schedule')
@@ -502,7 +502,7 @@ export function registerScheduleCommands(program: Command) {
       }
     })
 
-  // tau schedule disable <id>
+  // ficus schedule disable <id>
   sched
     .command('disable <id>')
     .description('Disable a schedule')
@@ -515,7 +515,7 @@ export function registerScheduleCommands(program: Command) {
       }
     })
 
-  // tau schedule show <id>
+  // ficus schedule show <id>
   sched
     .command('show <id>')
     .description('Show schedule details')

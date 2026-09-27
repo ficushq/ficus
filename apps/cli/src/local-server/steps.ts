@@ -164,10 +164,10 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
       // an install made before labels existed) may take one.
       const current = persistedLabel()
       if (current && opts.explicit.has('instance') && current !== opts.instance) {
-        // `tau server uninstall` drops the registry entry and the pm2 apps but
+        // `ficus server uninstall` drops the registry entry and the pm2 apps but
         // leaves FICUS_INSTANCE in place, so it cannot relabel a checkout on its own.
         throw new SetupFailure(
-          `this checkout is instance "${current}"; to relabel it, remove FICUS_INSTANCE from .env (after unregistering its supervisor with tau server uninstall --root ${root}) — or set up a fresh checkout`
+          `this checkout is instance "${current}"; to relabel it, remove FICUS_INSTANCE from .env (after unregistering its supervisor with ficus server uninstall --root ${root}) — or set up a fresh checkout`
         )
       }
       if (!existsSync(envPath)) copyFileSync(join(root, '.env.example'), envPath)
@@ -341,7 +341,7 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
           )
           if (foreign)
             throw new SetupFailure(
-              `pm2 already runs ${foreign.name} for instance "${opts.instance}" from another checkout (${foreign.cwd}). Give this checkout its own label with --instance <other-label>, or tau server uninstall --root ${foreign.cwd} the other one`
+              `pm2 already runs ${foreign.name} for instance "${opts.instance}" from another checkout (${foreign.cwd}). Give this checkout its own label with --instance <other-label>, or ficus server uninstall --root ${foreign.cwd} the other one`
             )
         }
         await startSupervisor(context)
@@ -353,7 +353,9 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
             /* not up yet */
           }
           if (i === 30)
-            throw new SetupFailure(`the API did not answer ${opts.apiUrl}/health within 60s — see \`tau server logs\``)
+            throw new SetupFailure(
+              `the API did not answer ${opts.apiUrl}/health within 60s — see \`ficus server logs\``
+            )
           await deps.sleep(2000)
         }
         if (opts.supervisor === 'pm2') {

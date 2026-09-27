@@ -4,7 +4,7 @@ import { systemdUnit, systemdUserNames } from './systemd-user'
 
 const context: SupervisorContext = {
   supervisor: 'systemd-user',
-  root: '/home/me/Tau repo% “x”',
+  root: '/home/me/Ficus repo% “x”',
   label: 'Smoke',
   home: '/home/me',
   bunPath: '/home/me/bin/bun',
@@ -27,7 +27,7 @@ describe('systemdUnit', () => {
       log: '/home/me/.tau/logs/tau-smoke-api.log',
     })
     const unit = systemdUnit(context, 'api')
-    expect(unit).toContain('WorkingDirectory=/home/me/Tau\\x20repo%%\\x20“x”')
+    expect(unit).toContain('WorkingDirectory=/home/me/Ficus\\x20repo%%\\x20“x”')
     expect(unit).toContain('ExecStart="/home/me/bin/bun" "run" "apps/core/dist/index.js"')
     expect(unit).toContain('Environment="PATH=/home/me/a\\"b:/usr/bin"')
     expect(unit).toContain('StandardOutput=append:"/home/me/.tau/logs/tau-smoke-api.log"')

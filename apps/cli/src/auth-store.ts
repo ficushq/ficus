@@ -33,25 +33,25 @@ export function loadAuthStore(path = getAuthStorePath()): AuthStore {
   try {
     parsed = JSON.parse(readFileSync(path, 'utf-8'))
   } catch (error) {
-    throw new Error(`Failed to read Tau auth store at ${path}: ${(error as Error).message}`)
+    throw new Error(`Failed to read Ficus auth store at ${path}: ${(error as Error).message}`)
   }
 
-  if (!parsed || typeof parsed !== 'object') throw new Error(`Invalid Tau auth store at ${path}`)
+  if (!parsed || typeof parsed !== 'object') throw new Error(`Invalid Ficus auth store at ${path}`)
   const raw = parsed as { active?: unknown; backends?: unknown }
   if (!raw.backends || typeof raw.backends !== 'object' || Array.isArray(raw.backends)) {
-    throw new Error(`Invalid Tau auth store at ${path}: missing backends object`)
+    throw new Error(`Invalid Ficus auth store at ${path}: missing backends object`)
   }
 
   const backends: Record<string, AuthBackend> = {}
   for (const [label, backend] of Object.entries(raw.backends)) {
-    if (!backend || typeof backend !== 'object') throw new Error(`Invalid backend '${label}' in Tau auth store`)
+    if (!backend || typeof backend !== 'object') throw new Error(`Invalid backend '${label}' in Ficus auth store`)
     const b = backend as { apiUrl?: unknown; password?: unknown; deviceId?: unknown }
     if (
       typeof b.apiUrl !== 'string' ||
       typeof b.password !== 'string' ||
       (b.deviceId !== undefined && typeof b.deviceId !== 'string')
     ) {
-      throw new Error(`Invalid backend '${label}' in Tau auth store`)
+      throw new Error(`Invalid backend '${label}' in Ficus auth store`)
     }
     backends[label] = { apiUrl: b.apiUrl, password: b.password, ...(b.deviceId ? { deviceId: b.deviceId } : {}) }
   }

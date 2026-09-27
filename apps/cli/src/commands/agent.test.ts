@@ -4,7 +4,7 @@ import { apiGet, apiPatch } from '../client'
 import { output, outputError, setOutputOptions } from '../output'
 import { registerAgentCommands } from './agent'
 
-describe('tau agent model subcommand', () => {
+describe('ficus agent model subcommand', () => {
   beforeEach(() => {
     ;(apiPatch as ReturnType<typeof mock>).mockClear()
     ;(outputError as ReturnType<typeof mock>).mockClear()
@@ -29,7 +29,7 @@ describe('tau agent model subcommand', () => {
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
 
-  it('patches modelOverride with the spec for `tau agent model <id> <spec>`', async () => {
+  it('patches modelOverride with the spec for `ficus agent model <id> <spec>`', async () => {
     await run(['agent', 'model', 'agent-123', 'zai:glm-5.2:high'])
 
     expect(apiPatch).toHaveBeenCalledWith('/api/agents/agent-123', {
@@ -72,7 +72,7 @@ describe('tau agent model subcommand', () => {
   })
 })
 
-describe('tau agent active subcommand', () => {
+describe('ficus agent active subcommand', () => {
   afterEach(() => mock.restore())
 
   it('prints the generic waiting-sandbox API response including sanitized recovery status', async () => {

@@ -215,7 +215,7 @@ export async function runPreflight(opts: SetupOptions, deps: PreflightDeps): Pro
   const node = await deps.nodeVersion()
   if (!node || !/^\d+\.\d+\.\d+$/.test(node) || compareVersions(node, '22.19.0') < 0) {
     failures.push(
-      `Node.js 22.19.0 or newer is required to build Tau and its embedded docs (found ${node || 'no working node'}). ` +
+      `Node.js 22.19.0 or newer is required to build Ficus and its embedded docs (found ${node || 'no working node'}). ` +
         'Install Node.js 24 LTS from https://nodejs.org and ensure node is on PATH before running setup again.'
     )
   }
@@ -263,14 +263,14 @@ export async function runPreflight(opts: SetupOptions, deps: PreflightDeps): Pro
       if (deps.wsl() && !deps.systemdActive()) {
         failures.push(
           'sysbox needs systemd, which WSL disables by default: add `[boot]\nsystemd=true` to /etc/wsl.conf, ' +
-            'run `wsl --shutdown` from PowerShell and reopen the distro, then run `tau server bootstrap-sysbox` ' +
+            'run `wsl --shutdown` from PowerShell and reopen the distro, then run `ficus server bootstrap-sysbox` ' +
             '(docs/wiki/sandbox-runtimes.md#installing-sysbox), or choose docker-socket.'
         )
       }
       const rt = await deps.runner(['docker', 'info', '--format', '{{json .Runtimes}}'])
       if (!rt.stdout.includes('sysbox-runc')) {
         failures.push(
-          'sysbox is not installed — run `tau server bootstrap-sysbox` to install it ' +
+          'sysbox is not installed — run `ficus server bootstrap-sysbox` to install it ' +
             '(docs/wiki/sandbox-runtimes.md#installing-sysbox), or choose docker-socket.'
         )
       }
