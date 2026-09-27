@@ -1,102 +1,102 @@
 ---
 name: ficus
-description: Operate a Tau instance as a manager/operator — CLI auth, the work-stream lifecycle, squad-manager coordination, answering agent questions, and the operating doctrine that avoids known failure modes. Use whenever supervising Tau squads, unblocking/reviewing work streams, or directing work on a Tau deployment via the `tau` CLI.
+description: Operate a Ficus instance as a manager/operator — CLI auth, the work-stream lifecycle, squad-manager coordination, answering agent questions, and the operating doctrine that avoids known failure modes. Use whenever supervising Ficus squads, unblocking/reviewing work streams, or directing work on a Ficus deployment via the `ficus` CLI.
 ---
 
-# Operating Tau (the `tau` CLI)
+# Operating Ficus (the `ficus` CLI)
 
-## What Tau is
+## What Ficus is
 
-A Tau instance runs **squads** of AI agents (typical crew: architect,
+A Ficus instance runs **squads** of AI agents (typical crew: architect,
 engineer, reviewer, coordinated by a squad **manager** agent). Work is
 organized into **work streams** — durable units with a lifecycle, a
 priority, an assignee, a dedicated agent crew, and a git branch. You direct
 at the work-stream level and communicate through the manager; the manager
 orchestrates the agents.
 
-Everything below uses the `tau` CLI. Global flags: `--json` for
+Everything below uses the `ficus` CLI. Global flags: `--json` for
 machine-readable output (parse this, not the human tables; add
 `--no-truncate` when grepping table output), `--backend <label>` to select a
 stored auth backend for one command.
 
-## Installing the CLI (if `tau` is missing)
+## Installing the CLI (if `ficus` is missing)
 
 ```bash
 curl -fsSL https://ficus.sh/cli/install.sh | bash
 export PATH="$HOME/.tau/bin:$PATH"   # add to the shell profile too
-tau --version                        # verify
+ficus --version                      # verify
 ```
 
 The installer writes the binary to `~/.tau/bin/ficus` and bundled assets to
-`~/.tau/share`. Upgrade or reinstall later with `tau install`. If `tau` is
-on PATH but misbehaving after an instance upgrade, run `tau install` before
+`~/.tau/share`. Upgrade or reinstall later with `ficus install`. If `ficus` is
+on PATH but misbehaving after an instance upgrade, run `ficus install` before
 debugging further — version skew between CLI and server is a common cause.
 
 ## Auth — connecting to a live instance
 
-`tau auth` manages named backends (label → URL + credential). CLI auth is a
+`ficus auth` manages named backends (label → URL + credential). CLI auth is a
 **device pairing flow**: no secrets are typed or stored by hand.
 
 ```bash
-tau auth login [label] --api-url https://<instance-host>
+ficus auth login [label] --api-url https://<instance-host>
 # The CLI prints a verification URL (and opens a browser where possible);
 # a signed-in user approves the pairing there; the CLI receives a durable
 # device token bound to this machine.
 
-tau auth list | status | switch <label>   # manage multiple instances
-tau auth introspect                        # identity + effective roles/permissions
-tau auth logout [label]                    # removes the backend AND revokes the
+ficus auth list | status | switch <label> # manage multiple instances
+ficus auth introspect                      # identity + effective roles/permissions
+ficus auth logout [label]                  # removes the backend AND revokes the
                                            # paired device server-side
                                            # (--local-only keeps the device grant)
 ```
 
 - Label defaults to the instance hostname; `--json` works on all of these.
-- Verify a new backend immediately with `tau auth introspect`.
+- Verify a new backend immediately with `ficus auth introspect`.
 - Device tokens survive instance upgrades and new-passkey registrations —
   pair once per machine per instance and it keeps working.
 
 ## Work streams — the core surface
 
 ```bash
-tau ws list -q <squadId> [--json]    # outside a squad box, the squad flag is required
-tau ws get <id> [--json]             # shows the crew and each agent's live status
-tau ws create "<title>" -q <squadId> -d "<description>" \
+ficus ws list -q <squadId> [--json]  # outside a squad box, the squad flag is required
+ficus ws get <id> [--json]           # shows the crew and each agent's live status
+ficus ws create "<title>" -q <squadId> -d "<description>" \
     --agents architect,engineer,reviewer --assign-index 1 \
     --branch <branch> --base-branch main \
     [--priority <p>] [--depends-on <id>] -m "<kickoff message>"
-tau ws request-review <id> -m "<what to review>" [--no-complete]
+ficus ws request-review <id> -m "<what to review>" [--no-complete]
                                      # open the review wait; approval completes the
                                      # stream by default. --no-complete = mid-work
                                      # checkpoint gate: approval resolves the gate
                                      # only and work continues
-tau ws approve <id> [-m "<note>"]    # close the open review wait; completes the
+ficus ws approve <id> [-m "<note>"]  # close the open review wait; completes the
                                      # stream unless the wait was --no-complete.
                                      # The note is recorded on the wait and
                                      # DELIVERED (durable home for follow-ups)
-tau ws send-back <id> -m "<fb>"      # close the review wait with feedback (a
+ficus ws send-back <id> -m "<fb>"    # close the review wait with feedback (a
                                      # review round); never completes anything —
                                      # always safe
-tau ws request-input <id> -m "<why>" # open a manual wait: the stream needs an
+ficus ws request-input <id> -m "<why>" # open a manual wait: the stream needs an
                                      # answer/action from the owner or operator
-tau ws unblock <id> -m "<answer>"    # resolve the manual wait; the note is
+ficus ws unblock <id> -m "<answer>"  # resolve the manual wait; the note is
                                      # delivered to the assignee as its next
                                      # instruction
-tau ws handoff <id> --to <agentId> -m "<context>" [-f <file>]...
+ficus ws handoff <id> --to <agentId> -m "<context>" [-f <file>]...
                                      # reassignment ONLY (bound-agent phase
                                      # transitions). It never opens a review
                                      # wait — that's request-review
-tau ws park <id>                     # intentional preemption ONLY: release the
+ficus ws park <id>                   # intentional preemption ONLY: release the
                                      # slot for higher-priority work. Never park
                                      # a waiting stream — open waits already
                                      # exclude it from scheduling
-tau ws done <id>                     # complete directly — REJECTED while any
+ficus ws done <id>                   # complete directly — REJECTED while any
                                      # wait is open (except via approve on the
                                      # final review wait)
-tau ws reopen <id>                   # take a done/canceled stream back through
+ficus ws reopen <id>                 # take a done/canceled stream back through
                                      # admission (queued/active)
-tau ws cancel <id>                   # cancel + stop assigned executions
-tau ws add-agent <id> <types...>     # spawn+bind extra agents; remove-agent to unbind
-tau ws watch <id>                    # subscribe to lifecycle updates
+ficus ws cancel <id>                 # cancel + stop assigned executions
+ficus ws add-agent <id> <types...>   # spawn+bind extra agents; remove-agent to unbind
+ficus ws watch <id>                  # subscribe to lifecycle updates
 ```
 
 Stored statuses are just `queued | active → done | canceled`. `queued` means
@@ -109,7 +109,7 @@ display: `in progress` (live execution), `in review`, `waiting on answer`,
 wait — the one alarming state).
 
 When more than one wait of a type is open, the sugar verbs require
-`--wait <waitId>` — `tau ws get <id>` prints each open wait's id (checkpoint
+`--wait <waitId>` — `ficus ws get <id>` prints each open wait's id (checkpoint
 review waits are marked). JSON fields worth knowing: `status` +
 `derivedState`, `openWaits[]` (id, type, message, completesOnApproval,
 openedAt — why it's waiting; often a precise statement of the resume
@@ -124,7 +124,7 @@ Effective priority is computed with **blocker boosting**: a stream inherits
 the max priority of every open stream that depends on it, so a low-priority
 flake fix blocking a high-priority feature schedules as high (`ws list`
 annotates when stored and effective differ). `dependsOn` writes reject
-cycles. The squad-level cap (`tau squad update --max-concurrent-streams
+cycles. The squad-level cap (`ficus squad update --max-concurrent-streams
 N|unlimited`) bounds how many streams may hold a slot (= have runnable
 sandboxes) at once; creation under a full cap lands in `queued` with the
 crew bound but boxes stopped — only sandboxes consume resources, agent rows
@@ -133,7 +133,7 @@ preemption — a critical arrival goes to the queue head and the manager
 decides whether to `park` something to make room. Parking is never lossy:
 files stay in place and the stream re-enters the queue at its effective
 priority. AUTO-PARK: an active stream with an open wait older than the squad
-grace (`tau squad update --blocked-grace-minutes N`, default 30, 0 =
+grace (`ficus squad update --blocked-grace-minutes N`, default 30, 0 =
 immediate) is parked automatically — no exemptions, review waits included. A
 parked-with-wait display (`in review — parked`, `waiting on <dep>`) is the
 system working, not a stall: do NOT "fix" it; resolve the wait.
@@ -150,7 +150,7 @@ waits, `approve`/`send-back` for review waits (there is no generic
 should do now, and any new constraints — the resumed agent reads it as its
 next instruction, and notes ride the wait record, so they are never lost.
 Blocking questions (`ask_human` with `blocking: true`) open a question wait
-that the answer (`tau aq answer`) clears automatically. This is THE path for
+that the answer (`ficus aq answer`) clears automatically. This is THE path for
 "an agent needs a human decision to continue": the worker asks, the stream
 shows `waiting on answer`, you answer once, and the worker resumes with your
 answer as its next instruction. A manual wait whose message is a question, or
@@ -179,7 +179,7 @@ to prevent.
 
 - The manager agent owns orchestration: assignment, sequencing, quality
   gates, steering messages to agents. Operate THROUGH it, not around it.
-- All communication is the inbox: `tau inbox send <recipientId> "<msg>"` —
+- All communication is the inbox: `ficus inbox send <recipientId> "<msg>"` —
   address the squad's manager agent directly.
 - When you believe streams are stalled: **ask the manager for execution
   state before concluding anything.** Idle agents + a stale `updatedAt` is
@@ -191,13 +191,13 @@ to prevent.
   expectations) — managers open well-scoped streams from precise specs and
   flounder on vague ones.
 - Handoffs carry the phase chain: workers hand off to the next bound agent
-  with `tau ws handoff <id> --to <agentId> -m "<context>"` (and `-f` file
+  with `ficus ws handoff <id> --to <agentId> -m "<context>"` (and `-f` file
   attachments reviewable in the UI). Opening a verdict review wait is a
   separate act (`request-review`) — never a handoff side effect.
 
 ### Message delivery: steer vs follow-up
 
-`tau inbox send` has two delivery modes, and choosing wrong has real
+`ficus inbox send` has two delivery modes, and choosing wrong has real
 consequences:
 
 - `--steer` (the default) **interrupts the recipient immediately**, mid-turn.
@@ -217,11 +217,11 @@ whole thing to the old spec first.
 You have an inbox too — check it when supervising:
 
 ```bash
-tau inbox list                       # your unread messages (agents report here)
-tau inbox read <messageIds...>       # mark read; read-all to clear
-tau inbox count                      # quick unread check
-tau inbox download <attachmentId> -o <path>
-tau action list                      # pending actions requiring human/operator attention
+ficus inbox list                     # your unread messages (agents report here)
+ficus inbox read <messageIds...>     # mark read; read-all to clear
+ficus inbox count                    # quick unread check
+ficus inbox download <attachmentId> -o <path>
+ficus action list                    # pending actions requiring human/operator attention
 ```
 
 Agents that hit a decision they can't make **ask an async question and keep
@@ -229,14 +229,14 @@ working** (their status shows `waiting-input` when truly halted). These
 surface in the Action Center and via:
 
 ```bash
-tau aq list <agentId>                # an agent's open questions
-tau aq answer <id> "<answer>"        # delivered to the agent, which wakes it
+ficus aq list <agentId>              # an agent's open questions
+ficus aq answer <id> "<answer>"      # delivered to the agent, which wakes it
 ```
 
 Answer questions promptly and decisively — a precise answer with the
 constraint spelled out beats a fast vague one; the agent resumes with your
 text as its instruction. If an agent seems stuck in `waiting-input`, check
-`tau aq list` before nudging it through the manager.
+`ficus aq list` before nudging it through the manager.
 
 ## Operating doctrine (learned the hard way)
 

@@ -1,15 +1,15 @@
 ---
 name: ficus-memory
-description: Use when an agent needs to retrieve, preserve, or maintain durable organization or project knowledge across sessions using Tau memory.
+description: Use when an agent needs to retrieve, preserve, or maintain durable organization or project knowledge across sessions using Ficus memory.
 ---
 
-# Tau Memory
+# Ficus Memory
 
-Tau is durable shared memory, not scratch space. Every memory operation must target an explicit **squad vault**, and every write must preserve useful context for future humans and agents.
+Ficus is durable shared memory, not scratch space. Every memory operation must target an explicit **squad vault**, and every write must preserve useful context for future humans and agents.
 
 ## Workspace Path Context
 
-Tau memory is shared by remote squad agents and local developer agents. They often work on the same repositories, but in different checkouts and execution environments.
+Ficus memory is shared by remote squad agents and local developer agents. They often work on the same repositories, but in different checkouts and execution environments.
 
 - Squad agents commonly refer to files under `/workspace/...`.
 - Local developer agents may see the same repository under a local path such as `/Users/.../project`.
@@ -20,7 +20,7 @@ Tau memory is shared by remote squad agents and local developer agents. They oft
 
 ## When to Use
 
-Use Tau memory for durable knowledge such as:
+Use Ficus memory for durable knowledge such as:
 
 - Architecture, product, or operational decisions with rationale.
 - Reusable codebase patterns and conventions.
@@ -28,7 +28,7 @@ Use Tau memory for durable knowledge such as:
 - API contracts, integration references, and recurring setup steps.
 - Stable, high-signal facts that will help future sessions.
 
-Do **not** use Tau memory for:
+Do **not** use Ficus memory for:
 
 - Secrets, credentials, tokens, private keys, or personal data.
 - Temporary TODOs, scratch notes, chat logs, or task-by-task progress.
@@ -40,7 +40,7 @@ Do **not** use Tau memory for:
 Before reading, searching, writing, patching, appending, or deleting memory:
 
 1. Use the Ficus CLI path shown in the generated **Installed Ficus CLI** section below.
-   - If no installed path is documented, use `tau` when it is on `PATH`; otherwise ask the human to install/configure Tau CLI.
+   - If no installed path is documented, use `ficus` when it is on `PATH`; otherwise ask the human to install/configure Ficus CLI.
 2. Run `<ficus-cli> squad list`.
 3. Select the squad UUID:
    - If exactly one squad is listed, use that squad automatically.
@@ -125,6 +125,6 @@ Memory writes are not immediately searchable through hybrid/vector search. `writ
 
 ## Setup Boundary
 
-This skill assumes Tau CLI or HTTP access is already configured. Do not turn normal memory tasks into installation work unless the human explicitly asks for setup help. To install the skill into a project, use `ficus skill install ficus-memory --agent <pi|claude-code|codex>` from the project root.
+This skill assumes Ficus CLI or HTTP access is already configured. Do not turn normal memory tasks into installation work unless the human explicitly asks for setup help. To install the skill into a project, use `ficus skill install ficus-memory --agent <pi|claude-code|codex>` from the project root.
 
 Never print, commit, or write `FICUS_PASSWORD` or `$HOME/.tau/cli/auth.json` contents into memory.

@@ -1,11 +1,11 @@
-# Tau Memory CLI Reference
+# Ficus Memory CLI Reference
 
 Use the Ficus CLI path shown in the installed skill's **Installed Ficus CLI** section. In this reference, `<ficus-cli>` means that exact command path. Always include `--squad <squad-id>` on memory commands.
 
 ## Auth and Backend Selection
 
 ```bash
-<ficus-cli> auth login work --api-url "https://tau.example.com"
+<ficus-cli> auth login work --api-url "https://ficus.example.com"
 <ficus-cli> auth login local --api-url "http://localhost:3000"
 <ficus-cli> auth list
 <ficus-cli> auth switch work
