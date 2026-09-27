@@ -2797,6 +2797,7 @@ build_app() { # SRC_DEST SERVE_WEB(true|false)
   if [[ ${serve_web} == true ]]; then
     bun run build:web
     [[ -f apps/web/dist/index.html ]] || die "web build did not produce apps/web/dist/index.html"
+    [[ -f apps/web/dist/garden/index.html ]] || die "web build did not produce the garden (apps/web/dist/garden/index.html)"
   fi
   build_stamp_write "${src_dest}" "${serve_web}"
   log_info "build complete"

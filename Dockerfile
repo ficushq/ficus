@@ -84,6 +84,7 @@ RUN set -e; \
     if [ "$FICUS_INCLUDE_WEB" = "1" ]; then \
       FICUS_BUILD_ID="$FICUS_BUILD_ID" bun run --filter web build; \
       test -f apps/web/dist/index.html; \
+      test -f apps/web/dist/garden/index.html; \
     fi
 
 # --- Stage 2: Production image ---

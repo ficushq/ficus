@@ -63,14 +63,23 @@ export function resolveWebDist(searchFrom: string = import.meta.dir): string | u
 
 /**
  * Resolves the absolute path to the built garden UI (`apps/garden`), served at
- * `/garden` beside the web UI. Same search order as {@link resolveWebDist}:
- * `FICUS_GARDEN_DIST`, then the repo root found by walking up from
- * `searchFrom`, then `<cwd>/apps/garden/dist`. Returns `undefined` if no
- * candidate exists on disk.
+ * `/garden` beside the web UI.
+ *
+ * Search order:
+ *  1. `FICUS_GARDEN_DIST` env var, if set.
+ *  2. `<web dist>/garden`: the web app's build writes the garden there, so
+ *     every install, artifact and image that ships the web UI ships it too.
+ *  3. The repo root's `apps/garden/dist` (a standalone `bun run build:garden`).
+ *  4. `<cwd>/apps/garden/dist`.
+ *
+ * Returns `undefined` if no candidate exists on disk.
  */
 export function resolveGardenDist(searchFrom: string = import.meta.dir): string | undefined {
   const explicit = process.env.FICUS_GARDEN_DIST
   if (explicit) return resolve(expandTilde(explicit))
+
+  const webDist = resolveWebDist(searchFrom)
+  if (webDist && existsSync(join(webDist, 'garden', 'index.html'))) return join(webDist, 'garden')
 
   const repoRoot = findRepoRoot(searchFrom)
   if (repoRoot) {

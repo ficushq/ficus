@@ -101,6 +101,21 @@ describe('resolveGardenDist', () => {
     expect(resolveGardenDist(tmp)).toBe(join(tmp, 'custom'))
   })
 
+  it('prefers the garden the web build placed inside the web dist', () => {
+    delete process.env.FICUS_GARDEN_DIST
+    const origWeb = process.env.FICUS_WEB_DIST
+    const webDist = join(tmp, 'web-dist')
+    mkdirSync(join(webDist, 'garden'), { recursive: true })
+    writeFileSync(join(webDist, 'garden', 'index.html'), 'garden')
+    process.env.FICUS_WEB_DIST = webDist
+    try {
+      expect(resolveGardenDist(tmp)).toBe(join(webDist, 'garden'))
+    } finally {
+      if (origWeb === undefined) delete process.env.FICUS_WEB_DIST
+      else process.env.FICUS_WEB_DIST = origWeb
+    }
+  })
+
   it('finds apps/garden/dist under the discovered repo root', () => {
     delete process.env.FICUS_GARDEN_DIST
     const repoRoot = join(tmp, 'repo')

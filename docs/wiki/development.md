@@ -141,9 +141,10 @@ the core with `FICUS_SERVE_WEB=1`; the app, `/api/*` and `/ws` are then all on
 ### The garden UI
 
 `apps/garden` is a game-style alternative UI (squads as fenced yards, work
-streams as plants, agents as robots) built on the same client packages. Core
-serves a built garden at `/garden` beside the web UI (`bun run build:garden`;
-`FICUS_GARDEN_DIST` overrides where Core looks for it).
+streams as plants, agents as robots) built on the same client packages. The web
+app's build also builds the garden into `apps/web/dist/garden/`, so every
+install, Core artifact and image that ships the web UI ships the garden, and
+Core serves it at `/garden` (`FICUS_GARDEN_DIST` overrides where Core looks).
 
 `bun run dev:garden` serves it at `http://127.0.0.1:5174/garden/`, proxying
 `/api` and `/ws` to local Core on `:3000` with your browser session (sign in on

@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:into-web": "vite build --outDir ../web/dist/garden --emptyOutDir",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.node.json",
     "test": "bun test"
