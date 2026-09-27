@@ -295,7 +295,7 @@ export function createAssistantTools(agentId: string, executionId: string, conve
       async (input) => listVisibleSquads((await access()).user, input.limit)
     ),
     tool(
-      'search_tau',
+      'search_ficus',
       'Search visible squads, work streams and conversations. Results include full IDs for subsequent tools.',
       Type.Object({ q: Type.String({ minLength: 1, maxLength: 200 }), squadId: Type.Optional(uuid), limit }),
       async (input) => searchEntities((await access()).user, input)

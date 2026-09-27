@@ -353,10 +353,10 @@ describe('site assistant task renderers', () => {
     ).toContain('Task update')
   })
 
-  it('search_tau summarizes the query', () => {
+  it('search_ficus summarizes the query', () => {
     expect(
       renderToStaticMarkup(
-        <ToolSummary renderers={siteAssistantToolRenderers} toolName="search_tau" args='{"query":"schedules"}' />
+        <ToolSummary renderers={siteAssistantToolRenderers} toolName="search_ficus" args='{"query":"schedules"}' />
       )
     ).toContain('Searched Ficus for “schedules”')
   })

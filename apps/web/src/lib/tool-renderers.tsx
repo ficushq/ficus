@@ -988,5 +988,5 @@ export const siteAssistantToolRenderers: ToolRenderers = {
   notify_contact: notifyContactRenderer,
   delegate_task: delegateTaskRenderer,
   assistant_inbox: taskUpdateRenderer,
-  search_tau: searchFicusRenderer,
+  search_ficus: searchFicusRenderer,
 }

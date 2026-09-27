@@ -106,7 +106,7 @@ export function createAssistantTools(
       followUp: 'never' as const,
     },
     tool(
-      'search_tau',
+      'search_ficus',
       'Look up Ficus entities by name or keyword: squads, work streams, consultant conversations, saved Assistant conversations, and navigation targets (pages and settings sections). Returns canonical IDs and links. It does not read data or configuration: no schedules, environment variables, secrets, integrations, users, permissions, agent status, activity, or the value of any setting. For live state use get_work, read_thread, read_inbox, or read_activity; for anything else use delegate_task.',
       { query: string, limit: number },
       ['query'],
