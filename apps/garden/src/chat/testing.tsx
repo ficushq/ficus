@@ -1,12 +1,12 @@
 /**
- * Test harness for chat components: a recording fake TauClient (the parts the
+ * Test harness for chat components: a recording fake FicusClient (the parts the
  * conversation engine and chat views call), a render helper and waitFor, in
  * the house style of packages/client-react/src/test-utils.tsx.
  */
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react-query'
-import type { AgentStreamCallbacks, RequestOptions, TauClient, Transport } from '@ficus/client-core'
+import type { AgentStreamCallbacks, RequestOptions, FicusClient, Transport } from '@ficus/client-core'
 import type { ChatSSECallbacks, SendChatParams } from '@ficus/client-core'
 import type { Agent, Message } from '@ficus/shared'
 import { ChatProvider } from './ChatProvider'
@@ -158,7 +158,7 @@ export function makeFakeClient(opts: FakeClientOptions = {}) {
         chatCallbacks = callbacks
       },
     },
-  } as unknown as TauClient
+  } as unknown as FicusClient
 
   return {
     client,
@@ -187,7 +187,7 @@ export function createTestQueryClient() {
 
 export async function render(
   ui: ReactNode,
-  { client, queryClient = createTestQueryClient() }: { client: TauClient; queryClient?: QueryClient }
+  { client, queryClient = createTestQueryClient() }: { client: FicusClient; queryClient?: QueryClient }
 ) {
   const doc = (globalThis as unknown as { document: Document }).document
   const container = doc.createElement('div')

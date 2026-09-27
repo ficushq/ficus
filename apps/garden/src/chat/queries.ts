@@ -1,4 +1,4 @@
-import { queryKeys, type TauClient } from '@ficus/client-core'
+import { queryKeys, type FicusClient } from '@ficus/client-core'
 import { queryOptions } from '@tanstack/react-query'
 
 /**
@@ -9,21 +9,21 @@ import { queryOptions } from '@tanstack/react-query'
  * singleton, so tests can inject a fake.
  */
 export const chatQueries = {
-  agent: (client: TauClient, agentId: string) =>
+  agent: (client: FicusClient, agentId: string) =>
     queryOptions({
       queryKey: queryKeys.agents.detail(agentId),
       queryFn: () => client.agents.getAgent(agentId),
       enabled: !!agentId,
     }),
   /** Same key as the garden session query; used to tell your own messages from teammates'. */
-  me: (client: TauClient) =>
+  me: (client: FicusClient) =>
     queryOptions({
       queryKey: queryKeys.auth.me(),
       queryFn: () => client.auth.getCurrentUser(),
       retry: false,
       staleTime: 60_000,
     }),
-  permissions: (client: TauClient, squadId?: string) =>
+  permissions: (client: FicusClient, squadId?: string) =>
     queryOptions({
       queryKey: queryKeys.auth.permissions(squadId),
       queryFn: () => client.auth.getMyPermissions(squadId),

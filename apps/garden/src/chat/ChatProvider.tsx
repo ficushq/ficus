@@ -1,5 +1,5 @@
 import { useCallback, type ReactNode } from 'react'
-import { createWsClient, type TauClient } from '@ficus/client-core'
+import { createWsClient, type FicusClient } from '@ficus/client-core'
 import { ConversationClientProvider, type AgentEventEntry } from '@ficus/client-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { client as gardenClient } from '../api/client'
@@ -33,7 +33,7 @@ export function ChatProvider({
   hub,
 }: {
   children: ReactNode
-  client?: TauClient
+  client?: FicusClient
   hub?: AgentEventHub
 }) {
   const queryClient = useQueryClient()
