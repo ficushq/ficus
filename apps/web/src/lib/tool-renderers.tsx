@@ -973,7 +973,7 @@ const taskUpdateRenderer: ToolRenderer = {
   },
 }
 
-const searchTauRenderer: ToolRenderer = {
+const searchFicusRenderer: ToolRenderer = {
   summary: (args) => `Searched Ficus for “${truncate(args.query ?? args.q ?? '', 40)}”`,
   ArgsView: ({ args }) => <InlineCode>{args.query ?? args.q ?? ''}</InlineCode>,
   ResultView: ({ result, isError }) => <CodeBlock isError={isError}>{extractResultText(result)}</CodeBlock>,
@@ -988,5 +988,5 @@ export const siteAssistantToolRenderers: ToolRenderers = {
   notify_contact: notifyContactRenderer,
   delegate_task: delegateTaskRenderer,
   assistant_inbox: taskUpdateRenderer,
-  search_tau: searchTauRenderer,
+  search_tau: searchFicusRenderer,
 }

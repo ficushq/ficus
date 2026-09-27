@@ -21,13 +21,13 @@ afterEach(async () => {
   globalThis.fetch = originalFetch
 })
 const missing: Access = { status: 'missing', complete: true, personalAccountInstalled: false, installations: [] }
-async function render(data: Access, usesTauApp = true) {
+async function render(data: Access, usesFicusApp = true) {
   client.setQueryData(integrationQueryKeys.githubRepositoryAccess('account'), data)
   const { root, container } = harness.createRoot()
   await harness.act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <GitHubRepositoryAccess connectionId="account" login="example" usesTauApp={usesTauApp} />
+        <GitHubRepositoryAccess connectionId="account" login="example" usesFicusApp={usesFicusApp} />
       </QueryClientProvider>
     )
   )

@@ -48,4 +48,4 @@ export function createClient(t: Transport) {
   }
 }
 
-export type TauClient = ReturnType<typeof createClient>
+export type FicusClient = ReturnType<typeof createClient>

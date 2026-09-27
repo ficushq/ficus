@@ -208,7 +208,7 @@ export function GitHubIntegrationSettings({
   )
   const hasAccounts = (pool.data?.length ?? 0) > 0
   const canConnect = canWrite && app.data?.configured && pool.isSuccess
-  const usesTauApp = app.data?.authority === 'platform_broker' || app.data?.clientId === FICUS_GITHUB_APP_CLIENT_ID
+  const usesFicusApp = app.data?.authority === 'platform_broker' || app.data?.clientId === FICUS_GITHUB_APP_CLIENT_ID
   const failure =
     error ||
     (app.isError && integrationErrorMessage(app.error, "Couldn't load the GitHub App settings.")) ||
@@ -230,7 +230,7 @@ export function GitHubIntegrationSettings({
           </button>
         )}
       </div>
-      {canConnect && !hasAccounts && usesTauApp && (
+      {canConnect && !hasAccounts && usesFicusApp && (
         <p className="mt-2 text-xs text-muted">
           {app.data?.authority === 'local' && app.data.authorizationMode !== 'browser'
             ? "Uses Ficus's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
@@ -244,11 +244,11 @@ export function GitHubIntegrationSettings({
       </p>
       <p className="mt-2 text-xs text-muted">
         Connecting an account does not grant repository access. Install{' '}
-        {usesTauApp ? 'Ficus Integration' : 'your GitHub App'} on your personal account or organization and choose its
+        {usesFicusApp ? 'Ficus Integration' : 'your GitHub App'} on your personal account or organization and choose its
         repositories. Organization access may require an owner's approval.
       </p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-accent-light">
-        {usesTauApp && (
+        {usesFicusApp && (
           <a href="https://github.com/apps/tau-integration/installations/new" target="_blank" rel="noreferrer">
             Grant repository access
           </a>
@@ -320,7 +320,7 @@ export function GitHubIntegrationSettings({
                 <GitHubRepositoryAccess
                   connectionId={connection.id}
                   login={connection.configuration.login ?? connection.displayName}
-                  usesTauApp={usesTauApp}
+                  usesFicusApp={usesFicusApp}
                 />
                 <GitHubCommitSigning
                   connectionId={connection.id}

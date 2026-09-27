@@ -1,10 +1,10 @@
 import { useCallback, type ReactNode } from 'react'
-import type { TauClient } from '@ficus/client-core'
+import type { FicusClient } from '@ficus/client-core'
 import { ConversationClientProvider, type AgentEventEntry } from '@ficus/client-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { retainLiveConversation } from '../lib/messageInvalidationSuppression'
 
-export function LiveConversationProvider({ client, children }: { client: TauClient; children: ReactNode }) {
+export function LiveConversationProvider({ client, children }: { client: FicusClient; children: ReactNode }) {
   const { subscribe } = useWebSocket()
   // Agent topics are authorized by the server's current squad or private-owner relation.
   const subscribeToAgentEvents = useCallback(

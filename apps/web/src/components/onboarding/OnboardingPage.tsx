@@ -142,12 +142,14 @@ export function OnboardingPage() {
             {coreDone && (
               <div className="flex items-center justify-between gap-4">
                 <p className="text-sm text-muted">You’re ready to get started.</p>
-                <OpenTauLink createdSquad={createdSquad} />
+                <OpenFicusLink createdSquad={createdSquad} />
               </div>
             )}
             <section className="border-t border-th-border pt-5">
               <h2 className="text-sm font-medium text-secondary">Optional setup</h2>
-              <p className="mt-1 text-xs text-muted">Make Ficus your own. You can also set these up later in Settings.</p>
+              <p className="mt-1 text-xs text-muted">
+                Make Ficus your own. You can also set these up later in Settings.
+              </p>
               <OptionalSetup />
             </section>
           </div>
@@ -163,7 +165,7 @@ export function OnboardingPage() {
   )
 }
 
-function OpenTauLink({ createdSquad }: { createdSquad: Squad | null }) {
+function OpenFicusLink({ createdSquad }: { createdSquad: Squad | null }) {
   const { data: squads = [] } = useQuery(queries.squads.list())
   const target = createdSquad ?? pickMostRecentlyCreated(squads)
   const slug = target ? (squadSlugMap(squads).idToSlug[target.id] ?? target.id) : null

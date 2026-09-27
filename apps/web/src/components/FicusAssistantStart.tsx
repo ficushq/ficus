@@ -12,7 +12,7 @@ import { SparklesIcon } from './icons'
 
 const examples = ['What needs my attention?', 'Summarize progress across my squads', 'Help me set up a new project']
 
-export function TauAssistantStart({
+export function FicusAssistantStart({
   onAsk,
   recentChats = [],
   onSelectChat,

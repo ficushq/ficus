@@ -23,7 +23,7 @@ function entityDestination(row: EntitySearchResult) {
   }
 }
 
-export async function hybridTauSearch(
+export async function hybridFicusSearch(
   query: string,
   limit: number,
   allowedSettings: ReadonlySet<string>,

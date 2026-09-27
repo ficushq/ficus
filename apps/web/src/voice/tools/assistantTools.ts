@@ -10,7 +10,7 @@ import { getMyInbox, markAsRead } from '../../api/inbox'
 import * as workspace from '../../api/workspace'
 import { searchMemory } from '../../api/memory'
 import { searchEntities } from '../../api/search'
-import { hybridTauSearch } from '../../lib/hybridTauSearch'
+import { hybridFicusSearch } from '../../lib/hybridFicusSearch'
 import { ALL_SECTIONS, isSectionAllowed } from '../../components/settings/settingsSections'
 import { resolveVoiceSquadId } from '../squadReferences'
 import { getChatDrawerPath, type ChatDrawerToolState } from '../chatDrawerTool'
@@ -117,7 +117,7 @@ export function createAssistantTools(
             (section) => section.id
           )
         )
-        return hybridTauSearch(input.query, input.limit, allowed, deps.searchEntities)
+        return hybridFicusSearch(input.query, input.limit, allowed, deps.searchEntities)
       }
     ),
     tool(

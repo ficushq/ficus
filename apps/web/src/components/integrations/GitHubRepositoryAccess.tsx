@@ -4,17 +4,17 @@ import { integrationQueries } from '../../queryOptions'
 export function GitHubRepositoryAccess({
   connectionId,
   login,
-  usesTauApp,
+  usesFicusApp,
 }: {
   connectionId: string
   login: string
-  usesTauApp: boolean
+  usesFicusApp: boolean
 }) {
   const access = useQuery(integrationQueries.githubRepositoryAccess(connectionId))
   const result = access.isError ? undefined : access.data
   const uncertain = access.isError || result?.status === 'unknown'
   const needsAccess = result?.status === 'missing' || result?.personalAccountInstalled === false
-  const installationUrl = usesTauApp
+  const installationUrl = usesFicusApp
     ? 'https://github.com/apps/tau-integration/installations/new'
     : 'https://github.com/settings/installations'
   return (
@@ -71,7 +71,9 @@ export function GitHubRepositoryAccess({
       )}
       <div className="flex flex-wrap items-center gap-3">
         <a
-          className={needsAccess ? 'ficus-button ficus-button-primary px-3 py-1.5' : 'text-accent-light hover:underline'}
+          className={
+            needsAccess ? 'ficus-button ficus-button-primary px-3 py-1.5' : 'text-accent-light hover:underline'
+          }
           href={installationUrl}
           target="_blank"
           rel="noreferrer"

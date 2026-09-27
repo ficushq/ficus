@@ -5,7 +5,7 @@ import { useStableRef } from '../hooks/useStableRef'
 import { AssistantConversationSwitcher } from './AssistantConversations'
 import { VoiceCompanionButton } from '../voice/VoiceCompanionWidget'
 import { useRealtimeEnabled } from '../hooks/useVoiceEnabled'
-import { TauAssistantStart } from './TauAssistantStart'
+import { FicusAssistantStart } from './FicusAssistantStart'
 import { usePermissions } from '../hooks/usePermissions'
 import { useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
@@ -477,7 +477,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
             </div>
           )}
           <div hidden={!isOpen || mode !== 'text' || conversation} className="min-h-0 overflow-y-auto">
-            <TauAssistantStart
+            <FicusAssistantStart
               active={isOpen && mode === 'text' && !conversation}
               onAsk={ask}
               recentChats={agents ?? []}
