@@ -580,3 +580,29 @@
   padding: 20px;
   text-align: center;
 }
+
+/* Ficus Desktop inset title bar: clear the traffic lights and let the top strip move the window. */
+.g-titlebar {
+  display: none;
+}
+
+:root[data-desktop-shell='inset'] .g-titlebar {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  -webkit-app-region: drag;
+}
+
+:root[data-desktop-shell='inset'] .g-hud {
+  padding-left: 72px;
+}
+
+:root[data-desktop-shell='inset'] .g-hud > *,
+:root[data-desktop-shell='inset'] .g-farm-card,
+:root[data-desktop-shell='inset'] .g-farm-list,
+:root[data-desktop-shell='inset'] .g-chat {
+  -webkit-app-region: no-drag;
+}

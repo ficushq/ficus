@@ -12,6 +12,7 @@ import { FarmCardContext, type FarmCardEnv } from './cards/context'
 import { ChatSlot, type ChatTarget } from './cards/ChatSlot'
 import { haltedAgentIds } from './state'
 import { useStableRef } from '../hooks/useStableRef'
+import { useDesktopShellChrome } from '../desktop/shell'
 import type { Selection } from './selection'
 import type { LiveStatus } from '../live/LiveUpdates'
 import {
@@ -34,6 +35,7 @@ import { webAppUrl } from '../api/base'
 const WORLD_PAD = { top: 200, side: 60, bottom: 40 }
 
 export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus }) {
+  useDesktopShellChrome()
   const layout = useMemo(() => layoutFarm(input), [input])
   const viewport = useRef<HTMLDivElement>(null)
   const size = useViewportSize(viewport)
@@ -130,6 +132,8 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         </svg>
       </div>
 
+      {/* Desktop's hidden title bar: the top strip drags the window (see desktop/shell.ts). */}
+      <div className="g-titlebar" aria-hidden="true" />
       <header className="g-hud">
         <div className="g-logo g-panel">
           <img src={`${import.meta.env.BASE_URL}ficus-mark.svg`} alt="" width={32} height={32} />
