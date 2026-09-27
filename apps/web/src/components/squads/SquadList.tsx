@@ -282,7 +282,10 @@ function SortableSquadCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={clsx('ficus-panel tau-interactive-card relative', isDragging && 'opacity-50 shadow-lg scale-105 z-10')}
+      className={clsx(
+        'ficus-panel ficus-interactive-card relative',
+        isDragging && 'opacity-50 shadow-lg scale-105 z-10'
+      )}
     >
       <button
         {...attributes}
@@ -302,7 +305,7 @@ function SortableSquadCard({
 function SquadCard({ squad, agents, workStreams }: { squad: Squad; agents: Agent[]; workStreams: WorkStream[] }) {
   const { slugFor } = useSquadSlugs()
   return (
-    <Link to={`/squads/${slugFor(squad.id)}`} className="ficus-panel tau-interactive-card block p-5">
+    <Link to={`/squads/${slugFor(squad.id)}`} className="ficus-panel ficus-interactive-card block p-5">
       <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} />
     </Link>
   )

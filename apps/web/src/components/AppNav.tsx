@@ -292,7 +292,7 @@ export function MobileBottomNav({
                 navigate(getTabNavigationTarget(location.pathname + location.search, item.to))
               }}
               className={clsx(
-                'tau-dock-item flex flex-col items-center justify-center flex-1 h-full min-w-0',
+                'ficus-dock-item flex flex-col items-center justify-center flex-1 h-full min-w-0',
                 isActive ? 'text-accent-light' : 'text-muted hover:text-primary'
               )}
             >
@@ -325,7 +325,7 @@ export function MobileBottomNav({
                 setMoreOpen((v) => !v)
               }}
               className={clsx(
-                'ficus-button tau-dock-item',
+                'ficus-button ficus-dock-item',
                 'flex flex-col items-center justify-center w-full h-full',
                 isMoreActive || moreOpen ? 'text-accent-light' : 'text-muted hover:text-primary'
               )}

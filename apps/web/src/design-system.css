@@ -276,12 +276,12 @@
     color: rgb(var(--color-primary-light));
   }
 
-  .tau-dock-item {
+  .ficus-dock-item {
     position: relative;
     isolation: isolate;
   }
 
-  .tau-dock-item::before {
+  .ficus-dock-item::before {
     content: '';
     position: absolute;
     inset: 4px;
@@ -292,24 +292,24 @@
     transition: background-color 140ms ease;
   }
 
-  .tau-dock-item[data-active='true']::before {
+  .ficus-dock-item[data-active='true']::before {
     background: rgb(var(--color-selection-bg));
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .tau-dock-item::before {
+    .ficus-dock-item::before {
       transition: none;
     }
   }
 
-  .tau-interactive-card {
+  .ficus-interactive-card {
     transition:
       background-color 140ms ease,
       border-color 140ms ease,
       box-shadow 140ms ease;
   }
 
-  .tau-interactive-card:hover {
+  .ficus-interactive-card:hover {
     border-color: rgb(var(--color-border-hover));
     background: rgb(var(--color-bg-surface-hover));
   }
@@ -358,7 +358,7 @@
     .ficus-button,
     .ficus-field,
     .ficus-nav-item,
-    .tau-interactive-card {
+    .ficus-interactive-card {
       transition: none;
     }
   }
@@ -375,7 +375,7 @@
 }
 
 /* Short, non-spring motion keeps menus anchored and never shifts page layout. */
-@keyframes tau-surface-in {
+@keyframes ficus-surface-in {
   from {
     opacity: 0;
     translate: 0 4px;
@@ -387,14 +387,14 @@
     scale: 1;
   }
 }
-@keyframes tau-surface-out {
+@keyframes ficus-surface-out {
   to {
     opacity: 0;
     translate: 0 3px;
     scale: 0.99;
   }
 }
-@keyframes tau-backdrop-in {
+@keyframes ficus-backdrop-in {
   from {
     opacity: 0;
   }
@@ -402,7 +402,7 @@
     opacity: 1;
   }
 }
-@keyframes tau-backdrop-out {
+@keyframes ficus-backdrop-out {
   to {
     opacity: 0;
   }
@@ -410,17 +410,17 @@
 @media (prefers-reduced-motion: no-preference) {
   .ficus-overlay,
   .ficus-presence[data-state='open'] {
-    animation: tau-surface-in 160ms ease-out;
+    animation: ficus-surface-in 160ms ease-out;
   }
   .ficus-presence[data-state='closed'] {
-    animation: tau-surface-out 120ms ease-in forwards;
+    animation: ficus-surface-out 120ms ease-in forwards;
     pointer-events: none;
   }
   .ficus-modal-backdrop[data-state='open'] {
-    animation: tau-backdrop-in 160ms ease-out;
+    animation: ficus-backdrop-in 160ms ease-out;
   }
   .ficus-modal-backdrop[data-state='closed'] {
-    animation: tau-backdrop-out 120ms ease-in forwards;
+    animation: ficus-backdrop-out 120ms ease-in forwards;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -430,7 +430,7 @@
   }
 }
 
-@keyframes tau-voice-settle {
+@keyframes ficus-voice-settle {
   from {
     opacity: 0.6;
     transform: translateY(6px) scale(0.98);
@@ -441,8 +441,8 @@
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .tau-voice-panel[data-state='open'][data-compact='true'] {
-    animation: tau-voice-settle 180ms ease-out;
+  .ficus-voice-panel[data-state='open'][data-compact='true'] {
+    animation: ficus-voice-settle 180ms ease-out;
   }
 }
 

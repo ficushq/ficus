@@ -284,7 +284,7 @@ export function AssistantCommandCenter({
               setSelected(Math.max(-1, Math.min(visible.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))))
             }
           }}
-          className="ficus-field tau-assistant-search h-12 flex-1 min-w-0 rounded-xl px-3 py-2 text-base"
+          className="ficus-field ficus-assistant-search h-12 flex-1 min-w-0 rounded-xl px-3 py-2 text-base"
         />
         <button
           type="button"

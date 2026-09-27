@@ -212,7 +212,7 @@ function stripDevAccessCredential(req: IncomingMessage): void {
 
 function devAccessPlugin(accessToken: string): Plugin {
   return {
-    name: 'tau-dev-access',
+    name: 'ficus-dev-access',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         try {
@@ -288,7 +288,7 @@ function devAccessPlugin(accessToken: string): Plugin {
 
 function devBackendControlPlugin(state: MutableDevProxyState): Plugin {
   return {
-    name: 'tau-dev-backend-control',
+    name: 'ficus-dev-backend-control',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith(DEV_BACKEND_CONTROL_PATH)) return next()

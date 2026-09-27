@@ -100,7 +100,7 @@ export function TauAssistantStart({
               )
             }
           }}
-          className="ficus-field tau-assistant-search w-full min-w-0 rounded-xl px-3 py-2.5 text-base sm:text-sm"
+          className="ficus-field ficus-assistant-search w-full min-w-0 rounded-xl px-3 py-2.5 text-base sm:text-sm"
         />
         <button
           type="button"

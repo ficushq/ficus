@@ -301,7 +301,7 @@ export function Terminal({ sandboxId, sessionId, isActive = true, onSessionCreat
   return (
     <div
       ref={containerRef}
-      className="w-full h-full tau-terminal bg-[rgb(var(--term-bg))] relative"
+      className="w-full h-full ficus-terminal bg-[rgb(var(--term-bg))] relative"
       aria-busy={connectionStatus === 'connecting'}
     >
       {connectionStatus === 'connecting' && (

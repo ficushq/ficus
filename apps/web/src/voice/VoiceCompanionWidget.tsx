@@ -206,7 +206,7 @@ export function VoiceCompanionButton({
       className={clsx(
         embedded
           ? 'p-2 overflow-y-auto min-h-0'
-          : 'ficus-overlay tau-voice-panel fixed right-3 sm:right-6 z-50 p-2 overflow-y-auto max-h-[calc(100dvh-10rem)] max-w-[calc(100vw-1.5rem)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
+          : 'ficus-overlay ficus-voice-panel fixed right-3 sm:right-6 z-50 p-2 overflow-y-auto max-h-[calc(100dvh-10rem)] max-w-[calc(100vw-1.5rem)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
         !embedded && (live && compact ? 'w-72' : 'w-[calc(100vw-1.5rem)] sm:w-96')
       )}
     >
