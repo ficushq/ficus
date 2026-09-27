@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
-import { devProxy } from './devProxy'
+import { devProxy, devWriteGuard, resolveDevBackend } from './devProxy'
 
 /**
  * The garden is served by Core at `<APP_BASE_PATH>/garden/`, beside the web UI
@@ -13,14 +13,20 @@ export default defineConfig(({ mode, command }) => {
   const appBase = (env.APP_BASE_PATH ?? '').replace(/\/+$/, '')
   const base = command === 'serve' && mode === 'development' ? '/garden/' : `${appBase}/garden/`
 
+  const isDev = command === 'serve'
+  const backend = isDev ? resolveDevBackend({ ...env, ...process.env }) : null
+  if (backend?.bearer) {
+    console.log(`Garden dev backend: ${backend.label} (${backend.target})${backend.writes ? '' : ', read-only'}`)
+  }
+
   return {
     base,
-    plugins: [react()],
+    plugins: [react(), ...(backend ? [devWriteGuard(backend)] : [])],
     server: {
       host: '127.0.0.1',
       port: 5174,
       strictPort: true,
-      proxy: devProxy({ ...env, ...process.env }),
+      proxy: backend ? devProxy({ ...env, ...process.env }, backend) : undefined,
     },
     build: { outDir: 'dist', emptyOutDir: true },
   }

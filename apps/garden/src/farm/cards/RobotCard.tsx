@@ -7,13 +7,17 @@ import { roleFor } from '../appearance'
 import { roleLabel } from '../selection'
 import { useFarmCard } from './context'
 import { RobotActions } from './slots'
+import { PORCH_ASSISTANT_ID } from '../useFarmData'
 
 export function RobotCard({ agentId }: { agentId: string }) {
   const env = useFarmCard()
   const placed = findRobot(env.layout, agentId)
   const known = env.agentsById.get(agentId)
   // Robots reached from a crew list or roster may not be on the field (finished, asleep).
-  const detail = useQuery({ ...gardenQueries.agent(agentId), enabled: !placed && !known })
+  const detail = useQuery({
+    ...gardenQueries.agent(agentId),
+    enabled: !placed && !known && agentId !== PORCH_ASSISTANT_ID,
+  })
   const agent = placed?.agent ?? known ?? detail.data
   if (!agent)
     return <p className="g-card-text">{detail.isError ? "Couldn't find this robot." : 'Finding this robot…'}</p>
@@ -41,7 +45,7 @@ export function RobotCard({ agentId }: { agentId: string }) {
       </div>
       {label.secondary && <p className="g-card-text">{label.secondary}</p>}
       <p className="g-state-tag">{halted ? 'Halted — needs a nudge' : AGENT_STATUS_LABELS[agent.status]}</p>
-      <RobotActions agentId={agentId} />
+      {role !== 'assistant' && <RobotActions agentId={agentId} />}
       <button
         type="button"
         className="g-button g-button-primary g-card-wide"

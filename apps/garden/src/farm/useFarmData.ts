@@ -36,11 +36,47 @@ export function useFarmData(): { input: FarmInput | null; error: unknown } {
       doneCount: done.data ?? 0,
       canceledCount: canceled.data ?? 0,
       agents: squadAgents.flatMap((q) => q.data ?? []),
-      assistants: assistantAgents.map((q) => q.data).filter((a): a is Agent => !!a),
+      assistants: withPorchAssistant(assistantAgents.map((q) => q.data).filter((a): a is Agent => !!a)),
       pendingActions: pending.data ?? [],
     }
     // squadAgents/assistantAgents are new arrays every render; their update stamps are the real deps.
   }, [squads.data, streams.data, pending.data, done.data, canceled.data, agentsReady, agentsKey, assistantsKey])
 
   return { input, error: squads.error ?? streams.error ?? null }
+}
+
+/**
+ * The assistant is always on the porch, even before its conversation has an
+ * agent: talking to it opens (or starts) the assistant conversation.
+ */
+export const PORCH_ASSISTANT_ID = 'garden:assistant'
+
+function withPorchAssistant(agents: Agent[]): Agent[] {
+  if (agents.length) return agents
+  const now = new Date()
+  return [
+    {
+      id: PORCH_ASSISTANT_ID,
+      agentTypeId: 'assistant',
+      squadId: null,
+      parentAgentId: null,
+      status: 'idle',
+      persist: true,
+      modelOverride: null,
+      metadata: { name: 'Assistant' },
+      context: {},
+      questionData: null,
+      sessionUsage: null,
+      dormantAt: null,
+      terminatedAt: null,
+      lastMessageAt: null,
+      lastHumanMessageAt: null,
+      lastMessagePreview: null,
+      createdAt: now,
+      updatedAt: now,
+      amtpHandle: null,
+      identityPublicKey: null,
+      inboundOpen: false,
+    },
+  ]
 }

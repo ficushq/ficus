@@ -1,32 +1,126 @@
-import type { ProxyOptions } from 'vite'
+import { existsSync, readFileSync } from 'node:fs'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { Plugin, ProxyOptions } from 'vite'
 
-/** Local Core API the garden dev server proxies to (`FICUS_API_URL` overrides). */
-export function devApiTarget(env: Record<string, string | undefined>): string {
-  return (env.FICUS_API_URL || 'http://localhost:3000').replace(/\/$/, '')
-}
+type Env = Record<string, string | undefined>
 
 /**
- * The origin Core already trusts for browser WebSocket handshakes. Outside
- * production Core only auto-allows the web dev server (localhost:5173), and the
- * garden dev server runs on another port, so its `/ws` upgrade is re-sent with
- * that origin. The garden dev server binds to loopback only.
+ * Where `bun run dev:garden` sends /api and /ws.
+ *
+ * - Default: local Core on :3000 with the browser's own session cookie (sign
+ *   in once on the web app; cookies ignore the port).
+ * - `FICUS_GARDEN_BACKEND=<label>`: a backend from the CLI auth store
+ *   (`FICUS_DEV_AUTH_STORE_PATH`), authenticated with its device token the
+ *   way `dev:web` does for remote backends. Such backends are READ-ONLY
+ *   unless `FICUS_GARDEN_ALLOW_WRITES=1`, so pointing the garden at a real
+ *   instance can't approve, answer or message anything by accident.
+ *   `FICUS_API_URL` overrides the stored URL (e.g. the loopback port).
  */
-export function devTrustedOrigin(env: Record<string, string | undefined>): string {
-  return (env.FICUS_WEB_ORIGIN?.split(',')[0] || 'http://localhost:5173').replace(/\/$/, '')
+export interface DevBackend {
+  label: string
+  target: string
+  bearer?: string
+  writes: boolean
 }
 
-export function devProxy(env: Record<string, string | undefined>): Record<string, ProxyOptions> {
-  const target = devApiTarget(env)
+export function resolveDevBackend(env: Env): DevBackend {
+  const label = env.FICUS_GARDEN_BACKEND?.trim()
+  if (!label) {
+    return { label: 'local', target: trimSlash(env.FICUS_API_URL || 'http://localhost:3000'), writes: true }
+  }
+  const storePath = env.FICUS_DEV_AUTH_STORE_PATH
+  if (!storePath || !existsSync(storePath)) {
+    throw new Error(`FICUS_GARDEN_BACKEND=${label} needs FICUS_DEV_AUTH_STORE_PATH pointing at the CLI auth store`)
+  }
+  const store = JSON.parse(readFileSync(storePath, 'utf8')) as {
+    backends?: Record<string, { apiUrl?: unknown; password?: unknown }>
+  }
+  const backend = store.backends?.[label]
+  if (!backend || typeof backend.apiUrl !== 'string' || typeof backend.password !== 'string') {
+    throw new Error(`No CLI backend named "${label}" in the auth store`)
+  }
+  return {
+    label,
+    target: trimSlash(env.FICUS_API_URL || backend.apiUrl),
+    bearer: backend.password,
+    writes: env.FICUS_GARDEN_ALLOW_WRITES === '1',
+  }
+}
+
+/** The origin Core already trusts for browser WebSocket handshakes (cookie mode only). */
+export function devTrustedOrigin(env: Env): string {
+  return trimSlash(env.FICUS_WEB_ORIGIN?.split(',')[0] || 'http://localhost:5173')
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+/** The one write read-only mode still allows: minting a socket ticket, so live updates work. */
+const READ_ONLY_ALLOWED_WRITES = new Set(['/api/auth/ws-ticket'])
+
+export function isBlockedWrite(backend: DevBackend, method: string | undefined, url: string | undefined): boolean {
+  if (backend.writes) return false
+  if (SAFE_METHODS.has((method ?? 'GET').toUpperCase())) return false
+  const path = (url ?? '').split('?')[0]
+  return path.startsWith('/api') && !READ_ONLY_ALLOWED_WRITES.has(path)
+}
+
+/** Refuses writes before they reach the proxy when the backend is read-only. */
+export function devWriteGuard(backend: DevBackend): Plugin {
+  return {
+    name: 'garden-dev-write-guard',
+    configureServer(server) {
+      server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        if (!isBlockedWrite(backend, req.method, req.url)) return next()
+        res.statusCode = 403
+        res.setHeader('Content-Type', 'application/json')
+        res.end(
+          JSON.stringify({
+            error: `The garden dev server is read-only against "${backend.label}". Set FICUS_GARDEN_ALLOW_WRITES=1 to allow changes.`,
+          })
+        )
+      })
+    },
+  }
+}
+
+export function devProxy(env: Env, backend: DevBackend = resolveDevBackend(env)): Record<string, ProxyOptions> {
+  const { target, bearer } = backend
   const origin = devTrustedOrigin(env)
   return {
-    '/api': { target, changeOrigin: true },
+    '/api': {
+      target,
+      changeOrigin: true,
+      configure(proxy) {
+        if (!bearer) return
+        proxy.on('proxyReq', (proxyReq) => {
+          // A bearer request carrying no Origin is a CLI-style client to Core's CSRF check.
+          proxyReq.removeHeader('cookie')
+          proxyReq.removeHeader('origin')
+          proxyReq.removeHeader('referer')
+          proxyReq.setHeader('Authorization', `Bearer ${bearer}`)
+        })
+        proxy.on('proxyRes', (proxyRes) => {
+          delete proxyRes.headers['set-cookie']
+        })
+      },
+    },
     '/ws': {
       target,
       ws: true,
       changeOrigin: true,
       configure(proxy) {
-        proxy.on('proxyReqWs', (proxyReq) => proxyReq.setHeader('Origin', origin))
+        proxy.on('proxyReqWs', (proxyReq) => {
+          if (bearer) {
+            proxyReq.removeHeader('cookie')
+            proxyReq.removeHeader('origin')
+          } else {
+            proxyReq.setHeader('Origin', origin)
+          }
+        })
       },
     },
   }
+}
+
+function trimSlash(url: string): string {
+  return url.replace(/\/+$/, '')
 }
