@@ -556,18 +556,18 @@ export function resolveThemeSelection<Theme extends ThemeDescriptor>(
 // Stored-selection normalization (persistence seam, PD-2)
 // ---------------------------------------------------------------------------
 
-/** The device-local selection shape: new keys `tau-theme-id` + `tau-appearance`. */
+/** The device-local selection shape: new keys `ficus-theme-id` + `ficus-appearance`. */
 export interface StoredThemeSelection {
   readonly themeId: string
   readonly appearance: AppearanceSetting
 }
 
 export interface StoredThemeSelectionInput {
-  /** Value of `tau-theme-id` (new key), if any. */
+  /** Value of `ficus-theme-id` (new key), if any. */
   readonly themeId: string | null | undefined
-  /** Value of `tau-appearance` (new key), if any. */
+  /** Value of `ficus-appearance` (new key), if any. */
   readonly appearance: string | null | undefined
-  /** Value of the legacy `tau-theme` key ('light' | 'dark'), if any. */
+  /** Value of the legacy `ficus-theme` key ('light' | 'dark'), if any. */
   readonly legacyTheme: string | null | undefined
   /** Registry ids considered known; defaults to just the default theme. */
   readonly knownThemeIds?: readonly string[]
@@ -577,7 +577,7 @@ export interface StoredThemeSelectionInput {
 
 /**
  * Normalizes raw stored strings into a valid selection, migrating the legacy
- * `tau-theme` value ('light' | 'dark') into the (themeId, appearance) model.
+ * `ficus-theme` value ('light' | 'dark') into the (themeId, appearance) model.
  * Unreadable, missing, or unknown values fall back to the defaults
  * (DEFAULT_THEME_ID, DEFAULT_APPEARANCE) — never an error at read time. This
  * stays a pure function so the pre-paint flash script, the provider, and a

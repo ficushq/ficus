@@ -402,7 +402,7 @@ function devProxyOptions(kind: 'api' | 'ws', state: MutableDevProxyState, access
 }
 
 /**
- * Build id baked into the SW and page bundle as __TAU_SW_CACHE_VERSION__.
+ * Build id baked into the SW and page bundle as __FICUS_SW_CACHE_VERSION__.
  * Must be stable for identical source (so rebuilding the same commit never
  * prompts users to update) and unique per distinct build otherwise.
  */
@@ -461,7 +461,7 @@ export default defineConfig(({ mode, command }) => {
   return {
     base,
     define: {
-      __TAU_SW_CACHE_VERSION__: JSON.stringify(serviceWorkerCacheVersion),
+      __FICUS_SW_CACHE_VERSION__: JSON.stringify(serviceWorkerCacheVersion),
       __TAU_BUILTIN_CSS_FINGERPRINT__: JSON.stringify(builtinCssFingerprint),
       __TAU_APP_URL__: JSON.stringify(env.APP_URL || ''),
       __TAU_APP_BASE_PATH__: JSON.stringify(env.APP_BASE_PATH || ''),

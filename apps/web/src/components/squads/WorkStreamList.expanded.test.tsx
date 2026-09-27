@@ -139,7 +139,7 @@ test('expandable Home stays list-only inline and shows the graph skeleton in its
 
 test('kanban preserves review, human wait, dependency wait, and blocked columns', async () => {
   const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
-  dom.window.localStorage.setItem(`tau.wsView.${squad.id}`, 'kanban')
+  dom.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
   const rendered = dom.createRoot()
@@ -288,7 +288,7 @@ test('Escape closes detail before fullscreen', async () => {
     expect(dialog.querySelector('[data-modal-size="viewport"]')).toBeNull()
     expect(dialog.querySelector('svg[aria-label^="Dependency graph"]')).toBeTruthy()
     // A stale Home view preference from older builds must not leak into the dialog or the inline list.
-    expect(dom.window.localStorage.getItem(`tau.wsView.home.${squad.id}`)).toBeNull()
+    expect(dom.window.localStorage.getItem(`ficus.wsView.home.${squad.id}`)).toBeNull()
 
     const graphNode = dialog.querySelector<HTMLElement>('[role="button"][aria-label^="Open Stream a,"]')!
     graphNode.focus()

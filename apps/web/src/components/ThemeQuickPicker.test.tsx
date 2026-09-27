@@ -79,14 +79,14 @@ async function renderPicker({
     },
   })
   cleanup = () => dom.cleanup()
-  if (themeId) localStorage.setItem('tau-theme-id', themeId)
-  if (appearance) localStorage.setItem('tau-appearance', appearance)
+  if (themeId) localStorage.setItem('ficus-theme-id', themeId)
+  if (appearance) localStorage.setItem('ficus-appearance', appearance)
   if (presetId) {
     const preset = activePreset ?? (presets ?? []).find((p) => p.id === presetId)!
-    localStorage.setItem('tau-custom-theme', JSON.stringify(preset.document))
-    localStorage.setItem('tau-theme-preset-id', presetId)
+    localStorage.setItem('ficus-custom-theme', JSON.stringify(preset.document))
+    localStorage.setItem('ficus-theme-preset-id', presetId)
   }
-  if (presetOwnerId) localStorage.setItem('tau-theme-preset-owner-id', presetOwnerId)
+  if (presetOwnerId) localStorage.setItem('ficus-theme-preset-owner-id', presetOwnerId)
   // Real per-theme cascade: mirrors the shipped selectors (:root and
   // [data-theme-scope]) so the circle swatches resolve genuine tokens, not a
   // synthetic stand-in.
@@ -214,8 +214,8 @@ test('clicking a circle swaps the palette only, preserving the stored appearance
   const { container } = await renderPicker({ themeId: 'tau', appearance: 'dark' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Ember' })))
-  expect(localStorage.getItem('tau-theme-id')).toBe('ember')
-  expect(localStorage.getItem('tau-appearance')).toBe('dark')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
+  expect(localStorage.getItem('ficus-appearance')).toBe('dark')
   expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
   expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
 })
@@ -224,8 +224,8 @@ test('clicking a preset circle applies it via applyPreset and rings it as active
   const { container } = await renderPicker({ presets: [midnight], themeId: 'tau', appearance: 'dark' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Midnight' })))
-  expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
-  expect(localStorage.getItem('tau-theme-preset-id')).toBe('preset-midnight')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
+  expect(localStorage.getItem('ficus-theme-preset-id')).toBe('preset-midnight')
   expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('14 165 233')
 })
 
@@ -271,21 +271,21 @@ test('Enter and Space activate a circle exactly like a click', async () => {
   await open(container)
   const harbor = getByRole(container, 'radio', { name: 'Harbor' })
   await act(async () => fireEvent.keyDown(harbor, { key: 'Enter' }))
-  expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Tau' })))
-  expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   await act(async () => fireEvent.keyDown(getByRole(container, 'radio', { name: 'Ember' }), { key: ' ' }))
-  expect(localStorage.getItem('tau-theme-id')).toBe('ember')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
 })
 
 test('appearance toggle applies light/dark/system and stays wired to the existing setAppearance', async () => {
   const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Dark' })))
-  expect(localStorage.getItem('tau-appearance')).toBe('dark')
+  expect(localStorage.getItem('ficus-appearance')).toBe('dark')
   expect(document.documentElement.classList.contains('dark')).toBe(true)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'System' })))
-  expect(localStorage.getItem('tau-appearance')).toBe('system')
+  expect(localStorage.getItem('ficus-appearance')).toBe('system')
 })
 
 test('a one-appearance theme hides the appearance control, which shows while a light/dark theme is previewed', async () => {
@@ -347,7 +347,7 @@ test('hovering a circle previews the whole app after the intent delay, pure DOM 
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
     // Zero persistence during preview.
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   } finally {
     hover.restore()
   }
@@ -384,7 +384,7 @@ test('sweeping quickly across circles cancels the pending preview (no strobe)', 
     expect(hover.pending()).toBe(1)
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   } finally {
     hover.restore()
   }
@@ -415,7 +415,7 @@ test('moving straight from one circle to the next swaps the preview without rest
     await hoverLeave(ember)
     expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
     expect(tau.querySelector('[data-ring="on"]')).not.toBeNull()
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   } finally {
     hover.restore()
   }

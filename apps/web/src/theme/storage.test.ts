@@ -22,13 +22,21 @@ function memoryStorage(initial: Record<string, string> = {}): ThemeStorage {
   }
 }
 
+test('theme storage keys are the ficus names', () => {
+  expect(THEME_ID_KEY).toBe('ficus-theme-id')
+  expect(APPEARANCE_KEY).toBe('ficus-appearance')
+  expect(LEGACY_THEME_KEY).toBe('ficus-theme')
+  expect(LEGACY_SURFACE_COLOR_KEY).toBe('ficus-surface-color')
+  expect(THEME_SURFACE_KEY).toBe('ficus-theme-surface')
+})
+
 describe('readThemeSelection (localStorage migration)', () => {
   test('empty storage falls back to the defaults (tau, light)', () => {
     expect(readThemeSelection(memoryStorage())).toEqual({ themeId: 'tau', appearance: 'light' })
     expect(readThemeSelection(null)).toEqual({ themeId: 'tau', appearance: 'light' })
   })
 
-  test("legacy 'tau-theme' values migrate onto the new model", () => {
+  test("legacy 'ficus-theme' values migrate onto the new model", () => {
     expect(readThemeSelection(memoryStorage({ [LEGACY_THEME_KEY]: 'dark' }))).toEqual({
       themeId: 'tau',
       appearance: 'dark',

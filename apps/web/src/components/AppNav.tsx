@@ -25,6 +25,7 @@ import {
   resolveNavShortcut,
   visibleNavItems,
 } from './navModel'
+import { TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
 
 type NavDependencies = {
   usePendingActions?: () => { data?: unknown[]; isError?: boolean; isLoading?: boolean; isFetching?: boolean }
@@ -172,7 +173,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             )}
 
             <button
-              onClick={() => window.dispatchEvent(new Event('toggle-tau-assistant'))}
+              onClick={() => window.dispatchEvent(new Event(TOGGLE_ASSISTANT_EVENT))}
               title="Assistant (⌘K / Ctrl+K)"
               aria-label="Assistant"
               aria-expanded={['open', 'expanded'].includes(new URLSearchParams(location.search).get('chat') ?? '')}

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  DEV_BACKEND_SHAPE_SCOPE_KEY,
   LOADING_SHAPE_MAX_AGE_MS,
+  LOADING_SHAPE_STORAGE_PREFIX,
   loadingShapeStorageKey,
   readLoadingShapeCount,
   readRecentLoadingShapeCount,
@@ -19,6 +21,12 @@ function memoryStorage() {
     values,
   }
 }
+
+test('loading-shape storage keys are the ficus names', () => {
+  expect(LOADING_SHAPE_STORAGE_PREFIX).toBe('ficus.loadingShape.v1')
+  expect(DEV_BACKEND_SHAPE_SCOPE_KEY).toBe('ficus.devBackend.shapeScope')
+  expect(loadingShapeStorageKey('scope', 'surface').startsWith('ficus.loadingShape.v1')).toBe(true)
+})
 
 describe('loadingShapeStorage', () => {
   test('stores only a bounded count and timestamp in a scoped key', () => {

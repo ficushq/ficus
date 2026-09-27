@@ -672,13 +672,13 @@ describe('OnboardingPage — appearance control', () => {
     await dom.act(async () => fireEvent.click(option('Dark')))
     expect(option('Dark').checked).toBe(true)
     expect(document.documentElement.classList.contains('dark')).toBe(true)
-    expect(localStorage.getItem('tau-appearance')).toBe('dark')
+    expect(localStorage.getItem('ficus-appearance')).toBe('dark')
 
     await dom.act(async () => fireEvent.click(option('Light')))
     expect(document.documentElement.classList.contains('dark')).toBe(false)
 
     await dom.act(async () => fireEvent.click(option('System')))
-    expect(localStorage.getItem('tau-appearance')).toBe('system')
+    expect(localStorage.getItem('ficus-appearance')).toBe('system')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 

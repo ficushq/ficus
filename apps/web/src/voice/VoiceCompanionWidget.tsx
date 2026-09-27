@@ -8,6 +8,7 @@ import { VoiceTranscriptInspector } from './VoiceTranscriptInspector'
 import { useRealtimeVoiceAssistant } from './useRealtimeVoiceAssistant'
 import { Presence } from '../components/Presence'
 import { MicIcon, CloseIcon, ExpandIcon, ChevronDownIcon, StopIcon, RefreshIcon } from '../components/icons'
+import { OPEN_ASSISTANT_EVENT, OPEN_VOICE_EVENT } from '@ficus/shared/browser-keys'
 
 type VoiceControls = Pick<
   ReturnType<typeof useRealtimeVoiceAssistant>,
@@ -71,11 +72,11 @@ export function VoiceCompanionButton({
       setPanelOpen((open) => isConnected && open)
       setCompact(true)
     }
-    window.addEventListener('open-tau-voice', open)
-    window.addEventListener('open-tau-assistant', showText)
+    window.addEventListener(OPEN_VOICE_EVENT, open)
+    window.addEventListener(OPEN_ASSISTANT_EVENT, showText)
     return () => {
-      window.removeEventListener('open-tau-voice', open)
-      window.removeEventListener('open-tau-assistant', showText)
+      window.removeEventListener(OPEN_VOICE_EVENT, open)
+      window.removeEventListener(OPEN_ASSISTANT_EVENT, showText)
     }
   }, [isConnected])
 

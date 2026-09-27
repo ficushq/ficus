@@ -5,6 +5,13 @@ import {
   type StoredThemeSelection,
 } from '@ficus/shared/theme-schema'
 import { KNOWN_THEME_IDS } from './registry'
+import {
+  APPEARANCE_STORAGE_KEY,
+  LEGACY_SURFACE_COLOR_STORAGE_KEY,
+  LEGACY_THEME_STORAGE_KEY,
+  THEME_ID_STORAGE_KEY,
+  THEME_SURFACE_STORAGE_KEY,
+} from '@ficus/shared/browser-keys'
 
 /**
  * Device-local theme persistence (phase 0, PD-2).
@@ -16,18 +23,18 @@ import { KNOWN_THEME_IDS } from './registry'
  * device-local explicit choice keeps winning.
  */
 
-export const THEME_ID_KEY = 'tau-theme-id'
-export const APPEARANCE_KEY = 'tau-appearance'
+export const THEME_ID_KEY = THEME_ID_STORAGE_KEY
+export const APPEARANCE_KEY = APPEARANCE_STORAGE_KEY
 /** Legacy pre-theme-architecture key holding bare 'light' | 'dark'. */
-export const LEGACY_THEME_KEY = 'tau-theme'
+export const LEGACY_THEME_KEY = LEGACY_THEME_STORAGE_KEY
 /** Legacy resolved-surface snapshot (plain color string), kept written for one migration cycle. */
-export const LEGACY_SURFACE_COLOR_KEY = 'tau-surface-color'
+export const LEGACY_SURFACE_COLOR_KEY = LEGACY_SURFACE_COLOR_STORAGE_KEY
 /**
  * State-keyed resolved-surface snapshot: `{ theme, appearance, surface }` with
  * the *resolved* appearance, so any stored theme can paint without a flash of
  * the default theme and an OS scheme flip never paints a stale surface.
  */
-export const THEME_SURFACE_KEY = 'tau-theme-surface'
+export const THEME_SURFACE_KEY = THEME_SURFACE_STORAGE_KEY
 
 /** Minimal storage surface; localStorage in the app, a Map in tests. */
 export interface ThemeStorage {
@@ -47,7 +54,7 @@ export function getThemeStorage(): ThemeStorage | null {
 }
 
 /**
- * Reads and normalizes the stored selection, migrating a legacy `tau-theme`
+ * Reads and normalizes the stored selection, migrating a legacy `ficus-theme`
  * value on the fly. Unreadable/unknown values fall back to the defaults; this
  * never throws.
  */

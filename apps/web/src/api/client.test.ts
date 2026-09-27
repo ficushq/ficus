@@ -19,17 +19,27 @@ afterEach(() => {
 })
 
 describe('token storage', () => {
-  test('stores tokens using the legacy tau_password key for upgrade compatibility', async () => {
+  test('stores tokens under the ficus_password key', async () => {
     installLocalStorage()
     const { getStoredToken, setStoredToken, clearStoredToken } = await import('./client')
 
     setStoredToken('session-token')
 
     expect(getStoredToken()).toBe('session-token')
-    expect(localStorage.getItem('tau_password')).toBe('session-token')
+    expect(localStorage.getItem('ficus_password')).toBe('session-token')
 
     clearStoredToken()
     expect(getStoredToken()).toBeFalsy()
+  })
+
+  test('clearing also purges a stale pre-rename credential', async () => {
+    installLocalStorage()
+    const { clearStoredToken } = await import('./client')
+    localStorage.setItem('tau_password', 'stale-credential')
+
+    clearStoredToken()
+
+    expect(localStorage.getItem('tau_password')).toBeNull()
   })
 })
 

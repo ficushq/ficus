@@ -2,7 +2,7 @@
  * Service Worker Registration and PWA Utilities
  *
  * Version-anchored update flow: the page knows its own build version
- * (__TAU_SW_CACHE_VERSION__, injected by vite into both this bundle and the
+ * (__FICUS_SW_CACHE_VERSION__, injected by vite into both this bundle and the
  * service worker), asks any waiting service worker for its version over a
  * MessageChannel, and shows the update banner iff the two differ. Applying an
  * update is confirmed: SKIP_WAITING → await activation/controllerchange →
@@ -12,15 +12,15 @@
  */
 
 import { installPwaUpdateChecks, readServiceWorkerVersion, type PwaUpdateController } from './pwaUpdater'
+import { PWA_AUTO_APPLY_TRANSITION_STORAGE_KEY, PWA_JUST_APPLIED_STORAGE_KEY } from '@ficus/shared/browser-keys'
 
 /** Build version baked into this page bundle; equals the SW's CACHE_VERSION for the same build. */
 export const APP_VERSION =
-  typeof __TAU_SW_CACHE_VERSION__ === 'string' && __TAU_SW_CACHE_VERSION__.length > 0 ? __TAU_SW_CACHE_VERSION__ : 'dev'
+  typeof __FICUS_SW_CACHE_VERSION__ === 'string' && __FICUS_SW_CACHE_VERSION__.length > 0
+    ? __FICUS_SW_CACHE_VERSION__
+    : 'dev'
 
 export const SKIP_WAITING_CONFIRM_TIMEOUT_MS = 4_000
-
-/** Storage key used by the pre-version-anchored flow; cleared on boot. */
-const LEGACY_JUST_APPLIED_KEY = 'tau-pwa-just-applied'
 
 export interface ServiceWorkerState {
   isSupported: boolean
@@ -68,7 +68,7 @@ async function getWorkerVersion(worker: ServiceWorker): Promise<string | null> {
  * sw.js against a fresh index.html). Auto-applying again would reload-loop
  * forever, so the pair is remembered in sessionStorage across reloads.
  */
-const AUTO_APPLY_TRANSITION_KEY = 'tau-pwa-auto-apply-transition'
+const AUTO_APPLY_TRANSITION_KEY = PWA_AUTO_APPLY_TRANSITION_STORAGE_KEY
 
 function getSessionStorage(): Storage | null {
   try {
@@ -174,8 +174,8 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
   }
 
   try {
-    localStorage.removeItem(LEGACY_JUST_APPLIED_KEY)
-    sessionStorage.removeItem(LEGACY_JUST_APPLIED_KEY)
+    localStorage.removeItem(PWA_JUST_APPLIED_STORAGE_KEY)
+    sessionStorage.removeItem(PWA_JUST_APPLIED_STORAGE_KEY)
   } catch {
     // Storage may be unavailable (private mode); the legacy key is harmless.
   }

@@ -253,7 +253,7 @@ All SVG icons live in `apps/web/src/components/icons/`, one component per file.
 
 ## Browser Tools Login
 
-Browser authentication uses an HttpOnly session cookie. Writing `tau_password`
+Browser authentication uses an HttpOnly session cookie. Writing `ficus_password`
 to localStorage does not establish the current browser session and is not a
 login bypass.
 

@@ -44,7 +44,8 @@
     "./identity": "./src/identity.ts",
     "./legacy-env": "./src/legacy-env.ts",
     "./box-user": "./src/box-user.ts",
-    "./http-headers": "./src/http-headers.ts"
+    "./http-headers": "./src/http-headers.ts",
+    "./browser-keys": "./src/browser-keys.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

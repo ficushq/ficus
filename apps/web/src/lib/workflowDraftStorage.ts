@@ -8,6 +8,7 @@ import {
 } from '@ficus/shared'
 import type { AuthIdentity } from '@ficus/client-core'
 import { getApiUrl } from '../api/client'
+import { WORKFLOW_DRAFT_STORAGE_PREFIX } from '@ficus/shared/browser-keys'
 
 // Drafts may have incomplete names, limits, or connections while being edited.
 // Check their structure without requiring a runnable workflow.
@@ -61,7 +62,7 @@ export function workflowDraftKey(identity: AuthIdentity | undefined, draftId: st
         : identity.type === 'system'
           ? identity.systemTokenId
           : 'legacy'
-  return `tau:workflow-draft:${JSON.stringify([getApiUrl(), identity.type, owner, draftId])}`
+  return `${WORKFLOW_DRAFT_STORAGE_PREFIX}${JSON.stringify([getApiUrl(), identity.type, owner, draftId])}`
 }
 
 export function readWorkflowDraft(key: string | undefined): WorkflowDraft | undefined {

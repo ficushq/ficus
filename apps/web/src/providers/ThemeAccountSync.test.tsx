@@ -87,10 +87,10 @@ function fixture() {
 
 test('cold load paints the cached theme first, reads only after paint, then adopts the account theme; no echo loop', async () => {
   const { root, container, paint } = await harness()
-  localStorage.setItem('tau-theme-id', 'ember')
-  localStorage.setItem('tau-appearance', 'light')
+  localStorage.setItem('ficus-theme-id', 'ember')
+  localStorage.setItem('ficus-appearance', 'light')
   const script = readFileSync(new URL('../../index.html', import.meta.url), 'utf8').match(
-    /<script data-tau-theme-flash>([\s\S]*?)<\/script>/
+    /<script data-ficus-theme-flash>([\s\S]*?)<\/script>/
   )![1]!
   new Function('window', 'document', 'localStorage', script)(window, document, localStorage)
   expect(document.documentElement.getAttribute('data-theme')).toBe('ember')

@@ -142,7 +142,7 @@ test('hosted with no managed connection shows Add to Slack and starts managed au
     expect(started?.url).toContain('/providers/slack/authorization/start')
     expect(started?.body).toEqual({ returnTo: '/settings' })
     expect(assign).toHaveBeenCalledWith('https://slack.com/oauth/v2/authorize?client_id=abc')
-    expect(window.sessionStorage.getItem('tauOAuthProviderHint')).toBe('slack')
+    expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBe('slack')
   } finally {
     assign.mockRestore()
   }

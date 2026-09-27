@@ -69,7 +69,7 @@ function LiveSurfaces({ load }: { load: () => Promise<WorkStream[]> }) {
 describe('shared work-stream graph live rendering', () => {
   test('workStream.updated refetches and rerenders both the home list and the work graph', async () => {
     const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
-    dom.window.localStorage.setItem(`tau.wsView.${squad.id}`, 'graph')
+    dom.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'graph')
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     queryClient.setQueryData(queryKeys.squads.agents(squad.id), [])
     queryClient.setQueryData(queryKeys.agentTypes.list(), [])
