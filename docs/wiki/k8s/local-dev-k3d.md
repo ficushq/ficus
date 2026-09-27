@@ -91,7 +91,7 @@ Instead, the `K8sPodManager` automatically manages `kubectl port-forward` proces
 
 ### host.k3d.internal Routing
 
-Sandbox pods need to reach the host API (for the Tau CLI). The k3d cluster is created with `--host-alias` to map `host.k3d.internal` to the correct host IP:
+Sandbox pods need to reach the host API (for the Ficus CLI). The k3d cluster is created with `--host-alias` to map `host.k3d.internal` to the correct host IP:
 
 - **OrbStack**: Uses OrbStack's magic IP (e.g. `0.250.250.254`), resolved by running `getent hosts host.docker.internal` inside a container at setup time.
 - **Docker Desktop**: Uses the `host-gateway` IP, resolved similarly.
@@ -188,7 +188,7 @@ The pod will be recreated automatically on next use (via the reconciliation loop
 
 ### Pod Can't Reach Host API
 
-**Symptoms:** Tau CLI inside sandbox fails with "Unable to connect".
+**Symptoms:** Ficus CLI inside sandbox fails with "Unable to connect".
 
 ```bash
 # Verify from inside the pod

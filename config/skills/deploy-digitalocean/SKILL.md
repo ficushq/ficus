@@ -18,8 +18,8 @@ For squad project work, invoke the following project-directory commands through 
 ## Guardrails
 
 - Ask before creating apps, droplets, managed databases, load balancers, domains, or always-on paid resources.
-- Required Tau secret: `DEPLOY_DIGITALOCEAN_TOKEN`. Do not paste tokens in chat.
-- Ask a human admin/operator to expose only this secret in squad Environment settings or with `tau squad-env expose-secrets <squad-id> DEPLOY_DIGITALOCEAN_TOKEN` before running provider CLI commands.
+- Required Ficus secret: `DEPLOY_DIGITALOCEAN_TOKEN`. Do not paste tokens in chat.
+- Ask a human admin/operator to expose only this secret in squad Environment settings or with `ficus squad-env expose-secrets <squad-id> DEPLOY_DIGITALOCEAN_TOKEN` before running provider CLI commands.
 - Ask before production deploys and any database migration.
 
 ## If `DEPLOY_DIGITALOCEAN_TOKEN` is not set
@@ -29,16 +29,16 @@ Walk the human through account/token setup before attempting CLI commands:
 1. Ask them to sign in or create a DigitalOcean account at https://cloud.digitalocean.com/registrations/new.
 2. Ask them to choose or create the project/account that should own the app. Mention that App Platform services, databases, droplets, load balancers, and domains can create billing charges.
 3. Direct them to API → Tokens/Keys: https://cloud.digitalocean.com/account/api/tokens.
-4. Ask them to generate a personal access token named `tau-deploy`. Use the least privilege DigitalOcean offers for the intended resources; write access is required for app creation/update.
-5. Do **not** ask them to paste the token in chat. Open Tau **Settings → Integrations → DigitalOcean**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
+4. Ask them to generate a personal access token named `ficus-deploy`. Use the least privilege DigitalOcean offers for the intended resources; write access is required for app creation/update.
+5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → DigitalOcean**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
 
 6. Ask an admin/operator to expose only `DEPLOY_DIGITALOCEAN_TOKEN` to this squad from the Squad Settings tab → Environment section. CLI fallback:
 
 ```bash
-tau squad-env expose-secrets <squad-id> DEPLOY_DIGITALOCEAN_TOKEN
+ficus squad-env expose-secrets <squad-id> DEPLOY_DIGITALOCEAN_TOKEN
 ```
 
-7. Verify non-secret access with `tau squad-env secrets <squad-id>` and then `DIGITALOCEAN_ACCESS_TOKEN="$DEPLOY_DIGITALOCEAN_TOKEN" doctl account get`.
+7. Verify non-secret access with `ficus squad-env secrets <squad-id>` and then `DIGITALOCEAN_ACCESS_TOKEN="$DEPLOY_DIGITALOCEAN_TOKEN" doctl account get`.
 
 ## Project directory and upload hygiene
 
@@ -81,12 +81,12 @@ DIGITALOCEAN_ACCESS_TOKEN="$DEPLOY_DIGITALOCEAN_TOKEN" doctl apps spec validate 
 - `doctl apps spec validate`: https://docs.digitalocean.com/reference/doctl/reference/apps/spec/validate/
 - `doctl apps logs`: https://docs.digitalocean.com/reference/doctl/reference/apps/logs/
 
-## Tau deployment record
+## Ficus deployment record
 
 After deploying, record the external deployment and keep it updated. Do not put secrets in metadata. Archive old or superseded external deployment records once they are no longer useful; archived records move out of the active Apps tab list while preserving history.
 
 ```bash
-tau deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
-tau deploy external update <deployment-id> --status failed
-tau deploy external archive <deployment-id>
+ficus deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
+ficus deploy external update <deployment-id> --status failed
+ficus deploy external archive <deployment-id>
 ```

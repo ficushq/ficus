@@ -11,10 +11,10 @@ A **definition** describes the process. A **preset** gives a reusable definition
 
 This preset uses two participants with the same `general` agent type: one writes a brief and another reviews it independently. Review feedback returns to the writer, then comes back to the reviewer.
 
-Pass this envelope to `tau workflow create --stdin` with a quoted heredoc (shown below), or use `--content` for short JSON/YAML. You may also save it as `brief-review.yaml` and use `tau workflow create brief-review.yaml` for reuse. In the visual editor's complete-definition field, use only the contents beneath `definition`.
+Pass this envelope to `ficus workflow create --stdin` with a quoted heredoc (shown below), or use `--content` for short JSON/YAML. You may also save it as `brief-review.yaml` and use `ficus workflow create brief-review.yaml` for reuse. In the visual editor's complete-definition field, use only the contents beneath `definition`.
 
 ```bash
-tau workflow create --stdin <<'FICUS_PRESET'
+ficus workflow create --stdin <<'FICUS_PRESET'
 id: brief-review
 description: Produce a concise brief with an independent evidence review.
 scope: { kind: instance }
@@ -144,17 +144,17 @@ Each outcome uses exactly one of these shapes:
 | `{ returnTo: earlier-step, afterRework: follow-graph-step }` | Revise the target step, then follow its normal outgoing arrows. Use `return-to-requester` to send the result directly back to the requesting step instead. |
 | `{ parallel: [security, qa], join: consolidate }`            | Start distinct branches and wait for them at their shared join.                                                                                            |
 
-Outcome names such as `approved` are chosen by the author; they are not built-in verdicts with hidden semantics. Agents submit an outcome and evidence. Tau enforces the configured transition, not the truth of a free-text verdict.
+Outcome names such as `approved` are chosen by the author; they are not built-in verdicts with hidden semantics. Agents submit an outcome and evidence. Ficus enforces the configured transition, not the truth of a free-text verdict.
 
 `returnTo` identifies the step doing the corrections. `afterRework` defaults to `follow-graph`, which follows that step’s ordinary forward connections after revisions. With `return-to-requester`, completing the correction returns directly to the requesting step, even if its normal outcome would branch, run another review, or finish. For example, `review.changes-requested: { returnTo: create-assets, afterRework: return-to-requester }` revises assets and brings them directly back to Review. The source step determines the requester; there is no separate resume destination.
 
-Use return transitions for revision loops. Normal forward edges cannot form cycles. Returns preserve prior review history; Tau does not invalidate every downstream review automatically. Instructions should tell reviewers which changes need another assessment.
+Use return transitions for revision loops. Normal forward edges cannot form cycles. Returns preserve prior review history; Ficus does not invalidate every downstream review automatically. Instructions should tell reviewers which changes need another assessment.
 
 During rework, an agent can complete with `resume: true` to return directly to the open obligation's destination. Without it, the declared forward path runs, and the open return must still be satisfied before leaving that path. Inspect the current run to understand which return is open.
 
 ## Parallel branches and joins
 
-A fork accepts 2–16 distinct branch entry IDs. Tau derives the first shared forward destination from their connections and stores it as `join`; authors can omit this field. The shared step runs once after **all active branches from that fork** arrive. The editor displays this on the destination card instead of inserting a separate join card. Separate tracks synchronize at `finish` if they share no earlier step. Alternative outcomes are considered when finding a shared destination; return edges do not introduce new branches. Use separate step IDs to keep executions independent.
+A fork accepts 2–16 distinct branch entry IDs. Ficus derives the first shared forward destination from their connections and stores it as `join`; authors can omit this field. The shared step runs once after **all active branches from that fork** arrive. The editor displays this on the destination card instead of inserting a separate join card. Separate tracks synchronize at `finish` if they share no earlier step. Alternative outcomes are considered when finding a shared destination; return edges do not introduce new branches. Use separate step IDs to keep executions independent.
 
 For example, replace a build step's successful outcome with:
 
@@ -199,21 +199,21 @@ Exhausting a step's attempt budget stops further progression for owner intervent
 
 ## Completion policy
 
-Reaching the end of the graph makes a satisfied flow `completion-ready`. `tau workstream finish` separately checks delivery conditions.
+Reaching the end of the graph makes a satisfied flow `completion-ready`. `ficus workstream finish` separately checks delivery conditions.
 
 | `completion.mode` | Delivery condition                                                                                                              |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `deliverable`     | Required work and returns are satisfied and blocking waits resolved; no intrinsic PR or additional reviewer.                    |
 | `review-approval` | A human explicitly approves final delivery through flow finish.                                                                 |
-| `pr-merge`        | The change request has been merged; Tau independently verifies it. This policy does not authorize the agent to merge it.        |
+| `pr-merge`        | The change request has been merged; Ficus independently verifies it. This policy does not authorize the agent to merge it.      |
 | `pr-auto-merge`   | The current squad must explicitly allow automatic merge. The agent can enable it, but delivery still requires a verified merge. |
-| `direct-merge`    | The squad must explicitly allow direct merge; Tau verifies the recorded commit is contained in the remote base branch.          |
+| `direct-merge`    | The squad must explicitly allow direct merge; Ficus verifies the recorded commit is contained in the remote base branch.        |
 
-**Code hosting** (`completion.followChanges: true`) subscribes to linked PR and issue updates through the stream's code-hosting adapter, including PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes. Issues and additional pull requests are tracked with `tau workstream track <ws-id> --url <issue-or-pr-url>`, or recorded at creation from an integration notification with `tau workstream create … --from-event <event-id>`; legacy `github.repo`/`github.pr.number` metadata is still recognized for the primary delivery PR, but a stale `github.repo`/`github.issue` pair is converted automatically at startup into a tracked issue entry and is never read afterward. Add `--delivery` when tracking a pull request that must also be merged before completion, alongside the primary `codeHost.changeRequest` PR — see [Delivery pull requests](#delivery-pull-requests) below. Set `completion.changeEventsTo: { step: engineer }` to send the entire event bundle to an existing agent step. Omit it or use `delivery-owner` for automatic delivery ownership. Events are retained while the recipient cannot receive them; they do not start a future step. It is optional and does not itself grant repository access or authorize delivery.
+**Code hosting** (`completion.followChanges: true`) subscribes to linked PR and issue updates through the stream's code-hosting adapter, including PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes. Issues and additional pull requests are tracked with `ficus workstream track <ws-id> --url <issue-or-pr-url>`, or recorded at creation from an integration notification with `ficus workstream create … --from-event <event-id>`; legacy `github.repo`/`github.pr.number` metadata is still recognized for the primary delivery PR, but a stale `github.repo`/`github.issue` pair is converted automatically at startup into a tracked issue entry and is never read afterward. Add `--delivery` when tracking a pull request that must also be merged before completion, alongside the primary `codeHost.changeRequest` PR — see [Delivery pull requests](#delivery-pull-requests) below. Set `completion.changeEventsTo: { step: engineer }` to send the entire event bundle to an existing agent step. Omit it or use `delivery-owner` for automatic delivery ownership. Events are retained while the recipient cannot receive them; they do not start a future step. It is optional and does not itself grant repository access or authorize delivery.
 
 ### Delivery pull requests
 
-A work stream has one primary delivery PR (`codeHost.changeRequest`) and may designate additional **delivery pull requests** — tracked pull requests flagged `delivery: true` (issues cannot be flagged). For `pr-merge`/`pr-auto-merge`, `tau workstream finish` verifies the primary change request is merged (its head/branch identity is what completion records), then independently verifies every flagged delivery PR is merged too; an unmerged one fails finish with `409 Delivery pull request <repo>#<n> must be merged before completion`. `direct-merge` does not consider delivery pull requests.
+A work stream has one primary delivery PR (`codeHost.changeRequest`) and may designate additional **delivery pull requests** — tracked pull requests flagged `delivery: true` (issues cannot be flagged). For `pr-merge`/`pr-auto-merge`, `ficus workstream finish` verifies the primary change request is merged (its head/branch identity is what completion records), then independently verifies every flagged delivery PR is merged too; an unmerged one fails finish with `409 Delivery pull request <repo>#<n> must be merged before completion`. `direct-merge` does not consider delivery pull requests.
 
 Observed merge/close/reopen events for a delivery PR (`pull_request.merged`, `pull_request.closed`, or `pull_request.updated` with a reopened action) are recorded under the stream's row lock in `metadata.delivery.pullRequests[<key>]` as `{ state: "open" | "merged" | "closed", at, headSha?, eventId? }`, with a newer `occurredAt` always superseding an older one; finish re-verifies live and overwrites this with the verified result. `GET /api/workstreams/:id/tracked` reports this as `delivery: { pullRequests: [{ key, repository, number, url?, primary, state, at?, headSha? }], complete }`, where `complete` requires at least one delivery pull request and all of them merged. Delivery pull request subscriptions (the primary PR's and any flagged tracked PR's) may pass the delivery-approval wait once the flow reaches `completion-ready`; other tracked resources' subscriptions never do.
 
@@ -234,7 +234,7 @@ An optional `codeHost.connectionId` selects an authorized account; omission uses
 
 ## Integration subscriptions
 
-Subscriptions consume events for **existing work**. Use `tau integration outputs` to inspect the installed output catalog and its typed fields. Integration IDs, output names, and versions must exist; a made-up event name cannot be saved successfully.
+Subscriptions consume events for **existing work**. Use `ficus integration outputs` to inspect the installed output catalog and its typed fields. Integration IDs, output names, and versions must exist; a made-up event name cannot be saved successfully.
 
 ```yaml
 subscriptions:
@@ -272,7 +272,7 @@ integrationTriggers:
     source: { integration: github, output: issue.assigned, version: 1 }
     match:
       repository: { value: acme/project }
-      assignee: { value: tau-bot }
+      assignee: { value: ficus-bot }
     create:
       workflow: { kind: preset, id: solo }
       titlePrefix: 'Investigate: '
@@ -280,7 +280,7 @@ integrationTriggers:
         github.repo: { event: repository }
 ```
 
-When the triggering event names an issue or pull request, Tau records it in
+When the triggering event names an issue or pull request, Ficus records it in
 `metadata.tracked[0]` for connection-authority events (all GitHub events) with a
 server-stamped `origin` automatically; an instance-authority event has no squad
 connection to pin on the entry, so it records none. Do not map
@@ -364,8 +364,8 @@ with `id` and `definition`, not a source. Update still requires the inspected
 retry `--request-id`. `--json` only controls output.
 
 ```bash
-tau workflow resolve --squad SQUAD_ID --content '{"kind":"preset","id":"solo"}'
-tau workflow resolve --squad SQUAD_ID --stdin <<'FICUS_FLOW'
+ficus workflow resolve --squad SQUAD_ID --content '{"kind":"preset","id":"solo"}'
+ficus workflow resolve --squad SQUAD_ID --stdin <<'FICUS_FLOW'
 kind: preset
 id: solo
 customizations:
@@ -373,7 +373,7 @@ customizations:
     name: Daily audit
 FICUS_FLOW
 
-printf '%s\n' '{"kind":"preset","id":"solo"}' | tau schedule update SCHEDULE_ID --flow-stdin
+printf '%s\n' '{"kind":"preset","id":"solo"}' | ficus schedule update SCHEDULE_ID --flow-stdin
 ```
 
 All sources are bounded to 1 MiB of UTF-8 and must contain one JSON/YAML object.
@@ -388,18 +388,18 @@ within the same bounds.
 
 ## Agent authoring workflow
 
-1. Inspect `tau workflow list`, then `tau workflow get PRESET_ID` or `export` to start from a known definition. Inspect agent types and `tau integration outputs` before selecting agent types or events.
+1. Inspect `ficus workflow list`, then `ficus workflow get PRESET_ID` or `export` to start from a known definition. Inspect agent types and `ficus integration outputs` before selecting agent types or events.
 2. Identify the deliverable, participants, approval authority, rework destinations, and budget. Use the smallest process that meets those requirements. Discuss uncertain choices before publishing.
-3. Author a preset for reusable configuration or a source for one-off work. Prefer `--content '<JSON>'` for short payloads and `--stdin` with a quoted heredoc for longer JSON/YAML instead of creating temporary files. Validate with `tau workflow resolve --content '<JSON source>' --squad SQUAD_ID` (or `--stdin`). This checks resolution in the target squad without creating a stream or workers.
-4. Publish only when requested: `tau workflow create --content '<JSON preset>'`, or `tau workflow update PRESET_ID --content '<JSON preset>' --revision REVISION_FROM_GET`; both also accept `--stdin`. A revision conflict requires re-reading and reconciling changes.
-5. Create requested work with `tau workstream create "Title" --squad SQUAD_ID --workflow PRESET_ID`, or `--flow-content '<JSON source>'` / `--flow-stdin` for an inline/customized source.
+3. Author a preset for reusable configuration or a source for one-off work. Prefer `--content '<JSON>'` for short payloads and `--stdin` with a quoted heredoc for longer JSON/YAML instead of creating temporary files. Validate with `ficus workflow resolve --content '<JSON source>' --squad SQUAD_ID` (or `--stdin`). This checks resolution in the target squad without creating a stream or workers.
+4. Publish only when requested: `ficus workflow create --content '<JSON preset>'`, or `ficus workflow update PRESET_ID --content '<JSON preset>' --revision REVISION_FROM_GET`; both also accept `--stdin`. A revision conflict requires re-reading and reconciling changes.
+5. Create requested work with `ficus workstream create "Title" --squad SQUAD_ID --workflow PRESET_ID`, or `--flow-content '<JSON source>'` / `--flow-stdin` for an inline/customized source.
 
 Catalog access uses `workflows:read`, `workflows:create`, `workflows:update`, and `workflows:delete` permissions with scope checks. Runtime flow management uses `workstreams:revise-flow`; normal active participants submit their own allowed outcomes.
 
-While executing, inspect `tau workstream flow STREAM_ID`. Advance using the current `expectedVersion`, your current `attemptId`, an allowed action, and evidence. For example:
+While executing, inspect `ficus workstream flow STREAM_ID`. Advance using the current `expectedVersion`, your current `attemptId`, an allowed action, and evidence. For example:
 
 ```bash
-tau workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'FICUS_COMMAND'
+ficus workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'FICUS_COMMAND'
 {
   "expectedVersion": 1,
   "attemptId": 1,
@@ -422,7 +422,7 @@ For implementation details, contributors can read the repository's [workflow run
 
 ## Upgrading older definitions
 
-Rename each participant’s `profile` field to `agentTypeId` in custom YAML or API payloads. Tau migrates saved styles, squad defaults, scheduled work, editor drafts, and running flows automatically. Pinned agent settings and existing revision references are preserved.
+Rename each participant’s `profile` field to `agentTypeId` in custom YAML or API payloads. Ficus migrates saved styles, squad defaults, scheduled work, editor drafts, and running flows automatically. Pinned agent settings and existing revision references are preserved.
 
 ### Targeted editor edits
 
@@ -444,4 +444,4 @@ The editor assistant uses `read`, `edit`, and (with Realtime) `delegate`. After 
 
 Use `put-participant` (`id`, `participant`) and `put-step` (`step`) to add or replace those objects. Use `update-step` (`id`, `changes`) to preserve unmentioned step fields. Step IDs and kinds are changed by replacement, not by `update-step`. Use `set-outcome` (`id`, `outcome`, `transition`) to add or change a connection, and `remove-outcome` (`id`, `outcome`) to disconnect it. A transition can use `next`, `parallel` and `join`, or `returnTo` and `afterRework`.
 
-Other operations are `remove-step`, `remove-participant`, `set-name`, `set-entry`, `set-step-order`, `set-routing`, `set-limits`, `set-completion`, and `set-subscriptions`. Set operations replace the named value. Related changes belong in one batch: for example, add a reviewer participant, add its step, and redirect the preceding step's outcome together. Deleting a step also requires fixing connections that reference it. Tau validates the complete resulting flow before applying anything; an invalid or stale batch changes nothing. Each successful batch is one undoable edit.
+Other operations are `remove-step`, `remove-participant`, `set-name`, `set-entry`, `set-step-order`, `set-routing`, `set-limits`, `set-completion`, and `set-subscriptions`. Set operations replace the named value. Related changes belong in one batch: for example, add a reviewer participant, add its step, and redirect the preceding step's outcome together. Deleting a step also requires fixing connections that reference it. Ficus validates the complete resulting flow before applying anything; an invalid or stale batch changes nothing. Each successful batch is one undoable edit.

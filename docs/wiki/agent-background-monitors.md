@@ -2,7 +2,7 @@
 
 Background monitors let squad agents observe long-lived sandbox commands and receive batched stdout as steering messages without blocking the current turn.
 
-Do not use a monitor to detach a one-shot build, generation, migration, or test that must complete. Run completion-critical work as one foreground Bash invocation with a timeout up to 3,600 seconds. A monitor is safe because its Tau supervisor owns it and keeps a live foreground log stream; it is not evidence that arbitrary `&`, `nohup`, `setsid`, `disown`, or hand-launched tmux processes survive box idle exit.
+Do not use a monitor to detach a one-shot build, generation, migration, or test that must complete. Run completion-critical work as one foreground Bash invocation with a timeout up to 3,600 seconds. A monitor is safe because its Ficus supervisor owns it and keeps a live foreground log stream; it is not evidence that arbitrary `&`, `nohup`, `setsid`, `disown`, or hand-launched tmux processes survive box idle exit.
 
 Use selective, event-driven commands that stay quiet until an actionable event occurs (completion, error, readiness, state transition, failure, or another condition that needs attention):
 
@@ -68,11 +68,11 @@ Management surfaces:
 - Agent chat view: open the **Monitors** tab for a squad-scoped agent.
 - Squad detail: open the **Monitors** tab to see monitors across squad agents.
 - CLI:
-  - `tau monitor list --agent <agentId>`
-  - `tau monitor list --squad <squadId> --active`
-  - `tau monitor show <monitorId>`
-  - `tau monitor logs <monitorId> --tail 100`
-  - `tau monitor cancel <monitorId>`
+  - `ficus monitor list --agent <agentId>`
+  - `ficus monitor list --squad <squadId> --active`
+  - `ficus monitor show <monitorId>`
+  - `ficus monitor logs <monitorId> --tail 100`
+  - `ficus monitor cancel <monitorId>`
 
 `cancel` is an admin safety override. It stops an agent-created monitor and
 marks it terminal; it does not create new sandbox execution surface area.

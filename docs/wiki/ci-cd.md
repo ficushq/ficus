@@ -1,6 +1,6 @@
 # CI and releases
 
-Tau uses GitHub Actions to validate changes and publish distributable artifacts.
+Ficus uses GitHub Actions to validate changes and publish distributable artifacts.
 The workflows in [`.github/workflows`](../../.github/workflows) are authoritative.
 
 ## Pull-request checks
@@ -57,7 +57,7 @@ DigitalOcean and other Ubuntu hosts use the setup/bootstrap scripts.
 ## Self-hosted builds and updates
 
 Use [the setup toolkit](setup.md) to provision a host, or [local mode](../../apps/cli/README.md)
-to run Tau on your own computer. The root [Dockerfile](../../Dockerfile) builds
+to run Ficus on your own computer. The root [Dockerfile](../../Dockerfile) builds
 an image containing Core, the CLI, web assets and embedded documentation.
 
 For existing installations, use the updater appropriate to the installation

@@ -2,7 +2,7 @@
 
 exe.dev is a **provider-provisioned** machine backend: unlike a BYO-SSH
 machine (an operator registers an endpoint they already run), an `exe`
-machine is a VM tau itself creates, keys, bootstraps, and eventually
+machine is a VM ficus itself creates, keys, bootstraps, and eventually
 destroys. Once exe.dev hands back an SSH endpoint, every other part of the
 VM runtime — bootstrap, boxes, tunnels, lifecycle, placement — runs over that
 endpoint completely unchanged (see `docs/wiki/machines/runtime.md`). This document
@@ -26,7 +26,7 @@ interface, never on the wire format, so any future correction touches
 ## Credential setup
 
 exe.dev's "API" is an SSH lobby, and its credential is the **account's SSH
-private key** (Settings → SSH keys on exe.dev) — not a bearer token. tau runs
+private key** (Settings → SSH keys on exe.dev) — not a bearer token. ficus runs
 instance-per-tenant, so one tenant's own exe.dev account key backs every VM it
 provisions. The key lives in the secret store — never in a `machines` row,
 never logged — under:
@@ -93,7 +93,7 @@ To start using exe:
 By default an exe VM boots exe's stock **exeuntu** image (bare Ubuntu 24.04),
 and `bootstrap.sh` then installs the whole toolchain (bun, multi-user nix,
 devbox, Docker engine + rootless extras) — a multi-minute cost. To collapse that
-to a **seconds-long** boot, tau provisions exe VMs from a **prebaked custom
+to a **seconds-long** boot, ficus provisions exe VMs from a **prebaked custom
 image**, `ficus-machine`, that bakes exactly that toolchain at the same pinned
 versions and paths. `bootstrap.sh` then detects the baked toolchain and skips the
 installs (see § Prebaked box image + fast bootstrap in `runtime.md`).
@@ -103,7 +103,7 @@ installs (see § Prebaked box image + fast bootstrap in `runtime.md`).
 - Source: `packages/machine-image/Dockerfile` (+ `README.md`). It is
   `FROM ghcr.io/boldsoftware/exeuntu:latest` (exe's own default image, public on
   ghcr) with `install_base_packages` / `install_docker_packages` / `install_bun`
-  / `install_nix` / `install_devbox` mirrored on top, plus the tau scripts in
+  / `install_nix` / `install_devbox` mirrored on top, plus the ficus scripts in
   `/opt/tau/bin` and the **`/opt/tau/prebaked` marker** — JSON recording the pins
   it baked (`{"bunVersion","nixVersion","devboxVersion"}`) — that bootstrap's
   fast-path reads. It keeps the `exe.dev/login-user=exedev` label so it stays a
@@ -281,7 +281,7 @@ registered keys only**. Two live-confirmed consequences (recon 2026-07-13):
 This is why exe machines mint no keypair and the DELETE route guards the
 shared secret. It also means exe machine access is account-scoped by
 construction: anyone whose key is on the exe.dev account can SSH any of the
-tenant's VMs — which matches tau's instance-per-tenant model (the account IS
+tenant's VMs — which matches ficus's instance-per-tenant model (the account IS
 the tenant boundary).
 
 ## Wire-format verification status
@@ -341,6 +341,6 @@ operator or the placement/lifecycle machinery explicitly terminates it.
 See `docs/wiki/machines/runtime.md` § Placement for the full role/scope-aware
 policy (squad-per-VM, the tenant commons singleton, dedicated VMs, and the
 `FICUS_MAX_MACHINES` provisioning cap). In short: when the exe provider is
-registered, tau auto-provisions and reuses exe machines by role instead of
+registered, ficus auto-provisions and reuses exe machines by role instead of
 falling back to the BYO least-loaded rule; when it isn't, placement is
 byte-identical to the pre-exe BYO-only behavior.

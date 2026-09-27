@@ -17,7 +17,7 @@ export function buildPlatformUrlsPrompt(): string {
     // (API publicly reachable on a different origin than the web UI). Unset
     // everywhere we deploy today — the default is SAME-ORIGIN, matching how
     // hosted tenants and self-hosted installs actually serve the API. The
-    // old hostname sniffing (`<name>.hiretau.ai` → `api-<name>.hiretau.ai`,
+    // old hostname sniffing (`<name>.ficus.sh` → `api-<name>.ficus.sh`,
     // the retired pre-platform layout) told every hosted tenant's agents an
     // API URL that does not resolve.
     const publicApiOverride = process.env.FICUS_PUBLIC_API_URL?.trim()

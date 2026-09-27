@@ -63,8 +63,8 @@ squad consultant access.
 The delegate reports directly on the task it owns; the request it received names the task ID:
 
 ```bash
-tau assistant-task status TASK_UUID --request-id REQUEST_UUID --status completed -m "The comparison is finished."
-tau assistant-task get TASK_UUID
+ficus assistant-task status TASK_UUID --request-id REQUEST_UUID --status completed -m "The comparison is finished."
+ficus assistant-task get TASK_UUID
 ```
 
 `POST /api/assistant-tasks/:taskId/status` accepts only the agent currently bound to the task and is
@@ -76,7 +76,7 @@ ID is refused with HTTP 409; do not replace it with the newest ID to report old 
 may omit it for the original request only. The equivalent inbox form carries a validated status flag:
 
 ```bash
-tau inbox send assistant:CONVERSATION_UUID \
+ficus inbox send assistant:CONVERSATION_UUID \
   "The comparison is finished. The recommended option is described below." \
   --recipient-type voice_assistant \
   --in-reply-to REQUEST_MESSAGE_UUID \

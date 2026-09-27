@@ -7,7 +7,7 @@ A workflow defines how a work stream gets done: who works on it, which steps run
 
 ## Pick the smallest process that fits
 
-Tau ships these starting workflows. An administrator can customize or disable them, so inspect the available workflows in your workspace.
+Ficus ships these starting workflows. An administrator can customize or disable them, so inspect the available workflows in your workspace.
 
 | Workflow        | Process                                                   | Good starting point for                   |
 | --------------- | --------------------------------------------------------- | ----------------------------------------- |
@@ -60,7 +60,7 @@ You can also select a preset in the work-stream creation controls. Inspect its s
 
 The Engineering squad preset starts new squads with Solo Coding and recommends all four engineering workflows above. A squad preset can choose a default and a collection of alternatives without defining the flows itself. Editing a squad preset does not change existing squads. Creating a squad copies its settings and provisions any declared persistent members and schedules; flow workers still start only when needed.
 
-Every new work stream uses a flow. Without an explicit choice, it inherits the squad default. Engineering copies Solo Coding as its squad default at creation. If a squad has no saved default, Tau uses Solo. Running streams retain their saved flow when defaults change.
+Every new work stream uses a flow. Without an explicit choice, it inherits the squad default. Engineering copies Solo Coding as its squad default at creation. If a squad has no saved default, Ficus uses Solo. Running streams retain their saved flow when defaults change.
 
 Open the squad's **More → Settings → Workflows**. Choose a default and describe when alternatives should be used. For example:
 
@@ -82,7 +82,7 @@ A question can hold one attempt while other work continues. Ask for another revi
 
 Each worker's assignment lists its allowed handoffs, additional return paths, delegation budget, and authority to revise the flow. Workers can inspect the current run again after another branch advances it.
 
-When delegation is enabled, a worker can request a specialist through the flow command interface. Tau starts that participant on demand and returns the result to the requesting step. In the visual editor, set **Delegation limit** to `0` to disable specialist help or a positive number to enable it. Guided routing keeps this at `0`.
+When delegation is enabled, a worker can request a specialist through the flow command interface. Ficus starts that participant on demand and returns the result to the requesting step. In the visual editor, set **Delegation limit** to `0` to disable specialist help or a positive number to enable it. Guided routing keeps this at `0`.
 
 Delegation is bounded across the entire flow; it does not grant permission to bypass a required review or start an unrelated crew. When disabled or exhausted, the worker asks the manager to adjust the plan.
 
@@ -121,7 +121,7 @@ Approval steps default to **Assigned reviewers**: any one person assigned to the
 In the work stream UI, use **Assigned reviewers** to add or remove people. Updating assignments requires `workstreams:update`; review permission alone does not allow self-assignment. The CLI supports the same controls:
 
 ```bash
-tau workstream reviewers --squad <squad-id>
-tau workstream update <stream-id> --reviewer <user-id> --reviewer <another-user-id>
-tau workstream update <stream-id> --clear-reviewers
+ficus workstream reviewers --squad <squad-id>
+ficus workstream update <stream-id> --reviewer <user-id> --reviewer <another-user-id>
+ficus workstream update <stream-id> --clear-reviewers
 ```

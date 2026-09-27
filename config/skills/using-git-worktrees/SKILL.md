@@ -7,7 +7,7 @@ description: Use when starting feature work that needs isolation from current wo
 
 ## Work stream authority and command runtime
 
-When work is assigned through a Tau work stream, first run `tau workstream get <id> --json` with `squad_bash`. If `git.worktree` and `git.branch` are present, use that recorded worktree and branch; **do not create a second worktree**. Only use this skill's creation flow when no work stream controls the worktree. Run all git, setup, and verification commands with `squad_bash` from the project/shared worktree, and follow the repository's package-manager policy instead of the generic examples below. If `squad_bash` is unavailable, use another shell only when the Workspace & Sandbox prompt says it can reach the recorded worktree; otherwise delegate the repository operation to an agent with shared-runtime access.
+When work is assigned through a Ficus work stream, first run `ficus workstream get <id> --json` with `squad_bash`. If `git.worktree` and `git.branch` are present, use that recorded worktree and branch; **do not create a second worktree**. Only use this skill's creation flow when no work stream controls the worktree. Run all git, setup, and verification commands with `squad_bash` from the project/shared worktree, and follow the repository's package-manager policy instead of the generic examples below. If `squad_bash` is unavailable, use another shell only when the Workspace & Sandbox prompt says it can reach the recorded worktree; otherwise delegate the repository operation to an agent with shared-runtime access.
 
 ## Overview
 
@@ -152,7 +152,7 @@ Ready to implement auth feature
 
 Platform-provisioned trees default to automatic asynchronous cleanup after delivery
 and associated execution settlement. This is not a manual cleanup assignment.
-Set `tau workstream update <id> --auto-cleanup-worktree false` before finishing
+Set `ficus workstream update <id> --auto-cleanup-worktree false` before finishing
 when retention is required. Register other-stream use before accessing a shared
 tree; undeclared shell access is outside the cooperative isolation guarantee.
 Do not recreate or reuse a path with pending/uncertain cleanup, or delete its

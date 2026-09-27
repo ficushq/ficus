@@ -1,4 +1,4 @@
-# Tau documentation
+# Ficus documentation
 
 Private user documentation for `docs.ficus.sh`, built with Astro Starlight. The initial 21-page guide set covers Cloud and self-hosted setup, a first completed task, the Assistant, work, configuration, integrations, and maintenance.
 
@@ -11,7 +11,7 @@ bun install --frozen-lockfile --ignore-scripts
 bun run dev:docs
 ```
 
-Open `http://127.0.0.1:4321`. The scripts bind to loopback by default. To preview from another device on your network, use `bun run --filter @ficus/docs preview --host 0.0.0.0 --port 4321`; restrict access to your trusted network. No Tau backend, database, provider credentials, submodules, or root postinstall hooks are needed.
+Open `http://127.0.0.1:4321`. The scripts bind to loopback by default. To preview from another device on your network, use `bun run --filter @ficus/docs preview --host 0.0.0.0 --port 4321`; restrict access to your trusted network. No Ficus backend, database, provider credentials, submodules, or root postinstall hooks are needed.
 
 To check and preview the production build:
 
@@ -34,7 +34,7 @@ Stop a dev server using the terminal that started it before binding a preview to
 | Directory                                                 | Purpose                                                | Included in the static site? |
 | --------------------------------------------------------- | ------------------------------------------------------ | ---------------------------- |
 | `src/content/docs/`                                       | Approved, edited user guides and reference pages       | Yes                          |
-| `src/styles/`                                             | Tau theme                                              | Yes                          |
+| `src/styles/`                                             | Ficus theme                                            | Yes                          |
 | `public/`                                                 | Curated public assets only                             | Yes, copied directly         |
 | `review/`                                                 | Proposed page map, source audit, verification evidence | No                           |
 | `scripts/`                                                | Build validation                                       | No                           |

@@ -198,9 +198,9 @@ and interaction patterns for the webapp.
 ### Theme colors
 
 Every color in `apps/web` comes from theme tokens, so it follows the selected
-theme (Tau, Harbor, Ember, High contrast, or a custom theme) in light and dark.
+theme (Ficus, Harbor, Ember, High contrast, or a custom theme) in light and dark.
 
-- Use semantic token utilities and the `tau-*` component classes (`bg-surface`,
+- Use semantic token utilities and the `ficus-*` component classes (`bg-surface`,
   `text-primary`, `text-on-accent`, `border-th-border`,
   `text-status-danger-600`, ...). Never use Tailwind palette utilities
   (`text-red-600`, `bg-white`, `text-black`), literal colors (`#fff`, `rgb()`)
@@ -264,7 +264,7 @@ login bypass.
   registration and create the administrator passkey. The bootstrap password
   stops being accepted once an administrator has a passkey.
 - When using `bun run dev:web`, enter its printed dev access token at the
-  development-server gate first. That gate is separate from Tau account
+  development-server gate first. That gate is separate from Ficus account
   authentication. For a paired backend, follow the [dev proxy workflow](docs/wiki/development.md#developing-against-a-remote-backend).
 - Keep first-run links, passkeys, device tokens and `.env` contents out of
   screenshots and logs. Wait for an observable signed-in UI or response before

@@ -13,8 +13,8 @@ prompts, inbox messages, or manually assigned agent lists.
 ## Prepare the work
 
 Read the squad's purpose, context, default `metadata.workflow`, and selection
-guidance in `metadata.workflowSetup`. Inspect `tau workflow list` and relevant
-presets with `tau workflow get`. Choose the smallest suitable process: Solo
+guidance in `metadata.workflowSetup`. Inspect `ficus workflow list` and relevant
+presets with `ficus workflow get`. Choose the smallest suitable process: Solo
 Coding, Reviewed Coding, Planned Coding, or an authorized custom flow. An
 engineering squad does not require three agents on every task.
 
@@ -27,7 +27,7 @@ deliverables or genuine dependencies; parallel checks can join within one flow.
 Before repository mutations, create an isolated worktree using the configured
 base branch. Use `squad_bash` for repository inspection, git, tests, builds, and
 local deployments. Do not reset another checkout or create duplicate worktrees.
-Pass `--repository <checkout-path>` to `tau workstream create` to create or validate
+Pass `--repository <checkout-path>` to `ficus workstream create` to create or validate
 an isolated worktree and detect code-host identity before workers start. Optional
 `--branch`, `--worktree`, `--base-branch`, and `--git-remote` override defaults.
 Without `--repository`, Git flags only attach existing metadata. Do not create a
@@ -36,7 +36,7 @@ Read-only investigations need no branch: state that repository mutations,
 commits, and PRs are outside scope. Non-repository tasks need no git ceremony.
 
 ```bash
-tau workstream create '<deliverable>' --squad <squad-id> \
+ficus workstream create '<deliverable>' --squad <squad-id> \
   --owner <manager-id> -d '<requirements and source context>' \
   --workflow <preset-id> --repository <checkout-path> \
   --branch <branch> --base-branch <base>
@@ -44,7 +44,7 @@ tau workstream create '<deliverable>' --squad <squad-id> \
 
 For one-off processes use `--flow-content '<JSON source>'` for short input, or
 `--flow-stdin` with a quoted heredoc for longer JSON/YAML, containing a source
-such as `{kind: inline, definition: ...}`. Validate with `tau workflow resolve
+such as `{kind: inline, definition: ...}`. Validate with `ficus workflow resolve
 --content` or `--stdin` first. Files remain optional via `--flow` for saved
 definitions; do not create temporary files merely to pass input.
 Do not also pass legacy agent lists, assignee, model, or completion flags.
@@ -55,9 +55,9 @@ creation, manual handoff chains, or manager-maintained scheduling ledgers.
 ## Execute and return
 
 Use the current handoff assignment and its incoming results. Read
-`tau workstream flow <id>` when earlier evidence or current state is needed;
+`ficus workstream flow <id>` when earlier evidence or current state is needed;
 do not reload the full history before every step. Perform the assigned step with the agent type's full expertise. Submit a declared outcome and evidence
-using `tau workstream advance <id> --content '<JSON>'`, or `--stdin` with a
+using `ficus workstream advance <id> --content '<JSON>'`, or `--stdin` with a
 quoted heredoc for longer JSON/YAML; include the current
 `expectedVersion` and `attemptId`. Use permitted returns for rework and tracked
 delegation if allowed. After a version conflict, re-read before retrying and
@@ -79,7 +79,7 @@ an authorized decision or revision, not another untracked worker.
 ## Deliver
 
 At completion-ready, follow the runtime's generated delivery instructions and
-use `tau workstream finish <id> --version <version>` when the condition is met.
+use `ficus workstream finish <id> --version <version>` when the condition is met.
 No agent type owns PR creation by default. A solo engineer may deliver its own
 work; a multi-step flow can assign that responsibility elsewhere.
 
@@ -101,20 +101,20 @@ clean up owned temporary resources only after delivery and dependent use finish.
 
 The primary delivery PR is `codeHost.changeRequest`. When an integration
 notification supplies `Event reference: <id>`, create or attach work with
-`tau workstream create ... --from-event <id>` or
-`tau workstream track <ws-id> --event <id>` — never hand-write
+`ficus workstream create ... --from-event <id>` or
+`ficus workstream track <ws-id> --event <id>` — never hand-write
 `github.*`/`codeHost` metadata to track a resource; `--from-url` links are
 reference material only and receive no updates. A stale
 `github.repo`/`github.issue` pair is converted automatically at startup into a
 `tracked` issue entry and is never read afterward.
 
-`tau workstream track --pr` adds a followed pull request alongside the
+`ficus workstream track --pr` adds a followed pull request alongside the
 primary delivery PR without changing completion, unless `--pr ... --delivery`
 (or `--url ... --delivery`) flags it as an additional delivery pull request:
-`tau workstream finish` then also requires that PR to be independently
+`ficus workstream finish` then also requires that PR to be independently
 verified merged, on top of the primary PR, before `pr-merge`/`pr-auto-merge`
 can complete (`409 Delivery pull request <repo>#<n> must be merged before
-completion` otherwise). `--delivery` only applies to pull requests. `tau
+completion` otherwise). `--delivery` only applies to pull requests. `ficus
 workstream tracked <ws-id>` lists everything tracked, which pull requests
 count toward delivery, their observed merge state, and whether subscriptions
 are active. A tracked issue closing, or any non-delivery resource's activity,

@@ -17,7 +17,7 @@ Bundled examples include Engineer for implementation, Architect for design, and 
 
 <ModeContent mode="cloud">
 
-Changes apply within your Tau workspace. If you can view types but cannot add or save one, ask an administrator for agent-type configuration access.
+Changes apply within your Ficus workspace. If you can view types but cannot add or save one, ask an administrator for agent-type configuration access.
 
 </ModeContent>
 
@@ -58,7 +58,7 @@ Agent types use one expertise prompt. The former `flowPrompt` field has been rem
 
 ## Worker and system-only types
 
-Worker choices in workflows, the squad spawn dialog, and schedules exclude disabled types and types marked **System-only**. Use `systemOnly: true` in an agent-type YAML definition to reserve a type for a Tau-managed role. It defaults to `false` for custom types. Manager, System Manager, Consultant, Artifact Builder, and the internal Subagent type are reserved this way; SysOps remains a worker type.
+Worker choices in workflows, the squad spawn dialog, and schedules exclude disabled types and types marked **System-only**. Use `systemOnly: true` in an agent-type YAML definition to reserve a type for a Ficus-managed role. It defaults to `false` for custom types. Manager, System Manager, Consultant, Artifact Builder, and the internal Subagent type are reserved this way; SysOps remains a worker type.
 
 System-only types remain visible in Agent Types administration. The flag describes how a type is used; it does not grant permissions. Workflow validation also rejects system-only participant types, including definitions supplied through YAML or assistant proposals.
 
@@ -77,8 +77,8 @@ Use the new type as a participant in a workflow, then start a small task with a 
 The CLI can inspect definitions:
 
 ```sh
-tau agent-type list
-tau agent-type get engineer
+ficus agent-type list
+ficus agent-type get engineer
 ```
 
 `engineer` is a bundled type ID; replace it if your instance uses a different type. The CLI also supports creating and updating definitions, but tier selection is currently in Settings. See the [CLI reference](/reference/cli/) for login and command discovery.

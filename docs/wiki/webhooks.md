@@ -174,18 +174,18 @@ A GitHub event passes through four stages, in order:
 
 Activity (stage 3) and delivery (stage 4) are independent: an issue or PR can show up in a squad's Activity feed with no agent ever notified, and a delivery can be skipped (work stream ended, not following changes, resource rebound) without affecting the Activity record.
 
-Bundled notification scripts have been retired. The default `actions.yaml` contains no notification rules. On upgrade, references to the old bundled notification commands are ignored, including their review batch, while custom commands remain intact. Native notifications need neither a CLI subprocess nor a host-user login. Custom webhook commands that invoke Tau still receive the instance-bound identity described above.
+Bundled notification scripts have been retired. The default `actions.yaml` contains no notification rules. On upgrade, references to the old bundled notification commands are ignored, including their review batch, while custom commands remain intact. Native notifications need neither a CLI subprocess nor a host-user login. Custom webhook commands that invoke Ficus still receive the instance-bound identity described above.
 
 ### GitHub webhook setup
 
 GitHub delivers events over the internet, so the API needs a **public URL**
-first — see [reverse-proxy.md](reverse-proxy.md) for serving tau on a real
+first — see [reverse-proxy.md](reverse-proxy.md) for serving ficus on a real
 origin.
 
-#### 1. Configure direct delivery in Tau
+#### 1. Configure direct delivery in Ficus
 
 Open **Settings → Integrations → GitHub → Webhook delivery**. Generate or enter
-a secret, copy it to GitHub's webhook configuration, and save it in Tau. Saved
+a secret, copy it to GitHub's webhook configuration, and save it in Ficus. Saved
 values cannot be revealed; rotation means entering a new secret on both sides.
 No API restart is needed. Copy the endpoint URL shown in this panel.
 
@@ -214,7 +214,7 @@ gh api repos/$REPO/hooks --method POST \
 1. Go to your repository **Settings > Webhooks > Add webhook**
 2. **Payload URL:** `https://YOUR-DOMAIN/api/webhooks/github`
 3. **Content type:** `application/json`
-4. **Secret:** the same secret you entered in Tau’s GitHub integration settings
+4. **Secret:** the same secret you entered in Ficus’s GitHub integration settings
 5. **Events:** select "Let me select individual events", then enable **Pushes**,
    **Pull request reviews**, **Pull request comments**, **Pull requests** (for
    merges and conflict detection), **Issues**, **Issue comments**, and
@@ -236,7 +236,7 @@ curl -H "Authorization: Bearer $FICUS_PASSWORD" https://YOUR-DOMAIN/api/webhooks
 GitHub sends a `ping` event immediately. Check the logs for confirmation:
 
 ```bash
-tau server logs | grep "GitHub Webhook"
+ficus server logs | grep "GitHub Webhook"
 ```
 
 ### Automatic GitHub watches
@@ -257,7 +257,7 @@ Synthetic `pull_request` synchronize, closed, and reopened events intentionally 
 
 ## GitHub auto-deploy
 
-Tau can redeploy itself when you push to `main`. This is **opt-in**: the rule
+Ficus can redeploy itself when you push to `main`. This is **opt-in**: the rule
 ships commented out in `config/webhooks/actions.yaml`. Uncomment it (adjusting
 the repo) and restart the API:
 
@@ -276,7 +276,7 @@ pull reports "Already up to date", and otherwise runs
 too — see [Configurable Webhook Actions](#configurable-webhook-actions).
 
 The webhook itself must include the `push` event. `scripts/setup-github-webhook.sh`
-creates or updates the repository webhook with the issue/PR/workflow events tau
+creates or updates the repository webhook with the issue/PR/workflow events ficus
 uses, but not `push` — add that one in the GitHub UI (or with `gh`) when you
 want auto-deploy:
 
@@ -289,7 +289,7 @@ The script checks `gh auth status` and your repo permission first, then points
 the hook at `https://your-domain.com/api/webhooks/github` with JSON payloads and
 the secret above.
 
-What tau does with each event:
+What ficus does with each event:
 
 - **Pushes** — auto-deploy on push to main (this section)
 - **Pull requests** — merge and conflict detection
@@ -313,13 +313,13 @@ What tau does with each event:
 A Linear event passes through four stages, in order, mirroring GitHub's:
 
 1. **Receipt** — the raw webhook is verified and persisted in `webhook_events`, tagged with `activity_squad_ids` for every squad that owns it: either a work stream that already names the issue (a `tracked` entry's `externalId`, or the legacy `metadata.linear.issueId`), or a squad with matching team routing (`metadata.linear[].teamId`). Team routing only owns deliveries that name a team: a `Comment` payload carries no `data.teamId`, so a comment receipt is owned through a tracking stream alone. Ownership is not a row either way — see stage 4.
-2. **Per-squad access probe** — a valid signature only proves the payload came from Linear. For every squad with an enabled, assigned Linear connection, Tau queries that squad's own connection to confirm it can currently read the issue — and, for assignment/unassignment, that the connected account is the (previous) assignee — before publishing the event under that squad's authority. A squad whose connection cannot read the issue never receives it, even when another squad's connection can.
+2. **Per-squad access probe** — a valid signature only proves the payload came from Linear. For every squad with an enabled, assigned Linear connection, Ficus queries that squad's own connection to confirm it can currently read the issue — and, for assignment/unassignment, that the connected account is the (previous) assignee — before publishing the event under that squad's authority. A squad whose connection cannot read the issue never receives it, even when another squad's connection can.
 3. **Outputs** — the payload becomes the provider-neutral `issue.assigned`, `issue.unassigned`, `issue.updated`, or `issue.comment` fact in `integration_output_events`, published once per authorized squad. See [Linear integrations → Outputs](linear-integrations.md#outputs) for the full field list.
 4. **Activity and delivery** — independent of each other: the fact projects into `squad_activity` under the `linear-issue` family (lane 71, kind `issue`), one row per stream tracking the issue, so an owned receipt with no tracking stream produces no rows (and produces them later if a stream starts tracking it); separately, the event is matched against work-stream and squad subscriptions and recorded in `integration_output_deliveries`. See [Linear integrations → Activity](linear-integrations.md#activity).
 
 ### Linear Webhook Setup
 
-#### 1. Configure the signing secret in Tau
+#### 1. Configure the signing secret in Ficus
 
 Open **Settings → Integrations → Linear → Webhook delivery**, generate or enter a secret, and save it. Saved values cannot be revealed; rotation means entering a new secret on both sides. Copy the endpoint URL shown in this panel (`https://your-domain.com/api/webhooks/linear`, path-prefixed if applicable).
 
@@ -327,9 +327,9 @@ Open **Settings → Integrations → Linear → Webhook delivery**, generate or 
 
 1. Go to **Settings → API → Webhooks** (requires admin)
 2. Click **New webhook**
-3. **Label:** `Tau Integration`
+3. **Label:** `Ficus Integration`
 4. **URL:** the endpoint URL from step 1
-5. **Signing secret:** paste the same secret you entered in Tau
+5. **Signing secret:** paste the same secret you entered in Ficus
 6. **Data change events:** check **Issues** and **Comments**
 7. **Team:** select specific team(s) or "All public teams"
 8. Save
@@ -345,7 +345,7 @@ curl -H "Authorization: Bearer $FICUS_PASSWORD" https://your-domain.com/api/webh
 Then assign yourself an issue in Linear and check the logs:
 
 ```bash
-tau server logs | grep "Linear Webhook"
+ficus server logs | grep "Linear Webhook"
 ```
 
 ## Adding a New Handler (Same Provider)
@@ -493,7 +493,7 @@ curl -H "Authorization: Bearer $FICUS_PASSWORD" https://your-domain.com/api/webh
 
 Common causes: a `401` means the integration webhook secret and the one on the provider
 differ; a `404` means the provider never registered — check that the API started
-cleanly (`tau server logs -c api`).
+cleanly (`ficus server logs -c api`).
 
 Without a configured integration webhook secret, the receiver rejects deliveries
 with `503`. Invalid signatures return `401`. Local tests also require a signing

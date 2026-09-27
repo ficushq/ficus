@@ -15,8 +15,8 @@ and a fix or a timeline within fourteen.
 
 ## Scope
 
-This repository is Tau Core: the self-hosted server, worker, CLI, web app and
-setup toolkit. Reports about the hosted Tau Cloud service (hiretau.ai) are
+This repository is Ficus Core: the self-hosted server, worker, CLI, web app and
+setup toolkit. Reports about the hosted Ficus Cloud service (ficus.sh) are
 welcome at the same address; please say which one you mean.
 
 ## Supported versions

@@ -314,7 +314,7 @@ commented there. Ground rules:
   and there is no ACME and no global email block anywhere. Two reasons, neither
   negotiable:
   - Let's Encrypt allows **50 certificates per registered domain per week**,
-    shared across every `*.hiretau.ai` subdomain. Per-tenant ACME therefore
+    shared across every `*.ficus.sh` subdomain. Per-tenant ACME therefore
     caps signups at 50/week, and issuance happens _after_ payment — a
     rate-limited failure is a paid-but-broken tenant.
   - An Origin CA certificate is trusted by **Cloudflare's proxy only**, never

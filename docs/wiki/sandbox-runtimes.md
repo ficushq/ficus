@@ -1,6 +1,6 @@
 # Choosing a sandbox runtime
 
-Every tau install must choose where agent work executes. `FICUS_SANDBOX_RUNTIME`
+Every ficus install must choose where agent work executes. `FICUS_SANDBOX_RUNTIME`
 is **required** and takes exactly one of five values — `docker-sysbox`,
 `docker-socket`, `k8s`, `vm`, `host`. There is no default and nothing is
 detected for you: the api and the worker refuse to start when it is unset or
@@ -125,7 +125,7 @@ This is the hand-wired alternative; the installer's `--instance <label>`
 (docs/wiki/setup.md → Multiple instances) does all of this for you, one instance per
 checkout.
 
-`host` is the cheapest way to try tau next to an install you already run, but
+`host` is the cheapest way to try ficus next to an install you already run, but
 the two share a machine, so everything they both hold has to be moved apart:
 
 | Knob                         | Why                                                             |
@@ -202,8 +202,8 @@ which prints the exact plan, requires explicit consent, and verifies
 afterwards that docker registered `sysbox-runc`:
 
 ```bash
-tau server bootstrap-sysbox            # consent-gated; prints the plan first
-tau server bootstrap-sysbox --dry-run  # print the plan, change nothing
+ficus server bootstrap-sysbox            # consent-gated; prints the plan first
+ficus server bootstrap-sysbox --dry-run  # print the plan, change nothing
 ```
 
 It checks the host first (Linux, x86_64, kernel ≥ 5.12, systemd, docker)
@@ -250,7 +250,7 @@ idle, and migrate between machines. This is the hosted product's runtime.
 
 **Prerequisites:** at least one registered machine. Either
 
-- **byo-ssh** — any Ubuntu 24.04 host reachable over SSH; tau bootstraps it, or
+- **byo-ssh** — any Ubuntu 24.04 host reachable over SSH; ficus bootstraps it, or
 - **exe** — auto-provisioned exe.dev VMs; store the exe.dev account SSH private
   key in the secret store under `exe-provider-ssh-key` (Settings → Secrets).
 
@@ -267,7 +267,7 @@ Setup toolkit: `runtime.sandbox: vm` (plus `runtime.exe.ssh_key_path` and
 
 ### Shared Nix source cache
 
-VM boxes already share the machine's `/nix/store`. Tau also shares the public
+VM boxes already share the machine's `/nix/store`. Ficus also shares the public
 source objects fetched while prewarming the default Devbox toolchains, in
 `/opt/tau/cache/nix/{tarball-cache,tarball-cache-v2}`. Only the dedicated machine
 prewarmer publishes objects. Shared packs are root-owned and read-only to boxes;
@@ -275,7 +275,7 @@ ordinary agents cannot publish private repositories into this cache.
 
 Each box keeps its own Nix fetcher databases, credentials, custom sources and
 writable objects. Its Git-backed tarball cache reads shared objects through
-Git alternates. Nix can still write duplicate loose objects, so Tau runs bounded,
+Git alternates. Nix can still write duplicate loose objects, so Ficus runs bounded,
 low-priority `git prune-packed` maintenance at box startup and after Devbox
 seeding (including failed installs). This removes only loose objects already
 available in packs, preserving private objects and fetcher metadata. A timed-out
@@ -355,12 +355,12 @@ sandbox any more, the alert is closed and the message says so.
 To find and stop the cause without restarting the sandbox:
 
 ```bash
-tau squad sandbox-ps <squadId>                        # load, processes by current CPU, containers
-tau squad sandbox-kill <squadId> <pid> [--signal KILL] # TERM by default
-tau squad sandbox-stop-container <squadId> <container>
+ficus squad sandbox-ps <squadId>                        # load, processes by current CPU, containers
+ficus squad sandbox-kill <squadId> <pid> [--signal KILL] # TERM by default
+ficus squad sandbox-stop-container <squadId> <container>
 ```
 
-The same commands exist under `tau agent` for an agent's own sandbox. A squad
+The same commands exist under `ficus agent` for an agent's own sandbox. A squad
 member's work runs in the squad sandbox, so use the squad commands for it. In
 the web app, the squad's Workspace settings and an agent's own-sandbox controls
 have a **Processes** section.
@@ -379,15 +379,15 @@ Declare packages and an optional idempotent setup hook for every sandbox owned
 by a squad:
 
 ```bash
-tau squad toolchain set <squad-id> \
+ficus squad toolchain set <squad-id> \
   --package python3@latest \
   --package terraform@latest \
-  --setup-file ./scripts/tau-setup.sh
-tau squad toolchain apply <squad-id>
-tau squad toolchain get <squad-id>
+  --setup-file ./scripts/ficus-setup.sh
+ficus squad toolchain apply <squad-id>
+ficus squad toolchain get <squad-id>
 ```
 
-Tau stores the setup file as durable inline code and runs it as the sandbox user
+Ficus stores the setup file as durable inline code and runs it as the sandbox user
 after installing the declared packages. Do not embed secrets in the script; read
 them from the sandbox's existing environment instead. The script must be safe to
 rerun after failures or configuration drift.
@@ -407,7 +407,7 @@ Change `FICUS_SANDBOX_RUNTIME` (or `runtime.sandbox` in the toolkit config) and
 restart the api and worker. Existing sandboxes on the old runtime are not
 migrated: agents get a fresh sandbox on the new runtime, and the old
 containers/pods/boxes are left for you to clean up. Squad workspaces and memory
-live in tau's storage, not in the sandbox, so work is not lost — but a machine
+live in ficus's storage, not in the sandbox, so work is not lost — but a machine
 change means a different filesystem, so uncommitted work inside an old sandbox
 does not follow. See [machines/upgrading.md](machines/upgrading.md) for the
 per-runtime migration notes.
@@ -459,7 +459,7 @@ runtime can idle when squad activity expires; an always-on squad keeps it warm.
 
 Each conversation retains its own history and short-term memory. Its shell starts
 in `<private-root>/conversations/<agent-id>`, and each command receives the calling
-agent's Tau token. Scratch directories prevent accidental filename collisions;
+agent's Ficus token. Scratch directories prevent accidental filename collisions;
 they are not security boundaries between consultants in the same squad. The
 runtime, installed tools, browser state, and shell configuration are shared, so
 coordinate changes and use squad resource slots where appropriate. Federation

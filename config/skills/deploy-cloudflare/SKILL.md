@@ -18,8 +18,8 @@ For squad project work, invoke the following project-directory commands through 
 ## Guardrails
 
 - Ask before Pages/Workers project creation, production deploy, routes/domains/DNS, public egress, KV/R2/D1, or paid features.
-- Required Tau secret: `DEPLOY_CLOUDFLARE_TOKEN`. Do not paste tokens in chat.
-- Ask a human admin/operator to expose only this secret in squad Environment settings or with `tau squad-env expose-secrets <squad-id> DEPLOY_CLOUDFLARE_TOKEN` before running provider CLI commands.
+- Required Ficus secret: `DEPLOY_CLOUDFLARE_TOKEN`. Do not paste tokens in chat.
+- Ask a human admin/operator to expose only this secret in squad Environment settings or with `ficus squad-env expose-secrets <squad-id> DEPLOY_CLOUDFLARE_TOKEN` before running provider CLI commands.
 
 ## If `DEPLOY_CLOUDFLARE_TOKEN` is not set
 
@@ -28,19 +28,19 @@ Walk the human through account/token setup before attempting CLI commands:
 1. Ask them to sign in or create a Cloudflare account at https://dash.cloudflare.com/sign-up.
 2. Ask them to choose the Cloudflare account that should own the Pages project or Worker. Mention that routes, custom domains, KV/R2/D1, and Workers usage may affect billing.
 3. Direct them to My Profile → API Tokens → Create Token: https://dash.cloudflare.com/profile/api-tokens.
-4. Prefer a custom token named `tau-deploy` with only the needed permissions. Typical starting points:
+4. Prefer a custom token named `ficus-deploy` with only the needed permissions. Typical starting points:
    - Cloudflare Pages: Account → Cloudflare Pages: Edit, Account → Account Settings: Read.
    - Workers: Account → Workers Scripts: Edit, Account → Account Settings: Read.
    - Add Zone permissions only if they explicitly approve routes/domains/DNS.
-5. Do **not** ask them to paste the token in chat. Open Tau **Settings → Integrations → Cloudflare**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
+5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Cloudflare**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
 
 6. Ask an admin/operator to expose only `DEPLOY_CLOUDFLARE_TOKEN` to this squad from the Squad Settings tab → Environment section. CLI fallback:
 
 ```bash
-tau squad-env expose-secrets <squad-id> DEPLOY_CLOUDFLARE_TOKEN
+ficus squad-env expose-secrets <squad-id> DEPLOY_CLOUDFLARE_TOKEN
 ```
 
-7. Verify non-secret access with `tau squad-env secrets <squad-id>` and then `CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler whoami`.
+7. Verify non-secret access with `ficus squad-env secrets <squad-id>` and then `CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler whoami`.
 
 ## Project directory and upload hygiene
 
@@ -84,12 +84,12 @@ CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler tail <worker-name>
 - Cloudflare Pages API/deployments and token permissions: https://developers.cloudflare.com/pages/configuration/api/
 - Cloudflare Wrangler Action examples for `pages project list` and `pages deploy`: https://github.com/cloudflare/wrangler-action
 
-## Tau deployment record
+## Ficus deployment record
 
 After deploying, record the external deployment and keep it updated. Do not put secrets in metadata. Archive old or superseded external deployment records once they are no longer useful; archived records move out of the active Apps tab list while preserving history.
 
 ```bash
-tau deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
-tau deploy external update <deployment-id> --status failed
-tau deploy external archive <deployment-id>
+ficus deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
+ficus deploy external update <deployment-id> --status failed
+ficus deploy external archive <deployment-id>
 ```

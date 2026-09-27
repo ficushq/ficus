@@ -19,9 +19,9 @@ const EXPLICIT_API_ORIGIN = import.meta.env?.DEV
  * otherwise the PAGE's own origin (plus APP_BASE_PATH via
  * import.meta.env.BASE_URL).
  *
- * There used to be hostname sniffing here mapping `<name>.hiretau.ai` to
- * `https://api-<name>.hiretau.ai` — the retired pre-platform deployment's
- * split-domain layout. Hosted-platform tenants live at `<name>.hiretau.ai`
+ * There used to be hostname sniffing here mapping `<name>.ficus.sh` to
+ * `https://api-<name>.ficus.sh` — the retired pre-platform deployment's
+ * split-domain layout. Hosted-platform tenants live at `<name>.ficus.sh`
  * with the API served SAME-ORIGIN behind caddy, so that mapping sent every
  * tenant's login to a subdomain that doesn't exist (observed live: CORS
  * failure, status null, on the first tenant's first login). Deriving the

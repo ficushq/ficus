@@ -1,10 +1,10 @@
 # K8s Sandbox Architecture
 
-System-level overview of how Tau runs agent sandboxes on Kubernetes.
+System-level overview of how Ficus runs agent sandboxes on Kubernetes.
 
 ## Runtime Selection
 
-Tau supports five sandbox runtimes, selected via the required `FICUS_SANDBOX_RUNTIME` variable — see [Choosing a sandbox runtime](../sandbox-runtimes.md) for how to pick one. This document covers `k8s`:
+Ficus supports five sandbox runtimes, selected via the required `FICUS_SANDBOX_RUNTIME` variable — see [Choosing a sandbox runtime](../sandbox-runtimes.md) for how to pick one. This document covers `k8s`:
 
 | Runtime         | Use Case                              | Sandbox Mechanism             | Tool Execution                |
 | --------------- | ------------------------------------- | ----------------------------- | ----------------------------- |
@@ -166,7 +166,7 @@ All persistent data lives on a single shared EFS volume (`tau-core-data`). Sandb
 | `/workspace`              | `workspaces/squads/{squadId}`    | read-write | Code, devbox.json, .tau/                                               |
 | `/memory`                 | `memory/{squadId}`               | read-only  | Agent memory files                                                     |
 | `/var/lib/tau/ssh-source` | `ssh/{squadId}`                  | read-write | SSH key source; entrypoint mirrors into container-private `/root/.ssh` |
-| `/etc/tau`                | (K8s Secret: `tau-sandbox-auth`) | read-only  | Auth password for Tau CLI                                              |
+| `/etc/tau`                | (K8s Secret: `tau-sandbox-auth`) | read-only  | Auth password for Ficus CLI                                            |
 
 See [volumes.md](volumes.md) for the full storage architecture.
 

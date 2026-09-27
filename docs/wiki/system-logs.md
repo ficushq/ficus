@@ -1,6 +1,6 @@
 # System log providers
 
-`tau system logs -c api -t 100 --no-follow` requires `system:logs`. The initial control frame reports only the selected provider and target kinds; deployment targets remain server-side.
+`ficus system logs -c api -t 100 --no-follow` requires `system:logs`. The initial control frame reports only the selected provider and target kinds; deployment targets remain server-side.
 
 | Provider  | Required configuration                                                                  | Access / behavior                                                                                                                                          |
 | --------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |

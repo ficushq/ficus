@@ -187,7 +187,7 @@ release runtime capacity; user stops and newer runner claims take precedence.
 After three retries, or for an ineligible error, the execution follows normal failure
 handling. Provider errors, unknown setup bugs, and failures after model dispatch are
 excluded from startup retries. Pi's provider retry policy remains enabled with five
-retries, followed by Tau's existing provider failover handling.
+retries, followed by Ficus's existing provider failover handling.
 
 1. Execution: `running → failed`
 2. Agent: `active → waiting-input` (or `idle`, depending on context)
@@ -332,7 +332,7 @@ POST   /api/agents/:id/abort-tool      — Abort current tool
 
 ## Chat file attachments
 
-Direct agent chats can upload ordinary files into the agent's tool-visible private workspace. Tau generates references in the exact form `@/private/chat-attachments/<uuid>/<safe-name>`; these references remain editable message text and are never silently re-appended after deletion.
+Direct agent chats can upload ordinary files into the agent's tool-visible private workspace. Ficus generates references in the exact form `@/private/chat-attachments/<uuid>/<safe-name>`; these references remain editable message text and are never silently re-appended after deletion.
 
 The private copy is available to the agent's filesystem tools and may subsequently be changed by the agent. Chat-history downloads instead serve the immutable originally uploaded bytes through an authenticated agent route. A descendant may use and download an ancestor's attachment only while both still resolve to the same sandbox. The reverse direction, siblings, and co-located system-manager agents do not receive logical API access merely because the underlying `/private` directory is physically shared. A changed sandbox binding returns a conflict rather than copying an old attachment into a new private workspace.
 

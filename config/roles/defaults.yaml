@@ -140,12 +140,12 @@ roles:
       - inbox:write # async messaging to other agents/users
       - squads:read
       - agents:read
-      - workspace:read # tau squad workspace / tau squad file
-      - schedules:read # tau schedule list/show
-      - schedules:create # tau schedule create (self-reminders)
-      - schedules:update # tau schedule update --enable/--disable
-      - schedules:delete # tau schedule delete
-      - schedules:trigger # tau schedule trigger
+      - workspace:read # ficus squad workspace / ficus squad file
+      - schedules:read # ficus schedule list/show
+      - schedules:create # ficus schedule create (self-reminders)
+      - schedules:update # ficus schedule update --enable/--disable
+      - schedules:delete # ficus schedule delete
+      - schedules:trigger # ficus schedule trigger
       - skills:read
       - skills:write
       - monitors:read
@@ -181,16 +181,16 @@ roles:
       - squads:read
       - squads:update # update own squad metadata/typeContext (squad-scoped)
       - agents:read
-      - agents:run # tau agent message
-      - agents:create # tau squad spawn
-      - agents:update # tau agent rename
-      - agents:terminate # tau squad unspawn (terminate a flex agent; NOT DB deletion)
+      - agents:run # ficus agent message
+      - agents:create # ficus squad spawn
+      - agents:update # ficus agent rename
+      - agents:terminate # ficus squad unspawn (terminate a flex agent; NOT DB deletion)
       - recommendations:read
       - recommendations:update
       - squad-relationships:read
-      - workspace:read # tau squad workspace / tau squad file
-      - env:read # tau squad-env secrets
-      - env:write # tau squad-env expose-secrets / unexpose-secrets
+      - workspace:read # ficus squad workspace / ficus squad file
+      - env:read # ficus squad-env secrets
+      - env:write # ficus squad-env expose-secrets / unexpose-secrets
       - schedules:read
       - schedules:create
       - schedules:update
@@ -211,15 +211,15 @@ roles:
       # grants:read is squad-scoped (requireSquadPermission) — own squad only.
       - integrations:read # inspect available connections without reading credentials
       - integrations:use # run gh with a connection assigned to this squad
-      - provider-auth:read # tau provider-auth list / get / oauth-providers
-      - webhooks:read # tau webhook status <provider>
-      - agent-types:read # tau agent-type list / get
+      - provider-auth:read # ficus provider-auth list / get / oauth-providers
+      - webhooks:read # ficus webhook status <provider>
+      - agent-types:read # ficus agent-type list / get
       - workflows:read # choose declarative presets; inline flows do not require catalog writes
       - workflows:create # catalog routes restrict squad managers to their own squad scope
       - workflows:update
       - workflows:delete
-      - channels:read # tau channel list
-      - grants:read # tau squad grant list / received (own squad only)
+      - channels:read # ficus channel list
+      - grants:read # ficus squad grant list / received (own squad only)
       # Federation: managers are the only agent type with amtp:read (peer listing);
       # register/send make the manager addressable + able to send amtp:// messages.
       - amtp:read

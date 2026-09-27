@@ -1,6 +1,6 @@
 # Voice Assistants and Artifacts
 
-Tau supports multiple realtime voice assistants built on a shared OpenAI Realtime runtime. Voice assistants are mounted by code where they belong; users do not choose from a global assistant picker.
+Ficus supports multiple realtime voice assistants built on a shared OpenAI Realtime runtime. Voice assistants are mounted by code where they belong; users do not choose from a global assistant picker.
 
 Voice is treated as a conversational router/operator. It is good at spoken interaction, short context gathering, choosing tools, and presenting results. It should not do complex long-running work directly. Durable visual work is routed to specialized artifact-builder agents.
 
@@ -28,7 +28,7 @@ Artifact builder agent
        └─ artifact_question
 ```
 
-Important rule: the voice assistant routes and monitors; artifact builders build. In user-facing speech, the workspace voice assistant should still speak as Tau — one capable workspace platform — rather than exposing artifact builders, squads, inboxes, or tool routing unless the user asks how the system works.
+Important rule: the voice assistant routes and monitors; artifact builders build. In user-facing speech, the workspace voice assistant should still speak as Ficus — one capable workspace platform — rather than exposing artifact builders, squads, inboxes, or tool routing unless the user asks how the system works.
 
 ## Realtime Voice Runtime
 
@@ -94,7 +94,7 @@ interface UseRealtimeVoiceAssistantReturn<TState> {
 
 ### Mic and interruption behavior
 
-- During assistant speech, Tau disables the mic so the speaker does not feed back into the realtime session.
+- During assistant speech, Ficus disables the mic so the speaker does not feed back into the realtime session.
 - The workspace orb supports click-to-barge-in while `speaking`: it cancels output, stops playback, re-enables the mic, and returns to `listening`.
 - During `listening`, clicking the orb toggles user mic pause/resume.
 - During `user-speaking`, clicking the orb commits the current input audio buffer and requests a response immediately.
@@ -166,7 +166,7 @@ Used by the unified app-wide Assistant (`UnifiedAssistant.tsx`, `AssistantComman
 
 Purpose:
 
-- general text and spoken interaction with the Tau web UI
+- general text and spoken interaction with the Ficus web UI
 - search and navigate pages, squads, work and conversations
 - inspect work and route messages to the relevant manager
 - delegate deeper tasks as background tasks on helpers the conversation owns — a general system-manager helper for instance-wide and personal work, plus one consultant per squad (named “Assistant task”) for squad-owned work — and receive their updates in the active conversation
@@ -194,7 +194,7 @@ Mounted by `VoiceWorkspacePage` at `/voice`.
 Purpose:
 
 - immersive full-screen voice workspace
-- present Tau as one cohesive system while internal agents/tools do the implementation work
+- present Ficus as one cohesive system while internal agents/tools do the implementation work
 - request, continue, list, archive, delete, and display persistent artifacts
 - choose displayed artifact: latest updated artifact or a specific older artifact
 - ask artifact-builder questions aloud and route answers back through artifact continue requests

@@ -1,6 +1,6 @@
 # AMTP Smoke Test (production)
 
-End-to-end manual test of AMTP (federation) Slice 5 across **two real tau instances**.
+End-to-end manual test of AMTP (federation) Slice 5 across **two real ficus instances**.
 You will peer the instances, give an agent an identity + handle, prove the
 default-closed gate, send a signed `amtp://` message, verify authorship pinning,
 reply, and exercise the allow-rule and security paths.
@@ -9,7 +9,7 @@ Budget ~20 minutes for the happy path.
 
 ## Prerequisites
 
-- **Two deployed tau instances** with this slice shipped — call them **A** and
+- **Two deployed ficus instances** with this slice shipped — call them **A** and
   **B**. They must be able to reach each other's `…/api` over HTTPS (the receiver
   fetches the sender's published key, and each delivers to the other's inbox).
 - **Operator access** (a login with `amtp:write`/`read`) on both instances —
@@ -21,10 +21,10 @@ Budget ~20 minutes for the happy path.
 
 ### Two actors, two ways to run commands
 
-| Actor        | How it acts                                                                                                                                                                                                                                                |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Operator** | Web UI (**Settings → Federation**, and each agent's **Federation mailbox** card in the Agent Info panel) or an operator-authenticated `tau` CLI.                                                                                                           |
-| **Agent**    | Runs `tau …` **inside its own sandbox**. Drive it by asking the agent in chat, e.g. _"Run `tau remote register alice` and paste the output."_ The CLI is auto-authenticated in-sandbox via `FICUS_TOKEN` and signs with the agent's `/private/identity.pem`. |
+| Actor        | How it acts                                                                                                                                                                                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Operator** | Web UI (**Settings → Federation**, and each agent's **Federation mailbox** card in the Agent Info panel) or an operator-authenticated `ficus` CLI.                                                                                                               |
+| **Agent**    | Runs `ficus …` **inside its own sandbox**. Drive it by asking the agent in chat, e.g. _"Run `ficus remote register alice` and paste the output."_ The CLI is auto-authenticated in-sandbox via `FICUS_TOKEN` and signs with the agent's `/private/identity.pem`. |
 
 > **Sending is always agent-driven.** A `amtp://` message is signed with the
 > agent's private key, so only the agent (in its sandbox) can send. Registering
@@ -38,7 +38,7 @@ Budget ~20 minutes for the happy path.
 Each instance has a cryptographic identity (`instanceId` + public key PEM).
 
 - **Operator on A:** Settings → Federation shows A's instance ID + public key.
-  (CLI equivalent: `tau federation identity` → `{ instanceId, publicKeyPem }`.)
+  (CLI equivalent: `ficus federation identity` → `{ instanceId, publicKeyPem }`.)
 - **Operator on B:** same, for B.
 
 Copy each instance's `instanceId` and public-key PEM; you'll paste them into the
@@ -59,21 +59,21 @@ know A to verify A's instance signature and fetch A's agent keys.
 CLI equivalent (operator-authenticated):
 
 ```bash
-tau federation peer add --alias B \
+ficus federation peer add --alias B \
   --instance-id <B-instanceId> \
   --base-url https://b.example.com/api \
   --public-key <B-public-key.pem-or-literal>
 ```
 
 ✅ **Expect:** each instance lists the other under Settings → Federation (or
-`tau federation peer list`), status **active**. A wrong/missing peer key later
+`ficus federation peer list`), status **active**. A wrong/missing peer key later
 shows up as a `401` instance-signature rejection on delivery.
 
 ## Step 3 — Confirm each agent has an identity
 
 Agent identities are generated automatically when the sandbox is provisioned.
 
-- **Ask `alice` (A) in chat:** _"Run `tau remote whoami`."_
+- **Ask `alice` (A) in chat:** _"Run `ficus remote whoami`."_
 
 ✅ **Expect:** live status with `registered: false` and `federationReady: false`
 (the handle has not been claimed yet), plus server
@@ -87,8 +87,8 @@ Core's recorded public identity and the delivered `/private/identity.pem` agree.
 
 ## Step 4 — Register handles (addressable, but NOT yet reachable)
 
-- **Ask `bob` (B) in chat:** _"Run `tau remote register bob`."_
-- **Ask `alice` (A) in chat:** _"Run `tau remote register alice`."_
+- **Ask `bob` (B) in chat:** _"Run `ficus remote register bob`."_
+- **Ask `alice` (A) in chat:** _"Run `ficus remote register alice`."_
 
 ✅ **Expect:** each prints `Registered as amtp://<thatInstanceId>/<handle>` plus
 `{ handle, address, identityPublicKey }`. Re-running with the same handle is
@@ -101,7 +101,7 @@ Operator alternative: the agent's **Federation mailbox** card → enter a handle
 
 Registration alone must **not** make `bob` reachable. Test it before opening.
 
-- **Ask `alice` (A) in chat:** _"Run `tau inbox send amtp://<B-instanceId>/bob "ping before open"`."_
+- **Ask `alice` (A) in chat:** _"Run `ficus inbox send amtp://<B-instanceId>/bob "ping before open"`."_
 
 ✅ **Expect:** the send is accepted locally (`{ enqueued: true, outboxId }`,
 HTTP 202) — but **`bob` receives nothing**. Delivery is rejected at B's receiver
@@ -113,10 +113,10 @@ door.
 
 ## Step 6 — Open the mailbox and send for real
 
-- **Ask `bob` (B) in chat:** _"Run `tau remote open`."_ (or Operator: the mailbox
-  card → **Open**). ✅ `Mailbox open`; `tau remote whoami` now shows
+- **Ask `bob` (B) in chat:** _"Run `ficus remote open`."_ (or Operator: the mailbox
+  card → **Open**). ✅ `Mailbox open`; `ficus remote whoami` now shows
   `inboundOpen: true`, `allowsInbound: true`.
-- **Ask `alice` (A) in chat:** _"Run `tau inbox send amtp://<B-instanceId>/bob --subject "smoke test" "hello from alice"`."_
+- **Ask `alice` (A) in chat:** _"Run `ficus inbox send amtp://<B-instanceId>/bob --subject "smoke test" "hello from alice"`."_
 
 ✅ **Expect on B:** `bob` is **woken with a new inbox message** within a few
 seconds — sender shown as the remote address `amtp://<A>/alice`, subject
@@ -134,10 +134,10 @@ is recorded on the inbox row's `metadata.remote`.
 
 ## Step 7 — Reply across instances
 
-- **Ask `bob` (B) in chat:** _"Reply to that message: `tau inbox send amtp://<A-instanceId>/alice --in-reply-to <localInboxMessageId> "got it"`."_ — use the **local inbox id of the received message**.
+- **Ask `bob` (B) in chat:** _"Reply to that message: `ficus inbox send amtp://<A-instanceId>/alice --in-reply-to <localInboxMessageId> "got it"`."_ — use the **local inbox id of the received message**.
 
 > For the reply to be delivered, `alice`'s mailbox on A must accept inbound from
-> B — open it (`tau remote open` as alice) or add an allow-rule (Step 8). The
+> B — open it (`ficus remote open` as alice) or add an allow-rule (Step 8). The
 > threading reply field rides the wire automatically.
 
 ✅ **Expect:** `alice` (A) is woken with `got it` from `amtp://<B>/bob`.
@@ -190,7 +190,7 @@ agent. Use principal `any` to accept all senders from a given peer.
 | `403` key mismatch on send                                                    | The recipient pinned a different key for this handle (e.g. the agent was recreated → new identity). No rotation this release.                                                                      |
 | `400 agentSig verification failed` after an operator re-registered the handle | The delivered private key does not match the recorded identity. Do not copy, delete, regenerate, or reuse identity keys, and do not clear TOFU pins. Contact an operator for coordinated recovery. |
 | Attachment send fails `400`                                                   | Known edge case: attachment filenames containing a double-quote currently fail closed. Rename the file.                                                                                            |
-| `tau remote peers` says "operator-only"                                       | Expected for worker agents (no `amtp:read`) — ask an operator for valid `amtp://` targets.                                                                                               |
+| `ficus remote peers` says "operator-only"                                     | Expected for worker agents (no `amtp:read`) — ask an operator for valid `amtp://` targets.                                                                                                         |
 
 ## Teardown
 

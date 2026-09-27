@@ -18,11 +18,11 @@ Prerequisites: `bash`, plus `tmux` on the machine if agents run local deployment
 
 ## Local service supervision
 
-Fresh `bun run setup` installs use launchd on macOS and systemd user services on Linux; PM2 is still available with `--supervisor pm2`. The explicit choice is stored in registry version 3 at `~/.tau/cli/local-server.json`, and every `tau server start|stop|restart|status|logs|update|uninstall` command dispatches from that record rather than guessing from the host.
+Fresh `bun run setup` installs use launchd on macOS and systemd user services on Linux; PM2 is still available with `--supervisor pm2`. The explicit choice is stored in registry version 3 at `~/.tau/cli/local-server.json`, and every `ficus server start|stop|restart|status|logs|update|uninstall` command dispatches from that record rather than guessing from the host.
 
 LaunchAgents live in `~/Library/LaunchAgents` and return at the next GUI login, but do not remain alive after logout. Linux units live in `${XDG_CONFIG_HOME:-~/.config}/systemd/user`; setup attempts unprivileged linger enablement and prints `sudo loginctl enable-linger <user>` guidance when required. Native stdout/stderr share private component logs at `~/.tau/logs/<process>.log`, selected through the existing file system-log provider.
 
-Never change a registered checkout in place. Run `tau server uninstall --root <checkout>` and then `bun run setup -- --supervisor <new>`; uninstall retains the checkout, logs, data, and PostgreSQL resources.
+Never change a registered checkout in place. Run `ficus server uninstall --root <checkout>` and then `bun run setup -- --supervisor <new>`; uninstall retains the checkout, logs, data, and PostgreSQL resources.
 
 ## What agents see
 
@@ -41,14 +41,14 @@ Agent shells never inherit the core's process env. At first use the core
 snapshots the user's login shell (`$SHELL -l`) from an identity-only seed
 (HOME, USER, SHELL, TERM, LANG, TZ, TMPDIR) and uses that as the base — so
 your PATH and profile exports apply, and the core's secrets do not. A change
-to your profile needs a core restart. Each command also gets a `tau` shim on
+to your profile needs a core restart. Each command also gets a `ficus` shim on
 PATH (`<HOME_DIR>/host/bin`) and, for squads, `GIT_SSH_COMMAND` pointing at the
 squad's ssh config plus the squad's `.tau/.env` sourced from the storage
 workspace.
 
 For squads, `FICUS_SQUAD_SSH_DIR` names the squad's SSH directory, and `ssh`,
-`scp`, and `rsync` on PATH are tau shims that transparently use that config
-when — and only when — every remote destination is a tau-managed
+`scp`, and `rsync` on PATH are ficus shims that transparently use that config
+when — and only when — every remote destination is a ficus-managed
 remote-host alias and no explicit `-F`/`-e`/`--rsh` was given; anything
 else is passed through to the operator's own ssh untouched (an explicit
 `-e`/`--rsh` still wins over the shim's `RSYNC_RSH` by rsync's own
@@ -57,7 +57,7 @@ precedence). The shims only ever ADD the squad config and pinned
 operator destinations stay byte-identical. Aliases a squad user adds to
 the _user_ section of the squad config are not auto-resolved by the shims —
 `ssh -F "$FICUS_SQUAD_SSH_DIR/config" <alias>` still works for those. At
-worker boot, tau re-materializes every granted squad's SSH config once
+worker boot, ficus re-materializes every granted squad's SSH config once
 (idempotently), so grants made before a host-mode switch keep working.
 
 ### Agent identity
@@ -74,7 +74,7 @@ An agent shell is one the runtime gave a scoped token. Those shells get:
 
 Shells the runtime does NOT give a token — web terminals, `exec`, anything the
 sandbox manager spawns — are operator-driven and unchanged: they keep your
-`~/.tau/cli/auth.json` and your `tau` behaves exactly as it does in any other
+`~/.tau/cli/auth.json` and your `ficus` behaves exactly as it does in any other
 shell of yours.
 
 What is actually enforced for an agent shell:
@@ -97,27 +97,27 @@ What is actually enforced for an agent shell:
   password to every agent.
 - **The shim directory is re-prepended to `PATH`** after the squad env is
   applied. Squad-env PATH additions are honoured — `PATH=$PATH:/opt/toolchain`
-  is a supported thing to write — but they cannot displace `tau`, which always
+  is a supported thing to write — but they cannot displace `ficus`, which always
   resolves to `<HOME_DIR>/host/bin/ficus`.
 - **Reserved keys are rejected at write time** — see
   [Reserved squad env keys](#reserved-squad-env-keys) — and are also filtered
   out of Secret Store rendering, so a Secret Store key literally named
   `FICUS_API_URL` cannot reach `.tau/.env` either.
 - **A per-agent CLI auth store.** Host agents run as your unix user with your
-  `$HOME`, so without `FICUS_AUTH_STORE` the `tau` CLI falls back to
+  `$HOME`, so without `FICUS_AUTH_STORE` the `ficus` CLI falls back to
   `~/.tau/cli/auth.json` — YOUR login, against whatever instance you last
   logged into. Each agent gets its own store path instead; the file is not
   created, and a missing store reads as empty. With `FICUS_AGENT_CONTEXT=1` the
   CLI resolves the API URL and credential from the env ONLY: no auth store, no
   `.env` fallback, and `--backend` is refused. A missing `FICUS_API_URL`/
   `FICUS_TOKEN` is an error when a command needs the credential — never a fall
-  back to a human login — while `tau whoami` and `tau auth status` still report
+  back to a human login — while `ficus whoami` and `ficus auth status` still report
   which variable is missing.
 
-Run `tau whoami` in any shell to see which instance it talks to and as whom.
+Run `ficus whoami` in any shell to see which instance it talks to and as whom.
 
 **Standing limits.** The above closes the ACCIDENT: no squad env variable, no
-stale value and no Secret Store name can reach an agent's identity or its `tau`
+stale value and no Secret Store name can reach an agent's identity or its `ficus`
 by mistake. It is not a security boundary, and host mode does not have one:
 
 - `.tau/.env` is executed as shell, not parsed. A squad env written
@@ -131,17 +131,17 @@ Use docker/k8s/vm when the deliberate case must be covered too.
 
 ### Reserved squad env keys
 
-A squad env (`tau squad-env set`, or the squad's Environment settings) may not
+A squad env (`ficus squad-env set`, or the squad's Environment settings) may not
 assign `FICUS_TOKEN`, `FICUS_API_URL`, `FICUS_PASSWORD`, `FICUS_AUTH_STORE`,
 `FICUS_AGENT_CONTEXT`, `FICUS_AGENT_ID`, or the `FICUS_IDENTITY_API_URL`,
 `FICUS_IDENTITY_TOKEN`, `FICUS_IDENTITY_AUTH_STORE` and `FICUS_IDENTITY_AGENT_ID`
-aliases: the agent's identity is injected by tau, and setting it there would
+aliases: the agent's identity is injected by ficus, and setting it there would
 make every agent in the squad act as a different identity. Writes naming one
 are rejected with a 400 naming the key and the reason, and the same names are
 filtered out of Secret Store exposure rendering.
 
 `PATH` is deliberately NOT reserved — adding to it is a legitimate squad env —
-because the shim re-prepend above already keeps `tau` pointing at tau's own CLI.
+because the shim re-prepend above already keeps `ficus` pointing at ficus's own CLI.
 
 Values stored before this rule are not migrated; the re-assertion above is what
 stops them taking effect.
@@ -162,10 +162,10 @@ stops them taking effect.
 ## Per-squad workspace override
 
 Choose a working directory while creating a squad in the web create modal or
-onboarding flow, or pass `--host-workspace-path /abs/dir` to `tau squad create`.
-For an existing squad, use `tau squad update <id> --host-workspace-path
+onboarding flow, or pass `--host-workspace-path /abs/dir` to `ficus squad create`.
+For an existing squad, use `ficus squad update <id> --host-workspace-path
 /abs/dir` or the squad's Settings → Workspace section in the web UI. Updates take effect at
-the squad's next sandbox start. Tau creates the directory if missing and never
+the squad's next sandbox start. Ficus creates the directory if missing and never
 deletes it — archive-with-delete only removes the default storage directory.
 
 ## Browser tools
@@ -175,7 +175,7 @@ deletes it — archive-with-delete only removes the default storage directory.
 this machine** in-process, through `playwright-core` — nothing is ever
 downloaded. Install one first: macOS `brew install --cask google-chrome` (or
 Chrome from <https://google.com/chrome>); Debian/Ubuntu `sudo apt install
-chromium`; Fedora `sudo dnf install chromium`; or point Tau at any
+chromium`; Fedora `sudo dnf install chromium`; or point Ficus at any
 Chromium-family binary with `FICUS_BROWSER_EXECUTABLE_PATH`. With none of them
 present the tools answer "Browser is unavailable on this machine."
 
@@ -212,7 +212,7 @@ blocklist exists on machine hosts because there `tau-browser` is a shared
 service whose network reach exceeds the calling box's; here it is your own
 machine and your own network, so the guard would protect nothing while breaking
 the main reason to browse from host — screenshotting the agent's own local
-deployment, including Tau's own `http://localhost:<port>/api/app/<id>/…`
+deployment, including Ficus's own `http://localhost:<port>/api/app/<id>/…`
 proxied URLs. Non-`http(s)` URLs (`file://`, …) are still refused.
 
 Each agent gets its own browser context, so cookies, storage and logins are not

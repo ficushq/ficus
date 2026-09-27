@@ -1,8 +1,8 @@
-# Tau developer wiki
+# Ficus developer wiki
 
-Tau runs autonomous teams of AI agents ("squads") that work on goals together. Squads consist of a manager and worker agents that coordinate via **work streams** (units of deliverable work), exchange **inbox messages**, run on **schedules**, and integrate with external systems (GitHub, Linear, Discord, Slack). Humans monitor and intervene via a web UI, the `tau` CLI, or chat.
+Ficus runs autonomous teams of AI agents ("squads") that work on goals together. Squads consist of a manager and worker agents that coordinate via **work streams** (units of deliverable work), exchange **inbox messages**, run on **schedules**, and integrate with external systems (GitHub, Linear, Discord, Slack). Humans monitor and intervene via a web UI, the `ficus` CLI, or chat.
 
-This wiki orients contributors (human or agent) to the current system. Start here, then follow links into subsystem explanations and operating guides. The separate [user guides](../../apps/docs/README.md) explain how to use Tau.
+This wiki orients contributors (human or agent) to the current system. Start here, then follow links into subsystem explanations and operating guides. The separate [user guides](../../apps/docs/README.md) explain how to use Ficus.
 
 Keep current implementation guidance in `docs/wiki/`. One-off plans, designs, specifications and delivery tracking belong in history, including work still underway. Record unresolved proposals and acceptance gaps in the backlog, with source evidence and a check that would establish completion. Promote verified behavior into the wiki as code changes; historical checkboxes and test counts are not current acceptance evidence.
 
@@ -14,7 +14,7 @@ For setup, see [`docs/wiki/setup.md`](setup.md). For project conventions (Bun, m
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `apps/core/`            | API server + background worker (Hono + Bun). DB schema, entities, services, tools, routes.                          |
 | `apps/web/`             | Frontend (Vite + React + Tailwind + React Query).                                                                   |
-| `apps/cli/`             | `tau` CLI (Commander.js). Mirrors the REST API and is installed in sandboxes.                                       |
+| `apps/cli/`             | `ficus` CLI (Commander.js). Mirrors the REST API and is installed in sandboxes.                                     |
 | `packages/shared/`      | Shared TypeScript types between core, web, cli.                                                                     |
 | `packages/client-core/` | Transport-agnostic API client (resources, SSE/WS, query keys) shared by web + mobile.                               |
 | `packages/k8s-sandbox/` | The sandbox server, used by both the `k8s` runtime (in pods) and the `vm` runtime (in boxes).                       |
@@ -136,8 +136,8 @@ Template-based entries can be customized in the UI but not deleted — only disa
 
 | If you're working on...                                   | Read                                                                                                                                                                  |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Installing tau on this machine                            | [Local setup](setup.md#local-setup)                                                                                                                                   |
-| Developing tau itself (scripts, tests, k3d, signing)      | [`development.md`](development.md)                                                                                                                                    |
+| Installing ficus on this machine                          | [Local setup](setup.md#local-setup)                                                                                                                                   |
+| Developing ficus itself (scripts, tests, k3d, signing)    | [`development.md`](development.md)                                                                                                                                    |
 | `.env`, environment variables, API auth                   | [`configuration.md`](configuration.md)                                                                                                                                |
 | Agent execution, the worker loop                          | [`agents-and-executions.md`](agents-and-executions.md)                                                                                                                |
 | Squad/work stream concepts and CLI                        | [`cli/squad-system-overview.md`](cli/squad-system-overview.md), [CLI index](cli/README.md), [workflows](workflows.md)                                                 |
@@ -203,13 +203,13 @@ See [`AGENTS.md`](../../AGENTS.md) for the full conventions list, including DB m
 - **Default agent** — Persistent squad member (e.g. the manager). Protected from unspawn.
 - **Flex agent** — Per-work-stream agent. Auto-cleaned when work stream completes.
 - **Handoff** — Transfer of responsibility for work. Legacy streams use reassignment; flow streams follow their selected workflow's transition rules.
-- **Steer** — Interrupt a running agent with a message (`tau inbox send ... --steer`).
+- **Steer** — Interrupt a running agent with a message (`ficus inbox send ... --steer`).
 - **Follow-up** — Queue a message for after the current turn (`--follow-up`).
 - **Inbox** — Per-agent message queue; also used for system notifications and human messages.
 - **Skill** — Reusable agent guidance bundle materialized into the sandbox (`config/skills/`).
 - **Worktree** — Per-work-stream git worktree, isolating branches so parallel work doesn't conflict.
-- **Sandbox** — Where an agent's work executes: a Docker container, a K8s pod, a VM box, or (on the `host` runtime) the core's own machine. The tau CLI is available inside. See [`sandbox-runtimes.md`](sandbox-runtimes.md).
+- **Sandbox** — Where an agent's work executes: a Docker container, a K8s pod, a VM box, or (on the `host` runtime) the core's own machine. The ficus CLI is available inside. See [`sandbox-runtimes.md`](sandbox-runtimes.md).
 
 ## License
 
-Tau is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). See the [LICENSE](../../LICENSE) file at the repo root.
+Ficus is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). See the [LICENSE](../../LICENSE) file at the repo root.

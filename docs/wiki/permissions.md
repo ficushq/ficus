@@ -1,6 +1,6 @@
 # Permission catalog
 
-Tau uses the shared catalog in
+Ficus uses the shared catalog in
 [`packages/shared/src/permissions.ts`](../../packages/shared/src/permissions.ts).
 Every named permission has a description in
 [`packages/shared/src/permission-catalog.ts`](../../packages/shared/src/permission-catalog.ts).
@@ -21,7 +21,7 @@ only once, after creation.
 
 Selecting permissions saves their exact names. Selecting every permission in a
 group does **not** create a wildcard. This avoids automatically granting newly
-introduced actions when Tau is updated.
+introduced actions when Ficus is updated.
 
 Existing wildcard grants remain visible and unchanged until removed. A resource
 wildcard such as `workstreams:*` includes all current and future permissions for

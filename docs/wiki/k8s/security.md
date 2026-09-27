@@ -1,6 +1,6 @@
 # K8s Security
 
-Security design for Tau's Kubernetes sandbox system.
+Security design for Ficus's Kubernetes sandbox system.
 
 ## Network Isolation
 
@@ -31,7 +31,7 @@ Sandbox pods can reach:
 | ------------------------ | ------------------------------------------------------ |
 | **DNS** (port 53)        | Required for package installation, git operations      |
 | **Internet** (all ports) | SSH/HTTPS git remotes, package installs, web API calls |
-| **Core API** (port 3000) | Tau CLI inside the sandbox talks back to Core          |
+| **Core API** (port 3000) | Ficus CLI inside the sandbox talks back to Core        |
 
 **Why allow internet egress?** Agent sandboxes need to install packages, clone repos, and run code that may call external APIs on arbitrary ports. Egress excludes private and special-use IPv4 ranges (including cloud metadata/link-local ranges) but otherwise allows all ports to the internet. Kubernetes NetworkPolicy does not portably support FQDN matching, so this cannot be restricted to `github.com`/`ssh.github.com` without CNI-specific policy extensions.
 
@@ -109,12 +109,12 @@ Core stores sensitive credentials (API keys, tokens, passwords) encrypted in the
 
 ### Sandbox Auth (`FICUS_PASSWORD`)
 
-Sandbox pods need to authenticate with the Core API (for Tau CLI). The password flows through:
+Sandbox pods need to authenticate with the Core API (for Ficus CLI). The password flows through:
 
 1. User sets `FICUS_PASSWORD` in Settings UI → encrypted in DB
 2. `K8sPodManager.syncAuthSecret()` pushes it to K8s Secret `tau-sandbox-auth` in the sandboxes namespace
 3. Secret is mounted at `/etc/tau/password` in sandbox pods
-4. Tau CLI reads the mounted file for authentication
+4. Ficus CLI reads the mounted file for authentication
 
 The secret is synced before each pod creation and whenever `FICUS_PASSWORD` changes (via `SecretStore.onChange` listener). K8s automatically propagates secret updates to running pods within ~1 minute.
 

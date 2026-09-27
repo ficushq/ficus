@@ -1,8 +1,8 @@
 # Kubernetes Deployment Guide
 
-Step-by-step guide for deploying Tau on Kubernetes with K8s-based sandboxes.
+Step-by-step guide for deploying Ficus on Kubernetes with K8s-based sandboxes.
 
-This is one of several ways to run Tau — see [hosting.md](../hosting.md) for the
+This is one of several ways to run Ficus — see [hosting.md](../hosting.md) for the
 full map (where the core runs × which sandbox runtime it uses),
 [scripts/setup/README.md](../../../scripts/setup/README.md) for the automated
 single-host/cloud-VM path, [docs/wiki/setup.md](../setup.md#local-setup) for a laptop
@@ -48,7 +48,7 @@ docker push $REGISTRY/tau-core:latest
 
 ## 3. Configure Storage Classes
 
-Tau requires RWX (ReadWriteMany) and RWO (ReadWriteOnce) storage classes.
+Ficus requires RWX (ReadWriteMany) and RWO (ReadWriteOnce) storage classes.
 
 ### AWS Example
 
@@ -138,7 +138,7 @@ kubectl -n tau-sandboxes create secret generic tau-git-credentials \
   --from-literal=GITHUB_TOKEN="ghp_..."
 
 kubectl -n tau-sandboxes create configmap tau-git-config \
-  --from-literal=user-name="Tau Bot" \
+  --from-literal=user-name="Ficus Bot" \
   --from-literal=user-email="tau@example.com"
 ```
 
@@ -187,8 +187,8 @@ kubectl -n tau-sandboxes get pods -w
 
 # Terminal 2: Port-forward and test
 kubectl -n tau-core port-forward svc/tau-api 3000:3000 &
-tau agent create test-agent --model gpt-4o --system "You are a test agent"
-tau run test-agent "echo hello"
+ficus agent create test-agent --model gpt-4o --system "You are a test agent"
+ficus run test-agent "echo hello"
 ```
 
 You should see a sandbox pod spin up in `tau-sandboxes`.
@@ -267,7 +267,7 @@ kubectl -n tau-sandboxes logs -l app=tau-sandbox       # Sandbox logs
 | `WORKSPACE_PATH`   | `/workspace`  | Agent working directory     |
 | `FICUS_SANDBOX_ID` | (set by Core) | Sandbox identifier          |
 | `FICUS_SQUAD_ID`   | (set by Core) | Squad identifier            |
-| `FICUS_API_URL`    | (set by Core) | Core API URL for Tau CLI    |
+| `FICUS_API_URL`    | (set by Core) | Core API URL for Ficus CLI  |
 | `GITHUB_TOKEN`     | (optional)    | Git credential helper token |
 | `GIT_USER_NAME`    | (optional)    | Git commit author name      |
 | `GIT_USER_EMAIL`   | (optional)    | Git commit author email     |

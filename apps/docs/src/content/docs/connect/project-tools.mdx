@@ -15,10 +15,10 @@ Slack, Discord, or Telegram, use [chat channels](/connect/chat/).
 
 ## Connect Linear
 
-1. Create a personal API key in Linear for the account Tau should use. Limit its
+1. Create a personal API key in Linear for the account Ficus should use. Limit its
    teams to the ones relevant to your squads. Read access is sufficient for issue
    search and assignment routing.
-2. In Tau, open **Settings → Integrations → Linear** and enable the card.
+2. In Ficus, open **Settings → Integrations → Linear** and enable the card.
 3. Under **Add account**, enter a recognizable name and the personal API key.
    Choose **Create and validate**.
 4. Confirm validation succeeds, then enable the account if it is disabled.
@@ -28,8 +28,8 @@ Slack, Discord, or Telegram, use [chat channels](/connect/chat/).
 
 For assignment updates, expand **Webhook delivery** in the global Linear card.
 Copy the displayed URL into an Issue webhook in Linear and configure the same
-signing secret on both sides. Save the secret in Tau to enable delivery. The
-connected account supplies the assignee identity; Tau checks issue access, team,
+signing secret on both sides. Save the secret in Ficus to enable delivery. The
+connected account supplies the assignee identity; Ficus checks issue access, team,
 and assignee before routing an update.
 
 <ModeContent mode="cloud">
@@ -44,7 +44,7 @@ flow does not connect Linear for you.
 
 Direct Linear webhooks require a public URL that reaches your instance. Set the
 correct public instance URL before copying the webhook address. See
-[configuration](/reference/configuration/) if Tau displays a local-only address.
+[configuration](/reference/configuration/) if Ficus displays a local-only address.
 
 </ModeContent>
 
@@ -59,7 +59,7 @@ Enable **Notion** in **Settings → Integrations** and expand its settings.
 <ModeContent mode="cloud">
 
 Choose **Connect Notion**. Follow Notion's authorization flow, choose the workspace
-and pages to share, and return to Tau. Cloud supplies the OAuth application
+and pages to share, and return to Ficus. Cloud supplies the OAuth application
 configuration.
 
 </ModeContent>
@@ -68,10 +68,10 @@ configuration.
 
 Create an OAuth integration in the Notion Developer Portal with **Read content**,
 **Insert content**, and **Update content** capabilities. Register the exact callback
-URL shown in Tau's Notion card. Enter its client ID and client secret, acknowledge
+URL shown in Ficus's Notion card. Enter its client ID and client secret, acknowledge
 those capabilities, and choose **Save OAuth application and acknowledge
 capabilities**. Then choose **Connect Notion**, authorize the workspace and pages,
-and return to Tau.
+and return to Ficus.
 
 </ModeContent>
 

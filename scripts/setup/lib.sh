@@ -1053,13 +1053,13 @@ caddy_host_from_origin() { # ORIGIN
 # "improve" this back to Let's Encrypt:
 #
 #   * Let's Encrypt allows 50 certificates per REGISTERED DOMAIN per week,
-#     shared across every *.hiretau.ai subdomain. Per-tenant ACME therefore
+#     shared across every *.ficus.sh subdomain. Per-tenant ACME therefore
 #     caps signups at 50/week — and issuance happens AFTER payment, so a
 #     failure there is a paid-but-broken tenant.
 #   * An Origin CA certificate is trusted by Cloudflare's proxy and by nothing
 #     else. It REQUIRES the hostname to be proxied (orange cloud) — see
 #     cf_dns_record_body's proxied:true. There is no half-measure.
-#   * One certificate covers both `hiretau.ai` and `*.hiretau.ai` and is valid
+#   * One certificate covers both `ficus.sh` and `*.ficus.sh` and is valid
 #     for years, so nothing here does per-host issuance or renewal. That is the
 #     entire point of the switch.
 #

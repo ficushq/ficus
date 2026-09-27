@@ -1,16 +1,16 @@
 ---
 title: Maintain a self-hosted instance
-description: Check local services, pause execution, update Tau, and preserve the data needed for recovery.
+description: Check local services, pause execution, update Ficus, and preserve the data needed for recovery.
 ---
 
-Use `tau server` to manage an installation on the computer where you run the command. These commands work without API login, including when the app is unavailable. Commands such as `tau system pause` and `tau update apply` instead use the CLI's selected backend and your account permissions.
+Use `ficus server` to manage an installation on the computer where you run the command. These commands work without API login, including when the app is unavailable. Commands such as `ficus system pause` and `ficus update apply` instead use the CLI's selected backend and your account permissions.
 
 ## Confirm which instance you are changing
 
 ```sh
-tau server list
-tau server status
-tau auth status
+ficus server list
+ficus server status
+ficus auth status
 ```
 
 The first two show local installations. The last shows where authenticated API commands go. Those targets can differ.
@@ -18,11 +18,11 @@ The first two show local installations. The last shows where authenticated API c
 For a named local installation, add the instance to the subcommand:
 
 ```sh
-tau server status --instance lab
-tau server logs --instance lab -f
+ficus server status --instance lab
+ficus server logs --instance lab -f
 ```
 
-Outside a checkout, `tau server use lab` chooses the default local instance. Inside a Tau checkout, that checkout still takes precedence unless you supply an explicit instance or root.
+Outside a checkout, `ficus server use lab` chooses the default local instance. Inside a Ficus checkout, that checkout still takes precedence unless you supply an explicit instance or root.
 
 ## Pause agent execution
 
@@ -31,8 +31,8 @@ When you need to work on an active instance, open **Settings → System → Main
 The CLI equivalent is:
 
 ```sh
-tau system pause --reason "Scheduled maintenance"
-tau system pause-status
+ficus system pause --reason "Scheduled maintenance"
+ficus system pause-status
 ```
 
 Pause prevents new execution and interrupts active turns into maintenance waiting state. Wait for the reported phase to settle before assuming work is quiescent. The app stays available; this is different from stopping its services or pausing one work stream.
@@ -40,8 +40,8 @@ Pause prevents new execution and interrupts active turns into maintenance waitin
 After maintenance, release your administrator hold:
 
 ```sh
-tau system resume
-tau system pause-status
+ficus system resume
+ficus system pause-status
 ```
 
 An administrator hold and a platform maintenance lease are independent. If a platform lease is still active, releasing your hold does not resume execution. The System page shows both holders; allow the owning operation to complete rather than repeatedly toggling the administrator control.
@@ -49,15 +49,15 @@ An administrator hold and a platform maintenance lease are independent. If a pla
 ## Restart or stop local services
 
 ```sh
-tau server restart
-tau server status
+ficus server restart
+ficus server status
 ```
 
 To take the API and worker down until you explicitly start them again:
 
 ```sh
-tau server stop
-tau server start
+ficus server stop
+ficus server start
 ```
 
 These commands use the service manager recorded during setup. Use them instead of mixing manual process launches with the registered services. A restart can interrupt an active turn; maintenance pause gives you a visible way to prepare first.
@@ -67,27 +67,27 @@ These commands use the service manager recorded during setup. Use them instead o
 Preserve a recoverable backup before updating an instance whose data matters. Check that the checkout has no uncommitted source changes; the offline updater refuses a dirty working tree.
 
 ```sh
-tau server update
-tau server status
-tau server logs -n 100
+ficus server update
+ficus server status
+ficus server logs -n 100
 ```
 
-The local updater fetches and rebuilds the checkout, performs its update tasks, and restarts the recorded supervisor. “Offline” means it does not require a running Tau API; fetching source and dependencies still needs network access. A normal update fast-forwards the current branch. If you use a pinned tag or commit, consult `tau server update --help` for the explicit ref option.
+The local updater fetches and rebuilds the checkout, performs its update tasks, and restarts the recorded supervisor. “Offline” means it does not require a running Ficus API; fetching source and dependencies still needs network access. A normal update fast-forwards the current branch. If you use a pinned tag or commit, consult `ficus server update --help` for the explicit ref option.
 
 If the API is available, the app's **Settings → Updates** or these commands provide the API-based flow:
 
 ```sh
-tau update check
-tau update apply
-tau update status
+ficus update check
+ficus update apply
+ficus update status
 ```
 
-Check `tau auth status` first: this can update a remote backend. The Updates page may be hidden when an external platform manages the installation. An unreachable remote API does not cause Tau to update an unrelated local checkout.
+Check `ficus auth status` first: this can update a remote backend. The Updates page may be hidden when an external platform manages the installation. An unreachable remote API does not cause Ficus to update an unrelated local checkout.
 
 If a local update fails, inspect its recorded result from the checkout:
 
 ```sh
-tau update status --offline
+ficus update status --offline
 ```
 
 Read the failed step before retrying. A source download alone is not proof that a new build is serving requests.
@@ -115,7 +115,7 @@ Coordinate a quiet backup window for database and file copies, and test restorat
 ## Unregister without deleting data
 
 ```sh
-tau server uninstall
+ficus server uninstall
 ```
 
-Tau asks for confirmation, removes its service registration and local instance registry entry, and prints what remains. It keeps the checkout, database container/volume and data directory. Review those retained resources separately if your intent is a complete removal.
+Ficus asks for confirmation, removes its service registration and local instance registry entry, and prints what remains. It keeps the checkout, database container/volume and data directory. Review those retained resources separately if your intent is a complete removal.

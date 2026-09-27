@@ -1,6 +1,6 @@
 ---
 name: setup-telegram
-description: "Set up Telegram bot integration — create the bot via BotFather, register the webhook, and create the channel instance."
+description: 'Set up Telegram bot integration — create the bot via BotFather, register the webhook, and create the channel instance.'
 ---
 
 # Setting Up Telegram Integration
@@ -22,10 +22,10 @@ need this — squad linking is configured in the channel instance (Step 4).
 
 ```bash
 # Check if Telegram secrets exist
-tau secret list | grep TELEGRAM
+ficus secret list | grep TELEGRAM
 
 # Check if channel instances exist
-tau channel list
+ficus channel list
 ```
 
 If Telegram is already set up, you only need to update the channel instance
@@ -38,7 +38,7 @@ to link additional squads.
   generated and they can view/copy it in **Settings → Integrations → Telegram**.
 - **User-provided secrets** (bot token, bot ID): Direct the human to enter
   them in **Settings → Integrations → Telegram**. If they offer to paste a value and
-  want you to set it, you can use `tau secret set`.
+  want you to set it, you can use `ficus secret set`.
 
 ## Prerequisites
 
@@ -56,8 +56,8 @@ to link additional squads.
 
 1. Open Telegram and start a chat with [@BotFather](https://t.me/BotFather)
 2. Send `/newbot` and follow the prompts:
-   - Choose a display name (e.g., "Tau")
-   - Choose a username (must end in `bot`, e.g., `mytau_bot`)
+   - Choose a display name (e.g., "Ficus")
+   - Choose a username (must end in `bot`, e.g., `myficus_bot`)
 3. Copy the **bot token** (format: `123456789:ABCdef...`)
 4. Note the bot's username (without `@`)
 
@@ -66,7 +66,7 @@ to link additional squads.
 ### Webhook Secret (auto-generated)
 
 ```bash
-tau secret set TELEGRAM_WEBHOOK_SECRET "$(openssl rand -hex 32)"
+ficus secret set TELEGRAM_WEBHOOK_SECRET "$(openssl rand -hex 32)"
 ```
 
 Tell the human: "I've generated a random Telegram webhook secret. You can view
@@ -77,15 +77,15 @@ it in **Settings → Integrations → Telegram** if needed."
 Direct the human to enter the following in **Settings → Integrations → Telegram**:
 
 - `TELEGRAM_BOT_TOKEN` — the bot token from BotFather
-- `TELEGRAM_BOT_ID` — the bot username without `@` (e.g., `mytau_bot`)
+- `TELEGRAM_BOT_ID` — the bot username without `@` (e.g., `myficus_bot`)
 
 If the human pastes a value in chat and wants you to set it, use
-`tau secret set <key> "<value>"`.
+`ficus secret set <key> "<value>"`.
 
 Restart the API:
 
 ```bash
-tau system restart
+ficus system restart
 ```
 
 ## Step 3: Register the Webhook
@@ -93,8 +93,8 @@ tau system restart
 Register the webhook URL with Telegram's API. This requires reading the secrets:
 
 ```bash
-BOT_TOKEN=$(tau secret get TELEGRAM_BOT_TOKEN)
-WEBHOOK_SECRET=$(tau secret get TELEGRAM_WEBHOOK_SECRET)
+BOT_TOKEN=$(ficus secret get TELEGRAM_BOT_TOKEN)
+WEBHOOK_SECRET=$(ficus secret get TELEGRAM_WEBHOOK_SECRET)
 # API_URL is derived from APP_URL: https://foo.example.com → https://api-foo.example.com
 API_URL="https://api-${APP_URL#https://}"
 
@@ -106,9 +106,9 @@ Expected response: `{"ok": true, "result": true, "description": "Webhook was set
 ## Step 4: Create Channel Instance
 
 ```bash
-BOT_ID=$(tau secret get TELEGRAM_BOT_ID)
+BOT_ID=$(ficus secret get TELEGRAM_BOT_ID)
 
-tau channel create \
+ficus channel create \
   --id "client-telegram" \
   --name "Client Telegram Bot" \
   --provider telegram \
@@ -122,13 +122,13 @@ tau channel create \
 Ask the human to test:
 
 1. Start a chat with the bot on Telegram
-2. Send `/tau help` or just `/help` — should show available commands
+2. Send `/ficus help` or just `/help` — should show available commands
 3. Send a message — should get a response from the consultant
 
 Verify webhook info programmatically:
 
 ```bash
-BOT_TOKEN=$(tau secret get TELEGRAM_BOT_TOKEN)
+BOT_TOKEN=$(ficus secret get TELEGRAM_BOT_TOKEN)
 curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo" | jq .
 ```
 
@@ -136,9 +136,9 @@ Check that `url` is correct and `last_error_date` is absent.
 
 ## Troubleshooting
 
-| Problem                    | Solution                                                        |
-| -------------------------- | --------------------------------------------------------------- |
-| Webhook registration fails | Verify bot token is correct, API URL is publicly reachable      |
-| Bot doesn't respond        | Check `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_ID` match          |
-| 401 on webhook delivery    | `TELEGRAM_WEBHOOK_SECRET` mismatch — re-register the webhook    |
-| getWebhookInfo shows errors| Check `last_error_message` for details, verify API is running   |
+| Problem                     | Solution                                                      |
+| --------------------------- | ------------------------------------------------------------- |
+| Webhook registration fails  | Verify bot token is correct, API URL is publicly reachable    |
+| Bot doesn't respond         | Check `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_ID` match        |
+| 401 on webhook delivery     | `TELEGRAM_WEBHOOK_SECRET` mismatch — re-register the webhook  |
+| getWebhookInfo shows errors | Check `last_error_message` for details, verify API is running |

@@ -1,6 +1,6 @@
 # Docker Images
 
-Tau uses two Docker images: **tau-core** for the API server, worker, and CLI, and **tau-sandbox** for agent sandbox pods with devbox/nix development environments.
+Ficus uses two Docker images: **tau-core** for the API server, worker, and CLI, and **tau-sandbox** for agent sandbox pods with devbox/nix development environments.
 
 ## tau-core
 
@@ -38,7 +38,7 @@ Each K8s Deployment overrides the CMD to run a different service:
 ### What's Included
 
 - API server and worker (Hono/Bun)
-- CLI (`tau` on PATH)
+- CLI (`ficus` on PATH)
 - Drizzle migrations (`apps/core/drizzle/`)
 - openssh-client for git memory sync
 - RDS CA bundle for SSL database connections
@@ -61,7 +61,7 @@ Single-stage build from `ubuntu:24.04` with nix, devbox, and all development pac
 | Devbox                | Installed from jetpack.io, default `devbox.json` pre-installed                                                   |
 | Devbox packages       | All packages from `packages/k8s-sandbox/sandbox/devbox.json` baked into `/nix/store` (~1.2GB)                    |
 | Bun                   | Installed to `/usr/local`                                                                                        |
-| Tau CLI               | Not bundled; Core stages `cli/ficus.js` into the shared core-data volume and mounts it at `/usr/local/bin/ficus` |
+| Ficus CLI             | Not bundled; Core stages `cli/ficus.js` into the shared core-data volume and mounts it at `/usr/local/bin/ficus` |
 | Tool executor         | HTTP service at `/opt/sandbox/` using bun-pty for shell sessions                                                 |
 | Git credential helper | `git-credential-github-token` for repo access                                                                    |
 
@@ -71,7 +71,7 @@ Single-stage build from `ubuntu:24.04` with nix, devbox, and all development pac
 - **Runtime class:** `sysbox-runc` for secure container isolation
 - **Healthcheck:** `GET /healthz` on port 50051
 - **Directories:** `/workspace` (code), `/memory` (memory files), `/home/tau`
-- **Tau CLI:** mounted read-only from the shared core-data PVC at `/usr/local/bin/ficus`; rebuild the CLI and recreate pods after CLI-only changes, without rebuilding the sandbox image.
+- **Ficus CLI:** mounted read-only from the shared core-data PVC at `/usr/local/bin/ficus`; rebuild the CLI and recreate pods after CLI-only changes, without rebuilding the sandbox image.
 
 ### Nix/Devbox Design Decision
 

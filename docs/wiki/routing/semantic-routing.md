@@ -1,6 +1,6 @@
 # Semantic routing
 
-Semantic routing helps a squad decide where work belongs before creating or forwarding it. It is advisory: Tau returns ranked squad suggestions with evidence, but an agent or human still chooses the action. Routing must fail loud with clarification or escalation instead of silently guessing.
+Semantic routing helps a squad decide where work belongs before creating or forwarding it. It is advisory: Ficus returns ranked squad suggestions with evidence, but an agent or human still chooses the action. Routing must fail loud with clarification or escalation instead of silently guessing.
 
 ## Overview
 
@@ -67,7 +67,7 @@ Common fields are `sourceSquadId`, `sourceId`, `path`, `title`, `url`, `snippet`
 The CLI exposes source-link flags for explicit creation from context:
 
 ```bash
-tau workstream create "Investigate refund failures" \
+ficus workstream create "Investigate refund failures" \
   --squad <squad-id> \
   --from-memory <source-squad-id>:/memory/ownership/billing.md \
   --from-slack <slack-permalink> \

@@ -1,6 +1,6 @@
 # Memory System
 
-Tau includes a squad-shared memory system that enables agents to persist and
+Ficus includes a squad-shared memory system that enables agents to persist and
 retrieve knowledge across sessions. The memory vault is Obsidian-compatible
 (markdown with YAML frontmatter and wikilinks).
 
@@ -38,13 +38,13 @@ retrieve knowledge across sessions. The memory vault is Obsidian-compatible
 ## CLI commands
 
 ```bash
-tau memory search "websocket reconnect" --squad <id> --mode hybrid
-tau memory get /memory/patterns/react-query.md --squad <id>
-tau memory write /memory/decisions/auth.md --squad <id>
-tau memory patch /memory/decisions/auth.md --match "old" --replace "new" --squad <id>
-tau memory reindex --squad <id>
-tau memory sync pull --squad <id>
-tau memory sync push --squad <id>
+ficus memory search "websocket reconnect" --squad <id> --mode hybrid
+ficus memory get /memory/patterns/react-query.md --squad <id>
+ficus memory write /memory/decisions/auth.md --squad <id>
+ficus memory patch /memory/decisions/auth.md --match "old" --replace "new" --squad <id>
+ficus memory reindex --squad <id>
+ficus memory sync pull --squad <id>
+ficus memory sync push --squad <id>
 ```
 
 ## Requirements
