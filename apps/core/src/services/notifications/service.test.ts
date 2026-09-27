@@ -24,7 +24,7 @@ function installApnsEnv(environment: 'production' | 'sandbox' = 'production') {
   process.env.APNS_KEY_P8 = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
   process.env.APNS_KEY_ID = 'KID123'
   process.env.APNS_TEAM_ID = 'TEAM456'
-  process.env.APNS_BUNDLE_ID = 'ai.hiretau.mobile'
+  process.env.APNS_BUNDLE_ID = 'sh.ficus.mobile'
   process.env.APNS_ENV = environment
   resetSecretStore()
 }

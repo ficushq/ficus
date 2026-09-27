@@ -53,9 +53,10 @@ function seedAccountQueries(queryClient: QueryClient) {
 
 afterEach(() => {
   delete window.tauDesktopApp
+  delete window.ficusDesktopApp
 })
 
-test('a paired remote instance shows Disconnect and calls disconnect, never logout', async () => {
+test('a paired remote instance shows Disconnect and calls disconnect, never logout (legacy window.tauDesktopApp — D1 and older Desktop builds)', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
@@ -144,7 +145,7 @@ test('a remote instance with a non-function disconnect keeps the existing Logout
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
   let logoutCalls = 0
-  window.tauDesktopApp = {
+  window.ficusDesktopApp = {
     version: 1,
     notificationsEnabled: async () => false,
     deliverNotifications: async () => {},
@@ -189,7 +190,7 @@ test('a rejected disconnect shows an inline error instead of failing silently', 
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
-  window.tauDesktopApp = {
+  window.ficusDesktopApp = {
     version: 1,
     notificationsEnabled: async () => false,
     deliverNotifications: async () => {},
@@ -230,7 +231,7 @@ test('a remote instance without disconnect keeps the existing Logout row', async
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
   let logoutCalls = 0
-  window.tauDesktopApp = {
+  window.ficusDesktopApp = {
     version: 1,
     notificationsEnabled: async () => false,
     deliverNotifications: async () => {},
