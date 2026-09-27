@@ -4,7 +4,7 @@
 
 ```json
 {
-  "product": "tau",
+  "product": "ficus",
   "version": "0.2.0",
   "revision": null,
   "apiVersion": 1,

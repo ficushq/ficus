@@ -57,7 +57,7 @@ The mobile app authenticates with a **per-device bearer token** (prefix `ficus_d
 
 These live under `/api/auth` (mounted before the global auth middleware — see [Route Ordering](#route-ordering)); `pair/start` and the device routes do their own identity check, while `pair/claim` is intentionally public so an unpaired device can redeem a code. The claim is single-use (an atomic conditional update flips `claimedAt` from NULL, closing the concurrent-claim race). The issued token is then sent as a normal `Authorization: Bearer <token>` and accepted by the auth middleware like any other bearer credential.
 
-The mobile-side UX — QR scan, the `tau://pair` deep link, web auto-detection, and sign-out revoke — is documented in [Mobile App → Pairing & authentication](mobile-app.md#pairing--authentication).
+The mobile-side UX — QR scan, the `ficus://pair` deep link, web auto-detection, and sign-out revoke — is documented in [Mobile App → Pairing & authentication](mobile-app.md#pairing--authentication).
 
 ### CLI and Ficus Desktop browser authorization
 

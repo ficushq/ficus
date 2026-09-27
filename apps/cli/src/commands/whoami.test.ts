@@ -52,7 +52,7 @@ describe('ficus whoami', () => {
     process.env.FICUS_API_URL = 'http://127.0.0.1:3000'
     process.env.FICUS_TOKEN = 'test-token'
     const server = {
-      product: 'tau',
+      product: 'ficus',
       version: '0.2.0',
       revision: 'a'.repeat(40),
       apiVersion: 1,
