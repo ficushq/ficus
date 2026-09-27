@@ -18,6 +18,11 @@ import { repairSquadActivity } from './repair'
 import { loadActivitySource } from './families'
 import { listGitHubAssociationPage, listGitHubIssueAssociationPage } from './source-loaders'
 
+// Activity repair only accepts windows inside the retention floor (30 days), so the
+// fixture day is always yesterday rather than a fixed date that ages out.
+const ACTIVITY_DAY = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+const NEXT_DAY = new Date(Date.parse(`${ACTIVITY_DAY}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+
 const squadIds: string[] = []
 const webhookIds: string[] = []
 const dispatchKeys: string[] = []
@@ -51,7 +56,7 @@ describe('verified GitHub webhook Activity', () => {
       pull_request: {
         id: 4242,
         number: 42,
-        closed_at: '2026-08-27T01:30:00Z',
+        closed_at: `${ACTIVITY_DAY}T01:30:00Z`,
         html_url: `https://github.com/${repository}/pull/42`,
       },
     }
@@ -71,8 +76,8 @@ describe('verified GitHub webhook Activity', () => {
     expect((await listGitHubAssociationPage(`hook:${webhook.id}`, fact, null, 10)).groupIds).toEqual([])
     expect(await materializeGitHubWebhook(webhook.id)).toBe(0)
     await repairSquadActivity({
-      from: new Date('2026-08-27T00:00:00Z'),
-      to: new Date('2026-08-28T00:00:00Z'),
+      from: new Date(`${ACTIVITY_DAY}T00:00:00Z`),
+      to: new Date(`${NEXT_DAY}T00:00:00Z`),
       pageSize: 2,
     })
     expect(
@@ -116,7 +121,7 @@ describe('verified GitHub webhook Activity', () => {
       pull_request: {
         id: 4200,
         number: 42,
-        closed_at: '2026-08-27T01:00:00Z',
+        closed_at: `${ACTIVITY_DAY}T01:00:00Z`,
         html_url: `https://github.com/${repository}/pull/42`,
       },
     }
@@ -140,7 +145,7 @@ describe('verified GitHub webhook Activity', () => {
       .select({ owners: webhookEvents.activitySquadIds })
       .from(webhookEvents)
       .where(eq(webhookEvents.id, eventId))
-    // Ownership union (2026-08-27): squad 0 via its source config, squad 1 via
+    // Ownership union (ACTIVITY_DAY): squad 0 via its source config, squad 1 via
     // its work stream referencing the repo — both are stamped at ingest, and
     // the stamp is immutable (the config swap below changes nothing).
     expect([...(stored.owners ?? [])].sort()).toEqual([createdSquads[0].id, createdSquads[1].id].sort())
@@ -150,8 +155,8 @@ describe('verified GitHub webhook Activity', () => {
 
     for (const squad of createdSquads) await db.delete(squadActivity).where(eq(squadActivity.squadId, squad.id))
     await repairSquadActivity({
-      from: new Date('2026-08-27T00:00:00Z'),
-      to: new Date('2026-08-28T00:00:00Z'),
+      from: new Date(`${ACTIVITY_DAY}T00:00:00Z`),
+      to: new Date(`${NEXT_DAY}T00:00:00Z`),
       pageSize: 2,
     })
     expect(
@@ -178,7 +183,7 @@ describe('verified GitHub webhook Activity', () => {
       eventType: 'pull_request',
       payload: {
         ...payload,
-        pull_request: { ...payload.pull_request, id: 4201, closed_at: '2026-08-27T02:00:00Z' },
+        pull_request: { ...payload.pull_request, id: 4201, closed_at: `${ACTIVITY_DAY}T02:00:00Z` },
       },
       headers: { 'x-github-delivery': crypto.randomUUID() },
       signature: 'verified',
@@ -261,7 +266,7 @@ describe('verified GitHub webhook Activity', () => {
             id: 4200,
             number: 42,
             merged: true,
-            merged_at: '2026-08-27T00:00:00Z',
+            merged_at: `${ACTIVITY_DAY}T00:00:00Z`,
             html_url: 'https://github.com/activity-webhook/widgets/pull/42',
           },
         },
@@ -324,11 +329,11 @@ describe('verified GitHub webhook Activity', () => {
       activityId,
       activitySquadIds: [squad.id],
       completedAt: new Date(),
-      eventOccurredAt: new Date('2026-08-27T00:00:00Z'),
+      eventOccurredAt: new Date(`${ACTIVITY_DAY}T00:00:00Z`),
       eventFact: {
         eventType: 'pull_request',
         action: 'merged',
-        occurredAt: '2026-08-27T00:00:00.000Z',
+        occurredAt: `${ACTIVITY_DAY}T00:00:00.000Z`,
         actorLogin: null,
         repository: 'activity-webhook/widgets',
         prNumber: 42,
@@ -337,7 +342,7 @@ describe('verified GitHub webhook Activity', () => {
         logicalRowId: githubPrLogicalRowId({
           eventType: 'pull_request',
           action: 'merged',
-          occurredAt: '2026-08-27T00:00:00.000Z',
+          occurredAt: `${ACTIVITY_DAY}T00:00:00.000Z`,
           repository: 'activity-webhook/widgets',
           prNumber: 42,
           nativeId: '4200',
@@ -382,8 +387,8 @@ describe('tracked GitHub issue Activity', () => {
       id: 9912,
       number: 12,
       title: 'Ship the tracked issue',
-      closed_at: '2026-08-27T01:00:00Z',
-      updated_at: '2026-08-27T01:00:00Z',
+      closed_at: `${ACTIVITY_DAY}T01:00:00Z`,
+      updated_at: `${ACTIVITY_DAY}T01:00:00Z`,
       html_url: `https://github.com/${repository}/issues/12`,
       ...issueOverrides,
     },
@@ -480,7 +485,7 @@ describe('tracked GitHub issue Activity', () => {
     expect(await rowsForSquad()).toHaveLength(1)
 
     // Distinct edits of one comment are distinct facts.
-    for (const updatedAt of ['2026-08-27T03:00:00Z', '2026-08-27T04:00:00Z']) {
+    for (const updatedAt of [`${ACTIVITY_DAY}T03:00:00Z`, `${ACTIVITY_DAY}T04:00:00Z`]) {
       const commentId = await storeWebhookEvent({
         provider: 'github',
         eventType: 'issue_comment',
@@ -504,7 +509,7 @@ describe('tracked GitHub issue Activity', () => {
       payload: issuePayload(
         repository,
         { action: 'reopened' },
-        { closed_at: null, updated_at: '2026-08-27T02:00:00Z' }
+        { closed_at: null, updated_at: `${ACTIVITY_DAY}T02:00:00Z` }
       ),
       headers: { 'x-github-delivery': crypto.randomUUID() },
       signature: 'verified',
@@ -516,8 +521,8 @@ describe('tracked GitHub issue Activity', () => {
       (row) => row.summary.includes('closed] ') || row.summary.includes('reopened] ')
     )
     expect(transitions.map((row) => [row.summary, row.at.toISOString()])).toEqual([
-      ['[Issue #12 closed] Ship the tracked issue · by noahsaso', '2026-08-27T01:00:00.000Z'],
-      ['[Issue #12 reopened] Ship the tracked issue · by noahsaso', '2026-08-27T02:00:00.000Z'],
+      ['[Issue #12 closed] Ship the tracked issue · by noahsaso', `${ACTIVITY_DAY}T01:00:00.000Z`],
+      ['[Issue #12 reopened] Ship the tracked issue · by noahsaso', `${ACTIVITY_DAY}T02:00:00.000Z`],
     ])
   })
 
@@ -617,8 +622,8 @@ describe('tracked GitHub issue Activity', () => {
     expect((await listGitHubIssueAssociationPage(`hook:${webhook.id}`, fact, null, 10)).groupIds).toEqual([])
     expect(await materializeGitHubWebhook(webhook.id)).toBe(0)
     await repairSquadActivity({
-      from: new Date('2026-08-27T00:00:00Z'),
-      to: new Date('2026-08-28T00:00:00Z'),
+      from: new Date(`${ACTIVITY_DAY}T00:00:00Z`),
+      to: new Date(`${NEXT_DAY}T00:00:00Z`),
       pageSize: 2,
     })
     expect(await db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))).toEqual([])
@@ -649,7 +654,7 @@ describe('tracked GitHub issue Activity', () => {
         pull_request: {
           id: 7007,
           number: 7,
-          closed_at: '2026-08-27T05:00:00Z',
+          closed_at: `${ACTIVITY_DAY}T05:00:00Z`,
           html_url: `https://github.com/${repository}/pull/7`,
         },
       },
@@ -747,8 +752,8 @@ describe('tracked GitHub issue Activity', () => {
       .where(and(eq(squadActivity.squadId, squad.id), eq(squadActivity.workStreamId, second.id)))
     expect(await rowsForSquad()).toHaveLength(1)
     await repairSquadActivity({
-      from: new Date('2026-08-27T00:00:00Z'),
-      to: new Date('2026-08-28T00:00:00Z'),
+      from: new Date(`${ACTIVITY_DAY}T00:00:00Z`),
+      to: new Date(`${NEXT_DAY}T00:00:00Z`),
       pageSize: 2,
     })
     const repaired = await byStream()
@@ -785,7 +790,7 @@ describe('tracked GitHub issue Activity', () => {
       pull_request: {
         id: 7008,
         number: 7,
-        closed_at: '2026-08-27T05:00:00Z',
+        closed_at: `${ACTIVITY_DAY}T05:00:00Z`,
         html_url: `https://github.com/${repository}/pull/7`,
       },
     }
