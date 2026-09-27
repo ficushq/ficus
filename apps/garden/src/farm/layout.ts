@@ -198,7 +198,13 @@ export function layoutFarm(input: FarmInput): FarmLayout {
   }
   for (const list of streamsBySquad.values()) list.sort((a, b) => compareStreams(a.stream, b.stream))
 
-  const place = (agent: Agent, role: RobotRole, i: number, j: number): RobotPlacement => {
+  const place = (
+    agent: Agent,
+    role: RobotRole,
+    i: number,
+    j: number,
+    facing: RobotPlacement['facing'] = 'right'
+  ): RobotPlacement => {
     const face = faceFor(agent, halted.has(agent.id))
     return {
       agent,
@@ -207,6 +213,7 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       j,
       face,
       helpers: helpers.get(agent.id) ?? 0,
+      facing,
     }
   }
 
@@ -277,7 +284,8 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       const chosen = candidates.find((candidate) => !drawn.has(candidate.agent.id))
       let tender: RobotPlacement | null = null
       if (chosen) {
-        tender = place(chosen.agent, 'worker', i + 1.1, j + 0.7)
+        // Just off the soil's right side, so it turns left to face (and water) the plant.
+        tender = place(chosen.agent, 'worker', i + 1.1, j + 0.7, 'left')
         drawn.add(chosen.agent.id)
       }
       return {

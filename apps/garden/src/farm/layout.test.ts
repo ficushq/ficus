@@ -238,6 +238,8 @@ describe('tenders', () => {
   it('stands in the path beside its plot, not on the plant', () => {
     const plot = plotFor([worker('w', 'active')])
     expect([plot.tender!.i, plot.tender!.j]).toEqual([plot.i + 1.1, plot.j + 0.7])
+    // It stands to the plant's right, so it faces left, toward it.
+    expect(plot.tender!.facing).toBe('left')
   })
 
   it('counts assignee and owner as participants', () => {

@@ -145,7 +145,10 @@ function Head({ head, fill }: { head: RobotHead; fill: string }) {
   }
 }
 
-function Face({ face, glow }: { face: RobotFace; glow: string }) {
+/** A transform that mirrors a glyph about x, undoing a mirrored robot's flip so text still reads. */
+const unmirror = (flip: boolean, x: number) => (flip ? `matrix(-1 0 0 1 ${2 * x} 0)` : undefined)
+
+function Face({ face, glow, flip }: { face: RobotFace; glow: string; flip: boolean }) {
   const gs = {
     stroke: glow,
     strokeWidth: 1.9,
@@ -182,6 +185,7 @@ function Face({ face, glow }: { face: RobotFace; glow: string }) {
               key={x}
               x={x}
               y={EY + 3}
+              transform={unmirror(flip, x)}
               textAnchor="middle"
               fontFamily={FONT_DISPLAY}
               fontWeight={900}
@@ -233,6 +237,7 @@ function Face({ face, glow }: { face: RobotFace; glow: string }) {
           <text
             x={14}
             y={HY - 12}
+            transform={unmirror(flip, 16)}
             fontFamily={FONT_DISPLAY}
             fontWeight={900}
             fontSize={8}
@@ -246,6 +251,7 @@ function Face({ face, glow }: { face: RobotFace; glow: string }) {
           <text
             x={19}
             y={HY - 19}
+            transform={unmirror(flip, 20.5)}
             fontFamily={FONT_DISPLAY}
             fontWeight={900}
             fontSize={6}
@@ -434,9 +440,9 @@ function Prop({ prop }: { prop: RobotProp }) {
 }
 
 /** A tiny hovering helper bot near the robot's shoulder (live subagents). */
-function HelperDrone({ count, glow, panel }: { count: number; glow: string; panel: string }) {
+function HelperDrone({ count, glow, panel, x }: { count: number; glow: string; panel: string; x: number }) {
   return (
-    <g transform="translate(-27 -40)">
+    <g transform={`translate(${x} -40)`}>
       <g className="g-drone">
         <ellipse cy={9} rx={2.2} ry={3} fill={glow} opacity={0.55} />
         <path d="M0 -6.5 v-3" stroke={INK} strokeWidth={2.4} strokeLinecap="round" />
@@ -475,7 +481,8 @@ function ExtraTag({ n }: { n: number }) {
 
 /**
  * A farm robot, anchored at the ground point it stands on (~58px tall,
- * facing slightly right).
+ * facing slightly right, or left when flipped). Only its body mirrors: the
+ * glyphs on its face, its helper drone's count and the "+N" tag still read.
  */
 export function Robot({
   look,
@@ -483,12 +490,14 @@ export function Robot({
   prop,
   helpers = 0,
   extra = 0,
+  flip = false,
 }: {
   look: RobotLook
   face: RobotFace
   prop: RobotProp | null
   helpers?: number
   extra?: number
+  flip?: boolean
 }) {
   const hover = look.move === 'hover'
   const lift = hover ? 7 : look.move === 'legs' ? 3 : 0
@@ -499,40 +508,46 @@ export function Robot({
     <g>
       <ellipse rx={hover ? 9 : 13} ry={hover ? 3.4 : 4.5} fill="#2a1a0e" opacity={hover ? 0.16 : 0.22} />
       <g className={hover ? 'g-hover' : undefined}>
-        <Locomotion look={look} />
-        <g transform={`translate(0 ${-lift})`}>
-          <Tube d="M-10 -24 q-6 3 -6 10" color="#c9ced3" />
-          <Tube d="M-19 -12 a3.4 3.4 0 1 1 6 0" color={look.panel} w={3.8} inner={2} />
-          <rect x={-11} y={-30} width={22} height={20} rx={8} fill={shell} {...OL} />
-          <rect x={-6.5} y={-25} width={13} height={10} rx={3.5} fill={look.panel} {...OL2} />
-          <circle cx={-2.6} cy={-20} r={1.5} fill="#fff" opacity={0.9} />
-          <circle cx={1.6} cy={-20} r={1.5} fill="#f2c14e" />
-          <rect x={-3.6} y={-17.4} width={7} height={1.4} rx={0.7} fill={INK} opacity={0.4} />
-          <path d="M-8 -28 q2 -1 5 -1" stroke="#fff" strokeWidth={1.6} strokeLinecap="round" opacity={0.8} />
-          <Outfit look={look} />
-          {look.scarf && (
-            <>
-              <path d="M-7 -30.5 Q0 -27 7 -30.5 L3 -24 L0 -21 L-3 -24Z" fill={look.scarf} {...OL2} />
-              <circle cx={-1.6} cy={-27.6} r={0.7} fill="#fff" opacity={0.8} />
-              <circle cx={1.6} cy={-25.6} r={0.7} fill="#fff" opacity={0.8} />
-            </>
-          )}
-          <rect x={-3} y={-33} width={6} height={4} fill="#9aa4ad" {...OL2} />
-          <rect x={-17.5} y={HY - 4} width={5} height={8} rx={2} fill={look.panel} {...OL2} />
-          <rect x={12.5} y={HY - 4} width={5} height={8} rx={2} fill={look.panel} {...OL2} />
-          <Head head={look.head} fill={shell} />
-          <Face face={face} glow={look.glow} />
-          {look.hat && <Hat hat={look.hat} color={look.hatColor} />}
-          {look.antenna !== 'none' && (
-            <g transform={`translate(0 ${-(crown - 11)})`}>
-              <Antenna kind={look.antenna} glow={look.glow} />
-            </g>
-          )}
-          <Tube d={`M10 -24 q6 2 ${hand[0] - 10} ${hand[1] + 24}`} color="#c9ced3" />
-          {prop && <Prop prop={prop} />}
-          <Tube d={`M${hand[0] - 3} ${hand[1] + 2} a3.4 3.4 0 1 1 6 0`} color={look.panel} w={3.8} inner={2} />
-          {helpers > 0 && <HelperDrone count={helpers} glow={look.glow} panel={look.panel} />}
+        <g transform={flip ? 'scale(-1 1)' : undefined}>
+          <Locomotion look={look} />
+          <g transform={`translate(0 ${-lift})`}>
+            <Tube d="M-10 -24 q-6 3 -6 10" color="#c9ced3" />
+            <Tube d="M-19 -12 a3.4 3.4 0 1 1 6 0" color={look.panel} w={3.8} inner={2} />
+            <rect x={-11} y={-30} width={22} height={20} rx={8} fill={shell} {...OL} />
+            <rect x={-6.5} y={-25} width={13} height={10} rx={3.5} fill={look.panel} {...OL2} />
+            <circle cx={-2.6} cy={-20} r={1.5} fill="#fff" opacity={0.9} />
+            <circle cx={1.6} cy={-20} r={1.5} fill="#f2c14e" />
+            <rect x={-3.6} y={-17.4} width={7} height={1.4} rx={0.7} fill={INK} opacity={0.4} />
+            <path d="M-8 -28 q2 -1 5 -1" stroke="#fff" strokeWidth={1.6} strokeLinecap="round" opacity={0.8} />
+            <Outfit look={look} />
+            {look.scarf && (
+              <>
+                <path d="M-7 -30.5 Q0 -27 7 -30.5 L3 -24 L0 -21 L-3 -24Z" fill={look.scarf} {...OL2} />
+                <circle cx={-1.6} cy={-27.6} r={0.7} fill="#fff" opacity={0.8} />
+                <circle cx={1.6} cy={-25.6} r={0.7} fill="#fff" opacity={0.8} />
+              </>
+            )}
+            <rect x={-3} y={-33} width={6} height={4} fill="#9aa4ad" {...OL2} />
+            <rect x={-17.5} y={HY - 4} width={5} height={8} rx={2} fill={look.panel} {...OL2} />
+            <rect x={12.5} y={HY - 4} width={5} height={8} rx={2} fill={look.panel} {...OL2} />
+            <Head head={look.head} fill={shell} />
+            <Face face={face} glow={look.glow} flip={flip} />
+            {look.hat && <Hat hat={look.hat} color={look.hatColor} />}
+            {look.antenna !== 'none' && (
+              <g transform={`translate(0 ${-(crown - 11)})`}>
+                <Antenna kind={look.antenna} glow={look.glow} />
+              </g>
+            )}
+            <Tube d={`M10 -24 q6 2 ${hand[0] - 10} ${hand[1] + 24}`} color="#c9ced3" />
+            {prop && <Prop prop={prop} />}
+            <Tube d={`M${hand[0] - 3} ${hand[1] + 2} a3.4 3.4 0 1 1 6 0`} color={look.panel} w={3.8} inner={2} />
+          </g>
         </g>
+        {helpers > 0 && (
+          <g transform={`translate(0 ${-lift})`}>
+            <HelperDrone count={helpers} glow={look.glow} panel={look.panel} x={flip ? 27 : -27} />
+          </g>
+        )}
       </g>
       {extra > 0 && <ExtraTag n={extra} />}
     </g>

@@ -32,6 +32,8 @@ export interface RobotPlacement {
   face: RobotFace
   /** Live subagents of this agent (drawn as one helper drone with a count). */
   helpers: number
+  /** Which way the robot looks on screen: toward the plant it tends, otherwise the default right. */
+  facing: 'left' | 'right'
 }
 
 export interface PlotLayout {

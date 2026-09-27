@@ -54,6 +54,7 @@ export const nostalgicSkin: FarmSkin = {
       prop={propFor(placement.role, placement.face)}
       helpers={placement.helpers}
       extra={extra}
+      flip={placement.facing === 'left'}
     />
   ),
   Avatar: ({ agent, role, face }) => <Robot look={robotLookFor(agent, role)} face={face} prop={propFor(role, face)} />,
