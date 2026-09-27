@@ -298,22 +298,6 @@ export async function materializeSquadRemoteHosts(squadId: string): Promise<void
     materializedNames.add(host.name)
   }
 
-  // Remove stale key files for hosts no longer granted (or no longer valid),
-  // and every key file written under the pre-rename prefix (K2): the current
-  // grants were just re-written under KEY_FILE_PREFIX above.
-  const existingFiles = fs.existsSync(sshPath) ? fs.readdirSync(sshPath) : []
-  for (const file of existingFiles) {
-    if (file.startsWith(LEGACY_REMOTE_HOST_KEY_PREFIX)) {
-      fs.unlinkSync(join(sshPath, file))
-      continue
-    }
-    if (!file.startsWith(KEY_FILE_PREFIX)) continue
-    const name = file.slice(KEY_FILE_PREFIX.length)
-    if (!materializedNames.has(name)) {
-      fs.unlinkSync(join(sshPath, file))
-    }
-  }
-
   const block = renderManagedBlock(
     materializable.map((m) => m.host),
     managedBlockOptions(squadId)
@@ -331,4 +315,42 @@ export async function materializeSquadRemoteHosts(squadId: string): Promise<void
   const tmpConfigPath = join(sshPath, `.config.tmp-${randomUUID()}`)
   fs.writeFileSync(tmpConfigPath, composeManagedConfig(userContent, block), { mode: 0o644 })
   fs.renameSync(tmpConfigPath, configPath)
+
+  // Only now sweep: the config names just the key files written above, so no
+  // removal (or failed removal) below can leave it pointing at a missing key.
+  sweepStaleKeyFiles(squadId, sshPath, materializedNames)
+}
+
+/**
+ * Remove key files for hosts no longer granted (or no longer valid), and every
+ * key file under the pre-rename prefix (K2): the current grants were re-written
+ * under KEY_FILE_PREFIX. Entries that are not files or symlinks (a directory
+ * someone created under a reserved name) are skipped, never recursed into. A
+ * failed removal does not stop the sweep; the failures are reported together
+ * after every other stale key is gone.
+ */
+function sweepStaleKeyFiles(squadId: string, sshPath: string, materializedNames: Set<string>): void {
+  const failures: string[] = []
+  for (const file of fs.readdirSync(sshPath)) {
+    const stale = file.startsWith(LEGACY_REMOTE_HOST_KEY_PREFIX)
+      ? true
+      : file.startsWith(KEY_FILE_PREFIX) && !materializedNames.has(file.slice(KEY_FILE_PREFIX.length))
+    if (!stale) continue
+    const path = join(sshPath, file)
+    try {
+      const entry = fs.lstatSync(path)
+      if (!entry.isFile() && !entry.isSymbolicLink()) {
+        log.warn(`remote-host key sweep for squad ${squadId}: skipping non-file entry ${file}`)
+        continue
+      }
+      fs.unlinkSync(path)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue
+      log.error(`remote-host key sweep for squad ${squadId}: could not remove ${file}`, err)
+      failures.push(file)
+    }
+  }
+  if (failures.length) {
+    throw new Error(`remote-host key sweep for squad ${squadId} could not remove: ${failures.join(', ')}`)
+  }
 }

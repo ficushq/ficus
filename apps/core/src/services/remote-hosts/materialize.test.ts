@@ -1,5 +1,6 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import * as fs from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { remoteHosts } from '../../db'
@@ -415,6 +416,52 @@ describe('materializeSquadRemoteHosts', () => {
     expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(true)
     expect(existsSync(join(sshPath, 'my-real-key'))).toBe(true)
     expect(readFileSync(join(sshPath, 'config'), 'utf-8')).not.toContain('tau_remote_')
+  })
+
+  it('a directory under a reserved prefix is skipped and the config still points at written keys', async () => {
+    const squadId = `${prefix}-squad-legacy-dir`
+    const host = await createGrantedHost('legacy-dir', squadId)
+    const sshPath = ensureSquadSshDir(squadId)
+    writeFileSync(join(sshPath, `tau_remote_${host.name}`), 'OLD-KEY', { mode: 0o600 })
+    mkdirSync(join(sshPath, 'tau_remote_odd'))
+    mkdirSync(join(sshPath, 'ficus_remote_odd'))
+
+    await materializeSquadRemoteHosts(squadId)
+
+    const config = readFileSync(join(sshPath, 'config'), 'utf-8')
+    expect(config).toContain(`IdentityFile ~/.ssh/ficus_remote_${host.name}`)
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(true)
+    expect(existsSync(join(sshPath, `tau_remote_${host.name}`))).toBe(false)
+    expect(statSync(join(sshPath, 'tau_remote_odd')).isDirectory()).toBe(true)
+    expect(statSync(join(sshPath, 'ficus_remote_odd')).isDirectory()).toBe(true)
+  })
+
+  it('a failing sweep unlink still leaves a config whose every key exists, and reports the failure', async () => {
+    const squadId = `${prefix}-squad-sweep-fails`
+    const host = await createGrantedHost('sweep-fails', squadId)
+    const sshPath = ensureSquadSshDir(squadId)
+    const legacyKey = join(sshPath, `tau_remote_${host.name}`)
+    writeFileSync(legacyKey, 'OLD-KEY', { mode: 0o600 })
+    // The managed block a pre-rename Core wrote, naming the legacy key file.
+    writeFileSync(
+      join(sshPath, 'config'),
+      `${MANAGED_BLOCK_BEGIN}\nHost ${host.name}\n  IdentityFile ~/.ssh/tau_remote_${host.name}\n${MANAGED_BLOCK_END}\n`
+    )
+    const realUnlink = fs.unlinkSync
+    const unlink = spyOn(fs, 'unlinkSync').mockImplementation((path: fs.PathLike) => {
+      if (String(path) === legacyKey) throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      return realUnlink(path)
+    })
+    try {
+      await expect(materializeSquadRemoteHosts(squadId)).rejects.toThrow('could not remove')
+    } finally {
+      unlink.mockRestore()
+    }
+
+    const config = readFileSync(join(sshPath, 'config'), 'utf-8')
+    const identityFiles = [...config.matchAll(/IdentityFile ~\/\.ssh\/(\S+)/g)].map((m) => m[1])
+    expect(identityFiles).toEqual([`ficus_remote_${host.name}`])
+    for (const file of identityFiles) expect(existsSync(join(sshPath, file))).toBe(true)
   })
 
   it('listSshKeys never lists a stale pre-rename tau_remote_ file as an uploaded key', async () => {
