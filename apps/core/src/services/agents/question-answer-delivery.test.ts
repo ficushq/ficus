@@ -51,11 +51,12 @@ describe('question answer delivery outbox', () => {
     await db.delete(users).where(eq(users.id, user.id))
   })
 
-  async function createPendingDelivery() {
+  async function createPendingDelivery(id?: string) {
     const now = new Date('2026-08-29T00:00:00.000Z')
     const [question] = await db
       .insert(agentQuestions)
       .values({
+        ...(id ? { id } : {}),
         agentId: agent.id,
         squadId: squad.id,
         questionData: QUESTION,
@@ -374,6 +375,49 @@ describe('question answer delivery outbox', () => {
     expect(await db.select().from(executions).where(eq(executions.agentId, agent.id))).toHaveLength(
       beforeExecutions.length
     )
+  })
+
+  it('sweeps past a full rejected receipt batch to reconcile a later accepted answer', async () => {
+    const rejectedIds: string[] = []
+    let validId = ''
+    for (let i = 1; i <= 21; i++) {
+      const id = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+      const { now } = await createPendingDelivery(id)
+      await reconcileQuestionAnswerDeliveriesOnce({
+        now,
+        questionId: id,
+        testHooks: {
+          afterAgentSend: async () => {
+            throw new Error('lost settlement')
+          },
+        },
+      })
+      await db
+        .update(agentQuestions)
+        .set({ answerDeliveryStatus: 'failed', answerDeliveryNextAttemptAt: null })
+        .where(eq(agentQuestions.id, id))
+      if (i < 21) {
+        rejectedIds.push(id)
+        await db
+          .update(chatSendReceipts)
+          .set({ requestHash: '0'.repeat(64) })
+          .where(eq(chatSendReceipts.clientId, `agent-question-answer:v1:${id}:inbox`))
+      } else validId = id
+    }
+    const messageCount = (await db.select().from(messages).where(eq(messages.agentId, agent.id))).length
+    const executionCount = (await db.select().from(executions).where(eq(executions.agentId, agent.id))).length
+    let delivered = 0
+    for (let sweep = 0; sweep < 3; sweep++) {
+      delivered += (await reconcileQuestionAnswerDeliveriesOnce()).delivered
+    }
+    expect(delivered).toBe(1)
+    const rows = await db.select().from(agentQuestions).where(eq(agentQuestions.agentId, agent.id))
+    expect(rows.find((row) => row.id === validId)?.answerDeliveryStatus).toBe('delivered')
+    expect(
+      rows.filter((row) => rejectedIds.includes(row.id)).every((row) => row.answerDeliveryStatus === 'failed')
+    ).toBe(true)
+    expect(await db.select().from(messages).where(eq(messages.agentId, agent.id))).toHaveLength(messageCount)
+    expect(await db.select().from(executions).where(eq(executions.agentId, agent.id))).toHaveLength(executionCount)
   })
 
   it('requires an accepted receipt, not only receipt identities, and never sends on a failed-row sweep', async () => {

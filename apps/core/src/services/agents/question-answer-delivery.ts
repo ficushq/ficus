@@ -1,5 +1,5 @@
 import { FlowWaitSupersededError } from '../work-streams/wait-scope'
-import { and, eq, isNotNull, lte, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, isNotNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestions, agents, chatSendReceipts, executions, inbox, messages } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
@@ -24,6 +24,10 @@ const QUESTION_ANSWER_DELIVERY_MAX_BACKOFF_MS = 5 * 60_000
 
 let runner: PeriodicRunner | null = null
 const inlineDrains = new Set<Promise<unknown>>()
+// Global sweeps inspect only a bounded page; a rejected receipt must not starve later rows.
+// Targeted retries never move this cursor. No durable state is needed: restarting scans from
+// the beginning, while a live worker advances one page per periodic sweep and wraps at the end.
+let failedDeliveryScanCursor: string | null = null
 
 async function alertTerminalFailure(questionId: string): Promise<void> {
   try {
@@ -266,6 +270,7 @@ export async function reconcileAcceptedQuestionAnswerFailuresOnce(
   questionId?: string,
   now = new Date()
 ): Promise<number> {
+  const scanCursor = questionId ? null : failedDeliveryScanCursor
   const candidates = await db
     .select({
       question: agentQuestions,
@@ -300,10 +305,14 @@ export async function reconcileAcceptedQuestionAnswerFailuresOnce(
       and(
         eq(agentQuestions.status, 'answered'),
         eq(agentQuestions.answerDeliveryStatus, 'failed'),
-        ...(questionId ? [eq(agentQuestions.id, questionId)] : [])
+        ...(questionId ? [eq(agentQuestions.id, questionId)] : scanCursor ? [gt(agentQuestions.id, scanCursor)] : [])
       )
     )
+    .orderBy(asc(agentQuestions.id))
     .limit(QUESTION_ANSWER_DELIVERY_BATCH_SIZE)
+  if (!questionId && failedDeliveryScanCursor === scanCursor) {
+    failedDeliveryScanCursor = candidates.at(-1)?.question.id ?? null
+  }
   let delivered = 0
   for (const candidate of candidates) {
     const question = candidate.question
