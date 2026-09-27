@@ -1,4 +1,10 @@
-import type { PendingAction, WorkStream } from '@ficus/shared'
+import type {
+  AgentQuestion,
+  AgentQuestionActionData,
+  PendingAction,
+  WorkStream,
+  WorkStreamActionData,
+} from '@ficus/shared'
 import type { FarmInput } from '../farm/layout'
 import { at, makeAgent, makeAgentError, makeSquad, makeStream, makeWait } from '../farm/testFixtures'
 
@@ -6,6 +12,32 @@ import { at, makeAgent, makeAgentError, makeSquad, makeStream, makeWait } from '
  * Sample farm for `bun run dev:garden` with `?demo`, so the scene can be
  * worked on (and screenshotted) without a running Core. Dev builds only.
  */
+export const SAMPLE_QUESTION: AgentQuestion = {
+  id: 'q-ws-10',
+  agentId: 'w-gus',
+  squadId: 'sq-mobile',
+  ownerUserId: null,
+  questionData: {
+    questions: [
+      {
+        id: 'storage',
+        type: 'select',
+        question: 'Where should offline drafts live?',
+        context: 'Drafts are written while you have no signal. I can keep them on the phone or sync them.',
+        options: [
+          { label: 'On the device only', value: 'device' },
+          { label: 'Synced to the server', value: 'server' },
+        ],
+      },
+    ],
+  },
+  status: 'open',
+  answer: null,
+  answeredByUserId: null,
+  createdAt: at(70).toISOString(),
+  answeredAt: null,
+}
+
 export function sampleFarm(): FarmInput {
   const squads = [
     makeSquad({ id: 'sq-platform', name: 'Platform', managerAgentId: 'mgr-platform', createdAt: at(0) }),
@@ -23,7 +55,9 @@ export function sampleFarm(): FarmInput {
   })
   const question = (id: string) => ({
     derivedState: 'waiting_on_answer' as const,
-    openWaits: [makeWait('question', { id: `q-${id}`, workStreamId: id })],
+    openWaits: [
+      makeWait('question', { id: `q-${id}`, workStreamId: id, referenceId: `q-${id}`, createdByAgentId: 'w-gus' }),
+    ],
   })
 
   const streams = [
@@ -65,14 +99,43 @@ export function sampleFarm(): FarmInput {
     agent('w-hal', 'sq-mobile'),
     agent('w-ivy', 'sq-mobile'),
   ]
-  const action = (id: string, type: PendingAction['type']): PendingAction => ({
-    id,
-    type,
-    priority: 0,
-    createdAt: at(60).toISOString(),
-    canRespond: true,
-    data: {} as PendingAction['data'],
-  })
+  const reviewAction = (ws: WorkStream, squadName: string, assignee: string): PendingAction => {
+    const wait = ws.openWaits![0]!
+    const data: WorkStreamActionData = {
+      workStreamId: ws.id,
+      workStreamTitle: ws.title,
+      squadId: ws.squadId,
+      squadName,
+      waitId: wait.id,
+      wait: { ...wait, message: 'Finished and tested. Take a look before it ships?' },
+      focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },
+      assigneeAgentId: assignee,
+      assigneeName: assignee.replace(/^w-/, ''),
+      completionMode: 'pr-merge',
+      prompt: { type: 'text', message: 'Finished and tested. Take a look before it ships?' },
+    }
+    return {
+      id: `workstream-review:${ws.id}:${wait.id}`,
+      type: 'workstream-review',
+      priority: 1,
+      createdAt: at(60).toISOString(),
+      canRespond: true,
+      squadId: ws.squadId,
+      squadName,
+      data,
+    }
+  }
+  const questionFor = streams.find((ws) => ws.id === 'ws-10')!
+  const questionData: AgentQuestionActionData = {
+    questionId: 'q-ws-10',
+    agentId: 'w-gus',
+    agentName: 'Gus',
+    agentTypeId: 'coder',
+    squadId: 'sq-mobile',
+    squadName: 'Mobile',
+    ownerUserId: null,
+    questionData: SAMPLE_QUESTION.questionData,
+  }
   return {
     squads,
     streams,
@@ -89,9 +152,18 @@ export function sampleFarm(): FarmInput {
       }),
     ],
     pendingActions: [
-      action('a1', 'workstream-review'),
-      action('a2', 'workstream-review'),
-      action('a3', 'agent-question'),
+      reviewAction(streams[2]!, 'Platform', 'w-cy'),
+      reviewAction(streams[7]!, 'Docs', 'w-eli'),
+      {
+        id: `agent-question:${questionData.questionId}`,
+        type: 'agent-question',
+        priority: 2,
+        createdAt: at(70).toISOString(),
+        canRespond: true,
+        squadId: questionFor.squadId,
+        squadName: 'Mobile',
+        data: questionData,
+      },
       makeAgentError('w-ivy', 'sq-mobile'),
     ],
   }

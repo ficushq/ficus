@@ -6,6 +6,7 @@ import '@fontsource-variable/instrument-sans'
 import '@fontsource-variable/jetbrains-mono'
 import './styles.css'
 import { App } from './app/App'
+import { ChatProvider } from './chat'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: true } },
@@ -14,7 +15,9 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ChatProvider>
+        <App />
+      </ChatProvider>
     </QueryClientProvider>
   </StrictMode>
 )
