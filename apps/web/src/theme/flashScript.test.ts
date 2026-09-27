@@ -49,7 +49,7 @@ interface FlashScenario {
   systemPrefersDark?: boolean
   /** Pre-seeds a stale dark class, as a bfcache-restored document may carry. */
   staleDarkClass?: boolean
-  /** Runs inside Ficus Desktop, whose preload defines window.tauDesktopApp first. */
+  /** Runs inside Ficus Desktop, whose preload defines window.ficusDesktopApp first. */
   desktop?: boolean
 }
 
@@ -80,7 +80,7 @@ async function runFlashScript(scenario: FlashScenario): Promise<FlashResult> {
         removeEventListener: () => undefined,
       })
       ;(window as unknown as { matchMedia: typeof matchMedia }).matchMedia = matchMedia
-      if (scenario.desktop) (window as unknown as { tauDesktopApp: { version: 1 } }).tauDesktopApp = { version: 1 }
+      if (scenario.desktop) (window as unknown as { ficusDesktopApp: { version: 1 } }).ficusDesktopApp = { version: 1 }
     },
   })
   try {

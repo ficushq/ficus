@@ -9,7 +9,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await harness.cleanup()
-  delete window.tauDesktopApp
+  delete window.ficusDesktopApp
 })
 
 function Probe() {
@@ -20,7 +20,7 @@ function Probe() {
 function installShell(shell: Partial<DesktopShell> & { insetTitleBar: boolean }, initiallyFullscreen = false) {
   const listeners = new Set<(fullscreen: boolean) => void>()
   let unsubscribed = 0
-  window.tauDesktopApp = {
+  window.ficusDesktopApp = {
     version: 1,
     notificationsEnabled: async () => false,
     deliverNotifications: async () => {},
@@ -76,7 +76,7 @@ test('browsers and desktop windows with a standard title bar are unchanged', asy
   await mount()
   expect(document.documentElement.hasAttribute('data-desktop-shell')).toBe(false)
 
-  delete window.tauDesktopApp
+  delete window.ficusDesktopApp
   await mount()
   expect(document.documentElement.hasAttribute('data-desktop-shell')).toBe(false)
 })

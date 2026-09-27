@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { generateKeyPairSync, verify } from 'crypto'
 import {
+  EXPECTED_APNS_BUNDLE_ID,
   buildApnsHeaders,
   buildApnsJwt,
   buildApnsPayload,
@@ -24,7 +25,7 @@ function installApnsEnv(environment: 'production' | 'sandbox' = 'production') {
   process.env.APNS_KEY_P8 = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
   process.env.APNS_KEY_ID = 'KID123'
   process.env.APNS_TEAM_ID = 'TEAM456'
-  process.env.APNS_BUNDLE_ID = 'ai.hiretau.mobile'
+  process.env.APNS_BUNDLE_ID = 'sh.ficus.mobile'
   process.env.APNS_ENV = environment
   resetSecretStore()
 }
@@ -233,7 +234,7 @@ describe('APNs', () => {
     process.env.APNS_KEY_P8_FILE = p8Path
     process.env.APNS_KEY_ID = 'KID123'
     process.env.APNS_TEAM_ID = 'TEAM456'
-    process.env.APNS_BUNDLE_ID = 'ai.hiretau.mobile'
+    process.env.APNS_BUNDLE_ID = 'sh.ficus.mobile'
     process.env.APNS_ENV = 'sandbox'
     resetSecretStore()
 
@@ -243,7 +244,7 @@ describe('APNs', () => {
       expect(config?.keyP8).toContain('-----BEGIN PRIVATE KEY-----')
       expect(config?.keyId).toBe('KID123')
       expect(config?.teamId).toBe('TEAM456')
-      expect(config?.bundleId).toBe('ai.hiretau.mobile')
+      expect(config?.bundleId).toBe('sh.ficus.mobile')
       expect(config?.environment).toBe('sandbox')
       expect(isApnsConfigured()).toBe(true)
     } finally {
@@ -276,7 +277,7 @@ describe('APNs', () => {
     process.env.APNS_KEY_P8_FILE = p8Path
     process.env.APNS_KEY_ID = 'KID123'
     process.env.APNS_TEAM_ID = 'TEAM456'
-    process.env.APNS_BUNDLE_ID = 'ai.hiretau.mobile'
+    process.env.APNS_BUNDLE_ID = 'sh.ficus.mobile'
     resetSecretStore()
 
     try {
@@ -296,7 +297,7 @@ describe('APNs', () => {
     process.env.APNS_KEY_P8_FILE = join(tmpdir(), 'does-not-exist-apns.p8')
     process.env.APNS_KEY_ID = 'KID123'
     process.env.APNS_TEAM_ID = 'TEAM456'
-    process.env.APNS_BUNDLE_ID = 'ai.hiretau.mobile'
+    process.env.APNS_BUNDLE_ID = 'sh.ficus.mobile'
     resetSecretStore()
     const errSpy = spyOn(console, 'error').mockImplementation(() => {})
     try {
@@ -334,10 +335,35 @@ describe('APNs', () => {
       getApnsConfig()
 
       const warnings = warnSpy.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')
-      expect(warnings).toContain("APNS_BUNDLE_ID is 'example.wrong.bundle', expected 'ai.hiretau.mobile'")
+      expect(warnings).toContain("APNS_BUNDLE_ID is 'example.wrong.bundle', expected 'sh.ficus.mobile'")
       expect(warnings).toContain('APNS_KEY_P8 does not look like a complete PEM private key')
     } finally {
       warnSpy.mockRestore()
+    }
+  })
+
+  it('warns on the retired mobile bundle id but not on the current one — advisory only, never an error', () => {
+    // installApnsEnv already configures APNS_BUNDLE_ID=sh.ficus.mobile.
+    installApnsEnv('production')
+    resetSecretStore()
+    const okWarnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(getApnsConfig()).not.toBeNull()
+      expect(okWarnSpy.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')).not.toContain('APNS_BUNDLE_ID')
+    } finally {
+      okWarnSpy.mockRestore()
+    }
+
+    process.env.APNS_BUNDLE_ID = 'ai.hiretau.mobile'
+    resetSecretStore()
+    const staleWarnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      // A self-hoster on the old bundle keeps working; the mismatch only warns.
+      expect(getApnsConfig()).not.toBeNull()
+      const warnings = staleWarnSpy.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')
+      expect(warnings).toContain(`APNS_BUNDLE_ID is 'ai.hiretau.mobile', expected '${EXPECTED_APNS_BUNDLE_ID}'`)
+    } finally {
+      staleWarnSpy.mockRestore()
     }
   })
 
@@ -360,7 +386,7 @@ describe('APNs', () => {
         ':method': 'POST',
         ':path': '/3/device/devicetoken',
         authorization: expect.stringContaining('bearer '),
-        'apns-topic': 'ai.hiretau.mobile',
+        'apns-topic': 'sh.ficus.mobile',
         'apns-push-type': 'alert',
         'content-type': 'application/json',
       })
@@ -439,7 +465,7 @@ describe('APNs', () => {
         expect(result).toEqual({ ok: true, status: 200 })
         expect(calls[0].headers).toMatchObject({
           ':path': '/3/device/latoken',
-          'apns-topic': 'ai.hiretau.mobile.push-type.liveactivity',
+          'apns-topic': 'sh.ficus.mobile.push-type.liveactivity',
           'apns-push-type': 'liveactivity',
         })
       } finally {
@@ -480,7 +506,7 @@ describe('APNs', () => {
       try {
         await sendApnsNotification('devicetoken', { title: 'T', body: 'B' })
         expect(calls[0].headers).toMatchObject({
-          'apns-topic': 'ai.hiretau.mobile',
+          'apns-topic': 'sh.ficus.mobile',
           'apns-push-type': 'alert',
         })
         expect(JSON.parse(calls[0].body)).toEqual({

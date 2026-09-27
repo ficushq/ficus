@@ -632,7 +632,7 @@ describe('OnboardingPage — appearance control', () => {
   afterEach(async () => {
     await queryClient?.cancelQueries()
     queryClient?.clear()
-    delete window.tauDesktopApp
+    delete window.ficusDesktopApp
     document.documentElement.classList.remove('dark')
     await dom.cleanup()
     globalThis.fetch = oldFetch
@@ -687,7 +687,11 @@ describe('OnboardingPage — appearance control', () => {
       configurable: true,
       value: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)', media: query }),
     })
-    window.tauDesktopApp = { version: 1, notificationsEnabled: async () => false, deliverNotifications: async () => {} }
+    window.ficusDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+    }
     await render()
 
     expect(option('System').checked).toBe(true)

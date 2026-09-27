@@ -16,7 +16,7 @@ Desktop-managed host agents run as the signed-in OS user and have filesystem acc
 
 ## Web app bridge
 
-The web app detects the desktop preload bridge (`window.tauDesktopApp`, `version: 1`). Members added after the first release are optional and feature-detected individually, so older and newer desktop builds degrade gracefully:
+The web app detects the desktop preload bridge (`window.ficusDesktopApp`, `version: 1`; builds released before the rename expose it as `window.tauDesktopApp`, which the web app still reads when the new name is absent). Members added after the first release are optional and feature-detected individually, so older and newer desktop builds degrade gracefully:
 
 - `updates` replaces the git updater on Settings → Updates with the app's native update status and **Restart to update**.
 - `setNotificationsEnabled` adds the **Desktop notifications** switch to Settings → Notification Rules (see [Desktop notifications](desktop-notifications.md)).
