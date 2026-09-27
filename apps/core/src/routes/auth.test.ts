@@ -2056,7 +2056,7 @@ describe('server capability discovery', () => {
       const publicServer = (await publicResponse.json()).server
       expect((await privateResponse.json()).server).toEqual(publicServer)
       expect(publicServer).toMatchObject({
-        product: 'tau',
+        product: 'ficus',
         apiVersion: 1,
         capabilities: { 'workstreams.workflow-runs': 1, 'auth.signup-default-role': 1 },
       })
