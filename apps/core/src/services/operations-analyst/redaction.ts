@@ -47,11 +47,13 @@ export function redactEvidence(raw: string, knownSecrets: readonly string[]): Re
     `$1=${REDACTED}`
   )
 
-  // JWTs and common Tau, GitHub, cloud, chat, and model-provider token
+  // JWTs and common Ficus, GitHub, cloud, chat, and model-provider token
   // prefixes. Requiring a useful suffix avoids redacting ordinary prose.
+  // Pre-rename `tau_` values stay redacted: they can sit in old evidence and
+  // authenticate again if a tenant rolls back to the pre-rename release.
   text = text.replace(/\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b/g, REDACTED)
   text = text.replace(
-    /\b(?:tau_[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_]{12,}|sk-(?:[A-Za-z0-9-]*[A-Za-z0-9])[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{12,}|xox[baprs]-[A-Za-z0-9-]{8,}|hf_[A-Za-z0-9]{8,}|AKIA[A-Z0-9]{12,})\b/g,
+    /\b(?:(?:ficus|tau)_[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_]{12,}|sk-(?:[A-Za-z0-9-]*[A-Za-z0-9])[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{12,}|xox[baprs]-[A-Za-z0-9-]{8,}|hf_[A-Za-z0-9]{8,}|AKIA[A-Z0-9]{12,})\b/g,
     REDACTED
   )
 

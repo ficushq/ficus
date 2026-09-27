@@ -2,7 +2,7 @@ import type { Context } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { primaryWebOrigin } from './web-origins'
 
-export const SESSION_COOKIE_NAME = 'tau_session'
+export const SESSION_COOKIE_NAME = 'ficus_session'
 // Matches the session row TTL (User.createSession default of 30 days).
 const SESSION_MAX_AGE_S = 30 * 24 * 60 * 60
 

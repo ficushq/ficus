@@ -214,7 +214,7 @@ describe('localDeployment proxy', () => {
     )
 
     const cookie = res.headers.get('set-cookie') ?? ''
-    expect(cookie).toContain(`tau_app_${localDeployment.id}=`)
+    expect(cookie).toContain(`ficus_app_${localDeployment.id}=`)
     // Path scoping is the security boundary — it keeps this credential off
     // Tau's own API and off every other deployment.
     expect(cookie).toContain(`Path=/api/app/${localDeployment.id}/`)
@@ -229,7 +229,7 @@ describe('localDeployment proxy', () => {
     const res = await proxyLocalDeploymentRequest(
       localDeployment.id,
       new Request(`http://tau.test/api/app/${localDeployment.id}/assets/index-abc.js`, {
-        headers: { cookie: `tau_app_${localDeployment.id}=${browserToken(localDeployment)}` },
+        headers: { cookie: `ficus_app_${localDeployment.id}=${browserToken(localDeployment)}` },
       }),
       'assets/index-abc.js'
     )
@@ -247,7 +247,7 @@ describe('localDeployment proxy', () => {
     const res = await proxyLocalDeploymentRequest(
       localDeployment.id,
       new Request(`http://tau.test/api/app/${localDeployment.id}/assets/x.js`, {
-        headers: { cookie: `tau_app_${localDeployment.id}=nope` },
+        headers: { cookie: `ficus_app_${localDeployment.id}=nope` },
       }),
       'assets/x.js'
     )

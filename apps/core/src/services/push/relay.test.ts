@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { pushRelayConfig, resolvePushRelayBaseUrl, sendRelayAlert } from './relay'
-const token = `tau_pri_${randomUUID()}_${'a'.repeat(43)}`
+const token = `ficus_pri_${randomUUID()}_${'a'.repeat(43)}`
 const config = pushRelayConfig({ FICUS_PUSH_RELAY_TOKEN: token })!
 
 test('relay uses only a push credential and strips content and arbitrary URLs', async () => {
@@ -11,7 +11,7 @@ test('relay uses only a push credential and strips content and arbitrary URLs', 
     return Response.json({ accepted: true })
   }) as (url: string, init: RequestInit) => Promise<Response>
   const result = await sendRelayAlert(
-    `tau_prd_${'b'.repeat(43)}`,
+    `ficus_prd_${'b'.repeat(43)}`,
     {
       title: 'private chat',
       body: 'private body',
@@ -35,7 +35,7 @@ test('relay forwards the preview subtitle and grouping keys, and drops unknown p
     return Response.json({ accepted: true })
   }) as (url: string, init: RequestInit) => Promise<Response>
   await sendRelayAlert(
-    `tau_prd_${'b'.repeat(43)}`,
+    `ficus_prd_${'b'.repeat(43)}`,
     {
       eventType: 'done',
       workStreamNumber: 197,
@@ -64,14 +64,14 @@ test('denial and network errors are redacted and never retry', async () => {
     calls++
     throw new Error(`secret ${token}`)
   }) as (url: string, init: RequestInit) => Promise<Response>
-  expect(await sendRelayAlert(`tau_prd_${'b'.repeat(43)}`, {}, { config, fetch: fetcher })).toEqual({
+  expect(await sendRelayAlert(`ficus_prd_${'b'.repeat(43)}`, {}, { config, fetch: fetcher })).toEqual({
     accepted: false,
     reason: 'relay_unavailable',
   })
   expect(calls).toBe(1)
   expect(
     await sendRelayAlert(
-      `tau_prd_${'b'.repeat(43)}`,
+      `ficus_prd_${'b'.repeat(43)}`,
       {},
       {
         config,
@@ -81,7 +81,7 @@ test('denial and network errors are redacted and never retry', async () => {
   ).toEqual({ accepted: false, reason: 'pro_required' })
 })
 test('account tokens and malformed credentials cannot configure the relay', () => {
-  expect(() => pushRelayConfig({ FICUS_PUSH_RELAY_TOKEN: 'tau_pat_account-token' })).toThrow('push-only')
+  expect(() => pushRelayConfig({ FICUS_PUSH_RELAY_TOKEN: 'ficus_pat_account-token' })).toThrow('push-only')
   expect(pushRelayConfig({})).toBeNull()
   expect(config.instanceId).toHaveLength(36)
 })
@@ -150,6 +150,6 @@ test('sendRelayAlert posts to the resolved base URL, not the built-in default', 
     requestedUrl = url
     return Response.json({ accepted: true })
   }) as (url: string, init: RequestInit) => Promise<Response>
-  await sendRelayAlert(`tau_prd_${'b'.repeat(43)}`, {}, { config: overriddenConfig, fetch: fetcher })
+  await sendRelayAlert(`ficus_prd_${'b'.repeat(43)}`, {}, { config: overriddenConfig, fetch: fetcher })
   expect(requestedUrl).toBe('https://relay.example/api/push-relay/send')
 })

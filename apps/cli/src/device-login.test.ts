@@ -15,7 +15,7 @@ describe('device login client', () => {
         },
       },
       { status: 202, body: { status: 'authorization_pending', interval: 1 } },
-      { status: 200, body: { token: 'tau_dev_secret', deviceId: 'd1', user: { id: 'u1', email: 'u@test' } } },
+      { status: 200, body: { token: 'ficus_dev_secret', deviceId: 'd1', user: { id: 'u1', email: 'u@test' } } },
     ]
     const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: String(url), init })
@@ -36,7 +36,7 @@ describe('device login client', () => {
         return true
       },
     })
-    expect(result.token).toBe('tau_dev_secret')
+    expect(result.token).toBe('ficus_dev_secret')
     expect(opened).toEqual(['https://tau.test/settings#device_request=verify'])
     expect(calls.map((call) => call.url)).toEqual([
       'https://tau.test/api/auth/device/start',
@@ -62,7 +62,7 @@ describe('device login client', () => {
       }
       polls += 1
       if (polls >= 3) {
-        return Response.json({ token: 'tau_dev_secret', deviceId: 'd1', user: { id: 'u1', email: 'u@test' } })
+        return Response.json({ token: 'ficus_dev_secret', deviceId: 'd1', user: { id: 'u1', email: 'u@test' } })
       }
       return new Response(JSON.stringify({ error: 'slow_down' }), {
         status: 429,

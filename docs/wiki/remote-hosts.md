@@ -154,7 +154,7 @@ in-agent usage guide this document backs.
 Materialization writes into each granted squad's SSH directory
 (`apps/core/src/services/squad/ssh.ts`, `apps/core/src/services/remote-hosts/materialize.ts`):
 
-- One `tau_remote_<name>` private key file (mode `0600`) per granted host.
+- One `ficus_remote_<name>` private key file (mode `0600`) per granted host.
 - A block in `config` delimited by markers:
 
   ```
@@ -163,7 +163,7 @@ Materialization writes into each granted squad's SSH directory
     HostName 10.1.2.3
     Port 22
     User deploy
-    IdentityFile ~/.ssh/tau_remote_staging
+    IdentityFile ~/.ssh/ficus_remote_staging
     IdentitiesOnly yes
     StrictHostKeyChecking accept-new
   # <<< tau remote hosts <<<
@@ -171,7 +171,7 @@ Materialization writes into each granted squad's SSH directory
 
 `materializeSquadRemoteHosts(squadId)` is **idempotent and complete**: every
 call rewrites the managed block from current DB state and deletes any
-`tau_remote_*` key file for a host no longer granted. It runs on every
+`ficus_remote_*` key file for a host no longer granted. It runs on every
 mutation that can affect a squad's grants — host create+grant, grant,
 revoke, host delete.
 

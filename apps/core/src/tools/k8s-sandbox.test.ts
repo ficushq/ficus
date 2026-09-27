@@ -1491,7 +1491,7 @@ describe('createHttpBashOperations', () => {
       podManager: { namespace: 'tau-sandboxes' },
     } as unknown as K8sSandboxManager
 
-    const operations = createHttpBashOperations(manager, 'test-sandbox', 'tau_agent_xyz')
+    const operations = createHttpBashOperations(manager, 'test-sandbox', 'ficus_agent_xyz')
 
     // Caller passes a stale FICUS_API_URL; the live one must win.
     const execPromise = operations.exec('ficus whoami', '/private', {
@@ -1510,7 +1510,7 @@ describe('createHttpBashOperations', () => {
     expect(liveUrl).not.toBe('http://host.k3d.internal:1')
     expect(bashMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        env: { FICUS_API_URL: liveUrl, FICUS_TOKEN: 'tau_agent_xyz' },
+        env: { FICUS_API_URL: liveUrl, FICUS_TOKEN: 'ficus_agent_xyz' },
       })
     )
   })

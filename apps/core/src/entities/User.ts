@@ -4,6 +4,7 @@ import { users, userCredentials, sessions, roleAssignments, agentTokens, emailVe
 import { invalidatePermissionCache } from '../services/rbac/permissions'
 import type { InferSelectModel } from 'drizzle-orm'
 import { createHash, randomUUID } from 'crypto'
+import { SESSION_TOKEN_PREFIX } from '../services/auth/token-prefixes'
 
 export type UserRow = InferSelectModel<typeof users>
 
@@ -208,7 +209,7 @@ export class User {
   }
 
   async createSession(opts?: { userAgent?: string; ipAddress?: string; expiresInMs?: number }): Promise<string> {
-    const token = `tau_sess_${randomUUID()}`
+    const token = `${SESSION_TOKEN_PREFIX}${randomUUID()}`
     const tokenHash = createHash('sha256').update(token).digest('hex')
     const expiresAt = new Date(Date.now() + (opts?.expiresInMs ?? 30 * 24 * 60 * 60 * 1000))
 

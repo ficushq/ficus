@@ -6,7 +6,7 @@ import { resolveToken } from '../services/auth/resolve-token'
 import { hasPermission } from '../services/rbac'
 import { createTestUser, createTestRole, assignRole, cleanupTestRbac } from '../test-utils'
 
-// Verifies the per-agent token wiring: an agent gets a scoped tau_agent_* token
+// Verifies the per-agent token wiring: an agent gets a scoped ficus_agent_* token
 // (injected into its sandbox as FICUS_TOKEN) that resolves to its squad-scoped
 // identity, and the default roles grant the CLI-driven permissions agents need.
 
@@ -49,7 +49,7 @@ describe('per-agent token wiring', () => {
 
     const token = await agent.getOrCreateToken()
     expect(token).toBeDefined()
-    expect(token).toMatch(/^tau_agent_/)
+    expect(token).toMatch(/^ficus_agent_/)
 
     // resolves (as the sandbox CLI's Bearer would) to the scoped agent identity
     expect(await resolveToken(token!)).toMatchObject({ type: 'agent', agentId: agent.id, squadId })
@@ -139,7 +139,7 @@ describe('per-agent token wiring', () => {
     const sm = await Agent.mustFind(row.id)
 
     const token = await sm.getOrCreateToken()
-    expect(token).toMatch(/^tau_agent_/)
+    expect(token).toMatch(/^ficus_agent_/)
     const identity = await resolveToken(token!)
     expect(identity).toMatchObject({ type: 'agent', agentId: row.id, userId: user.id })
     // inherits the owning user's system-scoped permissions (not a squad-agent role)

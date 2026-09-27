@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, afterEach, describe, expect, it } from 'bun:test'
+import { createHash } from 'crypto'
+import { eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { systemTokens } from '../../db/schema'
 import {
+  SYSTEM_TOKEN_PREFIX,
   createSystemToken,
   listSystemTokens,
   revokeSystemToken,
@@ -15,6 +18,20 @@ import { hasPermission } from '../rbac'
 import { getSecretStore, resetSecretStore } from '../secrets'
 
 const WEBHOOK_SECRET_KEY = '__SYSTEM_WEBHOOK_TOKEN'
+
+/** Insert a system-token row for an arbitrary raw value, as a pre-rename Core would have stored it. */
+async function seedSystemTokenRow(input: { raw: string; name: string; kind: 'manual' | 'webhook'; scopes?: string[] }) {
+  const [row] = await db
+    .insert(systemTokens)
+    .values({
+      name: input.name,
+      tokenHash: createHash('sha256').update(input.raw).digest('hex'),
+      scopes: input.scopes ?? DEFAULT_WEBHOOK_SCOPES,
+      kind: input.kind,
+    })
+    .returning()
+  return row
+}
 
 describe('system tokens', () => {
   let priorKey: string | undefined
@@ -41,7 +58,8 @@ describe('system tokens', () => {
 
   it('creates a token that resolves to its scopes, and revoking invalidates it', async () => {
     const { token, record } = await createSystemToken({ name: 'CI', scopes: ['inbox:system', 'workstreams:read'] })
-    expect(token.startsWith('tau_sys_')).toBe(true)
+    expect(SYSTEM_TOKEN_PREFIX).toBe('ficus_sys_')
+    expect(token.startsWith('ficus_sys_')).toBe(true)
 
     const resolved = await resolveSystemToken(token)
     expect(resolved).toMatchObject({
@@ -142,5 +160,87 @@ describe('system tokens', () => {
     // Same healed token returned after scopes are current (no repeated writes/churn).
     const second = await ensureWebhookToken()
     expect(second).toBe(token)
+  })
+
+  it('rejects a pre-rename tau_sys_ token even though its row is live (no dual-accept)', async () => {
+    const legacy = 'tau_sys_' + 'a'.repeat(43)
+    await seedSystemTokenRow({ raw: legacy, name: 'platform-orchestrator', kind: 'manual' })
+    expect(await resolveSystemToken(legacy)).toBeNull()
+    expect(await resolveToken(legacy)).toBeNull()
+  })
+
+  it('never resolves a token whose prefix only resembles the system prefix', async () => {
+    const secret = 'b'.repeat(43)
+    for (const raw of [`ficus_sysx${secret}`, `ficus_sy_${secret}`, `ficus_dev_${secret}`, `FICUS_SYS_${secret}`]) {
+      await seedSystemTokenRow({ raw, name: 'CI', kind: 'manual' })
+      expect(await resolveSystemToken(raw)).toBeNull()
+      expect(await resolveToken(raw)).toBeNull()
+    }
+  })
+
+  it('webhook token with a legacy prefix is re-minted and the old row revoked', async () => {
+    const legacy = 'tau_sys_' + 'a'.repeat(43)
+    const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
+    await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
+
+    const fresh = await ensureWebhookToken()
+
+    expect(fresh?.startsWith('ficus_sys_')).toBe(true)
+    expect(await resolveSystemToken(legacy)).toBeNull()
+    const [staleAfter] = await db.select().from(systemTokens).where(eq(systemTokens.id, stale.id))
+    expect(staleAfter.revokedAt).not.toBeNull()
+    expect(getSecretStore().get(WEBHOOK_SECRET_KEY)).toBe(fresh!)
+    const resolved = await resolveSystemToken(fresh!)
+    expect(resolved?.scopes).toEqual(DEFAULT_WEBHOOK_SCOPES)
+    // The healed token is what webhook scripts now receive, and it is stable.
+    expect((await webhookScriptAuthEnv()).FICUS_TOKEN).toBe(fresh!)
+    expect(await ensureWebhookToken()).toBe(fresh!)
+    const active = (await listSystemTokens({ includeWebhook: true })).filter((t) => !t.revokedAt)
+    expect(active.map((t) => t.id)).toEqual([resolved!.id])
+  })
+
+  it('re-mints a stored webhook token that lacks the current prefix even when its row was already revoked', async () => {
+    const legacy = 'tau_sys_' + 'c'.repeat(43)
+    const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
+    await revokeSystemToken(stale.id)
+    await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
+
+    const fresh = await ensureWebhookToken()
+
+    expect(fresh?.startsWith(SYSTEM_TOKEN_PREFIX)).toBe(true)
+    expect(await resolveSystemToken(fresh!)).not.toBeNull()
+  })
+
+  it('concurrent self-heals of a legacy webhook token mint exactly one replacement', async () => {
+    const legacy = 'tau_sys_' + 'e'.repeat(43)
+    const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
+    await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
+
+    const results = await Promise.all(Array.from({ length: 5 }, () => ensureWebhookToken()))
+
+    expect(new Set(results).size).toBe(1)
+    expect(results[0]?.startsWith(SYSTEM_TOKEN_PREFIX)).toBe(true)
+    expect(getSecretStore().get(WEBHOOK_SECRET_KEY)).toBe(results[0]!)
+    const rows = await db.select().from(systemTokens).where(eq(systemTokens.kind, 'webhook'))
+    const active = rows.filter((row) => !row.revokedAt)
+    expect(active).toHaveLength(1)
+    expect(active[0].id).toBe((await resolveSystemToken(results[0]!))!.id)
+    expect(rows.find((row) => row.id === stale.id)?.revokedAt).not.toBeNull()
+  })
+
+  it('concurrent first provisioning mints exactly one webhook token', async () => {
+    const results = await Promise.all(Array.from({ length: 5 }, () => ensureWebhookToken()))
+
+    expect(new Set(results).size).toBe(1)
+    const active = (await db.select().from(systemTokens).where(eq(systemTokens.kind, 'webhook'))).filter(
+      (row) => !row.revokedAt
+    )
+    expect(active).toHaveLength(1)
+  })
+
+  it('the webhook self-heal takes no caller input', () => {
+    // It is reachable only from verified webhook handlers, and it can only replace the
+    // stored secret with a fresh token it never returns to an HTTP caller.
+    expect(ensureWebhookToken.length).toBe(0)
   })
 })

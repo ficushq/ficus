@@ -1756,10 +1756,10 @@ describe('stampBoxSyncedHash / clearBoxSyncedHashes', () => {
     await stampBoxSyncedHash(machine.id, sandboxId, 'identity', 'h2')
     expect((await getMachineBox(sandboxId))?.syncedHashes).toEqual({ skills: 'h1', identity: 'h2' })
 
-    await stampBoxSyncedHash(machine.id, sandboxId, 'squad-ssh', 'h-ssh', ['config', 'tau_remote_prod'])
+    await stampBoxSyncedHash(machine.id, sandboxId, 'squad-ssh', 'h-ssh', ['config', 'ficus_remote_prod'])
     expect((await getMachineBox(sandboxId))?.syncedHashes?.['squad-ssh']).toEqual({
       hash: 'h-ssh',
-      files: ['config', 'tau_remote_prod'],
+      files: ['config', 'ficus_remote_prod'],
     })
 
     // Re-stamping an existing asset updates only that key.
@@ -1767,7 +1767,7 @@ describe('stampBoxSyncedHash / clearBoxSyncedHashes', () => {
     expect((await getMachineBox(sandboxId))?.syncedHashes).toEqual({
       skills: 'h3',
       identity: 'h2',
-      'squad-ssh': { hash: 'h-ssh', files: ['config', 'tau_remote_prod'] },
+      'squad-ssh': { hash: 'h-ssh', files: ['config', 'ficus_remote_prod'] },
     })
   })
 

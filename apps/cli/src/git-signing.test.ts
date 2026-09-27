@@ -160,7 +160,7 @@ describe('git signing through the real ficus entrypoint', () => {
       GIT_COMMITTER_EMAIL: 'agent@example.com',
       FICUS_AGENT_CONTEXT: '1',
       FICUS_API_URL: `http://127.0.0.1:${server.port}`,
-      FICUS_TOKEN: 'tau_agent_e2e',
+      FICUS_TOKEN: 'ficus_agent_e2e',
       FICUS_AUTH_STORE: join(dir, 'auth.json'),
       FICUS_GIT_SIGNING_SQUAD: 'squad-e2e',
     }
@@ -184,7 +184,9 @@ describe('git signing through the real ficus entrypoint', () => {
     )
     expect(commit.stderr).toBe('')
     expect(commit.code).toBe(0)
-    expect(requests).toEqual([{ path: '/api/squads/squad-e2e/integrations/github/sign', auth: 'Bearer tau_agent_e2e' }])
+    expect(requests).toEqual([
+      { path: '/api/squads/squad-e2e/integrations/github/sign', auth: 'Bearer ficus_agent_e2e' },
+    ])
 
     const verify = await runAsync(['git', ...signing, 'verify-commit', 'HEAD'], repo, env)
     expect(verify.stderr).toContain('Good "git" signature for agent@example.com')

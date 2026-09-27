@@ -32,6 +32,26 @@ async function setCookieHeader(url: string): Promise<string> {
 }
 
 describe('session cookie', () => {
+  test('the session cookie is ficus_session', () => {
+    expect(SESSION_COOKIE_NAME).toBe('ficus_session')
+  })
+
+  test('extractSessionToken ignores the pre-rename tau_session cookie', async () => {
+    const res = await app().request('http://localhost/read', { headers: { Cookie: 'tau_session=old' } })
+    expect((await res.json()).token).toBeNull()
+  })
+
+  test('the renamed cookie keeps HttpOnly, Secure and SameSite on an https deployment', async () => {
+    process.env.FICUS_WEB_ORIGIN = 'https://demo.example.com'
+    const sc = await setCookieHeader('https://demo.example.com/set')
+    expect(sc.startsWith('ficus_session=tok123;')).toBe(true)
+    expect(sc).toContain('HttpOnly')
+    expect(sc).toContain('Secure')
+    expect(sc).toContain('SameSite=Lax')
+    expect(sc).toContain('Path=/')
+    expect(sc).toContain(`Max-Age=${30 * 24 * 60 * 60}`)
+  })
+
   test('sets an HttpOnly, Path=/ cookie carrying the token', async () => {
     const sc = await setCookieHeader('http://localhost/set')
     expect(sc).toContain(`${SESSION_COOKIE_NAME}=tok123`)

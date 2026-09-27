@@ -7,6 +7,7 @@ import type { Identity } from '../rbac'
 import { adminHasPasskey } from './admin-users'
 import { resolveSystemToken } from './system-tokens'
 import { resolveDeviceToken } from './device-tokens'
+import { AGENT_TOKEN_PREFIX, SESSION_TOKEN_PREFIX } from './token-prefixes'
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
@@ -21,12 +22,16 @@ export interface AuthContext {
 export async function resolveTokenContext(token: string): Promise<AuthContext | null> {
   const tokenHash = hashToken(token)
 
+  // Sessions and agent tokens are looked up only under their own prefix, so a value minted as
+  // another kind (or under an earlier product prefix) never matches a row here.
   // 1. Check sessions table
-  const [session] = await db
-    .select({ userId: sessions.userId })
-    .from(sessions)
-    .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())))
-    .limit(1)
+  const [session] = token.startsWith(SESSION_TOKEN_PREFIX)
+    ? await db
+        .select({ userId: sessions.userId })
+        .from(sessions)
+        .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())))
+        .limit(1)
+    : []
 
   if (session) {
     // Check if user is disabled
@@ -42,15 +47,17 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
   }
 
   // 2. Check agent tokens table
-  const [agentToken] = await db
-    .select({
-      agentId: agentTokens.agentId,
-      squadId: agentTokens.squadId,
-      userId: agentTokens.userId,
-    })
-    .from(agentTokens)
-    .where(and(eq(agentTokens.tokenHash, tokenHash), isNull(agentTokens.revokedAt)))
-    .limit(1)
+  const [agentToken] = token.startsWith(AGENT_TOKEN_PREFIX)
+    ? await db
+        .select({
+          agentId: agentTokens.agentId,
+          squadId: agentTokens.squadId,
+          userId: agentTokens.userId,
+        })
+        .from(agentTokens)
+        .where(and(eq(agentTokens.tokenHash, tokenHash), isNull(agentTokens.revokedAt)))
+        .limit(1)
+    : []
 
   if (agentToken) {
     if (agentToken.userId) {

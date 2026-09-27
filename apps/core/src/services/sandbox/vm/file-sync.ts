@@ -61,7 +61,7 @@
  * ## squad ssh delivery (step 5) + on-demand refresh
  * The squad ssh dir (`services/squad/ssh.ts` `getSquadSshPath`) is where
  * `services/remote-hosts/materialize.ts` renders granted remote hosts as
- * `tau_remote_<name>` key files + a managed `config` block (see the remote-hosts
+ * `ficus_remote_<name>` key files + a managed `config` block (see the remote-hosts
  * design doc § Delivery). Step 5 re-runs `materializeSquadRemoteHosts(squadId)`
  * immediately before reading the dir — cheap (a handful of local fs read/writes)
  * and idempotent, so it's unconditional here rather than trusting that every
@@ -88,7 +88,7 @@ import {
   stampBoxSyncedHash as stampBoxSyncedHashReal,
 } from '../../machines/queries'
 import type { Machine, MachineBox } from '../../machines/queries'
-import { getSquadSshPath } from '../../squad/ssh'
+import { getSquadSshPath, RESERVED_REMOTE_HOST_KEY_PREFIXES } from '../../squad/ssh'
 import { materializeSquadRemoteHosts as materializeSquadRemoteHostsReal } from '../../remote-hosts/materialize'
 import { createLogger } from '../../../lib/infra/logger'
 import {
@@ -529,6 +529,16 @@ function validatedManagedPath(root: string, relPath: string): string {
   return `${root}/${relPath}`
 }
 
+/**
+ * Clears a box's squad ssh dir that was stamped before per-file manifests: every
+ * materialized remote-host key file, under the current or the pre-rename prefix
+ * (K2), plus the managed `config`. Uploaded keys and `known_hosts` are untouched.
+ */
+function legacySquadSshCleanupCommand(root: string): string {
+  const names = RESERVED_REMOTE_HOST_KEY_PREFIXES.map((prefix) => `-name ${shellQuote(`${prefix}*`)}`).join(' -o ')
+  return `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f \\( ${names} \\) -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`
+}
+
 async function removeManagedFiles(
   client: SandboxClient,
   root: string,
@@ -554,13 +564,7 @@ export async function syncBoxFiles(
 
   const clearLegacyTree = async (name: string, root: string): Promise<void> => {
     if (name === 'squad-ssh') {
-      await runBash(
-        client,
-        `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f -name 'tau_remote_*' -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`,
-        'asset_prune',
-        undefined,
-        deps.bashFence
-      )
+      await runBash(client, legacySquadSshCleanupCommand(root), 'asset_prune', undefined, deps.bashFence)
     } else if (name === 'skills' || name === 'memory') {
       await runBash(client, `find ${shellQuote(root)} -mindepth 1 -delete`, 'asset_prune', undefined, deps.bashFence)
     }
@@ -776,13 +780,7 @@ export async function pushSquadSshToBox(
   // Reject malformed materializer paths before mkdir or any /write effect.
   currentFiles.forEach((relPath) => validatedManagedPath(root, relPath))
   if (previous && !previous.files) {
-    await runBash(
-      client,
-      `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f -name 'tau_remote_*' -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`,
-      'asset_prune',
-      undefined,
-      deps.bashFence
-    )
+    await runBash(client, legacySquadSshCleanupCommand(root), 'asset_prune', undefined, deps.bashFence)
   }
   if (files.length) await writeSshFiles(client, home, files, deps.bashFence)
   const current = new Set(currentFiles)

@@ -1386,7 +1386,7 @@ export class DockerSandboxManager implements ISandboxManager {
       const userArgs = this.getSandboxUserArgs()
       // Inject the per-agent scoped token so `tau` CLI calls inside the sandbox
       // authenticate AS this agent (RBAC squad-scoped) rather than via the shared
-      // FICUS_PASSWORD. Tokens are `tau_agent_<uuid>` (no shell metacharacters).
+      // FICUS_PASSWORD. Tokens are `ficus_agent_<uuid>` (no shell metacharacters).
       // Re-inject the live Core URL so the CLI reaches the current Core even if the
       // container baked a now-stale dynamic port at creation (matches k8s behavior).
       const identityArgs: string[] = []

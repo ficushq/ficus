@@ -133,7 +133,7 @@ describe('a token grants no access by itself', () => {
 
   it('does not authenticate an API call as a session cookie', async () => {
     const { token } = await issueEmailChallenge(subject.email)
-    const res = await app.request('/api/protected', { headers: { Cookie: `tau_session=${token}` } })
+    const res = await app.request('/api/protected', { headers: { Cookie: `ficus_session=${token}` } })
     expect(res.status).toBe(401)
   })
 

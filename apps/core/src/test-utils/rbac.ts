@@ -4,6 +4,7 @@ import { eq, like, inArray, and, notInArray } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import { createHash } from 'crypto'
 import { invalidatePermissionCache } from '../services/rbac/permissions'
+import { AGENT_TOKEN_PREFIX, SESSION_TOKEN_PREFIX } from '../services/auth/token-prefixes'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export async function createTestUser(opts?: {
     })
     .returning()
 
-  const token = `tau_sess_${randomUUID()}`
+  const token = `${SESSION_TOKEN_PREFIX}${randomUUID()}`
   const [session] = await db
     .insert(sessions)
     .values({
@@ -230,7 +231,7 @@ export async function createTestAgentToken(opts: {
   squadId: string | null
   userId?: string
 }): Promise<TestAgentToken> {
-  const token = `tau_agent_${randomUUID()}`
+  const token = `${AGENT_TOKEN_PREFIX}${randomUUID()}`
   const [row] = await db
     .insert(agentTokens)
     .values({

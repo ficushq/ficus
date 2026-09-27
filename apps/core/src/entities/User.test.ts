@@ -281,11 +281,11 @@ describe('User entity', () => {
   // ---------------------------------------------------------------------------
 
   describe('user.createSession', () => {
-    it('returns a token with tau_sess_ prefix', async () => {
+    it('returns a token with ficus_sess_ prefix', async () => {
       const user = await User.create({ email: testEmail() })
       const token = await user.createSession()
 
-      expect(token).toMatch(/^tau_sess_[0-9a-f-]+$/)
+      expect(token).toMatch(/^ficus_sess_[0-9a-f-]+$/)
     })
 
     it('stores SHA-256 hash of the token in sessions table', async () => {

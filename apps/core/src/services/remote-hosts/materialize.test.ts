@@ -1,5 +1,6 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import * as fs from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { remoteHosts } from '../../db'
@@ -108,7 +109,7 @@ describe('renderManagedBlock', () => {
     expect(block).toContain('  HostName staging.example.com')
     expect(block).toContain('  Port 2222')
     expect(block).toContain('  User deploy')
-    expect(block).toContain('  IdentityFile ~/.ssh/tau_remote_staging')
+    expect(block).toContain('  IdentityFile ~/.ssh/ficus_remote_staging')
     expect(block).toContain('  IdentitiesOnly yes')
     expect(block).toContain('  StrictHostKeyChecking accept-new')
   })
@@ -122,7 +123,7 @@ describe('renderManagedBlock', () => {
     ]
 
     const block = renderManagedBlock(hosts, { absoluteSshDir: '/tau/ssh/squad-1' })
-    expect(block).toContain('  IdentityFile /tau/ssh/squad-1/tau_remote_staging')
+    expect(block).toContain('  IdentityFile /tau/ssh/squad-1/ficus_remote_staging')
     expect(block).toContain('  UserKnownHostsFile /tau/ssh/squad-1/known_hosts')
     expect(block).not.toContain('~/.ssh/')
     // Everything else is unchanged.
@@ -133,7 +134,7 @@ describe('renderManagedBlock', () => {
   it('keeps the ~/.ssh rendering and adds no UserKnownHostsFile without an absolute ssh dir', () => {
     const hosts = [{ id: '1', name: 'staging', sshHost: 'h', sshPort: 22, sshUser: 'u' } as RemoteHost]
     const block = renderManagedBlock(hosts)
-    expect(block).toContain('  IdentityFile ~/.ssh/tau_remote_staging')
+    expect(block).toContain('  IdentityFile ~/.ssh/ficus_remote_staging')
     expect(block).not.toContain('UserKnownHostsFile')
   })
 
@@ -253,7 +254,7 @@ describe('materializeSquadRemoteHosts', () => {
     await materializeSquadRemoteHosts(squadId)
 
     const sshPath = getSquadSshPath(squadId)
-    const keyPath = join(sshPath, `tau_remote_${host.name}`)
+    const keyPath = join(sshPath, `ficus_remote_${host.name}`)
     expect(existsSync(keyPath)).toBe(true)
     expect(readFileSync(keyPath, 'utf-8')).toBe('PRIVATE-KEY-CONTENT')
     expect(statSync(keyPath).mode & 0o777).toBe(0o600)
@@ -261,7 +262,7 @@ describe('materializeSquadRemoteHosts', () => {
     const config = readFileSync(join(sshPath, 'config'), 'utf-8')
     expect(config).toContain(MANAGED_BLOCK_BEGIN)
     expect(config).toContain(`Host ${host.name}`)
-    expect(config).toContain(`IdentityFile ~/.ssh/tau_remote_${host.name}`)
+    expect(config).toContain(`IdentityFile ~/.ssh/ficus_remote_${host.name}`)
   })
 
   it('host runtime: the written block points at the squad ssh dir by absolute path', async () => {
@@ -275,12 +276,12 @@ describe('materializeSquadRemoteHosts', () => {
 
       const sshPath = getSquadSshPath(squadId)
       const config = readFileSync(join(sshPath, 'config'), 'utf-8')
-      expect(config).toContain(`IdentityFile ${join(sshPath, `tau_remote_${host.name}`)}`)
+      expect(config).toContain(`IdentityFile ${join(sshPath, `ficus_remote_${host.name}`)}`)
       expect(config).toContain(`UserKnownHostsFile ${join(sshPath, 'known_hosts')}`)
       expect(config).not.toContain('~/.ssh/')
       // The recomputed block (used by setSshConfig's re-append) must match.
       expect(await getManagedBlockForSquad(squadId)).toContain(
-        `IdentityFile ${join(sshPath, `tau_remote_${host.name}`)}`
+        `IdentityFile ${join(sshPath, `ficus_remote_${host.name}`)}`
       )
     } finally {
       if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
@@ -313,16 +314,16 @@ describe('materializeSquadRemoteHosts', () => {
 
     await materializeSquadRemoteHosts(squadId)
     const sshPath = getSquadSshPath(squadId)
-    expect(existsSync(join(sshPath, `tau_remote_${keep.name}`))).toBe(true)
-    expect(existsSync(join(sshPath, `tau_remote_${revoke.name}`))).toBe(true)
+    expect(existsSync(join(sshPath, `ficus_remote_${keep.name}`))).toBe(true)
+    expect(existsSync(join(sshPath, `ficus_remote_${revoke.name}`))).toBe(true)
 
     // Simulate revocation: delete the revoked host (grants cascade off it).
     await deleteRemoteHost(revoke.id)
 
     await materializeSquadRemoteHosts(squadId)
 
-    expect(existsSync(join(sshPath, `tau_remote_${keep.name}`))).toBe(true)
-    expect(existsSync(join(sshPath, `tau_remote_${revoke.name}`))).toBe(false)
+    expect(existsSync(join(sshPath, `ficus_remote_${keep.name}`))).toBe(true)
+    expect(existsSync(join(sshPath, `ficus_remote_${revoke.name}`))).toBe(false)
 
     const config = readFileSync(join(sshPath, 'config'), 'utf-8')
     expect(config).toContain(`Host ${keep.name}`)
@@ -335,14 +336,14 @@ describe('materializeSquadRemoteHosts', () => {
 
     await materializeSquadRemoteHosts(squadId)
     const sshPath = getSquadSshPath(squadId)
-    expect(existsSync(join(sshPath, `tau_remote_${host.name}`))).toBe(true)
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(true)
 
     // Revoke this squad's grant without deleting the host itself.
     await deleteGrant(host.id, squadId)
 
     await materializeSquadRemoteHosts(squadId)
 
-    expect(existsSync(join(sshPath, `tau_remote_${host.name}`))).toBe(false)
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(false)
     const config = readFileSync(join(sshPath, 'config'), 'utf-8')
     expect(config).not.toContain(`Host ${host.name}`)
 
@@ -382,12 +383,97 @@ describe('materializeSquadRemoteHosts', () => {
     await materializeSquadRemoteHosts(squadId)
 
     const sshPath = getSquadSshPath(squadId)
-    expect(existsSync(join(sshPath, `tau_remote_${host.name}`))).toBe(false)
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(false)
     const config = existsSync(join(sshPath, 'config')) ? readFileSync(join(sshPath, 'config'), 'utf-8') : ''
     expect(config).not.toContain(`Host ${host.name}`)
   })
 
-  it('listSshKeys excludes the materialized tau_remote_ key file but still lists a genuinely uploaded key', async () => {
+  it('writes ficus_remote_<name> key files', async () => {
+    const squadId = `${prefix}-squad-ficus-prefix`
+    const host = await createGrantedHost('ficus-prefix', squadId, 'PRIVATE-KEY-CONTENT')
+
+    await materializeSquadRemoteHosts(squadId)
+
+    const sshPath = getSquadSshPath(squadId)
+    expect(readFileSync(join(sshPath, `ficus_remote_${host.name}`), 'utf-8')).toBe('PRIVATE-KEY-CONTENT')
+    expect(readFileSync(join(sshPath, 'config'), 'utf-8')).toContain(`IdentityFile ~/.ssh/ficus_remote_${host.name}`)
+  })
+
+  it('removes every stale pre-rename tau_remote_ key file, granted host or not (K2)', async () => {
+    const squadId = `${prefix}-squad-legacy-sweep`
+    const host = await createGrantedHost('legacy-sweep', squadId)
+    const sshPath = ensureSquadSshDir(squadId)
+    // Key files a pre-rename Core materialized: one for a host still granted, one for a
+    // grant revoked since. Neither may survive, or a revoked private key stays on disk.
+    writeFileSync(join(sshPath, `tau_remote_${host.name}`), 'OLD-KEY', { mode: 0o600 })
+    writeFileSync(join(sshPath, 'tau_remote_old'), 'REVOKED-KEY', { mode: 0o600 })
+    await addSshKey(squadId, 'my-real-key', VALID_TEST_KEY)
+
+    await materializeSquadRemoteHosts(squadId)
+
+    expect(existsSync(join(sshPath, `tau_remote_${host.name}`))).toBe(false)
+    expect(existsSync(join(sshPath, 'tau_remote_old'))).toBe(false)
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(true)
+    expect(existsSync(join(sshPath, 'my-real-key'))).toBe(true)
+    expect(readFileSync(join(sshPath, 'config'), 'utf-8')).not.toContain('tau_remote_')
+  })
+
+  it('a directory under a reserved prefix is skipped and the config still points at written keys', async () => {
+    const squadId = `${prefix}-squad-legacy-dir`
+    const host = await createGrantedHost('legacy-dir', squadId)
+    const sshPath = ensureSquadSshDir(squadId)
+    writeFileSync(join(sshPath, `tau_remote_${host.name}`), 'OLD-KEY', { mode: 0o600 })
+    mkdirSync(join(sshPath, 'tau_remote_odd'))
+    mkdirSync(join(sshPath, 'ficus_remote_odd'))
+
+    await materializeSquadRemoteHosts(squadId)
+
+    const config = readFileSync(join(sshPath, 'config'), 'utf-8')
+    expect(config).toContain(`IdentityFile ~/.ssh/ficus_remote_${host.name}`)
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(true)
+    expect(existsSync(join(sshPath, `tau_remote_${host.name}`))).toBe(false)
+    expect(statSync(join(sshPath, 'tau_remote_odd')).isDirectory()).toBe(true)
+    expect(statSync(join(sshPath, 'ficus_remote_odd')).isDirectory()).toBe(true)
+  })
+
+  it('a failing sweep unlink still leaves a config whose every key exists, and reports the failure', async () => {
+    const squadId = `${prefix}-squad-sweep-fails`
+    const host = await createGrantedHost('sweep-fails', squadId)
+    const sshPath = ensureSquadSshDir(squadId)
+    const legacyKey = join(sshPath, `tau_remote_${host.name}`)
+    writeFileSync(legacyKey, 'OLD-KEY', { mode: 0o600 })
+    // The managed block a pre-rename Core wrote, naming the legacy key file.
+    writeFileSync(
+      join(sshPath, 'config'),
+      `${MANAGED_BLOCK_BEGIN}\nHost ${host.name}\n  IdentityFile ~/.ssh/tau_remote_${host.name}\n${MANAGED_BLOCK_END}\n`
+    )
+    const realUnlink = fs.unlinkSync
+    const unlink = spyOn(fs, 'unlinkSync').mockImplementation((path: fs.PathLike) => {
+      if (String(path) === legacyKey) throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      return realUnlink(path)
+    })
+    try {
+      await expect(materializeSquadRemoteHosts(squadId)).rejects.toThrow('could not remove')
+    } finally {
+      unlink.mockRestore()
+    }
+
+    const config = readFileSync(join(sshPath, 'config'), 'utf-8')
+    const identityFiles = [...config.matchAll(/IdentityFile ~\/\.ssh\/(\S+)/g)].map((m) => m[1])
+    expect(identityFiles).toEqual([`ficus_remote_${host.name}`])
+    for (const file of identityFiles) expect(existsSync(join(sshPath, file))).toBe(true)
+  })
+
+  it('listSshKeys never lists a stale pre-rename tau_remote_ file as an uploaded key', async () => {
+    const squadId = `${prefix}-squad-legacy-list`
+    const sshPath = ensureSquadSshDir(squadId)
+    writeFileSync(join(sshPath, 'tau_remote_old'), 'REVOKED-KEY', { mode: 0o600 })
+    await addSshKey(squadId, 'my-real-key', VALID_TEST_KEY)
+
+    expect((await listSshKeys(squadId)).map((k) => k.name)).toEqual(['my-real-key'])
+  })
+
+  it('listSshKeys excludes the materialized ficus_remote_ key file but still lists a genuinely uploaded key', async () => {
     const squadId = `${prefix}-squad-listkeys`
     const host = await createGrantedHost('listkeys', squadId)
 
@@ -396,7 +482,7 @@ describe('materializeSquadRemoteHosts', () => {
 
     const keys = await listSshKeys(squadId)
     expect(keys.map((k) => k.name)).toEqual(['my-real-key'])
-    expect(keys.map((k) => k.name)).not.toContain(`tau_remote_${host.name}`)
+    expect(keys.map((k) => k.name)).not.toContain(`ficus_remote_${host.name}`)
   })
 })
 

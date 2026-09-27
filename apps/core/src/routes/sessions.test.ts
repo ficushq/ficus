@@ -102,7 +102,7 @@ describe('DELETE /api/sessions', () => {
     const { randomUUID } = await import('crypto')
     const { createHash } = await import('crypto')
 
-    const token2 = `tau_sess_${randomUUID()}`
+    const token2 = `ficus_sess_${randomUUID()}`
     const tokenHash2 = createHash('sha256').update(token2).digest('hex')
     await db.insert(sessions).values({
       userId: userA.id,

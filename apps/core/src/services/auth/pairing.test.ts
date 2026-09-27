@@ -23,7 +23,7 @@ describe('device pairing', () => {
     const userId = await makeUser('pair-ok@test.local')
     const { code } = await createPairingCode(userId)
     const result = await claimPairingCode({ code, name: 'iPhone', platform: 'ios' })
-    expect(result?.token.startsWith('tau_dev_')).toBe(true)
+    expect(result?.token.startsWith('ficus_dev_')).toBe(true)
     expect(result?.user.id).toBe(userId)
   })
 

@@ -1,6 +1,12 @@
 import { createHash, randomBytes } from 'crypto'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
-import { db, instanceMaintenanceAudit, instanceMaintenanceState, systemTokens } from '../../db'
+import {
+  db,
+  instanceMaintenanceAudit,
+  instanceMaintenanceState,
+  systemTokens,
+  withDedicatedDbTransaction,
+} from '../../db'
 import { getSecretStore } from '../secrets'
 import { createLogger } from '../../lib/infra/logger'
 import type { Identity } from '../rbac'
@@ -11,11 +17,15 @@ import {
 
 const log = createLogger('system-tokens')
 
-const TOKEN_PREFIX = 'tau_sys_'
+/** Every system token carries this prefix; resolveSystemToken rejects anything else before any lookup. */
+export const SYSTEM_TOKEN_PREFIX = 'ficus_sys_'
 // The auto-provisioned webhook token's raw value, kept encrypted in the secret store so the webhook
 // processors can present it. The `__` prefix marks it internal (hidden from the secrets UI list).
 const WEBHOOK_TOKEN_SECRET_KEY = '__SYSTEM_WEBHOOK_TOKEN'
 const WEBHOOK_TOKEN_NAME = 'Webhook automation'
+// Serializes webhook-token replacement across calls and processes (hashed with
+// hashtextextended(key, 0), like the other string-keyed advisory locks).
+const WEBHOOK_TOKEN_LOCK_KEY = 'system-tokens:webhook-automation-replace'
 
 /** Scopes the bundled webhook scripts need (inbox send-system, squad/agent get/list, workstream CRUD). */
 export const DEFAULT_WEBHOOK_SCOPES = [
@@ -85,7 +95,7 @@ export async function createSystemToken(input: {
   scopes: string[]
   kind?: 'manual' | 'webhook'
 }): Promise<{ token: string; record: SystemTokenRecord }> {
-  const token = `${TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
+  const token = `${SYSTEM_TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
   const [row] = await db
     .insert(systemTokens)
     .values({ name: input.name, tokenHash: hashToken(token), scopes: input.scopes, kind: input.kind ?? 'manual' })
@@ -231,7 +241,7 @@ export async function revokeSystemToken(id: string): Promise<boolean> {
 export async function resolveSystemToken(
   token: string
 ): Promise<{ id: string; name: string; scopes: string[] } | null> {
-  if (!token.startsWith(TOKEN_PREFIX)) return null
+  if (!token.startsWith(SYSTEM_TOKEN_PREFIX)) return null
   const [row] = await db
     .select()
     .from(systemTokens)
@@ -246,11 +256,15 @@ export async function resolveSystemToken(
  * Ensure the long-lived webhook automation token exists and return its raw value. Self-heals: if the
  * stored secret is missing/stale/revoked, a fresh token is minted and persisted. Returns null if the
  * secret store can't persist it (e.g. no FICUS_ENCRYPTION_KEY) — callers fall back to legacy auth.
+ *
+ * A stored value without the current prefix (minted before a prefix change) can never authenticate,
+ * so it is replaced by a fresh token and its row is revoked. The function takes no input: only
+ * verified webhook handlers reach it, and it never returns the token to an HTTP caller.
  */
 export async function ensureWebhookToken(): Promise<string | null> {
   const store = getSecretStore()
   const existing = store.get(WEBHOOK_TOKEN_SECRET_KEY)
-  if (existing) {
+  if (existing?.startsWith(SYSTEM_TOKEN_PREFIX)) {
     const [row] = await db
       .select()
       .from(systemTokens)
@@ -272,15 +286,58 @@ export async function ensureWebhookToken(): Promise<string | null> {
     }
   }
 
+  return replaceWebhookToken()
+}
+
+/**
+ * Replace the stored webhook token under an advisory lock, so a burst of concurrent webhook runs
+ * (in one process or several) mints exactly one token. Inside the lock the stored value is re-read
+ * from the database: if another caller already replaced it, that token is returned unchanged.
+ * Otherwise a fresh token is minted, the stale value's row is revoked, and the secret is written,
+ * all before the lock is released. The lock runs on a dedicated connection so waiters never hold
+ * pool slots the lock holder needs.
+ */
+async function replaceWebhookToken(): Promise<string | null> {
+  const store = getSecretStore()
   try {
-    const { token } = await createSystemToken({
-      name: WEBHOOK_TOKEN_NAME,
-      scopes: DEFAULT_WEBHOOK_SCOPES,
-      kind: 'webhook',
+    return await withDedicatedDbTransaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${WEBHOOK_TOKEN_LOCK_KEY}, 0))`)
+      await store.refreshKey(WEBHOOK_TOKEN_SECRET_KEY)
+      const current = store.get(WEBHOOK_TOKEN_SECRET_KEY)
+      if (current?.startsWith(SYSTEM_TOKEN_PREFIX)) {
+        const [live] = await tx
+          .select({ id: systemTokens.id })
+          .from(systemTokens)
+          .where(and(eq(systemTokens.tokenHash, hashToken(current)), isNull(systemTokens.revokedAt)))
+          .limit(1)
+        if (live) return current
+      }
+
+      const token = `${SYSTEM_TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
+      await tx.insert(systemTokens).values({
+        name: WEBHOOK_TOKEN_NAME,
+        tokenHash: hashToken(token),
+        scopes: DEFAULT_WEBHOOK_SCOPES,
+        kind: 'webhook',
+      })
+      if (current) {
+        await tx
+          .update(systemTokens)
+          .set({ revokedAt: new Date() })
+          .where(and(eq(systemTokens.tokenHash, hashToken(current)), isNull(systemTokens.revokedAt)))
+      }
+      // Written last: if it throws, the transaction rolls back and nothing is minted or revoked.
+      // The secret store writes on the main pool, not this transaction, so the new value can
+      // be visible just before this commit, and a failed commit after it leaves the store
+      // naming a token with no row. Both self-heal: the next call finds no live row and mints.
+      await store.set(WEBHOOK_TOKEN_SECRET_KEY, token, 'system')
+      log.info(
+        current && !current.startsWith(SYSTEM_TOKEN_PREFIX)
+          ? 'Replaced a webhook automation system token that lacked the current prefix'
+          : 'Provisioned webhook automation system token'
+      )
+      return token
     })
-    await store.set(WEBHOOK_TOKEN_SECRET_KEY, token, 'system')
-    log.info('Provisioned webhook automation system token')
-    return token
   } catch (err) {
     log.warn('Could not provision webhook system token (secret store unavailable):', err)
     return null

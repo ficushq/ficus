@@ -31,7 +31,7 @@ export function isValidLocalDeploymentRouteParameter(value: string): boolean {
 
 /** Per-deployment name so two open apps cannot overwrite each other's credential. */
 export function localDeploymentCookieName(localDeploymentId: string): string {
-  return `tau_app_${localDeploymentId}`
+  return `ficus_app_${localDeploymentId}`
 }
 
 export function localDeploymentProxyPath(localDeploymentId: string): string {

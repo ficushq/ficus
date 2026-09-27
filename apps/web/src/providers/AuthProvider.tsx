@@ -194,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (password: string) => {
       // X-Tau-Csrf: the CSRF middleware rejects any cookie-bearing mutation
-      // without it. Browser cookies ignore ports, so a stale tau_session from
+      // without it. Browser cookies ignore ports, so a stale ficus_session from
       // another tau instance on the same host (localhost:3000 next to
       // localhost:3200) rides along with this request and, without the header,
       // turned every password login into a 403 the page reported as

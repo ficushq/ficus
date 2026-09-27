@@ -130,7 +130,7 @@ describe('DeviceConnectionRegistry', () => {
     await registry.start()
     await registry.register(deviceId, close)
 
-    await crossProcessDeviceTokenEvents.publish('tau_dev_secret-not-a-uuid')
+    await crossProcessDeviceTokenEvents.publish('ficus_dev_secret-not-a-uuid')
 
     expect(close).not.toHaveBeenCalled()
     await registry.stop()

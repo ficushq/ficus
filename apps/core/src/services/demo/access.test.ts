@@ -79,7 +79,7 @@ describe('DemoReviewerAccess.pair', () => {
 
     const claimed = await claimPairingCode({ code: result.code, name: 'Reviewer iPhone', platform: 'ios' })
     expect(claimed?.user.id).toBe(demo.id)
-    expect(claimed?.token.startsWith('tau_dev_')).toBe(true)
+    expect(claimed?.token.startsWith('ficus_dev_')).toBe(true)
     // Single use: the same code cannot pair a second device.
     expect(await claimPairingCode({ code: result.code, name: 'Again', platform: 'ios' })).toBeNull()
     // A second reviewer gets their own code.

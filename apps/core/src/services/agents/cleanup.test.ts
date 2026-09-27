@@ -313,7 +313,7 @@ describe('agent-cleanup', () => {
     it('skips a listed candidate that wakes before authoritative reload and continues the batch', async () => {
       const agentWarmup = await import('../sandbox/agent-warmup')
       const ensure = spyOn(agentWarmup, 'ensureAgentSandbox').mockResolvedValue('ensured')
-      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
       const now = new Date()
       const first = await Agent.create({ agentTypeId: 'engineer', squadId: testSquadId })
       const second = await Agent.create({ agentTypeId: 'engineer', squadId: testSquadId })
@@ -906,7 +906,7 @@ describe('agent-cleanup', () => {
     it('does not revoke a re-woken agent when a stale finalization loses its CAS', async () => {
       const agentWarmup = await import('../sandbox/agent-warmup')
       const ensure = spyOn(agentWarmup, 'ensureAgentSandbox').mockResolvedValue('ensured')
-      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
       const revoke = spyOn(Agent.prototype, 'revokeTokensForAgent').mockResolvedValue(0)
       const agent = await Agent.create({ agentTypeId: 'engineer', squadId: testSquadId })
       await agent.update({ status: 'dormant', dormantAt: new Date() })

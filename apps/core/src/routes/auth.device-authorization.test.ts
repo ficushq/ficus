@@ -64,7 +64,7 @@ describe('device authorization routes', () => {
     })
     expect(token.status).toBe(200)
     const minted = (await token.json()) as { token: string; deviceId: string; user: { id: string } }
-    expect(minted.token).toStartWith('tau_dev_')
+    expect(minted.token).toStartWith('ficus_dev_')
     expect(minted.user.id).toBe(user.id)
     const reused = await app.request('/api/auth/device/token', {
       method: 'POST',
