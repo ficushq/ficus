@@ -19,6 +19,7 @@ import {
   createAccountScopedCredentialStore,
 } from '../services/agent/account-auth-backend'
 import { registerOpenAICompatibleAccounts } from '../services/agent/auth-backend'
+import { registerAnthropicWithClaudeCode } from '../services/agent/claude-code/anthropic'
 import { selectAccount } from '../services/agent/account-selection'
 import * as accountStore from '../services/agent/account-store'
 import { AGENT_DIR } from '../lib/paths'
@@ -172,6 +173,7 @@ export class AgentSession {
       allowModelNetwork: false,
     })
     registerOpenAICompatibleAccounts(modelRuntime)
+    registerAnthropicWithClaudeCode(modelRuntime)
 
     const { session } = await createAgentSession({
       // Used in SettingsManager, SessionManager, and DefaultResourceLoader, all

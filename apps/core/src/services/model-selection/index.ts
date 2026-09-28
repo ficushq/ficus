@@ -1,4 +1,5 @@
 import { tryGetModelRuntime } from '../agent'
+import { isAccountUsable } from '../agent/account-usable'
 import { splitModelPriorityList } from '../../lib/utils/model-spec'
 import { listAccounts, readAccountStore, type AccountStoreV1 } from '../agent/account-store'
 import { getDisabledProviders } from './disabled-providers'
@@ -138,5 +139,5 @@ function hasRuntimeRoute(provider: string): boolean {
 }
 
 function hasConfiguredAccount(provider: string, store: AccountStoreV1): boolean {
-  return listAccounts(store, provider).some((account) => account.enabled && account.credential != null)
+  return listAccounts(store, provider).some(isAccountUsable)
 }

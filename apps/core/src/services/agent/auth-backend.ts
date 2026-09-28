@@ -14,7 +14,9 @@
  */
 
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
+import { isAccountUsable } from './account-usable'
 import { compatibleRuntimeProvider } from './openai-compatible-runtime'
+import { registerAnthropicWithClaudeCode } from './claude-code/anthropic'
 import type { Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai'
 import { registerBunOAuthFlows } from '@earendil-works/pi-ai/bun-oauth'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
@@ -89,7 +91,7 @@ const credentialModifyQueue = new KeyedSerialQueue()
 export class SecretStoreCredentialStore implements CredentialStore {
   async read(providerId: string): Promise<Credential | undefined> {
     const accounts = readAccountStore().accounts[providerId]
-    const account = accounts?.find((a) => a.enabled && a.credential != null) ?? accounts?.[0]
+    const account = accounts?.find(isAccountUsable) ?? accounts?.[0]
     return account?.credential
   }
 
@@ -97,7 +99,7 @@ export class SecretStoreCredentialStore implements CredentialStore {
     const store = readAccountStore()
     const entries: CredentialInfo[] = []
     for (const [providerId, accounts] of Object.entries(store.accounts)) {
-      const account = accounts.find((a) => a.enabled && a.credential != null)
+      const account = accounts.find(isAccountUsable)
       if (account) entries.push({ providerId, type: account.credential.type })
     }
     return entries
@@ -249,6 +251,7 @@ export function getModelRuntime(): Promise<ModelRuntime> {
         allowModelNetwork: false,
       })
       registerOpenAICompatibleAccounts(runtime)
+      registerAnthropicWithClaudeCode(runtime)
       modelRuntimeInstance = runtime
       return runtime
     })().catch((err) => {

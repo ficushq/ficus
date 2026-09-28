@@ -419,6 +419,23 @@ describe('provider-auth routes', () => {
     expect(typeof zai.disabled).toBe('boolean')
   })
 
+  test('PUT /claude-code/enabled needs a boolean and is refused on Ficus Cloud', async () => {
+    const put = (body: unknown) => app.request('/claude-code/enabled', jsonReq('PUT', body))
+    expect((await put({ enabled: 'yes' })).status).toBe(400)
+    const previous = process.env.FICUS_MANAGED
+    process.env.FICUS_MANAGED = '1'
+    try {
+      const refused = await put({ enabled: true })
+      expect(refused.status).toBe(409)
+      expect(listAccounts(readAccountStore(), 'anthropic').some((account) => account.kind === 'claude-code')).toBe(
+        false
+      )
+    } finally {
+      if (previous === undefined) delete process.env.FICUS_MANAGED
+      else process.env.FICUS_MANAGED = previous
+    }
+  })
+
   test('GET /catalog marks oauth-capable providers, and Anthropic takes an API key only', async () => {
     const res = await app.request('/catalog', jsonReq())
     expect(res.status).toBe(200)

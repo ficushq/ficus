@@ -43,6 +43,7 @@ import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, SkeletonLine } from '../loading/Skeleton'
 import { ProviderAccountActions } from './ProviderAccountActions'
 import { ProviderDirectoryCard } from './ProviderDirectoryCard'
+import { ClaudeCodeProviderCard } from './ClaudeCodeProviderCard'
 import { SearchIcon } from '../icons'
 
 /**
@@ -300,6 +301,7 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
         </p>
       )}
       <div className="grid items-stretch gap-4 md:grid-cols-2">
+        <ClaudeCodeProviderCard canWrite={canWriteProviderAuth} />
         {canWriteProviderAuth && (
           <ProviderDirectoryCard
             providerId="custom"
@@ -883,7 +885,13 @@ export function ProviderAccountsList({
                   </span>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted">{account.type === 'oauth' ? (oauthLabel ?? 'OAuth') : 'API key'}</span>
+                  <span className="text-muted">
+                    {account.kind === 'claude-code'
+                      ? 'Claude Code on this computer'
+                      : account.type === 'oauth'
+                        ? (oauthLabel ?? 'OAuth')
+                        : 'API key'}
+                  </span>
                   <span
                     className={clsx(
                       'text-xs',
