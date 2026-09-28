@@ -1840,7 +1840,7 @@
     --agent-type-6-fg: 103 232 249;
     --scrollbar-thumb: 170 178 190 / 0.6;
     --on-accent-fg: 28 26 23;
-    --checkbox-check: 255 255 255;
+    --checkbox-check: 28 26 23;
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
     --syntax-comment: 141.8 148.6 162.2;
@@ -3767,7 +3767,7 @@
     --agent-type-6-fg: 103 232 249;
     --scrollbar-thumb: 162 169 181 / 0.6;
     --on-accent-fg: 0 0 0;
-    --checkbox-check: 255 255 255;
+    --checkbox-check: 0 0 0;
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
     --syntax-comment: 141.8 148.6 162.2;
@@ -5213,7 +5213,7 @@
     --agent-type-6-fg: 135 255 255;
     --scrollbar-thumb: 252 255 255 / 0.6;
     --on-accent-fg: 0 0 0;
-    --checkbox-check: 255 255 255;
+    --checkbox-check: 0 0 0;
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
     --syntax-comment: 141.8 148.6 162.2;
@@ -5695,7 +5695,7 @@
     --agent-type-6-fg: 103 232 249;
     --scrollbar-thumb: 225 233 245 / 0.6;
     --on-accent-fg: 0 0 0;
-    --checkbox-check: 255 255 255;
+    --checkbox-check: 0 0 0;
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
     --syntax-comment: 141.8 148.6 162.2;
@@ -6177,7 +6177,7 @@
     --agent-type-6-fg: 125 253 255;
     --scrollbar-thumb: 245 253 255 / 0.6;
     --on-accent-fg: 0 0 0;
-    --checkbox-check: 255 255 255;
+    --checkbox-check: 0 0 0;
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
     --syntax-comment: 141.8 148.6 162.2;

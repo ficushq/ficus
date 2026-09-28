@@ -60,7 +60,8 @@ export interface WebPaletteBuiltin {
   appearancePalette?: Partial<Record<ResolvedAppearance, Partial<ThemePalette>>>
   /** Exact page and surface colors per appearance, pinned before and after derivation. */
   surfaces?: Record<ResolvedAppearance, { page: string; surface: string }>
-  /** Exact token values (hex) pinned after derivation, before the interaction tints and contrast repair. */
+  /** Exact token values (hex) pinned after derivation, before the interaction tints and contrast repair. Any token
+   * may be pinned, including ones outside DERIVABLE_TOKENS. */
   pinned?: Partial<Record<ResolvedAppearance, Record<string, string>>>
   /** The colour the interaction surfaces tint from (hex), when it is not the appearance's own primary. */
   interactionTint?: Partial<Record<ResolvedAppearance, string>>
@@ -193,7 +194,7 @@ function buildThemeTokens(
     derivedHex['--color-bg-page'] = surfaces.page
     derivedHex['--color-bg-surface'] = surfaces.surface
   }
-  Object.assign(derivedHex, builtin.pinned?.[appearance])
+  const pinned = builtin.pinned?.[appearance] ?? {}
   const combined: Record<string, string> = {}
   for (const token of Object.keys(baseTokens)) {
     if (token.startsWith('--opacity-')) {
@@ -203,10 +204,13 @@ function buildThemeTokens(
       combined[token] = baseTokens[token]!
       continue
     }
-    const derived = DERIVABLE_TOKENS.has(token) ? derivedHex[token] : undefined
+    // A pinned value wins over derivation, and may name a token outside DERIVABLE_TOKENS.
+    const derived = pinned[token] ?? (DERIVABLE_TOKENS.has(token) ? derivedHex[token] : undefined)
     combined[token] = derived ? (customColorChannels(derived) ?? baseTokens[token]!) : baseTokens[token]!
   }
   applyInteractionTints(combined, appearance, builtin.interactionTint?.[appearance])
+  // The checked checkbox's tick sits on the accent fill, so it takes the same ink as text on that fill.
+  combined['--checkbox-check'] = combined['--on-accent-fg']!
   return repairContrastPairs(combined)
 }
 

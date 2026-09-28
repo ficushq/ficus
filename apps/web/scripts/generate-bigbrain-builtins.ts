@@ -188,6 +188,8 @@ function buildThemeTokens(
   for (const token of Object.keys(baseTokens)) {
     combined[token] = token.startsWith('--opacity-') ? finalOpacity[token]! : finalColors[token]!
   }
+  // The checked checkbox's tick sits on the accent fill, so it takes the same ink as text on that fill.
+  combined['--checkbox-check'] = combined['--on-accent-fg']!
   return repairContrastPairs(combined)
 }
 

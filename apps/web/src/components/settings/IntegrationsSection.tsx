@@ -103,8 +103,9 @@ export function IntegrationDirectoryCard({
           >
             <span
               className={clsx(
-                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-chrome-toggle-thumb shadow transition-transform',
-                enabled ? 'translate-x-4' : 'translate-x-0'
+                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full shadow transition-transform',
+                // On the accent track the thumb takes the on-accent ink, like text on an accent button.
+                enabled ? 'translate-x-4 bg-on-accent' : 'translate-x-0 bg-chrome-toggle-thumb'
               )}
             />
           </button>
