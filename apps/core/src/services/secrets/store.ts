@@ -203,6 +203,20 @@ export interface SecretStoreOptions {
   testEnvironmentMigrationFixtures?: readonly GeneratedSecretEnvironmentFixture[]
 }
 
+/** A stored secret that this instance's FICUS_ENCRYPTION_KEY cannot decrypt. */
+export class SecretDecryptError extends Error {
+  constructor(
+    readonly key: string,
+    cause: unknown
+  ) {
+    super(
+      `Stored secret '${key}' cannot be decrypted with this instance's FICUS_ENCRYPTION_KEY; it was saved with a different key`,
+      { cause }
+    )
+    this.name = 'SecretDecryptError'
+  }
+}
+
 export class SecretStore {
   private cache = new Map<string, string>()
   private encryptionKey: Buffer | null = null
@@ -671,7 +685,12 @@ export class SecretStore {
         const [row] = await tx.select().from(secrets).where(eq(secrets.key, key)).for('update')
 
         // Throws on decrypt failure → transaction aborts, row untouched.
-        const current = row ? decrypt(row.encryptedValue, row.iv, encryptionKey) : undefined
+        let current: string | undefined
+        try {
+          current = row ? decrypt(row.encryptedValue, row.iv, encryptionKey) : undefined
+        } catch (error) {
+          throw new SecretDecryptError(key, error)
+        }
 
         const next = mutate(current)
         if (next === undefined) return { wrote: false }

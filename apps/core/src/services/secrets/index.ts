@@ -1,5 +1,6 @@
 export {
   SecretStore,
+  SecretDecryptError,
   getSecretStore,
   resetSecretStore,
   SECRET_CHANGED_CHANNEL,

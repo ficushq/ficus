@@ -16,6 +16,7 @@ import {
   selectOAuthOption,
   type OAuthNeed,
   type ProviderAuthEntry,
+  type ClaudeCodeStatus,
   type ProviderCatalogEntry,
   type ProviderAccountEntry,
   detectCompatibleServers,
@@ -43,7 +44,7 @@ import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, SkeletonLine } from '../loading/Skeleton'
 import { ProviderAccountActions } from './ProviderAccountActions'
 import { ProviderDirectoryCard } from './ProviderDirectoryCard'
-import { ClaudeCodeProviderCard } from './ClaudeCodeProviderCard'
+import { ClaudeCodeAccountSetup } from './ClaudeCodeAccountSetup'
 import { SearchIcon } from '../icons'
 
 /**
@@ -121,6 +122,9 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
   const canWriteProviderAuth = !permissionsLoading && can('provider-auth:write')
   const { data: catalog = [] } = useQuery(queries.providerAuth.catalog())
   const { data: openRouterRouting } = useQuery(queries.providerAuth.openRouterRouting())
+  // Claude Code is offered wherever Core runs on the user's own machine (never Ficus Cloud).
+  const { data: claudeCodeStatus } = useQuery(queries.providerAuth.claudeCode())
+  const claudeCode = claudeCodeStatus?.offered ? claudeCodeStatus : undefined
 
   const [search, setSearch] = useState('')
   const [selectedProvider, setSelectedProvider] = useState('')
@@ -135,7 +139,15 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
     PROVIDER_REGISTRY.flatMap((provider) => [provider.id, provider.oauthId].filter(Boolean) as string[])
   )
   const providerCards: ProviderCard[] = [
-    ...PROVIDER_REGISTRY.map((provider) => {
+    ...PROVIDER_REGISTRY.map((registered) => {
+      const provider =
+        registered.id === 'anthropic' && claudeCode
+          ? {
+              ...registered,
+              name: 'Anthropic / Claude Code',
+              description: 'Claude models with an API key, or through Claude Code on your own Claude plan',
+            }
+          : registered
       const entry = providerMap.get(provider.id)
       const oauthEntry =
         provider.oauthId && provider.oauthId !== provider.id ? providerMap.get(provider.oauthId) : undefined
@@ -188,6 +200,7 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
         entry={card.entry}
         oauthEntry={card.oauthEntry}
         oauthAvailable={card.oauthAvailable}
+        claudeCode={card.provider.id === 'anthropic' ? claudeCode : undefined}
         canWrite={canWriteProviderAuth}
         setup={onboarding}
       />
@@ -301,7 +314,6 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
         </p>
       )}
       <div className="grid items-stretch gap-4 md:grid-cols-2">
-        <ClaudeCodeProviderCard canWrite={canWriteProviderAuth} />
         {canWriteProviderAuth && (
           <ProviderDirectoryCard
             providerId="custom"
@@ -540,10 +552,13 @@ export function ProviderRow({
   entry,
   oauthEntry,
   oauthAvailable,
+  claudeCode,
   canWrite = true,
   setup = false,
 }: {
   setup?: boolean
+  /** Claude Code status, for the Anthropic card where it is offered. */
+  claudeCode?: ClaudeCodeStatus
   provider: {
     id: string
     name: string
@@ -565,12 +580,17 @@ export function ProviderRow({
   // Account management is a single generic "Add account" flow: closed, a
   // chooser between API key / OAuth (only when OAuth is available), or one
   // of the two add flows themselves.
-  const [addMode, setAddMode] = useState<'closed' | 'choose' | 'api-key' | 'oauth' | 'oauth-browser'>(() =>
-    setup && canWrite && !entry?.hasCredential && !oauthEntry?.hasCredential
-      ? oauthAvailable
-        ? 'choose'
-        : 'api-key'
-      : 'closed'
+  // Claude Code can be connected while its account is absent or turned off.
+  const claudeCodeConnectable =
+    !!claudeCode && !entry?.accounts?.some((account) => account.kind === 'claude-code' && account.enabled)
+  const hasChoice = oauthAvailable || claudeCodeConnectable
+  const [addMode, setAddMode] = useState<'closed' | 'choose' | 'api-key' | 'oauth' | 'oauth-browser' | 'claude-code'>(
+    () =>
+      setup && canWrite && !entry?.hasCredential && !oauthEntry?.hasCredential
+        ? hasChoice
+          ? 'choose'
+          : 'api-key'
+        : 'closed'
   )
   const entries = [entry, oauthEntry].filter((e): e is ProviderAuthEntry => !!e)
   const configuredEntries = entries.filter((e) => e.hasCredential)
@@ -600,7 +620,7 @@ export function ProviderRow({
         ))}
       {canWrite && !hasAnyAccounts && addMode === 'closed' && (
         <button
-          onClick={() => setAddMode(oauthAvailable ? 'choose' : 'api-key')}
+          onClick={() => setAddMode(hasChoice ? 'choose' : 'api-key')}
           className="ficus-button ficus-button-primary rounded-lg px-3 py-2 text-sm"
         >
           Connect account
@@ -624,12 +644,13 @@ export function ProviderRow({
                 accounts={e.accounts!}
                 canWrite={canWrite}
                 oauthLabel={provider.oauthLabel ?? provider.name}
+                claudeCode={claudeCode}
               />
             </div>
           ))}
           {canWrite && hasAnyAccounts && addMode === 'closed' && (
             <button
-              onClick={() => setAddMode(oauthAvailable ? 'choose' : 'api-key')}
+              onClick={() => setAddMode(hasChoice ? 'choose' : 'api-key')}
               className="ficus-button text-sm text-accent-light hover:text-accent-hover"
             >
               Connect another account
@@ -640,10 +661,15 @@ export function ProviderRow({
             <AddAccountChooser
               oauthLabel={provider.oauthLabel ?? provider.name}
               onChooseApiKey={() => setAddMode('api-key')}
-              onChooseOAuth={() => setAddMode('oauth')}
+              onChooseOAuth={oauthAvailable ? () => setAddMode('oauth') : undefined}
+              onChooseClaudeCode={claudeCodeConnectable ? () => setAddMode('claude-code') : undefined}
               onChooseBrowser={provider.oauthId === 'openai-codex' ? () => setAddMode('oauth-browser') : undefined}
               onCancel={() => setAddMode('closed')}
             />
+          )}
+
+          {canWrite && addMode === 'claude-code' && claudeCode && (
+            <ClaudeCodeAccountSetup status={claudeCode} onDone={closeAdd} onCancel={() => setAddMode('closed')} />
           )}
 
           {canWrite && addMode === 'api-key' && (
@@ -665,30 +691,44 @@ export function ProviderRow({
   )
 }
 
-/** Inline chooser shown after clicking "Add account" on an OAuth-capable provider. */
+/** Inline chooser shown after clicking "Connect account" on a provider with more than an API key. */
 export function AddAccountChooser({
   oauthLabel,
   onChooseApiKey,
   onChooseOAuth,
+  onChooseClaudeCode,
   onChooseBrowser,
   onCancel,
 }: {
   oauthLabel: string
   onChooseApiKey: () => void
-  onChooseOAuth: () => void
+  onChooseOAuth?: () => void
+  /** Anthropic, where Claude Code is offered: use the user's own Claude Code. */
+  onChooseClaudeCode?: () => void
   onChooseBrowser?: () => void
   onCancel: () => void
 }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={onChooseOAuth}
-          className="ficus-button ficus-button-primary rounded-lg px-4 py-2.5 text-sm font-medium"
-        >
-          Login with {oauthLabel}
-        </button>
+        {onChooseClaudeCode && (
+          <button
+            type="button"
+            onClick={onChooseClaudeCode}
+            className="ficus-button ficus-button-primary rounded-lg px-4 py-2.5 text-sm font-medium"
+          >
+            Claude Code (your Claude plan)
+          </button>
+        )}
+        {onChooseOAuth && (
+          <button
+            type="button"
+            onClick={onChooseOAuth}
+            className="ficus-button ficus-button-primary rounded-lg px-4 py-2.5 text-sm font-medium"
+          >
+            Login with {oauthLabel}
+          </button>
+        )}
         <button
           type="button"
           onClick={onChooseApiKey}
@@ -796,12 +836,15 @@ export function ProviderAccountsList({
   accounts,
   canWrite,
   oauthLabel,
+  claudeCode,
 }: {
   providerId: string
   accounts: ProviderAccountEntry[]
   canWrite: boolean
   /** Display name used for the OAuth flow when re-authenticating an existing oauth account row. */
   oauthLabel?: string
+  /** Claude Code status, so a Claude Code account row can say when `claude` is signed out. */
+  claudeCode?: ClaudeCodeStatus
 }) {
   const queryClient = useQueryClient()
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
@@ -897,7 +940,8 @@ export function ProviderAccountsList({
                       'text-xs',
                       !account.enabled
                         ? 'text-muted'
-                        : account.health === 'exhausted'
+                        : account.health === 'exhausted' ||
+                            (account.kind === 'claude-code' && claudeCode && !claudeCode.loggedIn)
                           ? 'text-status-attention-700 dark:text-status-attention-400'
                           : account.kind === 'openai-compatible' && !account.capabilities
                             ? 'text-muted'
@@ -906,11 +950,15 @@ export function ProviderAccountsList({
                   >
                     {!account.enabled
                       ? 'Disabled'
-                      : account.health === 'exhausted'
-                        ? 'Exhausted'
-                        : account.kind === 'openai-compatible' && !account.capabilities
-                          ? 'Unverified'
-                          : 'Available'}
+                      : account.kind === 'claude-code' && claudeCode && !claudeCode.loggedIn
+                        ? claudeCode.installed
+                          ? 'Not signed in'
+                          : 'Not installed'
+                        : account.health === 'exhausted'
+                          ? 'Exhausted'
+                          : account.kind === 'openai-compatible' && !account.capabilities
+                            ? 'Unverified'
+                            : 'Available'}
                   </span>
                   {account.enabled &&
                     account.health === 'exhausted' &&
