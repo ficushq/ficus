@@ -1,4 +1,5 @@
-import { createContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { SNAPS, type Snap } from './chatWindowState'
 
 /*
@@ -31,6 +32,9 @@ export function snapForKey(
   return SNAPS.find((snap) => SNAP_INFO[snap].code === e.code) ?? null
 }
 
+/** The menu's height, px, near enough, for keeping it on screen. */
+const MENU_H = 350
+
 const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const MODIFIERS = MAC ? '⌃⌥' : 'Ctrl+Alt+'
 
@@ -62,11 +66,25 @@ function Diagram({ snap }: { snap: Snap }) {
 export function SnapMenu({ onSnap }: { onSnap: (snap: Snap) => void }) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
   const menuId = useId()
+  // The menu floats over the page beside its button (a small window would clip it), right-aligned below it.
+  const [place, setPlace] = useState<{ top: number; right: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!open) return setPlace(null)
+    const button = root.current?.getBoundingClientRect()
+    // Kept on screen for a window low down (the menu is about MENU_H tall).
+    if (button)
+      setPlace({
+        top: Math.max(8, Math.min(button.bottom + 8, window.innerHeight - MENU_H - 8)),
+        right: Math.max(8, window.innerWidth - button.right - 52),
+      })
+  }, [open])
   useEffect(() => {
     if (!open) return
     const away = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (!root.current?.contains(target) && !menu.current?.contains(target)) setOpen(false)
     }
     document.addEventListener('pointerdown', away)
     return () => document.removeEventListener('pointerdown', away)
@@ -88,42 +106,47 @@ export function SnapMenu({ onSnap }: { onSnap: (snap: Snap) => void }) {
           <path d="M12 4 V20 M12 12 H21" stroke="currentColor" strokeWidth="2" />
         </svg>
       </button>
-      {open && (
-        <div
-          id={menuId}
-          className="g-snap-menu"
-          role="menu"
-          aria-label="Arrange this window"
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              // Close the menu, not the chat.
-              e.stopPropagation()
-              setOpen(false)
-            }
-          }}
-        >
-          {SNAPS.map((snap) => (
-            <button
-              key={snap}
-              type="button"
-              role="menuitem"
-              className="g-snap-item"
-              title={`${SNAP_INFO[snap].label} (${MODIFIERS}${SNAP_INFO[snap].key})`}
-              onClick={() => {
+      {open &&
+        place &&
+        createPortal(
+          <div
+            ref={menu}
+            id={menuId}
+            className="g-snap-menu"
+            style={{ top: place.top, right: place.right }}
+            role="menu"
+            aria-label="Arrange this window"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                // Close the menu, not the chat.
+                e.stopPropagation()
                 setOpen(false)
-                onSnap(snap)
-              }}
-            >
-              <Diagram snap={snap} />
-              <span className="g-snap-label">{SNAP_INFO[snap].label}</span>
-              <kbd className="g-snap-key">
-                {MODIFIERS}
-                {SNAP_INFO[snap].key}
-              </kbd>
-            </button>
-          ))}
-        </div>
-      )}
+              }
+            }}
+          >
+            {SNAPS.map((snap) => (
+              <button
+                key={snap}
+                type="button"
+                role="menuitem"
+                className="g-snap-item"
+                title={`${SNAP_INFO[snap].label} (${MODIFIERS}${SNAP_INFO[snap].key})`}
+                onClick={() => {
+                  setOpen(false)
+                  onSnap(snap)
+                }}
+              >
+                <Diagram snap={snap} />
+                <span className="g-snap-label">{SNAP_INFO[snap].label}</span>
+                <kbd className="g-snap-key">
+                  {MODIFIERS}
+                  {SNAP_INFO[snap].key}
+                </kbd>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

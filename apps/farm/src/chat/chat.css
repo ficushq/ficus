@@ -36,6 +36,8 @@
 /* Header: a painted plank */
 .g-chat-header {
   position: relative;
+  /* Above the chat's body, so the header's menus (window layout) open over the transcript and composer. */
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1055,10 +1057,9 @@
 }
 
 .g-snap-menu {
-  position: absolute;
-  z-index: 3;
-  top: calc(100% + 8px);
-  right: -52px;
+  /* Over the page (a portal), placed below its button, above every window. */
+  position: fixed;
+  z-index: 1300;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
