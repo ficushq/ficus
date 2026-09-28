@@ -22,7 +22,7 @@ export const SKETCH: Drafting = {
   leafWash: 'var(--sk-leaf)',
   leafInk: 'var(--sk-leaf-ink)',
   fruitWash: 'var(--sk-fruit)',
-  letterScale: 1.5,
+  letterScale: 1.25,
 }
 
 /** A Blueprint sprite, drawn in pencil. */
@@ -70,17 +70,28 @@ export const SketchbookGround = memo(function SketchbookGround({ bounds }: { bou
   )
 })
 
-const GLYPHS: Record<BadgeKind, string> = { question: '?', blocked: '!', harvest: '✓' }
+/**
+ * The glyphs in a badge, drawn as pencil strokes centred on the bubble (a handwriting font's "?" and "!"
+ * sit off-centre and lean), each with an optional dot.
+ */
+const GLYPHS: Record<BadgeKind, { d: string; dot?: boolean }> = {
+  question: {
+    d: 'M-3.8 -21.6 Q-3.6 -25.6 0.2 -25.6 Q4.2 -25.6 4.2 -21.9 Q4.2 -19.3 1.2 -17.9 Q0.1 -17.3 0.1 -14.6',
+    dot: true,
+  },
+  blocked: { d: 'M0 -25.4 L0.1 -14.8', dot: true },
+  harvest: { d: 'M-5 -17.4 L-1.4 -13.4 L5.4 -21.6' },
+}
 
 /** A pencilled bubble with a red glyph, anchored at the bottom of its tail. */
 function Badge({ kind }: { kind: BadgeKind }) {
+  const glyph = GLYPHS[kind]
   return (
     <g className="ln-float">
       <Path d="M-3 -7 L0 0 L3 -7" fill={BG} stroke={FG} strokeLinejoin="round" />
       <Circle cy={-17} r={11} fill={BG} stroke={FG} />
-      <text y={-10.5} textAnchor="middle" fontFamily="var(--ln-letter)" fontSize={19} fontWeight={700} fill={ACCENT}>
-        {GLYPHS[kind]}
-      </text>
+      <Path d={glyph.d} fill="none" stroke={ACCENT} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+      {glyph.dot && <Circle cy={-10.6} r={1.5} fill={ACCENT} stroke="none" />}
     </g>
   )
 }
