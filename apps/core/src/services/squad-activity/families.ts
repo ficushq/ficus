@@ -43,7 +43,7 @@ import {
  *
  * Adding a family:
  * 1. Add the name to `SquadActivitySourceFamily` (types.ts) and allocate its
- *    lane numbers in @tau/shared.
+ *    lane numbers in @ficus/shared.
  * 2. Write its snapshot loader + source-window pager (source-loaders.ts) and
  *    its pure extractor (extractors.ts).
  * 3. Register the entry below — the compiler forces this step.

@@ -311,9 +311,9 @@ describe('handleBash', () => {
   it('sources .tau/.env when sourceEnv is true', async () => {
     const tauDir = join(testDir, '.tau')
     mkdirSync(tauDir, { recursive: true })
-    writeFileSync(join(tauDir, '.env'), 'TAU_SECRET=from-env-file\n')
+    writeFileSync(join(tauDir, '.env'), 'FICUS_SECRET=from-env-file\n')
 
-    const resp = handleBash({ command: 'echo $TAU_SECRET', cwd: testDir, sourceEnv: true, activateDevbox: false })
+    const resp = handleBash({ command: 'echo $FICUS_SECRET', cwd: testDir, sourceEnv: true, activateDevbox: false })
     const { stdout } = collectOutput(await consumeSSE(resp))
     expect(stdout.trim()).toBe('from-env-file')
   })
@@ -321,10 +321,10 @@ describe('handleBash', () => {
   it('does not source .tau/.env when sourceEnv is false', async () => {
     const tauDir = join(testDir, '.tau')
     mkdirSync(tauDir, { recursive: true })
-    writeFileSync(join(tauDir, '.env'), 'TAU_SECRET=should-not-appear\n')
+    writeFileSync(join(tauDir, '.env'), 'FICUS_SECRET=should-not-appear\n')
 
     const resp = handleBash({
-      command: 'echo "${TAU_SECRET:-empty}"',
+      command: 'echo "${FICUS_SECRET:-empty}"',
       cwd: testDir,
       sourceEnv: false,
       activateDevbox: false,
@@ -766,15 +766,15 @@ describe('handleBash', () => {
   })
 
   describe('VM box: logical cwd is rebased onto the box HOME', () => {
-    const originalBoxHome = process.env.TAU_BOX_HOME
-    const originalDevboxDir = process.env.TAU_DEVBOX_DIR
+    const originalBoxHome = process.env.FICUS_BOX_HOME
+    const originalDevboxDir = process.env.FICUS_DEVBOX_DIR
     const originalDevboxLog = process.env.DEVBOX_LOG
     const originalPath = process.env.PATH
     afterEach(() => {
-      if (originalBoxHome !== undefined) process.env.TAU_BOX_HOME = originalBoxHome
-      else delete process.env.TAU_BOX_HOME
-      if (originalDevboxDir !== undefined) process.env.TAU_DEVBOX_DIR = originalDevboxDir
-      else delete process.env.TAU_DEVBOX_DIR
+      if (originalBoxHome !== undefined) process.env.FICUS_BOX_HOME = originalBoxHome
+      else delete process.env.FICUS_BOX_HOME
+      if (originalDevboxDir !== undefined) process.env.FICUS_DEVBOX_DIR = originalDevboxDir
+      else delete process.env.FICUS_DEVBOX_DIR
       if (originalDevboxLog !== undefined) process.env.DEVBOX_LOG = originalDevboxLog
       else delete process.env.DEVBOX_LOG
       if (originalPath !== undefined) process.env.PATH = originalPath
@@ -793,8 +793,8 @@ describe('handleBash', () => {
         '#!/usr/bin/env bash\nprintf "%s|%s\\n" "$PWD" "$*" >> "$DEVBOX_LOG"\nexit 0\n'
       )
       chmodSync(join(bin, 'devbox'), 0o755)
-      process.env.TAU_BOX_HOME = testDir
-      process.env.TAU_DEVBOX_DIR = devboxDir
+      process.env.FICUS_BOX_HOME = testDir
+      process.env.FICUS_DEVBOX_DIR = devboxDir
       process.env.DEVBOX_LOG = log
       process.env.PATH = `${bin}:${process.env.PATH}`
 
@@ -813,11 +813,11 @@ describe('handleBash', () => {
 
     it('rebases a logical /private cwd to ~/.private before spawning', async () => {
       // The vm coding tools send a LOGICAL cwd (/private); box-provision lays the
-      // real dir out under HOME. With TAU_BOX_HOME set the server must rebase it,
+      // real dir out under HOME. With FICUS_BOX_HOME set the server must rebase it,
       // else `bash` cd's into a non-existent (or root-owned) path and every op fails.
       const privateDir = join(testDir, '.private')
       mkdirSync(privateDir, { recursive: true })
-      process.env.TAU_BOX_HOME = testDir
+      process.env.FICUS_BOX_HOME = testDir
 
       const resp = handleBash({ command: 'pwd', cwd: '/private', sourceEnv: false, activateDevbox: false })
       const { stdout, exitCode } = collectOutput(await consumeSSE(resp))

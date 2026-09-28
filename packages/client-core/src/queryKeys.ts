@@ -1,4 +1,4 @@
-import type { NormalizedSquadActivityFilters } from '@tau/shared'
+import type { NormalizedSquadActivityFilters } from '@ficus/shared'
 /**
  * Centralized query key definitions (shared between web and mobile).
  *

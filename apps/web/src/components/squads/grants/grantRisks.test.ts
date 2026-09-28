@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 import { evaluateGrantRisks } from './grantRisks'
-import type { GrantPolicy } from '@tau/shared'
+import type { GrantPolicy } from '@ficus/shared'
 
 describe('evaluateGrantRisks', () => {
   it('returns no risks for a tightly scoped grant', () => {

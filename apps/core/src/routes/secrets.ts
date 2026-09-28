@@ -53,7 +53,7 @@ app.get('/', requireSecretListAccess(), async (c) => {
         secretAccessible(heldPermissions, secret.key, 'read')
     ),
     managedKeys: [...getPublicManagedSecretKeys()].sort(),
-    // Instance-level flag (TAU_MANAGED=1), NOT a per-key one. Some credentials
+    // Instance-level flag (FICUS_MANAGED=1), NOT a per-key one. Some credentials
     // the platform provides never appear in `managedKeys` because they are not
     // delivered as managed env vars (the exe.dev account SSH key ships as a
     // file the tenant's setup config points at). The UI needs to know it is on

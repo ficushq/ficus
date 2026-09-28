@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { deliveryPullRequests } from '@tau/shared'
+import { deliveryPullRequests } from '@ficus/shared'
 import { db, workStreams, workStreamFlowRuns } from '../../../db'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { awaitsCodeHostDelivery } from '../../workflows/delivery-state'

@@ -2,7 +2,7 @@ import type { Context } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { primaryWebOrigin } from './web-origins'
 
-export const SESSION_COOKIE_NAME = 'tau_session'
+export const SESSION_COOKIE_NAME = 'ficus_session'
 // Matches the session row TTL (User.createSession default of 30 days).
 const SESSION_MAX_AGE_S = 30 * 24 * 60 * 60
 
@@ -21,7 +21,7 @@ export function getSessionCookie(c: Context): string | undefined {
 }
 
 // Best-effort registrable domain (eTLD+1) via the last two labels. Good enough to
-// distinguish "same site, different subdomain" (e.g. noah / api-noah .hiretau.ai)
+// distinguish "same site, different subdomain" (e.g. noah / api-noah .ficus.sh)
 // from a genuinely different site; PSL edge cases (e.g. *.co.uk) can be overridden
 // by deploying web + API on the same host.
 function registrableDomain(host: string): string {

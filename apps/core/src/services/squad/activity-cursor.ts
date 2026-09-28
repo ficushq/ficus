@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { SQUAD_ACTIVITY_LANES, type SquadActivityKind, type SquadActivityLane } from '@tau/shared'
+import { SQUAD_ACTIVITY_LANES, type SquadActivityKind, type SquadActivityLane } from '@ficus/shared'
 
 export class InvalidActivityCursorError extends Error {}
 export class ActivityCursorExpiredError extends Error {}

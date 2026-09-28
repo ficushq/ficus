@@ -1024,7 +1024,7 @@ describe('agents service', () => {
     it('rejects dormant correspondence accepted during an earlier dormancy episode', async () => {
       const warmup = await import('../services/sandbox/agent-warmup')
       const ensure = spyOn(warmup, 'ensureAgentSandbox').mockResolvedValue('ensured')
-      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       try {
         await makeDormant(agent)
@@ -1080,7 +1080,7 @@ describe('agents service', () => {
       async (blockedStage) => {
         const agentWarmup = await import('../services/sandbox/agent-warmup')
         const ensure = spyOn(agentWarmup, 'ensureAgentSandbox').mockResolvedValue('ensured')
-        const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+        const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
         const agent = await Agent.create({ agentTypeId: testAgentTypeId })
         let admission: Promise<Execution> | undefined
         let settled = false
@@ -1359,7 +1359,7 @@ describe('agents service', () => {
       const mintedGenerations: Array<string | undefined> = []
       const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockImplementation(async (options = {}) => {
         mintedGenerations.push(options.expectedResourceGeneration)
-        return 'tau_agent_test'
+        return 'ficus_agent_test'
       })
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       await agent.update({ status: 'dormant', dormantAt: new Date() })
@@ -1443,7 +1443,7 @@ describe('agents service', () => {
         currentGeneration = ((candidate.metadata as Record<string, unknown>).resourceGeneration as string) ?? ''
         return 'ensured'
       })
-      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       const episodeId = crypto.randomUUID()
       await seedAgentLifecycleForTest(agent, {
@@ -1814,7 +1814,7 @@ describe('agents service', () => {
       })
       const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockImplementation(async function (this: Agent) {
         minted.push(this.id)
-        return 'tau_agent_test'
+        return 'ficus_agent_test'
       })
       try {
         const agent = await Agent.create({ agentTypeId: testAgentTypeId })
@@ -1845,7 +1845,7 @@ describe('agents service', () => {
     ] as const)('completes wake after intentional sandbox result %s', async (ensureResult, expected) => {
       const agentWarmup = await import('../services/sandbox/agent-warmup')
       const ensure = spyOn(agentWarmup, 'ensureAgentSandbox').mockResolvedValue(ensureResult)
-      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       await makeDormant(agent)
       const completionId = await db.transaction(async (tx) => {
@@ -1867,7 +1867,7 @@ describe('agents service', () => {
     it('does not clear wake completion when dormancy wins the final clear boundary', async () => {
       const agentWarmup = await import('../services/sandbox/agent-warmup')
       const ensure = spyOn(agentWarmup, 'ensureAgentSandbox').mockResolvedValue('ensured')
-      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
       const parent = await Agent.create({ agentTypeId: testAgentTypeId })
       const child = await Agent.create({ agentTypeId: testAgentTypeId, parentAgentId: parent.id })
       await child.update({ status: 'dormant', dormantAt: new Date() })
@@ -1891,7 +1891,7 @@ describe('agents service', () => {
     it('does not let a stale wake completion clear a newer wake episode', async () => {
       const agentWarmup = await import('../services/sandbox/agent-warmup')
       const ensure = spyOn(agentWarmup, 'ensureAgentSandbox').mockResolvedValue('ensured')
-      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
       const parent = await Agent.create({ agentTypeId: testAgentTypeId })
       const child = await Agent.create({ agentTypeId: testAgentTypeId, parentAgentId: parent.id })
       await child.update({ status: 'dormant', dormantAt: new Date() })
@@ -1957,7 +1957,7 @@ describe('agents service', () => {
       const dormant = await Agent.mustFind(agent.id)
       const episodeId = (dormant.metadata as Record<string, unknown>).dormancyEpisodeId
       const ensure = spyOn(warmup, 'ensureAgentSandbox').mockResolvedValue('ensured')
-      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('tau_agent_test')
+      const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
 
       try {
         await dormant.finishCompaction()

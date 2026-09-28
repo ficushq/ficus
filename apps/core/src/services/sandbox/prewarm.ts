@@ -19,7 +19,7 @@ export async function prewarmSandbox(
 }
 
 export function prewarmSandboxBackground(squadId: string): void {
-  if (process.env.TAU_TEST_MODE === '1') return
+  if (process.env.FICUS_TEST_MODE === '1') return
   prewarmSandbox(squadId).catch((error) => {
     log.error(`Background sandbox prewarm failed for squad ${squadId}:`, error)
   })

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
+import { DOCS_MODE_STORAGE_KEY } from '../../../packages/shared/src/browser-keys'
 
 const script = readFileSync(new URL('../src/scripts/docs-mode.js', import.meta.url), 'utf8')
 
@@ -11,7 +12,7 @@ async function fixture(
   // Owned DOM only: never install browser globals into Bun's process.
   const window = new Window({ url: `https://docs.example.test${options.path ?? '/'}` })
   try {
-    if (options.stored) window.localStorage.setItem('tau-docs-mode', options.stored)
+    if (options.stored) window.localStorage.setItem('ficus-docs-mode', options.stored)
     if (options.blockedStorage) {
       Object.defineProperty(window, 'localStorage', {
         get() {
@@ -39,10 +40,15 @@ async function fixture(
   }
 }
 
+test('the inline script stores the mode under the shared ficus key', () => {
+  expect(DOCS_MODE_STORAGE_KEY).toBe('ficus-docs-mode')
+  expect(script).toContain(`const storageKey = '${DOCS_MODE_STORAGE_KEY}'`)
+})
+
 test('shared URL wins over saved mode, retaining unrelated query and fragment', async () => {
   await fixture({ path: '/?mode=cloud&from=share#setup', stored: 'self-hosted' }, (w) => {
     expect(w.document.documentElement.dataset.docsMode).toBe('cloud')
-    expect(w.localStorage.getItem('tau-docs-mode')).toBe('cloud')
+    expect(w.localStorage.getItem('ficus-docs-mode')).toBe('cloud')
     expect(w.location.search).toBe('?mode=cloud&from=share')
     expect(w.location.hash).toBe('#setup')
   })

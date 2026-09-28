@@ -2,23 +2,23 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { homedir } from 'os'
 import { createPrivateKey, createPublicKey, sign } from 'crypto'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 function privateRoot(): string {
-  const configured = process.env.TAU_PRIVATE_DIR
+  const configured = process.env.FICUS_PRIVATE_DIR
   if (configured) return expandTilde(configured)
   return existsSync('/private') ? '/private' : join(homedir(), '.private')
 }
 
 /** Path to this agent's PKCS8 Ed25519 private key (constant per-agent identity, mounted at /private). */
 export function identityPemPath(): string {
-  const configured = process.env.TAU_IDENTITY_PEM
+  const configured = process.env.FICUS_IDENTITY_PEM
   return configured ? expandTilde(configured) : join(privateRoot(), 'identity.pem')
 }
 
 /** Path to the small JSON cache holding the registered handle + full amtp:// address. */
 export function identityCachePath(): string {
-  const configured = process.env.TAU_IDENTITY_CACHE
+  const configured = process.env.FICUS_IDENTITY_CACHE
   return configured ? expandTilde(configured) : join(privateRoot(), '.tau', 'identity.json')
 }
 
@@ -33,7 +33,7 @@ export function readIdentityPrivateKeyPem(): string {
 /**
  * Detached Ed25519 signature (base64) over raw bytes. For Ed25519 the algorithm
  * argument MUST be null — byte-for-byte identical to apps/core crypto.ts signEnvelope,
- * so the server verifies it over the same @tau/shared canonical bytes.
+ * so the server verifies it over the same @ficus/shared canonical bytes.
  */
 export function signAgentSig(privateKeyPem: string, bytes: Uint8Array): string {
   return sign(null, bytes, createPrivateKey(privateKeyPem)).toString('base64')

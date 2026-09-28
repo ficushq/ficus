@@ -1,4 +1,4 @@
-import type { DeliveryMode } from '@tau/shared'
+import type { DeliveryMode } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import {
   formatInboxMessageSender,

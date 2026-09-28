@@ -8,7 +8,7 @@ import {
   sandboxProvisionRecoveries,
   workStreams,
 } from '../db/schema'
-import { Execution as ExecutionJson, ExecutionStatus, SessionUsage, AgentStatus, QuestionData } from '@tau/shared'
+import { Execution as ExecutionJson, ExecutionStatus, SessionUsage, AgentStatus, QuestionData } from '@ficus/shared'
 import type { SandboxProvisionErrorCode } from '../services/sandbox/k8s/provision-errors'
 import type { ProvisionFailureCode } from '../services/sandbox/k8s/provision-failure'
 import type { AdmissionLease } from '../services/maintenance/admission-reservation'

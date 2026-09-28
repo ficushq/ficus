@@ -91,8 +91,8 @@ beforeAll(async () => {
     .insert(settings)
     .values({ key: ENABLED_KEY, value: 'true' })
     .onConflictDoUpdate({ target: settings.key, set: { value: 'true' } })
-  previousKey = process.env.TAU_ENCRYPTION_KEY
-  process.env.TAU_ENCRYPTION_KEY ??= '0'.repeat(64)
+  previousKey = process.env.FICUS_ENCRYPTION_KEY
+  process.env.FICUS_ENCRYPTION_KEY ??= '0'.repeat(64)
   await getSecretStore().initialize()
 })
 
@@ -108,8 +108,8 @@ afterAll(async () => {
   for (const id of created.users) await db.delete(users).where(eq(users.id, id))
   if (previousEnabled === undefined) await db.delete(settings).where(eq(settings.key, ENABLED_KEY))
   else await db.update(settings).set({ value: previousEnabled }).where(eq(settings.key, ENABLED_KEY))
-  if (previousKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-  else process.env.TAU_ENCRYPTION_KEY = previousKey
+  if (previousKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+  else process.env.FICUS_ENCRYPTION_KEY = previousKey
   await getSecretStore().initialize()
 })
 

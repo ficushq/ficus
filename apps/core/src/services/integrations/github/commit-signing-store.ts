@@ -52,7 +52,7 @@ export async function readGitHubSigningRecord(connectionId: string): Promise<Git
 
 /**
  * The GitHub connection a squad's `git` uses: its default assignment, the same
- * one `tau integration exec github --squad` resolves without `--connection`.
+ * one `ficus integration exec github --squad` resolves without `--connection`.
  * Validation freshness is deliberately not required: env files are rendered at
  * arbitrary moments and must not drop signing because a 15-minute validation
  * window lapsed; the credential helper enforces usability per push.
@@ -76,7 +76,7 @@ export async function defaultGitHubConnectionId(squadId: string): Promise<string
   return row?.id
 }
 
-/** Enabled, authenticated GitHub connections this Tau user connected or last reconnected. */
+/** Enabled, authenticated GitHub connections this Ficus user connected or last reconnected. */
 export async function githubConnectionIdsForUser(userId: string): Promise<string[]> {
   const rows = await db
     .select({ id: integrationConnections.id })

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { AssistantEntry, AssistantMailbox, AssistantMailboxUpdate } from '@tau/shared'
+import type { AssistantEntry, AssistantMailbox, AssistantMailboxUpdate } from '@ficus/shared'
 import { buildAssistantCatchUpBatch, type AssistantCatchUpBatch } from '../voice/assistantCatchUp'
 import { useStableRef } from './useStableRef'
 

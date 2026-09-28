@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq, like } from 'drizzle-orm'
-import { type WorkflowDefinition, type WorkflowPreset, workflowPresetSchema } from '@tau/shared'
+import { type WorkflowDefinition, type WorkflowPreset, workflowPresetSchema } from '@ficus/shared'
 import { agentTypes, db, squads, workStreams, workStreamFlowRuns, workStreamFlowTransitions, workflows } from '../../db'
 import { WorkflowSync } from '../config-sync/workflow-sync'
 import {

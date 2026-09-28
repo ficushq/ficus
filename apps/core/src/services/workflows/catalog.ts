@@ -9,7 +9,7 @@ import {
   type WorkflowDefinition,
   type WorkflowPreset,
   type ResolvedWorkflow,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { agentTypes, db, modelTiers, workflows, type DbTx } from '../../db'
 
 type Store = typeof db | DbTx

@@ -38,7 +38,7 @@ for the full sharing/live-link/moderation contract.
 
 ## Conflict and recovery contract
 
-- `tau-theme-id`, `tau-appearance`, `tau-custom-theme` and the surface snapshot
+- `ficus-theme-id`, `ficus-appearance`, `ficus-custom-theme` and the surface snapshot
   remain the synchronous pre-paint source of truth. No network runs in the
   bootstrap script. Its generated output is refreshed for shared-module bundling;
   its behavior is unchanged.
@@ -46,7 +46,7 @@ for the full sharing/live-link/moderation contract.
   or Reset action is a deliberate choice that is saved on the device and pushed to
   the account. OS appearance changes, previews and hydration are not. Devices that
   want different looks use **System** appearance.
-- Older versions let a device keep its own theme with `tau-theme-local-override`.
+- Older versions let a device keep its own theme with `ficus-theme-local-override`.
   That flag is removed on load and ignored; a device that had it adopts the account
   theme on its next read, and its cached choice is never uploaded.
 - After a paint opportunity (two animation frames), an authenticated session reads

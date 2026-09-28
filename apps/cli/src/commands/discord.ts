@@ -1,11 +1,11 @@
 import { Command } from 'commander'
 import { outputError } from '../output'
 
-import { TAU_DISCORD_COMMANDS } from '@tau/shared/discord-commands'
+import { FICUS_DISCORD_COMMANDS } from '@ficus/shared/discord-commands'
 
 // The command set is shared with the server, which registers it whenever a
 // Discord connection is saved; these CLI commands remain as diagnostics.
-const TAU_COMMANDS = TAU_DISCORD_COMMANDS
+const FICUS_COMMANDS = FICUS_DISCORD_COMMANDS
 
 function getDiscordConfig(options: { token?: string; appId?: string; guildId?: string }) {
   const token = options.token || process.env.DISCORD_BOT_TOKEN
@@ -55,7 +55,7 @@ async function registerCommands(token: string, url: string, scope: string): Prom
       Authorization: `Bot ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(TAU_COMMANDS),
+    body: JSON.stringify(FICUS_COMMANDS),
   })
 
   if (!response.ok) {
@@ -88,7 +88,7 @@ export function registerDiscordCommands(program: Command) {
       .option('--guild-id <id>', 'Discord guild ID for guild-specific commands (or DISCORD_GUILD_ID env var)')
   }
 
-  // tau discord register
+  // ficus discord register
   addDiscordOptions(
     discord
       .command('register')
@@ -127,7 +127,7 @@ export function registerDiscordCommands(program: Command) {
     }
   })
 
-  // tau discord clear
+  // ficus discord clear
   addDiscordOptions(
     discord
       .command('clear')
@@ -177,7 +177,7 @@ export function registerDiscordCommands(program: Command) {
     }
   })
 
-  // tau discord status
+  // ficus discord status
   addDiscordOptions(discord.command('status').description('Show registered slash commands')).action(async (options) => {
     try {
       const config = getDiscordConfig(options)
@@ -250,8 +250,8 @@ export function registerDiscordCommands(program: Command) {
             console.log(`   - /${cmd.name}`)
           }
           console.log('\n   Users will see these commands twice. Run one of:')
-          console.log('   tau discord clear --scope global  (keep guild only)')
-          console.log('   tau discord clear --scope guild   (keep global only)')
+          console.log('   ficus discord clear --scope global  (keep guild only)')
+          console.log('   ficus discord clear --scope guild   (keep global only)')
         }
       }
     } catch (error) {

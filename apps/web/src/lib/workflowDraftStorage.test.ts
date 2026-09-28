@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { createBlankWorkflow } from '@tau/shared'
+import { createBlankWorkflow } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { workflowDraftKey, readWorkflowDraft } from './workflowDraftStorage'
 

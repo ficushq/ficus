@@ -1,5 +1,5 @@
 import { describe, expect, it, spyOn } from 'bun:test'
-import type { AgentStatus } from '@tau/shared'
+import type { AgentStatus } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { boxUnixUser } from './box-paths'
 import {
@@ -89,9 +89,9 @@ const now = () => NOW
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-/** Run `fn` with TAU_MACHINE_PROBE_CONCURRENCY set to `value` (or unset), restored after. */
+/** Run `fn` with FICUS_MACHINE_PROBE_CONCURRENCY set to `value` (or unset), restored after. */
 async function withProbeConcurrency(value: string | undefined, fn: () => Promise<void>) {
-  const key = 'TAU_MACHINE_PROBE_CONCURRENCY'
+  const key = 'FICUS_MACHINE_PROBE_CONCURRENCY'
   const prev = process.env[key]
   if (value === undefined) delete process.env[key]
   else process.env[key] = value
@@ -432,7 +432,7 @@ describe('sweepMachineHealth', () => {
     expect(updated).toEqual(['m-good'])
   })
 
-  it('(a) caps concurrent probes at TAU_MACHINE_PROBE_CONCURRENCY across the fleet', async () => {
+  it('(a) caps concurrent probes at FICUS_MACHINE_PROBE_CONCURRENCY across the fleet', async () => {
     const machines = [1, 2, 3, 4].map((n) => makeMachine({ id: `m-${n}`, status: 'ready' }))
     await withProbeConcurrency('2', async () => {
       const t = concurrencyTrackingDeps(machines)

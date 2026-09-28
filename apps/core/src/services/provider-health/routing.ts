@@ -3,7 +3,7 @@ import {
   type ProviderHealthRecord,
   type ProviderRoute,
   type RouteDecision,
-} from '@tau/shared/provider-health'
+} from '@ficus/shared/provider-health'
 import { listAccounts, type AccountStoreV1 } from '../agent/account-store'
 
 /** Build and aggregate a provider's configured concrete routes. */

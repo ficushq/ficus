@@ -1,5 +1,5 @@
 {
-  "name": "@tau/k8s-sandbox",
+  "name": "@ficus/k8s-sandbox",
   "version": "0.2.0",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -15,7 +15,7 @@
     "proto:generate": "buf generate proto"
   },
   "dependencies": {
-    "@tau/shared": "workspace:*",
+    "@ficus/shared": "workspace:*",
     "bun-pty": "^0.4.8",
     "chokidar": "5.0.0",
     "micromatch": "^4.0.8"

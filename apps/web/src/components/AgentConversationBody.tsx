@@ -9,7 +9,7 @@ import { ConfirmButton } from './ConfirmButton'
 import { executionStatusBadgeColors } from '../lib/execution-status'
 import { Badge } from './Badge'
 import { MoreIcon } from './icons'
-import { AGENT_STATUS_ROLE, type ExecutionStatus } from '@tau/shared'
+import { AGENT_STATUS_ROLE, type ExecutionStatus } from '@ficus/shared'
 import { formatTokens } from '../lib/format'
 import { isCodexModelSpec } from '../lib/modelSpec'
 import { queryKeys } from '../queryKeys'
@@ -169,7 +169,7 @@ export function AgentConversation({
                   >
                     {Math.round(usage.context.percent)}%
                   </summary>
-                  <div className="tau-overlay absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-th-border bg-surface p-3 text-xs text-secondary shadow-theme-lg">
+                  <div className="ficus-overlay absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-th-border bg-surface p-3 text-xs text-secondary shadow-theme-lg">
                     <p className="font-medium text-primary">Context used: {Math.round(usage.context.percent)}%</p>
                     <p className="mt-1">
                       {formatTokens(usage.stats.tokens.total)} tokens
@@ -184,7 +184,7 @@ export function AgentConversation({
                     onConfirm={() => stopMutation.mutate()}
                     disabled={stopMutation.isPending || !canRunAgent}
                     label="Stop"
-                    className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
+                    className="ficus-button px-1.5 py-0.5 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
                     confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-danger-700 dark:text-status-danger-300 bg-status-danger-50 dark:bg-status-danger-900/30 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50 rounded transition-colors"
                   />
                 </div>
@@ -196,14 +196,14 @@ export function AgentConversation({
                       onConfirm={() => compactMutation.mutate()}
                       disabled={compactMutation.isPending}
                       label="Compact"
-                      className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
+                      className="ficus-button px-1.5 py-0.5 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
                       confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-progress-700 dark:text-status-progress-300 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 rounded transition-colors"
                     />
                     <ConfirmButton
                       onConfirm={() => resetMutation.mutate()}
                       disabled={resetMutation.isPending}
                       label="Reset"
-                      className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
+                      className="ficus-button px-1.5 py-0.5 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
                       confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-external-wait-700 dark:text-status-external-wait-300 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 hover:bg-status-external-wait-100 dark:hover:bg-status-external-wait-900/50 rounded transition-colors"
                     />
                   </div>
@@ -213,7 +213,7 @@ export function AgentConversation({
                       aria-label="Agent actions"
                       aria-expanded={agentActionsOpen}
                       onClick={() => setAgentActionsOpen((open) => !open)}
-                      className="tau-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
+                      className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
                     >
                       <MoreIcon className="w-4 h-4" />
                     </button>
@@ -226,7 +226,7 @@ export function AgentConversation({
                           }}
                           disabled={compactMutation.isPending}
                           label="Compact"
-                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
+                          className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
                           confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-700 dark:text-status-progress-300 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 rounded transition-colors"
                         />
                         <ConfirmButton
@@ -236,7 +236,7 @@ export function AgentConversation({
                           }}
                           disabled={resetMutation.isPending}
                           label="Reset"
-                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
+                          className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
                           confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-700 dark:text-status-external-wait-300 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 hover:bg-status-external-wait-100 dark:hover:bg-status-external-wait-900/50 rounded transition-colors"
                         />
                       </div>

@@ -1,5 +1,5 @@
-import type { GrantPolicy, GrantPolicyReadScope, GrantPolicyWriteScope, MemorySourceType } from '@tau/shared'
-import { MEMORY_SOURCE_TYPE_LABELS } from '@tau/shared'
+import type { GrantPolicy, GrantPolicyReadScope, GrantPolicyWriteScope, MemorySourceType } from '@ficus/shared'
+import { MEMORY_SOURCE_TYPE_LABELS } from '@ficus/shared'
 
 interface Props {
   policy: GrantPolicy

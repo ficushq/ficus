@@ -93,7 +93,7 @@ describe('smokeConfiguredExtensions', () => {
         ],
         {
           cwd: coreDir,
-          env: { ...process.env, TAU_ROOT: artifactRoot },
+          env: { ...process.env, FICUS_ROOT: artifactRoot },
           timeoutMs: 4500,
         }
       )

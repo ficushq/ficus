@@ -9,7 +9,7 @@ import type { EntityReference } from '../lib/entityReference'
 const agentId = 'abc12345-1234-1234-1234-123456789012'
 const workId = 'def12345-1234-1234-1234-123456789012'
 
-async function fixture(reference: EntityReference, onOpenAgent?: (agent: import('@tau/shared').Agent) => void) {
+async function fixture(reference: EntityReference, onOpenAgent?: (agent: import('@ficus/shared').Agent) => void) {
   // Load lazy modules before installing the DOM's constructor globals.
   await Promise.all([import('./EntityReferencePreview'), import('./EntityReferenceModal')])
   const dom = await acquireDomHarness({ url: 'http://localhost/' })

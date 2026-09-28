@@ -1,5 +1,5 @@
-import { createPeriodicRunner, type PeriodicRunner } from '@tau/shared'
-import { RELAY_MAX_RESPONSE_BYTES, relayStatusResponse, relaySuccessResponse } from '@tau/shared/integration-relay'
+import { createPeriodicRunner, type PeriodicRunner } from '@ficus/shared'
+import { RELAY_MAX_RESPONSE_BYTES, relayStatusResponse, relaySuccessResponse } from '@ficus/shared/integration-relay'
 import type { ZodType } from 'zod'
 import { PlatformRequestError, type platformRequest } from '../../platform/instance-client'
 

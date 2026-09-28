@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import type { SandboxPressure } from '@tau/shared'
+import type { SandboxPressure } from '@ficus/shared'
 import { db } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { isVmRuntime } from '../sandbox/runtime'

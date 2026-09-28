@@ -1,6 +1,6 @@
-import type { ThemePresetScope } from '@tau/shared'
-// Query keys now live in @tau/client-core so web and mobile share one definition.
-export { queryKeys } from '@tau/client-core'
+import type { ThemePresetScope } from '@ficus/shared'
+// Query keys now live in @ficus/client-core so web and mobile share one definition.
+export { queryKeys } from '@ficus/client-core'
 export const desktopQueryKeys = {
   notifications: () => ['desktop', 'notifications'] as const,
   enabled: () => ['desktop', 'notifications-enabled'] as const,
@@ -20,7 +20,7 @@ export const themePresetQueryKeys = {
 
 /**
  * Onboarding has no mobile surface yet, so its keys live here directly
- * instead of in the shared @tau/client-core definitions — same `all` +
+ * instead of in the shared @ficus/client-core definitions — same `all` +
  * per-query-shape convention as everything in queryKeys.
  */
 export const onboardingQueryKeys = {

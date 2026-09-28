@@ -5,13 +5,13 @@ import {
   serializeOAuthCredential,
   type OAuthCredentialBundleV1,
 } from '../authorization/credential-bundle'
-import { NotionClient } from '@tau/shared/oauth-providers/notion/client'
-import { classifyNotionError } from '@tau/shared/oauth-providers'
+import { NotionClient } from '@ficus/shared/oauth-providers/notion/client'
+import { classifyNotionError } from '@ficus/shared/oauth-providers'
 import {
   parseNotionConfiguration,
   safeNotionConfiguration,
   type NotionConnectionConfiguration,
-} from '@tau/shared/oauth-providers/notion/config'
+} from '@ficus/shared/oauth-providers/notion/config'
 
 const CLI_INTEGRITY = 'f7HzeXdh9MPn67Bwlryh28v7ljy9i5yoibA67wFYqh7vezlh4aXCiEonVPuyrkSsv05i6PDITh5UiL/Xk+4i5w=='
 const CLI_SETUP_SCRIPT = [

@@ -35,12 +35,12 @@ describe('resolveRepoRoot', () => {
     expect(fromDist.startsWith('/packages')).toBe(false)
   })
 
-  it('honors TAU_REPO_ROOT override when it contains the entry', () => {
+  it('honors FICUS_REPO_ROOT override when it contains the entry', () => {
     const realRoot = resolveRepoRoot(import.meta.dir, undefined)
     expect(resolveRepoRoot('/nowhere/at/all', realRoot)).toBe(realRoot)
   })
 
-  it('expands a leading ~ in the TAU_REPO_ROOT override', async () => {
+  it('expands a leading ~ in the FICUS_REPO_ROOT override', async () => {
     // The override is only honoured when it actually contains the server
     // entry, so the fixture has to be a real tree under the (fake) home —
     // which expandTilde's optional home parameter threads straight through

@@ -1,6 +1,6 @@
 # K8s Security
 
-Security design for Tau's Kubernetes sandbox system.
+Security design for Ficus's Kubernetes sandbox system.
 
 ## Network Isolation
 
@@ -31,7 +31,7 @@ Sandbox pods can reach:
 | ------------------------ | ------------------------------------------------------ |
 | **DNS** (port 53)        | Required for package installation, git operations      |
 | **Internet** (all ports) | SSH/HTTPS git remotes, package installs, web API calls |
-| **Core API** (port 3000) | Tau CLI inside the sandbox talks back to Core          |
+| **Core API** (port 3000) | Ficus CLI inside the sandbox talks back to Core        |
 
 **Why allow internet egress?** Agent sandboxes need to install packages, clone repos, and run code that may call external APIs on arbitrary ports. Egress excludes private and special-use IPv4 ranges (including cloud metadata/link-local ranges) but otherwise allows all ports to the internet. Kubernetes NetworkPolicy does not portably support FQDN matching, so this cannot be restricted to `github.com`/`ssh.github.com` without CNI-specific policy extensions.
 
@@ -62,7 +62,7 @@ rules:
 
 - `pods/log` is included for debugging but could be removed if not used
 - `persistentvolumeclaims` permissions are retained for potential future use (currently using a shared PVC)
-- `secrets` access is needed for `syncAuthSecret()` which pushes `TAU_PASSWORD` to sandbox pods
+- `secrets` access is needed for `syncAuthSecret()` which pushes `FICUS_PASSWORD` to sandbox pods
 
 ## Sandbox Isolation
 
@@ -74,7 +74,7 @@ Sandbox pods run with the `sysbox-runc` RuntimeClass, which provides:
 - **Docker-in-Docker** — agents can run `docker build` and `docker run` without `--privileged`
 - **No host access** — sysbox prevents access to host devices, kernel modules, and other sensitive resources
 
-The runtime class is configurable via `TAU_K8S_RUNTIME_CLASS`. Set to empty string to disable (not recommended for production).
+The runtime class is configurable via `FICUS_K8S_RUNTIME_CLASS`. Set to empty string to disable (not recommended for production).
 
 ### Path Restrictions
 
@@ -105,18 +105,18 @@ A pod for squad A cannot access squad B's workspace, even though they share the 
 
 ### Core Secrets
 
-Core stores sensitive credentials (API keys, tokens, passwords) encrypted in the database using `TAU_ENCRYPTION_KEY`. These are managed via the Settings UI and never stored in K8s Secrets or ConfigMaps.
+Core stores sensitive credentials (API keys, tokens, passwords) encrypted in the database using `FICUS_ENCRYPTION_KEY`. These are managed via the Settings UI and never stored in K8s Secrets or ConfigMaps.
 
-### Sandbox Auth (`TAU_PASSWORD`)
+### Sandbox Auth (`FICUS_PASSWORD`)
 
-Sandbox pods need to authenticate with the Core API (for Tau CLI). The password flows through:
+Sandbox pods need to authenticate with the Core API (for Ficus CLI). The password flows through:
 
-1. User sets `TAU_PASSWORD` in Settings UI → encrypted in DB
+1. User sets `FICUS_PASSWORD` in Settings UI → encrypted in DB
 2. `K8sPodManager.syncAuthSecret()` pushes it to K8s Secret `tau-sandbox-auth` in the sandboxes namespace
 3. Secret is mounted at `/etc/tau/password` in sandbox pods
-4. Tau CLI reads the mounted file for authentication
+4. Ficus CLI reads the mounted file for authentication
 
-The secret is synced before each pod creation and whenever `TAU_PASSWORD` changes (via `SecretStore.onChange` listener). K8s automatically propagates secret updates to running pods within ~1 minute.
+The secret is synced before each pod creation and whenever `FICUS_PASSWORD` changes (via `SecretStore.onChange` listener). K8s automatically propagates secret updates to running pods within ~1 minute.
 
 ### Git Credentials
 

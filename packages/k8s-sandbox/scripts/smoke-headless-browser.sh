@@ -35,13 +35,13 @@ import platform
 
 assert os.environ.get('TMPDIR') == '/tmp', os.environ.get('TMPDIR')
 assert os.environ.get('LD_LIBRARY_PATH'), 'LD_LIBRARY_PATH must include Nix runtime libs'
-assert os.environ.get('TAU_NIX_LD_LIBRARY_PATH'), 'TAU_NIX_LD_LIBRARY_PATH must be set'
-assert os.environ.get('TAU_NIX_GLIBC_LIBRARY_PATH'), 'TAU_NIX_GLIBC_LIBRARY_PATH must be set'
+assert os.environ.get('FICUS_NIX_LD_LIBRARY_PATH'), 'FICUS_NIX_LD_LIBRARY_PATH must be set'
+assert os.environ.get('FICUS_NIX_GLIBC_LIBRARY_PATH'), 'FICUS_NIX_GLIBC_LIBRARY_PATH must be set'
 assert os.environ.get('PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS') == '1'
 print(platform.machine(), platform.platform())
 print('TMPDIR', os.environ['TMPDIR'])
-print('TAU_NIX_LD_LIBRARY_PATH', os.environ['TAU_NIX_LD_LIBRARY_PATH'])
-print('TAU_NIX_GLIBC_LIBRARY_PATH', os.environ['TAU_NIX_GLIBC_LIBRARY_PATH'])
+print('FICUS_NIX_LD_LIBRARY_PATH', os.environ['FICUS_NIX_LD_LIBRARY_PATH'])
+print('FICUS_NIX_GLIBC_LIBRARY_PATH', os.environ['FICUS_NIX_GLIBC_LIBRARY_PATH'])
 
 import greenlet
 from playwright.sync_api import sync_playwright

@@ -1,4 +1,4 @@
-import { ACTIVE_THEME_TOKENS } from '@tau/shared/theme-schema'
+import { ACTIVE_THEME_TOKENS } from '@ficus/shared/theme-schema'
 
 export type ThemeColors = Readonly<Record<string, string | undefined>>
 

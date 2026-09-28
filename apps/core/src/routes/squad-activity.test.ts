@@ -3,7 +3,7 @@ import { eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { squadsRouter } from './squads'
 import { activityRouter } from './activity'
-import type { SquadActivityItem } from '@tau/shared'
+import type { SquadActivityItem } from '@ficus/shared'
 import { materializeActivityFixtures } from '../test-utils/activity-fixtures'
 import { githubPrLogicalRowId } from '../services/squad-activity/github-pr-fact'
 import { identityMiddleware } from '../middleware/identity'
@@ -590,7 +590,7 @@ test('global and squad APIs serve the same source-generated preview and literal 
   const squad = await seedSquad('inline-preview')
   const [stream] = await db
     .insert(workStreams)
-    .values({ squadId: squad.id, title: 'See [**#241**](tau:ws:241)' })
+    .values({ squadId: squad.id, title: 'See [**#241**](ficus:ws:241)' })
     .returning()
   await repairFixtures()
   for (const url of [`/api/squads/${squad.id}/activity`, '/api/activity']) {
@@ -601,7 +601,7 @@ test('global and squad APIs serve the same source-generated preview and literal 
     expect(item.summary).toBe(`[#${stream.number} created] See #241`)
     expect(item.preview).toEqual([
       { text: `[#${stream.number} created] See ` },
-      { text: '#241', bold: true, href: 'tau:ws:241' },
+      { text: '#241', bold: true, href: 'ficus:ws:241' },
     ])
   }
 })

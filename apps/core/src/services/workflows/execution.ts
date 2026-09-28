@@ -16,7 +16,7 @@ import {
   workflowCommandSchema,
   type WorkflowSource,
   type WorkflowRun,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   db,
   agents,
@@ -43,7 +43,7 @@ import { resolveStoredWorkflow, validateWorkflowParticipants, WorkflowError, wor
 import { codeHostingRegistry } from '../integrations/code-hosting'
 import { recordDeliveryVerification } from '../work-streams/delivery-pull-requests'
 import { recordChangeRequestBinding } from '../work-streams/change-request-binding'
-import { resolveBranchChangeRequest } from '@tau/shared'
+import { resolveBranchChangeRequest } from '@ficus/shared'
 
 const log = createLogger('workflows')
 

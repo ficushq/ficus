@@ -40,8 +40,8 @@ describe('onboarding routes', () => {
     admin = await createTestAdmin({ prefix })
     unprivileged = await createTestUser({ prefix })
 
-    priorEncryptionKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
+    priorEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
     priorGitHubToken = process.env.GITHUB_TOKEN
     delete process.env.GITHUB_TOKEN
     resetSecretStore()
@@ -54,8 +54,8 @@ describe('onboarding routes', () => {
     try {
       await cleanupTestRbac(prefix)
     } finally {
-      if (priorEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-      else process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey
+      if (priorEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+      else process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey
       if (priorGitHubToken === undefined) delete process.env.GITHUB_TOKEN
       else process.env.GITHUB_TOKEN = priorGitHubToken
       resetSecretStore()

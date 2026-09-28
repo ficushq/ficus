@@ -1,4 +1,4 @@
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { InboxMessage } from '../../../entities/InboxMessage'
 
 export type OAuthControlPlaneAlertCode = 'broker_unauthorized' | 'insufficient_scope' | 'client_authority_mismatch'

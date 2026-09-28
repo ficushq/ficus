@@ -1,7 +1,7 @@
-// Thin shim over @tau/client-core (see ./clientInstance).
+// Thin shim over @ficus/client-core (see ./clientInstance).
 import { client } from './clientInstance'
 
-export type { DeviceAuthorizationPreview, DeviceSummary } from '@tau/client-core'
+export type { DeviceAuthorizationPreview, DeviceSummary } from '@ficus/client-core'
 
 export const listDevices = client.auth.listDevices
 export const revokeDevice = client.auth.revokeDevice

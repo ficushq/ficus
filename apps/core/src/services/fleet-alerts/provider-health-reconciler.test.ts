@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
-import type { ProviderHealthRecord, ProviderRoute } from '@tau/shared/provider-health'
+import type { ProviderHealthRecord, ProviderRoute } from '@ficus/shared/provider-health'
 import { db } from '../../db'
 import { fleetIncidentNotifications, fleetIncidents } from '../../db/schema'
 import { reconcileProviderHealthRecords } from './provider-health-reconciler'

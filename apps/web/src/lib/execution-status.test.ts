@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ExecutionStatus } from '@tau/shared'
+import type { ExecutionStatus } from '@ficus/shared'
 import { executionStatusBadgeColors, executionStatusTextColors } from './execution-status'
 
 const cases: Array<[ExecutionStatus, string, string]> = [

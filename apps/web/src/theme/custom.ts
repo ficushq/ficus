@@ -1,10 +1,10 @@
-import { ACTIVE_THEME_TOKENS, type EffectiveAppearance, type StoredThemeSelection } from '@tau/shared/theme-schema'
+import { ACTIVE_THEME_TOKENS, type EffectiveAppearance, type StoredThemeSelection } from '@ficus/shared/theme-schema'
 import {
   CUSTOM_THEME_MAX_BYTES,
   compileCustomTheme,
   validateCustomTheme,
   type CustomThemeDocument,
-} from '@tau/shared/custom-theme'
+} from '@ficus/shared/custom-theme'
 import { applyResolvedTheme } from './apply'
 import { BUILTIN_CSS_FINGERPRINT } from './builtinFingerprint'
 import { fnv1a } from './fnv'
@@ -16,24 +16,30 @@ import {
   readThemeSelection,
   type ThemeStorage,
 } from './storage'
+import {
+  CUSTOM_THEME_RESOLVED_STORAGE_KEY,
+  CUSTOM_THEME_STORAGE_KEY,
+  THEME_PRESET_ID_STORAGE_KEY,
+  THEME_PRESET_OWNER_ID_STORAGE_KEY,
+} from '@ficus/shared/browser-keys'
 
-export const CUSTOM_THEME_KEY = 'tau-custom-theme'
+export const CUSTOM_THEME_KEY = CUSTOM_THEME_STORAGE_KEY
 /** Device-local only (not part of pre-paint): remembers which library preset the
  * active document came from, so the UI can restore the ring/active state on reload
  * without a network round-trip. A dangling value (deleted preset) is harmless —
  * callers treat an unmatched id as detached. */
-export const PRESET_ID_KEY = 'tau-theme-preset-id'
+export const PRESET_ID_KEY = THEME_PRESET_ID_STORAGE_KEY
 /** Phase 2: the owner of `PRESET_ID_KEY`'s preset, populated whenever a preset
  * (own or shared) is applied. Deliberately retained even when a live-link
  * refresh clears `PRESET_ID_KEY` on a 404 — see ThemePreference.presetOwnerId
  * for why that combination (id null, owner set) is what marks "detached from
  * a shared theme" apart from an ordinary silently-detached own preset. */
-export const PRESET_OWNER_ID_KEY = 'tau-theme-preset-owner-id'
+export const PRESET_OWNER_ID_KEY = THEME_PRESET_OWNER_ID_STORAGE_KEY
 /** A palette-derived document needs getComputedStyle to derive (see
  * applyCustomTheme below), which the synchronous pre-paint script cannot trust
  * yet — so it stores the LAST RESOLVED result here instead, keyed to the exact
  * (document, resolved appearance) pair. See readResolvedSnapshot/persistResolvedSnapshot. */
-export const RESOLVED_SNAPSHOT_KEY = 'tau-custom-theme-resolved'
+export const RESOLVED_SNAPSHOT_KEY = CUSTOM_THEME_RESOLVED_STORAGE_KEY
 /** Generous but explicit safety cap: a full palette-derived theme can touch
  * most of the ~431-token registry (up to 3 compiled properties each), which a
  * real theme approaches but should never exceed by a wide margin. Exceeding

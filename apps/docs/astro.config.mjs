@@ -4,7 +4,7 @@ import { prefixDocsLinks } from './scripts/embedded-links.mjs'
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 
-const embedded = process.env.TAU_DOCS_EMBEDDED === '1'
+const embedded = process.env.FICUS_DOCS_EMBEDDED === '1'
 
 export default defineConfig({
   base: embedded ? '/docs' : '/',
@@ -17,11 +17,11 @@ export default defineConfig({
   trailingSlash: 'always',
   integrations: [
     starlight({
-      title: 'Tau Docs',
-      description: 'Practical guides to working with Tau, in the cloud or on your own machine.',
+      title: 'Ficus Docs',
+      description: 'Practical guides to working with Ficus, in the cloud or on your own machine.',
       logo: { src: './public/favicon.svg' },
       favicon: '/favicon.svg',
-      customCss: ['./src/styles/tau.css'],
+      customCss: ['./src/styles/ficus.css'],
       components: {
         Head: './src/components/Head.astro',
         ThemeSelect: './src/components/ThemeSelect.astro',
@@ -29,17 +29,17 @@ export default defineConfig({
       // Only approved user content belongs in this collection. Repository docs
       // and the private review directory are intentionally not imported.
       sidebar: [
-        { label: 'Welcome to Tau', slug: 'index' },
+        { label: 'Welcome to Ficus', slug: 'index' },
         {
           label: 'Get started',
           items: [
-            { label: 'Set up Tau Cloud', slug: 'start/cloud' },
-            { label: 'Self-host Tau', slug: 'start/self-host' },
+            { label: 'Set up Ficus Cloud', slug: 'start/cloud' },
+            { label: 'Self-host Ficus', slug: 'start/self-host' },
             { label: 'Complete your first task', slug: 'start/first-task' },
           ],
         },
         {
-          label: 'Work with Tau',
+          label: 'Work with Ficus',
           items: [
             { label: 'Use the Assistant', slug: 'use/assistant' },
             { label: 'Squads', slug: 'use/squads' },
@@ -70,7 +70,7 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Maintain self-hosted Tau',
+          label: 'Maintain self-hosted Ficus',
           collapsed: true,
           items: [
             { label: 'Runtime and access', slug: 'self-host/runtime-and-access' },

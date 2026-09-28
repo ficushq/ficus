@@ -1,5 +1,5 @@
 import { consultantSandboxSquadId } from '../sandbox/consultant-sandbox'
-import type { AgentStatus } from '@tau/shared'
+import type { AgentStatus } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import { Squad } from '../../entities/Squad'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -173,7 +173,7 @@ export async function probeMachineHealth(
 }
 
 /** Default fan-out cap for the per-tick health sweep. Overridable via
- *  `TAU_MACHINE_PROBE_CONCURRENCY` (positive int; invalid → default). */
+ *  `FICUS_MACHINE_PROBE_CONCURRENCY` (positive int; invalid → default). */
 const DEFAULT_PROBE_CONCURRENCY = 5
 
 /**
@@ -181,7 +181,7 @@ const DEFAULT_PROBE_CONCURRENCY = 5
  * Machines in any other status are skipped (see {@link probeMachineHealth}).
  *
  * Probes fan out with a concurrency cap (default {@link DEFAULT_PROBE_CONCURRENCY},
- * env `TAU_MACHINE_PROBE_CONCURRENCY`) rather than running strictly serially: at
+ * env `FICUS_MACHINE_PROBE_CONCURRENCY`) rather than running strictly serially: at
  * fleet scale a handful of dead machines (each a ~10s SSH ConnectTimeout) would
  * otherwise starve the whole tick. Per-machine error isolation is unchanged —
  * each probe is wrapped so one throw is logged and never aborts the sweep, and
@@ -193,7 +193,7 @@ export async function sweepMachineHealth(deps: MachineHealthDeps = {}): Promise<
   const listMachines = deps.listMachines ?? listMachinesReal
   const machines = await listMachines()
   const targets = machines.filter((machine) => machine.status === 'ready' || machine.status === 'unreachable')
-  const concurrency = positiveIntEnv('TAU_MACHINE_PROBE_CONCURRENCY', DEFAULT_PROBE_CONCURRENCY)
+  const concurrency = positiveIntEnv('FICUS_MACHINE_PROBE_CONCURRENCY', DEFAULT_PROBE_CONCURRENCY)
   await mapWithConcurrency(targets, concurrency, async (machine) => {
     try {
       await probeMachineHealth(machine, deps)

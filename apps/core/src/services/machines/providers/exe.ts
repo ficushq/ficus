@@ -31,7 +31,7 @@ export function createExeMachineProvider(deps: { api: ExeApi; image?: string }):
       // reaches every VM) and sizing uses defaults, so nothing else is threaded.
       // spec.publicKey/sizeHint are intentionally ignored (see module doc).
       //
-      // `image` (from TAU_EXE_MACHINE_IMAGE) selects the prebaked ficus-machine
+      // `image` (from FICUS_EXE_MACHINE_IMAGE) selects the prebaked ficus-machine
       // image so the VM boots the toolchain instead of installing it. When unset
       // it is omitted and exe boots its default image (see getExeMachineImage).
       const vm = await api.createVm({ name: spec.name, ...(image ? { image } : {}) })

@@ -28,7 +28,7 @@ import {
 } from '../services/integrations/authorization/service'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { describeGitHubAuthorizationError } from '../services/integrations/authorization/github-errors'
-import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
+import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { createLogger } from '../lib/infra/logger'
 import { userSessionRequired } from '../services/auth/user-session-required'
 import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
@@ -39,7 +39,7 @@ import type {
   IntegrationDeviceAuthorizationStatus,
   GitHubCommitSigningStatus,
   GitHubRepositoryAccess,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 const log = createLogger('integration-routes')
 
@@ -300,7 +300,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       if (!service.channelSettings?.manifest) return c.json({ error: 'Unknown integration' }, 404)
       c.header('Cache-Control', 'no-store')
       c.header('Content-Type', 'application/yaml; charset=utf-8')
-      c.header('Content-Disposition', 'attachment; filename="tau-slack-app-manifest.yaml"')
+      c.header('Content-Disposition', 'attachment; filename="ficus-slack-app-manifest.yaml"')
       return c.body(service.channelSettings.manifest())
     })
     .put(
@@ -697,7 +697,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       async (c) => {
         const identity = c.get('identity')
         // Signatures vouch for the connected account; only the squad's agents commit through this path.
-        if (identity?.type !== 'agent') return c.json({ error: 'Only agents sign commits through Tau' }, 403)
+        if (identity?.type !== 'agent') return c.json({ error: 'Only agents sign commits through Ficus' }, 403)
         if (!service.signGitObject) return c.json({ error: 'Commit signing is unavailable' }, 404)
         c.header('Cache-Control', 'no-store')
         try {

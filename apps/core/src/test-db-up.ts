@@ -1,1 +1,1 @@
-export * from '@tau/shared/testDbUp'
+export * from '@ficus/shared/testDbUp'

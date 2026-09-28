@@ -1,5 +1,5 @@
 import { createHash, randomBytes as cryptoRandomBytes, randomUUID as cryptoRandomUUID } from 'node:crypto'
-import { getOAuthProviderAdapter } from '@tau/shared/oauth-providers'
+import { getOAuthProviderAdapter } from '@ficus/shared/oauth-providers'
 import type { IntegrationAuditRecorder } from '../audit'
 import type { AuthorizationGrant, IntegrationPluginV1 } from '../plugin'
 import type { OAuthStateRecord, OAuthStateRepository } from './state-repository'

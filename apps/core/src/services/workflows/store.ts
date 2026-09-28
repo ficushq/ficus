@@ -6,7 +6,7 @@ import {
   workflowCommandSchema,
   workflowSourceSchema,
   type WorkflowRun,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db, workStreamFlowRuns, workStreamFlowTransitions, workStreams } from '../../db'
 import { resolveStoredWorkflow, workflowFingerprint, WorkflowError } from './catalog'
 

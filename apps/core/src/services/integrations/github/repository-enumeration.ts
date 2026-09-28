@@ -1,5 +1,5 @@
-import { eventRepositoryMatches } from '@tau/shared'
-import { githubRepositoryKey } from '@tau/shared/integration-relay'
+import { eventRepositoryMatches } from '@ficus/shared'
+import { githubRepositoryKey } from '@ficus/shared/integration-relay'
 import type { EventPollingSignal } from '../types'
 import type { GitHubPollingFetch } from './event-poller'
 

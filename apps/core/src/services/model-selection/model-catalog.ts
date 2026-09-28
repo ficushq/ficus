@@ -1,4 +1,4 @@
-import type { ModelCatalogEntry } from '@tau/shared'
+import type { ModelCatalogEntry } from '@ficus/shared'
 import type { Api, Model } from '@earendil-works/pi-ai'
 import { getModelRuntime } from '../agent/auth-backend'
 

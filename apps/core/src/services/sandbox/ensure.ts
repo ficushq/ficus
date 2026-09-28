@@ -1,4 +1,4 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxSquadId } from './consultant-sandbox'
 import { sandboxHasActiveExecution } from '../machines/sandbox-activity'
 import { RECENT_ACTIVITY_WINDOW_MS } from './squad-activity'
@@ -17,6 +17,7 @@ import * as sandboxFactory from './factory'
 import { SandboxProvisionError } from './k8s/provision-errors'
 import { getSecretStore } from '../secrets'
 import * as cliHelp from '../../lib/utils/cli-help'
+import { CLI_BUNDLE_FILE, SANDBOX_CLI_PATH } from './cli-path'
 import * as homeUtils from '../../lib/utils/home'
 import { ensureWorkspace } from './workspace'
 import * as squadWorkspace from '../squad/workspace'
@@ -169,7 +170,7 @@ const defaultWorkspaceDeps: EnsureWorkspaceDeps = {
 
 /**
  * Ensure a sandbox is running for the given workspace,
- * with the tau CLI and host access configured.
+ * with the ficus CLI and host access configured.
  *
  * Returns the workspace path on the host (Docker) or container mount (K8s).
  */
@@ -188,19 +189,19 @@ export function ensureK8sCliForSandbox(options: { cliHostPath?: string; homeDir?
   const homeDir = options.homeDir ?? homeUtils.getHomeDir()
 
   if (!existsSync(cliHostPath)) {
-    throw new Error(`Tau CLI build not found at ${cliHostPath}. Run bun run build:cli before starting K8s sandboxes.`)
+    throw new Error(`Ficus CLI build not found at ${cliHostPath}. Run bun run build:cli before starting K8s sandboxes.`)
   }
 
   const cliDir = join(homeDir, 'cli')
   mkdirSync(cliDir, { recursive: true })
-  const stagedPath = join(cliDir, 'tau.js')
+  const stagedPath = join(cliDir, CLI_BUNDLE_FILE)
   const cliContents = readFileSync(cliHostPath)
   const stagedContents = existsSync(stagedPath) ? readFileSync(stagedPath) : null
 
   if (!stagedContents || !stagedContents.equals(cliContents)) {
     // Preserve the staged file inode when refreshing it. K8s subPath file mounts
     // bind to the source inode; replacing the file leaves running pods mounted to
-    // a deleted inode, and Bun reports `/usr/local/bin/tau (deleted)` as missing.
+    // a deleted inode, and Bun reports `/usr/local/bin/ficus (deleted)` as missing.
     writeFileSync(stagedPath, cliContents, { mode: 0o755 })
   }
 
@@ -867,10 +868,10 @@ async function buildDockerAssetVolumes(ctx: AssetContext): Promise<string[]> {
 function buildDockerEnv(): Record<string, string> {
   const port = process.env.PORT || '3000'
   const env: Record<string, string> = {
-    TAU_API_URL: `http://host.docker.internal:${port}`,
+    FICUS_API_URL: `http://host.docker.internal:${port}`,
   }
-  // NOTE: TAU_PASSWORD is intentionally NOT injected. Agents authenticate via the
-  // per-command TAU_TOKEN; the shared legacy password is a dead credential under
+  // NOTE: FICUS_PASSWORD is intentionally NOT injected. Agents authenticate via the
+  // per-command FICUS_TOKEN; the shared legacy password is a dead credential under
   // multi-admin setups and pure exfil surface in a shared box.
   const sandboxCallbackSecret = getSecretStore().get('SANDBOX_CALLBACK_SECRET')
   if (sandboxCallbackSecret) {
@@ -883,6 +884,12 @@ function buildDockerEnv(): Record<string, string> {
   return env
 }
 
+/**
+ * The one CLI a docker sandbox gets: the built `ficus.js` at `/usr/local/bin/ficus`.
+ * The mount is part of the container's stamped spec, so a container created
+ * without it drifts and the manager recreates it on an idle ensure (deferred
+ * while a session runs).
+ */
 function buildCliVolumes(cliHostPath: string): string[] {
-  return [`${cliHostPath}:/usr/local/bin/tau:ro`]
+  return [`${cliHostPath}:${SANDBOX_CLI_PATH}:ro`]
 }

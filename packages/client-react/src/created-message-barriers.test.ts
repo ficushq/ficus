@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { StreamGroupSnapshot } from '@tau/client-core'
+import type { StreamGroupSnapshot } from '@ficus/client-core'
 import { barrierHidesGroup, exactResponseIdentity, type CreatedMessageBarrier } from './created-message-barriers'
 
 function group(executionId: string | undefined, streamGroupId: string, startedAt: number) {

@@ -2,6 +2,13 @@ import { randomBytes } from 'crypto'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { parseEnvFile } from './env-file'
+import { LEGACY_ENV_PREFIX } from '@ficus/shared/legacy-env'
+import {
+  assertCheckoutEnvRenamable,
+  checkoutEnvPrefix,
+  checkoutReadsFicusEnv,
+  describeCheckoutPackage,
+} from './env-prefix'
 import { DEFAULT_INSTANCE, instanceNames } from './instance'
 import { composeDatabaseUrl } from './options'
 import {
@@ -63,18 +70,18 @@ export function bootstrapLoginUrl(appUrl: string, password: string): string {
 export function handoffLines(opts: SetupOptions, password?: string): string[] {
   return [
     '',
-    `Tau is running at ${opts.appUrl}`,
+    `Ficus is running at ${opts.appUrl}`,
     '',
     'Next steps:',
     password
       ? `  1. Open ${bootstrapLoginUrl(opts.appUrl, password)} — it signs you in with the instance password`
-      : `  1. Open ${opts.appUrl} and sign in with the instance password (TAU_PASSWORD in ${opts.root}/.env)`,
-    '     (TAU_PASSWORD in .env; it stops working once an admin exists), then create your account —',
+      : `  1. Open ${opts.appUrl} and sign in with the instance password (FICUS_PASSWORD in ${opts.root}/.env)`,
+    '     (FICUS_PASSWORD in .env; it stops working once an admin exists), then create your account —',
     '     the first passkey becomes the admin. Email is not configured, so the verification code is shown in the page.',
     '  2. Sign in to an AI provider: Settings > AI Providers.',
-    `  3. CLI: \`tau auth login local --api-url ${opts.apiUrl}\` (after step 1; until then \`tau\` works from ${opts.root}).`,
+    `  3. CLI: \`ficus auth login local --api-url ${opts.apiUrl}\` (after step 1; until then \`ficus\` works from ${opts.root}).`,
     '',
-    'Manage it:  tau server status | logs -f | restart | stop      Update:  tau server update',
+    'Manage it:  ficus server status | logs -f | restart | stop      Update:  ficus server update',
     opts.supervisor === 'launchd'
       ? 'Supervisor: launchd (starts again at the next GUI login; it does not run while logged out).'
       : `Supervisor: ${opts.supervisor}.`,
@@ -175,14 +182,30 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
   const labelOwner = registry.instances[options.instance]
   if (rootOwner && (rootOwner[0] !== options.instance || rootOwner[1].supervisor !== options.supervisor)) {
     throw new SetupFailure(
-      `this checkout is registered as instance "${rootOwner[0]}" with ${rootOwner[1].supervisor}; run tau server uninstall --root ${options.root}, then rerun setup with --supervisor ${options.supervisor}`
+      `this checkout is registered as instance "${rootOwner[0]}" with ${rootOwner[1].supervisor}; run ficus server uninstall --root ${options.root}, then rerun setup with --supervisor ${options.supervisor}`
     )
   }
   if (labelOwner && canonicalRoot(labelOwner.root) !== root) {
     throw new SetupFailure(
-      `instance "${options.instance}" is registered to another checkout (${labelOwner.root}); run tau server uninstall --root ${labelOwner.root} before reusing the label`
+      `instance "${options.instance}" is registered to another checkout (${labelOwner.root}); run ficus server uninstall --root ${labelOwner.root} before reusing the label`
     )
   }
+
+  // Ficus rename. This CLI writes FICUS_ settings: into a checkout whose code still reads TAU_
+  // they would be dead weight, and they would collide with its TAU_ secrets at its first update.
+  // Fail closed: only a checkout whose package.json is named exactly "ficus" is set up.
+  if (checkoutEnvPrefix(root) === LEGACY_ENV_PREFIX) {
+    throw new SetupFailure(
+      `${root} predates the Ficus rename (its package.json is named "tau"): update it first (git pull), or run its own \`bun run setup\``
+    )
+  }
+  if (!checkoutReadsFicusEnv(root)) {
+    throw new SetupFailure(
+      `${root} is not a Ficus checkout: its package.json ${describeCheckoutPackage(root)}, not "ficus". Setup renames TAU_ settings and writes FICUS_ ones only in a Ficus checkout`
+    )
+  }
+  // A TAU_/FICUS_ secret conflict stops setup before anything runs (the env step renames).
+  assertCheckoutEnvRenamable(root)
 
   deps.log(`Preflight (${options.runtime}, ${options.databaseMode} database, port ${options.port})`)
   const pre = await runPreflight(canonicalOptions, deps.preflight)
@@ -228,7 +251,7 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
           existing && canonicalRoot(existing.root) === root && existing.createdAt ? existing.createdAt : deps.now(),
         updatedAt: deps.now(),
       },
-      // The first install is what a bare `tau server` command means; a later
+      // The first install is what a bare `ficus server` command means; a later
       // one only takes that over when the operator asks (--default).
       { makeDefault: opts.makeDefault || Object.keys(registry.instances).length === 0 },
       deps.statePath
@@ -238,17 +261,17 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
   for (const step of steps) {
     deps.log(`▸ ${step.title}`)
     // Everything before the start step is already durable — persist state now so a
-    // pm2-start/health-probe failure still leaves a state file `tau server logs` can use.
+    // pm2-start/health-probe failure still leaves a state file `ficus server logs` can use.
     if (step.id === 'start') persistState()
     await step.run()
   }
   // Refresh updatedAt after a successful start (or write for the first time when --no-start).
   persistState()
 
-  const password = parseEnvFile(readFileSync(join(opts.root, '.env'), 'utf8')).TAU_PASSWORD || undefined
+  const password = parseEnvFile(readFileSync(join(opts.root, '.env'), 'utf8')).FICUS_PASSWORD || undefined
   const handoff = opts.start
     ? handoffLines(opts, password)
-    : ['', `Setup complete (not started). Start it with: tau server start --root ${opts.root}`]
+    : ['', `Setup complete (not started). Start it with: ficus server start --root ${opts.root}`]
   for (const line of handoff) deps.log(line)
   return { handoff }
 }

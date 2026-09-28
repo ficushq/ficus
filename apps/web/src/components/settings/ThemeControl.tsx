@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ThemePresetLibrary } from './ThemePresetLibrary'
 import { ThemeSwatchGrid, type ThemeGridOption } from './ThemeSwatchGrid'
 import { SegmentedAppearanceControl } from '../SegmentedAppearanceControl'
-import type { AppearanceSetting, ThemePreset } from '@tau/shared'
+import type { AppearanceSetting, ThemePreset } from '@ficus/shared'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme, highContrastLast, THEME_PICKER_ENABLED } from '../../theme/registry'
 import { hasAppearances, useThemeHoverPreview } from '../../hooks/useThemeHoverPreview'
@@ -76,7 +76,7 @@ export function ThemeControl({
   const showAppearance = selected.kind === 'dual' || (!!previewing && hasAppearances(previewing))
 
   return (
-    <section data-setting-target="appearance" aria-label="Theme" className="tau-section py-5">
+    <section data-setting-target="appearance" aria-label="Theme" className="ficus-section py-5">
       <h3 data-setting-target="dark-mode" className="font-medium text-primary">
         Theme
       </h3>
@@ -104,7 +104,7 @@ export function ThemeControl({
           )}
         </div>
       ) : (
-        <button className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary mt-3" onClick={toggleTheme}>
+        <button className="ficus-button min-h-[44px] px-3 py-2 ficus-button-secondary mt-3" onClick={toggleTheme}>
           {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
         </button>
       )}

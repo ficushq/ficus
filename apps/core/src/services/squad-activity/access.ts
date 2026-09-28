@@ -1,4 +1,4 @@
-import { LIVE_AGENT_STATUSES, type SquadActivityProjectionEventData } from '@tau/shared'
+import { LIVE_AGENT_STATUSES, type SquadActivityProjectionEventData } from '@ficus/shared'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, squads, systemTokens, users } from '../../db/schema'

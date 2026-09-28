@@ -1,22 +1,22 @@
-# Tau webapp visual design guide
+# Ficus webapp visual design guide
 
 Approved direction, September 5, 2026. This guide covers `apps/web`; the coverage ledger distinguishes source changes from browser verification.
 
 ## Direction
 
-Tau is a focused workspace with flat content, frosted framing, softly rounded controls, restrained purple accents, and quiet supporting information. Keep useful density for work, settings, and diagnostics. Give conversations and page sections room to breathe. Information should be grouped by headings, spacing, and occasional separators rather than stacks of raised cards.
+Ficus is a focused workspace with flat content, frosted framing, softly rounded controls, restrained purple accents, and quiet supporting information. Keep useful density for work, settings, and diagnostics. Give conversations and page sections room to breathe. Information should be grouped by headings, spacing, and occasional separators rather than stacks of raised cards.
 
 Local layout improvements are authorized. Broader navigation changes require a concrete proposal; the approved changes are recorded in information architecture.
 
 ## Surfaces
 
-| Role                    | Treatment                                        | Use                                                                      |
-| ----------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
-| Canvas                  | Quiet, opaque light or dark background           | Page content                                                             |
-| Section (`tau-section`) | Transparent, no border or shadow                 | Settings groups, ordinary page sections                                  |
-| Panel (`tau-panel`)     | Thin boundary, 12px corners, no shadow           | Conversation workspace, navigation sidebar, distinct interactive regions |
-| Inset (`tau-inset`)     | Subtle tonal fill, 8px corners, no shadow        | An open editor or a locally grouped control                              |
-| Overlay (`tau-overlay`) | Opaque reading surface, thin border, soft shadow | Menus, dialogs, floating tools                                           |
+| Role                      | Treatment                                        | Use                                                                      |
+| ------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
+| Canvas                    | Quiet, opaque light or dark background           | Page content                                                             |
+| Section (`ficus-section`) | Transparent, no border or shadow                 | Settings groups, ordinary page sections                                  |
+| Panel (`ficus-panel`)     | Thin boundary, 12px corners, no shadow           | Conversation workspace, navigation sidebar, distinct interactive regions |
+| Inset (`ficus-inset`)     | Subtle tonal fill, 8px corners, no shadow        | An open editor or a locally grouped control                              |
+| Overlay (`ficus-overlay`) | Opaque reading surface, thin border, soft shadow | Menus, dialogs, floating tools                                           |
 
 Ordinary tables and lists sit on the page. Avoid gray header bars over white rows, outlined cards around every setting, and double dividers between adjacent groups. Rows use a subtle hover fill; selection uses a restrained purple wash. A status or attention callout can retain a semantic fill when it conveys information.
 
@@ -26,9 +26,9 @@ Glass belongs on app framing and sidebars. Use an approximately 88% surface fill
 
 Colors are theme tokens. `packages/shared/src/theme-schema.ts` lists them; `src/index.css` and `src/theme/builtins.css` define them for every built-in theme and appearance; `tailwind.config.js` exposes them to components; `src/design-system.css` contains explicit shared component roles. Add or change a token before introducing a color; palette utilities and literal colors fail `src/no-raw-colors.test.ts`. See [web themes](theme/README.md).
 
-In the default Tau theme the light canvas is nearly white, with a white reading surface and muted lavender-neutral secondary fill. Dark mode uses a near-black canvas, a subtle navy-neutral surface, and lighter control fills. Purple is Tau's primary action and selection color; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`.
+In the default Ficus theme the light canvas is nearly white, with a white reading surface and muted lavender-neutral secondary fill. Dark mode uses a near-black canvas, a subtle navy-neutral surface, and lighter control fills. Purple is Ficus's primary action and selection color; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`.
 
-Use `tau-field`, `tau-button`, `tau-button-primary`, `tau-nav-item`, and `tau-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
+Use `ficus-field`, `ficus-button`, `ficus-button-primary`, `ficus-nav-item`, and `ficus-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
 
 ## Hierarchy and spacing
 
@@ -55,7 +55,7 @@ Consultants are the main research, design, and brainstorming entry point. The ma
 
 Home presents a conversation entry point, active work, recent chats, and a labeled **Squad coordinator** row. The coordinator description explains its role. Keep Active and Recent chats headings on the same title gutter. Recent consultant rows retain idle dots so they read as clickable agents, even in the flat presentation.
 
-The Home active-work explorer is always a list inline; it has no list/kanban/graph toggle. Its header carries one graph icon (“Show work stream graph”) that opens a **Work Stream Graph** dialog showing only the dependency graph, with no view toggle in the dialog header. Selecting a node opens the work-stream detail; Escape closes the detail first, then the dialog, and focus returns to the icon. Only the Work tab persists a chosen view (`tau.wsView.<squadId>`); Home stores no view preference.
+The Home active-work explorer is always a list inline; it has no list/kanban/graph toggle. Its header carries one graph icon (“Show work stream graph”) that opens a **Work Stream Graph** dialog showing only the dependency graph, with no view toggle in the dialog header. Selecting a node opens the work-stream detail; Escape closes the detail first, then the dialog, and focus returns to the icon. Only the Work tab persists a chosen view (`ficus.wsView.<squadId>`); Home stores no view preference.
 
 The chat picker keeps the manager, search, and New chat action accessible. The pulse toggle starts disabled. When enabled, it limits the worker list to live/non-idle agents plus the currently viewed agent, retaining that agent’s category even if it becomes idle or completed and hiding other empty categories. Consultant recents remain available. Show **No active agents** when the filtered worker region is empty.
 
@@ -161,9 +161,9 @@ Delegated tasks and their updates are durable and independent of the browser (se
 
 ## Field and container radii
 
-Use the shared `tau-field` role for text inputs, search inputs, selects, and textareas. All use an 8px radius; do not add rounding utilities per page. Checkboxes and radio buttons keep their native control shapes. Assistant and agent chat composers may use a more rounded outer surface, while fields inside them follow the same rule.
+Use the shared `ficus-field` role for text inputs, search inputs, selects, and textareas. All use an 8px radius; do not add rounding utilities per page. Checkboxes and radio buttons keep their native control shapes. Assistant and agent chat composers may use a more rounded outer surface, while fields inside them follow the same rule.
 
-Buttons and inset controls use 8px; catalog cards (`tau-panel` or equivalent) and modals (`tau-overlay`) use 12px. Reserve pills for compact badges, chips, and avatars. Search fields are ordinary fields, not pills.
+Buttons and inset controls use 8px; catalog cards (`ficus-panel` or equivalent) and modals (`ficus-overlay`) use 12px. Reserve pills for compact badges, chips, and avatars. Search fields are ordinary fields, not pills.
 
 Configuration catalogs—Workflows, Agent Types, Squad Presets, and Skills—use a shared search field, individually bordered surface cards separated by a consistent gap, and explicit Edit/View actions opening a modal. This is an intentional exception to flat settings sections: each card represents an independently managed resource. Long forms use wide dialogs; the workflow co-editor uses the viewport with an interactive canvas and side conversation.
 

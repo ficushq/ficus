@@ -1,5 +1,5 @@
 import net from 'node:net'
-import type { LocalDeployment } from '@tau/shared'
+import type { LocalDeployment } from '@ficus/shared'
 import { createLogger } from '../../lib/infra/logger'
 import {
   getLocalDeployment,

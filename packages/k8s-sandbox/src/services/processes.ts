@@ -12,14 +12,14 @@
 
 import { execFile, execSync } from 'child_process'
 import { readdirSync, readFileSync } from 'fs'
-// Type-only: the server bundle must not pull in @tau/shared's runtime.
+// Type-only: the server bundle must not pull in @ficus/shared's runtime.
 import type {
   SandboxContainer,
   SandboxContainers,
   SandboxPressure,
   SandboxProcess,
   SandboxProcessSignal,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export type BoxPressure = SandboxPressure
 export type BoxProcess = SandboxProcess
@@ -264,7 +264,7 @@ function timedOut(error: unknown): boolean {
  * runs no Docker; an unresponsive daemon is reported, not waited on.
  */
 export async function listBoxContainers(docker: DockerRunner = runDocker): Promise<BoxContainers> {
-  if (process.env.TAU_SANDBOX_ROLE === 'agent') return { available: false, reason: 'This box runs no Docker' }
+  if (process.env.FICUS_SANDBOX_ROLE === 'agent') return { available: false, reason: 'This box runs no Docker' }
   try {
     const [ps, stats] = await Promise.all([
       docker(['ps', '-a', '--format', '{{json .}}'], DOCKER_TIMEOUT_MS),

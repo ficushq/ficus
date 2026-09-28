@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { registerOAuthProviderAdapterForTest } from '@tau/shared/oauth-providers'
-import { createFakeAdapter } from '@tau/shared/oauth-providers/fake'
+import { registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-providers'
+import { createFakeAdapter } from '@ficus/shared/oauth-providers/fake'
 import { createLocalRevocationTransport, createOAuthRevocationTransportResolver } from './revocation-transport'
 
 test('revocation resolver selects persisted job authority without consulting deployment mode', async () => {

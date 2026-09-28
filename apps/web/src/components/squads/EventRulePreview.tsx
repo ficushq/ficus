@@ -7,7 +7,7 @@ import {
   type IntegrationOutputDescriptor,
   type SquadEventRule,
   type SquadEventRulePreview,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export function EventRulePreview({
   provider,
@@ -79,7 +79,7 @@ export function EventRulePreview({
           Sample event
           <select
             aria-label="Sample event"
-            className="tau-field mt-1 block w-full"
+            className="ficus-field mt-1 block w-full"
             value={event ? `${event.output}@${event.version}` : ''}
             onChange={(e) => {
               setEventKey(e.target.value)
@@ -97,7 +97,7 @@ export function EventRulePreview({
           Sample connection
           <select
             aria-label="Sample connection"
-            className="tau-field mt-1 block w-full"
+            className="ficus-field mt-1 block w-full"
             value={connectionId}
             onChange={(e) => setConnectionId(e.target.value)}
           >
@@ -115,7 +115,7 @@ export function EventRulePreview({
               Hypothetical connected login
               <input
                 aria-label="Sample connected login"
-                className="tau-field mt-1 block w-full"
+                className="ficus-field mt-1 block w-full"
                 value={login}
                 maxLength={100}
                 onChange={(e) => setLogin(e.target.value)}
@@ -132,7 +132,7 @@ export function EventRulePreview({
         Sample fields (JSON)
         <textarea
           aria-label="Sample fields (JSON)"
-          className="tau-field mt-1 w-full font-mono text-xs"
+          className="ficus-field mt-1 w-full font-mono text-xs"
           rows={4}
           maxLength={64000}
           value={fieldsText}

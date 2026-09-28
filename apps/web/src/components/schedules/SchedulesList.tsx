@@ -1,7 +1,7 @@
 import { WorkflowPicker } from '../squads/WorkflowPicker'
 import { WorkflowEditorModal } from '../squads/WorkflowEditorModal'
-import type { WorkflowDefinition, WorkflowSource } from '@tau/shared'
-import { isWorkerAgentType } from '@tau/shared'
+import type { WorkflowDefinition, WorkflowSource } from '@ficus/shared'
+import { isWorkerAgentType } from '@ficus/shared'
 import clsx from 'clsx'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
@@ -9,7 +9,7 @@ import { queryKeys } from '../../queryKeys'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useEffect, useState } from 'react'
 import { useURLBooleanState, useURLStringState } from '../../hooks/useURLState'
-import type { Schedule, ScheduleAction, Agent, Squad } from '@tau/shared'
+import type { Schedule, ScheduleAction, Agent, Squad } from '@ficus/shared'
 import { MarkdownContent } from '../MarkdownContent'
 import { Modal } from '../Modal'
 import { Badge, type BadgeColor } from '../Badge'
@@ -559,7 +559,7 @@ function ScheduleCard({
             onToggle(schedule)
           }}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'relative w-9 h-5 rounded-full transition-colors shrink-0',
             schedule.enabled ? 'bg-status-success-500' : 'bg-status-neutral-300 dark:bg-status-neutral-600'
           )}
@@ -739,7 +739,7 @@ function ScheduleDetailModal({
             <button
               onClick={() => triggerMutation.mutate()}
               disabled={triggerMutation.isPending || !canTriggerSchedules}
-              className="tau-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
+              className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
               title={canTriggerSchedules ? 'Trigger now' : 'You do not have permission to trigger schedules'}
             >
               <PlayIcon className="w-4 h-4" />
@@ -747,7 +747,7 @@ function ScheduleDetailModal({
             <button
               onClick={() => setIsEditing(true)}
               disabled={!canUpdateSchedules}
-              className="tau-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors disabled:opacity-50"
+              className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors disabled:opacity-50"
               title={canUpdateSchedules ? 'Edit schedule' : 'You do not have permission to edit schedules'}
             >
               <PencilIcon className="w-4 h-4" />
@@ -768,7 +768,7 @@ function ScheduleDetailModal({
               type="text"
               value={editState.name}
               onChange={(e) => setEditState((prev) => ({ ...prev, name: e.target.value }))}
-              className="tau-field w-full px-2 py-1 text-sm bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+              className="ficus-field w-full px-2 py-1 text-sm bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
             />
           </DetailRow>
         )}
@@ -780,7 +780,7 @@ function ScheduleDetailModal({
               onClick={toggleEnabled}
               disabled={updateMutation.isPending || !canUpdateSchedules}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 'flex items-center gap-2 px-2 py-1 rounded-md transition-colors',
                 schedule.enabled
                   ? 'bg-status-success-100 dark:bg-status-success-900/30 hover:bg-status-success-200 dark:hover:bg-status-success-900/50'
@@ -808,7 +808,7 @@ function ScheduleDetailModal({
                   <button
                     onClick={() => setEditState((prev) => ({ ...prev, scheduleType: 'interval' }))}
                     className={clsx(
-                      'tau-button',
+                      'ficus-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'interval'
                         ? 'bg-accent text-on-accent'
@@ -820,7 +820,7 @@ function ScheduleDetailModal({
                   <button
                     onClick={() => setEditState((prev) => ({ ...prev, scheduleType: 'cron' }))}
                     className={clsx(
-                      'tau-button',
+                      'ficus-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'cron'
                         ? 'bg-accent text-on-accent'
@@ -832,7 +832,7 @@ function ScheduleDetailModal({
                   <button
                     onClick={() => setEditState((prev) => ({ ...prev, scheduleType: 'runAt' }))}
                     className={clsx(
-                      'tau-button',
+                      'ficus-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'runAt'
                         ? 'bg-accent text-on-accent'
@@ -845,7 +845,7 @@ function ScheduleDetailModal({
                     <button
                       onClick={() => setEditState((prev) => ({ ...prev, scheduleType: 'webhookOnly' }))}
                       className={clsx(
-                        'tau-button',
+                        'ficus-button',
                         'px-2 py-0.5 text-xs rounded',
                         editState.scheduleType === 'webhookOnly'
                           ? 'bg-accent text-on-accent'
@@ -865,7 +865,7 @@ function ScheduleDetailModal({
                     value={editState.interval}
                     onChange={(e) => setEditState((prev) => ({ ...prev, interval: e.target.value }))}
                     placeholder="e.g. 1h, 30m, 1d"
-                    className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+                    className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
                   />
                 )}
                 {editState.scheduleType === 'cron' && (
@@ -874,7 +874,7 @@ function ScheduleDetailModal({
                     value={editState.cron}
                     onChange={(e) => setEditState((prev) => ({ ...prev, cron: e.target.value }))}
                     placeholder="e.g. 0 9 * * 1-5"
-                    className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary font-mono"
+                    className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary font-mono"
                   />
                 )}
                 {editState.scheduleType === 'runAt' && (
@@ -887,7 +887,7 @@ function ScheduleDetailModal({
                         runAt: e.target.value ? new Date(e.target.value).toISOString() : '',
                       }))
                     }
-                    className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+                    className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
                   />
                 )}
                 <label className="block text-xs text-muted">
@@ -901,7 +901,7 @@ function ScheduleDetailModal({
                         expiresAt: e.target.value ? new Date(e.target.value).toISOString() : '',
                       }))
                     }
-                    className="tau-field mt-1 w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+                    className="ficus-field mt-1 w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
                   />
                 </label>
               </div>
@@ -1014,14 +1014,14 @@ function ScheduleDetailModal({
             <button
               onClick={saveEdits}
               disabled={updateMutation.isPending}
-              className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-on-accent text-xs font-medium rounded hover:bg-accent-hover disabled:opacity-50"
+              className="ficus-button ficus-button-primary px-3 py-1.5 bg-accent text-on-accent text-xs font-medium rounded hover:bg-accent-hover disabled:opacity-50"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </button>
             <button
               onClick={cancelEdits}
               disabled={updateMutation.isPending}
-              className="tau-button px-3 py-1.5 bg-surface-secondary text-secondary text-xs font-medium rounded hover:bg-surface-hover"
+              className="ficus-button px-3 py-1.5 bg-surface-secondary text-secondary text-xs font-medium rounded hover:bg-surface-hover"
             >
               Cancel
             </button>
@@ -1111,7 +1111,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
               <button
                 onClick={() => enableMutation.mutate()}
                 disabled={enableMutation.isPending || !canUpdateSchedules}
-                className="tau-button text-xs text-accent-light hover:text-accent-hover disabled:opacity-50"
+                className="ficus-button text-xs text-accent-light hover:text-accent-hover disabled:opacity-50"
                 title={canUpdateSchedules ? 'Enable webhook' : 'You do not have permission to edit schedules'}
               >
                 {enableMutation.isPending ? 'Enabling...' : 'Enable'}
@@ -1121,7 +1121,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 <button
                   onClick={() => regenerateMutation.mutate()}
                   disabled={regenerateMutation.isPending || !canUpdateSchedules}
-                  className="tau-button inline-flex items-center gap-1 text-xs text-muted hover:text-primary disabled:opacity-50"
+                  className="ficus-button inline-flex items-center gap-1 text-xs text-muted hover:text-primary disabled:opacity-50"
                   title={canUpdateSchedules ? 'Regenerate token' : 'You do not have permission to edit schedules'}
                 >
                   <RefreshIcon className="w-3 h-3" />
@@ -1130,7 +1130,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 <button
                   onClick={() => disableMutation.mutate()}
                   disabled={disableMutation.isPending || !canUpdateSchedules}
-                  className="tau-button text-xs text-status-danger-500 hover:text-status-danger-600 disabled:opacity-50"
+                  className="ficus-button text-xs text-status-danger-500 hover:text-status-danger-600 disabled:opacity-50"
                 >
                   {disableMutation.isPending ? 'Disabling...' : 'Disable'}
                 </button>
@@ -1150,7 +1150,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 </code>
                 <button
                   onClick={() => copyToClipboard(showToken)}
-                  className="tau-button p-1 text-muted hover:text-primary"
+                  className="ficus-button p-1 text-muted hover:text-primary"
                   title="Copy token"
                 >
                   <ClipboardIcon className="w-4 h-4" />
@@ -1170,7 +1170,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 </code>
                 <button
                   onClick={() => copyToClipboard(webhookUrl)}
-                  className="tau-button p-1 text-muted hover:text-primary"
+                  className="ficus-button p-1 text-muted hover:text-primary"
                   title="Copy URL"
                 >
                   <ClipboardIcon className="w-4 h-4" />
@@ -1227,7 +1227,7 @@ function EditActionFields({
         <select
           value={editState.actionType}
           onChange={(e) => setEditState((prev) => ({ ...prev, actionType: e.target.value as ScheduleAction['type'] }))}
-          className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+          className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
         >
           <option value="inbox_message">Inbox Message</option>
           {scopeType === 'squad' && (
@@ -1245,7 +1245,7 @@ function EditActionFields({
           <select
             value={editState.spawnAgentTypeId}
             onChange={(e) => setEditState((prev) => ({ ...prev, spawnAgentTypeId: e.target.value }))}
-            className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+            className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
           >
             <option value="">Select agent type...</option>
             {agentTypes.filter(isWorkerAgentType).map((agentType) => (
@@ -1259,7 +1259,7 @@ function EditActionFields({
             onChange={(e) => setEditState((prev) => ({ ...prev, spawnPrompt: e.target.value }))}
             placeholder="Prompt"
             rows={4}
-            className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+            className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
           />
         </div>
       )}
@@ -1287,7 +1287,7 @@ function EditActionFields({
               <button
                 onClick={() => setEditState((prev) => ({ ...prev, inboxTarget: 'agent' }))}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-2 py-0.5 text-xs rounded',
                   editState.inboxTarget === 'agent'
                     ? 'bg-accent text-on-accent'
@@ -1299,7 +1299,7 @@ function EditActionFields({
               <button
                 onClick={() => setEditState((prev) => ({ ...prev, inboxTarget: 'squad_manager' }))}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-2 py-0.5 text-xs rounded',
                   editState.inboxTarget === 'squad_manager'
                     ? 'bg-accent text-on-accent'
@@ -1314,7 +1314,7 @@ function EditActionFields({
             <select
               value={editState.inboxTargetAgentId}
               onChange={(e) => setEditState((prev) => ({ ...prev, inboxTargetAgentId: e.target.value }))}
-              className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+              className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
             >
               <option value="">Select target agent...</option>
               {agents.map((agent) => (
@@ -1329,14 +1329,14 @@ function EditActionFields({
             value={editState.inboxSubject}
             onChange={(e) => setEditState((prev) => ({ ...prev, inboxSubject: e.target.value }))}
             placeholder="Optional subject"
-            className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+            className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
           />
           <textarea
             value={editState.inboxContent}
             onChange={(e) => setEditState((prev) => ({ ...prev, inboxContent: e.target.value }))}
             placeholder="Message content"
             rows={3}
-            className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+            className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
           />
         </div>
       )}
@@ -1349,14 +1349,14 @@ function EditActionFields({
             value={editState.workStreamTitle}
             onChange={(e) => setEditState((prev) => ({ ...prev, workStreamTitle: e.target.value }))}
             placeholder="Work stream title"
-            className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+            className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
           />
           <input
             type="text"
             value={editState.workStreamDescription}
             onChange={(e) => setEditState((prev) => ({ ...prev, workStreamDescription: e.target.value }))}
             placeholder="Optional description"
-            className="tau-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
+            className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
           />
           <WorkflowPicker
             squadId={scopeType === 'squad' ? scopeId : undefined}

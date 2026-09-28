@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, InferSelectModel, isNotNull, isNull, lte, sql, type SQL } from 'drizzle-orm'
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
 import { agents, db, messages } from '../db'
-import { ADDRESSABLE_AGENT_STATUSES, AgentStatus, LIVE_AGENT_STATUSES, Message } from '@tau/shared'
+import { ADDRESSABLE_AGENT_STATUSES, AgentStatus, LIVE_AGENT_STATUSES, Message } from '@ficus/shared'
 import { AmbiguousPrefixError, uuidPrefixCondition } from '../db/prefix-match'
 import { validateModelSpecList } from '../lib/utils/model-spec'
 import { mapMessage } from './message-mapper'

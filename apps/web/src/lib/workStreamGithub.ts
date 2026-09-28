@@ -1,4 +1,4 @@
-import { codeHostReferenceSchema, deliveryPullRequests, type ResolvedTrackedResource } from '@tau/shared'
+import { codeHostReferenceSchema, deliveryPullRequests, type ResolvedTrackedResource } from '@ficus/shared'
 
 export interface GithubRepositoryInfo {
   repository: string

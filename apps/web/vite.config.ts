@@ -8,7 +8,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { DEV_ACCESS_COOKIE, DEV_ACCESS_HEADER, requestHasDevAccess, stripDevAccessCookie } from './devAccess'
 import { fnv1a } from './src/theme/fnv'
 
-const DEV_BACKEND_CONTROL_PATH = '/__tau_dev'
+const DEV_BACKEND_CONTROL_PATH = '/__ficus_dev'
 const DEV_ACCESS_LOGIN_PATH = `${DEV_BACKEND_CONTROL_PATH}/login`
 const LOCAL_BACKEND_LABEL = '@local'
 const DEFAULT_LOCAL_API_URL = 'http://localhost:3000'
@@ -35,7 +35,7 @@ interface MutableDevProxyState {
 }
 
 function cliAuthStorePath(): string {
-  return process.env.TAU_DEV_AUTH_STORE_PATH ?? ''
+  return process.env.FICUS_DEV_AUTH_STORE_PATH ?? ''
 }
 
 function readCliBackends(): Record<string, CliBackend> {
@@ -47,7 +47,7 @@ function readCliBackends(): Record<string, CliBackend> {
   try {
     parsed = JSON.parse(readFileSync(authPath, 'utf8'))
   } catch (error) {
-    throw new Error(`Could not read Tau CLI auth store at ${authPath}: ${(error as Error).message}`)
+    throw new Error(`Could not read Ficus CLI auth store at ${authPath}: ${(error as Error).message}`)
   }
 
   if (!parsed || typeof parsed !== 'object') return {}
@@ -84,7 +84,7 @@ function selectedDevBackend(state: MutableDevProxyState): DevBackend {
   }
 
   const backend = readCliBackends()[state.selectedLabel]
-  if (!backend) throw new Error(`Unknown Tau CLI backend '${state.selectedLabel}'`)
+  if (!backend) throw new Error(`Unknown Ficus CLI backend '${state.selectedLabel}'`)
   return {
     label: state.selectedLabel,
     ...backend,
@@ -170,7 +170,7 @@ function devAccessLoginPage(invalid = false): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tau Dev Access</title>
+    <title>Ficus Dev Access</title>
     <style>
       :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
       body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #09090b; color: #fafafa; }
@@ -185,7 +185,7 @@ function devAccessLoginPage(invalid = false): string {
   </head>
   <body>
     <main>
-      <h1>Tau dev access</h1>
+      <h1>Ficus dev access</h1>
       <p>Enter the access token printed by <code>bun run dev:web</code>.</p>
       ${invalid ? '<p class="error" role="alert">That token is not valid.</p>' : ''}
       <form method="post" action="${DEV_ACCESS_LOGIN_PATH}">
@@ -212,7 +212,7 @@ function stripDevAccessCredential(req: IncomingMessage): void {
 
 function devAccessPlugin(accessToken: string): Plugin {
   return {
-    name: 'tau-dev-access',
+    name: 'ficus-dev-access',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         try {
@@ -256,7 +256,7 @@ function devAccessPlugin(accessToken: string): Plugin {
               res.setHeader('Location', DEV_ACCESS_LOGIN_PATH)
               return res.end()
             }
-            return endJson(res, 401, { error: 'Tau dev access token required' })
+            return endJson(res, 401, { error: 'Ficus dev access token required' })
           }
 
           stripDevAccessCredential(req)
@@ -288,7 +288,7 @@ function devAccessPlugin(accessToken: string): Plugin {
 
 function devBackendControlPlugin(state: MutableDevProxyState): Plugin {
   return {
-    name: 'tau-dev-backend-control',
+    name: 'ficus-dev-backend-control',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith(DEV_BACKEND_CONTROL_PATH)) return next()
@@ -402,12 +402,12 @@ function devProxyOptions(kind: 'api' | 'ws', state: MutableDevProxyState, access
 }
 
 /**
- * Build id baked into the SW and page bundle as __TAU_SW_CACHE_VERSION__.
+ * Build id baked into the SW and page bundle as __FICUS_SW_CACHE_VERSION__.
  * Must be stable for identical source (so rebuilding the same commit never
  * prompts users to update) and unique per distinct build otherwise.
  */
 function resolveBuildId(): string {
-  if (process.env.TAU_BUILD_ID) return process.env.TAU_BUILD_ID
+  if (process.env.FICUS_BUILD_ID) return process.env.FICUS_BUILD_ID
   try {
     const git = (cmd: string) =>
       execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'] })
@@ -425,7 +425,7 @@ function resolveBuildId(): string {
 /**
  * Hash of index.css's + builtins.css's own content (the two files that
  * define every built-in theme's own token values), baked in as
- * __TAU_BUILTIN_CSS_FINGERPRINT__ (theme/builtinFingerprint.ts). Unlike
+ * __FICUS_BUILTIN_CSS_FINGERPRINT__ (theme/builtinFingerprint.ts). Unlike
  * resolveBuildId (which changes on every commit — right for SW cache
  * versioning, wrong here), this changes ONLY when these two files' content
  * changes, so a persisted resolved-theme snapshot (custom.ts) stays valid
@@ -449,9 +449,9 @@ export default defineConfig(({ mode, command }) => {
   const proxyRoot = isViteDev ? '' : deployedBase.replace(/\/?$/, '')
   const serviceWorkerCacheVersion = resolveBuildId()
   const builtinCssFingerprint = computeBuiltinCssFingerprint()
-  const devAccessToken = isViteDev ? process.env.TAU_DEV_ACCESS_TOKEN?.trim() : undefined
+  const devAccessToken = isViteDev ? process.env.FICUS_DEV_ACCESS_TOKEN?.trim() : undefined
   const devBackendState: MutableDevProxyState = {
-    selectedLabel: isViteDev ? (process.env.TAU_DEV_BACKEND ?? LOCAL_BACKEND_LABEL) : LOCAL_BACKEND_LABEL,
+    selectedLabel: isViteDev ? (process.env.FICUS_DEV_BACKEND ?? LOCAL_BACKEND_LABEL) : LOCAL_BACKEND_LABEL,
     productionWritesEnabled: false,
   }
   // Fail at startup with the requested label, before Vite starts serving a UI
@@ -461,25 +461,25 @@ export default defineConfig(({ mode, command }) => {
   return {
     base,
     define: {
-      __TAU_SW_CACHE_VERSION__: JSON.stringify(serviceWorkerCacheVersion),
-      __TAU_BUILTIN_CSS_FINGERPRINT__: JSON.stringify(builtinCssFingerprint),
-      __TAU_APP_URL__: JSON.stringify(env.APP_URL || ''),
-      __TAU_APP_BASE_PATH__: JSON.stringify(env.APP_BASE_PATH || ''),
-      __TAU_DEV_BACKEND_BAR__: JSON.stringify(isViteDev),
+      __FICUS_SW_CACHE_VERSION__: JSON.stringify(serviceWorkerCacheVersion),
+      __FICUS_BUILTIN_CSS_FINGERPRINT__: JSON.stringify(builtinCssFingerprint),
+      __FICUS_APP_URL__: JSON.stringify(env.APP_URL || ''),
+      __FICUS_APP_BASE_PATH__: JSON.stringify(env.APP_BASE_PATH || ''),
+      __FICUS_DEV_BACKEND_BAR__: JSON.stringify(isViteDev),
     },
     plugins: [
       ...(devAccessToken ? [devAccessPlugin(devAccessToken)] : []),
       ...(isViteDev ? [devBackendControlPlugin(devBackendState)] : []),
       react(),
-      // The built index.html keeps __TAU_ORIGIN__ for the server to fill in
+      // The built index.html keeps __FICUS_ORIGIN__ for the server to fill in
       // (apps/core/src/lib/web-serve.ts). The dev server serves the file itself,
       // so blank it there: relative og:* values are harmless in development.
       {
-        name: 'tau-origin-placeholder',
+        name: 'ficus-origin-placeholder',
         transformIndexHtml: {
           order: 'pre' as const,
           handler(html: string, ctx: { server?: unknown }) {
-            return ctx.server ? html.replaceAll('__TAU_ORIGIN__', '') : html
+            return ctx.server ? html.replaceAll('__FICUS_ORIGIN__', '') : html
           },
         },
       },
@@ -503,8 +503,8 @@ export default defineConfig(({ mode, command }) => {
         srcDir: 'src',
         filename: 'sw.ts',
         manifest: {
-          name: 'Tau - AI Task Management',
-          short_name: 'Tau',
+          name: 'Ficus - AI Task Management',
+          short_name: 'Ficus',
           description: 'A workspace for teams of AI agents.',
           start_url: base,
           scope: base,

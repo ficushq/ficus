@@ -16,14 +16,14 @@ export function apiBindHost(env: Record<string, string | undefined>, isK8s: bool
 }
 
 /**
- * The worker stream server's bind host: `TAU_WORKER_BIND` if set, else `HOST`,
+ * The worker stream server's bind host: `FICUS_WORKER_BIND` if set, else `HOST`,
  * else all interfaces inside Kubernetes, else loopback. The worker is not
  * meant to be reached from off-box (tau-api reaches it over loopback, or over
  * the container network in deployments that set HOST/WORKER_URL), so unlike
  * the API its non-k8s default is loopback-only.
  */
 export function workerBindHost(env: Record<string, string | undefined>, isK8s: boolean): string {
-  return env.TAU_WORKER_BIND?.trim() || env.HOST || (isK8s ? '0.0.0.0' : '127.0.0.1')
+  return env.FICUS_WORKER_BIND?.trim() || env.HOST || (isK8s ? '0.0.0.0' : '127.0.0.1')
 }
 
 /** True when a bind host exposes the listener beyond the loopback interface. */

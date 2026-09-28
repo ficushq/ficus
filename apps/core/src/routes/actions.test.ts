@@ -12,7 +12,7 @@ import { subscribeToSquad } from '../services/squad/subscriptions'
 import { parkWorkStream } from '../services/work-streams/admission'
 import { openWait } from '../services/work-streams/waits'
 import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
-import type { WorkStreamActionData } from '@tau/shared'
+import type { WorkStreamActionData } from '@ficus/shared'
 import { actionsRouter } from './actions'
 
 const app = new Hono()

@@ -242,15 +242,15 @@ function registerLocalCommands(deploy: Command): void {
     .requiredOption('--name <name>', 'Local app name')
     .option(
       '--port <port>',
-      'Application port. OMIT THIS: Tau assigns a free port and passes it as $PORT, which is the only way it can ' +
+      'Application port. OMIT THIS: Ficus assigns a free port and passes it as $PORT, which is the only way it can ' +
         'guarantee the port is free. Boxes on one machine share a loopback, so an explicit port is rejected when ' +
         'another live deployment holds it.'
     )
     .requiredOption(
       '--command <command>',
       'Command to start the local app. The app is served under a PATH PREFIX, not a domain root, so build it ' +
-        'with that prefix as its base ($TAU_APP_BASE_PATH is exported to the process): Vite `base`, Next ' +
-        '`basePath`, CRA `PUBLIC_URL`. A default build emitting /assets/... will 404 against the Tau origin.'
+        'with that prefix as its base ($FICUS_APP_BASE_PATH is exported to the process): Vite `base`, Next ' +
+        '`basePath`, CRA `PUBLIC_URL`. A default build emitting /assets/... will 404 against the Ficus origin.'
     )
     .option('--cwd <cwd>', 'Working directory inside the sandbox')
     .option('--env-secret-ref <key>', 'Secret Store key to expose to the process', collect, [])
@@ -262,7 +262,7 @@ function registerLocalCommands(deploy: Command): void {
     .description('Attach a local app run to an already-running app port')
     .requiredOption('--name <name>', 'Local app name')
     // Required here, unlike `start`: the app is ALREADY listening somewhere, so
-    // Tau cannot choose. Still rejected if another live deployment holds it.
+    // Ficus cannot choose. Still rejected if another live deployment holds it.
     .requiredOption('--port <port>', 'Port the already-running app listens on')
     .option(
       '--log-path <path>',

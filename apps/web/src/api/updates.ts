@@ -33,7 +33,7 @@ export interface UpdateSettingsResponse {
   settings: LocalAutoUpdateSettings
   status: UpdateStatusResponse
   /**
-   * True on a platform-managed instance (TAU_MANAGED=1), where self-updates
+   * True on a platform-managed instance (FICUS_MANAGED=1), where self-updates
    * cannot work and the hosting platform owns the upgrade lifecycle — the UI
    * hides the Updates surface entirely. Absent from older servers; treat
    * undefined as self-hosted.

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
@@ -42,7 +42,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
               <>
                 <button
                   type="button"
-                  className="tau-button rounded-md px-3 py-1.5 text-xs font-medium text-accent"
+                  className="ficus-button rounded-md px-3 py-1.5 text-xs font-medium text-accent"
                   disabled={action.isPending}
                   onClick={() => action.mutate('resume')}
                 >
@@ -51,7 +51,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
                 {stream.status === 'active' && (
                   <button
                     type="button"
-                    className="tau-button rounded-md px-3 py-1.5 text-xs font-medium text-secondary"
+                    className="ficus-button rounded-md px-3 py-1.5 text-xs font-medium text-secondary"
                     disabled={action.isPending}
                     onClick={() => action.mutate('park')}
                   >
@@ -62,7 +62,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
             ) : (
               <button
                 type="button"
-                className="tau-button rounded-md border border-th-border px-3 py-1.5 text-xs font-medium text-secondary"
+                className="ficus-button rounded-md border border-th-border px-3 py-1.5 text-xs font-medium text-secondary"
                 onClick={() => setEditing(!editing)}
               >
                 Pause work
@@ -84,7 +84,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
               <label className="block text-sm">
                 Reason
                 <input
-                  className="tau-field w-full p-2 border border-th-border rounded-md"
+                  className="ficus-field w-full p-2 border border-th-border rounded-md"
                   value={reason}
                   maxLength={2000}
                   onChange={(event) => setReason(event.target.value)}
@@ -93,7 +93,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
               <label className="block text-sm">
                 Auto-park after minutes (optional)
                 <input
-                  className="tau-field w-full p-2 border border-th-border rounded-md"
+                  className="ficus-field w-full p-2 border border-th-border rounded-md"
                   type="number"
                   min={1}
                   max={10080}
@@ -104,7 +104,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
               </label>
               <button
                 type="submit"
-                className="tau-button rounded-md px-3 py-1.5 text-xs font-medium text-accent"
+                className="ficus-button rounded-md px-3 py-1.5 text-xs font-medium text-accent"
                 disabled={action.isPending}
               >
                 Pause now

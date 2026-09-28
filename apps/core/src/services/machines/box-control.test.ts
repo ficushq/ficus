@@ -14,34 +14,51 @@ import type { Machine, MachineBox } from './queries'
 
 describe('parseBoxControlRequest', () => {
   test('defaults to read-only status and accepts every unit action and processes', () => {
-    expect(parseBoxControlRequest({ TAU_BC_SANDBOX_ID: 'squad_a' })).toEqual({ sandboxId: 'squad_a', action: 'status' })
+    expect(parseBoxControlRequest({ FICUS_BC_SANDBOX_ID: 'squad_a' })).toEqual({
+      sandboxId: 'squad_a',
+      action: 'status',
+    })
     for (const action of ['status', 'stop', 'start', 'restart', 'processes'] as const)
-      expect(parseBoxControlRequest({ TAU_BC_SANDBOX_ID: 'squad_a', TAU_BC_ACTION: action }).action).toBe(action)
+      expect(parseBoxControlRequest({ FICUS_BC_SANDBOX_ID: 'squad_a', FICUS_BC_ACTION: action }).action).toBe(action)
   })
 
   test('kill needs a real pid and one of TERM, INT or KILL (TERM by default)', () => {
-    expect(parseBoxControlRequest({ TAU_BC_SANDBOX_ID: 's', TAU_BC_ACTION: 'kill', TAU_BC_PID: '4242' })).toEqual({
-      sandboxId: 's',
-      action: 'kill',
-      pid: 4242,
-      signal: 'TERM',
-    })
+    expect(parseBoxControlRequest({ FICUS_BC_SANDBOX_ID: 's', FICUS_BC_ACTION: 'kill', FICUS_BC_PID: '4242' })).toEqual(
+      {
+        sandboxId: 's',
+        action: 'kill',
+        pid: 4242,
+        signal: 'TERM',
+      }
+    )
     expect(
-      parseBoxControlRequest({ TAU_BC_SANDBOX_ID: 's', TAU_BC_ACTION: 'kill', TAU_BC_PID: '9', TAU_BC_SIGNAL: 'kill' })
+      parseBoxControlRequest({
+        FICUS_BC_SANDBOX_ID: 's',
+        FICUS_BC_ACTION: 'kill',
+        FICUS_BC_PID: '9',
+        FICUS_BC_SIGNAL: 'kill',
+      })
     ).toMatchObject({ signal: 'KILL' })
     for (const pid of [undefined, '', '1', '0', '-5', '12;reboot', '1.5'])
-      expect(() => parseBoxControlRequest({ TAU_BC_SANDBOX_ID: 's', TAU_BC_ACTION: 'kill', TAU_BC_PID: pid })).toThrow(
-        'invalid pid'
-      )
+      expect(() =>
+        parseBoxControlRequest({ FICUS_BC_SANDBOX_ID: 's', FICUS_BC_ACTION: 'kill', FICUS_BC_PID: pid })
+      ).toThrow('invalid pid')
     expect(() =>
-      parseBoxControlRequest({ TAU_BC_SANDBOX_ID: 's', TAU_BC_ACTION: 'kill', TAU_BC_PID: '9', TAU_BC_SIGNAL: 'HUP' })
+      parseBoxControlRequest({
+        FICUS_BC_SANDBOX_ID: 's',
+        FICUS_BC_ACTION: 'kill',
+        FICUS_BC_PID: '9',
+        FICUS_BC_SIGNAL: 'HUP',
+      })
     ).toThrow('invalid signal')
   })
 
   test('rejects unknown actions and sandbox ids that could escape a shell', () => {
-    expect(() => parseBoxControlRequest({ TAU_BC_SANDBOX_ID: 's', TAU_BC_ACTION: 'reboot' })).toThrow('invalid action')
+    expect(() => parseBoxControlRequest({ FICUS_BC_SANDBOX_ID: 's', FICUS_BC_ACTION: 'reboot' })).toThrow(
+      'invalid action'
+    )
     for (const id of ['', "a'b", 'a b', 'a;rm', '$(id)'])
-      expect(() => parseBoxControlRequest({ TAU_BC_SANDBOX_ID: id })).toThrow('invalid sandboxId')
+      expect(() => parseBoxControlRequest({ FICUS_BC_SANDBOX_ID: id })).toThrow('invalid sandboxId')
   })
 })
 

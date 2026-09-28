@@ -1,16 +1,16 @@
 /**
  * Docker daemon management.
  *
- * Two runtimes, selected by whether `TAU_BOX_HOME` is set (only vm boxes set
+ * Two runtimes, selected by whether `FICUS_BOX_HOME` is set (only vm boxes set
  * it — exactly the same gate slice-2's path rebasing uses):
  *
- *  - `sysbox` (TAU_BOX_HOME unset — k8s pods with the sysbox RuntimeClass, and
+ *  - `sysbox` (FICUS_BOX_HOME unset — k8s pods with the sysbox RuntimeClass, and
  *    local docker): the pod can run a full rootful Docker daemon inside it
  *    without privileged mode. This module starts `dockerd` on boot if no socket
  *    is already present (socket mode) and chmods the system socket so
  *    `docker exec --user` can reach it. Byte-identical to the pre-box behavior.
  *
- *  - `rootless-box` (TAU_BOX_HOME set — a vm box): the daemon is the box user's
+ *  - `rootless-box` (FICUS_BOX_HOME set — a vm box): the daemon is the box user's
  *    OWN rootless dockerd, a lingering systemd --user service started by
  *    box-provision.sh and reached via `DOCKER_HOST=unix:///run/user/<uid>/docker.sock`.
  *    On a shared multi-box VM a single rootful daemon is root-equivalent for
@@ -53,7 +53,7 @@ export function ensureDocker(): Promise<boolean> {
  * its own error).
  */
 export async function waitForDockerReady(timeoutMs = 30_000): Promise<boolean> {
-  if (process.env.TAU_SANDBOX_ROLE === 'agent') return false
+  if (process.env.FICUS_SANDBOX_ROLE === 'agent') return false
 
   let timer: ReturnType<typeof setTimeout> | undefined
   const cap = new Promise<boolean>((resolve) => {
@@ -67,12 +67,12 @@ export async function waitForDockerReady(timeoutMs = 30_000): Promise<boolean> {
 }
 
 /**
- * Which docker runtime this process manages. Gated ONLY on `TAU_BOX_HOME`
+ * Which docker runtime this process manages. Gated ONLY on `FICUS_BOX_HOME`
  * (set exclusively by vm boxes), so with it unset the mode is `sysbox` and the
  * startup path is byte-identical to the pre-box implementation.
  */
 export function dockerRuntimeMode(): 'rootless-box' | 'sysbox' {
-  return process.env.TAU_BOX_HOME ? 'rootless-box' : 'sysbox'
+  return process.env.FICUS_BOX_HOME ? 'rootless-box' : 'sysbox'
 }
 
 /**
@@ -94,7 +94,7 @@ export async function verifyRootlessDocker(
   const wait = opts.wait ?? ((ms: number) => waitForDocker(ms))
 
   if (!process.env.DOCKER_HOST) {
-    logError('TAU_BOX_HOME is set but DOCKER_HOST is unset; rootless docker socket unknown')
+    logError('FICUS_BOX_HOME is set but DOCKER_HOST is unset; rootless docker socket unknown')
     return false
   }
 
@@ -114,7 +114,7 @@ async function startDocker(): Promise<boolean> {
   // VM box: verify the box user's OWN rootless daemon; never spawn rootful
   // dockerd or chmod the system socket (that shared-root hole is what
   // rootless-per-box closes). Everything below this guard is the unchanged
-  // sysbox path taken when TAU_BOX_HOME is unset (k8s/local).
+  // sysbox path taken when FICUS_BOX_HOME is unset (k8s/local).
   if (dockerRuntimeMode() === 'rootless-box') {
     return verifyRootlessDocker()
   }

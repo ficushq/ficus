@@ -91,7 +91,7 @@ describe('squad-env', () => {
       const envPath = join(workspacePath, '.tau', '.env')
       expect(existsSync(envPath)).toBe(true)
       expect(readFileSync(envPath, 'utf-8')).toContain(content)
-      expect(readFileSync(envPath, 'utf-8')).toContain('tau integration exec github')
+      expect(readFileSync(envPath, 'utf-8')).toContain('ficus integration exec github')
     })
 
     it('creates .env file with restricted owner or group-only permissions', async () => {
@@ -194,53 +194,53 @@ line2"`
 
     it('NEVER renders a reserved identity key into a squad env, even when exposed', async () => {
       const { renderEnvForSecrets } = await getModule()
-      // A Secret Store key literally named TAU_API_URL would otherwise be
+      // A Secret Store key literally named FICUS_API_URL would otherwise be
       // rendered into .tau/.env and sourced into every agent shell — the exact
       // thing the write-time check on user content refuses.
       const rendered = renderEnvForSecrets(
         'APP_ENV=x',
-        ['TAU_API_URL', 'TAU_TOKEN', 'DEPLOY_VERCEL_TOKEN'],
+        ['FICUS_API_URL', 'FICUS_TOKEN', 'DEPLOY_VERCEL_TOKEN'],
         (key: string) =>
           ({
-            TAU_API_URL: 'https://cloud.example.com',
-            TAU_TOKEN: 'operator-token',
+            FICUS_API_URL: 'https://cloud.example.com',
+            FICUS_TOKEN: 'operator-token',
             DEPLOY_VERCEL_TOKEN: 'vercel-secret',
           })[key]
       )
-      expect(rendered).not.toContain('TAU_API_URL')
+      expect(rendered).not.toContain('FICUS_API_URL')
       expect(rendered).not.toContain('operator-token')
       expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
     })
 
     it('excludes the self-hosted relay credential from explicit squad exposure', async () => {
-      const prior = process.env.TAU_MANAGED_SECRET_KEYS
-      delete process.env.TAU_MANAGED_SECRET_KEYS
+      const prior = process.env.FICUS_MANAGED_SECRET_KEYS
+      delete process.env.FICUS_MANAGED_SECRET_KEYS
       try {
         const { renderEnvForSecrets } = await getModule()
         const lookedUp: string[] = []
-        const rendered = renderEnvForSecrets('', ['TAU_PUSH_RELAY_TOKEN', 'DEPLOY_VERCEL_TOKEN'], (key: string) => {
+        const rendered = renderEnvForSecrets('', ['FICUS_PUSH_RELAY_TOKEN', 'DEPLOY_VERCEL_TOKEN'], (key: string) => {
           lookedUp.push(key)
-          return key === 'TAU_PUSH_RELAY_TOKEN' ? 'relay-canary' : 'allowed-value'
+          return key === 'FICUS_PUSH_RELAY_TOKEN' ? 'relay-canary' : 'allowed-value'
         })
         expect(lookedUp).toEqual(['DEPLOY_VERCEL_TOKEN'])
-        expect(rendered).not.toContain('TAU_PUSH_RELAY_TOKEN')
+        expect(rendered).not.toContain('FICUS_PUSH_RELAY_TOKEN')
         expect(rendered).not.toContain('relay-canary')
         expect(rendered).toContain('allowed-value')
       } finally {
-        if (prior === undefined) delete process.env.TAU_MANAGED_SECRET_KEYS
-        else process.env.TAU_MANAGED_SECRET_KEYS = prior
+        if (prior === undefined) delete process.env.FICUS_MANAGED_SECRET_KEYS
+        else process.env.FICUS_MANAGED_SECRET_KEYS = prior
       }
     })
 
     it('NEVER renders a platform-managed key into a squad env, even when named explicitly', async () => {
       const privateKeys = [
         'APNS_KEY_ID',
-        'TAU_PLATFORM_INSTANCE_TOKEN',
-        'TAU_PLATFORM_USAGE_TOKEN',
+        'FICUS_PLATFORM_INSTANCE_TOKEN',
+        'FICUS_PLATFORM_USAGE_TOKEN',
         'NOTION_OAUTH_CLIENT_ID',
         'NOTION_OAUTH_CLIENT_SECRET',
       ]
-      process.env.TAU_MANAGED_SECRET_KEYS = privateKeys.join(',')
+      process.env.FICUS_MANAGED_SECRET_KEYS = privateKeys.join(',')
       try {
         const { renderEnvForSecrets } = await getModule()
         // A tenant names the managed keys explicitly in the exposure allowlist…
@@ -256,7 +256,25 @@ line2"`
         // Non-managed keys still render normally.
         expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
       } finally {
-        delete process.env.TAU_MANAGED_SECRET_KEYS
+        delete process.env.FICUS_MANAGED_SECRET_KEYS
+      }
+    })
+
+    it('NEVER renders a retained TAU_ spelling of a managed or private key (one release)', async () => {
+      process.env.FICUS_MANAGED_SECRET_KEYS = 'FICUS_PLATFORM_INSTANCE_TOKEN,FICUS_PLATFORM_USAGE_TOKEN'
+      try {
+        const { renderEnvForSecrets } = await getModule()
+        const legacyKeys = ['TAU_PUSH_RELAY_TOKEN', 'TAU_PLATFORM_INSTANCE_TOKEN', 'TAU_PLATFORM_USAGE_TOKEN']
+        const lookedUp: string[] = []
+        const rendered = renderEnvForSecrets('', [...legacyKeys, 'DEPLOY_VERCEL_TOKEN'], (key: string) => {
+          lookedUp.push(key)
+          return `${key}-value`
+        })
+        expect(lookedUp).toEqual(['DEPLOY_VERCEL_TOKEN'])
+        for (const key of legacyKeys) expect(rendered).not.toContain(key)
+        expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='DEPLOY_VERCEL_TOKEN-value'")
+      } finally {
+        delete process.env.FICUS_MANAGED_SECRET_KEYS
       }
     })
 

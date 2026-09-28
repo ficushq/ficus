@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { SquadActivityItem, SquadActivityLane, SquadActivityRef } from '@tau/shared'
+import type { SquadActivityItem, SquadActivityLane, SquadActivityRef } from '@ficus/shared'
 
 export type SquadActivitySourceFamily =
   | 'chat'

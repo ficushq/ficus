@@ -35,7 +35,7 @@ import type {
   WorkflowCommand,
   IntegrationOutputFact,
   IntegrationSubscription,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { GitHubIssueDispatchFact } from '../services/squad-activity/github-issue-fact'
 import type { GitHubPrDispatchFact } from '../services/squad-activity/github-pr-fact'
 import type { SandboxProvisionErrorCode } from '../services/sandbox/k8s/provision-errors'
@@ -721,7 +721,7 @@ export const squadActivity = pgTable(
     agentTypeRequiresAgentsRead: boolean('agent_type_requires_agents_read').notNull().default(false),
     kind: varchar('kind', { length: 32 }).$type<SquadActivityKind>().notNull(),
     summary: varchar('summary', { length: 512 }).notNull(),
-    preview: jsonb('preview').$type<import('@tau/shared').ActivityPreviewSpan[]>().notNull().default([]),
+    preview: jsonb('preview').$type<import('@ficus/shared').ActivityPreviewSpan[]>().notNull().default([]),
     ref: jsonb('ref').$type<SquadActivityRef>().notNull(),
     quietEligible: boolean('quiet_eligible').notNull(),
     accessScope: squadActivityAccessScopeEnum('access_scope').notNull(),
@@ -877,7 +877,7 @@ export const messageAgentFileAttachments = pgTable(
 
 // Squad Presets table
 export const squadPresets = pgTable('squad_presets', {
-  workflows: jsonb('workflows').$type<import('@tau/shared').SquadPresetWorkflows>(),
+  workflows: jsonb('workflows').$type<import('@ficus/shared').SquadPresetWorkflows>(),
   id: varchar('id', { length: 100 }).primaryKey(),
   name: varchar('name', { length: 200 }).notNull(),
   description: text('description'),
@@ -894,7 +894,7 @@ export const squadPresets = pgTable('squad_presets', {
 
 // Workflow catalog. Inline stream definitions do not create catalog entries.
 export const workflows = pgTable('workflows', {
-  scope: jsonb('scope').$type<import('@tau/shared').WorkflowScope>().notNull().default({ kind: 'instance' }),
+  scope: jsonb('scope').$type<import('@ficus/shared').WorkflowScope>().notNull().default({ kind: 'instance' }),
   id: varchar('id', { length: 100 }).primaryKey(),
   description: text('description'),
   definition: jsonb('definition').$type<WorkflowDefinition>().notNull(),
@@ -937,7 +937,7 @@ export const squads = pgTable('squads', {
   machineId: uuid('machine_id').references((): AnyPgColumn => machines.id, { onDelete: 'set null' }),
   // Host sandbox runtime only: absolute directory on the core's machine this
   // squad's workspace lives in (NULL = <HOME_DIR>/workspaces/squads/<id>).
-  // Stored on any runtime, honoured only by TAU_SANDBOX_RUNTIME=host. Tau never
+  // Stored on any runtime, honoured only by FICUS_SANDBOX_RUNTIME=host. Ficus never
   // deletes this directory.
   hostWorkspacePath: text('host_workspace_path'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -1044,7 +1044,7 @@ export const localDeployments = pgTable(
     keepSandboxAlive: boolean('keep_sandbox_alive').notNull().default(true),
     command: text('command'),
     cwd: text('cwd'),
-    /** Attached deployments only: absolute sandbox-side log file Tau tails. */
+    /** Attached deployments only: absolute sandbox-side log file Ficus tails. */
     logPath: text('log_path'),
     envSecretRefs: text('env_secret_refs').array(),
     processId: varchar('process_id', { length: 255 }),
@@ -1189,7 +1189,7 @@ export const workStreams = pgTable(
     status: workStreamStatusEnum('status').notNull().default('active'),
     // Existing rows retain their worktree. New creation opts in explicitly.
     autoCleanupWorktree: boolean('auto_cleanup_worktree').notNull().default(false),
-    pause: jsonb('pause').$type<import('@tau/shared').WorkStreamPause>(),
+    pause: jsonb('pause').$type<import('@ficus/shared').WorkStreamPause>(),
     priority: workStreamPriorityEnum('priority').notNull().default('normal'),
     assigneeAgentId: uuid('assignee_agent_id').references(() => agents.id, { onDelete: 'set null' }),
     ownerAgentId: uuid('owner_agent_id').references(() => agents.id, { onDelete: 'set null' }),
@@ -2083,7 +2083,7 @@ export const instanceIdentity = pgTable('instance_identity', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 
-// Federation Peers - known remote Tau instances this instance can route to
+// Federation Peers - known remote Ficus instances this instance can route to
 export const peers = pgTable('peers', {
   id: uuid('id').primaryKey().defaultRandom(),
   localAlias: varchar('local_alias', { length: 200 }).notNull().unique(),
@@ -2344,7 +2344,7 @@ export const channelDirectAgents = pgTable(
   (table) => [unique('channel_direct_agent_scope_unique').on(table.chatId, table.squadId)]
 )
 
-// The user starts in Tau, proves control in the provider, then confirms the sender in Tau.
+// The user starts in Ficus, proves control in the provider, then confirms the sender in Ficus.
 export const channelLinkChallenges = pgTable('channel_link_challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
@@ -2496,7 +2496,7 @@ export const deviceTokens = pgTable('device_tokens', {
   revokedAt: timestamp('revoked_at'),
 })
 
-// Short-lived browser-approved grants used to bootstrap an unauthenticated CLI or Tau Desktop instance.
+// Short-lived browser-approved grants used to bootstrap an unauthenticated CLI or Ficus Desktop instance.
 export const deviceAuthorizations = pgTable(
   'device_authorizations',
   {
@@ -2709,7 +2709,7 @@ export const machines = pgTable('machines', {
   // and on a machine that has NEVER lost a box, so a freshly provisioned VM is
   // exempt from reaping until it has hosted and drained. The empty-machine
   // reaper terminates a ready, auto-provisioned, non-dedicated machine once
-  // now - empty_since exceeds TAU_MACHINE_IDLE_GRACE_MS (re-verifying zero
+  // now - empty_since exceeds FICUS_MACHINE_IDLE_GRACE_MS (re-verifying zero
   // boxes at terminate time).
   emptySince: timestamp('empty_since', { withTimezone: true }),
   // The squad a legacy 'squad'-purpose machine belongs to; null for every other
@@ -2766,7 +2766,7 @@ export const machineBoxes = pgTable(
     // field name this is NOT the bare reconcilable spec hash (role +
     // bundle/provision-script version + squad membership —
     // `computeSpecHash`, used for recreateSandbox's drift detection and
-    // baked into TAU_BOX_SPEC_HASH): it additionally folds in a HASH of the
+    // baked into FICUS_BOX_SPEC_HASH): it additionally folds in a HASH of the
     // caller env (never the raw secret values), because the resume fast
     // path this drives skips the server.env push a full provision does — a
     // rotated GITHUB_TOKEN/callback secret/API URL must also bust the fast
@@ -2783,7 +2783,7 @@ export const machineBoxes = pgTable(
     // secret rotation) is never silently skipped. Null for rows predating
     // this column.
     provisionedSpecHash: text('provisioned_spec_hash'),
-    // Bare reconcilable sandbox spec mirrored from TAU_BOX_SPEC_HASH. Unlike
+    // Bare reconcilable sandbox spec mirrored from FICUS_BOX_SPEC_HASH. Unlike
     // provisionedSpecHash this excludes environment/secret hashes, so drift
     // checks can compare it directly after a Core restart.
     reconcilableSpecHash: text('reconcilable_spec_hash'),
@@ -3748,11 +3748,11 @@ export const assistantConversations = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     /** Which assistant this is: the app-wide Assistant, or a page editor bound to one draft. */
     kind: varchar('kind', { length: 20 })
-      .$type<import('@tau/shared').AssistantConversationKind>()
+      .$type<import('@ficus/shared').AssistantConversationKind>()
       .notNull()
       .default('assistant'),
     title: text('title').notNull().default('New conversation'),
-    editor: jsonb('editor').$type<import('@tau/shared').AssistantEditorState>(),
+    editor: jsonb('editor').$type<import('@ficus/shared').AssistantEditorState>(),
     /** Durable conversation agent. NULL until the owner first opens the agent-backed conversation. */
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     inboxConsumerId: uuid('inbox_consumer_id'),
@@ -3825,10 +3825,10 @@ export const assistantTasks = pgTable(
       .references(() => assistantConversations.id, { onDelete: 'cascade' }),
     currentRequestId: uuid('current_request_id').notNull(),
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
-    kind: varchar('kind', { length: 20 }).$type<import('@tau/shared').AssistantMessageTargetKind>().notNull(),
+    kind: varchar('kind', { length: 20 }).$type<import('@ficus/shared').AssistantMessageTargetKind>().notNull(),
     squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'set null' }),
     label: text('label').notNull(),
-    status: varchar('status', { length: 20 }).$type<import('@tau/shared').AssistantTaskStatus>().notNull(),
+    status: varchar('status', { length: 20 }).$type<import('@ficus/shared').AssistantTaskStatus>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -3848,7 +3848,7 @@ export const assistantUpdates = pgTable(
     taskId: uuid('task_id').references(() => assistantTasks.id, { onDelete: 'set null' }),
     requestId: uuid('request_id'),
     sequence: integer('sequence').notNull(),
-    reportedStatus: varchar('reported_status', { length: 20 }).$type<import('@tau/shared').AssistantTaskStatus>(),
+    reportedStatus: varchar('reported_status', { length: 20 }).$type<import('@ficus/shared').AssistantTaskStatus>(),
     /** Durable inbox delivery to the conversational agent; separate from confirmed consumption. */
     forwardedMessageId: uuid('forwarded_message_id'),
     /** Assistant response that summarized the confirmed update. */
@@ -3873,16 +3873,16 @@ export const assistantUpdates = pgTable(
 // Latest scan, cross-process lease, and durable capacity-alert outbox.
 export const storageMonitor = pgTable('storage_monitor', {
   id: text('id').primaryKey(),
-  snapshot: jsonb('snapshot').$type<import('@tau/shared').StorageSnapshot>(),
+  snapshot: jsonb('snapshot').$type<import('@ficus/shared').StorageSnapshot>(),
   requestedAt: timestamp('requested_at', { withTimezone: true }),
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   leaseId: uuid('lease_id'),
   leaseUntil: timestamp('lease_until', { withTimezone: true }),
   error: text('error'),
-  levels: jsonb('levels').$type<Record<string, import('@tau/shared').StorageWarning>>().notNull().default({}),
+  levels: jsonb('levels').$type<Record<string, import('@ficus/shared').StorageWarning>>().notNull().default({}),
   pendingAlerts: jsonb('pending_alerts')
-    .$type<Array<{ id: string; warning: import('@tau/shared').StorageWarning }>>()
+    .$type<Array<{ id: string; warning: import('@ficus/shared').StorageWarning }>>()
     .notNull()
     .default([]),
 })

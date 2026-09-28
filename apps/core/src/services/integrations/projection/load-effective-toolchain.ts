@@ -1,6 +1,6 @@
 import { integrationEnabledPredicate } from '../provider-state'
 import { and, eq, gt } from 'drizzle-orm'
-import type { SandboxToolchainConfig } from '@tau/shared'
+import type { SandboxToolchainConfig } from '@ficus/shared'
 import { db, integrationConnectionAssignments, integrationConnections } from '../../../db'
 import { resolveOAuthAuthority } from '../authorization/authority'
 import { firstPartyIntegrationPlugin } from '../first-party-plugins'

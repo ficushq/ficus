@@ -66,7 +66,7 @@ export interface PiCompactionModelFailoverOptions {
   ) => false | void | PiCompactionProviderSwitch | Promise<false | void | PiCompactionProviderSwitch>
   /** Concrete account used by the current compaction request, when stored auth is active. */
   getActiveAccountId?: () => string | undefined
-  /** Test seam; the site-local Tau guard always runs before classification. */
+  /** Test seam; the site-local Ficus guard always runs before classification. */
   classifyError?: (error: unknown) => CaughtProviderErrorClassification | null
   /** Called after the live pi session has switched models and provider/account state is committed. */
   onModelSwitched?: (nextProvider: string, nextSpec: string) => void | Promise<void>

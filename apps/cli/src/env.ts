@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
+import { bridgeLegacyEnv } from '@ficus/shared/legacy-env'
 
 const dotenvInjected = new Map<string, string>()
 
@@ -15,10 +16,11 @@ export function loadEnv(options: { cwd?: string; env?: NodeJS.ProcessEnv } = {})
     contents = readFileSync(envPath, 'utf-8')
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : String(error)
-    process.stderr.write(`tau: could not read .env in ${cwd} (${code}); continuing without it\n`)
+    process.stderr.write(`ficus: could not read .env in ${cwd} (${code}); continuing without it\n`)
     return
   }
 
+  const parsed: Record<string, string | undefined> = {}
   for (const line of contents.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
@@ -29,8 +31,18 @@ export function loadEnv(options: { cwd?: string; env?: NodeJS.ProcessEnv } = {})
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1)
     }
+    if (!(key in parsed)) parsed[key] = value
+  }
+
+  // One release (Ficus rename): bridge the file's legacy TAU_* keys to FICUS_* in this separate
+  // record. The boot module already bridged process.env once; running the bridge on process.env
+  // again would let the file's protected value replace an explicit one.
+  bridgeLegacyEnv(parsed)
+
+  for (const [key, value] of Object.entries(parsed)) {
+    if (value === undefined) continue
     // Record EVERY key parsed from the file, not just the ones we inject. Bun auto-loads
-    // ./.env into process.env before any user code runs (the shipped CLI is dist/tau.js under
+    // ./.env into process.env before any user code runs (the shipped CLI is dist/ficus.js under
     // `#!/usr/bin/env bun`), so by the time we get here the key is usually already set and we
     // inject nothing. A process value identical to the file's is indistinguishable from one we
     // injected, so it must be treated as implicit too — otherwise a stale repo .env outranks

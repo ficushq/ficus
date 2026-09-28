@@ -1,5 +1,5 @@
 import { expect, test, spyOn } from 'bun:test'
-import type { RenderItem } from '@tau/client-core'
+import type { RenderItem } from '@ficus/client-core'
 import { assistantSummaryUpdateIds } from './assistantSummarySources'
 import { assistantQueries } from '../queryOptions'
 import { assistantApi } from '../api/assistant'

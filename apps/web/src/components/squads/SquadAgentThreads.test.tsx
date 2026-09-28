@@ -12,7 +12,7 @@ import type { Window } from 'happy-dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
 import { SquadAgentThreadsApiProvider } from './squadAgentThreadsApi'
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 
 // Seeds the initial URL search params for the next mount — lets tests simulate a
 // page load / refresh at a given URL (e.g. ?newConsultant=1). Reset in afterEach.

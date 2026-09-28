@@ -226,19 +226,19 @@ describe('createK8sSandboxedCodingTools', () => {
   })
 
   test('resolveAgentBashCwd: box-native ~/.private on the vm runtime', () => {
-    const prev = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    const prev = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     try {
       expect(resolveAgentBashCwd('agent_abc')).toBe(`/home/${boxUnixUser('agent_abc')}/.private`)
     } finally {
-      if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prev
+      if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prev
     }
   })
 
   test('vm squad member: a denied private-bash touch of the squad workspace names squad_bash', async () => {
-    const prev = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    const prev = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     try {
       const squadId = 'sq-hint'
       const workspaceMount = `/home/${boxUnixUser(`squad_${squadId}`)}/workspace`
@@ -286,8 +286,8 @@ describe('createK8sSandboxedCodingTools', () => {
         /squad_bash/
       )
     } finally {
-      if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prev
+      if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prev
     }
   })
 
@@ -906,14 +906,14 @@ describe('mkdir rollout tolerance: stale box bundle without the /mkdir route', (
 describe('resolveSquadFileRoute (vm-only toolkit gate)', () => {
   let prev: string | undefined
   function withRuntime(value: string | undefined, fn: () => void) {
-    prev = process.env.TAU_SANDBOX_RUNTIME
-    if (value === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = value
+    prev = process.env.FICUS_SANDBOX_RUNTIME
+    if (value === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = value
     try {
       fn()
     } finally {
-      if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prev
+      if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prev
     }
   }
 
@@ -954,11 +954,11 @@ describe('toolkit wiring: squad members carry the squad route on vm only', () =>
   }
 
   function withRuntime(value: string, fn: () => Promise<void>) {
-    const prev = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = value
+    const prev = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = value
     return fn().finally(() => {
-      if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prev
+      if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prev
     })
   }
 
@@ -1434,7 +1434,7 @@ describe('createHttpBashOperations', () => {
       cwd: '/custom/cwd',
       timeoutSeconds: 30,
       // The live Core URL is always injected (overrides any stale baked value).
-      env: { TAU_API_URL: resolveSandboxApiUrl('tau-sandboxes') },
+      env: { FICUS_API_URL: resolveSandboxApiUrl('tau-sandboxes') },
       sourceEnv: true,
       activateDevbox: true,
     })
@@ -1446,7 +1446,7 @@ describe('createHttpBashOperations', () => {
     // forwarded host PATH would clobber the pod's PATH — making global-profile tools like `gh`
     // unfindable on empty-devbox agent boxes (squad boxes only escape via their cached devbox
     // shellenv). The pod owns its PATH/HOME/etc; we forward NONE of the caller env, only the
-    // deliberate TAU_API_URL (+ token). Agent `bash` and `squad_bash` share this op, so both
+    // deliberate FICUS_API_URL (+ token). Agent `bash` and `squad_bash` share this op, so both
     // behave identically.
     const mockStream = createMockStream()
     const bashMock = mock(() => mockStream)
@@ -1475,7 +1475,7 @@ describe('createHttpBashOperations', () => {
       cwd: '/workspace',
       timeoutSeconds: 180,
       // None of the caller/host env survives — not PATH, not HOME, not FOO/BAZ.
-      env: { TAU_API_URL: resolveSandboxApiUrl('tau-sandboxes') },
+      env: { FICUS_API_URL: resolveSandboxApiUrl('tau-sandboxes') },
       sourceEnv: true,
       activateDevbox: true,
     })
@@ -1491,12 +1491,12 @@ describe('createHttpBashOperations', () => {
       podManager: { namespace: 'tau-sandboxes' },
     } as unknown as K8sSandboxManager
 
-    const operations = createHttpBashOperations(manager, 'test-sandbox', 'tau_agent_xyz')
+    const operations = createHttpBashOperations(manager, 'test-sandbox', 'ficus_agent_xyz')
 
-    // Caller passes a stale TAU_API_URL; the live one must win.
-    const execPromise = operations.exec('tau whoami', '/private', {
+    // Caller passes a stale FICUS_API_URL; the live one must win.
+    const execPromise = operations.exec('ficus whoami', '/private', {
       onData: () => {},
-      env: { TAU_API_URL: 'http://host.k3d.internal:1' },
+      env: { FICUS_API_URL: 'http://host.k3d.internal:1' },
     })
 
     mockStream.emitData({ exitCode: 0 })
@@ -1510,7 +1510,7 @@ describe('createHttpBashOperations', () => {
     expect(liveUrl).not.toBe('http://host.k3d.internal:1')
     expect(bashMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        env: { TAU_API_URL: liveUrl, TAU_TOKEN: 'tau_agent_xyz' },
+        env: { FICUS_API_URL: liveUrl, FICUS_TOKEN: 'ficus_agent_xyz' },
       })
     )
   })
@@ -1990,7 +1990,7 @@ test('concurrent consultant commands share a client but retain distinct tokens, 
       )!
   )
   await Promise.all(tools.map((tool) => tool.execute('call', { command: 'pwd' })))
-  expect(requests.map((request) => request.env.TAU_TOKEN).sort()).toEqual(['token-one', 'token-two'])
+  expect(requests.map((request) => request.env.FICUS_TOKEN).sort()).toEqual(['token-one', 'token-two'])
   expect(requests.map((request) => request.cwd).sort()).toEqual(
     ['one', 'two'].map((id) => resolveAgentBashCwd(sandboxId, id)).sort()
   )

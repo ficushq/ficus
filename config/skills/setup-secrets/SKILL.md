@@ -1,21 +1,21 @@
 ---
 name: setup-secrets
-description: "Help configure Tau credentials through their owning settings pages, keeping agent-model access separate from API services."
+description: 'Help configure Ficus credentials through their owning settings pages, keeping agent-model access separate from API services.'
 ---
 
 # Setting Up Credentials
 
-Tau encrypts stored secrets with AES-256-GCM. Server bootstrap requires `DATABASE_URL` and `TAU_ENCRYPTION_KEY`; provider and service credentials should normally be configured through the UI.
+Ficus encrypts stored secrets with AES-256-GCM. Server bootstrap requires `DATABASE_URL` and `FICUS_ENCRYPTION_KEY`; provider and service credentials should normally be configured through the UI.
 
 This skill is for the System Manager helping a human configure their instance. Check existing configuration before suggesting changes:
 
 ```bash
-tau provider-auth list
-tau integration list --json
-tau secret list
+ficus provider-auth list
+ficus integration list --json
+ficus secret list
 ```
 
-Do not ask the human to paste credentials into chat. Direct them to the owning settings page. Do not use `tau secret set` for integration-owned credentials; their legacy secret endpoints are retired. Saved integration secrets cannot be revealed: enter a replacement to rotate them. Webhook panels can generate a new signing secret for the human to copy into the provider before saving it.
+Do not ask the human to paste credentials into chat. Direct them to the owning settings page. Do not use `ficus secret set` for integration-owned credentials; their legacy secret endpoints are retired. Saved integration secrets cannot be revealed: enter a replacement to rotate them. Webhook panels can generate a new signing secret for the human to copy into the provider before saving it.
 
 ## Agent Models
 
@@ -49,11 +49,11 @@ The encryption key belongs in the server environment, not in the secret store. C
 
 ## Troubleshooting
 
-| Problem | Check |
-| --- | --- |
-| Secret store unavailable | Server `TAU_ENCRYPTION_KEY` configuration |
-| Agent-model authentication | AI Providers account, provider enable state, and `tau provider-auth get <provider>` |
-| Unexpected OpenAI fallback | AI Providers and legacy server environment credentials; API-services setup alone must not enroll a provider |
-| Voice/transcription/embeddings unavailable | OpenAI API services switch and key; Memory’s embeddings switch |
-| Message read-aloud unavailable | Google Cloud switch, service-account JSON or server ADC, and Text-to-Speech API access |
-| GitHub commands fail | Global/squad integration enable state, selected account, and App repository access |
+| Problem                                    | Check                                                                                                       |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Secret store unavailable                   | Server `FICUS_ENCRYPTION_KEY` configuration                                                                 |
+| Agent-model authentication                 | AI Providers account, provider enable state, and `ficus provider-auth get <provider>`                       |
+| Unexpected OpenAI fallback                 | AI Providers and legacy server environment credentials; API-services setup alone must not enroll a provider |
+| Voice/transcription/embeddings unavailable | OpenAI API services switch and key; Memory’s embeddings switch                                              |
+| Message read-aloud unavailable             | Google Cloud switch, service-account JSON or server ADC, and Text-to-Speech API access                      |
+| GitHub commands fail                       | Global/squad integration enable state, selected account, and App repository access                          |

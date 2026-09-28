@@ -4,7 +4,7 @@
 
 Discord, Slack, and Telegram are separate cards in **Settings → Integrations**.
 Each card holds one **connection** for the provider: paste the bot token (and
-the Slack signing secret), and Tau validates it, records the bot's identity, and
+the Slack signing secret), and Ficus validates it, records the bot's identity, and
 does the provider-side registration itself. Secret fields show whether a value
 is configured without revealing it, and credentials are not edited through
 Secrets & Keys. Existing configured bots remain enabled on upgrade; new
@@ -21,7 +21,7 @@ The integration switch gates the transport; disabling Discord also stops its
 gateway, and saving a new token reconnects it. Slack clients pick up token
 changes on their next request.
 
-Channels connect external platforms (Discord, Slack, Telegram) to Tau squads via
+Channels connect external platforms (Discord, Slack, Telegram) to Ficus squads via
 a **consultant agent**. The consultant is a member of its routed
 squad: it answers questions and creates work streams directly, with its configured
 permissions and tools. It forwards squad-specific operational decisions when
@@ -38,8 +38,8 @@ Discord/Slack User
        ↓
   ┌─────────────────────────────────────┐
   │ Can handle directly:                │
-  │ - Status checks (/tau status)       │
-  │ - Questions (/tau ask)              │
+  │ - Status checks (/ficus status)       │
+  │ - Questions (/ficus ask)              │
   │ - Create and follow work streams   │
   └─────────────────────────────────────┘
        ↓ (when an operational decision needs the manager)
@@ -53,10 +53,10 @@ Discord/Slack User
 
 ## Commands
 
-| Command          | Description                    | Handler    |
-| ---------------- | ------------------------------ | ---------- |
-| `/tau status`    | Show active work streams       | Immediate  |
-| `/tau <message>` | Ask questions or make requests | Consultant |
+| Command            | Description                    | Handler    |
+| ------------------ | ------------------------------ | ---------- |
+| `/ficus status`    | Show active work streams       | Immediate  |
+| `/ficus <message>` | Ask questions or make requests | Consultant |
 
 The consultant handles all freeform messages intelligently:
 
@@ -68,15 +68,15 @@ The consultant handles all freeform messages intelligently:
 
 Ingress verifies the provider signature (or Discord gateway session) before using
 its sender ID. `channel-access.ts` checks either an exact trusted channel ID or a
-confirmed external identity linked to an enabled Tau user with current `chat:send`
+confirmed external identity linked to an enabled Ficus user with current `chat:send`
 permission for the routed squad. Permission lookup bypasses the RBAC cache so
 revocation applies to the next message. Help and account linking do not start an
 agent and are available before this check. Notification commands can change only
 the squad routed to that channel.
 
 `/api/channel-links` is a personal authenticated-user API. A user starts a random,
-short-lived challenge in Tau, submits it through authenticated provider ingress,
-and confirms the displayed sender in Tau. Only hashes are stored. Confirmation
+short-lived challenge in Ficus, submits it through authenticated provider ingress,
+and confirms the displayed sender in Ficus. Only hashes are stored. Confirmation
 and uniqueness checks happen in a transaction. Links bind the instance and its
 provider identity, not display names; reusing a routing record for another Slack
 workspace invalidates old proofs and access. Unlink and disabled users fail closed.
@@ -90,7 +90,7 @@ channels. Discord routing and trust use a verified parent channel for threads.
 In shared channels, Slack and Discord continue a conversation on an explicit bot mention in a thread;
 unmentioned replies are ignored. Discord also accepts slash commands in a thread.
 Telegram group chats reuse one conversation per chat and respond to group
-`/tau` commands, and replies to bot messages. Lookups are scoped to provider,
+`/ficus` commands, and replies to bot messages. Lookups are scoped to provider,
 instance, channel, thread, and the currently routed squad. A changed squad override
 does not resume an agent in the old squad.
 
@@ -108,7 +108,7 @@ DMs and private server channels do not enable user-directed routing. Discord
 subscribes to `DIRECT_MESSAGES`; since a DM has no guild ID, it uses the configured
 bot connection's server to resolve the routing instance and linked identity.
 
-`/tau squad <slug, name or ID>` selects a permitted squad; no argument lists choices.
+`/ficus squad <slug, name or ID>` selects a permitted squad; no argument lists choices.
 Slug assignment uses shared `squadSlugMap` over the user's visible, non-anonymous,
 non-archived squad list, matching web URLs and duplicate-name suffixes. Choices
 are additionally filtered by fresh `chat:send` permission. Trusted-channel bypass
@@ -118,7 +118,7 @@ Telegram and Discord scope the selection to a linked identity and DM. Slack
 scopes it to each DM thread: a new top-level message gets a reply thread, and a
 root slash command creates a real parent message before binding the thread.
 Ordinary DM thread replies need no mention. Inside a Slack thread, use
-`@Tau squad <slug>` or `tau squad <slug>` because Slack custom slash commands are
+`@Ficus squad <slug>` or `ficus squad <slug>` because Slack custom slash commands are
 not available there. Discord has no native DM threads. Guild commands remain
 registered for immediate availability; a DM-only global copy propagates separately.
 
@@ -139,7 +139,7 @@ work. Only switch confirmations name the squad; ordinary replies and updates hav
 ## Connecting a provider
 
 Each provider is one **connection** on the instance, saved from its card in
-**Settings → Integrations**. Paste the secret the provider gives you; Tau
+**Settings → Integrations**. Paste the secret the provider gives you; Ficus
 validates it against the provider, records who the bot is (bot id, workspace,
 application), and does the provider-side setup that used to be manual. Pick a
 **Default squad** on the same card and the routing entry is created for you;
@@ -155,7 +155,7 @@ without discarding the credential.
 
 1. Message [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the
    bot token.
-2. Paste it into the Telegram card and save. Tau calls `getMe` to validate,
+2. Paste it into the Telegram card and save. Ficus calls `getMe` to validate,
    records the bot id and username, generates a webhook secret, and registers
    the webhook (`https://<instance>/api/webhooks/channels/telegram`) with
    Telegram. Switching the provider off removes the webhook.
@@ -165,11 +165,11 @@ without discarding the credential.
 ### Slack
 
 1. On the Slack card, **Download the Slack app manifest** — it already carries
-   this instance's URL for the `/tau` command and Events API.
+   this instance's URL for the `/ficus` command and Events API.
 2. At [api.slack.com/apps](https://api.slack.com/apps) choose **Create New App
    → From an app manifest**, paste it, create, then **Install to Workspace**.
 3. Paste the app's **Bot User OAuth Token** and **Signing Secret** into the card
-   and save. Tau calls `auth.test`, records the workspace and bot user id.
+   and save. Ficus calls `auth.test`, records the workspace and bot user id.
 4. Choose a **Default squad**. Invite the bot to the channels it should answer in.
 
 Reinstall the Slack app after changing scopes. The manifest's scope list is the
@@ -182,13 +182,13 @@ is the template the download is rendered from.
    create an application, open **Bot**, **Reset Token**, and copy it. Under
    **Privileged Gateway Intents** enable **Message Content Intent** (thread
    replies).
-2. Paste the token into the Discord card and save. Tau validates it, records
+2. Paste the token into the Discord card and save. Ficus validates it, records
    the application id and public key from `/applications/@me`, registers the
-   `/tau` slash commands, and (re)connects the gateway.
+   `/ficus` slash commands, and (re)connects the gateway.
 3. Slash commands work through the gateway without a public endpoint. If you
    prefer HTTP delivery, copy the **Interactions Endpoint URL** shown on the card
    (`https://<instance>/api/webhooks/channels/discord`) into **General
-   Information** in the portal; Discord verifies it with the public key Tau
+   Information** in the portal; Discord verifies it with the public key Ficus
    already has.
 4. Invite the bot: **OAuth2 → URL Generator**, scopes `bot` and
    `applications.commands`, permissions Send Messages, Use Slash Commands, Send
@@ -198,7 +198,7 @@ is the template the download is rendered from.
    server for instant availability; without a chosen server they register
    globally and can take up to an hour to appear.
 
-`tau discord status` and `tau discord clear` remain as diagnostics; they take
+`ficus discord status` and `ficus discord clear` remain as diagnostics; they take
 the bot token and application id as flags or environment variables because the
 CLI has no access to the instance's connections. Registration itself no longer
 needs the CLI.
@@ -206,13 +206,18 @@ needs the CLI.
 ### Verifying
 
 ```bash
-# webhooks:read required — the bootstrap TAU_PASSWORD works until the first admin passkey exists
-curl -H "Authorization: Bearer $TAU_PASSWORD" https://your-domain.com/api/webhooks/channels/<provider>/status
+# webhooks:read required — the bootstrap FICUS_PASSWORD works until the first admin passkey exists
+curl -H "Authorization: Bearer $FICUS_PASSWORD" https://your-domain.com/api/webhooks/channels/<provider>/status
 ```
 
-Then `/tau help` in the provider. The card's **Connection** section shows the
+Then `/ficus help` in the provider. The card's **Connection** section shows the
 validation state and the identity the provider reported; a rejected credential
 is kept and explained there rather than silently ignored.
+
+Apps set up before the rename from Tau still register `/tau`, which Ficus no
+longer answers. For Slack, download the manifest again and update the app's
+slash command to `/ficus`; for Discord, save the card again to register
+`/ficus`.
 
 ## Channel routing
 
@@ -280,10 +285,10 @@ keys keep serving as a fallback for one release:
 | `SLACK_BOT_TOKEN`         | Slack credential                                     |
 | `SLACK_SIGNING_SECRET`    | Slack credential                                     |
 | `TELEGRAM_BOT_TOKEN`      | Telegram credential                                  |
-| `TELEGRAM_WEBHOOK_SECRET` | Generated by Tau when a token is saved               |
+| `TELEGRAM_WEBHOOK_SECRET` | Generated by Ficus when a token is saved             |
 | `TELEGRAM_BOT_ID`         | Discovered from `getMe`                              |
 
-Platform-managed keys (`TAU_MANAGED_SECRET_KEYS`) are not migrated or editable;
+Platform-managed keys (`FICUS_MANAGED_SECRET_KEYS`) are not migrated or editable;
 the transports keep reading them directly.
 
 ## Troubleshooting
@@ -301,7 +306,7 @@ the transports keep reading them directly.
 
 ### Telegram: Bot not responding
 
-A bot has one webhook destination. Reusing its token on another Tau instance
+A bot has one webhook destination. Reusing its token on another Ficus instance
 replaces the destination; disabling that copy may delete the shared webhook.
 Use separate bots for separate instances.
 
@@ -315,14 +320,14 @@ Telegram replies are separate `sendMessage` API requests. Complete silence,
 including no Thinking indicator, can happen at several distinct stages:
 
 1. **No delivery:** the webhook URL, TLS, ingress, or Telegram delivery may fail
-   before Tau receives anything. With authorized access, inspect Telegram's
+   before Ficus receives anything. With authorized access, inspect Telegram's
    `getWebhookInfo` and correlate receipt in Core logs. Do not change webhook
    registration just to diagnose a missing reply.
 2. **Rejected delivery:** a disabled integration hides its credentials; a missing
    or mismatched `TELEGRAM_WEBHOOK_SECRET` rejects the webhook with 401. Verify
    the integration is enabled and the secret matches the registered webhook.
 3. **Ignored update:** only text messages are processed. Private plain text is
-   actionable without `/tau` or a reply. Group text requires `/tau` or a
+   actionable without `/ficus` or a reply. Group text requires `/ficus` or a
    reply-to-bot; photos without text and other non-message updates are ignored.
 4. **Missing bot/connection routing:** the credential settings' numeric
    `TELEGRAM_BOT_ID` must match `providerConfig.botId` on the connection. Missing
@@ -350,7 +355,7 @@ message contents out of shared diagnostics.
 ### "This server/workspace is not configured"
 
 - Create the routing entry under **Settings → Integrations → provider → Channel routing**
-- For YAML-managed entries only, restart Tau to sync the configuration
+- For YAML-managed entries only, restart Ficus to sync the configuration
 - Verify the `guildId`/`teamId`/`botId` matches the platform
 
 ## Architecture
@@ -372,14 +377,14 @@ require an explicit custom rule.
 From a channel where your bot is present, after authorization for its routed squad:
 
 ```
-/tau notify <squad-name>
+/ficus notify <squad-name>
 ```
 
-This configures the current channel to receive notifications for its routed squad. Other squads must be configured from Tau. To
+This configures the current channel to receive notifications for its routed squad. Other squads must be configured from Ficus. To
 unsubscribe:
 
 ```
-/tau unnotify <squad-name>
+/ficus unnotify <squad-name>
 ```
 
 ### Option 2: Configure via web UI
@@ -397,16 +402,16 @@ Set the notification config in squad metadata:
 
 ```bash
 # Discord - use channel instance ID and Discord channel ID
-tau squad set-meta <squad-id> notifications.discord.instanceId "<instance-id>"
-tau squad set-meta <squad-id> notifications.discord.channelId "<discord-channel-id>"
+ficus squad set-meta <squad-id> notifications.discord.instanceId "<instance-id>"
+ficus squad set-meta <squad-id> notifications.discord.channelId "<discord-channel-id>"
 
 # Slack - use channel instance ID and Slack channel ID
-tau squad set-meta <squad-id> notifications.slack.instanceId "<instance-id>"
-tau squad set-meta <squad-id> notifications.slack.channelId "<slack-channel-id>"
+ficus squad set-meta <squad-id> notifications.slack.instanceId "<instance-id>"
+ficus squad set-meta <squad-id> notifications.slack.channelId "<slack-channel-id>"
 
 # Telegram - use channel instance ID and Telegram chat ID
-tau squad set-meta <squad-id> notifications.telegram.instanceId "<instance-id>"
-tau squad set-meta <squad-id> notifications.telegram.channelId "<telegram-chat-id>"
+ficus squad set-meta <squad-id> notifications.telegram.instanceId "<instance-id>"
+ficus squad set-meta <squad-id> notifications.telegram.channelId "<telegram-chat-id>"
 ```
 
 To find IDs:
@@ -414,7 +419,7 @@ To find IDs:
 - **Instance ID**: check `config/channels/*.yaml` or the web UI channel instances list
 - **Discord channel ID**: right-click the channel → Copy Channel ID (enable Developer Mode in Discord settings)
 - **Slack channel ID**: click the channel name → About → scroll to the bottom
-- **Telegram chat ID**: use the `/tau notify` command, or read it from the bot API
+- **Telegram chat ID**: use the `/ficus notify` command, or read it from the bot API
 
 ### Events that trigger notifications
 
@@ -444,10 +449,10 @@ Remove the notification config:
 
 ```bash
 # Remove Discord notifications for a squad
-tau squad set-meta <squad-id> notifications.discord null
+ficus squad set-meta <squad-id> notifications.discord null
 
 # Or remove all notifications
-tau squad set-meta <squad-id> notifications null
+ficus squad set-meta <squad-id> notifications null
 ```
 
 ## Channel allowlists and denylists
@@ -468,7 +473,7 @@ YAML and API fields are `allowedChannelIds` and `deniedChannelIds` (arrays of ID
 ### Discord: slash commands time out but mentions work
 
 Discord sends slash commands through `INTERACTION_CREATE` on the gateway unless an
-Interactions Endpoint URL is configured. Tau handles this event, acknowledges it
+Interactions Endpoint URL is configured. Ficus handles this event, acknowledges it
 before database or agent work, then edits the response with the result. Link
 commands receive a private acknowledgement. An unsuccessful acknowledgement
 prevents command execution. With an endpoint configured, check its reachability
@@ -488,5 +493,5 @@ Discord slash interactions use the same early callback acknowledgement path for
 both the gateway and verified HTTP ingress. HTTP ingress returns an empty 202
 because the acknowledgement is sent via Discord's callback endpoint. The native
 `BOT_DM` context identifies private interactions when the channel object is omitted.
-Public-channel `/tau squad` requests explain the administrator-managed route and
-never change it. Private `/tau help` lists commands without requiring a squad.
+Public-channel `/ficus squad` requests explain the administrator-managed route and
+never change it. Private `/ficus help` lists commands without requiring a squad.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { AgentStatus } from '@tau/shared'
+import type { AgentStatus } from '@ficus/shared'
 import { hasWorkingAgent } from './SquadList'
 
 function agents(...statuses: AgentStatus[]) {

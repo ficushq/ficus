@@ -1,4 +1,4 @@
-import { resolveCodeHostReference } from '@tau/shared'
+import { resolveCodeHostReference } from '@ficus/shared'
 import { eq } from 'drizzle-orm'
 import { advanceWorkflowState, type Notification } from './ci-notification-state'
 export { ciNotificationSchema } from './ci-notification-state'

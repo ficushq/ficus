@@ -11,6 +11,7 @@ import * as k8s from '@kubernetes/client-node'
 import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { ENV_PREFIX, LEGACY_ENV_PREFIX } from '@ficus/shared/legacy-env'
 import { createLogger } from '../../../lib/infra/logger'
 import { getSecretStore } from '../../secrets/store'
 import { gitIdentityEnv, resolveGitHubIdentity } from '../github-identity'
@@ -18,6 +19,7 @@ import { getHomeDir } from '../../../lib/utils/home'
 import { getSandboxSkillsDir } from '../../agent/skill-materializer'
 import { resolveSandboxAssets } from '../asset-manifest'
 import { containerWorkspaceLayout } from '../workspace-layout'
+import { K8S_STAGED_CLI_SUBPATH, SANDBOX_CLI_PATH } from '../cli-path'
 import { isLocalK8sMode } from '../runtime'
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
@@ -62,11 +64,11 @@ export function getSandboxImage(
   // Agent (light) boxes run a stripped-down image; everything else runs the full image.
   if (opts.sandboxType === 'agent') {
     return (
-      env.TAU_SANDBOX_AGENT_IMAGE ||
+      env.FICUS_SANDBOX_AGENT_IMAGE ||
       (isLocalDev ? 'tau-registry:5000/tau-sandbox-agent:latest' : 'tau-sandbox-agent:latest')
     )
   }
-  return env.TAU_SANDBOX_IMAGE || (isLocalDev ? 'tau-registry:5000/tau-sandbox:latest' : 'tau-sandbox:latest')
+  return env.FICUS_SANDBOX_IMAGE || (isLocalDev ? 'tau-registry:5000/tau-sandbox:latest' : 'tau-sandbox:latest')
 }
 
 export function getSandboxImagePullPolicy(_opts: { isLocalDev?: boolean } = {}): 'Always' {
@@ -95,10 +97,10 @@ export function resolveSandboxApiUrl(namespace: string, opts: { isLocalDev?: boo
 }
 
 /** Exported for the death notifier, which reports the limit a killed pod ran under. */
-export const SANDBOX_MEMORY_LIMIT = process.env.TAU_SANDBOX_MEMORY_LIMIT || (IS_LOCAL_DEV ? '8Gi' : '4Gi')
+export const SANDBOX_MEMORY_LIMIT = process.env.FICUS_SANDBOX_MEMORY_LIMIT || (IS_LOCAL_DEV ? '8Gi' : '4Gi')
 // A squad sandbox really does use this: measured 7.0GiB on the dev cluster's
 // busiest squad, against this 10Gi request. Calibrated — leave it alone.
-const SANDBOX_SQUAD_EPHEMERAL_STORAGE_REQUEST = process.env.TAU_SANDBOX_SQUAD_EPHEMERAL_STORAGE_REQUEST || '10Gi'
+const SANDBOX_SQUAD_EPHEMERAL_STORAGE_REQUEST = process.env.FICUS_SANDBOX_SQUAD_EPHEMERAL_STORAGE_REQUEST || '10Gi'
 /**
  * Ephemeral storage RESERVED for an agent sandbox. Like the CPU request above,
  * this is subtracted from node capacity for the pod's whole life, so it — not
@@ -121,8 +123,8 @@ const SANDBOX_SQUAD_EPHEMERAL_STORAGE_REQUEST = process.env.TAU_SANDBOX_SQUAD_EP
  * and toolchain); if that ever stops being true, raise this deliberately rather
  * than discovering it through evictions.
  */
-const SANDBOX_AGENT_EPHEMERAL_STORAGE_REQUEST = process.env.TAU_SANDBOX_AGENT_EPHEMERAL_STORAGE_REQUEST || '256Mi'
-const SANDBOX_EPHEMERAL_STORAGE_LIMIT = process.env.TAU_SANDBOX_EPHEMERAL_STORAGE_LIMIT || '10Gi'
+const SANDBOX_AGENT_EPHEMERAL_STORAGE_REQUEST = process.env.FICUS_SANDBOX_AGENT_EPHEMERAL_STORAGE_REQUEST || '256Mi'
+const SANDBOX_EPHEMERAL_STORAGE_LIMIT = process.env.FICUS_SANDBOX_EPHEMERAL_STORAGE_LIMIT || '10Gi'
 /**
  * CPU the scheduler RESERVES for every sandbox, busy or idle. This single value
  * decides how many agents fit on a node; nothing else does.
@@ -147,12 +149,12 @@ const SANDBOX_EPHEMERAL_STORAGE_LIMIT = process.env.TAU_SANDBOX_EPHEMERAL_STORAG
  * to requests, so a working agent still gets its share and can burst to the
  * 2-core limit whenever the node is not saturated.
  */
-const SANDBOX_CPU_REQUEST = process.env.TAU_SANDBOX_CPU_REQUEST || '100m'
+const SANDBOX_CPU_REQUEST = process.env.FICUS_SANDBOX_CPU_REQUEST || '100m'
 // Cap the Docker-in-Docker emptyDir so a sandbox that fills /var/lib/docker (image/layer churn) is
 // evicted on its OWN budget rather than silently consuming node disk and tipping the whole node into
 // DiskPressure (which evicts every sandbox at once). Kept below the ephemeral-storage limit so the
 // container layer + logs still have headroom.
-const SANDBOX_DOCKER_STORAGE_LIMIT = process.env.TAU_SANDBOX_DOCKER_STORAGE_LIMIT || '8Gi'
+const SANDBOX_DOCKER_STORAGE_LIMIT = process.env.FICUS_SANDBOX_DOCKER_STORAGE_LIMIT || '8Gi'
 
 // Upper bound for a per-squad ephemeral-storage override, so a misconfigured
 // squad can't request more disk than any node could schedule.
@@ -182,8 +184,9 @@ export const SANDBOX_EXECUTOR_PROTOCOL_VERSION = 'write-verified-v1'
 
 /**
  * Hash of the pod-spec fields that are immutable on a running pod and therefore
- * require recreation to change (the resolved ephemeral-storage limit and the
- * squad membership that determines the squad-scoped mounts). When a sandbox's
+ * require recreation to change (the resolved ephemeral-storage limit, the
+ * squad membership that determines the squad-scoped mounts, and where the CLI
+ * is mounted). When a sandbox's
  * config changes, the desired hash diverges from the running pod's annotation,
  * which drift detection uses to recreate it instead of adopting a stale pod.
  */
@@ -201,12 +204,17 @@ export function reconcilableSpecHash(
     // (future: an agent in several squads) extends without changing the hash
     // shape or churning existing single-squad pods — today it's [] or [squadId].
     squadIds: config?.squadId ? [config.squadId] : [],
+    // The CLI's mount path. A pod created before the CLI was `ficus` carries a
+    // stamp without this field, so it drifts and is recreated once idle (the
+    // spec-drift gates: no active agent session / an idle squad); a busy one is
+    // kept until then. Changing the path later recreates pods the same way.
+    cliMountPath: SANDBOX_CLI_PATH,
   }
   return createHash('sha256').update(JSON.stringify(reconcilable)).digest('hex').slice(0, 16)
 }
 
 function getSharedVolumeGid(): number | undefined {
-  const configured = process.env.TAU_SANDBOX_SHARED_GID
+  const configured = process.env.FICUS_SANDBOX_SHARED_GID
   const gid = configured
     ? Number(configured)
     : IS_LOCAL_DEV && typeof process.getgid === 'function'
@@ -226,7 +234,7 @@ function ensureLocalSharedSubPath(path: string): void {
 }
 
 /** K8s RuntimeClass for sandbox pods. Defaults to sysbox-runc for secure DinD. Set to '' to disable. */
-const RUNTIME_CLASS = process.env.TAU_K8S_RUNTIME_CLASS ?? 'sysbox-runc'
+const RUNTIME_CLASS = process.env.FICUS_K8S_RUNTIME_CLASS ?? 'sysbox-runc'
 
 /**
  * In local dev (k3d), read the host IP written by `scripts/k3d-dev.sh` and
@@ -294,11 +302,11 @@ async function buildSandboxEnv(input: {
 
   const sharedVolumeGid = getSharedVolumeGid()
   const env: k8s.V1EnvVar[] = [
-    { name: 'TAU_SANDBOX_ID', value: sandboxId },
-    { name: 'TAU_SQUAD_ID', value: squadId },
-    { name: 'TAU_API_URL', value: apiUrl },
-    { name: 'TAU_SANDBOX_UMASK', value: process.env.TAU_SANDBOX_UMASK || '0002' },
-    ...(sharedVolumeGid !== undefined ? [{ name: 'TAU_SHARED_GID', value: String(sharedVolumeGid) }] : []),
+    { name: 'FICUS_SANDBOX_ID', value: sandboxId },
+    { name: 'FICUS_SQUAD_ID', value: squadId },
+    { name: 'FICUS_API_URL', value: apiUrl },
+    { name: 'FICUS_SANDBOX_UMASK', value: process.env.FICUS_SANDBOX_UMASK || '0002' },
+    ...(sharedVolumeGid !== undefined ? [{ name: 'FICUS_SHARED_GID', value: String(sharedVolumeGid) }] : []),
   ]
 
   // Public APP_URL so agents can reference it in bash commands
@@ -312,8 +320,8 @@ async function buildSandboxEnv(input: {
 
   // In local dev mode, pass the sandbox callback secret directly as env var.
   // In cluster mode, it's mounted via the K8s Secret volume.
-  // NOTE: TAU_PASSWORD is intentionally NOT injected — agents authenticate via the
-  // per-command TAU_TOKEN, and the shared legacy password is a dead credential
+  // NOTE: FICUS_PASSWORD is intentionally NOT injected — agents authenticate via the
+  // per-command FICUS_TOKEN, and the shared legacy password is a dead credential
   // under multi-admin setups (pure exfil surface in a box shared with agents).
   if (IS_LOCAL_DEV) {
     const sandboxCallbackSecret = store.get('SANDBOX_CALLBACK_SECRET')
@@ -321,6 +329,26 @@ async function buildSandboxEnv(input: {
   }
 
   return env
+}
+
+/**
+ * One release (Ficus rename): every literal `FICUS_X` container env var is also
+ * set as `TAU_X`, because a sandbox image built before the rename (its
+ * entrypoint and runtime-env scripts), user scripts and older `tau` CLIs in the
+ * pod still read the legacy names. The executor bridges them back at boot.
+ * Env is not part of {@link reconcilableSpecHash}, so this never recreates a pod.
+ */
+export function withLegacyPodEnvAliases(env: k8s.V1EnvVar[]): k8s.V1EnvVar[] {
+  const names = new Set(env.map((e) => e.name))
+  const aliases: k8s.V1EnvVar[] = []
+  for (const entry of env) {
+    if (!entry.name.startsWith(ENV_PREFIX) || entry.value === undefined) continue
+    const alias = `${LEGACY_ENV_PREFIX}${entry.name.slice(ENV_PREFIX.length)}`
+    if (names.has(alias)) continue
+    names.add(alias)
+    aliases.push({ name: alias, value: entry.value })
+  }
+  return [...env, ...aliases]
 }
 
 export interface BuildPodSpecInput {
@@ -421,8 +449,8 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
   volumeMounts.push(
     {
       name: 'core-data',
-      mountPath: '/usr/local/bin/tau',
-      subPath: 'cli/tau.js',
+      mountPath: SANDBOX_CLI_PATH,
+      subPath: K8S_STAGED_CLI_SUBPATH,
       readOnly: true,
     },
     {
@@ -516,9 +544,9 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
   // squad workspace). The entrypoint + server read these.
   const sandboxRole = sandboxType === 'agent' ? 'agent' : 'squad'
   const devboxDir = sandboxType === 'agent' ? privateMount : workspaceMount
-  containerEnv.push({ name: 'TAU_SANDBOX_ROLE', value: sandboxRole })
-  containerEnv.push({ name: 'TAU_DEVBOX_DIR', value: devboxDir })
-  containerEnv.push({ name: 'TAU_TOOLCHAIN_DIR', value: `${devboxDir}/.tau/toolchain` })
+  containerEnv.push({ name: 'FICUS_SANDBOX_ROLE', value: sandboxRole })
+  containerEnv.push({ name: 'FICUS_DEVBOX_DIR', value: devboxDir })
+  containerEnv.push({ name: 'FICUS_TOOLCHAIN_DIR', value: `${devboxDir}/.tau/toolchain` })
 
   const podSpec: k8s.V1Pod = {
     apiVersion: 'v1',
@@ -634,7 +662,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
             failureThreshold: 6,
           },
           volumeMounts,
-          env: containerEnv,
+          env: withLegacyPodEnvAliases(containerEnv),
         },
       ],
 

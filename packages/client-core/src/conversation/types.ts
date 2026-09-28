@@ -1,4 +1,4 @@
-import type { ContentBlock, DeliveryMode, ExecutionStatus, Message, MessageMetadata } from '@tau/shared'
+import type { ContentBlock, DeliveryMode, ExecutionStatus, Message, MessageMetadata } from '@ficus/shared'
 import type { StreamingContentBlock } from './blocks'
 
 /** Connection state of the agent SSE stream, surfaced by the hook to the combiner. */

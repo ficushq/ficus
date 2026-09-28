@@ -92,7 +92,7 @@ export function SandboxSettings({ squadId }: Props) {
           <button
             onClick={handleSave}
             disabled={updateMutation.isPending}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
           >
             {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
           </button>
@@ -111,7 +111,7 @@ export function SandboxSettings({ squadId }: Props) {
               setHasChanges(true)
             }}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
               config.alwaysOn ? 'bg-accent' : 'bg-surface-secondary'
             )}
@@ -160,7 +160,7 @@ export function SandboxSettings({ squadId }: Props) {
                     setHasChanges(true)
                   }
                 }}
-                className="tau-field w-24 px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
+                className="ficus-field w-24 px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
               />
               <span className="text-sm text-muted">minutes</span>
             </div>
@@ -201,7 +201,7 @@ export function SandboxSettings({ squadId }: Props) {
                   setHasChanges(true)
                 }
               }}
-              className="tau-field w-24 px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
+              className="ficus-field w-24 px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
             />
             <span className="text-sm text-muted">GiB</span>
           </div>

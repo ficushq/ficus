@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import type { SandboxToolchainConfig, SandboxToolchainStatus } from '@tau/shared'
+import type { SandboxToolchainConfig, SandboxToolchainStatus } from '@ficus/shared'
 import { db } from '../../../db'
 import { createPostgresConnection, getConnectionString, withDedicatedConnectionSlot } from '../../../db/connection'
 import { sandboxToolchainActivations, sandboxToolchainProvisions, squads } from '../../../db/schema'

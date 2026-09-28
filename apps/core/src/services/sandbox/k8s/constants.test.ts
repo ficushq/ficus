@@ -32,15 +32,15 @@ function isLocalDevInFreshProcess(env: Record<string, string>): unknown {
 }
 
 describe('IS_LOCAL_DEV (module-load gate)', () => {
-  test('a stale TAU_K8S_LOCAL under another runtime does not enable local dev', () => {
+  test('a stale FICUS_K8S_LOCAL under another runtime does not enable local dev', () => {
     // The sandbox factory imports every manager eagerly, so this module is
     // evaluated on a host install too — a leftover k3d line must stay inert.
-    expect(isLocalDevInFreshProcess({ TAU_SANDBOX_RUNTIME: 'host', TAU_K8S_LOCAL: 'true' })).toBe(false)
-    expect(isLocalDevInFreshProcess({ TAU_SANDBOX_RUNTIME: 'docker-socket', TAU_K8S_LOCAL: 'true' })).toBe(false)
+    expect(isLocalDevInFreshProcess({ FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' })).toBe(false)
+    expect(isLocalDevInFreshProcess({ FICUS_SANDBOX_RUNTIME: 'docker-socket', FICUS_K8S_LOCAL: 'true' })).toBe(false)
   })
 
-  test('the k8s runtime with TAU_K8S_LOCAL=true still enables local dev', () => {
-    expect(isLocalDevInFreshProcess({ TAU_SANDBOX_RUNTIME: 'k8s', TAU_K8S_LOCAL: 'true' })).toBe(true)
-    expect(isLocalDevInFreshProcess({ TAU_SANDBOX_RUNTIME: 'k8s', TAU_K8S_LOCAL: 'false' })).toBe(false)
+  test('the k8s runtime with FICUS_K8S_LOCAL=true still enables local dev', () => {
+    expect(isLocalDevInFreshProcess({ FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' })).toBe(true)
+    expect(isLocalDevInFreshProcess({ FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'false' })).toBe(false)
   })
 })

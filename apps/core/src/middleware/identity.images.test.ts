@@ -17,21 +17,21 @@ function buildApp() {
 }
 
 describe('identityMiddleware signed image URLs', () => {
-  const origEnc = process.env.TAU_ENCRYPTION_KEY
-  const origPw = process.env.TAU_PASSWORD
+  const origEnc = process.env.FICUS_ENCRYPTION_KEY
+  const origPw = process.env.FICUS_PASSWORD
 
   beforeEach(() => {
-    process.env.TAU_PASSWORD = PASSWORD
-    process.env.TAU_ENCRYPTION_KEY = 'b'.repeat(64)
+    process.env.FICUS_PASSWORD = PASSWORD
+    process.env.FICUS_ENCRYPTION_KEY = 'b'.repeat(64)
     resetSecretStore()
     __resetSigningKeyForTests()
   })
 
   afterEach(() => {
-    if (origEnc === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = origEnc
-    if (origPw === undefined) delete process.env.TAU_PASSWORD
-    else process.env.TAU_PASSWORD = origPw
+    if (origEnc === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = origEnc
+    if (origPw === undefined) delete process.env.FICUS_PASSWORD
+    else process.env.FICUS_PASSWORD = origPw
     resetSecretStore()
     __resetSigningKeyForTests()
   })

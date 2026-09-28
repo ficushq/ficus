@@ -10,7 +10,7 @@ import type {
   PresentationTone,
   TableBlock,
   TimelineBlock,
-} from '@tau/shared'
+} from '@ficus/shared'
 import clsx from 'clsx'
 import { Component, useEffect, useId, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 import type { VegaEmbedProps } from 'react-vega'
@@ -22,6 +22,7 @@ import {
   getPresentationHtmlHeightMessageType,
   isPresentationHtmlHeightMessage,
 } from './PresentationHtmlBlockSizing'
+import { VOICE_HOLD_KEYDOWN_MESSAGE, VOICE_HOLD_KEYUP_MESSAGE } from '@ficus/shared/browser-keys'
 
 export function PresentationRenderer({
   presentation,
@@ -110,7 +111,7 @@ function MetricsBlockView({ block }: { block: MetricsBlock }) {
 function TableBlockView({ block }: { block: TableBlock }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-status-neutral-200 dark:border-status-neutral-800">
-      <table className="tau-table min-w-full divide-y divide-status-neutral-200 text-sm dark:divide-status-neutral-800">
+      <table className="ficus-table min-w-full divide-y divide-status-neutral-200 text-sm dark:divide-status-neutral-800">
         <thead className="bg-status-neutral-50 dark:bg-status-neutral-900">
           <tr>
             {block.columns.map((column) => (
@@ -234,7 +235,7 @@ function TimelineBlockView({ block }: { block: TimelineBlock }) {
 
 const PRESENTATION_HTML_BLOCK_CSP =
   "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:; frame-src 'none'; object-src 'none'; connect-src * http: https: ws: wss:; script-src 'unsafe-inline'"
-const PRESENTATION_HTML_CONTENT_ID = 'tau-presentation-html-content'
+const PRESENTATION_HTML_CONTENT_ID = 'ficus-presentation-html-content'
 
 const VOICE_HOLD_SHORTCUT_BRIDGE_SCRIPT = `
 <script>
@@ -247,12 +248,12 @@ const VOICE_HOLD_SHORTCUT_BRIDGE_SCRIPT = `
   window.addEventListener('keydown', (event) => {
     if (!isSpace(event) || event.repeat || isEditableTarget(event.target)) return
     event.preventDefault()
-    window.parent?.postMessage({ type: 'tau:voice-hold-keydown', repeat: event.repeat }, '*')
+    window.parent?.postMessage({ type: ${JSON.stringify(VOICE_HOLD_KEYDOWN_MESSAGE)}, repeat: event.repeat }, '*')
   }, { capture: true })
   window.addEventListener('keyup', (event) => {
     if (!isSpace(event) || isEditableTarget(event.target)) return
     event.preventDefault()
-    window.parent?.postMessage({ type: 'tau:voice-hold-keyup' }, '*')
+    window.parent?.postMessage({ type: ${JSON.stringify(VOICE_HOLD_KEYUP_MESSAGE)} }, '*')
   }, { capture: true })
 })()
 </script>`

@@ -487,26 +487,26 @@ describe('worker admission-liveness loss restarts (non-zero exit), never stays d
   })
 })
 
-// TAU_SANDBOX_RUNTIME is mandatory and explicit: a misconfigured worker must
+// FICUS_SANDBOX_RUNTIME is mandatory and explicit: a misconfigured worker must
 // die at boot with the same one-line error the api prints, instead of picking
 // up turns it cannot run. Proven by BOOTING THE REAL WORKER in a child process
 // with a junk DATABASE_URL and unused ports — the guard fires before startup()
 // reaches any of them, so nothing outside the child is touched.
-describe('worker requires an explicit TAU_SANDBOX_RUNTIME at boot', () => {
-  const RUNTIME_LIST = 'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
+describe('worker requires an explicit FICUS_SANDBOX_RUNTIME at boot', () => {
+  const RUNTIME_LIST = 'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
 
   async function bootWorker(runtime: string | null): Promise<{ exitCode: number; stderr: string }> {
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       // Unreachable (port 1) but named tau_test, because the child inherits
-      // TAU_TEST_MODE=1 from this suite and db/index.ts refuses to load in test
+      // FICUS_TEST_MODE=1 from this suite and db/index.ts refuses to load in test
       // mode against any other database name.
       DATABASE_URL: 'postgres://x:x@127.0.0.1:1/tau_test',
       WORKER_PORT: '39911',
-      TAU_WORKER_EVENT_PORT: '39912',
+      FICUS_WORKER_EVENT_PORT: '39912',
     }
-    if (runtime === null) delete env.TAU_SANDBOX_RUNTIME
-    else env.TAU_SANDBOX_RUNTIME = runtime
+    if (runtime === null) delete env.FICUS_SANDBOX_RUNTIME
+    else env.FICUS_SANDBOX_RUNTIME = runtime
     const proc = Bun.spawn([process.execPath, join(import.meta.dir, 'worker.ts')], {
       env,
       stdout: 'pipe',

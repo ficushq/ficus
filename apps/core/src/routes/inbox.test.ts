@@ -5,7 +5,7 @@ import { db, agents, inbox, systemInboxReads, squads } from '../db'
 import { Agent } from '../entities/Agent'
 import { identityMiddleware } from '../middleware/identity'
 import { inboxRouter } from './inbox'
-import { SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@ficus/shared'
 import {
   assignRole,
   authHeaders,

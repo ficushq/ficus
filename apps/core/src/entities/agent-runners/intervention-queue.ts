@@ -1,5 +1,5 @@
 import { messageTextForModel } from '../../services/chat/message-context'
-import type { MessageMetadata } from '@tau/shared'
+import type { MessageMetadata } from '@ficus/shared'
 import { Image, type ImageContent } from '../Image'
 import type { Agent } from '../Agent'
 import type { AgentSession } from '../AgentSession'

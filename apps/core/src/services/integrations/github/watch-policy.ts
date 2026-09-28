@@ -5,7 +5,7 @@ import {
   resolveTrackedResources,
   integrationValueAt,
   type IntegrationSubscription,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { EventPollingWatch } from '../event-polling-runner'
 import type { GitHubPrPollingConfig } from './event-poller'
 import { isRepositoryPattern } from './repository-enumeration'

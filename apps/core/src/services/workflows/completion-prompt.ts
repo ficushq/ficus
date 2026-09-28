@@ -5,7 +5,7 @@ import {
   trackedResourceLabel,
   type WorkflowDefinition,
   type WorkflowRun,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 /** Delivery guidance is shared by every flow participant, independent of squad or agent type. */
 export function flowCompletionInstructions(mode: WorkflowDefinition['completion']['mode']): string {
@@ -27,9 +27,9 @@ export function flowCompletionInstructions(mode: WorkflowDefinition['completion'
     `Delivery policy: ${mode}. The workflow determines responsibility for delivery; no agent role intrinsically owns PR creation or completion.`,
     guidance[mode],
     pr
-      ? 'Use the work stream’s existing codeHost binding. When the delivery PR is the pull request this stream’s branch carries, finish resolves and binds it automatically from metadata.git.branch (the owner-namespace lookup never matches fork pull requests), so no manual binding step is required; attach codeHost.changeRequest.number and codeHost.changeRequest.url yourself only to override that resolution or to opt into event routing early (codeHost is strictly validated: changeRequest accepts only number and url, so record merge evidence such as state, verification time, or merge commit under metadata.delivery instead). If the binding is missing, identify the repository and squad-authorized integration first. Check live PR mergeability after creation, CI, and approval. Resolve conflicts through an authorized flow return or revision and re-review the affected changes. Do not use a legacy completing review wait to finish a flow. Additional pull requests that are part of the deliverable must be designated with `tau workstream track <ws-id> --pr <owner/repo#n> --delivery`; finish verifies every designated delivery PR is merged. `tau workstream tracked <ws-id>` shows the delivery state.'
+      ? 'Use the work stream’s existing codeHost binding. When the delivery PR is the pull request this stream’s branch carries, finish resolves and binds it automatically from metadata.git.branch (the owner-namespace lookup never matches fork pull requests), so no manual binding step is required; attach codeHost.changeRequest.number and codeHost.changeRequest.url yourself only to override that resolution or to opt into event routing early (codeHost is strictly validated: changeRequest accepts only number and url, so record merge evidence such as state, verification time, or merge commit under metadata.delivery instead). If the binding is missing, identify the repository and squad-authorized integration first. Check live PR mergeability after creation, CI, and approval. Resolve conflicts through an authorized flow return or revision and re-review the affected changes. Do not use a legacy completing review wait to finish a flow. Additional pull requests that are part of the deliverable must be designated with `ficus workstream track <ws-id> --pr <owner/repo#n> --delivery`; finish verifies every designated delivery PR is merged. `ficus workstream tracked <ws-id>` shows the delivery state.'
       : '',
-    'At completion-ready, use tau workstream finish with the current --version once the delivery condition is met.',
+    'At completion-ready, use ficus workstream finish with the current --version once the delivery condition is met.',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -60,13 +60,13 @@ export function deliveryBindingSelfCheck(
     const label = trackedResourceLabel({ integration, repository, number: changeRequest.number })
     return [
       `Delivery binding self-check: bound to ${label}${changeRequest.url ? ` (${changeRequest.url})` : ''}${branch ? ` on branch ${branch}` : ''}.`,
-      `tau workstream finish ${stream.id} verifies this pull request is merged; replace the binding only with ${changeRequestBindCommand(stream.id, stream.metadata)} if it is wrong.`,
+      `ficus workstream finish ${stream.id} verifies this pull request is merged; replace the binding only with ${changeRequestBindCommand(stream.id, stream.metadata)} if it is wrong.`,
     ].join(' ')
   }
   return [
     `Delivery binding self-check: codeHost is configured (${integration}, ${repository}) but codeHost.changeRequest is absent.`,
     branch
-      ? `tau workstream finish resolves the delivery pull request from this stream's branch ${branch} automatically (the owner-namespace lookup never matches fork pull requests) and binds it; bind manually with ${changeRequestBindCommand(stream.id, stream.metadata)} only to override that resolution. Flow finish then fails until the pull request is merged.`
+      ? `ficus workstream finish resolves the delivery pull request from this stream's branch ${branch} automatically (the owner-namespace lookup never matches fork pull requests) and binds it; bind manually with ${changeRequestBindCommand(stream.id, stream.metadata)} only to override that resolution. Flow finish then fails until the pull request is merged.`
       : `This stream records no branch (metadata.git.branch), so finish cannot resolve the delivery pull request automatically: bind it manually with ${changeRequestBindCommand(stream.id, stream.metadata)}.`,
   ].join(' ')
 }
@@ -81,6 +81,6 @@ export function deliveryInstructionsForRun(
   const selfCheck = deliveryBindingSelfCheck(stream, state.definition.completion.mode)
   return [
     flowCompletionInstructions(state.definition.completion.mode) + (selfCheck ? `\n\n${selfCheck}` : ''),
-    `When the condition is met: tau workstream finish ${stream.id} --version ${version}.`,
+    `When the condition is met: ficus workstream finish ${stream.id} --version ${version}.`,
   ].join('\n\n')
 }

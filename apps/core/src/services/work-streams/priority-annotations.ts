@@ -3,7 +3,7 @@ import {
   compareByEffectivePriorityThenCreatedAt,
   computeEffectivePriorities,
   type WorkStreamPriority,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db } from '../../db'
 import { workStreams, workStreamWaits } from '../../db/schema'
 

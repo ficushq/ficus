@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db, pushSubscriptions } from '../../db'
-import type { PushSubscription } from '@tau/shared'
+import type { PushSubscription } from '@ficus/shared'
 
 export interface RegisterPushSubscriptionInput {
   endpoint: string

@@ -15,15 +15,15 @@ describe('apiBindHost', () => {
 })
 
 describe('workerBindHost', () => {
-  it('TAU_WORKER_BIND > HOST > k8s-all-interfaces > loopback', () => {
-    expect(workerBindHost({ TAU_WORKER_BIND: '0.0.0.0', HOST: '127.0.0.1' }, false)).toBe('0.0.0.0')
+  it('FICUS_WORKER_BIND > HOST > k8s-all-interfaces > loopback', () => {
+    expect(workerBindHost({ FICUS_WORKER_BIND: '0.0.0.0', HOST: '127.0.0.1' }, false)).toBe('0.0.0.0')
     expect(workerBindHost({ HOST: '0.0.0.0' }, false)).toBe('0.0.0.0')
     expect(workerBindHost({}, true)).toBe('0.0.0.0')
     expect(workerBindHost({}, false)).toBe('127.0.0.1')
   })
-  it('treats a whitespace-only TAU_WORKER_BIND as unset', () => {
-    expect(workerBindHost({ TAU_WORKER_BIND: '   ', HOST: '0.0.0.0' }, false)).toBe('0.0.0.0')
-    expect(workerBindHost({ TAU_WORKER_BIND: '   ' }, false)).toBe('127.0.0.1')
+  it('treats a whitespace-only FICUS_WORKER_BIND as unset', () => {
+    expect(workerBindHost({ FICUS_WORKER_BIND: '   ', HOST: '0.0.0.0' }, false)).toBe('0.0.0.0')
+    expect(workerBindHost({ FICUS_WORKER_BIND: '   ' }, false)).toBe('127.0.0.1')
   })
 })
 

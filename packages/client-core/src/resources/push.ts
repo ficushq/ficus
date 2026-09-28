@@ -1,4 +1,4 @@
-import type { WorkInterestSnapshot } from '@tau/shared'
+import type { WorkInterestSnapshot } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 export interface RegisteredDevice {
@@ -27,7 +27,7 @@ export function pushResource(t: Transport) {
     enrollInstancePro: (input: {
       publicKey: string
       label: string
-    }): Promise<import('@tau/shared/push-relay').ActivationChallenge> =>
+    }): Promise<import('@ficus/shared/push-relay').ActivationChallenge> =>
       t.request('/push/instance-pro/enroll', { method: 'POST', body: input }),
     getRelayConfig: (): Promise<{ enabled: boolean; instanceId?: string }> => t.request('/push/relay-config'),
     getWorkInterestSnapshot: (): Promise<WorkInterestSnapshot> => t.request('/push/work-interest'),

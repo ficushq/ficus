@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
-import { entitySearchQuerySchema } from '@tau/shared'
+import { entitySearchQuerySchema } from '@ficus/shared'
 import { searchEntities } from '../services/entity-search'
 export const searchRouter = new Hono().get('/', zValidator('query', entitySearchQuerySchema), async (c) => {
   const identity = c.get('identity')

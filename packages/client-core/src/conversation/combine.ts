@@ -1,4 +1,4 @@
-import type { ContentBlock, DeliveryMode, Message } from '@tau/shared'
+import type { ContentBlock, DeliveryMode, Message } from '@ficus/shared'
 import { compareByKey, messageSortAt, ms } from './ordering'
 import type {
   CombineSession,

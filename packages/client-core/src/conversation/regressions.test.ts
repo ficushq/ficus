@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ContentBlock, Message, StreamEvent } from '@tau/shared'
+import type { ContentBlock, Message, StreamEvent } from '@ficus/shared'
 import { combine, completedGroupIds, groupPersisted } from './combine'
 import { StreamGroupStore } from './groups'
 import type { CombineSession } from './types'

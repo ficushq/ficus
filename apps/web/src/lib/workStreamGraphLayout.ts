@@ -1,4 +1,4 @@
-import { compareCanonicalWorkStreams, type WorkStream } from '@tau/shared'
+import { compareCanonicalWorkStreams, type WorkStream } from '@ficus/shared'
 
 export const WORK_STREAM_GRAPH_NODE_WIDTH = 240
 export const WORK_STREAM_GRAPH_NODE_HEIGHT = 128

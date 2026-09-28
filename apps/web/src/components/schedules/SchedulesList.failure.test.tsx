@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Schedule } from '@tau/shared'
+import type { Schedule } from '@ficus/shared'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { queries } from '../../queryOptions'

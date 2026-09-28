@@ -1,6 +1,6 @@
 import type { DeploymentFlavor, ProcessSupervisor } from './deployment-flavor'
 import type { PlannedCommand, UpdateTask } from './types'
-import { localProcessNames } from '@tau/shared'
+import { localProcessNames } from '@ficus/shared'
 
 type PathMatcher = {
   exact?: string[]
@@ -108,7 +108,7 @@ export function restartCommandsFor(
       [...prefix, 'systemctl', 'restart', 'tau-api'],
     ]
   }
-  const names = localProcessNames(options.instance ?? process.env.TAU_INSTANCE ?? 'tau')
+  const names = localProcessNames(options.instance ?? process.env.FICUS_INSTANCE ?? 'tau')
   if (supervisor === 'systemd-user') {
     return [
       ['systemctl', '--user', 'restart', `${names.worker}.service`],

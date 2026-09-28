@@ -1,4 +1,4 @@
-import type { ProviderHealthKind, ProviderHealthRecord } from '@tau/shared/provider-health'
+import type { ProviderHealthKind, ProviderHealthRecord } from '@ficus/shared/provider-health'
 
 export interface SanitizedProviderCause {
   kind: ProviderHealthKind
@@ -23,7 +23,7 @@ export function sanitizeProviderRecord(
 ): SanitizedProviderCause {
   const remediation =
     (record.kind === 'expired-oauth' || record.kind === 'invalid-credential') && SAFE_PROVIDER_ID.test(record.provider)
-      ? `Run \`tau pa login ${record.provider}\` to authenticate again.`
+      ? `Run \`ficus pa login ${record.provider}\` to authenticate again.`
       : undefined
   return { kind: record.kind, summary: SUMMARIES[record.kind], ...(remediation ? { remediation } : {}) }
 }

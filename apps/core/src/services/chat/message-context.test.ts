@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { chatPagePathSchema } from '@tau/shared'
+import { chatPagePathSchema } from '@ficus/shared'
 import { messageTextForModel } from './message-context'
 
 test('page context is added for model delivery without changing visible user content', () => {

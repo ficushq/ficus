@@ -7,8 +7,8 @@ import { AuthorizationFlowError, IntegrationAuthorizationService } from './servi
 import { createLocalTransport, type OAuthTransport } from './transport'
 import { BrokerUnconfiguredError } from './authority'
 import { PlatformRequestError } from '../../platform/instance-client'
-import { registerOAuthProviderAdapterForTest } from '@tau/shared/oauth-providers'
-import { createFakeAdapter } from '@tau/shared/oauth-providers/fake'
+import { registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-providers'
+import { createFakeAdapter } from '@ficus/shared/oauth-providers/fake'
 
 class MemoryStateRepository implements OAuthStateRepository {
   readonly rows = new Map<string, OAuthStateRecord>()

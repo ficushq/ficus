@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { queries } from '../queryOptions'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 
 export function usePendingActions() {
   return useQuery({

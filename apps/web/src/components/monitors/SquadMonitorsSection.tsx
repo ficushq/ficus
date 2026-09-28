@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Monitor, MonitorStatus } from '@tau/shared'
+import type { Monitor, MonitorStatus } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { monitorsApi } from '../../api/monitors'
@@ -31,7 +31,7 @@ export function SquadMonitorsSection({ squadId }: { squadId: string }) {
           {data.length} {showAll ? 'total' : 'active'}
         </span>
         <button
-          className="tau-button shrink-0 rounded-md border border-th-border px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
+          className="ficus-button shrink-0 rounded-md border border-th-border px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
           onClick={() => setShowAll(!showAll)}
         >
           {showAll ? 'Active only' : 'View all'}

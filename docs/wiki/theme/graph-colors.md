@@ -2,7 +2,7 @@
 
 ## Source of truth and adapters
 
-`index.css` owns the active graph family in both Tau variants. The default graph
+`index.css` owns the active graph family in both Ficus variants. The default graph
 scenes deliberately stay dark in **both** appearances. `tokenReader.ts` memoizes a
 computed-style snapshot per root attribute revision; `useThemeColors` subscribes
 to the applied theme/appearance/class/style surface. A change updates existing

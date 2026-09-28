@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { waitFor } from '@testing-library/dom'
-import type { TrackedResourcesView } from '@tau/shared'
+import type { TrackedResourcesView } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { WorkStreamTrackedResources } from './WorkStreamTrackedResources'

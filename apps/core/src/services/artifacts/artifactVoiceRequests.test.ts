@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import type { ArtifactManifest } from '@tau/shared'
+import type { ArtifactManifest } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { readUtf8RegularFileNoFollowBounded } from './artifactFiles'
 import { MAX_ARTIFACT_MARKDOWN_BYTES } from './artifactPublish'
@@ -309,7 +309,7 @@ describe('artifact voice request service', () => {
       expect(sentMessages[0].content).toContain('Informational artifact question')
       expect(sentMessages[0].content).toContain('Explain how the launch risk score is calculated.')
       expect(sentMessages[0].content).toContain(
-        'Reply to the workspace voice assistant through inbox: tau inbox send workspace "<message>" --recipient-type voice_assistant.'
+        'Reply to the workspace voice assistant through inbox: ficus inbox send workspace "<message>" --recipient-type voice_assistant.'
       )
       expect(sentMessages[0].content).toContain('do not edit artifact files')
       expect(sentMessages[0].metadata).toMatchObject({

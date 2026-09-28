@@ -21,7 +21,7 @@ export function validateCurrentBunTestRuntime(): void {
   // This injection can only make the guard stricter. It gives integration tests a
   // deterministic bad runtime without allowing callers to bypass real validation.
   const runtime =
-    process.env.TAU_BUN_TEST_FORCE_BAD_RUNTIME === '1'
+    process.env.FICUS_BUN_TEST_FORCE_BAD_RUNTIME === '1'
       ? {
           version: '1.3.14',
           revision: '1.3.14+injected-wiring-test',

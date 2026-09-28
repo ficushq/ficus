@@ -73,10 +73,10 @@ function makeDeps(fleet: Array<{ machine: Machine; boxSandboxIds: string[] }>, o
 }
 
 afterEach(() => {
-  delete process.env.TAU_UNIT_WEIGHT_SQUAD
-  delete process.env.TAU_UNIT_WEIGHT_AGENT
-  delete process.env.TAU_UNIT_WEIGHT_SYSTEM_MANAGER
-  delete process.env.TAU_MACHINE_UNIT_CAPACITY
+  delete process.env.FICUS_UNIT_WEIGHT_SQUAD
+  delete process.env.FICUS_UNIT_WEIGHT_AGENT
+  delete process.env.FICUS_UNIT_WEIGHT_SYSTEM_MANAGER
+  delete process.env.FICUS_MACHINE_UNIT_CAPACITY
 })
 
 // ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ describe('planRebalance', () => {
   it('never targets a squad VM, even one with free unit capacity', async () => {
     // Shrink the squad weight so the squad VM has free room the packer's
     // arithmetic would otherwise accept — exclusivity must still exclude it.
-    process.env.TAU_UNIT_WEIGHT_SQUAD = '5'
+    process.env.FICUS_UNIT_WEIGHT_SQUAD = '5'
     const m1 = makeMachine({ id: 'm1' })
     const m2 = makeMachine({ id: 'm2', createdAt: new Date('2020-01-02T00:00:00Z') })
     const { deps } = makeDeps([
@@ -201,7 +201,7 @@ describe('planRebalance', () => {
   it('evacuates the LIGHTEST box when only one needs to move (agent over system-manager)', async () => {
     // system-manager weighs 2, agents 1: Σ = 2 + 9 = 11 > 10 — shedding ONE
     // agent (weight 1) suffices; the heavier system-manager must stay put.
-    process.env.TAU_UNIT_WEIGHT_SYSTEM_MANAGER = '2'
+    process.env.FICUS_UNIT_WEIGHT_SYSTEM_MANAGER = '2'
     const m1 = makeMachine({ id: 'm1' })
     const m2 = makeMachine({ id: 'm2', createdAt: new Date('2020-01-02T00:00:00Z') })
     const { deps } = makeDeps([
@@ -219,7 +219,7 @@ describe('planRebalance', () => {
   it('leaves a lone over-weight non-squad box alone (no move, no churn, no unplaceable)', async () => {
     // Weight 15 > capacity 10: the packer tolerates this by giving the box its
     // own VM — evacuating it to a fresh VM would reproduce the violation forever.
-    process.env.TAU_UNIT_WEIGHT_AGENT = '15'
+    process.env.FICUS_UNIT_WEIGHT_AGENT = '15'
     const m1 = makeMachine({ id: 'm1' })
     const m2 = makeMachine({ id: 'm2', createdAt: new Date('2020-01-02T00:00:00Z') })
     const { deps } = makeDeps([
@@ -236,7 +236,7 @@ describe('planRebalance', () => {
     // system-manager weighs 15 (> capacity): moving the weight-1 agent is the
     // only useful move — the remaining lone system-manager is the packer's
     // tolerated own-VM configuration, not an evacuee and not unresolvable.
-    process.env.TAU_UNIT_WEIGHT_SYSTEM_MANAGER = '15'
+    process.env.FICUS_UNIT_WEIGHT_SYSTEM_MANAGER = '15'
     const m1 = makeMachine({ id: 'm1' })
     const m2 = makeMachine({ id: 'm2', createdAt: new Date('2020-01-02T00:00:00Z') })
     const { deps } = makeDeps([
@@ -296,7 +296,7 @@ describe('planRebalance', () => {
   })
 
   it('surfaces a lone over-weight squad as unresolvable', async () => {
-    process.env.TAU_UNIT_WEIGHT_SQUAD = '15'
+    process.env.FICUS_UNIT_WEIGHT_SQUAD = '15'
     const m1 = makeMachine({ id: 'm1' })
     const { deps } = makeDeps([{ machine: m1, boxSandboxIds: ['squad_s1'] }])
 
@@ -309,7 +309,7 @@ describe('planRebalance', () => {
   it('orders a machine`s outbound moves before its inbound moves', async () => {
     // m2 both sheds (a system-manager to m3) and receives (an agent from m1):
     // its outbound move must execute first, or m2 is transiently over capacity.
-    process.env.TAU_UNIT_WEIGHT_SYSTEM_MANAGER = '3'
+    process.env.FICUS_UNIT_WEIGHT_SYSTEM_MANAGER = '3'
     const m1 = makeMachine({ id: 'm1' })
     const m2 = makeMachine({ id: 'm2', createdAt: new Date('2020-01-02T00:00:00Z') })
     const m3 = makeMachine({ id: 'm3', createdAt: new Date('2020-01-03T00:00:00Z') })

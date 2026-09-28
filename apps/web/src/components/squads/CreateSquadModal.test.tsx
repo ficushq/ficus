@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { fireEvent } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
-import { createBlankWorkflow } from '@tau/shared'
+import { createBlankWorkflow } from '@ficus/shared'
 import { CreateSquadModal } from './CreateSquadModal'
 
 describe('CreateSquadModal host workspace field', () => {

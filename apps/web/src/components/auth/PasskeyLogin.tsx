@@ -34,7 +34,7 @@ export function PasskeyLogin({ onSuccess }: Props) {
         type="button"
         onClick={handleLogin}
         disabled={loading}
-        className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+        className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
       >
         {loading ? 'Authenticating...' : 'Sign in with Passkey'}
       </button>

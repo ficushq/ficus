@@ -85,24 +85,24 @@ compares all five.
 
 On a real cluster, Core talks to sandbox pods via headless service DNS (`<pod>.tau-sandboxes.<ns>.svc.cluster.local`). This doesn't work from the host because the host isn't inside the cluster network.
 
-Instead, the `K8sPodManager` automatically manages `kubectl port-forward` processes when `TAU_K8S_LOCAL=true`. Each sandbox gets a random free port on localhost, and the manager tracks the mapping in memory.
+Instead, the `K8sPodManager` automatically manages `kubectl port-forward` processes when `FICUS_K8S_LOCAL=true`. Each sandbox gets a random free port on localhost, and the manager tracks the mapping in memory.
 
 **On API restart**, the port-forward processes die (they're child processes). The `getSandboxStatus()` path re-establishes them when it calls `ensurePortForward()`. The `getPodEndpoint()` method checks both the `pods` map and the `portForwards` map directly, so it works even when the pods map is empty after a restart.
 
 ### host.k3d.internal Routing
 
-Sandbox pods need to reach the host API (for the Tau CLI). The k3d cluster is created with `--host-alias` to map `host.k3d.internal` to the correct host IP:
+Sandbox pods need to reach the host API (for the Ficus CLI). The k3d cluster is created with `--host-alias` to map `host.k3d.internal` to the correct host IP:
 
 - **OrbStack**: Uses OrbStack's magic IP (e.g. `0.250.250.254`), resolved by running `getent hosts host.docker.internal` inside a container at setup time.
 - **Docker Desktop**: Uses the `host-gateway` IP, resolved similarly.
 
-The `k3d-dev.sh setup` script detects which Docker provider (OrbStack or Docker Desktop) is running and picks the right IP. This is unrelated to `TAU_SANDBOX_RUNTIME`, which is never detected — see [sandbox-runtimes.md](../sandbox-runtimes.md).
+The `k3d-dev.sh setup` script detects which Docker provider (OrbStack or Docker Desktop) is running and picks the right IP. This is unrelated to `FICUS_SANDBOX_RUNTIME`, which is never detected — see [sandbox-runtimes.md](../sandbox-runtimes.md).
 
 **Why not `host.docker.internal` directly?** It works on OrbStack but isn't guaranteed on all setups. Using `host.k3d.internal` via `--host-alias` gives us explicit control over the mapping.
 
 ### API Bind Address
 
-When `TAU_K8S_LOCAL=true`, the API binds to `0.0.0.0` instead of `localhost`. This is required because connections from k3d pods arrive on the host's external interface, not loopback. See `apps/core/src/index.ts`.
+When `FICUS_K8S_LOCAL=true`, the API binds to `0.0.0.0` instead of `localhost`. This is required because connections from k3d pods arrive on the host's external interface, not loopback. See `apps/core/src/index.ts`.
 
 ### Privileged Mode for DinD
 
@@ -122,7 +122,7 @@ This doesn't occur on a sysbox-backed cluster, which provides proper filesystem 
 
 Bun's HTTP/2 client doesn't pass client certificates correctly through the `@kubernetes/client-node` HTTPS agent. Since k3d's default kubeconfig uses client-cert auth, API calls fail silently.
 
-The setup script creates a service account (`tau-dev`) with a long-lived token and configures a dedicated kubectl context (`k3d-tau-dev-token`). The `loadKubeConfig()` function in `kubeconfig.ts` explicitly sets this context when `TAU_K8S_LOCAL=true`, so it works regardless of which kubectl context is active on the host.
+The setup script creates a service account (`tau-dev`) with a long-lived token and configures a dedicated kubectl context (`k3d-tau-dev-token`). The `loadKubeConfig()` function in `kubeconfig.ts` explicitly sets this context when `FICUS_K8S_LOCAL=true`, so it works regardless of which kubectl context is active on the host.
 
 ### Native Architecture
 
@@ -148,10 +148,10 @@ This runs `scripts/k3d-dev.sh setup` which:
 Configure `.env`:
 
 ```bash
-TAU_SANDBOX_RUNTIME=k8s
-TAU_K8S_LOCAL=true
-TAU_K8S_NAMESPACE=tau-sandboxes-dev
-TAU_K8S_RUNTIME_CLASS=
+FICUS_SANDBOX_RUNTIME=k8s
+FICUS_K8S_LOCAL=true
+FICUS_K8S_NAMESPACE=tau-sandboxes-dev
+FICUS_K8S_RUNTIME_CLASS=
 ```
 
 ## Day-to-Day Commands
@@ -170,7 +170,7 @@ TAU_K8S_RUNTIME_CLASS=
 
 ## Rebuilding the Sandbox Image
 
-CLI-only changes do not require `k3d:import`: build the CLI with `bun run build:cli`, then recreate sandbox pods if they need the refreshed `/usr/local/bin/tau` mount.
+CLI-only changes do not require `k3d:import`: build the CLI with `bun run build:cli`, then recreate sandbox pods if they need the refreshed `/usr/local/bin/ficus` mount.
 
 After changing code in `packages/k8s-sandbox/`:
 
@@ -188,7 +188,7 @@ The pod will be recreated automatically on next use (via the reconciliation loop
 
 ### Pod Can't Reach Host API
 
-**Symptoms:** Tau CLI inside sandbox fails with "Unable to connect".
+**Symptoms:** Ficus CLI inside sandbox fails with "Unable to connect".
 
 ```bash
 # Verify from inside the pod
@@ -197,7 +197,7 @@ kubectl -n tau-sandboxes-dev exec <pod> -- curl -v http://host.k3d.internal:6283
 
 **Checks:**
 
-1. **API bound to 0.0.0.0?** — `lsof -iTCP:62832 -sTCP:LISTEN -P` should show `*:62832`, not `localhost:62832`. Ensure `TAU_K8S_LOCAL=true` is set.
+1. **API bound to 0.0.0.0?** — `lsof -iTCP:62832 -sTCP:LISTEN -P` should show `*:62832`, not `localhost:62832`. Ensure `FICUS_K8S_LOCAL=true` is set.
 2. **host.k3d.internal resolves?** — If DNS fails, the CoreDNS `NodeHosts` configmap may be missing the entry. Teardown and re-setup the cluster (`bun run k3d:teardown && bun run k3d:setup`).
 3. **Correct IP?** — On OrbStack, `host.k3d.internal` should resolve to OrbStack's magic IP (e.g. `0.250.250.254`), not `127.0.0.1` or the Docker bridge gateway.
 
@@ -252,7 +252,7 @@ kubectl config set-credentials tau-dev-token --token="<new-token>"
 
 Or teardown and re-setup: `bun run k3d:teardown && bun run k3d:setup`.
 
-The API explicitly sets the `k3d-tau-dev-token` context in `kubeconfig.ts` when `TAU_K8S_LOCAL=true`, so switching kubectl contexts on the host does not affect the API.
+The API explicitly sets the `k3d-tau-dev-token` context in `kubeconfig.ts` when `FICUS_K8S_LOCAL=true`, so switching kubectl contexts on the host does not affect the API.
 
 ### Image Not Updating After Rebuild
 

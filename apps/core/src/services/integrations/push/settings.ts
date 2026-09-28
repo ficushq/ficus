@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { getSecretStore, isManagedSecretKey } from '../../secrets'
 import { getSettingsStore } from '../../settings'
 import { getVapidContactSubject, getVapidKeysPath } from '../../push/vapid'
-import { normalizePemKey } from '../../push/apns'
+import { EXPECTED_APNS_BUNDLE_ID, normalizePemKey } from '../../push/apns'
 import {
   readIntegrationCredentialFields,
   writeIntegrationCredentialFields,
@@ -24,7 +24,13 @@ const fields: Record<string, IntegrationCredentialField[]> = {
     },
     { key: 'APNS_KEY_ID', required: true, label: 'Key ID', secret: false, placeholder: '10-character Apple key ID' },
     { key: 'APNS_TEAM_ID', required: true, label: 'Team ID', secret: false, placeholder: '10-character Apple team ID' },
-    { key: 'APNS_BUNDLE_ID', required: true, label: 'App bundle ID', secret: false, placeholder: 'ai.hiretau.mobile' },
+    {
+      key: 'APNS_BUNDLE_ID',
+      required: true,
+      label: 'App bundle ID',
+      secret: false,
+      placeholder: EXPECTED_APNS_BUNDLE_ID,
+    },
     {
       key: 'APNS_ENV',
       label: 'Environment',

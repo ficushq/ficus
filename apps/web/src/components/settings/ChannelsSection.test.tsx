@@ -586,7 +586,7 @@ describe('channel access list and linking controls', () => {
     try {
       const copy = window.document.querySelector('[aria-label="Copy account linking command"]')!
       await click(window, copy)
-      expect(writes).toEqual(['/tau link fixture-code'])
+      expect(writes).toEqual(['/ficus link fixture-code'])
       expect(copy.textContent).toBe('Copied')
       fail = true
       await click(window, copy)

@@ -16,14 +16,14 @@ export async function createTestGitHubConnection(
     credentialRef = `__integration-test:github:${id}`
   const store = getSecretStore()
   if (activeFixtures++ === 0) {
-    previousKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY ??= '0'.repeat(64)
+    previousKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY ??= '0'.repeat(64)
     await store.initialize()
   }
   const releaseKey = async () => {
     if (--activeFixtures === 0) {
-      if (previousKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-      else process.env.TAU_ENCRYPTION_KEY = previousKey
+      if (previousKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+      else process.env.FICUS_ENCRYPTION_KEY = previousKey
       await store.initialize()
     }
   }

@@ -7,7 +7,7 @@ import { IntegrationRefreshService, shouldProactivelyRefresh } from './refresh-s
 import { OAuthTransportError } from './transport'
 import { PlatformRequestError } from '../../platform/instance-client'
 import { BrokerUnconfiguredError } from './authority'
-import { parseNotionConfiguration } from '@tau/shared/oauth-providers/notion/config'
+import { parseNotionConfiguration } from '@ficus/shared/oauth-providers/notion/config'
 
 const connection: IntegrationConnectionRecord = {
   id: '80000000-0000-4000-8000-000000000001',

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
-import { isSandboxOverloaded, SYSTEM_RECIPIENT_ID, type SandboxPressure } from '@tau/shared'
-import type { ProviderHealthRecord } from '@tau/shared/provider-health'
+import { isSandboxOverloaded, SYSTEM_RECIPIENT_ID, type SandboxPressure } from '@ficus/shared'
+import type { ProviderHealthRecord } from '@ficus/shared/provider-health'
 import { db } from '../../db'
 import { agents, fleetIncidentNotifications, fleetIncidents, squads, type FleetIncidentKind } from '../../db/schema'
 import {
@@ -58,7 +58,7 @@ function describeStall(
     code: 'demand-not-served',
     summary: `${work}; oldest is ${oldestMin}m old. No execution run has started in the last ${stalledMin}m of pending demand, and no open provider or sandbox incident explains the delay.`,
     remediation:
-      'Check machine + sandbox health first (`tau machines list`, then the box/tunnel logs for that machine), then worker pickup (`tau worker status`).',
+      'Check machine + sandbox health first (`ficus machines list`, then the box/tunnel logs for that machine), then worker pickup (`ficus worker status`).',
   }
 }
 
@@ -677,12 +677,12 @@ const round1 = (value: number) => Math.round(value * 10) / 10
 function sandboxOverloadRemediation(sandboxId: string): string {
   const [, kind, id] = /^(squad|agent)_(.+)$/.exec(sandboxId) ?? []
   if (kind === 'agent' && id && UUID_PATTERN.test(id)) {
-    return `Find and stop the runaway job with \`tau agent sandbox-ps ${id}\` (or the agent's sandbox controls → Processes), then \`tau agent sandbox-kill\` / \`sandbox-stop-container\`.`
+    return `Find and stop the runaway job with \`ficus agent sandbox-ps ${id}\` (or the agent's sandbox controls → Processes), then \`ficus agent sandbox-kill\` / \`sandbox-stop-container\`.`
   }
   if (kind === 'squad' && id && UUID_PATTERN.test(id)) {
-    return `Find and stop the runaway job with \`tau squad sandbox-ps ${id}\` (or Workspace settings → Processes), then \`tau squad sandbox-kill\` / \`sandbox-stop-container\`.`
+    return `Find and stop the runaway job with \`ficus squad sandbox-ps ${id}\` (or Workspace settings → Processes), then \`ficus squad sandbox-kill\` / \`sandbox-stop-container\`.`
   }
-  return 'Find and stop the runaway job with `tau squad sandbox-ps` or `tau agent sandbox-ps`, then `sandbox-kill` / `sandbox-stop-container`.'
+  return 'Find and stop the runaway job with `ficus squad sandbox-ps` or `ficus agent sandbox-ps`, then `sandbox-kill` / `sandbox-stop-container`.'
 }
 
 /** The squad a sandbox belongs to: its own squad, or the owning agent's squad. */

@@ -41,7 +41,7 @@ describe('notification-config RBAC guards', () => {
   })
 
   test('own preferences expose the fixed push categories rather than raw routing events', async () => {
-    const { PUSH_CATEGORY_IDS } = await import('@tau/shared')
+    const { PUSH_CATEGORY_IDS } = await import('@ficus/shared')
     const response = await app.request('/notification-config/me', withAuth({}, unprivileged.token))
     expect(response.status).toBe(200)
     const body = await response.json()

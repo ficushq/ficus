@@ -59,9 +59,9 @@ describe('canonicalRoot', () => {
 })
 
 describe('state file', () => {
-  it('defaults to ~/.tau/cli/local-server.json and honours TAU_LOCAL_SERVER_STATE', () => {
+  it('defaults to ~/.tau/cli/local-server.json and honours FICUS_LOCAL_SERVER_STATE', () => {
     expect(getStatePath({})).toMatch(/\/\.tau\/cli\/local-server\.json$/)
-    expect(getStatePath({ TAU_LOCAL_SERVER_STATE: '/x/y.json' })).toBe('/x/y.json')
+    expect(getStatePath({ FICUS_LOCAL_SERVER_STATE: '/x/y.json' })).toBe('/x/y.json')
   })
   it('round-trips an instance through a directory it has to create, and removes it', () => {
     const path = join(tmp, 'nested', 'state.json')
@@ -219,17 +219,19 @@ describe('resolveRoot', () => {
     mkdirSync(outside, { recursive: true })
 
     expect(
-      resolveRoot({ flag: flagRoot, env: { TAU_SERVER_ROOT: envRoot }, instance: 'smoke', statePath, cwd: nested })
+      resolveRoot({ flag: flagRoot, env: { FICUS_SERVER_ROOT: envRoot }, instance: 'smoke', statePath, cwd: nested })
     ).toBe(flagRoot)
-    expect(resolveRoot({ env: { TAU_SERVER_ROOT: envRoot }, instance: 'smoke', statePath, cwd: nested })).toBe(envRoot)
+    expect(resolveRoot({ env: { FICUS_SERVER_ROOT: envRoot }, instance: 'smoke', statePath, cwd: nested })).toBe(
+      envRoot
+    )
     expect(resolveRoot({ env: {}, instance: 'smoke', statePath, cwd: nested })).toBe(instRoot)
-    // TAU_INSTANCE is the env form of --instance.
-    expect(resolveRoot({ env: { TAU_INSTANCE: 'smoke' }, statePath, cwd: nested })).toBe(instRoot)
+    // FICUS_INSTANCE is the env form of --instance.
+    expect(resolveRoot({ env: { FICUS_INSTANCE: 'smoke' }, statePath, cwd: nested })).toBe(instRoot)
     // The checkout you are standing in outranks the registry default.
     expect(resolveRoot({ env: {}, statePath, cwd: nested })).toBe(cwdRoot)
     expect(resolveRoot({ env: {}, statePath, cwd: outside })).toBe(defaultRoot)
   })
-  it('ignores an unknown or malformed TAU_INSTANCE and carries on resolving', () => {
+  it('ignores an unknown or malformed FICUS_INSTANCE and carries on resolving', () => {
     const instRoot = join(tmp, 'inst')
     const cwdRoot = join(tmp, 'cwd')
     const defaultRoot = join(tmp, 'default')
@@ -242,11 +244,11 @@ describe('resolveRoot', () => {
     const outside = join(tmp, 'outside')
     mkdirSync(outside, { recursive: true })
 
-    // TAU_INSTANCE is ambient (a checkout's .env exports it), so a label this
+    // FICUS_INSTANCE is ambient (a checkout's .env exports it), so a label this
     // machine has no entry for must not break an answerable command.
-    expect(resolveRoot({ env: { TAU_INSTANCE: 'ghost' }, statePath, cwd: nested })).toBe(cwdRoot)
-    expect(resolveRoot({ env: { TAU_INSTANCE: 'Bad Label' }, statePath, cwd: nested })).toBe(cwdRoot)
-    expect(resolveRoot({ env: { TAU_INSTANCE: 'ghost' }, statePath, cwd: outside })).toBe(defaultRoot)
+    expect(resolveRoot({ env: { FICUS_INSTANCE: 'ghost' }, statePath, cwd: nested })).toBe(cwdRoot)
+    expect(resolveRoot({ env: { FICUS_INSTANCE: 'Bad Label' }, statePath, cwd: nested })).toBe(cwdRoot)
+    expect(resolveRoot({ env: { FICUS_INSTANCE: 'ghost' }, statePath, cwd: outside })).toBe(defaultRoot)
     // The flag is a request: it is honoured or refused, never ignored.
     expect(() => resolveRoot({ env: {}, instance: 'ghost', statePath, cwd: nested })).toThrow(UnknownInstanceError)
     expect(() => resolveRoot({ env: {}, instance: 'Bad Label', statePath, cwd: nested })).toThrow(
@@ -267,7 +269,7 @@ describe('resolveRoot', () => {
       expect((error as Error).message).toContain('smoke, tau')
     }
   })
-  it('refuses a stale --instance root, and lets the same stale TAU_INSTANCE fall through', () => {
+  it('refuses a stale --instance root, and lets the same stale FICUS_INSTANCE fall through', () => {
     const statePath = join(tmp, 's.json')
     const gone = join(tmp, 'gone')
     const cwdRoot = join(tmp, 'cwd')
@@ -279,7 +281,7 @@ describe('resolveRoot', () => {
     expect(() => resolveRoot({ env: {}, instance: 'smoke', statePath, cwd: nested })).toThrow(NoRootError)
     expect(() => resolveRoot({ env: {}, instance: 'smoke', statePath, cwd: nested })).toThrow(gone)
     // The ambient label reports nothing: the checkout you are in still answers.
-    expect(resolveRoot({ env: { TAU_INSTANCE: 'smoke' }, statePath, cwd: nested })).toBe(cwdRoot)
+    expect(resolveRoot({ env: { FICUS_INSTANCE: 'smoke' }, statePath, cwd: nested })).toBe(cwdRoot)
   })
   it('rejects a flag/env root that is not a checkout', () => {
     expect(() => resolveRoot({ flag: tmp, env: {}, statePath: join(tmp, 'none.json'), cwd: tmp })).toThrow(NoRootError)
@@ -294,6 +296,13 @@ describe('resolveRoot', () => {
     writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'other' }))
     expect(isCheckout(tmp)).toBe(false)
   })
+  it('isCheckout accepts a checkout whose package.json is named ficus, and still accepts tau', () => {
+    mkdirSync(join(tmp, '.git'), { recursive: true })
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'ficus' }))
+    expect(isCheckout(tmp)).toBe(true)
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'tau' }))
+    expect(isCheckout(tmp)).toBe(true)
+  })
 })
 
 describe('resolveSetupRoot', () => {
@@ -306,15 +315,15 @@ describe('resolveSetupRoot', () => {
     const nested = join(cwdRoot, 'apps', 'core')
     mkdirSync(nested, { recursive: true })
 
-    expect(resolveSetupRoot({ env: { TAU_LOCAL_SERVER_STATE: statePath }, cwd: nested })).toBe(cwdRoot)
+    expect(resolveSetupRoot({ env: { FICUS_LOCAL_SERVER_STATE: statePath }, cwd: nested })).toBe(cwdRoot)
   })
   it('prefers the flag, then the env, over the cwd walk-up', () => {
     const flagRoot = join(tmp, 'flag')
     const envRoot = join(tmp, 'env')
     const cwdRoot = join(tmp, 'cwd')
     for (const d of [flagRoot, envRoot, cwdRoot]) makeCheckout(d)
-    expect(resolveSetupRoot({ flag: flagRoot, env: { TAU_SERVER_ROOT: envRoot }, cwd: cwdRoot })).toBe(flagRoot)
-    expect(resolveSetupRoot({ env: { TAU_SERVER_ROOT: envRoot }, cwd: cwdRoot })).toBe(envRoot)
+    expect(resolveSetupRoot({ flag: flagRoot, env: { FICUS_SERVER_ROOT: envRoot }, cwd: cwdRoot })).toBe(flagRoot)
+    expect(resolveSetupRoot({ env: { FICUS_SERVER_ROOT: envRoot }, cwd: cwdRoot })).toBe(envRoot)
   })
   it('rejects a flag/env root that is not a checkout', () => {
     expect(() => resolveSetupRoot({ flag: tmp, env: {}, cwd: tmp })).toThrow(NoRootError)

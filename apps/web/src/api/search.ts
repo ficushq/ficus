@@ -1,4 +1,4 @@
-import type { EntitySearchQuery, EntitySearchResponse } from '@tau/shared'
+import type { EntitySearchQuery, EntitySearchResponse } from '@ficus/shared'
 import { webTransport } from './transport'
 
 export function searchEntities(q: string, limit = 20, filters: Pick<EntitySearchQuery, 'kind' | 'squadId'> = {}) {

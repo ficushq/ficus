@@ -1,4 +1,4 @@
-# Slack App Manifest for Tau
+# Slack App Manifest for Ficus
 #
 # This manifest configures a Slack app with all permissions needed for
 # rich thread/reply/message interactions, similar to the Discord integration.
@@ -19,74 +19,74 @@
 # - Copy SLACK_BOT_TOKEN from OAuth & Permissions → Bot User OAuth Token
 
 display_information:
-  name: Tau
+  name: Ficus
   description: AI-powered squad management assistant
-  background_color: "#4A154B"
+  background_color: '#4A154B'
   long_description: |
-    Tau is an AI-powered assistant that helps teams manage work streams,
+    Ficus is an AI-powered assistant that helps teams manage work streams,
     search knowledge bases, and coordinate with squad managers.
 
     Commands:
-    • /tau status - Show active work streams
-    • /tau notify <squad> - Subscribe this channel to notifications for a squad
-    • /tau unnotify <squad> - Unsubscribe this channel from squad notifications
-    • /tau ask <question> - Ask a question or make a request
-    • /tau help - Show available commands
+    • /ficus status - Show active work streams
+    • /ficus notify <squad> - Subscribe this channel to notifications for a squad
+    • /ficus unnotify <squad> - Unsubscribe this channel from squad notifications
+    • /ficus ask <question> - Ask a question or make a request
+    • /ficus help - Show available commands
 
-    You can also reply to Tau's messages in threads to continue conversations.
+    You can also reply to Ficus's messages in threads to continue conversations.
 
 features:
   bot_user:
-    display_name: Tau
+    display_name: Ficus
     always_online: true
 
   slash_commands:
-    - command: /tau
+    - command: /ficus
       url: https://YOUR_DOMAIN/api/webhooks/channels/slack
-      description: Interact with Tau AI assistant
-      usage_hint: "status | help | ask <question> | notify <squad> | unnotify <squad>"
+      description: Interact with Ficus AI assistant
+      usage_hint: 'status | help | ask <question> | notify <squad> | unnotify <squad>'
       should_escape: false
 
 oauth_config:
   scopes:
     bot:
       # ===== Slash Commands =====
-      - commands                # Required for slash command registration
+      - commands # Required for slash command registration
 
       # ===== Core Messaging =====
-      - chat:write              # Send messages as the bot
-      - chat:write.public       # Send messages to channels the bot isn't a member of
+      - chat:write # Send messages as the bot
+      - chat:write.public # Send messages to channels the bot isn't a member of
 
       # ===== Thread & Message History =====
-      - channels:history        # Read messages in public channels (for thread context)
-      - groups:history          # Read messages in private channels (for thread context)
-      - im:history              # Read direct message history
-      - mpim:history            # Read group DM history
+      - channels:history # Read messages in public channels (for thread context)
+      - groups:history # Read messages in private channels (for thread context)
+      - im:history # Read direct message history
+      - mpim:history # Read group DM history
 
       # ===== Channel Information =====
-      - channels:read           # List and get info about public channels
-      - channels:join           # Join public channels (for receiving thread events)
-      - groups:read             # List and get info about private channels
-      - im:read                 # List and get info about DMs
-      - mpim:read               # List and get info about group DMs
+      - channels:read # List and get info about public channels
+      - channels:join # Join public channels (for receiving thread events)
+      - groups:read # List and get info about private channels
+      - im:read # List and get info about DMs
+      - mpim:read # List and get info about group DMs
 
       # ===== User Information =====
-      - users:read              # Get user display names, avatars, profiles
+      - users:read # Get user display names, avatars, profiles
 
       # ===== Reactions =====
-      - reactions:write         # Add emoji reactions to messages
-      - reactions:read          # Read emoji reactions on messages
+      - reactions:write # Add emoji reactions to messages
+      - reactions:read # Read emoji reactions on messages
 
       # ===== Files (optional, for attachments) =====
-      - files:write             # Upload files and images
-      - files:read              # Read file information and Canvas markdown via files.info
+      - files:write # Upload files and images
+      - files:read # Read file information and Canvas markdown via files.info
       # - canvases:read         # Future section-level Canvas lookup; not required for MVP
 
       # ===== DM Support =====
-      - im:write                # Open and send direct messages
+      - im:write # Open and send direct messages
 
       # ===== @Mention Events =====
-      - app_mentions:read       # Required for app_mention event subscription
+      - app_mentions:read # Required for app_mention event subscription
 
 settings:
   event_subscriptions:
@@ -95,18 +95,18 @@ settings:
 
     bot_events:
       # Thread reply support
-      - message.channels        # Messages in public channels the bot is in
-      - message.groups          # Messages in private channels the bot is in
-      - message.im              # Direct messages to the bot
-      - message.mpim            # Messages in group DMs the bot is in
+      - message.channels # Messages in public channels the bot is in
+      - message.groups # Messages in private channels the bot is in
+      - message.im # Direct messages to the bot
+      - message.mpim # Messages in group DMs the bot is in
 
       # @mention support (optional - for responding when mentioned)
-      - app_mention             # When someone @mentions the bot
+      - app_mention # When someone @mentions the bot
 
   interactivity:
-    is_enabled: false           # Enable if you want interactive components (buttons, modals)
+    is_enabled: false # Enable if you want interactive components (buttons, modals)
     # request_url: https://YOUR_DOMAIN/api/webhooks/channels/slack
 
   org_deploy_enabled: false
-  socket_mode_enabled: false    # Set to true for development without public URL
+  socket_mode_enabled: false # Set to true for development without public URL
   token_rotation_enabled: false

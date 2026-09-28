@@ -1,5 +1,5 @@
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
-import { workStreamTitle } from '@tau/shared'
+import { workStreamTitle } from '@ficus/shared'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import * as permissions from '../rbac/permissions'
 import { and, eq, inArray, sql } from 'drizzle-orm'

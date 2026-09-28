@@ -22,7 +22,7 @@ HTTP service that runs inside each K8s sandbox pod, providing command execution,
 bun run sandbox:build:k8s    # builds tau-sandbox Docker image
 ```
 
-The K8s sandbox image does not bundle the Tau CLI. Tau Core stages the built CLI into the shared core-data volume and mounts it read-only at `/usr/local/bin/tau` when creating sandbox pods. Run `bun run build:cli` before starting or recreating K8s sandboxes after CLI changes; local auto-update does this without running `k3d:import`.
+The K8s sandbox image does not bundle the Ficus CLI. Ficus Core stages the built CLI into the shared core-data volume and mounts it read-only at `/usr/local/bin/ficus` when creating sandbox pods. Run `bun run build:cli` before starting or recreating K8s sandboxes after CLI changes; local auto-update does this without running `k3d:import`.
 
 ### Browser smoke test
 
@@ -43,7 +43,7 @@ WORKSPACE_PATH=/tmp/test-workspace bun run packages/k8s-sandbox/src/server.ts
 
 ## Bash invocation process ownership
 
-Each `POST /bash` attempt is keyed by a stable invocation ID and a server-owned generation. The server starts bash as a dedicated session leader (`PID = PGID = SID`) and writes an atomic runtime record under `${TAU_BOX_HOME:-$HOME}/.tau/runtime/bash-invocations`. Records contain only the hashed invocation ID, generation, command SHA-256 digest, PID/PGID/SID, opaque process start token, and start/terminal timestamps; commands, environment variables, output, and credentials are never persisted.
+Each `POST /bash` attempt is keyed by a stable invocation ID and a server-owned generation. The server starts bash as a dedicated session leader (`PID = PGID = SID`) and writes an atomic runtime record under `${FICUS_BOX_HOME:-$HOME}/.tau/runtime/bash-invocations`. Records contain only the hashed invocation ID, generation, command SHA-256 digest, PID/PGID/SID, opaque process start token, and start/terminal timestamps; commands, environment variables, output, and credentials are never persisted.
 
 A live invocation fences duplicate acquisition. Timeout, response cancellation, explicit `POST /bash/cancel`, and server shutdown use one ownership rule: signal the exact owned groups with TERM, apply bounded KILL escalation to groups found inside the exact SID, join the leader, and scan the SID until it is empty. A new generation is admitted only after that proof. Startup reconciles every nonterminal record before admitting bash requests, covering wrapper loss, SIGKILL, and OOM where normal cleanup did not run.
 

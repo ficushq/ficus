@@ -1,4 +1,4 @@
-import type { AgentStatus, SessionUsage, MessageMetadata, QuestionData } from '@tau/shared'
+import type { AgentStatus, SessionUsage, MessageMetadata, QuestionData } from '@ficus/shared'
 
 /**
  * Context passed to turn completion hooks.

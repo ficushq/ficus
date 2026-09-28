@@ -130,10 +130,10 @@ describe('SandboxProvisionRecoveryService', () => {
 
   test('runs the timer backstop every 30s and does no DB work off the k8s runtime', async () => {
     const reconcileSpy = spyOn(SandboxProvisionRecoveryService.prototype, 'reconcileOnce').mockResolvedValue(undefined)
-    const previousRuntime = process.env.TAU_SANDBOX_RUNTIME
+    const previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
     try {
       // Non-k8s runtime (the tests' default): the tick must not touch the DB.
-      delete process.env.TAU_SANDBOX_RUNTIME
+      delete process.env.FICUS_SANDBOX_RUNTIME
       startSandboxProvisionRecovery()
       const runner = listPeriodicRunners().find((r) => r.runnerName === 'sandbox-provision-recovery')
       expect(runner?.runnerIntervalMs).toBe(30_000)
@@ -141,13 +141,13 @@ describe('SandboxProvisionRecoveryService', () => {
       await stopSandboxProvisionRecovery()
 
       // k8s runtime: the immediate tick still reconciles.
-      process.env.TAU_SANDBOX_RUNTIME = 'k8s'
+      process.env.FICUS_SANDBOX_RUNTIME = 'k8s'
       startSandboxProvisionRecovery()
       expect(reconcileSpy).toHaveBeenCalledTimes(1)
     } finally {
       await stopSandboxProvisionRecovery()
-      if (previousRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = previousRuntime
+      if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
       reconcileSpy.mockRestore()
     }
   })

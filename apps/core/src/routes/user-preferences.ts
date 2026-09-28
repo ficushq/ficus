@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { eq } from 'drizzle-orm'
-import { CUSTOM_THEME_MAX_BYTES, validateThemePreference } from '@tau/shared'
+import { CUSTOM_THEME_MAX_BYTES, validateThemePreference } from '@ficus/shared'
 import { db, userPreferences } from '../db'
 import { resolveActingUser } from '../services/rbac'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'

@@ -2,7 +2,7 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { queryKeys } from '../queryKeys'
 import { getMessages, type MessagesResponse } from '../api/agents'
-import type { Message } from '@tau/shared'
+import type { Message } from '@ficus/shared'
 
 const PAGE_SIZE = 50
 

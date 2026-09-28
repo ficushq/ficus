@@ -1,4 +1,4 @@
-import type { StreamGroupSnapshot } from '@tau/client-core'
+import type { StreamGroupSnapshot } from '@ficus/client-core'
 
 export interface ExactResponseIdentity {
   executionId: string

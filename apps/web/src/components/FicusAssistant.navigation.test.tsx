@@ -144,7 +144,7 @@ test('assistant history, starter messages, and live voice use the shared panel',
       )
       input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
     })
-    await click('Ask Tau')
+    await click('Ask Ficus')
     expect(container.querySelector('[data-testid="initial-message"]')?.textContent).toBe('Summarize today')
     await click('Voice')
     const panel = container.querySelector('[role="dialog"]')!

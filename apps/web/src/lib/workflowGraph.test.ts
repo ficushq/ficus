@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, workflowPresetSchema } from '@tau/shared'
+import { createBlankWorkflow, workflowPresetSchema } from '@ficus/shared'
 import { fitWorkflowGraph, layoutWorkflowGraph } from './workflowGraph'
 const definition = workflowPresetSchema.parse(
   Bun.YAML.parse(await Bun.file(new URL('../test/fixtures/parallel-flow.yaml', import.meta.url)).text())

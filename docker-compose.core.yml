@@ -10,9 +10,18 @@
 # quiet: "stop" simply never reaches a running turn.
 #
 # Every post is authenticated, and both services already share
-# TAU_ENCRYPTION_KEY, from which the transport derives the same shared token on
+# FICUS_ENCRYPTION_KEY, from which the transport derives the same shared token on
 # each side — so no extra secret is needed here. Keep the worker's event
 # listener on the private container network only; never publish port 3003.
+#
+# One release (Ficus rename): the secrets below go to each container under BOTH
+# names, and Core's boot bridge resolves them — on an encryption-key conflict it
+# keeps TAU_ (the key the existing store was encrypted with) and logs the names.
+# Compose must not pick one spelling here. These extension fields only make `docker
+# compose up` fail early when neither spelling is set; they are never passed to
+# a container.
+x-require-password: ${FICUS_PASSWORD:-${TAU_PASSWORD:?set FICUS_PASSWORD}}
+x-require-encryption-key: ${FICUS_ENCRYPTION_KEY:-${TAU_ENCRYPTION_KEY:?set FICUS_ENCRYPTION_KEY}}
 services:
   postgres:
     image: postgres:16-alpine
@@ -29,19 +38,21 @@ services:
     environment:
       DATABASE_URL: postgres://tau:${POSTGRES_PASSWORD:-tau}@postgres:5432/tau
       WORKER_URL: http://tau-worker:3002
-      TAU_SYSTEM_LOG_PROVIDER: docker
-      TAU_DOCKER_API_CONTAINER: tau-api
-      TAU_DOCKER_WORKER_CONTAINER: tau-worker
+      FICUS_SYSTEM_LOG_PROVIDER: docker
+      FICUS_DOCKER_API_CONTAINER: tau-api
+      FICUS_DOCKER_WORKER_CONTAINER: tau-worker
       # Mandatory and explicit (no default, no auto-detection): both processes
       # refuse to boot without it. docker-socket is the runtime this file is
       # built for — the host docker socket is mounted below. NOTE: only tau-api
       # gets that mount today; the worker is given the same runtime so it boots
       # and agrees with the api about which runtime is configured.
-      TAU_SANDBOX_RUNTIME: docker-socket
-      TAU_PASSWORD: ${TAU_PASSWORD:?set TAU_PASSWORD}
-      TAU_ENCRYPTION_KEY: ${TAU_ENCRYPTION_KEY:?set TAU_ENCRYPTION_KEY}
+      FICUS_SANDBOX_RUNTIME: docker-socket
+      FICUS_PASSWORD: ${FICUS_PASSWORD:-}
+      TAU_PASSWORD: ${TAU_PASSWORD:-}
+      FICUS_ENCRYPTION_KEY: ${FICUS_ENCRYPTION_KEY:-}
+      TAU_ENCRYPTION_KEY: ${TAU_ENCRYPTION_KEY:-}
       # api -> worker events (see the header note)
-      TAU_WORKER_EVENT_URL: http://tau-worker:3003/internal/events
+      FICUS_WORKER_EVENT_URL: http://tau-worker:3003/internal/events
     volumes:
       - core-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -52,16 +63,18 @@ services:
     command: bun run apps/core/dist/worker.js
     environment:
       DATABASE_URL: postgres://tau:${POSTGRES_PASSWORD:-tau}@postgres:5432/tau
-      TAU_PASSWORD: ${TAU_PASSWORD:?set TAU_PASSWORD}
-      TAU_ENCRYPTION_KEY: ${TAU_ENCRYPTION_KEY:?set TAU_ENCRYPTION_KEY}
+      FICUS_PASSWORD: ${FICUS_PASSWORD:-}
+      TAU_PASSWORD: ${TAU_PASSWORD:-}
+      FICUS_ENCRYPTION_KEY: ${FICUS_ENCRYPTION_KEY:-}
+      TAU_ENCRYPTION_KEY: ${TAU_ENCRYPTION_KEY:-}
       # The worker's stream server binds loopback by default (#1348); the api
       # reaches it over the container network, so bind all interfaces here.
       HOST: 0.0.0.0
       # Reachable from tau-api's container, not from the host: port 3003 is
       # deliberately NOT published in `ports:` above.
-      TAU_WORKER_EVENT_BIND: 0.0.0.0
-      TAU_SANDBOX_RUNTIME: docker-socket
-      TAU_API_EVENT_URL: http://tau-api:3000/internal/events
+      FICUS_WORKER_EVENT_BIND: 0.0.0.0
+      FICUS_SANDBOX_RUNTIME: docker-socket
+      FICUS_API_EVENT_URL: http://tau-api:3000/internal/events
     volumes: [core-data:/data]
     depends_on: [postgres]
 volumes:

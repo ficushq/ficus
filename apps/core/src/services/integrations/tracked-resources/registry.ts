@@ -4,7 +4,7 @@ import {
   type ResolvedTrackedResource,
   type TrackedResource,
   type TrackedResourceKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 /**
  * A provider's answer to "what is this issue or pull request, and may this squad follow it?".

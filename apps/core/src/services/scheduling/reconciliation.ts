@@ -1,5 +1,5 @@
 import { and, eq, inArray, lte, sql } from 'drizzle-orm'
-import { LIVE_AGENT_STATUSES, isLiveAgentStatus } from '@tau/shared'
+import { LIVE_AGENT_STATUSES, isLiveAgentStatus } from '@ficus/shared'
 import type { Agent } from '../../entities/Agent'
 import { db } from '../../db'
 import { agents, schedules, squads } from '../../db/schema'

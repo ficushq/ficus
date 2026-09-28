@@ -69,11 +69,11 @@ async function stopServer(): Promise<void> {
 // This file spawns a real k8s-sandbox server subprocess and drives real
 // verified-edit HTTP traffic against it — too jitter-prone for the shared CI
 // runner. It runs only in the dedicated `subprocess-tests` CI job (see
-// ci.yml); the main sweep sets TAU_TEST_SKIP_SUBPROCESS=1 to skip it here.
-const describeSubprocess = describe.skipIf(process.env.TAU_TEST_SKIP_SUBPROCESS === '1')
+// ci.yml); the main sweep sets FICUS_TEST_SKIP_SUBPROCESS=1 to skip it here.
+const describeSubprocess = describe.skipIf(process.env.FICUS_TEST_SKIP_SUBPROCESS === '1')
 
 beforeAll(async () => {
-  if (process.env.TAU_TEST_SKIP_SUBPROCESS === '1') return
+  if (process.env.FICUS_TEST_SKIP_SUBPROCESS === '1') return
   root = mkdtempSync(join(tmpdir(), 'real-edit-corpus-'))
   serverWorkspace = join(root, 'workspace')
   mkdirSync(serverWorkspace)
@@ -87,7 +87,7 @@ beforeAll(async () => {
       EXECUTOR_PORT: String(port),
       EXECUTOR_BIND: '127.0.0.1',
       EXECUTOR_AUTH_TOKEN: SERVER_TOKEN,
-      TAU_SANDBOX_ROLE: 'agent',
+      FICUS_SANDBOX_ROLE: 'agent',
       WORKSPACE_PATH: serverWorkspace,
     },
     stdout: 'ignore',
@@ -113,7 +113,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  if (process.env.TAU_TEST_SKIP_SUBPROCESS === '1') return
+  if (process.env.FICUS_TEST_SKIP_SUBPROCESS === '1') return
   let cleanupFailure: unknown
   try {
     client?.close()

@@ -544,7 +544,7 @@ describe('VmSandboxManager', () => {
         machineId: result.box.machineId,
         port: result.box.port,
         status: 'ready',
-        reconcilableSpecHash: options.env.TAU_BOX_SPEC_HASH,
+        reconcilableSpecHash: options.env.FICUS_BOX_SPEC_HASH,
       })
       return result
     }
@@ -597,7 +597,7 @@ describe('VmSandboxManager', () => {
         machineId: result.box.machineId,
         port: result.box.port,
         status: 'ready',
-        reconcilableSpecHash: options.env.TAU_BOX_SPEC_HASH,
+        reconcilableSpecHash: options.env.FICUS_BOX_SPEC_HASH,
       })
       return result
     }
@@ -624,7 +624,7 @@ describe('VmSandboxManager', () => {
         machineId: result.box.machineId,
         port: result.box.port,
         status: 'ready',
-        reconcilableSpecHash: options.env.TAU_BOX_SPEC_HASH,
+        reconcilableSpecHash: options.env.FICUS_BOX_SPEC_HASH,
       })
       return result
     }
@@ -663,7 +663,7 @@ describe('VmSandboxManager', () => {
         machineId: result.box.machineId,
         port: result.box.port,
         status: 'ready',
-        reconcilableSpecHash: options.env.TAU_BOX_SPEC_HASH,
+        reconcilableSpecHash: options.env.FICUS_BOX_SPEC_HASH,
       })
       return result
     }
@@ -1110,9 +1110,9 @@ describe('VmSandboxManager', () => {
     expect(call.role).toBe('squad')
 
     // Env parity: identity + secrets + spec hash are all rendered.
-    expect(call.env.TAU_SANDBOX_ID).toBe('squad_s1')
-    expect(call.env.TAU_SQUAD_ID).toBe('s1')
-    expect(call.env.TAU_SANDBOX_UMASK).toBe('0002')
+    expect(call.env.FICUS_SANDBOX_ID).toBe('squad_s1')
+    expect(call.env.FICUS_SQUAD_ID).toBe('s1')
+    expect(call.env.FICUS_SANDBOX_UMASK).toBe('0002')
     expect(call.env.GITHUB_TOKEN).toBeUndefined()
     expect(call.env.GH_TOKEN).toBeUndefined()
     expect(call.env.GIT_USER_NAME).toBe('Bot')
@@ -1121,8 +1121,8 @@ describe('VmSandboxManager', () => {
     expect(call.env.APP_URL).toBe('https://app.example.com')
     // The callback URL is the reverse tunnel (resolveBoxApiUrl), NEVER the
     // public-looking APP_URL — the tunnel is the default box→core path.
-    expect(call.env.TAU_API_URL).toBe('http://127.0.0.1:59999')
-    expect(call.env.TAU_BOX_SPEC_HASH).toBe(mgr.computeSpecHash(squadOpts))
+    expect(call.env.FICUS_API_URL).toBe('http://127.0.0.1:59999')
+    expect(call.env.FICUS_BOX_SPEC_HASH).toBe(mgr.computeSpecHash(squadOpts))
     // EnsureBoxOpts.specHash is NOT just computeSpecHash(opts) — it folds in a
     // hash of the caller env too (computeProvisioningMarker), so box-manager's
     // resume fast path also busts on a rotated secret, not only a bundle/role/
@@ -1131,8 +1131,8 @@ describe('VmSandboxManager', () => {
     // canonicalization exactly.
     expect(call.specHash).toBe(computeProvisioningMarker(mgr.computeSpecHash(squadOpts), call.env))
     expect(call.specHash).not.toBe(mgr.computeSpecHash(squadOpts))
-    // TAU_SANDBOX_ROLE mirrors pod-spec: a squad box is 'squad'.
-    expect(call.env.TAU_SANDBOX_ROLE).toBe('squad')
+    // FICUS_SANDBOX_ROLE mirrors pod-spec: a squad box is 'squad'.
+    expect(call.env.FICUS_SANDBOX_ROLE).toBe('squad')
 
     // Client created against host:port (no scheme), carrying the box row's
     // executor auth token so every request passes the server's auth gate.
@@ -1218,7 +1218,7 @@ describe('VmSandboxManager', () => {
   test('callback URL always delegates to resolveBoxApiUrl — a public APP_URL no longer short-circuits', async () => {
     const h = makeHarness()
     // APP_URL defaults to the public-LOOKING 'https://app.example.com'. The old
-    // heuristic would have baked it as TAU_API_URL directly, returning BEFORE
+    // heuristic would have baked it as FICUS_API_URL directly, returning BEFORE
     // resolveBoxApiUrl was ever consulted — a footgun when the URL is gated or
     // unreachable from the box. The reverse tunnel is the default now.
     const mgr = new VmSandboxManager(h.deps)
@@ -1227,7 +1227,7 @@ describe('VmSandboxManager', () => {
 
     const call = h.ensureCalls[0]
     // Callback URL is resolveBoxApiUrl's result, NOT the public APP_URL.
-    expect(call.env.TAU_API_URL).toBe('http://127.0.0.1:59999')
+    expect(call.env.FICUS_API_URL).toBe('http://127.0.0.1:59999')
     expect(h.resolveBoxApiUrlCalls).toEqual(['m1'])
     // APP_URL env still carries the public app url (distinct from the callback URL).
     expect(call.env.APP_URL).toBe('https://app.example.com')
@@ -1912,24 +1912,24 @@ describe('VmSandboxManager', () => {
     expect(client.healthCalls).toBe(before)
   })
 
-  test('buildBoxEnv sets TAU_SANDBOX_ROLE mirroring pod-spec (agent→agent, squad/system-manager→squad)', async () => {
+  test('buildBoxEnv sets FICUS_SANDBOX_ROLE mirroring pod-spec (agent→agent, squad/system-manager→squad)', async () => {
     const h = makeHarness()
     const mgr = new VmSandboxManager(h.deps)
 
     await mgr.ensureSandbox('agent_a1', agentOpts)
     expect(h.ensureCalls.at(-1)!.role).toBe('agent')
-    expect(h.ensureCalls.at(-1)!.env.TAU_SANDBOX_ROLE).toBe('agent')
+    expect(h.ensureCalls.at(-1)!.env.FICUS_SANDBOX_ROLE).toBe('agent')
 
     await mgr.ensureSandbox('squad_s1', squadOpts)
     expect(h.ensureCalls.at(-1)!.role).toBe('squad')
-    expect(h.ensureCalls.at(-1)!.env.TAU_SANDBOX_ROLE).toBe('squad')
+    expect(h.ensureCalls.at(-1)!.env.FICUS_SANDBOX_ROLE).toBe('squad')
 
     // system-manager boxes run the heavy squad-style runtime, so pod-spec maps them
     // to 'squad' (only 'agent' is the light role); mirror that exactly.
     const smOpts: SandboxOptions = { workspacePath: '/core/host/private', k8s: { sandboxType: 'system-manager' } }
     await mgr.ensureSandbox('system_manager_x', smOpts)
     expect(h.ensureCalls.at(-1)!.role).toBe('system-manager')
-    expect(h.ensureCalls.at(-1)!.env.TAU_SANDBOX_ROLE).toBe('squad')
+    expect(h.ensureCalls.at(-1)!.env.FICUS_SANDBOX_ROLE).toBe('squad')
   })
 
   test('stopSandbox parks the box, closes the client, and drops in-memory state', async () => {
@@ -2232,11 +2232,11 @@ describe('VmSandboxManager', () => {
 
   describe('computeProvisioningMarker', () => {
     const baseEnv: BoxEnv = {
-      TAU_SANDBOX_ID: 'squad_s1',
+      FICUS_SANDBOX_ID: 'squad_s1',
       GITHUB_TOKEN: 'ghtok',
       GH_TOKEN: 'ghtok',
       SANDBOX_CALLBACK_SECRET: 'cbsecret',
-      TAU_API_URL: 'http://127.0.0.1:59999',
+      FICUS_API_URL: 'http://127.0.0.1:59999',
     }
 
     test('identical specHash + env produce the identical marker', () => {
@@ -2254,7 +2254,7 @@ describe('VmSandboxManager', () => {
     test('a changed callback secret or API URL also changes the marker', () => {
       const base = computeProvisioningMarker('spec-1', baseEnv)
       expect(computeProvisioningMarker('spec-1', { ...baseEnv, SANDBOX_CALLBACK_SECRET: 'new-secret' })).not.toBe(base)
-      expect(computeProvisioningMarker('spec-1', { ...baseEnv, TAU_API_URL: 'http://127.0.0.1:1' })).not.toBe(base)
+      expect(computeProvisioningMarker('spec-1', { ...baseEnv, FICUS_API_URL: 'http://127.0.0.1:1' })).not.toBe(base)
     })
 
     test('a changed specHash changes the marker even with an identical env', () => {
@@ -2263,11 +2263,11 @@ describe('VmSandboxManager', () => {
 
     test('key insertion order does not affect the marker (canonicalized)', () => {
       const reordered: BoxEnv = {
-        TAU_API_URL: baseEnv.TAU_API_URL,
+        FICUS_API_URL: baseEnv.FICUS_API_URL,
         SANDBOX_CALLBACK_SECRET: baseEnv.SANDBOX_CALLBACK_SECRET,
         GH_TOKEN: baseEnv.GH_TOKEN,
         GITHUB_TOKEN: baseEnv.GITHUB_TOKEN,
-        TAU_SANDBOX_ID: baseEnv.TAU_SANDBOX_ID,
+        FICUS_SANDBOX_ID: baseEnv.FICUS_SANDBOX_ID,
       }
       expect(computeProvisioningMarker('spec-1', baseEnv)).toBe(computeProvisioningMarker('spec-1', reordered))
     })
@@ -2304,7 +2304,7 @@ describe('VmSandboxManager', () => {
       expect(h.ensureCalls).toHaveLength(2)
       expect(h.ensureCalls[1].specHash).toBe(h.ensureCalls[0].specHash)
       expect(h.ensureCalls[1].role).toBe('squad')
-      expect(h.ensureCalls[1].env.TAU_BOX_SPEC_HASH).toBe(h.ensureCalls[0].env.TAU_BOX_SPEC_HASH)
+      expect(h.ensureCalls[1].env.FICUS_BOX_SPEC_HASH).toBe(h.ensureCalls[0].env.FICUS_BOX_SPEC_HASH)
       // The whole env must match too — the marker folds an env hash in, so a
       // caller-dependent env would still restart the unit.
       expect(h.ensureCalls[1].env).toEqual(h.ensureCalls[0].env)
@@ -2315,7 +2315,7 @@ describe('VmSandboxManager', () => {
       // sandboxType: 'agent' for every non-squad box, while the vm lifecycle
       // recovery ensures the same system_manager_<userId> box with
       // sandboxType: 'system-manager' — the box must not flip identity (and
-      // marker, and TAU_SANDBOX_ROLE) depending on who ensured it last.
+      // marker, and FICUS_SANDBOX_ROLE) depending on who ensured it last.
       const h = makeHarness()
       const mgr = new VmSandboxManager(h.deps)
 
@@ -2349,11 +2349,11 @@ describe('VmSandboxManager', () => {
   })
 
   describe('vm boxes always-on by default (park-on-idle policy)', () => {
-    const ORIGINAL_ENV = process.env.TAU_VM_BOX_PARK_ON_IDLE
+    const ORIGINAL_ENV = process.env.FICUS_VM_BOX_PARK_ON_IDLE
 
     afterEach(() => {
-      if (ORIGINAL_ENV === undefined) delete process.env.TAU_VM_BOX_PARK_ON_IDLE
-      else process.env.TAU_VM_BOX_PARK_ON_IDLE = ORIGINAL_ENV
+      if (ORIGINAL_ENV === undefined) delete process.env.FICUS_VM_BOX_PARK_ON_IDLE
+      else process.env.FICUS_VM_BOX_PARK_ON_IDLE = ORIGINAL_ENV
     })
 
     test('agent boxes default to alwaysOn:true too — the policy is role-agnostic (ensure.ts hardcodes alwaysOn:false for agents)', async () => {
@@ -2366,8 +2366,8 @@ describe('VmSandboxManager', () => {
       expect(mgr.getLifecycleState('agent_a1')?.alwaysOn).toBe(true)
     })
 
-    test('TAU_VM_BOX_PARK_ON_IDLE=true re-enables parking: the caller opts value is honored again', async () => {
-      process.env.TAU_VM_BOX_PARK_ON_IDLE = 'true'
+    test('FICUS_VM_BOX_PARK_ON_IDLE=true re-enables parking: the caller opts value is honored again', async () => {
+      process.env.FICUS_VM_BOX_PARK_ON_IDLE = 'true'
       const h = makeHarness()
       const mgr = new VmSandboxManager(h.deps)
       await mgr.ensureSandbox('squad_s1', {
@@ -2378,8 +2378,8 @@ describe('VmSandboxManager', () => {
       expect(mgr.getLifecycleState('squad_s1')?.alwaysOn).toBe(false)
     })
 
-    test('TAU_VM_BOX_PARK_ON_IDLE=true still lets an explicit alwaysOn:true opt-in through', async () => {
-      process.env.TAU_VM_BOX_PARK_ON_IDLE = 'true'
+    test('FICUS_VM_BOX_PARK_ON_IDLE=true still lets an explicit alwaysOn:true opt-in through', async () => {
+      process.env.FICUS_VM_BOX_PARK_ON_IDLE = 'true'
       const h = makeHarness()
       const mgr = new VmSandboxManager(h.deps)
       await mgr.ensureSandbox('squad_s1', {

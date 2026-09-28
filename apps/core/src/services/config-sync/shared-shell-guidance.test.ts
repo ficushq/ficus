@@ -14,16 +14,16 @@ describe('local app deployment guidance', () => {
    * the page itself returns 200. Agents read the skill, not CLI flag help, so
    * the guidance is the thing that has to be right.
    */
-  test('deploy-app tells agents to let Tau assign the port and to set the base path', async () => {
+  test('deploy-app tells agents to let Ficus assign the port and to set the base path', async () => {
     const skill = await readRepoFile('config/skills/deploy-app/SKILL.md')
 
-    expect(skill).toContain('TAU_APP_BASE_PATH')
+    expect(skill).toContain('FICUS_APP_BASE_PATH')
     expect(skill).toContain('$PORT')
     // The managed-start example must not hand back a hard-coded port.
     expect(skill).toContain('Do not pass `--port`')
     expect(skill).not.toContain('--port 5173 \\')
 
-    expect(skill).toContain('Always honor `$TAU_APP_BASE_PATH`')
+    expect(skill).toContain('Always honor `$FICUS_APP_BASE_PATH`')
     expect(skill).toMatch(/hosted[\s\S]*?`\/`/i)
     expect(skill).toContain('root-absolute asset URLs work by default')
     expect(skill).toMatch(/self-hosted[\s\S]*?`\/api\/app\/<id>\/`/i)
@@ -34,19 +34,19 @@ describe('local app deployment guidance', () => {
     // variable does not help an agent holding a Next app. Next rejects both `/`
     // and a trailing slash, so the documented expression must normalize them.
     for (const setting of ['base', 'basePath', 'PUBLIC_URL']) expect(skill).toContain(setting)
-    expect(skill).toContain("basePath: process.env.TAU_APP_BASE_PATH?.replace(/\\/$/, '')")
+    expect(skill).toContain("basePath: process.env.FICUS_APP_BASE_PATH?.replace(/\\/$/, '')")
 
     expect(skill).toContain('WebSocket upgrades are not supported')
     expect(skill).toMatch(/SSE|polling/)
   })
 
-  test('visual review uses a Tau-managed app with an assigned port', async () => {
+  test('visual review uses a Ficus-managed app with an assigned port', async () => {
     const skill = await readRepoFile('config/skills/frontend-visual-review/SKILL.md')
-    expect(skill).toContain('tau deploy local start')
+    expect(skill).toContain('ficus deploy local start')
     expect(skill).toContain('$PORT')
-    expect(skill).toContain('$TAU_APP_BASE_PATH')
+    expect(skill).toContain('$FICUS_APP_BASE_PATH')
     expect(skill).not.toContain('nohup')
-    expect(skill).not.toContain('tau deploy local attach')
+    expect(skill).not.toContain('ficus deploy local attach')
   })
 })
 
@@ -74,7 +74,7 @@ describe('shared-first shell guidance', () => {
     }
     expect(visual).toContain('RUN_NAME')
     expect(visual).toContain('--name "$RUN_NAME"')
-    expect(visual).toContain('tau deploy local start')
+    expect(visual).toContain('ficus deploy local start')
     expect(visual).toContain('port $PORT')
     expect(visual).not.toContain('--port 5173')
     expect(visual).not.toContain('http.server 5173')
@@ -94,13 +94,13 @@ describe('shared-first shell guidance', () => {
       expect(content).not.toMatch(/\/workspace(?:\/|\b)/)
     }
     const worktrees = await readRepoFile('config/skills/using-git-worktrees/SKILL.md')
-    expect(worktrees).toContain('tau workstream get')
+    expect(worktrees).toContain('ficus workstream get')
     expect(worktrees).toContain('git.worktree')
     expect(worktrees).toContain('git.branch')
     expect(worktrees).toContain('do not create a second worktree')
   })
 
-  test('active Tau instruction sources are shared-first', async () => {
+  test('active Ficus instruction sources are shared-first', async () => {
     for (const path of [
       'docs/wiki/agent-runners.md',
       'config/agent-types/manager.yaml',

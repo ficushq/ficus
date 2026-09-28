@@ -2,7 +2,7 @@
 // 2026-07-08-amtp-engine-design.md §7.4/§5.9). `routes/inbox.ts` calls this
 // unchanged and uses only the returned entry's `.id`.
 import { amtpEngine } from './engine'
-import type { AmtpAttachmentRef } from '@tau/shared'
+import type { AmtpAttachmentRef } from '@ficus/shared'
 import type { OutboxEntry } from 'amtp-engine'
 
 export async function enqueueFederatedSend(args: {

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { asc, inArray, sql, type SQL } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
-import type { AmtpEnvelope } from '@tau/shared'
+import type { AmtpEnvelope } from '@ficus/shared'
 import { db } from '../db'
 import { createPostgresConnection, getConnectionString } from '../db/connection'
 import { outbox } from '../db/schema'

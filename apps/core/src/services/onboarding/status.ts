@@ -2,7 +2,7 @@ import { and, eq, isNotNull } from 'drizzle-orm'
 import { db, integrationConnections } from '../../db'
 import { integrationEnabledPredicate } from '../integrations/provider-state'
 import { resolveOAuthAuthority } from '../integrations/authorization/authority'
-import { parseGitHubConfiguration } from '@tau/shared/oauth-providers/github/config'
+import { parseGitHubConfiguration } from '@ficus/shared/oauth-providers/github/config'
 /**
  * Onboarding status: a fresh tau instance's setup checklist.
  *

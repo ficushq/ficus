@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from 'commander'
-import { workflowPresetSchema } from '@tau/shared'
+import { workflowPresetSchema } from '@ficus/shared'
 import { registerWorkflowCommands, type WorkflowDependencies } from './workflow'
 
 const dirs: string[] = []

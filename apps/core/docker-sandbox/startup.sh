@@ -31,8 +31,8 @@ supervise_child() {
   child=$!
   # Optional OOM protection for this child (root-only write; best-effort so a
   # kernel without the knob never breaks startup).
-  if [ -n "${TAU_CHILD_OOM_ADJ:-}" ]; then
-    echo "$TAU_CHILD_OOM_ADJ" >"/proc/$child/oom_score_adj" 2>/dev/null || true
+  if [ -n "${FICUS_CHILD_OOM_ADJ:-}" ]; then
+    echo "$FICUS_CHILD_OOM_ADJ" >"/proc/$child/oom_score_adj" 2>/dev/null || true
   fi
   printf '%s\n' "$child" >"$pid_file"
   set +e
@@ -68,17 +68,17 @@ fi
 # Apply only a complete, safe host identity pair. Collisions fail closed rather
 # than selecting another account or falling back to root.
 IDENTITY_SOURCE=image
-if printf '%s' "${TAU_HOST_UID:-}:${TAU_HOST_GID:-}" | grep -Eq '^[1-9][0-9]*:[1-9][0-9]*$' &&
-   [ "$TAU_HOST_UID" -le 2147483647 ] && [ "$TAU_HOST_GID" -le 2147483647 ] &&
-   [ "$TAU_HOST_UID" -ne 65534 ] && [ "$TAU_HOST_GID" -ne 65534 ]; then
-  if awk -F: -v id="$TAU_HOST_UID" '$3 == id && $1 != "tau" { found=1 } END { exit !found }' /etc/passwd ||
-     awk -F: -v id="$TAU_HOST_GID" '$3 == id && $1 != "tau" { found=1 } END { exit !found }' /etc/group; then
+if printf '%s' "${FICUS_HOST_UID:-}:${FICUS_HOST_GID:-}" | grep -Eq '^[1-9][0-9]*:[1-9][0-9]*$' &&
+   [ "$FICUS_HOST_UID" -le 2147483647 ] && [ "$FICUS_HOST_GID" -le 2147483647 ] &&
+   [ "$FICUS_HOST_UID" -ne 65534 ] && [ "$FICUS_HOST_GID" -ne 65534 ]; then
+  if awk -F: -v id="$FICUS_HOST_UID" '$3 == id && $1 != "tau" { found=1 } END { exit !found }' /etc/passwd ||
+     awk -F: -v id="$FICUS_HOST_GID" '$3 == id && $1 != "tau" { found=1 } END { exit !found }' /etc/group; then
     echo '[tau-sandbox] requested command identity collides with the image' >&2
     exit 1
   fi
-  groupmod -g "$TAU_HOST_GID" tau
-  usermod -u "$TAU_HOST_UID" -g "$TAU_HOST_GID" tau
-  chown "$TAU_HOST_UID:$TAU_HOST_GID" /home/tau /workspace
+  groupmod -g "$FICUS_HOST_GID" tau
+  usermod -u "$FICUS_HOST_UID" -g "$FICUS_HOST_GID" tau
+  chown "$FICUS_HOST_UID:$FICUS_HOST_GID" /home/tau /workspace
   IDENTITY_SOURCE=host
 fi
 
@@ -122,18 +122,18 @@ export EXECUTOR_COMMAND_CONTRACT_DIGEST="$CONTRACT_DIGEST"
 #   - `nice -n -10`: we are root (workloads run as `tau` at priority 0 via
 #     su-exec), so the scheduler always preempts saturated workloads to run the
 #     probe handler.
-#   - `oom_score_adj=-500` (applied by supervise_child via TAU_CHILD_OOM_ADJ,
+#   - `oom_score_adj=-500` (applied by supervise_child via FICUS_CHILD_OOM_ADJ,
 #     passed as a prefix assignment so the FUNCTION sees it): under memory
 #     pressure the OOM killer takes a workload, not the probe server.
 # Browser service env — exported BEFORE the box server launches so the main
-# server (and thus browser-proxy) inherits TAU_BROWSER_DEV_ALLOW_USER. The
+# server (and thus browser-proxy) inherits FICUS_BROWSER_DEV_ALLOW_USER. The
 # dev-allow user is the OS user THIS script runs as, which is exactly the user
 # the un-su-exec'd box server reports via os.userInfo() (see R-B17 note below).
-export TAU_BROWSER_SOCK="${TAU_BROWSER_SOCK:-/run/tau-browser/sock}"
-export TAU_BROWSER_MEMORY_HIGH_MB="${TAU_BROWSER_MEMORY_HIGH_MB:-2048}"
-export TAU_BROWSER_DEV_ALLOW_USER="${TAU_BROWSER_DEV_ALLOW_USER:-$(id -un)}"
+export FICUS_BROWSER_SOCK="${FICUS_BROWSER_SOCK:-/run/tau-browser/sock}"
+export FICUS_BROWSER_MEMORY_HIGH_MB="${FICUS_BROWSER_MEMORY_HIGH_MB:-2048}"
+export FICUS_BROWSER_DEV_ALLOW_USER="${FICUS_BROWSER_DEV_ALLOW_USER:-$(id -un)}"
 
-TAU_CHILD_OOM_ADJ=-500 supervise_child executor "$EXECUTOR_PID_FILE" nice -n -10 bun run /opt/sandbox/src/server.ts &
+FICUS_CHILD_OOM_ADJ=-500 supervise_child executor "$EXECUTOR_PID_FILE" nice -n -10 bun run /opt/sandbox/src/server.ts &
 EXECUTOR_PID=$!
 
 # --- tau-browser service (dev parity with tau-browser.service on VM machines) --
@@ -148,24 +148,27 @@ EXECUTOR_PID=$!
 #
 # R-B17 dev auth: the box server (main executor above) is NOT su-exec'd, so it
 # runs as this script's user (root) and browser-proxy sends
-# `x-tau-box-user: <that user>` — which never matches the prod `box_<hex>` gate.
-# TAU_BROWSER_DEV_ALLOW_USER (a docker-dev-only env prod NEVER sets) tells the
+# `x-ficus-box-user: <that user>` — which never matches the prod `box_<hex>` gate.
+# FICUS_BROWSER_DEV_ALLOW_USER (a docker-dev-only env prod NEVER sets) tells the
 # service to also accept exactly that user; the digest is therefore seeded at
 # <that user>.token, and the var is exported so BOTH the main server (env above,
 # already launched inheriting it) and the browser service (below) see it.
 start_browser_service() {
   service=/opt/tau/browser/service/tau-browser.js
   [ -f "$service" ] || { echo '[tau-sandbox] tau-browser service not present; skipping (dev parity)' >&2; return 0; }
-  tokens_dir="${TAU_BROWSER_TOKENS_DIR:-/opt/tau/browser-tokens}"
-  ( umask 077; mkdir -p "$tokens_dir"; mkdir -p "$(dirname "$TAU_BROWSER_SOCK")" )
+  tokens_dir="${FICUS_BROWSER_TOKENS_DIR:-/opt/tau/browser-tokens}"
+  ( umask 077; mkdir -p "$tokens_dir"; mkdir -p "$(dirname "$FICUS_BROWSER_SOCK")" )
   # sha256 of the container's own box token (trimmed of the trailing newline via
   # command substitution) — the SAME digest form box-manager pushes on VM hosts.
   digest="$(printf %s "$(cat "$TOKEN_FILE")" | sha256sum | cut -d' ' -f1)"
-  # Seed under the user browser-proxy actually sends (TAU_BROWSER_DEV_ALLOW_USER),
+  # Seed under the user browser-proxy actually sends (FICUS_BROWSER_DEV_ALLOW_USER),
   # NOT the command user — the two differ (root vs tau) and the header wins.
-  ( umask 077; printf '%s' "$digest" >"$tokens_dir/${TAU_BROWSER_DEV_ALLOW_USER}.token" )
-  bun "$service" >/var/log/tau-browser.log 2>&1 &
-  echo "[tau-sandbox] tau-browser service started (pid $!, sock $TAU_BROWSER_SOCK, dev-user $TAU_BROWSER_DEV_ALLOW_USER)" >&2
+  ( umask 077; printf '%s' "$digest" >"$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token" )
+  # One release (Ficus rename): the service may still read the TAU_BROWSER_* names.
+  TAU_BROWSER_SOCK="$FICUS_BROWSER_SOCK" TAU_BROWSER_MEMORY_HIGH_MB="$FICUS_BROWSER_MEMORY_HIGH_MB" \
+    TAU_BROWSER_DEV_ALLOW_USER="$FICUS_BROWSER_DEV_ALLOW_USER" TAU_BROWSER_TOKENS_DIR="$tokens_dir" \
+    bun "$service" >/var/log/tau-browser.log 2>&1 &
+  echo "[tau-sandbox] tau-browser service started (pid $!, sock $FICUS_BROWSER_SOCK, dev-user $FICUS_BROWSER_DEV_ALLOW_USER)" >&2
 }
 start_browser_service || echo '[tau-sandbox] tau-browser service failed to start (non-fatal, dev parity)' >&2
 

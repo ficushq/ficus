@@ -2,10 +2,11 @@ import { Command } from 'commander'
 import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join, resolve } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { applyUpdate, type UpdateDeps } from './update'
 import { bootstrap, defaultInstallDir, DEFAULT_REPO } from '../local-server/bootstrap'
 import { parseEnvFile } from '../local-server/env-file'
+import { migrateCheckoutEnv } from '../local-server/env-prefix'
 import { runOfflineUpdate } from '../local-server/offline-update'
 import { resolveSetupOptions, type Prompter, type RawSetupFlags, SetupOptionsError } from '../local-server/options'
 import { defaultSysboxHostDeps, runSysboxBootstrap, type SysboxHostDeps } from '../local-server/sysbox'
@@ -95,24 +96,41 @@ function narrateWarnings(root: string): { warnings?: string[] } {
   return { warnings }
 }
 
+/**
+ * Ficus rename: hard-rename the install's TAU_ settings to FICUS_ (with backups) before its
+ * processes start. A checkout that predates the rename is left alone, and a TAU_/FICUS_ secret
+ * conflict fails the command with the key names and nothing changed.
+ */
+async function renameInstallEnv(root: string): Promise<string[]> {
+  // Under --json the warnings ride in the document (see withWarnings) instead of on stdout.
+  const { warnings } = await migrateCheckoutEnv(root, { log: (line) => (isJsonMode() ? undefined : narrate(line)) })
+  return warnings
+}
+
+/** `narrateWarnings`' result with the env-rename warnings added, still omitted when there are none. */
+function withWarnings(envWarnings: string[], rest: { warnings?: string[] }): { warnings?: string[] } {
+  const warnings = [...envWarnings, ...(rest.warnings ?? [])]
+  return warnings.length > 0 ? { warnings } : {}
+}
+
 export function registerServerCommands(program: Command, deps: ServerDeps = defaultServerDeps()) {
   const server = program
     .command('server')
-    .description('Manage the tau instance installed on this machine (no API needed)')
+    .description('Manage the Ficus instance installed on this machine (no API needed)')
     .enablePositionalOptions()
   // Every command that resolves a checkout takes both, AFTER the subcommand:
-  // `tau server status --instance smoke`. Declaring --instance on the group
+  // `ficus server status --instance smoke`. Declaring --instance on the group
   // instead would shadow setup's own --instance (commander binds an option an
   // ancestor declares to that ancestor), silently dropping the label.
   const withRoot = (cmd: Command) =>
     cmd
       .option(
         '--root <dir>',
-        'Checkout to operate on (default: TAU_SERVER_ROOT, then --instance, then the current checkout, then the default instance)'
+        'Checkout to operate on (default: FICUS_SERVER_ROOT, then --instance, then the current checkout, then the default instance)'
       )
       .option(
         '--instance <label>',
-        'Instance to act on (default: TAU_INSTANCE, the current checkout, then the default)'
+        'Instance to act on (default: FICUS_INSTANCE, the current checkout, then the default)'
       )
   const root = (opts: { root?: string; instance?: string }) =>
     resolveRoot({
@@ -128,7 +146,8 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
   const managed = (opts: { root?: string; instance?: string }) => {
     const selected = root(opts)
     const registered = findInstanceByRoot(selected, deps.statePath)
-    if (!registered) throw new Error(`checkout ${selected} is not registered; run tau server setup --root ${selected}`)
+    if (!registered)
+      throw new Error(`checkout ${selected} is not registered; run ficus server setup --root ${selected}`)
     // The requested path only selects an instance. Lifecycle operations use
     // the canonical registry-owned root so aliases cannot break ownership
     // markers or make subprocess cwd drift from setup's persisted identity.
@@ -168,7 +187,7 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
 
   server
     .command('install')
-    .description('Clone tau, install deps and run its setup (the curl one-liner calls this)')
+    .description('Clone Ficus, install deps and run its setup (the curl one-liner calls this)')
     .option('--root <dir>', 'Where to clone (default ~/.tau/tau) (must precede any pass-through setup flags)')
     .option('--repo <url>', 'Git repository', DEFAULT_REPO)
     .option('--ref <ref>', 'Branch or tag to check out', 'main')
@@ -176,25 +195,25 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
     .passThroughOptions()
     .argument(
       '[setupArgs...]',
-      'Flags forwarded to `bun run setup` — run `tau server setup --help` for the full list (e.g. --instance lab --runtime host --yes)'
+      'Flags forwarded to `bun run setup` — run `ficus server setup --help` for the full list (e.g. --instance lab --runtime host --yes)'
     )
     .addHelpText(
       'after',
       `
 Examples:
   Install the first instance into ~/.tau/tau:
-    $ tau server install --runtime host --yes
+    $ ficus server install --runtime host --yes
 
   Install a SECOND instance that cannot collide with the first. --instance
   names every per-instance resource — services tau-lab-api/tau-lab-worker, the
   postgres container postgres-tau-lab, and data under ~/.tau-lab — so both run
   side by side. --root must come before the forwarded setup flags:
-    $ tau server install --root ~/.tau/instances/lab --instance lab --runtime host --yes
+    $ ficus server install --root ~/.tau/instances/lab --instance lab --runtime host --yes
 
   Address it afterwards (--instance is per subcommand, not global):
-    $ tau server status --instance lab
-    $ tau server update --instance lab
-    $ tau server list
+    $ ficus server status --instance lab
+    $ ficus server update --instance lab
+    $ ficus server list
 `
     )
     .action(
@@ -214,21 +233,21 @@ Examples:
 
   server
     .command('setup')
-    .description('Configure, build, migrate and start tau in a checkout (idempotent)')
+    .description('Configure, build, migrate and start Ficus in a checkout (idempotent)')
     .option(
       '--root <dir>',
-      'Checkout to configure (default: TAU_SERVER_ROOT, then the checkout the current directory is in)'
+      'Checkout to configure (default: FICUS_SERVER_ROOT, then the checkout the current directory is in)'
     )
     .option('--runtime <runtime>', 'host | docker-socket | docker-sysbox | k3d')
     .option('--supervisor <supervisor>', 'pm2 | launchd | systemd-user')
     .option('--instance <label>', 'Instance label — names every per-instance resource (default tau)')
-    .option('--home-dir <path>', 'HOME_DIR for tau data (default ~/.tau)')
+    .option('--home-dir <path>', 'HOME_DIR for Ficus data (default ~/.tau)')
     .option('--port <n>', 'API/web port (default 3000)')
     .option('--app-url <origin>', 'Browser origin (default http://localhost:<port>)')
     .option('--database-url <dsn>', 'Use an existing PostgreSQL instead of the docker compose container')
     .option('--db-name <name>', 'Database name in the compose container (default tau)')
     .option('--db-port <n>', 'Host port for the managed PostgreSQL (default 5432, else the first free port)')
-    .option('--default', 'Make this instance the one `tau server` commands act on by default')
+    .option('--default', 'Make this instance the one `ficus server` commands act on by default')
     .option('--no-start', 'Do not start the services')
     .option('--dry-run', 'Print the plan and change nothing')
     .option('--yes', 'Accept defaults without confirmation')
@@ -237,22 +256,23 @@ Examples:
       guarded(async (raw) => {
         const dir = setupRoot(raw as { root?: string })
         // A re-run keeps what this checkout already is: its label and port come
-        // from its own .env unless a flag or TAU_SETUP_* says otherwise.
+        // from its own .env unless a flag or FICUS_SETUP_* says otherwise.
         const persistedEnv = rootEnv(dir)
         const persistedPort = Number(persistedEnv.PORT)
         const registered = findInstanceByRoot(dir, deps.statePath)?.record
-        const marked = persistedEnv.TAU_UPDATE_SUPERVISOR
+        const marked = persistedEnv.FICUS_UPDATE_SUPERVISOR
         const markedSupervisor = (LOCAL_SUPERVISORS as readonly string[]).includes(marked ?? '')
           ? (marked as LocalSupervisor)
           : undefined
-        const legacyPm2 = existsSync(join(dir, 'ecosystem.config.js')) || persistedEnv.TAU_SYSTEM_LOG_PROVIDER === 'pm2'
+        const legacyPm2 =
+          existsSync(join(dir, 'ecosystem.config.js')) || persistedEnv.FICUS_SYSTEM_LOG_PROVIDER === 'pm2'
         const options = await resolveSetupOptions(
           { ...(raw as RawSetupFlags), root: dir },
           deps.env,
           deps.prompter,
           deps.isTTY,
           {
-            instance: persistedEnv.TAU_INSTANCE || undefined,
+            instance: persistedEnv.FICUS_INSTANCE || undefined,
             port: Number.isInteger(persistedPort) && persistedPort > 0 ? persistedPort : undefined,
             supervisor: registered?.supervisor ?? markedSupervisor ?? (legacyPm2 ? 'pm2' : undefined),
           }
@@ -271,8 +291,8 @@ Examples:
 
   server
     .command('use')
-    .description('Choose the instance bare `tau server` commands act on (--instance still overrides per command)')
-    .argument('<label>', 'Instance label, as shown by `tau server list`')
+    .description('Choose the instance bare `ficus server` commands act on (--instance still overrides per command)')
+    .argument('<label>', 'Instance label, as shown by `ficus server list`')
     .action(
       guarded(async (...args: unknown[]) => {
         const label = args[0] as string
@@ -281,7 +301,7 @@ Examples:
           const known = Object.keys(registry.instances).sort()
           throw new Error(
             known.length === 0
-              ? 'No local instances are registered — run `tau server install` first'
+              ? 'No local instances are registered — run `ficus server install` first'
               : `No local instance named '${label}' — known instances: ${known.join(', ')}`
           )
         }
@@ -296,14 +316,14 @@ Examples:
 
   server
     .command('list')
-    .description('List the tau instances installed on this machine')
+    .description('List the Ficus instances installed on this machine')
     .option('--json', 'Output in JSON format')
     .action(
       guarded(async (opts) => {
         if ((opts as { json?: boolean }).json) setOutputOptions({ json: true })
         const registry = readRegistryStrict(deps.statePath)
         // The same answer resolveRoot uses, so the `*` can never point at an
-        // instance a bare `tau server` command would not act on.
+        // instance a bare `ficus server` command would not act on.
         const def = defaultLabel(registry)
         // The default first, then alphabetically: the one you act on by
         // default is the one you look for first.
@@ -359,7 +379,7 @@ Examples:
         const urlW = width((r) => r.url)
         const text =
           rows.length === 0
-            ? '(none) — run `tau server setup` inside a checkout to install one'
+            ? '(none) — run `ficus server setup` inside a checkout to install one'
             : rows
                 .map((r) => {
                   const names = instanceNames(r.label)
@@ -375,6 +395,7 @@ Examples:
   withRoot(server.command('start').description('Start tau-api and tau-worker under the recorded supervisor')).action(
     guarded(async (opts) => {
       const { dir, names, context, registered } = managed(opts as { root?: string; instance?: string })
+      const envWarnings = await renameInstallEnv(dir)
       const url = rootEnv(dir).DATABASE_URL
       // A DSN the installer wrote (loopback, container credentials) is this
       // instance's own container, on the port it names. Anything else — a
@@ -393,7 +414,7 @@ Examples:
         await waitForPostgres(deps.runner, names.container, { sleep: deps.sleep })
       }
       await startSupervisor(context)
-      const warnings = narrateWarnings(dir)
+      const warnings = withWarnings(envWarnings, narrateWarnings(dir))
       output(
         { ok: true, root: dir, instance: names.label, supervisor: registered.record.supervisor, ...warnings },
         `Started instance "${names.label}" from ${dir}`
@@ -413,8 +434,9 @@ Examples:
   withRoot(server.command('restart').description('Restart tau-api and tau-worker')).action(
     guarded(async (opts) => {
       const { dir, names, context, registered } = managed(opts as { root?: string; instance?: string })
+      const envWarnings = await renameInstallEnv(dir)
       await restartSupervisor(context)
-      const warnings = narrateWarnings(dir)
+      const warnings = withWarnings(envWarnings, narrateWarnings(dir))
       output(
         { ok: true, root: dir, instance: names.label, supervisor: registered.record.supervisor, ...warnings },
         `Restarted instance "${names.label}" (${dir})`
@@ -444,7 +466,7 @@ Examples:
         port,
         api: `http://localhost:${port}`,
         supervisor: registered.record.supervisor,
-        runtime: rootEnv(dir).TAU_SANDBOX_RUNTIME ?? '(unset)',
+        runtime: rootEnv(dir).FICUS_SANDBOX_RUNTIME ?? '(unset)',
         commit,
         processes,
         health,
@@ -462,7 +484,7 @@ Examples:
   withRoot(
     server
       .command('update')
-      .description('Alias of `tau update apply --offline`: pull, build and restart the local checkout')
+      .description('Alias of `ficus update apply --offline`: pull, build and restart the local checkout')
   )
     .option('--ref <ref>', 'Check out this branch, tag, or commit instead of fast-forwarding')
     .action(
@@ -581,7 +603,7 @@ Examples:
           return
         }
         const { dir, names, context, registered } = managed(o)
-        if (!o.yes && !(await deps.prompter.confirm(`Unregister tau (${dir}) from ${registered.record.supervisor}?`)))
+        if (!o.yes && !(await deps.prompter.confirm(`Unregister Ficus (${dir}) from ${registered.record.supervisor}?`)))
           return
         await uninstallSupervisor(context)
         removeInstance(registered.label, deps.statePath)
@@ -593,7 +615,7 @@ Examples:
         const volume = await containerVolumeName(deps.runner, names.container, names.volume)
         const home = rootEnv(dir).HOME_DIR ?? names.homeDir ?? '~/.tau'
         // Name the registry this command actually read and wrote — under a
-        // TAU_LOCAL_SERVER_STATE override the default location is the wrong
+        // FICUS_LOCAL_SERVER_STATE override the default location is the wrong
         // file to go looking in.
         const registryLine = registered
           ? `removed instance "${registered.label}"`

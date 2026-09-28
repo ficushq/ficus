@@ -12,14 +12,14 @@ import {
   type ApnsAlertPayload,
   type ApnsSendResult,
   type LiveActivityPushInput,
-} from '@tau/shared/apns'
+} from '@ficus/shared/apns'
 export {
   normalizePemKey,
   buildApnsHeaders,
   buildApnsJwt,
   buildApnsPayload,
   buildLiveActivityPayload,
-} from '@tau/shared/apns'
+} from '@ficus/shared/apns'
 export type {
   ApnsConfig,
   ApnsEnvironment,
@@ -27,8 +27,12 @@ export type {
   ApnsSendResult,
   LiveActivityEvent,
   LiveActivityPushInput,
-} from '@tau/shared/apns'
+} from '@ficus/shared/apns'
 const log = createLogger('apns')
+
+/** Ficus Mobile's app bundle id. Advisory only: a self-hosted instance is free to
+ * configure another bundle, so a mismatch only warns, never fails. */
+export const EXPECTED_APNS_BUNDLE_ID = 'sh.ficus.mobile'
 
 /**
  * Resolve the APNs .p8 private key, in precedence order:
@@ -72,8 +76,8 @@ export function getApnsConfig(): ApnsConfig | null {
   const bundleId = s.get('APNS_BUNDLE_ID')
   if (!keyP8 || !keyId || !teamId || !bundleId) return null
   const environment = s.get('APNS_ENV') === 'sandbox' ? 'sandbox' : 'production'
-  if (bundleId !== 'ai.hiretau.mobile') {
-    log.warn(`APNS_BUNDLE_ID is '${bundleId}', expected 'ai.hiretau.mobile'`)
+  if (bundleId !== EXPECTED_APNS_BUNDLE_ID) {
+    log.warn(`APNS_BUNDLE_ID is '${bundleId}', expected '${EXPECTED_APNS_BUNDLE_ID}'`)
   }
   if (!keyP8.includes('-----BEGIN PRIVATE KEY-----') || !keyP8.includes('-----END PRIVATE KEY-----')) {
     log.warn('APNS_KEY_P8 does not look like a complete PEM private key')

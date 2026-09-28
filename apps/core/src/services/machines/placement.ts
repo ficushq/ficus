@@ -107,7 +107,7 @@ export class DedicatedPlacementUnavailableError extends Error {
   }
 }
 
-/** Provisioning a new machine would exceed the fleet cap (`TAU_MAX_MACHINES`).
+/** Provisioning a new machine would exceed the fleet cap (`FICUS_MAX_MACHINES`).
  *  Refused loudly rather than silently over-provisioning. */
 export class MachineProvisioningCapError extends Error {
   constructor(message: string) {
@@ -162,18 +162,18 @@ export interface PlacementDeps {
   getExeProvider?: () => MachineProvider | null | Promise<MachineProvider | null>
   /** Provision + bootstrap a new machine, returning a `ready` row. */
   provisionMachine?: (opts: ProvisionMachineOpts) => Promise<Machine>
-  /** Fleet cap; defaults to `TAU_MAX_MACHINES` (or {@link DEFAULT_MAX_MACHINES}). */
+  /** Fleet cap; defaults to `FICUS_MAX_MACHINES` (or {@link DEFAULT_MAX_MACHINES}). */
   maxMachines?: number
 }
 
-/** Default fleet cap when `TAU_MAX_MACHINES` is unset/invalid.
+/** Default fleet cap when `FICUS_MAX_MACHINES` is unset/invalid.
  *
  *  This bounds PEAK-CONCURRENT VMs, not steady state: the empty-machine reaper
  *  (machine-reaper.ts) terminates drained auto-provisioned VMs after the idle
  *  grace, so the fleet shrinks back on its own. 50 gives the squad=full-VM
  *  default economics headroom (a squad-heavy tenant needs roughly one VM per
  *  squad plus packed agent VMs); exe.dev's own per-account limit is the real
- *  backstop behind it. Override with `TAU_MAX_MACHINES`. */
+ *  backstop behind it. Override with `FICUS_MAX_MACHINES`. */
 export const DEFAULT_MAX_MACHINES = 50
 
 // ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ export const DEFAULT_MAX_MACHINES = 50
 // ---------------------------------------------------------------------------
 
 /**
- * Default per-role unit weights when the TAU_UNIT_WEIGHT_* envs are unset/invalid.
+ * Default per-role unit weights when the FICUS_UNIT_WEIGHT_* envs are unset/invalid.
  *
  * The squad default deliberately EQUALS {@link DEFAULT_MACHINE_UNIT_CAPACITY}:
  * out of the box a squad box fills a whole VM (free drops to 0), so no other box
@@ -196,18 +196,18 @@ export const DEFAULT_UNIT_WEIGHTS: Record<PlacementRole, number> = {
   'system-manager': 1,
 }
 
-/** Default units one shared VM holds when `TAU_MACHINE_UNIT_CAPACITY` is unset/invalid. */
+/** Default units one shared VM holds when `FICUS_MACHINE_UNIT_CAPACITY` is unset/invalid. */
 export const DEFAULT_MACHINE_UNIT_CAPACITY = 10
 
 const UNIT_WEIGHT_ENV: Record<PlacementRole, string> = {
-  squad: 'TAU_UNIT_WEIGHT_SQUAD',
-  agent: 'TAU_UNIT_WEIGHT_AGENT',
-  'system-manager': 'TAU_UNIT_WEIGHT_SYSTEM_MANAGER',
+  squad: 'FICUS_UNIT_WEIGHT_SQUAD',
+  agent: 'FICUS_UNIT_WEIGHT_AGENT',
+  'system-manager': 'FICUS_UNIT_WEIGHT_SYSTEM_MANAGER',
 }
 
-/** Positive-integer env override, else the default (same rule as TAU_MAX_MACHINES).
+/** Positive-integer env override, else the default (same rule as FICUS_MAX_MACHINES).
  *  Exported for the sibling machine modules with the same env convention (e.g.
- *  the empty-machine reaper's TAU_MACHINE_IDLE_GRACE_MS). */
+ *  the empty-machine reaper's FICUS_MACHINE_IDLE_GRACE_MS). */
 export function positiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name]
   if (!raw) return fallback
@@ -222,7 +222,7 @@ export function unitWeightForRole(role: PlacementRole): number {
 
 /** How many units one shared VM holds. */
 export function resolveMachineUnitCapacity(): number {
-  return positiveIntEnv('TAU_MACHINE_UNIT_CAPACITY', DEFAULT_MACHINE_UNIT_CAPACITY)
+  return positiveIntEnv('FICUS_MACHINE_UNIT_CAPACITY', DEFAULT_MACHINE_UNIT_CAPACITY)
 }
 
 let warnedUnknownSandboxIdPrefix = false
@@ -303,7 +303,7 @@ export async function defaultGetExeProvider(
 
 function resolveMaxMachines(deps: PlacementDeps): number {
   if (deps.maxMachines !== undefined) return deps.maxMachines
-  return positiveIntEnv('TAU_MAX_MACHINES', DEFAULT_MAX_MACHINES)
+  return positiveIntEnv('FICUS_MAX_MACHINES', DEFAULT_MAX_MACHINES)
 }
 
 /**
@@ -477,7 +477,7 @@ export async function provisionCapped(deps: PlacementDeps, opts: ProvisionMachin
   if (count >= max) {
     throw new MachineProvisioningCapError(
       `machine provisioning cap reached (${count}/${max}); refusing to provision a new ${opts.purpose} machine ` +
-        `— raise TAU_MAX_MACHINES or free a machine`
+        `— raise FICUS_MAX_MACHINES or free a machine`
     )
   }
   return provisionInflight.run(opts.name, () => provisionOrAdopt(deps, opts))

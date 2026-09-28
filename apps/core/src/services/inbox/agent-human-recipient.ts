@@ -1,5 +1,5 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
-import type { MessageMetadata } from '@tau/shared'
+import type { MessageMetadata } from '@ficus/shared'
 import { db, messages } from '../../db'
 import { Agent } from '../../entities/Agent'
 import { WorkStream } from '../../entities/WorkStream'

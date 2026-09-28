@@ -8,7 +8,7 @@ import {
   type WorkStreamDerivedState,
   type WorkStreamStatus,
   type WorkStreamWait,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db } from '../../db'
 import { users, workStreams } from '../../db/schema'
 import { hasPermission } from '../rbac/permissions'

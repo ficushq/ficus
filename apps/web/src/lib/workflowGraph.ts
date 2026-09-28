@@ -7,5 +7,5 @@ export {
   layoutWorkflowGraph,
   fitWorkflowGraph,
   roundedFlowPath,
-} from '@tau/shared'
-export type { FlowGraphNode, FlowGraphEdge, FlowGraph } from '@tau/shared'
+} from '@ficus/shared'
+export type { FlowGraphNode, FlowGraphEdge, FlowGraph } from '@ficus/shared'

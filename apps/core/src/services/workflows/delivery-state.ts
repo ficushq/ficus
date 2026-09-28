@@ -21,7 +21,7 @@ import {
   type WorkStreamDeliveryExplanation,
   type WorkStreamDeliveryGateFacts,
   type WorkStreamDeliveryPresentation,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { deliveryView } from '../work-streams/delivery-pull-requests'
 
 /** A linked PR with event routing is an external wait, not abandoned delivery setup. */

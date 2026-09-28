@@ -1,4 +1,4 @@
-import type { StreamEvent } from '@tau/shared'
+import type { StreamEvent } from '@ficus/shared'
 
 export interface SSECallbacks {
   onEvent: (event: StreamEvent) => void

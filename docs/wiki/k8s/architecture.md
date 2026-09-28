@@ -1,10 +1,10 @@
 # K8s Sandbox Architecture
 
-System-level overview of how Tau runs agent sandboxes on Kubernetes.
+System-level overview of how Ficus runs agent sandboxes on Kubernetes.
 
 ## Runtime Selection
 
-Tau supports five sandbox runtimes, selected via the required `TAU_SANDBOX_RUNTIME` variable — see [Choosing a sandbox runtime](../sandbox-runtimes.md) for how to pick one. This document covers `k8s`:
+Ficus supports five sandbox runtimes, selected via the required `FICUS_SANDBOX_RUNTIME` variable — see [Choosing a sandbox runtime](../sandbox-runtimes.md) for how to pick one. This document covers `k8s`:
 
 | Runtime         | Use Case                              | Sandbox Mechanism             | Tool Execution                |
 | --------------- | ------------------------------------- | ----------------------------- | ----------------------------- |
@@ -78,7 +78,7 @@ Manages K8s pod CRUD via `@kubernetes/client-node`.
 - **Pod creation** — Builds pod spec with volumes, probes, env vars, runtime class. Handles existing pods in terminal states (Failed/Succeeded) by deleting and recreating.
 - **Readiness** — Polls pod status until the `Ready` condition is true (up to 5 minutes for first boot with nix packages).
 - **Idle timeout** — Checks every 60s for pods idle beyond their timeout (default 15min). Configurable per squad via `SquadSandboxConfig.idleTimeout`. Pods with `alwaysOn: true` are never terminated.
-- **Auth secret sync** — Pushes `TAU_PASSWORD` from the Core SecretStore into a K8s Secret (`tau-sandbox-auth`), which pods mount at `/etc/tau`. K8s auto-propagates updates to running pods (~1min delay).
+- **Auth secret sync** — Pushes `FICUS_PASSWORD` from the Core SecretStore into a K8s Secret (`tau-sandbox-auth`), which pods mount at `/etc/tau`. K8s auto-propagates updates to running pods (~1min delay).
 
 ### SandboxClient (`apps/core/src/services/sandbox/k8s/http-client.ts`)
 
@@ -166,7 +166,7 @@ All persistent data lives on a single shared EFS volume (`tau-core-data`). Sandb
 | `/workspace`              | `workspaces/squads/{squadId}`    | read-write | Code, devbox.json, .tau/                                               |
 | `/memory`                 | `memory/{squadId}`               | read-only  | Agent memory files                                                     |
 | `/var/lib/tau/ssh-source` | `ssh/{squadId}`                  | read-write | SSH key source; entrypoint mirrors into container-private `/root/.ssh` |
-| `/etc/tau`                | (K8s Secret: `tau-sandbox-auth`) | read-only  | Auth password for Tau CLI                                              |
+| `/etc/tau`                | (K8s Secret: `tau-sandbox-auth`) | read-only  | Auth password for Ficus CLI                                            |
 
 See [volumes.md](volumes.md) for the full storage architecture.
 

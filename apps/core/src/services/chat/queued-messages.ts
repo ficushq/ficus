@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import type { Message } from '@tau/shared'
+import type { Message } from '@ficus/shared'
 import { db, chatSendReceipts } from '../../db'
 
 /**

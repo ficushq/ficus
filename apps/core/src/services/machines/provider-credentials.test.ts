@@ -83,27 +83,27 @@ describe('getExeMachineImage', () => {
   let prior: string | undefined
 
   beforeEach(() => {
-    prior = process.env.TAU_EXE_MACHINE_IMAGE
+    prior = process.env.FICUS_EXE_MACHINE_IMAGE
   })
 
   afterEach(() => {
-    if (prior === undefined) delete process.env.TAU_EXE_MACHINE_IMAGE
-    else process.env.TAU_EXE_MACHINE_IMAGE = prior
+    if (prior === undefined) delete process.env.FICUS_EXE_MACHINE_IMAGE
+    else process.env.FICUS_EXE_MACHINE_IMAGE = prior
   })
 
-  it('defaults to the ficus-machine image when TAU_EXE_MACHINE_IMAGE is unset', () => {
-    delete process.env.TAU_EXE_MACHINE_IMAGE
+  it('defaults to the ficus-machine image when FICUS_EXE_MACHINE_IMAGE is unset', () => {
+    delete process.env.FICUS_EXE_MACHINE_IMAGE
     expect(getExeMachineImage()).toBe(DEFAULT_EXE_MACHINE_IMAGE)
     expect(DEFAULT_EXE_MACHINE_IMAGE).toBe('ghcr.io/ficushq/ficus-machine:latest')
   })
 
-  it('returns the configured value when TAU_EXE_MACHINE_IMAGE is set', () => {
-    process.env.TAU_EXE_MACHINE_IMAGE = 'ghcr.io/ficushq/ficus-machine:v9'
+  it('returns the configured value when FICUS_EXE_MACHINE_IMAGE is set', () => {
+    process.env.FICUS_EXE_MACHINE_IMAGE = 'ghcr.io/ficushq/ficus-machine:v9'
     expect(getExeMachineImage()).toBe('ghcr.io/ficushq/ficus-machine:v9')
   })
 
-  it("returns undefined when TAU_EXE_MACHINE_IMAGE is empty (use exe's default image)", () => {
-    process.env.TAU_EXE_MACHINE_IMAGE = ''
+  it("returns undefined when FICUS_EXE_MACHINE_IMAGE is empty (use exe's default image)", () => {
+    process.env.FICUS_EXE_MACHINE_IMAGE = ''
     expect(getExeMachineImage()).toBeUndefined()
   })
 })

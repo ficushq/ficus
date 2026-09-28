@@ -8,7 +8,7 @@ import { parseOAuthCredential } from '../authorization/credential-bundle'
 import type { ClaimedIntegrationProjection } from './state-repository'
 import type { ISandboxManager, SandboxOptions } from '../../sandbox/types'
 import { ensureSandboxToolchain } from '../../sandbox/toolchain/provision'
-import { isLiveAgentStatus } from '@tau/shared'
+import { isLiveAgentStatus } from '@ficus/shared'
 import { findAgentLifecycleState } from '../../../entities/agent-queries'
 import { createLogger } from '../../../lib/infra/logger'
 

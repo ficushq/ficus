@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { eq, like, sql } from 'drizzle-orm'
-import type { StorageSnapshot } from '@tau/shared'
+import type { StorageSnapshot } from '@ficus/shared'
 import { db } from '../../db'
 import { storageMonitor, inbox } from '../../db/schema'
 import { InboxMessage } from '../../entities/InboxMessage'
@@ -27,14 +27,14 @@ const snapshot = (percent: number | null = 85): StorageSnapshot => ({
   ],
 })
 beforeEach(async () => {
-  oldRuntime = process.env.TAU_SANDBOX_RUNTIME
-  process.env.TAU_SANDBOX_RUNTIME = 'vm'
+  oldRuntime = process.env.FICUS_SANDBOX_RUNTIME
+  process.env.FICUS_SANDBOX_RUNTIME = 'vm'
   await db.delete(storageMonitor).where(eq(storageMonitor.id, 'default'))
   for (const key of keys) await getSettingsStore().delete(key)
 })
 afterEach(async () => {
-  if (oldRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-  else process.env.TAU_SANDBOX_RUNTIME = oldRuntime
+  if (oldRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+  else process.env.FICUS_SANDBOX_RUNTIME = oldRuntime
   await db.delete(storageMonitor).where(eq(storageMonitor.id, 'default'))
   await db.delete(inbox).where(like(inbox.idempotencyKey, 'storage-capacity:%:storage-test-machine'))
   for (const key of keys) await getSettingsStore().delete(key)

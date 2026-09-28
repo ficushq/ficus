@@ -87,7 +87,7 @@ function AgentScopesPanelContent({ agentId }: Props) {
                 <Can permission="agents:scopes:manage">
                   <button
                     type="button"
-                    className="tau-button text-muted hover:text-danger"
+                    className="ficus-button text-muted hover:text-danger"
                     aria-label={`Revoke ${scope.permission}`}
                     disabled={isMutating}
                     onClick={() => revokeMutation.mutate(scope.permission)}
@@ -111,7 +111,7 @@ function AgentScopesPanelContent({ agentId }: Props) {
             <button
               type="button"
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 'rounded-md px-3 py-1.5 text-sm font-medium',
                 grantableSelections.length === 0 || isMutating
                   ? 'cursor-not-allowed bg-surface text-muted'

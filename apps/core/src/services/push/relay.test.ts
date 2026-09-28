@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { pushRelayConfig, resolvePushRelayBaseUrl, sendRelayAlert } from './relay'
-const token = `tau_pri_${randomUUID()}_${'a'.repeat(43)}`
-const config = pushRelayConfig({ TAU_PUSH_RELAY_TOKEN: token })!
+const token = `ficus_pri_${randomUUID()}_${'a'.repeat(43)}`
+const config = pushRelayConfig({ FICUS_PUSH_RELAY_TOKEN: token })!
 
 test('relay uses only a push credential and strips content and arbitrary URLs', async () => {
   let captured: RequestInit | undefined
@@ -11,7 +11,7 @@ test('relay uses only a push credential and strips content and arbitrary URLs', 
     return Response.json({ accepted: true })
   }) as (url: string, init: RequestInit) => Promise<Response>
   const result = await sendRelayAlert(
-    `tau_prd_${'b'.repeat(43)}`,
+    `ficus_prd_${'b'.repeat(43)}`,
     {
       title: 'private chat',
       body: 'private body',
@@ -35,7 +35,7 @@ test('relay forwards the preview subtitle and grouping keys, and drops unknown p
     return Response.json({ accepted: true })
   }) as (url: string, init: RequestInit) => Promise<Response>
   await sendRelayAlert(
-    `tau_prd_${'b'.repeat(43)}`,
+    `ficus_prd_${'b'.repeat(43)}`,
     {
       eventType: 'done',
       workStreamNumber: 197,
@@ -64,14 +64,14 @@ test('denial and network errors are redacted and never retry', async () => {
     calls++
     throw new Error(`secret ${token}`)
   }) as (url: string, init: RequestInit) => Promise<Response>
-  expect(await sendRelayAlert(`tau_prd_${'b'.repeat(43)}`, {}, { config, fetch: fetcher })).toEqual({
+  expect(await sendRelayAlert(`ficus_prd_${'b'.repeat(43)}`, {}, { config, fetch: fetcher })).toEqual({
     accepted: false,
     reason: 'relay_unavailable',
   })
   expect(calls).toBe(1)
   expect(
     await sendRelayAlert(
-      `tau_prd_${'b'.repeat(43)}`,
+      `ficus_prd_${'b'.repeat(43)}`,
       {},
       {
         config,
@@ -81,36 +81,36 @@ test('denial and network errors are redacted and never retry', async () => {
   ).toEqual({ accepted: false, reason: 'pro_required' })
 })
 test('account tokens and malformed credentials cannot configure the relay', () => {
-  expect(() => pushRelayConfig({ TAU_PUSH_RELAY_TOKEN: 'tau_pat_account-token' })).toThrow('push-only')
+  expect(() => pushRelayConfig({ FICUS_PUSH_RELAY_TOKEN: 'ficus_pat_account-token' })).toThrow('push-only')
   expect(pushRelayConfig({})).toBeNull()
   expect(config.instanceId).toHaveLength(36)
 })
 
-test('resolvePushRelayBaseUrl prefers TAU_PUSH_RELAY_URL, then TAU_PLATFORM_BASE_URL, then the built-in default', () => {
+test('resolvePushRelayBaseUrl prefers FICUS_PUSH_RELAY_URL, then FICUS_PLATFORM_BASE_URL, then the built-in default', () => {
   expect(
     resolvePushRelayBaseUrl({
-      TAU_PUSH_RELAY_URL: 'https://relay.example',
-      TAU_PLATFORM_BASE_URL: 'https://platform.example',
+      FICUS_PUSH_RELAY_URL: 'https://relay.example',
+      FICUS_PLATFORM_BASE_URL: 'https://platform.example',
     })
   ).toBe('https://relay.example')
-  expect(resolvePushRelayBaseUrl({ TAU_PLATFORM_BASE_URL: 'https://platform.example' })).toBe(
+  expect(resolvePushRelayBaseUrl({ FICUS_PLATFORM_BASE_URL: 'https://platform.example' })).toBe(
     'https://platform.example'
   )
   expect(resolvePushRelayBaseUrl({})).toBe('https://ficus.sh')
 })
 
 test('resolvePushRelayBaseUrl trims whitespace and a trailing slash', () => {
-  expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: '  https://relay.example/  ' })).toBe('https://relay.example')
+  expect(resolvePushRelayBaseUrl({ FICUS_PUSH_RELAY_URL: '  https://relay.example/  ' })).toBe('https://relay.example')
 })
 
 test('resolvePushRelayBaseUrl allows http only for localhost origins', () => {
-  expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://localhost:4000' })).toBe('http://localhost:4000')
-  expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://127.0.0.1:4000' })).toBe('http://127.0.0.1:4000')
-  expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://[::1]:4000' })).toBe('http://[::1]:4000')
+  expect(resolvePushRelayBaseUrl({ FICUS_PUSH_RELAY_URL: 'http://localhost:4000' })).toBe('http://localhost:4000')
+  expect(resolvePushRelayBaseUrl({ FICUS_PUSH_RELAY_URL: 'http://127.0.0.1:4000' })).toBe('http://127.0.0.1:4000')
+  expect(resolvePushRelayBaseUrl({ FICUS_PUSH_RELAY_URL: 'http://[::1]:4000' })).toBe('http://[::1]:4000')
 
   const warn = spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://relay.example' })).toBe('https://ficus.sh')
+    expect(resolvePushRelayBaseUrl({ FICUS_PUSH_RELAY_URL: 'http://relay.example' })).toBe('https://ficus.sh')
   } finally {
     warn.mockRestore()
   }
@@ -125,13 +125,13 @@ test('resolvePushRelayBaseUrl rejects a path, query, fragment, or malformed valu
       'https://relay.example#frag',
       'not a url',
     ]) {
-      expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: bad })).toBe('https://ficus.sh')
+      expect(resolvePushRelayBaseUrl({ FICUS_PUSH_RELAY_URL: bad })).toBe('https://ficus.sh')
     }
     expect(warn).toHaveBeenCalledTimes(4)
 
     warn.mockClear()
-    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://ficus.sh')
-    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://ficus.sh')
+    expect(resolvePushRelayBaseUrl({ FICUS_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://ficus.sh')
+    expect(resolvePushRelayBaseUrl({ FICUS_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://ficus.sh')
     expect(warn).not.toHaveBeenCalled()
   } finally {
     warn.mockRestore()
@@ -140,8 +140,8 @@ test('resolvePushRelayBaseUrl rejects a path, query, fragment, or malformed valu
 
 test('sendRelayAlert posts to the resolved base URL, not the built-in default', async () => {
   const overriddenConfig = pushRelayConfig({
-    TAU_PUSH_RELAY_TOKEN: token,
-    TAU_PUSH_RELAY_URL: 'https://relay.example',
+    FICUS_PUSH_RELAY_TOKEN: token,
+    FICUS_PUSH_RELAY_URL: 'https://relay.example',
   })!
   expect(overriddenConfig.baseUrl).toBe('https://relay.example')
 
@@ -150,6 +150,6 @@ test('sendRelayAlert posts to the resolved base URL, not the built-in default', 
     requestedUrl = url
     return Response.json({ accepted: true })
   }) as (url: string, init: RequestInit) => Promise<Response>
-  await sendRelayAlert(`tau_prd_${'b'.repeat(43)}`, {}, { config: overriddenConfig, fetch: fetcher })
+  await sendRelayAlert(`ficus_prd_${'b'.repeat(43)}`, {}, { config: overriddenConfig, fetch: fetcher })
   expect(requestedUrl).toBe('https://relay.example/api/push-relay/send')
 })

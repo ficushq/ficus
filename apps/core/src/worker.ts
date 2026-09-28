@@ -1,3 +1,4 @@
+import './boot/legacy-env'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { forwardAssistantUpdates, reconcileAssistantSummaries } from './services/assistant-conversation-updates'
 import { Hono } from 'hono'
@@ -25,7 +26,7 @@ import { attemptPickup, pickupQueuedExecutions, getMaxConcurrentAgents } from '.
 import { scheduler, scheduleHealthNotifier } from './services/scheduling'
 import { reconcileSchedulesOnStartup } from './services/scheduling/reconciliation'
 import { streamManager } from './services/streaming/buffer'
-import type { StreamEvent } from '@tau/shared'
+import type { StreamEvent } from '@ficus/shared'
 import { Execution } from './entities/Execution'
 import type { Machine } from './services/machines/queries'
 import { ensureSessionDataDir } from './lib/infra/session-files'
@@ -73,7 +74,7 @@ installConsoleContentSanitizer()
 const log = createLogger('worker', undefined, { color: 'magenta' })
 
 const WORKER_PORT = Number(process.env.WORKER_PORT) || 3002
-// Loopback unless TAU_WORKER_BIND/HOST says otherwise (or we are in k8s, where
+// Loopback unless FICUS_WORKER_BIND/HOST says otherwise (or we are in k8s, where
 // pod-IP probes need all interfaces) — same rule as every other local service.
 const workerHost = workerBindHost(process.env, isK8sRuntime() || !!process.env.KUBERNETES_SERVICE_HOST)
 const POLL_INTERVAL_MS = 5_000
@@ -96,7 +97,7 @@ setStreamBufferFactory((id: string) => {
 // --- Stream HTTP Server ---
 
 export const workerApp = new Hono()
-const readiness = new RuntimeReadiness('worker', process.env.TAU_RUNTIME_INSTANCE_ID)
+const readiness = new RuntimeReadiness('worker', process.env.FICUS_RUNTIME_INSTANCE_ID)
 workerApp.get('/ready', () => readiness.response())
 
 workerApp.get('/health', (c) => {
@@ -674,7 +675,7 @@ const subsystems: Subsystem[] = [
   ),
   // Platform usage-sample reporter: every 5 minutes, POSTs the live machines
   // fleet to the hosted platform's shadow-metering ingest endpoint. Inert
-  // (one log line, no runner) unless TAU_PLATFORM_INGEST_URL is set — which
+  // (one log line, no runner) unless FICUS_PLATFORM_INGEST_URL is set — which
   // only happens on an instance the platform itself provisioned — so it
   // registers here unconditionally like vm-sandbox-lifecycle above.
   subsystem(
@@ -715,12 +716,12 @@ const subsystems: Subsystem[] = [
 async function startup(): Promise<void> {
   log.info('Starting...')
 
-  // Fail fast on a missing/unknown TAU_SANDBOX_RUNTIME: the worker is the
+  // Fail fast on a missing/unknown FICUS_SANDBOX_RUNTIME: the worker is the
   // process that actually runs turns, so booting it against an unconfigured
   // runtime only defers the failure to the first agent's first tool call.
   const sandboxRuntime = requireSandboxRuntime()
 
-  // Every TAU_K8S_* key applies ONLY to the k8s runtime. Say so once at boot,
+  // Every FICUS_K8S_* key applies ONLY to the k8s runtime. Say so once at boot,
   // or a stale line an operator left behind when they switched runtimes reads
   // as live configuration.
   const ignoredK8sEnv = ignoredK8sEnvWarning()

@@ -303,8 +303,8 @@ test('a timed-out claim reminds its owner exactly once to clean up heavy work', 
   expect(content).toContain('test:db:down')
   expect(content).toContain('docker')
   expect(content).toContain('background jobs')
-  expect(content).toContain(`tau slot claim shared-box-intensive --squad ${squad.id}`)
-  expect(content).toContain('tau slot release')
+  expect(content).toContain(`ficus slot claim shared-box-intensive --squad ${squad.id}`)
+  expect(content).toContain('ficus slot release')
   expect(messages[0]!.deliveryMode).toBe('steer')
   expect(
     await db

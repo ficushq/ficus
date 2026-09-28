@@ -4,7 +4,7 @@ import {
   openRouterEndpointForDirectProvider,
   openRouterEndpointForModelId,
   parseOpenRouterDirectSpec,
-} from '@tau/shared/openrouter-tier-expansion'
+} from '@ficus/shared/openrouter-tier-expansion'
 import { expandOpenRouterFallbacks, inspectOpenRouterFallbacks, openRouterSpecForDirect } from './openrouter-expansion'
 
 describe('OpenRouter tier-chain expansion', () => {

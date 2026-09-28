@@ -9,7 +9,7 @@ import { identityMiddleware } from '../middleware/identity'
 import { inboxRouter } from './inbox'
 import { notificationConfigRouter } from './notification-config'
 import { resolveActingUser } from '../services/rbac'
-import { SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@ficus/shared'
 import {
   assignRole,
   createTestRole,

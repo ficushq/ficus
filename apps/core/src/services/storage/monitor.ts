@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm'
-import { SYSTEM_RECIPIENT_ID, type StorageSnapshot, type StorageStatus } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID, type StorageSnapshot, type StorageStatus } from '@ficus/shared'
 import { db } from '../../db'
 import { storageMonitor } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'

@@ -67,14 +67,14 @@ const TIMESTAMP = `date -u '+%Y-%m-%dT%H:%M:%SZ'`
 
 export const LAUNCHER_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
-mkdir -p "$TAU_MONITOR_DIR/logs"
-${TIMESTAMP} > "$TAU_MONITOR_DIR/startedAt" || true
-cd "$TAU_MONITOR_CWD"
+mkdir -p "$FICUS_MONITOR_DIR/logs"
+${TIMESTAMP} > "$FICUS_MONITOR_DIR/startedAt" || true
+cd "$FICUS_MONITOR_CWD"
 set +e
-bash -lc "$TAU_MONITOR_COMMAND" 2>&1 | tee -a "$TAU_MONITOR_DIR/logs/current.log"
+bash -lc "$FICUS_MONITOR_COMMAND" 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"
 status=\${PIPESTATUS[0]}
 set -e
-echo "$status" > "$TAU_MONITOR_DIR/exitCode"
-${TIMESTAMP} > "$TAU_MONITOR_DIR/exitedAt" || true
+echo "$status" > "$FICUS_MONITOR_DIR/exitCode"
+${TIMESTAMP} > "$FICUS_MONITOR_DIR/exitedAt" || true
 exit "$status"
 `

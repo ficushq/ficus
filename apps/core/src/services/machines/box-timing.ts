@@ -61,7 +61,7 @@
  * dockerd setup, combined" — the summary line's trailing `role=` field tells
  * you which boxes that applies to. Agent (light) boxes never provision docker
  * at all (`roleWantsDocker` is false, and the box's own server skips
- * `ensureDocker` for `TAU_SANDBOX_ROLE=agent` — see packages/k8s-sandbox's
+ * `ensureDocker` for `FICUS_SANDBOX_ROLE=agent` — see packages/k8s-sandbox's
  * server.ts), so for `role=agent` this bucket is pure user/unit provisioning.
  */
 export const BOX_STEP_ORDER = [

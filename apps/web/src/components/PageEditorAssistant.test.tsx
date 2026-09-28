@@ -7,7 +7,7 @@ import {
   assistantEditorInstructionsByKind,
   assistantEditorToolDefinitionsByKind,
   type AssistantEditorState,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { assistantApi } from '../api/assistant'
 import { queries } from '../queryOptions'
 import { PermissionsProvider } from '../hooks/usePermissions'

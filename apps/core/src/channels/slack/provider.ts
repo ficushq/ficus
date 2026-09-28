@@ -5,7 +5,7 @@
  */
 
 import { createHmac, timingSafeEqual } from 'crypto'
-import { TAU_SLASH_COMMANDS } from '../../lib/channels'
+import { FICUS_SLASH_COMMANDS } from '../../lib/channels'
 import type { ChannelProvider, ChannelEvent, ThreadMessage, PostMessageResult, ChannelAttachment } from '../provider'
 import { Image, type ImageContent } from '../../entities/Image'
 import { createLogger } from '../../lib/infra/logger'
@@ -494,9 +494,9 @@ export const slackProvider: ChannelProvider = {
       const parts = text.split(/\s+/)
       const firstWord = parts[0]?.toLowerCase() || 'ask'
 
-      const command = (TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
+      const command = (FICUS_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
       const content =
-        command === 'ask' && !(TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord)
+        command === 'ask' && !(FICUS_SLASH_COMMANDS as readonly string[]).includes(firstWord)
           ? text
           : parts.slice(1).join(' ')
 
@@ -527,7 +527,7 @@ export const slackProvider: ChannelProvider = {
 
       // App mention
       if (event.type === 'app_mention' && event.text && event.user && event.channel) {
-        const cleanedText = botUserId ? event.text.replace(new RegExp(`<@${botUserId}>`, 'g'), '@Tau') : event.text
+        const cleanedText = botUserId ? event.text.replace(new RegExp(`<@${botUserId}>`, 'g'), '@Ficus') : event.text
 
         return {
           type: 'mention',
@@ -622,7 +622,7 @@ export const slackProvider: ChannelProvider = {
 
     return Promise.all(
       messages.map(async (m) => {
-        const textWithBotMention = botUserId ? m.text.replace(new RegExp(`<@${botUserId}>`, 'g'), '@Tau') : m.text
+        const textWithBotMention = botUserId ? m.text.replace(new RegExp(`<@${botUserId}>`, 'g'), '@Ficus') : m.text
 
         return {
           messageId: m.ts,
@@ -727,7 +727,7 @@ export const slackProvider: ChannelProvider = {
       const userMention = userId ? this.formatUserMention(userId) : 'User'
       const joinWarning =
         joinedChannel === false
-          ? "\n\n⚠️ _Thread replies won't work in this channel. Please `/invite @Tau` to enable replies._"
+          ? "\n\n⚠️ _Thread replies won't work in this channel. Please `/invite @Ficus` to enable replies._"
           : ''
 
       await api.updateMessage({
@@ -789,7 +789,7 @@ export const slackProvider: ChannelProvider = {
   async postMentionThinkingIndicator(event): Promise<PostMessageResult> {
     // App mentions can be delivered for public channels before the bot is a
     // member. Match the slash-command path by attempting to join before posting
-    // the thread reply that starts the Tau-managed conversation.
+    // the thread reply that starts the Ficus-managed conversation.
     await joinChannel(event.channelId)
 
     return this.postMessage({
@@ -811,7 +811,7 @@ export const slackProvider: ChannelProvider = {
   },
 
   replaceBotMention(text: string, botUserId: string): string {
-    return text.replace(new RegExp(`<@${botUserId}>`, 'g'), '@Tau')
+    return text.replace(new RegExp(`<@${botUserId}>`, 'g'), '@Ficus')
   },
 
   formatUserMention(userId: string): string {

@@ -7,7 +7,7 @@ import {
   type NormalizedSquadActivityFilters,
   type SquadActivityItem,
   type SquadActivityKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { listSquadActivity } from '../../api/squads'
 import { useWebSocket } from '../../hooks/useWebSocket'

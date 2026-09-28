@@ -57,11 +57,11 @@ import {
   DbDeviceAuthorizationRepository,
   deleteExpiredDeviceAuthorizations,
 } from './authorization/db-device-repository'
-import { GitHubOAuthClient } from '@tau/shared/oauth-providers/github/client'
+import { GitHubOAuthClient } from '@ficus/shared/oauth-providers/github/client'
 import { resolveGitHubAppCredentials } from './authorization/github-app'
 import { resolveInstanceGitHubConnection } from './github/resolve-connection'
 import { checkGitHubRepositoryAccess } from './github/repository-access'
-import { parseGitHubConfiguration } from '@tau/shared/oauth-providers/github/config'
+import { parseGitHubConfiguration } from '@ficus/shared/oauth-providers/github/config'
 import { integrationOutputRegistry } from './outputs/registry'
 import { join } from 'path'
 import { getHomeDir } from '../../lib/utils/home'
@@ -207,7 +207,7 @@ export const githubCommitSigning = new GitHubCommitSigning({
     } catch {
       host = undefined
     }
-    return `Tau commit signing${host ? ` (${host})` : ''}`
+    return `Ficus commit signing${host ? ` (${host})` : ''}`
   },
   now: () => new Date(),
 })

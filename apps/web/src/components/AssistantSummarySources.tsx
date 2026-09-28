@@ -1,7 +1,7 @@
 import { assistantSummaryUpdateIds } from '../lib/assistantSummarySources'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { RenderItem } from '@tau/client-core'
+import type { RenderItem } from '@ficus/client-core'
 import { assistantQueries } from '../queryOptions'
 import { assistantApi } from '../api/assistant'
 import clsx from 'clsx'
@@ -33,7 +33,7 @@ export function AssistantSummarySources({
       <button
         type="button"
         aria-expanded={expanded}
-        className="tau-button flex min-w-0 items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-muted hover:text-primary"
+        className="ficus-button flex min-w-0 items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-muted hover:text-primary"
         onClick={() => setExpanded(!expanded)}
       >
         <ChevronRightIcon
@@ -49,7 +49,7 @@ export function AssistantSummarySources({
         (query.isError ? (
           <button
             type="button"
-            className="tau-button py-1 text-xs text-accent-light"
+            className="ficus-button py-1 text-xs text-accent-light"
             onClick={() => {
               void query.refetch()
             }}
@@ -75,7 +75,7 @@ export function AssistantSummarySources({
                     !update.seenAt && (
                       <button
                         type="button"
-                        className="tau-button -my-1 shrink-0 rounded-md px-1.5 py-1 text-accent-light hover:bg-selection"
+                        className="ficus-button -my-1 shrink-0 rounded-md px-1.5 py-1 text-accent-light hover:bg-selection"
                         onClick={async () => {
                           try {
                             await assistantApi.seen(conversationId, [update.messageId])

@@ -29,12 +29,12 @@ const request = (secret: string, address = '203.0.113.7') => ({
 describe('isDemoReviewerAccessEnabled', () => {
   it('is off unless the flag is explicitly on', () => {
     expect(isDemoReviewerAccessEnabled({})).toBe(false)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: '' })).toBe(false)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: '0' })).toBe(false)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: 'false' })).toBe(false)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: '1' })).toBe(true)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: 'true' })).toBe(true)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: 'YES' })).toBe(true)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: '' })).toBe(false)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: '0' })).toBe(false)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: 'false' })).toBe(false)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: '1' })).toBe(true)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: 'true' })).toBe(true)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: 'YES' })).toBe(true)
   })
 })
 
@@ -79,7 +79,7 @@ describe('DemoReviewerAccess.pair', () => {
 
     const claimed = await claimPairingCode({ code: result.code, name: 'Reviewer iPhone', platform: 'ios' })
     expect(claimed?.user.id).toBe(demo.id)
-    expect(claimed?.token.startsWith('tau_dev_')).toBe(true)
+    expect(claimed?.token.startsWith('ficus_dev_')).toBe(true)
     // Single use: the same code cannot pair a second device.
     expect(await claimPairingCode({ code: result.code, name: 'Again', platform: 'ios' })).toBeNull()
     // A second reviewer gets their own code.

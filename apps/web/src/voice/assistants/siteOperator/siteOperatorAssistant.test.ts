@@ -227,7 +227,7 @@ describe('siteOperatorVoiceAssistant', () => {
 })
 
 test('page conversations expose only scoped editor tools and delegation, without loading unrelated squads', async () => {
-  const { assistantEditorInstructions, assistantEditorToolDefinitions } = await import('@tau/shared')
+  const { assistantEditorInstructions, assistantEditorToolDefinitions } = await import('@ficus/shared')
   const { siteOperatorVoiceAssistant: controller } = createSiteOperatorAssistant({
     listSquads: listSquads as any,
     listSquadAgents: listSquadAgents as any,

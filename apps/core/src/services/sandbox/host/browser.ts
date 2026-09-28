@@ -39,7 +39,8 @@ import type { Browser } from 'playwright-core'
 // step, no .d.ts) — see the header above and the script's own.
 // @ts-expect-error no type declarations for this untyped machine script
 import { createService } from '../../../../../../scripts/machine/browser/tau-browser.js'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
+import { boxUserHeaders } from '@ficus/shared/box-user'
 import { boxUnixUser } from '../../machines/box-paths'
 import { getHomeDir } from '../../../lib/utils/home'
 import { createLogger } from '../../../lib/infra/logger'
@@ -113,7 +114,7 @@ function defaultListDir(path: string): string[] {
  * Candidate binaries, most-preferred first. Deliberately excludes
  * `/snap/bin/chromium`: snap confinement denies Chromium access to the
  * temporary profile directory Playwright hands it, so it fails at launch in a
- * way that looks like a Tau bug.
+ * way that looks like a Ficus bug.
  */
 function probeCandidates(platform: NodeJS.Platform, home: string, listDir: (p: string) => string[]): string[] {
   if (platform === 'darwin') {
@@ -155,7 +156,7 @@ let loggedResolution = false
 
 // Misconfiguration warnings are gated to once per message per process:
 // `call()` re-resolves the browser on every 502 to distinguish "restarted"
-// from "unavailable", so an operator with a bad TAU_BROWSER_* value would
+// from "unavailable", so an operator with a bad FICUS_BROWSER_* value would
 // otherwise see the same warning on every failing request.
 const warnedOnce = new Set<string>()
 
@@ -169,7 +170,7 @@ function warnMisconfigOnce(message: string): void {
  * Which locally installed browser the host runtime should drive, or null when
  * the machine has none.
  *
- * Order: `TAU_BROWSER_EXECUTABLE_PATH` → `TAU_BROWSER_CHANNEL` → the
+ * Order: `FICUS_BROWSER_EXECUTABLE_PATH` → `FICUS_BROWSER_CHANNEL` → the
  * well-known install locations for this platform. There is deliberately NO
  * blind `{ channel: 'chrome' }` last resort: Playwright's channel resolution
  * probes the very paths this function already probes, so the only thing such
@@ -194,30 +195,30 @@ export function resolveHostChromium(
     // environment (bun's dotenv loader, systemd's EnvironmentFile=) expands
     // it — so expand BEFORE the absolute check, or `~/chrome` is rejected as
     // "not an absolute path" and the operator's setting silently does nothing.
-    const configured = env.TAU_BROWSER_EXECUTABLE_PATH?.trim()
-      ? expandTilde(env.TAU_BROWSER_EXECUTABLE_PATH.trim())
+    const configured = env.FICUS_BROWSER_EXECUTABLE_PATH?.trim()
+      ? expandTilde(env.FICUS_BROWSER_EXECUTABLE_PATH.trim())
       : undefined
     if (configured) {
       // A macOS ".app" is a DIRECTORY — the single most likely thing an
       // operator points this at — so name the real binary rather than just
       // saying "not executable".
       if (!isAbsolute(configured)) {
-        warnMisconfigOnce(`TAU_BROWSER_EXECUTABLE_PATH=${configured} is not an absolute path; ignoring it`)
+        warnMisconfigOnce(`FICUS_BROWSER_EXECUTABLE_PATH=${configured} is not an absolute path; ignoring it`)
       } else if (exists(configured) && !isFile(configured)) {
         warnMisconfigOnce(
-          `TAU_BROWSER_EXECUTABLE_PATH=${configured} is a directory, not a browser binary; point it at the executable inside it (e.g. "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"); ignoring it`
+          `FICUS_BROWSER_EXECUTABLE_PATH=${configured} is a directory, not a browser binary; point it at the executable inside it (e.g. "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"); ignoring it`
         )
       } else if (!usable(configured)) {
-        warnMisconfigOnce(`TAU_BROWSER_EXECUTABLE_PATH=${configured} is not an executable file; ignoring it`)
+        warnMisconfigOnce(`FICUS_BROWSER_EXECUTABLE_PATH=${configured} is not an executable file; ignoring it`)
       } else {
         return { executablePath: configured }
       }
     }
 
-    const channel = env.TAU_BROWSER_CHANNEL?.trim()
+    const channel = env.FICUS_BROWSER_CHANNEL?.trim()
     if (channel) {
       if (SUPPORTED_CHANNELS.has(channel)) return { channel }
-      warnMisconfigOnce(`TAU_BROWSER_CHANNEL=${channel} is not a Chromium-family Playwright channel; ignoring it`)
+      warnMisconfigOnce(`FICUS_BROWSER_CHANNEL=${channel} is not a Chromium-family Playwright channel; ignoring it`)
     }
 
     for (const candidate of probeCandidates(platform, home, listDir)) {
@@ -232,7 +233,7 @@ export function resolveHostChromium(
       log.info(`Host browser: using ${resolved.executablePath ?? `channel ${resolved.channel}`}`)
     } else {
       log.warn(
-        'Host browser: no Chrome/Chromium/Edge found on this machine; browser tools will report the browser as unavailable (install Google Chrome, or set TAU_BROWSER_EXECUTABLE_PATH)'
+        'Host browser: no Chrome/Chromium/Edge found on this machine; browser tools will report the browser as unavailable (install Google Chrome, or set FICUS_BROWSER_EXECUTABLE_PATH)'
       )
     }
   }
@@ -336,7 +337,7 @@ export interface HostBrowserOptions {
   launch?: () => Promise<unknown>
   /** Directory holding the per-box token digests (default `<HOME_DIR>/host/browser-tokens/<pid>`). */
   tokensDir?: string
-  /** Page-budget input, in MB (default: `TAU_BROWSER_MEMORY_HIGH_MB`, else a quarter of RAM capped at 4G). */
+  /** Page-budget input, in MB (default: `FICUS_BROWSER_MEMORY_HIGH_MB`, else a quarter of RAM capped at 4G). */
   memoryHighMb?: number
   /** Register the process-exit shutdown hooks (default true; tests opt out).
    *
@@ -348,9 +349,11 @@ export interface HostBrowserOptions {
   installExitHooks?: boolean
   /** Whether this machine has a browser at all (default {@link resolveHostChromium}). */
   resolveBrowser?: () => HostChromium | null
+  /** Wraps the engine once it is built (default: none); tests use it to observe the requests it receives. */
+  wrapEngine?: (engine: BrowserService) => BrowserService
 }
 
-interface BrowserService {
+export interface BrowserService {
   fetch(request: Request): Promise<Response>
   shutdown(): Promise<unknown>
   /** Embedder-only close of one box user's context (the engine's new seam). */
@@ -392,7 +395,7 @@ function sha256Hex(value: string): string {
 
 function resolveMemoryHighMb(explicit?: number): number {
   if (explicit && explicit > 0) return explicit
-  const fromEnv = Number(process.env.TAU_BROWSER_MEMORY_HIGH_MB)
+  const fromEnv = Number(process.env.FICUS_BROWSER_MEMORY_HIGH_MB)
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv
   const share = Math.floor((totalmem() * MEMORY_HIGH_RAM_FRACTION) / (1024 * 1024))
   return Math.max(256, Math.min(share, MAX_MEMORY_HIGH_MB))
@@ -506,7 +509,7 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
       // on the user's own machine with exactly the reach the agent's `bash`
       // already has, so the guard protects nothing while breaking the primary
       // use case: screenshotting the agent's own local deployment (including
-      // Tau's own proxied http://localhost:<port>/api/app/<id>/... URLs).
+      // Ficus's own proxied http://localhost:<port>/api/app/<id>/... URLs).
       isBlockedHost: () => false,
       // The engine's production disconnect policy is process.exit(1) (for the
       // systemd unit it restarts). In-process in the core that would kill the
@@ -514,6 +517,7 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
       // self-heals (resetState + relaunch on the next verb).
       onDisconnected: () => log.warn('Host browser disconnected (crash or shutdown); it will relaunch on next use'),
     })
+    if (opts.wrapEngine) service = opts.wrapEngine(service as BrowserService)
     if (opts.installExitHooks !== false) {
       // Best effort: both entrypoints install their own SIGTERM handler that
       // exits, so this only ever gets the chance to START closing. Safe to
@@ -548,7 +552,8 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-tau-box-user': boxUser,
+          // K3: every box-user name, like the machine hosts' box servers.
+          ...boxUserHeaders(boxUser),
           authorization: `Bearer ${bearer}`,
         },
         body: JSON.stringify(body),

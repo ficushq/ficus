@@ -1,8 +1,8 @@
-import { workStreamRef } from '@tau/shared'
+import { workStreamRef } from '@ficus/shared'
 import { resolveVoiceSquadId } from '../squadReferences'
 import { getActiveExecution, getAgent } from '../../api/agents'
 import { getWorkStream, listAllWorkStreams, listSquadAgents, listSquads, listWorkStreams } from '../../api/squads'
-import { selectWorkStreamPresentationState, type WorkStream } from '@tau/shared'
+import { selectWorkStreamPresentationState, type WorkStream } from '@ficus/shared'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
 export function voiceWorkStreamStatus(workStream: WorkStream) {

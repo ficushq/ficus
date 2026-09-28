@@ -20,10 +20,10 @@ describe('K8sPodManager', () => {
     })
   })
 
-  test('syncAuthSecret ships ONLY the callback secret — never the legacy TAU_PASSWORD', async () => {
+  test('syncAuthSecret ships ONLY the callback secret — never the legacy FICUS_PASSWORD', async () => {
     const storeSpy = spyOn(secretStoreModule, 'getSecretStore').mockReturnValue({
       get: (k: string) =>
-        k === 'TAU_PASSWORD' ? 'PASSWORD-MUST-NOT-SHIP' : k === 'SANDBOX_CALLBACK_SECRET' ? 'cb-secret' : undefined,
+        k === 'FICUS_PASSWORD' ? 'PASSWORD-MUST-NOT-SHIP' : k === 'SANDBOX_CALLBACK_SECRET' ? 'cb-secret' : undefined,
     } as any)
     let captured: any
     const fakeThis = {

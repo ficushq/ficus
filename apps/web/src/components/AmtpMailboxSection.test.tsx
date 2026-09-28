@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
 import type { AgentFederationStatus } from '../api/amtp'
-import type { AmtpSignedAgentCard } from '@tau/shared'
+import type { AmtpSignedAgentCard } from '@ficus/shared'
 import { AmtpMailboxSection } from './AmtpMailboxSection'
 
 function render(opts: { status: AgentFederationStatus; permissions?: string[] }): string {
@@ -86,12 +86,12 @@ describe('AmtpMailboxSection', () => {
     const html = render({ status: { ...registered, card: sampleCard }, permissions: [] })
     expect(html).toContain('Alice Bot')
     expect(html).toContain('Helps with things.')
-    expect(html).not.toContain('tau remote card set')
+    expect(html).not.toContain('ficus remote card set')
   })
 
-  test('renders the "tau remote card set" hint when registered, no card, and canWrite', () => {
+  test('renders the "ficus remote card set" hint when registered, no card, and canWrite', () => {
     const html = render({ status: registered, permissions: ['amtp:write'] })
-    expect(html).toContain('tau remote card set')
+    expect(html).toContain('ficus remote card set')
     expect(html).toContain('--name')
     expect(html).toContain('--description')
   })
@@ -113,7 +113,7 @@ describe('AmtpMailboxSection', () => {
       },
       permissions: ['amtp:write'],
     })
-    expect(html).not.toContain('tau remote card set')
+    expect(html).not.toContain('ficus remote card set')
     expect(html).not.toContain('Alice Bot')
   })
   test('shows historical unavailable custody without unsafe controls', () => {
@@ -135,7 +135,7 @@ describe('AmtpMailboxSection', () => {
     expect(html).toContain('Registered, but signing identity unavailable')
     expect(html).toContain('Inbound closed')
     expect(html).not.toContain('>Open<')
-    expect(html).not.toContain('tau remote card set')
+    expect(html).not.toContain('ficus remote card set')
   })
 
   test('shows unsupported custody without registration control', () => {

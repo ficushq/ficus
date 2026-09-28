@@ -23,8 +23,8 @@ import type {
   AgentErrorActionData,
   AssistantTaskActionData,
   WorkStreamActionData,
-} from '@tau/shared'
-import type { StatusRole } from '@tau/shared'
+} from '@ficus/shared'
+import type { StatusRole } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 
 // Icons for each action type
@@ -192,7 +192,7 @@ export function ActionItem({
                   e.stopPropagation()
                   setShowWsModal(true)
                 }}
-                className="tau-button font-medium text-sm text-primary hover:text-accent-light line-clamp-2 block text-left w-fit max-w-full"
+                className="ficus-button font-medium text-sm text-primary hover:text-accent-light line-clamp-2 block text-left w-fit max-w-full"
               >
                 {title}
               </button>
@@ -218,7 +218,7 @@ export function ActionItem({
                 e.stopPropagation()
                 setExpanded(!expanded)
               }}
-              className="tau-button self-center -my-1 -mr-1 p-2 text-muted hover:text-primary hover:bg-surface-hover shrink-0"
+              className="ficus-button self-center -my-1 -mr-1 p-2 text-muted hover:text-primary hover:bg-surface-hover shrink-0"
               aria-expanded={expanded}
               aria-label={expanded ? 'Collapse' : 'Expand'}
             >
@@ -448,7 +448,7 @@ function AgentQuestionActionContent({
             type="button"
             onClick={() => retryMutation.mutate()}
             disabled={retryMutation.isPending}
-            className="tau-button tau-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
           >
             {retryMutation.isPending ? 'Retrying…' : 'Retry delivery'}
           </button>
@@ -529,7 +529,7 @@ function AgentErrorActionContent({
         <button
           onClick={() => mutation.mutate()}
           disabled={mutation.isPending}
-          className="tau-button tau-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
+          className="ficus-button ficus-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
         >
           {mutation.isPending ? 'Continuing…' : 'Continue'}
         </button>
@@ -538,7 +538,7 @@ function AgentErrorActionContent({
             closeActionCenter()
             navigate(agentThreadPath(data.agentId, data.squadId))
           }}
-          className="tau-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+          className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
         >
           View agent
         </button>
@@ -606,21 +606,21 @@ function WorkStreamReviewActionContent({
           <button
             onClick={() => setShowApprovalConfirmation(true)}
             disabled={isLoading}
-            className="tau-button tau-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
           >
             {approveMutation.isPending ? 'Approving…' : approveLabel}
           </button>
           <button
             onClick={() => setShowRejectModal(true)}
             disabled={isLoading}
-            className="tau-button min-h-10 border border-th-border px-3 py-2 text-sm text-secondary hover:bg-surface-hover disabled:opacity-50"
+            className="ficus-button min-h-10 border border-th-border px-3 py-2 text-sm text-secondary hover:bg-surface-hover disabled:opacity-50"
           >
             {sendBackLabel}
           </button>
           {!hideWorkStreamLink && (
             <button
               onClick={() => setShowWsModal(true)}
-              className="tau-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+              className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
             >
               View
             </button>
@@ -708,7 +708,7 @@ function WorkStreamBlockedActionContent({
             value={response}
             onChange={(e) => setResponse(e.target.value)}
             placeholder="Your response..."
-            className="tau-field min-w-0 flex-1 px-3 py-2 text-base sm:text-sm"
+            className="ficus-field min-w-0 flex-1 px-3 py-2 text-base sm:text-sm"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && response.trim()) {
                 respondMutation.mutate(response)
@@ -718,7 +718,7 @@ function WorkStreamBlockedActionContent({
           <button
             onClick={() => respondMutation.mutate(response)}
             disabled={respondMutation.isPending || !response.trim()}
-            className="tau-button tau-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
           >
             {respondMutation.isPending ? 'Sending…' : 'Send'}
           </button>
@@ -732,7 +732,7 @@ function WorkStreamBlockedActionContent({
               key={opt}
               onClick={() => respondMutation.mutate(opt)}
               disabled={respondMutation.isPending}
-              className="tau-button min-h-10 px-3 py-2 text-sm text-secondary border border-th-border hover:bg-surface-hover disabled:opacity-50"
+              className="ficus-button min-h-10 px-3 py-2 text-sm text-secondary border border-th-border hover:bg-surface-hover disabled:opacity-50"
             >
               {opt}
             </button>
@@ -743,7 +743,7 @@ function WorkStreamBlockedActionContent({
       {(!hideWorkStreamLink || flowControlled) && (
         <button
           onClick={() => setShowWsModal(true)}
-          className="tau-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+          className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
         >
           {flowControlled ? 'Review and decide' : 'View'}
         </button>
@@ -796,7 +796,7 @@ function AssistantTaskActionContent({ action }: { action: PendingAction }) {
           search: assistantConversationSearch(location.search, data.conversationId, data.taskId),
         }}
         onClick={closeActionCenter}
-        className="tau-button tau-button-primary inline-flex min-h-10 items-center px-3 py-2 text-sm"
+        className="ficus-button ficus-button-primary inline-flex min-h-10 items-center px-3 py-2 text-sm"
       >
         Answer in Assistant
       </Link>

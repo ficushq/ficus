@@ -10,7 +10,7 @@ import {
   type IntegrationOutputFact,
   type IntegrationSubscription,
   type TrackedResource,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   db,
   agents,
@@ -796,9 +796,9 @@ test('native review requests create one bound flow and keep code-host delivery i
     expect(notices[0]!.content).toContain('an integration event (github)')
     expect(notices[0]!.content).toContain('paused before any workers start')
     expect(notices[0]!.content).toContain(
-      `tau workstream update ${(await WorkStream.mustFind(id)).number} --repository`
+      `ficus workstream update ${(await WorkStream.mustFind(id)).number} --repository`
     )
-    expect(notices[0]!.content).toContain(`tau workstream resume ${(await WorkStream.mustFind(id)).number}`)
+    expect(notices[0]!.content).toContain(`ficus workstream resume ${(await WorkStream.mustFind(id)).number}`)
     const repositorySetup = await import('../../work-streams/repository-setup')
     const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
       async (_squad, _input, _id, metadata) => ({
@@ -875,7 +875,7 @@ test('native review requests reuse provider-neutral PR bindings instead of creat
 })
 
 async function setRule(type: 'notify-manager' | 'notify-consultant' | 'ignore', additionalContext?: string) {
-  const { squadEventRuleSchema } = await import('@tau/shared')
+  const { squadEventRuleSchema } = await import('@ficus/shared')
   const rule = squadEventRuleSchema.parse({
     id: 'assigned',
     source: { integration: 'github', output: 'issue.assigned', version: 1 },
@@ -967,7 +967,7 @@ test('failed native notifications remain retryable and reconciliation completes 
 
 test('Linear uses the same start-workstream action and attaches its own resource bindings', async () => {
   await withNativeRouting(async (connectionId) => {
-    const { squadEventRuleSchema } = await import('@tau/shared')
+    const { squadEventRuleSchema } = await import('@ficus/shared')
     const flow = definition()
     delete flow.subscriptions
     const rule = squadEventRuleSchema.parse({
@@ -990,7 +990,7 @@ test('Linear uses the same start-workstream action and attaches its own resource
       resourceKey: `${prefix}-linear-issue`,
       data: { issue: { id: `${prefix}-linear-issue` }, teamId: 'team', assignee: 'user' },
     })
-    const { previewSquadEventRules } = await import('@tau/shared')
+    const { previewSquadEventRules } = await import('@ficus/shared')
     expect(
       previewSquadEventRules({ integrationRules: { linear: [rule] } }, 'linear', assigned, '', connectionId).action
     ).toBe('start-workstream')
@@ -1060,7 +1060,7 @@ test('any-account rules perform one action when two authorized squad accounts ob
       const created = after.filter((agent) => !before.some((prior) => prior.id === agent.id))
       expect(created).toHaveLength(1)
       expect(await db.select().from(inbox).where(eq(inbox.recipientId, created[0]!.id))).toHaveLength(1)
-      const { squadEventRuleSchema } = await import('@tau/shared')
+      const { squadEventRuleSchema } = await import('@ficus/shared')
       const rule = squadEventRuleSchema.parse({
         id: 'start-on-assigned',
         source: { integration: 'github', output: 'issue.assigned', version: 1 },
@@ -1210,7 +1210,7 @@ test('parked merge events notify the actual owner once, retain waits, and reach 
     expect(notices[0]!.recipientId).toBe(owner.id)
     expect(notices[0]!.recipientId).not.toBe(managerId)
     expect(notices[0]!.content).toContain('is parked; worker delivery is retained')
-    expect(notices[0]!.content).toContain(`tau workstream get ${id}`)
+    expect(notices[0]!.content).toContain(`ficus workstream get ${id}`)
     expect(await isCurrentFlowMessage(notices[0]!)).toBe(true)
     const { listOpenWaits } = await import('../../work-streams/waits')
     expect(await listOpenWaits(db, id)).toHaveLength(1)
@@ -1755,7 +1755,7 @@ test('pre-existing self-comment deliveries are fenced at worker and parked-owner
 
 for (const provider of ['github', 'linear'])
   test(`synthetic preview selects the same ${provider} action as authorized native dispatch`, async () => {
-    const { previewSquadEventRules, squadEventRuleSchema } = await import('@tau/shared')
+    const { previewSquadEventRules, squadEventRuleSchema } = await import('@ficus/shared')
     const { integrationOutputRegistry } = await import('./registry')
     await withNativeRouting(async (connectionId, managerId) => {
       const candidate = squadEventRuleSchema.parse({
@@ -2355,8 +2355,8 @@ test('squad-fallback notifications carry an actionable event reference; stream-s
     expect(message.metadata).toMatchObject({ source: 'integration-notification', integrationEventId: ids[0] })
     expect(message.content).toContain(`Event reference: ${ids[0]}`)
     expect(message.content).toContain(`Tracked resource: issue ${prefix}/repo#41`)
-    expect(message.content).toContain(`tau workstream create '<title>' --squad ${squadId} --from-event ${ids[0]}`)
-    expect(message.content).toContain(`tau workstream track <work-stream> --event ${ids[0]}`)
+    expect(message.content).toContain(`ficus workstream create '<title>' --squad ${squadId} --from-event ${ids[0]}`)
+    expect(message.content).toContain(`ficus workstream track <work-stream> --event ${ids[0]}`)
     expect(message.content).toContain('Do not hand-write github or codeHost metadata to track it')
 
     // A stream-scoped compatibility notice (workStreamId set) never carries the reference block.
@@ -2516,7 +2516,7 @@ function linearComment(issueId: string, changes: Partial<IntegrationOutputFact> 
   })
 }
 async function setLinearRule(action: Record<string, unknown>, output = 'issue.comment') {
-  const { squadEventRuleSchema } = await import('@tau/shared')
+  const { squadEventRuleSchema } = await import('@ficus/shared')
   const rule = squadEventRuleSchema.parse({
     id: `linear-${output.replaceAll('.', '-')}`,
     predicates: [{ field: 'teamId', op: 'in', value: ['team'] }],
@@ -2564,7 +2564,7 @@ test('a Linear comment reaches the stream that tracks its issue instead of the s
     expect(fallback.content).toContain(`Event reference: ${otherId}`)
     expect(fallback.content).toContain(`Tracked resource: issue ${issueId}-other`)
     expect(fallback.content).toContain(`--squad ${squadId} --from-event ${otherId}`)
-    expect(fallback.content).toContain(`tau workstream track <work-stream> --event ${otherId}`)
+    expect(fallback.content).toContain(`ficus workstream track <work-stream> --event ${otherId}`)
   }, 'linear')
 })
 
@@ -2678,7 +2678,7 @@ test('only the squad whose connection observed a comment asks Linear about it', 
     await setLinearRule({ type: 'notify-manager' })
     const flow = definition()
     delete flow.subscriptions
-    const { squadEventRuleSchema } = await import('@tau/shared')
+    const { squadEventRuleSchema } = await import('@ficus/shared')
     const [other] = await db
       .insert(squads)
       .values({

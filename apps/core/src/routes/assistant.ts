@@ -12,7 +12,7 @@ import {
   proposeAssistantEditor,
   closeAssistantEditor,
 } from '../services/assistant-editors'
-import { assistantEditorSyncSchema, assistantEditorProposalSchema } from '@tau/shared'
+import { assistantEditorSyncSchema, assistantEditorProposalSchema } from '@ficus/shared'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { HTTPException } from 'hono/http-exception'
@@ -24,7 +24,7 @@ import {
   assistantEntrySchema,
   type AssistantEntry,
   type AssistantMailbox,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { assistantConversations, assistantEntries, assistantTasks, assistantUpdates, db, inbox, agents } from '../db'
 import { assistantActivityRouter } from './assistant-activity'
 import { markAssistantUpdatesProcessed } from '../services/assistant-activity/acknowledge'

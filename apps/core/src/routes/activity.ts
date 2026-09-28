@@ -5,7 +5,7 @@ import {
   type GlobalActivityPresence,
   type GlobalSquadActivityPage,
   type SquadActivityKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { Identity } from '../services/rbac'
 import { resolveGlobalActivityAccess } from '../services/squad-activity/access'
 import { projectGlobalActivity } from '../services/squad-activity/global-activity'

@@ -18,7 +18,7 @@ import {
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
 import { InboxMessage, formatInboxMessages, setBeforeRecipientLifecycleLockHookForTest } from '../entities/InboxMessage'
-import { assistantInboxRecipientId } from '@tau/shared'
+import { assistantInboxRecipientId } from '@ficus/shared'
 import { inboxRouter } from './inbox'
 import { assistantTasksRouter } from './assistant-tasks'
 import { actionsRouter } from './actions'
@@ -270,7 +270,7 @@ test('only contacted agents can reply; inReplyTo stays local and cannot cross co
     (
       await request(`/${id}/messages`, {
         agentId: allowed.id,
-        request: 'Tau',
+        request: 'Ficus',
         clientId: randomUUID(),
         inReplyTo: reply.id,
       })
@@ -279,7 +279,7 @@ test('only contacted agents can reply; inReplyTo stays local and cannot cross co
 })
 
 test('page editors scope tools to their conversation and reject stale, invalid, and closed proposals', async () => {
-  const { createBlankWorkflow } = await import('@tau/shared')
+  const { createBlankWorkflow } = await import('@ficus/shared')
   const { createPageEditorTools } = await import('../tools/page-editor')
   const f = await fixture('page-editor')
   const role = await createTestRole({ prefix, permissions: ['workflows:create', 'agent-types:read'] })
@@ -352,7 +352,7 @@ test('page editors scope tools to their conversation and reject stale, invalid, 
 })
 
 test('closing a page editor that never became a conversation deletes it, and empty shells are not listed', async () => {
-  const { createBlankWorkflow } = await import('@tau/shared')
+  const { createBlankWorkflow } = await import('@ficus/shared')
   const f = await fixture('page-editor')
   const role = await createTestRole({ prefix, permissions: ['workflows:create'] })
   await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })
@@ -420,7 +420,7 @@ test('closing a page editor that never became a conversation deletes it, and emp
 })
 
 test('page editor validation prevents an agent proposal from accepting an unknown integration output', async () => {
-  const { createBlankWorkflow } = await import('@tau/shared')
+  const { createBlankWorkflow } = await import('@ficus/shared')
   const f = await fixture('page-editor')
   const role = await createTestRole({ prefix, permissions: ['workflows:create'] })
   await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })
@@ -449,7 +449,7 @@ test('page editor validation prevents an agent proposal from accepting an unknow
 })
 
 test('editor operations and history actions share revision checks and atomic proposal delivery', async () => {
-  const { createBlankWorkflow } = await import('@tau/shared')
+  const { createBlankWorkflow } = await import('@ficus/shared')
   const f = await fixture('page-editor')
   const role = await createTestRole({ prefix, permissions: ['workflows:create'] })
   await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })
@@ -1509,7 +1509,7 @@ test('delegate status reports stay bound to the request generation they processe
   expect((await call(`/${randomUUID()}/status`, { status: 'failed' })).status).toBe(404)
   expect((await call(`/${receipt.taskId}/status`, { status: 'done' })).status).toBe(400)
   expect(formatInboxMessages([await InboxMessage.mustFind(receipt.id)])).toContain(
-    `tau assistant-task status ${receipt.taskId}`
+    `ficus assistant-task status ${receipt.taskId}`
   )
 })
 
@@ -1776,7 +1776,7 @@ test('task command authorization cannot be bypassed by task IDs, private targets
 })
 
 test('replaying an accepted page-editor request uses its original snapshot after the draft changes', async () => {
-  const { createBlankWorkflow } = await import('@tau/shared')
+  const { createBlankWorkflow } = await import('@ficus/shared')
   const f = await fixture('page-editor')
   const role = await createTestRole({ prefix, permissions: ['workflows:create', 'agent-types:read'] })
   await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })

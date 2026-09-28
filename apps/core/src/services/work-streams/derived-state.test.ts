@@ -1,4 +1,4 @@
-import { WORK_STREAM_PRESENTATION_CASES } from '@tau/shared/test-fixtures/work-stream-presentation'
+import { WORK_STREAM_PRESENTATION_CASES } from '@ficus/shared/test-fixtures/work-stream-presentation'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { and, eq, like, inArray } from 'drizzle-orm'
@@ -9,7 +9,7 @@ import { Agent } from '../../entities/Agent'
 import { WorkStream } from '../../entities/WorkStream'
 import { AgentType } from '../../entities/AgentType'
 import { computeDerivedStates, sortWaitsByDisplayPrecedence } from './derived-state'
-import type { WorkStreamTerminalFailure, WorkStreamWait } from '@tau/shared'
+import type { WorkStreamTerminalFailure, WorkStreamWait } from '@ficus/shared'
 
 describe('work-stream derived state', () => {
   let testPrefix: string
@@ -74,7 +74,7 @@ describe('work-stream derived state', () => {
       })
     ).get(ws.id)!
     const { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, buildWorkInterestSnapshot } =
-      await import('@tau/shared')
+      await import('@ficus/shared')
     const json = { ...ws.toJson(), ...result }
     expect(result.derivedState).toBe('in_review')
     expect(result.delivery).toEqual({ kind: 'approval', approvalWaitId: wait!.id })
@@ -87,7 +87,7 @@ describe('work-stream derived state', () => {
   it('batch-loads active flow delivery independently of callers selecting metadata', async () => {
     const { workStreamFlowRuns } = await import('../../db/schema')
     const { attachFlow } = await import('../workflows/execution')
-    const { workflowPresetSchema } = await import('@tau/shared')
+    const { workflowPresetSchema } = await import('@ficus/shared')
     const definition = workflowPresetSchema.parse(
       Bun.YAML.parse(
         await Bun.file(new URL('../../../../../config/workflows/builder-reviewer.yaml', import.meta.url)).text()
@@ -114,7 +114,7 @@ describe('work-stream derived state', () => {
 
   it('shared matrix survives derivation, JSON serialization, attention and both native projections', async () => {
     const { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, buildWorkInterestSnapshot } =
-      await import('@tau/shared')
+      await import('@ficus/shared')
     for (const row of WORK_STREAM_PRESENTATION_CASES.filter((row) => row.facts.openWaits !== undefined)) {
       const ws = await createStream(row.name)
       for (const wait of row.facts.openWaits ?? [])

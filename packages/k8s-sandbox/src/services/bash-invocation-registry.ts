@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { advisoryLock as defaultAdvisoryLock } from '@tau/shared/advisory-lock'
+import { advisoryLock as defaultAdvisoryLock } from '@ficus/shared/advisory-lock'
 import { link, mkdir, open, opendir, readFile, readdir, rename, unlink, type FileHandle } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 export type InvocationState =

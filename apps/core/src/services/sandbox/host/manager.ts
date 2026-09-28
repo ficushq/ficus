@@ -18,11 +18,11 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { mkdirSync } from 'fs'
 import { spawn as ptySpawn, type IPty } from 'bun-pty'
-import { WorkspaceWatcher, isSafeWatchPattern } from '@tau/k8s-sandbox/watcher'
+import { WorkspaceWatcher, isSafeWatchPattern } from '@ficus/k8s-sandbox/watcher'
 import type { ISandboxManager, SandboxOptions, SandboxRuntime, SpawnHook } from '../types'
 import { getSquadIdFromSandbox } from '../types'
 import { hostWorkspaceLayout, type WorkspaceLayout, type WorkspaceLayoutContext } from '../workspace-layout'
-import { buildHostCommandEnv, ensureTauShim, getHostBaseEnv } from './env'
+import { buildHostCommandEnv, ensureCliShim, getHostBaseEnv } from './env'
 import { ensureSshFamilyShims } from './ssh-shims'
 import { createHostBrowserBackend, type HostBrowserEngine } from './browser'
 import { acquireSquadWatchLock, type SquadWatchLock } from './watch-lock'
@@ -174,7 +174,7 @@ export class HostSandboxManager implements ISandboxManager {
     mkdirSync(layout.privateMount, { recursive: true })
     mkdirSync(workRoot, { recursive: true })
     if (!this.shimEnsured) {
-      ensureTauShim()
+      ensureCliShim()
       ensureSshFamilyShims()
       this.shimEnsured = true
     }

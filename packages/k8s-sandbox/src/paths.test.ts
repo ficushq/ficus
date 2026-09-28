@@ -1,17 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { resolvePath, getDevboxDir, getDevboxJsonPath, rebaseLogicalRoot } from './paths'
 
-// Save and restore WORKSPACE_PATH / TAU_DEVBOX_DIR / TAU_BOX_HOME / TAU_SQUAD_ID across tests
+// Save and restore WORKSPACE_PATH / FICUS_DEVBOX_DIR / FICUS_BOX_HOME / FICUS_SQUAD_ID across tests
 const originalWorkspace = process.env.WORKSPACE_PATH
-const originalDevboxDir = process.env.TAU_DEVBOX_DIR
-const originalBoxHome = process.env.TAU_BOX_HOME
-const originalSquadId = process.env.TAU_SQUAD_ID
+const originalDevboxDir = process.env.FICUS_DEVBOX_DIR
+const originalBoxHome = process.env.FICUS_BOX_HOME
+const originalSquadId = process.env.FICUS_SQUAD_ID
 
 beforeEach(() => {
   process.env.WORKSPACE_PATH = '/workspace'
-  delete process.env.TAU_DEVBOX_DIR
-  delete process.env.TAU_BOX_HOME
-  delete process.env.TAU_SQUAD_ID
+  delete process.env.FICUS_DEVBOX_DIR
+  delete process.env.FICUS_BOX_HOME
+  delete process.env.FICUS_SQUAD_ID
 })
 
 afterEach(() => {
@@ -21,36 +21,36 @@ afterEach(() => {
     delete process.env.WORKSPACE_PATH
   }
   if (originalDevboxDir !== undefined) {
-    process.env.TAU_DEVBOX_DIR = originalDevboxDir
+    process.env.FICUS_DEVBOX_DIR = originalDevboxDir
   } else {
-    delete process.env.TAU_DEVBOX_DIR
+    delete process.env.FICUS_DEVBOX_DIR
   }
   if (originalBoxHome !== undefined) {
-    process.env.TAU_BOX_HOME = originalBoxHome
+    process.env.FICUS_BOX_HOME = originalBoxHome
   } else {
-    delete process.env.TAU_BOX_HOME
+    delete process.env.FICUS_BOX_HOME
   }
   if (originalSquadId !== undefined) {
-    process.env.TAU_SQUAD_ID = originalSquadId
+    process.env.FICUS_SQUAD_ID = originalSquadId
   } else {
-    delete process.env.TAU_SQUAD_ID
+    delete process.env.FICUS_SQUAD_ID
   }
 })
 
 describe('getDevboxDir / getDevboxJsonPath', () => {
-  it('falls back to WORKSPACE_PATH when TAU_DEVBOX_DIR is unset (squad box)', () => {
+  it('falls back to WORKSPACE_PATH when FICUS_DEVBOX_DIR is unset (squad box)', () => {
     process.env.WORKSPACE_PATH = '/workspace/squad-abc'
     expect(getDevboxDir()).toBe('/workspace/squad-abc')
     expect(getDevboxJsonPath()).toBe('/workspace/squad-abc/devbox.json')
   })
 
-  it('honors TAU_DEVBOX_DIR over WORKSPACE_PATH (per-agent light box)', () => {
+  it('honors FICUS_DEVBOX_DIR over WORKSPACE_PATH (per-agent light box)', () => {
     // The crux of the boot-hang bug: an agent box shares the squad WORKSPACE_PATH
     // (heavy, un-realized toolchain) but keeps its OWN empty devbox in /private.
     // The executor must resolve /private, matching the entrypoint, so the empty
     // devbox short-circuits cacheDevboxShellEnv instead of hanging on `devbox shellenv`.
     process.env.WORKSPACE_PATH = '/workspace/squad-abc'
-    process.env.TAU_DEVBOX_DIR = '/private'
+    process.env.FICUS_DEVBOX_DIR = '/private'
     expect(getDevboxDir()).toBe('/private')
     expect(getDevboxJsonPath()).toBe('/private/devbox.json')
   })
@@ -124,11 +124,11 @@ describe('resolvePath', () => {
     expect(() => resolvePath('/home/taurine/hack')).toThrow('Path outside allowed directories')
   })
 
-  describe('TAU_BOX_HOME (VM box runtime only)', () => {
-    it('permits paths under TAU_BOX_HOME when it is set (box file-sync targets)', () => {
+  describe('FICUS_BOX_HOME (VM box runtime only)', () => {
+    it('permits paths under FICUS_BOX_HOME when it is set (box file-sync targets)', () => {
       // VM boxes sync agent assets under the box user's HOME, which is not a static
-      // ALLOWED_PREFIX. box-manager bakes TAU_BOX_HOME so the server permits it.
-      process.env.TAU_BOX_HOME = '/home/box_abc123'
+      // ALLOWED_PREFIX. box-manager bakes FICUS_BOX_HOME so the server permits it.
+      process.env.FICUS_BOX_HOME = '/home/box_abc123'
       expect(resolvePath('/home/box_abc123/bin/tau')).toBe('/home/box_abc123/bin/tau')
       expect(resolvePath('/home/box_abc123/.tau/skills/s/SKILL.md')).toBe('/home/box_abc123/.tau/skills/s/SKILL.md')
       expect(resolvePath('/home/box_abc123/memory/notes.md')).toBe('/home/box_abc123/memory/notes.md')
@@ -136,15 +136,15 @@ describe('resolvePath', () => {
       expect(resolvePath('/home/box_abc123')).toBe('/home/box_abc123')
     })
 
-    it('still rejects paths outside TAU_BOX_HOME (and sibling box homes) when it is set', () => {
-      process.env.TAU_BOX_HOME = '/home/box_abc123'
+    it('still rejects paths outside FICUS_BOX_HOME (and sibling box homes) when it is set', () => {
+      process.env.FICUS_BOX_HOME = '/home/box_abc123'
       expect(() => resolvePath('/home/box_other/steal.sh')).toThrow('Path outside allowed directories')
       expect(() => resolvePath('/home/box_abc123-evil/x')).toThrow('Path outside allowed directories')
       expect(() => resolvePath('/etc/passwd')).toThrow('Path outside allowed directories')
     })
 
-    it('does not widen the allow-list when TAU_BOX_HOME is unset (k8s pods never set it)', () => {
-      delete process.env.TAU_BOX_HOME
+    it('does not widen the allow-list when FICUS_BOX_HOME is unset (k8s pods never set it)', () => {
+      delete process.env.FICUS_BOX_HOME
       expect(() => resolvePath('/home/box_abc123/bin/tau')).toThrow('Path outside allowed directories')
     })
   })
@@ -152,10 +152,10 @@ describe('resolvePath', () => {
   describe('logical-root rebasing (VM box runtime only)', () => {
     const HOME = '/home/box_abc123'
 
-    describe('with a squad box (TAU_SQUAD_ID set)', () => {
+    describe('with a squad box (FICUS_SQUAD_ID set)', () => {
       beforeEach(() => {
-        process.env.TAU_BOX_HOME = HOME
-        process.env.TAU_SQUAD_ID = 'sq123'
+        process.env.FICUS_BOX_HOME = HOME
+        process.env.FICUS_SQUAD_ID = 'sq123'
         // A squad box's WORKSPACE_PATH is its physical ~/workspace.
         process.env.WORKSPACE_PATH = `${HOME}/workspace`
       })
@@ -190,9 +190,9 @@ describe('resolvePath', () => {
       })
     })
 
-    describe('with a solo agent box (no TAU_SQUAD_ID)', () => {
+    describe('with a solo agent box (no FICUS_SQUAD_ID)', () => {
       beforeEach(() => {
-        process.env.TAU_BOX_HOME = HOME
+        process.env.FICUS_BOX_HOME = HOME
         process.env.WORKSPACE_PATH = `${HOME}/.private`
       })
 
@@ -205,8 +205,8 @@ describe('resolvePath', () => {
 
     describe('security: no `..` escape above HOME after rebasing', () => {
       beforeEach(() => {
-        process.env.TAU_BOX_HOME = HOME
-        process.env.TAU_SQUAD_ID = 'sq123'
+        process.env.FICUS_BOX_HOME = HOME
+        process.env.FICUS_SQUAD_ID = 'sq123'
         process.env.WORKSPACE_PATH = `${HOME}/workspace`
       })
 
@@ -217,7 +217,7 @@ describe('resolvePath', () => {
         expect(() => resolvePath('/private/../../etc/shadow')).toThrow('Path outside allowed directories')
       })
 
-      it('rejects sibling box homes even when TAU_BOX_HOME is set', () => {
+      it('rejects sibling box homes even when FICUS_BOX_HOME is set', () => {
         expect(() => resolvePath('/home/box_other/steal.sh')).toThrow('Path outside allowed directories')
       })
 
@@ -228,14 +228,14 @@ describe('resolvePath', () => {
     })
   })
 
-  // Parity snapshot: with TAU_BOX_HOME UNSET (k8s/docker), rebaseLogicalRoot is
+  // Parity snapshot: with FICUS_BOX_HOME UNSET (k8s/docker), rebaseLogicalRoot is
   // the identity function and resolvePath is byte-identical to its pre-box
   // behavior. Locks k8s path handling so a future box-side change can't silently
   // alter it.
-  describe('rebaseLogicalRoot parity (TAU_BOX_HOME unset → identity)', () => {
+  describe('rebaseLogicalRoot parity (FICUS_BOX_HOME unset → identity)', () => {
     beforeEach(() => {
-      delete process.env.TAU_BOX_HOME
-      process.env.TAU_SQUAD_ID = 'sq123' // present but must be ignored with no HOME
+      delete process.env.FICUS_BOX_HOME
+      process.env.FICUS_SQUAD_ID = 'sq123' // present but must be ignored with no HOME
     })
 
     const identityCases = [

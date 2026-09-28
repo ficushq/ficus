@@ -4,11 +4,12 @@
  * artifact install. Run on the tenant Core VM from `/opt/tau-core`, where Bun
  * loads Core's `.env` (database and secret store):
  *
- *   TAU_BC_SANDBOX_ID=<sandboxId> TAU_BC_ACTION=<status|stop|start|restart|processes|kill> \
- *     [TAU_BC_PID=<pid> TAU_BC_SIGNAL=<TERM|INT|KILL>] bun current/apps/core/dist/box-control.js
+ *   FICUS_BC_SANDBOX_ID=<sandboxId> FICUS_BC_ACTION=<status|stop|start|restart|processes|kill> \
+ *     [FICUS_BC_PID=<pid> FICUS_BC_SIGNAL=<TERM|INT|KILL>] bun current/apps/core/dist/box-control.js
  *
  * The platform's `scripts/box-control.ts` is the usual caller.
  */
+import './boot/legacy-env'
 import { parseBoxControlRequest, runBoxControl } from './services/machines/box-control'
 
 async function main(): Promise<number> {

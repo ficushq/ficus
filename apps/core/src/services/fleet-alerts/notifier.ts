@@ -1,4 +1,4 @@
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { eq } from 'drizzle-orm'
 import { agents, db, squads } from '../../db'
 import { InboxMessage } from '../../entities/InboxMessage'

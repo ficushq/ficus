@@ -3,7 +3,7 @@
  *
  * Owns the kubectl port-forward lifecycle for K8s sandbox pods: spawning,
  * readiness probing, retry-with-fresh-port, and teardown. Only used in local
- * dev mode (TAU_K8S_LOCAL=true), where the host cannot reach pod IPs directly.
+ * dev mode (FICUS_K8S_LOCAL=true), where the host cannot reach pod IPs directly.
  *
  * Forwards are keyed by sandbox ID for the executor port and by
  * `<sandboxId>:<targetPort>` for app ports, so one sandbox can hold several

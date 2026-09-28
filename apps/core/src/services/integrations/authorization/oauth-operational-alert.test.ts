@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { sendOAuthControlPlaneAlert } from './oauth-operational-alert'
 
 test('broker access alert uses fixed safe content and a stable exactly-once key', async () => {

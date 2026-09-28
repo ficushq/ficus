@@ -4,8 +4,9 @@
  * The box server does not interpret browser verbs at all — it forwards the
  * already-authenticated request body to the per-machine `tau-browser`
  * service over its unix socket, identifying itself as this box's own unix
- * user (`x-tau-box-user`) with the box's own EXECUTOR_AUTH_TOKEN as the
- * bearer (R-B3: "the same secret the box already holds"). The upstream
+ * user (`x-ficus-box-user`, and for the cutover window the pre-Ficus name
+ * too) with the box's own EXECUTOR_AUTH_TOKEN as the bearer (R-B3: "the
+ * same secret the box already holds"). The upstream
  * status + JSON body are mirrored back verbatim in both directions.
  *
  * When the socket is absent or unreachable (no tau-browser service on this
@@ -14,6 +15,7 @@
  */
 
 import { userInfo } from 'node:os'
+import { boxUserHeaders } from '@ficus/shared/box-user'
 
 const DEFAULT_SOCK = '/run/tau-browser/sock'
 
@@ -27,7 +29,7 @@ export async function handleBrowserProxy(
   body: unknown,
   authToken: string | undefined
 ): Promise<Response> {
-  const sock = process.env.TAU_BROWSER_SOCK || DEFAULT_SOCK
+  const sock = process.env.FICUS_BROWSER_SOCK || DEFAULT_SOCK
   const subpath = pathname.slice('/browser'.length) // '/open', '/click', ...
 
   let upstream: Response
@@ -36,7 +38,8 @@ export async function handleBrowserProxy(
       unix: sock,
       method: 'POST',
       headers: {
-        'x-tau-box-user': userInfo().username,
+        // K3: every box-user name, for browser services on older machine images.
+        ...boxUserHeaders(userInfo().username),
         authorization: `Bearer ${authToken ?? ''}`,
         'content-type': 'application/json',
       },

@@ -1,4 +1,4 @@
-import type { AgentTypeIntegrationPolicyV1 } from '@tau/shared'
+import type { AgentTypeIntegrationPolicyV1 } from '@ficus/shared'
 import { apiFetch, authFetch } from './client'
 
 // ============================================================================
@@ -101,7 +101,7 @@ export async function exportAgentTypeYaml(id: string): Promise<string> {
 // ============================================================================
 
 export interface SquadPresetConfig {
-  workflows?: import('@tau/shared').SquadPresetWorkflows | null
+  workflows?: import('@ficus/shared').SquadPresetWorkflows | null
   id: string
   name: string
   description: string | null
@@ -277,7 +277,7 @@ export interface MyNotificationPrefs {
   showPreviews?: boolean
   pushEnabled: boolean
   mutedEvents: string[]
-  /** Mutable push category ids (see PUSH_CATEGORIES in @tau/shared); each gets a toggle in the UI. */
+  /** Mutable push category ids (see PUSH_CATEGORIES in @ficus/shared); each gets a toggle in the UI. */
   pushEvents: string[]
 }
 

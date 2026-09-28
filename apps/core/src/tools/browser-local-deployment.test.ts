@@ -20,7 +20,7 @@ describe('browser_open local deployment handoff', () => {
   let agentIds: string[]
   let calls: Array<{ runId: string; url: string }>
   let open: ReturnType<typeof createBrowserTools>[number]
-  let previousEnv: { APP_URL: string | undefined; TAU_APPS_DOMAIN: string | undefined }
+  let previousEnv: { APP_URL: string | undefined; FICUS_APPS_DOMAIN: string | undefined }
 
   async function createSquad() {
     const [row] = await db
@@ -66,9 +66,9 @@ describe('browser_open local deployment handoff', () => {
     squadIds = []
     agentIds = []
     calls = []
-    previousEnv = { APP_URL: process.env.APP_URL, TAU_APPS_DOMAIN: process.env.TAU_APPS_DOMAIN }
+    previousEnv = { APP_URL: process.env.APP_URL, FICUS_APPS_DOMAIN: process.env.FICUS_APPS_DOMAIN }
     process.env.APP_URL = 'https://tenant.example.test'
-    delete process.env.TAU_APPS_DOMAIN
+    delete process.env.FICUS_APPS_DOMAIN
     squadId = await createSquad()
     const user = await createTestUser({ prefix })
     const role = await createTestRole({ prefix, permissions: ['deployments:read'] })
@@ -131,7 +131,7 @@ describe('browser_open local deployment handoff', () => {
   })
 
   test('uses the issued hosted app origin rather than concatenating APP_URL', async () => {
-    process.env.TAU_APPS_DOMAIN = 'apps.example.test'
+    process.env.FICUS_APPS_DOMAIN = 'apps.example.test'
     const result = await execute({ localDeploymentId: deploymentId })
     expect(result.details).not.toHaveProperty('error')
     const url = new URL(calls[0].url)

@@ -2,7 +2,7 @@
 
 `slack_thread` is an indexed, searchable, readable, incremental, external source. Default sensitivity is `internal`.
 
-Slack threads are ingested on demand from a Slack permalink or stable source ID. Tau does not tail channels; `list()` returns already-indexed threads so sync can reindex known documents without discovering new conversations.
+Slack threads are ingested on demand from a Slack permalink or stable source ID. Ficus does not tail channels; `list()` returns already-indexed threads so sync can reindex known documents without discovering new conversations.
 
 ## Source IDs
 
@@ -18,7 +18,7 @@ Permalinks are resolved from Slack archive URLs such as:
 https://acme.slack.com/archives/C0123ABCDE/p1715800000123456?thread_ts=1715800000.123456
 ```
 
-If the URL has no `thread_ts` query parameter, Tau derives the timestamp from the packed `p...` permalink segment.
+If the URL has no `thread_ts` query parameter, Ficus derives the timestamp from the packed `p...` permalink segment.
 
 ## Frontmatter
 
@@ -80,7 +80,7 @@ Slack Canvas documents found on thread messages are fanned out to `slack_canvas`
 - Requires `SLACK_BOT_TOKEN` and bot access to the channel.
 - Fetches up to 200 thread replies.
 - Does not ingest channel history automatically.
-- User identity remains the Slack user/bot ID; Tau does not resolve people across systems.
+- User identity remains the Slack user/bot ID; Ficus does not resolve people across systems.
 
 Source class: [`SlackThreadSource`](../../../../apps/core/src/services/memory/sources/SlackThreadSource.ts).
 

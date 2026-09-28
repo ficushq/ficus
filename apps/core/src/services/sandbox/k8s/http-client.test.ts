@@ -496,3 +496,35 @@ describe('SandboxClient.upload (raw-body transport)', () => {
     }
   })
 })
+
+describe('SandboxClient legacy env overrides (one release)', () => {
+  it('sends a TAU_ alias for every FICUS_ per-command override, for executors started before the rename', async () => {
+    const previousFetch = globalThis.fetch
+    let body: { env?: Record<string, string> } | undefined
+    const called = new Promise<void>((resolve) => {
+      globalThis.fetch = mock(async (_url: string | URL | Request, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body))
+        resolve()
+        return new Response('', { status: 500 })
+      }) as unknown as typeof fetch
+    })
+
+    try {
+      const client = new SandboxClient('127.0.0.1:1234', 'tok-xyz')
+      const stream = client.bash({
+        command: 'ficus whoami',
+        env: { FICUS_API_URL: 'http://core:3000', FICUS_TOKEN: 't' },
+      })
+      stream.on('error', () => {})
+      await called
+      expect(body?.env).toEqual({
+        FICUS_API_URL: 'http://core:3000',
+        FICUS_TOKEN: 't',
+        TAU_API_URL: 'http://core:3000',
+        TAU_TOKEN: 't',
+      })
+    } finally {
+      globalThis.fetch = previousFetch
+    }
+  })
+})

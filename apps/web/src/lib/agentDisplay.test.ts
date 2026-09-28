@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import {
   getAgentName,
   getAgentPrimaryLabel,

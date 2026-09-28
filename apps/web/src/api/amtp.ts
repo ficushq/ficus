@@ -5,7 +5,7 @@ import type {
   AgentRegisterResponse,
   InstanceIdentityResponse,
   PeerResponse,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export function getInstanceIdentity(): Promise<InstanceIdentityResponse> {
   return apiFetch<InstanceIdentityResponse>('/amtp/instance-identity')

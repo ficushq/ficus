@@ -13,7 +13,7 @@ import {
   type InboxRecipientType,
   type InboxMessageSenderType,
   type AmtpAttachmentRef,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { assistantInboxOwner } from '../services/assistant-inbox'
 import { InboxMessage } from '../entities/InboxMessage'
 import { InboxAttachment } from '../entities/InboxAttachment'

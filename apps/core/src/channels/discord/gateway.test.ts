@@ -25,7 +25,7 @@ describe('DiscordGateway mention routing', () => {
     registerProvider(discordProvider)
   })
 
-  it('ignores a regular message in a Tau-created thread when Tau is not mentioned', async () => {
+  it('ignores a regular message in a Ficus-created thread when Ficus is not mentioned', async () => {
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
       id: 'agent-1',
       squadId: 'squad-test',
@@ -53,7 +53,7 @@ describe('DiscordGateway mention routing', () => {
       id: 'message-1',
       channel_id: 'thread-1',
       guild_id: 'guild-1',
-      content: 'regular follow-up with no Tau mention',
+      content: 'regular follow-up with no Ficus mention',
       author: { id: 'user-1', username: 'Ada' },
       mentions: [],
     })
@@ -62,7 +62,7 @@ describe('DiscordGateway mention routing', () => {
     expect(inboxSendSpy).not.toHaveBeenCalled()
   })
 
-  it('processes a mention in a Tau-created thread through the mention path', async () => {
+  it('processes a mention in a Ficus-created thread through the mention path', async () => {
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
       id: 'agent-1',
       squadId: 'squad-test',
@@ -111,7 +111,7 @@ describe('DiscordGateway mention routing', () => {
       guild_id: 'guild-1',
       content: '<@UBOT> current follow-up',
       author: { id: 'user-1', username: 'Ada' },
-      mentions: [{ id: 'UBOT', username: 'Tau' }],
+      mentions: [{ id: 'UBOT', username: 'Ficus' }],
     })
 
     expect(provider.getThreadHistory).toHaveBeenCalledWith('thread-1', 'thread-1', 50)
@@ -124,7 +124,7 @@ describe('DiscordGateway mention routing', () => {
       senderType: 'system',
       wakeEligible: true,
       subject: 'Channel: mention',
-      content: expect.stringContaining('<@user-1>: @Tau current follow-up'),
+      content: expect.stringContaining('<@user-1>: @Ficus current follow-up'),
       metadata: {
         type: 'channel_message',
         channelContext: {
@@ -189,7 +189,7 @@ describe('DiscordGateway mention routing', () => {
       guild_id: 'guild-1',
       content: '<@UBOT> current follow-up',
       author: { id: 'user-1', username: 'Ada' },
-      mentions: [{ id: 'UBOT', username: 'Tau' }],
+      mentions: [{ id: 'UBOT', username: 'Ficus' }],
     })
 
     expect(provider.getThreadHistory).not.toHaveBeenCalled()
@@ -228,7 +228,7 @@ describe('DiscordGateway slash commands', () => {
       expect(requests[0]?.body).toEqual({ type: 5, data: { flags: 64 } })
       expect(user.id).toBe('member')
       expect(text).toBe(`link ${'a'.repeat(32)}`)
-      return 'Account verified. Return to Tau and confirm.'
+      return 'Account verified. Return to Ficus and confirm.'
     })
     const instance = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(
       new ChannelInstance({ id: 'bot', provider: 'discord', disabled: false } as any)
@@ -247,7 +247,7 @@ describe('DiscordGateway slash commands', () => {
         channel_id: 'channel',
         member: { user: { id: 'member', username: 'Ada' } },
         data: {
-          name: 'tau',
+          name: 'ficus',
           options: [{ name: 'link', type: 1, options: [{ name: 'code', type: 3, value: 'a'.repeat(32) }] }],
         },
       })
@@ -255,7 +255,7 @@ describe('DiscordGateway slash commands', () => {
       expect(requests[1]).toEqual({
         url: 'https://discord.com/api/v10/webhooks/application/token/messages/@original',
         method: 'PATCH',
-        body: { content: 'Account verified. Return to Tau and confirm.' },
+        body: { content: 'Account verified. Return to Ficus and confirm.' },
       })
     } finally {
       globalThis.fetch = originalFetch
@@ -278,7 +278,7 @@ describe('DiscordGateway slash commands', () => {
           guild_id: 'guild',
           channel_id: 'channel',
           member: { user: { id: 'member', username: 'Ada' } },
-          data: { name: 'tau', options: [{ name: 'help', type: 1 }] },
+          data: { name: 'ficus', options: [{ name: 'help', type: 1 }] },
         })
       ).rejects.toThrow('acknowledgement failed')
       expect(lookup).not.toHaveBeenCalled()

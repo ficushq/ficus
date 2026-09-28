@@ -86,7 +86,7 @@ describe('AgentTypeSync', () => {
     expect(artifactBuilder!.tools?.allow ?? []).not.toContain('respond_to_voice')
     expect(artifactBuilder!.systemPrompt).not.toContain('respond_to_voice')
     expect(artifactBuilder!.systemPrompt).toContain(
-      'tau inbox send workspace "<message>" --recipient-type voice_assistant'
+      'ficus inbox send workspace "<message>" --recipient-type voice_assistant'
     )
   })
 
@@ -144,7 +144,7 @@ describe('AgentTypeSync', () => {
     const reviewerPrompt = reviewer!.systemPrompt
     expect(reviewerPrompt).toContain('## Scope Checking')
     expect(reviewerPrompt).toContain('do NOT automatically revert it as scope creep')
-    expect(reviewerPrompt).toContain('tau workstream get <id>')
+    expect(reviewerPrompt).toContain('ficus workstream get <id>')
     expect(reviewerPrompt).toContain('flag it to the manager as a question')
 
     for (const id of ['manager', 'architect', 'engineer', 'reviewer']) {
@@ -164,7 +164,7 @@ describe('AgentTypeSync', () => {
     expect(manager.systemPrompt).toContain('Never ask a decision through an inbox message')
     expect(manager.systemPrompt).toContain('check `requestingUserId`')
     expect(manager.systemPrompt).toContain('--recipient-type user')
-    expect(manager.systemPrompt).toContain('tau inbox send system')
+    expect(manager.systemPrompt).toContain('ficus inbox send system')
     expect(manager.systemPrompt).not.toContain('Decisions that need human input')
     expect(manager.systemPrompt).not.toContain('Blockers that require human intervention')
   })
@@ -184,7 +184,7 @@ describe('AgentTypeSync', () => {
     expect(manager).toBeTruthy()
     const p = manager!.systemPrompt
 
-    // Inline `tau workstream create` examples include branch/worktree flags.
+    // Inline `ficus workstream create` examples include branch/worktree flags.
     expect(p).toContain('--branch <branch>')
     // Namespaced shared-workspace root (interpolated to /workspace/<squadId> at runtime).
     expect(p).toContain('--worktree {{workspaceRoot}}/worktrees/<branch>')
@@ -205,7 +205,7 @@ describe('AgentTypeSync', () => {
       expect(agentType).toBeTruthy()
       const p = agentType!.systemPrompt
       // Startup verification of worktree metadata.
-      expect(p).toContain('tau workstream get')
+      expect(p).toContain('ficus workstream get')
       expect(p).toContain('git.worktree')
       expect(p).toContain('git.branch')
       // If metadata exists but the worktree wasn't set up, create it.
@@ -238,7 +238,7 @@ describe('AgentTypeSync', () => {
       const type = parsed.find((row) => row.id === id)!
       expect(type).not.toHaveProperty('flowPrompt')
       for (const text of expertise) expect(type.systemPrompt).toContain(text)
-      expect(type.systemPrompt).toContain('tau workstream advance')
+      expect(type.systemPrompt).toContain('ficus workstream advance')
       expect(type.systemPrompt).toContain('Outside a flow, complete the assigned task')
       expect(type.systemPrompt).toContain('no role may grant itself that authority')
       expect(type.systemPrompt).toContain('Sibling branches can continue')
@@ -256,7 +256,7 @@ describe('AgentTypeSync', () => {
       'direct-merge',
       'allowAutoMerge',
       'allowDirectMerge',
-      'tau workflow',
+      'ficus workflow',
       'human',
       'Never grant yourself',
       '--admin',

@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { AssistantActivityPage } from '@tau/shared'
+import type { AssistantActivityPage } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { assistantQueryKeys, queryKeys } from '../queryKeys'
 import { useAssistantActivity } from './useAssistantActivity'

@@ -21,6 +21,17 @@ describe('local deployment browser auth', () => {
     }
   })
 
+  it('names the per-deployment cookie ficus_app_<id>', () => {
+    expect(localDeploymentCookieName(ID)).toBe(`ficus_app_${ID}`)
+  })
+
+  it('never reads the pre-rename tau_app_<id> cookie', () => {
+    const request = new Request(`https://t.example/api/app/${ID}/assets/index-abc.js`, {
+      headers: { cookie: `tau_app_${ID}=abc` },
+    })
+    expect(presentedLocalDeploymentToken(request, ID).token).toBeNull()
+  })
+
   it('prefers the URL token and reports that a cookie must be set', () => {
     const request = new Request(`https://t.example/api/app/${ID}/?_tau_token=abc`)
     expect(presentedLocalDeploymentToken(request, ID)).toEqual({ token: 'abc', fromQuery: true })
@@ -42,11 +53,11 @@ describe('local deployment browser auth', () => {
     expect(presentedLocalDeploymentToken(request, ID).token).toBeNull()
   })
 
-  it('ignores the Tau session cookie riding the same request', () => {
-    // tau_session is Path=/ so it IS sent here. It must never be mistaken for a
+  it('ignores the Ficus session cookie riding the same request', () => {
+    // ficus_session is Path=/ so it IS sent here. It must never be mistaken for a
     // deployment credential.
     const request = new Request(`https://t.example/api/app/${ID}/x`, {
-      headers: { cookie: 'tau_session=a-real-session' },
+      headers: { cookie: 'ficus_session=a-real-session' },
     })
     expect(presentedLocalDeploymentToken(request, ID).token).toBeNull()
   })
@@ -59,7 +70,7 @@ describe('local deployment browser auth', () => {
     })
     expect(header).toContain(`Path=${localDeploymentProxyPath(ID)}`)
     // Path scoping is the security boundary: it is what keeps this credential
-    // off Tau's own API and off other deployments.
+    // off Ficus's own API and off other deployments.
     expect(header).toContain('HttpOnly')
     expect(header).toContain('SameSite=Lax')
     expect(header).toContain('Secure')
@@ -78,7 +89,7 @@ describe('local deployment browser auth', () => {
   })
 
   it('parses a cookie surrounded by others and by whitespace', () => {
-    const header = `tau_session=x; ${localDeploymentCookieName(ID)}=abc ; other=y`
+    const header = `ficus_session=x; ${localDeploymentCookieName(ID)}=abc ; other=y`
     expect(readCookie(header, localDeploymentCookieName(ID))).toBe('abc')
     expect(readCookie(null, 'anything')).toBeNull()
     expect(readCookie('malformed', 'anything')).toBeNull()

@@ -1,4 +1,4 @@
-import { isWorkspaceVoiceRecipient } from '@tau/shared'
+import { isWorkspaceVoiceRecipient } from '@ficus/shared'
 import { useEffect, useMemo } from 'react'
 import { prewarmArtifactBuilder } from '../../../api/artifacts'
 import { getMyInbox, getVoiceAssistantInbox, markAsRead, type InboxMessageResponse } from '../../../api/inbox'

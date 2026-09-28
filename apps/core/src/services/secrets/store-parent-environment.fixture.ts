@@ -1,7 +1,7 @@
 import { ContentSafetyRegistry } from '../security/content-safety-registry'
 import { SecretStore } from './store'
 
-const key = process.env.TAU_TEST_PARENT_SENTINEL_KEY
+const key = process.env.FICUS_TEST_PARENT_SENTINEL_KEY
 if (!key) throw new Error('missing_generated_parent_sentinel_key')
 const value = process.env[key]
 if (!value) throw new Error('missing_generated_parent_sentinel_value')

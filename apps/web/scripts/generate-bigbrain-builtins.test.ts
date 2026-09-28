@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { BIGBRAIN_PALETTES } from '@tau/shared/bigbrain-palettes'
+import { BIGBRAIN_PALETTES } from '@ficus/shared/bigbrain-palettes'
 import {
   GENERATED_END,
   GENERATED_START,

@@ -3,7 +3,7 @@
  *
  * Endpoint functions (see ./resources) are written against this interface so the
  * same API layer works over either host's transport:
- * - web: cookie + `X-Tau-Csrf` header + hiretau.ai host resolution (apps/web/src/api/transport.ts)
+ * - web: cookie + CSRF header (`CSRF_HEADER` from `@ficus/shared/http-headers`) + hiretau.ai host resolution (apps/web/src/api/transport.ts)
  * - mobile: `Authorization: Bearer` + paired base URL + expo-secure-store token (the native companion)
  */
 export interface RequestOptions {

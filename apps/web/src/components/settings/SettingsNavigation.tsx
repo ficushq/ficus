@@ -136,7 +136,8 @@ export function SettingsNavigation({
     onSectionChange(id)
     setSearch('')
   }
-  const showSetupResult = showOnboardingLink && !!search.trim() && matchesSetting(search, 'Set up Tau onboarding setup')
+  const showSetupResult =
+    showOnboardingLink && !!search.trim() && matchesSetting(search, 'Set up Ficus onboarding setup')
   const resultCount = results.length + Number(showSetupResult)
   const resultKey = JSON.stringify([search, results.map((result) => [result.section, result.id]), showSetupResult])
   const selectedIndex = selection.key === resultKey ? Math.min(selection.index, resultCount - 1) : 0
@@ -170,7 +171,7 @@ export function SettingsNavigation({
             aria-pressed={!inAdministration}
             onClick={() => selectArea(personal[0]?.id ?? 'account')}
             className={clsx(
-              'tau-button flex-1 rounded-md px-2 py-2 text-xs',
+              'ficus-button flex-1 rounded-md px-2 py-2 text-xs',
               !inAdministration ? 'bg-surface text-primary' : 'text-secondary hover:text-primary'
             )}
           >
@@ -184,7 +185,7 @@ export function SettingsNavigation({
                 if (administration[0]?.items[0]) selectArea(administration[0].items[0].id)
               }}
               className={clsx(
-                'tau-button flex-1 rounded-md px-2 py-2 text-xs',
+                'ficus-button flex-1 rounded-md px-2 py-2 text-xs',
                 inAdministration ? 'bg-surface text-primary' : 'text-secondary hover:text-primary'
               )}
             >
@@ -209,7 +210,7 @@ export function SettingsNavigation({
           setSearch(event.target.value)
           setSelection({ key: '', index: 0 })
         }}
-        className="tau-field mb-4 h-9 w-full px-3 text-base md:text-sm"
+        className="ficus-field mb-4 h-9 w-full px-3 text-base md:text-sm"
       />
       <nav
         id={`${searchId}-${surface}-results`}
@@ -239,7 +240,7 @@ export function SettingsNavigation({
                 type="button"
                 onClick={() => select(result.section, result.id || undefined)}
                 className={clsx(
-                  'tau-button tau-nav-item block w-full px-2.5 py-2.5 text-left',
+                  'ficus-button ficus-nav-item block w-full px-2.5 py-2.5 text-left',
                   selectedIndex === index && 'bg-accent/10 text-accent'
                 )}
               >
@@ -257,7 +258,7 @@ export function SettingsNavigation({
           matchingGroups.map((group, i) => (
             <div key={group.label ?? i}>
               {group.label && (scopeTitle || inAdministration || search) && (
-                <h3 className="tau-section-title px-2 pb-2">{group.label}</h3>
+                <h3 className="ficus-section-title px-2 pb-2">{group.label}</h3>
               )}
               <div className="space-y-1">
                 {group.items.map((section) => {
@@ -268,7 +269,7 @@ export function SettingsNavigation({
                       key={section.id}
                       aria-current={activeSection === section.id ? 'page' : undefined}
                       onClick={() => select(section.id)}
-                      className="tau-button tau-nav-item flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm text-secondary"
+                      className="ficus-button ficus-nav-item flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm text-secondary"
                     >
                       <Icon className="h-4 w-4 shrink-0 opacity-80" />
                       <span>{section.label}</span>
@@ -285,7 +286,7 @@ export function SettingsNavigation({
           </p>
         )}
         {showOnboardingLink &&
-          (search.trim() ? matchesSetting(search, 'Set up Tau onboarding setup') : inAdministration) && (
+          (search.trim() ? matchesSetting(search, 'Set up Ficus onboarding setup') : inAdministration) && (
             <Link
               to="/onboarding"
               id={`${searchId}-${surface}-result-${results.length}`}
@@ -295,12 +296,12 @@ export function SettingsNavigation({
               onMouseEnter={() => setSelection({ key: resultKey, index: results.length })}
               onFocus={() => setSelection({ key: resultKey, index: results.length })}
               className={clsx(
-                'tau-nav-item flex items-center gap-2.5 px-2.5 py-2 text-sm text-secondary',
+                'ficus-nav-item flex items-center gap-2.5 px-2.5 py-2 text-sm text-secondary',
                 search.trim() && selectedIndex === results.length && 'bg-accent/10 text-accent'
               )}
             >
               <SettingsIcon className="h-4 w-4" />
-              Set up Tau
+              Set up Ficus
             </Link>
           )}
       </nav>
@@ -315,7 +316,7 @@ export function SettingsNavigation({
           aria-label="Choose settings section"
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen((open) => !open)}
-          className="tau-panel flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+          className="ficus-panel flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
         >
           <span>
             <span className="block text-xs text-secondary">{scopeTitle ?? 'Settings'}</span>
@@ -326,12 +327,12 @@ export function SettingsNavigation({
         <Presence
           open={mobileOpen}
           style={{ maxHeight: `min(60dvh, ${mobileMaxHeight}px)` }}
-          className="tau-overlay absolute left-0 right-0 top-full z-30 mt-2 overflow-y-auto overscroll-contain p-3"
+          className="ficus-overlay absolute left-0 right-0 top-full z-30 mt-2 overflow-y-auto overscroll-contain p-3"
         >
           {content('mobile')}
         </Presence>
       </div>
-      <aside className="tau-panel tau-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3">
+      <aside className="ficus-panel ficus-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3">
         <h2 className="px-2 pb-4 pt-1 text-sm font-semibold text-primary">{scopeTitle ?? 'Settings'}</h2>
         {content('desktop')}
       </aside>

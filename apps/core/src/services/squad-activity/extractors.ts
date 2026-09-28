@@ -1,5 +1,5 @@
 import { activityPreview } from './preview'
-import { trackedResourceLabel } from '@tau/shared'
+import { trackedResourceLabel } from '@ficus/shared'
 import { activityRowIdForStream } from './activity-row-id'
 import { describeGitHubIssueFact, type GitHubIssueDispatchFact } from './github-issue-fact'
 import type { GitHubPrDispatchFact } from './github-pr-fact'

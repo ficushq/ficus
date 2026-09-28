@@ -46,7 +46,7 @@ interface BacklinkResult {
 export function registerMemoryCommands(program: Command): void {
   const memory = program.command('memory').description('Memory vault operations')
 
-  // tau memory search <query> --squad <id> --limit N --mode <mode> --source-type <type> --kind <kind> --tag <tag> --path <glob>
+  // ficus memory search <query> --squad <id> --limit N --mode <mode> --source-type <type> --kind <kind> --tag <tag> --path <glob>
   memory
     .command('search <query>')
     .description('Search memory documents using hybrid retrieval')
@@ -102,7 +102,7 @@ export function registerMemoryCommands(program: Command): void {
       }
     })
 
-  // tau memory get <path> --squad <id>
+  // ficus memory get <path> --squad <id>
   memory
     .command('get <path>')
     .description('Read a memory file')
@@ -125,7 +125,7 @@ export function registerMemoryCommands(program: Command): void {
       }
     })
 
-  // tau memory list [path] --squad <id>
+  // ficus memory list [path] --squad <id>
   memory
     .command('list [path]')
     .description('List files in a memory directory')
@@ -154,9 +154,9 @@ export function registerMemoryCommands(program: Command): void {
       }
     })
 
-  // tau memory write <path> --squad <id> --content <content>
-  // or: tau memory write <path> --squad <id> < file.md
-  // or: tau memory write <path> --squad <id> --delete
+  // ficus memory write <path> --squad <id> --content <content>
+  // or: ficus memory write <path> --squad <id> < file.md
+  // or: ficus memory write <path> --squad <id> --delete
   memory
     .command('write <path>')
     .description('Write (overwrite) a memory file, or delete it with --delete')
@@ -201,7 +201,7 @@ export function registerMemoryCommands(program: Command): void {
       }
     })
 
-  // tau memory patch <path> --squad <id> --match <text> --replace <text>
+  // ficus memory patch <path> --squad <id> --match <text> --replace <text>
   memory
     .command('patch <path>')
     .description('Patch a memory file (exact match replacement)')
@@ -236,7 +236,7 @@ export function registerMemoryCommands(program: Command): void {
       }
     })
 
-  // tau memory append <path> --squad <id> --content <content>
+  // ficus memory append <path> --squad <id> --content <content>
   memory
     .command('append <path>')
     .description('Append content to a memory file')
@@ -278,7 +278,7 @@ export function registerMemoryCommands(program: Command): void {
       }
     })
 
-  // tau memory backlinks <path> --squad <id>
+  // ficus memory backlinks <path> --squad <id>
   memory
     .command('backlinks <path>')
     .description('Get documents that link to a memory file')
@@ -308,7 +308,7 @@ export function registerMemoryCommands(program: Command): void {
       }
     })
 
-  // tau memory sync <action> --squad <id>
+  // ficus memory sync <action> --squad <id>
   const sync = memory.command('sync').description('Memory sync operations')
 
   sync
@@ -355,7 +355,7 @@ export function registerMemoryCommands(program: Command): void {
       }
     })
 
-  // tau memory reindex --squad <id> --source <source>
+  // ficus memory reindex --squad <id> --source <source>
   memory
     .command('reindex')
     .description('Reindex memory documents')

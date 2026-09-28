@@ -14,7 +14,7 @@ import {
   type ArtifactReference,
   type ArtifactRequest,
   type ArtifactRequestAction,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { randomUUID } from 'crypto'
 import { existsSync, realpathSync } from 'fs'
 import { appendFile, lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'fs/promises'

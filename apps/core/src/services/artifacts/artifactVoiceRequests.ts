@@ -6,7 +6,7 @@ import type {
   ArtifactRequest,
   ArtifactRequestAction,
   Presentation,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { Buffer } from 'node:buffer'
 import { lstat, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -988,7 +988,7 @@ function buildArtifactInfoRequestMessage({
     'Instructions:',
     '- Answer the question using your knowledge of this artifact and its files.',
     '- Inspect artifact files as needed, but do not edit artifact files and do not publish an artifact update.',
-    '- Reply to the workspace voice assistant through inbox: tau inbox send workspace "<message>" --recipient-type voice_assistant. Use a concise, voice-friendly summary.',
+    '- Reply to the workspace voice assistant through inbox: ficus inbox send workspace "<message>" --recipient-type voice_assistant. Use a concise, voice-friendly summary.',
     '- Do not ask an artifact_question unless you truly need clarification before answering.',
   ].join('\n')
 }

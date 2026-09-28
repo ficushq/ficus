@@ -1,5 +1,5 @@
-import { workStreamRef } from '@tau/shared'
-import { workStreamTitle } from '@tau/shared'
+import { workStreamRef } from '@ficus/shared'
+import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
@@ -28,8 +28,8 @@ import {
   SkeletonText,
   SkeletonRows,
 } from './loading/Skeleton'
-import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@tau/shared'
-import type { WorkStream, WorkStreamStatus, WorkStreamDerivedState, Squad, Agent } from '@tau/shared'
+import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@ficus/shared'
+import type { WorkStream, WorkStreamStatus, WorkStreamDerivedState, Squad, Agent } from '@ficus/shared'
 
 // --- Status constants ---
 
@@ -200,7 +200,7 @@ function SectionHeader({
       <div className="flex items-center">
         <button
           onClick={onToggle}
-          className={clsx('tau-button min-w-0 flex-1 py-2 text-left hover:bg-surface-hover', !flush && 'px-3')}
+          className={clsx('ficus-button min-w-0 flex-1 py-2 text-left hover:bg-surface-hover', !flush && 'px-3')}
         >
           {content}
         </button>
@@ -278,7 +278,7 @@ function SquadManagerChatMenu({ squads, agentMap }: { squads: Squad[]; agentMap:
             onClick={() => setCustomizing((current) => !current)}
             aria-pressed={customizing}
             aria-label={customizing ? 'Finish customizing squad quick links' : 'Customize squad quick links'}
-            className="tau-button px-2 py-2 text-xs text-muted hover:bg-surface-hover hover:text-primary"
+            className="ficus-button px-2 py-2 text-xs text-muted hover:bg-surface-hover hover:text-primary"
           >
             {customizing ? 'Done' : 'Customize'}
           </button>
@@ -318,7 +318,7 @@ function SquadManagerChatMenu({ squads, agentMap }: { squads: Squad[]; agentMap:
                     <button
                       type="button"
                       onClick={() => setSquadHidden(squad.id, !hiddenSquadIds.has(squad.id))}
-                      className="tau-button mr-3 min-h-11 min-w-14 shrink-0 rounded px-2 py-1 text-xs text-muted hover:bg-surface-secondary hover:text-primary"
+                      className="ficus-button mr-3 min-h-11 min-w-14 shrink-0 rounded px-2 py-1 text-xs text-muted hover:bg-surface-secondary hover:text-primary"
                       aria-label={`${hiddenSquadIds.has(squad.id) ? 'Unhide' : 'Hide'} ${squad.name} ${hiddenSquadIds.has(squad.id) ? 'in' : 'from'} quick links`}
                     >
                       {hiddenSquadIds.has(squad.id) ? 'Unhide' : 'Hide'}
@@ -379,7 +379,7 @@ function StatusFilters({
         type="button"
         onClick={() => onChange([])}
         className={clsx(
-          'tau-button',
+          'ficus-button',
           'px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors',
           values.length === 0 ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover'
         )}
@@ -393,7 +393,7 @@ function StatusFilters({
           key={option.value}
           onClick={() => onChange(toggleFilter(values, option.value))}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors',
             values.includes(option.value) ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover'
           )}
@@ -430,7 +430,7 @@ function SquadFilters({
         onClick={() => onChange([])}
         disabled={isLoading}
         className={clsx(
-          'tau-button',
+          'ficus-button',
           'px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors',
           values.length === 0 ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover'
         )}
@@ -444,7 +444,7 @@ function SquadFilters({
           key={squad.id}
           onClick={() => onChange(toggleFilter(values, squad.id))}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors',
             values.includes(squad.id) ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover'
           )}

@@ -1,4 +1,4 @@
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { and, eq, gte, sql } from 'drizzle-orm'
 import { withDedicatedDbTransaction } from '../../../db'
 import { inbox } from '../../../db/schema'
@@ -178,7 +178,7 @@ function buildSandboxDeathMessage(args: {
       `- Signal: ${obs.signal}\n` +
       `- Reason: ${obs.reason ?? 'unknown'}${exitCodeLine}${messageLine}\n\n` +
       'This usually indicates a host/device issue (eviction or node failure) rather than a normal stop. ' +
-      'Tau will automatically recreate the sandbox on the next agent activity (always-on squads are restored within ~60s by the reconciliation loop). No action is required unless the problem repeats.',
+      'Ficus will automatically recreate the sandbox on the next agent activity (always-on squads are restored within ~60s by the reconciliation loop). No action is required unless the problem repeats.',
   }
 }
 

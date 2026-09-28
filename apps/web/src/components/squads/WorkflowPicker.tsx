@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { resolveWorkflow, type WorkflowDefinition, type WorkflowSource } from '@tau/shared'
+import { resolveWorkflow, type WorkflowDefinition, type WorkflowSource } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { WorkflowGraph } from '../WorkflowGraph'
 
@@ -50,7 +50,7 @@ export function WorkflowPicker({
       <label className="block text-sm font-medium">
         Workflow
         <select
-          className="tau-field mt-1 w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2"
+          className="ficus-field mt-1 w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2"
           disabled={disabled || catalog.isPending || catalog.isError}
           value={value?.kind === 'preset' ? value.id : value ? '__inline' : ''}
           onChange={(event) => {
@@ -85,7 +85,7 @@ export function WorkflowPicker({
       {onCustomize && value?.kind === 'inline' && (
         <button
           type="button"
-          className="tau-button text-sm text-accent"
+          className="ficus-button text-sm text-accent"
           disabled={disabled}
           onClick={() => onCustomize(structuredClone(value.definition))}
         >
@@ -95,7 +95,7 @@ export function WorkflowPicker({
       {onCustomize && value?.kind === 'preset' && definition && (
         <button
           type="button"
-          className="tau-button text-sm text-accent"
+          className="ficus-button text-sm text-accent"
           disabled={disabled}
           title="Start a custom flow from this preset (it will no longer follow the preset)"
           onClick={() => onCustomize(structuredClone(definition))}

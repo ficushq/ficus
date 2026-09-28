@@ -5,7 +5,7 @@ import { SharedPrompt } from '../../entities/SharedPrompt'
 import { Skill } from '../../entities/Skill'
 import { validateModelSpecList } from '../../lib/utils/model-spec'
 import { assertConfigId, assertNonEmptyString } from '../../lib/validation/config-ids'
-import { INTEGRATION_CAPABILITIES, squadPresetWorkflowsSchema } from '@tau/shared'
+import { INTEGRATION_CAPABILITIES, squadPresetWorkflowsSchema } from '@ficus/shared'
 
 const MAX_EARLY_MARGIN_TOKENS = 1_000_000
 

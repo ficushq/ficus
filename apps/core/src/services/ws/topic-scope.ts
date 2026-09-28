@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { EventMap } from '@tau/shared'
+import type { EventMap } from '@ficus/shared'
 import { db } from '../../db'
 import { agents, schedules, workStreams } from '../../db/schema'
 

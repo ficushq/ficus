@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { InboxMessageSenderType } from '@tau/shared'
+import type { InboxMessageSenderType } from '@ficus/shared'
 import { isInboxMessageWakeEligible } from './InboxMessage'
 
 describe('inbox dormant wake policy', () => {

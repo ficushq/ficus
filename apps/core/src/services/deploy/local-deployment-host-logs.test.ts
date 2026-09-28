@@ -29,9 +29,9 @@ describe('local deployment logs on the host runtime', () => {
   beforeEach(async () => {
     home = mkdtempSync(join(tmpdir(), 'tau-host-logs-'))
     prevHome = process.env.HOME_DIR
-    prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     clearHostWorkspaceOverrides()
     manager = new HostSandboxManager({ baseEnv: () => ({ PATH: process.env.PATH!, HOME: home }) })
     supervisor = new LocalDeploymentProcessSupervisor(manager)
@@ -43,8 +43,8 @@ describe('local deployment logs on the host runtime', () => {
     clearHostWorkspaceOverrides()
     if (prevHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = prevHome
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     rmSync(home, { recursive: true, force: true })
   })
 
@@ -115,13 +115,13 @@ describe('local deployment logs on the host runtime', () => {
       (e) => errors.push(e.message)
     )
     try {
-      await waitFor(() => lines.some((l) => l.includes('[tau] starting')) && lines.some((l) => l.includes('hello')))
+      await waitFor(() => lines.some((l) => l.includes('[ficus] starting')) && lines.some((l) => l.includes('hello')))
     } finally {
       tail.cancel()
       await supervisor.stopLocalDeployment(SANDBOX, `tau-local-deployment-${id.slice(0, 8)}`)
     }
     expect(errors).toEqual([])
-    expect(lines.some((l) => l.includes('[tau] starting'))).toBe(true)
+    expect(lines.some((l) => l.includes('[ficus] starting'))).toBe(true)
     expect(lines).toContain('hello')
   }, 20000)
 

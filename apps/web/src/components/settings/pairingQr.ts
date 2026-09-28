@@ -9,7 +9,7 @@ export interface PairingCodeValue {
 
 export interface RenderedPairing {
   dataUrl: string
-  /** tau://pair?url=…&code=… — tap on the same phone to open the app and pair. */
+  /** ficus://pair?url=…&code=… — tap on the same phone to open the app and pair. */
   deepLink: string
   expiresAt: number
 }
@@ -20,6 +20,6 @@ export async function renderPairing(value: PairingCodeValue): Promise<RenderedPa
     width: 240,
     margin: 1,
   })
-  const deepLink = `tau://pair?url=${encodeURIComponent(value.serverUrl)}&code=${encodeURIComponent(value.code)}`
+  const deepLink = `ficus://pair?url=${encodeURIComponent(value.serverUrl)}&code=${encodeURIComponent(value.code)}`
   return { dataUrl, deepLink, expiresAt: new Date(value.expiresAt).getTime() }
 }

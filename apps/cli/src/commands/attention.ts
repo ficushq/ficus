@@ -1,4 +1,4 @@
-import { ATTENTION_LEVELS, WATCH_ATTENTION, type Attention, type AttentionLevel } from '@tau/shared'
+import { ATTENTION_LEVELS, WATCH_ATTENTION, type Attention, type AttentionLevel } from '@ficus/shared'
 
 export interface AttentionFlags {
   decisions?: string

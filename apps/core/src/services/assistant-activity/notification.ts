@@ -1,4 +1,4 @@
-import type { AssistantTaskStatus } from '@tau/shared'
+import type { AssistantTaskStatus } from '@ficus/shared'
 
 /** Facts frozen while the update was projected; a later status change must not alter the decision. */
 export interface AssistantNotificationDecision {

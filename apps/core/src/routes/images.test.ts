@@ -16,7 +16,7 @@ import {
 } from '../test-utils'
 import { db, squads, agents, roles, images } from '../db'
 import { eq, inArray } from 'drizzle-orm'
-import { MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@tau/shared'
+import { MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@ficus/shared'
 import { deflateSync } from 'node:zlib'
 
 const PASSWORD = 'test-password-xyz'
@@ -70,20 +70,20 @@ function buildApp() {
 }
 
 describe('GET /api/images/:id', () => {
-  const origEnc = process.env.TAU_ENCRYPTION_KEY
-  const origPw = process.env.TAU_PASSWORD
+  const origEnc = process.env.FICUS_ENCRYPTION_KEY
+  const origPw = process.env.FICUS_PASSWORD
 
   beforeEach(() => {
-    process.env.TAU_PASSWORD = PASSWORD
-    process.env.TAU_ENCRYPTION_KEY = 'b'.repeat(64)
+    process.env.FICUS_PASSWORD = PASSWORD
+    process.env.FICUS_ENCRYPTION_KEY = 'b'.repeat(64)
     __resetSigningKeyForTests()
   })
 
   afterEach(() => {
-    if (origEnc === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = origEnc
-    if (origPw === undefined) delete process.env.TAU_PASSWORD
-    else process.env.TAU_PASSWORD = origPw
+    if (origEnc === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = origEnc
+    if (origPw === undefined) delete process.env.FICUS_PASSWORD
+    else process.env.FICUS_PASSWORD = origPw
     __resetSigningKeyForTests()
   })
 
@@ -115,8 +115,8 @@ describe('GET /api/images/:id', () => {
     expect(maxAge).toBeLessThanOrEqual(24 * 60 * 60)
   })
 
-  it('still serves cacheable headers when TAU_PASSWORD is not configured', async () => {
-    delete process.env.TAU_PASSWORD
+  it('still serves cacheable headers when FICUS_PASSWORD is not configured', async () => {
+    delete process.env.FICUS_PASSWORD
 
     const res = await requestSignedImage()
 
@@ -279,12 +279,12 @@ describe('POST /api/images', () => {
 })
 
 describe('POST /api/images/sign-urls', () => {
-  const origEnc = process.env.TAU_ENCRYPTION_KEY
-  const origPw = process.env.TAU_PASSWORD
+  const origEnc = process.env.FICUS_ENCRYPTION_KEY
+  const origPw = process.env.FICUS_PASSWORD
   const userPrefix = 'images-sign-urls'
   let user: TestUser
 
-  // Authenticate with a real session token rather than the legacy TAU_PASSWORD.
+  // Authenticate with a real session token rather than the legacy FICUS_PASSWORD.
   // identityMiddleware disables legacy password auth once an admin user exists,
   // and the full suite runs other files concurrently that may have a canonical
   // admin in the shared DB — so a session token is the stable way to authenticate.
@@ -297,16 +297,16 @@ describe('POST /api/images/sign-urls', () => {
   })
 
   beforeEach(() => {
-    process.env.TAU_PASSWORD = PASSWORD
-    process.env.TAU_ENCRYPTION_KEY = 'b'.repeat(64)
+    process.env.FICUS_PASSWORD = PASSWORD
+    process.env.FICUS_ENCRYPTION_KEY = 'b'.repeat(64)
     __resetSigningKeyForTests()
   })
 
   afterEach(() => {
-    if (origEnc === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = origEnc
-    if (origPw === undefined) delete process.env.TAU_PASSWORD
-    else process.env.TAU_PASSWORD = origPw
+    if (origEnc === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = origEnc
+    if (origPw === undefined) delete process.env.FICUS_PASSWORD
+    else process.env.FICUS_PASSWORD = origPw
     __resetSigningKeyForTests()
   })
 

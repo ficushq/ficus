@@ -1,5 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm'
-import type { EventMap } from '@tau/shared'
+import type { EventMap } from '@ficus/shared'
 import { db } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'

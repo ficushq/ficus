@@ -6,7 +6,7 @@
 
 import * as ed from '@noble/ed25519'
 import { sha512 } from '@noble/hashes/sha2.js'
-import { isTauSlashCommand, TAU_DISCORD_OPTION_NAMES } from '../../lib/channels'
+import { isTauSlashCommand, FICUS_DISCORD_OPTION_NAMES } from '../../lib/channels'
 import type { ChannelProvider, ChannelEvent, ThreadMessage, PostMessageResult } from '../provider'
 import { createLogger } from '../../lib/infra/logger'
 import { getChannelIntegrationValue } from '../../services/integrations/channels/settings'
@@ -200,7 +200,7 @@ export const discordProvider: ChannelProvider = {
       return {
         type: 'slash_command',
         command,
-        text: extractOptionValue(options, [...TAU_DISCORD_OPTION_NAMES]),
+        text: extractOptionValue(options, [...FICUS_DISCORD_OPTION_NAMES]),
         channelId: interaction.channel_id || '',
         routingChannelId: [10, 11, 12].includes(interaction.channel?.type ?? -1)
           ? interaction.channel?.parent_id
@@ -217,7 +217,7 @@ export const discordProvider: ChannelProvider = {
           applicationId: interaction.application_id,
           guildId: interaction.guild_id,
           userId: user?.id,
-          question: extractOptionValue(options, [...TAU_DISCORD_OPTION_NAMES]),
+          question: extractOptionValue(options, [...FICUS_DISCORD_OPTION_NAMES]),
         },
       }
     }
@@ -425,7 +425,7 @@ export const discordProvider: ChannelProvider = {
 
     // Get message and create thread
     const message = await getInteractionMessage(applicationId, interactionToken)
-    const thread = await createThread(message.channel_id, message.id, 'Tau Response')
+    const thread = await createThread(message.channel_id, message.id, 'Ficus Response')
 
     // Post in thread
     await this.postMessage({
@@ -460,7 +460,7 @@ export const discordProvider: ChannelProvider = {
 
   replaceBotMention(text: string, botUserId: string): string {
     // Discord mentions can be <@123> or <@!123>
-    return text.replace(new RegExp(`<@!?${botUserId}>`, 'g'), '@Tau')
+    return text.replace(new RegExp(`<@!?${botUserId}>`, 'g'), '@Ficus')
   },
 
   formatUserMention(userId: string): string {

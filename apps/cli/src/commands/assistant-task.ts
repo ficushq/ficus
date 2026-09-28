@@ -1,11 +1,11 @@
 /**
- * `tau assistant-task` — the delegated agent's direct handle on a task that a saved Assistant
+ * `ficus assistant-task` — the delegated agent's direct handle on a task that a saved Assistant
  * conversation gave it. `status` reports lifecycle for a specific request generation; the server turns
- * it into the same inbox reply that `tau inbox send --assistant-task-status` would produce.
+ * it into the same inbox reply that `ficus inbox send --assistant-task-status` would produce.
  */
 
 import { Command, Option } from 'commander'
-import type { AssistantTaskSummary } from '@tau/shared'
+import type { AssistantTaskSummary } from '@ficus/shared'
 import { apiGet, apiPost } from '../client'
 import { output, outputError } from '../output'
 

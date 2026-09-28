@@ -5,7 +5,7 @@
  * keep thin delegates.
  */
 
-import { LIVE_AGENT_STATUSES } from '@tau/shared'
+import { LIVE_AGENT_STATUSES } from '@ficus/shared'
 import { and, eq, inArray, isNotNull, isNull, not } from 'drizzle-orm'
 import { agents, db, squads } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'

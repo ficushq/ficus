@@ -20,7 +20,7 @@ import { sha256Hex } from '../services/inbox/attachment-storage'
 import { generateInstanceKeyPair, instanceIdFromPublicKeyPem, signEnvelope } from '../services/amtp/crypto'
 import { formatAmtpAddress } from '../services/amtp/address'
 import { ensureAgentIdentity } from '../services/amtp/agent-identity'
-import type { AmtpEnvelope, AmtpAttachmentRef } from '@tau/shared'
+import type { AmtpEnvelope, AmtpAttachmentRef } from '@ficus/shared'
 
 // Production-like app: sentinel wired exactly as real app does.
 const app = new Hono()

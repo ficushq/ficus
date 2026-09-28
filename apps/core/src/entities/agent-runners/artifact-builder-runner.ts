@@ -1,4 +1,4 @@
-import type { SessionUsage, MessageMetadata } from '@tau/shared'
+import type { SessionUsage, MessageMetadata } from '@ficus/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { ensureWorkspaceSandbox, getAgentWorkspaceStoragePath } from '../../services/sandbox/ensure'

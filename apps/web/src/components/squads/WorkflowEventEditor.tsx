@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { IntegrationSubscription, WorkflowDefinition } from '@tau/shared'
+import type { IntegrationSubscription, WorkflowDefinition } from '@ficus/shared'
 import { integrationQueries } from '../../queryOptions'
 
-const field = 'tau-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
+const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
 export function WorkflowEventEditor({
   definition,
   onChange,
@@ -300,7 +300,7 @@ export function WorkflowEventEditor({
             </label>
             <button
               type="button"
-              className="tau-button px-3 py-2 text-sm text-accent-light"
+              className="ficus-button px-3 py-2 text-sm text-accent-light"
               disabled={!source || (definition.subscriptions?.length ?? 0) >= 32}
               onClick={() => {
                 const output = outputs[Number(source)]

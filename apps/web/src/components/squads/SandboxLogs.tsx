@@ -173,11 +173,11 @@ export function SandboxLogs({ squadId }: Props) {
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={onSearchKey}
             placeholder="Search…"
-            className="tau-field w-40 px-2 py-1 text-xs rounded border border-th-border bg-surface text-primary"
+            className="ficus-field w-40 px-2 py-1 text-xs rounded border border-th-border bg-surface text-primary"
           />
           <button
             onClick={() => searchRef.current?.findNext(search)}
-            className="tau-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+            className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
           >
             Next
           </button>
@@ -189,13 +189,13 @@ export function SandboxLogs({ squadId }: Props) {
             <>
               <button
                 onClick={connect}
-                className="tau-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+                className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
               >
                 Reconnect
               </button>
               <button
                 onClick={disconnect}
-                className="tau-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+                className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
               >
                 Disconnect
               </button>
@@ -203,7 +203,7 @@ export function SandboxLogs({ squadId }: Props) {
           ) : (
             <button
               onClick={connect}
-              className="tau-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+              className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
             >
               Connect
             </button>

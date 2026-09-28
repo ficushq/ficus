@@ -12,7 +12,7 @@ function fakeDeps(overrides: Partial<GitSigningDependencies> = {}) {
   }
   const written = new Map<string, string>()
   const deps: GitSigningDependencies = {
-    env: { TAU_GIT_SIGNING_SQUAD: 'squad-1' },
+    env: { FICUS_GIT_SIGNING_SQUAD: 'squad-1' },
     readFile: async (path) => Buffer.from(`payload of ${path}`),
     writeFile: async (path, content) => {
       written.set(path, content)
@@ -33,7 +33,7 @@ function fakeDeps(overrides: Partial<GitSigningDependencies> = {}) {
   return { deps, calls, written }
 }
 
-describe('tau as gpg.ssh.program', () => {
+describe('ficus as gpg.ssh.program', () => {
   it('recognizes only ssh-keygen style invocations', () => {
     expect(isSshKeygenInvocation(['-Y', 'sign'])).toBe(true)
     expect(isSshKeygenInvocation(['ws', 'list'])).toBe(false)
@@ -62,8 +62,8 @@ describe('tau as gpg.ssh.program', () => {
 
   it('refuses other namespaces, missing buffers and use outside the squad wrapper', async () => {
     for (const [args, env] of [
-      [['-Y', 'sign', '-n', 'file', '-f', 'k', 'buf'], { TAU_GIT_SIGNING_SQUAD: 's' }],
-      [['-Y', 'sign', '-n', 'git', '-f', 'k'], { TAU_GIT_SIGNING_SQUAD: 's' }],
+      [['-Y', 'sign', '-n', 'file', '-f', 'k', 'buf'], { FICUS_GIT_SIGNING_SQUAD: 's' }],
+      [['-Y', 'sign', '-n', 'git', '-f', 'k'], { FICUS_GIT_SIGNING_SQUAD: 's' }],
       [['-Y', 'sign', '-n', 'git', '-f', 'k', 'buf'], {}],
     ] as const) {
       const { deps, calls } = fakeDeps({ env })
@@ -80,12 +80,14 @@ describe('tau as gpg.ssh.program', () => {
       },
     })
     expect(await runSshKeygenCompat(['-Y', 'sign', '-n', 'git', '-f', 'k', '-U', 'buf'], deps)).toBe(1)
-    expect(calls.errors).toEqual(['tau: commit signing failed: Commit signing is off for this squad’s GitHub account.'])
+    expect(calls.errors).toEqual([
+      'ficus: commit signing failed: Commit signing is off for this squad’s GitHub account.',
+    ])
     expect(written.size).toBe(0)
   })
 })
 
-describe('git signing through the real tau entrypoint', () => {
+describe('git signing through the real ficus entrypoint', () => {
   const dirs: string[] = []
   let server: ReturnType<typeof Bun.serve> | undefined
   afterEach(async () => {
@@ -140,12 +142,12 @@ describe('git signing through the real tau entrypoint', () => {
       },
     })
 
-    // Production puts `tau` on PATH and sets gpg.ssh.program=tau; mirror that.
+    // Production puts `ficus` on PATH and sets gpg.ssh.program=ficus; mirror that.
     writeFileSync(
-      join(bin, 'tau'),
+      join(bin, 'ficus'),
       `#!/bin/sh\nexec "${process.execPath}" "${join(import.meta.dir, 'index.ts')}" "$@"\n`
     )
-    chmodSync(join(bin, 'tau'), 0o755)
+    chmodSync(join(bin, 'ficus'), 0o755)
     writeFileSync(join(dir, 'allowed'), `agent@example.com ${publicKey}\n`)
     const env = {
       PATH: `${bin}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin`,
@@ -156,11 +158,11 @@ describe('git signing through the real tau entrypoint', () => {
       GIT_AUTHOR_EMAIL: 'agent@example.com',
       GIT_COMMITTER_NAME: 'Agent',
       GIT_COMMITTER_EMAIL: 'agent@example.com',
-      TAU_AGENT_CONTEXT: '1',
-      TAU_API_URL: `http://127.0.0.1:${server.port}`,
-      TAU_TOKEN: 'tau_agent_e2e',
-      TAU_AUTH_STORE: join(dir, 'auth.json'),
-      TAU_GIT_SIGNING_SQUAD: 'squad-e2e',
+      FICUS_AGENT_CONTEXT: '1',
+      FICUS_API_URL: `http://127.0.0.1:${server.port}`,
+      FICUS_TOKEN: 'ficus_agent_e2e',
+      FICUS_AUTH_STORE: join(dir, 'auth.json'),
+      FICUS_GIT_SIGNING_SQUAD: 'squad-e2e',
     }
     const signing = [
       '-c',
@@ -170,19 +172,21 @@ describe('git signing through the real tau entrypoint', () => {
       '-c',
       `user.signingkey=key::${publicKey}`,
       '-c',
-      'gpg.ssh.program=tau',
+      'gpg.ssh.program=ficus',
       '-c',
       `gpg.ssh.allowedSignersFile=${join(dir, 'allowed')}`,
     ]
     expect(run(['git', 'init', '-q'], repo, env).code).toBe(0)
     const commit = await runAsync(
-      ['git', ...signing, 'commit', '-q', '--allow-empty', '-m', 'signed by tau'],
+      ['git', ...signing, 'commit', '-q', '--allow-empty', '-m', 'signed by ficus'],
       repo,
       env
     )
     expect(commit.stderr).toBe('')
     expect(commit.code).toBe(0)
-    expect(requests).toEqual([{ path: '/api/squads/squad-e2e/integrations/github/sign', auth: 'Bearer tau_agent_e2e' }])
+    expect(requests).toEqual([
+      { path: '/api/squads/squad-e2e/integrations/github/sign', auth: 'Bearer ficus_agent_e2e' },
+    ])
 
     const verify = await runAsync(['git', ...signing, 'verify-commit', 'HEAD'], repo, env)
     expect(verify.stderr).toContain('Good "git" signature for agent@example.com')

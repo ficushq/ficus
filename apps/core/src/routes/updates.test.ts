@@ -64,15 +64,15 @@ describe('updates routes', () => {
 
   it('reports managed=true on a platform-managed instance and false otherwise', async () => {
     const router = authedRouter({ store: fakeStore(), updater: fakeUpdater() })
-    const prior = process.env.TAU_MANAGED
+    const prior = process.env.FICUS_MANAGED
     try {
-      process.env.TAU_MANAGED = '1'
+      process.env.FICUS_MANAGED = '1'
       expect((await (await router.request('/settings', req())).json()).managed).toBe(true)
-      delete process.env.TAU_MANAGED
+      delete process.env.FICUS_MANAGED
       expect((await (await router.request('/settings', req())).json()).managed).toBe(false)
     } finally {
-      if (prior === undefined) delete process.env.TAU_MANAGED
-      else process.env.TAU_MANAGED = prior
+      if (prior === undefined) delete process.env.FICUS_MANAGED
+      else process.env.FICUS_MANAGED = prior
     }
   })
 
@@ -133,7 +133,9 @@ describe('updates routes', () => {
       updater: {
         ...fakeUpdater(),
         applyInBackground: () => {
-          throw new UnsupportedDeploymentError('Unknown process supervisor; set TAU_UPDATE_SUPERVISOR=pm2 or =systemd')
+          throw new UnsupportedDeploymentError(
+            'Unknown process supervisor; set FICUS_UPDATE_SUPERVISOR=pm2 or =systemd'
+          )
         },
       },
     })
@@ -141,7 +143,7 @@ describe('updates routes', () => {
     const res = await router.request('/apply', req('POST'))
 
     expect(res.status).toBe(409)
-    expect((await res.json()).error).toContain('TAU_UPDATE_SUPERVISOR')
+    expect((await res.json()).error).toContain('FICUS_UPDATE_SUPERVISOR')
   })
 
   it('apply-target accepts allowed targets and delegates to applyInBackground', async () => {

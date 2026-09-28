@@ -26,7 +26,7 @@ export async function hasAdminUsers(): Promise<boolean> {
  * True if at least one enabled admin user has a registered passkey credential.
  *
  * This is the source of truth for the password-vs-passkey decision: the
- * bootstrap `TAU_PASSWORD` may authenticate, and the UI should offer password
+ * bootstrap `FICUS_PASSWORD` may authenticate, and the UI should offer password
  * login, precisely while this returns `false`.
  *
  * It is strictly wider than `hasAdminUsers()` only in the "admin users exist
@@ -77,7 +77,7 @@ export interface PendingAdminSetup {
 
 /**
  * Who is waiting to become the instance's first passkey-holding admin, for the
- * bootstrap `TAU_PASSWORD` session to finish setting up. Only meaningful while
+ * bootstrap `FICUS_PASSWORD` session to finish setting up. Only meaningful while
  * `adminHasPasskey()` is false.
  *
  * - An admin row exists (a restore stripped its credentials, or its passkey

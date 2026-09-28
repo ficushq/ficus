@@ -1,5 +1,5 @@
-import { NotionClientError } from '@tau/shared/oauth-providers/notion/client'
-import { parseNotionConfiguration } from '@tau/shared/oauth-providers/notion/config'
+import { NotionClientError } from '@ficus/shared/oauth-providers/notion/client'
+import { parseNotionConfiguration } from '@ficus/shared/oauth-providers/notion/config'
 
 /** Assert that a refreshed grant still belongs to the connection's workspace and bot. */
 export function assertNotionIdentity(expected: unknown, reported: unknown): void {

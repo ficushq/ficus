@@ -5,7 +5,7 @@ import {
   listPeriodicRunners as sharedListPeriodicRunners,
   stopAllPeriodicRunners as sharedStopAllPeriodicRunners,
   type PeriodicRunnerOptions as SharedPeriodicRunnerOptions,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { createLogger } from './logger'
 
 const log = createLogger('periodic')

@@ -38,7 +38,7 @@ describe('Docker startup contract', () => {
     // Probe-responsiveness guards: the server must outrank saturated workloads
     // (nice) and outlive memory pressure (oom_score_adj) — losing either
     // re-opens the healthy-box-condemned-under-load recreate loop.
-    expect(startup).toMatch(/TAU_CHILD_OOM_ADJ=-500 supervise_child executor .* nice -n -10 bun run/)
+    expect(startup).toMatch(/FICUS_CHILD_OOM_ADJ=-500 supervise_child executor .* nice -n -10 bun run/)
     expect(startup).toContain('oom_score_adj')
     expect(startup).toContain('IFS= read -r FAILED_CHILD <"$CHILD_EXIT_FIFO"')
     expect(startup).toContain('. /usr/local/lib/tau-shutdown.sh')
@@ -52,9 +52,9 @@ describe('Docker startup contract', () => {
     // musl-Chromium is documented-fragile, so a failure must never take down the
     // box server (|| ... non-fatal), and the launch is backgrounded (&).
     expect(startup).toContain('/opt/tau/browser/service/tau-browser.js')
-    expect(startup).toContain('TAU_BROWSER_SOCK')
+    expect(startup).toContain('FICUS_BROWSER_SOCK')
     expect(startup).toContain('/run/tau-browser/sock')
-    expect(startup).toContain('TAU_BROWSER_MEMORY_HIGH_MB')
+    expect(startup).toContain('FICUS_BROWSER_MEMORY_HIGH_MB')
     // Fail-open: the service launch is guarded so it can never abort startup.
     expect(startup).toMatch(/start_browser_service \|\|/)
     // Seed the tokens dir with sha256(token) (R-B8 digest auth) so the same auth
@@ -65,22 +65,22 @@ describe('Docker startup contract', () => {
     expect(startup).not.toMatch(/no-sandbox/)
   })
 
-  test('R-B17: seeds the digest at the proxy-sent user and exports TAU_BROWSER_DEV_ALLOW_USER', () => {
+  test('R-B17: seeds the digest at the proxy-sent user and exports FICUS_BROWSER_DEV_ALLOW_USER', () => {
     // The box server is not su-exec'd, so browser-proxy sends
-    // x-tau-box-user:<this script's OS user>. The service's prod box_<hex> gate
-    // would 401 it, so TAU_BROWSER_DEV_ALLOW_USER (prod NEVER sets it) admits
+    // x-ficus-box-user:<this script's OS user>. The service's prod box_<hex> gate
+    // would 401 it, so FICUS_BROWSER_DEV_ALLOW_USER (prod NEVER sets it) admits
     // exactly that user — and the digest MUST be seeded under that same user, not
     // the (differing) command user, or auth still fails.
-    expect(startup).toContain('TAU_BROWSER_DEV_ALLOW_USER')
+    expect(startup).toContain('FICUS_BROWSER_DEV_ALLOW_USER')
     // Exported so BOTH the main server (browser-proxy) and the browser service
     // inherit it; derived from the OS user this script runs as.
-    expect(startup).toMatch(/export TAU_BROWSER_DEV_ALLOW_USER=.*id -un/)
+    expect(startup).toMatch(/export FICUS_BROWSER_DEV_ALLOW_USER=.*id -un/)
     // The token file is keyed by the dev-allow user, matching the proxy header —
     // NOT the hardcoded command user (tau).
-    expect(startup).toContain('${TAU_BROWSER_DEV_ALLOW_USER}.token')
+    expect(startup).toContain('${FICUS_BROWSER_DEV_ALLOW_USER}.token')
     expect(startup).not.toContain('${EXECUTOR_COMMAND_USER}.token')
     // The export precedes the box server launch so the main server inherits it.
-    expect(startup.indexOf('export TAU_BROWSER_DEV_ALLOW_USER')).toBeLessThan(
+    expect(startup.indexOf('export FICUS_BROWSER_DEV_ALLOW_USER')).toBeLessThan(
       startup.indexOf('supervise_child executor')
     )
   })

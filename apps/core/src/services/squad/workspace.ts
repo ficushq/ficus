@@ -41,7 +41,7 @@ export function getSquadWorkspacePath(squadId: string): string {
  * to the storage path on every runtime except host, where a configured
  * override (squads.host_workspace_path) is the real workspace. File browsing,
  * search and upload routes must use this; storage-lifecycle code (create,
- * remove) keeps using getSquadWorkspacePath so Tau never deletes an override.
+ * remove) keeps using getSquadWorkspacePath so Ficus never deletes an override.
  */
 export function resolveSquadWorkspaceHostPath(squadId: string): string {
   if (isHostRuntime()) {

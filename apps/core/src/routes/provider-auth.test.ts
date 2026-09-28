@@ -126,8 +126,8 @@ describe('provider-auth routes', () => {
   })
 
   beforeEach(async () => {
-    originalEncryptionKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    originalEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     providerHealthState = snapshotProviderHealthTestState()
     resetProviderHealthForTests()
     await db.delete(modelTiers).where(inArray(modelTiers.slug, OPENROUTER_ROUTING_TEST_TIERS))
@@ -148,8 +148,8 @@ describe('provider-auth routes', () => {
     resetSecretStore()
     resetSettingsStore()
     restoreProviderHealthTestState(providerHealthState)
-    if (originalEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = originalEncryptionKey
+    if (originalEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = originalEncryptionKey
     // Credential routes refresh the process-wide runtime; restore its empty
     // account snapshot so later suites do not inherit this file's last write.
     await refreshModelRuntime()

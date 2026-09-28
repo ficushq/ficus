@@ -9,7 +9,7 @@ import {
   type WorkStreamStatus,
   type WorkStreamTerminalFailure,
   type WorkStreamWait,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db } from '../../db'
 import { executions } from '../../db/schema'
 import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'

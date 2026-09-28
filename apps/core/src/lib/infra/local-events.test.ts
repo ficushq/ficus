@@ -4,6 +4,7 @@ import { join } from 'path'
 import {
   LocalEventTransport,
   INTERNAL_EVENTS_PATH,
+  INTERNAL_EVENT_TOKEN_HEADER,
   LOCAL_EVENT_CHANNELS,
   workerEventPort,
   resolveInternalEventToken,
@@ -542,7 +543,7 @@ describe('local-events transport', () => {
       const wrong = 'x'.repeat(TOKEN.length)
 
       const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
-        'x-tau-internal-token': wrong,
+        'x-ficus-internal-token': wrong,
       })
       expect(res.status).toBe(401)
     })
@@ -555,7 +556,7 @@ describe('local-events transport', () => {
       const server = worker.serve({ port: 0 })
 
       const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
-        'x-tau-internal-token': 'short',
+        'x-ficus-internal-token': 'short',
       })
       expect(res.status).toBe(401)
     })
@@ -567,10 +568,26 @@ describe('local-events transport', () => {
       await worker.listen('agent_control', (p) => received.push(p))
 
       const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
-        'x-tau-internal-token': TOKEN,
+        'x-ficus-internal-token': TOKEN,
       })
       expect(res.status).toBe(204)
       expect(received).toEqual(['stop'])
+    })
+
+    test('reads the token from x-ficus-internal-token only', async () => {
+      expect(INTERNAL_EVENT_TOKEN_HEADER).toBe('x-ficus-internal-token')
+      // The api and the worker restart together from one release, so the
+      // pre-Ficus header name is not read.
+      const worker = transport({ token: TOKEN })
+      const server = worker.serve({ port: 0 })
+      const received: string[] = []
+      await worker.listen('agent_control', (p) => received.push(p))
+
+      const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
+        'x-tau-internal-token': TOKEN, // D15
+      })
+      expect(res.status).toBe(401)
+      expect(received).toEqual([])
     })
 
     test('rejects every request when no token is configured (fail closed)', async () => {
@@ -613,7 +630,7 @@ describe('local-events transport', () => {
 
       const res = await fetch(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
         method: 'POST',
-        headers: { 'x-tau-internal-token': TOKEN },
+        headers: { 'x-ficus-internal-token': TOKEN },
         body: 'not json',
       })
       expect(res.status).toBe(400)
@@ -621,43 +638,43 @@ describe('local-events transport', () => {
   })
 
   describe('worker event port', () => {
-    const original = process.env.TAU_WORKER_EVENT_PORT
+    const original = process.env.FICUS_WORKER_EVENT_PORT
 
     afterEach(() => {
-      if (original === undefined) delete process.env.TAU_WORKER_EVENT_PORT
-      else process.env.TAU_WORKER_EVENT_PORT = original
+      if (original === undefined) delete process.env.FICUS_WORKER_EVENT_PORT
+      else process.env.FICUS_WORKER_EVENT_PORT = original
     })
 
-    test('defaults when unset and honours TAU_WORKER_EVENT_PORT', () => {
-      delete process.env.TAU_WORKER_EVENT_PORT
+    test('defaults when unset and honours FICUS_WORKER_EVENT_PORT', () => {
+      delete process.env.FICUS_WORKER_EVENT_PORT
       expect(workerEventPort()).toBe(3003)
-      process.env.TAU_WORKER_EVENT_PORT = '4111'
+      process.env.FICUS_WORKER_EVENT_PORT = '4111'
       expect(workerEventPort()).toBe(4111)
     })
 
     test('falls back to the default for a non-numeric value', () => {
-      process.env.TAU_WORKER_EVENT_PORT = 'nope'
+      process.env.FICUS_WORKER_EVENT_PORT = 'nope'
       expect(workerEventPort()).toBe(3003)
     })
   })
 })
 
 describe('internal event token resolution', () => {
-  test('an explicit TAU_INTERNAL_EVENT_TOKEN wins', () => {
+  test('an explicit FICUS_INTERNAL_EVENT_TOKEN wins', () => {
     const { token, source } = resolveInternalEventToken({
-      TAU_INTERNAL_EVENT_TOKEN: 'explicit',
-      TAU_ENCRYPTION_KEY: 'k',
+      FICUS_INTERNAL_EVENT_TOKEN: 'explicit',
+      FICUS_ENCRYPTION_KEY: 'k',
     })
     expect(source).toBe('explicit')
     expect(token).toBe('explicit')
   })
 
-  test('derives a STABLE token from TAU_ENCRYPTION_KEY so both units agree without new config', () => {
+  test('derives a STABLE token from FICUS_ENCRYPTION_KEY so both units agree without new config', () => {
     // This is the property that matters: two processes reading the same
     // environment must independently arrive at the same token, or every
     // cross-process post 401s and agent stop/abort silently stops working on
-    // any instance predating TAU_INTERNAL_EVENT_TOKEN.
-    const env = { TAU_ENCRYPTION_KEY: 'shared-master-key' }
+    // any instance predating FICUS_INTERNAL_EVENT_TOKEN.
+    const env = { FICUS_ENCRYPTION_KEY: 'shared-master-key' }
     const a = resolveInternalEventToken(env)
     const b = resolveInternalEventToken({ ...env })
     expect(a.source).toBe('derived')
@@ -666,9 +683,9 @@ describe('internal event token resolution', () => {
 
   test('the derived token does not leak the encryption key, and differs per key', () => {
     const key = 'shared-master-key'
-    const { token } = resolveInternalEventToken({ TAU_ENCRYPTION_KEY: key })
+    const { token } = resolveInternalEventToken({ FICUS_ENCRYPTION_KEY: key })
     expect(token).not.toContain(key)
-    expect(token).not.toBe(resolveInternalEventToken({ TAU_ENCRYPTION_KEY: 'other-key' }).token)
+    expect(token).not.toBe(resolveInternalEventToken({ FICUS_ENCRYPTION_KEY: 'other-key' }).token)
   })
 
   test('falls back to a random token that fails closed when neither is set', () => {

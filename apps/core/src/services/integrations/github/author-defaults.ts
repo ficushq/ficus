@@ -1,4 +1,7 @@
-import { parseGitHubConfiguration, type GitHubConnectionConfiguration } from '@tau/shared/oauth-providers/github/config'
+import {
+  parseGitHubConfiguration,
+  type GitHubConnectionConfiguration,
+} from '@ficus/shared/oauth-providers/github/config'
 import { globalIntegrationDefault } from '../scope-settings'
 import { resolveGitHubConnection, resolveInstanceGitHubConnection } from './resolve-connection'
 

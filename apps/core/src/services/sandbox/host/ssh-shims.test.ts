@@ -3,7 +3,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { SSH_FAMILY_TOOLS, ensureSshFamilyShims, renderSshShimScript } from './ssh-shims'
+import {
+  LEGACY_MANAGED_BLOCK_BEGIN,
+  LEGACY_MANAGED_BLOCK_END,
+  MANAGED_BLOCK_BEGIN,
+  MANAGED_BLOCK_END,
+  SSH_FAMILY_TOOLS,
+  ensureSshFamilyShims,
+  renderSshShimScript,
+} from './ssh-shims'
 
 // The rendered scripts must be valid POSIX /bin/sh — CI's shell is dash, the
 // strictest of the targets — so syntax-check every render. A wrong \${...}
@@ -23,9 +31,9 @@ describe('renderSshShimScript (unit)', () => {
   test.each([...SSH_FAMILY_TOOLS])('renders a %s shim with the shared skeleton', (tool) => {
     const script = renderSshShimScript(tool)
     expect(script.startsWith('#!/bin/sh\n')).toBe(true)
-    expect(script).toContain('TAU_SQUAD_SSH_DIR')
-    expect(script).toContain('# >>> tau remote hosts >>>')
-    expect(script).toContain('# <<< tau remote hosts <<<')
+    expect(script).toContain('FICUS_SQUAD_SSH_DIR')
+    expect(script).toContain('# >>> ficus remote hosts >>>')
+    expect(script).toContain('# <<< ficus remote hosts <<<')
     expect(script).toContain('-ef "$0"') // recursion guard
     expect(script).toContain('exec "$REAL"')
     checkShellSyntax(script)
@@ -65,16 +73,16 @@ describe('ssh-family shims (functional matrix)', () => {
   const FIXTURE_CONFIG = [
     'Host github-work',
     '  HostName github.com',
-    '# >>> tau remote hosts >>>',
+    '# >>> ficus remote hosts >>>',
     '  Host staging',
     '    HostName 10.1.2.3',
     '    Port 22',
     '    User deploy',
-    '    IdentityFile /abs/tau_remote_staging',
+    '    IdentityFile /abs/ficus_remote_staging',
     '    IdentitiesOnly yes',
     '    UserKnownHostsFile /abs/known_hosts',
     '    StrictHostKeyChecking accept-new',
-    '# <<< tau remote hosts <<<',
+    '# <<< ficus remote hosts <<<',
     '',
   ].join('\n')
 
@@ -99,7 +107,7 @@ describe('ssh-family shims (functional matrix)', () => {
       HOME: t,
       RECORDER_OUT: join(t, 'out'),
     }
-    if (!opts.solo) env.TAU_SQUAD_SSH_DIR = join(t, 'squadssh')
+    if (!opts.solo) env.FICUS_SQUAD_SSH_DIR = join(t, 'squadssh')
     const result = Bun.spawnSync(['/bin/sh', '-c', command], {
       env,
       cwd: t,
@@ -160,12 +168,24 @@ describe('ssh-family shims (functional matrix)', () => {
     expect(run('ssh staging').lines).toEqual(['-F', CFG(), 'staging'])
   })
 
-  test('7. ssh with no TAU_SQUAD_SSH_DIR (solo agent): untouched', () => {
+  test('7. ssh with no FICUS_SQUAD_SSH_DIR (solo agent): untouched', () => {
     expect(run('ssh staging true', { solo: true }).lines).toEqual(['staging', 'true'])
   })
 
+  test('8b. a config still carrying the pre-rename managed block resolves its aliases', () => {
+    writeFileSync(
+      CFG(),
+      FIXTURE_CONFIG.replace(MANAGED_BLOCK_BEGIN, LEGACY_MANAGED_BLOCK_BEGIN).replace(
+        MANAGED_BLOCK_END,
+        LEGACY_MANAGED_BLOCK_END
+      )
+    )
+    expect(readFileSync(CFG(), 'utf8')).not.toContain(MANAGED_BLOCK_BEGIN)
+    expect(run('ssh staging true').lines).toEqual([...KH_ARGS(), 'staging', 'true'])
+  })
+
   test('8. ssh with an empty managed block: untouched', () => {
-    writeFileSync(CFG(), '# >>> tau remote hosts >>>\n# <<< tau remote hosts <<<\n')
+    writeFileSync(CFG(), '# >>> ficus remote hosts >>>\n# <<< ficus remote hosts <<<\n')
     expect(run('ssh staging true').lines).toEqual(['staging', 'true'])
   })
 
@@ -231,7 +251,7 @@ describe('ssh-family shims (functional matrix)', () => {
   test('no recursion: shim-only PATH exits 127 with the shim error, never loops', () => {
     const { exitCode, stderr } = run('ssh anyhost true', { path: join(t, 'host', 'bin') })
     expect(exitCode).toBe(127)
-    expect(stderr).toContain('ssh: not found (tau host shim)')
+    expect(stderr).toContain('ssh: not found (ficus host shim)')
   })
 
   test('aliases outside the managed block (user stanza) are never resolved by the shim', () => {

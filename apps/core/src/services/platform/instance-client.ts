@@ -1,5 +1,5 @@
 import type { ZodType } from 'zod'
-import { SAFE_CODE_PATTERN } from '@tau/shared/oauth-broker'
+import { SAFE_CODE_PATTERN } from '@ficus/shared/oauth-broker'
 import { BrokerUnconfiguredError, requireBrokerConfig } from '../integrations/authorization/authority'
 
 const DEFAULT_TIMEOUT_MS = 15_000

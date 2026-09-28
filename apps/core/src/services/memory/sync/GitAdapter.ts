@@ -200,7 +200,7 @@ export class GitAdapter implements SyncAdapter {
 
       // Create initial README
       const { writeFileSync } = await import('fs')
-      writeFileSync(join(this.memoryPath, 'README.md'), '# Memory\n\nThis repository stores squad memory for Tau.\n')
+      writeFileSync(join(this.memoryPath, 'README.md'), '# Memory\n\nThis repository stores squad memory for Ficus.\n')
 
       // Commit and push
       await execAsync('git add -A', { cwd: this.memoryPath, env })

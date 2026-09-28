@@ -6,7 +6,7 @@ import {
   type DeliveryPullRequestView,
   type TrackedResourcesView,
   type WorkStreamDeliveryState,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db, squads, workStreams, type DbTx, type integrationOutputEvents } from '../../db'
 import { eventTrackedResource } from '../integrations/outputs/tracked-match'
 

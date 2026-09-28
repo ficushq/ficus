@@ -4,7 +4,12 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, spyOn
 import { createHash, randomUUID } from 'node:crypto'
 import { eq, inArray, like } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { createBlankWorkflow, squadEventRuleSchema, trackedResourceKey, type IntegrationOutputFact } from '@tau/shared'
+import {
+  createBlankWorkflow,
+  squadEventRuleSchema,
+  trackedResourceKey,
+  type IntegrationOutputFact,
+} from '@ficus/shared'
 import { workStreamsRouter } from './work-streams'
 import { identityMiddleware } from '../middleware/identity'
 import { db } from '../db'

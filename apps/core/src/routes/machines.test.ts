@@ -6,7 +6,7 @@ import { join } from 'path'
 import { eventEmitter, type EventMap } from '../lib/infra/event-emitter'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { Permissions } from '@tau/shared'
+import { Permissions } from '@ficus/shared'
 import { createMachinesRouter, forceMigrationActor } from './machines'
 import { identityMiddleware } from '../middleware/identity'
 import { agentExtraScopes, agents, db, machineBoxes, machines, squads } from '../db'
@@ -98,8 +98,8 @@ describe('machines routes', () => {
   let priorKey: string | undefined
 
   beforeAll(async () => {
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64) // 32-byte hex test key
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64) // 32-byte hex test key
     resetSecretStore()
     await getSecretStore().initialize()
 
@@ -109,8 +109,8 @@ describe('machines routes', () => {
 
   afterAll(async () => {
     await cleanupTestRbac(prefix)
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     resetSecretStore()
   })
 

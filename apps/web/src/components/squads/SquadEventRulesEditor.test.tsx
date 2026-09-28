@@ -2,7 +2,7 @@ import { fireEvent } from '@testing-library/dom'
 import { expect, test, spyOn } from 'bun:test'
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { squadEventRuleSchema, createBlankWorkflow, type SquadEventRule } from '@tau/shared'
+import { squadEventRuleSchema, createBlankWorkflow, type SquadEventRule } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueries, queries } from '../../queryOptions'
 import { SquadEventRulesEditor } from './SquadEventRulesEditor'
@@ -124,7 +124,7 @@ test('event rules expose four actions, persist workflow selection, and allow pri
 })
 
 test('typed conditions and synthetic preview follow unsaved filters and priority without network side effects', async () => {
-  const { githubOutputCatalog } = await import('@tau/shared')
+  const { githubOutputCatalog } = await import('@ficus/shared')
   const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)

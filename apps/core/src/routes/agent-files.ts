@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { isReferencableAgentAttachmentPath } from '@tau/shared'
+import { isReferencableAgentAttachmentPath } from '@ficus/shared'
 import { Agent } from '../entities/Agent'
 import { AgentFileAttachment, agentVisibleAttachmentPath } from '../entities/AgentFileAttachment'
 import { requireEntityPermission } from '../middleware/require-entity-permission'

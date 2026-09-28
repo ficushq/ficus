@@ -79,11 +79,11 @@ test('resolves the current squad slug and supplies full tool IDs', () => {
   const squadId = '11111111-1111-1111-1111-111111111111'
   const managerId = '22222222-2222-2222-2222-222222222222'
   const instructions = buildVoiceInstructions({
-    currentPath: '/squads/tau',
+    currentPath: '/squads/ficus',
     squads: [
       {
         id: squadId,
-        name: 'Tau',
+        name: 'Ficus',
         purpose: null,
         status: 'active',
         createdAt: '2026-01-01',
@@ -97,7 +97,7 @@ test('resolves the current squad slug and supplies full tool IDs', () => {
   expect(instructions).toContain('manager: 22222222)')
   expect(instructions).not.toContain(managerId)
   expect(instructions).toContain('never assemble an ID from memory')
-  expect(instructions).not.toContain('Current squad ID: tau')
+  expect(instructions).not.toContain('Current squad ID: ficus')
 })
 
 const sourceSquad = {
@@ -122,7 +122,7 @@ test('squad reports become squad tasks and instance-wide questions stay instance
   expect(instructions).toContain('call delegate_task with that squad')
   expect(instructions).toContain('A new report does not need an existing work stream')
   expect(instructions).toContain('what schedules are enabled')
-  expect(instructions).toContain('All of Tau, or just Source?')
+  expect(instructions).toContain('All of Ficus, or just Source?')
   expect(instructions).toContain('delete GITHUB_TOKEN and GITHUB_TOKEN_NOAHSASO env vars')
   expect(instructions).toContain('Current squad manager ID: source-manager')
   expect(instructions).not.toContain('source-worker')

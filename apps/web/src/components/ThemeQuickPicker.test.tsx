@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { act } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
-import type { ThemePreset } from '@tau/shared'
+import type { ThemePreset } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { useHoverTimer } from '../test/hoverTimer'
 import { ThemeProvider, useTheme, useThemeSyncStore } from '../providers/ThemeProvider'
@@ -79,14 +79,14 @@ async function renderPicker({
     },
   })
   cleanup = () => dom.cleanup()
-  if (themeId) localStorage.setItem('tau-theme-id', themeId)
-  if (appearance) localStorage.setItem('tau-appearance', appearance)
+  if (themeId) localStorage.setItem('ficus-theme-id', themeId)
+  if (appearance) localStorage.setItem('ficus-appearance', appearance)
   if (presetId) {
     const preset = activePreset ?? (presets ?? []).find((p) => p.id === presetId)!
-    localStorage.setItem('tau-custom-theme', JSON.stringify(preset.document))
-    localStorage.setItem('tau-theme-preset-id', presetId)
+    localStorage.setItem('ficus-custom-theme', JSON.stringify(preset.document))
+    localStorage.setItem('ficus-theme-preset-id', presetId)
   }
-  if (presetOwnerId) localStorage.setItem('tau-theme-preset-owner-id', presetOwnerId)
+  if (presetOwnerId) localStorage.setItem('ficus-theme-preset-owner-id', presetOwnerId)
   // Real per-theme cascade: mirrors the shipped selectors (:root and
   // [data-theme-scope]) so the circle swatches resolve genuine tokens, not a
   // synthetic stand-in.
@@ -158,8 +158,8 @@ test('trigger exposes aria-haspopup/aria-expanded and opens a labelled dialog', 
 test('lists all four built-ins with the stored theme checked, none other', async () => {
   const { container } = await renderPicker({ themeId: 'harbor' })
   await open(container)
-  const circles = getAllByRole(container, 'radio', { name: /Tau|Harbor|Ember|High contrast/ })
-  expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual(['Tau', 'Harbor', 'Ember', 'High contrast'])
+  const circles = getAllByRole(container, 'radio', { name: /Iris|Harbor|Ember|High contrast/ })
+  expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual(['Iris', 'Harbor', 'Ember', 'High contrast'])
   expect(circles.map((c) => c.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false', 'false'])
   circles.forEach((c) => expect(c.getAttribute('role')).toBe('radio'))
 })
@@ -167,9 +167,9 @@ test('lists all four built-ins with the stored theme checked, none other', async
 test('adds a circle per saved preset, selected instead of its base built-in when active; High contrast stays last', async () => {
   const { container } = await renderPicker({ presets: [midnight], presetId: midnight.id })
   await open(container)
-  const circles = getAllByRole(container, 'radio', { name: /Tau|Harbor|Ember|High contrast|Midnight/ })
+  const circles = getAllByRole(container, 'radio', { name: /Iris|Harbor|Ember|High contrast|Midnight/ })
   expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual([
-    'Tau',
+    'Iris',
     'Harbor',
     'Ember',
     'Midnight',
@@ -197,13 +197,13 @@ test('each built-in circle resolves its own real --color-primary token under the
   const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
   await open(container)
   const values = new Map<string, string>()
-  for (const label of ['Tau', 'Harbor', 'Ember', 'High contrast']) {
+  for (const label of ['Iris', 'Harbor', 'Ember', 'High contrast']) {
     const circle = getByRole(container, 'radio', { name: label })
     const swatch = circle.querySelector('[data-theme-scope]')!
     values.set(label, window.getComputedStyle(swatch).getPropertyValue('--color-primary').trim())
   }
   // Every theme's swatch resolves a distinct, non-empty accent token.
-  expect(values.get('Tau')).toBe('91 33 182')
+  expect(values.get('Iris')).toBe('91 33 182')
   expect(values.get('Harbor')).toBe('14 95 109')
   expect(values.get('Ember')).toBe('151 55 29')
   expect(values.get('High contrast')).toBe('0 0 0')
@@ -214,8 +214,8 @@ test('clicking a circle swaps the palette only, preserving the stored appearance
   const { container } = await renderPicker({ themeId: 'tau', appearance: 'dark' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Ember' })))
-  expect(localStorage.getItem('tau-theme-id')).toBe('ember')
-  expect(localStorage.getItem('tau-appearance')).toBe('dark')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
+  expect(localStorage.getItem('ficus-appearance')).toBe('dark')
   expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
   expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
 })
@@ -224,8 +224,8 @@ test('clicking a preset circle applies it via applyPreset and rings it as active
   const { container } = await renderPicker({ presets: [midnight], themeId: 'tau', appearance: 'dark' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Midnight' })))
-  expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
-  expect(localStorage.getItem('tau-theme-preset-id')).toBe('preset-midnight')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
+  expect(localStorage.getItem('ficus-theme-preset-id')).toBe('preset-midnight')
   expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('14 165 233')
 })
 
@@ -271,21 +271,21 @@ test('Enter and Space activate a circle exactly like a click', async () => {
   await open(container)
   const harbor = getByRole(container, 'radio', { name: 'Harbor' })
   await act(async () => fireEvent.keyDown(harbor, { key: 'Enter' }))
-  expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
-  await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Tau' })))
-  expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
+  await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Iris' })))
+  expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   await act(async () => fireEvent.keyDown(getByRole(container, 'radio', { name: 'Ember' }), { key: ' ' }))
-  expect(localStorage.getItem('tau-theme-id')).toBe('ember')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
 })
 
 test('appearance toggle applies light/dark/system and stays wired to the existing setAppearance', async () => {
   const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Dark' })))
-  expect(localStorage.getItem('tau-appearance')).toBe('dark')
+  expect(localStorage.getItem('ficus-appearance')).toBe('dark')
   expect(document.documentElement.classList.contains('dark')).toBe(true)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'System' })))
-  expect(localStorage.getItem('tau-appearance')).toBe('system')
+  expect(localStorage.getItem('ficus-appearance')).toBe('system')
 })
 
 test('a one-appearance theme hides the appearance control, which shows while a light/dark theme is previewed', async () => {
@@ -347,7 +347,7 @@ test('hovering a circle previews the whole app after the intent delay, pure DOM 
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
     // Zero persistence during preview.
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   } finally {
     hover.restore()
   }
@@ -384,7 +384,7 @@ test('sweeping quickly across circles cancels the pending preview (no strobe)', 
     expect(hover.pending()).toBe(1)
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   } finally {
     hover.restore()
   }
@@ -395,14 +395,14 @@ test('moving straight from one circle to the next swaps the preview without rest
   await open(container)
   const hover = useHoverTimer()
   try {
-    const tau = getByRole(container, 'radio', { name: 'Tau' })
+    const tau = getByRole(container, 'radio', { name: 'Iris' })
     const harbor = getByRole(container, 'radio', { name: 'Harbor' })
     const ember = getByRole(container, 'radio', { name: 'Ember' })
     await hoverEnter(harbor)
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     await moveBetween(harbor, ember)
-    // Still Harbor, never the stored Tau, until Ember's own preview lands.
+    // Still Harbor, never the stored Ficus, until Ember's own preview lands.
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     // The ring follows the previewed circle; the stored selection's ring dims.
     expect(ember.querySelector('[data-ring="on"]')).not.toBeNull()
@@ -415,7 +415,7 @@ test('moving straight from one circle to the next swaps the preview without rest
     await hoverLeave(ember)
     expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
     expect(tau.querySelector('[data-ring="on"]')).not.toBeNull()
-    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   } finally {
     hover.restore()
   }
@@ -537,7 +537,7 @@ test('a palette-only preset circle resolves a real derived color, not an empty/u
   const resolvedPrimary = window.getComputedStyle(swatch).getPropertyValue('--color-primary').trim()
   expect(resolvedPrimary).not.toBe('')
   expect(resolvedPrimary).not.toBe('14 95 109') // not the plain Harbor base primary
-  const { srgbToOklch } = await import('@tau/shared/color-oklch')
+  const { srgbToOklch } = await import('@ficus/shared/color-oklch')
   const [r, g, b] = resolvedPrimary.split(/\s+/).map(Number)
   const oklch = srgbToOklch([r!, g!, b!])
   expect(oklch.h).toBeGreaterThan(200)

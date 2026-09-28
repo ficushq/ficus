@@ -45,8 +45,8 @@ interface BuiltThreadHistory {
  * Flow:
  * 1. Slash command → post "Thinking..." parent → create thread → queue for consultant
  * 2. @mention in channel → post "Thinking..." in thread on user's message → queue
- * 3. @mention in any thread → fetch history since last Tau → respond
- * 4. Message in regular thread → ignore (Tau only responds to mentions)
+ * 3. @mention in any thread → fetch history since last Ficus → respond
+ * 4. Message in regular thread → ignore (Ficus only responds to mentions)
  * 5. Message in reusable chat provider → route to the chat consultant
  */
 export async function handleChannelEvent(
@@ -100,7 +100,7 @@ export async function handleChannelEvent(
       return sendImmediate(
         provider,
         event,
-        'Notification commands must target this channel’s routed squad. Configure other notification destinations in Tau.'
+        'Notification commands must target this channel’s routed squad. Configure other notification destinations in Ficus.'
       )
     }
   }
@@ -301,7 +301,7 @@ async function handleMentionInChannel(
       channelId: event.channelId,
       threadId: event.messageId, // User's message is the thread parent
       messageToEdit: thinkingMsg.messageId,
-      tauInitiated: true, // Tau is creating this thread
+      tauInitiated: true, // Ficus is creating this thread
       extras: event.raw,
     },
   })
@@ -401,7 +401,7 @@ async function handleMessage(
   }
 
   // Threaded providers only respond to explicit mention events. Regular thread
-  // messages are ignored even in Tau-created threads.
+  // messages are ignored even in Ficus-created threads.
   if (!reusesChat) {
     log.info(`${provider.name}: regular thread message without mention, ignoring`)
     return { response: { ok: true } }
@@ -483,7 +483,7 @@ async function handleNewChatMessage(
       channelId: event.channelId,
       threadId: event.channelId, // Use chat ID as thread
       messageToEdit: thinkingMsg.messageId,
-      tauInitiated: true, // Mark as Tau-initiated so future messages route here
+      tauInitiated: true, // Mark as Ficus-initiated so future messages route here
     },
   })
 
@@ -573,7 +573,7 @@ async function buildThreadHistory(
     const messages = await provider.getThreadHistory(event.channelId, event.threadId, 50)
     const botUserId = await provider.getBotUserId()
 
-    // Existing active consultants only need the messages since the last Tau
+    // Existing active consultants only need the messages since the last Ficus
     // response. Replacement consultants need the full thread to recover context.
     let startIndex = 0
     if (!options.includeAll) {
@@ -605,7 +605,7 @@ async function buildThreadHistory(
     } as import('./provider').InboundMessage)
     const allowedMessages: ThreadMessage[] = []
     for (const message of historyMessages) {
-      // Do not treat unrelated bots as Tau, or import unauthorized human instructions.
+      // Do not treat unrelated bots as Ficus, or import unauthorized human instructions.
       if (
         (botUserId && message.userId === botUserId) ||
         (targetSquad &&
@@ -619,7 +619,7 @@ async function buildThreadHistory(
 
     const formatted = allowedMessages
       .map((m) => {
-        const userLabel = m.isBotMessage ? '@Tau' : m.userName || provider.formatUserMention(m.userId)
+        const userLabel = m.isBotMessage ? '@Ficus' : m.userName || provider.formatUserMention(m.userId)
         const text = botUserId ? provider.replaceBotMention(m.text, botUserId) : m.text
         const attachments = formatThreadAttachments(m)
         return `${userLabel}: ${text}${attachments ? `\n\n${attachments}` : ''}`
@@ -627,7 +627,7 @@ async function buildThreadHistory(
       .join('\n\n')
 
     if (formatted) {
-      return { content: `**Thread history** (you are referenced as @Tau):\n\n${formatted}`, imageIds }
+      return { content: `**Thread history** (you are referenced as @Ficus):\n\n${formatted}`, imageIds }
     }
   } catch (e) {
     log.warn(`Failed to fetch thread history: ${e}`)

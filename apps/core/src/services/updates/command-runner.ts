@@ -1,4 +1,4 @@
-import { parseLaunchdJobIdentity } from '@tau/shared'
+import { parseLaunchdJobIdentity } from '@ficus/shared'
 import { isApiRestartCommand } from './change-detector'
 import type { PlannedCommand } from './types'
 

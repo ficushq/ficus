@@ -64,17 +64,17 @@ function makeBox(overrides: Partial<MachineBox> = {}): MachineBox {
 /** The old box's server.env as pushed by a previous full ensure: one carried
  *  caller var plus the machine-derived vars a migrate must re-bake, not copy. */
 const OLD_SERVER_ENV = [
-  'TAU_SANDBOX_ID=' + SANDBOX_ID,
-  'GIT_USER_NAME=Tau Test',
+  'FICUS_SANDBOX_ID=' + SANDBOX_ID,
+  'GIT_USER_NAME=Ficus Test',
   'EXECUTOR_PORT=50100',
   'EXECUTOR_AUTH_TOKEN=tok-old',
   'EXECUTOR_BIND=127.0.0.1',
   'WORKSPACE_PATH=/home/box_x/.private',
-  'TAU_DEVBOX_DIR=/home/box_x/.tau/devbox',
-  'TAU_BOX_HOME=/home/box_x',
+  'FICUS_DEVBOX_DIR=/home/box_x/.tau/devbox',
+  'FICUS_BOX_HOME=/home/box_x',
   'BUN_PTY_LIB=/opt/tau/server/bun-pty.so',
   'DOCKER_HOST=unix:///run/user/4321/docker.sock',
-  'TAU_API_URL=https://tau.example.com',
+  'FICUS_API_URL=https://tau.example.com',
 ].join('\n')
 
 /** Facts a healthy SOURCE box reports for its state dirs (only the requested
@@ -503,12 +503,12 @@ describe('migrateBox', () => {
 
     const env = h.installs[0].env
     // Carried caller vars survive.
-    expect(env.TAU_SANDBOX_ID).toBe(h.sandboxId)
-    expect(env.GIT_USER_NAME).toBe('Tau Test')
-    // TAU_API_URL is ALWAYS re-resolved for the TARGET machine (the reverse
+    expect(env.FICUS_SANDBOX_ID).toBe(h.sandboxId)
+    expect(env.GIT_USER_NAME).toBe('Ficus Test')
+    // FICUS_API_URL is ALWAYS re-resolved for the TARGET machine (the reverse
     // tunnel is the default box→core path, and a tunnel URL is machine-specific)
     // — even when the carried value looks like a public URL.
-    expect(env.TAU_API_URL).toBe('http://127.0.0.1:40001')
+    expect(env.FICUS_API_URL).toBe('http://127.0.0.1:40001')
     // Machine-derived vars are stripped (installBoxOnMachine re-derives them
     // for the target port/uid); copying the old values would pin the old port.
     for (const key of [
@@ -516,8 +516,8 @@ describe('migrateBox', () => {
       'EXECUTOR_AUTH_TOKEN',
       'EXECUTOR_BIND',
       'WORKSPACE_PATH',
-      'TAU_DEVBOX_DIR',
-      'TAU_BOX_HOME',
+      'FICUS_DEVBOX_DIR',
+      'FICUS_BOX_HOME',
       'BUN_PTY_LIB',
       'DOCKER_HOST',
     ]) {
@@ -525,17 +525,17 @@ describe('migrateBox', () => {
     }
   })
 
-  it('re-resolves a reverse-tunnel TAU_API_URL against the TARGET machine', async () => {
-    // A reverse-tunnel TAU_API_URL is an SSH forward ON THE OLD MACHINE —
+  it('re-resolves a reverse-tunnel FICUS_API_URL against the TARGET machine', async () => {
+    // A reverse-tunnel FICUS_API_URL is an SSH forward ON THE OLD MACHINE —
     // carrying it verbatim would point the new box's callbacks at a port that
     // only exists on the machine it just left.
     const h = makeHarness({
-      serverEnv: ['TAU_SANDBOX_ID=' + SANDBOX_ID, 'TAU_API_URL=http://127.0.0.1:39999'].join('\n'),
+      serverEnv: ['FICUS_SANDBOX_ID=' + SANDBOX_ID, 'FICUS_API_URL=http://127.0.0.1:39999'].join('\n'),
     })
 
     await migrateBox(h.sandboxId, h.targetMachineId, h.deps)
 
-    expect(h.installs[0].env.TAU_API_URL).toBe('http://127.0.0.1:40001')
+    expect(h.installs[0].env.FICUS_API_URL).toBe('http://127.0.0.1:40001')
   })
 
   it('mints a token for a legacy token-less box and threads the SAME token to install and repoint', async () => {

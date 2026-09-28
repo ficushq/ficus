@@ -89,8 +89,8 @@ function fullDeps(over: Partial<SyncBoxFilesDeps> = {}): SyncBoxFilesDeps {
     ],
     materializeSquadRemoteHosts: async () => {},
     listSquadSshFiles: async () => [
-      { relPath: 'tau_remote_prod', content: Buffer.from('PRIVATE') },
-      { relPath: 'tau_remote_prod.pub', content: Buffer.from('PUBLIC') },
+      { relPath: 'ficus_remote_prod', content: Buffer.from('PRIVATE') },
+      { relPath: 'ficus_remote_prod.pub', content: Buffer.from('PUBLIC') },
       { relPath: 'config', content: Buffer.from('Host prod\n') },
       { relPath: 'known_hosts', content: Buffer.from('prod ssh-ed25519 AAA') },
     ],
@@ -132,9 +132,9 @@ describe('syncBoxFiles', () => {
       `${home}/memory/context.md`,
       `${home}/memory/map.md`,
       `${home}/.ssh/config`,
+      `${home}/.ssh/ficus_remote_prod`,
+      `${home}/.ssh/ficus_remote_prod.pub`,
       `${home}/.ssh/known_hosts`,
-      `${home}/.ssh/tau_remote_prod`,
-      `${home}/.ssh/tau_remote_prod.pub`,
     ])
     // Squad boxes are shared → no per-agent identity key pushed.
     expect(client.writePaths().some((p) => p.includes('identity.pem'))).toBe(false)
@@ -146,7 +146,7 @@ describe('syncBoxFiles', () => {
     for (const w of client.writes()) expect(w.createDirs).toBe(true)
   })
 
-  test('no CLI push: never writes ~/bin/tau (the machine-level /usr/local/bin/tau supersedes it)', async () => {
+  test('no CLI push: never writes ~/bin/tau (the machine-level /usr/local/bin/ficus supersedes it)', async () => {
     const client = new FakeClient()
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     await syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
@@ -159,8 +159,8 @@ describe('syncBoxFiles', () => {
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     await syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
 
-    // Existing boxes carry a stale per-box CLI at ~/bin/tau which SHADOWS the
-    // machine-level /usr/local/bin/tau on PATH — the ensure sync clears it.
+    // Existing boxes carry a stale per-box CLI at ~/bin/tau which shadowed the
+    // machine-level CLI on PATH — the ensure sync still clears it.
     expect(client.bashes().map((b) => b.command)).toContain(`rm -f '${home}/bin/tau'`)
   })
 
@@ -204,8 +204,8 @@ describe('syncBoxFiles', () => {
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     await syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
 
-    expect(client.modeAt(`${home}/.ssh/tau_remote_prod`)).toBe('0600')
-    expect(client.modeAt(`${home}/.ssh/tau_remote_prod.pub`)).toBe('0644')
+    expect(client.modeAt(`${home}/.ssh/ficus_remote_prod`)).toBe('0600')
+    expect(client.modeAt(`${home}/.ssh/ficus_remote_prod.pub`)).toBe('0644')
     expect(client.modeAt(`${home}/.ssh/config`)).toBe('0644')
     expect(client.modeAt(`${home}/.ssh/known_hosts`)).toBe('0644')
     expect(client.bashes().map((b) => b.command)).toContain(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`)
@@ -250,16 +250,16 @@ describe('syncBoxFiles', () => {
   test('a failure during the ssh push best-effort removes only the private key files written (not config/known_hosts)', async () => {
     const client = new FakeClient()
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
-    client.throwOnWrite = (p) => p === `${home}/.ssh/tau_remote_prod.pub`
+    client.throwOnWrite = (p) => p === `${home}/.ssh/ficus_remote_prod.pub`
     await expect(
       syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
     ).rejects.toThrow()
 
-    // config/known_hosts and the key ('tau_remote_prod', sorted before its
-    // failing .pub sibling) were written before the throw, so the key gets
-    // cleaned up but the non-secret config/known_hosts do not.
+    // config and the key ('ficus_remote_prod', sorted before its failing .pub
+    // sibling) were written before the throw, so the key gets cleaned up but
+    // the non-secret config/known_hosts do not.
     const bashCmds = client.bashes().map((b) => b.command)
-    expect(bashCmds).toContain(`rm -f '${home}/.ssh/tau_remote_prod'`)
+    expect(bashCmds).toContain(`rm -f '${home}/.ssh/ficus_remote_prod'`)
     expect(bashCmds.some((c) => c.includes('known_hosts') && c.startsWith('rm -f'))).toBe(false)
     expect(bashCmds.some((c) => c === `rm -f '${home}/.ssh/config'`)).toBe(false)
   })
@@ -300,7 +300,7 @@ describe('syncBoxFiles', () => {
     expect(paths).toContain(`${home}/.tau/skills/skill-a/SKILL.md`)
     expect(paths).toContain(`${home}/workspace/.tau/.env`)
     expect(paths).toContain(`${home}/.private/identity.pem`)
-    expect(paths).toContain(`${home}/.ssh/tau_remote_prod`)
+    expect(paths).toContain(`${home}/.ssh/ficus_remote_prod`)
     // Squad memory's canonical vm root is the SQUAD box's ~/memory; a replica
     // on a member box would be an orphan no layout/acceptedRoots references.
     expect(paths.some((p) => p.includes('/memory/'))).toBe(false)
@@ -537,14 +537,14 @@ describe('syncBoxFiles content-hash skip', () => {
       'squad_11111111-1111-4111-8111-111111111111',
       squadOpts,
       fullDeps({
-        box: syncBox({ 'squad-ssh': { hash: 'old', files: ['config', 'tau_remote_prod', 'tau_remote_staging'] } }),
+        box: syncBox({ 'squad-ssh': { hash: 'old', files: ['config', 'ficus_remote_prod', 'ficus_remote_staging'] } }),
         stampBoxSyncedHash: stamp.fn,
         listSkillFiles: async () => [],
         readSquadEnv: () => null,
         listMemoryFiles: async () => [],
         listSquadSshFiles: async () => [
           { relPath: 'config', content: Buffer.from('Host prod') },
-          { relPath: 'tau_remote_prod', content: Buffer.from('KEY') },
+          { relPath: 'ficus_remote_prod', content: Buffer.from('KEY') },
         ],
         trackSetupWork: async (operation) => {
           sshProgress.push('started')
@@ -558,9 +558,61 @@ describe('syncBoxFiles content-hash skip', () => {
       .bashes()
       .map((b) => b.command)
       .find((command) => command.startsWith('rm -f --') && command.includes('/.ssh/'))
-    expect(prune).toBe(`rm -f -- '${home}/.ssh/tau_remote_staging'`)
-    expect(stamp.stamped['squad-ssh']).toMatchObject({ files: ['config', 'tau_remote_prod'] })
+    expect(prune).toBe(`rm -f -- '${home}/.ssh/ficus_remote_staging'`)
+    expect(stamp.stamped['squad-ssh']).toMatchObject({ files: ['config', 'ficus_remote_prod'] })
     expect(sshProgress).toEqual(['started', 'finished'])
+  })
+
+  test('prunes pre-rename tau_remote_ key files from the prior manifest once ficus_remote_ replaces them', async () => {
+    const client = new FakeClient()
+    const home = HOME('squad_11111111-1111-4111-8111-111111111111')
+    const stamp = recordingStamp()
+    await syncBoxFiles(
+      client as any,
+      'squad_11111111-1111-4111-8111-111111111111',
+      squadOpts,
+      fullDeps({
+        box: syncBox({ 'squad-ssh': { hash: 'old', files: ['config', 'tau_remote_prod'] } }),
+        stampBoxSyncedHash: stamp.fn,
+        listSkillFiles: async () => [],
+        readSquadEnv: () => null,
+        listMemoryFiles: async () => [],
+        listSquadSshFiles: async () => [
+          { relPath: 'config', content: Buffer.from('Host prod') },
+          { relPath: 'ficus_remote_prod', content: Buffer.from('KEY') },
+        ],
+      })
+    )
+    const prune = client
+      .bashes()
+      .map((b) => b.command)
+      .find((command) => command.startsWith('rm -f --') && command.includes('/.ssh/'))
+    expect(prune).toBe(`rm -f -- '${home}/.ssh/tau_remote_prod'`)
+    expect(stamp.stamped['squad-ssh']).toMatchObject({ files: ['config', 'ficus_remote_prod'] })
+  })
+
+  test('legacy SSH tree cleanup removes both ficus_remote_ and pre-rename tau_remote_ key files (K2)', async () => {
+    const client = new FakeClient()
+    await syncBoxFiles(
+      client as any,
+      'squad_11111111-1111-4111-8111-111111111111',
+      squadOpts,
+      fullDeps({
+        box: syncBox({ 'squad-ssh': 'legacy-hash' }),
+        stampBoxSyncedHash: async () => {},
+        listSkillFiles: async () => [],
+        readSquadEnv: () => null,
+        listMemoryFiles: async () => [],
+        listSquadSshFiles: async () => [{ relPath: 'ficus_remote_prod', content: Buffer.from('NEW') }],
+      })
+    )
+    const cleanup =
+      client
+        .bashes()
+        .map((b) => b.command)
+        .find((command) => command.includes('-delete') && command.includes('/.ssh')) ?? ''
+    expect(cleanup).toContain("-name 'ficus_remote_*'")
+    expect(cleanup).toContain("-name 'tau_remote_*'")
   })
 
   test('removes prior squad-scoped secrets when an agent loses squad scope', async () => {
@@ -574,7 +626,7 @@ describe('syncBoxFiles content-hash skip', () => {
       fullDeps({
         box: syncBox({
           'squad-env': { hash: 'old', files: ['.tau/.env'] },
-          'squad-ssh': { hash: 'old', files: ['config', 'tau_remote_prod'] },
+          'squad-ssh': { hash: 'old', files: ['config', 'ficus_remote_prod'] },
         }),
         stampBoxSyncedHash: stamps.fn,
         listSkillFiles: async () => [],
@@ -583,12 +635,12 @@ describe('syncBoxFiles content-hash skip', () => {
     )
     const commands = client.bashes().map((b) => b.command)
     expect(commands).toContain(`rm -f -- '${home}/workspace/.tau/.env'`)
-    expect(commands).toContain(`rm -f -- '${home}/.ssh/config' '${home}/.ssh/tau_remote_prod'`)
+    expect(commands).toContain(`rm -f -- '${home}/.ssh/config' '${home}/.ssh/ficus_remote_prod'`)
     expect(stamps.stamped['squad-env']).toMatchObject({ files: [] })
     expect(stamps.stamped['squad-ssh']).toMatchObject({ files: [] })
   })
 
-  test('legacy tree hash mismatch clears only the declared Tau-managed root before rewriting', async () => {
+  test('legacy tree hash mismatch clears only the declared Ficus-managed root before rewriting', async () => {
     const client = new FakeClient()
     const home = HOME('agent_a1')
     await syncBoxFiles(
@@ -616,7 +668,7 @@ describe('syncBoxFiles content-hash skip', () => {
     ).not.toContain(`${home}/workspace`)
   })
 
-  test('legacy SSH hash cleanup removes only Tau-managed names before rewriting current hosts', async () => {
+  test('legacy SSH hash cleanup removes only Ficus-managed names before rewriting current hosts', async () => {
     const client = new FakeClient()
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     await syncBoxFiles(
@@ -629,15 +681,15 @@ describe('syncBoxFiles content-hash skip', () => {
         listSkillFiles: async () => [],
         readSquadEnv: () => null,
         listMemoryFiles: async () => [],
-        listSquadSshFiles: async () => [{ relPath: 'tau_remote_prod', content: Buffer.from('NEW') }],
+        listSquadSshFiles: async () => [{ relPath: 'ficus_remote_prod', content: Buffer.from('NEW') }],
       })
     )
     const cleanup =
       client
         .bashes()
         .map((b) => b.command)
-        .find((command) => command.includes("-name 'tau_remote_*'")) ?? ''
-    expect(cleanup).toContain("-name 'tau_remote_*'")
+        .find((command) => command.includes("-name 'ficus_remote_*'")) ?? ''
+    expect(cleanup).toContain("-name 'ficus_remote_*'")
     expect(cleanup).toContain(`rm -f -- '${home}/.ssh/config'`)
     expect(cleanup).not.toContain('known_hosts')
     expect(cleanup).not.toContain('id_rsa')
@@ -688,7 +740,7 @@ describe('syncBoxFiles content-hash skip', () => {
       fullDeps({
         box: syncBox(),
         stampBoxSyncedHash: stamp.fn,
-        listSquadSshFiles: async () => [{ relPath: 'tau_remote_prod', content: Buffer.from('X') }],
+        listSquadSshFiles: async () => [{ relPath: 'ficus_remote_prod', content: Buffer.from('X') }],
       })
     )
     const client = new FakeClient()
@@ -700,7 +752,7 @@ describe('syncBoxFiles content-hash skip', () => {
         box: syncBox({ 'squad-ssh': stamp.stamped['squad-ssh'] }),
         stampBoxSyncedHash: async () => {},
         // Same bytes, but now a 0644 (`.pub`) mode → different hash.
-        listSquadSshFiles: async () => [{ relPath: 'tau_remote_prod.pub', content: Buffer.from('X') }],
+        listSquadSshFiles: async () => [{ relPath: 'ficus_remote_prod.pub', content: Buffer.from('X') }],
       })
     )
     expect(client.writePaths().some((p) => p.includes('/.ssh/'))).toBe(true)
@@ -748,7 +800,7 @@ describe('syncBoxFiles content-hash skip', () => {
       listSkillFiles: async () => [],
       readSquadEnv: () => null,
       listMemoryFiles: async () => [],
-      listSquadSshFiles: async () => [{ relPath: 'tau_remote_prod', content: Buffer.from('P1') }],
+      listSquadSshFiles: async () => [{ relPath: 'ficus_remote_prod', content: Buffer.from('P1') }],
     })
     await syncBoxFiles(new FakeClient() as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, oneHost)
 
@@ -766,12 +818,12 @@ describe('syncBoxFiles content-hash skip', () => {
         readSquadEnv: () => null,
         listMemoryFiles: async () => [],
         listSquadSshFiles: async () => [
-          { relPath: 'tau_remote_prod', content: Buffer.from('P1') },
-          { relPath: 'tau_remote_staging', content: Buffer.from('P2') },
+          { relPath: 'ficus_remote_prod', content: Buffer.from('P1') },
+          { relPath: 'ficus_remote_staging', content: Buffer.from('P2') },
         ],
       })
     )
-    expect(client.writePaths()).toContain(`${home}/.ssh/tau_remote_staging`)
+    expect(client.writePaths()).toContain(`${home}/.ssh/ficus_remote_staging`)
   })
 
   test('no box row (legacy call shape) pushes everything and stamps nothing', async () => {
@@ -834,9 +886,9 @@ describe('syncBoxFiles golden master', () => {
       // squad ssh — mkdir/chmod 0700 first, then sorted files with per-file mode
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
+      W(`${home}/.ssh/ficus_remote_prod`, 'PRIVATE', '0600'),
+      W(`${home}/.ssh/ficus_remote_prod.pub`, 'PUBLIC', '0644'),
       W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
-      W(`${home}/.ssh/tau_remote_prod`, 'PRIVATE', '0600'),
-      W(`${home}/.ssh/tau_remote_prod.pub`, 'PUBLIC', '0644'),
     ])
   })
 
@@ -870,9 +922,9 @@ describe('syncBoxFiles golden master', () => {
       W(`${home}/.private/identity.pem`, PEM, '0600'),
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
+      W(`${home}/.ssh/ficus_remote_prod`, 'PRIVATE', '0600'),
+      W(`${home}/.ssh/ficus_remote_prod.pub`, 'PUBLIC', '0644'),
       W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
-      W(`${home}/.ssh/tau_remote_prod`, 'PRIVATE', '0600'),
-      W(`${home}/.ssh/tau_remote_prod.pub`, 'PUBLIC', '0644'),
     ])
   })
 
@@ -887,8 +939,8 @@ describe('syncBoxFiles golden master', () => {
   test('mid-ssh failure: inner key cleanup removes only the ssh asset’s own written key (squad box)', async () => {
     const client = new FakeClient()
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
-    // Fail on the .pub write — tau_remote_prod (its 0600 sibling) is written first.
-    client.throwOnWrite = (p) => p === `${home}/.ssh/tau_remote_prod.pub`
+    // Fail on the .pub write — ficus_remote_prod (its 0600 sibling) is written first.
+    client.throwOnWrite = (p) => p === `${home}/.ssh/ficus_remote_prod.pub`
     await expect(
       syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
     ).rejects.toThrow()
@@ -903,12 +955,11 @@ describe('syncBoxFiles golden master', () => {
       W(`${home}/memory/map.md`, '# map'),
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
-      W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
-      W(`${home}/.ssh/tau_remote_prod`, 'PRIVATE', '0600'),
+      W(`${home}/.ssh/ficus_remote_prod`, 'PRIVATE', '0600'),
       // .pub write throws → the ssh asset's own cleanup removes the one 0600 key
       // it wrote (config/known_hosts, not secret, are left). The COMPLETE .env
       // sibling asset is left intact — per-asset cleanup, no cross-asset removal.
-      B(`rm -f '${home}/.ssh/tau_remote_prod'`),
+      B(`rm -f '${home}/.ssh/ficus_remote_prod'`),
     ])
   })
 
@@ -993,7 +1044,7 @@ describe('pushSquadSshToBox', () => {
       listSquadSshFiles: async (squadId) => {
         calls.push(`list:${squadId}`)
         return [
-          { relPath: 'tau_remote_prod', content: Buffer.from('PRIVATE') },
+          { relPath: 'ficus_remote_prod', content: Buffer.from('PRIVATE') },
           { relPath: 'config', content: Buffer.from('Host prod\n') },
         ]
       },
@@ -1006,7 +1057,7 @@ describe('pushSquadSshToBox', () => {
       'materialize:11111111-1111-4111-8111-111111111111',
       'list:11111111-1111-4111-8111-111111111111',
     ])
-    expect(client.modeAt(`${home}/.ssh/tau_remote_prod`)).toBe('0600')
+    expect(client.modeAt(`${home}/.ssh/ficus_remote_prod`)).toBe('0600')
     expect(client.modeAt(`${home}/.ssh/config`)).toBe('0644')
     expect(client.bashes().map((b) => b.command)).toContain(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`)
     // A forced push re-stamps the squad-ssh asset so the box's NEXT full ensure
@@ -1021,7 +1072,7 @@ describe('pushSquadSshToBox', () => {
     // must not suppress the write.
     const client = new FakeClient()
     const home = HOME('agent_a1')
-    const files = [{ relPath: 'tau_remote_prod', content: Buffer.from('PRIVATE') }]
+    const files = [{ relPath: 'ficus_remote_prod', content: Buffer.from('PRIVATE') }]
     const deps: PushSquadSshToBoxDeps = {
       // A box row whose squad-ssh stamp equals whatever hash this very tree
       // produces would make syncBoxFiles skip — but the on-demand path ignores it.
@@ -1033,7 +1084,7 @@ describe('pushSquadSshToBox', () => {
     }
     const result = await pushSquadSshToBox('11111111-1111-4111-8111-111111111111', 'agent_a1', deps)
     expect(result).toEqual({ pushed: true })
-    expect(client.writePaths()).toContain(`${home}/.ssh/tau_remote_prod`)
+    expect(client.writePaths()).toContain(`${home}/.ssh/ficus_remote_prod`)
   })
 
   test('rejects on-demand SSH traversal before any write or Bash effect', async () => {
@@ -1057,19 +1108,33 @@ describe('pushSquadSshToBox', () => {
       getMachineBox: async () => makeBox({ syncedHashes: { 'squad-ssh': 'legacy-hash' } }),
       getClient: async () => client as any,
       materializeSquadRemoteHosts: async () => {},
-      listSquadSshFiles: async () => [{ relPath: 'tau_remote_prod', content: Buffer.from('NEW') }],
+      listSquadSshFiles: async () => [{ relPath: 'ficus_remote_prod', content: Buffer.from('NEW') }],
       stampBoxSyncedHash: async (_m, _s, _n, _h, files) => void stamps.push({ files }),
     })
     const cleanup = client.calls.findIndex(
-      (call) => call.kind === 'bash' && call.command.includes("-name 'tau_remote_*'")
+      (call) => call.kind === 'bash' && call.command.includes("-name 'ficus_remote_*'")
     )
     const write = client.calls.findIndex((call) => call.kind === 'write')
     expect(cleanup).toBeGreaterThan(-1)
     expect(cleanup).toBeLessThan(write)
-    expect(stamps).toEqual([{ files: ['tau_remote_prod'] }])
+    expect(stamps).toEqual([{ files: ['ficus_remote_prod'] }])
     expect(client.bashes()[cleanup].command).not.toContain('known_hosts')
     expect(client.bashes()[cleanup].command).not.toContain('id_rsa')
     expect(client.bashes()[cleanup].command).toContain(`${home}/.ssh/config`)
+  })
+
+  test('on-demand legacy SSH cleanup removes both ficus_remote_ and pre-rename tau_remote_ key files (K2)', async () => {
+    const client = new FakeClient()
+    await pushSquadSshToBox('11111111-1111-4111-8111-111111111111', 'agent_a1', {
+      getMachineBox: async () => makeBox({ syncedHashes: { 'squad-ssh': 'legacy-hash' } }),
+      getClient: async () => client as any,
+      materializeSquadRemoteHosts: async () => {},
+      listSquadSshFiles: async () => [],
+      stampBoxSyncedHash: async () => {},
+    })
+    const cleanup = client.bashes().find((b) => b.command.includes('-delete'))?.command ?? ''
+    expect(cleanup).toContain("-name 'ficus_remote_*'")
+    expect(cleanup).toContain("-name 'tau_remote_*'")
   })
 
   test('on-demand legacy final-host revoke cleans generated SSH names and stamps empty', async () => {
@@ -1082,7 +1147,7 @@ describe('pushSquadSshToBox', () => {
       listSquadSshFiles: async () => [],
       stampBoxSyncedHash: async (_m, _s, _n, _h, files) => void stamps.push({ files }),
     })
-    expect(client.bashes().some((bash) => bash.command.includes("-name 'tau_remote_*'"))).toBe(true)
+    expect(client.bashes().some((bash) => bash.command.includes("-name 'ficus_remote_*'"))).toBe(true)
     expect(client.writes()).toEqual([])
     expect(stamps).toEqual([{ files: [] }])
   })
@@ -1096,7 +1161,7 @@ describe('pushSquadSshToBox', () => {
         getMachineBox: async () => makeBox({ syncedHashes: { 'squad-ssh': 'legacy-hash' } }),
         getClient: async () => client as any,
         materializeSquadRemoteHosts: async () => {},
-        listSquadSshFiles: async () => [{ relPath: 'tau_remote_prod', content: Buffer.from('NEW') }],
+        listSquadSshFiles: async () => [{ relPath: 'ficus_remote_prod', content: Buffer.from('NEW') }],
         stampBoxSyncedHash: async () => {
           stamps++
         },
@@ -1112,7 +1177,7 @@ describe('pushSquadSshToBox', () => {
     const stamps: Array<{ hash: string; files?: string[] }> = []
     const result = await pushSquadSshToBox('11111111-1111-4111-8111-111111111111', 'agent_a1', {
       getMachineBox: async () =>
-        makeBox({ syncedHashes: { 'squad-ssh': { hash: 'old', files: ['config', 'tau_remote_prod'] } } }),
+        makeBox({ syncedHashes: { 'squad-ssh': { hash: 'old', files: ['config', 'ficus_remote_prod'] } } }),
       getClient: async () => client as any,
       materializeSquadRemoteHosts: async () => {},
       listSquadSshFiles: async () => [],
@@ -1121,7 +1186,7 @@ describe('pushSquadSshToBox', () => {
     expect(result).toEqual({ pushed: true })
     expect(client.writes()).toEqual([])
     expect(client.bashes().map((b) => b.command)).toEqual([
-      `rm -f -- '${home}/.ssh/config' '${home}/.ssh/tau_remote_prod'`,
+      `rm -f -- '${home}/.ssh/config' '${home}/.ssh/ficus_remote_prod'`,
     ])
     expect(stamps).toHaveLength(1)
     expect(stamps[0].files).toEqual([])

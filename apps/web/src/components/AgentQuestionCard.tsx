@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { isHttpResponseError } from '@tau/client-core'
-import type { AgentQuestion } from '@tau/shared'
+import { isHttpResponseError } from '@ficus/client-core'
+import type { AgentQuestion } from '@ficus/shared'
 import { answerAgentQuestion, dismissAgentQuestion } from '../api/agentQuestions'
 import { queryKeys } from '../queryKeys'
 import { QuestionInput } from './QuestionInput'
@@ -41,7 +41,7 @@ export function AgentQuestionCard({
     ])
   const settleQuestion = async () => {
     const actionId = `agent-question:${question.id}`
-    queryClient.setQueryData<import('@tau/shared').PendingAction[]>(queryKeys.actions.pending(), (current) =>
+    queryClient.setQueryData<import('@ficus/shared').PendingAction[]>(queryKeys.actions.pending(), (current) =>
       current?.filter((action) => action.id !== actionId)
     )
     await reconcileQuestion()

@@ -14,14 +14,14 @@ test('links numeric work references in prose without changing code, links or iss
   }
   remarkWorkStreamReferences()(tree)
   const result = JSON.stringify(tree)
-  expect(result.match(/tau:ws:/g)).toHaveLength(2)
-  expect(result).toContain('tau:ws:42')
-  expect(result).toContain('tau:ws:57')
+  expect(result.match(/ficus:ws:/g)).toHaveLength(2)
+  expect(result).toContain('ficus:ws:42')
+  expect(result).toContain('ficus:ws:57')
   expect(result).toContain('PR #8 and issue #9 stay plain.')
 })
 
 test('does not link invalid, out-of-range or embedded numbers', () => {
   const tree = { type: 'root', children: [{ type: 'text', value: '#0 #2147483648 word#42 ##42 /#42 #42abc' }] }
   remarkWorkStreamReferences()(tree)
-  expect(JSON.stringify(tree)).not.toContain('tau:ws:')
+  expect(JSON.stringify(tree)).not.toContain('ficus:ws:')
 })

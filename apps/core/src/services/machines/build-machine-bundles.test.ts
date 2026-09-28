@@ -14,7 +14,7 @@ const BOX_PROVISION_SOURCE = join(REPO_ROOT, 'scripts/machine/box-provision.sh')
 
 const SERVER_CONTENT = new TextEncoder().encode('sentinel server.js bytes')
 const SERVER_LIB = new TextEncoder().encode('sentinel librust_pty.so bytes')
-const CLI_JS = new TextEncoder().encode('sentinel tau.js bytes')
+const CLI_JS = new TextEncoder().encode('sentinel ficus.js bytes')
 
 /** Fake buildServerBundle/buildCliBundle pair that records the prebuiltDir
  *  each was called with (so the test can assert it exists and is empty) and
@@ -69,11 +69,11 @@ describe('buildMachineBundles', () => {
       await buildMachineBundles(outDir, { buildServer, buildCli })
 
       const entries = (await readdir(outDir)).sort()
-      expect(entries).toEqual(['bootstrap.sh', 'box-provision.sh', 'librust_pty.so', 'server.js', 'tau.js'].sort())
+      expect(entries).toEqual(['bootstrap.sh', 'box-provision.sh', 'librust_pty.so', 'server.js', 'ficus.js'].sort())
 
       expect(await readFile(join(outDir, 'server.js'))).toEqual(Buffer.from(SERVER_CONTENT))
       expect(await readFile(join(outDir, 'librust_pty.so'))).toEqual(Buffer.from(SERVER_LIB))
-      expect(await readFile(join(outDir, 'tau.js'))).toEqual(Buffer.from(CLI_JS))
+      expect(await readFile(join(outDir, 'ficus.js'))).toEqual(Buffer.from(CLI_JS))
 
       expect(await readFile(join(outDir, 'bootstrap.sh'))).toEqual(readFileSync(BOOTSTRAP_SOURCE))
       expect(await readFile(join(outDir, 'box-provision.sh'))).toEqual(readFileSync(BOX_PROVISION_SOURCE))
@@ -111,7 +111,7 @@ describe('buildMachineBundles', () => {
       await buildMachineBundles(outDir, { buildServer, buildCli })
 
       const entries = (await readdir(outDir)).sort()
-      expect(entries).toEqual(['bootstrap.sh', 'box-provision.sh', 'librust_pty.so', 'server.js', 'tau.js'].sort())
+      expect(entries).toEqual(['bootstrap.sh', 'box-provision.sh', 'librust_pty.so', 'server.js', 'ficus.js'].sort())
       expect(entries).not.toContain('STALE.txt')
       expect(entries).not.toContain('nested')
     } finally {

@@ -11,7 +11,7 @@
  *
  * A VM box runs on bare Ubuntu with no such image, so its shells lack the comfort
  * set until we seed one. This module materializes a per-user `devbox` at the
- * box's `TAU_DEVBOX_DIR` (`~/.tau/devbox`, see packages/k8s-sandbox/src/paths.ts)
+ * box's `FICUS_DEVBOX_DIR` (`~/.tau/devbox`, see packages/k8s-sandbox/src/paths.ts)
  * and runs `devbox install` — AS THE BOX USER, because the sandbox-server executes
  * every `/write` and `/bash` as that user (never root), and the box user owns
  * `~/.tau`.

@@ -1,7 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, isAbsolute, join, resolve } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared/identity'
+import { expandTilde } from '@ficus/shared/node'
 import { DEFAULT_INSTANCE, normalizeLabel } from './instance'
 import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
 
@@ -15,7 +16,7 @@ export interface InstanceRecord {
 }
 
 /**
- * Every instance installed on this machine, plus the one `tau server`
+ * Every instance installed on this machine, plus the one `ficus server`
  * commands act on when nothing else says which. Version 1 was a single
  * bare record ({ root, port, … }) — it reads as the `tau` instance.
  */
@@ -35,7 +36,7 @@ export const REGISTRY_VERSION = 3
  */
 export class InvalidRegistryError extends Error {
   constructor(reason: string, path: string) {
-    super(`${reason} in ${path} — fix or remove the file (see \`tau server list\`) before changing instances`)
+    super(`${reason} in ${path} — fix or remove the file (see \`ficus server list\`) before changing instances`)
     this.name = 'InvalidRegistryError'
   }
 }
@@ -52,7 +53,7 @@ export function canonicalRoot(dir: string): string {
 export class NoRootError extends Error {
   constructor(detail: string) {
     super(
-      `No local tau checkout found (${detail}). Run \`tau server install\`, pass --root <dir>, set TAU_SERVER_ROOT, or run from inside a checkout.`
+      `No local Ficus checkout found (${detail}). Run \`ficus server install\`, pass --root <dir>, set FICUS_SERVER_ROOT, or run from inside a checkout.`
     )
     this.name = 'NoRootError'
   }
@@ -63,14 +64,14 @@ export class UnknownInstanceError extends Error {
     super(
       `unknown instance "${label}" — ${
         known.length > 0 ? `known instances: ${known.join(', ')}` : 'no instances are registered'
-      } (see \`tau server list\`)`
+      } (see \`ficus server list\`)`
     )
     this.name = 'UnknownInstanceError'
   }
 }
 
 export function getStatePath(env: Record<string, string | undefined> = process.env): string {
-  return expandTilde(env.TAU_LOCAL_SERVER_STATE || join(homedir(), '.tau', 'cli', 'local-server.json'))
+  return expandTilde(env.FICUS_LOCAL_SERVER_STATE || join(homedir(), '.tau', 'cli', 'local-server.json'))
 }
 
 function emptyRegistry(): LocalServerRegistry {
@@ -116,7 +117,7 @@ function validRegistryLabel(label: string): boolean {
 
 /**
  * The registry as it is on disk, migrated forward. A file this CLI cannot make
- * sense of reads as an empty registry rather than throwing: `tau server` must
+ * sense of reads as an empty registry rather than throwing: `ficus server` must
  * stay usable (with --root) when the registry is damaged. Mutating paths use
  * {@link readRegistryStrict}, which fails closed instead.
  */
@@ -206,7 +207,7 @@ function parseRegistryFile(path: string): { registry: LocalServerRegistry; stric
  * temporary name in the same directory and is renamed over the target. The
  * chmod comes after the rename so a file that already existed with looser
  * permissions is tightened too (it holds nothing secret, but it decides which
- * checkout `tau server` acts on).
+ * checkout `ficus server` acts on).
  */
 export function writeRegistry(registry: LocalServerRegistry, path = getStatePath()): void {
   mkdirSync(dirname(path), { recursive: true })
@@ -216,7 +217,7 @@ export function writeRegistry(registry: LocalServerRegistry, path = getStatePath
   chmodSync(path, 0o600)
 }
 
-/** The instance a bare `tau server` command acts on when nothing names one. */
+/** The instance a bare `ficus server` command acts on when nothing names one. */
 export function defaultLabel(registry: LocalServerRegistry): string | undefined {
   if (registry.default && registry.instances[registry.default]) return registry.default
   // A hand-edited file can lose its `default` line; the instances are still real.
@@ -267,7 +268,7 @@ export function isCheckout(dir: string): boolean {
   try {
     if (!existsSync(join(dir, '.git'))) return false
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name?: string }
-    return pkg.name === 'tau'
+    return CORE_ROOT_PACKAGE_NAMES.includes(pkg.name as CoreRootPackageName)
   } catch {
     return false
   }
@@ -292,21 +293,21 @@ function optionalLabel(raw: string): string | undefined {
   }
 }
 
-/** --root, then TAU_SERVER_ROOT. Either, when given, must be a checkout. */
+/** --root, then FICUS_SERVER_ROOT. Either, when given, must be a checkout. */
 function explicitRoot(flag: string | undefined, env: Record<string, string | undefined>): string | null {
   const candidates: { source: string; dir: string }[] = []
   if (flag) candidates.push({ source: '--root', dir: resolve(expandTilde(flag)) })
-  if (env.TAU_SERVER_ROOT)
-    candidates.push({ source: 'TAU_SERVER_ROOT', dir: resolve(expandTilde(env.TAU_SERVER_ROOT)) })
+  if (env.FICUS_SERVER_ROOT)
+    candidates.push({ source: 'FICUS_SERVER_ROOT', dir: resolve(expandTilde(env.FICUS_SERVER_ROOT)) })
   for (const c of candidates) {
     if (isCheckout(c.dir)) return canonicalRoot(c.dir)
-    throw new NoRootError(`${c.source}=${c.dir} is not a tau checkout`)
+    throw new NoRootError(`${c.source}=${c.dir} is not a Ficus checkout`)
   }
   return null
 }
 
 /**
- * --root > TAU_SERVER_ROOT > --instance / TAU_INSTANCE > the checkout the cwd
+ * --root > FICUS_SERVER_ROOT > --instance / FICUS_INSTANCE > the checkout the cwd
  * is in > the registry default. A named instance outranks the cwd (you asked
  * for it by name), and the cwd outranks the default (the checkout you are
  * standing in is the one you mean). Flag/env roots must be checkouts.
@@ -321,12 +322,12 @@ export function resolveRoot(options: {
   const explicit = explicitRoot(options.flag, options.env)
   if (explicit) return explicit
   const registry = readRegistryStrict(options.statePath ?? getStatePath(options.env))
-  // --instance is a request: honour it or refuse. TAU_INSTANCE is ambient — a
+  // --instance is a request: honour it or refuse. FICUS_INSTANCE is ambient — a
   // checkout's own .env puts it in the environment — so a label it names that
   // this machine cannot use is ignored rather than turned into a failure of an
   // otherwise perfectly answerable command.
   const fromFlag = options.instance !== undefined
-  const asked = options.instance ?? options.env.TAU_INSTANCE
+  const asked = options.instance ?? options.env.FICUS_INSTANCE
   if (asked) {
     const label = fromFlag ? normalizeLabel(asked) : optionalLabel(asked)
     const record = label === undefined ? undefined : registry.instances[label]
@@ -334,7 +335,7 @@ export function resolveRoot(options: {
     // Only the flag reports why it could not be honoured. Every way the
     // environment's label can fail — unparsable, unregistered, or registered
     // at a checkout that has since been deleted — leaves resolution to carry
-    // on as if TAU_INSTANCE had not been set at all.
+    // on as if FICUS_INSTANCE had not been set at all.
     if (fromFlag) {
       if (!record) throw new UnknownInstanceError(label as string, Object.keys(registry.instances).sort())
       throw new NoRootError(`instance "${label}" is registered at ${record.root}, which is not a checkout`)
@@ -351,7 +352,7 @@ export function resolveRoot(options: {
 }
 
 /**
- * Root resolution for `setup` only: --root > TAU_SERVER_ROOT > walk up from cwd.
+ * Root resolution for `setup` only: --root > FICUS_SERVER_ROOT > walk up from cwd.
  * The registry is deliberately NOT consulted — once an install exists, using it
  * would make `bun run setup` inside a second checkout configure, migrate and
  * pm2-start the FIRST one. Management commands (start/stop/status/…) act on "the
@@ -366,5 +367,5 @@ export function resolveSetupRoot(options: {
   if (explicit) return explicit
   const walked = walkUp(options.cwd ?? process.cwd())
   if (walked) return canonicalRoot(walked)
-  throw new NoRootError('not inside a tau checkout')
+  throw new NoRootError('not inside a Ficus checkout')
 }

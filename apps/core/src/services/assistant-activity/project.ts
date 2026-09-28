@@ -6,7 +6,7 @@ import {
   assistantTaskStatusSchema,
   parseAssistantInboxConversationId,
   type AssistantMessageTargetKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { db } from '../../db'
 import type { AssistantNotificationDecision } from './notification'
 import { assistantConversations, assistantTasks, assistantUpdates, inbox } from '../../db/schema'

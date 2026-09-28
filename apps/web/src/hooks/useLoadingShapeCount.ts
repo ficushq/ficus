@@ -1,5 +1,5 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { AuthIdentity } from '@tau/client-core'
+import type { AuthIdentity } from '@ficus/client-core'
 import { getApiUrl } from '../api/client'
 import { usePermissions } from './usePermissions'
 import {

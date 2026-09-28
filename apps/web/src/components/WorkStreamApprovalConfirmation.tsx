@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { WorkStreamCompletionMode } from '@tau/shared'
+import type { WorkStreamCompletionMode } from '@ficus/shared'
 import { useStableRef } from '../hooks/useStableRef'
 import { Modal } from './Modal'
 
@@ -86,7 +86,7 @@ export function WorkStreamApprovalConfirmation({
             type="button"
             onClick={onCancel}
             disabled={isPending}
-            className="tau-button min-h-10 px-3 py-2 text-sm text-secondary hover:bg-surface-hover disabled:opacity-50"
+            className="ficus-button min-h-10 px-3 py-2 text-sm text-secondary hover:bg-surface-hover disabled:opacity-50"
           >
             Cancel
           </button>
@@ -94,7 +94,7 @@ export function WorkStreamApprovalConfirmation({
             type="button"
             onClick={confirmOnce}
             disabled={isPending}
-            className="tau-button tau-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
           >
             {isPending ? 'Approving…' : confirmLabel}
           </button>

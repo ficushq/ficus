@@ -6,7 +6,7 @@ import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } fro
 import { useNavigate } from 'react-router-dom'
 import { CanvasSkeleton } from '../loading/Skeleton'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
-import type { Squad, SquadRelationship } from '@tau/shared'
+import type { Squad, SquadRelationship } from '@ficus/shared'
 
 // Lazy load force graph components
 const ForceGraph2DLazy = lazy(() => import('react-force-graph-2d'))
@@ -195,7 +195,7 @@ export function OrgGraph({ squads, relationships }: Props) {
         <button
           onClick={() => setIs3D(false)}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
           )}
         >
@@ -204,7 +204,7 @@ export function OrgGraph({ squads, relationships }: Props) {
         <button
           onClick={() => setIs3D(true)}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
           )}
         >

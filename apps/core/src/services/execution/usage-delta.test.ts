@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import type { SessionUsage } from '@tau/shared'
+import type { SessionUsage } from '@ficus/shared'
 import { subtractTokens, withUsageDelta, withoutDelta, type UsageBaseline } from './usage-delta'
 
 function usage(total: number, cost: number): SessionUsage {

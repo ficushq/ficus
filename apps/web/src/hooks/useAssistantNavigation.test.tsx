@@ -29,7 +29,7 @@ test('navigation restores nesting and search on refresh and unwraps legacy conve
     expect(new URLSearchParams(search).has('agentConversation')).toBe(false)
     expect(new URLSearchParams(search).has('assistantConversation')).toBe(false)
     await dom.act(async () => nav.setQuery('OAuth'))
-    await dom.act(async () => nav.push({ kind: 'squad', id: 'tau', label: 'Tau' }))
+    await dom.act(async () => nav.push({ kind: 'squad', id: 'tau', label: 'Ficus' }))
     await dom.act(async () => nav.push({ kind: 'work', id: 'w1', squadId: 'tau', label: 'OAuth setup' }))
     await dom.act(async () =>
       nav.push({ kind: 'chat', id: 'a1', agentId: 'a1', squadId: 'tau', label: 'Research OAuth' })

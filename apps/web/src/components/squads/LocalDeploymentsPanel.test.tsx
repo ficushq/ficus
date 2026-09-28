@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { queryKeys } from '../../queryKeys'
-import type { LocalDeployment } from '@tau/shared'
+import type { LocalDeployment } from '@ficus/shared'
 
 const { LocalDeploymentsPanel } = await import('./LocalDeploymentsPanel')
 

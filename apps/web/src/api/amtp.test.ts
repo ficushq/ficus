@@ -2,7 +2,7 @@ import { describe, it, expect, mock } from 'bun:test'
 
 const apiFetchMock = mock(async () => undefined as unknown)
 import * as fed from './amtp'
-const { queryKeys } = await import('@tau/client-core')
+const { queryKeys } = await import('@ficus/client-core')
 const { queries } = await import('../queryOptions')
 
 function call(response: unknown) {

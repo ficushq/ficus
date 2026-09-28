@@ -5,7 +5,7 @@ import {
   type WorkStreamPresentationFacts,
   type WorkStreamPresentationState,
   type StatusRole,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { webStatus } from './statusPresentation'
 
 // Merged label/color maps covering BOTH stored statuses (queued/active/done/canceled) and derived

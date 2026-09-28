@@ -6,8 +6,8 @@ import { resolveToken } from '../services/auth/resolve-token'
 import { hasPermission } from '../services/rbac'
 import { createTestUser, createTestRole, assignRole, cleanupTestRbac } from '../test-utils'
 
-// Verifies the per-agent token wiring: an agent gets a scoped tau_agent_* token
-// (injected into its sandbox as TAU_TOKEN) that resolves to its squad-scoped
+// Verifies the per-agent token wiring: an agent gets a scoped ficus_agent_* token
+// (injected into its sandbox as FICUS_TOKEN) that resolves to its squad-scoped
 // identity, and the default roles grant the CLI-driven permissions agents need.
 
 const PREFIX = 'agent-token-wiring'
@@ -49,7 +49,7 @@ describe('per-agent token wiring', () => {
 
     const token = await agent.getOrCreateToken()
     expect(token).toBeDefined()
-    expect(token).toMatch(/^tau_agent_/)
+    expect(token).toMatch(/^ficus_agent_/)
 
     // resolves (as the sandbox CLI's Bearer would) to the scoped agent identity
     expect(await resolveToken(token!)).toMatchObject({ type: 'agent', agentId: agent.id, squadId })
@@ -66,7 +66,7 @@ describe('per-agent token wiring', () => {
     const identity = await resolveToken((await agent.getOrCreateToken())!)
     expect(identity).not.toBeNull()
 
-    // workspace:read is now granted (tau squad workspace/file) — own squad only
+    // workspace:read is now granted (ficus squad workspace/file) — own squad only
     expect(await hasPermission(identity!, 'workspace:read', ownSquad)).toBe(true)
     expect(await hasPermission(identity!, 'memory:write', ownSquad)).toBe(true)
     // cross-squad is denied (ROOT squad gate)
@@ -87,7 +87,7 @@ describe('per-agent token wiring', () => {
     const identity = await resolveToken((await manager.getOrCreateToken())!)
     expect(identity).not.toBeNull()
 
-    // can unspawn (tau squad unspawn) + manage squad env (expose-secrets)...
+    // can unspawn (ficus squad unspawn) + manage squad env (expose-secrets)...
     expect(await hasPermission(identity!, 'agents:terminate', squadId)).toBe(true)
     expect(await hasPermission(identity!, 'env:write', squadId)).toBe(true)
     expect(await hasPermission(identity!, 'workspace:read', squadId)).toBe(true)
@@ -139,7 +139,7 @@ describe('per-agent token wiring', () => {
     const sm = await Agent.mustFind(row.id)
 
     const token = await sm.getOrCreateToken()
-    expect(token).toMatch(/^tau_agent_/)
+    expect(token).toMatch(/^ficus_agent_/)
     const identity = await resolveToken(token!)
     expect(identity).toMatchObject({ type: 'agent', agentId: row.id, userId: user.id })
     // inherits the owning user's system-scoped permissions (not a squad-agent role)

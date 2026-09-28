@@ -66,7 +66,7 @@ describe('identityMiddleware', () => {
 
     const wrong = await app.request(`/api/app/${prefix}/?_tau_token=wrong`)
     expect(wrong.status).toBe(401)
-    expect(wrong.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(wrong.headers.get('x-ficus-app-proxy')).toBe('error')
 
     const response = await app.request(`/api/app/${prefix}/?_tau_token=${encodeURIComponent(token)}`)
     expect(response.status).toBe(200)
@@ -112,7 +112,7 @@ describe('identityMiddleware', () => {
     const response = await app.request(`/api/app/${prefix}/?_tau_token=irrelevant`)
 
     expect(response.status).toBe(409)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(await response.json()).toEqual({ error: 'This app link is no longer unique — get a fresh URL.' })
 
     const wildcard = await app.request('/api/app/_/?_tau_token=irrelevant')
@@ -151,6 +151,55 @@ describe('identityMiddleware', () => {
         deviceTokenId: device.id,
       },
     })
+  })
+
+  test('a valid session is accepted as ficus_session and rejected as tau_session (no legacy cookie)', async () => {
+    const user = await createTestUser({ prefix: PREFIX })
+    const app = createTestApp()
+
+    const legacy = await app.request('/whoami', { headers: { Cookie: `tau_session=${user.token}` } })
+    expect(legacy.status).toBe(401)
+
+    const current = await app.request('/whoami', { headers: { Cookie: `ficus_session=${user.token}` } })
+    expect(current.status).toBe(200)
+    expect(await current.json()).toEqual({ type: 'user', userId: user.id })
+  })
+
+  test('the ficus_session cookie decides the identity, never a stale tau_session beside it', async () => {
+    const alice = await createTestUser({ prefix: PREFIX })
+    const bob = await createTestUser({ prefix: PREFIX })
+    const app = createTestApp()
+
+    const res = await app.request('/whoami', {
+      headers: { Cookie: `tau_session=${alice.token}; ficus_session=${bob.token}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ type: 'user', userId: bob.id })
+  })
+
+  test('the local-deployment app cookie is ficus_app_<id> only', async () => {
+    const [row] = await db
+      .insert(squads)
+      .values({ name: `${PREFIX}-app-cookie-${crypto.randomUUID()}`, purpose: 'App cookie test' })
+      .returning()
+    const localDeployment = await createLocalDeployment(new Squad(row), { name: 'web', port: 5173, mode: 'attached' })
+    // The tokenized URL carries exactly one query parameter: the browser token.
+    const [token] = [...new URL(localDeployment.urlPathOrHost, 'http://localhost').searchParams.values()]
+    const app = new Hono()
+    app.use('*', identityMiddleware)
+    app.get('/api/app/:id/*', (c) => c.json({ resolvedId: c.get('resolvedLocalDeploymentId') }))
+    const assetPath = `/api/app/${localDeployment.id}/assets/index.js`
+
+    const legacy = await app.request(assetPath, {
+      headers: { Cookie: `tau_app_${localDeployment.id}=${encodeURIComponent(token)}` },
+    })
+    expect(legacy.status).toBe(401)
+
+    const current = await app.request(assetPath, {
+      headers: { Cookie: `ficus_app_${localDeployment.id}=${encodeURIComponent(token)}` },
+    })
+    expect(current.status).toBe(200)
+    expect(await current.json()).toEqual({ resolvedId: localDeployment.id })
   })
 
   test('rejects expired session tokens', async () => {
@@ -251,12 +300,12 @@ describe('identityMiddleware', () => {
     expect(body.userId).toBe(user.id)
   })
 
-  test('rejects TAU_PASSWORD once an admin user has a passkey', async () => {
-    const originalPassword = process.env.TAU_PASSWORD
+  test('rejects FICUS_PASSWORD once an admin user has a passkey', async () => {
+    const originalPassword = process.env.FICUS_PASSWORD
 
     try {
       const testPassword = `test-password-${Date.now()}`
-      process.env.TAU_PASSWORD = testPassword
+      process.env.FICUS_PASSWORD = testPassword
 
       // Reset the secret store cache so it picks up the env var
       resetSecretStore()
@@ -267,7 +316,7 @@ describe('identityMiddleware', () => {
 
       const app = createTestApp()
 
-      // TAU_PASSWORD should be rejected since an admin holds a passkey
+      // FICUS_PASSWORD should be rejected since an admin holds a passkey
       const res = await app.request('/whoami', {
         headers: authHeaders(testPassword),
       })
@@ -281,21 +330,21 @@ describe('identityMiddleware', () => {
     } finally {
       // Restore original password
       if (originalPassword) {
-        process.env.TAU_PASSWORD = originalPassword
+        process.env.FICUS_PASSWORD = originalPassword
       } else {
-        delete process.env.TAU_PASSWORD
+        delete process.env.FICUS_PASSWORD
       }
       resetSecretStore()
       await cleanupTestRbac(`${PREFIX}-pw`)
     }
   })
 
-  test('accepts TAU_PASSWORD in the restored state (admin rows exist, zero credentials)', async () => {
-    const originalPassword = process.env.TAU_PASSWORD
+  test('accepts FICUS_PASSWORD in the restored state (admin rows exist, zero credentials)', async () => {
+    const originalPassword = process.env.FICUS_PASSWORD
 
     try {
       const testPassword = `test-password-restore-${Date.now()}`
-      process.env.TAU_PASSWORD = testPassword
+      process.env.FICUS_PASSWORD = testPassword
       resetSecretStore()
 
       // Cross-subdomain restore: admin user/role rows survive, but the
@@ -313,9 +362,9 @@ describe('identityMiddleware', () => {
       expect(body.type).toBe('legacy')
     } finally {
       if (originalPassword) {
-        process.env.TAU_PASSWORD = originalPassword
+        process.env.FICUS_PASSWORD = originalPassword
       } else {
-        delete process.env.TAU_PASSWORD
+        delete process.env.FICUS_PASSWORD
       }
       resetSecretStore()
       await cleanupTestRbac(`${PREFIX}-restore`)
@@ -323,11 +372,11 @@ describe('identityMiddleware', () => {
   })
 
   test('self-heals: password auth turns off the moment an admin registers a passkey', async () => {
-    const originalPassword = process.env.TAU_PASSWORD
+    const originalPassword = process.env.FICUS_PASSWORD
 
     try {
       const testPassword = `test-password-heal-${Date.now()}`
-      process.env.TAU_PASSWORD = testPassword
+      process.env.FICUS_PASSWORD = testPassword
       resetSecretStore()
 
       const admin = await createTestAdmin({ prefix: `${PREFIX}-heal`, canonicalAdmin: true })
@@ -345,9 +394,9 @@ describe('identityMiddleware', () => {
       expect(after.status).toBe(401)
     } finally {
       if (originalPassword) {
-        process.env.TAU_PASSWORD = originalPassword
+        process.env.FICUS_PASSWORD = originalPassword
       } else {
-        delete process.env.TAU_PASSWORD
+        delete process.env.FICUS_PASSWORD
       }
       resetSecretStore()
       await cleanupTestRbac(`${PREFIX}-heal`)

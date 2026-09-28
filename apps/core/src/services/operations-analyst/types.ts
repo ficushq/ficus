@@ -1,4 +1,4 @@
-import type { OperationsRemediation, OperationsSignalType } from '@tau/shared'
+import type { OperationsRemediation, OperationsSignalType } from '@ficus/shared'
 import type { RedactedText } from './redaction'
 export interface TaintedToolCall {
   messageId: string

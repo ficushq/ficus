@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { Schedule } from '@tau/shared'
+import type { Schedule } from '@ficus/shared'
 import { buildScheduleUpdateFromEditState, createScheduleEditState } from './SchedulesList'
 import { buildCreateScheduleConfig, CreateScheduleModal } from './CreateScheduleModal'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

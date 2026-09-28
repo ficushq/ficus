@@ -75,8 +75,8 @@ afterEach(async () => {
   await cleanup()
   await cleanupUsers()
   await stopUsageReporter()
-  delete process.env.TAU_PLATFORM_INGEST_URL
-  delete process.env.TAU_PLATFORM_USAGE_TOKEN
+  delete process.env.FICUS_PLATFORM_INGEST_URL
+  delete process.env.FICUS_PLATFORM_USAGE_TOKEN
   resetSecretStore()
 })
 afterAll(cleanup)
@@ -887,15 +887,15 @@ describe('countInstanceActivity', () => {
 })
 
 describe('startUsageReporter / stopUsageReporter', () => {
-  it('does not register a periodic runner when TAU_PLATFORM_INGEST_URL is unset', async () => {
-    delete process.env.TAU_PLATFORM_INGEST_URL
+  it('does not register a periodic runner when FICUS_PLATFORM_INGEST_URL is unset', async () => {
+    delete process.env.FICUS_PLATFORM_INGEST_URL
     startUsageReporter()
     expect(listPeriodicRunnerNames()).not.toContain('platform-usage-reporter')
     await stopUsageReporter() // must not throw even though nothing was started
   })
 
-  it('registers the platform-usage-reporter runner when TAU_PLATFORM_INGEST_URL is set', async () => {
-    process.env.TAU_PLATFORM_INGEST_URL = 'https://platform.example.com'
+  it('registers the platform-usage-reporter runner when FICUS_PLATFORM_INGEST_URL is set', async () => {
+    process.env.FICUS_PLATFORM_INGEST_URL = 'https://platform.example.com'
     const originalFetch = globalThis.fetch
     globalThis.fetch = mock(async () => new Response(null, { status: 204 })) as unknown as typeof fetch
     try {

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, createWorkflowRun } from '@tau/shared'
+import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
 import { hasRunnableStreamDemand } from './demand'
 
 function candidate() {

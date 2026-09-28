@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ACTIVE_THEME_TOKENS, THEME_TOKEN_FAMILIES, validateThemeTokenSet } from '@tau/shared'
+import { ACTIVE_THEME_TOKENS, THEME_TOKEN_FAMILIES, validateThemeTokenSet } from '@ficus/shared'
 
 // Ties the CSS token scopes in src/index.css to the single source-of-truth
 // token registry in packages/shared/src/theme-schema.ts: every built-in theme

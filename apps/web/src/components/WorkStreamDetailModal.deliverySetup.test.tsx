@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import type { Agent, Squad, WorkStream, WorkStreamDeliveryPresentation } from '@tau/shared'
+import type { Agent, Squad, WorkStream, WorkStreamDeliveryPresentation } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { WorkStreamDetailModal } from './WorkStreamDetailModal'

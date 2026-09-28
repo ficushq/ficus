@@ -23,7 +23,7 @@ let admin: TestUser
 let plainUser: TestUser
 
 const original = {
-  managed: process.env.TAU_MANAGED,
+  managed: process.env.FICUS_MANAGED,
   price: process.env[SEAT_PRICE_ENV],
   included: process.env[INCLUDED_SEATS_ENV],
 }
@@ -45,7 +45,7 @@ afterAll(async () => {
 })
 
 afterEach(() => {
-  setEnv('TAU_MANAGED', original.managed)
+  setEnv('FICUS_MANAGED', original.managed)
   setEnv(SEAT_PRICE_ENV, original.price)
   setEnv(INCLUDED_SEATS_ENV, original.included)
 })
@@ -67,7 +67,7 @@ async function getSeats(token = admin.token) {
 
 describe('GET /api/users/seats', () => {
   it('says nothing on a self-hosted instance', async () => {
-    delete process.env.TAU_MANAGED
+    delete process.env.FICUS_MANAGED
     setEnv(SEAT_PRICE_ENV, '1000')
     setEnv(INCLUDED_SEATS_ENV, '1')
     const { res, body } = await getSeats()
@@ -76,7 +76,7 @@ describe('GET /api/users/seats', () => {
   })
 
   it('says nothing on a managed instance whose pricing has not been delivered', async () => {
-    process.env.TAU_MANAGED = '1'
+    process.env.FICUS_MANAGED = '1'
     setEnv(SEAT_PRICE_ENV, undefined)
     setEnv(INCLUDED_SEATS_ENV, undefined)
     const { res, body } = await getSeats()
@@ -85,7 +85,7 @@ describe('GET /api/users/seats', () => {
   })
 
   it('reports the delivered price and the platform seat rule on a managed instance', async () => {
-    process.env.TAU_MANAGED = '1'
+    process.env.FICUS_MANAGED = '1'
     setEnv(SEAT_PRICE_ENV, '1000')
     setEnv(INCLUDED_SEATS_ENV, '1')
     const { res, body } = await getSeats()
@@ -101,7 +101,7 @@ describe('GET /api/users/seats', () => {
   })
 
   it('counts only enabled accounts — disabling a user drops a billed seat', async () => {
-    process.env.TAU_MANAGED = '1'
+    process.env.FICUS_MANAGED = '1'
     setEnv(SEAT_PRICE_ENV, '1000')
     setEnv(INCLUDED_SEATS_ENV, '1')
     const before = (await getSeats()).body.pricing!
@@ -117,7 +117,7 @@ describe('GET /api/users/seats', () => {
   })
 
   it('requires users:read like the rest of the users resource', async () => {
-    process.env.TAU_MANAGED = '1'
+    process.env.FICUS_MANAGED = '1'
     setEnv(SEAT_PRICE_ENV, '1000')
     setEnv(INCLUDED_SEATS_ENV, '1')
     const { res } = await getSeats(plainUser.token)

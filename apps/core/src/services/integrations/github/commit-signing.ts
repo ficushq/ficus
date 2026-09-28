@@ -1,4 +1,4 @@
-import type { GitHubCommitSigningErrorCode, GitHubCommitSigningStatus } from '@tau/shared'
+import type { GitHubCommitSigningErrorCode, GitHubCommitSigningStatus } from '@ficus/shared'
 import { createLogger } from '../../../lib/infra/logger'
 import { generateSshSigningKey, signSshSig, sshKeyFingerprint } from './ssh-signature'
 import { parseGitSigningPayload } from './signing-payload'
@@ -50,7 +50,7 @@ export interface GitHubCommitSigningDependencies {
   keys: GitHubSigningKeysApi
   /** A usable account for the connection, or undefined when its credential cannot be used right now. */
   account(connectionId: string): Promise<GitHubAccount | undefined>
-  /** Enabled, authenticated GitHub connections this Tau user connected or last reconnected. */
+  /** Enabled, authenticated GitHub connections this Ficus user connected or last reconnected. */
   connectionIdsFor(userId: string): Promise<string[]>
   /** Connection whose credential a squad's `git` uses (its default assignment). */
   squadConnectionId(squadId: string): Promise<string | undefined>
@@ -99,7 +99,7 @@ export class GitHubCommitSigning {
     if (!account)
       throw new GitHubSigningError(
         'connection_unusable',
-        'This GitHub account needs attention before Tau can use it. Reconnect it, then turn signing on.'
+        'This GitHub account needs attention before Ficus can use it. Reconnect it, then turn signing on.'
       )
     const existing = await this.#record(connectionId)
     if (existing?.state === 'on') {
@@ -124,7 +124,7 @@ export class GitHubCommitSigning {
     try {
       await this.deps.secrets.set(githubSigningSecretKey(connectionId), JSON.stringify(record), actor)
     } catch (error) {
-      // Never leave a registered key whose private half Tau failed to keep.
+      // Never leave a registered key whose private half Ficus failed to keep.
       await this.deps.keys.remove(account.accessToken, created.id).catch(() => {})
       throw error
     }
@@ -205,13 +205,16 @@ export class GitHubCommitSigning {
     try {
       parsed = parseGitSigningPayload(input.payload)
     } catch (error) {
-      throw new GitHubSignRefused('invalid_payload', `Tau signs only git commits and tags: ${(error as Error).message}`)
+      throw new GitHubSignRefused(
+        'invalid_payload',
+        `Ficus signs only git commits and tags: ${(error as Error).message}`
+      )
     }
     const allowed = (await this.deps.signerEmails(input.squadId, connectionId)).map((email) => email.toLowerCase())
     if (!allowed.includes(parsed.signerEmail))
       throw new GitHubSignRefused(
         'identity_mismatch',
-        `Tau signs only ${parsed.kind}s ${parsed.kind === 'commit' ? 'committed' : 'tagged'} as ${allowed.join(' or ')}, not ${parsed.signerEmail}.`
+        `Ficus signs only ${parsed.kind}s ${parsed.kind === 'commit' ? 'committed' : 'tagged'} as ${allowed.join(' or ')}, not ${parsed.signerEmail}.`
       )
     const signature = signSshSig(record.privateKey, input.payload, 'git')
     log.info(
@@ -267,7 +270,7 @@ export function githubSigningKeysApi(
       if (response.status === 403 || response.status === 404)
         throw new GitHubSigningError(
           'permission_missing',
-          'Tau’s GitHub App needs the “SSH signing keys” account permission. Reconnect this account and approve the updated permissions on GitHub, then turn signing on.'
+          'Ficus’s GitHub App needs the “SSH signing keys” account permission. Reconnect this account and approve the updated permissions on GitHub, then turn signing on.'
         )
       if (response.status === 422)
         throw new GitHubSigningError('key_rejected', 'GitHub rejected the signing key. Try turning signing on again.')

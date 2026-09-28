@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, afterEach, describe, expect, it } from 'bun:test'
+import { createHash } from 'crypto'
+import { eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { systemTokens } from '../../db/schema'
 import {
+  SYSTEM_TOKEN_PREFIX,
   createSystemToken,
   listSystemTokens,
   revokeSystemToken,
@@ -9,6 +12,7 @@ import {
   ensureWebhookToken,
   webhookScriptAuthEnv,
   DEFAULT_WEBHOOK_SCOPES,
+  reissuePlatformOrchestratorToken,
 } from './system-tokens'
 import { resolveToken } from './resolve-token'
 import { hasPermission } from '../rbac'
@@ -16,12 +20,26 @@ import { getSecretStore, resetSecretStore } from '../secrets'
 
 const WEBHOOK_SECRET_KEY = '__SYSTEM_WEBHOOK_TOKEN'
 
+/** Insert a system-token row for an arbitrary raw value, as a pre-rename Core would have stored it. */
+async function seedSystemTokenRow(input: { raw: string; name: string; kind: 'manual' | 'webhook'; scopes?: string[] }) {
+  const [row] = await db
+    .insert(systemTokens)
+    .values({
+      name: input.name,
+      tokenHash: createHash('sha256').update(input.raw).digest('hex'),
+      scopes: input.scopes ?? DEFAULT_WEBHOOK_SCOPES,
+      kind: input.kind,
+    })
+    .returning()
+  return row
+}
+
 describe('system tokens', () => {
   let priorKey: string | undefined
 
   beforeAll(async () => {
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64) // 32-byte hex test key
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64) // 32-byte hex test key
     resetSecretStore()
     await getSecretStore().initialize()
   })
@@ -34,14 +52,15 @@ describe('system tokens', () => {
   })
 
   afterAll(() => {
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     resetSecretStore()
   })
 
   it('creates a token that resolves to its scopes, and revoking invalidates it', async () => {
     const { token, record } = await createSystemToken({ name: 'CI', scopes: ['inbox:system', 'workstreams:read'] })
-    expect(token.startsWith('tau_sys_')).toBe(true)
+    expect(SYSTEM_TOKEN_PREFIX).toBe('ficus_sys_')
+    expect(token.startsWith('ficus_sys_')).toBe(true)
 
     const resolved = await resolveSystemToken(token)
     expect(resolved).toMatchObject({
@@ -90,21 +109,21 @@ describe('system tokens', () => {
 
   it('injects a scoped webhook identity bound to this Core listener', async () => {
     const previousPort = process.env.PORT
-    const previousUrl = process.env.TAU_API_URL
+    const previousUrl = process.env.FICUS_API_URL
     try {
       process.env.PORT = '39994'
-      process.env.TAU_API_URL = 'https://another-instance.example'
+      process.env.FICUS_API_URL = 'https://another-instance.example'
       const env = await webhookScriptAuthEnv()
-      expect(env.TAU_WEBHOOK_CONTEXT).toBe('1')
-      expect(env.TAU_API_URL).toBe('http://127.0.0.1:39994')
-      expect(env.TAU_PASSWORD).toBe('')
-      const identity = await resolveSystemToken(env.TAU_TOKEN!)
+      expect(env.FICUS_WEBHOOK_CONTEXT).toBe('1')
+      expect(env.FICUS_API_URL).toBe('http://127.0.0.1:39994')
+      expect(env.FICUS_PASSWORD).toBe('')
+      const identity = await resolveSystemToken(env.FICUS_TOKEN!)
       expect(identity?.scopes).toEqual(DEFAULT_WEBHOOK_SCOPES)
     } finally {
       if (previousPort === undefined) delete process.env.PORT
       else process.env.PORT = previousPort
-      if (previousUrl === undefined) delete process.env.TAU_API_URL
-      else process.env.TAU_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.FICUS_API_URL
+      else process.env.FICUS_API_URL = previousUrl
     }
   })
 
@@ -142,5 +161,221 @@ describe('system tokens', () => {
     // Same healed token returned after scopes are current (no repeated writes/churn).
     const second = await ensureWebhookToken()
     expect(second).toBe(token)
+  })
+
+  it('rejects a pre-rename tau_sys_ token even though its row is live (no dual-accept)', async () => {
+    const legacy = 'tau_sys_' + 'a'.repeat(43)
+    await seedSystemTokenRow({ raw: legacy, name: 'platform-orchestrator', kind: 'manual' })
+    expect(await resolveSystemToken(legacy)).toBeNull()
+    expect(await resolveToken(legacy)).toBeNull()
+  })
+
+  it('never resolves a token whose prefix only resembles the system prefix', async () => {
+    const secret = 'b'.repeat(43)
+    for (const raw of [`ficus_sysx${secret}`, `ficus_sy_${secret}`, `ficus_dev_${secret}`, `FICUS_SYS_${secret}`]) {
+      await seedSystemTokenRow({ raw, name: 'CI', kind: 'manual' })
+      expect(await resolveSystemToken(raw)).toBeNull()
+      expect(await resolveToken(raw)).toBeNull()
+    }
+  })
+
+  it('webhook token with a legacy prefix is re-minted and the old row revoked', async () => {
+    const legacy = 'tau_sys_' + 'a'.repeat(43)
+    const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
+    await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
+
+    const fresh = await ensureWebhookToken()
+
+    expect(fresh?.startsWith('ficus_sys_')).toBe(true)
+    expect(await resolveSystemToken(legacy)).toBeNull()
+    const [staleAfter] = await db.select().from(systemTokens).where(eq(systemTokens.id, stale.id))
+    expect(staleAfter.revokedAt).not.toBeNull()
+    expect(getSecretStore().get(WEBHOOK_SECRET_KEY)).toBe(fresh!)
+    const resolved = await resolveSystemToken(fresh!)
+    expect(resolved?.scopes).toEqual(DEFAULT_WEBHOOK_SCOPES)
+    // The healed token is what webhook scripts now receive, and it is stable.
+    expect((await webhookScriptAuthEnv()).FICUS_TOKEN).toBe(fresh!)
+    expect(await ensureWebhookToken()).toBe(fresh!)
+    const active = (await listSystemTokens({ includeWebhook: true })).filter((t) => !t.revokedAt)
+    expect(active.map((t) => t.id)).toEqual([resolved!.id])
+  })
+
+  it('re-mints a stored webhook token that lacks the current prefix even when its row was already revoked', async () => {
+    const legacy = 'tau_sys_' + 'c'.repeat(43)
+    const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
+    await revokeSystemToken(stale.id)
+    await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
+
+    const fresh = await ensureWebhookToken()
+
+    expect(fresh?.startsWith(SYSTEM_TOKEN_PREFIX)).toBe(true)
+    expect(await resolveSystemToken(fresh!)).not.toBeNull()
+  })
+
+  it('concurrent self-heals of a legacy webhook token mint exactly one replacement', async () => {
+    const legacy = 'tau_sys_' + 'e'.repeat(43)
+    const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
+    await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
+
+    const results = await Promise.all(Array.from({ length: 5 }, () => ensureWebhookToken()))
+
+    expect(new Set(results).size).toBe(1)
+    expect(results[0]?.startsWith(SYSTEM_TOKEN_PREFIX)).toBe(true)
+    expect(getSecretStore().get(WEBHOOK_SECRET_KEY)).toBe(results[0]!)
+    const rows = await db.select().from(systemTokens).where(eq(systemTokens.kind, 'webhook'))
+    const active = rows.filter((row) => !row.revokedAt)
+    expect(active).toHaveLength(1)
+    expect(active[0].id).toBe((await resolveSystemToken(results[0]!))!.id)
+    expect(rows.find((row) => row.id === stale.id)?.revokedAt).not.toBeNull()
+  })
+
+  it('concurrent first provisioning mints exactly one webhook token', async () => {
+    const results = await Promise.all(Array.from({ length: 5 }, () => ensureWebhookToken()))
+
+    expect(new Set(results).size).toBe(1)
+    const active = (await db.select().from(systemTokens).where(eq(systemTokens.kind, 'webhook'))).filter(
+      (row) => !row.revokedAt
+    )
+    expect(active).toHaveLength(1)
+  })
+
+  it('the webhook self-heal takes no caller input', () => {
+    // It is reachable only from verified webhook handlers, and it can only replace the
+    // stored secret with a fresh token it never returns to an HTTP caller.
+    expect(ensureWebhookToken.length).toBe(0)
+  })
+})
+
+describe('reissuePlatformOrchestratorToken', () => {
+  const ORCHESTRATOR = 'platform-orchestrator'
+
+  afterEach(async () => {
+    await db.delete(systemTokens)
+  })
+
+  async function liveOrchestratorRows() {
+    return (await db.select().from(systemTokens).where(eq(systemTokens.name, ORCHESTRATOR))).filter(
+      (row) => !row.revokedAt
+    )
+  }
+
+  it('reissue mints ficus_sys_ with orchestrator scopes and revokes older orchestrator rows', async () => {
+    const old = await createSystemToken({ name: 'platform-orchestrator', scopes: ['machines:read'] })
+    const out = await reissuePlatformOrchestratorToken()
+    expect(out.token.startsWith('ficus_sys_')).toBe(true)
+    expect(out.revoked).toBe(1)
+    expect(await resolveSystemToken(old.token)).toBeNull()
+    const resolved = await resolveSystemToken(out.token)
+    expect(resolved?.scopes.sort()).toEqual(['machines:read', 'machines:write', 'system:pause'])
+  })
+
+  it('reissue works when no orchestrator token exists yet', async () => {
+    expect((await reissuePlatformOrchestratorToken()).revoked).toBe(0)
+  })
+
+  it('leaves exactly one live platform-orchestrator row: the one it returned, stored only as a hash', async () => {
+    const out = await reissuePlatformOrchestratorToken()
+
+    const live = await liveOrchestratorRows()
+    expect(live).toHaveLength(1)
+    expect(live[0].id).toBe(out.id)
+    expect(live[0].kind).toBe('manual')
+    expect(live[0].tokenHash).toBe(createHash('sha256').update(out.token).digest('hex'))
+    // The raw value is never persisted in any column.
+    expect(JSON.stringify(live[0])).not.toContain(out.token)
+    expect((await resolveSystemToken(out.token))?.name).toBe(ORCHESTRATOR)
+  })
+
+  it('revokes every live orchestrator row whatever its prefix, and counts only rows it revoked', async () => {
+    await createSystemToken({ name: ORCHESTRATOR, scopes: ['machines:read', 'machines:write'] })
+    // A row minted under an older prefix (neutral stand-in): dead for auth, but still live in the table.
+    const legacy = await seedSystemTokenRow({ raw: 'old_sys_' + 'a'.repeat(43), name: ORCHESTRATOR, kind: 'manual' })
+    const alreadyRevoked = await seedSystemTokenRow({
+      raw: 'old_sys_' + 'b'.repeat(43),
+      name: ORCHESTRATOR,
+      kind: 'manual',
+    })
+    const revokedAt = new Date('2026-01-01T00:00:00Z')
+    await db.update(systemTokens).set({ revokedAt }).where(eq(systemTokens.id, alreadyRevoked.id))
+
+    const out = await reissuePlatformOrchestratorToken()
+
+    expect(out.revoked).toBe(2)
+    const rows = await db.select().from(systemTokens)
+    expect(rows.find((row) => row.id === legacy.id)?.revokedAt).not.toBeNull()
+    // An already-revoked row keeps its original revocation time.
+    expect(rows.find((row) => row.id === alreadyRevoked.id)?.revokedAt?.toISOString()).toBe(revokedAt.toISOString())
+    expect((await liveOrchestratorRows()).map((row) => row.id)).toEqual([out.id])
+  })
+
+  it('never touches tokens with another name', async () => {
+    const manual = await createSystemToken({ name: 'CI', scopes: ['inbox:system'] })
+    const webhook = await seedSystemTokenRow({
+      raw: SYSTEM_TOKEN_PREFIX + 'w'.repeat(43),
+      name: 'Webhook automation',
+      kind: 'webhook',
+    })
+
+    await reissuePlatformOrchestratorToken()
+
+    expect(await resolveSystemToken(manual.token)).not.toBeNull()
+    expect(await resolveSystemToken(SYSTEM_TOKEN_PREFIX + 'w'.repeat(43))).not.toBeNull()
+    const [webhookRow] = await db.select().from(systemTokens).where(eq(systemTokens.id, webhook.id))
+    expect(webhookRow.revokedAt).toBeNull()
+  })
+
+  it('a second run (a retry after a lost reply) supersedes the first: new token live, first revoked', async () => {
+    const first = await reissuePlatformOrchestratorToken()
+    const second = await reissuePlatformOrchestratorToken()
+
+    expect(second.token).not.toBe(first.token)
+    expect(second.revoked).toBe(1)
+    expect(await resolveSystemToken(first.token)).toBeNull()
+    expect(await resolveSystemToken(second.token)).not.toBeNull()
+    expect((await liveOrchestratorRows()).map((row) => row.id)).toEqual([second.id])
+  })
+
+  it('concurrent re-issues serialize: exactly one orchestrator token survives, and no orphans', async () => {
+    await createSystemToken({ name: ORCHESTRATOR, scopes: ['machines:read'] })
+
+    const results = await Promise.all(Array.from({ length: 5 }, () => reissuePlatformOrchestratorToken()))
+
+    const live = await liveOrchestratorRows()
+    expect(live).toHaveLength(1)
+    const survivors = []
+    for (const result of results) if (await resolveSystemToken(result.token)) survivors.push(result)
+    expect(survivors).toHaveLength(1)
+    expect(survivors[0].id).toBe(live[0].id)
+    // Serialized: each run revokes exactly the one live row it found (the pre-existing one, then each predecessor).
+    expect(results.map((result) => result.revoked)).toEqual([1, 1, 1, 1, 1])
+  })
+
+  it('never logs the raw token', async () => {
+    const captured: string[] = []
+    const originals = { log: console.log, info: console.info, warn: console.warn, error: console.error }
+    const capture =
+      (original: (...args: unknown[]) => void) =>
+      (...args: unknown[]) => {
+        captured.push(args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' '))
+        original(...args)
+      }
+    console.log = capture(originals.log)
+    console.info = capture(originals.info)
+    console.warn = capture(originals.warn)
+    console.error = capture(originals.error)
+    let token: string
+    try {
+      ;({ token } = await reissuePlatformOrchestratorToken())
+    } finally {
+      Object.assign(console, originals)
+    }
+
+    expect(captured.length).toBeGreaterThan(0)
+    expect(captured.join('\n')).not.toContain(token)
+    expect(captured.join('\n')).not.toContain(token.slice(SYSTEM_TOKEN_PREFIX.length))
+  })
+
+  it('takes no caller input', () => {
+    expect(reissuePlatformOrchestratorToken.length).toBe(0)
   })
 })

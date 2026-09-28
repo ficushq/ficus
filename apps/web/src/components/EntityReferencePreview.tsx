@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { workStreamTitle, type Agent, type WorkStream } from '@tau/shared'
+import { workStreamTitle, type Agent, type WorkStream } from '@ficus/shared'
 import { useLayoutEffect, useRef, useState, type RefObject, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useStableRef } from '../hooks/useStableRef'
@@ -113,7 +113,7 @@ export function EntityReferencePreview({
       }}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
-      className="tau-overlay fixed z-[80] w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto p-3 text-[13px] leading-5 text-primary"
+      className="ficus-overlay fixed z-[80] w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto p-3 text-[13px] leading-5 text-primary"
       style={{ ...position, visibility: position ? 'visible' : 'hidden' }}
     >
       {reference.kind === 'ws' ? (

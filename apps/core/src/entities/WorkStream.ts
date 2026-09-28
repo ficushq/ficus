@@ -19,7 +19,7 @@ import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
 import { eq, desc, and, sql, inArray, type SQL } from 'drizzle-orm'
 import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } from '../db'
 import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
-import { describeCodeHostReference, WORK_STREAM_ADMITTED_STATUSES, workStreamSourceLinkKindSchema } from '@tau/shared'
+import { describeCodeHostReference, WORK_STREAM_ADMITTED_STATUSES, workStreamSourceLinkKindSchema } from '@ficus/shared'
 import type {
   WorkStream as WorkStreamJson,
   WorktreeCleanupSummary,
@@ -33,7 +33,7 @@ import type {
   WorkStreamMetrics,
   WorkStreamRuntime,
   WorkStreamSourceLink,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { listWorkStreamSubscriberIds } from '../services/work-streams/subscriptions'
 import { BaseEntity } from './base'

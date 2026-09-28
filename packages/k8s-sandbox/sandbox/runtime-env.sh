@@ -43,19 +43,19 @@ _tau_nix_glibc_dirs() {
   \) -printf '%h\n' 2>/dev/null | _tau_join_by_colon
 }
 
-if [ -z "${TAU_NIX_GLIBC_LIBRARY_PATH:-}" ]; then
-  TAU_NIX_GLIBC_LIBRARY_PATH="$(_tau_nix_glibc_dirs || true)"
-  export TAU_NIX_GLIBC_LIBRARY_PATH
+if [ -z "${FICUS_NIX_GLIBC_LIBRARY_PATH:-}" ]; then
+  FICUS_NIX_GLIBC_LIBRARY_PATH="$(_tau_nix_glibc_dirs || true)"
+  export FICUS_NIX_GLIBC_LIBRARY_PATH
 fi
 
-if [ -z "${TAU_NIX_LD_LIBRARY_PATH:-}" ]; then
-  TAU_NIX_LD_LIBRARY_PATH="$(_tau_nix_cxx_lib_dirs || true)"
-  export TAU_NIX_LD_LIBRARY_PATH
+if [ -z "${FICUS_NIX_LD_LIBRARY_PATH:-}" ]; then
+  FICUS_NIX_LD_LIBRARY_PATH="$(_tau_nix_cxx_lib_dirs || true)"
+  export FICUS_NIX_LD_LIBRARY_PATH
 fi
 
-if [ -n "${TAU_NIX_LD_LIBRARY_PATH:-}" ]; then
+if [ -n "${FICUS_NIX_LD_LIBRARY_PATH:-}" ]; then
   case ":${LD_LIBRARY_PATH:-}:" in
-    *":$TAU_NIX_LD_LIBRARY_PATH:"*) ;;
-    *) export LD_LIBRARY_PATH="$TAU_NIX_LD_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+    *":$FICUS_NIX_LD_LIBRARY_PATH:"*) ;;
+    *) export LD_LIBRARY_PATH="$FICUS_NIX_LD_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
   esac
 fi

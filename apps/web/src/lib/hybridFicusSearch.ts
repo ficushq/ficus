@@ -1,4 +1,4 @@
-import type { EntitySearchResult } from '@tau/shared'
+import type { EntitySearchResult } from '@ficus/shared'
 import { searchEntities } from '../api/search'
 import { assistantSearch } from './assistantSearch'
 import { settingMatchRank } from '../components/settings/settingsSearch'
@@ -23,7 +23,7 @@ function entityDestination(row: EntitySearchResult) {
   }
 }
 
-export async function hybridTauSearch(
+export async function hybridFicusSearch(
   query: string,
   limit: number,
   allowedSettings: ReadonlySet<string>,

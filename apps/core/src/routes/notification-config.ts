@@ -7,7 +7,7 @@ import { notificationSync } from '../services/config-sync'
 import { notificationService } from '../services/notifications'
 import { requirePermission } from '../middleware/require-permission'
 import { UserNotificationPreferences } from '../entities/UserNotificationPreferences'
-import { PUSH_CATEGORY_IDS } from '@tau/shared'
+import { PUSH_CATEGORY_IDS } from '@ficus/shared'
 
 // The mutable push categories (see PUSH_CATEGORIES) — surfaced so the per-user preferences UI can
 // present one toggle per kind of push, independent of how routing rules are configured.

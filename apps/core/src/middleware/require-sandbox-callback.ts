@@ -10,7 +10,7 @@ function sha256(s: string): Buffer {
  * Authenticates the in-cluster sandbox watcher's callbacks (e.g. workspace-files)
  * via a constant-time comparison against SANDBOX_CALLBACK_SECRET. The watcher has
  * no RBAC identity (no session, no agent token); this secret is independent of
- * the admin-users gate that disables legacy TAU_PASSWORD, so the callback keeps
+ * the admin-users gate that disables legacy FICUS_PASSWORD, so the callback keeps
  * working once admin users exist. identityMiddleware bypasses this path, so this
  * is the sole auth gate for the route.
  */

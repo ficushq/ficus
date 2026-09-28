@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Agent, Monitor, MonitorStatus } from '@tau/shared'
+import type { Agent, Monitor, MonitorStatus } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { monitorsApi } from '../../api/monitors'
@@ -32,7 +32,7 @@ export function AgentMonitorsPanel({ agent }: { agent: Agent }) {
             override.
           </p>
         </div>
-        <button className="tau-button rounded border px-3 py-1 text-sm" onClick={() => setShowAll(!showAll)}>
+        <button className="ficus-button rounded border px-3 py-1 text-sm" onClick={() => setShowAll(!showAll)}>
           {showAll ? 'Active' : 'All'}
         </button>
       </div>

@@ -2,11 +2,11 @@ import { describe, expect, it } from 'bun:test'
 import { mergeEnvFile, parseEnvFile, renderEnvDiff } from './env-file'
 
 const base = `# Web
-TAU_SERVE_WEB=1
-TAU_API_URL=http://localhost:3000
+FICUS_SERVE_WEB=1
+FICUS_API_URL=http://localhost:3000
 
 # Encryption
-TAU_ENCRYPTION_KEY=
+FICUS_ENCRYPTION_KEY=
 APP_URL=https://your-domain.com
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/tau
 `
@@ -14,9 +14,9 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/tau
 describe('parseEnvFile', () => {
   it('returns key/value pairs and ignores comments and blanks', () => {
     expect(parseEnvFile(base)).toEqual({
-      TAU_SERVE_WEB: '1',
-      TAU_API_URL: 'http://localhost:3000',
-      TAU_ENCRYPTION_KEY: '',
+      FICUS_SERVE_WEB: '1',
+      FICUS_API_URL: 'http://localhost:3000',
+      FICUS_ENCRYPTION_KEY: '',
       APP_URL: 'https://your-domain.com',
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/tau',
     })
@@ -26,18 +26,34 @@ describe('parseEnvFile', () => {
   })
 })
 
+describe('parseEnvFile legacy TAU_ lines (one release)', () => {
+  it('reads a TAU_X line as FICUS_X, and a FICUS_X line in the same file wins (except for encryption keys)', () => {
+    expect(parseEnvFile('TAU_INSTANCE=smoke\nTAU_PASSWORD=old\nFICUS_PASSWORD=new\nPORT=3100\n')).toEqual({
+      FICUS_INSTANCE: 'smoke',
+      FICUS_PASSWORD: 'new',
+      PORT: '3100',
+    })
+  })
+
+  it('keeps the TAU_ value of a conflicting encryption key, as the boot bridge does', () => {
+    expect(parseEnvFile('TAU_ENCRYPTION_KEY=store-key\nFICUS_ENCRYPTION_KEY=other-key\n')).toEqual({
+      FICUS_ENCRYPTION_KEY: 'store-key',
+    })
+  })
+})
+
 describe('mergeEnvFile', () => {
   it('fills an empty managed key in place and keeps everything else byte-identical', () => {
-    const out = mergeEnvFile(base, [{ key: 'TAU_ENCRYPTION_KEY', value: 'abc', explicit: false }])
-    expect(out).toBe(base.replace('TAU_ENCRYPTION_KEY=', 'TAU_ENCRYPTION_KEY=abc'))
+    const out = mergeEnvFile(base, [{ key: 'FICUS_ENCRYPTION_KEY', value: 'abc', explicit: false }])
+    expect(out).toBe(base.replace('FICUS_ENCRYPTION_KEY=', 'FICUS_ENCRYPTION_KEY=abc'))
   })
   it('keeps an existing non-empty value when the update is not explicit', () => {
-    const out = mergeEnvFile(base, [{ key: 'TAU_API_URL', value: 'http://localhost:4000', explicit: false }])
+    const out = mergeEnvFile(base, [{ key: 'FICUS_API_URL', value: 'http://localhost:4000', explicit: false }])
     expect(out).toBe(base)
   })
   it('replaces an existing value when the update is explicit', () => {
-    const out = mergeEnvFile(base, [{ key: 'TAU_API_URL', value: 'http://localhost:4000', explicit: true }])
-    expect(out).toContain('TAU_API_URL=http://localhost:4000\n')
+    const out = mergeEnvFile(base, [{ key: 'FICUS_API_URL', value: 'http://localhost:4000', explicit: true }])
+    expect(out).toContain('FICUS_API_URL=http://localhost:4000\n')
     expect(out).not.toContain('localhost:3000')
   })
   it('treats the .env.example APP_URL placeholder as empty', () => {
@@ -46,11 +62,11 @@ describe('mergeEnvFile', () => {
   })
   it('appends missing keys under one trailer comment, in order', () => {
     const out = mergeEnvFile(base, [
-      { key: 'TAU_SANDBOX_RUNTIME', value: 'host', explicit: true },
-      { key: 'TAU_SYSTEM_LOG_PROVIDER', value: 'pm2', explicit: false },
+      { key: 'FICUS_SANDBOX_RUNTIME', value: 'host', explicit: true },
+      { key: 'FICUS_SYSTEM_LOG_PROVIDER', value: 'pm2', explicit: false },
     ])
     expect(
-      out.endsWith('\n# --- added by tau setup ---\nTAU_SANDBOX_RUNTIME=host\nTAU_SYSTEM_LOG_PROVIDER=pm2\n')
+      out.endsWith('\n# --- added by tau setup ---\nFICUS_SANDBOX_RUNTIME=host\nFICUS_SYSTEM_LOG_PROVIDER=pm2\n')
     ).toBe(true)
   })
   it('reuses an existing trailer instead of adding a second one', () => {
@@ -77,10 +93,10 @@ describe('mergeEnvFile', () => {
 describe('renderEnvDiff', () => {
   it('lists changed keys and redacts secrets', () => {
     const after = mergeEnvFile(base, [
-      { key: 'TAU_ENCRYPTION_KEY', value: 'deadbeef', explicit: false },
+      { key: 'FICUS_ENCRYPTION_KEY', value: 'deadbeef', explicit: false },
       { key: 'PORT', value: '3000', explicit: false },
     ])
-    const lines = renderEnvDiff(base, after, ['TAU_ENCRYPTION_KEY'])
-    expect(lines).toEqual(['TAU_ENCRYPTION_KEY=<redacted>', 'PORT=3000'])
+    const lines = renderEnvDiff(base, after, ['FICUS_ENCRYPTION_KEY'])
+    expect(lines).toEqual(['FICUS_ENCRYPTION_KEY=<redacted>', 'PORT=3000'])
   })
 })

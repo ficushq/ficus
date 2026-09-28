@@ -1838,8 +1838,8 @@ test('revocation claim skips a busy oldest artifact and drains unrelated work', 
 })
 
 test('hosted projection emits zero material for a historical local Notion connection', async () => {
-  const previousManaged = process.env.TAU_MANAGED
-  process.env.TAU_MANAGED = '1'
+  const previousManaged = process.env.FICUS_MANAGED
+  process.env.FICUS_MANAGED = '1'
   const [squad] = await db.insert(squads).values({ name: 'Authority projection', purpose: 'test' }).returning()
   const materialRevision = crypto.randomUUID()
   const [connection] = await db
@@ -1873,8 +1873,8 @@ test('hosted projection emits zero material for a historical local Notion connec
       readiness: [],
     })
   } finally {
-    if (previousManaged === undefined) delete process.env.TAU_MANAGED
-    else process.env.TAU_MANAGED = previousManaged
+    if (previousManaged === undefined) delete process.env.FICUS_MANAGED
+    else process.env.FICUS_MANAGED = previousManaged
     await db.delete(squads).where(eq(squads.id, squad.id))
     await db.delete(integrationConnections).where(eq(integrationConnections.id, connection.id))
   }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { LEGACY_ENTITY_REFERENCE_SCHEME } from '@ficus/shared'
 import { activityPreview } from './preview'
 
 describe('source activity previews', () => {
@@ -9,21 +10,21 @@ describe('source activity previews', () => {
       preview: [{ text: 'hel', bold: true, href }, { text: '…' }],
     })
   })
-  test('preserves labels and explicit Tau references but not bare numbers', () => {
-    expect(activityPreview('[#241](tau:ws:241) [Ada](tau:agent:deadbeef) #242').preview).toEqual([
-      { text: '#241', href: 'tau:ws:241' },
+  test('preserves labels and explicit Ficus references but not bare numbers', () => {
+    expect(activityPreview('[#241](ficus:ws:241) [Ada](ficus:agent:deadbeef) #242').preview).toEqual([
+      { text: '#241', href: 'ficus:ws:241' },
       { text: ' ' },
-      { text: 'Ada', href: 'tau:agent:deadbeef' },
+      { text: 'Ada', href: 'ficus:agent:deadbeef' },
       { text: ' #242' },
     ])
   })
   test('formats inline content and keeps code literal', () => {
-    expect(activityPreview('**bold** *italic* `[x](tau:ws:1)` https://example.com').preview).toEqual([
+    expect(activityPreview('**bold** *italic* `[x](ficus:ws:1)` https://example.com').preview).toEqual([
       { text: 'bold', bold: true },
       { text: ' ' },
       { text: 'italic', italic: true },
       { text: ' ' },
-      { text: '[x](tau:ws:1)', code: true },
+      { text: '[x](ficus:ws:1)', code: true },
       { text: ' ' },
       { text: 'https://example.com', href: 'https://example.com' },
     ])
@@ -58,9 +59,9 @@ test('chat extraction materializes previews from original source', async () => {
     executionId: 'e',
     agentId: 'a',
     agentTypeId: 'engineer',
-    messages: [{ id: 'm', role: 'assistant', content: '[#241](tau:ws:241)', createdAt: new Date() }],
+    messages: [{ id: 'm', role: 'assistant', content: '[#241](ficus:ws:241)', createdAt: new Date() }],
   })
-  expect(row!.preview).toEqual([{ text: '#241', href: 'tau:ws:241' }])
+  expect(row!.preview).toEqual([{ text: '#241', href: 'ficus:ws:241' }])
   expect(row!.summary).toBe('#241')
 })
 
@@ -90,11 +91,16 @@ test('clips before, at and after link labels and bounds oversized inputs', () =>
   expect(activityPreview('x'.repeat(600), 1000).summary.endsWith('…')).toBe(true)
 })
 
-test('validates Tau references using the shared client grammar', () => {
-  for (const href of ['tau:ws:241', 'tau:ws:deadbeef', 'tau:agent:deadbeef-1234-1234-1234-123456789abc'])
+test('validates Ficus references using the shared client grammar', () => {
+  for (const href of ['ficus:ws:241', 'ficus:ws:deadbeef', 'ficus:agent:deadbeef-1234-1234-1234-123456789abc'])
     expect(activityPreview(`[label](${href})`).preview).toEqual([{ text: 'label', href }])
-  for (const href of ['tau:ws:abc-def', 'tau:agent:xyz', 'tau:other:241'])
+  for (const href of ['ficus:ws:abc-def', 'ficus:agent:xyz', 'ficus:other:241'])
     expect(activityPreview(`[label](${href})`).preview).toEqual([{ text: 'label' }])
+})
+
+test('keeps references written before the rename (stored messages still link until they are migrated)', () => {
+  for (const href of [`${LEGACY_ENTITY_REFERENCE_SCHEME}:ws:241`, `${LEGACY_ENTITY_REFERENCE_SCHEME}:agent:deadbeef`])
+    expect(activityPreview(`[label](${href})`).preview).toEqual([{ text: 'label', href }])
 })
 
 test('bounds repeated hidden destinations without cutting or fabricating them', () => {
@@ -116,12 +122,12 @@ test('inbox Markdown is parsed before adding its literal system prefix', async (
     recipientAgentTypeId: 'engineer',
     senderType: 'agent',
     senderId: 'b',
-    content: '# [#241](tau:ws:241)\n\n- **ready**',
+    content: '# [#241](ficus:ws:241)\n\n- **ready**',
     metadata: null,
     workStream: null,
   })
   expect(row!.summary).toBe('Sent message to Engineer: #241 ready')
-  expect(row!.preview).toContainEqual({ text: '#241', href: 'tau:ws:241' })
+  expect(row!.preview).toContainEqual({ text: '#241', href: 'ficus:ws:241' })
 })
 
 test('an input safety cutoff never turns a partial multiline destination into a URL', () => {

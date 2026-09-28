@@ -219,7 +219,7 @@ export class GitHubOAuthClient {
         signal,
         headers: {
           accept: 'application/json',
-          'user-agent': 'Tau',
+          'user-agent': 'Ficus',
           'x-github-api-version': '2022-11-28',
           ...input.headers,
         },

@@ -1,4 +1,4 @@
-import type { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
+import type { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 
 export interface GitHubAuthorizationFailure {
   status: 400 | 429 | 502 | 504

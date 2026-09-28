@@ -153,7 +153,7 @@ export class K8sSandboxManager implements ISandboxManager {
 
   constructor(namespace?: string, options: K8sSandboxManagerOptions = {}) {
     const runPeriodicLoops = options.runPeriodicLoops ?? true
-    const ns = namespace || process.env.TAU_K8S_NAMESPACE || 'tau-sandboxes'
+    const ns = namespace || process.env.FICUS_K8S_NAMESPACE || 'tau-sandboxes'
     this.podManager = new K8sPodManager(ns)
     this.provisionScope = provisionScope(this.podManager.getClusterServer(), ns)
     this.provisionCoordinator = new ProvisionCoordinator({
@@ -167,9 +167,9 @@ export class K8sSandboxManager implements ISandboxManager {
     })
     this.podManager.setIdleKeepAliveChecker(buildIdleKeepAliveChecker())
 
-    // Sync sandbox auth K8s Secret whenever TAU_PASSWORD changes
+    // Sync sandbox auth K8s Secret whenever FICUS_PASSWORD changes
     getSecretStore().onChange(async (key) => {
-      if (key === 'TAU_PASSWORD') {
+      if (key === 'FICUS_PASSWORD') {
         await this.podManager.syncAuthSecret()
       }
     })
@@ -608,7 +608,7 @@ export class K8sSandboxManager implements ISandboxManager {
         rows,
         cwd: state.workspaceMount,
         useDevboxRc: true,
-        env: { TAU_API_URL: resolveSandboxApiUrl(this.podManager.namespace) },
+        env: { FICUS_API_URL: resolveSandboxApiUrl(this.podManager.namespace) },
       },
     })
 

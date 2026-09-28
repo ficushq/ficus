@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { generateKeyPairSync, verify } from 'crypto'
-import { canonicalAgentSigBytes } from '@tau/shared'
+import { canonicalAgentSigBytes } from '@ficus/shared'
 import { buildFederatedSendBody } from './sign'
 
 const { publicKey, privateKey } = generateKeyPairSync('ed25519')
@@ -8,7 +8,7 @@ const priv = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
 const pub = publicKey.export({ type: 'spki', format: 'pem' }) as string
 
 describe('buildFederatedSendBody', () => {
-  test('produces an agentSig that verifies over the @tau/shared canonical subset', () => {
+  test('produces an agentSig that verifies over the @ficus/shared canonical subset', () => {
     const body = buildFederatedSendBody({
       from: 'amtp://us/alice',
       to: 'amtp://peer/bob',

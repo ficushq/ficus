@@ -18,12 +18,12 @@
 /**
  * Whether the preload may continue without a database. CI always expects one,
  * and the package runner (`bun run --filter core test`) sets
- * TAU_TEST_REQUIRE_DB=1: both keep the original fail-fast exit.
+ * FICUS_TEST_REQUIRE_DB=1: both keep the original fail-fast exit.
  */
 export function testDbFallbackAllowed(env: Record<string, string | undefined> = process.env): boolean {
   const ci = env.CI
   if (ci && ci !== '0' && ci.toLowerCase() !== 'false') return false
-  return env.TAU_TEST_REQUIRE_DB !== '1'
+  return env.FICUS_TEST_REQUIRE_DB !== '1'
 }
 
 export type TestDbStartup = { ready: true } | { ready: false; reason: string }
@@ -84,7 +84,7 @@ export function unavailableTestDbBanner(reason: string): string {
   return (
     `Core test database unavailable: ${reason}\n` +
     'Continuing so database-free tests can run; every database use will fail with "Core test database unavailable".\n' +
-    'Fix Docker, then run: bun run test:db:down && bun run test:db:up (set TAU_TEST_REQUIRE_DB=1 to exit instead).'
+    'Fix Docker, then run: bun run test:db:down && bun run test:db:up (set FICUS_TEST_REQUIRE_DB=1 to exit instead).'
   )
 }
 

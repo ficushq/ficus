@@ -2,9 +2,9 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { TauClient } from '@tau/client-core'
-import { useAgentConversation, type RenderItem } from '@tau/client-react'
-import type { Message } from '@tau/shared'
+import type { FicusClient } from '@ficus/client-core'
+import { useAgentConversation, type RenderItem } from '@ficus/client-react'
+import type { Message } from '@ficus/shared'
 import { LiveConversationProvider } from './LiveConversationProvider'
 import { WebSocketProvider } from './WebSocketProvider'
 import { QueryInvalidator } from '../components/QueryInvalidator'
@@ -38,7 +38,7 @@ class FakeWebSocket {
   }
 }
 
-type StreamCallbacks = Parameters<TauClient['agents']['subscribeToAgentStream']>[1]
+type StreamCallbacks = Parameters<FicusClient['agents']['subscribeToAgentStream']>[1]
 
 function makeClient(getMessage: (messageId: string) => Promise<Message>) {
   let streamCallbacks: StreamCallbacks | null = null
@@ -60,7 +60,7 @@ function makeClient(getMessage: (messageId: string) => Promise<Message>) {
         return () => undefined
       },
     },
-  } as unknown as TauClient
+  } as unknown as FicusClient
   return {
     client,
     getMessagesCount: () => getMessagesCount,

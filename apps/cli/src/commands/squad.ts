@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { readFileSync } from 'fs'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete, apiGetRaw } from '../client'
 import { output, outputTable, outputError, isJsonMode } from '../output'
 import { WorkStream } from './workstream'
@@ -242,7 +242,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad list [--status <status>] [--include-anonymous]
+  // ficus squad list [--status <status>] [--include-anonymous]
   squad
     .command('list')
     .description('List all squads')
@@ -282,7 +282,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad create <name> -p <purpose> [options]
+  // ficus squad create <name> -p <purpose> [options]
   squad
     .command('create <name>')
     .alias('new')
@@ -298,7 +298,7 @@ export function registerSquadCommands(program: Command) {
     .option('--type-context <json>', 'JSON map of agent type ID -> context string (e.g. \'{"engineer":"..."}\')')
     .option(
       '--host-workspace-path <path>',
-      'Host sandbox runtime only: absolute directory on the Tau host this squad works in; `~` is expanded on the machine running the CLI'
+      'Host sandbox runtime only: absolute directory on the Ficus host this squad works in; `~` is expanded on the machine running the CLI'
     )
     .action(async (name, options) => {
       try {
@@ -324,7 +324,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad get <id>
+  // ficus squad get <id>
   squad
     .command('get <id>')
     .alias('info')
@@ -363,7 +363,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad update <id> [options]
+  // ficus squad update <id> [options]
   squad
     .command('update <id>')
     .alias('edit')
@@ -393,7 +393,7 @@ export function registerSquadCommands(program: Command) {
     )
     .option(
       '--host-workspace-path <path>',
-      "Host sandbox runtime only: absolute directory on the Tau host this squad works in; `~` is expanded on the machine running the CLI; 'none' restores the default. Takes effect at the squad's next sandbox start"
+      "Host sandbox runtime only: absolute directory on the Ficus host this squad works in; `~` is expanded on the machine running the CLI; 'none' restores the default. Takes effect at the squad's next sandbox start"
     )
     .action(async (id, options) => {
       try {
@@ -444,7 +444,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad delete|rm|archive <id>
+  // ficus squad delete|rm|archive <id>
   squad
     .command('delete <id>')
     .aliases(['rm', 'archive'])
@@ -462,7 +462,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad workspace <id>
+  // ficus squad workspace <id>
   squad
     .command('workspace <id>')
     .alias('ws')
@@ -481,7 +481,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad file <id> <path>
+  // ficus squad file <id> <path>
   squad
     .command('file <id> <path>')
     .alias('cat')
@@ -496,7 +496,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad workspace-search <id> <query>
+  // ficus squad workspace-search <id> <query>
   squad
     .command('workspace-search <id> <query>')
     .description('Search files in squad workspace')
@@ -521,7 +521,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad sandbox-status <id>
+  // ficus squad sandbox-status <id>
   squad
     .command('sandbox-status <id>')
     .description('Get sandbox status for a squad')
@@ -536,7 +536,7 @@ export function registerSquadCommands(program: Command) {
 
   registerSandboxProcessCommands(squad, 'squad')
 
-  // tau squad link <source> <target> -t <type>
+  // ficus squad link <source> <target> -t <type>
   squad
     .command('link <source> <target>')
     .description('Create relationship between squads')
@@ -568,7 +568,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad unlink <relationshipId>
+  // ficus squad unlink <relationshipId>
   squad
     .command('unlink <relationshipId>')
     .description('Remove a relationship between squads')
@@ -587,7 +587,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad relationships <id>
+  // ficus squad relationships <id>
   squad
     .command('relationships <id>')
     .alias('rels')
@@ -624,7 +624,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad can-communicate <squadA> <squadB>
+  // ficus squad can-communicate <squadA> <squadB>
   squad
     .command('can-communicate <squadA> <squadB>')
     .alias('can-comm')
@@ -648,7 +648,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad agents <id>
+  // ficus squad agents <id>
   squad
     .command('agents <id>')
     .description('List agents in squad')
@@ -680,7 +680,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad search-messages <id> <query> [--limit <n>] [--role <role>]
+  // ficus squad search-messages <id> <query> [--limit <n>] [--role <role>]
   squad
     .command('search-messages <id> <query>')
     .alias('grep')
@@ -719,7 +719,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad spawn <agentType> <squadId> [--workstream <wsId>]
+  // ficus squad spawn <agentType> <squadId> [--workstream <wsId>]
   squad
     .command('spawn <agentType> <squadId>')
     .description('Spawn an agent in a squad, optionally assigning it to a work stream')
@@ -765,7 +765,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad unspawn <agentId>
+  // ficus squad unspawn <agentId>
   squad
     .command('unspawn <agentId>')
     .description('Terminate a flex agent')
@@ -791,7 +791,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad terminate-bulk <squadId> --type <agentTypeId>
+  // ficus squad terminate-bulk <squadId> --type <agentTypeId>
   squad
     .command('terminate-bulk <squadId>')
     .description('Terminate all eligible agents of a type in a squad')
@@ -870,7 +870,7 @@ export function registerSquadCommands(program: Command) {
   // --- SSH Credentials Commands ---
   const ssh = squad.command('ssh').description('Manage SSH credentials for a squad')
 
-  // tau squad ssh list-keys <squad-id>
+  // ficus squad ssh list-keys <squad-id>
   ssh
     .command('list-keys <squadId>')
     .description('List SSH keys for a squad')
@@ -892,7 +892,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad ssh add-key <squad-id> <key-name> --private-key <path> [--public-key <path>]
+  // ficus squad ssh add-key <squad-id> <key-name> --private-key <path> [--public-key <path>]
   ssh
     .command('add-key <squadId> <keyName>')
     .description('Add an SSH key to a squad')
@@ -921,7 +921,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad ssh remove-key <squad-id> <key-name>
+  // ficus squad ssh remove-key <squad-id> <key-name>
   ssh
     .command('remove-key <squadId> <keyName>')
     .description('Remove an SSH key from a squad')
@@ -939,7 +939,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad ssh get-public-key <squad-id> <key-name>
+  // ficus squad ssh get-public-key <squad-id> <key-name>
   ssh
     .command('get-public-key <squadId> <keyName>')
     .description('Get the public key for an SSH key')
@@ -957,7 +957,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad ssh set-config <squad-id> --file <path>
+  // ficus squad ssh set-config <squad-id> --file <path>
   ssh
     .command('set-config <squadId>')
     .description('Set SSH config for a squad')
@@ -980,7 +980,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad ssh get-config <squad-id>
+  // ficus squad ssh get-config <squad-id>
   ssh
     .command('get-config <squadId>')
     .description('Get SSH config for a squad')
@@ -1000,7 +1000,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad ssh add-known-host <squad-id> <host-entry>
+  // ficus squad ssh add-known-host <squad-id> <host-entry>
   ssh
     .command('add-known-host <squadId> <hostEntry>')
     .description('Add a host entry to known_hosts')
@@ -1018,7 +1018,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad ssh list-known-hosts <squad-id>
+  // ficus squad ssh list-known-hosts <squad-id>
   ssh
     .command('list-known-hosts <squadId>')
     .description('List known hosts for a squad')
@@ -1040,7 +1040,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad ssh generate-key <squad-id> <key-name> [--type ed25519|rsa]
+  // ficus squad ssh generate-key <squad-id> <key-name> [--type ed25519|rsa]
   ssh
     .command('generate-key <squadId> <keyName>')
     .description('Generate a new SSH key pair for a squad')
@@ -1092,7 +1092,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad cleanup-agents
+  // ficus squad cleanup-agents
   squad
     .command('cleanup-agents')
     .description('Terminate eligible flex agents (those with all work streams done)')
@@ -1147,7 +1147,7 @@ export function registerSquadCommands(program: Command) {
 
   // --- Squad attention (what this squad's decisions and progress do in your Action Center and push) ---
 
-  // tau squad subscription <id>
+  // ficus squad subscription <id>
   squad
     .command('subscription <id>')
     .description('Show your attention levels for this squad, and the watcher count')
@@ -1163,7 +1163,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad subscribe <id> [--decisions <level>] [--progress <level>]
+  // ficus squad subscribe <id> [--decisions <level>] [--progress <level>]
   squad
     .command('subscribe <id>')
     .alias('watch')
@@ -1188,7 +1188,7 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // tau squad unsubscribe <id>
+  // ficus squad unsubscribe <id>
   squad
     .command('unsubscribe <id>')
     .alias('unwatch')

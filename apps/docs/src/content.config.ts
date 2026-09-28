@@ -7,7 +7,7 @@ export const collections = {
     loader: docsLoader(),
     schema: (context) =>
       docsSchema()(context).transform((data) => {
-        if (process.env.TAU_DOCS_EMBEDDED === '1') {
+        if (process.env.FICUS_DOCS_EMBEDDED === '1') {
           for (const key of ['prev', 'next'] as const) {
             const link = data[key]
             if (

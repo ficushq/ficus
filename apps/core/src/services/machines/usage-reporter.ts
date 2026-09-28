@@ -1,10 +1,10 @@
-import { MAX_INGEST_MACHINES, type IngestMachine } from '@tau/shared/platform-usage'
+import { MAX_INGEST_MACHINES, type IngestMachine } from '@ficus/shared/platform-usage'
 /**
  * Platform usage-sample reporter — the tau-instance side of the shadow-
  * metering loop. Every 5 minutes, samples the
  * live `machines` fleet and POSTs it to the platform's ingest endpoint, which
  * stores it for later billing aggregation. Entirely inert on a self-hosted
- * (non-platform-managed) instance: `TAU_PLATFORM_INGEST_URL` is only ever set
+ * (non-platform-managed) instance: `FICUS_PLATFORM_INGEST_URL` is only ever set
  * by the platform's render-config for a tenant it provisioned.
  *
  * Shadow metering must never hurt the instance it's reporting on: every
@@ -45,7 +45,7 @@ const REPORT_INTERVAL_MS = 5 * 60_000
 const MAX_MACHINES = MAX_INGEST_MACHINES
 
 /** The shared ingest contract keeps client and server payloads aligned. */
-export type { IngestMachine } from '@tau/shared/platform-usage'
+export type { IngestMachine } from '@ficus/shared/platform-usage'
 
 export interface UsageReportPayload {
   sampledAt: string
@@ -485,7 +485,7 @@ export function buildIngestEndpoint(baseUrl: string): string {
 
 /** Token resolution: secret-store override, falling back to the raw env var (same pattern as services/github/api-client.ts's githubApiGet). */
 function resolveUsageToken(): string | undefined {
-  return getSecretStore().get('TAU_PLATFORM_USAGE_TOKEN') ?? process.env.TAU_PLATFORM_USAGE_TOKEN
+  return getSecretStore().get('FICUS_PLATFORM_USAGE_TOKEN') ?? process.env.FICUS_PLATFORM_USAGE_TOKEN
 }
 
 export interface ReportUsageSampleDeps {
@@ -544,7 +544,7 @@ function defaultDeps(): ReportUsageSampleDeps {
     countUsers: () => User.countActive(),
     fetch,
     now: () => new Date(),
-    ingestUrl: process.env.TAU_PLATFORM_INGEST_URL,
+    ingestUrl: process.env.FICUS_PLATFORM_INGEST_URL,
     getToken: resolveUsageToken,
     getVersion: () => getBuildVersion(),
     sampleDisk: (machines: Machine[]) => {
@@ -642,12 +642,12 @@ let runner: PeriodicRunner | null = null
 
 /**
  * Start the `platform-usage-reporter` subsystem. No-op (one log line, no
- * runner) when `TAU_PLATFORM_INGEST_URL` is unset — the common case for a
+ * runner) when `FICUS_PLATFORM_INGEST_URL` is unset — the common case for a
  * self-hosted instance the platform never provisioned.
  */
 export function startUsageReporter(): void {
-  if (!process.env.TAU_PLATFORM_INGEST_URL) {
-    log.info('TAU_PLATFORM_INGEST_URL not configured — platform usage reporter disabled')
+  if (!process.env.FICUS_PLATFORM_INGEST_URL) {
+    log.info('FICUS_PLATFORM_INGEST_URL not configured — platform usage reporter disabled')
     return
   }
   if (runner) return

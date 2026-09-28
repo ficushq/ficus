@@ -6,7 +6,7 @@ description: Authorize an account, grant repository access, and choose the ident
 import ModeContent from '../../../components/ModeContent.astro'
 
 Connect GitHub so squads can read repositories, push changes, and work with issues
-and pull requests. You need permission to manage integrations in Tau and permission
+and pull requests. You need permission to manage integrations in Ficus and permission
 to authorize the account and install the GitHub App on the intended repositories.
 
 ## Connect an account
@@ -16,7 +16,7 @@ Open **Settings → Integrations**, find **GitHub**, enable the card, and expand
 
 <ModeContent mode="cloud">
 
-Follow the GitHub authorization page and return to your Tau instance when it
+Follow the GitHub authorization page and return to your Ficus instance when it
 finishes. Cloud handles the shared OAuth application configuration; you do not
 need to enter an application client secret in your instance.
 
@@ -24,34 +24,34 @@ need to enter an application client secret in your instance.
 
 <ModeContent mode="self-hosted">
 
-The default setup uses Tau's GitHub App and device login, so no app setup is
-needed. Copy the code shown in Tau, open the displayed GitHub verification link,
-and enter the code. Leave Tau open while it waits for authorization. If the code
+The default setup uses Ficus's GitHub App and device login, so no app setup is
+needed. Copy the code shown in Ficus, open the displayed GitHub verification link,
+and enter the code. Leave Ficus open while it waits for authorization. If the code
 expires, start **Connect account** again.
 
 To use your own GitHub App, expand **Use your own GitHub App** in Settings, or
 **Use your own GitHub App instead** during onboarding. A client ID alone uses
 device login and needs no public URL; enable device flow in that App. Adding the
 optional client secret switches to browser authorization, which redirects to the
-exact callback URL displayed by Tau. Enable expiring user tokens either way,
+exact callback URL displayed by Ficus. Enable expiring user tokens either way,
 and give the App the **SSH signing keys** account permission (read and write)
-so Tau can sign agents' commits.
+so Ficus can sign agents' commits.
 
-If connecting fails, Tau shows GitHub's reason, such as GitHub being unreachable
+If connecting fails, Ficus shows GitHub's reason, such as GitHub being unreachable
 from the instance, device flow being disabled for the App, or GitHub rejecting
 the App's client ID or secret. Fix the cause, then choose **Retry**.
 
 </ModeContent>
 
-Install the GitHub App on the repositories Tau should use. Authorizing your user
-account alone does not give the App repository access. When you return, Tau
+Install the GitHub App on the repositories Ficus should use. Authorizing your user
+account alone does not give the App repository access. When you return, Ficus
 checks the App installations available to that account and how many repositories
 each installation exposes. If setup needs repository access, choose **Grant
 repository access**, install the App on the intended account or organization,
-and select its repositories. Return to Tau or choose **Check again** to verify.
+and select its repositories. Return to Ficus or choose **Check again** to verify.
 
 Access through an organization does not include forks owned by your personal
-account. Tau shows a separate warning when the App is missing from that account.
+account. Ficus shows a separate warning when the App is missing from that account.
 A failed or incomplete check is shown as unverified, rather than claiming the
 App is missing. The check verifies installation access, not whether a particular
 branch permits pushes.
@@ -82,7 +82,7 @@ Use a read-only request first, such as: “List the open pull requests in
 `example-org/sample-app` and summarize their titles.” Replace that example with
 your repository. Then continue with [your first task](/start/first-task/).
 
-Tau uses the selected account when `gh` runs and when Git needs HTTPS credentials.
+Ficus uses the selected account when `gh` runs and when Git needs HTTPS credentials.
 Changing the connection takes effect for subsequent credential requests. Git
 commit author name and email are separate settings; edit those in **Settings →
 Git** or the squad's author overrides when needed.
@@ -94,7 +94,7 @@ Git** or the squad's author overrides when needed.
 Managed instances can receive shared-App webhook events when Cloud delivery is
 configured. You still need a squad account and a repository referenced by the
 squad's work or subscriptions. You do not need to create a tenant webhook for
-that managed delivery path. Tau also polls repositories referenced by its work.
+that managed delivery path. Ficus also polls repositories referenced by its work.
 
 </ModeContent>
 
@@ -103,7 +103,7 @@ that managed delivery path. Tau also polls repositories referenced by its work.
 Polling works without a webhook. For direct delivery, expand **Webhook delivery**
 in the GitHub card. Copy its URL, generate or enter a signing secret, and configure
 the same secret in your GitHub App or repository webhook. Choose JSON delivery
-and the events your workflows consume, then save the setting in Tau. Your
+and the events your workflows consume, then save the setting in Ficus. Your
 instance must be reachable at the displayed public URL.
 
 </ModeContent>
@@ -115,15 +115,15 @@ commits and tags your agents make with that account are signed and show as
 **Verified** on GitHub. Connecting an account turns it on automatically; choose
 **Turn on signing** if it is off.
 
-Tau creates a signing key, adds it to the connected GitHub account (you can see
+Ficus creates a signing key, adds it to the connected GitHub account (you can see
 it under **GitHub Settings → SSH and GPG keys** as _Tau commit signing_), and
-keeps the private key on your Tau server. Agents never see it: their `git` asks
-Tau to sign each commit. **Turn off** removes the key from GitHub.
+keeps the private key on your Ficus server. Agents never see it: their `git` asks
+Ficus to sign each commit. **Turn off** removes the key from GitHub.
 
 Signing needs the App's **SSH signing keys** permission. If the card asks for it,
 choose **Reconnect** and approve the updated permissions on GitHub, then turn
 signing on. Commits show as Verified when the commit email is one GitHub has
-verified for the account; Tau's default, the account's `users.noreply.github.com`
+verified for the account; Ficus's default, the account's `users.noreply.github.com`
 address, always is.
 
 ## Fix access or disconnect
@@ -137,13 +137,13 @@ fork as well as any upstream repository. Your account owning the fork does not
 automatically grant the App access. Pushes need **Contents: write**; changes to
 `.github/workflows` also need **Workflows: write**, which is separate from
 **Actions: write**. In GitHub's installation settings, approve any pending App
-permission updates. Reconnecting in Tau does not replace that approval or add
+permission updates. Reconnecting in Ficus does not replace that approval or add
 repositories to the installation.
 
 Disabling GitHub preserves saved accounts and assignments while stopping new
-use. Disconnecting removes access through Tau and removes Tau's signing key from
+use. Disconnecting removes access through Ficus and removes Ficus's signing key from
 the account while the account's authorization still allows it; without its
 private half, a leftover key cannot sign anything. Removing a default account does
 not silently choose another identity; select a new default explicitly. For full
 revocation, review **GitHub Settings → Applications → Authorized GitHub Apps**;
-public-client device authorizations cannot be remotely revoked by Tau alone.
+public-client device authorizations cannot be remotely revoked by Ficus alone.

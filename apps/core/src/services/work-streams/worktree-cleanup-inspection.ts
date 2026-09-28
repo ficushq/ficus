@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { WorktreeCleanupInspection } from '@tau/shared'
+import type { WorktreeCleanupInspection } from '@ficus/shared'
 import { db, workStreams, workStreamWorktrees, worktreeCleanupJobs } from '../../db'
 
 /** A single read snapshot; never starts a sandbox or changes cleanup ownership. */

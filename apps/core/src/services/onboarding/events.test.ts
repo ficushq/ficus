@@ -10,7 +10,7 @@ describe('onboarding events', () => {
   let store: SecretStore
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
     resetSecretStore()
     store = getSecretStore()
@@ -22,7 +22,7 @@ describe('onboarding events', () => {
   afterEach(() => {
     resetOnboardingEventSourcesForTest()
     store.stopPeriodicRefresh()
-    delete process.env.TAU_ENCRYPTION_KEY
+    delete process.env.FICUS_ENCRYPTION_KEY
   })
 
   describe('notifyOnboardingChanged (leading-edge with trailing catch-up)', () => {

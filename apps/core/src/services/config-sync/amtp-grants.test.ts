@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
-import { Permissions } from '@tau/shared'
+import { Permissions } from '@ficus/shared'
 import { CONFIG_DIR } from '../../lib/paths'
 
 const AGENT_TYPES_DIR = join(CONFIG_DIR, 'agent-types')

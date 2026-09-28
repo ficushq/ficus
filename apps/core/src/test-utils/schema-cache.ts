@@ -26,7 +26,7 @@ export function createTestSchemaCache(file: string, key: string, dump: () => str
 }
 
 export function runnerTestSchemaCache(databaseUrl: string) {
-  const file = process.env.TAU_TEST_SCHEMA_CACHE_FILE
+  const file = process.env.FICUS_TEST_SCHEMA_CACHE_FILE
   if (!file) return undefined
   const root = resolve(import.meta.dir, '../../../..')
   const inputs = [join(root, 'bun.lock'), join(root, 'apps/core/src/test-setup.ts')]

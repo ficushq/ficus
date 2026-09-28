@@ -3,8 +3,15 @@ import {
   type AppearanceSetting,
   type EffectiveAppearance,
   type StoredThemeSelection,
-} from '@tau/shared/theme-schema'
+} from '@ficus/shared/theme-schema'
 import { KNOWN_THEME_IDS } from './registry'
+import {
+  APPEARANCE_STORAGE_KEY,
+  LEGACY_SURFACE_COLOR_STORAGE_KEY,
+  LEGACY_THEME_STORAGE_KEY,
+  THEME_ID_STORAGE_KEY,
+  THEME_SURFACE_STORAGE_KEY,
+} from '@ficus/shared/browser-keys'
 
 /**
  * Device-local theme persistence (phase 0, PD-2).
@@ -16,18 +23,18 @@ import { KNOWN_THEME_IDS } from './registry'
  * device-local explicit choice keeps winning.
  */
 
-export const THEME_ID_KEY = 'tau-theme-id'
-export const APPEARANCE_KEY = 'tau-appearance'
+export const THEME_ID_KEY = THEME_ID_STORAGE_KEY
+export const APPEARANCE_KEY = APPEARANCE_STORAGE_KEY
 /** Legacy pre-theme-architecture key holding bare 'light' | 'dark'. */
-export const LEGACY_THEME_KEY = 'tau-theme'
+export const LEGACY_THEME_KEY = LEGACY_THEME_STORAGE_KEY
 /** Legacy resolved-surface snapshot (plain color string), kept written for one migration cycle. */
-export const LEGACY_SURFACE_COLOR_KEY = 'tau-surface-color'
+export const LEGACY_SURFACE_COLOR_KEY = LEGACY_SURFACE_COLOR_STORAGE_KEY
 /**
  * State-keyed resolved-surface snapshot: `{ theme, appearance, surface }` with
  * the *resolved* appearance, so any stored theme can paint without a flash of
  * the default theme and an OS scheme flip never paints a stale surface.
  */
-export const THEME_SURFACE_KEY = 'tau-theme-surface'
+export const THEME_SURFACE_KEY = THEME_SURFACE_STORAGE_KEY
 
 /** Minimal storage surface; localStorage in the app, a Map in tests. */
 export interface ThemeStorage {
@@ -47,7 +54,7 @@ export function getThemeStorage(): ThemeStorage | null {
 }
 
 /**
- * Reads and normalizes the stored selection, migrating a legacy `tau-theme`
+ * Reads and normalizes the stored selection, migrating a legacy `ficus-theme`
  * value on the fly. Unreadable/unknown values fall back to the defaults; this
  * never throws.
  */
@@ -75,15 +82,18 @@ export function readThemeSelection(storage: ThemeStorage | null): StoredThemeSel
 }
 
 /**
- * The appearance before anyone chooses one. Tau Desktop's own setup and startup
+ * The appearance before anyone chooses one. Ficus Desktop's own setup and startup
  * screens follow the OS appearance, so inside it the app does too instead of
- * flashing to light (its preload defines `window.tauDesktopApp` before page
- * scripts run, so the pre-paint script sees it). Browsers keep the light default.
+ * flashing to light (its preload defines `window.ficusDesktopApp` — or, on a D1
+ * build, `window.tauDesktopApp` (K5, dropped in the Wave 3 sweep, Task 36) —
+ * before page scripts run, so the pre-paint script sees it). Browsers keep the
+ * light default.
  */
 function hostDefaultAppearance(): AppearanceSetting | undefined {
   try {
     if (typeof window === 'undefined') return undefined
-    const bridge = (window as unknown as { tauDesktopApp?: { version?: unknown } }).tauDesktopApp
+    const w = window as unknown as { ficusDesktopApp?: { version?: unknown }; tauDesktopApp?: { version?: unknown } }
+    const bridge = w.ficusDesktopApp ?? w.tauDesktopApp
     return bridge?.version === 1 ? 'system' : undefined
   } catch {
     return undefined

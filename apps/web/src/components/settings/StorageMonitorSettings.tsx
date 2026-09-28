@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { StorageMonitoring } from '@tau/shared'
+import type { StorageMonitoring } from '@ficus/shared'
 import { setSetting } from '../../api/settings'
 import { queryKeys } from '../../queryKeys'
 
@@ -35,7 +35,7 @@ export function StorageMonitorSettings({ config }: { config: StorageMonitoring }
         <label className="text-sm space-y-1">
           Scan interval (hours; 0 disables)
           <input
-            className="tau-field block w-48 px-3 py-2"
+            className="ficus-field block w-48 px-3 py-2"
             type="number"
             min="0"
             max="168"
@@ -48,7 +48,7 @@ export function StorageMonitorSettings({ config }: { config: StorageMonitoring }
         <label className="text-sm space-y-1">
           Capacity thresholds (%)
           <input
-            className="tau-field block w-48 px-3 py-2"
+            className="ficus-field block w-48 px-3 py-2"
             required
             value={thresholds}
             onChange={(event) => setThresholds(event.target.value)}
@@ -63,7 +63,7 @@ export function StorageMonitorSettings({ config }: { config: StorageMonitoring }
         Alerts fire on entry into a higher threshold. A drop of 3 percentage points rearms that threshold. Missing
         measurements never count as recovery.
       </p>
-      <button className="tau-button tau-button-primary px-3 py-2 text-sm" disabled={save.isPending}>
+      <button className="ficus-button ficus-button-primary px-3 py-2 text-sm" disabled={save.isPending}>
         {save.isPending ? 'Saving…' : 'Save monitoring settings'}
       </button>
       {save.isError && (

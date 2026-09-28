@@ -1,4 +1,4 @@
-import type { OperationsRemediation } from '@tau/shared'
+import type { OperationsRemediation } from '@ficus/shared'
 import { generatedEvidence, redactEvidence, type RedactedText } from './redaction'
 import type { ExtractedSignal } from './types'
 

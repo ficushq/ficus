@@ -382,7 +382,7 @@ describe('memory workspace-files sandbox callback auth', () => {
       }
 
       // Correct secret -> 200 (even though a canonical admin exists, which would
-      // disable legacy TAU_PASSWORD auth).
+      // disable legacy FICUS_PASSWORD auth).
       const ok = await app.request(`/api/memory/${squad.id}/workspace-files`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sandboxSecret}` },

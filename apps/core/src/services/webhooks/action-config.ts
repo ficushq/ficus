@@ -1,7 +1,7 @@
 import yaml from 'js-yaml'
 import { readFile } from 'fs/promises'
 import { resolve } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { MONOREPO_ROOT } from '../../lib/paths'
 import type { BatchConfig, BatchEventConfig, BatcherConfig } from './batcher'
 import { createLogger } from '../../lib/infra/logger'

@@ -13,7 +13,7 @@
 
 import { Type } from '@sinclair/typebox'
 import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-agent'
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { Agent } from '../entities/Agent'
 import { InboxMessage } from '../entities/InboxMessage'
 import { WorkStream } from '../entities/WorkStream'

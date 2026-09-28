@@ -5,9 +5,9 @@
  */
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@tau/shared/testDbPort'
-import { isComposePostgresReady } from '@tau/shared/testDbReady'
-import { ensureTestDbUp } from '@tau/shared/testDbUp'
+import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@ficus/shared/testDbPort'
+import { isComposePostgresReady } from '@ficus/shared/testDbReady'
+import { ensureTestDbUp } from '@ficus/shared/testDbUp'
 
 const repoRoot = join(__dirname, '..')
 const composeFile = join(repoRoot, 'docker-compose.test.yml')

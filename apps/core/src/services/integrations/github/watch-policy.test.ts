@@ -256,7 +256,7 @@ test('dedupes a PR present in both the delivery changeRequest and tracked resour
 })
 
 test('wildcard issue rules establish one watch per expanded repository and none without an expander', async () => {
-  const { squadEventRuleSchema } = await import('@tau/shared')
+  const { squadEventRuleSchema } = await import('@ficus/shared')
   const rule = squadEventRuleSchema.parse({
     id: 'glob',
     source: { integration: 'github', output: 'issue.assigned', version: 1 },

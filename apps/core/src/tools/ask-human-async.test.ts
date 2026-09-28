@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import type { AgentQuestion } from '@tau/shared'
+import type { AgentQuestion } from '@ficus/shared'
 import { createAsyncAskHumanTool } from './ask-human-async'
 
 const record: AgentQuestion = {

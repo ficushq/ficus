@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { eq, inArray, like, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, agentTokens, agentTypes, squads } from '../../db/schema'
+import { agents, agentTokens, agentTypes, sessions, squads } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { User } from '../../entities/User'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import {
   cleanupTestRbac,
   createTestAdmin,
@@ -15,6 +15,7 @@ import {
 } from '../../test-utils/rbac'
 import { resetSecretStore } from '../secrets'
 import { resolveToken, resolveTokenContext } from './resolve-token'
+import { AGENT_TOKEN_PREFIX, SESSION_TOKEN_PREFIX } from './token-prefixes'
 
 const PREFIX = 'resolve-token-test'
 
@@ -98,18 +99,18 @@ describe('resolveToken — disabled agent-token owner', () => {
   })
 })
 
-describe('resolveToken — TAU_PASSWORD gated on admin passkey', () => {
-  const originalPassword = process.env.TAU_PASSWORD
+describe('resolveToken — FICUS_PASSWORD gated on admin passkey', () => {
+  const originalPassword = process.env.FICUS_PASSWORD
   const testPassword = `resolve-token-pw-${randomUUID()}`
 
   beforeEach(() => {
-    process.env.TAU_PASSWORD = testPassword
+    process.env.FICUS_PASSWORD = testPassword
     resetSecretStore()
   })
 
   afterEach(() => {
-    if (originalPassword !== undefined) process.env.TAU_PASSWORD = originalPassword
-    else delete process.env.TAU_PASSWORD
+    if (originalPassword !== undefined) process.env.FICUS_PASSWORD = originalPassword
+    else delete process.env.FICUS_PASSWORD
     resetSecretStore()
   })
 
@@ -136,5 +137,76 @@ describe('resolveToken — TAU_PASSWORD gated on admin passkey', () => {
     await createTestAdmin({ prefix: PREFIX, canonicalAdmin: true })
 
     expect(await resolveToken('not-the-password')).toBeNull()
+  })
+})
+
+describe('resolveToken — ficus_ prefixes only (no dual-accept)', () => {
+  const sha256 = (raw: string) => createHash('sha256').update(raw).digest('hex')
+  const inADay = () => new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+  test('Core mints ficus_sess_ sessions and ficus_agent_ agent tokens', async () => {
+    expect(SESSION_TOKEN_PREFIX).toBe('ficus_sess_')
+    expect(AGENT_TOKEN_PREFIX).toBe('ficus_agent_')
+    const user = await User.create({ email: `${PREFIX}-mint-${randomUUID().slice(0, 8)}@test.local` })
+    try {
+      const session = await user.createSession()
+      expect(session.startsWith('ficus_sess_')).toBe(true)
+      expect(await resolveToken(session)).toEqual({ type: 'user', userId: user.id })
+    } finally {
+      await user.delete()
+    }
+    const { agent } = await createAgentFixture('mint')
+    const { token } = await agent.createAgentToken()
+    expect(token.startsWith('ficus_agent_')).toBe(true)
+    expect(await resolveToken(token)).toMatchObject({ type: 'agent', agentId: agent.id })
+  })
+
+  test('a live pre-rename tau_sess_ session row does not authenticate', async () => {
+    const user = await createTestUser({ prefix: PREFIX })
+    const legacy = `tau_sess_${randomUUID()}`
+    await db.insert(sessions).values({ userId: user.id, tokenHash: sha256(legacy), expiresAt: inADay() })
+
+    expect(await resolveToken(user.token)).toEqual({ type: 'user', userId: user.id })
+    expect(await resolveToken(legacy)).toBeNull()
+    expect(await resolveTokenContext(legacy)).toBeNull()
+  })
+
+  test('a live pre-rename tau_agent_ token row does not authenticate', async () => {
+    const { agent, squad } = await createAgentFixture('legacy')
+    const legacy = `tau_agent_${randomUUID()}`
+    await db.insert(agentTokens).values({ agentId: agent.id, squadId: squad.id, tokenHash: sha256(legacy) })
+
+    expect(await resolveToken(legacy)).toBeNull()
+  })
+
+  test('a token is looked up only in the table its prefix names', async () => {
+    const user = await createTestUser({ prefix: PREFIX })
+    const { agent, squad } = await createAgentFixture('cross')
+    // An agent-shaped value sitting in the sessions table, and a session-shaped value in
+    // agent_tokens: neither may authenticate as the other kind.
+    const agentShaped = `${AGENT_TOKEN_PREFIX}${randomUUID()}`
+    const sessionShaped = `${SESSION_TOKEN_PREFIX}${randomUUID()}`
+    await db.insert(sessions).values({ userId: user.id, tokenHash: sha256(agentShaped), expiresAt: inADay() })
+    await db.insert(agentTokens).values({ agentId: agent.id, squadId: squad.id, tokenHash: sha256(sessionShaped) })
+
+    expect(await resolveToken(agentShaped)).toBeNull()
+    expect(await resolveToken(sessionShaped)).toBeNull()
+
+    // Near-miss prefixes never widen into a real one.
+    for (const raw of [`ficus_sessx${randomUUID()}`, `ficus_ses_${randomUUID()}`, `FICUS_SESS_${randomUUID()}`]) {
+      await db.insert(sessions).values({ userId: user.id, tokenHash: sha256(raw), expiresAt: inADay() })
+      expect(await resolveToken(raw)).toBeNull()
+    }
+    for (const raw of [`ficus_agentx${randomUUID()}`, `ficus_agen_${randomUUID()}`]) {
+      await db.insert(agentTokens).values({ agentId: agent.id, squadId: squad.id, tokenHash: sha256(raw) })
+      expect(await resolveToken(raw)).toBeNull()
+    }
+  })
+
+  test('a session resolves only to the user who owns it', async () => {
+    const alice = await createTestUser({ prefix: PREFIX })
+    const bob = await createTestUser({ prefix: PREFIX })
+    expect(await resolveToken(alice.token)).toEqual({ type: 'user', userId: alice.id })
+    expect(await resolveToken(bob.token)).toEqual({ type: 'user', userId: bob.id })
   })
 })

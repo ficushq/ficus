@@ -1,4 +1,4 @@
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 
 /**
  * Total agent execution runtime for a work stream, in ms.

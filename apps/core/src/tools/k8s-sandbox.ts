@@ -69,7 +69,7 @@ import {
  *  - `getClientForSandbox` — the {@link SandboxClient} for a live sandbox.
  *  - `getSandboxStatus` — live status, used by the outage mapper to distinguish a
  *    dead box from a transient transport error.
- *  - `resolveToolApiUrl` — the live Core URL injected as `TAU_API_URL` for bash
+ *  - `resolveToolApiUrl` — the live Core URL injected as `FICUS_API_URL` for bash
  *    commands. The vm manager supplies its box's baked callback URL here; the k8s
  *    manager omits it and falls back to its cluster-DNS URL derived from
  *    `podManager.namespace` (preserving the exact k8s behavior).
@@ -582,10 +582,10 @@ export function createHttpBashOperations(
             // vm managers supply their box's baked callback URL via resolveToolApiUrl;
             // k8s managers omit it and fall back to the cluster-DNS URL derived from the
             // pod namespace (unchanged behavior).
-            TAU_API_URL: manager.resolveToolApiUrl
+            FICUS_API_URL: manager.resolveToolApiUrl
               ? manager.resolveToolApiUrl(sandboxId)
               : resolveSandboxApiUrl(manager.podManager!.namespace),
-            ...(tauToken ? { TAU_TOKEN: tauToken } : {}),
+            ...(tauToken ? { FICUS_TOKEN: tauToken } : {}),
           } as Record<string, string>,
           sourceEnv: true,
           activateDevbox: true,

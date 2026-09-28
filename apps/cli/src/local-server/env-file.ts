@@ -1,3 +1,5 @@
+import { bridgeLegacyEnv } from '@ficus/shared/legacy-env'
+
 export interface EnvUpdate {
   key: string
   value: string
@@ -19,12 +21,22 @@ function unquote(raw: string): string {
   return v
 }
 
+/**
+ * The key/value pairs of a .env file. One release (Ficus rename): a legacy
+ * `TAU_X` line reads as `FICUS_X`, so an install whose .env predates the rename
+ * is still read correctly — for example its `TAU_INSTANCE` label, where the
+ * wrong answer acts on another instance. When both spellings are present the
+ * boot bridge's rule applies: the `FICUS_X` line wins, except for
+ * `*ENCRYPTION_KEY*`, where a differing `TAU_X` value is kept because it is the
+ * key the existing secret store was encrypted with.
+ */
 export function parseEnvFile(text: string): Record<string, string> {
   const out: Record<string, string> = {}
   for (const line of text.split('\n')) {
     const m = LINE_RE.exec(line.trim())
     if (m) out[m[1]] = unquote(m[2])
   }
+  bridgeLegacyEnv(out)
   return out
 }
 

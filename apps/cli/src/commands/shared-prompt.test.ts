@@ -33,7 +33,7 @@ async function run(args: string[]): Promise<void> {
   await program.parseAsync(['--quiet', ...args], { from: 'user' })
 }
 
-describe('tau shared-prompt', () => {
+describe('ficus shared-prompt', () => {
   beforeEach(() => {
     ;(apiGet as ReturnType<typeof mock>).mockClear().mockResolvedValue(includes)
     ;(apiPut as ReturnType<typeof mock>).mockClear().mockResolvedValue({ id: 'rules' })

@@ -5,7 +5,7 @@ import type {
   UpdateScheduleInput,
   ScheduleScopeType,
   WebhookEnableResult,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export interface ListSchedulesParams {
   scopeType?: ScheduleScopeType

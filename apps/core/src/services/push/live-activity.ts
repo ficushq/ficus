@@ -5,7 +5,7 @@ import {
   type EventMap,
   type WorkInterestSnapshot,
   type WorkStream,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { createLogger } from '../../lib/infra/logger'
 import { getApnsConfig, sendApnsLiveActivity, type ApnsSendResult } from './apns'
 import { deleteLiveActivityToken, listLiveActivityTokens } from './live-activity-tokens'

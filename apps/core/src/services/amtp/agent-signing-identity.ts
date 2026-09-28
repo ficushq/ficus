@@ -1,7 +1,7 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { existsSync, readFileSync } from 'fs'
 import { createPublicKey } from 'crypto'
-import type { AmtpSigningIdentity, AmtpSigningIdentityReason } from '@tau/shared'
+import type { AmtpSigningIdentity, AmtpSigningIdentityReason } from '@ficus/shared'
 import type { Agent } from '../../entities/Agent'
 import { agentIdentityHostPath, publicPemFromPrivate, samePublicKey } from './agent-identity'
 

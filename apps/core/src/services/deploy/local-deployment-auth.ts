@@ -11,7 +11,7 @@
  * deployment's proxy path, and the proxy accepts either credential.
  *
  * `Path` is the whole security boundary here and is why this is safe:
- *   - the browser sends it only to `/api/app/<id>/…`, never to Tau's own API,
+ *   - the browser sends it only to `/api/app/<id>/…`, never to Ficus's own API,
  *     and never to another deployment's prefix;
  *   - deployment ids are fixed-length uuids, so one prefix can never be a path
  *     prefix of another (a cookie path matches only on a `/` boundary);
@@ -31,7 +31,7 @@ export function isValidLocalDeploymentRouteParameter(value: string): boolean {
 
 /** Per-deployment name so two open apps cannot overwrite each other's credential. */
 export function localDeploymentCookieName(localDeploymentId: string): string {
-  return `tau_app_${localDeploymentId}`
+  return `ficus_app_${localDeploymentId}`
 }
 
 export function localDeploymentProxyPath(localDeploymentId: string): string {

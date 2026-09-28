@@ -1,14 +1,14 @@
 import { getAuthStorePath } from '../apps/cli/src/auth-store'
 import { randomBytes } from 'node:crypto'
 
-const configuredAccessToken = process.env.TAU_DEV_ACCESS_TOKEN?.trim()
+const configuredAccessToken = process.env.FICUS_DEV_ACCESS_TOKEN?.trim()
 if (configuredAccessToken && configuredAccessToken.length < 16) {
-  throw new Error('TAU_DEV_ACCESS_TOKEN must be at least 16 characters')
+  throw new Error('FICUS_DEV_ACCESS_TOKEN must be at least 16 characters')
 }
 const accessToken = configuredAccessToken ?? randomBytes(24).toString('base64url')
 
 if (configuredAccessToken) {
-  console.log('Tau dev access-token gate enabled from TAU_DEV_ACCESS_TOKEN.')
+  console.log('Tau dev access-token gate enabled from FICUS_DEV_ACCESS_TOKEN.')
 } else {
   console.log(`Tau dev access token: ${accessToken}`)
   console.log('Enter this token in the browser login prompt. It changes on every restart.')
@@ -20,8 +20,8 @@ const child = Bun.spawn(['bun', 'run', '--filter', 'web', 'dev', ...process.argv
     ...process.env,
     // Vite receives an absolute path, so its Node-based config loader does not
     // need to import Bun/TypeScript modules from the CLI or duplicate home-dir logic.
-    TAU_DEV_AUTH_STORE_PATH: getAuthStorePath(),
-    TAU_DEV_ACCESS_TOKEN: accessToken,
+    FICUS_DEV_AUTH_STORE_PATH: getAuthStorePath(),
+    FICUS_DEV_ACCESS_TOKEN: accessToken,
   },
   stdin: 'inherit',
   stdout: 'inherit',

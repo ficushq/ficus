@@ -2,7 +2,7 @@ import { afterEach, expect, spyOn, test } from 'bun:test'
 import { act } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ThemePreset } from '@tau/shared'
+import type { ThemePreset } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { ThemeProvider, useTheme } from '../../providers/ThemeProvider'
 import { ThemePresetLibrary } from './ThemePresetLibrary'
@@ -60,7 +60,7 @@ async function render(
 ) {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   cleanup = () => dom.cleanup()
-  if (opts.themeId) localStorage.setItem('tau-theme-id', opts.themeId)
+  if (opts.themeId) localStorage.setItem('ficus-theme-id', opts.themeId)
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(themePresetQueryKeys.list('mine'), mine)
   queryClient.setQueryData(themePresetQueryKeys.list('shared'), opts.shared ?? [])
@@ -95,8 +95,8 @@ test('lists a preset with its name, and applies it via Use (applyPreset)', async
   const { container } = await render([mine])
   expect(container.textContent).toContain('Mine')
   await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Use' })))
-  expect(localStorage.getItem('tau-theme-preset-id')).toBe('preset-1')
-  expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
+  expect(localStorage.getItem('ficus-theme-preset-id')).toBe('preset-1')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
 })
 
 test('Duplicate calls the server-side duplicate endpoint (works identically for own and shared presets)', async () => {
@@ -125,7 +125,7 @@ test('Rename shows an inline form and sends a PUT with the current revision', as
     const { container } = await render([mine])
     await openActions(container)
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Rename' })))
-    const input = container.querySelector('input.tau-field') as HTMLInputElement
+    const input = container.querySelector('input.ficus-field') as HTMLInputElement
     await act(async () => fireEvent.change(input, { target: { value: 'Renamed' } }))
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Save' })))
     expect(update).toHaveBeenCalledWith('preset-1', 1, expect.objectContaining({ name: 'Renamed' }))
@@ -189,7 +189,7 @@ test('the row overflow menu (narrow widths) exposes aria-haspopup/expanded and i
     window.confirm = () => true
     const menu = container.querySelector('[data-theme-preset-actions]')!
     // Menu items are plain rows, not bordered secondary buttons.
-    expect(menu.querySelectorAll('button.tau-button-secondary')).toHaveLength(0)
+    expect(menu.querySelectorAll('button.ficus-button-secondary')).toHaveLength(0)
     await act(async () => fireEvent.click(getByRole(menu, 'button', { name: 'Delete' })))
     expect(remove).toHaveBeenCalledWith('preset-1', 1)
     // Selecting an action closes the menu and returns focus to the trigger.
@@ -289,7 +289,7 @@ test('a palette-only preset (no explicit overrides) still resolves a real swatch
   // ...and recognizably derived FROM the seed (#0ea5e9): a blue hue, not the
   // exact seed necessarily (a contrast pass may nudge lightness), but well
   // within the blue family, never a neutral/gray/other-hue washout.
-  const { srgbToOklch } = await import('@tau/shared/color-oklch')
+  const { srgbToOklch } = await import('@ficus/shared/color-oklch')
   const [r, g, b] = resolvedPrimary.split(/\s+/).map(Number)
   const oklch = srgbToOklch([r!, g!, b!])
   expect(oklch.h).toBeGreaterThan(200)
@@ -347,8 +347,8 @@ test('Shared themes section lists other users’ shared presets with attribution
   expect(container.textContent).toContain('Ann Author')
   const useButtons = getAllByRole(container, 'button', { name: 'Use' })
   await act(async () => fireEvent.click(useButtons[0]!))
-  expect(localStorage.getItem('tau-theme-preset-id')).toBe('preset-shared')
-  expect(localStorage.getItem('tau-theme-preset-owner-id')).toBe('author')
+  expect(localStorage.getItem('ficus-theme-preset-id')).toBe('preset-shared')
+  expect(localStorage.getItem('ficus-theme-preset-owner-id')).toBe('author')
 })
 
 test('with no shared presets, the Shared themes section is omitted entirely', async () => {
@@ -420,9 +420,9 @@ test('detached-shared: a foreign preset that 404s is shown as no longer availabl
   cleanup = () => dom.cleanup()
   // Simulate ThemeSyncStore.refreshLinkedPreset's 404 outcome directly via
   // localStorage: presetId cleared, presetOwnerId + document retained.
-  localStorage.setItem('tau-custom-theme', JSON.stringify(sharedByAuthor.document))
-  localStorage.setItem('tau-theme-preset-owner-id', 'author')
-  localStorage.setItem('tau-theme-id', 'harbor')
+  localStorage.setItem('ficus-custom-theme', JSON.stringify(sharedByAuthor.document))
+  localStorage.setItem('ficus-theme-preset-owner-id', 'author')
+  localStorage.setItem('ficus-theme-id', 'harbor')
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(themePresetQueryKeys.list('mine'), [])
   queryClient.setQueryData(themePresetQueryKeys.list('shared'), [])
@@ -448,7 +448,7 @@ test('detached-shared: a foreign preset that 404s is shown as no longer availabl
     expect(container.textContent).toContain('no longer available')
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Keep a copy' })))
     expect(create).toHaveBeenCalledTimes(1)
-    expect(localStorage.getItem('tau-theme-preset-id')).toBe('kept-copy')
+    expect(localStorage.getItem('ficus-theme-preset-id')).toBe('kept-copy')
   } finally {
     create.mockRestore()
   }

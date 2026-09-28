@@ -39,7 +39,7 @@ describe('runOfflineUpdate', () => {
     const run = await runOfflineUpdate({
       repoRoot: root,
       fromSha: 'a'.repeat(40),
-      env: { TAU_SANDBOX_RUNTIME: 'host' },
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
       git: async (args) => (args[0] === 'diff' ? 'apps/core/src/x.ts\n' : 'b'.repeat(40) + '\n'),
       runProcess: async (command, cwd) => {
         ran.push(`${cwd}:${command.join(' ')}`)
@@ -57,11 +57,11 @@ describe('runOfflineUpdate', () => {
     expect(persisted.id).toBe(run.id)
     expect(persisted.status).toBe('succeeded')
   })
-  it('honours an explicit TAU_UPDATE_SUPERVISOR', async () => {
+  it('honours an explicit FICUS_UPDATE_SUPERVISOR', async () => {
     const run = await runOfflineUpdate({
       repoRoot: root,
       fromSha: 'a'.repeat(40),
-      env: { TAU_SANDBOX_RUNTIME: 'host', TAU_UPDATE_SUPERVISOR: 'systemd' },
+      env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_UPDATE_SUPERVISOR: 'systemd' },
       git: async () => '',
       runProcess: async () => ({ exitCode: 0, output: '' }),
     })
@@ -71,7 +71,7 @@ describe('runOfflineUpdate', () => {
     const run = await runOfflineUpdate({
       repoRoot: root,
       fromSha: 'a'.repeat(40),
-      env: { TAU_SANDBOX_RUNTIME: 'host' },
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
       git: async (args) => (args[0] === 'diff' ? 'apps/web/src/y.tsx\n' : 'b'.repeat(40)),
       runProcess: async () => ({ exitCode: 2, output: 'boom' }),
     }).catch((e) => e)
@@ -147,7 +147,7 @@ describe('runOfflineUpdate', () => {
     const run = await runOfflineUpdate({
       repoRoot: root,
       fromSha: 'a'.repeat(40),
-      env: { TAU_SANDBOX_RUNTIME: 'host' },
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
       git: async (args) => (args[0] === 'diff' ? 'apps/core/src/x.ts\n' : 'b'.repeat(40)),
       runProcess: async () => ({ exitCode: 0, output: '' }),
       now: () => '2026-09-02T00:00:30.000Z',
@@ -173,7 +173,7 @@ describe('runOfflineUpdate', () => {
     const run = await runOfflineUpdate({
       repoRoot: root,
       fromSha: 'a'.repeat(40),
-      env: { TAU_SANDBOX_RUNTIME: 'host' },
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
       git: async (args) => (args[0] === 'diff' ? 'apps/core/src/x.ts\n' : 'b'.repeat(40)),
       runProcess: async () => ({ exitCode: 0, output: '' }),
       // 3 hours after the persisted run's startedAt (> STALE_RUN_MS = 2h).
@@ -216,7 +216,7 @@ describe('runOfflineUpdate', () => {
     const run = await runOfflineUpdate({
       repoRoot: root,
       fromSha: 'a'.repeat(40),
-      env: { TAU_SANDBOX_RUNTIME: 'host' },
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
       git: async (args) => (args[0] === 'diff' ? '' : 'b'.repeat(40)),
       runProcess: async (command, cwd) => {
         ran.push(`${cwd}:${command.join(' ')}`)

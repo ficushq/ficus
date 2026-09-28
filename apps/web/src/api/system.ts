@@ -1,4 +1,4 @@
-import type { StorageSnapshot, StorageStatus } from '@tau/shared'
+import type { StorageSnapshot, StorageStatus } from '@ficus/shared'
 import { apiFetch } from './client'
 
 export interface PublicMaintenanceStatus {

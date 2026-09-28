@@ -1,11 +1,11 @@
-import type { TauClient } from '@tau/client-core'
+import type { FicusClient } from '@ficus/client-core'
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 
 export type AgentEventEntry = { event: string; data: unknown }
 export type SubscribeToAgentEvents = (agentId: string, callback: (entry: AgentEventEntry) => void) => () => void
 
 export interface ConversationEnvironment {
-  client: TauClient
+  client: FicusClient
   subscribeToAgentEvents?: SubscribeToAgentEvents
 }
 
@@ -16,7 +16,7 @@ export function ConversationClientProvider({
   subscribeToAgentEvents,
   children,
 }: {
-  client: TauClient
+  client: FicusClient
   subscribeToAgentEvents?: SubscribeToAgentEvents
   children: ReactNode
 }) {
@@ -31,7 +31,7 @@ export function useConversationEnvironment(): ConversationEnvironment {
   return environment
 }
 
-/** Access the TauClient supplied by ConversationClientProvider. Throws if missing. */
-export function useConversationClient(): TauClient {
+/** Access the FicusClient supplied by ConversationClientProvider. Throws if missing. */
+export function useConversationClient(): FicusClient {
   return useConversationEnvironment().client
 }

@@ -173,17 +173,17 @@ describe('createSandboxStatusTool', () => {
 })
 
 describe('sandbox_status defaultDeps runtime gate', () => {
-  const prev = process.env.TAU_SANDBOX_RUNTIME
+  const prev = process.env.FICUS_SANDBOX_RUNTIME
   const spies: Array<{ mockRestore: () => void }> = []
   afterEach(() => {
     spies.forEach((s) => s.mockRestore())
     spies.length = 0
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   it('(vm runtime) combines the live VM status with toolchain state without ambient prefix lookup', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squadId = randomUUID()
     const agentId = randomUUID()
     const sandboxId = `agent_${agentId}`
@@ -221,7 +221,7 @@ describe('sandbox_status defaultDeps runtime gate', () => {
   })
 
   it('(toolchain lookup fails) still reports the live physical status, not "down (unknown)"', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const fakeVmManager = {
       getSandboxStatus: async (_id: string) => ({ status: 'starting', reason: 'box is provisioning' }),
       hasSandbox: () => true,

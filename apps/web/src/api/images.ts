@@ -1,10 +1,11 @@
-// Hybrid shim: signing + simple upload come from @tau/client-core; the XHR upload-with-progress
+// Hybrid shim: signing + simple upload come from @ficus/client-core; the XHR upload-with-progress
 // (uploadImages) stays here because per-image progress needs XMLHttpRequest, not fetch.
 import { apiUrl } from './client'
 import { client } from './clientInstance'
-import type { ImageContent, ImageUploadTarget, UploadProgress } from '@tau/client-core'
+import type { ImageContent, ImageUploadTarget, UploadProgress } from '@ficus/client-core'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
-export type { ImageContent, UploadProgress } from '@tau/client-core'
+export type { ImageContent, UploadProgress } from '@ficus/client-core'
 
 type ImageUploadScope = ImageUploadTarget | { agentId?: never; squadId?: never }
 export type ImageUploadOptions = ImageUploadScope & {
@@ -74,7 +75,7 @@ function uploadSingleImage(
     xhr.open('POST', apiUrl('/images'))
     xhr.withCredentials = true // send the HttpOnly session cookie cross-origin
     xhr.setRequestHeader('Content-Type', 'application/json')
-    xhr.setRequestHeader('X-Tau-Csrf', '1')
+    xhr.setRequestHeader(CSRF_HEADER, '1')
 
     xhr.send(
       JSON.stringify({

@@ -1,4 +1,4 @@
-import type { IntegrationSubscription } from '@tau/shared'
+import type { IntegrationSubscription } from '@ficus/shared'
 import { githubTrackedResourceAdapter } from '../github/code-hosting'
 import { linearTrackedResourceAdapter } from './linear'
 import { TrackedResourceRegistry, type TrackedResourceIdentity } from './registry'

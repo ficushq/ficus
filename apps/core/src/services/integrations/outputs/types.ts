@@ -3,7 +3,7 @@ import type {
   IntegrationOutputFact,
   TrackedResourceKind,
   WorkflowEventTrigger,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { VerifiedIngressEvent } from '../types'
 
 export interface IntegrationOutputAdapter {

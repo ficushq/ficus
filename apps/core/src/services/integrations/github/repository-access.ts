@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { GitHubRepositoryAccess } from '@tau/shared'
+import type { GitHubRepositoryAccess } from '@ficus/shared'
 
 const LIMIT = 20
 const installationsSchema = z.object({

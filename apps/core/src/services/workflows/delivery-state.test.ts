@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { classifyDeliveryPresentation, type DeliveryEvent } from './delivery-state'
-import type { WorkStreamDeliveryGateFacts, WorkflowRun } from '@tau/shared'
+import type { WorkStreamDeliveryGateFacts, WorkflowRun } from '@ficus/shared'
 
 const metadata = { codeHost: { integration: 'github', repository: 'acme/repo', changeRequest: { number: 42 } } }
 const run = (mode = 'pr-merge', followChanges = true) =>
@@ -305,7 +305,7 @@ test('explanations key pull requests by repository, prefer live pending checks, 
 
 test('normalized approvals, newer native snapshots and per-workflow CI recovery clear superseded failure without losing the gate', async () => {
   const { githubOutputAdapter } = await import('../integrations/outputs/github')
-  const { workStreamNeedsHumanAttention, workBucket } = await import('@tau/shared')
+  const { workStreamNeedsHumanAttention, workBucket } = await import('@ficus/shared')
   const pr = { id: 42, number: 42, state: 'open', head: { sha: 'a'.repeat(40) }, mergeable_state: 'blocked' }
   const normalize = (type: string, payload: unknown) =>
     githubOutputAdapter.normalize({ type, payload }).map((fact) => ({ ...fact, integration: 'github' }))

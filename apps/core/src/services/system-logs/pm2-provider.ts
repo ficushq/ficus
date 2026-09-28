@@ -22,8 +22,8 @@ export function buildPm2LogsArgs(processName: string, opts: SystemLogStreamOptio
 export class Pm2LogProvider extends CommandLogProvider {
   constructor(
     targets: Record<SystemLogComponent, string> = {
-      api: process.env.TAU_PM2_API_NAME ?? 'tau-api',
-      worker: process.env.TAU_PM2_WORKER_NAME ?? 'tau-worker',
+      api: process.env.FICUS_PM2_API_NAME ?? 'tau-api',
+      worker: process.env.FICUS_PM2_WORKER_NAME ?? 'tau-worker',
     },
     dependencies: Pm2LogProviderDependencies = {}
   ) {

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { eq, like } from 'drizzle-orm'
-import { type WorkflowDefinition } from '@tau/shared'
+import { type WorkflowDefinition } from '@ficus/shared'
 import { db, agentTypes, squads, workflows, workStreamFlowRuns, workStreams } from '../db'
 import { identityMiddleware } from '../middleware/identity'
 import {
@@ -260,11 +260,11 @@ test('delivery guidance arrives on completion-ready advance/read and disappears 
     const result = await response.json()
     expect(result.stateStatus).toBe('completion-ready')
     expect(result.deliveryInstructions).toContain('Leave merging to the human')
-    expect(result.deliveryInstructions).toContain(`tau workstream finish ${stream!.id} --version 1`)
+    expect(result.deliveryInstructions).toContain(`ficus workstream finish ${stream!.id} --version 1`)
     // The completion-ready self-check names the current binding state and the exact repair.
     expect(result.deliveryInstructions).toContain('codeHost is not configured for this work stream')
     expect(result.deliveryInstructions).toContain(
-      `tau workstream set-meta ${stream!.id} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
+      `ficus workstream set-meta ${stream!.id} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
     )
     expect((await (await request(`/runs/${stream!.id}`, admin)).json()).deliveryInstructions).toBe(
       result.deliveryInstructions
@@ -285,7 +285,7 @@ test('delivery guidance arrives on completion-ready advance/read and disappears 
     const bound = await (await request(`/runs/${stream!.id}`, admin)).json()
     expect(bound.deliveryInstructions).toContain('bound to example/repo#42')
     expect(bound.deliveryInstructions).toContain('(https://github.com/example/repo/pull/42)')
-    expect(bound.deliveryInstructions).toContain(`tau workstream finish ${stream!.id}`)
+    expect(bound.deliveryInstructions).toContain(`ficus workstream finish ${stream!.id}`)
     expect(bound.deliveryInstructions).not.toContain('codeHost.changeRequest is absent')
     // With integration/repository but no PR, the exact bind command carries this stream's id.
     await db
@@ -300,7 +300,7 @@ test('delivery guidance arrives on completion-ready advance/read and disappears 
     const unbound = await (await request(`/runs/${stream!.id}`, admin)).json()
     expect(unbound.deliveryInstructions).toContain('codeHost.changeRequest is absent')
     expect(unbound.deliveryInstructions).toContain(
-      `tau workstream set-meta ${stream!.id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
+      `ficus workstream set-meta ${stream!.id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
     )
     expect(unbound.deliveryInstructions).toContain("stream's branch work/example")
     await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, stream!.id))

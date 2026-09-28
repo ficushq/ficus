@@ -1,13 +1,13 @@
 /**
  * Kubernetes-based System Log Provider
  *
- * Streams container logs from Tau's own API/worker pods. Pod targeting uses
+ * Streams container logs from Ficus's own API/worker pods. Pod targeting uses
  * fixed label selectors; namespace is server-configured. Clients cannot specify
  * pod names, namespaces, or label selectors.
  *
  * Env configuration:
- *   TAU_SYSTEM_LOG_PROVIDER=k8s selects this provider explicitly.
- *   TAU_SYSTEM_LOG_K8S_NAMESPACE sets the required core namespace.
+ *   FICUS_SYSTEM_LOG_PROVIDER=k8s selects this provider explicitly.
+ *   FICUS_SYSTEM_LOG_K8S_NAMESPACE sets the required core namespace.
  */
 
 import { Writable } from 'node:stream'

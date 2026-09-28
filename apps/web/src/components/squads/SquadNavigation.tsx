@@ -55,7 +55,7 @@ export function SquadNavigation<T extends SquadTab>({
               role="tab"
               aria-selected={activeTab === tab.path}
               onClick={() => onChange(tab.path)}
-              className="tau-button tau-nav-item px-2 py-2.5 text-xs font-medium text-secondary sm:px-4 sm:text-sm"
+              className="ficus-button ficus-nav-item px-2 py-2.5 text-xs font-medium text-secondary sm:px-4 sm:text-sm"
             >
               {tab.label}
             </button>
@@ -77,7 +77,7 @@ export function SquadNavigation<T extends SquadTab>({
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
           className={clsx(
-            'tau-button flex max-w-20 sm:max-w-36 items-center gap-1 rounded-lg px-2 py-2.5 text-xs sm:text-sm',
+            'ficus-button flex max-w-20 sm:max-w-36 items-center gap-1 rounded-lg px-2 py-2.5 text-xs sm:text-sm',
             selectedSecondary ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover'
           )}
         >
@@ -86,9 +86,9 @@ export function SquadNavigation<T extends SquadTab>({
         </button>
         <Presence
           open={open}
-          className="tau-overlay absolute right-0 top-full z-30 mt-2 max-h-[60dvh] w-48 overflow-y-auto p-1.5"
+          className="ficus-overlay absolute right-0 top-full z-30 mt-2 max-h-[60dvh] w-48 overflow-y-auto p-1.5"
         >
-          <p className="tau-section-title px-2 py-1.5">Squad tools</p>
+          <p className="ficus-section-title px-2 py-1.5">Squad tools</p>
           {secondary.map((tab) => (
             <button
               key={tab.path}
@@ -101,7 +101,7 @@ export function SquadNavigation<T extends SquadTab>({
                 triggerRef.current?.focus()
               }}
               className={clsx(
-                'tau-button block w-full px-2.5 py-2 text-left text-sm hover:bg-surface-hover hover:text-primary focus-visible:bg-surface-hover focus-visible:text-primary active:bg-selection active:text-accent-light',
+                'ficus-button block w-full px-2.5 py-2 text-left text-sm hover:bg-surface-hover hover:text-primary focus-visible:bg-surface-hover focus-visible:text-primary active:bg-selection active:text-accent-light',
                 activeTab === tab.path ? 'bg-selection text-accent-light' : 'text-secondary'
               )}
             >

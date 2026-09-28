@@ -1,4 +1,4 @@
-import { isWorkerAgentType } from '@tau/shared'
+import { isWorkerAgentType } from '@ficus/shared'
 import clsx from 'clsx'
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -59,14 +59,14 @@ export function SpawnAgentModal({ squadId, onClose, onSpawned }: SpawnAgentModal
               <button
                 type="button"
                 onClick={onClose}
-                className="tau-button rounded-md border border-th-border px-3 py-1.5 text-sm font-medium text-secondary"
+                className="ficus-button rounded-md border border-th-border px-3 py-1.5 text-sm font-medium text-secondary"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 disabled
-                className="tau-button tau-button-primary rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent opacity-50"
+                className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent opacity-50"
               >
                 Spawn
               </button>
@@ -80,7 +80,7 @@ export function SpawnAgentModal({ squadId, onClose, onSpawned }: SpawnAgentModal
                 value={selectedTypeId}
                 onChange={(e) => setSelectedTypeId(e.target.value)}
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   `w-full px-3 py-2 text-sm border border-th-border bg-surface rounded-md  focus:ring-2 focus:ring-accent ${selectedTypeId ? 'text-primary' : 'text-muted'}`
                 )}
               >
@@ -107,14 +107,14 @@ export function SpawnAgentModal({ squadId, onClose, onSpawned }: SpawnAgentModal
             <div className="flex justify-end gap-2">
               <button
                 onClick={onClose}
-                className="tau-button px-3 py-1.5 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover transition-colors"
+                className="ficus-button px-3 py-1.5 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSpawn}
                 disabled={!selectedTypeId || spawnMutation.isPending}
-                className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
               >
                 {spawnMutation.isPending && <SpinnerIcon className="w-4 h-4 animate-spin" />}
                 Spawn

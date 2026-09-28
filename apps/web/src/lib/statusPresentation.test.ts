@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { StatusRole } from '@tau/shared'
+import type { StatusRole } from '@ficus/shared'
 import colors from 'tailwindcss/colors'
 import { acquireDomHarness } from '../test/domHarness'
 import { WEB_STATUS, webStatus, readStatusMarkerColor } from './statusPresentation'

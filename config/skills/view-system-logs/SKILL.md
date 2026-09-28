@@ -1,6 +1,6 @@
 ---
 name: view-system-logs
-description: "View Tau server system logs (API and worker) via the CLI. Requires the system:logs permission scope. Use when diagnosing server-side errors, worker failures, or runtime behavior."
+description: 'View Ficus server system logs (API and worker) via the CLI. Requires the system:logs permission scope. Use when diagnosing server-side errors, worker failures, or runtime behavior.'
 required-permission: system:logs
 ---
 
@@ -8,22 +8,22 @@ required-permission: system:logs
 
 ## When to Use
 
-Use this skill to inspect Tau's own server logs — the API (core) process and
+Use this skill to inspect Ficus's own server logs — the API (core) process and
 the worker process — when diagnosing server-side errors, failed background
 jobs, webhook delivery issues, or unexpected runtime behavior. This skill only
 appears for agents that hold the `system:logs` permission scope.
 
 ## CLI Usage
 
-Stream system logs with `tau system logs`:
+Stream system logs with `ficus system logs`:
 
 ```bash
-tau system logs                              # all components, follow live, last 500 lines
-tau system logs -c api                       # API/core logs only
-tau system logs -c worker                    # worker logs only
-tau system logs -c all -t 1000               # last 1000 lines, all components
-tau system logs --no-follow                  # one-shot tail, then exit
-tau system logs -c api -t 200 --no-follow    # snapshot of last 200 API lines
+ficus system logs                              # all components, follow live, last 500 lines
+ficus system logs -c api                       # API/core logs only
+ficus system logs -c worker                    # worker logs only
+ficus system logs -c all -t 1000               # last 1000 lines, all components
+ficus system logs --no-follow                  # one-shot tail, then exit
+ficus system logs -c api -t 200 --no-follow    # snapshot of last 200 API lines
 ```
 
 ## Options
@@ -46,7 +46,7 @@ This skill is gated by `system:logs`. An admin grants it to a specific agent
 with:
 
 ```bash
-tau agent scope grant <agent-id-or-name> system:logs
+ficus agent scope grant <agent-id-or-name> system:logs
 ```
 
 Once granted, the skill appears in that agent's available skills automatically

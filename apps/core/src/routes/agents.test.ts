@@ -1555,13 +1555,13 @@ describe('agent sandbox stop/restart', () => {
     let prevRuntime: string | undefined
 
     beforeEach(() => {
-      prevRuntime = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
     })
 
     afterEach(() => {
-      if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     })
 
     const post = (path: string) =>
@@ -1601,7 +1601,7 @@ describe('agent sandbox stop/restart', () => {
         expect(body.runtime).toBe('host')
         expect(body).not.toHaveProperty('toolchain')
 
-        process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+        process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
         const docker = await (
           await app.request(`/api/agents/${squadAgent.id}/sandbox/status`, { headers: authHeaders(admin.token) })
         ).json()
@@ -1612,7 +1612,7 @@ describe('agent sandbox stop/restart', () => {
     })
 
     it('leaves the docker runtime behaviour unchanged', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       expect((await post('stop')).status).toBe(200)
     })
   })

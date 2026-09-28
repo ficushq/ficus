@@ -1,9 +1,9 @@
 // Pure re-export: the wire-protocol code lives in amtp-protocol (the amtp-protocol npm package),
-// which apps/cli also depends on directly. This file exists only so existing `@tau/shared`
+// which apps/cli also depends on directly. This file exists only so existing `@ficus/shared`
 // importers keep working.
 //
 // Import from the specific submodules, NOT the barrel `amtp-protocol`, so the
-// browser bundle (@tau/shared is used by apps/web) never pulls in ./crypto,
+// browser bundle (@ficus/shared is used by apps/web) never pulls in ./crypto,
 // which imports node:crypto and breaks vite. address/canonical are pure.
 export { parseAmtpAddress, formatAmtpAddress } from 'amtp-protocol/address'
 export { canonicalAgentSigBytes, type AgentSigSubset } from 'amtp-protocol/canonical'

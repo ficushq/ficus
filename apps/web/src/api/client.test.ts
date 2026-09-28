@@ -19,17 +19,27 @@ afterEach(() => {
 })
 
 describe('token storage', () => {
-  test('stores tokens using the legacy tau_password key for upgrade compatibility', async () => {
+  test('stores tokens under the ficus_password key', async () => {
     installLocalStorage()
     const { getStoredToken, setStoredToken, clearStoredToken } = await import('./client')
 
     setStoredToken('session-token')
 
     expect(getStoredToken()).toBe('session-token')
-    expect(localStorage.getItem('tau_password')).toBe('session-token')
+    expect(localStorage.getItem('ficus_password')).toBe('session-token')
 
     clearStoredToken()
     expect(getStoredToken()).toBeFalsy()
+  })
+
+  test('clearing also purges a stale pre-rename credential', async () => {
+    installLocalStorage()
+    const { clearStoredToken } = await import('./client')
+    localStorage.setItem('tau_password', 'stale-credential')
+
+    clearStoredToken()
+
+    expect(localStorage.getItem('tau_password')).toBeNull()
   })
 })
 
@@ -73,14 +83,14 @@ describe('readApiErrorMessage', () => {
 
 test('proxy HTML errors are concise through both API clients without losing JSON validation details', async () => {
   const { readApiErrorMessage: legacy } = await import('./client')
-  const { readApiErrorMessage: shared } = await import('@tau/client-core')
+  const { readApiErrorMessage: shared } = await import('@ficus/client-core')
   expect(legacy).toBe(shared)
   for (const contentType of ['text/html', 'text/plain']) {
     const response = new Response('<!DOCTYPE html><html><body>Bad gateway ' + 'x'.repeat(6000) + '</body></html>', {
       status: 502,
       headers: { 'Content-Type': contentType },
     })
-    expect(await shared(response)).toBe('Tau is temporarily unavailable (502). Please try again shortly.')
+    expect(await shared(response)).toBe('Ficus is temporarily unavailable (502). Please try again shortly.')
   }
   const details = JSON.stringify([
     { code: 'invalid_literal', path: ['schemaVersion'], expected: 1, message: 'Expected 1' },
@@ -93,7 +103,7 @@ test('proxy HTML errors are concise through both API clients without losing JSON
 })
 
 test('schema validation errors preserve nested issue paths for assistant tool retries', async () => {
-  const { readApiErrorMessage } = await import('@tau/client-core')
+  const { readApiErrorMessage } = await import('@ficus/client-core')
   const issues = [
     {
       code: 'invalid_string',

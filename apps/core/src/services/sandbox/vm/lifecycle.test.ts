@@ -196,9 +196,9 @@ describe('runVmSandboxLifecycleTick — idle reap', () => {
     expect(stopped).toEqual([])
   })
 
-  test('TAU_VM_BOX_PARK_ON_IDLE=true reaches the sweep too: the SAME untracked+stale box above IS reaped again once parking is explicitly re-enabled', async () => {
-    const original = process.env.TAU_VM_BOX_PARK_ON_IDLE
-    process.env.TAU_VM_BOX_PARK_ON_IDLE = 'true'
+  test('FICUS_VM_BOX_PARK_ON_IDLE=true reaches the sweep too: the SAME untracked+stale box above IS reaped again once parking is explicitly re-enabled', async () => {
+    const original = process.env.FICUS_VM_BOX_PARK_ON_IDLE
+    process.env.FICUS_VM_BOX_PARK_ON_IDLE = 'true'
     try {
       const { deps, stopped } = makeDeps({
         listAllMachineBoxes: async () => [makeBox({ lastActivityAt: new Date(0) })],
@@ -208,8 +208,8 @@ describe('runVmSandboxLifecycleTick — idle reap', () => {
       await runVmSandboxLifecycleTick(deps)
       expect(stopped).toEqual(['agent_a1'])
     } finally {
-      if (original === undefined) delete process.env.TAU_VM_BOX_PARK_ON_IDLE
-      else process.env.TAU_VM_BOX_PARK_ON_IDLE = original
+      if (original === undefined) delete process.env.FICUS_VM_BOX_PARK_ON_IDLE
+      else process.env.FICUS_VM_BOX_PARK_ON_IDLE = original
     }
   })
 
@@ -687,11 +687,11 @@ describe('createVmLifecycleTick — re-entrancy guard', () => {
 })
 
 describe('buildProductionTickDeps — reaper parks via manager.stopSandbox', () => {
-  const savedRuntime = process.env.TAU_SANDBOX_RUNTIME
+  const savedRuntime = process.env.FICUS_SANDBOX_RUNTIME
 
   afterEach(() => {
-    if (savedRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = savedRuntime
+    if (savedRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = savedRuntime
   })
 
   // The production park effect MUST route through VmSandboxManager.stopSandbox
@@ -701,7 +701,7 @@ describe('buildProductionTickDeps — reaper parks via manager.stopSandbox', () 
   // port → silent cross-box exec). Assert the wired `stopBox` invokes the
   // manager's stopSandbox for the given box.
   test('production stopBox dep invokes manager.stopSandbox (not the bare box-manager stopBox)', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const { getSandboxManager } = await import('../factory')
     const manager = getSandboxManager() as unknown as import('./manager').VmSandboxManager
 
@@ -721,28 +721,28 @@ describe('buildProductionTickDeps — reaper parks via manager.stopSandbox', () 
 })
 
 describe('startVmSandboxLifecycle / stopVmSandboxLifecycle — runtime gating', () => {
-  const savedRuntime = process.env.TAU_SANDBOX_RUNTIME
+  const savedRuntime = process.env.FICUS_SANDBOX_RUNTIME
 
   afterEach(async () => {
     await stopVmSandboxLifecycle()
-    if (savedRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = savedRuntime
+    if (savedRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = savedRuntime
   })
 
   test('is inert on a non-vm runtime (k8s) — no runner registered', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'k8s'
+    process.env.FICUS_SANDBOX_RUNTIME = 'k8s'
     startVmSandboxLifecycle()
     expect(listPeriodicRunnerNames()).not.toContain('vm-sandbox-lifecycle')
   })
 
   test('is inert on the docker (default) runtime — no runner registered', () => {
-    delete process.env.TAU_SANDBOX_RUNTIME
+    delete process.env.FICUS_SANDBOX_RUNTIME
     startVmSandboxLifecycle()
     expect(listPeriodicRunnerNames()).not.toContain('vm-sandbox-lifecycle')
   })
 
   test('registers a runner on the vm runtime and stop removes it', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     startVmSandboxLifecycle()
     expect(listPeriodicRunnerNames()).toContain('vm-sandbox-lifecycle')
     await stopVmSandboxLifecycle()

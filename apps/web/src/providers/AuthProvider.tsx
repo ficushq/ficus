@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import type { AuthStatus, AuthValidation } from '../api/auth'
 import { apiUrl, authFetch, clearStoredToken, getApiHost } from '../api/client'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 interface AuthContextValue {
   /** Changes at every explicit session boundary, even when already signed in. */
@@ -193,15 +194,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (password: string) => {
-      // X-Tau-Csrf: the CSRF middleware rejects any cookie-bearing mutation
-      // without it. Browser cookies ignore ports, so a stale tau_session from
-      // another tau instance on the same host (localhost:3000 next to
+      // CSRF_HEADER: the CSRF middleware rejects any cookie-bearing mutation
+      // without it. Browser cookies ignore ports, so a stale ficus_session from
+      // another Ficus instance on the same host (localhost:3000 next to
       // localhost:3200) rides along with this request and, without the header,
       // turned every password login into a 403 the page reported as
       // "Invalid password".
       const res = await fetch(apiUrl('/auth/login'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Tau-Csrf': '1' },
+        headers: { 'Content-Type': 'application/json', [CSRF_HEADER]: '1' },
         credentials: 'include',
         body: JSON.stringify({ password }),
       })

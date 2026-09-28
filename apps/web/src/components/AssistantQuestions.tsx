@@ -1,6 +1,6 @@
 import { useQueries } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import type { AssistantActivityUpdate, AssistantTaskSummary } from '@tau/shared'
+import type { AssistantActivityUpdate, AssistantTaskSummary } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { MarkdownContent } from './MarkdownContent'
 import { PendingQuestionsBanner } from './PendingQuestionsBanner'

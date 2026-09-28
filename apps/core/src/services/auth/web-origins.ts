@@ -3,12 +3,12 @@
  * origin, the CORS allowlist, the WebSocket-handshake Origin check, and the
  * session-cookie SameSite/Secure decision.
  *
- * Configured via TAU_WEB_ORIGIN (comma-separated; the first entry is canonical).
+ * Configured via FICUS_WEB_ORIGIN (comma-separated; the first entry is canonical).
  * Falls back to the legacy WEBAUTHN_ORIGIN, then APP_URL, so existing deployments
  * keep working without changing env.
  */
 function configuredWebOrigins(): string[] {
-  const raw = process.env.TAU_WEB_ORIGIN ?? process.env.WEBAUTHN_ORIGIN ?? process.env.APP_URL
+  const raw = process.env.FICUS_WEB_ORIGIN ?? process.env.WEBAUTHN_ORIGIN ?? process.env.APP_URL
   if (!raw) return []
   return raw
     .split(',')

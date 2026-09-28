@@ -77,7 +77,7 @@ export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
               value={githubIdentity.gitUserName}
               onChange={(e) => updateGithubIdentity({ gitUserName: e.target.value })}
               placeholder={authorDefaults?.defaults.gitUserName ?? 'Optional'}
-              className="tau-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
+              className="ficus-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
             />
           </div>
           <div>
@@ -95,7 +95,7 @@ export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
               value={githubIdentity.gitUserEmail}
               onChange={(e) => updateGithubIdentity({ gitUserEmail: e.target.value })}
               placeholder={authorDefaults?.defaults.gitUserEmail ?? 'Optional'}
-              className="tau-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
+              className="ficus-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
             />
           </div>
         </div>
@@ -105,7 +105,7 @@ export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
           type="button"
           onClick={() => updateMutation.mutate()}
           disabled={updateMutation.isPending}
-          className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
+          className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
         >
           {updateMutation.isPending ? 'Saving…' : 'Save identity'}
         </button>

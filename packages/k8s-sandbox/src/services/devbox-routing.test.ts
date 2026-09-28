@@ -39,8 +39,8 @@ function run(directory: string, fixture: Fixture, command: string): ReturnType<t
     env: {
       ...process.env,
       PATH: `${fixture.bin}:${process.env.PATH}`,
-      TAU_BOX_HOME: fixture.root,
-      TAU_DEVBOX_DIR: fixture.devbox,
+      FICUS_BOX_HOME: fixture.root,
+      FICUS_DEVBOX_DIR: fixture.devbox,
       DEVBOX_ROUTING_LOG: fixture.log,
     },
   })

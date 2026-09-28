@@ -41,7 +41,7 @@ export function createUpdatesRouter(deps: { store?: Store; updater?: Updater } =
   const store = deps.store ?? getSettingsStore()
   const updater = deps.updater ?? localUpdateManager
 
-  // `managed`: on a platform-managed tenant (TAU_MANAGED=1) self-updates can't
+  // `managed`: on a platform-managed tenant (FICUS_MANAGED=1) self-updates can't
   // work — the checkout has no GitHub credentials by design (the setup toolkit
   // scrubs the clone token) and the hosting platform's upgrade job owns the
   // lifecycle (backup, migrations, artifact verify). The web hides the whole

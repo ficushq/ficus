@@ -1,4 +1,4 @@
-import { createSquadSchema } from '@tau/shared'
+import { createSquadSchema } from '@ficus/shared'
 
 export function createHostWorkspacePathError(value: string): string | null {
   if (!value) return null

@@ -42,10 +42,10 @@ Core always calls `POST /watch` on `ensureSquadSandbox()`, so killed or recreate
 
 The sandbox authenticates callbacks to core using a Bearer token:
 
-1. Reads `TAU_PASSWORD` from the environment
+1. Reads `FICUS_PASSWORD` from the environment
 2. Falls back to reading `/etc/tau/password` (K8s mounted secret volume)
 3. Sends as `Authorization: Bearer <password>` on all POSTs to core
-4. Uses `TAU_API_URL` env var to construct the core callback URL (not a URL passed from core)
+4. Uses `FICUS_API_URL` env var to construct the core callback URL (not a URL passed from core)
 
 ## File Change Events
 

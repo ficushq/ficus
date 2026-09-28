@@ -13,8 +13,8 @@ const buildScript = packageJson.scripts.build
 // This suite runs a real `bun build` and spawns the resulting bundle as a
 // real subprocess — too jitter-prone for the shared CI runner. It runs only
 // in the dedicated `subprocess-tests` CI job (see ci.yml); the main sweep
-// sets TAU_TEST_SKIP_SUBPROCESS=1 to skip it here.
-const describeSubprocess = describe.skipIf(process.env.TAU_TEST_SKIP_SUBPROCESS === '1')
+// sets FICUS_TEST_SKIP_SUBPROCESS=1 to skip it here.
+const describeSubprocess = describe.skipIf(process.env.FICUS_TEST_SKIP_SUBPROCESS === '1')
 
 describeSubprocess('migrate bundle build contract', () => {
   // Cheap pin: the build script must still produce dist/migrate.js from the
@@ -26,12 +26,12 @@ describeSubprocess('migrate bundle build contract', () => {
   })
 
   // Behavioral half: actually build the migrate bundle (to a scratch outfile,
-  // not dist/) and run it with no DATABASE_URL and no TAU_MIGRATE_LIVE in the
+  // not dist/) and run it with no DATABASE_URL and no FICUS_MIGRATE_LIVE in the
   // child environment. run-migrations-guard.ts must refuse before the
   // top-level await ever imports execute-migrations (the only module that
   // touches the database) — so this proves the refusal happens with zero DB
   // access, not merely that the process eventually errors.
-  test('the bundled migrate entrypoint refuses to run without TAU_MIGRATE_LIVE, before any DB access', async () => {
+  test('the bundled migrate entrypoint refuses to run without FICUS_MIGRATE_LIVE, before any DB access', async () => {
     const migrateBuildCommand = buildScript
       .split('&&')
       .map((part) => part.trim())
@@ -51,14 +51,14 @@ describeSubprocess('migrate bundle build contract', () => {
       expect(buildExitCode, `bun build failed:\n${buildStderr}`).toBe(0)
       expect(statSync(outfile).size).toBeGreaterThan(0)
 
-      // Strip DATABASE_URL and TAU_MIGRATE_LIVE from the child env, and run
+      // Strip DATABASE_URL and FICUS_MIGRATE_LIVE from the child env, and run
       // from a cwd with no .env of its own, so the guard's refusal can only
       // come from the absence of an explicit override — not from picking up
       // ambient config.
       const env: Record<string, string> = {}
       for (const [key, value] of Object.entries(process.env)) {
         if (value === undefined) continue
-        if (key === 'DATABASE_URL' || key === 'TAU_MIGRATE_LIVE') continue
+        if (key === 'DATABASE_URL' || key === 'FICUS_MIGRATE_LIVE') continue
         env[key] = value
       }
       env.NODE_ENV = 'production'

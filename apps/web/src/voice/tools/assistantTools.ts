@@ -10,7 +10,7 @@ import { getMyInbox, markAsRead } from '../../api/inbox'
 import * as workspace from '../../api/workspace'
 import { searchMemory } from '../../api/memory'
 import { searchEntities } from '../../api/search'
-import { hybridTauSearch } from '../../lib/hybridTauSearch'
+import { hybridFicusSearch } from '../../lib/hybridFicusSearch'
 import { ALL_SECTIONS, isSectionAllowed } from '../../components/settings/settingsSections'
 import { resolveVoiceSquadId } from '../squadReferences'
 import { getChatDrawerPath, type ChatDrawerToolState } from '../chatDrawerTool'
@@ -106,8 +106,8 @@ export function createAssistantTools(
       followUp: 'never' as const,
     },
     tool(
-      'search_tau',
-      'Look up Tau entities by name or keyword: squads, work streams, consultant conversations, saved Assistant conversations, and navigation targets (pages and settings sections). Returns canonical IDs and links. It does not read data or configuration: no schedules, environment variables, secrets, integrations, users, permissions, agent status, activity, or the value of any setting. For live state use get_work, read_thread, read_inbox, or read_activity; for anything else use delegate_task.',
+      'search_ficus',
+      'Look up Ficus entities by name or keyword: squads, work streams, consultant conversations, saved Assistant conversations, and navigation targets (pages and settings sections). Returns canonical IDs and links. It does not read data or configuration: no schedules, environment variables, secrets, integrations, users, permissions, agent status, activity, or the value of any setting. For live state use get_work, read_thread, read_inbox, or read_activity; for anything else use delegate_task.',
       { query: string, limit: number },
       ['query'],
       async (args, env) => {
@@ -117,12 +117,12 @@ export function createAssistantTools(
             (section) => section.id
           )
         )
-        return hybridTauSearch(input.query, input.limit, allowed, deps.searchEntities)
+        return hybridFicusSearch(input.query, input.limit, allowed, deps.searchEntities)
       }
     ),
     tool(
       'delegate_task',
-      'Run a task in the background: with the user’s own permissions for instance-wide tasks, or as a squad consultant for squad tasks. Results are reported back here. Omit squadId for anything about the whole Tau instance or the user’s account: schedules, integrations, environment variables, secrets, users, permissions, billing, notifications, instance settings, and any investigation or sustained work that is not owned by one squad. Pass squadId (full ID or URL slug) only for work that belongs to that squad: its project, repositories, work streams, incidents, and squad settings. Give every task a short label. Results, progress, and clarification questions arrive in this conversation as task updates; a receipt is not a result and must never be described as one. To continue or answer a task, call this again with inReplyTo set to the update’s id and the same squadId. Delivery is steer (the new request takes priority); pass follow-up only when the user explicitly wants it queued behind the running task. Never send secret values.',
+      'Run a task in the background: with the user’s own permissions for instance-wide tasks, or as a squad consultant for squad tasks. Results are reported back here. Omit squadId for anything about the whole Ficus instance or the user’s account: schedules, integrations, environment variables, secrets, users, permissions, billing, notifications, instance settings, and any investigation or sustained work that is not owned by one squad. Pass squadId (full ID or URL slug) only for work that belongs to that squad: its project, repositories, work streams, incidents, and squad settings. Give every task a short label. Results, progress, and clarification questions arrive in this conversation as task updates; a receipt is not a result and must never be described as one. To continue or answer a task, call this again with inReplyTo set to the update’s id and the same squadId. Delivery is steer (the new request takes priority); pass follow-up only when the user explicitly wants it queued behind the running task. Never send secret values.',
       {
         label: {
           type: 'string',

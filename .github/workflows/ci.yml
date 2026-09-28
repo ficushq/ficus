@@ -186,6 +186,21 @@ jobs:
           }
           if (( status != 0 )); then exit $(( status )); fi
 
+      # The published CLI installer (scripts/install.sh), run for real against
+      # a local ficus-* fixture release: what it installs, which inputs it
+      # reads, and that it never touches a file under the pre-rename name.
+      - name: Run CLI installer suite
+        run: |
+          set -o pipefail
+          status=0
+          out=$(bash scripts/install.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::install.test.sh ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
       # The suite above runs unprivileged, so its root-install sections
       # (ensure_system_bun_node, ensure_swapfile — `install -o root -g root`)
       # self-skip via the capability probe and those ~30 assertions have
@@ -263,6 +278,29 @@ jobs:
           }
           grep -Fq 'TAU retarget-backup mutation-phase section: ENABLED' <<<"${out}" || {
             echo '::error::retarget-backup.test.sh (root) skipped the mutation-phase section (no "TAU retarget-backup mutation-phase section: ENABLED" marker) — this step exists to execute it.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
+      # The Ficus env rename (TAU_* -> FICUS_*) end to end: upgrade-host.sh,
+      # apply-artifacts.sh and setup-host.sh run as root against a fake host
+      # (every path through the toolkit's seams; systemctl, journalctl,
+      # swapon, sleep and the health probe are PATH shims) — the rename, the
+      # rollback restore, SIGTERM/SIGHUP/SIGKILL, the reconcile and the
+      # refusals. It needs real root and a systemd Ubuntu host, so the same
+      # summary-line + positive-marker gating as the suites above.
+      - name: Run env-prefix upgrade suite (root)
+        run: |
+          set -o pipefail
+          status=0
+          out=$(sudo env "PATH=$PATH" bash scripts/setup/env-prefix-upgrade.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::env-prefix-upgrade.test.sh (root) ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          grep -Fq 'FICUS env-prefix upgrade section: ENABLED' <<<"${out}" || {
+            echo '::error::env-prefix-upgrade.test.sh (root) skipped itself (no "FICUS env-prefix upgrade section: ENABLED" marker) — this step exists to execute it.'
             exit 1
           }
           if (( status != 0 )); then exit $(( status )); fi
@@ -403,9 +441,9 @@ jobs:
           fi
           NODE_OPTIONS=--max-old-space-size=6144 node -e "const v8 = require('node:v8'); console.log('v8_heap_size_limit=' + v8.getHeapStatistics().heap_size_limit)"
 
-      # Every package, not just @tau/shared. `bun build` (used for the CLI and
+      # Every package, not just @ficus/shared. `bun build` (used for the CLI and
       # for apps/core) transpiles without type-checking, so before this step the
-      # only code CI ever type-checked was @tau/shared — which is how main once
+      # only code CI ever type-checked was @ficus/shared — which is how main once
       # shipped a TS2677 error in apps/core that no test could catch. Each
       # package's typecheck is `tsc --noEmit`, so this builds nothing and the
       # step it replaced ("Build shared package") never built anything either.
@@ -433,7 +471,7 @@ jobs:
       # (scripts/setup/setup-host.sh's build phase), so a broken web build is a
       # broken tenant — provisioning fails after the customer has paid. Nothing
       # here built apps/web, which is how a node builtin reaching the browser
-      # bundle (`@tau/shared` re-exporting ./crypto) shipped to main and blocked
+      # bundle (`@ficus/shared` re-exporting ./crypto) shipped to main and blocked
       # every provision. Build it in CI so that class of break is caught here.
       - name: Build web
         run: bun run --filter web build
@@ -443,7 +481,7 @@ jobs:
   # runs. They have 8-25x local headroom but flake under CI scheduling
   # jitter when packed onto the shared `test` runner alongside everything
   # else, so they run here alone (only postgres beside them) and are
-  # skipped in the main sweep via TAU_TEST_SKIP_SUBPROCESS=1 (see the
+  # skipped in the main sweep via FICUS_TEST_SKIP_SUBPROCESS=1 (see the
   # `test` job's "Run tests" step). No `needs:` — runs in parallel with
   # `test`.
 
@@ -571,7 +609,7 @@ jobs:
         working-directory: apps/core
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
-          TAU_TEST_SKIP_SUBPROCESS: '1'
+          FICUS_TEST_SKIP_SUBPROCESS: '1'
 
       - name: Create isolated sterile secret-boundary database
         run: |
@@ -796,6 +834,8 @@ jobs:
           src/services/sandbox/k8s/constants.test.ts
           src/services/sandbox/k8s/kubeconfig.test.ts
           src/services/secrets/store-hermetic.test.ts
+          src/boot/legacy-env.test.ts
+          src/system-token-control.test.ts
         working-directory: apps/core
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
@@ -933,9 +973,9 @@ jobs:
         shell: bash
         run: |
           bun run setup -- --runtime host --database-url postgres://postgres:postgres@localhost:5433/tau_local_setup --port 3100 --yes 2>&1 | tee /tmp/setup.log
-          grep -q 'Tau is running at http://localhost:3100' /tmp/setup.log
-          grep -q 'TAU_SANDBOX_RUNTIME=host' .env
-          grep -Eq '^TAU_ENCRYPTION_KEY=[0-9a-f]{64}$' .env
+          grep -q 'Ficus is running at http://localhost:3100' /tmp/setup.log
+          grep -q 'FICUS_SANDBOX_RUNTIME=host' .env
+          grep -Eq '^FICUS_ENCRYPTION_KEY=[0-9a-f]{64}$' .env
 
       # Exercise authenticated updates using a disposable integration connection
       # with the job token; interactive user
@@ -957,7 +997,7 @@ jobs:
           bun apps/cli/src/index.ts server status --json | tee /tmp/status.json
           node -e "const s=require('/tmp/status.json'); if (s.health!=='ok' || s.supervisor!=='systemd-user') { console.error(JSON.stringify(s)); process.exit(1) } for (const n of ['tau-api','tau-worker']) if (!s.processes.find(p=>p.name===n&&p.status==='online')) { console.error('not online: '+n); process.exit(1) }"
 
-          PW=$(grep '^TAU_PASSWORD=' .env | cut -d= -f2-)
+          PW=$(grep '^FICUS_PASSWORD=' .env | cut -d= -f2-)
 
           # Point the in-app updater at the exact code under test. On
           # pull_request runs the tree is the PR merge commit; targeting
@@ -1012,7 +1052,7 @@ jobs:
           echo "check HTTP $CHECK_STATUS:"; cat /tmp/check.json
           if [ "$CHECK_STATUS" -lt 200 ] || [ "$CHECK_STATUS" -ge 300 ]; then
             echo "curl /api/updates/check rejected the bootstrap bearer — falling back to the CLI"
-            TAU_PASSWORD="$PW" bun apps/cli/src/index.ts update check --json | tee /tmp/check.json
+            FICUS_PASSWORD="$PW" bun apps/cli/src/index.ts update check --json | tee /tmp/check.json
           fi
           node -e "const r=require('/tmp/check.json'); if (r.supported!==true || r.flavor.supervisor!=='systemd-user' || r.flavor.source!=='git-checkout') { console.error(JSON.stringify(r)); process.exit(1) }"
 
@@ -1020,7 +1060,7 @@ jobs:
           echo "apply HTTP $APPLY_STATUS:"; cat /tmp/apply.json
           if [ "$APPLY_STATUS" -lt 200 ] || [ "$APPLY_STATUS" -ge 300 ]; then
             echo "curl /api/updates/apply rejected the bootstrap bearer — falling back to the CLI"
-            TAU_PASSWORD="$PW" bun apps/cli/src/index.ts update apply --json | tee /tmp/apply.json
+            FICUS_PASSWORD="$PW" bun apps/cli/src/index.ts update apply --json | tee /tmp/apply.json
           fi
 
           # /api/updates/apply returns the run the instant the background job
@@ -1090,7 +1130,7 @@ jobs:
 
       # An instance is a CHECKOUT: .env and ecosystem.config.js belong to one
       # label, and setup refuses to relabel a checkout that already carries
-      # another (TAU_INSTANCE=tau is in the .env the step above wrote). So the
+      # another (FICUS_INSTANCE=tau is in the .env the step above wrote). So the
       # second instance gets its own clone. --shared points the clone at the
       # workspace's object store, and --no-checkout + an explicit detach is the
       # only order that works for every event: on pull_request the commit under
@@ -1118,7 +1158,7 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bun run setup -- --instance ci2 --runtime host --port 3300 --database-url postgres://postgres:postgres@localhost:5433/tau_local_setup2 --yes 2>&1 | tee /tmp/setup-ci2.log
-          grep -q 'Tau is running at http://localhost:3300' /tmp/setup-ci2.log
+          grep -q 'Ficus is running at http://localhost:3300' /tmp/setup-ci2.log
 
       - name: Two instances coexist
         shell: bash

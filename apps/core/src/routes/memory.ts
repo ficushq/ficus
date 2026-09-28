@@ -16,8 +16,8 @@
  */
 
 import { Hono } from 'hono'
-import type { MemorySourceType } from '@tau/shared'
-import { AGENT_THREAD_SEARCH_ENABLED, isMemorySourceType } from '@tau/shared'
+import type { MemorySourceType } from '@ficus/shared'
+import { AGENT_THREAD_SEARCH_ENABLED, isMemorySourceType } from '@ficus/shared'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { Squad } from '../entities/Squad'

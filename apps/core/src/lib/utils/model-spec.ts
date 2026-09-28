@@ -2,7 +2,7 @@ import { getModel, getModels, getProviders } from '@earendil-works/pi-ai/compat'
 import { type Api, type Model } from '@earendil-works/pi-ai'
 import type { ThinkingLevel } from '@earendil-works/pi-agent-core'
 import { tryGetModelRuntime } from '../../services/agent/auth-backend'
-import { openRouterEndpointForModelId } from '@tau/shared/openrouter-tier-expansion'
+import { openRouterEndpointForModelId } from '@ficus/shared/openrouter-tier-expansion'
 
 const THINKING_LEVELS = [
   'off',

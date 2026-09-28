@@ -4,7 +4,7 @@ import type { SupervisorContext } from './supervisor'
 
 const context: SupervisorContext = {
   supervisor: 'launchd',
-  root: '/tmp/Tau & <repo> “one”',
+  root: '/tmp/Ficus & <repo> “one”',
   label: 'Smoke',
   home: '/Users/me',
   bunPath: '/Users/me/My Bun/bin/bun',
@@ -31,7 +31,7 @@ describe('launchdDefinition', () => {
     expect(xml).toContain('<string>ai.hiretau.tau-smoke-worker</string>')
     expect(xml).toContain('<string>/Users/me/My Bun/bin/bun</string>')
     expect(xml).toContain('<string>apps/core/dist/worker.js</string>')
-    expect(xml).toContain('/tmp/Tau &amp; &lt;repo&gt; “one”')
+    expect(xml).toContain('/tmp/Ficus &amp; &lt;repo&gt; “one”')
     expect(xml).toContain('/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib')
     expect(xml.match(/\/Users\/me\/\.tau\/logs\/tau-smoke-worker\.log/g)?.length).toBe(2)
     for (const key of ['RunAtLoad', 'KeepAlive', 'ThrottleInterval', 'ProcessType', 'Umask'])

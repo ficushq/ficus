@@ -1,7 +1,7 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('github')
 import { describe, expect, test } from 'bun:test'
-import { GitHubOAuthError, type GitHubDevicePoll } from '@tau/shared/oauth-providers/github/client'
+import { GitHubOAuthError, type GitHubDevicePoll } from '@ficus/shared/oauth-providers/github/client'
 import {
   DeviceAuthorizationService,
   type DeviceAuthorizationDependencies,

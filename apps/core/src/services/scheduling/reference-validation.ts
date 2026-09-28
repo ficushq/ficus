@@ -1,5 +1,5 @@
 import { resolveCreationWorkflow } from '../workflows/creation-source'
-import type { ScheduleAction, ScheduleScopeType } from '@tau/shared'
+import type { ScheduleAction, ScheduleScopeType } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Squad } from '../../entities/Squad'
@@ -88,7 +88,7 @@ export async function validateScheduleReferences(input: {
           'Legacy work-stream creation is no longer supported; configure a workflow.'
         )
       const source = await resolveCreationWorkflow(input.action.workflow, squad)
-      const { workflowSourceSchema } = await import('@tau/shared')
+      const { workflowSourceSchema } = await import('@ficus/shared')
       const { checkWorkflowScope } = await import('../workflows/access')
       const { resolveStoredWorkflow } = await import('../workflows/catalog')
       try {

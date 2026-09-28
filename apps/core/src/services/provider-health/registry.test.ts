@@ -388,7 +388,7 @@ describe('ProviderHealthRegistry persistence', () => {
   const testKey = randomBytes(32).toString('hex')
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
     await db.delete(settings)
     resetSecretStore()
@@ -403,7 +403,7 @@ describe('ProviderHealthRegistry persistence', () => {
     getSecretStore().stopPeriodicRefresh()
     resetSettingsStore()
     resetProviderHealthForTests()
-    delete process.env.TAU_ENCRYPTION_KEY
+    delete process.env.FICUS_ENCRYPTION_KEY
   })
 
   /** Wait for the fire-and-forget persistence write to land in the settings DB. */

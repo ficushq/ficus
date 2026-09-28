@@ -1,4 +1,4 @@
-# Tau documentation
+# Ficus documentation
 
 Private user documentation for `docs.ficus.sh`, built with Astro Starlight. The initial 21-page guide set covers Cloud and self-hosted setup, a first completed task, the Assistant, work, configuration, integrations, and maintenance.
 
@@ -11,13 +11,13 @@ bun install --frozen-lockfile --ignore-scripts
 bun run dev:docs
 ```
 
-Open `http://127.0.0.1:4321`. The scripts bind to loopback by default. To preview from another device on your network, use `bun run --filter @tau/docs preview --host 0.0.0.0 --port 4321`; restrict access to your trusted network. No Tau backend, database, provider credentials, submodules, or root postinstall hooks are needed.
+Open `http://127.0.0.1:4321`. The scripts bind to loopback by default. To preview from another device on your network, use `bun run --filter @ficus/docs preview --host 0.0.0.0 --port 4321`; restrict access to your trusted network. No Ficus backend, database, provider credentials, submodules, or root postinstall hooks are needed.
 
 To check and preview the production build:
 
 ```sh
 bun run check:docs
-bun run --filter @tau/docs preview --port 4321
+bun run --filter @ficus/docs preview --port 4321
 ```
 
 With this Astro version, preview starts a background server. To inspect or stop it, from `apps/docs`:
@@ -34,7 +34,7 @@ Stop a dev server using the terminal that started it before binding a preview to
 | Directory                                                 | Purpose                                                | Included in the static site? |
 | --------------------------------------------------------- | ------------------------------------------------------ | ---------------------------- |
 | `src/content/docs/`                                       | Approved, edited user guides and reference pages       | Yes                          |
-| `src/styles/`                                             | Tau theme                                              | Yes                          |
+| `src/styles/`                                             | Ficus theme                                            | Yes                          |
 | `public/`                                                 | Curated public assets only                             | Yes, copied directly         |
 | `review/`                                                 | Proposed page map, source audit, verification evidence | No                           |
 | `scripts/`                                                | Build validation                                       | No                           |
@@ -54,7 +54,7 @@ See content coverage and remaining gaps, validation evidence, the historical-doc
 
 ## Cloud and self-hosted instructions
 
-The setup selector is beside the desktop theme control and in the mobile menu. It stores `tau-docs-mode` locally and carries `?mode=cloud` or `?mode=self-hosted` in documentation links. An explicit URL mode overrides a saved preference; the `/start/cloud/` and `/start/self-host/` setup entrypoints select their own mode. Invalid values default to the saved preference or Cloud. Storage failures do not prevent selection or navigation.
+The setup selector is beside the desktop theme control and in the mobile menu. It stores `ficus-docs-mode` locally and carries `?mode=cloud` or `?mode=self-hosted` in documentation links. An explicit URL mode overrides a saved preference; the `/start/cloud/` and `/start/self-host/` setup entrypoints select their own mode. Invalid values default to the saved preference or Cloud. Storage failures do not prevent selection or navigation.
 
 Write shared explanations once. In an MDX guide, wrap only differing instructions:
 

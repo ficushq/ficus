@@ -2,7 +2,7 @@ import { ToolRenderersContext } from '../lib/ToolRenderersContext'
 import { SingleToolCallSection } from './MessageContent'
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { MessageMetadata } from '@tau/shared'
+import type { MessageMetadata } from '@ficus/shared'
 
 const { HumanMessageContent } = await import('./MessageContent')
 

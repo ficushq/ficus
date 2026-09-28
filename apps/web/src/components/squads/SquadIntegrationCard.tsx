@@ -82,7 +82,7 @@ export function SquadIntegrationCard({
             type="button"
             aria-expanded={expanded}
             onClick={() => setExpanded(!expanded)}
-            className="tau-button mt-4 flex items-center gap-2 text-sm text-primary"
+            className="ficus-button mt-4 flex items-center gap-2 text-sm text-primary"
           >
             Settings
             <ChevronDownIcon className={clsx('h-4 w-4', expanded && 'rotate-180')} />

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'crypto'
 import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
-import type { CreateLocalDeploymentInput, LocalDeployment, LocalDeploymentStatus } from '@tau/shared'
+import type { CreateLocalDeploymentInput, LocalDeployment, LocalDeploymentStatus } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { db, localDeployments } from '../../db'
 import { AmbiguousPrefixError, uuidPrefixCondition } from '../../db/prefix-match'
@@ -35,18 +35,18 @@ const TENANT_APP_LABEL_MAX_LENGTH = 49
 
 /** Returns the validated app-host apex, or null when hosted app URLs are disabled. */
 export function getHostedAppsDomain(): string | null {
-  const rawAppsDomain = process.env.TAU_APPS_DOMAIN
+  const rawAppsDomain = process.env.FICUS_APPS_DOMAIN
   if (rawAppsDomain === undefined || rawAppsDomain === '') return null
   const appsDomain = rawAppsDomain.trim()
   if (!appsDomain || appsDomain !== rawAppsDomain || !DNS_NAME_PATTERN.test(appsDomain)) {
-    throw new HostedAppsConfigError('TAU_APPS_DOMAIN must be a lowercase DNS name without a scheme, port, or path')
+    throw new HostedAppsConfigError('FICUS_APPS_DOMAIN must be a lowercase DNS name without a scheme, port, or path')
   }
   return appsDomain
 }
 
 function getHostedTenantLabel(): string {
   const appUrl = process.env.APP_URL?.trim()
-  if (!appUrl) throw new HostedAppsConfigError('APP_URL is required when TAU_APPS_DOMAIN is configured')
+  if (!appUrl) throw new HostedAppsConfigError('APP_URL is required when FICUS_APPS_DOMAIN is configured')
 
   let hostname: string
   try {
@@ -54,7 +54,7 @@ function getHostedTenantLabel(): string {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('unsupported protocol')
     hostname = parsed.hostname
   } catch {
-    throw new HostedAppsConfigError('APP_URL must be a valid HTTP(S) URL when TAU_APPS_DOMAIN is configured')
+    throw new HostedAppsConfigError('APP_URL must be a valid HTTP(S) URL when FICUS_APPS_DOMAIN is configured')
   }
 
   const labels = hostname.split('.')
@@ -127,7 +127,7 @@ export async function createLocalDeployment(squad: Squad, input: CreateLocalDepl
   // live row. A bad operator value must not leave an unreachable orphan behind.
   validateHostedAppsConfig()
   const normalized = normalizeLocalDeploymentInput(input, { squadId: squad.id })
-  // Absent port => Tau assigns one (the default, and the only way to guarantee
+  // Absent port => Ficus assigns one (the default, and the only way to guarantee
   // it is free); explicit port => rejected if another live deployment in the
   // same network scope holds it.
   const sandboxId = Squad.getSandboxId(squad.id)

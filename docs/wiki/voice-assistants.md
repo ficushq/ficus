@@ -1,6 +1,6 @@
 # Voice Assistants and Artifacts
 
-Tau supports multiple realtime voice assistants built on a shared OpenAI Realtime runtime. Voice assistants are mounted by code where they belong; users do not choose from a global assistant picker.
+Ficus supports multiple realtime voice assistants built on a shared OpenAI Realtime runtime. Voice assistants are mounted by code where they belong; users do not choose from a global assistant picker.
 
 Voice is treated as a conversational router/operator. It is good at spoken interaction, short context gathering, choosing tools, and presenting results. It should not do complex long-running work directly. Durable visual work is routed to specialized artifact-builder agents.
 
@@ -28,7 +28,7 @@ Artifact builder agent
        └─ artifact_question
 ```
 
-Important rule: the voice assistant routes and monitors; artifact builders build. In user-facing speech, the workspace voice assistant should still speak as Tau — one capable workspace platform — rather than exposing artifact builders, squads, inboxes, or tool routing unless the user asks how the system works.
+Important rule: the voice assistant routes and monitors; artifact builders build. In user-facing speech, the workspace voice assistant should still speak as Ficus — one capable workspace platform — rather than exposing artifact builders, squads, inboxes, or tool routing unless the user asks how the system works.
 
 ## Realtime Voice Runtime
 
@@ -94,7 +94,7 @@ interface UseRealtimeVoiceAssistantReturn<TState> {
 
 ### Mic and interruption behavior
 
-- During assistant speech, Tau disables the mic so the speaker does not feed back into the realtime session.
+- During assistant speech, Ficus disables the mic so the speaker does not feed back into the realtime session.
 - The workspace orb supports click-to-barge-in while `speaking`: it cancels output, stops playback, re-enables the mic, and returns to `listening`.
 - During `listening`, clicking the orb toggles user mic pause/resume.
 - During `user-speaking`, clicking the orb commits the current input audio buffer and requests a response immediately.
@@ -166,7 +166,7 @@ Used by the unified app-wide Assistant (`UnifiedAssistant.tsx`, `AssistantComman
 
 Purpose:
 
-- general text and spoken interaction with the Tau web UI
+- general text and spoken interaction with the Ficus web UI
 - search and navigate pages, squads, work and conversations
 - inspect work and route messages to the relevant manager
 - delegate deeper tasks as background tasks on helpers the conversation owns — a general system-manager helper for instance-wide and personal work, plus one consultant per squad (named “Assistant task”) for squad-owned work — and receive their updates in the active conversation
@@ -194,7 +194,7 @@ Mounted by `VoiceWorkspacePage` at `/voice`.
 Purpose:
 
 - immersive full-screen voice workspace
-- present Tau as one cohesive system while internal agents/tools do the implementation work
+- present Ficus as one cohesive system while internal agents/tools do the implementation work
 - request, continue, list, archive, delete, and display persistent artifacts
 - choose displayed artifact: latest updated artifact or a specific older artifact
 - ask artifact-builder questions aloud and route answers back through artifact continue requests
@@ -488,7 +488,7 @@ Important coverage:
 
 ## Assistants embedded in editors
 
-`PageEditorAssistant` embeds the existing durable conversation UI in a page. It accepts a typed draft envelope and reports validated proposals to the host page. Realtime text and voice share the conversation; when Realtime is not configured, typed messages use a lazily created user assistant. The user can also select that fallback explicitly when a Realtime connection is unavailable. The host supplies its page kind's title, help copy, and model-facing `instructions`/`tools` as props (`assistantEditorInstructionsByKind[kind]` / `assistantEditorToolDefinitionsByKind[kind]` from `@tau/shared`), so `PageEditorAssistant` itself stays kind-agnostic.
+`PageEditorAssistant` embeds the existing durable conversation UI in a page. It accepts a typed draft envelope and reports validated proposals to the host page. Realtime text and voice share the conversation; when Realtime is not configured, typed messages use a lazily created user assistant. The user can also select that fallback explicitly when a Realtime connection is unavailable. The host supplies its page kind's title, help copy, and model-facing `instructions`/`tools` as props (`assistantEditorInstructionsByKind[kind]` / `assistantEditorToolDefinitionsByKind[kind]` from `@ficus/shared`), so `PageEditorAssistant` itself stays kind-agnostic.
 
 The page does not send executable callbacks to the agent runner. The shared `assistant-editors` contract describes two tools, `read` and `edit`. Both the Realtime adapter (via the page's bridge) and the system-manager runner (`createPageEditorTools`) call the same server service, bound to the conversation and never exposed to the model directly. Each editor kind supplies authorization, document validation, a model-facing contract string, and how it turns a proposal's `operations` into a candidate document (`adapters[kind].applyOperations`) in `apps/core/src/services/assistant-editors/index.ts`. Workflows (`kind: 'workflow'`) and themes (`kind: 'theme'`) are the two adapters today; the sync/proposal envelope is a discriminated union on `kind` (`assistantEditorSyncSchema` in `packages/shared/src/assistant-editors.ts`), and each kind's own operation set (`workflowCustomizationSchema`, `themeOperationSchema`) merges into one wider operations union so the same `edit` tool and HTTP route serve every kind without per-kind routes.
 

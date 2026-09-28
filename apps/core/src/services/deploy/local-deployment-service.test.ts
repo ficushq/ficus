@@ -37,9 +37,9 @@ describe('localDeployment service', () => {
   }
 
   it('emits a hosted URL with only the compact deployment prefix', async () => {
-    const previousAppsDomain = process.env.TAU_APPS_DOMAIN
+    const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     const previousAppUrl = process.env.APP_URL
-    process.env.TAU_APPS_DOMAIN = 'hiretau.app'
+    process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
     process.env.APP_URL = 'https://team--blue.hiretau.ai:8443/control'
 
     try {
@@ -53,16 +53,16 @@ describe('localDeployment service', () => {
       expect(url.searchParams.get('_tau_token')).toBeTruthy()
       expect(url.hostname).not.toContain(localDeployment.id.replaceAll('-', ''))
     } finally {
-      if (previousAppsDomain === undefined) delete process.env.TAU_APPS_DOMAIN
-      else process.env.TAU_APPS_DOMAIN = previousAppsDomain
+      if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
       if (previousAppUrl === undefined) delete process.env.APP_URL
       else process.env.APP_URL = previousAppUrl
     }
   })
 
   it('keeps the path fallback byte-for-byte unchanged when the apps domain is unset', async () => {
-    const previousAppsDomain = process.env.TAU_APPS_DOMAIN
-    delete process.env.TAU_APPS_DOMAIN
+    const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
+    delete process.env.FICUS_APPS_DOMAIN
 
     try {
       const squad = await createTestSquad('path-fallback')
@@ -73,22 +73,22 @@ describe('localDeployment service', () => {
         `/api/app/${localDeployment.id}/?_tau_token=${encodeURIComponent(token!)}`
       )
     } finally {
-      if (previousAppsDomain === undefined) delete process.env.TAU_APPS_DOMAIN
-      else process.env.TAU_APPS_DOMAIN = previousAppsDomain
+      if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
     }
   })
 
   it('falls back to the path URL on reads when hosted URL config becomes invalid', async () => {
-    const previousAppsDomain = process.env.TAU_APPS_DOMAIN
+    const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     const previousAppUrl = process.env.APP_URL
-    delete process.env.TAU_APPS_DOMAIN
+    delete process.env.FICUS_APPS_DOMAIN
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
 
     try {
       const squad = await createTestSquad('invalid-hosted-read')
       const created = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
       const token = new URL(`http://tau${created.urlPathOrHost}`).searchParams.get('_tau_token')!
-      process.env.TAU_APPS_DOMAIN = 'hiretau.app'
+      process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
       process.env.APP_URL = `https://${'a'.repeat(50)}.hiretau.ai`
 
       const found = await getLocalDeployment(created.id)
@@ -99,19 +99,19 @@ describe('localDeployment service', () => {
       expect(warn.mock.calls.flat().join(' ').toLowerCase()).toContain('hosted app url config is invalid')
     } finally {
       warn.mockRestore()
-      if (previousAppsDomain === undefined) delete process.env.TAU_APPS_DOMAIN
-      else process.env.TAU_APPS_DOMAIN = previousAppsDomain
+      if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
       if (previousAppUrl === undefined) delete process.env.APP_URL
       else process.env.APP_URL = previousAppUrl
     }
   })
 
   it('fails descriptively for invalid apps domain config', async () => {
-    const previousAppsDomain = process.env.TAU_APPS_DOMAIN
+    const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     const previousAppUrl = process.env.APP_URL
     const invalidConfigs = [
-      { appsDomain: ' ', appUrl: 'https://team.hiretau.ai', message: 'TAU_APPS_DOMAIN' },
-      { appsDomain: 'https://hiretau.app', appUrl: 'https://team.hiretau.ai', message: 'TAU_APPS_DOMAIN' },
+      { appsDomain: ' ', appUrl: 'https://team.hiretau.ai', message: 'FICUS_APPS_DOMAIN' },
+      { appsDomain: 'https://hiretau.app', appUrl: 'https://team.hiretau.ai', message: 'FICUS_APPS_DOMAIN' },
       { appsDomain: 'hiretau.app', appUrl: 'not a URL', message: 'APP_URL' },
       { appsDomain: 'hiretau.app', appUrl: 'https://localhost', message: 'tenant label' },
       { appsDomain: 'hiretau.app', appUrl: 'https://a.hiretau.ai', message: 'at least 3 characters' },
@@ -122,7 +122,7 @@ describe('localDeployment service', () => {
     try {
       const squad = await createTestSquad('invalid-hosted-config')
       for (const [index, config] of invalidConfigs.entries()) {
-        process.env.TAU_APPS_DOMAIN = config.appsDomain
+        process.env.FICUS_APPS_DOMAIN = config.appsDomain
         process.env.APP_URL = config.appUrl
         await expect(
           createLocalDeployment(squad, { name: `web-${index}`, port: 5173 + index, mode: 'attached' })
@@ -134,8 +134,8 @@ describe('localDeployment service', () => {
         .where(eq(localDeployments.squadId, squad.id))
       expect(persisted).toHaveLength(0)
     } finally {
-      if (previousAppsDomain === undefined) delete process.env.TAU_APPS_DOMAIN
-      else process.env.TAU_APPS_DOMAIN = previousAppsDomain
+      if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
       if (previousAppUrl === undefined) delete process.env.APP_URL
       else process.env.APP_URL = previousAppUrl
     }

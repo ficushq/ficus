@@ -138,7 +138,7 @@ export function hostWorkspaceLayout(ctx: WorkspaceLayoutContext = {}): Workspace
 /**
  * Resolve an agent's workspace layout — the single source of truth for where an
  * agent's working directory, private dir, and memory live inside its sandbox,
- * dispatched on the ACTIVE runtime (TAU_SANDBOX_RUNTIME):
+ * dispatched on the ACTIVE runtime (FICUS_SANDBOX_RUNTIME):
  *
  * - k8s + docker (and unset): the fixed container mounts
  *   ({@link containerWorkspaceLayout}).

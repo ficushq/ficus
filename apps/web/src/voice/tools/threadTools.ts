@@ -1,6 +1,6 @@
 import { getActiveExecution, getAgent, getMessage, getMessages, listAgents } from '../../api/agents'
 import { agentHandle, resolveAgentByReference } from './agentResolution'
-import type { Message } from '@tau/shared'
+import type { Message } from '@ficus/shared'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
 function mapMessages(messages: Message[]) {

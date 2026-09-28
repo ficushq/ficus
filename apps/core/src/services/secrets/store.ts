@@ -32,11 +32,11 @@ export const SECRET_STORE_REFRESH_INTERVAL_MS = 5 * 60_000
 /** Known secret keys the application uses */
 const KNOWN_KEYS = [
   // Authentication
-  'TAU_PASSWORD',
+  'FICUS_PASSWORD',
   // Shared secret authenticating the in-cluster sandbox watcher's core callbacks
-  // (workspace-files), independent of the admin-gated legacy TAU_PASSWORD.
+  // (workspace-files), independent of the admin-gated legacy FICUS_PASSWORD.
   'SANDBOX_CALLBACK_SECRET',
-  // Reviewer credential for the demo access page (TAU_DEMO_REVIEWER_ACCESS); rotate to revoke.
+  // Reviewer credential for the demo access page (FICUS_DEMO_REVIEWER_ACCESS); rotate to revoke.
   'DEMO_REVIEWER_SECRET',
 
   // Notifications
@@ -245,7 +245,7 @@ export class SecretStore {
     try {
       this.encryptionKey = getEncryptionKey()
     } catch {
-      log.warn('TAU_ENCRYPTION_KEY not set — secret store running in read-only env-fallback mode')
+      log.warn('FICUS_ENCRYPTION_KEY not set — secret store running in read-only env-fallback mode')
       return
     }
 
@@ -544,7 +544,7 @@ export class SecretStore {
    */
   async set(key: string, value: string, updatedBy = 'admin'): Promise<void> {
     if (!this.encryptionKey) {
-      throw new Error('Cannot set secrets: TAU_ENCRYPTION_KEY not configured')
+      throw new Error('Cannot set secrets: FICUS_ENCRYPTION_KEY not configured')
     }
 
     const { encrypted, iv } = encrypt(value, this.encryptionKey)
@@ -588,7 +588,7 @@ export class SecretStore {
     obligation: (tx: SecretStoreTransaction) => Promise<T>
   ): Promise<T> {
     if (!this.encryptionKey) {
-      throw new Error('Cannot set secrets: TAU_ENCRYPTION_KEY not configured')
+      throw new Error('Cannot set secrets: FICUS_ENCRYPTION_KEY not configured')
     }
     const { encrypted, iv } = encrypt(value, this.encryptionKey)
     const result = await db.transaction(async (tx) => {
@@ -621,7 +621,7 @@ export class SecretStore {
     mutationBeforeDelete: (tx: SecretStoreTransaction) => Promise<T>
   ): Promise<T> {
     if (!this.encryptionKey) {
-      throw new Error('Cannot delete secrets: TAU_ENCRYPTION_KEY not configured')
+      throw new Error('Cannot delete secrets: FICUS_ENCRYPTION_KEY not configured')
     }
     const result = await db.transaction(async (tx) => {
       const mutation = await mutationBeforeDelete(tx)
@@ -662,7 +662,7 @@ export class SecretStore {
     updatedBy = 'admin'
   ): Promise<void> {
     if (!this.encryptionKey) {
-      throw new Error('Cannot mutate secrets: TAU_ENCRYPTION_KEY not configured')
+      throw new Error('Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured')
     }
     const encryptionKey = this.encryptionKey
 
@@ -715,7 +715,7 @@ export class SecretStore {
    */
   async delete(key: string): Promise<void> {
     if (!this.encryptionKey) {
-      throw new Error('Cannot delete secrets: TAU_ENCRYPTION_KEY not configured')
+      throw new Error('Cannot delete secrets: FICUS_ENCRYPTION_KEY not configured')
     }
 
     await this.deleteWithDurableMutation(key, async () => undefined)
@@ -857,7 +857,7 @@ export class SecretStore {
   }
 
   private isTestProcess(): boolean {
-    return process.env.TAU_TEST_MODE === '1'
+    return process.env.FICUS_TEST_MODE === '1'
   }
 
   private canReadEnvironmentKey(key: string): boolean {

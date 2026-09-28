@@ -1,4 +1,4 @@
-import type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from '@tau/shared'
+import type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from '@ficus/shared'
 import { Command } from 'commander'
 import { apiDelete, apiGet, apiPost, apiPut } from '../client'
 import { output, outputError } from '../output'

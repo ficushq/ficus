@@ -1,5 +1,5 @@
 {
-  "name": "@tau/client-core",
+  "name": "@ficus/client-core",
   "version": "0.0.1",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tau/shared": "workspace:*",
+    "@ficus/shared": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {

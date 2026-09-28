@@ -1,4 +1,4 @@
-import { createBlankWorkflow, type WorkflowSource } from '@tau/shared'
+import { createBlankWorkflow, type WorkflowSource } from '@ficus/shared'
 import { AgentType } from '../entities/AgentType'
 import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test'
 import { Hono } from 'hono'

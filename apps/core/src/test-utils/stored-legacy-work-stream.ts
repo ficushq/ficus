@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { CreateWorkStreamInput } from '@tau/shared'
+import type { CreateWorkStreamInput } from '@ficus/shared'
 import { db, squads, workStreams } from '../db'
 import { WorkStream } from '../entities/WorkStream'
 import { resetContinuationCycle } from '../services/work-streams/continuation-state'

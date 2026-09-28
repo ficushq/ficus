@@ -75,7 +75,7 @@ export async function bootstrap(options: BootstrapOptions, deps: BootstrapDeps):
   if (isCheckout(root)) {
     deps.log(`Using existing checkout ${root}`)
   } else if (existsSync(root) && (!statSync(root).isDirectory() || readdirSync(root).length > 0)) {
-    throw new Error(`${root} exists and is not a tau checkout — choose another --root or remove it.`)
+    throw new Error(`${root} exists and is not a Ficus checkout — choose another --root or remove it.`)
   } else {
     deps.log(`Cloning ${options.repo} (${options.ref}) into ${root}`)
     const r = await deps.runner(['git', 'clone', '--recurse-submodules', '--branch', options.ref, options.repo, root], {
@@ -135,7 +135,7 @@ export async function bootstrap(options: BootstrapOptions, deps: BootstrapDeps):
 
   deps.log('Handing off to the checkout: bun run setup')
   // Pass --root explicitly: setup resolves its root from cwd, and an inherited
-  // TAU_SERVER_ROOT (or a future resolution change) must not retarget the
+  // FICUS_SERVER_ROOT (or a future resolution change) must not retarget the
   // checkout we just cloned.
   const setup = await deps.runner([bun, 'run', 'setup', '--', '--root', root, ...options.setupArgs], {
     cwd: root,

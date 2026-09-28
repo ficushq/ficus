@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import clsx from 'clsx'
-import type { ThemePreset } from '@tau/shared'
+import type { ThemePreset } from '@ficus/shared'
 import { presetAppearance } from '../../theme/custom'
 import { ThemeSwatch, type ThemeSwatchSpec } from '../ThemeSwatch'
 import type { WebThemeDefinition } from '../../theme/registry'

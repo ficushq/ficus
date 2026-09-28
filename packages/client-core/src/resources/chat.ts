@@ -1,4 +1,4 @@
-import type { DeliveryMode } from '@tau/shared'
+import type { DeliveryMode } from '@ficus/shared'
 import type { Transport } from '../transport'
 import { parseSSEStream, type SSECallbacks } from '../sse'
 

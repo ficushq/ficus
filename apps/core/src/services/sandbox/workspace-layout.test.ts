@@ -17,19 +17,19 @@ import { WORKSPACE_MOUNT, MEMORY_MOUNT } from './types'
 import { boxUnixUser } from '../machines/box-paths'
 
 /**
- * Pin TAU_SANDBOX_RUNTIME to "unset" (container dispatch) for a describe block
+ * Pin FICUS_SANDBOX_RUNTIME to "unset" (container dispatch) for a describe block
  * whose assertions depend on the ambient runtime, restoring it afterwards —
  * so the suite passes regardless of the environment it runs in.
  */
 function pinContainerRuntime(): void {
   let prev: string | undefined
   beforeEach(() => {
-    prev = process.env.TAU_SANDBOX_RUNTIME
-    delete process.env.TAU_SANDBOX_RUNTIME
+    prev = process.env.FICUS_SANDBOX_RUNTIME
+    delete process.env.FICUS_SANDBOX_RUNTIME
   })
   afterEach(() => {
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 }
 
@@ -132,19 +132,19 @@ describe('vmWorkspaceLayout (box-native paths, derived from the deterministic bo
   })
 })
 
-describe('resolveWorkspaceLayout runtime dispatch (TAU_SANDBOX_RUNTIME)', () => {
+describe('resolveWorkspaceLayout runtime dispatch (FICUS_SANDBOX_RUNTIME)', () => {
   let prev: string | undefined
   beforeEach(() => {
-    prev = process.env.TAU_SANDBOX_RUNTIME
+    prev = process.env.FICUS_SANDBOX_RUNTIME
   })
   afterEach(() => {
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   test('k8s + both docker runtimes resolve the container layout (pinned exact values)', () => {
     for (const runtime of ['k8s', 'docker-sysbox', 'docker-socket']) {
-      process.env.TAU_SANDBOX_RUNTIME = runtime
+      process.env.FICUS_SANDBOX_RUNTIME = runtime
       const layout = resolveWorkspaceLayout({ squadId: 'sq1', sandboxId: 'agent_a1' })
       expect(layout).toEqual({
         workspaceMount: '/workspace/sq1',
@@ -156,7 +156,7 @@ describe('resolveWorkspaceLayout runtime dispatch (TAU_SANDBOX_RUNTIME)', () => 
   })
 
   test('vm resolves box-native paths', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     expect(resolveWorkspaceLayout({ squadId: 'sq1', sandboxId: 'agent_a1' })).toEqual(
       vmWorkspaceLayout({ squadId: 'sq1', sandboxId: 'agent_a1' })
     )
@@ -172,17 +172,17 @@ describe('hostWorkspaceLayout', () => {
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'tau-host-layout-'))
     prevHome = process.env.HOME_DIR
-    prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     clearHostWorkspaceOverrides()
   })
   afterEach(() => {
     clearHostWorkspaceOverrides()
     if (prevHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = prevHome
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     rmSync(home, { recursive: true, force: true })
   })
 
@@ -215,7 +215,7 @@ describe('hostWorkspaceLayout', () => {
     expect(hostWorkspaceLayout({})).toEqual(containerWorkspaceLayout({}))
   })
 
-  test('resolveWorkspaceLayout dispatches to host under TAU_SANDBOX_RUNTIME=host', () => {
+  test('resolveWorkspaceLayout dispatches to host under FICUS_SANDBOX_RUNTIME=host', () => {
     expect(resolveWorkspaceLayout({ sandboxId: 'agent_x' }).privateMount).toBe(join(home, 'private', 'agent_x'))
   })
 })

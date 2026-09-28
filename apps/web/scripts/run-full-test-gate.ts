@@ -137,7 +137,7 @@ export async function runFullTestGate() {
   const pinned = (await Bun.file(resolve(checkoutRoot, '.bun-version')).text()).trim()
   if (Bun.version !== pinned) throw new Error(`Bun version mismatch: expected ${pinned}, received ${Bun.version}`)
 
-  for (const specifier of ['react', 'react-dom', 'react-router-dom', '@tau/shared', '@tau/client-core']) {
+  for (const specifier of ['react', 'react-dom', 'react-router-dom', '@ficus/shared', '@ficus/client-core']) {
     const resolved = Bun.resolveSync(specifier, webRoot)
     const rel = relative(checkoutRoot, resolved)
     if (rel.startsWith('..') || resolve(checkoutRoot, rel) !== resolved) {

@@ -1,4 +1,4 @@
-import { isLiveAgentStatus } from '@tau/shared'
+import { isLiveAgentStatus } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import { listAgentActivityRows } from '../../entities/agent-queries'
 import { WorkStream } from '../../entities/WorkStream'

@@ -19,7 +19,7 @@ function renderToolResult(toolName: string, result: string, isError = false, ent
 }
 
 const block =
-  '<!--tau:memory-provenance [{"sourceSquadId":"squad-aaaa1111","path":"/memory/a.md","title":"A","sourceType":"memory_file","sensitivity":"internal","score":0.9,"documentId":"d1","url":"https://example.com/source"}] -->'
+  '<!--ficus:memory-provenance [{"sourceSquadId":"squad-aaaa1111","path":"/memory/a.md","title":"A","sourceType":"memory_file","sensitivity":"internal","score":0.9,"documentId":"d1","url":"https://example.com/source"}] -->'
 
 describe('memory_search renderer', () => {
   it('summary shows the query', () => {
@@ -34,7 +34,7 @@ describe('memory_search renderer', () => {
     const html = renderToStaticMarkup(
       <ToolResultView renderers={agentToolRenderers} toolName="memory_search" result={result} isError={false} />
     )
-    expect(html).not.toContain('tau:memory-provenance')
+    expect(html).not.toContain('memory-provenance')
     expect(html).toContain('squad-aa')
     expect(html.toLowerCase()).toContain('internal')
     expect(html).toContain('href="https://example.com/source"')
@@ -353,11 +353,11 @@ describe('site assistant task renderers', () => {
     ).toContain('Task update')
   })
 
-  it('search_tau summarizes the query', () => {
+  it('search_ficus summarizes the query', () => {
     expect(
       renderToStaticMarkup(
-        <ToolSummary renderers={siteAssistantToolRenderers} toolName="search_tau" args='{"query":"schedules"}' />
+        <ToolSummary renderers={siteAssistantToolRenderers} toolName="search_ficus" args='{"query":"schedules"}' />
       )
-    ).toContain('Searched Tau for “schedules”')
+    ).toContain('Searched Ficus for “schedules”')
   })
 })

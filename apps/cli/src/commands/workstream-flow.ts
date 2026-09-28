@@ -5,7 +5,7 @@ import {
   type StructuredInputOptions,
 } from '../structured-input'
 import { Command } from 'commander'
-import { workflowCommandSchema } from '@tau/shared'
+import { workflowCommandSchema } from '@ficus/shared'
 import { apiGet, apiPost } from '../client'
 import { output, outputError } from '../output'
 

@@ -4,6 +4,7 @@ import { db } from '../../db'
 import { deviceTokens, users } from '../../db/schema'
 import { createHash } from 'node:crypto'
 import {
+  DEVICE_TOKEN_PREFIX,
   createDeviceToken,
   findActiveDeviceTokenIds,
   listDeviceTokens,
@@ -57,7 +58,8 @@ describe('device tokens', () => {
   it('creates a token that resolves to the owning user; revoking invalidates it', async () => {
     const userId = await makeUser('dt-resolve@test.local')
     const { token, id } = await createDeviceToken({ userId, name: 'iPhone', platform: 'ios' })
-    expect(token.startsWith('tau_dev_')).toBe(true)
+    expect(DEVICE_TOKEN_PREFIX).toBe('ficus_dev_')
+    expect(token.startsWith('ficus_dev_')).toBe(true)
 
     expect(await resolveDeviceToken(token)).toEqual({ id, userId })
     // Integration: resolveToken retains its compatibility identity-only result,
@@ -71,6 +73,32 @@ describe('device tokens', () => {
     expect(await revokeDeviceToken(userId, id)).toBe(true)
     expect(await resolveDeviceToken(token)).toBeNull()
     expect(await resolveToken(token)).toBeNull()
+  })
+
+  it('device tokens with the tau_dev_ prefix are rejected (no dual-accept)', async () => {
+    expect(await resolveDeviceToken('tau_dev_' + 'x'.repeat(43))).toBeNull()
+  })
+
+  it('a live pre-rename tau_dev_ row no longer authenticates anywhere', async () => {
+    const userId = await makeUser('dt-legacy@test.local')
+    const legacy = 'tau_dev_' + 'y'.repeat(43)
+    await db.insert(deviceTokens).values({ userId, tokenHash: tokenHash(legacy), name: 'Old CLI', platform: 'cli' })
+
+    expect(await resolveDeviceToken(legacy)).toBeNull()
+    expect(await resolveToken(legacy)).toBeNull()
+    expect(await resolveTokenContext(legacy)).toBeNull()
+  })
+
+  it('never resolves a device row whose token only resembles the device prefix', async () => {
+    const userId = await makeUser('dt-lookalike@test.local')
+    const secret = 'z'.repeat(43)
+    for (const raw of [`ficus_devx${secret}`, `ficus_de_${secret}`, `ficus_sys_${secret}`, `FICUS_DEV_${secret}`]) {
+      await db
+        .insert(deviceTokens)
+        .values({ userId, tokenHash: tokenHash(raw), name: raw.slice(0, 12), platform: 'cli' })
+      expect(await resolveDeviceToken(raw)).toBeNull()
+      expect(await resolveTokenContext(raw)).toBeNull()
+    }
   })
 
   it('committed revoke closes only locally attached connections for that DB token', async () => {

@@ -3,7 +3,7 @@ import { createMiddleware } from 'hono/factory'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
-import { Permissions } from '@tau/shared'
+import { Permissions } from '@ficus/shared'
 import { db, squads } from '../db'
 import { requireAnySquadCleanupPermission, requireAnySquadPermission, requireSquadPermission } from '../middleware'
 import {

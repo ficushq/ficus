@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { squadsResource } from './squads'
-import type { Agent, WorkStream, WorkStreamWait } from '@tau/shared'
+import type { Agent, WorkStream, WorkStreamWait } from '@ficus/shared'
 import type { Transport, RequestOptions } from '../transport'
 
 function mockTransport(responder?: (path: string, options?: RequestOptions) => unknown) {

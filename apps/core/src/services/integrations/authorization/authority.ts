@@ -19,9 +19,9 @@ export function resolveOAuthAuthority(): OAuthAuthority {
 
 /** Resolve the hosted broker configuration without ever falling back to local OAuth. */
 export function requireBrokerConfig(): { baseUrl: string; token: string } {
-  const baseUrl = process.env.TAU_PLATFORM_BASE_URL?.trim()
+  const baseUrl = process.env.FICUS_PLATFORM_BASE_URL?.trim()
   const token =
-    getSecretStore().get('TAU_PLATFORM_INSTANCE_TOKEN')?.trim() ?? process.env.TAU_PLATFORM_INSTANCE_TOKEN?.trim()
+    getSecretStore().get('FICUS_PLATFORM_INSTANCE_TOKEN')?.trim() ?? process.env.FICUS_PLATFORM_INSTANCE_TOKEN?.trim()
   if (!baseUrl || !token) throw new BrokerUnconfiguredError()
   return { baseUrl, token }
 }

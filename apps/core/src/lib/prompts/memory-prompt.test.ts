@@ -14,12 +14,12 @@ describe('buildMemorySystemPrompt', () => {
   describe('vm runtime', () => {
     let prev: string | undefined
     beforeEach(() => {
-      prev = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'vm'
+      prev = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     })
     afterEach(() => {
-      if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prev
+      if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prev
     })
 
     it('uses the squad box-native memory + workspace paths, no container literals', () => {

@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import type { ProviderHealthKind } from '@tau/shared'
+import type { ProviderHealthKind } from '@ficus/shared'
 import type { ProviderAuthEntry } from '../../api/providerAuth'
 import { queryKeys, onboardingQueryKeys } from '../../queryKeys'
 

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { WorkflowScope, WorkflowSource, WorkflowEventTrigger } from '@tau/shared'
+import type { WorkflowScope, WorkflowSource, WorkflowEventTrigger } from '@ficus/shared'
 import { db, workflows, squads, users, type DbTx } from '../../db'
 import { hasPermission, type Identity } from '../rbac'
 import { WorkflowError } from './catalog'
@@ -56,7 +56,7 @@ export async function validateSquadWorkflows(
   squadId: string,
   store: DbTx | typeof db = db
 ) {
-  const { squadMetadataSchema } = await import('@tau/shared')
+  const { squadMetadataSchema } = await import('@ficus/shared')
   const { resolveStoredWorkflow } = await import('./catalog')
   squadMetadataSchema.parse(metadata)
   const { integrationOutputRegistry } = await import('../integrations/outputs/registry')

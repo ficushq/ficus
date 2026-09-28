@@ -6,14 +6,14 @@ import { loadExplicitSystemLogConfig } from './config'
 import { SystemLogProviderError } from './types'
 
 describe('loadExplicitSystemLogConfig — file provider paths', () => {
-  it('expands a leading ~ in TAU_LOG_FILE_API / TAU_LOG_FILE_WORKER', () => {
+  it('expands a leading ~ in FICUS_LOG_FILE_API / FICUS_LOG_FILE_WORKER', () => {
     // `~/logs/api.log` was rejected as CONFIG_INVALID ("must be absolute"),
     // because isAbsolute() sees a relative path. Expanding first makes it
     // absolute, and the check then passes on its own terms.
     const config = loadExplicitSystemLogConfig({
-      TAU_SYSTEM_LOG_PROVIDER: 'file',
-      TAU_LOG_FILE_API: '~/logs/api.log',
-      TAU_LOG_FILE_WORKER: '~/logs/worker.log',
+      FICUS_SYSTEM_LOG_PROVIDER: 'file',
+      FICUS_LOG_FILE_API: '~/logs/api.log',
+      FICUS_LOG_FILE_WORKER: '~/logs/worker.log',
     } as NodeJS.ProcessEnv)
 
     expect(config).toEqual({
@@ -24,9 +24,9 @@ describe('loadExplicitSystemLogConfig — file provider paths', () => {
 
   it('still leaves absolute paths untouched', () => {
     const config = loadExplicitSystemLogConfig({
-      TAU_SYSTEM_LOG_PROVIDER: 'file',
-      TAU_LOG_FILE_API: '/var/log/tau/api.log',
-      TAU_LOG_FILE_WORKER: '/var/log/tau/worker.log',
+      FICUS_SYSTEM_LOG_PROVIDER: 'file',
+      FICUS_LOG_FILE_API: '/var/log/tau/api.log',
+      FICUS_LOG_FILE_WORKER: '/var/log/tau/worker.log',
     } as NodeJS.ProcessEnv)
 
     expect(config).toEqual({
@@ -38,9 +38,9 @@ describe('loadExplicitSystemLogConfig — file provider paths', () => {
   it('still rejects a genuinely relative path — expansion is not resolution', () => {
     expect(() =>
       loadExplicitSystemLogConfig({
-        TAU_SYSTEM_LOG_PROVIDER: 'file',
-        TAU_LOG_FILE_API: 'logs/api.log',
-        TAU_LOG_FILE_WORKER: '/var/log/tau/worker.log',
+        FICUS_SYSTEM_LOG_PROVIDER: 'file',
+        FICUS_LOG_FILE_API: 'logs/api.log',
+        FICUS_LOG_FILE_WORKER: '/var/log/tau/worker.log',
       } as NodeJS.ProcessEnv)
     ).toThrow(SystemLogProviderError)
   })
@@ -48,9 +48,9 @@ describe('loadExplicitSystemLogConfig — file provider paths', () => {
   it('still rejects ~user, which is not absolute after expansion', () => {
     expect(() =>
       loadExplicitSystemLogConfig({
-        TAU_SYSTEM_LOG_PROVIDER: 'file',
-        TAU_LOG_FILE_API: '~someoneelse/logs/api.log',
-        TAU_LOG_FILE_WORKER: '/var/log/tau/worker.log',
+        FICUS_SYSTEM_LOG_PROVIDER: 'file',
+        FICUS_LOG_FILE_API: '~someoneelse/logs/api.log',
+        FICUS_LOG_FILE_WORKER: '/var/log/tau/worker.log',
       } as NodeJS.ProcessEnv)
     ).toThrow(SystemLogProviderError)
   })

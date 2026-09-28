@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ProviderHealthRecord, ProviderRoute } from '@tau/shared/provider-health'
+import type { ProviderHealthRecord, ProviderRoute } from '@ficus/shared/provider-health'
 import { aggregateRouteDecision, routeSwitchBackEligible } from './routing'
 
 const route = (accountId?: string, credentialUsable = true): ProviderRoute => ({

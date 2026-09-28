@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { GrantPolicy } from '@tau/shared'
+import type { GrantPolicy } from '@ficus/shared'
 import { createGrant } from '../../../api/grants'
 import { queries } from '../../../queryOptions'
 import { queryKeys } from '../../../queryKeys'
@@ -41,7 +41,7 @@ export function CreateGrantForm({ sourceSquadId, onClose }: Props) {
         <select
           value={granteeSquadId}
           onChange={(event) => setGranteeSquadId(event.target.value)}
-          className="tau-field w-full px-2 py-1 text-sm border border-th-border bg-surface text-primary rounded"
+          className="ficus-field w-full px-2 py-1 text-sm border border-th-border bg-surface text-primary rounded"
         >
           <option value="">Select squad...</option>
           {availableSquads.map((squad) => (
@@ -60,7 +60,7 @@ export function CreateGrantForm({ sourceSquadId, onClose }: Props) {
           type="datetime-local"
           value={expiresAt}
           onChange={(event) => setExpiresAt(event.target.value)}
-          className="tau-field px-2 py-1 text-xs border border-th-border bg-surface text-primary rounded"
+          className="ficus-field px-2 py-1 text-xs border border-th-border bg-surface text-primary rounded"
         />
       </div>
 
@@ -74,13 +74,13 @@ export function CreateGrantForm({ sourceSquadId, onClose }: Props) {
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending || !granteeSquadId}
-          className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating...' : 'Create grant'}
         </button>
         <button
           onClick={onClose}
-          className="tau-button px-4 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
+          className="ficus-button px-4 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
         >
           Cancel
         </button>

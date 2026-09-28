@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { queryKeys } from '../queryKeys'
-import type { Agent, Squad } from '@tau/shared'
+import type { Agent, Squad } from '@ficus/shared'
 
 import { SquadManagerChatPage } from './SquadManagerChatPage'
 
@@ -14,7 +14,7 @@ const ThreadsStub = (props: Record<string, unknown>) => {
 }
 
 const now = new Date('2026-01-01T00:00:00Z')
-const squad = { id: 'squad-1', name: 'Tau', managerAgentId: 'manager-1' } as Squad
+const squad = { id: 'squad-1', name: 'Ficus', managerAgentId: 'manager-1' } as Squad
 const manager = {
   id: 'manager-1',
   squadId: 'squad-1',

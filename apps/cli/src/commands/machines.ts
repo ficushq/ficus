@@ -29,7 +29,7 @@ interface RebalanceResponse {
 export function registerMachinesCommands(program: Command) {
   const machines = program.command('machines').description('Manage VM sandbox machines (vm runtime)')
 
-  // tau machines migrate-box <sandboxId> --to <machineId> [--skip-squad] [--force <reason>]
+  // ficus machines migrate-box <sandboxId> --to <machineId> [--skip-squad] [--force <reason>]
   machines
     .command('migrate-box <sandboxId>')
     .description(
@@ -92,7 +92,7 @@ export function registerMachinesCommands(program: Command) {
       }
     })
 
-  // tau machines rebalance [--dry-run]
+  // ficus machines rebalance [--dry-run]
   machines
     .command('rebalance')
     .description('Re-pack the shared machine fleet (idle non-squad boxes only); --dry-run plans without moving')

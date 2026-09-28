@@ -6,7 +6,7 @@ import type {
   GlobalSquadActivityItem,
   NormalizedSquadActivityFilters,
   SquadActivityKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { ActivityFeedView } from './squads/ActivityFeedView'
@@ -127,7 +127,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Activity">
-      <h1 className="tau-page-title mb-4 shrink-0">Activity</h1>
+      <h1 className="ficus-page-title mb-4 shrink-0">Activity</h1>
       <ActivityFeedView
         kinds={kinds}
         onKindsChange={setKinds}

@@ -5,9 +5,9 @@ import { existsSync, readFileSync, writeFileSync, statSync, mkdtempSync, rmSync 
 import { sweepOrphanTestDbs } from './test-db-sweep'
 import { beforeEach, mock } from 'bun:test'
 import { sesSendMock } from './test-utils/ses-mock'
-import { withTestDbLockSync } from '@tau/shared/testDbLock'
-import { canExecuteQuery, isComposePostgresReady } from '@tau/shared/testDbReady'
-import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@tau/shared/testDbPort'
+import { withTestDbLockSync } from '@ficus/shared/testDbLock'
+import { canExecuteQuery, isComposePostgresReady } from '@ficus/shared/testDbReady'
+import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@ficus/shared/testDbPort'
 import { expectedCheckConstraints, expectedTableColumns, findSchemaDrift, parseColumnRows } from './db/expected-schema'
 import { expectedForeignKeys, foreignKeyStatements } from './db/expected-foreign-keys'
 import { runnerTestSchemaCache } from './test-utils/schema-cache'
@@ -20,7 +20,7 @@ import {
   unavailableTestDbMessage,
 } from './test-utils/test-db-fallback'
 
-// Give the whole run its own Tau home so no test can write into the developer's
+// Give the whole run its own Ficus home so no test can write into the developer's
 // real ~/.tau (this is what stops squad workspace stubs leaking out of tests).
 // On macOS, tmpdir() is the ~45-char /var/folders/... path; with the suffixes
 // the machines tunnel-manager appends (machines/ctl/owner-<pid>-<hash>.sock)
@@ -109,16 +109,16 @@ mock.module('@aws-sdk/client-ses', () => ({
 // default: inherited environment credentials are neither read nor migrated.
 // Individual tests must opt in with generated, test-owned keys through the
 // SecretStore constructor rather than relaxing this process-wide policy.
-process.env.TAU_TEST_MODE = '1'
-process.env.TAU_TEST_SECRET_ENV_POLICY = 'sterile'
-process.env.TAU_ENCRYPTION_KEY = randomBytes(32).toString('hex')
-delete process.env.TAU_MANAGED
-delete process.env.TAU_MANAGED_SECRET_KEYS
+process.env.FICUS_TEST_MODE = '1'
+process.env.FICUS_TEST_SECRET_ENV_POLICY = 'sterile'
+process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+delete process.env.FICUS_MANAGED
+delete process.env.FICUS_MANAGED_SECRET_KEYS
 process.env.NODE_ENV = 'test'
-// TAU_SANDBOX_RUNTIME is mandatory and explicit in production (no default, no
+// FICUS_SANDBOX_RUNTIME is mandatory and explicit in production (no default, no
 // auto-detection), so the suite must name one too: tests default to the
 // docker-socket path. K8s/vm/host tests set their own value (and restore it).
-process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
 
 // Disable logger colors, timestamps, and prefix padding for stable test assertions.
 process.env.NO_COLOR = '1'
@@ -555,7 +555,7 @@ if (useExternalDb) {
   try {
     const sweepMarker = join(tmpdir(), 'tau-test-db-sweep.last')
     const last = existsSync(sweepMarker) ? statSync(sweepMarker).mtimeMs : 0
-    if (process.env.TAU_TEST_SWEEP_ORPHANS === '1' && Date.now() - last > 60 * 60 * 1000) {
+    if (process.env.FICUS_TEST_SWEEP_ORPHANS === '1' && Date.now() - last > 60 * 60 * 1000) {
       writeFileSync(sweepMarker, '')
       const removed = sweepOrphanTestDbs({ composeFile, currentRepoRoot: repoRoot })
       if (removed.length > 0) console.log(`Reaped orphaned test DB project(s): ${removed.join(', ')}`)
@@ -567,7 +567,7 @@ if (useExternalDb) {
   // Local development: set up our own postgres container.
   //
   // The whole probe -> maybe tear down -> maybe recreate sequence runs under
-  // a cross-process lock (see @tau/shared/testDbLock's doc comment for the
+  // a cross-process lock (see @ficus/shared/testDbLock's doc comment for the
   // full story — tau issue #795). Without it, apps/core's and the hosted control plane's
   // `bun test` processes (launched ~simultaneously by the root `bun run
   // test`) can both probe the same container, both decide it's dead, and
@@ -665,7 +665,7 @@ if (testDbUnavailableReason !== undefined) {
     let result: { exitCode: number; stderr: Buffer; stdout: Buffer }
     try {
       const pushArgs =
-        process.env.TAU_TEST_SCHEMA_PUSH_NO_FORCE === '1'
+        process.env.FICUS_TEST_SCHEMA_PUSH_NO_FORCE === '1'
           ? ['bunx', 'drizzle-kit', 'push']
           : ['bunx', 'drizzle-kit', 'push', '--force']
       result = Bun.spawnSync(pushArgs, {

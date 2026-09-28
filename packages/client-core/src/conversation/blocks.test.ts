@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'bun:test'
 import { createStreamingBlockState, reduceStreamingBlocks } from './blocks'
-import type { StreamEvent } from '@tau/shared'
+import type { StreamEvent } from '@ficus/shared'
 
 function reduceAll(events: StreamEvent[]) {
   return events.reduce((state, event) => reduceStreamingBlocks(state, event, 1_000), createStreamingBlockState())

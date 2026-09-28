@@ -1,4 +1,4 @@
-import type { AppearanceSetting } from '@tau/shared/theme-schema'
+import type { AppearanceSetting } from '@ficus/shared/theme-schema'
 import { SegmentedControl, type SegmentedControlOption } from './SegmentedControl'
 import { SunIcon, MoonIcon, MonitorIcon } from './icons'
 

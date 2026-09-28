@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { useEffect, useRef } from 'react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { Agent, SquadActivityItem, SquadActivityKind } from '@tau/shared'
+import type { Agent, SquadActivityItem, SquadActivityKind } from '@ficus/shared'
 import { useStableRef } from '../../hooks/useStableRef'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { agentTypeColor } from '../../lib/agentTypeColor'
@@ -121,7 +121,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
           below it and the pills never scroll away (2026-08-27 audit). */}
       <div
         className={clsx(
-          'flex shrink-0 items-center gap-1.5 overflow-x-auto tau-section mb-2',
+          'flex shrink-0 items-center gap-1.5 overflow-x-auto ficus-section mb-2',
           isGlobalFeed ? 'px-3 py-3' : 'px-1 pb-1',
           filtersPending && 'animate-pulse'
         )}
@@ -132,7 +132,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
         <button
           type="button"
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'rounded-lg px-3 text-xs transition-colors',
             isGlobalFeed ? 'py-2' : 'py-1.5',
             kinds.length === 0
@@ -151,7 +151,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
               type="button"
               key={group.label}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 'rounded-lg px-3 text-xs transition-colors',
                 isGlobalFeed ? 'py-2' : 'py-1.5',
                 active ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover hover:text-primary'
@@ -313,7 +313,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           event.stopPropagation()
                           navigate(chip.href)
                         }}
-                        className="tau-button pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
+                        className="ficus-button pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
                         data-activity-column="squad"
                         aria-label={`Open activity for ${chip.label}`}
                         title={chip.label}
@@ -360,7 +360,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           event.stopPropagation()
                           navigate(workStreamChip.href)
                         }}
-                        className="tau-button pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="ficus-button pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         aria-label={`Open work stream #${workStreamChip.number}`}
                       >
                         #{workStreamChip.number}

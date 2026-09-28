@@ -375,7 +375,7 @@
     --status-neutral-badge-hover: 229 231 235;
     --opacity-status-neutral-badge-hover: 1;
 
-    /* Graph scenes stay dark in both Tau appearances. Links are contrast-corrected
+    /* Graph scenes stay dark in both Ficus appearances. Links are contrast-corrected
        (see docs/wiki/theme/graph-colors.md); all other graph/chart colors retain parity. */
     --graph-bg: 17 24 39;
     --graph-loading-bg: 15 23 42;
@@ -888,7 +888,7 @@
     --status-neutral-badge-hover: 55 65 81;
     --opacity-status-neutral-badge-hover: 1;
 
-    /* Graph scenes stay dark in both Tau appearances. Links are contrast-corrected
+    /* Graph scenes stay dark in both Ficus appearances. Links are contrast-corrected
        (see docs/wiki/theme/graph-colors.md); all other graph/chart colors retain parity. */
     --graph-bg: 17 24 39;
     --graph-loading-bg: 15 23 42;
@@ -1208,27 +1208,27 @@
   }
 }
 
-/* xterm 5.5 uses native scrollbars. Leave them native for Tau (auto tokens),
+/* xterm 5.5 uses native scrollbars. Leave them native for Ficus (auto tokens),
    but allow later themes to supply the complete thumb/hover/active palette. */
-.tau-terminal[data-terminal-scrollbar] .xterm-viewport {
+.ficus-terminal[data-terminal-scrollbar] .xterm-viewport {
   scrollbar-color: rgb(var(--term-scrollbar-thumb)) rgb(var(--term-bg));
 }
-.tau-terminal[data-terminal-scrollbar] .xterm-viewport:hover {
+.ficus-terminal[data-terminal-scrollbar] .xterm-viewport:hover {
   scrollbar-color: rgb(var(--term-scrollbar-thumb-hover)) rgb(var(--term-bg));
 }
-.tau-terminal[data-terminal-scrollbar] .xterm-viewport:active {
+.ficus-terminal[data-terminal-scrollbar] .xterm-viewport:active {
   scrollbar-color: rgb(var(--term-scrollbar-thumb-active)) rgb(var(--term-bg));
 }
-.tau-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar {
+.ficus-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar {
   width: 14px;
 }
-.tau-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb {
+.ficus-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb {
   background-color: rgb(var(--term-scrollbar-thumb));
 }
-.tau-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb:hover {
+.ficus-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background-color: rgb(var(--term-scrollbar-thumb-hover));
 }
-.tau-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb:active {
+.ficus-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb:active {
   background-color: rgb(var(--term-scrollbar-thumb-active));
 }
 
@@ -1401,18 +1401,18 @@
   }
 }
 
-/* Tau Desktop inset title bar (html[data-desktop-shell='inset'], set by
+/* Ficus Desktop inset title bar (html[data-desktop-shell='inset'], set by
    useDesktopShellChrome only inside the desktop app while windowed). The macOS
    window controls sit over the top-left of the page, so the app header becomes
    the title bar: exactly 56px tall, a window drag region, with a compact logo 24px after
    the window controls. Browsers and mobile never get the attribute. */
-:root[data-desktop-shell='inset'] .tau-app-header {
+:root[data-desktop-shell='inset'] .ficus-app-header {
   height: 56px;
   padding-top: 0;
   -webkit-app-region: drag;
 }
 
-:root[data-desktop-shell='inset'] .tau-app-header-bar {
+:root[data-desktop-shell='inset'] .ficus-app-header-bar {
   height: 100%;
   padding-top: 0;
   padding-bottom: 0;
@@ -1425,13 +1425,13 @@
 }
 
 /* A compact app mark rather than a web page masthead. */
-:root[data-desktop-shell='inset'] .tau-app-header-logo {
+:root[data-desktop-shell='inset'] .ficus-app-header-logo {
   font-size: 1rem;
   line-height: 1.5rem;
   font-weight: 600;
 }
 
-:root[data-desktop-shell='inset'] .tau-app-header-logo svg {
+:root[data-desktop-shell='inset'] .ficus-app-header-logo svg {
   width: 1.375rem;
   height: 1.375rem;
 }
@@ -1439,18 +1439,18 @@
 /* The instance label (which Desktop instance this window shows) only makes
    sense next to the compact inset title-bar logo; a full-width web masthead
    never needs it. */
-.tau-app-header-instance {
+.ficus-app-header-instance {
   display: none;
 }
 
-:root[data-desktop-shell='inset'] .tau-app-header-instance {
+:root[data-desktop-shell='inset'] .ficus-app-header-instance {
   display: inline;
 }
 
 /* Everything interactive in the title bar, and any overlay that can cover it,
    must stay clickable rather than drag the window. */
 :root[data-desktop-shell='inset']
-  .tau-app-header
+  .ficus-app-header
   :is(
     a,
     button,
@@ -1467,6 +1467,6 @@
     [role='dialog'],
     [tabindex]
   ),
-:root[data-desktop-shell='inset'] :is([role='dialog'], [aria-modal='true'], .tau-overlay, .fixed.inset-0) {
+:root[data-desktop-shell='inset'] :is([role='dialog'], [aria-modal='true'], .ficus-overlay, .fixed.inset-0) {
   -webkit-app-region: no-drag;
 }

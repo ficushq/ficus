@@ -95,7 +95,7 @@ export async function runTests(options: {
                 ...process.env,
                 FORCE_COLOR: '0',
                 NO_COLOR: '1',
-                TAU_TEST_SCHEMA_CACHE_FILE: options.cacheSchema ? join(scratch, 'schema.json') : undefined,
+                FICUS_TEST_SCHEMA_CACHE_FILE: options.cacheSchema ? join(scratch, 'schema.json') : undefined,
               },
               stdout: fd,
               stderr: fd,

@@ -1,4 +1,4 @@
-import type { ServerInfo } from '@tau/shared'
+import type { ServerInfo } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 export interface AuthStatus {
@@ -9,7 +9,7 @@ export interface AuthStatus {
   hasUsers: boolean
   hasAdminUser: boolean
   emailConfigured: boolean
-  /** The /demo reviewer access page is served on this instance (TAU_DEMO_REVIEWER_ACCESS). */
+  /** The /demo reviewer access page is served on this instance (FICUS_DEMO_REVIEWER_ACCESS). */
   demoReviewerAccess?: boolean
   /**
    * Whether registration could succeed for SOME address a stranger types — the only

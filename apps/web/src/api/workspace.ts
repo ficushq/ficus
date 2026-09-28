@@ -4,10 +4,11 @@
  * API functions for the task workspace file browser and terminal sessions.
  */
 
-import type { LocalDeployment, SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@tau/shared'
+import type { LocalDeployment, SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@ficus/shared'
 import { apiFetch, apiUrl, authFetch } from './client'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
-export type { LocalDeployment, LocalDeploymentStatus } from '@tau/shared'
+export type { LocalDeployment, LocalDeploymentStatus } from '@ficus/shared'
 
 export interface TreeNode {
   name: string
@@ -172,7 +173,7 @@ export interface SandboxStatus {
    */
   controllable?: boolean
   /**
-   * Server-driven runtime this sandbox is running under (TAU_SANDBOX_RUNTIME)
+   * Server-driven runtime this sandbox is running under (FICUS_SANDBOX_RUNTIME)
    * — never inferred client-side. Docker/k8s keep the classic Start/Stop
    * controls; VM mode replaces them with the chain-health status (see
    * {@link SandboxChainHealth}) since Stop is not a meaningful goal state there
@@ -463,7 +464,7 @@ function uploadWithProgress(
 
     xhr.open('POST', apiUrl(`${url}${query}`))
     xhr.withCredentials = true // send the HttpOnly session cookie cross-origin
-    xhr.setRequestHeader('X-Tau-Csrf', '1')
+    xhr.setRequestHeader(CSRF_HEADER, '1')
 
     xhr.send(formData)
   })

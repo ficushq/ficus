@@ -102,7 +102,9 @@ describe('isGitHubTokenSecretKey', () => {
 
 describe('SECRET_REGISTRY flags', () => {
   test('push infrastructure and bootstrap password have moved out of the registry', () => {
-    expect(SECRET_REGISTRY.some((entry) => [...PLATFORM_MANAGED_KEYS, 'TAU_PASSWORD'].includes(entry.key))).toBe(false)
+    expect(SECRET_REGISTRY.some((entry) => [...PLATFORM_MANAGED_KEYS, 'FICUS_PASSWORD'].includes(entry.key))).toBe(
+      false
+    )
   })
 
   test('the exe.dev key carries no managed flag — seed.sh writes it to the store', () => {

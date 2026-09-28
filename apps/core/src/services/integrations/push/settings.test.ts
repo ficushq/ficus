@@ -35,9 +35,9 @@ let priorSettings: (typeof settings.$inferSelect)[] = []
 beforeEach(async () => {
   for (const key of [
     ...credentialKeys,
-    'TAU_ENCRYPTION_KEY',
-    'TAU_MANAGED',
-    'TAU_MANAGED_SECRET_KEYS',
+    'FICUS_ENCRYPTION_KEY',
+    'FICUS_MANAGED',
+    'FICUS_MANAGED_SECRET_KEYS',
     'VAPID_KEYS_PATH',
   ]) {
     priorEnv.set(key, process.env[key])
@@ -45,7 +45,7 @@ beforeEach(async () => {
   }
   tempDir = mkdtempSync(join(tmpdir(), 'tau-push-settings-'))
   process.env.VAPID_KEYS_PATH = join(tempDir, 'vapid.json')
-  process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+  process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   priorSecrets = await db.select().from(secrets).where(inArray(secrets.key, credentialKeys))
   priorSettings = await db.select().from(settings).where(inArray(settings.key, settingKeys))
   await db.delete(secrets).where(inArray(secrets.key, credentialKeys))
@@ -87,7 +87,7 @@ test('push credentials are validated before writes and private keys remain redac
     configurePushIntegration('apple-push', { APNS_KEY_P8: 'bad', APNS_BUNDLE_ID: 'changed' }, 'test')
   ).rejects.toThrow('valid Apple')
   expect(getSecretStore().get('APNS_BUNDLE_ID')).toBe('test.tau')
-  await expect(configurePushIntegration('apple-push', { TAU_PASSWORD: 'bad' }, 'test')).rejects.toThrow('Unknown')
+  await expect(configurePushIntegration('apple-push', { FICUS_PASSWORD: 'bad' }, 'test')).rejects.toThrow('Unknown')
   for (const subject of ['mailto:', 'mailto:not-an-email', 'ftp://example.com'])
     await expect(configurePushIntegration('web-push', { VAPID_SUBJECT: subject }, 'test')).rejects.toThrow(
       'contact URL'
@@ -124,13 +124,13 @@ test('existing push delivery survives upgrade, disable gates delivery, and resum
   expect(await loadOrGenerateVapidKeys()).toEqual(vapid)
 })
 test('platform-managed inline and file signing keys cannot be overridden', async () => {
-  process.env.TAU_MANAGED = '1'
-  process.env.TAU_MANAGED_SECRET_KEYS = 'APNS_KEY_P8_FILE'
+  process.env.FICUS_MANAGED = '1'
+  process.env.FICUS_MANAGED_SECRET_KEYS = 'APNS_KEY_P8_FILE'
   process.env.APNS_KEY_P8_FILE = '/platform/protected.p8'
   expect(getPushIntegrationSettings('apple-push').fields[0]).toMatchObject({ managed: true, configured: true })
   expect(JSON.stringify(getPushIntegrationSettings('apple-push'))).not.toContain('/platform/')
   await expect(configurePushIntegration('apple-push', { APNS_KEY_P8: privateKey }, 'test')).rejects.toThrow('managed')
-  process.env.TAU_MANAGED_SECRET_KEYS = 'APNS_KEY_P8'
+  process.env.FICUS_MANAGED_SECRET_KEYS = 'APNS_KEY_P8'
   process.env.APNS_KEY_P8 = privateKey
   await expect(configurePushIntegration('apple-push', { APNS_KEY_P8: null }, 'test')).rejects.toThrow('managed')
 })

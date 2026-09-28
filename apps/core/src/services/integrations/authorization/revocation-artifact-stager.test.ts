@@ -8,7 +8,7 @@ import { RevocationArtifactStager } from './revocation-artifact-stager'
 let store: SecretStore
 
 beforeEach(async () => {
-  process.env.TAU_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+  process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
   await db.delete(secrets)
   store = new SecretStore()
   store.bindContentSafetyConsumer({ replace: () => undefined, update: () => undefined })

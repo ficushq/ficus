@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { like } from 'drizzle-orm'
-import type { LocalDeployment } from '@tau/shared'
+import type { LocalDeployment } from '@ficus/shared'
 import { db, squads } from '../../db'
 import { Squad } from '../../entities/Squad'
 import { createLocalDeployment, getLocalDeployment, updateLocalDeploymentRecord } from './local-deployment-service'

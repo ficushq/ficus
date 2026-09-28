@@ -59,7 +59,7 @@ describe('Secret save validation with an injected validator', () => {
   })
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = encryptionKey
+    process.env.FICUS_ENCRYPTION_KEY = encryptionKey
     delete process.env.VALIDATION_TEST_KEY
     await db.delete(secrets)
     resetSecretGroups()

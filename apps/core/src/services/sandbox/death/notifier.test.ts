@@ -21,7 +21,7 @@ function makeNotifier(classification: SandboxDeathClassification) {
       sent.push(m)
       return undefined
     },
-    resolveSquadName: async () => 'Tau',
+    resolveSquadName: async () => 'Ficus',
   })
   return { n, sent }
 }
@@ -41,7 +41,7 @@ describe('SandboxDeathNotifier', () => {
     expect((await n.maybeNotify(obs)).notified).toBe(true)
     expect(sent).toHaveLength(1)
     expect(sent[0].recipientType).toBe('system')
-    expect(sent[0].content).toContain('Tau')
+    expect(sent[0].content).toContain('Ficus')
     expect(sent[0].content).toContain('stopped unexpectedly')
     expect(sent[0].content).not.toContain('exceeded its memory limit')
   })
@@ -69,7 +69,7 @@ describe('SandboxDeathNotifier', () => {
           sent.push(m)
           return undefined
         },
-        resolveSquadName: async () => 'Tau',
+        resolveSquadName: async () => 'Ficus',
         dedupe: {
           async claim(key, notify) {
             if (claimed.has(key)) return false
@@ -118,7 +118,7 @@ describe('SandboxDeathNotifier', () => {
           sent.push(m)
           return undefined
         },
-        resolveSquadName: async () => 'Tau',
+        resolveSquadName: async () => 'Ficus',
         dedupe: {
           async claim(key, notify) {
             if (claimed.has(key)) return false
@@ -148,7 +148,7 @@ describe('SandboxDeathNotifier', () => {
           sent.push(m)
           return undefined
         },
-        resolveSquadName: async () => 'Tau',
+        resolveSquadName: async () => 'Ficus',
         dedupe: {
           async claim(key, notify) {
             if (claimed.has(key)) return false
@@ -169,7 +169,7 @@ describe('SandboxDeathNotifier', () => {
     const make = () =>
       new SandboxDeathNotifier({
         classify: () => 'unexpected',
-        resolveSquadName: async () => 'Tau',
+        resolveSquadName: async () => 'Ficus',
       })
 
     const results = await Promise.all([make().maybeNotify(obs), make().maybeNotify(obs), make().maybeNotify(obs)])

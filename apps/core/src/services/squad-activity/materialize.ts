@@ -7,7 +7,7 @@ import { materializedItem } from './types'
 import { activityFamily, loadActivitySource } from './families'
 import { listReceiptAssociationPage, loadWebhookActivityBaseSource, type ActivitySourceKey } from './source-loaders'
 import { activityPayloadHash, activityPersistencePayload, type ExtractedSquadActivity } from './types'
-import { coerceSquadActivityRef } from '@tau/shared'
+import { coerceSquadActivityRef } from '@ficus/shared'
 
 export interface MaterializeResult {
   upserted: ExtractedSquadActivity[]

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'

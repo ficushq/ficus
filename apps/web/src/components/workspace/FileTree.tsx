@@ -157,7 +157,7 @@ function TreeItem({
             onClick={handleDownload}
             disabled={isDownloading}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'p-1 rounded transition-opacity',
               isDownloading
                 ? 'opacity-100 text-muted cursor-wait'
@@ -391,7 +391,7 @@ export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps)
         <span className="text-xs font-medium text-secondary">Files</span>
         <button
           onClick={handleRefresh}
-          className="tau-button rounded-lg p-1.5 text-muted hover:text-primary hover:bg-surface-hover"
+          className="ficus-button rounded-lg p-1.5 text-muted hover:text-primary hover:bg-surface-hover"
           title="Refresh files"
           aria-label="Refresh files"
         >
@@ -418,7 +418,7 @@ export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps)
           {isError ? (
             <div className="p-3 text-sm text-muted">
               <p>Failed to load files</p>
-              <button onClick={handleRefresh} className="tau-button mt-2 text-accent-light">
+              <button onClick={handleRefresh} className="ficus-button mt-2 text-accent-light">
                 Retry
               </button>
             </div>

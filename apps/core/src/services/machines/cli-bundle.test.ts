@@ -37,7 +37,7 @@ function makeFakeSpawn(reply: { exitCode: number; stderr?: string; bytes?: Uint8
   return { spawn, commands }
 }
 
-const FIXTURE_JS = new TextEncoder().encode('#!/usr/bin/env bun\nconsole.log("tau cli fixture")\n')
+const FIXTURE_JS = new TextEncoder().encode('#!/usr/bin/env bun\nconsole.log("ficus cli fixture")\n')
 
 const genPath = join(resolveRepoRoot(), 'apps/cli/src/build-info.generated.ts')
 const bakPath = `${genPath}.artifactbuild.bak`
@@ -102,8 +102,8 @@ const stamp = (info: { version: string; commit: string; buildDate: string }) =>
 // This file spawns real `bun build` subprocesses and drives real cross-process
 // exclusion — too jitter-prone for the shared CI runner. It runs only in the
 // dedicated `subprocess-tests` CI job (see ci.yml); the main sweep sets
-// TAU_TEST_SKIP_SUBPROCESS=1 to skip it here.
-const describeSubprocess = describe.skipIf(process.env.TAU_TEST_SKIP_SUBPROCESS === '1')
+// FICUS_TEST_SKIP_SUBPROCESS=1 to skip it here.
+const describeSubprocess = describe.skipIf(process.env.FICUS_TEST_SKIP_SUBPROCESS === '1')
 
 describeSubprocess('CLI wrapper constants', () => {
   it('pins the exact wrapper script: sh shebang exec-ing the machine bun against the pushed bundle', () => {
@@ -111,37 +111,47 @@ describeSubprocess('CLI wrapper constants', () => {
     // part of the pushed artifact AND folded into the version hash, so this
     // string is a wire contract, not an implementation detail.
     expect(new TextDecoder().decode(CLI_WRAPPER_BYTES)).toBe(
-      '#!/bin/sh\nexec /opt/tau/bin/bun /opt/tau/cli/tau.js "$@"\n'
+      '#!/bin/sh\nexec /opt/tau/bin/bun /opt/tau/cli/ficus.js "$@"\n'
     )
-    expect(CLI_REMOTE_PATH).toBe('/opt/tau/cli/tau.js')
-    expect(CLI_WRAPPER_PATH).toBe('/usr/local/bin/tau')
+    expect(CLI_REMOTE_PATH).toBe('/opt/tau/cli/ficus.js')
+    expect(CLI_WRAPPER_PATH).toBe('/usr/local/bin/ficus')
+  })
+
+  it('exports no second (legacy) wrapper path or bundle name', async () => {
+    const exported = Object.entries(await import('./cli-bundle'))
+      .filter(([, value]) => typeof value === 'string')
+      .map(([name, value]) => [name, value])
+    expect(exported).toEqual([
+      ['CLI_REMOTE_PATH', CLI_REMOTE_PATH],
+      ['CLI_WRAPPER_PATH', '/usr/local/bin/ficus'],
+    ])
   })
 })
 
 describeSubprocess('buildCliBundle prebuilt fallback', () => {
-  // A shipped core artifact carries tau.js prebuilt under <root>/machine and NO
-  // apps/cli/src; runtime must READ it from disk (same sha256(tau.js ||
+  // A shipped core artifact carries ficus.js prebuilt under <root>/machine and NO
+  // apps/cli/src; runtime must READ it from disk (same sha256(ficus.js ||
   // wrapper) stamp) and skip the git-stamp / advisory-lock / build machinery
   // entirely. spawn, lock, and git all throw here to prove none of them run.
-  it('reads tau.js from the prebuilt dir and hashes it with the wrapper (no build, no lock, no git)', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-prebuilt-cli-'))
+  it('reads ficus.js from the prebuilt dir and hashes it with the wrapper (no build, no lock, no git)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-cli-'))
     try {
-      const js = new TextEncoder().encode('#!/usr/bin/env bun\nconsole.log("prebuilt tau")\n')
-      await writeFile(join(dir, 'tau.js'), js)
+      const js = new TextEncoder().encode('#!/usr/bin/env bun\nconsole.log("prebuilt ficus")\n')
+      await writeFile(join(dir, 'ficus.js'), js)
 
       const { js: gotJs, version } = await buildCliBundle({
         prebuiltDir: dir,
         spawn: (() => {
-          throw new Error('must not build when prebuilt tau.js is present')
+          throw new Error('must not build when prebuilt ficus.js is present')
         }) as unknown as typeof Bun.spawn,
         lock: () => {
-          throw new Error('must not take the build lock when prebuilt tau.js is present')
+          throw new Error('must not take the build lock when prebuilt ficus.js is present')
         },
-        git: () => Promise.reject(new Error('must not shell out to git when prebuilt tau.js is present')),
+        git: () => Promise.reject(new Error('must not shell out to git when prebuilt ficus.js is present')),
       })
 
       expect(gotJs).toEqual(js)
-      // EXACT same version contract as the source path — sha256 over tau.js and
+      // EXACT same version contract as the source path — sha256 over ficus.js and
       // the wrapper bytes.
       expect(version).toBe(createHash('sha256').update(js).update(CLI_WRAPPER_BYTES).digest('hex'))
     } finally {
@@ -178,8 +188,8 @@ describeSubprocess('buildCliBundle prebuilt fallback', () => {
     expect(events).toEqual(['lock', `write:${genPath}`, 'spawn', `rm:${genPath}`, 'unlock'])
   })
 
-  it('falls through to the source build when no prebuilt tau.js exists', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-prebuilt-cli-empty-'))
+  it('falls through to the source build when no prebuilt ficus.js exists', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-cli-empty-'))
     const { spawn, commands } = makeFakeSpawn({ exitCode: 0, bytes: FIXTURE_JS })
     const { fs } = makeFakeFs(new Map(), [])
     try {
@@ -203,7 +213,7 @@ describeSubprocess('buildCliBundle prebuilt fallback', () => {
 describeSubprocess('buildCliBundle', () => {
   // These inject fake fs + git alongside the fake spawn so no real repo file is
   // touched and no real git shells out.
-  it('bun-builds the CLI entry into a scratch tau.js and returns its bytes + content version', async () => {
+  it('bun-builds the CLI entry into a scratch ficus.js and returns its bytes + content version', async () => {
     const { spawn, commands } = makeFakeSpawn({ exitCode: 0, bytes: FIXTURE_JS })
     const { fs } = makeFakeFs(new Map(), [])
     const { js, version } = await buildCliBundle({ spawn, fs, git: stubGit(COMMIT_A) })
@@ -219,7 +229,7 @@ describeSubprocess('buildCliBundle', () => {
       // The entry is the CLI's real source entry, resolved from the repo root.
       join(resolveRepoRoot(), 'apps/cli/src/index.ts'),
       '--outfile',
-      expect.stringMatching(/\/tau\.js$/) as unknown as string,
+      expect.stringMatching(/\/ficus\.js$/) as unknown as string,
       '--target',
       'bun',
     ])
@@ -236,13 +246,13 @@ describeSubprocess('buildCliBundle', () => {
     await expect(buildCliBundle({ spawn, fs, git: stubGit(COMMIT_A) })).rejects.toThrow(/could not resolve module/)
   })
 
-  it('throws when the build produces no tau.js', async () => {
+  it('throws when the build produces no ficus.js', async () => {
     const { spawn } = makeFakeSpawn({ exitCode: 0 })
     const { fs } = makeFakeFs(new Map(), [])
-    await expect(buildCliBundle({ spawn, fs, git: stubGit(COMMIT_A) })).rejects.toThrow(/tau\.js/)
+    await expect(buildCliBundle({ spawn, fs, git: stubGit(COMMIT_A) })).rejects.toThrow(/ficus\.js/)
   })
 
-  it('throws when the build produces an empty tau.js', async () => {
+  it('throws when the build produces an empty ficus.js', async () => {
     const { spawn } = makeFakeSpawn({ exitCode: 0, bytes: new Uint8Array() })
     const { fs } = makeFakeFs(new Map(), [])
     await expect(buildCliBundle({ spawn, fs, git: stubGit(COMMIT_A) })).rejects.toThrow(/empty/)
@@ -250,7 +260,7 @@ describeSubprocess('buildCliBundle', () => {
 })
 
 describeSubprocess('buildCliBundle stable build-info stamping', () => {
-  // The bundle must inline an INFORMATIVE `tau --version` (real commit + that
+  // The bundle must inline an INFORMATIVE `ficus --version` (real commit + that
   // commit's own date) while staying churn-free: the stamped values are a pure
   // function of the commit, NOT the wall clock, so two builds of the same code
   // hash identically and the artifact only re-pushes on a real deploy. The
@@ -520,7 +530,7 @@ describeSubprocess('buildCliBundle stamps the real bundle with stable commit inf
     // function of the commit — identical across rebuilds at the same commit
     // even with DIFFERENT wall-clock-shaped leftover files on disk (leaking
     // those would churn the hash every deploy), and different when the commit
-    // moves (a real deploy SHOULD re-push). Also proves `tau --version` gets
+    // moves (a real deploy SHOULD re-push). Also proves `ficus --version` gets
     // the real commit + commit-date, and the dev's file survives unchanged.
     const original = existsSync(genPath) ? await readFile(genPath) : null
     const contentA =
@@ -532,7 +542,7 @@ describeSubprocess('buildCliBundle stamps the real bundle with stable commit inf
       const a = await buildCliBundle({ git: stubGit(COMMIT_A) })
       expect(await readFile(genPath, 'utf8')).toBe(contentA) // restored, unchanged
 
-      // The stable stamp is inlined into the bundle (informative tau --version)…
+      // The stable stamp is inlined into the bundle (informative ficus --version)…
       const text = new TextDecoder().decode(a.js)
       expect(text).toContain('abc1234')
       expect(text).toContain('2026-07-01T12:00:00+02:00')
@@ -558,13 +568,20 @@ describeSubprocess('cliArtifact', () => {
   // These build the REAL CLI bundle once (memoized per process), mirroring
   // serverArtifact's tests — the artifact's exact file layout against real
   // bytes is the wire contract Task 4's ensure loop pushes.
-  it('is named "cli" and ships tau.js + the /usr/local/bin/tau wrapper, both 0755, wrapper-folded version', async () => {
+  it('is named "cli" and ships ficus.js + the /usr/local/bin/ficus wrapper, both 0755, wrapper-folded version', async () => {
     expect(cliArtifact.name).toBe('cli')
     const { files, version } = await cliArtifact.build()
     const bundle = await currentCliBundleCached()
     expect(files).toHaveLength(2)
     expect(files[0]).toEqual({ remotePath: CLI_REMOTE_PATH, bytes: bundle.js, mode: '0755' })
     expect(files[1]).toEqual({ remotePath: CLI_WRAPPER_PATH, bytes: CLI_WRAPPER_BYTES, mode: '0755' })
+    // The only PATH entry the artifact installs is /usr/local/bin/ficus, and it runs exactly the
+    // bundle pushed beside it (byte-identical to the staged CLI).
+    expect(files.map((f) => f.remotePath).filter((p) => /^\/usr\/(local\/)?s?bin\//.test(p))).toEqual([
+      '/usr/local/bin/ficus',
+    ])
+    expect(new TextDecoder().decode(files[1].bytes).endsWith(` ${files[0].remotePath} "$@"\n`)).toBe(true)
+    expect(Buffer.from(files[0].bytes).equals(Buffer.from(bundle.js))).toBe(true)
     expect(version).toBe(bundle.version)
     expect(version).toBe(createHash('sha256').update(bundle.js).update(CLI_WRAPPER_BYTES).digest('hex'))
   })

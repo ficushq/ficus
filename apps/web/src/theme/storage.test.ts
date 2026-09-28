@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import {
   APPEARANCE_KEY,
   LEGACY_SURFACE_COLOR_KEY,
@@ -22,13 +22,21 @@ function memoryStorage(initial: Record<string, string> = {}): ThemeStorage {
   }
 }
 
+test('theme storage keys are the ficus names', () => {
+  expect(THEME_ID_KEY).toBe('ficus-theme-id')
+  expect(APPEARANCE_KEY).toBe('ficus-appearance')
+  expect(LEGACY_THEME_KEY).toBe('ficus-theme')
+  expect(LEGACY_SURFACE_COLOR_KEY).toBe('ficus-surface-color')
+  expect(THEME_SURFACE_KEY).toBe('ficus-theme-surface')
+})
+
 describe('readThemeSelection (localStorage migration)', () => {
   test('empty storage falls back to the defaults (tau, light)', () => {
     expect(readThemeSelection(memoryStorage())).toEqual({ themeId: 'tau', appearance: 'light' })
     expect(readThemeSelection(null)).toEqual({ themeId: 'tau', appearance: 'light' })
   })
 
-  test("legacy 'tau-theme' values migrate onto the new model", () => {
+  test("legacy 'ficus-theme' values migrate onto the new model", () => {
     expect(readThemeSelection(memoryStorage({ [LEGACY_THEME_KEY]: 'dark' }))).toEqual({
       themeId: 'tau',
       appearance: 'dark',
@@ -66,6 +74,41 @@ describe('readThemeSelection (localStorage migration)', () => {
   test('system appearance round-trips through storage', () => {
     const storage = memoryStorage({ [THEME_ID_KEY]: 'tau', [APPEARANCE_KEY]: 'system' })
     expect(readThemeSelection(storage)).toEqual({ themeId: 'tau', appearance: 'system' })
+  })
+
+  describe('inside Ficus Desktop, with no stored appearance choice', () => {
+    afterEach(() => {
+      delete window.ficusDesktopApp
+      delete window.tauDesktopApp
+    })
+
+    test('follows the OS appearance via window.ficusDesktopApp', () => {
+      window.ficusDesktopApp = {
+        version: 1,
+        notificationsEnabled: async () => false,
+        deliverNotifications: async () => {},
+      }
+      expect(readThemeSelection(memoryStorage())).toEqual({ themeId: 'tau', appearance: 'system' })
+    })
+
+    test('follows the OS appearance via the legacy window.tauDesktopApp (D1 and older Desktop builds)', () => {
+      window.tauDesktopApp = {
+        version: 1,
+        notificationsEnabled: async () => false,
+        deliverNotifications: async () => {},
+      }
+      expect(readThemeSelection(memoryStorage())).toEqual({ themeId: 'tau', appearance: 'system' })
+    })
+
+    test('a stored choice still wins over the desktop default', () => {
+      window.ficusDesktopApp = {
+        version: 1,
+        notificationsEnabled: async () => false,
+        deliverNotifications: async () => {},
+      }
+      const storage = memoryStorage({ [THEME_ID_KEY]: 'tau', [APPEARANCE_KEY]: 'light' })
+      expect(readThemeSelection(storage)).toEqual({ themeId: 'tau', appearance: 'light' })
+    })
   })
 })
 

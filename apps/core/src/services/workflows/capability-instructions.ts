@@ -1,4 +1,4 @@
-import { isEarlierWorkflowStep, type WorkflowAttempt, type WorkflowRun } from '@tau/shared'
+import { isEarlierWorkflowStep, type WorkflowAttempt, type WorkflowRun } from '@ficus/shared'
 
 /** Explain the actual run's capabilities, including the active attempt's pinned handoffs. */
 export function flowCapabilityInstructions(state: WorkflowRun, attempt: WorkflowAttempt, version = state.version) {
@@ -31,10 +31,10 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
   if (definition.routing.delegation === 'allowed' && remaining > 0) {
     lines.push(
       `Delegation: enabled, ${remaining} of ${definition.limits.maxDelegations} specialist assignments remain across the whole flow.`,
-      'Use a worker agent type from tau agent-type list (exclude systemOnly or disabled types). Set agentTypeId to its agent-type ID. A new participant starts on demand; its result returns to this step. Do not manually spawn an untracked helper.',
+      'Use a worker agent type from ficus agent-type list (exclude systemOnly or disabled types). Set agentTypeId to its agent-type ID. A new participant starts on demand; its result returns to this step. Do not manually spawn an untracked helper.',
       'Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer JSON/YAML; no temporary file is needed. Replace STREAM_ID with this work stream ID, agentTypeId with the chosen worker type, and task with a self-contained request:',
       '```bash',
-      "tau workstream advance STREAM_ID --stdin <<'TAU_COMMAND'",
+      "ficus workstream advance STREAM_ID --stdin <<'FICUS_COMMAND'",
       JSON.stringify(
         {
           expectedVersion: version,
@@ -46,7 +46,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
         null,
         2
       ),
-      'TAU_COMMAND',
+      'FICUS_COMMAND',
       '```'
     )
   } else

@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
-import type { AssistantActivityUpdate, AssistantTaskSummary } from '@tau/shared'
+import type { AssistantActivityUpdate, AssistantTaskSummary } from '@ficus/shared'
 import { useStableRef } from '../hooks/useStableRef'
 import { shouldAcknowledgeAssistantUpdate } from '../lib/assistantActivityPresentation'
 import { AssistantUpdateCard } from './AssistantUpdateCard'
@@ -191,7 +191,7 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
           type="button"
           aria-expanded={expanded}
           aria-controls="assistant-task-updates"
-          className="tau-button flex min-w-0 items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-muted hover:text-primary"
+          className="ficus-button flex min-w-0 items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-muted hover:text-primary"
           onClick={() => {
             setExpandedOverride(!expanded)
             setLatched(false)
@@ -218,7 +218,7 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
           <button
             type="button"
             disabled={marking}
-            className="tau-button ml-auto py-1 text-xs text-accent-light disabled:opacity-40"
+            className="ficus-button ml-auto py-1 text-xs text-accent-light disabled:opacity-40"
             onClick={async () => {
               setMarking(true)
               try {
@@ -270,7 +270,7 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
                         type="button"
                         aria-label="Hide update"
                         title="Mark read and hide until the section is reopened"
-                        className="tau-button -my-1 shrink-0 rounded-md px-1.5 py-1 text-accent-light hover:bg-selection"
+                        className="ficus-button -my-1 shrink-0 rounded-md px-1.5 py-1 text-accent-light hover:bg-selection"
                         onClick={() => void hideCard.current(update.messageId)}
                       >
                         Hide
@@ -288,7 +288,7 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
               <button
                 type="button"
                 aria-pressed={showRead}
-                className="tau-button py-1 hover:text-primary"
+                className="ficus-button py-1 hover:text-primary"
                 onClick={() => setShowRead((current) => !current)}
               >
                 {showRead ? 'Hide read' : `Show read (${readCount}${props.hasMore ? '+' : ''})`}
@@ -297,7 +297,7 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
             {showRead && props.hasMore && props.onLoadMore && (
               <button
                 type="button"
-                className="tau-button py-1 hover:text-primary"
+                className="ficus-button py-1 hover:text-primary"
                 onClick={() => void props.onLoadMore?.()}
               >
                 Load earlier updates

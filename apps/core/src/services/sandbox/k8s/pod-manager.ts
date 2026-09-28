@@ -882,7 +882,7 @@ export class K8sPodManager {
    * In cluster mode: returns DNS endpoint
    *   <podName>.<headlessService>.<namespace>.svc.cluster.local:50051
    *
-   * In local dev mode (TAU_K8S_LOCAL=true): returns localhost:<port>
+   * In local dev mode (FICUS_K8S_LOCAL=true): returns localhost:<port>
    *   using kubectl port-forward to bridge host → pod.
    *   Requires ensurePortForward() to be called first.
    */
@@ -911,7 +911,7 @@ export class K8sPodManager {
 
   /**
    * Start a kubectl port-forward for a sandbox pod.
-   * Only used in local dev mode (TAU_K8S_LOCAL=true).
+   * Only used in local dev mode (FICUS_K8S_LOCAL=true).
    * Allocates a random free port and forwards it to the pod's executor port.
    */
   async ensurePortForward(sandboxId: string, podName: string): Promise<number> {
@@ -973,8 +973,8 @@ export class K8sPodManager {
    * sandbox namespace. K8s auto-propagates mounted secret updates to running pods
    * (~1 min delay). Called before each pod creation to ensure the secret is current.
    *
-   * NOTE: the legacy `password` (TAU_PASSWORD) key is intentionally omitted — agents
-   * authenticate via the per-command TAU_TOKEN, so shipping the shared password into
+   * NOTE: the legacy `password` (FICUS_PASSWORD) key is intentionally omitted — agents
+   * authenticate via the per-command FICUS_TOKEN, so shipping the shared password into
    * the box is pure exfil surface. Only the callback secret (used by the workspace
    * watcher) is delivered.
    */

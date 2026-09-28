@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from 'bun:test'
-import { resolveBranchChangeRequest } from '@tau/shared'
+import { resolveBranchChangeRequest } from '@ficus/shared'
 import * as githubApi from '../../github/api-client'
 import { githubCodeHostingAdapter } from './code-hosting'
 

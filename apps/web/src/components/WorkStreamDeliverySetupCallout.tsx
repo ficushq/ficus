@@ -1,4 +1,4 @@
-import { changeRequestBindCommand, type WorkStream, type WorkStreamPresentationFacts } from '@tau/shared'
+import { changeRequestBindCommand, type WorkStream, type WorkStreamPresentationFacts } from '@ficus/shared'
 import { getWsDisplayState } from '../lib/workStreamStatusPresentation'
 import { Badge } from './Badge'
 

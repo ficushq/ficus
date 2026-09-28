@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { isAbsolute, join } from 'path'
-import { localProcessNames, parseLaunchdJobIdentity } from '@tau/shared'
+import { localProcessNames, parseLaunchdJobIdentity } from '@ficus/shared'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
 
 export type NativeComponent = 'api' | 'worker'

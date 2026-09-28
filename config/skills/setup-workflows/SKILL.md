@@ -12,8 +12,8 @@ the manager conversation; it is not a work stream and needs no helper agents.
 
 ## Start from the existing configuration
 
-Read `tau squad get <squad-id>` and `tau workflow list`. Inspect relevant
-presets with `tau workflow get <id>`. Existing `metadata.workflow` is the
+Read `ficus squad get <squad-id>` and `ficus workflow list`. Inspect relevant
+presets with `ficus workflow get <id>`. Existing `metadata.workflow` is the
 default for new work. `metadata.workflowSetup` records the user's selection
 policy and whether setup is complete. Preserve existing choices unless the
 user asks to change them. Do not repeat completed onboarding on every chat.
@@ -44,7 +44,7 @@ without automatically invalidating every previous review.
 
 ## Configure the agreed choices
 
-Use the declarative schema documented by `tau workflow get`, not prose as a
+Use the declarative schema documented by `ficus workflow get`, not prose as a
 substitute for executable steps. A source is either `{kind: "preset", id: ...}`
 (with optional typed customizations) or `{kind: "inline", definition: ...}`.
 Agent types, participant IDs, models, sessions, steps, human gates, outcomes,
@@ -67,18 +67,18 @@ payloads and a quoted heredoc with `--stdin` for longer JSON/YAML, without a
 temporary file:
 
 ```bash
-tau workflow resolve --squad <squad-id> --content '{"kind":"preset","id":"solo"}'
-tau workflow resolve --squad <squad-id> --stdin <<'TAU_FLOW'
+ficus workflow resolve --squad <squad-id> --content '{"kind":"preset","id":"solo"}'
+ficus workflow resolve --squad <squad-id> --stdin <<'FICUS_FLOW'
 kind: preset
 id: solo
-TAU_FLOW
+FICUS_FLOW
 ```
 
 For a new reusable preset, provide a JSON/YAML envelope with `id`, `description`,
 `scope: {kind: squad, squadId: <squad-id>}`, and `definition`. Use an ID prefixed
-with the squad's short ID to avoid collisions. Publish with `tau workflow create
---content '<JSON preset>'` or `tau workflow create --stdin` and a quoted heredoc.
-Files remain optional for saved/reusable definitions (`tau workflow create preset.yaml`).
+with the squad's short ID to avoid collisions. Publish with `ficus workflow create
+--content '<JSON preset>'` or `ficus workflow create --stdin` and a quoted heredoc.
+Files remain optional for saved/reusable definitions (`ficus workflow create preset.yaml`).
 
 Squad managers publish only inside their own squad scope. They do not need
 instance-wide catalog privileges. Private user presets remain private; copy
@@ -86,12 +86,12 @@ only content the user has authorized to share. Never put secret values in a
 preset. Saving a preset does not run it. If publication is not authorized,
 keep the agreed flow inline in this squad's setup instead of broadening roles.
 
-Set the default and the selection guidance with `tau squad set-meta`. For
+Set the default and the selection guidance with `ficus squad set-meta`. For
 example, after agreeing to this arrangement (substitute actual IDs):
 
 ```bash
-tau squad set-meta <squad-id> workflow '{"kind":"preset","id":"solo"}'
-tau squad set-meta <squad-id> workflowSetup '{"guidance":"Use solo for routine work. Use independent review for customer-facing changes. Ask before relaxing a requested review.","choices":[{"when":"Customer-facing changes","source":{"kind":"preset","id":"builder-reviewer"}}],"completedAt":"2026-09-06T00:00:00.000Z"}'
+ficus squad set-meta <squad-id> workflow '{"kind":"preset","id":"solo"}'
+ficus squad set-meta <squad-id> workflowSetup '{"guidance":"Use solo for routine work. Use independent review for customer-facing changes. Ask before relaxing a requested review.","choices":[{"when":"Customer-facing changes","source":{"kind":"preset","id":"builder-reviewer"}}],"completedAt":"2026-09-06T00:00:00.000Z"}'
 ```
 
 Use the actual completion time. `when` and `guidance` are manager selection
@@ -108,7 +108,7 @@ these choices.
 ## Use and revisit the setup
 
 For each new request, consult the recorded guidance and select the suitable
-source with `tau workstream create --workflow <id>` or `--flow-content '<JSON source>'`;
+source with `ficus workstream create --workflow <id>` or `--flow-content '<JSON source>'`;
 use `--flow-stdin` and a quoted heredoc for longer JSON/YAML. Schedule create/update
 uses the same `--workflow`, `--flow-content`, and `--flow-stdin` selection.
 Do not also supply legacy `--agents`, assignee, model, or completion options.
@@ -123,17 +123,17 @@ or edit the squad's workflow settings whenever their needs change.
 
 ## Pause without changing the process
 
-When asked to hold work briefly, use `tau workstream pause <id> --reason "..."`.
+When asked to hold work briefly, use `ficus workstream pause <id> --reason "..."`.
 This interrupts current executions and suppresses automatic continuations; it is
 not just advice in a message. It keeps the admission slot by default. If requested,
 use `--park-after <minutes>` or park an already paused stream to release capacity.
-Parking does not resume it. Only explicit `tau workstream resume <id>` clears the
+Parking does not resume it. Only explicit `ficus workstream resume <id>` clears the
 pause, and parked work still needs admission. Do not create substitute streams,
 wake paused participants, or schedule messages to bypass the hold.
 
 ## Explain waits and pause when choosing a flow
 
-Blocking questions and manual requests from flow agents default to their own active attempt. Other branches continue, and the join waits. Use `waitScope: stream` for a shared question blocker or `tau workstream request-input ID --scope stream -m "Reason"` for a shared manual blocker. A response provides input without approving the step. Use a human-approval step for an enforced decision. Whole-stream pause interrupts work until explicit resume; park separately to release capacity.
+Blocking questions and manual requests from flow agents default to their own active attempt. Other branches continue, and the join waits. Use `waitScope: stream` for a shared question blocker or `ficus workstream request-input ID --scope stream -m "Reason"` for a shared manual blocker. A response provides input without approving the step. Use a human-approval step for an enforced decision. Whole-stream pause interrupts work until explicit resume; park separately to release capacity.
 
 See `docs/wiki/workflows.md` for the reference. Flow `subscriptions` and squad `integrationTriggers` are supported. Graph integration connections visualize those definitions; do not invent additional graph attachment fields outside the accepted schema.
 
@@ -146,7 +146,7 @@ For linked PR and issue updates, enable **Code hosting** in the workflow editor
 subscriptions to the delivery owner and verifies merge evidence. GitHub is
 supported today; other providers need adapters before use. Existing
 `metadata.github` remains compatible for that primary PR binding. To follow a
-GitHub issue (or an additional pull request), use `tau workstream track` — do
+GitHub issue (or an additional pull request), use `ficus workstream track` — do
 not hand-write `github.repo`/`github.issue`, which is never read; Code hosting
 then includes issue comments, edits, and assignment changes alongside any
 linked PR events. Add `--delivery` when tracking a PR that must also be merged
@@ -155,7 +155,7 @@ explicit subscriptions for additional outputs or different consumers; do not
 duplicate the generated subscriptions or use their reserved `code-host-` ID
 prefix.
 
-Ask which external events should create new work versus update existing work. Use `tau integration outputs` to inspect accepted output names, versions, and data fields. Add flow `subscriptions` for updates to existing work, selecting local participants/steps, active attempts, or delivery-owner. Match explicit typed event fields against stream metadata; missing bindings do not match. Choose retain or manager handling for an inactive consumer. Notifications do not approve gates or clear questions.
+Ask which external events should create new work versus update existing work. Use `ficus integration outputs` to inspect accepted output names, versions, and data fields. Add flow `subscriptions` for updates to existing work, selecting local participants/steps, active attempts, or delivery-owner. Match explicit typed event fields against stream metadata; missing bindings do not match. Choose retain or manager handling for an inactive consumer. Notifications do not approve gates or clear questions.
 
 Optional squad metadata `integrationTriggers` can create a saved or inline flow from a matched output (for example issue.assigned or pull_request.review_requested). Use explicit repository and assignee/reviewer matches, and map resource identities into stream metadata atomically. Repeated events reuse the trigger/resource receipt. Do not create a mandatory reviewer or wake unused participants. Explain that flows with GitHub subscriptions own their GitHub notifications, so include all outputs the user wants. See docs/wiki/workflows.md for complete examples.
 

@@ -24,7 +24,7 @@ const HASHED_ASSET = /\/assets\/[^/]+\.[0-9a-f]{8,}\./i
  * URLs (og:url, og:image): link crawlers ignore relative ones, and a built
  * index.html cannot know which origin it will be served from.
  */
-export const ORIGIN_PLACEHOLDER = '__TAU_ORIGIN__'
+export const ORIGIN_PLACEHOLDER = '__FICUS_ORIGIN__'
 
 export function renderIndexHtml(html: string, origin: string): string {
   return html.replaceAll(ORIGIN_PLACEHOLDER, origin.replace(/\/+$/, ''))
@@ -32,11 +32,11 @@ export function renderIndexHtml(html: string, origin: string): string {
 
 /**
  * This instance's public origin, for the placeholder above. The configured web
- * origin (TAU_WEB_ORIGIN, the same source WebAuthn trusts) wins; otherwise the
+ * origin (FICUS_WEB_ORIGIN, the same source WebAuthn trusts) wins; otherwise the
  * reverse proxy's forwarded headers; otherwise the request URL itself.
  */
 export function publicOrigin(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
-  if (process.env.TAU_WEB_ORIGIN ?? process.env.WEBAUTHN_ORIGIN ?? process.env.APP_URL) return primaryWebOrigin()
+  if (process.env.FICUS_WEB_ORIGIN ?? process.env.WEBAUTHN_ORIGIN ?? process.env.APP_URL) return primaryWebOrigin()
   const host = c.req.header('x-forwarded-host')?.split(',')[0].trim()
   if (host) {
     const proto = c.req.header('x-forwarded-proto')?.split(',')[0].trim() || 'https'
@@ -54,7 +54,7 @@ export function publicOrigin(c: { req: { url: string; header: (name: string) => 
  * Returns true when static handlers were mounted.
  */
 export function maybeMountWebUi(app: Hono, log: Log): boolean {
-  const mode = envFlag(process.env.TAU_SERVE_WEB)
+  const mode = envFlag(process.env.FICUS_SERVE_WEB)
   if (mode === 'off') return false
 
   const dist = resolveWebDist()
@@ -62,9 +62,9 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
 
   if (mode === 'on' && !hasIndex) {
     log.warn(
-      `TAU_SERVE_WEB is enabled but no built web UI was found` +
+      `FICUS_SERVE_WEB is enabled but no built web UI was found` +
         (dist ? ` at ${dist}` : '') +
-        `. Run \`bun run build:web\` or unset TAU_SERVE_WEB.`
+        `. Run \`bun run build:web\` or unset FICUS_SERVE_WEB.`
     )
     return false
   }

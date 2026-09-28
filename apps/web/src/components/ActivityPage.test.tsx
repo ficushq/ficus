@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import type { GlobalSquadActivityItem, NormalizedSquadActivityFilters, Squad } from '@tau/shared'
+import type { GlobalSquadActivityItem, NormalizedSquadActivityFilters, Squad } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
 import { ActivityPage } from './ActivityPage'
@@ -520,7 +520,7 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
     await import('./EntityReferenceModal')
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     const target = { id: 'abc12345-1234-1234-1234-123456789abc', squadId: squadAId, agentTypeId: 'reviewer' }
-    const item = { ...messageItem, preview: [{ text: 'Review agent', href: `tau:agent:${reference}` }] }
+    const item = { ...messageItem, preview: [{ text: 'Review agent', href: `ficus:agent:${reference}` }] }
     const client = seedClient([item])
     client.setQueryData(queryKeys.activity.globalInfinite({ ...filters, kinds: ['message', 'subagent'] }), {
       pages: [{ items: [item], hasMore: false, nextCursor: null, squads: { [squadBId]: { name: 'Bravo' } } }],

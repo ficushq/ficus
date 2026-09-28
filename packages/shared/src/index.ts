@@ -27,7 +27,7 @@ export * from './image-attachments'
 // re-exporting it drags a node builtin into the browser bundle and breaks the
 // vite build with `"randomBytes" is not exported by "__vite-browser-external"`.
 // That broke every tenant provision, because provisioning builds the web app
-// on the tenant VM. Server code imports it directly: `@tau/shared/crypto`.
+// on the tenant VM. Server code imports it directly: `@ficus/shared/crypto`.
 export * from './work-stream-priority'
 export * from './work-stream-order'
 export * from './status-presentation'

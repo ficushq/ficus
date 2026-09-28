@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { SandboxProcesses } from '@tau/shared'
+import type { SandboxProcesses } from '@ficus/shared'
 import { SandboxHttpError, type SandboxClient } from './k8s/http-client'
 import {
   listSandboxProcesses,

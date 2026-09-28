@@ -120,7 +120,7 @@ describe('deployments localDeployment integration', () => {
     const response = await app.request(`/api/app/${prefix}/?_tau_token=irrelevant`)
 
     expect(response.status).toBe(409)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(await response.json()).toEqual({ error: 'This app link is no longer unique — get a fresh URL.' })
     expect(resolveLocalDeploymentTarget).not.toHaveBeenCalled()
   })
@@ -142,7 +142,7 @@ describe('deployments localDeployment integration', () => {
     const response = await app.request(localDeployment.urlPathOrHost)
 
     expect(response.status).toBe(409)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(await response.json()).toEqual({ error: 'This app link is no longer unique — get a fresh URL.' })
     expect(resolveLocalDeploymentTarget).not.toHaveBeenCalled()
   })
@@ -165,7 +165,7 @@ describe('deployments localDeployment integration', () => {
     const response = await app.request(`/api/app/${hyphenatedPrefix}/?_tau_token=${encodeURIComponent(token)}`)
     expect(response.status).toBe(200)
     expect(await response.text()).toBe('hello localDeployment')
-    expect(response.headers.get('set-cookie')).toContain(`tau_app_${localDeployment.id}=`)
+    expect(response.headers.get('set-cookie')).toContain(`ficus_app_${localDeployment.id}=`)
   })
 
   it('keeps the full UUID path cookie behavior and omits a Domain attribute', async () => {

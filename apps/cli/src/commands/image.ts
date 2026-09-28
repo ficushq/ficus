@@ -15,7 +15,7 @@ const MIME_MAP: Record<string, string> = {
 export function registerImageCommands(program: Command) {
   const image = program.command('image').description('Manage images')
 
-  // tau image upload <file...> [--agent <agentId>]
+  // ficus image upload <file...> [--agent <agentId>]
   image
     .command('upload <file...>')
     .description('Upload one or more images')
@@ -46,7 +46,7 @@ export function registerImageCommands(program: Command) {
       }
     })
 
-  // tau image get <id> [--out <filepath>]
+  // ficus image get <id> [--out <filepath>]
   image
     .command('get <id>')
     .alias('download')

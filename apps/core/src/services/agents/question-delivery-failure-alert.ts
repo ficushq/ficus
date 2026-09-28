@@ -1,4 +1,4 @@
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestions, inbox } from '../../db/schema'

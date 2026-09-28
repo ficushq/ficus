@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { SquadMemoryGrantDTO } from '@tau/shared'
+import type { SquadMemoryGrantDTO } from '@ficus/shared'
 import { deleteGrant } from '../../../api/grants'
 import { queries } from '../../../queryOptions'
 import { queryKeys } from '../../../queryKeys'
@@ -74,7 +74,7 @@ export function OutboundGrantsList({ sourceSquadId }: Props) {
                   onClick={() => {
                     if (confirm('Revoke this grant?')) deleteMutation.mutate(grant.id)
                   }}
-                  className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:underline"
+                  className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:underline"
                 >
                   Revoke
                 </button>

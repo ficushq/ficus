@@ -8,7 +8,7 @@ import { identityMiddleware } from '../middleware/identity'
 import { authzSentinel } from '../middleware/authz-sentinel'
 import { inboxRouter } from './inbox'
 import { generateInstanceKeyPair, signEnvelope } from '../services/amtp/crypto'
-import { canonicalAgentSigBytes, formatAmtpAddress } from '@tau/shared'
+import { canonicalAgentSigBytes, formatAmtpAddress } from '@ficus/shared'
 import { authHeaders, cleanupTestRbac, createTestAdmin, createTestAgentToken, type TestUser } from '../test-utils'
 
 const app = new Hono()

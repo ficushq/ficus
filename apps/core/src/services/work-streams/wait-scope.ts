@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { activeWorkflowAttempts } from '@tau/shared'
+import { activeWorkflowAttempts } from '@ficus/shared'
 import {
   db,
   inbox,

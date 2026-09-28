@@ -126,7 +126,7 @@ function makeHarness(
 }
 
 afterEach(() => {
-  delete process.env.TAU_MACHINE_IDLE_GRACE_MS
+  delete process.env.FICUS_MACHINE_IDLE_GRACE_MS
 })
 
 // ---------------------------------------------------------------------------
@@ -139,12 +139,12 @@ describe('resolveMachineIdleGraceMs', () => {
     expect(resolveMachineIdleGraceMs()).toBe(DEFAULT_MACHINE_IDLE_GRACE_MS)
   })
 
-  it('honors a positive-int TAU_MACHINE_IDLE_GRACE_MS and rejects invalid values', () => {
-    process.env.TAU_MACHINE_IDLE_GRACE_MS = '30000'
+  it('honors a positive-int FICUS_MACHINE_IDLE_GRACE_MS and rejects invalid values', () => {
+    process.env.FICUS_MACHINE_IDLE_GRACE_MS = '30000'
     expect(resolveMachineIdleGraceMs()).toBe(30_000)
-    process.env.TAU_MACHINE_IDLE_GRACE_MS = '-5'
+    process.env.FICUS_MACHINE_IDLE_GRACE_MS = '-5'
     expect(resolveMachineIdleGraceMs()).toBe(DEFAULT_MACHINE_IDLE_GRACE_MS)
-    process.env.TAU_MACHINE_IDLE_GRACE_MS = 'soon'
+    process.env.FICUS_MACHINE_IDLE_GRACE_MS = 'soon'
     expect(resolveMachineIdleGraceMs()).toBe(DEFAULT_MACHINE_IDLE_GRACE_MS)
   })
 })

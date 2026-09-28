@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 import { createStatusTools, voiceWorkStreamStatus } from './statusTools'
 
 function stream(overrides: Partial<WorkStream> = {}): WorkStream {
@@ -39,7 +39,7 @@ describe('get_work', () => {
   const squadId = '11111111-1111-1111-1111-111111111111'
   function tools(overrides: Partial<Parameters<typeof createStatusTools>[0]> = {}) {
     return createStatusTools({
-      listSquads: async () => [{ id: squadId, name: 'Tau', createdAt: '2026-01-01' }] as any,
+      listSquads: async () => [{ id: squadId, name: 'Ficus', createdAt: '2026-01-01' }] as any,
       listSquadAgents: async () =>
         [{ id: 'a1', agentTypeId: 'engineer', status: 'idle', metadata: { name: 'Ava' } }] as any,
       listWorkStreams: async () => [stream({ id: 'ws-s', squadId })],
@@ -69,7 +69,7 @@ describe('get_work', () => {
 
   test('a squad reference resolves the slug and returns agents with work', async () => {
     const { getWorkTool } = tools()
-    const result = (await getWorkTool.execute({ squadId: 'tau' }, env)) as any
+    const result = (await getWorkTool.execute({ squadId: 'ficus' }, env)) as any
     expect(result.agents).toEqual([{ id: 'a1', type: 'engineer', status: 'idle', name: 'Ava' }])
     expect(result.workStreams.map((w: any) => w.id)).toEqual(['ws-s'])
     expect(await getWorkTool.execute({ squadId: 'missing' }, env)).toHaveProperty('error')
@@ -79,6 +79,6 @@ describe('get_work', () => {
     const { getWorkTool } = tools()
     const result = (await getWorkTool.execute({ workStreamId: 'work:ws-9' }, env)) as any
     expect(result.workStream).toMatchObject({ id: 'ws-9', title: 'Full stream' })
-    expect(await getWorkTool.execute({ squadId: 'tau', workStreamId: 'ws-9' }, env)).toHaveProperty('error')
+    expect(await getWorkTool.execute({ squadId: 'ficus', workStreamId: 'ws-9' }, env)).toHaveProperty('error')
   })
 })

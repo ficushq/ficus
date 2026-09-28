@@ -1,15 +1,15 @@
-// Thin shim over @tau/client-core (see ./clientInstance). Types + logic live in the shared package.
+// Thin shim over @ficus/client-core (see ./clientInstance). Types + logic live in the shared package.
 import { client } from './clientInstance'
 import { apiFetch } from './client'
-import type { AuthUser } from '@tau/client-core'
+import type { AuthUser } from '@ficus/client-core'
 
-export type { UserRoleAssignment, InvitedUser } from '@tau/client-core'
+export type { UserRoleAssignment, InvitedUser } from '@ficus/client-core'
 
 /**
  * A row from GET /users. The admin list carries onboarding state the shared
  * `AuthUser` shape doesn't model (see apps/core/src/routes/users.ts): an invite
  * creates the user row up front, so only these fields say whether the person
- * ever arrived. Declared here rather than in @tau/client-core because the admin
+ * ever arrived. Declared here rather than in @ficus/client-core because the admin
  * Users list is the only surface that consumes it.
  */
 export interface UserListEntry extends AuthUser {
@@ -61,7 +61,7 @@ export interface SeatPricing {
  * `null` means render NO pricing UI; there is deliberately no fallback price.
  *
  * Called through `apiFetch` rather than the shared client because
- * @tau/client-core doesn't model this admin-only endpoint yet, and the Users
+ * @ficus/client-core doesn't model this admin-only endpoint yet, and the Users
  * list is its only consumer (same reasoning as `resendInvite` above).
  */
 export const getSeatPricing = (): Promise<{ pricing: SeatPricing | null }> =>
@@ -73,7 +73,7 @@ export const getSeatPricing = (): Promise<{ pricing: SeatPricing | null }> =>
  * thing the caller must do is refresh the list afterwards — `inviteExpiresAt`
  * moves to the new link's expiry.
  *
- * Called through `apiFetch` rather than the shared client because @tau/client-core
+ * Called through `apiFetch` rather than the shared client because @ficus/client-core
  * doesn't model this admin-only endpoint yet, and the Users list is its only consumer.
  */
 export const resendInvite = (userId: string): Promise<ResentInvite> =>

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { uploadImages } from './images'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 type Listener = (event: ProgressEvent) => void
 
@@ -64,7 +65,7 @@ describe('uploadImages', () => {
 
     expect(xhr.method).toBe('POST')
     expect(xhr.withCredentials).toBe(true)
-    expect(xhr.headers.get('X-Tau-Csrf')).toBe('1')
+    expect(xhr.headers.get(CSRF_HEADER)).toBe('1')
     expect(body).toMatchObject({ images: [{ type: 'image', data: 'cG5n', mimeType: 'image/png' }], ...expectedTarget })
     expect('agentId' in body).toBe('agentId' in expectedTarget)
     expect('squadId' in body).toBe('squadId' in expectedTarget)

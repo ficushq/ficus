@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { inArray } from 'drizzle-orm'
-import type { SandboxPressure } from '@tau/shared'
+import type { SandboxPressure } from '@ficus/shared'
 import { db } from '../../db'
 import { agents, executions, machineBoxes, machines, squads } from '../../db/schema'
 import { listBusySandboxIds, reconcileSandboxOverload } from './sandbox-overload'

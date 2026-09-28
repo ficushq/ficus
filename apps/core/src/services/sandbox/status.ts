@@ -1,4 +1,4 @@
-import type { SandboxToolchainConfig } from '@tau/shared'
+import type { SandboxToolchainConfig } from '@ficus/shared'
 import type { Squad } from '../../entities/Squad'
 import { fingerprintToolchain, isEmptyToolchain, type ManagedToolchainConfig } from './toolchain/config'
 import { getProvisionState, loadDesiredToolchain, type ProvisionState } from './toolchain/state'

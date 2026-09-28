@@ -1,9 +1,9 @@
 import { createMiddleware } from 'hono/factory'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { getSessionCookie } from '../services/auth/session-cookie'
 import { corsAllowOrigins, normalizeOrigin } from '../services/auth/web-origins'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
-export const CSRF_HEADER = 'x-tau-csrf'
 
 /**
  * CSRF defense for cookie-authenticated browser requests. The session cookie is

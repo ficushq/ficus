@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os'
 import { resolveWebDist } from './web-dist'
 
 describe('resolveWebDist', () => {
-  const origEnv = process.env.TAU_WEB_DIST
+  const origEnv = process.env.FICUS_WEB_DIST
   const origCwd = process.cwd()
   let tmp: string
   // A walk-up origin with no package.json above it, so the repo-root step finds
@@ -23,28 +23,28 @@ describe('resolveWebDist', () => {
   })
 
   afterEach(() => {
-    if (origEnv === undefined) delete process.env.TAU_WEB_DIST
-    else process.env.TAU_WEB_DIST = origEnv
+    if (origEnv === undefined) delete process.env.FICUS_WEB_DIST
+    else process.env.FICUS_WEB_DIST = origEnv
     process.chdir(origCwd)
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it('honours TAU_WEB_DIST when set', () => {
+  it('honours FICUS_WEB_DIST when set', () => {
     const explicit = join(tmp, 'custom')
     mkdirSync(explicit, { recursive: true })
-    process.env.TAU_WEB_DIST = explicit
+    process.env.FICUS_WEB_DIST = explicit
     expect(resolveWebDist(rootless)).toBe(explicit)
   })
 
-  it('expands a leading ~ in TAU_WEB_DIST', () => {
+  it('expands a leading ~ in FICUS_WEB_DIST', () => {
     // resolve() alone turns `~/web` into `<cwd>/~/web` — a directory literally
     // named `~`. Expansion has to happen before resolution.
-    process.env.TAU_WEB_DIST = '~/tau-web-dist-fixture'
+    process.env.FICUS_WEB_DIST = '~/tau-web-dist-fixture'
     expect(resolveWebDist(rootless)).toBe(join(homedir(), 'tau-web-dist-fixture'))
   })
 
   it('prefers the repo root discovered by walking up from the module directory', () => {
-    delete process.env.TAU_WEB_DIST
+    delete process.env.FICUS_WEB_DIST
     const repoRoot = join(tmp, 'repo')
     const dist = join(repoRoot, 'apps', 'web', 'dist')
     mkdirSync(dist, { recursive: true })
@@ -54,8 +54,19 @@ describe('resolveWebDist', () => {
     expect(resolveWebDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
   })
 
+  it('finds a repo root whose package.json is named ficus', () => {
+    delete process.env.FICUS_WEB_DIST
+    const repoRoot = join(tmp, 'repo')
+    const dist = join(repoRoot, 'apps', 'web', 'dist')
+    mkdirSync(dist, { recursive: true })
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
+    // cwd deliberately elsewhere: only the walk-up can produce this answer.
+    process.chdir(tmp)
+    expect(resolveWebDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
+  })
+
   it('falls back to <cwd>/apps/web/dist', () => {
-    delete process.env.TAU_WEB_DIST
+    delete process.env.FICUS_WEB_DIST
     const repoRoot = join(tmp, 'repo')
     const dist = join(repoRoot, 'apps', 'web', 'dist')
     mkdirSync(dist, { recursive: true })
@@ -65,7 +76,7 @@ describe('resolveWebDist', () => {
   })
 
   it('returns undefined when nothing is found', () => {
-    delete process.env.TAU_WEB_DIST
+    delete process.env.FICUS_WEB_DIST
     process.chdir(tmp)
     expect(resolveWebDist(rootless)).toBeUndefined()
   })

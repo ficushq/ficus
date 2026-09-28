@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 // ── Mock @simplewebauthn/server before importing ──────────────────────────────
 const mockGenerateRegistrationOptions = mock(async () => ({
   challenge: 'mock-reg-challenge',
-  rp: { name: 'Tau', id: 'localhost' },
+  rp: { name: 'Ficus', id: 'localhost' },
   user: { id: 'user-id', name: 'user@example.com', displayName: 'user@example.com' },
   pubKeyCredParams: [],
   timeout: 60000,

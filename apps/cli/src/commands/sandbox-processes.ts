@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { isSandboxOverloaded, SANDBOX_PROCESS_SIGNALS, type SandboxProcesses } from '@tau/shared'
+import { isSandboxOverloaded, SANDBOX_PROCESS_SIGNALS, type SandboxProcesses } from '@ficus/shared'
 import { apiGet, apiPost } from '../client'
 import { isJsonMode, output, outputError, outputTable } from '../output'
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
 import { MemoryRouter } from 'react-router-dom'
-import type { Agent, Squad, WorkStream } from '@tau/shared'
+import type { Agent, Squad, WorkStream } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 
 let permissions = new Set<string>()
@@ -13,8 +13,8 @@ const { WorkStreamDetailModal } = await import('./WorkStreamDetailModal')
 const now = new Date('2026-01-01T00:00:00Z')
 const squad: Squad = {
   id: 'squad-1',
-  name: 'Tau',
-  purpose: 'Build Tau',
+  name: 'Ficus',
+  purpose: 'Build Ficus',
   status: 'active',
   squadPresetId: null,
   defaultAgents: [],

@@ -65,13 +65,13 @@ describe('derivePorts', () => {
 })
 
 describe('readInstanceLabel', () => {
-  it('reads TAU_INSTANCE from the checkout .env and defaults to tau', () => {
+  it('reads FICUS_INSTANCE from the checkout .env and defaults to tau', () => {
     const root = mkdtempSync(join(tmpdir(), 'tau-instance-'))
     try {
       expect(readInstanceLabel(root)).toBe('tau')
-      writeFileSync(join(root, '.env'), 'PORT=3100\nTAU_INSTANCE=smoke\n')
+      writeFileSync(join(root, '.env'), 'PORT=3100\nFICUS_INSTANCE=smoke\n')
       expect(readInstanceLabel(root)).toBe('smoke')
-      writeFileSync(join(root, '.env'), 'TAU_INSTANCE=\n')
+      writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=\n')
       expect(readInstanceLabel(root)).toBe('tau')
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -84,8 +84,8 @@ describe('generateEcosystem', () => {
     const out = generateEcosystem(EXAMPLE, instanceNames('smoke'))
     expect(out).toContain("name: 'tau-smoke-api',")
     expect(out).toContain("name: 'tau-smoke-worker',")
-    expect(out).toContain("TAU_PM2_API_NAME: 'tau-smoke-api',")
-    expect(out).toContain("TAU_PM2_WORKER_NAME: 'tau-smoke-worker',")
+    expect(out).toContain("FICUS_PM2_API_NAME: 'tau-smoke-api',")
+    expect(out).toContain("FICUS_PM2_WORKER_NAME: 'tau-smoke-worker',")
     expect(out).not.toContain("'tau-api'")
     expect(out).not.toContain("'tau-worker'")
     // Nothing else moved: undoing the four substitutions restores the file byte for byte.
@@ -96,7 +96,7 @@ describe('generateEcosystem', () => {
   })
   it('throws when a substitution target is missing', () => {
     expect(() => generateEcosystem('module.exports = {}\n', instanceNames('smoke'))).toThrow(/tau-api/)
-    const missingWorker = EXAMPLE.replace("TAU_PM2_WORKER_NAME: 'tau-worker',", '')
-    expect(() => generateEcosystem(missingWorker, instanceNames('smoke'))).toThrow(/TAU_PM2_WORKER_NAME/)
+    const missingWorker = EXAMPLE.replace("FICUS_PM2_WORKER_NAME: 'tau-worker',", '')
+    expect(() => generateEcosystem(missingWorker, instanceNames('smoke'))).toThrow(/FICUS_PM2_WORKER_NAME/)
   })
 })

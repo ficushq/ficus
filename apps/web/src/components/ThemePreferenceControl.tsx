@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useOptionalTheme } from '../providers/ThemeProvider'
-import type { AppearanceSetting } from '@tau/shared/theme-schema'
+import type { AppearanceSetting } from '@ficus/shared/theme-schema'
 
 const OPTIONS: { value: AppearanceSetting; label: string }[] = [
   { value: 'system', label: 'System' },

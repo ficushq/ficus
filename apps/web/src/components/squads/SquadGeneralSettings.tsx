@@ -7,7 +7,7 @@ import { queries } from '../../queryOptions'
 import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { SquadAvatarSettings } from './SquadAvatarSettings'
-import { updateSquadSchema, type UpdateSquadInput } from '@tau/shared'
+import { updateSquadSchema, type UpdateSquadInput } from '@ficus/shared'
 
 type SettingsSection = 'general' | 'workflows' | 'workspace'
 
@@ -38,7 +38,7 @@ export function blockedGraceMinutesError(value: number | null): string | null {
 export function hostWorkspacePathError(value: string | null): string | null {
   const parsed = updateSquadSchema.safeParse({ hostWorkspacePath: value })
   if (parsed.success) return null
-  // Nothing expands `~` on this path: the browser cannot know the Tau host's
+  // Nothing expands `~` on this path: the browser cannot know the Ficus host's
   // home directory, so the literal characters would reach the server. Say
   // that, rather than the schema's generic "must be an absolute path".
   if (value?.startsWith('~')) return 'Enter the full absolute path; `~` is not expanded here.'
@@ -173,7 +173,7 @@ export function SquadGeneralSettings({
             ? 'The squad’s identity and how other squads discover it.'
             : section === 'workflows'
               ? 'Control how much work runs at once and when waiting work frees a slot.'
-              : 'Choose where this squad works on the Tau host.'}
+              : 'Choose where this squad works on the Ficus host.'}
         </p>
       </div>
 
@@ -197,7 +197,7 @@ export function SquadGeneralSettings({
                 onKeyDown={handleKeyDown}
                 placeholder="Squad name"
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   'w-full px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -223,7 +223,7 @@ export function SquadGeneralSettings({
                 placeholder="What is this squad's purpose?"
                 rows={3}
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   'w-full px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'leading-relaxed resize-y',
                   'placeholder:text-placeholder',
@@ -265,7 +265,7 @@ export function SquadGeneralSettings({
                   }
                 }}
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   'w-32 px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -302,7 +302,7 @@ export function SquadGeneralSettings({
                 aria-invalid={graceError !== null}
                 aria-describedby="squad-blocked-grace-minutes-help"
                 className={clsx(
-                  'tau-field',
+                  'ficus-field',
                   'w-32 px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -343,7 +343,7 @@ export function SquadGeneralSettings({
               aria-invalid={hostError !== null}
               aria-describedby="squad-host-workspace-path-help"
               className={clsx(
-                'tau-field',
+                'ficus-field',
                 'w-full px-3 py-2 rounded-lg border bg-surface text-primary text-sm font-mono',
                 'placeholder:text-placeholder',
                 ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -365,8 +365,8 @@ export function SquadGeneralSettings({
               </p>
             )}
             <p id="squad-host-workspace-path-help" className="text-xs text-muted mt-1">
-              Absolute directory on the Tau host this squad works in. Takes effect on the squad&apos;s next sandbox
-              start. Tau never deletes this directory.
+              Absolute directory on the Ficus host this squad works in. Takes effect on the squad&apos;s next sandbox
+              start. Ficus never deletes this directory.
             </p>
             {hostError && <p className="text-xs text-status-danger-500 mt-1">{hostError}</p>}
           </div>
@@ -399,7 +399,7 @@ export function SquadGeneralSettings({
           onClick={handleSave}
           disabled={!dirty || !isValid || mutation.isPending || !canUpdateSquad}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
             dirty && isValid && canUpdateSquad
               ? 'bg-accent text-on-accent hover:bg-accent/90'

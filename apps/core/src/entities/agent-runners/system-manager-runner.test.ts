@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { SystemManagerRunner } from './system-manager-runner'
 import { AgentSession } from '../AgentSession'
 import * as tools from '../../tools'
-import { assistantEditorInstructionsByKind } from '@tau/shared'
+import { assistantEditorInstructionsByKind } from '@ficus/shared'
 
 class TestSystemManagerRunner extends SystemManagerRunner {
   protected override async getPageEditorConversation() {
@@ -164,7 +164,7 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
   let agentSessionCreateSpy: any
   let buildManagerPromptSpy: any
   let getShortTermMemorySpy: any
-  const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+  const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
 
   beforeEach(() => {
     agentSessionCreateSpy = spyOn(AgentSession, 'create').mockResolvedValue({} as any)
@@ -179,8 +179,8 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
     agentSessionCreateSpy.mockRestore()
     buildManagerPromptSpy.mockRestore()
     getShortTermMemorySpy.mockRestore()
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
   })
 
   function capturedToolNames(): string[] {
@@ -189,7 +189,7 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
   }
 
   it('does not include sandbox_status on the host runtime', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const { agent, agentType } = makeAgentAndType()
     const runner = new RealToolkitSystemManagerRunner({ id: 'exec-1' } as any, agent, agentType)
 
@@ -199,7 +199,7 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
   })
 
   it('omits ask_human for Assistant delegates and keeps it in standalone user chats', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const { agent, agentType } = makeAgentAndType()
     const runner = new RealToolkitSystemManagerRunner({ id: 'exec-1' } as any, agent, agentType)
     await runner.exposeCreateSession(null)
@@ -214,7 +214,7 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
   })
 
   it('page editor delegates have only draft tools, without shell, dispatch, or catalog mutation tools', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const { agent, agentType } = makeAgentAndType()
     const runner = new RealToolkitSystemManagerRunner({ id: 'exec-1' } as any, agent, agentType)
     runner.assistantDelegate = true
@@ -224,7 +224,7 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
   })
 
   it('selects the system prompt by the open page editor draft kind', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const { agent, agentType } = makeAgentAndType()
     const runner = new RealToolkitSystemManagerRunner({ id: 'exec-1' } as any, agent, agentType)
     runner.assistantDelegate = true
@@ -239,7 +239,7 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
   })
 
   it('includes sandbox_status on docker-socket', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     const { agent, agentType } = makeAgentAndType()
     const runner = new RealToolkitSystemManagerRunner({ id: 'exec-1' } as any, agent, agentType)
 

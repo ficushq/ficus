@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { and, eq } from 'drizzle-orm'
-import { parseAssistantInboxConversationId } from '@tau/shared'
+import { parseAssistantInboxConversationId } from '@ficus/shared'
 import { assistantConversations, db, inbox } from '../db'
 
 export async function assistantInboxOwner(recipientId: string): Promise<string | null> {

@@ -313,7 +313,7 @@ Unique provenance needle text for structured search results.`
       const text = (result.content[0] as { text: string }).text
 
       expect(text).toContain(`1. /memory/${testSquadId}/provenance.md`)
-      const match = text.match(/<!--tau:memory-provenance\s+(\[.*\])\s*-->/s)
+      const match = text.match(/<!--ficus:memory-provenance\s+(\[.*\])\s*-->/s)
       expect(match).not.toBeNull()
       const parsed = JSON.parse(match![1]) as Array<{ sourceSquadId: string; path: string; sensitivity: string }>
       expect(parsed[0]).toMatchObject({ sourceSquadId: testSquadId, path: `/memory/${testSquadId}/provenance.md` })
@@ -497,25 +497,25 @@ Unique provenance needle text for structured search results.`
         return (tool.parameters as { properties: { path: { description: string } } }).properties.path.description
       }
 
-      const prev = process.env.TAU_SANDBOX_RUNTIME
+      const prev = process.env.FICUS_SANDBOX_RUNTIME
       try {
         // Container runtimes: the root IS the container literal.
-        process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+        process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
         const containerTools = createMemoryTools(testSquadId)
         for (const name of pathTools) {
           expect(pathDescription(containerTools, name)).toContain(`/memory/${testSquadId}/<rel>`)
         }
 
         // vm runtime: show the squad box's ~/memory, not /memory/<squadId>.
-        process.env.TAU_SANDBOX_RUNTIME = 'vm'
+        process.env.FICUS_SANDBOX_RUNTIME = 'vm'
         const vmTools = createMemoryTools(testSquadId)
         for (const name of pathTools) {
           expect(pathDescription(vmTools, name)).toContain('/home/box_')
           expect(pathDescription(vmTools, name)).not.toContain(`/memory/${testSquadId}`)
         }
       } finally {
-        if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-        else process.env.TAU_SANDBOX_RUNTIME = prev
+        if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+        else process.env.FICUS_SANDBOX_RUNTIME = prev
       }
     })
   })

@@ -1,4 +1,4 @@
-import { isLiveAgentStatus } from '@tau/shared'
+import { isLiveAgentStatus } from '@ficus/shared'
 import type { Agent } from '../../entities/Agent'
 import type { WorkStream } from '../../entities/WorkStream'
 import { eventEmitter } from '../../lib/infra/event-emitter'

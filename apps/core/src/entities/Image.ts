@@ -17,7 +17,7 @@ import {
   MAX_IMAGE_ATTACHMENT_BYTES,
   MAX_IMAGE_ATTACHMENTS_PER_MESSAGE,
   MAX_IMAGE_ATTACHMENTS_TOTAL_BYTES,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 

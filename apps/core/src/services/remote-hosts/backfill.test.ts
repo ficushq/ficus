@@ -64,30 +64,30 @@ async function cleanupHosts() {
 }
 
 beforeAll(async () => {
-  priorEncryptionKey = process.env.TAU_ENCRYPTION_KEY
-  process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
+  priorEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
+  process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
   resetSecretStore()
   await getSecretStore().initialize()
 })
 
 afterAll(async () => {
-  if (priorEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-  else process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey
+  if (priorEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+  else process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey
   resetSecretStore()
 })
 
 beforeEach(async () => {
   tempDir = mkdtempSync(join(tmpdir(), 'remote-hosts-backfill-test-'))
   process.env.HOME_DIR = tempDir
-  priorRuntime = process.env.TAU_SANDBOX_RUNTIME
+  priorRuntime = process.env.FICUS_SANDBOX_RUNTIME
   await cleanupHosts()
 })
 
 afterEach(async () => {
   if (originalHomeDir === undefined) delete process.env.HOME_DIR
   else process.env.HOME_DIR = originalHomeDir
-  if (priorRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-  else process.env.TAU_SANDBOX_RUNTIME = priorRuntime
+  if (priorRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+  else process.env.FICUS_SANDBOX_RUNTIME = priorRuntime
   if (tempDir) rmSync(tempDir, { recursive: true, force: true })
   await cleanupHosts()
 })
@@ -97,7 +97,7 @@ describe('backfillSquadSshConfigs', () => {
     // The gap this closes (issue #1331): a squad granted before host-mode
     // support still carries a managed block naming ~/.ssh/... paths, which
     // on host expand to the OPERATOR's home where the keys do not exist.
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const squadId = await createSquad('stale')
     const host: RemoteHost = await createGrantedHost('stale', squadId)
 
@@ -114,7 +114,7 @@ describe('backfillSquadSshConfigs', () => {
       `    HostName ${host.sshHost}`,
       '    Port 22',
       `    User ${host.sshUser}`,
-      `    IdentityFile ~/.ssh/tau_remote_${host.name}`,
+      `    IdentityFile ~/.ssh/ficus_remote_${host.name}`,
       '    IdentitiesOnly yes',
       '    StrictHostKeyChecking accept-new',
       MANAGED_BLOCK_END,
@@ -125,17 +125,17 @@ describe('backfillSquadSshConfigs', () => {
     expect(await backfillSquadSshConfigs()).toBe(1)
 
     const config = readFileSync(join(sshDir, 'config'), 'utf-8')
-    expect(config).toContain(`IdentityFile ${join(sshDir, `tau_remote_${host.name}`)}`)
+    expect(config).toContain(`IdentityFile ${join(sshDir, `ficus_remote_${host.name}`)}`)
     expect(config).toContain(`UserKnownHostsFile ${join(sshDir, 'known_hosts')}`)
     expect(config).not.toContain('~/.ssh/')
     // The user's own stanza survives byte-for-byte outside the markers.
     expect(config.startsWith('Host mine\n  HostName my.example.com\n  User me\n')).toBe(true)
     // The key file the absolute path names was (re)written too.
-    expect(existsSync(join(sshDir, `tau_remote_${host.name}`))).toBe(true)
+    expect(existsSync(join(sshDir, `ficus_remote_${host.name}`))).toBe(true)
   })
 
   it('is idempotent: a second run rewrites nothing (byte-identical config)', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const squadId = await createSquad('idem')
     await createGrantedHost('idem', squadId)
     mkdirSync(getSquadSshPath(squadId), { recursive: true })
@@ -154,7 +154,7 @@ describe('backfillSquadSshConfigs', () => {
   })
 
   it('skips archived squads and grants without a live squad row', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     // Archived squad with a grant: excluded by the query's archivedAt filter.
     const archivedId = await createSquad('archived')
     await db.update(squads).set({ archivedAt: new Date() }).where(eq(squads.id, archivedId))
@@ -168,7 +168,7 @@ describe('backfillSquadSshConfigs', () => {
   })
 
   it('materializes multiple granted squads and isolates per-squad failures', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const squadA = await createSquad('multi-a')
     const squadB = await createSquad('multi-b')
     await createGrantedHost('multi-a', squadA)

@@ -1,7 +1,7 @@
 import { useVoiceEnabled } from '../hooks/useVoiceEnabled'
 import clsx from 'clsx'
 import { useCallback, useRef, useState } from 'react'
-import type { QuestionData, QuestionItem } from '@tau/shared'
+import type { QuestionData, QuestionItem } from '@ficus/shared'
 import { useVoiceRecorder, type RecorderState } from '../hooks/useVoiceRecorder'
 import { useVoiceKeyboardShortcuts } from '../hooks/useVoiceKeyboardShortcuts'
 import { useStableRef } from '../hooks/useStableRef'
@@ -268,7 +268,7 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
         <button
           onClick={() => handleSubmit()}
           disabled={disabled || !isValid()}
-          className="tau-button tau-button-primary min-h-10 px-4 py-2 disabled:opacity-50 text-sm"
+          className="ficus-button ficus-button-primary min-h-10 px-4 py-2 disabled:opacity-50 text-sm"
         >
           {secondaryAction ? 'Confirm' : `Submit ${questionData.questions.length > 1 ? 'Answers' : 'Answer'}`}
         </button>
@@ -276,7 +276,7 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
           <button
             onClick={() => handleSubmit(secondaryAction.onSubmit)}
             disabled={disabled || !isValid()}
-            className="tau-button min-h-10 text-secondary border border-th-border px-3 py-2 hover:bg-surface-hover disabled:opacity-50 text-sm"
+            className="ficus-button min-h-10 text-secondary border border-th-border px-3 py-2 hover:bg-surface-hover disabled:opacity-50 text-sm"
           >
             {secondaryAction.label}
           </button>
@@ -288,7 +288,7 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
             disabled={disabled}
             title="Dismiss without answering"
             aria-label="Dismiss without answering"
-            className="tau-button min-h-10 px-3 py-2 text-sm text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 hover:bg-surface-hover disabled:opacity-50"
+            className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 hover:bg-surface-hover disabled:opacity-50"
           >
             Dismiss
           </button>
@@ -447,7 +447,7 @@ function QuestionField({
                 : undefined
             }
             rows={5}
-            className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border disabled:bg-surface-secondary text-sm"
+            className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border disabled:bg-surface-secondary text-sm"
           />
 
           {(meFocused || alwaysShowVoiceHint) && (
@@ -532,7 +532,7 @@ function QuestionField({
               placeholder="Enter your answer..."
               disabled={disabled}
               autoFocus
-              className="tau-field w-[calc(100%-1.5rem)] rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border disabled:bg-surface-secondary text-sm ml-6"
+              className="ficus-field w-[calc(100%-1.5rem)] rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border disabled:bg-surface-secondary text-sm ml-6"
             />
           )}
         </div>
@@ -602,7 +602,7 @@ function QuestionField({
               placeholder="Enter your answer..."
               disabled={disabled}
               autoFocus
-              className="tau-field w-[calc(100%-1.5rem)] rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border disabled:bg-surface-secondary text-sm ml-6"
+              className="ficus-field w-[calc(100%-1.5rem)] rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border disabled:bg-surface-secondary text-sm ml-6"
             />
           )}
         </div>

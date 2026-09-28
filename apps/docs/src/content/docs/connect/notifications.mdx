@@ -15,7 +15,7 @@ updates to Slack, Discord, or Telegram.
    alerts on.
 2. Under **Push Notifications**, choose **Enable** beside **Enable notifications
    on this device**.
-3. Allow notifications in the browser prompt. Confirm Tau reports that this
+3. Allow notifications in the browser prompt. Confirm Ficus reports that this
    device will receive push notifications.
 4. Under **Notification preferences**, keep the account's **Push notifications**
    switch enabled and choose the events under **Notify me about**.
@@ -25,7 +25,7 @@ applies across your devices, while the device control enables or disables only
 that subscription. Use **Registered Devices → Remove** to remove an old browser.
 
 If the browser reports that permission is denied, change its notification
-permission for this Tau site in browser settings, then return to Tau. If it says
+permission for this Ficus site in browser settings, then return to Ficus. If it says
 push is unsupported, use a supported browser or another notification channel.
 
 ## Choose how much an alert reveals
@@ -36,11 +36,11 @@ Live Activity rows also show work titles.
 Turn off **Show work titles and message previews** in your personal notification
 settings to conceal those details. Alerts then describe only the event and work
 number, such as **Work #42 needs your answer**, and Live Activity rows use the
-work number instead of the title. Open Tau to read the details.
+work number instead of the title. Open Ficus to read the details.
 
 In the mobile app, this switch is in Settings. The preference applies to your
-account on that Tau instance across devices. While enabled, preview text is sent
-through the configured delivery service (including the Tau relay, when used) and
+account on that Ficus instance across devices. While enabled, preview text is sent
+through the configured delivery service (including the Ficus relay, when used) and
 Apple or your browser's push service, and may appear on your lock screen. Squad
 updates to connected chat channels follow their own notification settings.
 
@@ -66,7 +66,7 @@ controlled by Cloud rather than editable in your tenant settings.
 <ModeContent mode="self-hosted">
 
 As an administrator, enable **Settings → Integrations → Web Push** and save a
-valid **Contact address**, using a `mailto:` address or HTTPS URL. Tau manages
+valid **Contact address**, using a `mailto:` address or HTTPS URL. Ficus manages
 the browser push signing keys. Use HTTPS for your public instance and then
 register the browser device above.
 
@@ -95,10 +95,10 @@ You can also subscribe from the target chat after linking your account (or trust
 the channel). The squad must be the one routed to that chat:
 
 ```text
-/tau notify <squad-name>
+/ficus notify <squad-name>
 ```
 
-Use `/tau unnotify <squad-name>` to unsubscribe, or choose **Clear** for that
+Use `/ficus unnotify <squad-name>` to unsubscribe, or choose **Clear** for that
 provider in the squad's notification settings and save.
 
 Instance notification rules determine which events are sent. Configuring a
@@ -115,5 +115,5 @@ chat finishes responding. It is separate from browser push registration.
 For a missing alert, check the destination, instance integration switch, your
 personal preferences, and browser or operating-system notification permissions.
 For a chat destination, also check bot membership and the squad's selected
-channel instance. Notifications link back to work in Tau; you can always return
+channel instance. Notifications link back to work in Ficus; you can always return
 to [the assistant](/use/assistant/) to inspect progress directly.

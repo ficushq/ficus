@@ -101,12 +101,12 @@ test('rendered tool entries keep a label: the summary or text when present, the 
     await dom.act(async () =>
       root.render(
         <VoiceTranscriptInspector
-          history={[{ role: 'tool' as const, text: '', final: true, toolName: 'search_tau' }]}
+          history={[{ role: 'tool' as const, text: '', final: true, toolName: 'search_ficus' }]}
           toolRenderers={siteAssistantToolRenderers}
         />
       )
     )
-    expect(document.body.textContent).toContain('search_tau')
+    expect(document.body.textContent).toContain('search_ficus')
   } finally {
     await dom.cleanup()
   }

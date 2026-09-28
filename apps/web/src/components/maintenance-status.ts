@@ -8,9 +8,9 @@ export function maintenanceStatusText(
   failed: boolean
 ): string {
   if (loading) return 'Loading maintenance state…'
-  if (failed || !maintenance) return 'Maintenance state is unavailable. Tau execution status is unknown.'
-  if (!maintenance.effective) return 'Tau is accepting agent work normally.'
+  if (failed || !maintenance) return 'Maintenance state is unavailable. Ficus execution status is unknown.'
+  if (!maintenance.effective) return 'Ficus is accepting agent work normally.'
   return maintenance.phase === 'pausing'
     ? 'Maintenance is starting and active turns are being safely interrupted.'
-    : 'Tau is paused. Submitted work is queued and resumes automatically.'
+    : 'Ficus is paused. Submitted work is queued and resumes automatically.'
 }

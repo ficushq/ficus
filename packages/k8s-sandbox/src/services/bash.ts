@@ -87,7 +87,7 @@ export async function reconcileBashRecord(
 }
 
 const bashInvocationRegistry = new BashInvocationRegistry({
-  runtimeDir: join(process.env.TAU_BOX_HOME ?? process.env.HOME ?? '/tmp', '.tau/runtime/bash-invocations'),
+  runtimeDir: join(process.env.FICUS_BOX_HOME ?? process.env.HOME ?? '/tmp', '.tau/runtime/bash-invocations'),
   reconcile: reconcileBashRecord,
 })
 
@@ -148,11 +148,11 @@ export function buildPreamble(opts: { sourceEnv: boolean; activateDevbox: boolea
     }
   }
 
-  if (process.env.TAU_BOX_HOME && process.env.TAU_DEVBOX_DIR) {
+  if (process.env.FICUS_BOX_HOME && process.env.FICUS_DEVBOX_DIR) {
     preamble += vmDevboxRouting + '\n'
   }
 
-  // Apply Tau's runtime normalization after devbox activation so Nix Python
+  // Apply Ficus's runtime normalization after devbox activation so Nix Python
   // native wheels see Nix runtime libraries and browser tooling uses /tmp.
   preamble += '[ -f /opt/sandbox/runtime-env.sh ] && . /opt/sandbox/runtime-env.sh\n'
 
@@ -318,7 +318,7 @@ export function handleBash(
 ): Response {
   const dependencies = { ...defaultBashDependencies, ...dependencyOverrides }
   // On a VM box, a logical cwd (/private, /workspace/<squadId>) is rebased onto
-  // the box HOME layout; identity on k8s/docker (TAU_BOX_HOME unset).
+  // the box HOME layout; identity on k8s/docker (FICUS_BOX_HOME unset).
   const cwd = rebaseLogicalRoot(req.cwd || getWorkspace())
   const sourceEnv = req.sourceEnv !== false
   const activateDevbox = req.activateDevbox !== false

@@ -3,7 +3,7 @@ import { pullAttachment } from './attachment-pull'
 import { sha256Hex } from '../inbox/attachment-storage'
 import { generateInstanceKeyPair, instanceIdFromPublicKeyPem } from './crypto'
 import { resetSettingsStore } from '../settings/store'
-import type { AmtpAttachmentRef } from '@tau/shared'
+import type { AmtpAttachmentRef } from '@ficus/shared'
 
 const { privateKeyPem, publicKeyPem } = generateInstanceKeyPair()
 const INSTANCE_ID = instanceIdFromPublicKeyPem(publicKeyPem)

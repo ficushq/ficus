@@ -12,7 +12,7 @@ function normalizeAddress(value: string | undefined | null): string | null {
 }
 
 function configuredTrustedProxies(): string[] {
-  return (process.env.TAU_TRUSTED_PROXY_ADDRESSES ?? '')
+  return (process.env.FICUS_TRUSTED_PROXY_ADDRESSES ?? '')
     .split(',')
     .map(normalizeAddress)
     .filter((address): address is string => address !== null)
@@ -32,7 +32,7 @@ export function resolveClientAddress(input: {
   if (!peerAddress) return 'unknown'
   const trusted = new Set((input.trustedProxies ?? []).map(normalizeAddress).filter(Boolean))
   // Core never terminates TLS, so every HTTPS deployment fronts it with caddy/nginx bound to
-  // the same host — the peer is always 127.0.0.1 and no deployment sets TAU_TRUSTED_PROXY_ADDRESSES.
+  // the same host — the peer is always 127.0.0.1 and no deployment sets FICUS_TRUSTED_PROXY_ADDRESSES.
   // Without this, every caller on the instance shares one rate-limit bucket. The trust is gated on
   // the PEER being loopback (something only a same-host process can be), never on a header, so a
   // remote caller still cannot forge its way into the chain.

@@ -108,7 +108,7 @@ export function InboxPopup() {
       {/* Popover dropdown */}
       <Presence
         open={isOpen}
-        className="tau-overlay fixed top-14 right-3 w-96 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-5rem)] z-50 flex flex-col origin-top-right"
+        className="ficus-overlay fixed top-14 right-3 w-96 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-5rem)] z-50 flex flex-col origin-top-right"
       >
         <div className="flex items-center justify-between px-4 py-3 ">
           <div className="flex items-center gap-2">
@@ -120,7 +120,7 @@ export function InboxPopup() {
               <button
                 onClick={() => markAllAsReadMutation.mutate()}
                 disabled={markAllAsReadMutation.isPending}
-                className="tau-button text-xs text-accent-light hover:underline disabled:opacity-50"
+                className="ficus-button text-xs text-accent-light hover:underline disabled:opacity-50"
               >
                 Mark all read
               </button>
@@ -128,7 +128,7 @@ export function InboxPopup() {
             <button
               onClick={() => setIsOpen(false)}
               aria-label="Close inbox"
-              className="tau-button rounded-lg text-muted hover:text-primary hover:bg-surface-hover p-2"
+              className="ficus-button rounded-lg text-muted hover:text-primary hover:bg-surface-hover p-2"
             >
               <CloseIcon />
             </button>
@@ -175,7 +175,7 @@ export function InboxPopup() {
                 <div className="mt-2 border-t border-panel-border pt-2">
                   <button
                     onClick={() => setShowRead(!showRead)}
-                    className="tau-button w-full px-4 py-2 flex items-center gap-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+                    className="ficus-button w-full px-4 py-2 flex items-center gap-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
                   >
                     {showRead ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
                     <span>Read messages ({readMessages.length})</span>

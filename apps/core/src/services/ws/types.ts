@@ -1,6 +1,6 @@
-import type { Topic } from '@tau/shared'
-export { isValidTopic } from '@tau/shared'
-export type { Topic, CollectionTopic, InstanceTopic } from '@tau/shared'
+import type { Topic } from '@ficus/shared'
+export { isValidTopic } from '@ficus/shared'
+export type { Topic, CollectionTopic, InstanceTopic } from '@ficus/shared'
 
 // Client -> Server messages
 export type ClientMessage = { type: 'subscribe'; topic: string } | { type: 'unsubscribe'; topic: string }

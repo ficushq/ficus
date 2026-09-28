@@ -1,4 +1,4 @@
-import { isLiveAgentStatus } from '@tau/shared'
+import { isLiveAgentStatus } from '@ficus/shared'
 import { randomUUID } from 'crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import { db as defaultDb } from '../../../db'

@@ -1,4 +1,4 @@
-// Hybrid shim: cross-platform auth comes from @tau/client-core; browser-only WebAuthn
+// Hybrid shim: cross-platform auth comes from @ficus/client-core; browser-only WebAuthn
 // ceremonies (which return @simplewebauthn/browser option types) stay here.
 import type {
   PublicKeyCredentialCreationOptionsJSON,
@@ -6,9 +6,9 @@ import type {
 } from '@simplewebauthn/browser'
 import { apiFetch } from './client'
 import { client } from './clientInstance'
-import type { AuthUser } from '@tau/client-core'
+import type { AuthUser } from '@ficus/client-core'
 
-export type { AuthStatus, AuthUser, AuthSettings, AuthValidation, PendingAdminAccount } from '@tau/client-core'
+export type { AuthStatus, AuthUser, AuthSettings, AuthValidation, PendingAdminAccount } from '@ficus/client-core'
 
 // ── Cross-platform (shared client-core) ─────────────────────────────────────
 export const getAuthStatus = client.auth.getAuthStatus

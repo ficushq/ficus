@@ -1,4 +1,4 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { Type } from '@sinclair/typebox'
 import type { AgentToolResult, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { Agent } from '../entities/Agent'

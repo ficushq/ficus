@@ -27,7 +27,7 @@ import {
   type WorkStreamWait,
   type WorkflowDefinition,
   type WorkflowRun,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   fitWorkflowGraph,
   placeNewWorkflowNodes,
@@ -91,7 +91,7 @@ export function WorkflowGraph({
   metadata?: Record<string, unknown>
 }) {
   const control = clsx(
-    'tau-button flex shrink-0 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40',
+    'ficus-button flex shrink-0 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40',
     onConnect ? 'h-8 w-8' : 'h-7 w-7'
   )
   const marker = useId().replaceAll(':', '') + '-flow-arrow'
@@ -920,7 +920,7 @@ export function WorkflowGraph({
                     {editable && step && selected === node.id && onDeleteStep && (
                       <button
                         type="button"
-                        className="tau-button absolute z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-status-danger-500/10 hover:text-status-danger-400"
+                        className="ficus-button absolute z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-status-danger-500/10 hover:text-status-danger-400"
                         style={{ left: node.x + W - 35, top: node.y + 5 }}
                         title={`Delete ${node.label} (Delete or Backspace)`}
                         onClick={onDeleteStep}
@@ -1034,7 +1034,7 @@ export function WorkflowGraph({
           >
             <div
               role="alert"
-              className="tau-overlay pointer-events-auto flex max-w-lg items-start gap-3 rounded-lg border border-th-border bg-surface p-4 text-sm shadow-lg"
+              className="ficus-overlay pointer-events-auto flex max-w-lg items-start gap-3 rounded-lg border border-th-border bg-surface p-4 text-sm shadow-lg"
             >
               <div className="min-w-0 flex-1 space-y-2 break-words">
                 <p className="font-medium leading-5 text-status-attention-400">Workflow needs attention</p>
@@ -1044,7 +1044,7 @@ export function WorkflowGraph({
               <button
                 type="button"
                 aria-label="Dismiss workflow warning"
-                className="tau-button shrink-0 p-1 text-muted"
+                className="ficus-button shrink-0 p-1 text-muted"
                 onClick={onDismissNotice}
               >
                 <CloseIcon className="h-4 w-4" />

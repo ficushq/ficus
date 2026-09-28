@@ -1,6 +1,6 @@
 import { listedAssistantConversation } from './assistant-conversation-query'
 import { sql, type SQL } from 'drizzle-orm'
-import { entitySearchQuerySchema, type EntitySearchResult } from '@tau/shared'
+import { entitySearchQuerySchema, type EntitySearchResult } from '@ficus/shared'
 import { db, squads, workStreams, agents, assistantConversations } from '../db'
 import {
   getAccessibleSquadIds,

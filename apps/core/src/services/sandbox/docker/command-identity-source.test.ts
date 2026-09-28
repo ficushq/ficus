@@ -18,16 +18,16 @@ describe('Docker sandbox image source contract', () => {
     expect(dockerfile).toContain('apps/core/docker-sandbox/command-identity.json')
   })
 
-  // packages/k8s-sandbox depends on @tau/shared as `workspace:*`; a bare copy of
+  // packages/k8s-sandbox depends on @ficus/shared as `workspace:*`; a bare copy of
   // its package.json + src cannot `bun install` outside the monorepo. Both
   // executor images must vendor the member and declare the workspace first —
   // the docker-socket setup path broke silently when the dependency arrived.
-  test('both executor images vendor @tau/shared as a workspace member before installing', () => {
+  test('both executor images vendor @ficus/shared as a workspace member before installing', () => {
     const k8sDockerfile = readFileSync(resolve(repoRoot, 'packages/k8s-sandbox/Dockerfile'), 'utf8')
     const executorDeps = JSON.parse(readFileSync(resolve(repoRoot, 'packages/k8s-sandbox/package.json'), 'utf8')) as {
       dependencies: Record<string, string>
     }
-    expect(executorDeps.dependencies['@tau/shared']).toBe('workspace:*')
+    expect(executorDeps.dependencies['@ficus/shared']).toBe('workspace:*')
     for (const [name, text] of [
       ['apps/core/docker-sandbox/Dockerfile', dockerfile],
       ['packages/k8s-sandbox/Dockerfile', k8sDockerfile],
@@ -43,7 +43,7 @@ describe('Docker sandbox image source contract', () => {
         const at = text.indexOf(line)
         expect({ name, line, beforeInstall: at > -1 && at < install }).toEqual({ name, line, beforeInstall: true })
       }
-      expect(text).toContain("require('@tau/shared/advisory-lock')")
+      expect(text).toContain("require('@ficus/shared/advisory-lock')")
     }
   })
 

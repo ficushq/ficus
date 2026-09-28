@@ -1,4 +1,4 @@
-import { artifactReferenceSchema as sharedArtifactReferenceSchema } from '@tau/shared'
+import { artifactReferenceSchema as sharedArtifactReferenceSchema } from '@ficus/shared'
 import {
   editArtifactFile,
   getArtifactContext,
@@ -255,7 +255,7 @@ export function createArtifactTools(deps: ArtifactToolDependencies) {
       type: 'function',
       name: 'request_artifact',
       description:
-        'Voice-only tool to create, continue, ask about, archive, delete, or fork a visual/app/canvas artifact through Tau background work. Use action "ask" for informational questions about an existing artifact that require the artifact builder\'s knowledge but should not change the artifact. A successful result is only a background work acknowledgement; it does not mean Tau has performed, published, answered, or displayed the requested work yet. Tell the user Tau is working on it or checking without mentioning requests, routing, delivery, queues, builders, agents, tools, or handoffs. Wait for a later inbox/artifact confirmation before saying the answer or artifact is ready.',
+        'Voice-only tool to create, continue, ask about, archive, delete, or fork a visual/app/canvas artifact through Ficus background work. Use action "ask" for informational questions about an existing artifact that require the artifact builder\'s knowledge but should not change the artifact. A successful result is only a background work acknowledgement; it does not mean Ficus has performed, published, answered, or displayed the requested work yet. Tell the user Ficus is working on it or checking without mentioning requests, routing, delivery, queues, builders, agents, tools, or handoffs. Wait for a later inbox/artifact confirmation before saying the answer or artifact is ready.',
       parameters: {
         type: 'object',
         properties: {
@@ -280,7 +280,7 @@ export function createArtifactTools(deps: ArtifactToolDependencies) {
           brief: {
             type: 'string',
             description:
-              'Required self-contained brief for Tau background work. Include goal, expected UX/output, data/context, constraints, and acceptance criteria.',
+              'Required self-contained brief for Ficus background work. Include goal, expected UX/output, data/context, constraints, and acceptance criteria.',
           },
           references: voiceArtifactReferencesParameterSchema,
           answers: voiceArtifactAnswersParameterSchema,
@@ -310,8 +310,8 @@ export function createArtifactTools(deps: ArtifactToolDependencies) {
           ...(result.inboxDeliveryFailed ? { inboxDeliveryFailed: true, message: result.message } : {}),
           requestReceipt:
             input.action === 'ask'
-              ? 'Tau is checking the artifact details. Tell the user only that you are checking and will let them know. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not answer until a separate inbox response arrives.'
-              : 'Background artifact work has started. Tell the user only that Tau is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
+              ? 'Ficus is checking the artifact details. Tell the user only that you are checking and will let them know. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not answer until a separate inbox response arrives.'
+              : 'Background artifact work has started. Tell the user only that Ficus is working on it and will let them know when it is available. Do not mention requests, routing, delivery, queues, builders, agents, tools, or handoffs. Do not say the artifact is ready, updated, refreshed, changed, or complete until a separate artifact update/publication event arrives.',
         }
       }
       return result

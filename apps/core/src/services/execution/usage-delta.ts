@@ -1,4 +1,4 @@
-import type { SessionUsage, UsageTokens } from '@tau/shared'
+import type { SessionUsage, UsageTokens } from '@ficus/shared'
 
 /**
  * Per-execution usage accounting.

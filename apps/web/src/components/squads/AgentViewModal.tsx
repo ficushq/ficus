@@ -9,7 +9,7 @@ import { AgentWorkStreamsPanel } from './AgentWorkStreamsPanel'
 import { AgentContextPanel } from './AgentContextPanel'
 import { AgentInfoPanel } from '../AgentInfoPanel'
 import { ChatIcon, InboxIcon, WorkStreamIcon, MemoryIcon } from '../icons'
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { getAgentName, getAgentPurpose } from '../../lib/agentDisplay'
 
 export function getAgentHeaderTitleParts(agent: Agent): { title: string; suffix: string } {

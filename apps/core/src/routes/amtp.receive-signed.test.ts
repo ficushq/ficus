@@ -14,9 +14,9 @@ import { Peer } from '../entities/Peer'
 import { InstanceIdentity } from '../entities/InstanceIdentity'
 import { AmtpKnownKey } from '../entities/AmtpKnownKey'
 import { generateInstanceKeyPair, instanceIdFromPublicKeyPem, signEnvelope } from '../services/amtp/crypto'
-import { formatAmtpAddress, canonicalAgentSigBytes } from '@tau/shared'
+import { formatAmtpAddress, canonicalAgentSigBytes } from '@ficus/shared'
 import { ensureAgentIdentity, agentIdentityHostPath } from '../services/amtp/agent-identity'
-import type { AmtpEnvelope } from '@tau/shared'
+import type { AmtpEnvelope } from '@ficus/shared'
 
 const app = new Hono()
 app.use('/api/*', identityMiddleware)

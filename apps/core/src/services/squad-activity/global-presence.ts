@@ -1,4 +1,4 @@
-import { workStreamNeedsHumanAttention, type GlobalActivityPresence } from '@tau/shared'
+import { workStreamNeedsHumanAttention, type GlobalActivityPresence } from '@ficus/shared'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, workStreams } from '../../db/schema'

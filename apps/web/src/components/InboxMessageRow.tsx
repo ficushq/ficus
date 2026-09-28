@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
-import { isWorkspaceVoiceRecipient, type Squad } from '@tau/shared'
+import { isWorkspaceVoiceRecipient, type Squad } from '@ficus/shared'
 import type { InboxMessageResponse } from '../api/inbox'
 import { apiUrl } from '../api/client'
 import { MarkdownContent } from './MarkdownContent'
@@ -102,7 +102,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
                       e.stopPropagation()
                       onMarkAsRead()
                     }}
-                    className="tau-button -my-1 min-h-[32px] py-1 text-accent-light hover:underline"
+                    className="ficus-button -my-1 min-h-[32px] py-1 text-accent-light hover:underline"
                   >
                     Mark read
                   </button>
@@ -123,7 +123,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
                 e.stopPropagation()
                 onMarkAsRead()
               }}
-              className="tau-button text-xs text-accent-light hover:underline shrink-0"
+              className="ficus-button text-xs text-accent-light hover:underline shrink-0"
             >
               {compact ? 'Read' : 'Mark read'}
             </button>
@@ -136,7 +136,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
             e.stopPropagation()
             setExpanded(!expanded)
           }}
-          className="tau-button p-1 -mr-1 text-placeholder hover:text-secondary shrink-0 md:mr-0"
+          className="ficus-button p-1 -mr-1 text-placeholder hover:text-secondary shrink-0 md:mr-0"
           aria-expanded={expanded}
           aria-label={expanded ? 'Collapse' : 'Expand'}
         >
@@ -210,7 +210,7 @@ export function SectionHeader({ title, count, collapsible, collapsed, onToggle }
       <button
         onClick={onToggle}
         aria-expanded={!collapsed}
-        className={clsx('tau-button', 'w-full px-3 py-2 hover:bg-surface-hover text-left')}
+        className={clsx('ficus-button', 'w-full px-3 py-2 hover:bg-surface-hover text-left')}
       >
         {content}
       </button>

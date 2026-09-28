@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import type { SquadMemoryGrantDTO } from '@tau/shared'
+import type { SquadMemoryGrantDTO } from '@ficus/shared'
 import { queries } from '../../../queryOptions'
 import { useSquadSlugs } from '../../../hooks/useSquadSlugs'
 import { useLoadingShapeCount } from '../../../hooks/useLoadingShapeCount'

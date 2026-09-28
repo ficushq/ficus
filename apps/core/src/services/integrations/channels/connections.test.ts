@@ -42,11 +42,16 @@ async function wipe() {
 }
 
 beforeEach(async () => {
-  for (const key of [...legacyChannelCredentialKeys, 'TAU_ENCRYPTION_KEY', 'TAU_MANAGED', 'TAU_MANAGED_SECRET_KEYS']) {
+  for (const key of [
+    ...legacyChannelCredentialKeys,
+    'FICUS_ENCRYPTION_KEY',
+    'FICUS_MANAGED',
+    'FICUS_MANAGED_SECRET_KEYS',
+  ]) {
     priorEnv.set(key, process.env[key])
     delete process.env[key]
   }
-  process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+  process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   startedAt = new Date()
   await wipe()
   resetSecretStore()
@@ -294,8 +299,8 @@ test('legacy secret keys migrate into a connection once and keep serving as the 
 })
 
 test('platform-managed material is neither migrated nor editable, and still serves the transport', async () => {
-  process.env.TAU_MANAGED = '1'
-  process.env.TAU_MANAGED_SECRET_KEYS = 'SLACK_BOT_TOKEN,SLACK_SIGNING_SECRET'
+  process.env.FICUS_MANAGED = '1'
+  process.env.FICUS_MANAGED_SECRET_KEYS = 'SLACK_BOT_TOKEN,SLACK_SIGNING_SECRET'
   process.env.SLACK_BOT_TOKEN = 'platform-token'
   process.env.SLACK_SIGNING_SECRET = 'platform-signing'
   resetSecretStore()

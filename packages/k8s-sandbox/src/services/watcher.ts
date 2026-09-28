@@ -1,7 +1,7 @@
 /**
  * Workspace File Watcher
  *
- * Watches the workspace directory for file changes and sends updates to Tau Core.
+ * Watches the workspace directory for file changes and sends updates to Ficus Core.
  * Uses chokidar for FS watching and micromatch for glob filtering.
  */
 
@@ -26,7 +26,7 @@ const DEFAULT_EXCLUDES = [
 interface WatchConfig {
   include: string[]
   exclude: string[]
-  coreCallbackUrl?: string // Optional override; defaults to TAU_API_URL env var
+  coreCallbackUrl?: string // Optional override; defaults to FICUS_API_URL env var
   squadId: string
 }
 
@@ -159,7 +159,7 @@ const log = (msg: string) => {
 /**
  * Read the secret for authenticating callbacks to core. Prefers the dedicated
  * SANDBOX_CALLBACK_SECRET (env var or mounted K8s Secret file at
- * /etc/tau/sandbox-callback-secret), falling back to the legacy TAU_PASSWORD for
+ * /etc/tau/sandbox-callback-secret), falling back to the legacy FICUS_PASSWORD for
  * transition.
  */
 function getAuthPassword(): string {
@@ -168,7 +168,7 @@ function getAuthPassword(): string {
   if (existsSync(callbackSecretPath)) {
     return readFileSync(callbackSecretPath, 'utf-8').trim()
   }
-  if (process.env.TAU_PASSWORD) return process.env.TAU_PASSWORD
+  if (process.env.FICUS_PASSWORD) return process.env.FICUS_PASSWORD
   const secretPath = '/etc/tau/password'
   if (existsSync(secretPath)) {
     return readFileSync(secretPath, 'utf-8').trim()
@@ -467,7 +467,7 @@ export class WorkspaceWatcher {
 
   private getCallbackUrl(): string {
     if (this.config?.coreCallbackUrl) return this.config.coreCallbackUrl
-    const apiUrl = process.env.TAU_API_URL || 'http://localhost:3000'
+    const apiUrl = process.env.FICUS_API_URL || 'http://localhost:3000'
     return `${apiUrl}/api/memory/${this.config!.squadId}/workspace-files`
   }
 

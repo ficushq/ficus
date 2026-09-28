@@ -6,7 +6,7 @@ import {
   relayInstanceTokenPattern,
   relayRoutingSchema,
   type RelayRouting,
-} from '@tau/shared/push-relay'
+} from '@ficus/shared/push-relay'
 
 const log = createLogger('push-relay')
 
@@ -38,14 +38,14 @@ function validateRelayBaseUrl(candidate: string): string | null {
 }
 
 /**
- * Resolve the push-relay origin: `TAU_PUSH_RELAY_URL` (Core-specific override)
- * → `TAU_PLATFORM_BASE_URL` (the same fleet artifact the OAuth broker already
+ * Resolve the push-relay origin: `FICUS_PUSH_RELAY_URL` (Core-specific override)
+ * → `FICUS_PLATFORM_BASE_URL` (the same fleet artifact the OAuth broker already
  * reuses on hosted tenants) → the built-in default. Whichever candidate wins
  * is validated; an invalid value is logged once and the built-in default is
  * used rather than silently trying the next tier or an unverifiable origin.
  */
 export function resolvePushRelayBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
-  const candidate = env.TAU_PUSH_RELAY_URL?.trim() || env.TAU_PLATFORM_BASE_URL?.trim()
+  const candidate = env.FICUS_PUSH_RELAY_URL?.trim() || env.FICUS_PLATFORM_BASE_URL?.trim()
   if (!candidate) return PUSH_RELAY_BASE_URL
   const validated = validateRelayBaseUrl(candidate)
   if (validated) return validated
@@ -58,10 +58,10 @@ export function resolvePushRelayBaseUrl(env: NodeJS.ProcessEnv = process.env): s
 
 /** Runtime-only credential; never a Secret Store value or squad environment input. */
 export function pushRelayConfig(env?: NodeJS.ProcessEnv) {
-  const token = (env ? env.TAU_PUSH_RELAY_TOKEN : getSecretStore().get('TAU_PUSH_RELAY_TOKEN'))?.trim()
+  const token = (env ? env.FICUS_PUSH_RELAY_TOKEN : getSecretStore().get('FICUS_PUSH_RELAY_TOKEN'))?.trim()
   if (!token) return null
   const match = relayInstanceTokenPattern.exec(token)
-  if (!match) throw new Error('TAU_PUSH_RELAY_TOKEN must be a push-only instance credential')
+  if (!match) throw new Error('FICUS_PUSH_RELAY_TOKEN must be a push-only instance credential')
   return { token, instanceId: match[1], baseUrl: resolvePushRelayBaseUrl(env) }
 }
 
@@ -136,5 +136,5 @@ export async function enrollInstancePro(input: { publicKey: string; label: strin
     await response.body?.cancel()
     throw new Error('Cloud enrollment is unavailable')
   }
-  return (await response.json()) as import('@tau/shared/push-relay').ActivationChallenge
+  return (await response.json()) as import('@ficus/shared/push-relay').ActivationChallenge
 }

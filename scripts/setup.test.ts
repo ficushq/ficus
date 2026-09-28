@@ -12,7 +12,7 @@ if (!SH) throw new Error('test environment has no `sh` on PATH')
 let tmp: string
 let log: string
 beforeEach(() => {
-  tmp = mkdtempSync(join(tmpdir(), 'tau-setup-sh-'))
+  tmp = mkdtempSync(join(tmpdir(), 'ficus-setup-sh-'))
   log = join(tmp, 'log')
   mkdirSync(join(tmp, 'bin'))
   // PATH for `run()` below is ONLY tmp/bin — no /usr/bin, no /bin — so a
@@ -20,7 +20,7 @@ beforeEach(() => {
   // on macOS, and reachable via /bin on Linux distros where /bin is itself a
   // symlink into /usr/bin — excluding /usr/bin alone doesn't hide it there).
   // setup.sh invokes bare `sh` twice (`sh -c "curl | sh"`), and the fake
-  // installer below needs `cat`/`mkdir`/`chmod` to build the fake tau binary,
+  // installer below needs `cat`/`mkdir`/`chmod` to build the fake ficus binary,
   // so the stub dir must provide those too — symlink the real ones in.
   for (const cmd of ['sh', 'cat', 'mkdir', 'chmod']) {
     const real = Bun.which(cmd)
@@ -30,21 +30,23 @@ beforeEach(() => {
   // The installer body goes through two nested shells (the outer `sh -c "curl
   // | sh"` and the piped-into `sh`), each of which is a fresh, argument-less
   // shell — so a `$*` embedded via nested echo/printf quoting gets prematurely
-  // expanded to empty before it ever reaches the fake tau script. Write the
+  // expanded to empty before it ever reaches the fake ficus script. Write the
   // installer body to a file instead and have the curl stub `cat` it; the
-  // heredoc that creates the fake tau uses a quoted delimiter so `$*` survives
-  // into the fake tau's own source, to be expanded only when tau itself runs.
+  // heredoc that creates the fake ficus uses a quoted delimiter so `$*` survives
+  // into the fake ficus's own source, to be expanded only when ficus itself runs.
   const installer = join(tmp, 'installer.sh')
   writeFileSync(
     installer,
-    `#!/bin/sh\nmkdir -p "$HOME/.tau/bin"\ncat > "$HOME/.tau/bin/tau" <<'TAUEOF'\n#!/bin/sh\necho "tau $*" >> ${log}\nTAUEOF\nchmod +x "$HOME/.tau/bin/tau"\n`
+    `#!/bin/sh\nmkdir -p "$HOME/.tau/bin"\ncat > "$HOME/.tau/bin/ficus" <<'FICUSEOF'\n#!/bin/sh\necho "ficus $*" >> ${log}\nFICUSEOF\nchmod +x "$HOME/.tau/bin/ficus"\n`
   )
   // stub curl: record argv, then hand the installer body to the `| sh` pipe
-  // TAU_INSTALL_AUTH is logged too: setup.sh must install the CLI without the
-  // installer's auth prompt (it runs unattended under `curl | bash`).
+  // FICUS_INSTALL_AUTH is logged too: setup.sh must install the CLI without the
+  // installer's auth prompt (it runs unattended under `curl | bash`). The
+  // TAU_INSTALL_AUTH twin is logged as well (K1): during the rename window the
+  // published installer may predate setup.sh, so setup.sh hands it both names.
   writeFileSync(
     join(tmp, 'bin', 'curl'),
-    `#!/bin/sh\necho "curl $* TAU_INSTALL_AUTH=$TAU_INSTALL_AUTH" >> "${log}"\ncat "${installer}"\n`
+    `#!/bin/sh\necho "curl $* FICUS_INSTALL_AUTH=$FICUS_INSTALL_AUTH TAU_INSTALL_AUTH=$TAU_INSTALL_AUTH" >> "${log}"\ncat "${installer}"\n`
   )
   writeFileSync(join(tmp, 'bin', 'git'), `#!/bin/sh\nexit 0\n`)
   chmodSync(join(tmp, 'bin', 'curl'), 0o755)
@@ -62,25 +64,59 @@ function run(args: string[], env: Record<string, string> = {}) {
 }
 
 describe('scripts/setup.sh', () => {
-  it('installs the CLI without auth prompts, then runs tau server install with pass-through args', () => {
+  it('installs the CLI without auth prompts, then runs ficus server install with pass-through args', () => {
     const r = run(['--runtime', 'host', '--yes'])
     expect(r.exitCode).toBe(0)
     const lines = readFileSync(log, 'utf8').trim().split('\n')
-    expect(lines[0]).toBe('curl -fsSL https://ficus.sh/cli/install.sh TAU_INSTALL_AUTH=0')
-    expect(lines[1]).toBe('tau server install --runtime host --yes')
+    // K1: both *_INSTALL_AUTH names reach the installer.
+    expect(lines[0]).toBe('curl -fsSL https://ficus.sh/cli/install.sh FICUS_INSTALL_AUTH=0 TAU_INSTALL_AUTH=0')
+    expect(lines[1]).toBe('ficus server install --runtime host --yes')
   })
-  it('honours TAU_INSTALL_URL', () => {
-    const r = run([], { TAU_INSTALL_URL: 'https://example/i.sh' })
+  it('honours FICUS_INSTALL_URL', () => {
+    const r = run([], { FICUS_INSTALL_URL: 'https://example/i.sh' })
     expect(r.exitCode).toBe(0)
     expect(readFileSync(log, 'utf8')).toContain('curl -fsSL https://example/i.sh')
   })
-  it('skips the CLI install when the binary exists and TAU_SETUP_SKIP_CLI_INSTALL=1', () => {
-    mkdirSync(join(tmp, '.tau', 'bin'), { recursive: true })
-    writeFileSync(join(tmp, '.tau', 'bin', 'tau'), `#!/bin/sh\necho "tau $*" >> "${log}"\n`)
-    chmodSync(join(tmp, '.tau', 'bin', 'tau'), 0o755)
-    const r = run(['--dry-run'], { TAU_SETUP_SKIP_CLI_INSTALL: '1' })
+  // D5: only the two *_INSTALL_AUTH names keep a TAU_ spelling (K1). Every
+  // other setup input is read under its FICUS_ name only.
+  it('ignores TAU_INSTALL_URL given alone', () => {
+    const r = run([], { TAU_INSTALL_URL: 'https://example/legacy.sh' }) // legacy-env (D5: ignored)
     expect(r.exitCode).toBe(0)
-    expect(readFileSync(log, 'utf8').trim()).toBe('tau server install --dry-run')
+    const log0 = readFileSync(log, 'utf8')
+    expect(log0).toContain('curl -fsSL https://ficus.sh/cli/install.sh')
+    expect(log0).not.toContain('legacy.sh')
+  })
+  it('ignores TAU_INSTALL_API_URL given alone', () => {
+    const r = run([], { TAU_INSTALL_API_URL: 'https://example/legacy-api' }) // legacy-env (D5: ignored)
+    expect(r.exitCode).toBe(0)
+    expect(readFileSync(log, 'utf8')).not.toContain('legacy-api')
+  })
+  it('ignores TAU_INSTALL_DIR given alone: the CLI is looked for in the default directory', () => {
+    const r = run([], { TAU_INSTALL_DIR: join(tmp, 'elsewhere') }) // legacy-env (D5: ignored)
+    expect(r.exitCode).toBe(0)
+    expect(readFileSync(log, 'utf8').trim().split('\n')[1]).toBe('ficus server install')
+  })
+  it('skips the CLI install when the binary exists and FICUS_SETUP_SKIP_CLI_INSTALL=1', () => {
+    mkdirSync(join(tmp, '.tau', 'bin'), { recursive: true })
+    writeFileSync(join(tmp, '.tau', 'bin', 'ficus'), `#!/bin/sh\necho "ficus $*" >> "${log}"\n`)
+    chmodSync(join(tmp, '.tau', 'bin', 'ficus'), 0o755)
+    const r = run(['--dry-run'], { FICUS_SETUP_SKIP_CLI_INSTALL: '1' })
+    expect(r.exitCode).toBe(0)
+    expect(readFileSync(log, 'utf8').trim()).toBe('ficus server install --dry-run')
+  })
+  it('ignores TAU_SETUP_SKIP_CLI_INSTALL given alone: the CLI is (re)installed', () => {
+    mkdirSync(join(tmp, '.tau', 'bin'), { recursive: true })
+    writeFileSync(join(tmp, '.tau', 'bin', 'ficus'), `#!/bin/sh\necho "ficus $*" >> "${log}"\n`)
+    chmodSync(join(tmp, '.tau', 'bin', 'ficus'), 0o755)
+    const r = run(['--dry-run'], { TAU_SETUP_SKIP_CLI_INSTALL: '1' }) // legacy-env (D5: ignored)
+    expect(r.exitCode).toBe(0)
+    expect(readFileSync(log, 'utf8')).toContain('curl -fsSL https://ficus.sh/cli/install.sh')
+  })
+  it('fails when the installer produced no ficus binary', () => {
+    writeFileSync(join(tmp, 'installer.sh'), '#!/bin/sh\nexit 0\n')
+    const r = run([])
+    expect(r.exitCode).not.toBe(0)
+    expect(new TextDecoder().decode(r.stderr)).toContain('.tau/bin/ficus')
   })
   it('fails clearly without git', () => {
     rmSync(join(tmp, 'bin', 'git'))

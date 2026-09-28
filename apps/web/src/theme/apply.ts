@@ -1,4 +1,4 @@
-import type { EffectiveAppearance } from '@tau/shared'
+import type { EffectiveAppearance } from '@ficus/shared'
 import type { WebThemeDefinition } from './registry'
 
 /**

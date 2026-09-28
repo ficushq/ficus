@@ -120,7 +120,7 @@ import { getAgentQuestions } from './api/agentQuestions'
 import { getSystemTokens } from './api/systemTokens'
 import { getInstanceIdentity, listPeers, getAgentFederationStatus, listAgentAllowRules } from './api/amtp'
 import { getOnboardingStatus } from './api/onboarding'
-import type { NormalizedSquadActivityFilters, ThemePresetScope } from '@tau/shared'
+import type { NormalizedSquadActivityFilters, ThemePresetScope } from '@ficus/shared'
 
 /**
  * Centralized query option factories.
@@ -724,7 +724,7 @@ export const queries = {
      * Seat billing for the instance. Admin-only (users:read), same gate as the
      * list — only fetch it behind that gate.
      *
-     * The key is declared here rather than in @tau/client-core's queryKeys
+     * The key is declared here rather than in @ficus/client-core's queryKeys
      * because the admin Users page is its only consumer (same reasoning as
      * UserListEntry in api/users.ts). It sits UNDER `users.all` on purpose: the
      * invite/delete/disable mutations already invalidate that prefix, so the

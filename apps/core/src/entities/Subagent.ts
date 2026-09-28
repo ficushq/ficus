@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
-import { LIVE_AGENT_STATUSES, isLiveAgentStatus, type AgentStatus } from '@tau/shared'
+import { LIVE_AGENT_STATUSES, isLiveAgentStatus, type AgentStatus } from '@ficus/shared'
 import { agents, db, withDedicatedDbTransaction } from '../db'
 import { Agent, AgentTargetUnavailableError } from './Agent'
 import { InboxMessage } from './InboxMessage'

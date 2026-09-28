@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { listSquadAgents } from '../../api/squads'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
 import { CanvasSkeleton } from '../loading/Skeleton'
-import { AGENT_STATUS_ROLE, type Squad, type SquadRelationship, type Agent } from '@tau/shared'
+import { AGENT_STATUS_ROLE, type Squad, type SquadRelationship, type Agent } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 

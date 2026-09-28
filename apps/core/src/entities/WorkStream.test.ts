@@ -1,7 +1,7 @@
 import * as schema from '../db/schema'
 import * as repositorySetup from '../services/work-streams/repository-setup'
 import { storedLegacyWorkStream } from '../test-utils/stored-legacy-work-stream'
-import { createBlankWorkflow } from '@tau/shared'
+import { createBlankWorkflow } from '@ficus/shared'
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { eq, like, inArray, and, sql } from 'drizzle-orm'
 import { Squad } from './Squad'
@@ -2581,7 +2581,7 @@ describe('WorkStream entity', () => {
       expect(content).toContain(
         `A new work stream you now own was started by the consultant agent Neon (${creator.id}).`
       )
-      expect(content).toContain(`Query it with \`tau workstream get ${ws.number}\` to see the full details.`)
+      expect(content).toContain(`Query it with \`ficus workstream get ${ws.number}\` to see the full details.`)
     })
 
     it('identifies human creators by display name and email', async () => {
@@ -2596,7 +2596,7 @@ describe('WorkStream entity', () => {
 
       const content = await getWorkStreamInboxContent(ws.id, 'created', manager!.id)
       expect(content).toContain(`A new work stream you now own was started by the user Noah (${user.email}).`)
-      expect(content).toContain(`Query it with \`tau workstream get ${ws.number}\` to see the full details.`)
+      expect(content).toContain(`Query it with \`ficus workstream get ${ws.number}\` to see the full details.`)
     })
 
     it('does not notify when creator equals owner', async () => {

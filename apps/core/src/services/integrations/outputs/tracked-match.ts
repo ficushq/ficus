@@ -3,7 +3,7 @@ import {
   trackedResourceMatches,
   type IntegrationOutputFact,
   type TrackedResourceKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { integrationOutputRegistry } from './registry'
 import type { integrationOutputEvents } from '../../../db'
 

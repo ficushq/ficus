@@ -71,7 +71,7 @@ export async function isExeBacked(
 export const DEFAULT_EXE_MACHINE_IMAGE = 'ghcr.io/ficushq/ficus-machine:latest'
 
 /**
- * Resolve the OCI image exe VMs boot from, configured via `TAU_EXE_MACHINE_IMAGE`:
+ * Resolve the OCI image exe VMs boot from, configured via `FICUS_EXE_MACHINE_IMAGE`:
  *   - unset  ⇒ {@link DEFAULT_EXE_MACHINE_IMAGE} (the prebaked ficus-machine image).
  *   - a value ⇒ that image ref (a tenant override — e.g. a pinned tag).
  *   - EMPTY  ⇒ `undefined`, meaning "use exe's own default image" (the provider
@@ -82,7 +82,7 @@ export const DEFAULT_EXE_MACHINE_IMAGE = 'ghcr.io/ficushq/ficus-machine:latest'
  * exe-api.ts `createVm`); that plumbing is intentionally not built here.
  */
 export function getExeMachineImage(): string | undefined {
-  const raw = process.env.TAU_EXE_MACHINE_IMAGE
+  const raw = process.env.FICUS_EXE_MACHINE_IMAGE
   if (raw === undefined) return DEFAULT_EXE_MACHINE_IMAGE
   return raw === '' ? undefined : raw
 }

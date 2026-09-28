@@ -1,4 +1,4 @@
-import type { ExecutionStatus } from '@tau/shared'
+import type { ExecutionStatus } from '@ficus/shared'
 
 /** States that preserve the one-active-execution invariant. */
 export const ACTIVE_EXECUTION_STATUSES = [

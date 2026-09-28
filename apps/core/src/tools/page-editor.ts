@@ -4,7 +4,7 @@ import {
   assistantEditorReadSchema,
   assistantEditorReadParameters,
   assistantEditorReadResult,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { z } from 'zod'
 import { Type } from '@sinclair/typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'

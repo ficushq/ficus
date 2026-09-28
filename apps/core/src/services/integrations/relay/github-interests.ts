@@ -4,8 +4,8 @@ import {
   resolveTrackedResources,
   integrationValueAt,
   type WorkflowEventTrigger,
-} from '@tau/shared'
-import { githubRepositoryKey } from '@tau/shared/integration-relay'
+} from '@ficus/shared'
+import { githubRepositoryKey } from '@ficus/shared/integration-relay'
 import { isRepositoryPattern } from '../github/repository-enumeration'
 import { findGitHubPrUrl, type WorkStreamCandidate } from '../github/watch-policy'
 

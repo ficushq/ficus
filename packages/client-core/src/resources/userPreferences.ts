@@ -1,4 +1,4 @@
-import type { MyThemePreferences, ThemePreference } from '@tau/shared'
+import type { MyThemePreferences, ThemePreference } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 export function userPreferencesResource(t: Transport) {

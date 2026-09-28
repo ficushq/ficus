@@ -1,5 +1,5 @@
 import { posix as path } from 'node:path'
-import type { CreateWorkStreamInput, WorktreeOwnership } from '@tau/shared'
+import type { CreateWorkStreamInput, WorktreeOwnership } from '@ficus/shared'
 
 export class RepositorySetupError extends Error {}
 
@@ -9,7 +9,7 @@ export type RepositorySetupInput = Pick<
 >
 export type RepositoryExec = (args: string[]) => Promise<string>
 
-export type { WorktreeOwnership } from '@tau/shared'
+export type { WorktreeOwnership } from '@ficus/shared'
 
 type RecordOwnership = (ownership: WorktreeOwnership) => unknown
 

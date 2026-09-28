@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
 import { Hono } from 'hono'
+import { CORE_ROOT_PACKAGE_NAMES } from '@ficus/shared/identity'
 import { mountCoreDocs } from '../../lib/docs-serve'
 import { resolveCoreDocsDist } from '../../lib/web-dist'
 import {
   assembleCoreArtifact,
   defaultRun,
   formatTrailer,
+  GENERATED_ROOT_MARKER,
   type Run,
   type RunResult,
 } from '../../../../../scripts/artifact/lib/assemble-core-artifact'
@@ -52,6 +54,7 @@ async function makeCheckout(): Promise<string> {
   await write(join(root, 'apps/core/dist/migrate.js'), 'core migrate bundle\n')
   await write(join(root, 'apps/core/dist/smoke-configured-extensions.js'), 'configured extension smoke bundle\n')
   await write(join(root, 'apps/core/dist/box-control.js'), 'operator box control bundle\n')
+  await write(join(root, 'apps/core/dist/system-token-control.js'), 'system token control bundle\n')
   // Not part of the layout: dist holds build detritus that must not ship.
   await write(join(root, 'apps/core/dist/tsconfig.tsbuildinfo'), '{"detritus":true}\n')
 
@@ -72,9 +75,9 @@ async function makeCheckout(): Promise<string> {
   await write(join(root, 'apps/web/dist/assets/app.js'), 'console.log(1)\n')
   await write(join(root, 'apps/web/dist/.DS_Store'), 'finder junk')
 
-  await write(join(root, 'apps/cli/dist/tau.js'), '#!/usr/bin/env bun\n')
-  await chmod(join(root, 'apps/cli/dist/tau.js'), 0o755)
-  await write(join(root, 'apps/cli/dist/skills/tau-memory/SKILL.md'), '# memory\n')
+  await write(join(root, 'apps/cli/dist/ficus.js'), '#!/usr/bin/env bun\n')
+  await chmod(join(root, 'apps/cli/dist/ficus.js'), 0o755)
+  await write(join(root, 'apps/cli/dist/skills/ficus-memory/SKILL.md'), '# memory\n')
 
   await write(join(root, 'config/agent/agent.md'), '# agent\n')
   await write(
@@ -86,7 +89,7 @@ async function makeCheckout(): Promise<string> {
   await mkdir(join(root, 'config/agent/extensions/code-ast/node_modules/.bin'), { recursive: true })
   await symlink('../typescript/package.json', join(root, 'config/agent/extensions/code-ast/node_modules/.bin/tsc-link'))
 
-  for (const name of ['server.js', 'librust_pty.so', 'tau.js', 'bootstrap.sh', 'box-provision.sh']) {
+  for (const name of ['server.js', 'librust_pty.so', 'ficus.js', 'bootstrap.sh', 'box-provision.sh']) {
     await write(join(root, 'machine', name), `machine ${name}\n`)
   }
 
@@ -203,12 +206,13 @@ describe('assembleCoreArtifact', () => {
     const files = Object.keys(await computeFilesMap(tree)).sort()
     expect(files).toEqual(
       [
-        'apps/cli/dist/skills/tau-memory/SKILL.md',
-        'apps/cli/dist/tau.js',
+        'apps/cli/dist/skills/ficus-memory/SKILL.md',
+        'apps/cli/dist/ficus.js',
         'apps/core/dist/box-control.js',
         'apps/core/dist/index.js',
         'apps/core/dist/migrate.js',
         'apps/core/dist/smoke-configured-extensions.js',
+        'apps/core/dist/system-token-control.js',
         'apps/core/dist/worker.js',
         'apps/core/docker-sandbox/command-identity.json',
         'apps/core/docker-sandbox/devbox.json',
@@ -228,7 +232,7 @@ describe('assembleCoreArtifact', () => {
         'machine/box-provision.sh',
         'machine/librust_pty.so',
         'machine/server.js',
-        'machine/tau.js',
+        'machine/ficus.js',
         'node_modules/bun-pty/index.js',
         'package.json',
       ].sort()
@@ -239,8 +243,8 @@ describe('assembleCoreArtifact', () => {
     expect(await (await app.request('/docs/')).text()).toBe('docs home')
     expect(await (await app.request('/docs/pagefind/pagefind.js')).text()).toBe('search')
     expect((await app.request('/docs/unknown/')).status).toBe(404)
-    // The executable bit survives the copy (tau.js is exec'd on the box).
-    expect((await stat(join(tree, 'apps/cli/dist/tau.js'))).mode & 0o111).not.toBe(0)
+    // The executable bit survives the copy (ficus.js is exec'd on the box).
+    expect((await stat(join(tree, 'apps/cli/dist/ficus.js'))).mode & 0o111).not.toBe(0)
   })
 
   it('names the tarball for the native build target and returns the trailer values', async () => {
@@ -343,11 +347,11 @@ describe('assembleCoreArtifact', () => {
     // Generated, NOT copied: the fixture checkout's own root package.json has
     // devDependencies and a real workspaces list.
     const marker = await readFile(join(tree, 'package.json'), 'utf8')
-    expect(marker.trim()).toBe('{"name":"tau","private":true,"workspaces":[]}')
+    expect(marker.trim()).toBe('{"name":"ficus","private":true,"workspaces":[]}')
 
     // apps/core/src/lib/web-dist.ts walks UP from the running bundle's
-    // directory looking for a package.json named "tau" (or carrying a
-    // workspaces array) and then expects <root>/apps/web/dist. Without the
+    // directory looking for a package.json named "ficus" or "tau" (or carrying
+    // a workspaces array) and then expects <root>/apps/web/dist. Without the
     // marker the search falls off the top of the tree and the API mounts no
     // web UI at all. This mirrors that walk.
     let dir = join(tree, 'apps/core/dist')
@@ -356,7 +360,7 @@ describe('assembleCoreArtifact', () => {
       const candidate = join(dir, 'package.json')
       if (await pathExists(candidate)) {
         const json = JSON.parse(await readFile(candidate, 'utf8'))
-        if (json.name === 'tau' || Array.isArray(json.workspaces)) found = dir
+        if (CORE_ROOT_PACKAGE_NAMES.includes(json.name) || Array.isArray(json.workspaces)) found = dir
       }
       const parent = dirname(dir)
       if (parent === dir) break
@@ -364,6 +368,16 @@ describe('assembleCoreArtifact', () => {
     }
     expect(found).toBe(tree)
     expect(await pathExists(join(found!, 'apps/web/dist/index.html'))).toBe(true)
+  })
+
+  it('marks the artifact as a Ficus release (the toolkit keys the env rename on it)', async () => {
+    const rootPackage = JSON.parse(await readFile(join(import.meta.dir, '../../../../../package.json'), 'utf8'))
+    expect(JSON.parse(GENERATED_ROOT_MARKER).name).toBe(rootPackage.name)
+    const { result } = await assemble()
+    const tree = await extract(result.tarballPath)
+    expect(JSON.parse(await readFile(join(tree, 'package.json'), 'utf8')).name).toBe('ficus')
+    expect(JSON.parse(await readFile(result.manifestPath, 'utf8')).envPrefix).toBe('FICUS')
+    expect(JSON.parse(await readFile(join(tree, 'artifact.json'), 'utf8')).envPrefix).toBe('FICUS')
   })
 
   it('drops node_modules/.bin directories, whose shims cannot survive materialization', async () => {
@@ -395,7 +409,7 @@ describe('assembleCoreArtifact', () => {
     const fake = makeRun()
     const { result } = await assemble({ smoke: true }, fake)
 
-    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 28 })
+    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 29 })
     expect(fake.calls).toContainEqual([
       'bun',
       expect.stringMatching(/apps\/core\/dist\/smoke-configured-extensions\.js$/),
@@ -459,9 +473,13 @@ describe('build-core-artifact.sh', () => {
     // localhost, so a build that somehow reaches the DB fails fast instead of
     // hanging on an unroutable host.
     expect(script).toContain('postgres://build:build@localhost:5432/build')
-    expect(script).toContain('unset TAU_TEST_MODE')
-    expect(script).toContain('unset TAU_ROOT')
-    expect(script).toContain('unset TAU_REPO_ROOT')
+    // Both spellings for one release (Ficus rename): the in-process bridge
+    // would promote an inherited TAU_ name to FICUS_ inside the build.
+    for (const prefix of ['FICUS', 'TAU']) {
+      expect(script).toContain(`unset ${prefix}_TEST_MODE`)
+      expect(script).toContain(`unset ${prefix}_ROOT`)
+      expect(script).toContain(`unset ${prefix}_REPO_ROOT`)
+    }
   })
 
   it('installs reproducibly and prebuilds the machine bundles as a subprocess', async () => {

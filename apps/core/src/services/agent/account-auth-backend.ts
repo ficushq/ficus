@@ -11,7 +11,7 @@
  * rotated/logged-in credential.
  */
 import type { Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai'
-import { routeDecision } from '@tau/shared/provider-health'
+import { routeDecision } from '@ficus/shared/provider-health'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
 import { providerHealth } from '../provider-health/registry'
 import { selectAccount } from './account-selection'

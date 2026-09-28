@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { AGENT_STATUS_ROLE, type AgentStatus } from '@tau/shared'
+import { AGENT_STATUS_ROLE, type AgentStatus } from '@ficus/shared'
 import { AGENT_STATUS_LABELS } from '../lib/agentDisplay'
 import { webStatus } from '../lib/statusPresentation'
 

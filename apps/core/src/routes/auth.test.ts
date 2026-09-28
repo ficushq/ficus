@@ -54,7 +54,7 @@ function bearerHeader(token: string): Record<string, string> {
 }
 
 async function clearStoredTauPassword() {
-  await db.delete(secrets).where(eq(secrets.key, 'TAU_PASSWORD'))
+  await db.delete(secrets).where(eq(secrets.key, 'FICUS_PASSWORD'))
   resetSecretStore()
 }
 
@@ -74,9 +74,9 @@ afterEach(resetAuthTestState)
 // ── Auth Status Endpoint ─────────────────────────────────────────────────────
 
 describe('GET /api/auth/status', () => {
-  it('returns authEnabled: false when TAU_PASSWORD is not set and no admin users', async () => {
-    const original = process.env.TAU_PASSWORD
-    delete process.env.TAU_PASSWORD
+  it('returns authEnabled: false when FICUS_PASSWORD is not set and no admin users', async () => {
+    const original = process.env.FICUS_PASSWORD
+    delete process.env.FICUS_PASSWORD
 
     try {
       const app = buildApp()
@@ -89,13 +89,13 @@ describe('GET /api/auth/status', () => {
       expect(body.hasUsers).toBe(false)
       expect(body.hasAdminUser).toBe(false)
     } finally {
-      if (original !== undefined) process.env.TAU_PASSWORD = original
+      if (original !== undefined) process.env.FICUS_PASSWORD = original
     }
   })
 
-  it('returns authEnabled: true when TAU_PASSWORD is set', async () => {
-    const original = process.env.TAU_PASSWORD
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+  it('returns authEnabled: true when FICUS_PASSWORD is set', async () => {
+    const original = process.env.FICUS_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
 
     try {
       const app = buildApp()
@@ -107,14 +107,14 @@ describe('GET /api/auth/status', () => {
       expect(body.mode).toBe('password')
       expect(body.hasAdminUser).toBe(false)
     } finally {
-      if (original !== undefined) process.env.TAU_PASSWORD = original
-      else delete process.env.TAU_PASSWORD
+      if (original !== undefined) process.env.FICUS_PASSWORD = original
+      else delete process.env.FICUS_PASSWORD
     }
   })
 
   it('is accessible without authentication even when auth is enabled', async () => {
-    const original = process.env.TAU_PASSWORD
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    const original = process.env.FICUS_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
 
     try {
       const app = buildApp()
@@ -125,8 +125,8 @@ describe('GET /api/auth/status', () => {
       const body = await res.json()
       expect(body.authEnabled).toBe(true)
     } finally {
-      if (original !== undefined) process.env.TAU_PASSWORD = original
-      else delete process.env.TAU_PASSWORD
+      if (original !== undefined) process.env.FICUS_PASSWORD = original
+      else delete process.env.FICUS_PASSWORD
     }
   })
 })
@@ -194,16 +194,16 @@ describe('POST /api/auth/login', () => {
   let original: string | undefined
 
   beforeEach(() => {
-    original = process.env.TAU_PASSWORD
+    original = process.env.FICUS_PASSWORD
   })
 
   afterEach(() => {
-    if (original !== undefined) process.env.TAU_PASSWORD = original
-    else delete process.env.TAU_PASSWORD
+    if (original !== undefined) process.env.FICUS_PASSWORD = original
+    else delete process.env.FICUS_PASSWORD
   })
 
   it('succeeds with correct password', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildApp()
 
     const res = await app.request('/api/auth/login', {
@@ -218,7 +218,7 @@ describe('POST /api/auth/login', () => {
   })
 
   it('returns 401 with wrong password', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildApp()
 
     const res = await app.request('/api/auth/login', {
@@ -233,7 +233,7 @@ describe('POST /api/auth/login', () => {
   })
 
   it('returns 401 with empty password', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildApp()
 
     const res = await app.request('/api/auth/login', {
@@ -246,7 +246,7 @@ describe('POST /api/auth/login', () => {
   })
 
   it('returns 401 with missing password field', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildApp()
 
     const res = await app.request('/api/auth/login', {
@@ -261,7 +261,7 @@ describe('POST /api/auth/login', () => {
   })
 
   it('succeeds without password when auth is disabled', async () => {
-    delete process.env.TAU_PASSWORD
+    delete process.env.FICUS_PASSWORD
     const app = buildApp()
 
     const res = await app.request('/api/auth/login', {
@@ -276,7 +276,7 @@ describe('POST /api/auth/login', () => {
   })
 
   it('is accessible without Authorization header (login is unprotected)', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildApp()
 
     // Login endpoint should be reachable without a Bearer token
@@ -290,7 +290,7 @@ describe('POST /api/auth/login', () => {
   })
 
   it('rejects password with different length (timing-safe)', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildApp()
 
     const res = await app.request('/api/auth/login', {
@@ -303,7 +303,7 @@ describe('POST /api/auth/login', () => {
   })
 
   it('rejects password with same length but wrong content', async () => {
-    process.env.TAU_PASSWORD = 'abcdef'
+    process.env.FICUS_PASSWORD = 'abcdef'
     const app = buildApp()
 
     const res = await app.request('/api/auth/login', {
@@ -322,17 +322,17 @@ describe('authMiddleware', () => {
   let original: string | undefined
 
   beforeEach(() => {
-    original = process.env.TAU_PASSWORD
+    original = process.env.FICUS_PASSWORD
   })
 
   afterEach(() => {
-    if (original !== undefined) process.env.TAU_PASSWORD = original
-    else delete process.env.TAU_PASSWORD
+    if (original !== undefined) process.env.FICUS_PASSWORD = original
+    else delete process.env.FICUS_PASSWORD
   })
 
   describe('when auth is enabled', () => {
     beforeEach(() => {
-      process.env.TAU_PASSWORD = TEST_PASSWORD
+      process.env.FICUS_PASSWORD = TEST_PASSWORD
     })
 
     it('allows requests with correct Bearer token', async () => {
@@ -441,9 +441,9 @@ describe('authMiddleware', () => {
     })
   })
 
-  describe('when no TAU_PASSWORD is set', () => {
+  describe('when no FICUS_PASSWORD is set', () => {
     beforeEach(() => {
-      delete process.env.TAU_PASSWORD
+      delete process.env.FICUS_PASSWORD
     })
 
     it('rejects requests without Authorization header (identity middleware always requires auth)', async () => {
@@ -456,7 +456,7 @@ describe('authMiddleware', () => {
       expect(body.error).toBe('Authentication required')
     })
 
-    it('rejects requests with unknown token when no TAU_PASSWORD is set', async () => {
+    it('rejects requests with unknown token when no FICUS_PASSWORD is set', async () => {
       const app = buildApp()
 
       const res = await app.request('/api/protected', {
@@ -466,8 +466,8 @@ describe('authMiddleware', () => {
       expect(res.status).toBe(401)
     })
 
-    it('rejects requests when TAU_PASSWORD is empty string', async () => {
-      process.env.TAU_PASSWORD = ''
+    it('rejects requests when FICUS_PASSWORD is empty string', async () => {
+      process.env.FICUS_PASSWORD = ''
       const app = buildApp()
 
       const res = await app.request('/api/protected')
@@ -483,13 +483,13 @@ describe('route protection order', () => {
   let original: string | undefined
 
   beforeEach(() => {
-    original = process.env.TAU_PASSWORD
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    original = process.env.FICUS_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
   })
 
   afterEach(() => {
-    if (original !== undefined) process.env.TAU_PASSWORD = original
-    else delete process.env.TAU_PASSWORD
+    if (original !== undefined) process.env.FICUS_PASSWORD = original
+    else delete process.env.FICUS_PASSWORD
   })
 
   it('auth/status is accessible without token', async () => {
@@ -529,12 +529,12 @@ describe('WebSocket auth', () => {
   let original: string | undefined
 
   beforeEach(() => {
-    original = process.env.TAU_PASSWORD
+    original = process.env.FICUS_PASSWORD
   })
 
   afterEach(() => {
-    if (original !== undefined) process.env.TAU_PASSWORD = original
-    else delete process.env.TAU_PASSWORD
+    if (original !== undefined) process.env.FICUS_PASSWORD = original
+    else delete process.env.FICUS_PASSWORD
   })
 
   // Build an app with the WS auth guard (without the actual upgradeWebSocket
@@ -542,7 +542,7 @@ describe('WebSocket auth', () => {
   function buildWsApp() {
     const app = new Hono()
     app.get('/ws', (c) => {
-      const password = process.env.TAU_PASSWORD
+      const password = process.env.FICUS_PASSWORD
       if (password) {
         const token = new URL(c.req.url).searchParams.get('token')
         if (token !== password) {
@@ -555,7 +555,7 @@ describe('WebSocket auth', () => {
   }
 
   it('allows connection without token when auth is disabled', async () => {
-    delete process.env.TAU_PASSWORD
+    delete process.env.FICUS_PASSWORD
     const app = buildWsApp()
 
     const res = await app.request('/ws')
@@ -563,7 +563,7 @@ describe('WebSocket auth', () => {
   })
 
   it('allows connection with correct token', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildWsApp()
 
     const res = await app.request(`/ws?token=${TEST_PASSWORD}`)
@@ -571,7 +571,7 @@ describe('WebSocket auth', () => {
   })
 
   it('rejects connection without token when auth is enabled', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildWsApp()
 
     const res = await app.request('/ws')
@@ -579,7 +579,7 @@ describe('WebSocket auth', () => {
   })
 
   it('rejects connection with wrong token', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildWsApp()
 
     const res = await app.request('/ws?token=wrong')
@@ -587,7 +587,7 @@ describe('WebSocket auth', () => {
   })
 
   it('rejects connection with empty token', async () => {
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildWsApp()
 
     const res = await app.request('/ws?token=')
@@ -596,7 +596,7 @@ describe('WebSocket auth', () => {
 
   it('handles URL-encoded token', async () => {
     const specialPassword = 'p@ss w0rd!'
-    process.env.TAU_PASSWORD = specialPassword
+    process.env.FICUS_PASSWORD = specialPassword
     const app = buildWsApp()
 
     const res = await app.request(`/ws?token=${encodeURIComponent(specialPassword)}`)
@@ -610,17 +610,17 @@ describe('auth edge cases', () => {
   let original: string | undefined
 
   beforeEach(() => {
-    original = process.env.TAU_PASSWORD
+    original = process.env.FICUS_PASSWORD
   })
 
   afterEach(() => {
-    if (original !== undefined) process.env.TAU_PASSWORD = original
-    else delete process.env.TAU_PASSWORD
+    if (original !== undefined) process.env.FICUS_PASSWORD = original
+    else delete process.env.FICUS_PASSWORD
   })
 
   it('handles special characters in password', async () => {
     const specialPassword = 'p@$$w0rd!#%^&*(){}[]|\\:";<>?,./~`'
-    process.env.TAU_PASSWORD = specialPassword
+    process.env.FICUS_PASSWORD = specialPassword
     const app = buildApp()
 
     // Login with special chars
@@ -640,7 +640,7 @@ describe('auth edge cases', () => {
 
   it('handles unicode password via login endpoint', async () => {
     const unicodePassword = 'pässwörd☃🔒'
-    process.env.TAU_PASSWORD = unicodePassword
+    process.env.FICUS_PASSWORD = unicodePassword
     const app = buildApp()
 
     // Login with unicode password works (JSON body, not header)
@@ -662,7 +662,7 @@ describe('auth edge cases', () => {
 
   it('handles very long password', async () => {
     const longPassword = 'a'.repeat(10000)
-    process.env.TAU_PASSWORD = longPassword
+    process.env.FICUS_PASSWORD = longPassword
     const app = buildApp()
 
     const res = await app.request('/api/protected', {
@@ -672,7 +672,7 @@ describe('auth edge cases', () => {
   })
 
   it('password comparison is exact (no trimming)', async () => {
-    process.env.TAU_PASSWORD = 'password'
+    process.env.FICUS_PASSWORD = 'password'
     const app = buildApp()
 
     // Leading space
@@ -693,7 +693,7 @@ describe('auth edge cases', () => {
   })
 
   it('password comparison is case-sensitive', async () => {
-    process.env.TAU_PASSWORD = 'MyPassword'
+    process.env.FICUS_PASSWORD = 'MyPassword'
     const app = buildApp()
 
     const res = await app.request('/api/auth/login', {
@@ -704,9 +704,9 @@ describe('auth edge cases', () => {
     expect(res.status).toBe(401)
   })
 
-  it('dynamically responds to env changes for TAU_PASSWORD', async () => {
+  it('dynamically responds to env changes for FICUS_PASSWORD', async () => {
     // Start with a password set
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     const app = buildApp()
 
     // Correct token works
@@ -720,7 +720,7 @@ describe('auth edge cases', () => {
     expect(res2.status).toBe(401)
 
     // Change password
-    process.env.TAU_PASSWORD = 'new-password'
+    process.env.FICUS_PASSWORD = 'new-password'
 
     // Old password no longer works
     const res3 = await app.request('/api/protected', {
@@ -856,8 +856,8 @@ describe('POST /api/auth/login with admin users', () => {
   // In the test DB (clean state), no admin users exist, so password login works.
   // We verify the behavior indirectly: when no admin users, password login works.
   it('password login works when no admin users exist', async () => {
-    const original = process.env.TAU_PASSWORD
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    const original = process.env.FICUS_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     try {
       const app = buildApp()
       const res = await app.request('/api/auth/login', {
@@ -869,8 +869,8 @@ describe('POST /api/auth/login with admin users', () => {
       const body = await res.json()
       expect(body.ok).toBe(true)
     } finally {
-      if (original !== undefined) process.env.TAU_PASSWORD = original
-      else delete process.env.TAU_PASSWORD
+      if (original !== undefined) process.env.FICUS_PASSWORD = original
+      else delete process.env.FICUS_PASSWORD
     }
   })
 })
@@ -1013,21 +1013,21 @@ describe('invite-only registration', () => {
 
 // ── First-admin bootstrap gate (public-subdomain takeover defense) ────────────
 
-describe('first-admin bootstrap gate (TAU_PASSWORD provisioned)', () => {
+describe('first-admin bootstrap gate (FICUS_PASSWORD provisioned)', () => {
   let originalPw: string | undefined
   let originalFrom: string | undefined
 
   beforeEach(() => {
-    originalPw = process.env.TAU_PASSWORD
+    originalPw = process.env.FICUS_PASSWORD
     originalFrom = process.env.SES_FROM_ADDRESS
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     // Force emailConfigured=false so an ungated first-user path WOULD hand back the code.
     delete process.env.SES_FROM_ADDRESS
   })
 
   afterEach(() => {
-    if (originalPw !== undefined) process.env.TAU_PASSWORD = originalPw
-    else delete process.env.TAU_PASSWORD
+    if (originalPw !== undefined) process.env.FICUS_PASSWORD = originalPw
+    else delete process.env.FICUS_PASSWORD
     if (originalFrom !== undefined) process.env.SES_FROM_ADDRESS = originalFrom
     else delete process.env.SES_FROM_ADDRESS
   })
@@ -1191,13 +1191,13 @@ describe('first-admin bootstrap gate (TAU_PASSWORD provisioned)', () => {
   })
 })
 
-describe('first-run stays ungated with no TAU_PASSWORD (bare local install)', () => {
+describe('first-run stays ungated with no FICUS_PASSWORD (bare local install)', () => {
   let originalFrom: string | undefined
 
   beforeEach(() => {
     originalFrom = process.env.SES_FROM_ADDRESS
     delete process.env.SES_FROM_ADDRESS
-    delete process.env.TAU_PASSWORD
+    delete process.env.FICUS_PASSWORD
   })
 
   afterEach(() => {
@@ -1223,13 +1223,13 @@ describe('finishing first-admin setup from the bootstrap session', () => {
   let originalPw: string | undefined
 
   beforeEach(() => {
-    originalPw = process.env.TAU_PASSWORD
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    originalPw = process.env.FICUS_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
   })
 
   afterEach(() => {
-    if (originalPw !== undefined) process.env.TAU_PASSWORD = originalPw
-    else delete process.env.TAU_PASSWORD
+    if (originalPw !== undefined) process.env.FICUS_PASSWORD = originalPw
+    else delete process.env.FICUS_PASSWORD
   })
 
   async function validate(token: string) {
@@ -1733,15 +1733,15 @@ describe('POST /api/auth/login canonical admin lockout', () => {
 
   it('returns 403 when a canonical admin holds a passkey (legacy password lockout)', async () => {
     const { createTestAdmin, createTestCredential, cleanupTestRbac } = await import('../test-utils/rbac')
-    const original = process.env.TAU_PASSWORD
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    const original = process.env.FICUS_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     // Canonical admin (slug='admin') WITH a passkey → password auth disabled.
     const admin = await createTestAdmin({ prefix: 'login-lockout', canonicalAdmin: true })
     await createTestCredential({ userId: admin.id })
     cleanup = async () => {
       await cleanupTestRbac('login-lockout')
-      if (original !== undefined) process.env.TAU_PASSWORD = original
-      else delete process.env.TAU_PASSWORD
+      if (original !== undefined) process.env.FICUS_PASSWORD = original
+      else delete process.env.FICUS_PASSWORD
     }
 
     const app = buildApp()
@@ -1757,14 +1757,14 @@ describe('POST /api/auth/login canonical admin lockout', () => {
 
   it('accepts the password in the restored state (canonical admin exists, zero credentials)', async () => {
     const { createTestAdmin, cleanupTestRbac } = await import('../test-utils/rbac')
-    const original = process.env.TAU_PASSWORD
-    process.env.TAU_PASSWORD = TEST_PASSWORD
+    const original = process.env.FICUS_PASSWORD
+    process.env.FICUS_PASSWORD = TEST_PASSWORD
     // Restore state: admin/role rows survive, origin-bound credentials stripped.
     await createTestAdmin({ prefix: 'login-restore', canonicalAdmin: true })
     cleanup = async () => {
       await cleanupTestRbac('login-restore')
-      if (original !== undefined) process.env.TAU_PASSWORD = original
-      else delete process.env.TAU_PASSWORD
+      if (original !== undefined) process.env.FICUS_PASSWORD = original
+      else delete process.env.FICUS_PASSWORD
     }
 
     const app = buildApp()
@@ -2056,7 +2056,7 @@ describe('server capability discovery', () => {
       const publicServer = (await publicResponse.json()).server
       expect((await privateResponse.json()).server).toEqual(publicServer)
       expect(publicServer).toMatchObject({
-        product: 'tau',
+        product: 'ficus',
         apiVersion: 1,
         capabilities: { 'workstreams.workflow-runs': 1, 'auth.signup-default-role': 1 },
       })

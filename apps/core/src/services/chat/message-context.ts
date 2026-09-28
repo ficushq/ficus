@@ -1,4 +1,4 @@
-import { chatPagePathSchema, type MessageMetadata } from '@tau/shared'
+import { chatPagePathSchema, type MessageMetadata } from '@ficus/shared'
 
 /** Attach client navigation data only for model delivery; never rewrite the saved user text. */
 export function messageTextForModel(message: { content: string; metadata?: MessageMetadata | null }): string {

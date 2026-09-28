@@ -6,7 +6,7 @@ import {
 } from '../structured-input'
 import { registerWorkstreamFlowCommands } from './workstream-flow'
 import { Command } from 'commander'
-import { workflowPresetSchema, workflowSourceSchema } from '@tau/shared'
+import { workflowPresetSchema, workflowSourceSchema } from '@ficus/shared'
 import { apiGet, apiPost, apiPut, apiDelete, apiGetRaw } from '../client'
 import { output, outputError } from '../output'
 

@@ -1,4 +1,4 @@
-import type { Attention, WorkStream } from '@tau/shared'
+import type { Attention, WorkStream } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 /** The caller's attention for one stream. `inherited` means the levels came from the squad row. */

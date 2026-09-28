@@ -4,7 +4,7 @@ import {
   openRouterEndpointForDirectProvider,
   openRouterEndpointForModelId,
   openRouterSpecForDirect,
-} from '@tau/shared/openrouter-tier-expansion'
+} from '@ficus/shared/openrouter-tier-expansion'
 import type { DynamicModelCatalog } from '../../lib/utils/model-spec'
 
 export { openRouterSpecForDirect }

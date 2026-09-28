@@ -22,8 +22,8 @@ test('CI credential seeding refuses non-CI, inherited databases, and missing sec
     GITHUB_ACTIONS: 'true',
     DATABASE_URL: 'postgres://postgres:postgres@localhost:5433/tau_local_setup',
     GH_TOKEN: 'fixture-token',
-    TAU_PASSWORD: 'fixture-password',
-    TAU_ENCRYPTION_KEY: '0'.repeat(64),
+    FICUS_PASSWORD: 'fixture-password',
+    FICUS_ENCRYPTION_KEY: '0'.repeat(64),
   }
   expect(() => assertLocalSetupFixtureEnvironment(env)).not.toThrow()
   for (const key of Object.keys(env)) {

@@ -1,4 +1,4 @@
-import { SANDBOX_PROCESS_SIGNALS, type SandboxProcesses, type SandboxProcessSignal } from '@tau/shared'
+import { SANDBOX_PROCESS_SIGNALS, type SandboxProcesses, type SandboxProcessSignal } from '@ficus/shared'
 import { createLogger } from '../../lib/infra/logger'
 import type { Identity } from '../rbac/permissions'
 import { SandboxHttpError, type SandboxClient } from './k8s/http-client'

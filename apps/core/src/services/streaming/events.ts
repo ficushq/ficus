@@ -1,5 +1,5 @@
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
-import type { MessageToolCall, MessageMetadata, ContentBlock } from '@tau/shared'
+import type { MessageToolCall, MessageMetadata, ContentBlock } from '@ficus/shared'
 import type { StreamBuffer } from './buffer'
 
 const AUTO_RETRY_TRANSIENT_ID = 'auto-retry'

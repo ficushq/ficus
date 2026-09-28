@@ -24,7 +24,7 @@ import {
   type CredentialInfo,
   type CredentialStore,
 } from '@earendil-works/pi-ai'
-import { providerLabel, resolveProviderHealthRecord, type ProviderHealthKind } from '@tau/shared'
+import { providerLabel, resolveProviderHealthRecord, type ProviderHealthKind } from '@ficus/shared'
 import { db, modelTiers } from '../db'
 import { detectLocalServers, probeOpenAICompatible } from '../services/model-selection/openai-compatible'
 import { getModelRuntime, refreshModelRuntime, tryGetModelRuntime } from '../services/agent/auth-backend'
@@ -540,7 +540,7 @@ function isCredentialHealth(provider: string, accountId?: string): boolean {
  * Clear a provider's exhaustion records early.
  *
  * Cooldowns are an estimate: when a provider's window resets ahead of the
- * `retryAt` Tau recorded, the operator would otherwise have to wait out a
+ * `retryAt` Ficus recorded, the operator would otherwise have to wait out a
  * window that is already over. This clears the provider record AND every one of
  * its accounts, since an exhausted account keeps the provider unusable on its
  * own. Nothing is asserted about the upstream state — the next failure re-marks

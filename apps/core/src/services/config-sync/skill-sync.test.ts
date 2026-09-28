@@ -149,7 +149,7 @@ describe('SkillSync', () => {
     const filePath = join(SKILLS_DIR, 'view-system-logs', 'SKILL.md')
     await expect(stat(filePath)).resolves.toBeDefined()
     const md = await readFile(filePath, 'utf8')
-    expect(md).toContain('tau system logs')
+    expect(md).toContain('ficus system logs')
     expect(parseSkillMarkdown(md, 'view-system-logs').requiredPermission).toBe('system:logs')
   })
 })

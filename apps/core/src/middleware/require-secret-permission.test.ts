@@ -72,7 +72,7 @@ describe('requireSecretKeyPermission / requireSecretListAccess', () => {
     expect(allowed.status).toBe(200)
     expect(await allowed.json()).toEqual({ ok: true, authzChecked: true })
 
-    expect((await app.request('/secret/TAU_PASSWORD', { headers: authHeaders(user.token) })).status).toBe(403)
+    expect((await app.request('/secret/FICUS_PASSWORD', { headers: authHeaders(user.token) })).status).toBe(403)
 
     const list = await app.request('/secrets', { headers: authHeaders(user.token) })
     expect(list.status).toBe(200)
@@ -84,7 +84,7 @@ describe('requireSecretKeyPermission / requireSecretListAccess', () => {
     const admin = await createTestAdmin({ prefix: PREFIX, canonicalAdmin: true })
 
     expect((await app.request('/secret/GITHUB_TOKEN', { headers: authHeaders(admin.token) })).status).toBe(200)
-    expect((await app.request('/secret/TAU_PASSWORD', { headers: authHeaders(admin.token) })).status).toBe(200)
+    expect((await app.request('/secret/FICUS_PASSWORD', { headers: authHeaders(admin.token) })).status).toBe(200)
     expect((await app.request('/secret/UNMATCHED_KEY', { headers: authHeaders(admin.token) })).status).toBe(200)
     expect((await app.request('/secrets', { headers: authHeaders(admin.token) })).status).toBe(200)
   })

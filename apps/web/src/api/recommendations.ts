@@ -2,7 +2,7 @@ import type {
   OperationsRecommendationDetail,
   OperationsRecommendationPage,
   OperationsRecommendationStatus,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { apiFetch, authFetch } from './client'
 export interface ListRecommendationsParams {
   status?: OperationsRecommendationStatus

@@ -52,31 +52,31 @@ describe('crypto', () => {
   })
 
   describe('getEncryptionKey', () => {
-    const originalKey = process.env.TAU_ENCRYPTION_KEY
+    const originalKey = process.env.FICUS_ENCRYPTION_KEY
 
     afterAll(() => {
       if (originalKey) {
-        process.env.TAU_ENCRYPTION_KEY = originalKey
+        process.env.FICUS_ENCRYPTION_KEY = originalKey
       } else {
-        delete process.env.TAU_ENCRYPTION_KEY
+        delete process.env.FICUS_ENCRYPTION_KEY
       }
     })
 
     test('reads hex key from env', () => {
       const hex = randomBytes(32).toString('hex')
-      process.env.TAU_ENCRYPTION_KEY = hex
+      process.env.FICUS_ENCRYPTION_KEY = hex
       const key = getEncryptionKey()
       expect(key.length).toBe(32)
       expect(key.toString('hex')).toBe(hex)
     })
 
     test('throws if not set', () => {
-      delete process.env.TAU_ENCRYPTION_KEY
-      expect(() => getEncryptionKey()).toThrow('TAU_ENCRYPTION_KEY environment variable is required')
+      delete process.env.FICUS_ENCRYPTION_KEY
+      expect(() => getEncryptionKey()).toThrow('FICUS_ENCRYPTION_KEY environment variable is required')
     })
 
     test('derives key via SHA-256 for non-hex strings', () => {
-      process.env.TAU_ENCRYPTION_KEY = 'abcd'
+      process.env.FICUS_ENCRYPTION_KEY = 'abcd'
       const key = getEncryptionKey()
       expect(key).toBeInstanceOf(Buffer)
       expect(key.length).toBe(32)

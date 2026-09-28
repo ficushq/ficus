@@ -2,7 +2,7 @@ import { chmod, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeHeapSnapshot } from 'node:v8'
 
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 export interface HeapSnapshotOptions {
   role: 'api' | 'worker'

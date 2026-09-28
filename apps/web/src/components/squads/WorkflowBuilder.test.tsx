@@ -6,7 +6,7 @@ import {
   createBlankWorkflow,
   workflowPresetSchema,
   type WorkflowSource,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { integrationQueries, queries } from '../../queryOptions'
 import { acquireDomHarness } from '../../test/domHarness'
@@ -237,7 +237,7 @@ test('assistant edits apply directly, share undo history, and cannot overwrite n
   cache.setQueryData(integrationQueries.outputs().queryKey, [])
   cache.setQueryData(queries.voice.status().queryKey, { enabled: false })
   let id = ''
-  let stored: import('@tau/shared').AssistantEditorState
+  let stored: import('@ficus/shared').AssistantEditorState
   let bridge: ReturnType<typeof useAssistantConversationBridge>
   let value: WorkflowSource | undefined
   let graphPositions: Record<string, { x: number; y: number }> = {}

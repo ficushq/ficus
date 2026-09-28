@@ -1,4 +1,4 @@
-import { workflowSourceSchema } from '@tau/shared'
+import { workflowSourceSchema } from '@ficus/shared'
 import { and, eq, lte, isNotNull, isNull, desc, or, sql, inArray, type SQL } from 'drizzle-orm'
 import { CronExpressionParser } from 'cron-parser'
 import { db } from '../db'
@@ -24,7 +24,7 @@ import {
   type ScheduleAttemptSource,
 } from '../services/scheduling/health-store'
 import { scheduleHealthNotifier } from '../services/scheduling/failure-notifications'
-import { isLiveAgentStatus } from '@tau/shared'
+import { isLiveAgentStatus } from '@ficus/shared'
 import { acquireAgentQueueLock } from '../services/execution/agent-admission'
 import type { DbTransaction } from '../services/machines/queries'
 
@@ -40,7 +40,7 @@ import type {
   WebhookEnableResult,
   WebhookTriggerResult,
   ScheduleHealthStatus,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 type ScheduleRow = typeof schedules.$inferSelect
 

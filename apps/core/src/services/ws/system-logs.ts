@@ -1,7 +1,7 @@
 /**
  * System Logs WebSocket Handler
  *
- * Read-only streaming of Tau's own system logs (API and worker) at
+ * Read-only streaming of Ficus's own system logs (API and worker) at
  * /ws/system/logs. Binary frames carry log chunks; JSON frames carry control
  * messages ({ type: 'info' | 'error', message }).
  *

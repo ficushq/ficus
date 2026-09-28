@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { createHash, randomUUID } from 'node:crypto'
-import { integrationSubscriptionSchema, trackedResourceKey, type TrackedResource } from '@tau/shared'
+import { integrationSubscriptionSchema, trackedResourceKey, type TrackedResource } from '@ficus/shared'
 import { TrackedResourceRegistry, type TrackedResourceAdapter } from './registry'
 import { subscriptionTargetsResource, trackedResourceRegistry } from './index'
 import { linearTrackedResourceAdapter } from './linear'

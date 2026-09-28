@@ -1,4 +1,4 @@
-import { isLiveAgentStatus, type SessionUsage, type MessageMetadata } from '@tau/shared'
+import { isLiveAgentStatus, type SessionUsage, type MessageMetadata } from '@ficus/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { AgentSession } from '../AgentSession'
@@ -226,9 +226,9 @@ export class SubagentRunner extends AgentRunner {
         ? [
             `You report to one parent agent (id: ${this.agent.parentAgentId}). Your agent id is ${this.agent.id}. You have no human to ask.`,
             '',
-            `- For intermediate questions, progress, or discussion, message your parent with the Tau CLI via the ${parentShell} tool:`,
+            `- For intermediate questions, progress, or discussion, message your parent with the Ficus CLI via the ${parentShell} tool:`,
             '',
-            `    tau inbox send ${this.agent.parentAgentId} "your message" -s "Short subject" --steer`,
+            `    ficus inbox send ${this.agent.parentAgentId} "your message" -s "Short subject" --steer`,
             '',
             '  After sending, end your turn — you stay available and your parent will reply.',
             '- When you are finished or blocked, call `im_done` with your single, self-contained final result. `im_done` sends your parent the conclusory message and terminates you. Do NOT send your final conclusion yourself and then call `im_done` — that double-messages. Use plain inbox sends only for intermediate/conversational messages; use `im_done` for the terminal one.',
@@ -237,7 +237,7 @@ export class SubagentRunner extends AgentRunner {
           ]
         : [
             `You report to one parent agent (id: ${this.agent.parentAgentId}). Your agent id is ${this.agent.id}. You have no human to ask.`,
-            '- You do not have a shell tool for intermediate Tau CLI messages. When finished, blocked, or in need of clarification, call `im_done` with one self-contained result; use status `blocked` when appropriate.',
+            '- You do not have a shell tool for intermediate Ficus CLI messages. When finished, blocked, or in need of clarification, call `im_done` with one self-contained result; use status `blocked` when appropriate.',
             '- After you finish and terminate, your parent may message you to continue. Call `im_done` again when that follow-up work is complete.',
           ]
       p.section('Talking to your parent', parentProtocol.join('\n'))

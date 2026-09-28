@@ -1,4 +1,4 @@
-import type { AgentStatus } from '@tau/shared'
+import type { AgentStatus } from '@ficus/shared'
 import * as fs from 'fs'
 import * as path from 'path'
 import { eq } from 'drizzle-orm'

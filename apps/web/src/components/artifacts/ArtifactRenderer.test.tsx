@@ -170,10 +170,10 @@ describe('ArtifactRenderer', () => {
       />
     )
 
-    expect(html).toContain('tau:presentation-html-height')
+    expect(html).toContain('ficus:presentation-html-height')
     expect(html).toContain('sandbox="allow-scripts"')
     expect(html).not.toContain('allow-same-origin')
-    expect(html).toContain('tau-presentation-html-content')
+    expect(html).toContain('ficus-presentation-html-content')
     expect(html).not.toContain('min-height:100%')
     expect(html).not.toContain('documentElement.scrollHeight')
     expect(html).not.toContain('min-h-[360px]')
@@ -195,8 +195,8 @@ describe('ArtifactRenderer', () => {
     )
 
     expect(html).toContain('style="height:240px"')
-    expect(html).toContain('tau:presentation-html-height')
-    expect(html).toContain('tau-presentation-html-content')
+    expect(html).toContain('ficus:presentation-html-height')
+    expect(html).toContain('ficus-presentation-html-content')
   })
 
   test('presentation HTML blocks honor explicit fixed height metadata', () => {
@@ -213,7 +213,7 @@ describe('ArtifactRenderer', () => {
     )
 
     expect(html).toContain('style="height:640px"')
-    expect(html).not.toContain('tau:presentation-html-height')
+    expect(html).not.toContain('ficus:presentation-html-height')
   })
 
   test('validates and clamps presentation HTML height messages', () => {
@@ -223,19 +223,19 @@ describe('ArtifactRenderer', () => {
 
     expect(
       isPresentationHtmlHeightMessage(
-        { type: 'tau:presentation-html-height', blockId: 'presentation-html-1', height: 320 },
+        { type: 'ficus:presentation-html-height', blockId: 'presentation-html-1', height: 320 },
         'presentation-html-1'
       )
     ).toBe(true)
     expect(
       isPresentationHtmlHeightMessage(
-        { type: 'tau:presentation-html-height', blockId: 'spoofed-block', height: 320 },
+        { type: 'ficus:presentation-html-height', blockId: 'spoofed-block', height: 320 },
         'presentation-html-1'
       )
     ).toBe(false)
     expect(
       isPresentationHtmlHeightMessage(
-        { type: 'tau:presentation-html-height', blockId: 'presentation-html-1', height: Number.POSITIVE_INFINITY },
+        { type: 'ficus:presentation-html-height', blockId: 'presentation-html-1', height: Number.POSITIVE_INFINITY },
         'presentation-html-1'
       )
     ).toBe(false)

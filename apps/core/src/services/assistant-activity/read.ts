@@ -6,7 +6,7 @@ import type {
   AssistantConversationActivity,
   AssistantConversationActivityDetail,
   AssistantTaskSummary,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { agents, assistantConversations, assistantTasks, assistantUpdates, db, inbox } from '../../db'
 
 export const ACTIVITY_PREVIEW_LENGTH = 160

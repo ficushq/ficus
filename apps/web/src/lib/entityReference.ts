@@ -1,6 +1,6 @@
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 
-export { parseEntityReference, type EntityReference } from '@tau/shared'
+export { parseEntityReference, type EntityReference } from '@ficus/shared'
 
 export function agentChatPath(agent: Pick<Agent, 'id' | 'squadId'>): string {
   return agent.squadId

@@ -8,7 +8,7 @@ import { Agent } from '../../entities/Agent'
 import { makeDormant } from '../agent/lifecycle'
 import { agents, db } from '../../db'
 import { eq } from 'drizzle-orm'
-import type { AgentStatus } from '@tau/shared'
+import type { AgentStatus } from '@ficus/shared'
 import { ensureAgentSandbox, setAgentWarmupLifecycleLoaderForTest } from './agent-warmup'
 import * as factory from './factory'
 

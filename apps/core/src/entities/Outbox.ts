@@ -2,7 +2,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import type { InferSelectModel, SQL } from 'drizzle-orm'
 import { db } from '../db'
 import { outbox } from '../db/schema'
-import type { AmtpEnvelope } from '@tau/shared'
+import type { AmtpEnvelope } from '@ficus/shared'
 
 export type OutboxRow = InferSelectModel<typeof outbox>
 export type OutboxStatus = 'pending' | 'delivering' | 'delivered' | 'failed'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ContentBlock, Message } from '@tau/shared'
+import type { ContentBlock, Message } from '@ficus/shared'
 import { combine, completedGroupIds, groupPersisted } from './combine'
 import type { CombineSession, PendingItem, StreamGroupSnapshot, SystemMessageItem } from './types'
 

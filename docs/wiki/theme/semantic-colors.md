@@ -1,6 +1,6 @@
 # Semantic colors
 
-The default Tau light/dark colors are unchanged, except for intentional text-selection styling. Status meanings and precedence still come from `packages/shared/src/status-presentation.ts`, which is unchanged.
+The default Ficus light/dark colors are unchanged, except for intentional text-selection styling. Status meanings and precedence still come from `packages/shared/src/status-presentation.ts`, which is unchanged.
 
 ## Compatibility
 

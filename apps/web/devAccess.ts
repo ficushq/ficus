@@ -1,8 +1,8 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { IncomingHttpHeaders } from 'node:http'
 
-export const DEV_ACCESS_COOKIE = 'tau_dev_access'
-export const DEV_ACCESS_HEADER = 'x-tau-dev-access-token'
+export const DEV_ACCESS_COOKIE = 'ficus_dev_access'
+export const DEV_ACCESS_HEADER = 'x-ficus-dev-access-token'
 
 function tokensMatch(candidate: string | undefined, expected: string): boolean {
   if (!candidate) return false

@@ -5,7 +5,7 @@ import {
   artifactRequestActionSchema,
   type ArtifactRequestAction,
   type ArtifactReference,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { z } from 'zod'
 import { artifactVoiceRequestService } from '../services/artifacts/artifactVoiceRequests'
 import { Agent } from '../entities/Agent'

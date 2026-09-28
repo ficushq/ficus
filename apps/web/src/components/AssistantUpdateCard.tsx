@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { AssistantActivityUpdate } from '@tau/shared'
+import type { AssistantActivityUpdate } from '@ficus/shared'
 import { ASSISTANT_TASK_STATUS_LABELS, formatAssistantUpdateTime } from '../lib/assistantActivityPresentation'
 import { MarkdownContent } from './MarkdownContent'
 

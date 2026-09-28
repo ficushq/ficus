@@ -3,7 +3,7 @@ import { HostedIntegrationRelayRunner } from './runner'
 import { githubRelayProvider } from './runtime'
 import { slackRelayProvider, type SlackRelayInterest } from './slack-runtime'
 import { PlatformRequestError, type platformRequest } from '../../platform/instance-client'
-import type { RelayDelivery, SlackRelayDelivery } from '@tau/shared/integration-relay'
+import type { RelayDelivery, SlackRelayDelivery } from '@ficus/shared/integration-relay'
 
 function fixture() {
   const id = crypto.randomUUID(),

@@ -1,4 +1,4 @@
-import { permissionMatches } from '@tau/shared'
+import { permissionMatches } from '@ficus/shared'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { roleAssignments, roles } from '../../db/schema'

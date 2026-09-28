@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ThemePreset } from '@tau/shared'
+import type { ThemePreset } from '@ficus/shared'
 import { useOptionalThemePreview } from '../providers/ThemeProvider'
 import { findWebTheme, type WebThemeDefinition } from '../theme/registry'
 import { presetAppearance } from '../theme/custom'

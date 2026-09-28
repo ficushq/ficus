@@ -1,6 +1,6 @@
 import { CatalogSearch } from './CatalogSearch'
 import { SquadPresetWorkflowsEditor } from './SquadPresetWorkflowsEditor'
-import type { SquadPresetWorkflows } from '@tau/shared'
+import type { SquadPresetWorkflows } from '@ficus/shared'
 import { Modal } from '../Modal'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -81,7 +81,7 @@ export function SquadPresetsSection() {
           <button
             onClick={() => setIsAdding(true)}
             disabled={isAdding}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
           >
             New squad preset
           </button>
@@ -241,11 +241,11 @@ function AddSquadPresetForm({ onClose, onCreated }: { onClose: () => void; onCre
         <button
           onClick={handleCreate}
           disabled={createMutation.isPending}
-          className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
         </button>
-        <button onClick={onClose} className="tau-button text-sm text-muted hover:text-primary px-3 py-1.5">
+        <button onClick={onClose} className="ficus-button text-sm text-muted hover:text-primary px-3 py-1.5">
           Cancel
         </button>
         {createMutation.isError && (
@@ -393,7 +393,7 @@ function SquadPresetRow({
           type="button"
           onClick={onToggle}
           aria-label={`${canUpdate ? 'Edit' : 'View'} ${squadPreset.name}`}
-          className="tau-button shrink-0 text-sm text-accent-light"
+          className="ficus-button shrink-0 text-sm text-accent-light"
         >
           {canUpdate ? 'Edit' : 'View'}
         </button>
@@ -414,14 +414,14 @@ function SquadPresetRow({
               {squadPreset.hasTemplate && squadPreset.yamlFieldOverrides.length > 0 && (
                 <button
                   onClick={onShowDiff}
-                  className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                  className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
                 >
                   Compare to Template
                 </button>
               )}
               <button
                 onClick={handleExport}
-                className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
               >
                 {copyMsg || 'Export YAML'}
               </button>
@@ -429,7 +429,7 @@ function SquadPresetRow({
                 <button
                   onClick={() => toggleDisableMutation.mutate()}
                   disabled={toggleDisableMutation.isPending}
-                  className="tau-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
+                  className="ficus-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
                 >
                   {squadPreset.disabled ? 'Enable' : 'Disable'}
                 </button>
@@ -438,7 +438,7 @@ function SquadPresetRow({
                 <button
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
-                  className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
+                  className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
                 >
                   Delete
                 </button>
@@ -499,7 +499,7 @@ function SquadPresetRow({
                 <button
                   onClick={handleSave}
                   disabled={!canUpdate || updateMutation.isPending}
-                  className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button ficus-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
                 >
                   {updateMutation.isPending ? 'Saving…' : 'Save'}
                 </button>
@@ -559,7 +559,7 @@ function FormField({
           rows={rows ?? 3}
           readOnly={readOnly}
           placeholder={placeholder}
-          className={clsx('tau-field', cls, 'resize-y font-mono')}
+          className={clsx('ficus-field', cls, 'resize-y font-mono')}
         />
       ) : (
         <input
@@ -569,7 +569,7 @@ function FormField({
           onChange={(e) => onChange(e.target.value)}
           readOnly={readOnly}
           placeholder={placeholder}
-          className={clsx('tau-field', cls)}
+          className={clsx('ficus-field', cls)}
         />
       )}
     </div>

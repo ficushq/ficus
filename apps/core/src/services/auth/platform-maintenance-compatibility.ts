@@ -2,7 +2,7 @@ import {
   PLATFORM_MAINTENANCE_HEADERS,
   PLATFORM_MAINTENANCE_PROTOCOL_VERSION,
   type PlatformMaintenanceCompatibilityContext,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { z } from 'zod'
 
 export type LegacyUpgradePolicy = 'observe' | 'enforce' | 'disabled'
@@ -26,10 +26,10 @@ export type PlatformMaintenanceCompatibilityDecision =
 const commitSha = z.string().regex(/^[0-9a-f]{40}$/)
 const uuid = z.string().uuid()
 
-export function legacyUpgradePolicy(raw = process.env.TAU_LEGACY_PLATFORM_MAINTENANCE_UPGRADE): LegacyUpgradePolicy {
+export function legacyUpgradePolicy(raw = process.env.FICUS_LEGACY_PLATFORM_MAINTENANCE_UPGRADE): LegacyUpgradePolicy {
   if (raw === undefined || raw === '') return 'observe'
   if (raw === 'observe' || raw === 'enforce' || raw === 'disabled') return raw
-  throw new Error(`Invalid TAU_LEGACY_PLATFORM_MAINTENANCE_UPGRADE value: expected observe, enforce, or disabled`)
+  throw new Error(`Invalid FICUS_LEGACY_PLATFORM_MAINTENANCE_UPGRADE value: expected observe, enforce, or disabled`)
 }
 
 export function parsePlatformMaintenanceHeaders(get: (name: string) => string | undefined): ParsedContext {

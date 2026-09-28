@@ -8,6 +8,7 @@ import {
   secretAccessible,
   secretPermissionCandidates,
 } from './groups'
+import { COPIED_LEGACY_SECRET_ROW_KEYS } from '../../db/legacy-secret-rows'
 
 afterEach(() => resetSecretGroups())
 
@@ -15,7 +16,7 @@ describe('globToRegExp', () => {
   test('* matches any run, anchored', () => {
     expect(globToRegExp('GITHUB_*').test('GITHUB_TOKEN')).toBe(true)
     expect(globToRegExp('GITHUB_*').test('XGITHUB_TOKEN')).toBe(false)
-    expect(globToRegExp('*ENCRYPTION_KEY').test('TAU_ENCRYPTION_KEY')).toBe(true)
+    expect(globToRegExp('*ENCRYPTION_KEY').test('FICUS_ENCRYPTION_KEY')).toBe(true)
   })
 
   test('? matches exactly one char; regex specials are literal', () => {
@@ -28,6 +29,8 @@ describe('globToRegExp', () => {
 describe('getSecretGroups (default config)', () => {
   test('categorizes every current known key intentionally and non-overlapping', () => {
     const expected = new Map<string, string[]>([
+      ['FICUS_PASSWORD', ['system']],
+      // The retained TAU_ secret rows stay authorized until the bridge is removed (Task 36).
       ['TAU_PASSWORD', ['system']],
       ['VAPID_SUBJECT', ['notification']],
       ['OPENAI_API_KEY', ['provider']],
@@ -82,13 +85,13 @@ describe('secretAccessible / candidates', () => {
   })
 
   test('bare secrets:read reads everything incl. unmatched', () => {
-    expect(secretAccessible(['secrets:read'], 'TAU_PASSWORD', 'read')).toBe(true)
+    expect(secretAccessible(['secrets:read'], 'FICUS_PASSWORD', 'read')).toBe(true)
     expect(secretAccessible(['secrets:read'], 'SOME_RANDOM_KEY', 'read')).toBe(true)
   })
 
   test('wildcard admin reads everything', () => {
     expect(secretAccessible(['*'], 'SOME_RANDOM_KEY', 'read')).toBe(true)
-    expect(secretAccessible(['secrets:*'], 'TAU_PASSWORD', 'write')).toBe(true)
+    expect(secretAccessible(['secrets:*'], 'FICUS_PASSWORD', 'write')).toBe(true)
   })
 
   test('group-limited reads only its group, not others/unmatched', () => {
@@ -96,8 +99,30 @@ describe('secretAccessible / candidates', () => {
     expect(secretAccessible(held, 'GITHUB_TOKEN', 'read')).toBe(true)
     expect(secretAccessible(held, 'GITHUB_TOKEN', 'write')).toBe(true)
     expect(secretAccessible(held, 'OPENAI_API_KEY', 'read')).toBe(false)
-    expect(secretAccessible(held, 'TAU_PASSWORD', 'read')).toBe(false)
+    expect(secretAccessible(held, 'FICUS_PASSWORD', 'read')).toBe(false)
     expect(secretAccessible(held, 'SOME_RANDOM_KEY', 'read')).toBe(false)
+  })
+
+  test('each FICUS_ row the rename migration copies is authorized exactly like its retained TAU_ source', () => {
+    for (const legacy of COPIED_LEGACY_SECRET_ROW_KEYS) {
+      const current = `FICUS_${legacy.slice('TAU_'.length)}`
+      expect(getSecretGroups(current), current).toEqual(['system'])
+      expect(getSecretGroups(legacy), legacy).toEqual(['system'])
+      for (const action of ['read', 'write'] as const) {
+        expect(secretPermissionCandidates(current, action)).toEqual(secretPermissionCandidates(legacy, action))
+        for (const key of [current, legacy]) {
+          expect(secretAccessible([`secrets:${action}:system`], key, action), key).toBe(true)
+          expect(
+            secretAccessible(
+              [`secrets:${action}:integration`, `secrets:${action}:provider`, `secrets:${action}:notification`],
+              key,
+              action
+            ),
+            key
+          ).toBe(false)
+        }
+      }
+    }
   })
 
   test('read grant does not imply write', () => {

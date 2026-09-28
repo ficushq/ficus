@@ -293,14 +293,14 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={!canWriteWorkspace || uploadMutation.isPending}
-            className="tau-button inline-flex items-center gap-1.5 text-xs px-2 py-2 rounded-lg hover:bg-surface-hover text-secondary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ficus-button inline-flex items-center gap-1.5 text-xs px-2 py-2 rounded-lg hover:bg-surface-hover text-secondary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <FileIcon className="h-3.5 w-3.5" /> Upload files
           </button>
           <button
             onClick={() => folderInputRef.current?.click()}
             disabled={!canWriteWorkspace || uploadMutation.isPending}
-            className="tau-button inline-flex items-center gap-1.5 text-xs px-2 py-2 rounded-lg hover:bg-surface-hover text-secondary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ficus-button inline-flex items-center gap-1.5 text-xs px-2 py-2 rounded-lg hover:bg-surface-hover text-secondary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <FolderIcon className="h-3.5 w-3.5" /> Upload folder
           </button>
@@ -308,7 +308,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
           {uploadMutation.isPending && (
             <button
               onClick={handleCancelUpload}
-              className="tau-button text-xs px-2 py-1 rounded bg-status-danger-500/10 hover:bg-status-danger-500/20 text-status-danger-500 hover:text-status-danger-600 cursor-pointer"
+              className="ficus-button text-xs px-2 py-1 rounded bg-status-danger-500/10 hover:bg-status-danger-500/20 text-status-danger-500 hover:text-status-danger-600 cursor-pointer"
               title="Cancel upload"
             >
               Cancel
@@ -330,7 +330,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
             <span className="text-xs text-status-danger-500 flex-1 whitespace-pre-line">{uploadError}</span>
             <button
               onClick={() => setUploadError(null)}
-              className="tau-button text-xs text-muted hover:text-secondary"
+              className="ficus-button text-xs text-muted hover:text-secondary"
               title="Dismiss"
             >
               ✕
@@ -342,7 +342,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
       {/* Overwrite confirmation dialog */}
       {showOverwriteDialog && (
         <div className="fixed inset-0 bg-chrome-scrim/50 flex items-center justify-center z-50">
-          <div className="tau-overlay bg-surface rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+          <div className="ficus-overlay bg-surface rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-primary mb-2">Files already exist</h3>
             <p className="text-sm text-muted mb-4">{skippedFiles.length} file(s) already exist at the destination:</p>
             <ul className="text-sm text-secondary mb-4 max-h-32 overflow-y-auto">
@@ -356,13 +356,13 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
             <div className="flex gap-3 justify-end">
               <button
                 onClick={handleOverwriteCancel}
-                className="tau-button px-4 py-2 text-sm rounded bg-surface-hover hover:bg-surface-secondary text-secondary"
+                className="ficus-button px-4 py-2 text-sm rounded bg-surface-hover hover:bg-surface-secondary text-secondary"
               >
                 Skip
               </button>
               <button
                 onClick={handleOverwriteConfirm}
-                className="tau-button tau-button-primary px-4 py-2 text-sm rounded bg-accent hover:bg-accent/90 text-on-accent"
+                className="ficus-button ficus-button-primary px-4 py-2 text-sm rounded bg-accent hover:bg-accent/90 text-on-accent"
               >
                 Overwrite
               </button>

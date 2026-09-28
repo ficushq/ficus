@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { OperationsRecommendationDetail } from '@tau/shared'
+import type { OperationsRecommendationDetail } from '@ficus/shared'
 import { RecommendationDetail } from './RecommendationDetail'
 const item: OperationsRecommendationDetail = {
   id: 'r1',

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
-import type { SessionUsage, MessageMetadata, Message } from '@tau/shared'
+import type { SessionUsage, MessageMetadata, Message } from '@ficus/shared'
 import { AgentRunner, getSquadAgentTypeSkills } from './base'
 import { MockAgentSession, makeAgent, makeAgentType } from '../../services/execution/test-helpers'
 import { StreamBuffer } from '../../services/streaming/buffer'
@@ -856,7 +856,7 @@ describe('AgentRunner (base class)', () => {
       buffer.subscribe((event) => events.push(event))
       createBufferSpy.mockReturnValue(buffer)
       const syntheticValue = `CANARY_SECRET_${randomUUID()}`
-      const originalEncryptionKey = process.env.TAU_ENCRYPTION_KEY
+      const originalEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
       const originalSecretRows = await db.select().from(secretRows)
       spyOn(agent, 'getEffectiveModelSpec').mockResolvedValue('anthropic:claude-sonnet-4-5')
 
@@ -873,7 +873,7 @@ describe('AgentRunner (base class)', () => {
       const toolBody = mock(async () => ({ content: [{ type: 'text', text: 'must not run' }] }))
 
       try {
-        process.env.TAU_ENCRYPTION_KEY = 'a'.repeat(64)
+        process.env.FICUS_ENCRYPTION_KEY = 'a'.repeat(64)
         await db.delete(secretRows)
         resetSecretStore()
         await getSecretStore().initialize()
@@ -929,8 +929,8 @@ describe('AgentRunner (base class)', () => {
         expect(events.some((event) => event.type === 'tool_end')).toBe(true)
         expect(events.some((event) => event.type === 'done')).toBe(true)
       } finally {
-        delete process.env.TAU_ENCRYPTION_KEY
-        if (originalEncryptionKey !== undefined) process.env.TAU_ENCRYPTION_KEY = originalEncryptionKey
+        delete process.env.FICUS_ENCRYPTION_KEY
+        if (originalEncryptionKey !== undefined) process.env.FICUS_ENCRYPTION_KEY = originalEncryptionKey
         await db.delete(secretRows)
         if (originalSecretRows.length > 0) await db.insert(secretRows).values(originalSecretRows)
         resetSecretStore()
@@ -2541,10 +2541,10 @@ describe('AgentRunner (base class)', () => {
     })
 
     it('clears and exactly restores all ambient OpenRouter selection state', async () => {
-      const originalEncryptionKey = process.env.TAU_ENCRYPTION_KEY
+      const originalEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
       const originalSecretRows = await db.select().from(secretRows)
       try {
-        process.env.TAU_ENCRYPTION_KEY = 'a'.repeat(64)
+        process.env.FICUS_ENCRYPTION_KEY = 'a'.repeat(64)
         resetSecretStore()
         await getSecretStore().initialize()
         await getSecretStore().set('OPENROUTER_TEST_SENTINEL', 'unchanged', 'test')
@@ -2589,8 +2589,8 @@ describe('AgentRunner (base class)', () => {
         await db.delete(secretRows)
         if (originalSecretRows.length > 0) await db.insert(secretRows).values(originalSecretRows)
         resetSecretStore()
-        if (originalEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-        else process.env.TAU_ENCRYPTION_KEY = originalEncryptionKey
+        if (originalEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+        else process.env.FICUS_ENCRYPTION_KEY = originalEncryptionKey
       }
     })
 

@@ -8,10 +8,10 @@ Report meaningful progress, questions, and final results to the originating
 `assistant:<conversation UUID>` mailbox. Ordinary chat output is not forwarded.
 
 The simplest way is the task command, using the task ID and request ID shown with
-the request: `tau assistant-task status <taskId> --request-id <requestId> --status <status> -m "<update>"`,
+the request: `ficus assistant-task status <taskId> --request-id <requestId> --status <status> -m "<update>"`,
 with `--status` one of `working`, `waiting`, `needs-input`, `completed`, `failed`,
-or `cancelled` (`tau assistant-task get <taskId>` shows the tracked state). The
-equivalent inbox form is `tau inbox send assistant:<conversation UUID> "<update>"
+or `cancelled` (`ficus assistant-task get <taskId>` shows the tracked state). The
+equivalent inbox form is `ficus inbox send assistant:<conversation UUID> "<update>"
 --recipient-type voice_assistant --in-reply-to <current request UUID>
 --assistant-task-status <status>`. An update without a status is still delivered
 but does not change the task's tracked state.

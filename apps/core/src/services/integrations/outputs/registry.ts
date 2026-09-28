@@ -1,5 +1,5 @@
 import { linearOutputAdapter } from '../linear/outputs'
-import { integrationValueAt, type IntegrationSubscription, type IntegrationOutputFact } from '@tau/shared'
+import { integrationValueAt, type IntegrationSubscription, type IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
 import { githubOutputAdapter } from './github'
 

@@ -121,7 +121,7 @@ describe('CI typecheck gate', () => {
   test.each([
     [
       'shared-only command',
-      { run: 'bun run --filter @tau/shared typecheck' },
+      { run: 'bun run --filter @ficus/shared typecheck' },
       'the typecheck gate must invoke the canonical root command exactly',
     ],
     [
@@ -378,7 +378,7 @@ finish_measurement candidate "$sha" 0 "$log"`,
   test('rejects workspace package-list drift in the root script', () => {
     const candidate = structuredClone(workflow)
 
-    expect(validateTypecheckGate(candidate, { typecheck: 'bun run --filter @tau/shared typecheck' })).toEqual([
+    expect(validateTypecheckGate(candidate, { typecheck: 'bun run --filter @ficus/shared typecheck' })).toEqual([
       'the root typecheck script must cover every workspace',
     ])
   })

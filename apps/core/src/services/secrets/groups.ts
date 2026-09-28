@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { permissionMatches } from '@tau/shared'
+import { permissionMatches } from '@ficus/shared'
 import { parse } from 'yaml'
 import { CONFIG_DIR } from '../../lib/paths'
 

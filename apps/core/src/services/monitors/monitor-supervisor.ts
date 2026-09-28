@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
 import { db } from '../../db'
 import { monitors } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
@@ -111,11 +112,16 @@ export class MonitorSupervisor {
     const dir = monitorDir(workRoot, monitor.id)
     const script = `${dir}/run.sh`
     const cwd = monitor.cwd?.trim() || workRoot
+    // Monitor commands may read these, so for one release (Ficus rename) each
+    // also goes out under its TAU_ spelling.
+    const monitorEnv = withLegacyEnvAliases({
+      FICUS_MONITOR_ID: monitor.id,
+      FICUS_MONITOR_CWD: cwd,
+      FICUS_MONITOR_DIR: dir,
+      FICUS_MONITOR_COMMAND: monitor.command,
+    })
     const launchCommand = [
-      `TAU_MONITOR_ID=${shellQuote(monitor.id)}`,
-      `TAU_MONITOR_CWD=${shellQuote(cwd)}`,
-      `TAU_MONITOR_DIR=${shellQuote(dir)}`,
-      `TAU_MONITOR_COMMAND=${shellQuote(monitor.command)}`,
+      ...Object.entries(monitorEnv).map(([key, value]) => `${key}=${shellQuote(value)}`),
       `bash ${shellQuote(script)}`,
     ].join(' ')
     const command = [

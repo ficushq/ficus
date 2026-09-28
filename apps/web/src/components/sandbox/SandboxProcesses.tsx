@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { isSandboxOverloaded, type SandboxPressure, type SandboxProcessSignal } from '@tau/shared'
+import { isSandboxOverloaded, type SandboxPressure, type SandboxProcessSignal } from '@ficus/shared'
 import { signalAgentSandboxProcess, stopAgentSandboxContainer } from '../../api/agents'
 import { signalSandboxProcess, stopSandboxContainer } from '../../api/workspace'
 import { actionErrorMessage } from '../../lib/actionError'
@@ -82,7 +82,7 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
         </div>
         <button
           type="button"
-          className="tau-button px-3 py-1.5 text-sm rounded-md border border-th-border text-secondary hover:bg-surface-hover disabled:opacity-50"
+          className="ficus-button px-3 py-1.5 text-sm rounded-md border border-th-border text-secondary hover:bg-surface-hover disabled:opacity-50"
           disabled={isFetching}
           onClick={() => (open ? void refetch() : setOpen(true))}
         >
@@ -101,7 +101,7 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
           {data.pressure && <PressureSummary pressure={data.pressure} />}
 
           <div className="overflow-x-auto">
-            <table className="tau-table w-full text-xs">
+            <table className="ficus-table w-full text-xs">
               <thead>
                 <tr className="text-left text-muted">
                   <th className="py-1 pr-3 font-medium text-right whitespace-nowrap">CPU</th>

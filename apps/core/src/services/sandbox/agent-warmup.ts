@@ -1,6 +1,6 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxSquadId } from './consultant-sandbox'
-import { isLiveAgentStatus, WORK_STREAM_ADMITTED_STATUSES } from '@tau/shared'
+import { isLiveAgentStatus, WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
 import type { Agent } from '../../entities/Agent'
 import { findAgentLifecycleState } from '../../entities/agent-queries'
 import { maintenanceStore } from '../maintenance/store'

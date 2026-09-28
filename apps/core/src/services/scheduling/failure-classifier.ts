@@ -1,4 +1,4 @@
-import type { ScheduleFailureClass } from '@tau/shared'
+import type { ScheduleFailureClass } from '@ficus/shared'
 
 export const SCHEDULE_FAILURE_CODES = [
   'scope_not_found',

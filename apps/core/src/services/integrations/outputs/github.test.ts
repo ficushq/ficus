@@ -174,7 +174,7 @@ test('invalid native identities cannot broaden correlation or cross a repository
 })
 
 test('event-specific predicates match normalized review, CI, collection, boolean and absent-line facts', async () => {
-  const { previewSquadEventRules, selectSquadEventRule, squadEventRuleSchema } = await import('@tau/shared')
+  const { previewSquadEventRules, selectSquadEventRule, squadEventRuleSchema } = await import('@ficus/shared')
   const cases = [
     {
       type: 'pull_request_review',

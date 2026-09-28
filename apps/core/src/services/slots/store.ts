@@ -1,6 +1,6 @@
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { and, asc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm'
-import { isLiveAgentStatus } from '@tau/shared'
+import { isLiveAgentStatus } from '@ficus/shared'
 import { agents, db, slotClaims, slotNotifications, slotPools, slotWaiters, squads } from '../../db'
 import type { DbTx } from '../../db'
 import { createLogger } from '../../lib/infra/logger'

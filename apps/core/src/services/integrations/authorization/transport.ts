@@ -1,5 +1,5 @@
-import { getOAuthProviderAdapter } from '@tau/shared/oauth-providers'
-import type { OAuthClientBinding, OAuthProviderGrant } from '@tau/shared/oauth-providers/types'
+import { getOAuthProviderAdapter } from '@ficus/shared/oauth-providers'
+import type { OAuthClientBinding, OAuthProviderGrant } from '@ficus/shared/oauth-providers/types'
 import { resolveOAuthCallbackUrl } from './public-url'
 import type { OAuthAuthority } from './authority'
 

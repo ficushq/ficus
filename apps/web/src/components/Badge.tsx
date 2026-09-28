@@ -1,4 +1,4 @@
-import type { StatusRole } from '@tau/shared'
+import type { StatusRole } from '@ficus/shared'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 
@@ -85,7 +85,14 @@ export function Badge({ children, color = 'neutral', to, onClick, className, tit
       <button
         type="button"
         onClick={onClick}
-        className={clsx('tau-button', BASE_CLASSES, colorClasses, HOVER_CLASSES[color], 'transition-colors', className)}
+        className={clsx(
+          'ficus-button',
+          BASE_CLASSES,
+          colorClasses,
+          HOVER_CLASSES[color],
+          'transition-colors',
+          className
+        )}
         title={title}
       >
         {children}

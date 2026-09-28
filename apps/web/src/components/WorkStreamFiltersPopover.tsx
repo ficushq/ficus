@@ -44,7 +44,7 @@ export function WorkStreamFiltersPopover({ count, children }: { count: number; c
         aria-expanded={open}
         aria-controls={panelId}
         className={clsx(
-          'tau-button flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
+          'ficus-button flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
           count > 0 ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover hover:text-primary'
         )}
         onClick={() => setOpen((current) => !current)}
@@ -59,7 +59,7 @@ export function WorkStreamFiltersPopover({ count, children }: { count: number; c
           id={panelId}
           role="region"
           aria-label="Feed filters"
-          className="tau-overlay absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-3rem)] max-h-[min(32rem,70dvh)] overflow-y-auto rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
+          className="ficus-overlay absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-3rem)] max-h-[min(32rem,70dvh)] overflow-y-auto rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
         >
           {children}
         </div>

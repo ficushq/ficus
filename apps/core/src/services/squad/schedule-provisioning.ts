@@ -4,7 +4,7 @@ const log = createLogger('schedule-provision')
 import { Schedule } from '../../entities/Schedule'
 import { Squad } from '../../entities/Squad'
 import type { ScheduleTemplateYaml } from '../config-sync'
-import type { ScheduleAction } from '@tau/shared'
+import type { ScheduleAction } from '@ficus/shared'
 
 /** Copy creation-time schedule templates into independently owned squad schedules. */
 export async function provisionSquadSchedules(squadId: string, templates: ScheduleTemplateYaml[]): Promise<number> {

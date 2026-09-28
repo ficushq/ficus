@@ -59,7 +59,7 @@ function renderStatic(queryClient: QueryClient, entry = '/onboarding'): string {
 }
 
 describe('OnboardingPage — static rendering', () => {
-  test('Open Tau links to the newest squad manager chat after onboarding', () => {
+  test('Open Ficus links to the newest squad manager chat after onboarding', () => {
     const client = seededQueryClient(['settings:read'], coreSettledStatus())
     client.setQueryData(queryKeys.squads.list(), [
       { id: 'old', name: 'Older', managerAgentId: 'old-manager', createdAt: '2026-01-01' },
@@ -632,7 +632,7 @@ describe('OnboardingPage — appearance control', () => {
   afterEach(async () => {
     await queryClient?.cancelQueries()
     queryClient?.clear()
-    delete window.tauDesktopApp
+    delete window.ficusDesktopApp
     document.documentElement.classList.remove('dark')
     await dom.cleanup()
     globalThis.fetch = oldFetch
@@ -672,22 +672,26 @@ describe('OnboardingPage — appearance control', () => {
     await dom.act(async () => fireEvent.click(option('Dark')))
     expect(option('Dark').checked).toBe(true)
     expect(document.documentElement.classList.contains('dark')).toBe(true)
-    expect(localStorage.getItem('tau-appearance')).toBe('dark')
+    expect(localStorage.getItem('ficus-appearance')).toBe('dark')
 
     await dom.act(async () => fireEvent.click(option('Light')))
     expect(document.documentElement.classList.contains('dark')).toBe(false)
 
     await dom.act(async () => fireEvent.click(option('System')))
-    expect(localStorage.getItem('tau-appearance')).toBe('system')
+    expect(localStorage.getItem('ficus-appearance')).toBe('system')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 
-  test('inside Tau Desktop with no stored choice, System is selected and follows the OS', async () => {
+  test('inside Ficus Desktop with no stored choice, System is selected and follows the OS', async () => {
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)', media: query }),
     })
-    window.tauDesktopApp = { version: 1, notificationsEnabled: async () => false, deliverNotifications: async () => {} }
+    window.ficusDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+    }
     await render()
 
     expect(option('System').checked).toBe(true)

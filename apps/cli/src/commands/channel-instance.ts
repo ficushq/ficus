@@ -5,7 +5,7 @@ import { output, outputTable, outputError, isJsonMode } from '../output'
 export function registerChannelInstanceCommands(program: Command) {
   const ch = program.command('channel').alias('ch').description('Manage channel instances')
 
-  // tau channel list
+  // ficus channel list
   ch.command('list')
     .description('List all channel instances')
     .action(async () => {
@@ -35,7 +35,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel get <id>
+  // ficus channel get <id>
   ch.command('get <id>')
     .alias('info')
     .description('Get channel instance details')
@@ -48,7 +48,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel create
+  // ficus channel create
   ch.command('create')
     .description('Create a channel instance')
     .requiredOption('--id <id>', 'Channel instance ID')
@@ -80,7 +80,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel update <id>
+  // ficus channel update <id>
   ch.command('update <id>')
     .description('Update a channel instance')
     .option('--name <name>', 'New name')
@@ -109,7 +109,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel delete <id>
+  // ficus channel delete <id>
   ch.command('delete <id>')
     .alias('rm')
     .description('Delete a channel instance')
@@ -122,7 +122,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel template-diff <id>
+  // ficus channel template-diff <id>
   ch.command('template-diff <id>')
     .description('Show diff between current config and YAML template')
     .action(async (id) => {
@@ -134,7 +134,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel revert <id>
+  // ficus channel revert <id>
   ch.command('revert <id>')
     .description('Revert channel instance to its YAML template')
     .action(async (id) => {
@@ -146,7 +146,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel disable <id>
+  // ficus channel disable <id>
   ch.command('disable <id>')
     .description('Disable a channel instance')
     .action(async (id) => {
@@ -158,7 +158,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel enable <id>
+  // ficus channel enable <id>
   ch.command('enable <id>')
     .description('Enable a channel instance')
     .action(async (id) => {
@@ -170,7 +170,7 @@ export function registerChannelInstanceCommands(program: Command) {
       }
     })
 
-  // tau channel export <id>
+  // ficus channel export <id>
   ch.command('export <id>')
     .description('Export channel instance as YAML')
     .action(async (id) => {

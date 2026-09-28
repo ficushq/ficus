@@ -9,11 +9,11 @@
 
 set -e
 
-# Shared PVC mounts are also read/written by Tau Core. In local k3d that
+# Shared PVC mounts are also read/written by Ficus Core. In local k3d that
 # usually means container root and host user share the same underlying files.
-# Keep new sandbox-created files group-writable when TAU_SHARED_GID is provided
+# Keep new sandbox-created files group-writable when FICUS_SHARED_GID is provided
 # by Core; this is harmless on CSI drivers that ignore chmod/chgrp failures.
-umask "${TAU_SANDBOX_UMASK:-0002}"
+umask "${FICUS_SANDBOX_UMASK:-0002}"
 
 # Profiling helper: prof <label> <start-ns>. Emits "[profile] <label> <ms>ms".
 prof() { echo "[profile] $1 $(( ($(date +%s%N) - $2) / 1000000 ))ms"; }
@@ -37,20 +37,20 @@ normalize_shared_mount() {
   # Keep startup bounded: large/restored workspaces can contain hundreds of
   # thousands of files, so recursively normalizing on every container start can
   # block the sandbox HTTP server and leave the pod NotReady/"Starting".
-  if [ -n "${TAU_SHARED_GID:-}" ]; then
-    chgrp "$TAU_SHARED_GID" "$dir" 2>/dev/null || true
+  if [ -n "${FICUS_SHARED_GID:-}" ]; then
+    chgrp "$FICUS_SHARED_GID" "$dir" 2>/dev/null || true
   fi
   chmod g+rwX "$dir" 2>/dev/null || true
   chmod g+s "$dir" 2>/dev/null || true
 
   # Optional one-time recursive normalization for existing files. This runs in
   # the background and writes a marker so restarts do not repeat expensive work.
-  if [ "${TAU_RECURSIVE_PERMISSION_NORMALIZE:-false}" = "true" ]; then
+  if [ "${FICUS_RECURSIVE_PERMISSION_NORMALIZE:-false}" = "true" ]; then
     local marker="$dir/.tau-permissions-normalized-v1"
     if [ ! -e "$marker" ]; then
       (
-        if [ -n "${TAU_SHARED_GID:-}" ]; then
-          chgrp -R "$TAU_SHARED_GID" "$dir" 2>/dev/null || true
+        if [ -n "${FICUS_SHARED_GID:-}" ]; then
+          chgrp -R "$FICUS_SHARED_GID" "$dir" 2>/dev/null || true
         fi
         chmod -R g+rwX "$dir" 2>/dev/null || true
         find "$dir" -type d -exec chmod g+s {} + 2>/dev/null || true
@@ -193,12 +193,12 @@ save_nix_cache() {
 }
 
 # ── Workspace devbox ─────────────────────────────────────────────────────────
-# Agent (light) boxes keep their own minimal devbox in $TAU_DEVBOX_DIR (/private
+# Agent (light) boxes keep their own minimal devbox in $FICUS_DEVBOX_DIR (/private
 # for squad members); squad boxes use $WORKSPACE_PATH. Agent boxes seed the
 # minimal devbox.agent.json template; squad boxes seed the full devbox.json.
-WS="${TAU_DEVBOX_DIR:-${WORKSPACE_PATH:-/workspace}}"
+WS="${FICUS_DEVBOX_DIR:-${WORKSPACE_PATH:-/workspace}}"
 DEFAULT_DEVBOX=/opt/tau/defaults/devbox.json
-if [ "${TAU_SANDBOX_ROLE:-squad}" = "agent" ] && [ -f /opt/tau/defaults/devbox.agent.json ]; then
+if [ "${FICUS_SANDBOX_ROLE:-squad}" = "agent" ] && [ -f /opt/tau/defaults/devbox.agent.json ]; then
   DEFAULT_DEVBOX=/opt/tau/defaults/devbox.agent.json
 fi
 mkdir -p "$WS"
@@ -253,7 +253,7 @@ fi
   # Restore cached nix packages before devbox install. Non-fatal: a failed/corrupt
   # restore is recoverable (devbox install rebuilds the packages below). Agent
   # (light) boxes have no nix-cache mount — skip restore entirely.
-  if [ "${TAU_SANDBOX_ROLE:-squad}" != "agent" ]; then
+  if [ "${FICUS_SANDBOX_ROLE:-squad}" != "agent" ]; then
     _t=$(date +%s%N); restore_nix_cache || true; prof nix-cache-restore "$_t"
   fi
 
@@ -272,7 +272,7 @@ fi
 
   # Save nix cache after install (captures squad-specific packages).
   # Agent (light) boxes have no nix-cache mount — skip the save.
-  if [ "${TAU_SANDBOX_ROLE:-squad}" != "agent" ]; then save_nix_cache; fi
+  if [ "${FICUS_SANDBOX_ROLE:-squad}" != "agent" ]; then save_nix_cache; fi
 
   if [ -x "$WS/.tau/setup.sh" ]; then
     echo "[background] Running workspace setup script..."

@@ -19,7 +19,7 @@ describe('Runtime Selection Factory', () => {
     expect(isK8sRuntimeValue(undefined)).toBe(false)
   })
 
-  test('isK8sRuntimeValue returns true when TAU_SANDBOX_RUNTIME=k8s', () => {
+  test('isK8sRuntimeValue returns true when FICUS_SANDBOX_RUNTIME=k8s', () => {
     expect(isK8sRuntimeValue('k8s')).toBe(true)
   })
 
@@ -48,10 +48,10 @@ describe('Runtime Selection Factory', () => {
 
   test('getSandboxManagerForRuntime throws for unset / legacy / unknown runtimes instead of defaulting to docker', () => {
     expect(() => getSandboxManagerForRuntime(undefined)).toThrow(
-      'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (is unset)'
+      'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (is unset)'
     )
     expect(() => getSandboxManagerForRuntime('sysbox')).toThrow(
-      'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (got "sysbox"). Use docker-sysbox.'
+      'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (got "sysbox"). Use docker-sysbox.'
     )
     expect(() => getSandboxManagerForRuntime('socket')).toThrow('Use docker-socket.')
     expect(() => getSandboxManagerForRuntime('auto')).toThrow(
@@ -60,43 +60,43 @@ describe('Runtime Selection Factory', () => {
     expect(() => getSandboxManagerForRuntime('bogus')).toThrow('(got "bogus")')
   })
 
-  test('validateSandboxSetup throws the runtime list when TAU_SANDBOX_RUNTIME is unset, before probing docker', () => {
-    const prev = process.env.TAU_SANDBOX_RUNTIME
-    delete process.env.TAU_SANDBOX_RUNTIME
+  test('validateSandboxSetup throws the runtime list when FICUS_SANDBOX_RUNTIME is unset, before probing docker', () => {
+    const prev = process.env.FICUS_SANDBOX_RUNTIME
+    delete process.env.FICUS_SANDBOX_RUNTIME
     const spawnSpy = spyOn(Bun, 'spawnSync')
     try {
       expect(() => validateSandboxSetup()).toThrow(
-        'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (is unset)'
+        'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (is unset)'
       )
       expect(spawnSpy).not.toHaveBeenCalled()
     } finally {
       spawnSpy.mockRestore()
-      if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prev
+      if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prev
     }
   })
 })
 
 // The tool factory used to `return createDockerSandboxedCodingTools(...)` as
-// its fallthrough, so an unset or legacy TAU_SANDBOX_RUNTIME silently handed
+// its fallthrough, so an unset or legacy FICUS_SANDBOX_RUNTIME silently handed
 // the agent Docker tools — the exact silent-default the explicit-runtime work
 // removed everywhere else.
 describe('createCodingTools requires an explicit runtime', () => {
-  const LIST = 'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
-  const prev = process.env.TAU_SANDBOX_RUNTIME
+  const LIST = 'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
+  const prev = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   test('throws instead of falling through to docker when the runtime is unset', () => {
-    delete process.env.TAU_SANDBOX_RUNTIME
+    delete process.env.FICUS_SANDBOX_RUNTIME
     expect(() => createCodingTools('/w', 'agent_a1')).toThrow(`${LIST} (is unset)`)
   })
 
   test('throws for legacy and unknown values, naming what it got', () => {
     for (const value of ['bogus', 'sysbox', 'socket', 'auto', 'docker']) {
-      process.env.TAU_SANDBOX_RUNTIME = value
+      process.env.FICUS_SANDBOX_RUNTIME = value
       expect(() => createCodingTools('/w', 'agent_a1')).toThrow(`${LIST} (got "${value}")`)
     }
   })
@@ -106,7 +106,7 @@ describe('createCodingTools requires an explicit runtime', () => {
   // precisely the proof that dispatch went to docker and not to the guard.
   test('both docker runtimes still reach the docker tool builder', () => {
     for (const value of ['docker-sysbox', 'docker-socket']) {
-      process.env.TAU_SANDBOX_RUNTIME = value
+      process.env.FICUS_SANDBOX_RUNTIME = value
       expect(() => createCodingTools('/w', 'agent_a1')).toThrow('No sandbox executor found for agent_a1')
     }
   })
@@ -115,7 +115,7 @@ describe('createCodingTools requires an explicit runtime', () => {
   // ` host ` passes the boot guard and then hits the "unreachable" fallthrough.
   test('a whitespace-padded value dispatches like its trimmed form', () => {
     expect(getSandboxManagerForRuntime(' host ')).toBe(getSandboxManagerForRuntime('host'))
-    process.env.TAU_SANDBOX_RUNTIME = ' docker-socket '
+    process.env.FICUS_SANDBOX_RUNTIME = ' docker-socket '
     expect(() => createCodingTools('/w', 'agent_a1')).toThrow('No sandbox executor found for agent_a1')
   })
 })
@@ -129,8 +129,8 @@ describe('host runtime factory dispatch', () => {
   })
 
   test('validateSandboxSetup on host does not require a docker image and warns UNSANDBOXED', () => {
-    const prev = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    const prev = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
     const spawnSpy = spyOn(Bun, 'spawnSync')
     try {
@@ -149,8 +149,8 @@ describe('host runtime factory dispatch', () => {
     } finally {
       warnSpy.mockRestore()
       spawnSpy.mockRestore()
-      if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prev
+      if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prev
     }
   })
 
@@ -162,9 +162,9 @@ describe('host runtime factory dispatch', () => {
     beforeEach(() => {
       home = mkdtempSync(join(tmpdir(), 'tau-factory-host-'))
       prevHome = process.env.HOME_DIR
-      prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+      prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
       process.env.HOME_DIR = home
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       clearHostWorkspaceOverrides()
       resetHostBaseEnvCache()
       mkdirSync(join(home, 'private', 'agent_a1'), { recursive: true })
@@ -174,12 +174,12 @@ describe('host runtime factory dispatch', () => {
       resetHostBaseEnvCache()
       if (prevHome === undefined) delete process.env.HOME_DIR
       else process.env.HOME_DIR = prevHome
-      if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
       rmSync(home, { recursive: true, force: true })
     })
 
-    test('createCodingTools dispatches to the host coding tools under TAU_SANDBOX_RUNTIME=host', () => {
+    test('createCodingTools dispatches to the host coding tools under FICUS_SANDBOX_RUNTIME=host', () => {
       const tools = createCodingTools('', 'agent_a1', 'tok', SQUAD)
       expect(tools.map((t) => t.key)).toEqual(['read', 'write', 'edit', 'bash'])
       const bash = tools.find((t) => t.key === 'bash')!

@@ -12,7 +12,7 @@ describe('resolveSetupOptions', () => {
   it('resolves supervisor flag over env over persisted value over the OS default', async () => {
     const flagged = await resolveSetupOptions(
       { runtime: 'host', supervisor: 'pm2' },
-      { TAU_SETUP_SUPERVISOR: 'systemd-user' },
+      { FICUS_SETUP_SUPERVISOR: 'systemd-user' },
       noPrompt,
       false,
       { supervisor: 'launchd' },
@@ -23,7 +23,7 @@ describe('resolveSetupOptions', () => {
 
     const fromEnv = await resolveSetupOptions(
       { runtime: 'host' },
-      { TAU_SETUP_SUPERVISOR: 'systemd-user' },
+      { FICUS_SETUP_SUPERVISOR: 'systemd-user' },
       noPrompt,
       false,
       { supervisor: 'pm2' },
@@ -59,7 +59,7 @@ describe('resolveSetupOptions', () => {
   it('uses flags over env over defaults', async () => {
     const opts = await resolveSetupOptions(
       { runtime: 'host', port: '4000' },
-      { TAU_SETUP_RUNTIME: 'docker-socket', TAU_SETUP_PORT: '5000', TAU_SETUP_DB_NAME: 'tau2' },
+      { FICUS_SETUP_RUNTIME: 'docker-socket', FICUS_SETUP_PORT: '5000', FICUS_SETUP_DB_NAME: 'tau2' },
       noPrompt,
       false
     )
@@ -134,7 +134,7 @@ describe('resolveSetupOptions', () => {
 
     const opts = await resolveSetupOptions(
       { runtime: 'host', instance: 'Smoke' },
-      { TAU_SETUP_INSTANCE: 'other' },
+      { FICUS_SETUP_INSTANCE: 'other' },
       noPrompt,
       false
     )
@@ -142,7 +142,7 @@ describe('resolveSetupOptions', () => {
     expect(opts.explicit.has('instance')).toBe(true)
   })
   it('takes the instance from the env when there is no flag', async () => {
-    const opts = await resolveSetupOptions({ runtime: 'host' }, { TAU_SETUP_INSTANCE: 'ci2' }, noPrompt, false)
+    const opts = await resolveSetupOptions({ runtime: 'host' }, { FICUS_SETUP_INSTANCE: 'ci2' }, noPrompt, false)
     expect(opts.instance).toBe('ci2')
     expect(opts.explicit.has('instance')).toBe(true)
   })
@@ -157,7 +157,7 @@ describe('resolveSetupOptions', () => {
   it('takes the db port from the flag over the env and puts it in the compose database url', async () => {
     const opts = await resolveSetupOptions(
       { runtime: 'host', dbPort: '5433' },
-      { TAU_SETUP_DB_PORT: '5599' },
+      { FICUS_SETUP_DB_PORT: '5599' },
       noPrompt,
       false
     )
@@ -165,7 +165,7 @@ describe('resolveSetupOptions', () => {
     expect(opts.explicit.has('dbPort')).toBe(true)
     expect(opts.databaseUrl).toBe('postgres://postgres:postgres@localhost:5433/tau')
 
-    const fromEnv = await resolveSetupOptions({ runtime: 'host' }, { TAU_SETUP_DB_PORT: '5599' }, noPrompt, false)
+    const fromEnv = await resolveSetupOptions({ runtime: 'host' }, { FICUS_SETUP_DB_PORT: '5599' }, noPrompt, false)
     expect(fromEnv.dbPort).toBe(5599)
     expect(fromEnv.explicit.has('dbPort')).toBe(true)
   })
@@ -201,7 +201,7 @@ describe('resolveSetupOptions', () => {
 
     const fromEnv = await resolveSetupOptions(
       { runtime: 'host' },
-      { TAU_SETUP_INSTANCE: 'ci2', TAU_SETUP_PORT: '3300' },
+      { FICUS_SETUP_INSTANCE: 'ci2', FICUS_SETUP_PORT: '3300' },
       noPrompt,
       false,
       persisted

@@ -9,8 +9,8 @@
  * platform-owned value is: as environment variables in /etc/tau/managed.env
  * (see ../secrets/managed.ts).
  *
- *   TAU_MANAGED_SEAT_PRICE_USD_CENTS=1000   — USD minor units per billed seat / month
- *   TAU_MANAGED_INCLUDED_SEATS=1            — seats the base plan already covers
+ *   FICUS_MANAGED_SEAT_PRICE_USD_CENTS=1000   — USD minor units per billed seat / month
+ *   FICUS_MANAGED_INCLUDED_SEATS=1            — seats the base plan already covers
  *
  * Both are OPTIONAL. A self-hosted install sets neither and gets `undefined`
  * here, which every consumer renders as "no pricing UI at all". There is
@@ -24,11 +24,11 @@
  */
 import { isPlatformManaged } from '../secrets/managed'
 
-/** Currency of TAU_MANAGED_SEAT_PRICE_USD_CENTS — encoded in the var name, not configurable. */
+/** Currency of FICUS_MANAGED_SEAT_PRICE_USD_CENTS — encoded in the var name, not configurable. */
 export const SEAT_PRICE_CURRENCY = 'USD'
 
-export const SEAT_PRICE_ENV = 'TAU_MANAGED_SEAT_PRICE_USD_CENTS'
-export const INCLUDED_SEATS_ENV = 'TAU_MANAGED_INCLUDED_SEATS'
+export const SEAT_PRICE_ENV = 'FICUS_MANAGED_SEAT_PRICE_USD_CENTS'
+export const INCLUDED_SEATS_ENV = 'FICUS_MANAGED_INCLUDED_SEATS'
 
 /** The delivered pricing facts, once both vars parsed cleanly. */
 export interface SeatPricingConfig {

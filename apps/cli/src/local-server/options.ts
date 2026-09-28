@@ -37,7 +37,7 @@ export interface Prompter {
   confirm(question: string): Promise<boolean>
 }
 
-const ENV_PREFIX = 'TAU_SETUP_'
+const ENV_PREFIX = 'FICUS_SETUP_'
 const ENV_KEYS = {
   runtime: 'RUNTIME',
   supervisor: 'SUPERVISOR',
@@ -91,7 +91,7 @@ export function deriveUrls(port: number, appUrl?: string): { apiUrl: string; app
   return { apiUrl, appUrl: appUrl ? assertBareOrigin(appUrl) : apiUrl }
 }
 
-const FLAG_HELP = `Set --runtime <${LOCAL_RUNTIMES.join('|')}> (or TAU_SETUP_RUNTIME). Supervisor: --supervisor <${LOCAL_SUPERVISORS.join('|')}> (or TAU_SETUP_SUPERVISOR). Other flags: --instance, --home-dir, --port, --app-url, --database-url | --db-name | --db-port, --default, --no-start, --dry-run, --yes, --rebuild-image.`
+const FLAG_HELP = `Set --runtime <${LOCAL_RUNTIMES.join('|')}> (or FICUS_SETUP_RUNTIME). Supervisor: --supervisor <${LOCAL_SUPERVISORS.join('|')}> (or FICUS_SETUP_SUPERVISOR). Other flags: --instance, --home-dir, --port, --app-url, --database-url | --db-name | --db-port, --default, --no-start, --dry-run, --yes, --rebuild-image.`
 
 /** What this checkout already chose (its .env) — used when no flag or env says otherwise. */
 export interface PersistedSetupValues {
@@ -148,7 +148,7 @@ export async function resolveSetupOptions(
 
   const portPick = pick('port', raw, env)
   const port = portPick.value !== undefined ? Number(portPick.value) : (persisted.port ?? 3000)
-  // 65532 is the ceiling, not 65535: WORKER_PORT and TAU_WORKER_EVENT_PORT are
+  // 65532 is the ceiling, not 65535: WORKER_PORT and FICUS_WORKER_EVENT_PORT are
   // derived as PORT+2 / PORT+3 and must still be legal ports.
   if (!Number.isInteger(port) || port < 1 || port > 65532) {
     throw new SetupOptionsError(`--port must be an integer between 1 and 65532 (got "${portPick.value ?? port}")`)

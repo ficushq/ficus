@@ -32,9 +32,9 @@ Capability meanings:
 
 - `searchable` — emits searchable results, either via chunks or live `search()`.
 - `readable` — full content can be resolved by memory read flows.
-- `writable` — Tau can create/update documents in the source.
+- `writable` — Ficus can create/update documents in the source.
 - `incremental` — `list()` can support cheap sync using cursors or timestamps.
-- `external` — content originates outside Tau's core database.
+- `external` — content originates outside Ficus's core database.
 - `live` — source is queried at search time and does not persist chunks.
 
 ## Writing an indexed adapter
@@ -175,7 +175,7 @@ Every chunk must carry `sourceSquadId` via the `squadId` column, `sourceType`, `
 
 ## Validators and source-specific filters
 
-Adapters own their source-specific validation. Tau deliberately does not provide a generic authorization framework for every external system.
+Adapters own their source-specific validation. Ficus deliberately does not provide a generic authorization framework for every external system.
 
 - `validatePolicy(policy)` validates ingestion policy stored in `squad_source_configs` for that adapter.
 - `validateGrantFilter(filter)` validates adapter-specific grant filters before scope expansion uses a grant.

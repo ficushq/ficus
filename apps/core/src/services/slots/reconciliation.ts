@@ -1,6 +1,6 @@
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { and, eq, gt, inArray, sql } from 'drizzle-orm'
-import { isLiveAgentStatus } from '@tau/shared'
+import { isLiveAgentStatus } from '@ficus/shared'
 import { agents, db, slotClaims, slotNotifications, slotPools, slotWaiters } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'

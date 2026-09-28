@@ -1,6 +1,6 @@
 # Distributed Event Emitter
 
-Tau has an in-process typed event emitter in both the API and worker. The two emitters are joined by the authenticated, best-effort local-events HTTP transport on the `app_events` channel.
+Ficus has an in-process typed event emitter in both the API and worker. The two emitters are joined by the authenticated, best-effort local-events HTTP transport on the `app_events` channel.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ Worker process                              API process
        dedicated listener                 POST /internal/events
 ```
 
-The API posts to the worker's dedicated listener (loopback by default). The worker posts to the API's existing `POST /internal/events` route. `TAU_WORKER_EVENT_BIND`, `TAU_WORKER_EVENT_URL`, and `TAU_API_EVENT_URL` support deployments where the processes use separate network namespaces.
+The API posts to the worker's dedicated listener (loopback by default). The worker posts to the API's existing `POST /internal/events` route. `FICUS_WORKER_EVENT_BIND`, `FICUS_WORKER_EVENT_URL`, and `FICUS_API_EVENT_URL` support deployments where the processes use separate network namespaces.
 
 ## Key files
 
@@ -40,8 +40,8 @@ On receipt, `source` suppresses the sender's self-echo and prevents re-forwardin
 
 Every post is authenticated. The token resolves in this order:
 
-1. explicit `TAU_INTERNAL_EVENT_TOKEN`;
-2. an HMAC-derived token from `TAU_ENCRYPTION_KEY`;
+1. explicit `FICUS_INTERNAL_EVENT_TOKEN`;
+2. an HMAC-derived token from `FICUS_ENCRYPTION_KEY`;
 3. a random per-process token, which fails closed because the two processes will not agree.
 
 ## Local-events channels

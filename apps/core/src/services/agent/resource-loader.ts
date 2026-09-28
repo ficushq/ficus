@@ -63,7 +63,7 @@ export class TauResourceLoader implements ResourceLoader {
       this.skillPaths?.map((path) =>
         loadSkillsFromDir({
           dir: path,
-          source: 'tau',
+          source: 'ficus',
         })
       ) ?? []
 
@@ -135,7 +135,7 @@ export class TauResourceLoader implements ResourceLoader {
 
   /**
    * Pi 0.84 asks the loader where the system prompt came from (it renders the
-   * path in interactive `/context`). Tau builds its prompt in memory rather
+   * path in interactive `/context`). Ficus builds its prompt in memory rather
    * than reading an `AGENTS.md`-style file, so there is no source path.
    */
   getSystemPromptSource() {

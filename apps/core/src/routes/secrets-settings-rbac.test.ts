@@ -75,7 +75,7 @@ describe('B14 secrets and settings RBAC', () => {
   })
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = encryptionKey
+    process.env.FICUS_ENCRYPTION_KEY = encryptionKey
     await db.delete(secrets)
     await db.delete(settings)
     resetSecretGroups()
@@ -99,9 +99,9 @@ describe('B14 secrets and settings RBAC', () => {
   })
 
   test('hosted exe.dev credentials are absent from lists and cannot be revealed or changed', async () => {
-    const previous = process.env.TAU_MANAGED
+    const previous = process.env.FICUS_MANAGED
     try {
-      process.env.TAU_MANAGED = '1'
+      process.env.FICUS_MANAGED = '1'
       await getSecretStore().set('exe-provider-ssh-key', 'fixture-private-key')
       const listing = await (await app.request('/secrets', req())).json()
       expect(listing.secrets.some((secret: { key: string }) => secret.key === 'exe-provider-ssh-key')).toBe(false)
@@ -115,8 +115,8 @@ describe('B14 secrets and settings RBAC', () => {
       }
       expect(getSecretStore().get('exe-provider-ssh-key')).toBe('fixture-private-key')
     } finally {
-      if (previous === undefined) delete process.env.TAU_MANAGED
-      else process.env.TAU_MANAGED = previous
+      if (previous === undefined) delete process.env.FICUS_MANAGED
+      else process.env.FICUS_MANAGED = previous
     }
   })
 
@@ -229,7 +229,7 @@ describe('B14 secrets and settings RBAC', () => {
 
   test('admin reads and lists all groups including system and unmatched keys', async () => {
     await app.request('/secrets/DEPLOY_TEST_TOKEN', req('PUT', { value: 'gh' }))
-    await app.request('/secrets/TAU_PASSWORD', req('PUT', { value: 'pw' }))
+    await app.request('/secrets/FICUS_PASSWORD', req('PUT', { value: 'pw' }))
     await app.request('/secrets/RANDOM_KEY', req('PUT', { value: 'r' }))
 
     const list = await app.request('/secrets', req())
@@ -237,14 +237,14 @@ describe('B14 secrets and settings RBAC', () => {
     const keys = ((await list.json()) as { secrets: Array<{ key: string; isSet: boolean }> }).secrets
       .filter((secret) => secret.isSet)
       .map((secret) => secret.key)
-    expect(keys).toEqual(expect.arrayContaining(['DEPLOY_TEST_TOKEN', 'TAU_PASSWORD', 'RANDOM_KEY']))
-    expect((await app.request('/secrets/TAU_PASSWORD', req())).status).toBe(200)
+    expect(keys).toEqual(expect.arrayContaining(['DEPLOY_TEST_TOKEN', 'FICUS_PASSWORD', 'RANDOM_KEY']))
+    expect((await app.request('/secrets/FICUS_PASSWORD', req())).status).toBe(200)
   })
 
   test('group-limited operator list shows only integration and read/write/delete are scoped', async () => {
     await app.request('/secrets/DEPLOY_TEST_TOKEN', req('PUT', { value: 'gh' }))
     await app.request('/secrets/OPENAI_API_KEY', req('PUT', { value: 'oai' }))
-    await app.request('/secrets/TAU_PASSWORD', req('PUT', { value: 'pw' }))
+    await app.request('/secrets/FICUS_PASSWORD', req('PUT', { value: 'pw' }))
 
     const list = await app.request('/secrets', req('GET', undefined, operator.token))
     expect(list.status).toBe(200)
@@ -253,17 +253,17 @@ describe('B14 secrets and settings RBAC', () => {
       .map((secret) => secret.key)
     expect(setKeys).toContain('DEPLOY_TEST_TOKEN')
     expect(setKeys).not.toContain('OPENAI_API_KEY')
-    expect(setKeys).not.toContain('TAU_PASSWORD')
+    expect(setKeys).not.toContain('FICUS_PASSWORD')
 
     expect((await app.request('/secrets/DEPLOY_TEST_TOKEN', req('GET', undefined, operator.token))).status).toBe(200)
     expect((await app.request('/secrets/OPENAI_API_KEY', req('GET', undefined, operator.token))).status).toBe(403)
-    expect((await app.request('/secrets/TAU_PASSWORD', req('GET', undefined, operator.token))).status).toBe(403)
+    expect((await app.request('/secrets/FICUS_PASSWORD', req('GET', undefined, operator.token))).status).toBe(403)
 
     expect((await app.request('/secrets/GITHUB_DEPLOY_KEY', req('PUT', { value: 'x' }, operator.token))).status).toBe(
       200
     )
     expect((await app.request('/secrets/OPENAI_API_KEY', req('PUT', { value: 'x' }, operator.token))).status).toBe(403)
-    expect((await app.request('/secrets/TAU_PASSWORD', req('DELETE', undefined, operator.token))).status).toBe(403)
+    expect((await app.request('/secrets/FICUS_PASSWORD', req('DELETE', undefined, operator.token))).status).toBe(403)
     expect((await app.request('/secrets/DEPLOY_TEST_TOKEN', req('DELETE', undefined, operator.token))).status).toBe(200)
   })
 
@@ -281,36 +281,65 @@ describe('B14 secrets and settings RBAC', () => {
   })
 
   test('self-hosted relay credentials cannot be listed, read, replaced or deleted through tenant APIs', async () => {
-    const prior = process.env.TAU_PUSH_RELAY_TOKEN
-    const managed = process.env.TAU_MANAGED_SECRET_KEYS
-    delete process.env.TAU_MANAGED_SECRET_KEYS
-    process.env.TAU_PUSH_RELAY_TOKEN = 'owned-relay-credential-canary'
+    const prior = process.env.FICUS_PUSH_RELAY_TOKEN
+    const managed = process.env.FICUS_MANAGED_SECRET_KEYS
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
+    process.env.FICUS_PUSH_RELAY_TOKEN = 'owned-relay-credential-canary'
     try {
       const list = await app.request('/secrets', req())
       expect(list.status).toBe(200)
       const raw = await list.text()
-      expect(raw).not.toContain('TAU_PUSH_RELAY_TOKEN')
+      expect(raw).not.toContain('FICUS_PUSH_RELAY_TOKEN')
       expect(raw).not.toContain('owned-relay-credential-canary')
       for (const method of ['GET', 'PUT', 'DELETE']) {
         const response = await app.request(
-          '/secrets/TAU_PUSH_RELAY_TOKEN',
+          '/secrets/FICUS_PUSH_RELAY_TOKEN',
           req(method, method === 'PUT' ? { value: 'replacement' } : undefined)
         )
         expect(response.status).toBe(403)
         expect(await response.text()).not.toContain('owned-relay-credential-canary')
       }
-      expect(process.env.TAU_PUSH_RELAY_TOKEN).toBe('owned-relay-credential-canary')
+      expect(process.env.FICUS_PUSH_RELAY_TOKEN).toBe('owned-relay-credential-canary')
     } finally {
-      if (prior === undefined) delete process.env.TAU_PUSH_RELAY_TOKEN
-      else process.env.TAU_PUSH_RELAY_TOKEN = prior
-      if (managed === undefined) delete process.env.TAU_MANAGED_SECRET_KEYS
-      else process.env.TAU_MANAGED_SECRET_KEYS = managed
+      if (prior === undefined) delete process.env.FICUS_PUSH_RELAY_TOKEN
+      else process.env.FICUS_PUSH_RELAY_TOKEN = prior
+      if (managed === undefined) delete process.env.FICUS_MANAGED_SECRET_KEYS
+      else process.env.FICUS_MANAGED_SECRET_KEYS = managed
+    }
+  })
+
+  test('retained TAU_ managed rows are hidden and fail closed like their FICUS_ keys (one release)', async () => {
+    // Rows a pre-rename Core stored and the secret-row copy (Task 9) keeps until the bridge is removed.
+    await getSecretStore().set('TAU_PUSH_RELAY_TOKEN', 'legacy-relay-canary')
+    await getSecretStore().set('TAU_PLATFORM_INSTANCE_TOKEN', 'legacy-instance-canary')
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS = 'FICUS_PLATFORM_INSTANCE_TOKEN'
+    try {
+      const list = await app.request('/secrets', req())
+      expect(list.status).toBe(200)
+      const raw = await list.text()
+      expect(raw).not.toContain('TAU_PUSH_RELAY_TOKEN')
+      expect(raw).not.toContain('TAU_PLATFORM_INSTANCE_TOKEN')
+      expect(raw).not.toContain('legacy-')
+      for (const key of ['TAU_PUSH_RELAY_TOKEN', 'TAU_PLATFORM_INSTANCE_TOKEN']) {
+        for (const method of ['GET', 'PUT', 'DELETE']) {
+          const response = await app.request(
+            `/secrets/${key}`,
+            req(method, method === 'PUT' ? { value: 'x' } : undefined)
+          )
+          expect(response.status).toBe(403)
+          expect(await response.text()).not.toContain('legacy-')
+        }
+      }
+    } finally {
+      delete process.env.FICUS_MANAGED
+      delete process.env.FICUS_MANAGED_SECRET_KEYS
     }
   })
 
   test('platform-managed keys are invisible: excluded from list, surfaced as names, and fail closed on read/write/delete', async () => {
-    process.env.TAU_MANAGED = '1'
-    process.env.TAU_MANAGED_SECRET_KEYS = 'APNS_KEY_ID'
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS = 'APNS_KEY_ID'
     process.env.APNS_KEY_ID = 'platform-delivered'
     try {
       const body = (await (await app.request('/secrets', req())).json()) as {
@@ -330,8 +359,8 @@ describe('B14 secrets and settings RBAC', () => {
       expect((await app.request('/secrets/APNS_KEY_ID', req('PUT', { value: 'x' }))).status).toBe(403)
       expect((await app.request('/secrets/APNS_KEY_ID', req('DELETE'))).status).toBe(403)
     } finally {
-      delete process.env.TAU_MANAGED
-      delete process.env.TAU_MANAGED_SECRET_KEYS
+      delete process.env.FICUS_MANAGED
+      delete process.env.FICUS_MANAGED_SECRET_KEYS
       delete process.env.APNS_KEY_ID
     }
   })
@@ -340,8 +369,8 @@ describe('B14 secrets and settings RBAC', () => {
     for (const key of ['NOTION_OAUTH_CLIENT_ID', 'NOTION_OAUTH_CLIENT_SECRET']) {
       expect((await app.request(`/secrets/${key}`, req('PUT', { value: `${key}-stale-db-value` }))).status).toBe(200)
     }
-    process.env.TAU_MANAGED = '1'
-    process.env.TAU_MANAGED_SECRET_KEYS = 'NOTION_OAUTH_CLIENT_ID,NOTION_OAUTH_CLIENT_SECRET,SES_ACCESS_KEY_ID'
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS = 'NOTION_OAUTH_CLIENT_ID,NOTION_OAUTH_CLIENT_SECRET,SES_ACCESS_KEY_ID'
     try {
       const response = await app.request('/secrets', req())
       const raw = await response.text()
@@ -354,8 +383,8 @@ describe('B14 secrets and settings RBAC', () => {
       expect((await app.request('/secrets/NOTION_OAUTH_CLIENT_ID', req())).status).toBe(403)
       expect((await app.request('/secrets/NOTION_OAUTH_CLIENT_SECRET', req())).status).toBe(403)
     } finally {
-      delete process.env.TAU_MANAGED
-      delete process.env.TAU_MANAGED_SECRET_KEYS
+      delete process.env.FICUS_MANAGED
+      delete process.env.FICUS_MANAGED_SECRET_KEYS
       await app.request('/secrets/NOTION_OAUTH_CLIENT_ID', req('DELETE'))
       await app.request('/secrets/NOTION_OAUTH_CLIENT_SECRET', req('DELETE'))
     }
@@ -368,8 +397,8 @@ describe('B14 secrets and settings RBAC', () => {
     // A tenant row already exists here (a self-host that became managed).
     expect((await app.request('/secrets/APNS_KEY_P8', req('PUT', { value: 'tenant-supplied-pem' }))).status).toBe(200)
 
-    process.env.TAU_MANAGED = '1'
-    process.env.TAU_MANAGED_SECRET_KEYS = 'APNS_KEY_P8_FILE,APNS_KEY_ID'
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS = 'APNS_KEY_P8_FILE,APNS_KEY_ID'
     process.env.APNS_KEY_P8_FILE = '/etc/tau/artifacts/apns_key.p8'
     try {
       const res = await app.request('/secrets', req())
@@ -389,8 +418,8 @@ describe('B14 secrets and settings RBAC', () => {
       expect((await app.request('/secrets/APNS_KEY_P8', req('PUT', { value: 'override' }))).status).toBe(403)
       expect((await app.request('/secrets/APNS_KEY_P8', req('DELETE'))).status).toBe(403)
     } finally {
-      delete process.env.TAU_MANAGED
-      delete process.env.TAU_MANAGED_SECRET_KEYS
+      delete process.env.FICUS_MANAGED
+      delete process.env.FICUS_MANAGED_SECRET_KEYS
       delete process.env.APNS_KEY_P8_FILE
     }
   })
@@ -413,7 +442,7 @@ describe('B14 secrets and settings RBAC', () => {
   })
 
   test('list reports whether this instance is platform-managed, without leaking any value or path', async () => {
-    // Self-hosted: no TAU_MANAGED, nothing is managed.
+    // Self-hosted: no FICUS_MANAGED, nothing is managed.
     const selfHosted = (await (await app.request('/secrets', req())).json()) as {
       managed: boolean
       managedKeys: string[]
@@ -421,8 +450,8 @@ describe('B14 secrets and settings RBAC', () => {
     expect(selfHosted.managed).toBe(false)
     expect(selfHosted.managedKeys).toEqual([])
 
-    process.env.TAU_MANAGED = '1'
-    process.env.TAU_MANAGED_SECRET_KEYS = 'APNS_KEY_ID'
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS = 'APNS_KEY_ID'
     // A platform-provided credential that is NOT a managed env var: delivered as
     // a file the tenant's setup config points at. The flag must not expose it.
     await app.request('/secrets/exe-provider-ssh-key', req('PUT', { value: 'PRIVATE-KEY-BODY' }))
@@ -437,8 +466,8 @@ describe('B14 secrets and settings RBAC', () => {
       expect(raw).not.toContain('/root/tau-setup')
       expect(raw).not.toContain('ssh_key_path')
     } finally {
-      delete process.env.TAU_MANAGED
-      delete process.env.TAU_MANAGED_SECRET_KEYS
+      delete process.env.FICUS_MANAGED
+      delete process.env.FICUS_MANAGED_SECRET_KEYS
     }
   })
 

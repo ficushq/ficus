@@ -1,4 +1,4 @@
-import type { WorkflowSource } from '@tau/shared'
+import type { WorkflowSource } from '@ficus/shared'
 import type { Squad } from '../../entities/Squad'
 
 /** Explicit choice, squad default, then the standard Solo preset. */

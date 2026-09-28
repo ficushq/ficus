@@ -1,5 +1,5 @@
 import { activityExternalHref } from './squadActivityView'
-import type { ActivityPreviewSpan, Agent } from '@tau/shared'
+import type { ActivityPreviewSpan, Agent } from '@ficus/shared'
 import type { ReactNode } from 'react'
 import { parseEntityReference } from '../../lib/entityReference'
 import { EntityReferenceLink } from '../EntityReferenceLink'

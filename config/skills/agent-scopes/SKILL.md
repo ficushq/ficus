@@ -1,6 +1,6 @@
 ---
 name: agent-scopes
-description: "Explain and manage per-agent extra permission scopes via the Tau CLI. Use when granting, auditing, or revoking narrowly-scoped permissions for a specific agent."
+description: 'Explain and manage per-agent extra permission scopes via the Ficus CLI. Use when granting, auditing, or revoking narrowly-scoped permissions for a specific agent.'
 ---
 
 # Agent Extra Scopes
@@ -41,7 +41,7 @@ Managing extra scopes is intentionally privileged.
 - Scope management is admin-only by default; do not add it to ordinary operator
   roles casually.
 - You can only grant a permission that you already hold.
-- Grantable values must be known permissions from Tau's permission catalog, or a
+- Grantable values must be known permissions from Ficus's permission catalog, or a
   known resource wildcard like `agents:*`.
 - The global wildcard `*` is not grantable as an extra scope.
 - Unknown resources/actions are rejected.
@@ -56,7 +56,7 @@ relevant work stream, and revoke it when it is no longer needed.
 ### List an Agent's Extra Scopes
 
 ```bash
-tau agent scope list <agent-id>
+ficus agent scope list <agent-id>
 ```
 
 This prints the additive permissions currently granted directly to that agent,
@@ -65,17 +65,17 @@ including creation timestamps.
 ### Grant an Extra Scope
 
 ```bash
-tau agent scope grant <agent-id> <permission>
+ficus agent scope grant <agent-id> <permission>
 ```
 
 Examples:
 
 ```bash
 # Grant one exact permission
-tau agent scope grant 00000000-0000-0000-0000-000000000000 inbox:read
+ficus agent scope grant 00000000-0000-0000-0000-000000000000 inbox:read
 
 # Grant all known permissions under a resource namespace
-tau agent scope grant 00000000-0000-0000-0000-000000000000 agents:*
+ficus agent scope grant 00000000-0000-0000-0000-000000000000 agents:*
 ```
 
 If the command fails, check the error before retrying:
@@ -92,17 +92,17 @@ If the command fails, check the error before retrying:
 ### Revoke an Extra Scope
 
 ```bash
-tau agent scope revoke <agent-id> <permission>
+ficus agent scope revoke <agent-id> <permission>
 ```
 
 The revoke command also has an `rm` alias:
 
 ```bash
-tau agent scope rm <agent-id> <permission>
+ficus agent scope rm <agent-id> <permission>
 ```
 
 Revocation takes effect for subsequent permission checks. After changing scopes,
-Tau invalidates access caches so new authorization decisions use the updated
+Ficus invalidates access caches so new authorization decisions use the updated
 scope set.
 
 ## Recommended Workflow
@@ -112,27 +112,27 @@ scope set.
 2. Confirm the target agent and its current grants:
 
    ```bash
-   tau agent get <agent-id>
-   tau agent scope list <agent-id>
+   ficus agent get <agent-id>
+   ficus agent scope list <agent-id>
    ```
 
 3. Grant the narrowest permission that solves the problem:
 
    ```bash
-   tau agent scope grant <agent-id> <permission>
+   ficus agent scope grant <agent-id> <permission>
    ```
 
 4. Ask the agent to retry the operation.
 5. When the exceptional need is over, revoke the grant:
 
    ```bash
-   tau agent scope revoke <agent-id> <permission>
+   ficus agent scope revoke <agent-id> <permission>
    ```
 
 6. Re-list scopes to verify cleanup:
 
    ```bash
-   tau agent scope list <agent-id>
+   ficus agent scope list <agent-id>
    ```
 
 ## Choosing Scope Values
@@ -140,22 +140,22 @@ scope set.
 Use exact permissions when possible:
 
 ```bash
-tau agent scope grant <agent-id> workstreams:read
-tau agent scope grant <agent-id> agents:update
+ficus agent scope grant <agent-id> workstreams:read
+ficus agent scope grant <agent-id> agents:update
 ```
 
 Use resource wildcards only when the agent truly needs the full set of actions
 for a known resource namespace:
 
 ```bash
-tau agent scope grant <agent-id> workstreams:*
+ficus agent scope grant <agent-id> workstreams:*
 ```
 
 Do not try to grant global admin:
 
 ```bash
 # Rejected
-tau agent scope grant <agent-id> '*'
+ficus agent scope grant <agent-id> '*'
 ```
 
 ## Web UI

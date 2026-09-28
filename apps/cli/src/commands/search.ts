@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { entitySearchQuerySchema, type EntitySearchResponse } from '@tau/shared'
+import { entitySearchQuerySchema, type EntitySearchResponse } from '@ficus/shared'
 import { apiGet } from '../client'
 import { outputTable, outputError } from '../output'
 

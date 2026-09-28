@@ -1,5 +1,5 @@
 import { Schedule } from '../../entities/Schedule'
-import type { ScheduleAction, Schedule as ScheduleType } from '@tau/shared'
+import type { ScheduleAction, Schedule as ScheduleType } from '@ficus/shared'
 
 function formatScheduleConfig(schedule: ScheduleType['schedule']): string {
   if (schedule.interval) return `every ${schedule.interval}`

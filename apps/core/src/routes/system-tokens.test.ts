@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, setSystemTime } 
 import { acquireMaintenanceTestIsolation } from '../test-utils/maintenance-test-isolation'
 import { Hono } from 'hono'
 import { eq, sql } from 'drizzle-orm'
-import { PLATFORM_MAINTENANCE_HEADERS } from '@tau/shared'
+import { PLATFORM_MAINTENANCE_HEADERS } from '@ficus/shared'
 import { db, instanceMaintenanceAudit, instanceMaintenanceState, systemTokens } from '../db'
 import { identityMiddleware } from '../middleware/identity'
 import { authHeaders } from '../test-utils'

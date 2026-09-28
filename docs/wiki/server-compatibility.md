@@ -1,10 +1,10 @@
 # Server compatibility and capabilities
 
-`GET /api/auth/status` includes a `server` object before sign-in. `GET /api/auth/introspect` includes the same object alongside identity, roles, and permissions. `tau whoami` shows the release/API versions and revision in text output, and preserves the full object at `instance.server` in JSON output.
+`GET /api/auth/status` includes a `server` object before sign-in. `GET /api/auth/introspect` includes the same object alongside identity, roles, and permissions. `ficus whoami` shows the release/API versions and revision in text output, and preserves the full object at `instance.server` in JSON output.
 
 ```json
 {
-  "product": "tau",
+  "product": "ficus",
   "version": "0.2.0",
   "revision": null,
   "apiVersion": 1,

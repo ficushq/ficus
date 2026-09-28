@@ -4,7 +4,7 @@ import {
   trackedResourceMatches,
   type AgentStatus,
   type TrackedResourceKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import {

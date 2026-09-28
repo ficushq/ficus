@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { ProviderRoute } from '@tau/shared/provider-health'
+import type { ProviderRoute } from '@ficus/shared/provider-health'
 import { createLogger } from '../../lib/infra/logger'
 import { parseModelSpec, splitModelPriorityList } from '../../lib/utils/model-spec'
 import { db } from '../../db'
@@ -12,7 +12,7 @@ import { reconcileDeadFleet } from './dead-fleet'
 import { FleetIncidentNotifier } from './notifier'
 import { reconcileProviderHealthRecords } from './provider-health-reconciler'
 import { reconcileSandboxOverload } from './sandbox-overload'
-import type { ProviderHealthRecord } from '@tau/shared/provider-health'
+import type { ProviderHealthRecord } from '@ficus/shared/provider-health'
 
 const log = createLogger('fleet-alert-runtime')
 const DEFAULT_INTERVAL_MS = 60_000

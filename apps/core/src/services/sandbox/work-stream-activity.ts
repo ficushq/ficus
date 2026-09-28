@@ -1,7 +1,7 @@
 import { Agent } from '../../entities/Agent'
 import { listAgentActivityRows } from '../../entities/agent-queries'
 import { WorkStream } from '../../entities/WorkStream'
-import { isLiveAgentStatus, WORK_STREAM_ADMITTED_STATUSES, type WorkStreamStatus } from '@tau/shared'
+import { isLiveAgentStatus, WORK_STREAM_ADMITTED_STATUSES, type WorkStreamStatus } from '@ficus/shared'
 import { collectWorkStreamAgentIds } from '../work-streams/agent-ids'
 import { RECENT_ACTIVITY_WINDOW_MS } from './squad-activity'
 

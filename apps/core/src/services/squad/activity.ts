@@ -1,8 +1,8 @@
 import { addWorkReferences } from '../squad-activity/work-references'
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { coerceSquadActivityRef } from '@tau/shared'
-import type { SquadActivityItem, SquadActivityKind, SquadActivityPage } from '@tau/shared'
+import { coerceSquadActivityRef } from '@ficus/shared'
+import type { SquadActivityItem, SquadActivityKind, SquadActivityPage } from '@ficus/shared'
 import {
   ActivityCursorExpiredError,
   decodeActivityCursor,

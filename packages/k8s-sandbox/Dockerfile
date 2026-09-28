@@ -1,4 +1,4 @@
-# Tau Sandbox — multi-stage build (3 stages, 2 published images)
+# Ficus Sandbox — multi-stage build (3 stages, 2 published images)
 #
 #   base   — shared minimal core. Internal build stage; never run as a pod.
 #   agent  — minimal per-agent light box  → tau-sandbox-agent  (sandboxType: agent)
@@ -58,7 +58,7 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
 # --- Tool executor service ---
 COPY packages/k8s-sandbox/package.json /opt/sandbox/package.json
 COPY packages/k8s-sandbox/src /opt/sandbox/src
-# The executor depends on @tau/shared as `workspace:*`, which bun can only
+# The executor depends on @ficus/shared as `workspace:*`, which bun can only
 # resolve inside a workspace. Make /opt/sandbox that workspace: copy the member
 # in and declare it on the executor's own manifest (same shape as
 # apps/core/docker-sandbox/Dockerfile), so server.ts keeps its path.
@@ -69,7 +69,7 @@ WORKDIR /opt/sandbox
 RUN bun -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("package.json","utf8"));p.workspaces=["packages/shared"];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' \
     && bun install --production
 # Verify bun-pty (Bun built-in, no native addon needed) and the vendored workspace member resolve
-RUN bun -e "require('bun-pty'); require('@tau/shared/advisory-lock')" || (echo "ERROR: executor dependencies not available" && exit 1)
+RUN bun -e "require('bun-pty'); require('@ficus/shared/advisory-lock')" || (echo "ERROR: executor dependencies not available" && exit 1)
 
 # --- Sandbox scaffolding ---
 COPY packages/k8s-sandbox/sandbox/runtime-env.sh /opt/sandbox/runtime-env.sh
@@ -110,7 +110,7 @@ FROM base AS agent
 
 # Empty default devbox template. In this image /opt/tau/defaults/devbox.json IS
 # the (package-less) template the entrypoint seeds as the agent's own devbox in
-# /private (TAU_DEVBOX_DIR). With no packages declared, the entrypoint's
+# /private (FICUS_DEVBOX_DIR). With no packages declared, the entrypoint's
 # `devbox install` is skipped — the comfort set already lives on PATH below.
 COPY packages/k8s-sandbox/sandbox/devbox.agent.json /opt/tau/defaults/devbox.json
 

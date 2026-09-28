@@ -149,14 +149,14 @@ describe('K8sSandboxManager', () => {
     expect(layout.privateMount).toBe('/private')
   })
 
-  test('getWorkspaceLayout is env-independent (k8s pods keep container mounts even if TAU_SANDBOX_RUNTIME leaks)', () => {
-    const prev = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+  test('getWorkspaceLayout is env-independent (k8s pods keep container mounts even if FICUS_SANDBOX_RUNTIME leaks)', () => {
+    const prev = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     try {
       expect(K8sSandboxManager.prototype.getWorkspaceLayout({ squadId: 'sq1' }).workspaceMount).toBe('/workspace/sq1')
     } finally {
-      if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prev
+      if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prev
     }
   })
 
@@ -176,10 +176,10 @@ describe('K8sSandboxManager', () => {
   })
 
   test('getLocalDeploymentTarget returns hosted pod DNS target', async () => {
-    const previousLocal = process.env.TAU_K8S_LOCAL
-    const previousRuntime = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'k8s'
-    process.env.TAU_K8S_LOCAL = 'false'
+    const previousLocal = process.env.FICUS_K8S_LOCAL
+    const previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'k8s'
+    process.env.FICUS_K8S_LOCAL = 'false'
     const sandboxes = new Map([
       [
         'test-sandbox',
@@ -203,18 +203,18 @@ describe('K8sSandboxManager', () => {
 
       expect(result).toEqual({ host: 'tau-sandbox-test.tau-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
     } finally {
-      if (previousLocal === undefined) delete process.env.TAU_K8S_LOCAL
-      else process.env.TAU_K8S_LOCAL = previousLocal
-      if (previousRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = previousRuntime
+      if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
+      else process.env.FICUS_K8S_LOCAL = previousLocal
+      if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
     }
   })
 
   test('getLocalDeploymentTarget uses tracked pod state instead of local-dev endpoint host as pod name', async () => {
-    const previousLocal = process.env.TAU_K8S_LOCAL
-    const previousRuntime = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'k8s'
-    process.env.TAU_K8S_LOCAL = 'true'
+    const previousLocal = process.env.FICUS_K8S_LOCAL
+    const previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'k8s'
+    process.env.FICUS_K8S_LOCAL = 'true'
     const sandboxes = new Map([
       [
         'test-sandbox',
@@ -247,20 +247,20 @@ describe('K8sSandboxManager', () => {
       expect(result).toEqual({ host: 'localhost', port: 59668 })
       expect(forwarded).toEqual([{ sandboxId: 'test-sandbox', podName: 'tau-sandbox-test', port: 3000 }])
     } finally {
-      if (previousLocal === undefined) delete process.env.TAU_K8S_LOCAL
-      else process.env.TAU_K8S_LOCAL = previousLocal
-      if (previousRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = previousRuntime
+      if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
+      else process.env.FICUS_K8S_LOCAL = previousLocal
+      if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
     }
   })
 
-  // A stale TAU_K8S_LOCAL=true in a .env that now selects another runtime must
+  // A stale FICUS_K8S_LOCAL=true in a .env that now selects another runtime must
   // not route deployments through a k3d port-forward that does not exist.
-  test('getLocalDeploymentTarget ignores TAU_K8S_LOCAL when the runtime is not k8s', async () => {
-    const previousLocal = process.env.TAU_K8S_LOCAL
-    const previousRuntime = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
-    process.env.TAU_K8S_LOCAL = 'true'
+  test('getLocalDeploymentTarget ignores FICUS_K8S_LOCAL when the runtime is not k8s', async () => {
+    const previousLocal = process.env.FICUS_K8S_LOCAL
+    const previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_K8S_LOCAL = 'true'
     const sandboxes = new Map([
       [
         'test-sandbox',
@@ -290,10 +290,10 @@ describe('K8sSandboxManager', () => {
 
       expect(result).toEqual({ host: 'tau-sandbox-test.tau-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
     } finally {
-      if (previousLocal === undefined) delete process.env.TAU_K8S_LOCAL
-      else process.env.TAU_K8S_LOCAL = previousLocal
-      if (previousRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = previousRuntime
+      if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
+      else process.env.FICUS_K8S_LOCAL = previousLocal
+      if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
     }
   })
 

@@ -6,9 +6,9 @@ import path from 'path'
 import { SandboxClient } from '../k8s/http-client'
 import { computeDockerSpecDigest, parseDockerImageContract } from './runtime-contract'
 import { removeOwnedDockerContainers, runOwnedDocker } from './docker-test-runtime'
-const enabled = process.env.TAU_DOCKER_RUNTIME_INTEGRATION === '1'
-const owner = process.env.TAU_DOCKER_TEST_OWNER ?? 'disabled'
-const image = process.env.TAU_SANDBOX_IMAGE ?? 'tau-sandbox:latest'
+const enabled = process.env.FICUS_DOCKER_RUNTIME_INTEGRATION === '1'
+const owner = process.env.FICUS_DOCKER_TEST_OWNER ?? 'disabled'
+const image = process.env.FICUS_SANDBOX_IMAGE ?? 'tau-sandbox:latest'
 
 function startArgs(name: string, extra: string[] = []): string[] {
   return [
@@ -21,9 +21,9 @@ function startArgs(name: string, extra: string[] = []): string[] {
     '-p',
     '127.0.0.1::50051',
     '-e',
-    'TAU_HOST_UID=12345',
+    'FICUS_HOST_UID=12345',
     '-e',
-    'TAU_HOST_GID=12346',
+    'FICUS_HOST_GID=12346',
     '-v',
     '/var/run/docker.sock:/var/run/docker.sock',
     ...extra,
@@ -97,7 +97,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
 
   test('identity collision fails closed before executor/token creation', async () => {
     const name = `tau-collision-${owner}`
-    expect(runOwnedDocker(startArgs(name, ['-e', 'TAU_HOST_GID=20']), owner).exitCode).toBe(0)
+    expect(runOwnedDocker(startArgs(name, ['-e', 'FICUS_HOST_GID=20']), owner).exitCode).toBe(0)
     await expectExited(name)
     expect(
       runOwnedDocker(['logs', name], owner).stderr.toString() + runOwnedDocker(['logs', name], owner).stdout.toString()
@@ -214,10 +214,10 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
       manager.markSandboxReady = async () => {}
       manager.resetStaleSandboxStatus = async () => {}
     }
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     try {
       expect(runOwnedDocker(['image', 'tag', image, mutableTag], owner).exitCode).toBe(0)
-      process.env.TAU_SANDBOX_IMAGE = mutableTag
+      process.env.FICUS_SANDBOX_IMAGE = mutableTag
       const { DockerSandboxManager } = await import('./manager')
       const first = new DockerSandboxManager()
       cleanupManager = first

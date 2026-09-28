@@ -25,12 +25,12 @@ const post = (secret: unknown) => ({
 
 describe('reviewer access routes', () => {
   const originalFlag = process.env[DEMO_REVIEWER_ACCESS_ENV]
-  const originalEncryptionKey = process.env.TAU_ENCRYPTION_KEY
+  const originalEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
 
   beforeAll(async () => {
     await db.delete(users).where(eq(users.email, DEMO_REVIEWER_EMAIL))
     // Storing a secret needs the at-rest key; tests run without one by default.
-    process.env.TAU_ENCRYPTION_KEY = 'b'.repeat(64)
+    process.env.FICUS_ENCRYPTION_KEY = 'b'.repeat(64)
     resetSecretStore()
     await getSecretStore().initialize()
     await getSecretStore().set(DEMO_REVIEWER_SECRET_KEY, SECRET, 'test')
@@ -41,8 +41,8 @@ describe('reviewer access routes', () => {
   })
   afterAll(async () => {
     await db.delete(secrets).where(eq(secrets.key, DEMO_REVIEWER_SECRET_KEY))
-    if (originalEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = originalEncryptionKey
+    if (originalEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = originalEncryptionKey
     resetSecretStore()
     await db.delete(users).where(eq(users.email, DEMO_REVIEWER_EMAIL))
     await cleanupTestRbac(prefix)

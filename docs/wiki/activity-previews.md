@@ -25,21 +25,21 @@ parsing, source-message fetches, embedded HTML, images, tables or document-level
 Adjacent text can carry combined emphasis. Whitespace and block boundaries flatten to
 spaces; image alt text remains text; raw HTML tokens are omitted. Code stays literal.
 
-Example original source: `See [**#241**](tau:ws:241) and [Ada](tau:agent:deadbeef).`
+Example original source: `See [**#241**](ficus:ws:241) and [Ada](ficus:agent:deadbeef).`
 
 ```json
 [
   { "text": "See " },
-  { "text": "#241", "bold": true, "href": "tau:ws:241" },
+  { "text": "#241", "bold": true, "href": "ficus:ws:241" },
   { "text": " and " },
-  { "text": "Ada", "href": "tau:agent:deadbeef" },
+  { "text": "Ada", "href": "ficus:agent:deadbeef" },
   { "text": "." }
 ]
 ```
 
-`parseEntityReference` and `EntityReference` are exported from `@tau/shared`.
-They retain the existing web grammar: explicit `tau:ws:` numbers, UUIDs and UUID
-prefixes, and `tau:agent:` UUIDs/prefixes. Parsing does not establish access or resolve
+`parseEntityReference` and `EntityReference` are exported from `@ficus/shared`.
+They retain the existing web grammar: explicit `ficus:ws:` numbers, UUIDs and UUID
+prefixes, and `ficus:agent:` UUIDs/prefixes. Parsing does not establish access or resolve
 ambiguity: clients must use the existing authorized resolvers and generic error UI.
 Bare `#241` is text, never inferred as a reference. Authored link labels are retained.
 HTTP(S) links (including bare URLs recognized by GFM) open with safe external behavior;

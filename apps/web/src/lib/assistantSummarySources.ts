@@ -1,4 +1,4 @@
-import type { RenderItem } from '@tau/client-core'
+import type { RenderItem } from '@ficus/client-core'
 
 export function assistantSummaryUpdateIds(item: Extract<RenderItem, { kind: 'persisted' }>): string[] {
   return [

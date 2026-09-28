@@ -67,11 +67,11 @@ const ADMIN_BOOTSTRAP_LOCK_KEY = 424242
 /**
  * First-admin bootstrap gate.
  *
- * On a bare local install (no TAU_PASSWORD configured) the first visitor is
+ * On a bare local install (no FICUS_PASSWORD configured) the first visitor is
  * legitimately the owner, so the first-user registration flow stays ungated —
  * exactly today's localhost self-hosting behavior. Do not break that path.
  *
- * But when a TAU_PASSWORD is provisioned (hosted per-tenant subdomains), that
+ * But when a FICUS_PASSWORD is provisioned (hosted per-tenant subdomains), that
  * per-instance random env secret IS the bootstrap credential: it exists precisely
  * to gate the window before the first admin exists. In that mode the first-user
  * paths of /register/email, /register/options and /register/verify require the
@@ -85,14 +85,14 @@ const ADMIN_BOOTSTRAP_LOCK_KEY = 424242
  * caller may proceed.
  */
 async function requireBootstrapAuthForFirstUser(c: Context): Promise<Response | null> {
-  const tauPassword = getSecretStore().get('TAU_PASSWORD')
+  const tauPassword = getSecretStore().get('FICUS_PASSWORD')
   if (!tauPassword) return null // bare local install — first-run stays ungated
 
   if (await holdsBootstrapSession(c)) return null // authenticated as the bootstrap identity
   return c.json({ error: 'Bootstrap authentication required. Sign in with the instance password first.' }, 401)
 }
 
-/** Whether this request carries the bootstrap `TAU_PASSWORD` identity (only resolvable while no admin has a passkey). */
+/** Whether this request carries the bootstrap `FICUS_PASSWORD` identity (only resolvable while no admin has a passkey). */
 async function holdsBootstrapSession(c: Context): Promise<boolean> {
   const token = extractSessionToken(c)
   if (!token) return false
@@ -146,7 +146,7 @@ export const authRouter = new Hono()
 // ── GET /status ──────────────────────────────────────────────────────────────
 
 authRouter.get('/status', async (c) => {
-  const password = getSecretStore().get('TAU_PASSWORD')
+  const password = getSecretStore().get('FICUS_PASSWORD')
   const hasAdmin = await hasAdminUsers()
   const passkeyEnrolled = await adminHasPasskey()
   const userCount = await User.count()
@@ -173,7 +173,7 @@ authRouter.get('/status', async (c) => {
     // nobody new can register themselves. Zero users is the first-admin bootstrap
     // window, which deliberately bypasses the policy entirely.
     canSelfRegister: userCount === 0 || !settings.requireInvite || settings.allowedDomains.length > 0,
-    // The /demo reviewer page exists on this instance (TAU_DEMO_REVIEWER_ACCESS).
+    // The /demo reviewer page exists on this instance (FICUS_DEMO_REVIEWER_ACCESS).
     // Says nothing about the secret or whether the demo account is seeded.
     demoReviewerAccess: demoReviewerAccess.enabled(),
   })
@@ -190,7 +190,7 @@ authRouter.post('/login', async (c) => {
     return c.json({ error: 'Password auth disabled. Use passkey login.' }, 403)
   }
 
-  const password = getSecretStore().get('TAU_PASSWORD')
+  const password = getSecretStore().get('FICUS_PASSWORD')
   if (!password) {
     return c.json({ ok: true })
   }
@@ -226,7 +226,7 @@ authRouter.post('/register/email', async (c) => {
   const isFirstUser = userCount === 0
 
   if (isFirstUser) {
-    // Bootstrap gate: when TAU_PASSWORD is configured, only the bootstrap-password
+    // Bootstrap gate: when FICUS_PASSWORD is configured, only the bootstrap-password
     // session may kick off first-admin creation (and thus receive the code below).
     const gate = await requireBootstrapAuthForFirstUser(c)
     if (gate) return gate
@@ -285,7 +285,7 @@ authRouter.post('/register/options', async (c) => {
   const isFirstUser = userCount === 0
 
   if (isFirstUser) {
-    // Bootstrap gate: when TAU_PASSWORD is configured, only the bootstrap-password
+    // Bootstrap gate: when FICUS_PASSWORD is configured, only the bootstrap-password
     // session may complete first-admin creation, even with a mailed/logged code.
     const gate = await requireBootstrapAuthForFirstUser(c)
     if (gate) return gate
@@ -340,7 +340,7 @@ authRouter.post('/register/verify', async (c) => {
   }
 
   // Bootstrap gate: while no admin user exists yet this call would mint the first
-  // admin (see the auto-admin assignment below). When TAU_PASSWORD is configured,
+  // admin (see the auto-admin assignment below). When FICUS_PASSWORD is configured,
   // require the bootstrap-password session so the passkey can't be planted by an
   // anonymous first visitor. By /register/verify the first user row already exists
   // (created in /register/options), so the first-user condition is "no admin yet".
@@ -670,7 +670,7 @@ function isSecureDeviceAuthOrigin(value: string): boolean {
   try {
     url = new URL(value)
   } catch {
-    // A misconfigured TAU_WEB_ORIGIN must fail closed, never 500 an unauthenticated route.
+    // A misconfigured FICUS_WEB_ORIGIN must fail closed, never 500 an unauthenticated route.
     return false
   }
   return (
@@ -777,7 +777,7 @@ authRouter.post('/pair/claim', async (c) => {
   const body = await c.req.json<{ code?: string; name?: string; platform?: string }>()
   if (!body.code) return c.json({ error: 'Pairing code required' }, 400)
   const platform = body.platform === 'android' ? 'android' : body.platform === 'cli' ? 'cli' : 'ios'
-  const defaultName = platform === 'cli' ? 'Tau CLI' : platform === 'android' ? 'Android device' : 'iOS device'
+  const defaultName = platform === 'cli' ? 'Ficus CLI' : platform === 'android' ? 'Android device' : 'iOS device'
   const name = (body.name?.trim() || defaultName).slice(0, 200)
   const result = await claimPairingCode({ code: body.code, name, platform })
   if (!result) return c.json({ error: 'Invalid or expired pairing code' }, 401)
@@ -787,7 +787,7 @@ authRouter.post('/pair/claim', async (c) => {
 // POST /api/auth/demo/pair — (unauthenticated) app-store reviewer access on a
 // designated demo instance: the private reviewer secret mints an ordinary
 // pairing code for the shared demo account. Off (404) unless
-// TAU_DEMO_REVIEWER_ACCESS is set; see services/demo/access.ts.
+// FICUS_DEMO_REVIEWER_ACCESS is set; see services/demo/access.ts.
 authRouter.post('/demo/pair', async (c) => {
   const body = await c.req.json<{ secret?: unknown }>()
   const secret = typeof body.secret === 'string' ? body.secret : ''

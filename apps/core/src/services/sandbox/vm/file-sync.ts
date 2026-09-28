@@ -7,8 +7,8 @@
  * shared volume, so Core pushes those same artifacts over the box's own
  * sandbox-server `/write` endpoint AT ENSURE TIME. Pushing through the server
  * (rather than ssh/root) matters: the box's unix user must OWN the files, and
- * the server writes as that user. The `tau` CLI is NOT pushed here: on vm it is
- * a MACHINE-level artifact (`/usr/local/bin/tau` → `/opt/tau/cli/tau.js`,
+ * the server writes as that user. The `ficus` CLI is NOT pushed here: on vm it is
+ * a MACHINE-level artifact (`/usr/local/bin/ficus` → `/opt/tau/cli/ficus.js`,
  * delivered + drift-updated by machine-artifact delivery), shared by every box
  * on the machine.
  *
@@ -26,9 +26,9 @@
  *     server ship together, so we rely on it unconditionally (no legacy fallback).
  *
  * ## push order (deterministic)
- *   0. best-effort `rm -f ~/bin/tau` — an earlier revision pushed a per-box CLI
- *      there, and `~/bin` precedes `/usr/local/bin` on the box PATH, so a stale
- *      leftover would SHADOW the machine-level CLI; idempotent when absent
+ *   0. best-effort `rm -f ~/bin/tau` — an earlier revision pushed a per-box copy
+ *      of the pre-ficus CLI there (`~/bin` precedes `/usr/local/bin` on the box
+ *      PATH); removing it keeps that stale copy off the box PATH. Idempotent when absent
  *   1. materialized skills tree → `~/.tau/skills/<materializer layout>`
  *   2. squad `.env` → `~/workspace/.tau/.env`   (mode 0600; squad-scoped only)
  *   3. identity key → `~/.private/identity.pem`  (mode 0600; per-agent only)
@@ -61,7 +61,7 @@
  * ## squad ssh delivery (step 5) + on-demand refresh
  * The squad ssh dir (`services/squad/ssh.ts` `getSquadSshPath`) is where
  * `services/remote-hosts/materialize.ts` renders granted remote hosts as
- * `tau_remote_<name>` key files + a managed `config` block (see the remote-hosts
+ * `ficus_remote_<name>` key files + a managed `config` block (see the remote-hosts
  * design doc § Delivery). Step 5 re-runs `materializeSquadRemoteHosts(squadId)`
  * immediately before reading the dir — cheap (a handful of local fs read/writes)
  * and idempotent, so it's unconditional here rather than trusting that every
@@ -88,7 +88,7 @@ import {
   stampBoxSyncedHash as stampBoxSyncedHashReal,
 } from '../../machines/queries'
 import type { Machine, MachineBox } from '../../machines/queries'
-import { getSquadSshPath } from '../../squad/ssh'
+import { getSquadSshPath, RESERVED_REMOTE_HOST_KEY_PREFIXES } from '../../squad/ssh'
 import { materializeSquadRemoteHosts as materializeSquadRemoteHostsReal } from '../../remote-hosts/materialize'
 import { createLogger } from '../../../lib/infra/logger'
 import {
@@ -529,6 +529,16 @@ function validatedManagedPath(root: string, relPath: string): string {
   return `${root}/${relPath}`
 }
 
+/**
+ * Clears a box's squad ssh dir that was stamped before per-file manifests: every
+ * materialized remote-host key file, under the current or the pre-rename prefix
+ * (K2), plus the managed `config`. Uploaded keys and `known_hosts` are untouched.
+ */
+function legacySquadSshCleanupCommand(root: string): string {
+  const names = RESERVED_REMOTE_HOST_KEY_PREFIXES.map((prefix) => `-name ${shellQuote(`${prefix}*`)}`).join(' -o ')
+  return `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f \\( ${names} \\) -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`
+}
+
 async function removeManagedFiles(
   client: SandboxClient,
   root: string,
@@ -554,13 +564,7 @@ export async function syncBoxFiles(
 
   const clearLegacyTree = async (name: string, root: string): Promise<void> => {
     if (name === 'squad-ssh') {
-      await runBash(
-        client,
-        `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f -name 'tau_remote_*' -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`,
-        'asset_prune',
-        undefined,
-        deps.bashFence
-      )
+      await runBash(client, legacySquadSshCleanupCommand(root), 'asset_prune', undefined, deps.bashFence)
     } else if (name === 'skills' || name === 'memory') {
       await runBash(client, `find ${shellQuote(root)} -mindepth 1 -delete`, 'asset_prune', undefined, deps.bashFence)
     }
@@ -608,9 +612,9 @@ export async function syncBoxFiles(
   }
 
   // 0. Best-effort remove the legacy per-box CLI at ~/bin/tau. The CLI is now a
-  //    machine-level artifact (/usr/local/bin/tau), but ~/bin precedes
-  //    /usr/local/bin on the box PATH, so a stale leftover from an earlier
-  //    revision would SHADOW it. `rm -f` is idempotent when the file is absent,
+  //    machine-level artifact (/usr/local/bin/ficus); a stale per-box copy from an
+  //    earlier revision (~/bin precedes /usr/local/bin on the box PATH) would be a
+  //    second, outdated CLI. `rm -f` is idempotent when the file is absent,
   //    and a removal failure never fails the sync. Not an asset — unconditional.
   await bestEffortRemove(client, `${home}/bin/tau`, deps.bashFence)
 
@@ -776,13 +780,7 @@ export async function pushSquadSshToBox(
   // Reject malformed materializer paths before mkdir or any /write effect.
   currentFiles.forEach((relPath) => validatedManagedPath(root, relPath))
   if (previous && !previous.files) {
-    await runBash(
-      client,
-      `if [ -d ${shellQuote(root)} ]; then find ${shellQuote(root)} -maxdepth 1 -type f -name 'tau_remote_*' -delete && rm -f -- ${shellQuote(`${root}/config`)}; fi`,
-      'asset_prune',
-      undefined,
-      deps.bashFence
-    )
+    await runBash(client, legacySquadSshCleanupCommand(root), 'asset_prune', undefined, deps.bashFence)
   }
   if (files.length) await writeSshFiles(client, home, files, deps.bashFence)
   const current = new Set(currentFiles)
@@ -799,7 +797,7 @@ export async function pushSquadSshToBox(
 }
 
 // ---------------------------------------------------------------------------
-// resolveBoxApiUrl — the box's callback URL (BoxEnv.TAU_API_URL)
+// resolveBoxApiUrl — the box's callback URL (BoxEnv.FICUS_API_URL)
 // ---------------------------------------------------------------------------
 
 /** Injectable seams for {@link resolveBoxApiUrl}; each defaults to production. */
@@ -847,7 +845,7 @@ function defaultCorePort(): number {
 }
 
 /**
- * The URL a box should call Core back on (baked into `BoxEnv.TAU_API_URL`).
+ * The URL a box should call Core back on (baked into `BoxEnv.FICUS_API_URL`).
  *
  * The SSH **reverse tunnel is the DEFAULT** path: allocate one
  * (`machineTunnels.addReverse(machine, corePort)` → the box's sshd picks a

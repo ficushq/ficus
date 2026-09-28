@@ -26,8 +26,8 @@ import {
   attentionSchema,
   DEFAULT_ATTENTION,
   type Attention,
-} from '@tau/shared'
-import type { WorkStreamStatus, WorkStreamWaitCreatedBy, WorkStreamPriority } from '@tau/shared'
+} from '@ficus/shared'
+import type { WorkStreamStatus, WorkStreamWaitCreatedBy, WorkStreamPriority } from '@ficus/shared'
 import {
   WorkStream,
   WorkStreamEventAlreadyHandledError,

@@ -1,4 +1,4 @@
-import type { Agent, QuestionItem } from '@tau/shared'
+import type { Agent, QuestionItem } from '@ficus/shared'
 import { getAgent } from '../api/agents'
 import type { PendingVoiceMessage, VoiceAssistantRuntime } from './useRealtimeVoiceAssistant'
 

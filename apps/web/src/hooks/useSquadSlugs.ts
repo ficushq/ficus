@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { squadSlugMap, type SquadSlugMap } from '@tau/shared'
+import { squadSlugMap, type SquadSlugMap } from '@ficus/shared'
 import { queries } from '../queryOptions'
 
 /**

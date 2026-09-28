@@ -5,7 +5,7 @@ import { db, integrationConnections, integrationConnectionAssignments } from '..
 import { getSecretStore } from '../../secrets'
 import { resolveOAuthAuthority } from '../authorization/authority'
 import { parseOAuthCredential } from '../authorization/credential-bundle'
-import { parseGitHubConfiguration } from '@tau/shared/oauth-providers/github/config'
+import { parseGitHubConfiguration } from '@ficus/shared/oauth-providers/github/config'
 
 async function assignedGitHubConnection(
   squadId: string,

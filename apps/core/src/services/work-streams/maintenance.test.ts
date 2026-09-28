@@ -1,7 +1,7 @@
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { and, eq, isNull, like } from 'drizzle-orm'
-import { updateSquadSchema } from '@tau/shared'
+import { updateSquadSchema } from '@ficus/shared'
 import { db } from '../../db'
 import { agentTypes, squads, workStreams, workStreamWaits } from '../../db/schema'
 import { Squad } from '../../entities/Squad'

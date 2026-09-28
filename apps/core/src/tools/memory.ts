@@ -11,8 +11,8 @@
  */
 
 import { Type } from '@sinclair/typebox'
-import type { MemorySourceType } from '@tau/shared'
-import { AGENT_THREAD_SEARCH_ENABLED, DEFAULT_MEMORY_SEARCH_SOURCE_TYPES, MEMORY_SOURCE_TYPES } from '@tau/shared'
+import type { MemorySourceType } from '@ficus/shared'
+import { AGENT_THREAD_SEARCH_ENABLED, DEFAULT_MEMORY_SEARCH_SOURCE_TYPES, MEMORY_SOURCE_TYPES } from '@ficus/shared'
 import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-agent'
 import { WriteService, MemoryErrorCodes, MemoryWriteError, SearchService, IndexingService } from '../services/memory'
 import { Squad } from '../entities/Squad'
@@ -316,7 +316,7 @@ export function createMemoryTools(callerSquadId: string, options?: CreateMemoryT
           .join('\n')
 
         // HTML comment is invisible in chat/channel markdown but parseable by web tool traces.
-        const provenanceBlock = `\n<!--tau:memory-provenance ${JSON.stringify(provenance)} -->`
+        const provenanceBlock = `\n<!--ficus:memory-provenance ${JSON.stringify(provenance)} -->`
 
         return {
           content: [

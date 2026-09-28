@@ -7,7 +7,7 @@ import type { Identity } from '../services/rbac'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integrations'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
-import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
+import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
 
 const summary = {
@@ -322,7 +322,7 @@ describe('integration routes', () => {
     expect((await sign(noUse.app)).status).toBe(403)
 
     const [agent] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId }).returning()
-    // The same grant squad agents rely on for `tau integration exec github`.
+    // The same grant squad agents rely on for `ficus integration exec github`.
     await db.insert(agentExtraScopes).values({ agentId: agent.id, permission: 'integrations:use' })
     try {
       const { app, calls } = createApp({ type: 'agent', agentId: agent.id, squadId })
@@ -628,14 +628,14 @@ describe('integration routes', () => {
     })
     expect(response.status).toBe(403)
     expect(await response.json()).toEqual({
-      error: 'Sign in with your Tau account to connect Notion.',
+      error: 'Sign in with your Ficus account to connect Notion.',
       code: 'user_session_required',
     })
     expect(calls.authorizationStart).not.toHaveBeenCalled()
   })
 
   test('the bootstrap password session is told to finish admin setup before connecting an account', async () => {
-    // No admin holds a passkey in this suite's database, so TAU_PASSWORD is still a
+    // No admin holds a passkey in this suite's database, so FICUS_PASSWORD is still a
     // live identity: it passes admin RBAC, but there is no person to connect for.
     const { app, calls } = createApp({ type: 'legacy' })
     const response = await app.request('/api/integrations/providers/github/authorization/start', {
@@ -1067,7 +1067,7 @@ test('output catalog exposes event-specific predicate types only to authenticate
   const { app, calls } = createApp({ type: 'system', systemTokenId: 'token-1', name: 'test', scopes: [] })
   const response = await app.request('/api/integrations/outputs')
   expect(response.status).toBe(200)
-  const catalog: import('@tau/shared').IntegrationOutputDescriptor[] = await response.json()
+  const catalog: import('@ficus/shared').IntegrationOutputDescriptor[] = await response.json()
   const assigned = catalog.find((event) => event.integration === 'github' && event.output === 'issue.assigned')!
   expect(assigned.predicateFields!['issue.number'].type).toBe('number')
   expect(assigned.predicateFields!.labels.type).toBe('string[]')

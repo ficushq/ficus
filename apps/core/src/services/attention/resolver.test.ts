@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { DEFAULT_ATTENTION, WATCH_ATTENTION } from '@tau/shared'
+import { DEFAULT_ATTENTION, WATCH_ATTENTION } from '@ficus/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { db, squads, workStreams } from '../../db'
 import { Squad } from '../../entities/Squad'

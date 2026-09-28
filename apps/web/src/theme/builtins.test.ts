@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
-import { ACTIVE_THEME_TOKENS, validateThemeTokenSet } from '@tau/shared'
+import { ACTIVE_THEME_TOKENS, validateThemeTokenSet } from '@ficus/shared'
 import { palettes, resolveToken, contrastPairs, pairRatio, contrast, composite } from './test/builtins'
 
 test('contrast math uses sRGB luminance, fractional channels, and alpha compositing', () => {
@@ -58,7 +58,7 @@ test('forced-colors retains real boundaries/focus and visible voice status witho
       })
     })
   })
-  expect(declarations['.tau-button,\n  .tau-field']?.outline).toBe('1px solid ButtonText')
+  expect(declarations['.ficus-button,\n  .ficus-field']?.outline).toBe('1px solid ButtonText')
   expect(declarations['.voice-orb']?.outline).toBe('2px solid ButtonText')
   expect(declarations['.voice-orb:focus-visible']?.outline).toBe('3px solid Highlight')
   expect(declarations['.voice-orb-status']?.display).toBe('block')

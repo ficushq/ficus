@@ -6,7 +6,7 @@ import type {
   SandboxProcesses,
   SandboxProcessSignal,
   StreamEvent,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { SandboxStatus } from './workspace'
 import { apiFetch, authFetch } from './client'
 import { parseSSEStream } from './sse'

@@ -244,7 +244,7 @@ describe('squad-ssh', () => {
       await expect(addSshKey(squadId, 'known_hosts', VALID_TEST_KEY)).rejects.toThrow('reserved')
     })
 
-    it('rejects the reserved tau_remote_ prefix (materialize.ts stale-sweep would otherwise destroy it)', async () => {
+    it('rejects the reserved ficus_remote_ prefix (materialize.ts stale-sweep would otherwise destroy it)', async () => {
       const { addSshKey, getSquadSshPath } = await getModule()
       const squadId = 'test-squad-123'
 
@@ -253,9 +253,19 @@ describe('squad-ssh', () => {
       // next materializeSquadRemoteHosts stale-sweep (materialize.ts's
       // KEY_FILE_PREFIX cleanup loop) unlinks it because it isn't in the
       // current grant set.
-      await expect(addSshKey(squadId, 'tau_remote_mykey', VALID_TEST_KEY)).rejects.toThrow('tau_remote_')
+      await expect(addSshKey(squadId, 'ficus_remote_mykey', VALID_TEST_KEY)).rejects.toThrow('ficus_remote_')
 
-      expect(existsSync(join(getSquadSshPath(squadId), 'tau_remote_mykey'))).toBe(false)
+      expect(existsSync(join(getSquadSshPath(squadId), 'ficus_remote_mykey'))).toBe(false)
+    })
+
+    it('reserves both the ficus_remote_ prefix and the pre-rename tau_remote_ prefix (K2)', async () => {
+      const { addSshKey, getSquadSshPath } = await getModule()
+      const squadId = 'test-squad-123'
+
+      await expect(addSshKey(squadId, 'ficus_remote_x', VALID_TEST_KEY)).rejects.toThrow('reserved "ficus_remote_"')
+      await expect(addSshKey(squadId, 'tau_remote_x', VALID_TEST_KEY)).rejects.toThrow('reserved "tau_remote_"')
+      expect(existsSync(join(getSquadSshPath(squadId), 'ficus_remote_x'))).toBe(false)
+      expect(existsSync(join(getSquadSshPath(squadId), 'tau_remote_x'))).toBe(false)
     })
 
     it('rejects invalid key format', async () => {

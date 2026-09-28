@@ -1,4 +1,4 @@
-# VM sandbox runtime (`TAU_SANDBOX_RUNTIME=vm`)
+# VM sandbox runtime (`FICUS_SANDBOX_RUNTIME=vm`)
 
 The `vm` runtime runs each sandbox as a **box**: a dedicated Unix user
 (`box_<hash>`) on a registered **machine** (a provider VM or a BYO-SSH host),
@@ -9,7 +9,7 @@ runtimes: it implements the same `ISandboxManager` contract via
 `VmSandboxManager`. (The `host` runtime is the exception — it has no container
 at all, and drops the features listed in `docs/wiki/host-runtime.md`.)
 
-Enable it by setting `TAU_SANDBOX_RUNTIME=vm` and restarting the api + worker
+Enable it by setting `FICUS_SANDBOX_RUNTIME=vm` and restarting the api + worker
 (setup toolkit: `runtime.sandbox: vm`); you also need at least one registered
 machine, per the sections below. See
 [`docs/wiki/sandbox-runtimes.md`](../sandbox-runtimes.md) to compare the five
@@ -23,20 +23,20 @@ and how to troubleshoot it. The authoritative design is
 
 ## Remote hosts are not machines
 
-A `machines` row is substrate tau **colonizes**: tau bootstraps it, creates a
+A `machines` row is substrate ficus **colonizes**: ficus bootstraps it, creates a
 Unix box user on it, installs a sandbox server, and runs agent sandboxes on
 it (everything below). A **remote host** is the opposite — a team-owned box
 (staging server, build machine, a Mac with Xcode, a Windows box with `sshd`)
-that a squad merely SSHes _into_. tau never bootstraps a remote host, never
+that a squad merely SSHes _into_. ficus never bootstraps a remote host, never
 creates users on it, and never installs anything on it. If you're looking to
-give tau a new place to run agent sandboxes, that's this document; if you're
+give ficus a new place to run agent sandboxes, that's this document; if you're
 looking to let a squad reach an existing box the team already owns, see
 `docs/wiki/remote-hosts.md` instead.
 
 ## Architecture at a glance
 
 ```
-  ┌──────────────────────── Tau Core (this process) ────────────────────────┐
+  ┌──────────────────────── Ficus Core (this process) ────────────────────────┐
   │                                                                          │
   │  VmSandboxManager ── box-manager ──┬── ssh.ts (one-shot exec, key 0600)  │
   │        │                           ├── server-bundle.ts (bun build+push) │
@@ -60,7 +60,7 @@ looking to let a squad reach an existing box the team already owns, see
   │    ├─ ~/.tau/server.env   (0600, systemd EnvironmentFile — secrets)      │
   │    ├─ ~/workspace         (squad box work root)                          │
   │    ├─ ~/.private          (0700; agent/system-manager work root)         │
-  │    └─ ~/bin/tau, ~/.tau/skills, ~/memory  (pushed over /write)           │
+  │    └─ ~/bin/ficus, ~/.tau/skills, ~/memory  (pushed over /write)           │
   └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -271,10 +271,10 @@ the destination's artifacts before it streams.
    unit fails closed until `server.env` lands, see the hardening section) →
    push `~/.tau/server.env` (**mode 0600**, chowned to the box user) → restart
    the unit (its first real activation, with token + bind already in place) →
-   establish the ControlMaster + `-L` forward → poll `/healthz` (bounded: 240s default, `TAU_BOX_HEALTH_BUDGET_MS`; a "still waiting" progress line every ~20s)
+   establish the ControlMaster + `-L` forward → poll `/healthz` (bounded: 240s default, `FICUS_BOX_HEALTH_BUDGET_MS`; a "still waiting" progress line every ~20s)
    → mark the box row `ready`.
 6. **Sync files.** Push the k8s-PVC-equivalent artifacts over the box's own
-   `/write` endpoint (so the box user OWNS them): the `tau` CLI → `~/bin/tau`
+   `/write` endpoint (so the box user OWNS them): the `ficus` CLI → `~/bin/ficus`
    (0755), materialized skills → `~/.tau/skills`, squad `.env` →
    `~/workspace/.tau/.env` (0600), `identity.pem` → `~/.private/identity.pem`
    (0600), and a read-only memory replica → `~/memory`. A failure after a secret
@@ -320,7 +320,7 @@ off-machine exposure (defense-in-depth).
 starts it — the first real activation is box-manager's post-`server.env`
 restart, so the server only ever boots with token + bind already in place. And
 the server itself refuses to start (exit 1) when it detects a VM boot without a
-token: `TAU_BOX_PORT` (baked into the unit itself, present even before
+token: `FICUS_BOX_PORT` (baked into the unit itself, present even before
 `server.env` lands) or `EXECUTOR_BIND` set while `EXECUTOR_AUTH_TOKEN` is not.
 A prematurely-activated unit therefore crash-loops harmlessly instead of
 serving an unauthenticated executor on `0.0.0.0` for the provision window —
@@ -343,17 +343,17 @@ are literal, root-owned machine paths the box user cannot touch. So the
 to Core's tools (`packages/k8s-sandbox` `resolvePath` for `/read`/`/write`/`/stat`
 and the `/bash` `cwd`):
 
-| logical root             | box path (`$TAU_BOX_HOME` = `~`) | where it's provisioned / synced          |
-| ------------------------ | -------------------------------- | ---------------------------------------- |
-| `/private`               | `~/.private`                     | box-provision dir; `identity.pem` synced |
-| `/workspace[/<squadId>]` | `~/workspace`                    | box-provision dir; squad `.env` synced   |
-| `/memory[/<squadId>]`    | `~/memory`                       | materialized by the memory file sync     |
+| logical root             | box path (`$FICUS_BOX_HOME` = `~`) | where it's provisioned / synced          |
+| ------------------------ | ---------------------------------- | ---------------------------------------- |
+| `/private`               | `~/.private`                       | box-provision dir; `identity.pem` synced |
+| `/workspace[/<squadId>]` | `~/workspace`                      | box-provision dir; squad `.env` synced   |
+| `/memory[/<squadId>]`    | `~/memory`                         | materialized by the memory file sync     |
 
 The `/<squadId>` namespace segment **collapses**: a box holds exactly one squad's
 tree directly under `~/workspace` / `~/memory` (file sync writes
 `~/workspace/.tau/.env`, not `~/workspace/<squadId>/.tau/.env`), so the box's own
-`TAU_SQUAD_ID` segment is stripped during the rebase. Rebasing is gated on
-`TAU_BOX_HOME`, which **only** vm boxes set (box-manager `derivedBoxEnv`); k8s
+`FICUS_SQUAD_ID` segment is stripped during the rebase. Rebasing is gated on
+`FICUS_BOX_HOME`, which **only** vm boxes set (box-manager `derivedBoxEnv`); k8s
 pods and docker sandboxes never set it, so their path handling is byte-identical
 (a parity snapshot in `paths.test.ts` locks this). The rebase is security-safe:
 paths are normalized (`path.resolve`, collapsing `..`) **before** the prefix
@@ -520,7 +520,7 @@ purposes is never wrongly reaped; it is reconciled or re-ensured instead.
    orphan the old machine's user + unit + forward.
 3. **`dedicated`.** A box requesting `dedicated: true` gets a freshly
    provisioned VM of its own — **requires the exe provider** (BYO-SSH machines
-   are registered by an operator, never auto-provisioned by tau); no exe
+   are registered by an operator, never auto-provisioned by ficus); no exe
    provider configured → `DedicatedPlacementUnavailableError`.
 4. **No cloud provider (BYO-only).** When the exe provider isn't registered
    (no `exe-provider-token` configured — see `docs/wiki/machines/exe-provider.md`),
@@ -541,17 +541,17 @@ purposes is never wrongly reaped; it is reconciled or re-ensured instead.
    once, subject to the cap.
 
 Steps 3/5/6 provision through the shared `provisionCapped` helper: mint a
-keypair, `provider.provision(...)` (injecting tau's public key —
+keypair, `provider.provision(...)` (injecting ficus's public key —
 UNVERIFIED for exe, see `docs/wiki/machines/exe-provider.md`), insert the row,
 `bootstrapMachine` it so it comes back `ready` (a box can only land on a
 bootstrapped machine). Reusing an existing squad/commons machine (the "else"
 half of steps 5/6) is never cap-blocked — only a genuinely NEW provision
 counts against the cap.
 
-**Provisioning cap (`TAU_MAX_MACHINES`).** Placement never silently
+**Provisioning cap (`FICUS_MAX_MACHINES`).** Placement never silently
 over-provisions: before any new machine is created, the live fleet size
 (`countMachines()` — every row, since a terminated machine's row is deleted
-rather than retained) is checked against `TAU_MAX_MACHINES` (default **20**,
+rather than retained) is checked against `FICUS_MAX_MACHINES` (default **20**,
 `DEFAULT_MAX_MACHINES`). At or over the cap, provisioning is refused with a
 structured `MachineProvisioningCapError` rather than silently queuing or
 degrading placement — raise the env var or free a machine.
@@ -579,7 +579,7 @@ absence of exe credentials degrades gracefully rather than breaking anything.
 
 **Single-worker provisioning race-safety.** Provisioning is a check-then-act
 (count the fleet, look for an existing squad/commons machine, provision on the
-miss). Like the rest of the VM runtime, tau runs one worker, so two placement
+miss). Like the rest of the VM runtime, ficus runs one worker, so two placement
 calls for the same tenant never run concurrently — a future multi-worker
 deployment would need an advisory lock around the provision step; the cap and
 the `(purpose, squad_id)` reuse key bound the blast radius until then.
@@ -646,7 +646,7 @@ different-machine pin.
 ## Manual rebalance: re-packing live boxes
 
 Placement (§ Placement) only ever decides where a **new** box goes, so a
-`TAU_UNIT_WEIGHT_*` / `TAU_MACHINE_UNIT_CAPACITY` change can leave live boxes
+`FICUS_UNIT_WEIGHT_*` / `FICUS_MACHINE_UNIT_CAPACITY` change can leave live boxes
 co-located in ways the packer would now refuse. Manual rebalance
 (`services/machines/rebalance.ts` on top of the `migrateBox` primitive in
 `services/machines/box-migrate.ts`) re-packs the **existing** shared fleet so
@@ -659,7 +659,7 @@ its two placement invariants hold again:
 2. **Squad exclusivity** — a `squad_` box shares its VM with nothing else.
 
 **Squad boxes migrate by default; rebalance still never moves them.** A direct
-`migrateBox` — `tau machines migrate-box <sandboxId> --to <machineId>`, and the
+`migrateBox` — `ficus machines migrate-box <sandboxId> --to <machineId>`, and the
 primitive the platform's machine-host resize uses to evacuate EVERY box off a
 host before destroying it — moves a squad box like any other. Pass
 `migrateBox(..., { allowSquad: false })`, or `--skip-squad` on the CLI, to
@@ -721,7 +721,7 @@ A migrating squad box behaves like an agent box with two additions:
   (staging would need transient headroom equal to the workspace on both, and
   disk pressure is frequently _why_ a migration is running). The codec is agreed
   across BOTH hosts first — `zstd` when each proves a `--zstd` tar round-trips,
-  else `gzip` (`TAU_BOX_ARCHIVE_CODEC` pins a candidate, still verified) — so
+  else `gzip` (`FICUS_BOX_ARCHIVE_CODEC` pins a candidate, still verified) — so
   the codec that writes is always the codec that reads. This restore-only mode
   intentionally omits `--port`: it does not start or configure the sandbox
   server. A supplied port is still required to use the separate `--port VALUE`
@@ -779,9 +779,9 @@ A migrating squad box behaves like an agent box with two additions:
 
 - **Size budget (transfer AND teardowns).** Role-scaled: 30 minutes for a
   squad's potentially-huge `~/workspace`
-  (`TAU_BOX_MIGRATE_ARCHIVE_TIMEOUT_MS`), 5 minutes for an agent /
+  (`FICUS_BOX_MIGRATE_ARCHIVE_TIMEOUT_MS`), 5 minutes for an agent /
   system-manager box's `~/.private` (which holds its git trees;
-  `TAU_BOX_MIGRATE_AGENT_ARCHIVE_TIMEOUT_MS`). Neither is the SSH runner's 30s
+  `FICUS_BOX_MIGRATE_AGENT_ARCHIVE_TIMEOUT_MS`). Neither is the SSH runner's 30s
   default — that bound exists for a HUNG box, not a fat one — but the agent
   budget stays an order of magnitude under the squad's, because rebalance moves
   boxes sequentially and one unreachable box must not stall the whole run for
@@ -821,11 +821,11 @@ non-execution background work is quiescent. A violation no legal move can fix
 
 **Progress + timeouts.** Because a squad `~/workspace` can be tens of GB, the
 streamed transfer's SSH budget is raised well past the 30s default
-(`TAU_BOX_MIGRATE_ARCHIVE_TIMEOUT_MS`, 30 min default) — **squad moves only**:
+(`FICUS_BOX_MIGRATE_ARCHIVE_TIMEOUT_MS`, 30 min default) — **squad moves only**:
 rebalance moves boxes sequentially, so widening every box's budget would let
 one hung agent box stall a whole rebalance for up to 30 minutes instead of
 failing fast at 30s; the agent/system-manager path gets its own, much smaller
-minutes-scale budget (`TAU_BOX_MIGRATE_AGENT_ARCHIVE_TIMEOUT_MS`, 5 min
+minutes-scale budget (`FICUS_BOX_MIGRATE_AGENT_ARCHIVE_TIMEOUT_MS`, 5 min
 default). The state-dir probes on either side are
 O(top-level entries) and deliberately keep the runner default on every role, so
 an unreachable machine fails them fast instead of hanging for half an hour.
@@ -855,7 +855,7 @@ idle/fence definition is **execution-based**: non-execution writes into
 write landing after the source is read is simply not migrated — rebalance when
 the agent is quiescent.
 
-**Forcing past the fence.** `tau machines migrate-box --force <reason>`
+**Forcing past the fence.** `ficus machines migrate-box --force <reason>`
 requires an explicit bounded reason. The API additionally
 requires `machines:force-migrate` and derives an attributable user/agent actor
 from authentication; legacy and anonymous system-token identities fail closed.
@@ -900,7 +900,7 @@ effects — and the executing run (`rebalanceFleet`) executes exactly that plan,
 so `dryRun: true` shows precisely what a real run would attempt. Evacuees are
 chosen lightest-first from each violating VM and targeted best-fit against the
 fleet's virtual state; when nothing fits, the plan groups evacuees onto the
-fewest freshly provisioned shared machines (subject to `TAU_MAX_MACHINES` —
+fewest freshly provisioned shared machines (subject to `FICUS_MAX_MACHINES` —
 past the cap they're `unplaceable`). The executing loop runs moves sequentially
 in outbound-before-inbound order; one move's failure never aborts the rest, and
 a fleet with no violations plans zero moves (idempotent).
@@ -917,19 +917,19 @@ never blocked), since overlapping executes would each provision their own
 fresh machines for their provision groups (duplicate billed VMs).
 
 **Surface.** Both entry points are admin (`machines:write`) HTTP routes served
-by `routes/machines.ts`, with `tau machines` CLI wrappers:
+by `routes/machines.ts`, with `ficus machines` CLI wrappers:
 
 - `POST /api/machines/rebalance` body `{ dryRun?: boolean }` → the plan (plus
   per-move `results` when executing, each stamped with the resolved
   `targetMachineId` — the machine actually provisioned for a `provision:<n>`
-  planned target) — `tau machines rebalance [--dry-run]`. 409 while another
+  planned target) — `ficus machines rebalance [--dry-run]`. 409 while another
   execute is running.
 - `POST /api/machines/:id/migrate-box` body
   `{ sandboxId, allowSquad?, force?: { reason, requestId } }` moves one box
   onto machine `:id` and
   returns `migrateBox`'s structured result
   (`{ moved, reason?, activeExecutionCount? }`). CLI:
-  `tau machines migrate-box <sandboxId> --to <machineId>`, plus
+  `ficus machines migrate-box <sandboxId> --to <machineId>`, plus
   `--skip-squad` / `--force <reason>`.
 
 VM runtime only (`isVmRuntime()`); on other runtimes the routes return an
@@ -938,7 +938,7 @@ error.
 ## Events: `machine.*` / `box.status` (admin-global)
 
 The fleet is observable over the same WS EventMap/topic mechanism the rest of
-tau uses (`packages/shared/src/events.ts`, `ws-topics.ts`):
+ficus uses (`packages/shared/src/events.ts`, `ws-topics.ts`):
 
 ```
 'machine.created': { machineId: string }
@@ -1010,7 +1010,7 @@ prioritized; nothing in the backend design blocks it.
 
 ## Callbacks: how a box reaches Core
 
-A box bakes `TAU_API_URL` for its `tau` CLI and callbacks:
+A box bakes `FICUS_API_URL` for its `ficus` CLI and callbacks:
 
 - **Reverse tunnel is the DEFAULT**: `resolveBoxApiUrl` allocates one
   (`machineTunnels.addReverse(machine, corePort)`) and bakes
@@ -1053,13 +1053,13 @@ runs its **own rootless dockerd** instead (spec §5):
   by `useradd`, or allocated deterministically if missing), so a container escape
   lands in the _box user_, not root, and other boxes' files stay unreadable.
 - **`DOCKER_HOST`.** The box user's uid is `useradd`-assigned and NOT
-  deterministic, so `box-provision.sh` prints it once on stdout (`TAU_BOX_UID=<uid>`);
+  deterministic, so `box-provision.sh` prints it once on stdout (`FICUS_BOX_UID=<uid>`);
   box-manager reads it (`parseBoxUid`) and bakes
   `DOCKER_HOST=unix:///run/user/<uid>/docker.sock` into the box's `server.env`
-  (`derivedBoxEnv`). The sandbox-server's docker path is gated on `TAU_BOX_HOME`
+  (`derivedBoxEnv`). The sandbox-server's docker path is gated on `FICUS_BOX_HOME`
   (set only by vm boxes): it never spawns rootful `dockerd` or `chmod 666`s a
   system socket — it only **verifies** the box's own rootless socket answers
-  (`docker info`). k8s pods (sysbox) and local docker leave `TAU_BOX_HOME` unset
+  (`docker info`). k8s pods (sysbox) and local docker leave `FICUS_BOX_HOME` unset
   and are byte-identical to before (`packages/k8s-sandbox/src/docker.ts`).
 - **Known workload gaps** (spec §5): no `--privileged` in the rootful sense,
   ports <1024 need a sysctl, some exotic network modes fail. These are inherent to
@@ -1252,7 +1252,7 @@ box's own `/write` + `/bash`, never root):
   the same sync-on-every-ensure lesson applied to a minutes-long step.
 - **Both devbox shapes are the user's config.** devbox rewrites `packages` from
   the seeded list form into its map form (`{"zlib": {"version": "latest",
-  "outputs": ["dev"]}}`) as soon as an agent runs `devbox add … --outputs`. The
+"outputs": ["dev"]}}`) as soon as an agent runs `devbox add … --outputs`. The
   seeder merges missing comfort packages into whichever shape it finds (a map
   stays a map — flattening would drop the options) and the box server's
   `devboxHasPackages` / `prepareDevboxShellEnv` count either shape, so a
@@ -1272,7 +1272,7 @@ box's own `/write` + `/bash`, never root):
   `/devbox-ready` to trigger that cache; a vm box has no entrypoint (its systemd
   unit execs the server directly), so it is delivered two ways: (1) the manager
   POSTs `/devbox-ready` right after a successful seed, and (2) the server
-  **self-caches at boot** when `TAU_BOX_HOME` is set and `~/.tau/devbox/devbox.json`
+  **self-caches at boot** when `FICUS_BOX_HOME` is set and `~/.tau/devbox/devbox.json`
   declares packages (surviving unit restarts; an empty/un-realized devbox is never
   shellenv'd — it would hang). Interactive terminals get the same env from a
   `~/workspace/.tau/.bashrc` (or `~/.private/.tau/.bashrc` for agent boxes) the
@@ -1297,7 +1297,7 @@ box's own `/write` + `/bash`, never root):
   bundle version and the box-provision script version. When either changes, the
   box is `recreate`d (park + re-ensure; state persists). The server bundle is
   content-hashed and re-pushed only when the machine's recorded version differs.
-  The **file-synced** artifacts (`~/bin/tau`, skills, squad `.env`,
+  The **file-synced** artifacts (`~/bin/ficus`, skills, squad `.env`,
   `identity.pem`, memory) are re-pushed over `/write` on **every** ensure (step 6
   runs after `ensureBox` returns). `server.env`, however, is pushed only on a full
   (re-)provision — the healthy **fast path** (step 4) returns BEFORE the
@@ -1308,8 +1308,8 @@ box's own `/write` + `/bash`, never root):
   previously managed files (never unmanaged user files), and stamps completion
   only after deletion succeeds. An explicitly empty SSH source therefore
   revokes the last delivered host key instead of leaving it usable.
-- **Stale baked `TAU_API_URL` after a Core restart.** When Core reaches a box
-  over a reverse tunnel, the box's `server.env` bakes `TAU_API_URL=http://127.0.0.1:<remotePort>`.
+- **Stale baked `FICUS_API_URL` after a Core restart.** When Core reaches a box
+  over a reverse tunnel, the box's `server.env` bakes `FICUS_API_URL=http://127.0.0.1:<remotePort>`.
   A Core restart allocates a NEW reverse-tunnel port, but the healthy fast path
   does not re-push `server.env` (above), so the box keeps the stale baked URL. The
   interactive/session surfaces are unaffected — `exec`/`spawnShell` and the bash
@@ -1346,14 +1346,14 @@ box's own `/write` + `/bash`, never root):
   ssh runner, tunnel manager, real server bundle, `SandboxClient`, and the
   file/exec/reverse contracts — via a UNIT-FREE box (the server started
   directly), and asserts box-provision fails loudly at the systemd step. Its
-  slice-3 blocks are additionally gated: `TAU_TEST_EGRESS` (NET_ADMIN — the live
-  RFC1918-drop proof) and `TAU_TEST_SYSTEMD` (a real systemd host — the rootless
+  slice-3 blocks are additionally gated: `FICUS_TEST_EGRESS` (NET_ADMIN — the live
+  RFC1918-drop proof) and `FICUS_TEST_SYSTEMD` (a real systemd host — the rootless
   docker + docker-path egress blocks). Devbox seeding is folded into the MAIN
   flow, but although `bootstrap.sh` puts `devbox` on PATH, `devbox install`
   realizes packages through the nix DAEMON, which runs only on a systemd VM (and
   the nix install itself dies under qemu on an amd64-emulated host). So the seed
   step self-gates on the nix daemon socket (`/nix/var/nix/daemon-socket/socket`)
-  or `TAU_TEST_SYSTEMD` and skips otherwise; running the full main flow (seed +
+  or `FICUS_TEST_SYSTEMD` and skips otherwise; running the full main flow (seed +
   cached-shellenv + a comfort tool resolving in a PLAIN `/bash`) therefore needs a
   **native-amd64 systemd host**, aligned with those gated blocks.
 - **Sync-on-every-ensure re-push traffic.** File sync (CLI, skills, `.env`,
@@ -1384,10 +1384,10 @@ box's own `/write` + `/bash`, never root):
 - **The exe.dev provider path is UNVERIFIED-pending-credentials.** exe.dev's
   entire wire format (lobby command grammar, JSON field names, the token's
   auth role, and — the biggest open question — the pubkey-injection mechanism
-  that lets tau SSH into a VM it just created) is an assumption from a
+  that lets ficus SSH into a VM it just created) is an assumption from a
   provider survey, never confirmed against a live account. Every assumption
   is isolated in `providers/exe-api.ts`, and the gated
-  `integration-exe.test.ts` (separate `TAU_TEST_EXE_TOKEN` gate from the SSH
+  `integration-exe.test.ts` (separate `FICUS_TEST_EXE_TOKEN` gate from the SSH
   integration test) is the ONLY thing that exercises the real API — it has
   never actually run in this environment (no exe.dev token available). Until
   a credentialed human runs it, treat the exe provider as **authored but
@@ -1459,11 +1459,11 @@ hasRecentWorkStreamActivityForSandbox` — and `work-stream-activity.ts`
 
 ## Instance maintenance pause
 
-Tau has a global execution pause for host maintenance. An administrator hold and an expiring platform lease are independent; the instance remains paused while either holder is active. Lease expiry is evaluated from database time on every read, so a crashed platform job cannot leave an instance frozen indefinitely.
+Ficus has a global execution pause for host maintenance. An administrator hold and an expiring platform lease are independent; the instance remains paused while either holder is active. Lease expiry is evaluated from database time on every read, so a crashed platform job cannot leave an instance frozen indefinitely.
 
 Acquiring an effective pause fences new queued-to-running claims, interrupts active turns, waits for their persisted session events to settle, and requeues executions without consuming a retry. Queued and newly submitted work resumes through normal pickup after the final hold is released. Machine-host resize acquires a five-minute lease, renews it every minute, verifies ownership before destructive checkpoints, and releases it in cleanup; expiry remains the final recovery backstop.
 
-Use `tau system pause-status`, `tau system pause --reason "..."`, and `tau system resume` for administrator operations. Releasing the administrator hold never clears a platform lease.
+Use `ficus system pause-status`, `ficus system pause --reason "..."`, and `ficus system resume` for administrator operations. Releasing the administrator hold never clears a platform lease.
 
 ### Native machine-host resize recovery
 

@@ -1,10 +1,10 @@
 # Work references
 
-Each Tau instance assigns an immutable, increasing number to every work stream, across all squads. Use `#42` in conversations and labels and `42` in CLI/API lookups and URLs (`/squads/<squad>/work?ws=42`). Moving work does not change its number. Numbers are never reused; gaps are normal. Existing work is numbered by creation time, with UUID order breaking ties.
+Each Ficus instance assigns an immutable, increasing number to every work stream, across all squads. Use `#42` in conversations and labels and `42` in CLI/API lookups and URLs (`/squads/<squad>/work?ws=42`). Moving work does not change its number. Numbers are never reused; gaps are normal. Existing work is numbered by creation time, with UUID order breaking ties.
 
 UUIDs remain internal keys and are still returned as `id`; API objects additionally return `number`. UUIDs and unique UUID prefixes remain accepted for lookup. Digits-only references prefer a work number; use a longer UUID prefix or full UUID when a numeric prefix collides. `#42` explicitly requests a numeric lookup (quote it in the shell and URL-encode the hash as `%23` in API paths). Ambiguous UUID prefixes fail rather than picking a stream. References are local to the instance, not globally unique across servers.
 
-Examples: `tau workstream get 42`, `tau workstream get '#42'`, and `GET /api/workstreams/42`. Existing UUID links remain valid. Agent chats can use `[#42](tau:ws:42)`; bare work numbers in prose are also linked, while code and explicit PR/issue references are preserved.
+Examples: `ficus workstream get 42`, `ficus workstream get '#42'`, and `GET /api/workstreams/42`. Existing UUID links remain valid. Agent chats can use `[#42](ficus:ws:42)`; bare work numbers in prose are also linked, while code and explicit PR/issue references are preserved.
 
 ## Tracked issues and pull requests
 
@@ -33,7 +33,7 @@ set: `migrateDatabase` runs an idempotent backfill at every startup that
 converts any row still carrying that pair into a `tracked` issue entry
 (repository lowercased, `connectionId` carried over) and removes the
 `github.issue` key. `github.issue` is never read after that; use `tracked` /
-`tau workstream track` going forward.
+`ficus workstream track` going forward.
 
 ### Delivery pull requests
 
@@ -42,7 +42,7 @@ plus zero or more **flagged** delivery PRs — tracked pull requests with
 `delivery: true`. Together they are the pull requests whose merge state gates
 completion:
 
-**Resolving the primary delivery PR at finish.** When `tau workstream finish` runs for a
+**Resolving the primary delivery PR at finish.** When `ficus workstream finish` runs for a
 `pr-merge`/`pr-auto-merge` stream whose `codeHost.changeRequest` is not set, it asks the code
 host which pull request the stream's branch (`metadata.git.branch`) carries — one
 owner-namespace scoped lookup (`GET /repos/{repo}/pulls?head={owner}:{branch}&state=all`),
@@ -51,7 +51,7 @@ bound and persisted to `codeHost.changeRequest {number, url}` before merge verif
 continues (a merged candidate wins over an open one; closed-unmerged candidates and candidates
 with the wrong base are never chosen). When the branch carries nothing, the stream records no
 branch, or the candidates do not identify one pull request, finish fails with the exact
-shape-matching manual bind command — `tau workstream set-meta <id> codeHost.changeRequest
+shape-matching manual bind command — `ficus workstream set-meta <id> codeHost.changeRequest
 '{"number":N,"url":"<pr url>"}'` for canonical streams, `github.pr` for legacy
 `metadata.github` streams, and a full `codeHost` object for unconfigured ones. The manual bind
 is therefore an override for unusual cases, not a required step, and nothing depends on
@@ -61,11 +61,11 @@ webhooks, event timing, or connection state for the binding to exist.
   `{ resource, delivery: true }` (only valid when the resource is a pull
   request) to flag a tracked PR as delivery, alongside the identity fields
   described below; the response includes `changed`. The CLI equivalent is
-  `tau workstream track <id> --pr owner/repo#n --delivery` (or
+  `ficus workstream track <id> --pr owner/repo#n --delivery` (or
   `--url <pr-url> --delivery`). `--delivery` combined with `--issue` or
   `--event` is rejected — an issue is never a delivery change request, and an
   event's resource kind isn't known until the server resolves it.
-- For `pr-merge`/`pr-auto-merge` completion, `tau workstream finish` still
+- For `pr-merge`/`pr-auto-merge` completion, `ficus workstream finish` still
   verifies the primary change request is merged first (branch identity and the
   recorded `deliveredHead` come only from the primary PR), then additionally
   requires every flagged delivery PR to be independently verified as merged.
@@ -79,7 +79,7 @@ webhooks, event timing, or connection state for the binding to exist.
   `pull_request.updated` with `action: "reopened"`) update this under the
   stream's row lock, keyed by the matching delivery PR's
   `integration:repository:kind:number` key; a newer `occurredAt` always wins
-  over a stale one. `tau workstream finish` re-verifies every delivery PR live
+  over a stale one. `ficus workstream finish` re-verifies every delivery PR live
   against the code hosting adapter and records the result, independent of
   whatever was last observed from events. Unobserved is treated as open —
   delivery is only complete on positive evidence.
@@ -148,16 +148,16 @@ authorization, and stamp `origin` atomically.
 ### Adding and removing tracked resources
 
 ```bash
-tau workstream create "<title>" --squad <squad-id> --from-event <event-id>   # new stream, idempotent
-tau workstream track <ws-id> --event <event-id>                             # attach to an existing stream
-tau workstream track <ws-id> --issue owner/repo#12
-tau workstream track <ws-id> --issue KEY-123                                 # Linear issue
-tau workstream track <ws-id> --pr owner/repo#34
-tau workstream track <ws-id> --pr owner/repo#35 --delivery
-tau workstream track <ws-id> --url https://github.com/owner/repo/pull/34
-tau workstream track <ws-id> --url https://linear.app/workspace/issue/KEY-123/slug
-tau workstream untrack <ws-id> --issue owner/repo#12
-tau workstream tracked <ws-id>   # alias: links
+ficus workstream create "<title>" --squad <squad-id> --from-event <event-id>   # new stream, idempotent
+ficus workstream track <ws-id> --event <event-id>                             # attach to an existing stream
+ficus workstream track <ws-id> --issue owner/repo#12
+ficus workstream track <ws-id> --issue KEY-123                                 # Linear issue
+ficus workstream track <ws-id> --pr owner/repo#34
+ficus workstream track <ws-id> --pr owner/repo#35 --delivery
+ficus workstream track <ws-id> --url https://github.com/owner/repo/pull/34
+ficus workstream track <ws-id> --url https://linear.app/workspace/issue/KEY-123/slug
+ficus workstream untrack <ws-id> --issue owner/repo#12
+ficus workstream tracked <ws-id>   # alias: links
 ```
 
 API surface, each gated by its own permission on the work stream's squad:
@@ -226,7 +226,7 @@ primary PR. There is no separate `code-host-issue-` prefix — a legacy
 Only the primary delivery PR's merge/completion evidence sets the delivered
 head and branch identity for `pr-merge`/`pr-auto-merge` completion, but every
 flagged delivery PR must also be independently verified merged before
-`tau workstream finish` succeeds (see
+`ficus workstream finish` succeeds (see
 [Delivery pull requests](#delivery-pull-requests)). Activity on any
 non-delivery tracked resource — a tracked PR's reviews or CI, a tracked issue
 closing, reopening, or being relabeled — is informational: it never finishes
@@ -235,7 +235,7 @@ or discards acceptance requirements.
 
 ### Diagnosing "why isn't this delivering"
 
-`GET /api/workstreams/:id/tracked` (and `tau workstream tracked`) reports a
+`GET /api/workstreams/:id/tracked` (and `ficus workstream tracked`) reports a
 top-level `subscriptions` status alongside each resource:
 
 | Status          | Meaning                                                                    |

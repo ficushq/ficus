@@ -2,7 +2,7 @@ import type { IPty } from 'bun-pty'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 // Type-only import (erased at runtime) — workspace-layout imports constants
 // from this module, so a value import here would create a cycle.
-import type { SandboxToolchainConfig, SandboxToolchainStatus } from '@tau/shared'
+import type { SandboxToolchainConfig, SandboxToolchainStatus } from '@ficus/shared'
 import type { WorkspaceLayout, WorkspaceLayoutContext } from './workspace-layout'
 import type { BrowserBackend } from './browser-backend'
 
@@ -23,7 +23,7 @@ export function getSquadIdFromSandbox(sandboxId: string): string | null {
 }
 
 /**
- * Supported sandbox runtime types — the same closed set TAU_SANDBOX_RUNTIME
+ * Supported sandbox runtime types — the same closed set FICUS_SANDBOX_RUNTIME
  * must name (see ./runtime's SANDBOX_RUNTIME_VALUES, the runtime-side source
  * of truth; this alias exists so manager modules can type their state without
  * importing a value from a module that imports back).
@@ -143,7 +143,7 @@ export interface ISandboxManager {
   ensureSandbox(sandboxId: string, opts: SandboxOptions): Promise<string>
   /** Adopt a physically existing sandbox without creating or recreating it. */
   attachExistingSandbox?(sandboxId: string, opts: SandboxOptions): Promise<boolean>
-  /** Reconcile Tau's isolated managed toolchain after the physical sandbox is ready. */
+  /** Reconcile Ficus's isolated managed toolchain after the physical sandbox is ready. */
   reconcileToolchain?(
     sandboxId: string,
     opts: SandboxOptions,

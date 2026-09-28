@@ -65,7 +65,7 @@ The source ID for thread documents is the `agentId`. Each agent has exactly one 
 
 ## Searchability and Reindexing
 
-Agent threads are ingested and stored from execution lifecycle events, but **search is disabled by product decision**. The `memory_search` tool and HTTP search route both strip `agent_thread` from requests while `AGENT_THREAD_SEARCH_ENABLED` is `false` in `@tau/shared`.
+Agent threads are ingested and stored from execution lifecycle events, but **search is disabled by product decision**. The `memory_search` tool and HTTP search route both strip `agent_thread` from requests while `AGENT_THREAD_SEARCH_ENABLED` is `false` in `@ficus/shared`.
 
 `POST /api/memory/:squadId/reindex` rejects `source=agent_thread` with `400`; `source=all` does not reindex agent threads. See [Reindexing](reindex.md) for the source matrix.
 

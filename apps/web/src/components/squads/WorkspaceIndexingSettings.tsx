@@ -39,7 +39,7 @@ function ScanStatusDisplay({ scanStatus }: { scanStatus: NonNullable<MemoryConfi
             <span>·</span>
             <button
               onClick={() => setShowSkipped(!showSkipped)}
-              className="tau-button text-status-attention-600 dark:text-status-attention-400 hover:underline"
+              className="ficus-button text-status-attention-600 dark:text-status-attention-400 hover:underline"
             >
               {scanStatus.skipped.length} skipped
             </button>
@@ -160,7 +160,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
           <button
             data-setting-reveal="include-patterns exclude-patterns"
             onClick={startEditing}
-            className="tau-button text-xs text-accent-light hover:underline"
+            className="ficus-button text-xs text-accent-light hover:underline"
           >
             Edit
           </button>
@@ -184,7 +184,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                   <span className="text-sm font-mono text-primary flex-1">{pattern}</span>
                   <button
                     onClick={() => removeInclude(i)}
-                    className="tau-button text-xs text-muted hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="ficus-button text-xs text-muted hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     ✕
                   </button>
@@ -198,13 +198,13 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                 onChange={(e) => setNewInclude(e.target.value)}
                 onKeyDown={(e) => handleKeyDown(e, addInclude)}
                 placeholder="e.g. docs/**/*.md"
-                className="tau-field flex-1 px-2 py-1.5 text-sm font-mono rounded-md border border-th-border bg-surface text-primary placeholder:text-muted  focus:ring-2 focus:ring-accent/50"
+                className="ficus-field flex-1 px-2 py-1.5 text-sm font-mono rounded-md border border-th-border bg-surface text-primary placeholder:text-muted  focus:ring-2 focus:ring-accent/50"
               />
               <button
                 onClick={addInclude}
                 disabled={!newInclude.trim()}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-2 py-1.5 text-sm rounded-md',
                   newInclude.trim() ? 'text-accent-light hover:bg-surface-hover' : 'text-muted cursor-not-allowed'
                 )}
@@ -235,7 +235,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                   <span className="text-sm font-mono text-primary flex-1">{pattern}</span>
                   <button
                     onClick={() => removeExclude(i)}
-                    className="tau-button text-xs text-muted hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="ficus-button text-xs text-muted hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     ✕
                   </button>
@@ -249,13 +249,13 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                 onChange={(e) => setNewExclude(e.target.value)}
                 onKeyDown={(e) => handleKeyDown(e, addExclude)}
                 placeholder="e.g. tmp/**"
-                className="tau-field flex-1 px-2 py-1.5 text-sm font-mono rounded-md border border-th-border bg-surface text-primary placeholder:text-muted  focus:ring-2 focus:ring-accent/50"
+                className="ficus-field flex-1 px-2 py-1.5 text-sm font-mono rounded-md border border-th-border bg-surface text-primary placeholder:text-muted  focus:ring-2 focus:ring-accent/50"
               />
               <button
                 onClick={addExclude}
                 disabled={!newExclude.trim()}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-2 py-1.5 text-sm rounded-md',
                   newExclude.trim() ? 'text-accent-light hover:bg-surface-hover' : 'text-muted cursor-not-allowed'
                 )}
@@ -269,14 +269,14 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
           <div className="flex justify-end gap-2">
             <button
               onClick={handleCancel}
-              className="tau-button px-3 py-1.5 text-sm rounded-md text-secondary hover:bg-surface-hover"
+              className="ficus-button px-3 py-1.5 text-sm rounded-md text-secondary hover:bg-surface-hover"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={updateMutation.isPending}
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </button>

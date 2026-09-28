@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -29,11 +30,11 @@ let root: string
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), 'tau-setup-')))
   mkdirSync(join(root, '.git'))
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
   writeFileSync(join(root, '.bun-version'), '1.3.8\n')
   writeFileSync(
     join(root, '.env.example'),
-    'TAU_SERVE_WEB=1\nTAU_ENCRYPTION_KEY=\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nTAU_SANDBOX_RUNTIME=\n'
+    'FICUS_SERVE_WEB=1\nFICUS_ENCRYPTION_KEY=\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nFICUS_SANDBOX_RUNTIME=\n'
   )
   // The real example: the config-files step generates a per-instance config from it.
   copyFileSync(join(__dirname, '../../../../ecosystem.config.example.js'), join(root, 'ecosystem.config.example.js'))
@@ -130,13 +131,15 @@ describe('runSetup', () => {
     const migrate = calls.find((c) => c.command.join(' ') === 'bun run db:migrate')!
     expect(migrate.options.env).toEqual({
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/tau',
+      FICUS_MIGRATE_LIVE: '1',
+      // One release (Ficus rename): a checkout that predates the rename reads the legacy name.
       TAU_MIGRATE_LIVE: '1',
     })
     expect(migrate.options.cwd).toBe(root)
     const env = readFileSync(join(root, '.env'), 'utf8')
-    expect(env).toContain('TAU_SANDBOX_RUNTIME=host\n')
-    expect(env).toContain(`TAU_ENCRYPTION_KEY=${'ab'.repeat(32)}\n`)
-    expect(env).toContain('TAU_PASSWORD=bootstrap-token\n')
+    expect(env).toContain('FICUS_SANDBOX_RUNTIME=host\n')
+    expect(env).toContain(`FICUS_ENCRYPTION_KEY=${'ab'.repeat(32)}\n`)
+    expect(env).toContain('FICUS_PASSWORD=bootstrap-token\n')
     expect(statSync(join(root, '.env')).mode & 0o777).toBe(0o600)
     expect(existsSync(join(root, 'ecosystem.config.js'))).toBe(true)
     expect(readRegistry(join(root, 'state.json')).instances.tau?.root).toBe(root)
@@ -145,11 +148,62 @@ describe('runSetup', () => {
     expect(result.handoff.join('\n')).toContain('http://localhost:3000/#setup=bootstrap-token')
     expect(lines.some((l) => l.includes('Preflight'))).toBe(true)
   })
+  it('renames a pre-rename .env before writing it, so a re-run keeps the real password and key', async () => {
+    const legacy = `TAU_ENCRYPTION_KEY=${'cd'.repeat(32)}\nTAU_PASSWORD=real-password\nTAU_SANDBOX_RUNTIME=host\n`
+    writeFileSync(join(root, '.env'), legacy)
+    const { d } = deps()
+    const result = await runSetup(opts(), d)
+    const env = readFileSync(join(root, '.env'), 'utf8')
+    expect(env).not.toMatch(/^TAU_/m)
+    expect(env.match(/^FICUS_PASSWORD=.*$/gm)).toEqual(['FICUS_PASSWORD=real-password'])
+    expect(env.match(/^FICUS_ENCRYPTION_KEY=.*$/gm)).toEqual([`FICUS_ENCRYPTION_KEY=${'cd'.repeat(32)}`])
+    expect(result.handoff.join('\n')).toContain('#setup=real-password')
+    const backups = readdirSync(root).filter((name) => name.startsWith('.env.pre-ficus-'))
+    expect(backups.map((name) => readFileSync(join(root, name), 'utf8'))).toEqual([legacy])
+  })
+  it('stops on a conflicting encryption key before any command runs or any file changes', async () => {
+    const conflicting = 'TAU_ENCRYPTION_KEY=key-one\nFICUS_ENCRYPTION_KEY=key-two\n'
+    writeFileSync(join(root, '.env'), conflicting)
+    const { d, calls } = deps()
+    const error = (await runSetup(opts(), d).catch((e: unknown) => e)) as Error
+    expect(error.message).toContain('TAU_ENCRYPTION_KEY')
+    expect(error.message).toContain('remove the wrong value, then re-run')
+    expect(error.message).not.toContain('key-one')
+    expect(error.message).not.toContain('key-two')
+    expect(readFileSync(join(root, '.env'), 'utf8')).toBe(conflicting)
+    expect(readdirSync(root).some((name) => name.includes('.pre-ficus-'))).toBe(false)
+    expect(calls).toEqual([])
+  })
+  it('fails closed on a checkout whose package name is not "ficus", or cannot be read', async () => {
+    writeFileSync(join(root, '.env'), 'TAU_PASSWORD=real-password\n')
+    for (const [contents, described] of [
+      [JSON.stringify({ name: 'my-fork' }), 'is named "my-fork"'],
+      ['{not json', 'could not be read'],
+    ]) {
+      writeFileSync(join(root, 'package.json'), contents)
+      const { d, calls } = deps()
+      await expect(runSetup(opts(), d)).rejects.toThrow(
+        `${root} is not a Ficus checkout: its package.json ${described}, not "ficus". Setup renames TAU_ settings and writes FICUS_ ones only in a Ficus checkout`
+      )
+      expect(calls).toEqual([])
+      expect(readFileSync(join(root, '.env'), 'utf8')).toBe('TAU_PASSWORD=real-password\n')
+    }
+  })
+  it('refuses a checkout that predates the Ficus rename before preflight or any mutation', async () => {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(root, '.env'), 'TAU_PASSWORD=real-password\n')
+    const { d, calls } = deps()
+    await expect(runSetup(opts(), d)).rejects.toThrow(
+      `${root} predates the Ficus rename (its package.json is named "tau"): update it first (git pull), or run its own \`bun run setup\``
+    )
+    expect(calls).toEqual([])
+    expect(readFileSync(join(root, '.env'), 'utf8')).toBe('TAU_PASSWORD=real-password\n')
+  })
   it('keeps an existing encryption key on re-run', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_ENCRYPTION_KEY=keep-me\n')
+    writeFileSync(join(root, '.env'), 'FICUS_ENCRYPTION_KEY=keep-me\n')
     const { d } = deps()
     await runSetup(opts(), d)
-    expect(readFileSync(join(root, '.env'), 'utf8')).toContain('TAU_ENCRYPTION_KEY=keep-me\n')
+    expect(readFileSync(join(root, '.env'), 'utf8')).toContain('FICUS_ENCRYPTION_KEY=keep-me\n')
   })
   it('dry run touches nothing and prints the plan with secrets redacted', async () => {
     const { d, calls, lines } = deps()
@@ -158,7 +212,7 @@ describe('runSetup', () => {
     // makes the printed plan name the port this instance would really use.
     expect(calls.map((c) => c.command.join(' '))).toEqual(['docker info', 'docker inspect -f {{json .}} postgres-tau'])
     expect(existsSync(join(root, '.env'))).toBe(false)
-    expect(lines.join('\n')).toContain('TAU_ENCRYPTION_KEY=<redacted>')
+    expect(lines.join('\n')).toContain('FICUS_ENCRYPTION_KEY=<redacted>')
     expect(lines.join('\n')).toContain('bun run db:migrate')
     expect(lines.join('\n')).not.toContain('ab'.repeat(32))
   })
@@ -353,7 +407,7 @@ describe('runSetup', () => {
     // and 5432 is never probed — its occupant is not this run's business.
     writeFileSync(
       join(root, '.env'),
-      'TAU_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\n'
     )
     const { d, calls } = deps({
       [PORT_INSPECT]: {
@@ -380,7 +434,7 @@ describe('runSetup', () => {
     // 5433 is another container-shaped install — sharing it would corrupt both.
     writeFileSync(
       join(root, '.env'),
-      'TAU_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
     )
     const { d, calls } = deps()
     d.connect = async (_host, port) => {
@@ -394,7 +448,7 @@ describe('runSetup', () => {
   it('manages the container normally when it is the one publishing that port', async () => {
     writeFileSync(
       join(root, '.env'),
-      'TAU_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
     )
     const { d, calls } = deps({
       [PORT_INSPECT]: {
@@ -522,7 +576,7 @@ describe('runSetup', () => {
     })
     // Both ways out are named: relabel this checkout, or uninstall the other one.
     await expect(runSetup(opts(), d)).rejects.toThrow(
-      'pm2 already runs tau-api for instance "tau" from another checkout (/elsewhere). Give this checkout its own label with --instance <other-label>, or tau server uninstall --root /elsewhere the other one'
+      'pm2 already runs tau-api for instance "tau" from another checkout (/elsewhere). Give this checkout its own label with --instance <other-label>, or ficus server uninstall --root /elsewhere the other one'
     )
   })
   it('does not block start on a stopped pm2 row from another checkout', async () => {
@@ -548,7 +602,7 @@ describe('runSetup', () => {
     d.fetch = async () => new Response('', { status: 503 })
     await expect(runSetup(opts(), d)).rejects.toThrow(/health/)
   })
-  it('treats a 401 health probe as up (auth-gated /api/*, TAU_PASSWORD is set by this same run)', async () => {
+  it('treats a 401 health probe as up (auth-gated /api/*, FICUS_PASSWORD is set by this same run)', async () => {
     const { d } = deps()
     d.fetch = async () => new Response('', { status: 401 })
     await expect(runSetup(opts(), d)).resolves.toBeTruthy()
@@ -571,7 +625,7 @@ describe('runSetup', () => {
     // the container port lookup) and before any step ran
     expect(confirms).toEqual(['Proceed with setup? @2'])
     // plan-only lines (the run loop logs titles, never the plan bodies)
-    expect(lines).toContain('    bun run db:migrate (TAU_MIGRATE_LIVE=1, DATABASE_URL explicit)')
+    expect(lines).toContain('    bun run db:migrate (FICUS_MIGRATE_LIVE=1, DATABASE_URL explicit)')
     expect(lines).toContain(
       '    docker run paradedb/paradedb:latest as postgres-tau on 127.0.0.1:5432 (or start the existing container)'
     )

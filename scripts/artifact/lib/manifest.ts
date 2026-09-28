@@ -26,6 +26,13 @@ export interface CoreArtifactManifest {
   bun: string
   platform: CoreArtifactPlatform
   builder: string
+  /**
+   * The env-name prefix this release reads (`FICUS_*`). The host toolkit keys
+   * the one-time `TAU_*` -> `FICUS_*` env rename on it, falling back to the
+   * root package name for trees without it (git checkouts, pre-rename
+   * artifacts). Optional so readers of older manifests stay valid.
+   */
+  envPrefix?: 'FICUS'
   /** relpath (POSIX `/` separators, relative to the artifact root) -> `sha256:<hex>` of the file's bytes. */
   files: Record<string, string>
   digest: string
@@ -102,6 +109,7 @@ export async function buildManifest(opts: {
     bun: opts.bun,
     platform: opts.platform ?? artifactPlatform(),
     builder: opts.builder,
+    envPrefix: 'FICUS',
     files,
     digest: computeDigest(files),
   }

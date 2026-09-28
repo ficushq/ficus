@@ -31,7 +31,7 @@ const log = createLogger('local-events')
 export const INTERNAL_EVENTS_PATH = '/internal/events'
 
 /** Header carrying the shared secret. */
-export const INTERNAL_EVENT_TOKEN_HEADER = 'x-tau-internal-token'
+export const INTERNAL_EVENT_TOKEN_HEADER = 'x-ficus-internal-token'
 
 const DEFAULT_WORKER_EVENT_PORT = 3003
 const DEFAULT_API_PORT = 3000
@@ -146,7 +146,7 @@ function port(envVar: string, fallback: number): number {
 
 /** Port the worker's loopback event listener binds. */
 export function workerEventPort(): number {
-  return port('TAU_WORKER_EVENT_PORT', DEFAULT_WORKER_EVENT_PORT)
+  return port('FICUS_WORKER_EVENT_PORT', DEFAULT_WORKER_EVENT_PORT)
 }
 
 /**
@@ -163,39 +163,40 @@ export function workerEventPort(): number {
  * should always be a deliberate act.
  */
 export function workerEventBindHost(): string {
-  const configured = process.env.TAU_WORKER_EVENT_BIND?.trim()
+  const configured = process.env.FICUS_WORKER_EVENT_BIND?.trim()
   if (!configured || configured === '127.0.0.1') return '127.0.0.1'
   log.warn(
-    `TAU_WORKER_EVENT_BIND='${configured}' — the internal event listener is bound beyond loopback. ` +
-      'Ensure it is reachable ONLY from the paired tau process (private network / container network).'
+    `FICUS_WORKER_EVENT_BIND='${configured}' — the internal event listener is bound beyond loopback. ` +
+      'Ensure it is reachable ONLY from the paired Ficus process (private network / container network).'
   )
   return configured
 }
 
 /**
  * Where the api posts events (the worker's dedicated event listener).
- * `TAU_WORKER_EVENT_URL` overrides for split-namespace deployments, e.g.
+ * `FICUS_WORKER_EVENT_URL` overrides for split-namespace deployments, e.g.
  * `http://worker:3003/internal/events` under Compose.
  */
 export function workerPeerUrl(): string {
-  return process.env.TAU_WORKER_EVENT_URL?.trim() || `http://127.0.0.1:${workerEventPort()}${INTERNAL_EVENTS_PATH}`
+  return process.env.FICUS_WORKER_EVENT_URL?.trim() || `http://127.0.0.1:${workerEventPort()}${INTERNAL_EVENTS_PATH}`
 }
 
 /**
  * Where the worker posts events: the api's EXISTING Hono server, so the api
  * needs no second listener. Matches `index.ts`'s default bind hostname.
- * `TAU_API_EVENT_URL` overrides for split-namespace deployments.
+ * `FICUS_API_EVENT_URL` overrides for split-namespace deployments.
  */
 export function apiPeerUrl(): string {
   return (
-    process.env.TAU_API_EVENT_URL?.trim() || `http://localhost:${port('PORT', DEFAULT_API_PORT)}${INTERNAL_EVENTS_PATH}`
+    process.env.FICUS_API_EVENT_URL?.trim() ||
+    `http://localhost:${port('PORT', DEFAULT_API_PORT)}${INTERNAL_EVENTS_PATH}`
   )
 }
 
 let processToken: string | null = null
 
 /**
- * Domain separator for deriving the event token from TAU_ENCRYPTION_KEY. Any
+ * Domain separator for deriving the event token from FICUS_ENCRYPTION_KEY. Any
  * other secret derived from that key MUST use a different label, so that
  * disclosing one derived value never yields another.
  */
@@ -204,11 +205,11 @@ const INTERNAL_EVENT_TOKEN_LABEL = 'tau-internal-events-v1'
 /**
  * The shared secret both units must agree on, resolved in three steps:
  *
- * 1. `TAU_INTERNAL_EVENT_TOKEN` when set — the explicit, preferred value.
- * 2. Otherwise DERIVED from `TAU_ENCRYPTION_KEY`, which every existing
+ * 1. `FICUS_INTERNAL_EVENT_TOKEN` when set — the explicit, preferred value.
+ * 2. Otherwise DERIVED from `FICUS_ENCRYPTION_KEY`, which every existing
  *    deployment already sets and both units already read from the same
  *    environment. Without this step, upgrading an instance that predates
- *    `TAU_INTERNAL_EVENT_TOKEN` would silently stop delivering agent control
+ *    `FICUS_INTERNAL_EVENT_TOKEN` would silently stop delivering agent control
  *    signals (stop / abort-tool) until an operator noticed the log and added
  *    a var — a regression pg NOTIFY never had, since it needed no shared
  *    secret at all. Derivation is one-way (HMAC with a domain-separating
@@ -222,12 +223,12 @@ export function resolveInternalEventToken(env: NodeJS.ProcessEnv = process.env):
   token: string
   source: 'explicit' | 'derived' | 'random'
 } {
-  if (env.TAU_INTERNAL_EVENT_TOKEN) {
-    return { token: env.TAU_INTERNAL_EVENT_TOKEN, source: 'explicit' }
+  if (env.FICUS_INTERNAL_EVENT_TOKEN) {
+    return { token: env.FICUS_INTERNAL_EVENT_TOKEN, source: 'explicit' }
   }
-  if (env.TAU_ENCRYPTION_KEY) {
+  if (env.FICUS_ENCRYPTION_KEY) {
     return {
-      token: createHmac('sha256', env.TAU_ENCRYPTION_KEY).update(INTERNAL_EVENT_TOKEN_LABEL).digest('hex'),
+      token: createHmac('sha256', env.FICUS_ENCRYPTION_KEY).update(INTERNAL_EVENT_TOKEN_LABEL).digest('hex'),
       source: 'derived',
     }
   }
@@ -241,7 +242,7 @@ export function internalEventToken(): string {
   processToken = token
   if (source === 'random') {
     log.error(
-      'Neither TAU_INTERNAL_EVENT_TOKEN nor TAU_ENCRYPTION_KEY is set — cross-process events ' +
+      'Neither FICUS_INTERNAL_EVENT_TOKEN nor FICUS_ENCRYPTION_KEY is set — cross-process events ' +
         '(agent control signals, event forwarding, secret invalidation) are DISABLED. Set the ' +
         'SAME value in the environment of both tau-api and tau-worker.'
     )
@@ -498,7 +499,7 @@ export class LocalEventTransport {
   }
 
   /**
-   * Start the event listener. Loopback by default; `TAU_WORKER_EVENT_BIND`
+   * Start the event listener. Loopback by default; `FICUS_WORKER_EVENT_BIND`
    * widens it for split-namespace deployments (see `workerEventBindHost`).
    * Every inbound post is authenticated regardless of bind address.
    */

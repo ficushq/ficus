@@ -66,7 +66,7 @@ export function InviteUserForm({
             type="button"
             disabled={resendMutation.isPending}
             onClick={() => resendMutation.mutate()}
-            className="tau-button text-sm text-accent-light disabled:opacity-50"
+            className="ficus-button text-sm text-accent-light disabled:opacity-50"
           >
             {resendMutation.isPending ? 'Resending…' : 'Resend invitation'}
           </button>
@@ -85,7 +85,7 @@ export function InviteUserForm({
               </code>
               <button
                 type="button"
-                className="tau-button text-sm text-accent-light"
+                className="ficus-button text-sm text-accent-light"
                 onClick={async () => {
                   try {
                     if (!navigator.clipboard) throw new Error('Clipboard unavailable')
@@ -104,7 +104,7 @@ export function InviteUserForm({
         <div className="flex gap-3">
           <button
             type="button"
-            className="tau-button text-sm text-accent-light"
+            className="ficus-button text-sm text-accent-light"
             onClick={() => {
               inviteMutation.reset()
               resendMutation.reset()
@@ -116,7 +116,7 @@ export function InviteUserForm({
           >
             Invite another teammate
           </button>
-          <button type="button" className="tau-button text-sm text-muted" onClick={onCancel}>
+          <button type="button" className="ficus-button text-sm text-muted" onClick={onCancel}>
             Done
           </button>
         </div>
@@ -142,7 +142,7 @@ export function InviteUserForm({
         value={inviteEmail}
         onChange={(e) => setInviteEmail(e.target.value)}
         placeholder="Email address"
-        className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+        className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
       />
       <label htmlFor="invite-user-display-name" className="sr-only">
         Display name (optional)
@@ -154,7 +154,7 @@ export function InviteUserForm({
         value={inviteDisplayName}
         onChange={(e) => setInviteDisplayName(e.target.value)}
         placeholder="Display name (optional)"
-        className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+        className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
       />
       <div>
         <label htmlFor="invite-user-role" className="block text-xs text-muted mb-1">
@@ -164,7 +164,7 @@ export function InviteUserForm({
           id="invite-user-role"
           value={selectedInviteRole}
           onChange={(e) => setInviteRoleSlug(e.target.value)}
-          className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary  focus:ring-1 focus:ring-accent"
+          className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary  focus:ring-1 focus:ring-accent"
         >
           {assignableRoles.length === 0 && <option value={DEFAULT_INVITE_ROLE_SLUG}>Operator</option>}
           {assignableRoles.map((role) => (
@@ -183,7 +183,7 @@ export function InviteUserForm({
         <button
           type="submit"
           disabled={!inviteEmail || inviteMutation.isPending}
-          className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {inviteMutation.isPending ? 'Inviting...' : 'Send Invite'}
         </button>
@@ -191,7 +191,7 @@ export function InviteUserForm({
           <button
             type="button"
             onClick={onCancel}
-            className="tau-button px-4 py-2 text-sm text-muted hover:text-primary"
+            className="ficus-button px-4 py-2 text-sm text-muted hover:text-primary"
           >
             Cancel
           </button>

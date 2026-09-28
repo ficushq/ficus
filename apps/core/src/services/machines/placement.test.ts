@@ -107,11 +107,11 @@ function makeStore(seed: Machine[] = [], boxes: Record<string, string[]> = {}) {
 }
 
 afterEach(() => {
-  delete process.env.TAU_MAX_MACHINES
-  delete process.env.TAU_MACHINE_UNIT_CAPACITY
-  delete process.env.TAU_UNIT_WEIGHT_SQUAD
-  delete process.env.TAU_UNIT_WEIGHT_AGENT
-  delete process.env.TAU_UNIT_WEIGHT_SYSTEM_MANAGER
+  delete process.env.FICUS_MAX_MACHINES
+  delete process.env.FICUS_MACHINE_UNIT_CAPACITY
+  delete process.env.FICUS_UNIT_WEIGHT_SQUAD
+  delete process.env.FICUS_UNIT_WEIGHT_AGENT
+  delete process.env.FICUS_UNIT_WEIGHT_SYSTEM_MANAGER
 })
 
 // ---------------------------------------------------------------------------
@@ -131,10 +131,10 @@ describe('unit weights + machine capacity', () => {
   })
 
   it('honors positive-integer env overrides', () => {
-    process.env.TAU_UNIT_WEIGHT_SQUAD = '5'
-    process.env.TAU_UNIT_WEIGHT_AGENT = '2'
-    process.env.TAU_UNIT_WEIGHT_SYSTEM_MANAGER = '4'
-    process.env.TAU_MACHINE_UNIT_CAPACITY = '24'
+    process.env.FICUS_UNIT_WEIGHT_SQUAD = '5'
+    process.env.FICUS_UNIT_WEIGHT_AGENT = '2'
+    process.env.FICUS_UNIT_WEIGHT_SYSTEM_MANAGER = '4'
+    process.env.FICUS_MACHINE_UNIT_CAPACITY = '24'
     expect(unitWeightForRole('squad')).toBe(5)
     expect(unitWeightForRole('agent')).toBe(2)
     expect(unitWeightForRole('system-manager')).toBe(4)
@@ -142,10 +142,10 @@ describe('unit weights + machine capacity', () => {
   })
 
   it('falls back to defaults on invalid or non-positive overrides', () => {
-    process.env.TAU_UNIT_WEIGHT_SQUAD = '0'
-    process.env.TAU_UNIT_WEIGHT_AGENT = '-2'
-    process.env.TAU_UNIT_WEIGHT_SYSTEM_MANAGER = 'lots'
-    process.env.TAU_MACHINE_UNIT_CAPACITY = '1.5'
+    process.env.FICUS_UNIT_WEIGHT_SQUAD = '0'
+    process.env.FICUS_UNIT_WEIGHT_AGENT = '-2'
+    process.env.FICUS_UNIT_WEIGHT_SYSTEM_MANAGER = 'lots'
+    process.env.FICUS_MACHINE_UNIT_CAPACITY = '1.5'
     expect(unitWeightForRole('squad')).toBe(10)
     expect(unitWeightForRole('agent')).toBe(1)
     expect(unitWeightForRole('system-manager')).toBe(1)
@@ -313,7 +313,7 @@ describe('resolvePlacement — packed shared pool', () => {
 
   it('skips an over-subscribed machine (used > capacity → negative free) and picks one with room', async () => {
     // `over` carries a squad + an agent (10+1 = 11) against capacity 10 — e.g.
-    // after a TAU_MACHINE_UNIT_CAPACITY drop — so its free is NEGATIVE (-1). It
+    // after a FICUS_MACHINE_UNIT_CAPACITY drop — so its free is NEGATIVE (-1). It
     // must be ineligible: without the free >= incoming filter, best-fit's
     // smallest-free sort would rank it FIRST for the incoming agent. The roomy
     // machine wins and nothing is provisioned.
@@ -424,7 +424,7 @@ describe('resolvePlacement — packed shared pool', () => {
   })
 
   it('gives an over-capacity box (weight > capacity) its own fresh shared VM', async () => {
-    process.env.TAU_MACHINE_UNIT_CAPACITY = '2'
+    process.env.FICUS_MACHINE_UNIT_CAPACITY = '2'
     // An EMPTY shared machine exists (free 2) but a squad box weighs 10 → it can
     // never fit anywhere; provision a fresh VM for it rather than looping.
     const empty = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000' })
@@ -554,8 +554,8 @@ describe('resolvePlacement — BYO-only (no exe provider)', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolvePlacement — provisioning cap', () => {
-  it('refuses to provision past TAU_MAX_MACHINES with a structured error', async () => {
-    process.env.TAU_MAX_MACHINES = '2'
+  it('refuses to provision past FICUS_MAX_MACHINES with a structured error', async () => {
+    process.env.FICUS_MAX_MACHINES = '2'
     // Two legacy squad-keyed VMs fill the fleet; the packer cannot see them
     // (purpose != 'shared'), so the new box needs a provision the cap refuses.
     const seed = [
@@ -570,7 +570,7 @@ describe('resolvePlacement — provisioning cap', () => {
   })
 
   it('provisions right up to the cap', async () => {
-    process.env.TAU_MAX_MACHINES = '2'
+    process.env.FICUS_MAX_MACHINES = '2'
     const seed = [makeMachine({ id: 'm-0', purpose: 'squad', squadId: 'other-a' })]
     const { deps, provisioned } = makeStore(seed)
     const resolved = await resolvePlacement({ sandboxId: 'agent_new', role: 'agent', squadId: 'sq-new' }, deps)
@@ -579,7 +579,7 @@ describe('resolvePlacement — provisioning cap', () => {
   })
 
   it('reusing an existing shared machine with room is not blocked by the cap', async () => {
-    process.env.TAU_MAX_MACHINES = '1'
+    process.env.FICUS_MAX_MACHINES = '1'
     const seed = [makeMachine({ id: 'm-0' })]
     const { deps, provisioned } = makeStore(seed)
     const resolved = await resolvePlacement({ sandboxId: 'agent_solo', role: 'agent' }, deps)

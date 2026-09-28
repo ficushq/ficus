@@ -1,5 +1,5 @@
-import { providerLabel, type InboxPushPresentation } from '@tau/shared'
-import type { ProviderHealthKind } from '@tau/shared/provider-health'
+import { providerLabel, type InboxPushPresentation } from '@ficus/shared'
+import type { ProviderHealthKind } from '@ficus/shared/provider-health'
 import { SANDBOX_OVERLOAD_STALE_MS } from './audience-policy'
 import type { FleetIncidentNotificationClaim } from './store'
 
@@ -76,7 +76,7 @@ function shortId(id: string | undefined): string {
   return id ? id.slice(0, 8) : 'unknown'
 }
 
-/** "the sandbox for reviewer in squad Tau Core", from names resolved at delivery time. */
+/** "the sandbox for reviewer in squad Ficus Core", from names resolved at delivery time. */
 function sandboxScope(claim: FleetIncidentNotificationClaim, names: FleetIncidentNames): string {
   if (names.agentName)
     return `the sandbox for ${names.agentName}${names.squadName ? ` in squad ${names.squadName}` : ''}`

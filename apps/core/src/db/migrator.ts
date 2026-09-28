@@ -10,6 +10,7 @@ import { backfillMessageEnqueueOrder } from './message-enqueue-order-backfill'
 import { backfillTrackedIssues } from './tracked-issue-backfill'
 import { backfillAssistantActivity } from './assistant-activity-backfill'
 import { backfillAssistantConversationKinds } from './assistant-conversation-kind-backfill'
+import { reportLegacySecretRowConflicts } from './legacy-secret-rows'
 
 const CREATE_CONCURRENT_INDEX =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+"([^"]+)"\s+ON\s+(?:ONLY\s+)?(?:(?:"([^"]+)"\.)?)"([^"]+)"/i
@@ -403,7 +404,10 @@ export async function applyMigrations(
                         // column exist; the first activity index follows them in the generated SQL.
                         /CREATE INDEX "idx_assistant_tasks_conversation_updated"/.test(statement)
                         ? backfillAssistantActivity
-                        : undefined
+                        : // Names any existing FICUS_ row the Ficus-rename copy keeps instead of its TAU_ source.
+                          /INSERT INTO "secrets" \("key"[\s\S]*'TAU_PASSWORD'/.test(statement)
+                          ? reportLegacySecretRowConflicts
+                          : undefined
           if (backfill) {
             await flush()
             await backfill(connection)

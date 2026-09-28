@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, lte, sql } from 'drizzle-orm'
-import type { AssistantEntry } from '@tau/shared'
+import type { AssistantEntry } from '@ficus/shared'
 import { assistantConversations, assistantEntries, assistantUpdates, db, inbox } from '../../db'
 import { ownedConversation } from './read'
 

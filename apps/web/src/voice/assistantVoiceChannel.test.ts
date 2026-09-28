@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { RenderItem } from '@tau/client-core'
+import type { RenderItem } from '@ficus/client-core'
 import { AssistantVoiceReceipts, createAssistantVoiceChannel } from './assistantVoiceChannel'
 
 function confirmed(clientId: string, group: string, executionId = 'execution', pending = false): RenderItem {

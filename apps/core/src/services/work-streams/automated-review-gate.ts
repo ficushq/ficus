@@ -1,5 +1,5 @@
 import { inArray } from 'drizzle-orm'
-import type { WorkStreamDeliveryPresentation, WorkStreamWait } from '@tau/shared'
+import type { WorkStreamDeliveryPresentation, WorkStreamWait } from '@ficus/shared'
 import { db, squads } from '../../db'
 import { codeHostingRegistry } from '../integrations/code-hosting'
 

@@ -5,7 +5,7 @@
  */
 
 import { timingSafeEqual } from 'crypto'
-import { TAU_SLASH_COMMANDS } from '../../lib/channels'
+import { COMMAND_WORD, FICUS_SLASH_COMMANDS } from '../../lib/channels'
 import type { ChannelProvider, ChannelEvent, ThreadMessage, PostMessageResult } from '../provider'
 import { createLogger } from '../../lib/infra/logger'
 import { getChannelIntegrationValue } from '../../services/integrations/channels/settings'
@@ -78,20 +78,20 @@ async function apiRequest<T = TelegramApiResponse>(method: string, body: Record<
 // Helpers
 // =============================================================================
 
-const tauCommandPrefix = /^\/tau(?:@\w+)?(?:\s+|$)/i
+const commandPrefix = new RegExp(String.raw`^\/${COMMAND_WORD}(?:@\w+)?(?:\s+|$)`, 'i')
 
 function parseCommand(text: string): { command: string; content: string } {
   const trimmed = text.trim()
 
-  // Check for /tau command format
-  const prefix = trimmed.match(tauCommandPrefix)
+  // Check for /ficus command format
+  const prefix = trimmed.match(commandPrefix)
   if (prefix) {
     const commandText = trimmed.slice(prefix[0].length).trim()
     const parts = commandText.split(/\s+/)
     const firstWord = parts[0]?.toLowerCase() || 'help'
-    const command = (TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
+    const command = (FICUS_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
     const content =
-      command === 'ask' && !(TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord)
+      command === 'ask' && !(FICUS_SLASH_COMMANDS as readonly string[]).includes(firstWord)
         ? commandText
         : parts.slice(1).join(' ')
     return { command, content }
@@ -181,7 +181,7 @@ export const telegramProvider: ChannelProvider = {
     const chatType = message.chat.type
     const isPrivate = chatType === 'private'
     const isCommand =
-      tauCommandPrefix.test(messageText.trim()) ||
+      commandPrefix.test(messageText.trim()) ||
       (isPrivate && /^\/(?:help|status|squad|link|ask|notify|unnotify)(?:@\w+)?(?:\s|$)/i.test(messageText.trim()))
     const botUserId = await this.getBotUserId()
 
@@ -192,7 +192,7 @@ export const telegramProvider: ChannelProvider = {
 
     // Determine if we should respond:
     // - Private chat: always respond
-    // - Group/supergroup: only /tau commands or replies to bot
+    // - Group/supergroup: only /ficus commands or replies to bot
     const shouldRespond = isPrivate || isCommand || isReplyToBot
 
     if (!shouldRespond) {
@@ -237,7 +237,7 @@ export const telegramProvider: ChannelProvider = {
       chat_id: opts.channelId,
       text: truncated,
       parse_mode: 'Markdown',
-      // A Tau conversation ID is the chat ID, not a Telegram message to reply to.
+      // A Ficus conversation ID is the chat ID, not a Telegram message to reply to.
       reply_to_message_id: opts.replyToMessageId ? Number(opts.replyToMessageId) : undefined,
       allow_sending_without_reply: opts.replyToMessageId ? true : undefined,
     })

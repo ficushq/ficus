@@ -5,7 +5,7 @@ import {
   brokerRefreshResponse,
   brokerRevokeResponse,
   brokerStartResponse,
-} from '@tau/shared/oauth-broker'
+} from '@ficus/shared/oauth-broker'
 import { platformRequest } from '../../platform/instance-client'
 import { OAuthTransportError, type OAuthTransport } from './transport'
 

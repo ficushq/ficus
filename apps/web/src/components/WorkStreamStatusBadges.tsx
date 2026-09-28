@@ -1,4 +1,4 @@
-import type { WorkStreamPresentationFacts } from '@tau/shared'
+import type { WorkStreamPresentationFacts } from '@ficus/shared'
 import { Badge } from './Badge'
 import {
   getWsDisplayState,

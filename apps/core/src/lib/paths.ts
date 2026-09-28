@@ -1,21 +1,23 @@
 import { join, resolve } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 // During tests run from the monorepo root, process.cwd() is the monorepo root,
 // while during normal operation, process.cwd() is the core app root.
 //
-// `TAU_ROOT` takes precedence when set (the units point it at
+// `FICUS_ROOT` takes precedence when set (the units point it at
 // `/opt/tau-core/current`): a prebuilt-artifact box activates a new release by
 // flipping the `current` symlink, and inferring the root from cwd through a
 // symlink being renamed in flight could resolve to a stale/partial tree. An
 // explicit anchor removes that ambiguity; unset, the cwd rule is unchanged.
 //
 // `resolve()` absolutizes a relative override against cwd: Bun auto-loads
-// `./.env` before any of this code runs, so a stray relative `TAU_ROOT=` line
+// `./.env` before any of this code runs, so a stray relative `FICUS_ROOT=` line
 // left in a repo-root `.env` would otherwise redirect every config path
 // wherever the process happened to be started from.
 const inferredMonorepoRoot = join(process.cwd().split('apps/core')[0])
-export const MONOREPO_ROOT = process.env.TAU_ROOT ? resolve(expandTilde(process.env.TAU_ROOT)) : inferredMonorepoRoot
+export const MONOREPO_ROOT = process.env.FICUS_ROOT
+  ? resolve(expandTilde(process.env.FICUS_ROOT))
+  : inferredMonorepoRoot
 export const CONFIG_DIR = join(MONOREPO_ROOT, 'config')
 
 export const AGENT_DIR = join(CONFIG_DIR, 'agent')

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { WATCH_ATTENTION, type Attention, type WorkStream } from '@tau/shared'
+import { WATCH_ATTENTION, type Attention, type WorkStream } from '@ficus/shared'
 import { buildUserAttention } from '../attention/resolver'
 import { createWorkInterestLoader, type WorkInterestCandidate } from './work-interest'
 

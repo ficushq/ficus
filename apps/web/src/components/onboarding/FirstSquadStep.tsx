@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import type { Squad } from '@tau/shared'
+import type { Squad } from '@ficus/shared'
 import { createSquad } from '../../api/squads'
 import { sendChatMessage } from '../../api/chat'
 import { onboardingQueryKeys, queryKeys } from '../../queryKeys'
@@ -187,7 +187,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
               <button
                 type="submit"
                 disabled={kickoffMutation.isPending}
-                className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
               >
                 {kickoffMutation.isPending ? 'Sending…' : 'Send'}
               </button>
@@ -212,7 +212,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Frontend Team"
-              className="tau-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
+              className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
             />
           </div>
           <div>
@@ -226,7 +226,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
               onChange={(e) => setPurpose(e.target.value)}
               placeholder="Software development for the company"
               rows={2}
-              className="tau-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
+              className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
             />
             <p id="first-squad-purpose-help" className="mt-1 text-xs text-muted">
               Strongly encouraged: describe what this squad is responsible for. The assistant and other agents use its
@@ -244,7 +244,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
               disabled={squadPresets.isLoading}
               aria-busy={squadPresets.isLoading || undefined}
               aria-describedby="first-squad-preset-help"
-              className="tau-field w-full sm:max-w-sm px-3 py-2 border border-th-border bg-surface text-primary rounded-md focus:ring-2 focus:ring-accent"
+              className="ficus-field w-full sm:max-w-sm px-3 py-2 border border-th-border bg-surface text-primary rounded-md focus:ring-2 focus:ring-accent"
             >
               <option value="">Build your own squad</option>
               {squadPresets.data
@@ -262,7 +262,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
             {squadPresets.isError && (
               <p role="alert" className="mt-1 text-xs text-muted">
                 Could not load presets.{' '}
-                <button type="button" onClick={() => squadPresets.refetch()} className="tau-button text-accent-light">
+                <button type="button" onClick={() => squadPresets.refetch()} className="ficus-button text-accent-light">
                   Retry
                 </button>
               </p>
@@ -291,7 +291,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
                 !name.trim() ||
                 createHostWorkspacePathError(hostWorkspacePath.trim()) !== null
               }
-              className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+              className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
             >
               {createMutation.isPending ? 'Creating…' : 'Create squad & send kickoff'}
             </button>
@@ -323,7 +323,7 @@ function ReposField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={'One URL per line, e.g.\nhttps://github.com/acme/api'}
         rows={3}
-        className="tau-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
+        className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
       />
       <p className="text-xs text-muted mt-1">
         Cloned into the workspace on kickoff — leave blank and your squad will just introduce itself.
@@ -350,7 +350,7 @@ function KickoffFeedback({
         <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Failed to send the kickoff message.
         </p>
-        <button type="button" onClick={onRetry} className="tau-button text-sm text-accent-light hover:underline">
+        <button type="button" onClick={onRetry} className="ficus-button text-sm text-accent-light hover:underline">
           Retry
         </button>
       </div>

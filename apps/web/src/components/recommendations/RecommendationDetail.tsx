@@ -2,7 +2,7 @@ import {
   OPERATIONS_RECOMMENDATION_TRANSITIONS,
   type OperationsRecommendationDetail,
   type OperationsRecommendationStatus,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { Badge, type BadgeColor } from '../Badge'
 
 const CONFIDENCE_COLORS: Record<string, BadgeColor> = {
@@ -72,7 +72,7 @@ export function RecommendationDetail({
             <button
               key={s}
               onClick={() => onStatus(s)}
-              className="tau-button rounded-md border border-th-border px-3 py-1.5 text-sm capitalize text-primary transition-colors hover:bg-surface-hover"
+              className="ficus-button rounded-md border border-th-border px-3 py-1.5 text-sm capitalize text-primary transition-colors hover:bg-surface-hover"
             >
               {s === 'open' ? 'Reopen' : s}
             </button>

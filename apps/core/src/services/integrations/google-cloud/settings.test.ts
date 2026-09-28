@@ -11,15 +11,15 @@ let priorSettings: (typeof settings.$inferSelect)[] = []
 beforeEach(async () => {
   for (const key of [
     ...credentialKeys,
-    'TAU_ENCRYPTION_KEY',
-    'TAU_MANAGED',
-    'TAU_MANAGED_SECRET_KEYS',
+    'FICUS_ENCRYPTION_KEY',
+    'FICUS_MANAGED',
+    'FICUS_MANAGED_SECRET_KEYS',
     'GOOGLE_APPLICATION_CREDENTIALS',
   ]) {
     priorEnv.set(key, process.env[key])
     delete process.env[key]
   }
-  process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+  process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   priorSecrets = await db.select().from(secrets).where(inArray(secrets.key, credentialKeys))
   priorSettings = await db.select().from(settings).where(inArray(settings.key, settingKeys))
   await db.delete(secrets).where(inArray(secrets.key, credentialKeys))
@@ -103,8 +103,8 @@ test('ADC file installations are recognized but remain subject to global disable
   await expect(requireGoogleCloudSpeechEnabled()).rejects.toThrow('Enable Google Cloud')
 })
 test('platform-managed Google keys stay hidden and cannot be replaced', async () => {
-  process.env.TAU_MANAGED = '1'
-  process.env.TAU_MANAGED_SECRET_KEYS = 'GOOGLE_SERVICE_ACCOUNT_JSON'
+  process.env.FICUS_MANAGED = '1'
+  process.env.FICUS_MANAGED_SECRET_KEYS = 'GOOGLE_SERVICE_ACCOUNT_JSON'
   process.env.GOOGLE_SERVICE_ACCOUNT_JSON = validJson
   expect(getGoogleCloudIntegrationSettings().fields[0]).toMatchObject({ managed: true, configured: true })
   await expect(configureGoogleCloudIntegration({ GOOGLE_SERVICE_ACCOUNT_JSON: validJson }, 'test')).rejects.toThrow(

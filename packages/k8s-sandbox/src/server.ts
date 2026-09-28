@@ -15,9 +15,10 @@
  * 1. Start HTTP server on configured port (so /healthz is up immediately)
  * 2. Start dockerd in the background if running under sysbox (no socket mounted)
  *
- * Agent intelligence stays in Tau Core — this service only executes tools.
+ * Agent intelligence stays in Ficus Core — this service only executes tools.
  */
 
+import './boot/legacy-env'
 import { chmod, mkdir, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isAuthorized, loadExecutorAuthToken } from './services/auth'
@@ -111,17 +112,17 @@ const AUTH_TOKEN = loadExecutorAuthToken()
 //  - EXECUTOR_BIND — pushed in the box's server.env (catches a partial/
 //    malformed env that carries the bind but lost the token, or a
 //    machine-global bind);
-//  - TAU_BOX_PORT — baked as `Environment=` into the box's systemd unit
+//  - FICUS_BOX_PORT — baked as `Environment=` into the box's systemd unit
 //    itself by box-provision.sh, so it is present even when server.env has
 //    not landed yet. This closes the fresh-provision window: a unit started
 //    before the env push used to stay shut only by accident (the bun-pty
 //    dlopen of BUN_PTY_LIB, also server.env-only, crashed the import first).
 // Refusing to serve makes the guarantee explicit and independent of loader
 // behavior; k8s/docker (neither marker) keep the legacy no-enforcement path.
-if ((process.env.EXECUTOR_BIND || process.env.TAU_BOX_PORT || process.env.EXECUTOR_DOCKER_RUNTIME) && !AUTH_TOKEN) {
+if ((process.env.EXECUTOR_BIND || process.env.FICUS_BOX_PORT || process.env.EXECUTOR_DOCKER_RUNTIME) && !AUTH_TOKEN) {
   console.error(
     '[sandbox] FATAL: VM sandbox server requires EXECUTOR_AUTH_TOKEN when EXECUTOR_BIND or ' +
-      'TAU_BOX_PORT is set; refusing to start unauthenticated'
+      'FICUS_BOX_PORT is set; refusing to start unauthenticated'
   )
   process.exit(1)
 }
@@ -456,7 +457,7 @@ async function main(): Promise<void> {
 
   // VM box only: nothing POSTs /devbox-ready (the systemd unit execs the server
   // directly, no entrypoint), so self-cache the seeded devbox shellenv at boot so
-  // a plain /bash PATH includes the comfort set (rg/fd/gh). Gated on TAU_BOX_HOME
+  // a plain /bash PATH includes the comfort set (rg/fd/gh). Gated on FICUS_BOX_HOME
   // (+ a packaged devbox.json), so this is a NO-OP on k8s/docker — boot stays
   // byte-identical there.
   if (selfCacheDevboxEnvOnBoot()) setDevboxReady(true)
@@ -464,7 +465,7 @@ async function main(): Promise<void> {
   // Step 2: Bring up dockerd in the background (sysbox mode), unless this is an
   // agent (light) box — those are minimal and never run docker. Commands that
   // need docker await readiness lazily; pod-readiness is not gated on it.
-  if (process.env.TAU_SANDBOX_ROLE === 'agent') {
+  if (process.env.FICUS_SANDBOX_ROLE === 'agent') {
     log('Docker: skipped (agent role)')
   } else {
     const dockerStart = performance.now()

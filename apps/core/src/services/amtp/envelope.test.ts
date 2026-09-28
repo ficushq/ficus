@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { type AmtpEnvelope, amtpEnvelopeSchema } from '@tau/shared'
+import { type AmtpEnvelope, amtpEnvelopeSchema } from '@ficus/shared'
 import { generateInstanceKeyPair, signEnvelope, verifyEnvelope } from './crypto'
 import { formatAmtpAddress } from './address'
 

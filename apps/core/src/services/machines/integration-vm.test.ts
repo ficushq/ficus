@@ -64,11 +64,11 @@ import { MachineTunnelManager } from './tunnel-manager'
  *     chmod 600 /root/.ssh/authorized_keys &&
  *     exec /usr/sbin/sshd -D -e"
  *   # wait ~15s for apt+sshd, then:
- *   TAU_TEST_SSH_HOST=127.0.0.1 \
- *   TAU_TEST_SSH_PORT=2222 \
- *   TAU_TEST_SSH_USER=root \
- *   TAU_TEST_SSH_KEY_PATH=$HOME/.ssh/id_ed25519 \
- *   TAU_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
+ *   FICUS_TEST_SSH_HOST=127.0.0.1 \
+ *   FICUS_TEST_SSH_PORT=2222 \
+ *   FICUS_TEST_SSH_USER=root \
+ *   FICUS_TEST_SSH_KEY_PATH=$HOME/.ssh/id_ed25519 \
+ *   FICUS_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
  *   bun test src/services/machines/integration-vm.test.ts
  *   # afterwards: docker rm -f tau-vm-int
  *
@@ -90,10 +90,10 @@ import { MachineTunnelManager } from './tunnel-manager'
  * same container but each need something the plain recipe lacks, so each is
  * behind its own extra gate — the standard integration run above is unaffected:
  *
- *  - `TAU_TEST_EGRESS=1` (needs `--cap-add NET_ADMIN`, already on the recipe):
+ *  - `FICUS_TEST_EGRESS=1` (needs `--cap-add NET_ADMIN`, already on the recipe):
  *    the egress block loads the real nftables ruleset and proves the RFC1918 drop
  *    behaviorally. HOST-path only in the plain container.
- *  - `TAU_TEST_SYSTEMD=1`: assert the SSH target runs systemd as PID 1 (a real VM
+ *  - `FICUS_TEST_SYSTEMD=1`: assert the SSH target runs systemd as PID 1 (a real VM
  *    or a systemd-enabled container — NOT the plain `ubuntu:24.04` recipe, which
  *    has no systemd). Enables the rootless-docker-per-box block and the docker-PATH
  *    egress proof, both of which need the box user's `--user` manager + linger +
@@ -104,7 +104,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  *    `devbox install` REALIZES packages through the nix DAEMON, which runs only
  *    on a real systemd VM (a plain container has no daemon; and on an amd64-
  *    EMULATED host the nix install itself dies under qemu). So the seed step
- *    self-gates on the nix daemon socket being present (or `TAU_TEST_SYSTEMD`)
+ *    self-gates on the nix daemon socket being present (or `FICUS_TEST_SYSTEMD`)
  *    and SKIPS honestly otherwise. Where it runs, it asserts the seed marker AND
  *    that a comfort tool resolves in a PLAIN `/bash` (via the server's cached
  *    shellenv, signalled by POST /devbox-ready) — NOT just `devbox run --`. The
@@ -140,7 +140,7 @@ function bashCollect(
   })
 }
 
-describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real ssh container)', () => {
+describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real ssh container)', () => {
   let priorKey: string | undefined
   let priorHome: string | undefined
 
@@ -166,13 +166,13 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real s
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
     process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-vm-int-home-'))
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
     await getSecretStore().initialize()
 
-    const keyPath = process.env.TAU_TEST_SSH_KEY_PATH
-    if (!keyPath) throw new Error('integration test requires TAU_TEST_SSH_KEY_PATH')
+    const keyPath = process.env.FICUS_TEST_SSH_KEY_PATH
+    if (!keyPath) throw new Error('integration test requires FICUS_TEST_SSH_KEY_PATH')
     const privateKey = await Bun.file(keyPath).text()
     await getSecretStore().set(REAL_SECRET_KEY, privateKey, 'system')
 
@@ -181,9 +181,9 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real s
       name: 'vm-integration',
       provider: 'ssh',
       providerRef: null,
-      sshHost: process.env.TAU_TEST_SSH_HOST!,
-      sshPort: Number(process.env.TAU_TEST_SSH_PORT ?? 22),
-      sshUser: process.env.TAU_TEST_SSH_USER ?? 'root',
+      sshHost: process.env.FICUS_TEST_SSH_HOST!,
+      sshPort: Number(process.env.FICUS_TEST_SSH_PORT ?? 22),
+      sshUser: process.env.FICUS_TEST_SSH_USER ?? 'root',
       sshKeyId: REAL_SECRET_KEY,
       sshPublicKey: 'ssh-ed25519 AAAA test',
       status: 'ready',
@@ -255,8 +255,8 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real s
     } catch {
       /* best-effort */
     }
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     if (priorHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = priorHome
     resetSecretStore()
@@ -314,9 +314,9 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real s
         'set -e',
         `export EXECUTOR_PORT=${BOX_PORT}`,
         'export WORKSPACE_PATH="$HOME/.private"',
-        'export TAU_BOX_HOME="$HOME"',
+        'export FICUS_BOX_HOME="$HOME"',
         // 'agent' role skips the docker bring-up the server would otherwise do.
-        'export TAU_SANDBOX_ROLE=agent',
+        'export FICUS_SANDBOX_ROLE=agent',
         // Point the bundle's PTY loader at the lib ensureServerBundle pushed in
         // step 4 (SERVER_LIB_REMOTE_PATH). In production the box's server.env sets
         // this same var (box-manager derivedBoxEnv); this unit-free start mirrors it.
@@ -372,7 +372,7 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real s
 
       // ── 8b. LOGICAL-root rebasing (the crux for vm session tools). ─────────
       // The vm coding tools address k8s LOGICAL roots (/private, /workspace/<sq>),
-      // never box-native paths. The start script sets WORKSPACE_PATH + TAU_BOX_HOME
+      // never box-native paths. The start script sets WORKSPACE_PATH + FICUS_BOX_HOME
       // exactly as box-manager's server.env does, so the server must rebase
       // /private → $HOME/.private. Write to the LOGICAL path, then read it back at
       // the PHYSICAL path to prove the server landed it under HOME.
@@ -413,11 +413,11 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real s
       // is on PATH — but `devbox install` REALIZES packages through the nix
       // DAEMON, which runs only on a real systemd VM (a plain container has no
       // daemon socket; on an amd64-emulated host the nix install itself dies under
-      // qemu). So gate on the daemon socket (or TAU_TEST_SYSTEMD) and SKIP
+      // qemu). So gate on the daemon socket (or FICUS_TEST_SYSTEMD) and SKIP
       // honestly otherwise — the seeder's logic (content, marker skip, non-fatal)
       // is unit-covered in devbox-seed.test.ts; this is the live behavioral layer.
       const nixDaemon = await bashCollect(client, '[ -S /nix/var/nix/daemon-socket/socket ] && echo yes || echo no')
-      const canSeed = nixDaemon.stdout.trim() === 'yes' || !!process.env.TAU_TEST_SYSTEMD
+      const canSeed = nixDaemon.stdout.trim() === 'yes' || !!process.env.FICUS_TEST_SYSTEMD
       if (canSeed) {
         // Agent-role box → the LIGHT comfort set. Seeding is idempotent; a marker
         // matching this role's content-hash proves the install completed.
@@ -558,13 +558,13 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real s
  * Separate from the main flow because it needs privileges the default recipe
  * container does NOT have: applying the nftables ruleset requires the container
  * run with `--cap-add NET_ADMIN` and have `nftables` installed. It is therefore
- * double-gated on TAU_TEST_SSH_HOST **and** TAU_TEST_EGRESS so the standard
+ * double-gated on FICUS_TEST_SSH_HOST **and** FICUS_TEST_EGRESS so the standard
  * integration recipe above is unaffected.
  *
  * Recipe delta (add to the `docker run` in the main header):
  *   docker run -d --rm --platform linux/amd64 --cap-add NET_ADMIN \
  *     --name tau-vm-int -p 2222:22 ubuntu:24.04 bash -c "... same as above ..."
- * then set TAU_TEST_EGRESS=1 alongside the TAU_TEST_SSH_* vars.
+ * then set FICUS_TEST_EGRESS=1 alongside the FICUS_TEST_SSH_* vars.
  *
  * What this proves behaviorally: after loading the EXACT production ruleset
  * (rendered by `bootstrap.sh --print-egress-ruleset`, no apt/bun cost), an
@@ -583,11 +583,11 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('vm runtime (integration, real s
  * packets traverse the same output hook. This needs the box user's rootless
  * daemon (systemd `--user` + linger), which the plain container lacks, so it
  * lives in the `egress docker-path` block below, additionally gated on
- * `TAU_TEST_SYSTEMD`. In the plain container the HOST-path RFC1918 drop asserted
+ * `FICUS_TEST_SYSTEMD`. In the plain container the HOST-path RFC1918 drop asserted
  * here is the minimum; the docker-path is VM-smoke-deferred.
  * ============================================================================
  */
-describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_EGRESS)(
+describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRESS)(
   'egress lockdown (integration, NET_ADMIN container)',
   () => {
     let priorKey: string | undefined
@@ -598,13 +598,13 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_EGRESS)(
     beforeAll(async () => {
       priorHome = process.env.HOME_DIR
       process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-vm-egr-home-'))
-      priorKey = process.env.TAU_ENCRYPTION_KEY
-      process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+      priorKey = process.env.FICUS_ENCRYPTION_KEY
+      process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
       resetSecretStore()
       await getSecretStore().initialize()
 
-      const keyPath = process.env.TAU_TEST_SSH_KEY_PATH
-      if (!keyPath) throw new Error('egress integration test requires TAU_TEST_SSH_KEY_PATH')
+      const keyPath = process.env.FICUS_TEST_SSH_KEY_PATH
+      if (!keyPath) throw new Error('egress integration test requires FICUS_TEST_SSH_KEY_PATH')
       await getSecretStore().set(REAL_SECRET_KEY, await Bun.file(keyPath).text(), 'system')
 
       machine = {
@@ -612,9 +612,9 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_EGRESS)(
         name: 'vm-egress',
         provider: 'ssh',
         providerRef: null,
-        sshHost: process.env.TAU_TEST_SSH_HOST!,
-        sshPort: Number(process.env.TAU_TEST_SSH_PORT ?? 22),
-        sshUser: process.env.TAU_TEST_SSH_USER ?? 'root',
+        sshHost: process.env.FICUS_TEST_SSH_HOST!,
+        sshPort: Number(process.env.FICUS_TEST_SSH_PORT ?? 22),
+        sshUser: process.env.FICUS_TEST_SSH_USER ?? 'root',
         sshKeyId: REAL_SECRET_KEY,
         sshPublicKey: 'ssh-ed25519 AAAA test',
         status: 'ready',
@@ -642,8 +642,8 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_EGRESS)(
       } catch {
         /* best-effort */
       }
-      if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-      else process.env.TAU_ENCRYPTION_KEY = priorKey
+      if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+      else process.env.FICUS_ENCRYPTION_KEY = priorKey
       if (priorHome === undefined) delete process.env.HOME_DIR
       else process.env.HOME_DIR = priorHome
       resetSecretStore()
@@ -707,9 +707,9 @@ function buildIntegrationMachine(name: string, egressPolicy: boolean): Machine {
     name,
     provider: 'ssh',
     providerRef: null,
-    sshHost: process.env.TAU_TEST_SSH_HOST!,
-    sshPort: Number(process.env.TAU_TEST_SSH_PORT ?? 22),
-    sshUser: process.env.TAU_TEST_SSH_USER ?? 'root',
+    sshHost: process.env.FICUS_TEST_SSH_HOST!,
+    sshPort: Number(process.env.FICUS_TEST_SSH_PORT ?? 22),
+    sshUser: process.env.FICUS_TEST_SSH_USER ?? 'root',
     sshKeyId: REAL_SECRET_KEY,
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -733,7 +733,7 @@ function buildIntegrationMachine(name: string, egressPolicy: boolean): Machine {
  * systemd `--user` service (linger + `/run/user/<uid>`). A plain container has no
  * systemd as PID 1, so `loginctl enable-linger` fails and provision aborts BEFORE
  * the docker step (the main flow asserts exactly that loud failure). It therefore
- * runs ONLY when `TAU_TEST_SYSTEMD=1` asserts the SSH target is a real systemd VM
+ * runs ONLY when `FICUS_TEST_SYSTEMD=1` asserts the SSH target is a real systemd VM
  * (or systemd-enabled container) on which bootstrap.sh has ALREADY run (docker
  * engine + rootless launcher installed, the system daemon masked, box-provision
  * installed at /opt/tau/bin). On a plain container it is SKIPPED and the path is
@@ -745,7 +745,7 @@ function buildIntegrationMachine(name: string, egressPolicy: boolean): Machine {
  * and its `/var/run/docker.sock` is not world-writable 666 (the pre-slice-3 hole).
  * ============================================================================
  */
-describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_SYSTEMD)(
+describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_SYSTEMD)(
   'rootless docker per box (integration, systemd host)',
   () => {
     let priorKey: string | undefined
@@ -764,13 +764,13 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_SYSTEMD)
     beforeAll(async () => {
       priorHome = process.env.HOME_DIR
       process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-vm-dock-home-'))
-      priorKey = process.env.TAU_ENCRYPTION_KEY
-      process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+      priorKey = process.env.FICUS_ENCRYPTION_KEY
+      process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
       resetSecretStore()
       await getSecretStore().initialize()
 
-      const keyPath = process.env.TAU_TEST_SSH_KEY_PATH
-      if (!keyPath) throw new Error('docker integration test requires TAU_TEST_SSH_KEY_PATH')
+      const keyPath = process.env.FICUS_TEST_SSH_KEY_PATH
+      if (!keyPath) throw new Error('docker integration test requires FICUS_TEST_SSH_KEY_PATH')
       await getSecretStore().set(REAL_SECRET_KEY, await Bun.file(keyPath).text(), 'system')
 
       machine = buildIntegrationMachine('vm-docker', false)
@@ -796,8 +796,8 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_SYSTEMD)
       } catch {
         /* best-effort */
       }
-      if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-      else process.env.TAU_ENCRYPTION_KEY = priorKey
+      if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+      else process.env.FICUS_ENCRYPTION_KEY = priorKey
       if (priorHome === undefined) delete process.env.HOME_DIR
       else process.env.HOME_DIR = priorHome
       resetSecretStore()
@@ -857,13 +857,13 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_SYSTEMD)
  * slirp4netns userspace NAT, which performs the real outbound socket() in the
  * HOST network namespace as the box user — so container packets traverse the same
  * `table inet tau_egress` output hook as host traffic. This needs BOTH the
- * NET_ADMIN nftables path (TAU_TEST_EGRESS) AND the box user's rootless daemon
- * (TAU_TEST_SYSTEMD), so it is triple-gated. In the plain NET_ADMIN container the
+ * NET_ADMIN nftables path (FICUS_TEST_EGRESS) AND the box user's rootless daemon
+ * (FICUS_TEST_SYSTEMD), so it is triple-gated. In the plain NET_ADMIN container the
  * host-path RFC1918 drop (asserted in the block above) is the minimum; this
  * docker-path proof is VM-smoke-deferred.
  * ============================================================================
  */
-describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_EGRESS || !process.env.TAU_TEST_SYSTEMD)(
+describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRESS || !process.env.FICUS_TEST_SYSTEMD)(
   'egress docker-path (integration, systemd + NET_ADMIN)',
   () => {
     let priorKey: string | undefined
@@ -878,13 +878,13 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_EGRESS |
     beforeAll(async () => {
       priorHome = process.env.HOME_DIR
       process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-vm-egrdock-home-'))
-      priorKey = process.env.TAU_ENCRYPTION_KEY
-      process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+      priorKey = process.env.FICUS_ENCRYPTION_KEY
+      process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
       resetSecretStore()
       await getSecretStore().initialize()
 
-      const keyPath = process.env.TAU_TEST_SSH_KEY_PATH
-      if (!keyPath) throw new Error('egress docker-path test requires TAU_TEST_SSH_KEY_PATH')
+      const keyPath = process.env.FICUS_TEST_SSH_KEY_PATH
+      if (!keyPath) throw new Error('egress docker-path test requires FICUS_TEST_SSH_KEY_PATH')
       await getSecretStore().set(REAL_SECRET_KEY, await Bun.file(keyPath).text(), 'system')
 
       machine = buildIntegrationMachine('vm-egress-docker', true)
@@ -910,8 +910,8 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST || !process.env.TAU_TEST_EGRESS |
       } catch {
         /* best-effort */
       }
-      if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-      else process.env.TAU_ENCRYPTION_KEY = priorKey
+      if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+      else process.env.FICUS_ENCRYPTION_KEY = priorKey
       if (priorHome === undefined) delete process.env.HOME_DIR
       else process.env.HOME_DIR = priorHome
       resetSecretStore()

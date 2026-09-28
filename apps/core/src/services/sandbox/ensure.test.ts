@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, spyOn } from 'bun:test'
-import { randomUUID, createPublicKey } from 'crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { randomUUID, createHash, createPublicKey } from 'crypto'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { eq } from 'drizzle-orm'
@@ -19,6 +19,12 @@ import { getSquadWorkspacePath } from '../squad/workspace'
 import { resolveSandboxAssets } from './asset-manifest'
 import { ensureWorkspaceSandbox, type EnsureWorkspaceDeps } from './ensure'
 import { SandboxProvisionError } from './k8s/provision-errors'
+import {
+  SANDBOX_EXECUTOR_PROTOCOL_VERSION,
+  reconcilableSpecHash,
+  resolveEphemeralStorageLimit,
+  type SquadSandboxConfig,
+} from './k8s/pod-spec'
 import type { AdmissionEffectSpec } from '../maintenance/admission-reservation'
 import { trackSandboxSetupWork, type SandboxSetupProgressEvent } from './setup-progress'
 import { computeDockerSpecHash } from './docker/manager'
@@ -38,22 +44,22 @@ describe('normalizeWatchPatterns', () => {
 
 describe('ensureK8sCliForSandbox', () => {
   it('stages built CLI into shared core-data for k8s pods', async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-cli-stage-'))
-    const source = join(tmp, 'tau.js')
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-cli-stage-'))
+    const source = join(tmp, 'ficus.js')
     writeFileSync(source, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
 
     const { ensureK8sCliForSandbox } = await import('./ensure')
     const staged = ensureK8sCliForSandbox({ cliHostPath: source, homeDir: tmp })
 
-    expect(staged).toBe(join(tmp, 'cli', 'tau.js'))
+    expect(staged).toBe(join(tmp, 'cli', 'ficus.js'))
     expect(readFileSync(staged, 'utf8')).toContain('console.log("ok")')
     expect(statSync(staged).mode & 0o777).toBe(0o755)
     rmSync(tmp, { recursive: true, force: true })
   })
 
   it('does not rewrite staged CLI when contents are unchanged', async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-cli-stage-'))
-    const source = join(tmp, 'source-tau.js')
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-cli-stage-'))
+    const source = join(tmp, 'source-ficus.js')
     writeFileSync(source, '#!/usr/bin/env bun\nconsole.log("same")\n', { mode: 0o755 })
 
     const { ensureK8sCliForSandbox } = await import('./ensure')
@@ -69,8 +75,8 @@ describe('ensureK8sCliForSandbox', () => {
   })
 
   it('refreshes staged CLI in-place so k8s subPath mounts keep working', async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-cli-stage-'))
-    const source = join(tmp, 'source-tau.js')
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-cli-stage-'))
+    const source = join(tmp, 'source-ficus.js')
     writeFileSync(source, '#!/usr/bin/env bun\nconsole.log("v1")\n', { mode: 0o755 })
 
     const { ensureK8sCliForSandbox } = await import('./ensure')
@@ -87,11 +93,11 @@ describe('ensureK8sCliForSandbox', () => {
   })
 
   it('throws actionable error when built CLI is missing', async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-cli-stage-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-cli-stage-'))
     const { ensureK8sCliForSandbox } = await import('./ensure')
 
     expect(() => ensureK8sCliForSandbox({ cliHostPath: join(tmp, 'missing'), homeDir: tmp })).toThrow(
-      'Tau CLI build not found'
+      'Ficus CLI build not found'
     )
     rmSync(tmp, { recursive: true, force: true })
   })
@@ -165,7 +171,7 @@ describe('ensureWorkspaceSandbox admission effect boundaries', () => {
         isK8sRuntime: () => false,
         isRemoteSandboxRuntime: () => false,
         getSandboxManager: () => manager,
-        getCliHostPath: () => join(tmp, 'tau.js'),
+        getCliHostPath: () => join(tmp, 'ficus.js'),
         getHomeDir: () => tmp,
         ensureSquadWorkspace: () => tmp,
         isSessionActive: () => false,
@@ -195,7 +201,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
         {
           isK8sRuntime: () => false,
           getSandboxManager: () => mockManager as any,
-          getCliHostPath: () => '/tmp/tau.js',
+          getCliHostPath: () => '/tmp/ficus.js',
           getHomeDir: () => tmp,
           ensureSquadWorkspace: () => '/unused',
           isSessionActive: () => false,
@@ -218,7 +224,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
   it('(squad member) calls ensureSquadWorkspace, passes squadId, mounts NO memory, sets privateVolumePath', async () => {
     const squadId = randomUUID()
     const tmp = mkdtempSync(join(tmpdir(), 'tau-docker-squad-'))
-    const fakeCliSrc = join(tmp, 'tau.js')
+    const fakeCliSrc = join(tmp, 'ficus.js')
     const fakeHome = join(tmp, 'home')
     writeFileSync(fakeCliSrc, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
 
@@ -252,7 +258,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
       expect(capturedOptions).toBeDefined()
       expect(capturedOptions.workspacePath).toBe(`/mock/workspace/${squadId}`)
       expect(capturedOptions.squadId).toBe(squadId)
-      expect(capturedOptions.volumes).toContain(`${fakeCliSrc}:/usr/local/bin/tau:ro`)
+      expect(capturedOptions.volumes).toContain(`${fakeCliSrc}:/usr/local/bin/ficus:ro`)
       // Squad memory is delivered only to the squad box (asset-manifest scope);
       // members get NO memory mount at all.
       expect((capturedOptions.volumes ?? []).find((v: string) => v.includes(':/memory'))).toBeUndefined()
@@ -268,7 +274,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
   it('(k8s, squad member) forwards squadId and privateStorageKey to manager options', async () => {
     const squadId = randomUUID()
     const tmp = mkdtempSync(join(tmpdir(), 'tau-k8s-squad-'))
-    const fakeCliSrc = join(tmp, 'tau.js')
+    const fakeCliSrc = join(tmp, 'ficus.js')
     writeFileSync(fakeCliSrc, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
 
     let capturedOptions: any = null
@@ -339,7 +345,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
       setupProgress?: (event: SandboxSetupProgressEvent) => void
     ) {
       const tmp = mkdtempSync(join(tmpdir(), 'tau-k8s-heal-'))
-      const fakeCliSrc = join(tmp, 'tau.js')
+      const fakeCliSrc = join(tmp, 'ficus.js')
       writeFileSync(fakeCliSrc, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
 
       try {
@@ -449,23 +455,23 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
 })
 
 describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
-  const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+  const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
   })
 
-  // Drive the REAL factory runtime predicates off TAU_SANDBOX_RUNTIME=vm, faking
+  // Drive the REAL factory runtime predicates off FICUS_SANDBOX_RUNTIME=vm, faking
   // only the manager — this proves the vm env selects the remote manager flow.
   // getCliHostPath points at a non-existent build on purpose: if the vm path
-  // wrongly ran the k8s CLI subPath staging it would throw "Tau CLI build not
+  // wrongly ran the k8s CLI subPath staging it would throw "Ficus CLI build not
   // found" (vm boxes receive the CLI via syncBoxFiles, not a host subPath mount).
   function vmDeps(manager: any, tmp: string): any {
     return {
       isK8sRuntime: sandboxFactory.isK8sRuntime,
       isRemoteSandboxRuntime: sandboxFactory.isRemoteSandboxRuntime,
       getSandboxManager: () => manager,
-      getCliHostPath: () => join(tmp, 'nonexistent-tau.js'),
+      getCliHostPath: () => join(tmp, 'nonexistent-ficus.js'),
       getHomeDir: () => tmp,
       ensureSquadWorkspace: (id: string) => join(tmp, 'squad-ws', id),
       isSessionActive: () => false,
@@ -473,7 +479,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
   }
 
   it('(solo agent) routes to the vm manager ensureSandbox with agent opts + machineId, skipping k8s CLI staging', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-solo-'))
     let captured: any = null
     const manager = {
@@ -506,7 +512,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
   })
 
   it('(squad member) passes squadId + shared squad workspace to the vm manager', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squadId = randomUUID()
     const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-squad-'))
     let captured: any = null
@@ -538,7 +544,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
   })
 
   it('(system-manager) reaches ensureSandbox without drift-recreate (non-agent_ prefix)', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-sysmgr-'))
     let ensureCalls = 0
     let recreateCalls = 0
@@ -616,7 +622,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     return {
       isK8sRuntime: () => false,
       getSandboxManager: () => manager as any,
-      getCliHostPath: () => '/tmp/tau.js',
+      getCliHostPath: () => '/tmp/ficus.js',
       getHomeDir: () => tmp,
       ensureSquadWorkspace: () => '/unused',
       isSessionActive: () => false,
@@ -1015,10 +1021,10 @@ describe('ensureSquadSandbox setup progress extent', () => {
 })
 
 describe('ensureWorkspaceSandbox managed toolchain gate', () => {
-  const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+  const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
   })
 
   // The orchestrator and every runtime adapter are unit-tested in
@@ -1031,7 +1037,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
       isK8sRuntime: sandboxFactory.isK8sRuntime,
       isRemoteSandboxRuntime: sandboxFactory.isRemoteSandboxRuntime,
       getSandboxManager: () => manager,
-      getCliHostPath: () => join(tmp, 'nonexistent-tau.js'),
+      getCliHostPath: () => join(tmp, 'nonexistent-ficus.js'),
       getHomeDir: () => tmp,
       ensureSquadWorkspace: (id: string) => join(tmp, 'squad-ws', id),
       isSessionActive: () => false,
@@ -1059,7 +1065,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
   }
 
   it('provisions the squad declaration only after the physical box is ready', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({
       name: `toolchain gate ${randomUUID()}`,
       purpose: 'test',
@@ -1083,7 +1089,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
   })
 
   it('fails the ensure when the declaration cannot be provisioned', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({
       name: `toolchain gate fail ${randomUUID()}`,
       purpose: 'test',
@@ -1113,7 +1119,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
   })
 
   it('does not gate readiness for a squad without a declaration', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({ name: `toolchain none ${randomUUID()}`, purpose: 'test' })
     const gateSandboxUuid = randomUUID()
     const tmp = mkdtempSync(join(tmpdir(), 'tau-toolchain-none-'))
@@ -1161,7 +1167,7 @@ describe('(k8s) drift recreate is serialized across concurrent callers', () => {
       hasSandbox: () => true,
     }
     const tmp = mkdtempSync(join(tmpdir(), 'tau-k8s-heal-race-'))
-    const fakeCliSrc = join(tmp, 'tau.js')
+    const fakeCliSrc = join(tmp, 'ficus.js')
     writeFileSync(fakeCliSrc, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
     const deps = {
       isK8sRuntime: () => true,
@@ -1184,5 +1190,147 @@ describe('(k8s) drift recreate is serialized across concurrent callers', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
+  })
+})
+
+describe('the ficus CLI is the only CLI a sandbox gets', () => {
+  /** Volume targets on the PATH directories a container shell searches. */
+  const pathMounts = (volumes: string[]) => volumes.filter((v) => /:\/usr\/(local\/)?s?bin\//.test(v))
+
+  it('(docker) mounts the built ficus.js at /usr/local/bin/ficus and nothing else on PATH', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-docker-cli-'))
+    const cli = join(tmp, 'ficus.js')
+    writeFileSync(cli, '#!/usr/bin/env bun\n', { mode: 0o755 })
+    const captured: any[] = []
+    const manager = {
+      ensureSandbox: async (_id: string, options: any) => void captured.push(options),
+      getWorkspaceLayout: () => ({ privateMount: '/private', workspaceMount: '/workspace' }),
+    }
+    try {
+      await ensureWorkspaceSandbox(
+        { sandboxId: 'agent_cli_only', workspaceId: 'agent_cli_only' },
+        {
+          isK8sRuntime: () => false,
+          isRemoteSandboxRuntime: () => false,
+          getSandboxManager: () => manager as any,
+          getCliHostPath: () => cli,
+          getHomeDir: () => tmp,
+          ensureSquadWorkspace: () => '/unused',
+          isSessionActive: () => false,
+        }
+      )
+      expect(pathMounts(captured[0].volumes)).toEqual([`${cli}:/usr/local/bin/ficus:ro`])
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+      rmSync(join(homeUtils.getHomeDir(), 'skills', 'sandboxes', 'agent-cli-only'), { recursive: true, force: true })
+    }
+  })
+
+  it('(docker) a container stamped without the ficus mount drifts; the recreate is deferred only while a session runs', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-docker-drift-'))
+    const cli = join(tmp, 'ficus.js')
+    writeFileSync(cli, '#!/usr/bin/env bun\n', { mode: 0o755 })
+    const captured: any[] = []
+    const manager = {
+      ensureSandbox: async (_id: string, options: any) => void captured.push(options),
+      getWorkspaceLayout: () => ({ privateMount: '/private', workspaceMount: '/workspace' }),
+    }
+    const run = (active: boolean) =>
+      ensureWorkspaceSandbox(
+        { sandboxId: 'agent_cli_drift', workspaceId: 'agent_cli_drift' },
+        {
+          isK8sRuntime: () => false,
+          isRemoteSandboxRuntime: () => false,
+          getSandboxManager: () => manager as any,
+          getCliHostPath: () => cli,
+          getHomeDir: () => tmp,
+          ensureSquadWorkspace: () => '/unused',
+          isSessionActive: () => active,
+        }
+      )
+    try {
+      await run(true)
+      await run(false)
+      const [busy, idle] = captured
+      // The docker manager defers a drift recreate exactly when hasActiveSession is set
+      // (docker/manager.test.ts "(g)"); ensure sets it from the agent's live session only.
+      expect(busy.hasActiveSession).toBe(true)
+      expect(idle.hasActiveSession).toBe(false)
+      // A container created without the ficus mount (any pre-ficus volume set) carries a different stamp.
+      const withoutFicus = {
+        ...idle,
+        volumes: idle.volumes.filter((v: string) => !v.endsWith(':/usr/local/bin/ficus:ro')),
+      }
+      expect(computeDockerSpecHash(withoutFicus)).not.toBe(computeDockerSpecHash(idle))
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+      rmSync(join(homeUtils.getHomeDir(), 'skills', 'sandboxes', 'agent-cli-drift'), { recursive: true, force: true })
+    }
+  })
+
+  describe('(k8s) a pod created before the ficus mount', () => {
+    /** The reconcilable-spec stamp a pre-ficus Core wrote on its pods (no CLI mount field). */
+    const preFicusStamp = (config?: SquadSandboxConfig) =>
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            executorProtocolVersion: SANDBOX_EXECUTOR_PROTOCOL_VERSION,
+            ephemeralStorage: resolveEphemeralStorageLimit(config?.ephemeralStorageLimitGi),
+            squadIds: config?.squadId ? [config.squadId] : [],
+          })
+        )
+        .digest('hex')
+        .slice(0, 16)
+
+    async function runK8s(active: boolean) {
+      const tmp = mkdtempSync(join(tmpdir(), 'ficus-k8s-cli-'))
+      const cli = join(tmp, 'build', 'ficus.js')
+      mkdirSync(join(tmp, 'build'), { recursive: true })
+      writeFileSync(cli, '#!/usr/bin/env bun\nconsole.log("ficus")\n', { mode: 0o755 })
+      const calls = { ensure: 0, recreate: 0 }
+      const toPodConfig = (opts: ManagerSandboxOptions) =>
+        opts.squadId ? { ...opts.k8s, squadId: opts.squadId } : opts.k8s
+      const manager = {
+        ensureSandbox: async () => void calls.ensure++,
+        recreateSandbox: async () => {
+          calls.recreate++
+          return '/workspace'
+        },
+        // The real K8sSandboxManager hash: reconcilableSpecHash over its pod config.
+        computeSpecHash: (opts: ManagerSandboxOptions) => reconcilableSpecHash(toPodConfig(opts)),
+        assertProvisionInspectionAllowed: async () => {},
+        getRunningSandboxSpecHash: async () =>
+          preFicusStamp({ sandboxType: 'agent', alwaysOn: false, privateStorageKey: 'agent_old_pod' }),
+        getWorkspaceLayout: () => ({ workspaceMount: '/workspace', privateMount: '/private' }),
+        hasSandbox: () => true,
+      }
+      try {
+        await ensureWorkspaceSandbox(
+          { sandboxId: 'agent_old_pod', workspaceId: 'agent_old_pod' },
+          {
+            isK8sRuntime: () => true,
+            getSandboxManager: () => manager as any,
+            getCliHostPath: () => cli,
+            getHomeDir: () => tmp,
+            ensureSquadWorkspace: () => '/unused',
+            isSessionActive: () => active,
+          }
+        )
+        // Only ficus.js is staged for the subPath mount.
+        expect(readdirSync(join(tmp, 'cli'))).toEqual(['ficus.js'])
+        expect(readFileSync(join(tmp, 'cli', 'ficus.js'), 'utf8')).toContain('console.log("ficus")')
+      } finally {
+        rmSync(tmp, { recursive: true, force: true })
+      }
+      return calls
+    }
+
+    it('is recreated when the agent is idle', async () => {
+      expect(await runK8s(false)).toEqual({ ensure: 0, recreate: 1 })
+    })
+
+    it('is kept while the agent has a running session', async () => {
+      expect(await runK8s(true)).toEqual({ ensure: 1, recreate: 0 })
+    })
   })
 })

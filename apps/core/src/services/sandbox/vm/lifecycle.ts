@@ -24,7 +24,7 @@ import { consultantSandboxSquadId } from '../consultant-sandbox'
  * the whole reap sweep.
  */
 
-import { isLiveAgentStatus, type AgentStatus } from '@tau/shared'
+import { isLiveAgentStatus, type AgentStatus } from '@ficus/shared'
 import { join } from 'path'
 import { createLogger } from '../../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../../lib/infra/PeriodicRunner'

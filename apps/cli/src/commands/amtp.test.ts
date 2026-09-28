@@ -29,16 +29,16 @@ describe('resolvePublicKey', () => {
   })
 })
 
-describe('tau remote commands', () => {
+describe('ficus remote commands', () => {
   let publicPem: string
   let privatePem: string
   beforeEach(async () => {
     const { publicKey, privateKey } = generateKeyPairSync('ed25519')
     publicPem = publicKey.export({ type: 'spki', format: 'pem' }) as string
-    process.env.TAU_IDENTITY_PEM = join(dir, 'identity.pem')
+    process.env.FICUS_IDENTITY_PEM = join(dir, 'identity.pem')
     privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
-    await writeFile(process.env.TAU_IDENTITY_PEM, privatePem)
-    process.env.TAU_IDENTITY_CACHE = join(dir, 'identity.json')
+    await writeFile(process.env.FICUS_IDENTITY_PEM, privatePem)
+    process.env.FICUS_IDENTITY_CACHE = join(dir, 'identity.json')
     ;(output as ReturnType<typeof mock>).mockClear()
     ;(outputError as ReturnType<typeof mock>).mockClear()
     ;(apiPost as ReturnType<typeof mock>).mockClear()
@@ -63,8 +63,8 @@ describe('tau remote commands', () => {
     })
   })
   afterEach(() => {
-    delete process.env.TAU_IDENTITY_CACHE
-    delete process.env.TAU_IDENTITY_PEM
+    delete process.env.FICUS_IDENTITY_CACHE
+    delete process.env.FICUS_IDENTITY_PEM
   })
 
   async function run(args: string[]): Promise<void> {
@@ -79,7 +79,7 @@ describe('tau remote commands', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/amtp/agents/me/register', { handle: 'alice' })
   })
   test('register fails before POST or cache write when the local PEM is missing', async () => {
-    await rm(process.env.TAU_IDENTITY_PEM!)
+    await rm(process.env.FICUS_IDENTITY_PEM!)
     await run(['remote', 'register', 'alice'])
     expect(apiPost).not.toHaveBeenCalled()
     expect(outputError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/not found/) }))
@@ -111,7 +111,7 @@ describe('tau remote commands', () => {
         identityPublicKey,
       })
       await run(['remote', 'register', 'alice'])
-      expect(existsSync(process.env.TAU_IDENTITY_CACHE!)).toBe(false)
+      expect(existsSync(process.env.FICUS_IDENTITY_CACHE!)).toBe(false)
     }
   })
 
@@ -121,7 +121,7 @@ describe('tau remote commands', () => {
   })
   test('open fails before POST when the local key mismatches', async () => {
     await writeFile(
-      process.env.TAU_IDENTITY_PEM!,
+      process.env.FICUS_IDENTITY_PEM!,
       generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
     )
     ;(apiPost as ReturnType<typeof mock>).mockClear()
@@ -156,7 +156,7 @@ describe('tau remote commands', () => {
         identityPublicKey: publicPem,
       },
     })
-    await rm(process.env.TAU_IDENTITY_PEM!)
+    await rm(process.env.FICUS_IDENTITY_PEM!)
     await run(['remote', 'whoami'])
     expect(output).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -236,7 +236,7 @@ describe('remote handles command', () => {
   })
 })
 
-describe('tau remote card commands', () => {
+describe('ficus remote card commands', () => {
   let dir: string
   let priv: string
   let pub: string
@@ -246,17 +246,17 @@ describe('tau remote card commands', () => {
     const { publicKey, privateKey } = generateKeyPairSync('ed25519')
     priv = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
     pub = publicKey.export({ type: 'spki', format: 'pem' }) as string
-    process.env.TAU_IDENTITY_PEM = join(dir, 'identity.pem')
-    process.env.TAU_IDENTITY_CACHE = join(dir, 'identity.json')
-    await writeFile(process.env.TAU_IDENTITY_PEM, priv)
+    process.env.FICUS_IDENTITY_PEM = join(dir, 'identity.pem')
+    process.env.FICUS_IDENTITY_CACHE = join(dir, 'identity.json')
+    await writeFile(process.env.FICUS_IDENTITY_PEM, priv)
     ;(apiGet as ReturnType<typeof mock>).mockReset()
     ;(apiPut as ReturnType<typeof mock>).mockReset()
     ;(apiDelete as ReturnType<typeof mock>).mockReset()
     ;(outputError as ReturnType<typeof mock>).mockClear()
   })
   afterEach(async () => {
-    delete process.env.TAU_IDENTITY_PEM
-    delete process.env.TAU_IDENTITY_CACHE
+    delete process.env.FICUS_IDENTITY_PEM
+    delete process.env.FICUS_IDENTITY_CACHE
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -269,7 +269,7 @@ describe('tau remote card commands', () => {
 
   test('card set signs a card from flags and PUTs it, instanceId resolved from the cached address', async () => {
     await writeFile(
-      process.env.TAU_IDENTITY_CACHE!,
+      process.env.FICUS_IDENTITY_CACHE!,
       JSON.stringify({ handle: 'alice', address: 'amtp://inst-1/alice', identityPublicKey: pub })
     )
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
@@ -304,7 +304,7 @@ describe('tau remote card commands', () => {
 
   test('card set defaults name/description from status when flags are omitted', async () => {
     await writeFile(
-      process.env.TAU_IDENTITY_CACHE!,
+      process.env.FICUS_IDENTITY_CACHE!,
       JSON.stringify({ handle: 'alice', address: 'amtp://inst-1/alice', identityPublicKey: pub })
     )
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
@@ -354,7 +354,7 @@ describe('tau remote card commands', () => {
   })
 
   test('card set fails before PUT when the delivered PEM is missing', async () => {
-    await rm(process.env.TAU_IDENTITY_PEM!)
+    await rm(process.env.FICUS_IDENTITY_PEM!)
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
       handle: 'alice',
       address: 'amtp://inst-1/alice',

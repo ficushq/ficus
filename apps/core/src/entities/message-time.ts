@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import { messages } from '../db/schema'
 
-/** SQL mirror of @tau/shared messageSortAt, normalized to JavaScript Date precision. */
+/** SQL mirror of @ficus/shared messageSortAt, normalized to JavaScript Date precision. */
 export const messageSortAtSql = sql<Date>`
   date_trunc(
     'milliseconds',

@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { commandCenterSearch, recentlyCompletedWork } from './commandCenterSearch'
 
 const data = {
-  squads: [{ id: 'tau', name: 'Tau', purpose: 'Orchestration' }],
+  squads: [{ id: 'tau', name: 'Ficus', purpose: 'Orchestration' }],
   streams: [{ id: 'work', squadId: 'tau', title: 'Review OAuth', status: 'done' }],
   consultants: [
     {
@@ -108,12 +108,12 @@ test('work ranking blends relevance with unfinished status and completion recenc
 
 test('keyword-only active work does not bury strong completed title matches', () => {
   const rows = commandCenterSearch(
-    'Tau',
+    'Ficus',
     {
       ...data,
       streams: [
         datedWork('keyword', 'Unrelated project', 'active', 0),
-        datedWork('title', 'Tau migration', 'done', 120),
+        datedWork('title', 'Ficus migration', 'done', 120),
       ],
     },
     now

@@ -7,7 +7,7 @@ import {
   isTerminalAssistantTaskStatus,
   reportableAssistantTaskStatusSchema,
   type AssistantTaskSummary,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { agents, assistantTasks, db } from '../db'
 import { InboxMessage } from '../entities/InboxMessage'
 import type { Identity } from '../services/rbac'
@@ -51,7 +51,7 @@ function summarize(row: NonNullable<Awaited<ReturnType<typeof ownedTask>>>): Ass
 /**
  * Direct task status reporting for the delegated agent. `POST /:taskId/status` is sugar over an
  * inbox reply on the task's current request, so it goes through the same validation, projection,
- * activity events, and push policy as `tau inbox send --assistant-task-status`; the agent
+ * activity events, and push policy as `ficus inbox send --assistant-task-status`; the agent
  * supplies the request generation it is reporting, so a late report cannot finish newer work.
  */
 export const assistantTasksRouter = new Hono()

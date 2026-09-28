@@ -1,6 +1,6 @@
 import { Hono, type Context, type Next } from 'hono'
 import { z } from 'zod'
-import { Permissions } from '@tau/shared'
+import { Permissions } from '@ficus/shared'
 import { requireEntityPermission } from '../middleware/require-entity-permission'
 import { auditActor } from '../services/rbac/audit-actor'
 import { parseJsonBody } from './json-body'

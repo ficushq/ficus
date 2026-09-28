@@ -286,7 +286,7 @@ function FileHeader({
         <span>{formatSize(size)}</span>
         <button
           onClick={handleDownload}
-          className="tau-button p-1 text-muted hover:text-primary rounded hover:bg-surface-hover transition-colors"
+          className="ficus-button p-1 text-muted hover:text-primary rounded hover:bg-surface-hover transition-colors"
           title="Download file"
         >
           <DownloadIcon className="w-4 h-4" />

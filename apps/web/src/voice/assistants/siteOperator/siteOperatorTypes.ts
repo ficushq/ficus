@@ -1,5 +1,5 @@
 import type { AssistantConversationBridge } from '../../AssistantConversationContext'
-import type { Agent, Squad } from '@tau/shared'
+import type { Agent, Squad } from '@ficus/shared'
 import type { WebSocketContextValue } from '../../../hooks/useWebSocket'
 import type { InboxMessageResponse } from '../../../api/inbox'
 import type { VisibleAgentContext } from '../../pageContext'

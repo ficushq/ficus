@@ -1,8 +1,9 @@
-import type { ArtifactEntry, Presentation } from '@tau/shared'
-import { presentationSchema } from '@tau/shared'
+import type { ArtifactEntry, Presentation } from '@ficus/shared'
+import { presentationSchema } from '@ficus/shared'
 import clsx from 'clsx'
 import { MarkdownContent } from '../MarkdownContent'
 import { PresentationRenderer } from './PresentationRenderer'
+import { VOICE_HOLD_KEYDOWN_MESSAGE, VOICE_HOLD_KEYUP_MESSAGE } from '@ficus/shared/browser-keys'
 
 export interface ArtifactRendererProps {
   entry: ArtifactEntry
@@ -98,12 +99,12 @@ const VOICE_HOLD_SHORTCUT_BRIDGE_SCRIPT = `
   window.addEventListener('keydown', (event) => {
     if (!isSpace(event) || event.repeat || isEditableTarget(event.target)) return
     event.preventDefault()
-    window.parent?.postMessage({ type: 'tau:voice-hold-keydown', repeat: event.repeat }, '*')
+    window.parent?.postMessage({ type: ${JSON.stringify(VOICE_HOLD_KEYDOWN_MESSAGE)}, repeat: event.repeat }, '*')
   }, { capture: true })
   window.addEventListener('keyup', (event) => {
     if (!isSpace(event) || isEditableTarget(event.target)) return
     event.preventDefault()
-    window.parent?.postMessage({ type: 'tau:voice-hold-keyup' }, '*')
+    window.parent?.postMessage({ type: ${JSON.stringify(VOICE_HOLD_KEYUP_MESSAGE)} }, '*')
   }, { capture: true })
 })()
 </script>`

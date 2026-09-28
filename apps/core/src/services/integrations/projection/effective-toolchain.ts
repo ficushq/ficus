@@ -1,4 +1,4 @@
-import type { SandboxToolchainConfig } from '@tau/shared'
+import type { SandboxToolchainConfig } from '@ficus/shared'
 import type { PublicIntegrationDeclaration } from './types'
 
 export interface EffectiveToolchain {

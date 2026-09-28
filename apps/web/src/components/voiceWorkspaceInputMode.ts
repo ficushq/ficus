@@ -1,6 +1,7 @@
 import type { VoiceInputMode } from '../voice/useRealtimeVoiceAssistant'
+import { VOICE_INPUT_MODE_STORAGE_KEY } from '@ficus/shared/browser-keys'
 
-export const VOICE_INPUT_MODE_STORAGE_KEY = 'tau_voice_workspace_input_mode'
+export { VOICE_INPUT_MODE_STORAGE_KEY }
 
 export function getStoredVoiceInputMode(storage: Pick<Storage, 'getItem'> | undefined): VoiceInputMode {
   try {

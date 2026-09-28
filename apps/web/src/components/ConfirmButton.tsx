@@ -56,7 +56,7 @@ export function ConfirmButton({
       onClick={handleClick}
       disabled={disabled}
       aria-label={ariaLabel}
-      className={clsx('tau-button', confirming ? confirmClassName : className, 'disabled:opacity-50')}
+      className={clsx('ficus-button', confirming ? confirmClassName : className, 'disabled:opacity-50')}
       title={title}
     >
       {confirming ? confirmLabel : label}

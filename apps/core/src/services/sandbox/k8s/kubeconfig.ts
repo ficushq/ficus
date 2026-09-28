@@ -1,13 +1,13 @@
 /**
  * Shared KubeConfig loader for K8s sandbox managers.
  *
- * In local dev mode (TAU_SANDBOX_RUNTIME=k8s with TAU_K8S_LOCAL=true), disables
+ * In local dev mode (FICUS_SANDBOX_RUNTIME=k8s with FICUS_K8S_LOCAL=true), disables
  * TLS certificate verification so Bun can talk to k3d's self-signed K8s API
  * server. node-fetch's per-request rejectUnauthorized option doesn't work in
  * Bun, so we set the process-level NODE_TLS_REJECT_UNAUTHORIZED=0 env var
  * instead. Because local mode is read through isLocalK8sMode, that
  * process-wide TLS downgrade can only happen under the k8s runtime — which is
- * the point: a stale TAU_K8S_LOCAL=true line in a .env that now selects
+ * the point: a stale FICUS_K8S_LOCAL=true line in a .env that now selects
  * host/docker/vm must never disable TLS verification for the whole process.
  *
  * In production (in-cluster), TLS works normally — the service account CA
@@ -19,7 +19,7 @@ import { isLocalK8sMode } from '../runtime'
 
 const IS_LOCAL_DEV = isLocalK8sMode()
 
-const K3D_CONTEXT = process.env.TAU_K8S_CONTEXT || 'k3d-tau-dev-token'
+const K3D_CONTEXT = process.env.FICUS_K8S_CONTEXT || 'k3d-tau-dev-token'
 
 export function loadKubeConfig(): k8s.KubeConfig {
   const kc = new k8s.KubeConfig()

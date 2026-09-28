@@ -16,10 +16,10 @@ import type {
   ResolvedTrackedResource,
   TrackedResource,
   TrackedResourcesView,
-} from '@tau/shared'
-// The payload shapes live with the transport in @tau/client-core; web re-exports them so
+} from '@ficus/shared'
+// The payload shapes live with the transport in @ficus/client-core; web re-exports them so
 // components keep importing their api-layer types from one place, with one definition behind it.
-import type { SquadSubscription, WorkStreamSubscription } from '@tau/client-core'
+import type { SquadSubscription, WorkStreamSubscription } from '@ficus/client-core'
 export type { SquadSubscription, WorkStreamSubscription }
 import { apiFetch } from './client'
 import { client } from './clientInstance'

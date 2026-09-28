@@ -8,7 +8,7 @@ What an existing install must do, by runtime:
 
 All migrations are additive for pre-stack installs (the `machines` /
 `machine_boxes` tables, `agents`/`squads.machine_id`, `synced_hashes` are new
-columns/tables). Run `TAU_MIGRATE_LIVE=1 bun run db:migrate` on deploy — the
+columns/tables). Run `FICUS_MIGRATE_LIVE=1 bun run db:migrate` on deploy — the
 flag explicitly confirms the configured live database; no other manual steps
 are needed and nothing is destructive. (Migration 0076 drops `server_bundle_version`, a column
 introduced _within_ this stack — installs upgrading from before the stack
@@ -59,7 +59,7 @@ turn. See `docs/wiki/host-runtime.md`.
 
 ## Renamed runtime values (all installs)
 
-`TAU_SANDBOX_RUNTIME` is now required and takes exactly `docker-sysbox`,
+`FICUS_SANDBOX_RUNTIME` is now required and takes exactly `docker-sysbox`,
 `docker-socket`, `k8s`, `vm`, or `host`. The old spellings were removed, not
 aliased — an install still carrying one fails to start with an error naming the
 replacement:
@@ -75,13 +75,13 @@ Setup-toolkit installs carry the same value as `runtime.sandbox` in the config
 yaml. See `docs/wiki/sandbox-runtimes.md`.
 
 **Edit `.env` BEFORE restarting.** An upgrade rewrites no `.env` — whatever
-`TAU_SANDBOX_RUNTIME` an install carries today (`auto`, `docker`, `sysbox`,
+`FICUS_SANDBOX_RUNTIME` an install carries today (`auto`, `docker`, `sysbox`,
 `socket`, or nothing at all) is still there after the new code is deployed, and
 the api and worker refuse to start on it. The setup toolkit's
 `upgrade-host.sh` and the in-app updater stop before the restart rather than
 leave the instance down, so the upgrade fails until the value is fixed. The
 in-app preflight ships WITH this change, so an instance still running
-pre-rename code must set `TAU_SANDBOX_RUNTIME` in `.env` BEFORE applying the
+pre-rename code must set `FICUS_SANDBOX_RUNTIME` in `.env` BEFORE applying the
 update that introduces it; `upgrade-host.sh` from this checkout is safe either
 way.
 
@@ -96,9 +96,9 @@ for it.
 
 ## vm runtime — opt-in only
 
-`TAU_SANDBOX_RUNTIME=vm` enables the new runtime; existing k8s/docker installs
-are unaffected without it. All new env vars (`TAU_MACHINE_REVERSE_PORT`,
-`TAU_UNIT_WEIGHT_*`, `TAU_MACHINE_UNIT_CAPACITY`, `TAU_MAX_MACHINES`, …) are
+`FICUS_SANDBOX_RUNTIME=vm` enables the new runtime; existing k8s/docker installs
+are unaffected without it. All new env vars (`FICUS_MACHINE_REVERSE_PORT`,
+`FICUS_UNIT_WEIGHT_*`, `FICUS_MACHINE_UNIT_CAPACITY`, `FICUS_MAX_MACHINES`, …) are
 optional with defaults. The prebaked machine image
 `ghcr.io/ficushq/ficus-machine` is public (no pull auth needed).
 

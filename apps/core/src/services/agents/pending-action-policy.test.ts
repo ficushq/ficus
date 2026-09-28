@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {

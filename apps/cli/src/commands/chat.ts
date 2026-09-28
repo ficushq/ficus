@@ -43,7 +43,7 @@ export function registerChatCommands(program: Command) {
         // Require message for chat
         if (!message) {
           console.error('Error: message is required')
-          console.error('Usage: tau chat <message>')
+          console.error('Usage: ficus chat <message>')
           process.exit(1)
         }
 

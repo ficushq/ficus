@@ -5,7 +5,7 @@ import { agents, images, squads, users } from '../db/schema'
 import { Agent } from './Agent'
 import { Image } from './Image'
 import { InvalidAttachmentError } from '../services/attachments/agent-scope'
-import { MAX_IMAGE_ATTACHMENTS_PER_MESSAGE, MAX_IMAGE_ATTACHMENTS_TOTAL_BYTES } from '@tau/shared'
+import { MAX_IMAGE_ATTACHMENTS_PER_MESSAGE, MAX_IMAGE_ATTACHMENTS_TOTAL_BYTES } from '@ficus/shared'
 
 const agentIds: string[] = []
 const imageIds: string[] = []

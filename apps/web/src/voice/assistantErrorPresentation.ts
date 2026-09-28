@@ -2,7 +2,7 @@
 export function summarizeAssistantError(message: string): string {
   if (/<(?:!doctype|html|head|body)\b/i.test(message)) {
     const status = message.match(/\b[45]\d{2}\b/)?.[0]
-    return `Tau is temporarily unavailable${status ? ` (${status})` : ''}. Please try again shortly.`
+    return `Ficus is temporarily unavailable${status ? ` (${status})` : ''}. Please try again shortly.`
   }
   const detail = message.replace(/^API error: \d+:\s*/, '')
   try {

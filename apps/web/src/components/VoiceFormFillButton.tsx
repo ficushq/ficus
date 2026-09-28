@@ -50,7 +50,7 @@ export function VoiceFormFillButton({
         onTouchEnd={() => endPress()}
         disabled={disabled || state === 'extracting' || state === 'transcribing'}
         className={clsx(
-          'tau-button',
+          'ficus-button',
           'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed transition-colors disabled:opacity-50',
           state === 'recording'
             ? 'border-status-danger-400 dark:border-status-danger-600 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300'

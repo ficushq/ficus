@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
-import type { ArtifactRequestAction } from '@tau/shared'
+import type { ArtifactRequestAction } from '@ficus/shared'
 import { createArtifactsRouter } from './artifacts'
 import { identityMiddleware } from '../middleware/identity'
 import { createTestAdmin, createTestUser, authHeaders, cleanupTestRbac, type TestUser } from '../test-utils'

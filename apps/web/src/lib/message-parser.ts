@@ -1,4 +1,4 @@
-import { parseMagicStrings, UNIQUE_MAGIC_TYPES, type MagicStringToken } from '@tau/shared'
+import { parseMagicStrings, UNIQUE_MAGIC_TYPES, type MagicStringToken } from '@ficus/shared'
 
 export type MessageSegment =
   | { type: 'text'; content: string }

@@ -165,7 +165,7 @@ RUN wget -q "https://github.com/opencontainers/runc/releases/download/v1.1.15/ru
 COPY apps/core/docker-sandbox/command-identity.json /opt/tau/command-identity.json
 COPY packages/k8s-sandbox/package.json /opt/sandbox/package.json
 COPY packages/k8s-sandbox/src /opt/sandbox/src
-# The executor depends on @tau/shared as `workspace:*`, which bun can only
+# The executor depends on @ficus/shared as `workspace:*`, which bun can only
 # resolve inside a workspace. Make /opt/sandbox that workspace: copy the member
 # in and declare it on the executor's own manifest, so server.ts keeps its
 # /opt/sandbox/src path and the monorepo's package.json stays the single source.
@@ -175,7 +175,7 @@ RUN addgroup -g 1000 tau && adduser -D -u 1000 -G tau -h /home/tau tau \
     && cd /opt/sandbox \
     && bun -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("package.json","utf8"));p.workspaces=["packages/shared"];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' \
     && bun install --production \
-    && bun -e "require('bun-pty'); require('@tau/shared/advisory-lock')"
+    && bun -e "require('bun-pty'); require('@ficus/shared/advisory-lock')"
 
 # Create workspace mount point
 RUN mkdir -p /workspace /run/tau /run/tau-docker && chown tau:tau /workspace /home/tau

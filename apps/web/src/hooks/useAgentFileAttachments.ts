@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStableRef } from './useStableRef'
-import { buildAgentAttachmentPath } from '@tau/shared'
+import { buildAgentAttachmentPath } from '@ficus/shared'
 import { deleteAgentFile, uploadAgentFile } from '../api/agentFiles'
 import {
   insertAttachmentReference,

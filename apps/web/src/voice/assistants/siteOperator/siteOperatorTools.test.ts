@@ -14,7 +14,7 @@ test('the site operator exposes exactly the twelve consolidated tools', () => {
       'read_inbox',
       'read_squad_files',
       'read_thread',
-      'search_tau',
+      'search_ficus',
       'set_subscription',
     ].sort()
   )

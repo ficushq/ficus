@@ -1,8 +1,8 @@
 import { addWorkReferences } from './work-references'
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { coerceSquadActivityRef } from '@tau/shared'
-import type { GlobalSquadActivityItem, SquadActivityKind } from '@tau/shared'
+import { coerceSquadActivityRef } from '@ficus/shared'
+import type { GlobalSquadActivityItem, SquadActivityKind } from '@ficus/shared'
 import { shapeActivityPage, type SquadActivityAccess } from '../squad/activity'
 import {
   decodeGlobalActivityCursor,

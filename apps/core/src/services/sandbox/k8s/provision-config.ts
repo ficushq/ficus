@@ -24,14 +24,17 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 
 export function parseProvisionConfig(env: Environment = process.env): ProvisionConfig {
   return {
-    maxConcurrent: positiveInteger(env.TAU_K8S_PROVISION_MAX_CONCURRENT, DEFAULT_PROVISION_CONFIG.maxConcurrent),
-    maxWaiters: positiveInteger(env.TAU_K8S_PROVISION_MAX_WAITERS, DEFAULT_PROVISION_CONFIG.maxWaiters),
+    maxConcurrent: positiveInteger(env.FICUS_K8S_PROVISION_MAX_CONCURRENT, DEFAULT_PROVISION_CONFIG.maxConcurrent),
+    maxWaiters: positiveInteger(env.FICUS_K8S_PROVISION_MAX_WAITERS, DEFAULT_PROVISION_CONFIG.maxWaiters),
     failureThreshold: positiveInteger(
-      env.TAU_K8S_PROVISION_FAILURE_THRESHOLD,
+      env.FICUS_K8S_PROVISION_FAILURE_THRESHOLD,
       DEFAULT_PROVISION_CONFIG.failureThreshold
     ),
-    failureWindowMs: positiveInteger(env.TAU_K8S_PROVISION_FAILURE_WINDOW_MS, DEFAULT_PROVISION_CONFIG.failureWindowMs),
-    cooldownMs: positiveInteger(env.TAU_K8S_PROVISION_COOLDOWN_MS, DEFAULT_PROVISION_CONFIG.cooldownMs),
+    failureWindowMs: positiveInteger(
+      env.FICUS_K8S_PROVISION_FAILURE_WINDOW_MS,
+      DEFAULT_PROVISION_CONFIG.failureWindowMs
+    ),
+    cooldownMs: positiveInteger(env.FICUS_K8S_PROVISION_COOLDOWN_MS, DEFAULT_PROVISION_CONFIG.cooldownMs),
   }
 }
 

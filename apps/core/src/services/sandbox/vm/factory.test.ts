@@ -11,13 +11,13 @@ import { VmSandboxManager } from './manager'
 import { K8sSandboxManager } from '../k8s/manager'
 import { DockerSandboxManager } from '../docker/manager'
 
-// The factory reads TAU_SANDBOX_RUNTIME; restore it after every test so the
+// The factory reads FICUS_SANDBOX_RUNTIME; restore it after every test so the
 // process-global doesn't leak into sibling suites.
-const savedRuntime = process.env.TAU_SANDBOX_RUNTIME
+const savedRuntime = process.env.FICUS_SANDBOX_RUNTIME
 
 afterEach(() => {
-  if (savedRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-  else process.env.TAU_SANDBOX_RUNTIME = savedRuntime
+  if (savedRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+  else process.env.FICUS_SANDBOX_RUNTIME = savedRuntime
 })
 
 describe('sandbox factory — vm runtime selection', () => {
@@ -37,15 +37,15 @@ describe('sandbox factory — vm runtime selection', () => {
   })
 
   test('isVmRuntime / isRemoteSandboxRuntime read the env', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     expect(isVmRuntime()).toBe(true)
     expect(isRemoteSandboxRuntime()).toBe(true)
 
-    process.env.TAU_SANDBOX_RUNTIME = 'k8s'
+    process.env.FICUS_SANDBOX_RUNTIME = 'k8s'
     expect(isVmRuntime()).toBe(false)
     expect(isRemoteSandboxRuntime()).toBe(true)
 
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     expect(isVmRuntime()).toBe(false)
     expect(isRemoteSandboxRuntime()).toBe(false)
   })
@@ -61,7 +61,7 @@ describe('sandbox factory — vm runtime selection', () => {
   })
 
   test('createCodingTools(vm) returns the k8s-style client-based tool set', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const tools = createCodingTools('/ignored', 'squad_s1', undefined, 's1')
     expect(tools.map((t) => t.key)).toEqual(['read', 'write', 'edit', 'bash'])
   })

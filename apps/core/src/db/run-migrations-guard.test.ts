@@ -33,7 +33,7 @@ describe('checkMigrationSafety', () => {
 
   test('refuses an explicit URL that identifies the root database', () => {
     expect(() => check({ explicitDatabaseUrl: ROOT_URL, resolvedDatabaseUrl: ROOT_URL })).toThrow(
-      'TAU_MIGRATE_LIVE=1 or pass --live'
+      'FICUS_MIGRATE_LIVE=1 or pass --live'
     )
   })
 
@@ -85,7 +85,7 @@ describe('checkMigrationSafety', () => {
     expect(check().argv).toEqual(['bun', 'run-migrations.ts'])
   })
 
-  test('allows deliberate live migration with TAU_MIGRATE_LIVE=1', () => {
+  test('allows deliberate live migration with FICUS_MIGRATE_LIVE=1', () => {
     expect(check({ explicitDatabaseUrl: undefined, resolvedDatabaseUrl: ROOT_URL, liveEnvValue: '1' }).argv).toEqual([
       'bun',
       'run-migrations.ts',
@@ -102,8 +102,8 @@ describe('checkMigrationSafety', () => {
     ).toEqual(['bun', 'run-migrations.ts', '--verbose'])
   })
 
-  test.each(['', '0', 'true', 'yes', '2'])('rejects invalid TAU_MIGRATE_LIVE value %p', (value) => {
-    expect(() => check({ liveEnvValue: value })).toThrow('TAU_MIGRATE_LIVE must be exactly 1')
+  test.each(['', '0', 'true', 'yes', '2'])('rejects invalid FICUS_MIGRATE_LIVE value %p', (value) => {
+    expect(() => check({ liveEnvValue: value })).toThrow('FICUS_MIGRATE_LIVE must be exactly 1')
   })
 
   test('refuses before loading database and migration side effects', async () => {
@@ -163,7 +163,7 @@ describe('checkMigrationSafety', () => {
     const setupLibrary = readFileSync(join(MONOREPO_ROOT, 'scripts/setup/lib.sh'), 'utf8')
     const migrationFunction = setupLibrary.match(/run_db_migrations\(\)[\s\S]*?^}/m)?.[0]
 
-    expect(migrationFunction).toContain('TAU_MIGRATE_LIVE=1 bun run db:migrate')
+    expect(migrationFunction).toContain('FICUS_MIGRATE_LIVE=1 TAU_MIGRATE_LIVE=1 bun run db:migrate')
   })
 })
 

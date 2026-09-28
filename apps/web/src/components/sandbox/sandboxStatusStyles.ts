@@ -1,4 +1,4 @@
-import { SANDBOX_STATUS_ROLE, selectSandboxPresentationState, type SandboxPresentationState } from '@tau/shared'
+import { SANDBOX_STATUS_ROLE, selectSandboxPresentationState, type SandboxPresentationState } from '@ficus/shared'
 import type { SandboxStatus } from '../../api/workspace'
 import { webStatus } from '../../lib/statusPresentation'
 

@@ -5,7 +5,7 @@ import { sandboxPollInterval } from './sandboxStatusStyles'
 import { SandboxStatusBadge } from './SandboxStatusBadge'
 import { resolveVmChainDisplay } from './vmChainHealth'
 import { webStatus } from '../../lib/statusPresentation'
-import { isSandboxOverloaded } from '@tau/shared'
+import { isSandboxOverloaded } from '@ficus/shared'
 import { PressureSummary } from './SandboxProcesses'
 
 /** Read-only status of the squad's shared warm sandbox. */

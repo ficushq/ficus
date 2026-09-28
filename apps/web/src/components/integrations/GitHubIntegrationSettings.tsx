@@ -4,8 +4,8 @@ import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
 import { GitHubCommitSigning } from './GitHubCommitSigning'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { IntegrationAuthorizationStart } from '@tau/shared'
-import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/github-app'
+import type { IntegrationAuthorizationStart } from '@ficus/shared'
+import { FICUS_GITHUB_APP_CLIENT_ID } from '@ficus/shared/github-app'
 import {
   setIntegrationDefault,
   setIntegrationEnabled,
@@ -198,7 +198,7 @@ export function GitHubIntegrationSettings({
       setConfirmation(null)
       if (input.action === 'remove')
         setNotice(
-          'Account disconnected from Tau. To revoke its GitHub authorization too, open GitHub settings → Applications → Authorized GitHub Apps.'
+          'Account disconnected from Ficus. To revoke its GitHub authorization too, open GitHub settings → Applications → Authorized GitHub Apps.'
         )
       await refresh()
     },
@@ -208,7 +208,7 @@ export function GitHubIntegrationSettings({
   )
   const hasAccounts = (pool.data?.length ?? 0) > 0
   const canConnect = canWrite && app.data?.configured && pool.isSuccess
-  const usesTauApp = app.data?.authority === 'platform_broker' || app.data?.clientId === TAU_GITHUB_APP_CLIENT_ID
+  const usesFicusApp = app.data?.authority === 'platform_broker' || app.data?.clientId === FICUS_GITHUB_APP_CLIENT_ID
   const failure =
     error ||
     (app.isError && integrationErrorMessage(app.error, "Couldn't load the GitHub App settings.")) ||
@@ -222,7 +222,7 @@ export function GitHubIntegrationSettings({
         {canConnect && !hasAccounts && (
           <button
             type="button"
-            className="tau-button tau-button-primary px-3 py-2 text-sm"
+            className="ficus-button ficus-button-primary px-3 py-2 text-sm"
             disabled={authorize.isPending || !!device}
             onClick={() => authorize.mutate(undefined)}
           >
@@ -230,11 +230,11 @@ export function GitHubIntegrationSettings({
           </button>
         )}
       </div>
-      {canConnect && !hasAccounts && usesTauApp && (
+      {canConnect && !hasAccounts && usesFicusApp && (
         <p className="mt-2 text-xs text-muted">
           {app.data?.authority === 'local' && app.data.authorizationMode !== 'browser'
-            ? "Uses Tau's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
-            : "Uses Tau's GitHub App, so no setup is needed. You'll sign in on github.com."}
+            ? "Uses Ficus's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
+            : "Uses Ficus's GitHub App, so no setup is needed. You'll sign in on github.com."}
         </p>
       )}
       <p className="mt-2 text-sm text-muted">
@@ -244,11 +244,11 @@ export function GitHubIntegrationSettings({
       </p>
       <p className="mt-2 text-xs text-muted">
         Connecting an account does not grant repository access. Install{' '}
-        {usesTauApp ? 'Tau Integration' : 'your GitHub App'} on your personal account or organization and choose its
+        {usesFicusApp ? 'Ficus Integration' : 'your GitHub App'} on your personal account or organization and choose its
         repositories. Organization access may require an owner's approval.
       </p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-accent-light">
-        {usesTauApp && (
+        {usesFicusApp && (
           <a href="https://github.com/apps/ficus-integration/installations/new" target="_blank" rel="noreferrer">
             Grant repository access
           </a>
@@ -263,12 +263,12 @@ export function GitHubIntegrationSettings({
         </p>
       )}
       {device && (
-        <div className="tau-inset my-3 space-y-2 p-3" role="status">
+        <div className="ficus-inset my-3 space-y-2 p-3" role="status">
           <p className="text-sm">Enter this code on GitHub:</p>
           <GitHubDeviceCode key={device.id} code={device.userCode} />
           <div className="flex gap-3">
             <a
-              className="tau-button tau-button-primary px-3 py-2 text-sm"
+              className="ficus-button ficus-button-primary px-3 py-2 text-sm"
               href={device.verificationUri}
               target="_blank"
               rel="noreferrer"
@@ -277,7 +277,7 @@ export function GitHubIntegrationSettings({
             </a>
             <button
               type="button"
-              className="tau-button px-3 py-2 text-sm"
+              className="ficus-button px-3 py-2 text-sm"
               disabled={cancel.isPending}
               onClick={() => cancel.mutate()}
             >
@@ -320,7 +320,7 @@ export function GitHubIntegrationSettings({
                 <GitHubRepositoryAccess
                   connectionId={connection.id}
                   login={connection.configuration.login ?? connection.displayName}
-                  usesTauApp={usesTauApp}
+                  usesFicusApp={usesFicusApp}
                 />
                 <GitHubCommitSigning
                   connectionId={connection.id}
@@ -337,7 +337,7 @@ export function GitHubIntegrationSettings({
               {!connection.isGlobalDefault && connection.enabled && (
                 <button
                   type="button"
-                  className="tau-button text-xs"
+                  className="ficus-button text-xs"
                   disabled={defaultMutation.isPending}
                   onClick={() => defaultMutation.mutate(connection.id)}
                 >
@@ -346,7 +346,7 @@ export function GitHubIntegrationSettings({
               )}
               <button
                 type="button"
-                className="tau-button text-xs"
+                className="ficus-button text-xs"
                 disabled={authorize.isPending || !!device}
                 onClick={() => authorize.mutate(connection.id)}
               >
@@ -360,7 +360,7 @@ export function GitHubIntegrationSettings({
                   <button
                     key={kind}
                     type="button"
-                    className="tau-button text-xs"
+                    className="ficus-button text-xs"
                     disabled={lifecycle.isPending}
                     onClick={() => {
                       if (assigned && confirmation !== key) {
@@ -396,7 +396,7 @@ export function GitHubIntegrationSettings({
               type="button"
               onClick={() => useConnected.mutate()}
               disabled={useConnected.isPending}
-              className="tau-button tau-button-primary mt-3 rounded-lg px-3 py-2 text-sm"
+              className="ficus-button ficus-button-primary mt-3 rounded-lg px-3 py-2 text-sm"
             >
               Use GitHub
             </button>
@@ -404,7 +404,7 @@ export function GitHubIntegrationSettings({
         {canConnect && hasAccounts && (
           <button
             type="button"
-            className="tau-button mt-3 text-sm text-accent-light hover:text-accent-hover disabled:opacity-50"
+            className="ficus-button mt-3 text-sm text-accent-light hover:text-accent-hover disabled:opacity-50"
             disabled={authorize.isPending || !!device}
             onClick={() => authorize.mutate(undefined)}
           >
@@ -425,15 +425,15 @@ export function GitHubIntegrationSettings({
             }}
           >
             <p className="text-xs text-muted">
-              Enable expiring user tokens in the app's settings. With only a client ID, Tau uses device login: enable
+              Enable expiring user tokens in the app's settings. With only a client ID, Ficus uses device login: enable
               device flow, and no public URL is needed. Adding a client secret switches to browser login, which
-              redirects back to Tau, so set the app's callback URL to{' '}
+              redirects back to Ficus, so set the app's callback URL to{' '}
               <span className="break-all">{app.data.callbackUrl}</span>.
             </p>
             <label className="block text-sm text-primary">
               Client ID
               <input
-                className="tau-field mt-1 block h-10 w-full px-3 py-2 text-sm"
+                className="ficus-field mt-1 block h-10 w-full px-3 py-2 text-sm"
                 aria-label="GitHub App client ID"
                 placeholder="Iv23li…"
                 value={clientId}
@@ -444,7 +444,7 @@ export function GitHubIntegrationSettings({
             <label className="block text-sm text-primary">
               Client secret <span className="text-muted">(optional)</span>
               <input
-                className="tau-field mt-1 block h-10 w-full px-3 py-2 text-sm"
+                className="ficus-field mt-1 block h-10 w-full px-3 py-2 text-sm"
                 aria-label="GitHub App client secret (optional)"
                 placeholder="Enter a client secret for browser login"
                 type="password"
@@ -459,18 +459,18 @@ export function GitHubIntegrationSettings({
             </label>
             <div className="flex gap-3">
               <button
-                className="tau-button text-sm"
+                className="ficus-button text-sm"
                 disabled={!clientId.trim() || !acknowledged || configure.isPending || !!device}
               >
                 Save app
               </button>
               <button
                 type="button"
-                className="tau-button text-sm"
+                className="ficus-button text-sm"
                 disabled={configure.isPending || !!device}
                 onClick={() => configure.mutate(true)}
               >
-                Use Tau app
+                Use Ficus app
               </button>
             </div>
           </form>
@@ -490,7 +490,7 @@ export function GitHubIntegrationSettings({
           {adminSetupRequired && finishAdminSetup ? (
             <button
               type="button"
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm"
               onClick={finishAdminSetup}
             >
               Finish admin setup
@@ -500,7 +500,7 @@ export function GitHubIntegrationSettings({
             canWrite && (
               <button
                 type="button"
-                className="tau-button px-3 py-1.5 text-sm"
+                className="ficus-button px-3 py-1.5 text-sm"
                 disabled={authorize.isPending || !!device}
                 onClick={() => authorize.mutate(authorize.variables)}
               >
@@ -529,7 +529,7 @@ function GitHubDeviceCode({ code }: { code: string }) {
         type="button"
         aria-label="Copy GitHub device code"
         title={copied ? 'Copied' : 'Copy code'}
-        className="tau-button rounded-md p-1.5 text-muted hover:text-primary"
+        className="ficus-button rounded-md p-1.5 text-muted hover:text-primary"
         onClick={async () => {
           setCopyFailed(false)
           try {

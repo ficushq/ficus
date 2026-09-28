@@ -74,13 +74,13 @@ describe('bootstrap', () => {
     mkdirSync(root)
     writeFileSync(join(root, 'file'), 'x')
     const { d } = deps()
-    await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(/not a tau checkout/)
+    await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(/not a Ficus checkout/)
   })
   it('refuses a root that is a regular file (not just a non-empty non-checkout dir)', async () => {
     const root = join(tmp, 'tau')
     writeFileSync(root, 'not a directory')
     const { d } = deps()
-    await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(/not a tau checkout/)
+    await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(/not a Ficus checkout/)
   })
   it('propagates the checkout setup exit code', async () => {
     const root = join(tmp, 'tau')

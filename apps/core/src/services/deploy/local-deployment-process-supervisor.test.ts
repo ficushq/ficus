@@ -70,9 +70,9 @@ class FakeSandboxManager implements ISandboxManager {
 }
 
 describe('LocalDeploymentProcessSupervisor', () => {
-  it('uses root TAU_APP_BASE_PATH in hosted mode without changing launch inputs', async () => {
-    const previousAppsDomain = process.env.TAU_APPS_DOMAIN
-    process.env.TAU_APPS_DOMAIN = 'hiretau.app'
+  it('uses root FICUS_APP_BASE_PATH in hosted mode without changing launch inputs', async () => {
+    const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
+    process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
 
     try {
       const manager = new FakeSandboxManager()
@@ -80,7 +80,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
       await supervisor.startManagedLocalDeployment({
         localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
         sandboxId: 'squad_1',
-        command: "bun run dev -- --title 'Tau app'",
+        command: "bun run dev -- --title 'Ficus app'",
         cwd: '/workspace/1/my app',
         port: 5173,
       })
@@ -96,25 +96,32 @@ describe('LocalDeploymentProcessSupervisor', () => {
       const launchCommand = encodedLaunchCommand.slice(1, -1).replaceAll(`'"'"'`, "'")
       expect(launchCommand).toBe(
         [
-          "TAU_LOCAL_DEPLOYMENT_ID='abcdef12-1234-1234-1234-123456789abc'",
-          'TAU_LOCAL_DEPLOYMENT_PORT=5173',
-          'PORT=5173',
+          "FICUS_LOCAL_DEPLOYMENT_ID='abcdef12-1234-1234-1234-123456789abc'",
+          "FICUS_LOCAL_DEPLOYMENT_PORT='5173'",
+          "PORT='5173'",
+          "FICUS_APP_BASE_PATH='/'",
+          "FICUS_LOCAL_DEPLOYMENT_CWD='/workspace/1/my app'",
+          "FICUS_LOCAL_DEPLOYMENT_DIR='/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
+          `FICUS_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Ficus app'"'"''`,
+          // One release (Ficus rename): user apps still get the legacy TAU_ spellings.
           "TAU_APP_BASE_PATH='/'",
+          "TAU_LOCAL_DEPLOYMENT_ID='abcdef12-1234-1234-1234-123456789abc'",
+          "TAU_LOCAL_DEPLOYMENT_PORT='5173'",
           "TAU_LOCAL_DEPLOYMENT_CWD='/workspace/1/my app'",
           "TAU_LOCAL_DEPLOYMENT_DIR='/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
-          `TAU_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Tau app'"'"''`,
+          `TAU_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Ficus app'"'"''`,
           "bash '/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc/run.sh'",
         ].join(' ')
       )
     } finally {
-      if (previousAppsDomain === undefined) delete process.env.TAU_APPS_DOMAIN
-      else process.env.TAU_APPS_DOMAIN = previousAppsDomain
+      if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
     }
   })
 
-  it('retains the full deployment path in TAU_APP_BASE_PATH when hosted mode is unset', async () => {
-    const previousAppsDomain = process.env.TAU_APPS_DOMAIN
-    delete process.env.TAU_APPS_DOMAIN
+  it('retains the full deployment path in FICUS_APP_BASE_PATH when hosted mode is unset', async () => {
+    const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
+    delete process.env.FICUS_APPS_DOMAIN
 
     try {
       const manager = new FakeSandboxManager()
@@ -127,11 +134,11 @@ describe('LocalDeploymentProcessSupervisor', () => {
       })
 
       const command = manager.execCalls[0].args.join(' ')
-      expect(command).toContain('TAU_APP_BASE_PATH=')
+      expect(command).toContain('FICUS_APP_BASE_PATH=')
       expect(command).toContain('/api/app/abcdef12-1234-1234-1234-123456789abc/')
     } finally {
-      if (previousAppsDomain === undefined) delete process.env.TAU_APPS_DOMAIN
-      else process.env.TAU_APPS_DOMAIN = previousAppsDomain
+      if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
     }
   })
 
@@ -150,7 +157,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const command = manager.execCalls[0].args.join(' ')
     expect(command).toContain('mkdir -p /workspace/1/.tau/local-deployments/12345678-1234-1234-1234-123456789abc/logs')
     expect(command).toContain('cat > /workspace/1/.tau/local-deployments/12345678-1234-1234-1234-123456789abc/run.sh')
-    expect(command).toContain('TAU_LOCAL_DEPLOYMENT_DIR/logs/current.log')
+    expect(command).toContain('FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log')
   })
 
   it('captures exit status even when localDeployment command fails', async () => {
@@ -166,7 +173,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
     const command = manager.execCalls[0].args.join(' ')
     const disableExitOnError = command.indexOf('set +e')
-    const localDeploymentPipeline = command.indexOf('} 2>&1 | tee -a "$TAU_LOCAL_DEPLOYMENT_DIR/logs/current.log"')
+    const localDeploymentPipeline = command.indexOf('} 2>&1 | tee -a "$FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log"')
     const statusCapture = command.indexOf('status=${PIPESTATUS[0]}')
     expect(disableExitOnError).toBeGreaterThan(-1)
     expect(localDeploymentPipeline).toBeGreaterThan(disableExitOnError)
@@ -204,7 +211,9 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const command = manager.execCalls[0].args.join(' ')
     expect(result.processId).toBe('tau-local-deployment-abcdef12')
     expect(command).toContain("tmux new-session -d -s 'tau-local-deployment-abcdef12'")
-    expect(command).toContain('TAU_LOCAL_DEPLOYMENT_PORT=5173')
+    // The launch command is itself single-quoted for tmux, so each quote is escaped.
+    expect(command).toContain(`FICUS_LOCAL_DEPLOYMENT_PORT='"'"'5173'"'"'`)
+    expect(command).toContain(`TAU_LOCAL_DEPLOYMENT_PORT='"'"'5173'"'"'`)
   })
 
   it('kills the tmux session when stopping', async () => {
@@ -242,7 +251,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     })
   })
 
-  it('defaults TAU_LOCAL_DEPLOYMENT_CWD to the squad workspace mount when cwd is omitted', async () => {
+  it('defaults FICUS_LOCAL_DEPLOYMENT_CWD to the squad workspace mount when cwd is omitted', async () => {
     const manager = new FakeSandboxManager()
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
@@ -254,9 +263,9 @@ describe('LocalDeploymentProcessSupervisor', () => {
     })
 
     const command = manager.execCalls[0].args.join(' ')
-    // TAU_LOCAL_DEPLOYMENT_CWD is embedded in the shell-quoted launch command, so single-quotes
+    // FICUS_LOCAL_DEPLOYMENT_CWD is embedded in the shell-quoted launch command, so single-quotes
     // around the path get escaped; use a regex to verify the value regardless of quoting.
-    expect(command).toMatch(/TAU_LOCAL_DEPLOYMENT_CWD.*\/workspace\/1/)
+    expect(command).toMatch(/FICUS_LOCAL_DEPLOYMENT_CWD.*\/workspace\/1/)
   })
 
   it('uses /workspace/2 mount for squad_2 sandbox', async () => {
@@ -273,7 +282,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const command = manager.execCalls[0].args.join(' ')
     expect(command).toContain('mkdir -p /workspace/2/.tau/local-deployments/aabbccdd-1234-1234-1234-123456789abc/logs')
     expect(command).toContain('cat > /workspace/2/.tau/local-deployments/aabbccdd-1234-1234-1234-123456789abc/run.sh')
-    expect(command).toMatch(/TAU_LOCAL_DEPLOYMENT_CWD.*\/workspace\/2/)
+    expect(command).toMatch(/FICUS_LOCAL_DEPLOYMENT_CWD.*\/workspace\/2/)
   })
   describe('attached log paths', () => {
     const LOG_PATH = '/workspace/1/my-app/app.log'

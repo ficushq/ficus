@@ -33,11 +33,11 @@ async function run(arg: string, env: Record<string, string> = {}) {
 
 describe('scripts/pm2-name.ts', () => {
   it('prints the instance app name from the environment', async () => {
-    expect(await run('api', { TAU_PM2_API_NAME: 'tau-smoke-api' })).toMatchObject({
+    expect(await run('api', { FICUS_PM2_API_NAME: 'tau-smoke-api' })).toMatchObject({
       stdout: 'tau-smoke-api',
       code: 0,
     })
-    expect(await run('worker', { TAU_PM2_WORKER_NAME: 'tau-smoke-worker' })).toMatchObject({
+    expect(await run('worker', { FICUS_PM2_WORKER_NAME: 'tau-smoke-worker' })).toMatchObject({
       stdout: 'tau-smoke-worker',
       code: 0,
     })
@@ -47,7 +47,7 @@ describe('scripts/pm2-name.ts', () => {
     expect(await run('worker')).toMatchObject({ stdout: 'tau-worker', code: 0 })
   })
   it('ignores the other component name', async () => {
-    expect((await run('api', { TAU_PM2_WORKER_NAME: 'tau-smoke-worker' })).stdout).toBe('tau-api')
+    expect((await run('api', { FICUS_PM2_WORKER_NAME: 'tau-smoke-worker' })).stdout).toBe('tau-api')
   })
   it('exits 2 on a bad argument so a script cannot silently target nothing', async () => {
     const bad = await run('web')

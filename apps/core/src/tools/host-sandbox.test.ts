@@ -45,9 +45,9 @@ describe('host sandboxed coding tools', () => {
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'tau-host-tools-'))
     prevHome = process.env.HOME_DIR
-    prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     clearHostWorkspaceOverrides()
     resetHostBaseEnvCache()
     mkdirSync(join(home, 'private', 'agent_a1'), { recursive: true })
@@ -59,8 +59,8 @@ describe('host sandboxed coding tools', () => {
     resetHostBaseEnvCache()
     if (prevHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = prevHome
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     rmSync(home, { recursive: true, force: true })
   })
 
@@ -75,7 +75,7 @@ describe('host sandboxed coding tools', () => {
     try {
       const bash = createHostSandboxedCodingTools('', 'agent_a1', 'tok', SQUAD).find((t) => t.key === 'bash')!
       const out = await run(bash, {
-        command: `pwd; echo tok=$TAU_TOKEN; echo url=$TAU_API_URL; echo env=$FROM_SQUAD_ENV; echo canary=\${${canary}:-absent}`,
+        command: `pwd; echo tok=$FICUS_TOKEN; echo url=$FICUS_API_URL; echo env=$FROM_SQUAD_ENV; echo canary=\${${canary}:-absent}`,
       })
       expect(out).toContain(join(home, 'private', 'agent_a1'))
       expect(out).toContain('tok=tok')
@@ -87,9 +87,9 @@ describe('host sandboxed coding tools', () => {
     }
   })
 
-  test('a hostile squad .tau/.env cannot make the agent act as another identity, instance, or `tau`', async () => {
+  test('a hostile squad .tau/.env cannot make the agent act as another identity, instance, or `ficus`', async () => {
     // The reported clash, plus the two ways a squad env can defeat a naive fix:
-    // poisoning the TAU_IDENTITY_* aliases the preamble reads, and moving `tau`.
+    // poisoning the FICUS_IDENTITY_* aliases the preamble reads, and moving `ficus`.
     const impostorDir = join(home, 'impostor-bin')
     const shimDir = join(home, 'host', 'bin')
     mkdirSync(impostorDir, { recursive: true })
@@ -98,22 +98,22 @@ describe('host sandboxed coding tools', () => {
       [impostorDir, 'impostor'],
       [shimDir, 'shim'],
     ]) {
-      writeFileSync(join(dir, 'tau'), `#!/bin/sh\necho ${who}\n`)
-      chmodSync(join(dir, 'tau'), 0o755)
+      writeFileSync(join(dir, 'ficus'), `#!/bin/sh\necho ${who}\n`)
+      chmodSync(join(dir, 'ficus'), 0o755)
     }
     writeFileSync(
       join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'),
       [
-        'TAU_API_URL=https://cloud.example.com',
-        'TAU_TOKEN=operator-token',
-        'TAU_AUTH_STORE=/home/operator/.tau/cli/auth.json',
-        'TAU_AGENT_ID=someone-else',
+        'FICUS_API_URL=https://cloud.example.com',
+        'FICUS_TOKEN=operator-token',
+        'FICUS_AUTH_STORE=/home/operator/.tau/cli/auth.json',
+        'FICUS_AGENT_ID=someone-else',
         // The aliases are ordinary variables: a squad env that sets these used to
         // be promoted straight back into the real names by the re-assertion.
-        'TAU_IDENTITY_API_URL=https://cloud.example.com',
-        'TAU_IDENTITY_TOKEN=operator-token',
-        'TAU_IDENTITY_AUTH_STORE=/home/operator/.tau/cli/auth.json',
-        'TAU_IDENTITY_AGENT_ID=someone-else',
+        'FICUS_IDENTITY_API_URL=https://cloud.example.com',
+        'FICUS_IDENTITY_TOKEN=operator-token',
+        'FICUS_IDENTITY_AUTH_STORE=/home/operator/.tau/cli/auth.json',
+        'FICUS_IDENTITY_AGENT_ID=someone-else',
         // …and so were the preamble's own snapshot names, until they gained a
         // per-command random suffix. These are the fixed names it used to use.
         '__tau_api_url=https://cloud.example.com',
@@ -137,15 +137,15 @@ describe('host sandboxed coding tools', () => {
     const bash = createHostSandboxedCodingTools('', 'agent_a1', 'tok', SQUAD).find((t) => t.key === 'bash')!
     const out = await run(bash, {
       command:
-        'echo url=$TAU_API_URL; echo tok=$TAU_TOKEN; echo store=$TAU_AUTH_STORE; echo ctx=$TAU_AGENT_CONTEXT; echo id=$TAU_AGENT_ID; echo env=$FROM_SQUAD_ENV; echo alias=${TAU_IDENTITY_TOKEN:-unset}; echo tau=$(tau); echo path=$PATH',
+        'echo url=$FICUS_API_URL; echo tok=$FICUS_TOKEN; echo store=$FICUS_AUTH_STORE; echo ctx=$FICUS_AGENT_CONTEXT; echo id=$FICUS_AGENT_ID; echo env=$FROM_SQUAD_ENV; echo alias=${FICUS_IDENTITY_TOKEN:-unset}; echo ficus=$(ficus); echo path=$PATH',
     })
     expect(out).toContain('url=http://127.0.0.1:')
     expect(out).toContain('tok=tok')
     expect(out).toContain(`store=${join(home, 'host', 'cli-auth', 'a1.json')}`)
     expect(out).toContain('ctx=1')
     expect(out).toContain('id=a1')
-    // `tau` is the runtime's shim, not the squad env's impostor…
-    expect(out).toContain('tau=shim')
+    // `ficus` is the runtime's shim, not the squad env's impostor…
+    expect(out).toContain('ficus=shim')
     expect(out).toContain(`path=${shimDir}:`)
     // …while everything else the squad env asked for still applies, including a
     // legitimate PATH addition.
@@ -159,16 +159,39 @@ describe('host sandboxed coding tools', () => {
   test('a stale squad .tau/.env cannot hand a credential to a shell that was given none', async () => {
     writeFileSync(
       join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'),
-      'TAU_TOKEN=stale-operator-token\nTAU_AUTH_STORE=/home/operator/.tau/cli/auth.json\nTAU_AGENT_CONTEXT=1\n'
+      'FICUS_TOKEN=stale-operator-token\nFICUS_AUTH_STORE=/home/operator/.tau/cli/auth.json\nFICUS_AGENT_CONTEXT=1\n'
     )
     const bash = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD })
     const out = await run(bash, {
       command:
-        'echo tok=${TAU_TOKEN:-unset}; echo store=${TAU_AUTH_STORE:-unset}; echo ctx=${TAU_AGENT_CONTEXT:-unset}',
+        'echo tok=${FICUS_TOKEN:-unset}; echo store=${FICUS_AUTH_STORE:-unset}; echo ctx=${FICUS_AGENT_CONTEXT:-unset}',
     })
     expect(out).toContain('tok=unset')
     expect(out).toContain('store=unset')
     expect(out).toContain('ctx=unset')
+  })
+
+  test('legacy TAU_ identity names follow the injected identity and never leak a stale one (one release)', async () => {
+    writeFileSync(
+      join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'),
+      'TAU_TOKEN=stale-operator-token\nTAU_API_URL=https://cloud.example.com\nTAU_PASSWORD=admin-password\n'
+    )
+    const agent = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD, tauToken: 'tok' })
+    const agentOut = await run(agent, {
+      command: 'echo tok=${TAU_TOKEN:-unset}; echo url=${TAU_API_URL:-unset}; echo pw=${TAU_PASSWORD:-unset}',
+    })
+    // An older `tau` CLI reads these: they must name the injected identity.
+    expect(agentOut).toContain('tok=tok')
+    expect(agentOut).toContain('url=http://127.0.0.1:')
+    // The new CLI would bridge TAU_PASSWORD into FICUS_PASSWORD, so it must be gone.
+    expect(agentOut).toContain('pw=unset')
+
+    const tokenless = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD })
+    const tokenlessOut = await run(tokenless, {
+      command: 'echo tok=${TAU_TOKEN:-unset}; echo pw=${TAU_PASSWORD:-unset}',
+    })
+    expect(tokenlessOut).toContain('tok=unset')
+    expect(tokenlessOut).toContain('pw=unset')
   })
 
   test('each command gets fresh snapshot names, so an earlier command cannot publish them', async () => {
@@ -203,7 +226,7 @@ describe('host sandboxed coding tools', () => {
       undefined,
       'agent-7'
     ).find((t) => t.key === 'bash')!
-    const out = await run(bash, { command: 'echo id=$TAU_AGENT_ID; echo store=$TAU_AUTH_STORE' })
+    const out = await run(bash, { command: 'echo id=$FICUS_AGENT_ID; echo store=$FICUS_AUTH_STORE' })
     expect(out).toContain('id=agent-7')
     expect(out).toContain(`store=${join(home, 'host', 'cli-auth', 'agent-7.json')}`)
   })

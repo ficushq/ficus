@@ -105,7 +105,7 @@ After the initial scan, chokidar watches for changes:
 
 ## Authentication
 
-The sandbox reads `TAU_PASSWORD` from the environment or `/etc/tau/password` (K8s mounted secret) and sends it as a `Bearer` token on all callbacks to core.
+The sandbox reads `FICUS_PASSWORD` from the environment or `/etc/tau/password` (K8s mounted secret) and sends it as a `Bearer` token on all callbacks to core.
 
 ## Implementation
 

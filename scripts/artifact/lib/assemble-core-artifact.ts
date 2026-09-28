@@ -90,6 +90,14 @@ export const RUNTIME_EXTERNALS = [
 ] as const
 
 /**
+ * The artifact's root `package.json`, generated rather than copied. It names the
+ * tree `ficus` — the checkout root's own package name — so the release is
+ * recognizably a post-rename Ficus build to anything that keys on the root
+ * name (the web UI resolver, the host toolkit's env-prefix fallback).
+ */
+export const GENERATED_ROOT_MARKER = '{"name":"ficus","private":true,"workspaces":[]}\n'
+
+/**
  * Everything copied out of the checkout, in artifact-relative order. `file`
  * entries are copied individually because their directory holds things the
  * artifact must not carry (`dist/tsconfig.tsbuildinfo`, the sandbox
@@ -98,18 +106,20 @@ export const RUNTIME_EXTERNALS = [
 const LAYOUT: { path: string; kind: 'file' | 'dir' | 'generated'; contents?: string }[] = [
   // GENERATED, never copied from the checkout. `apps/core/src/lib/web-dist.ts`
   // finds the web UI by walking up from the running bundle until it hits a
-  // package.json named "tau" (or one carrying a `workspaces` array) and then
-  // looking for <root>/apps/web/dist. An artifact with no package.json
-  // anywhere fails that walk, `maybeMountWebUi` mounts nothing, and the box
+  // package.json named "ficus" or "tau" (`CORE_ROOT_PACKAGE_NAMES`, or one
+  // carrying a `workspaces` array) and then looking for <root>/apps/web/dist.
+  // An artifact with no package.json anywhere fails that walk, `maybeMountWebUi` mounts nothing, and the box
   // comes up with a healthy API and a 404 for every page. The marker is
   // deliberately minimal — it is a root anchor, not a manifest of anything.
-  { path: 'package.json', kind: 'generated', contents: '{"name":"tau","private":true,"workspaces":[]}\n' },
+  { path: 'package.json', kind: 'generated', contents: GENERATED_ROOT_MARKER },
   { path: 'apps/core/dist/index.js', kind: 'file' },
   { path: 'apps/core/dist/worker.js', kind: 'file' },
   { path: 'apps/core/dist/migrate.js', kind: 'file' },
   { path: 'apps/core/dist/smoke-configured-extensions.js', kind: 'file' },
   // Operator box control (platform scripts/box-control.ts runs it on the tenant VM).
   { path: 'apps/core/dist/box-control.js', kind: 'file' },
+  // Root-only platform-orchestrator token re-issue (the control plane's reissue_system_token job runs it).
+  { path: 'apps/core/dist/system-token-control.js', kind: 'file' },
   { path: 'apps/core/drizzle', kind: 'dir' },
   { path: 'apps/core/docker-sandbox/devbox.json', kind: 'file' },
   { path: 'apps/core/docker-sandbox/git-credential-github-token', kind: 'file' },
@@ -176,7 +186,7 @@ async function pathExists(path: string): Promise<boolean> {
 
 /**
  * Copy one file, following it if it is a symlink and preserving its mode —
- * `apps/cli/dist/tau.js`, the machine scripts and the `.bin` shims are all
+ * `apps/cli/dist/ficus.js`, the machine scripts and the `.bin` shims are all
  * executed on the box, so the exec bit is load-bearing.
  */
 async function copyRegularFile(src: string, dest: string): Promise<void> {
@@ -343,7 +353,7 @@ async function stagePrunedNodeModules(
 
 /**
  * Prove the artifact is usable without a database: extract it, run the bundled
- * migration runner with no `TAU_MIGRATE_LIVE` and no `DATABASE_URL` (its guard
+ * migration runner with no `FICUS_MIGRATE_LIVE` and no `DATABASE_URL` (its guard
  * must refuse — which it can only do if the bundle loaded and executed), then
  * re-hash every file in the manifest against the extracted tree.
  */
@@ -363,12 +373,20 @@ async function runSmoke(opts: {
 
     const migrate = await opts.run(['bun', join(treeRoot, 'apps/core/dist/migrate.js')], {
       cwd: join(treeRoot, 'apps/core'),
-      env: { DATABASE_URL: undefined, TAU_MIGRATE_LIVE: undefined, TAU_ROOT: undefined },
+      // Both spellings (Ficus rename): the in-process bridge would promote an
+      // inherited TAU_ name to FICUS_ and let the migration run.
+      env: {
+        DATABASE_URL: undefined,
+        FICUS_MIGRATE_LIVE: undefined,
+        FICUS_ROOT: undefined,
+        TAU_MIGRATE_LIVE: undefined, // legacy-env
+        TAU_ROOT: undefined, // legacy-env
+      },
     })
     const output = `${migrate.stdout}\n${migrate.stderr}`
     if (migrate.exitCode === 0) {
       throw new Error(
-        `smoke: the bundled migrate.js exited 0 without TAU_MIGRATE_LIVE; its guard must refuse.\n${output}`
+        `smoke: the bundled migrate.js exited 0 without FICUS_MIGRATE_LIVE; its guard must refuse.\n${output}`
       )
     }
     if (!/refus/i.test(output)) {
@@ -384,7 +402,7 @@ async function runSmoke(opts: {
     const coreDir = join(treeRoot, 'apps/core')
     const extensionSmoke = await opts.run(
       ['bun', join(coreDir, 'dist/smoke-configured-extensions.js'), extensionsDir, coreDir],
-      { cwd: coreDir, env: { TAU_ROOT: treeRoot } }
+      { cwd: coreDir, env: { FICUS_ROOT: treeRoot } }
     )
     if (extensionSmoke.exitCode !== 0) {
       throw new Error(

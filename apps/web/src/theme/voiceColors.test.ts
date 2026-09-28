@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import fixture from './fixtures/legacy-voice-colors.json'
 import { palettes, tokenRgba } from './test/builtins'
-import { ACTIVE_THEME_TOKENS } from '@tau/shared'
+import { ACTIVE_THEME_TOKENS } from '@ficus/shared'
 
 test('voice glass, shadows, and every state retain their original channels and intrinsic alpha via tokens', () => {
   const source = readFileSync(new URL('../components/VoiceWorkspacePage.tsx', import.meta.url), 'utf8')

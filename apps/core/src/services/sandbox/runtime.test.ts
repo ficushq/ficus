@@ -19,10 +19,10 @@ import {
 import { hostWorkspaceLayout, resolveWorkspaceLayout } from './workspace-layout'
 
 describe('host runtime predicates', () => {
-  const prev = process.env.TAU_SANDBOX_RUNTIME
+  const prev = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   test('isHostRuntimeValue matches exactly "host"', () => {
@@ -32,10 +32,10 @@ describe('host runtime predicates', () => {
     expect(isHostRuntimeValue(undefined)).toBe(false)
   })
 
-  test('isHostRuntime reads TAU_SANDBOX_RUNTIME', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+  test('isHostRuntime reads FICUS_SANDBOX_RUNTIME', () => {
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     expect(isHostRuntime()).toBe(true)
-    delete process.env.TAU_SANDBOX_RUNTIME
+    delete process.env.FICUS_SANDBOX_RUNTIME
     expect(isHostRuntime()).toBe(false)
   })
 
@@ -59,10 +59,10 @@ describe('SANDBOX_RUNTIME_VALUES', () => {
 })
 
 describe('isDockerRuntimeValue / isDockerRuntime', () => {
-  const prev = process.env.TAU_SANDBOX_RUNTIME
+  const prev = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   test('covers both docker values only', () => {
@@ -76,27 +76,27 @@ describe('isDockerRuntimeValue / isDockerRuntime', () => {
     expect(isDockerRuntimeValue(undefined)).toBe(false)
   })
 
-  test('isDockerRuntime reads TAU_SANDBOX_RUNTIME', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+  test('isDockerRuntime reads FICUS_SANDBOX_RUNTIME', () => {
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     expect(isDockerRuntime()).toBe(true)
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     expect(isDockerRuntime()).toBe(false)
-    delete process.env.TAU_SANDBOX_RUNTIME
+    delete process.env.FICUS_SANDBOX_RUNTIME
     expect(isDockerRuntime()).toBe(false)
   })
 })
 
 describe('requireSandboxRuntime', () => {
-  const LIST = 'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
-  const prev = process.env.TAU_SANDBOX_RUNTIME
+  const LIST = 'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
+  const prev = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   test('returns each of the five supported values', () => {
     for (const value of SANDBOX_RUNTIME_VALUES) {
-      expect(requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: value })).toBe(value)
+      expect(requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: value })).toBe(value)
     }
   })
 
@@ -107,32 +107,32 @@ describe('requireSandboxRuntime', () => {
   })
 
   test('throws naming the five values when empty', () => {
-    expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: '' })).toThrow(
+    expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: '' })).toThrow(
       `${LIST} (is unset). Set it in .env (see docs/wiki/sandbox-runtimes.md)`
     )
   })
 
   test('throws on an unknown value, quoting what it got', () => {
-    expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: 'bogus' })).toThrow(
+    expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: 'bogus' })).toThrow(
       `${LIST} (got "bogus"). Set it in .env (see docs/wiki/sandbox-runtimes.md)`
     )
   })
 
   test('hints the replacement for the legacy "sysbox" spelling', () => {
-    expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: 'sysbox' })).toThrow(
+    expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: 'sysbox' })).toThrow(
       `${LIST} (got "sysbox"). Use docker-sysbox.`
     )
   })
 
   test('hints the replacement for the legacy "socket" spelling', () => {
-    expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: 'socket' })).toThrow(
+    expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: 'socket' })).toThrow(
       `${LIST} (got "socket"). Use docker-socket.`
     )
   })
 
   test('tells auto/docker to choose a docker runtime explicitly', () => {
     for (const legacy of ['auto', 'docker']) {
-      expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: legacy })).toThrow(
+      expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: legacy })).toThrow(
         `${LIST} (got "${legacy}"). Auto-detection was removed — choose docker-sysbox or docker-socket.`
       )
     }
@@ -142,7 +142,7 @@ describe('requireSandboxRuntime', () => {
   // like `toString` used to splice a function's source into the hint.
   test('an inherited Object.prototype key gets the generic hint, not a prototype member', () => {
     for (const inherited of ['toString', 'constructor', 'hasOwnProperty']) {
-      expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: inherited })).toThrow(
+      expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: inherited })).toThrow(
         `${LIST} (got "${inherited}"). Set it in .env (see docs/wiki/sandbox-runtimes.md)`
       )
     }
@@ -151,20 +151,20 @@ describe('requireSandboxRuntime', () => {
   // .env files and shell exports pick up stray whitespace; that is a typo, not
   // a different runtime. Case is NOT normalized — the five values are exact.
   test('trims surrounding whitespace but does not lowercase', () => {
-    expect(requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: ' host ' })).toBe('host')
-    expect(requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: '\tdocker-socket\n' })).toBe('docker-socket')
-    expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: 'Host' })).toThrow(`${LIST} (got "Host")`)
-    expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: '   ' })).toThrow(`${LIST} (is unset)`)
+    expect(requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: ' host ' })).toBe('host')
+    expect(requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: '\tdocker-socket\n' })).toBe('docker-socket')
+    expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: 'Host' })).toThrow(`${LIST} (got "Host")`)
+    expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: '   ' })).toThrow(`${LIST} (is unset)`)
     // A trimmed legacy spelling still earns its rename hint.
-    expect(() => requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: ' sysbox ' })).toThrow(
+    expect(() => requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: ' sysbox ' })).toThrow(
       `${LIST} (got "sysbox"). Use docker-sysbox.`
     )
   })
 
   test('defaults to process.env when no env is passed', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     expect(requireSandboxRuntime()).toBe('vm')
-    process.env.TAU_SANDBOX_RUNTIME = 'sysbox'
+    process.env.FICUS_SANDBOX_RUNTIME = 'sysbox'
     expect(() => requireSandboxRuntime()).toThrow('Use docker-sysbox.')
   })
 })
@@ -173,15 +173,15 @@ describe('requireSandboxRuntime', () => {
 // agree with it, or the factory hands out the host manager while
 // isHostRuntime() says otherwise (and the workspace layout follows the
 // predicate, not the manager).
-describe('predicates trim TAU_SANDBOX_RUNTIME exactly like the boot guard', () => {
-  const prev = process.env.TAU_SANDBOX_RUNTIME
+describe('predicates trim FICUS_SANDBOX_RUNTIME exactly like the boot guard', () => {
+  const prev = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   test('" host " boots, and is host to the predicates and the workspace layout', () => {
-    process.env.TAU_SANDBOX_RUNTIME = ' host '
+    process.env.FICUS_SANDBOX_RUNTIME = ' host '
     expect(requireSandboxRuntime()).toBe('host')
     expect(isHostRuntime()).toBe(true)
     expect(isDockerRuntime()).toBe(false)
@@ -190,25 +190,25 @@ describe('predicates trim TAU_SANDBOX_RUNTIME exactly like the boot guard', () =
   })
 
   test('" docker-socket " boots, and is docker to the predicates', () => {
-    process.env.TAU_SANDBOX_RUNTIME = ' docker-socket '
+    process.env.FICUS_SANDBOX_RUNTIME = ' docker-socket '
     expect(requireSandboxRuntime()).toBe('docker-socket')
     expect(isDockerRuntime()).toBe(true)
     expect(isHostRuntime()).toBe(false)
   })
 
   test('" vm " and "\\tk8s\\n" reach their own predicates', () => {
-    process.env.TAU_SANDBOX_RUNTIME = ' vm '
+    process.env.FICUS_SANDBOX_RUNTIME = ' vm '
     expect(isVmRuntime()).toBe(true)
     expect(isRemoteSandboxRuntime()).toBe(true)
     expect(isK8sRuntime()).toBe(false)
-    process.env.TAU_SANDBOX_RUNTIME = '\tk8s\n'
+    process.env.FICUS_SANDBOX_RUNTIME = '\tk8s\n'
     expect(isK8sRuntime()).toBe(true)
     expect(isRemoteSandboxRuntime()).toBe(true)
     expect(isVmRuntime()).toBe(false)
   })
 
   test('whitespace-only is no runtime at all', () => {
-    process.env.TAU_SANDBOX_RUNTIME = '   '
+    process.env.FICUS_SANDBOX_RUNTIME = '   '
     expect(isHostRuntime()).toBe(false)
     expect(isDockerRuntime()).toBe(false)
     expect(isVmRuntime()).toBe(false)
@@ -216,80 +216,80 @@ describe('predicates trim TAU_SANDBOX_RUNTIME exactly like the boot guard', () =
   })
 })
 
-// TAU_K8S_* is a strict SUBSET of the k8s runtime: a key left behind in .env
+// FICUS_K8S_* is a strict SUBSET of the k8s runtime: a key left behind in .env
 // after a checkout switches runtimes must never change behaviour. A real
-// install moved a local k3d instance to TAU_SANDBOX_RUNTIME=host, kept the
-// stale TAU_K8S_LOCAL=true line, and the updater kept planning `k3d:import`.
+// install moved a local k3d instance to FICUS_SANDBOX_RUNTIME=host, kept the
+// stale FICUS_K8S_LOCAL=true line, and the updater kept planning `k3d:import`.
 describe('isLocalK8sMode', () => {
-  const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
-  const prevLocal = process.env.TAU_K8S_LOCAL
+  const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
+  const prevLocal = process.env.FICUS_K8S_LOCAL
   afterEach(() => {
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
-    if (prevLocal === undefined) delete process.env.TAU_K8S_LOCAL
-    else process.env.TAU_K8S_LOCAL = prevLocal
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
+    if (prevLocal === undefined) delete process.env.FICUS_K8S_LOCAL
+    else process.env.FICUS_K8S_LOCAL = prevLocal
   })
 
-  test('is true for k8s + TAU_K8S_LOCAL=true and false for every other runtime', () => {
+  test('is true for k8s + FICUS_K8S_LOCAL=true and false for every other runtime', () => {
     for (const runtime of SANDBOX_RUNTIME_VALUES) {
-      expect(isLocalK8sMode({ TAU_SANDBOX_RUNTIME: runtime, TAU_K8S_LOCAL: 'true' })).toBe(runtime === 'k8s')
-      expect(isLocalK8sMode({ TAU_SANDBOX_RUNTIME: runtime })).toBe(false)
-      expect(isLocalK8sMode({ TAU_SANDBOX_RUNTIME: runtime, TAU_K8S_LOCAL: 'false' })).toBe(false)
-      expect(isLocalK8sMode({ TAU_SANDBOX_RUNTIME: runtime, TAU_K8S_LOCAL: '' })).toBe(false)
-      expect(isLocalK8sMode({ TAU_SANDBOX_RUNTIME: runtime, TAU_K8S_LOCAL: '   ' })).toBe(false)
+      expect(isLocalK8sMode({ FICUS_SANDBOX_RUNTIME: runtime, FICUS_K8S_LOCAL: 'true' })).toBe(runtime === 'k8s')
+      expect(isLocalK8sMode({ FICUS_SANDBOX_RUNTIME: runtime })).toBe(false)
+      expect(isLocalK8sMode({ FICUS_SANDBOX_RUNTIME: runtime, FICUS_K8S_LOCAL: 'false' })).toBe(false)
+      expect(isLocalK8sMode({ FICUS_SANDBOX_RUNTIME: runtime, FICUS_K8S_LOCAL: '' })).toBe(false)
+      expect(isLocalK8sMode({ FICUS_SANDBOX_RUNTIME: runtime, FICUS_K8S_LOCAL: '   ' })).toBe(false)
     }
   })
 
   test('trims both values exactly like the boot guard', () => {
-    expect(isLocalK8sMode({ TAU_SANDBOX_RUNTIME: '\tk8s\n', TAU_K8S_LOCAL: ' true ' })).toBe(true)
-    expect(isLocalK8sMode({ TAU_SANDBOX_RUNTIME: ' host ', TAU_K8S_LOCAL: 'true' })).toBe(false)
+    expect(isLocalK8sMode({ FICUS_SANDBOX_RUNTIME: '\tk8s\n', FICUS_K8S_LOCAL: ' true ' })).toBe(true)
+    expect(isLocalK8sMode({ FICUS_SANDBOX_RUNTIME: ' host ', FICUS_K8S_LOCAL: 'true' })).toBe(false)
   })
 
-  test('TAU_K8S_LOCAL alone, with no runtime configured, is inert', () => {
-    expect(isLocalK8sMode({ TAU_K8S_LOCAL: 'true' })).toBe(false)
+  test('FICUS_K8S_LOCAL alone, with no runtime configured, is inert', () => {
+    expect(isLocalK8sMode({ FICUS_K8S_LOCAL: 'true' })).toBe(false)
   })
 
   test('defaults to process.env', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'k8s'
-    process.env.TAU_K8S_LOCAL = 'true'
+    process.env.FICUS_SANDBOX_RUNTIME = 'k8s'
+    process.env.FICUS_K8S_LOCAL = 'true'
     expect(isLocalK8sMode()).toBe(true)
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     expect(isLocalK8sMode()).toBe(false)
   })
 })
 
 describe('ignoredK8sEnvKeys / ignoredK8sEnvWarning', () => {
-  test('names every set TAU_K8S_* key, sorted, when the runtime is not k8s', () => {
-    const env = { TAU_SANDBOX_RUNTIME: 'host', TAU_K8S_NAMESPACE: 'tau-sandboxes-dev', TAU_K8S_LOCAL: 'true' }
-    expect(ignoredK8sEnvKeys(env)).toEqual(['TAU_K8S_LOCAL', 'TAU_K8S_NAMESPACE'])
+  test('names every set FICUS_K8S_* key, sorted, when the runtime is not k8s', () => {
+    const env = { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_NAMESPACE: 'tau-sandboxes-dev', FICUS_K8S_LOCAL: 'true' }
+    expect(ignoredK8sEnvKeys(env)).toEqual(['FICUS_K8S_LOCAL', 'FICUS_K8S_NAMESPACE'])
     expect(ignoredK8sEnvWarning(env)).toBe(
-      'TAU_K8S_LOCAL, TAU_K8S_NAMESPACE are set but TAU_SANDBOX_RUNTIME=host — ignoring them (they apply only to the k8s runtime)'
+      'FICUS_K8S_LOCAL, FICUS_K8S_NAMESPACE are set but FICUS_SANDBOX_RUNTIME=host — ignoring them (they apply only to the k8s runtime)'
     )
   })
 
   test('says "is"/"it" for a single key', () => {
-    expect(ignoredK8sEnvWarning({ TAU_SANDBOX_RUNTIME: 'vm', TAU_K8S_LOCAL: 'true' })).toBe(
-      'TAU_K8S_LOCAL is set but TAU_SANDBOX_RUNTIME=vm — ignoring it (they apply only to the k8s runtime)'
+    expect(ignoredK8sEnvWarning({ FICUS_SANDBOX_RUNTIME: 'vm', FICUS_K8S_LOCAL: 'true' })).toBe(
+      'FICUS_K8S_LOCAL is set but FICUS_SANDBOX_RUNTIME=vm — ignoring it (they apply only to the k8s runtime)'
     )
   })
 
   test('is empty under the k8s runtime — there the keys are honoured', () => {
-    const env = { TAU_SANDBOX_RUNTIME: ' k8s ', TAU_K8S_LOCAL: 'true', TAU_K8S_NAMESPACE: 'tau-sandboxes-dev' }
+    const env = { FICUS_SANDBOX_RUNTIME: ' k8s ', FICUS_K8S_LOCAL: 'true', FICUS_K8S_NAMESPACE: 'tau-sandboxes-dev' }
     expect(ignoredK8sEnvKeys(env)).toEqual([])
     expect(ignoredK8sEnvWarning(env)).toBeUndefined()
   })
 
-  test('is empty when no TAU_K8S_* key carries a value', () => {
-    const env = { TAU_SANDBOX_RUNTIME: 'host', TAU_K8S_LOCAL: '', TAU_K8S_RUNTIME_CLASS: '   ' }
+  test('is empty when no FICUS_K8S_* key carries a value', () => {
+    const env = { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: '', FICUS_K8S_RUNTIME_CLASS: '   ' }
     expect(ignoredK8sEnvKeys(env)).toEqual([])
     expect(ignoredK8sEnvWarning(env)).toBeUndefined()
-    expect(ignoredK8sEnvKeys({ TAU_SANDBOX_RUNTIME: 'docker-socket' })).toEqual([])
+    expect(ignoredK8sEnvKeys({ FICUS_SANDBOX_RUNTIME: 'docker-socket' })).toEqual([])
     expect(ignoredK8sEnvWarning({})).toBeUndefined()
   })
 
   test('reports an unset runtime without printing "undefined"', () => {
-    expect(ignoredK8sEnvWarning({ TAU_K8S_LOCAL: 'true' })).toBe(
-      'TAU_K8S_LOCAL is set but TAU_SANDBOX_RUNTIME is unset — ignoring it (they apply only to the k8s runtime)'
+    expect(ignoredK8sEnvWarning({ FICUS_K8S_LOCAL: 'true' })).toBe(
+      'FICUS_K8S_LOCAL is set but FICUS_SANDBOX_RUNTIME is unset — ignoring it (they apply only to the k8s runtime)'
     )
   })
 })

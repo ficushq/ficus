@@ -1,5 +1,5 @@
 {
-  "name": "@tau/docs",
+  "name": "@ficus/docs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,13 +8,13 @@
   },
   "scripts": {
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev --host 127.0.0.1",
-    "build": "ASTRO_TELEMETRY_DISABLED=1 TAU_DOCS_EMBEDDED=0 astro build",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 FICUS_DOCS_EMBEDDED=0 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview --host 127.0.0.1",
     "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check",
     "check:links": "bun scripts/check-links.ts",
     "test": "bun test scripts",
     "check": "bun run typecheck && bun run test && bun run build && bun run check:links && bun run build:embedded",
-    "build:embedded": "ASTRO_TELEMETRY_DISABLED=1 TAU_DOCS_EMBEDDED=1 astro build && bun scripts/check-links.ts --embedded"
+    "build:embedded": "ASTRO_TELEMETRY_DISABLED=1 FICUS_DOCS_EMBEDDED=1 astro build && bun scripts/check-links.ts --embedded"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.0",

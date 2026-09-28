@@ -25,6 +25,7 @@ import {
   resolveNavShortcut,
   visibleNavItems,
 } from './navModel'
+import { TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
 
 type NavDependencies = {
   usePendingActions?: () => { data?: unknown[]; isError?: boolean; isLoading?: boolean; isFetching?: boolean }
@@ -64,7 +65,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   const actionCount = pendingPresentation.count
   // Durable Assistant activity is discovered independently of whether the command bar is open.
   const assistantActivity = useAssistantActivity()
-  // Only visible in the desktop inset (windowed) title bar (see .tau-app-header-instance in
+  // Only visible in the desktop inset (windowed) title bar (see .ficus-app-header-instance in
   // index.css); the label shows this window's Desktop instance name for every instance kind
   // (local, attached, or remote), disambiguating which instance this window is showing.
   const instance = desktopInstance()
@@ -98,17 +99,17 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
 
   return (
     <>
-      <header className="tau-app-header tau-glass relative border-b border-panel-border shrink-0 z-10 safe-area-pt safe-area-status-bar-scrim">
-        <div className="tau-app-header-bar max-w-7xl mx-auto py-2.5 md:py-3 px-4 md:px-6 flex items-center gap-4">
+      <header className="ficus-app-header ficus-glass relative border-b border-panel-border shrink-0 z-10 safe-area-pt safe-area-status-bar-scrim">
+        <div className="ficus-app-header-bar max-w-7xl mx-auto py-2.5 md:py-3 px-4 md:px-6 flex items-center gap-4">
           {/* Left: Logo */}
-          <h1 className="tau-app-header-logo text-xl md:text-2xl font-bold text-primary">
+          <h1 className="ficus-app-header-logo text-xl md:text-2xl font-bold text-primary">
             <Link to="/" className="flex items-center gap-2 hover:text-status-progress-600 transition-colors">
               <TauLogo />
-              Tau
+              Ficus
               {instance && (
                 <span
                   data-testid="desktop-instance-label"
-                  className="tau-app-header-instance ml-2 text-sm font-normal text-muted truncate max-w-[12rem]"
+                  className="ficus-app-header-instance ml-2 text-sm font-normal text-muted truncate max-w-[12rem]"
                 >
                   {instance.name}
                 </span>
@@ -137,7 +138,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
                     key={item.to}
                     to={item.to}
                     className={clsx(
-                      'tau-nav-item relative px-4 py-2 rounded-md text-sm font-medium transition-colors',
+                      'ficus-nav-item relative px-4 py-2 rounded-md text-sm font-medium transition-colors',
                       isActive ? 'bg-selection text-accent-light' : 'text-secondary  hover:text-accent-light'
                     )}
                   >
@@ -164,7 +165,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             {isChat && (
               <button
                 onClick={() => navigate('/chat?new')}
-                className="tau-button md:hidden p-2 text-accent-light hover:text-accent-light"
+                className="ficus-button md:hidden p-2 text-accent-light hover:text-accent-light"
                 title="New chat"
               >
                 <PencilIcon className="w-5 h-5" />
@@ -172,11 +173,11 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             )}
 
             <button
-              onClick={() => window.dispatchEvent(new Event('toggle-tau-assistant'))}
+              onClick={() => window.dispatchEvent(new Event(TOGGLE_ASSISTANT_EVENT))}
               title="Assistant (⌘K / Ctrl+K)"
               aria-label="Assistant"
               aria-expanded={['open', 'expanded'].includes(new URLSearchParams(location.search).get('chat') ?? '')}
-              className="tau-button group relative flex items-center gap-1.5 p-2 text-muted hover:text-accent-light hover:bg-surface-hover"
+              className="ficus-button group relative flex items-center gap-1.5 p-2 text-muted hover:text-accent-light hover:bg-surface-hover"
             >
               <SparklesIcon className="w-5 h-5 motion-safe:transition-transform motion-safe:duration-150 motion-safe:group-hover:rotate-6 motion-safe:group-hover:scale-110" />
               <span className="hidden lg:inline text-xs">Assistant</span>
@@ -201,7 +202,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             <button
               onClick={() => window.dispatchEvent(new Event('open-inbox-popup'))}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 'relative hidden md:flex items-center justify-center p-2 rounded-md',
                 inboxPopupOpen ? 'text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
               )}
@@ -261,7 +262,7 @@ export function MobileBottomNav({
   }, [location.pathname])
 
   return (
-    <nav className="tau-glass md:hidden shrink-0 border-t border-panel-border safe-area-pb z-10 [[data-keyboard=open]_&]:hidden">
+    <nav className="ficus-glass md:hidden shrink-0 border-t border-panel-border safe-area-pb z-10 [[data-keyboard=open]_&]:hidden">
       <div className="flex justify-around items-center h-16">
         {/* A lone secondary destination belongs directly in the dock. */}
         {dockItems.map((item) => {
@@ -291,7 +292,7 @@ export function MobileBottomNav({
                 navigate(getTabNavigationTarget(location.pathname + location.search, item.to))
               }}
               className={clsx(
-                'tau-dock-item flex flex-col items-center justify-center flex-1 h-full min-w-0',
+                'ficus-dock-item flex flex-col items-center justify-center flex-1 h-full min-w-0',
                 isActive ? 'text-accent-light' : 'text-muted hover:text-primary'
               )}
             >
@@ -324,7 +325,7 @@ export function MobileBottomNav({
                 setMoreOpen((v) => !v)
               }}
               className={clsx(
-                'tau-button tau-dock-item',
+                'ficus-button ficus-dock-item',
                 'flex flex-col items-center justify-center w-full h-full',
                 isMoreActive || moreOpen ? 'text-accent-light' : 'text-muted hover:text-primary'
               )}
@@ -335,7 +336,7 @@ export function MobileBottomNav({
 
             <Presence
               open={moreOpen}
-              className="tau-overlay absolute bottom-full right-0 mb-2 mr-2 bg-surface rounded-lg shadow-theme-lg border border-th-border py-1 min-w-[160px]"
+              className="ficus-overlay absolute bottom-full right-0 mb-2 mr-2 bg-surface rounded-lg shadow-theme-lg border border-th-border py-1 min-w-[160px]"
               onMouseDown={(e) => e.stopPropagation()}
             >
               {visibleMoreMenuItems.map((item) => {
@@ -345,7 +346,7 @@ export function MobileBottomNav({
                     key={item.to}
                     onClick={() => navigate(getTabNavigationTarget(location.pathname + location.search, item.to))}
                     className={clsx(
-                      'tau-button',
+                      'ficus-button',
                       'flex items-center gap-3 w-full px-4 py-3 text-sm',
                       isActive
                         ? 'text-accent-light bg-status-progress-50 dark:bg-status-progress-900/20'

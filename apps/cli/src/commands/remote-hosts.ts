@@ -3,10 +3,10 @@ import { apiDelete, apiGet, apiPost } from '../client'
 import { isJsonMode, output, outputError, outputTable } from '../output'
 
 /**
- * `tau remote-hosts`: the agent-facing CLI for the team-owned SSH registry
+ * `ficus remote-hosts`: the agent-facing CLI for the team-owned SSH registry
  * (docs/history/superpowers/specs/2026-07-14-remote-hosts-design.md § CLI). Mirrors
  * `commands/secret.ts` for structure and `commands/amtp.ts` for the
- * multi-word-group idiom (`tau remote` is taken by federation, hence
+ * multi-word-group idiom (`ficus remote` is taken by federation, hence
  * `remote-hosts`).
  */
 
@@ -48,7 +48,7 @@ export function renderInstallInstructions(
   return [
     host.sshPublicKey.trim(),
     `Ask the owner of ${host.sshHost} to append the line above to ~/.ssh/authorized_keys for user ${host.sshUser}.`,
-    `Then verify with: tau remote-hosts check ${host.name}.`,
+    `Then verify with: ficus remote-hosts check ${host.name}.`,
   ].join('\n')
 }
 
@@ -98,12 +98,12 @@ function validatePort(port: string): number {
   return n
 }
 
-/** Resolve the squad to act as: `--squad` wins, else `TAU_SQUAD_ID` (set automatically inside a squad box). */
+/** Resolve the squad to act as: `--squad` wins, else `FICUS_SQUAD_ID` (set automatically inside a squad box). */
 function resolveSquadId(explicit?: string): string {
-  const squadId = explicit ?? process.env.TAU_SQUAD_ID
+  const squadId = explicit ?? process.env.FICUS_SQUAD_ID
   if (!squadId) {
     throw new Error(
-      'No squad context: run this from a squad agent box (TAU_SQUAD_ID is set automatically) or pass --squad <id>.'
+      'No squad context: run this from a squad agent box (FICUS_SQUAD_ID is set automatically) or pass --squad <id>.'
     )
   }
   return squadId
@@ -130,7 +130,7 @@ function describeHost(host: PublicRemoteHost): string {
 export function registerRemoteHostsCommands(program: Command) {
   const remoteHosts = program.command('remote-hosts').description('Manage team-owned SSH remote hosts')
 
-  // tau remote-hosts list [--all] [--squad <id>]
+  // ficus remote-hosts list [--all] [--squad <id>]
   remoteHosts
     .command('list')
     .description('List remote hosts (defaults to your squad; --all for the whole registry)')
@@ -151,7 +151,7 @@ export function registerRemoteHostsCommands(program: Command) {
       }
     })
 
-  // tau remote-hosts show <name> [--all] [--squad <id>]
+  // ficus remote-hosts show <name> [--all] [--squad <id>]
   remoteHosts
     .command('show <name>')
     .description('Show a remote host and its install instructions')
@@ -173,7 +173,7 @@ export function registerRemoteHostsCommands(program: Command) {
       }
     })
 
-  // tau remote-hosts add --name <n> --host <h> --user <u> [--port <p>] [--description <d>] [--squad <id>] [--global]
+  // ficus remote-hosts add --name <n> --host <h> --user <u> [--port <p>] [--description <d>] [--squad <id>] [--global]
   remoteHosts
     .command('add')
     .description('Register a new remote host (grants it to your squad unless --global)')
@@ -182,7 +182,7 @@ export function registerRemoteHostsCommands(program: Command) {
     .requiredOption('--user <user>', 'ssh user')
     .option('--port <port>', 'ssh port (default 22)')
     .option('--description <description>', 'free-text description')
-    .option('--squad <id>', 'grant to this squad instead of TAU_SQUAD_ID')
+    .option('--squad <id>', 'grant to this squad instead of FICUS_SQUAD_ID')
     .option('--global', 'register without granting any squad (needs global remote-hosts:write)')
     .action(
       async (opts: {
@@ -221,7 +221,7 @@ export function registerRemoteHostsCommands(program: Command) {
       }
     )
 
-  // tau remote-hosts grant <name> --squad <id>
+  // ficus remote-hosts grant <name> --squad <id>
   remoteHosts
     .command('grant <name>')
     .description('Grant a squad access to a remote host (global write)')
@@ -239,7 +239,7 @@ export function registerRemoteHostsCommands(program: Command) {
       }
     })
 
-  // tau remote-hosts revoke <name> [--squad <id>]
+  // ficus remote-hosts revoke <name> [--squad <id>]
   remoteHosts
     .command('revoke <name>')
     .description("Revoke a squad's access to a remote host (defaults to your own squad)")
@@ -271,7 +271,7 @@ export function registerRemoteHostsCommands(program: Command) {
       }
     })
 
-  // tau remote-hosts remove <name>
+  // ficus remote-hosts remove <name>
   remoteHosts
     .command('remove <name>')
     .description('Delete a remote host entirely (global write)')
@@ -292,7 +292,7 @@ export function registerRemoteHostsCommands(program: Command) {
       }
     })
 
-  // tau remote-hosts check <name> [--all] [--squad <id>]
+  // ficus remote-hosts check <name> [--all] [--squad <id>]
   remoteHosts
     .command('check <name>')
     .description('Probe SSH connectivity to a remote host (squad surface by default; --all for the global registry)')
@@ -319,7 +319,7 @@ export function registerRemoteHostsCommands(program: Command) {
       }
     })
 
-  // tau remote-hosts sync
+  // ficus remote-hosts sync
   remoteHosts
     .command('sync')
     .description('Re-push your squad ssh config/keys to your box now')
@@ -332,7 +332,7 @@ export function registerRemoteHostsCommands(program: Command) {
         } else if (result.reason === 'live-mount') {
           output(result, "No sync needed: your box mounts the squad's ssh config live, so changes already apply.")
         } else if (result.reason === 'box-unreachable') {
-          output(result, "Your box isn't reachable right now — try `tau remote-hosts sync` again once it wakes.")
+          output(result, "Your box isn't reachable right now — try `ficus remote-hosts sync` again once it wakes.")
         } else {
           output(result, `Not pushed (${result.reason ?? 'unknown reason'}).`)
         }

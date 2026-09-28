@@ -1,6 +1,6 @@
 ---
-title: Install Tau on your machine
-description: Install a local Tau instance, create your administrator account, and connect a model provider.
+title: Install Ficus on your machine
+description: Install a local Ficus instance, create your administrator account, and connect a model provider.
 prev:
   label: Choose your setup
   link: /
@@ -9,14 +9,14 @@ next:
   link: /start/first-task/
 ---
 
-Run Tau on your own Mac or Linux machine when you want to manage its software, data and agent runtime yourself. This guide takes you from an empty machine to a running instance with an administrator account. You will need a model-provider account before an agent can do useful work.
+Run Ficus on your own Mac or Linux machine when you want to manage its software, data and agent runtime yourself. This guide takes you from an empty machine to a running instance with an administrator account. You will need a model-provider account before an agent can do useful work.
 
 ## Before you start
 
 Have these ready:
 
 - A Mac with an active desktop login, or Linux with a working systemd user session. On Windows, run the installer inside WSL 2 rather than PowerShell.
-- Node.js 24 LTS (minimum 22.19.0) on your `PATH`, for building Tau and its embedded documentation. Check with `node --version`.
+- Node.js 24 LTS (minimum 22.19.0) on your `PATH`, for building Ficus and its embedded documentation. Check with `node --version`.
 - `curl` and `git`, plus permission to install files in your home directory.
 - Docker Desktop or a running Docker daemon. The default setup uses Docker for PostgreSQL, **even when agents run directly on the host**. An existing PostgreSQL connection is an advanced alternative.
 - Internet access to download the CLI, source, dependencies and database image.
@@ -44,7 +44,7 @@ In your terminal, run:
 curl -fsSL https://ficus.sh/cli/setup.sh | bash
 ```
 
-Choose your runtime, review the printed plan, then confirm. Setup installs the Tau CLI, installs Bun if needed, and places the source checkout at `~/.tau/tau`. It creates configuration, starts PostgreSQL, builds Tau, prepares the selected runtime, and starts the API and worker processes.
+Choose your runtime, review the printed plan, then confirm. Setup installs the Ficus CLI, installs Bun if needed, and places the source checkout at `~/.tau/tau`. It creates configuration, starts PostgreSQL, builds Ficus, prepares the selected runtime, and starts the API and worker processes.
 
 The first database image download and builds can take several minutes. Keep the terminal open until setup prints the URL and next steps.
 
@@ -57,10 +57,10 @@ curl -fsSL https://ficus.sh/cli/setup.sh | bash -s -- --runtime host --yes
 `--yes` accepts the plan; it does not choose a runtime. To use another directory, put installer options before setup options:
 
 ```sh
-tau server install --root ~/tau-local --runtime host --yes
+ficus server install --root ~/ficus-local --runtime host --yes
 ```
 
-If you already have a Tau checkout with Bun and dependencies installed, configure that checkout instead:
+If you already have a Ficus checkout with Bun and dependencies installed, configure that checkout instead:
 
 ```sh
 bun run setup -- --runtime host
@@ -77,9 +77,9 @@ bun run setup -- --runtime host --dry-run
 1. Open the URL printed by setup, normally on `http://localhost:3000`. The printed first-run link signs you in using the bootstrap password. Treat that link as private.
 2. Enter your email to create the administrator account. If email delivery is configured, follow the verification step. Otherwise, the bootstrap flow continues without asking you to enter a verification code.
 3. Register a passkey when prompted. The first passkey account becomes the system administrator.
-4. Return to Tau using that passkey. Once an administrator has a passkey, the bootstrap password stops working for login.
+4. Return to Ficus using that passkey. Once an administrator has a passkey, the bootstrap password stops working for login.
 
-If you opened the plain address and it asks for a password, find `TAU_PASSWORD` in the checkout's `.env` file. Setup generates it for you. Keep the file and the first-run link out of shared screenshots or support messages.
+If you opened the plain address and it asks for a password, find `FICUS_PASSWORD` in the checkout's `.env` file. Setup generates it for you. Keep the file and the first-run link out of shared screenshots or support messages.
 
 ## Connect a model and try a task
 
@@ -90,20 +90,20 @@ Then follow [your first task](/start/first-task/). A working browser page alone 
 To use the CLI with your new account:
 
 ```sh
-tau auth login local --api-url http://localhost:3000
-tau auth status
+ficus auth login local --api-url http://localhost:3000
+ficus auth status
 ```
 
-Approve the device in your browser. If you previously exported `TAU_PASSWORD` in this shell, unset it before browser-based login so it does not select the old password flow. See the [CLI reference](/reference/cli/) for backend selection.
+Approve the device in your browser. If you previously exported `FICUS_PASSWORD` in this shell, unset it before browser-based login so it does not select the old password flow. See the [CLI reference](/reference/cli/) for backend selection.
 
 ## Check the installation
 
 ```sh
-tau server status
-tau server logs -f
+ficus server status
+ficus server logs -f
 ```
 
-Status identifies the local checkout, runtime, service manager and process state. Logs follow the API and worker; press Ctrl+C to stop following them without stopping Tau.
+Status identifies the local checkout, runtime, service manager and process state. Logs follow the API and worker; press Ctrl+C to stop following them without stopping Ficus.
 
 The default service manager is launchd on macOS and systemd-user on Linux. A Mac install runs in your desktop login session and stops at logout. On Linux, follow setup's linger instructions if the instance must keep running after logout. PM2 is also available through `--supervisor pm2`.
 

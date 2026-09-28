@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import type { StorageSnapshot } from '@tau/shared'
+import type { StorageSnapshot } from '@ficus/shared'
 import { apiGet, apiPost, apiPut } from '../client'
 import { config } from '../config'
 import { output, outputError } from '../output'
@@ -166,7 +166,7 @@ export function registerSystemCommands(program: Command) {
       }
     })
 
-  // tau system restart
+  // ficus system restart
   system
     .command('restart')
     .description('Restart the server process (K8s will auto-restart the pod)')
@@ -179,10 +179,10 @@ export function registerSystemCommands(program: Command) {
       }
     })
 
-  // tau system logs
+  // ficus system logs
   system
     .command('logs')
-    .description('Stream Tau system logs (API/worker)')
+    .description('Stream Ficus system logs (API/worker)')
     .option('-c, --component <component>', 'Component: api, worker, or all', 'all')
     .option('-t, --tail <n>', 'Number of recent lines', '500')
     .option('-f, --follow', 'Follow live logs', true)

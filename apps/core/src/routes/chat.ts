@@ -8,7 +8,7 @@ import { withDeviceStreamRevocation } from '../services/streaming/device-revocat
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { zValidator } from '@hono/zod-validator'
-import { chatRequestSchema } from '@tau/shared'
+import { chatRequestSchema } from '@ficus/shared'
 import { getProxyWorkerSSE } from '../services/streaming/sse-proxy'
 import { Agent } from '../entities/Agent'
 import { User } from '../entities/User'

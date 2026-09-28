@@ -105,7 +105,7 @@ test('expanded voice interrupts beside the current transcript response', async (
 test('connected voice floats compactly and stays available when interacting with the page', async () => {
   const { container, render } = await setup()
   await render({ status: 'listening', isConnected: true })
-  const panel = dom!.window.document.querySelector<HTMLElement>('.tau-voice-panel')!
+  const panel = dom!.window.document.querySelector<HTMLElement>('.ficus-voice-panel')!
   expect(panel.dataset.compact).toBe('true')
   const anchoredTop = panel.style.top
   expect(anchoredTop).not.toBe('')

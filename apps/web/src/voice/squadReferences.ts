@@ -1,4 +1,4 @@
-import { squadSlugMap, type Squad } from '@tau/shared'
+import { squadSlugMap, type Squad } from '@ficus/shared'
 
 type VoiceSquadReference = Pick<Squad, 'id' | 'name'> & Partial<Pick<Squad, 'createdAt'>>
 

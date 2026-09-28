@@ -40,7 +40,7 @@ describe('SecretStore', () => {
   const testKey = randomBytes(32).toString('hex')
   let store: SecretStore
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
     store = makeStore()
     await store.initialize()
@@ -48,7 +48,7 @@ describe('SecretStore', () => {
 
   afterEach(() => {
     store.stopPeriodicRefresh()
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
   })
 
   test('set and get a secret', async () => {
@@ -305,7 +305,7 @@ describe('SecretStore', () => {
   test('fallback mode reads only an explicit generated environment fixture', async () => {
     const fixture = createGeneratedSecretEnvironmentFixture()
     const { key: envKey, value: envValue } = fixture
-    delete process.env.TAU_ENCRYPTION_KEY
+    delete process.env.FICUS_ENCRYPTION_KEY
 
     const fallbackStore = makeStore({ testEnvironmentReadFixtures: [fixture] })
     await fallbackStore.initialize()
@@ -331,7 +331,7 @@ describe('SecretStore', () => {
     })
     expect(lateMatcherEntries).toContainEqual({ key: envKey, value: envValue })
     expect(fallbackStore.set(envKey, `CANARY_SECRET_${randomUUID()}`)).rejects.toThrow(
-      'TAU_ENCRYPTION_KEY not configured'
+      'FICUS_ENCRYPTION_KEY not configured'
     )
 
     fallbackStore.stopPeriodicRefresh()
@@ -505,14 +505,14 @@ describe('SecretStore', () => {
     })
 
     test('throws in env-fallback mode (no encryption key)', async () => {
-      delete process.env.TAU_ENCRYPTION_KEY
+      delete process.env.FICUS_ENCRYPTION_KEY
       const fallbackStore = makeStore()
       await fallbackStore.initialize()
 
       await expect(fallbackStore.mutateSecret('GITHUB_TOKEN', () => 'x')).rejects.toThrow(
-        'TAU_ENCRYPTION_KEY not configured'
+        'FICUS_ENCRYPTION_KEY not configured'
       )
-      process.env.TAU_ENCRYPTION_KEY = testKey
+      process.env.FICUS_ENCRYPTION_KEY = testKey
     })
   })
 
@@ -869,7 +869,7 @@ describe('content-safety matcher eligibility', () => {
     for (const key of [
       'GITHUB_TOKEN',
       'OPENAI_API_KEY',
-      'TAU_PASSWORD',
+      'FICUS_PASSWORD',
       'SANDBOX_CALLBACK_SECRET',
       'VAPID_PRIVATE_KEY',
       'PROVIDER_AUTH_DATA',
@@ -888,26 +888,26 @@ describe('content-safety matcher eligibility', () => {
 
 describe('SecretStore — platform-managed keys', () => {
   const testKey = randomBytes(32).toString('hex')
-  const originalEnvKey = process.env.TAU_ENCRYPTION_KEY
+  const originalEnvKey = process.env.FICUS_ENCRYPTION_KEY
   let managedFixture: ReturnType<typeof createGeneratedSecretEnvironmentFixture>
   let managedKey: string
   let managedValue: string
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
     managedFixture = createGeneratedSecretEnvironmentFixture()
     managedKey = managedFixture.key
     managedValue = managedFixture.value
-    process.env.TAU_MANAGED = '1'
-    process.env.TAU_MANAGED_SECRET_KEYS = managedKey
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS = managedKey
   })
 
   afterEach(() => {
-    if (originalEnvKey) process.env.TAU_ENCRYPTION_KEY = originalEnvKey
-    else delete process.env.TAU_ENCRYPTION_KEY
-    delete process.env.TAU_MANAGED
-    delete process.env.TAU_MANAGED_SECRET_KEYS
+    if (originalEnvKey) process.env.FICUS_ENCRYPTION_KEY = originalEnvKey
+    else delete process.env.FICUS_ENCRYPTION_KEY
+    delete process.env.FICUS_MANAGED
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
     delete process.env.APNS_KEY_P8_FILE
     managedFixture.revoke()
   })
@@ -925,13 +925,13 @@ describe('SecretStore — platform-managed keys', () => {
 
   test('list() excludes a managed key even when a stale DB row exists, and get() ignores the stale row', async () => {
     // Simulate a self-host that later became platform-managed: a leftover DB row.
-    delete process.env.TAU_MANAGED_SECRET_KEYS
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
     const seed = makeStore()
     await seed.initialize()
     await seed.set(managedKey, 'stale-db-value')
 
     // Now the platform manages it.
-    process.env.TAU_MANAGED_SECRET_KEYS = managedKey
+    process.env.FICUS_MANAGED_SECRET_KEYS = managedKey
     const store = makeStore({ testEnvironmentReadFixtures: [managedFixture] })
     await store.initialize()
 
@@ -944,7 +944,7 @@ describe('SecretStore — platform-managed keys', () => {
   test('a key superseded by a managed key is managed too: hidden from list() and its DB row never resolves', async () => {
     // APNS_KEY_P8 (inline PEM) is resolved BEFORE APNS_KEY_P8_FILE, so a
     // tenant-set inline key would silently override the platform's .p8.
-    delete process.env.TAU_MANAGED_SECRET_KEYS
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
     const seed = makeStore()
     await seed.initialize()
     await seed.set('APNS_KEY_P8', 'tenant-supplied-pem')
@@ -953,7 +953,7 @@ describe('SecretStore — platform-managed keys', () => {
     // The platform now manages the FILE variant — the inline key follows,
     // without making its filesystem path a tenant-visible Secret Store key.
     const managedPath = `/tmp/generated-${randomUUID()}.p8`
-    process.env.TAU_MANAGED_SECRET_KEYS = `${managedKey},APNS_KEY_P8_FILE`
+    process.env.FICUS_MANAGED_SECRET_KEYS = `${managedKey},APNS_KEY_P8_FILE`
     process.env.APNS_KEY_P8_FILE = managedPath
     const store = makeStore()
     await store.initialize()
@@ -974,13 +974,13 @@ describe('SecretStore — platform-managed keys', () => {
     // EnvironmentFile value may not). A self-host that later became managed can
     // easily have a leftover row under the old name.
     const pem = `CANARY_SECRET_${randomUUID()}\ngenerated multiline fixture\n`
-    delete process.env.TAU_MANAGED_SECRET_KEYS
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
     const seed = makeStore()
     await seed.initialize()
     await seed.set('exe-provider-ssh-key', 'stale-tenant-key')
     expect((await seed.list()).some((s) => s.key === 'exe-provider-ssh-key')).toBe(true)
 
-    process.env.TAU_MANAGED_SECRET_KEYS = `${managedKey},EXE_PROVIDER_SSH_KEY`
+    process.env.FICUS_MANAGED_SECRET_KEYS = `${managedKey},EXE_PROVIDER_SSH_KEY`
     process.env.EXE_PROVIDER_SSH_KEY = Buffer.from(pem, 'utf8').toString('base64')
     try {
       expect(() => makeStore({ testEnvironmentReadFixtures: [{ key: 'exe-provider-ssh-key' }] as never })).toThrow(
@@ -996,8 +996,8 @@ describe('SecretStore — platform-managed keys', () => {
   })
 
   test('self-hosted: the exe.dev key stays an ordinary DB secret, read verbatim', async () => {
-    delete process.env.TAU_MANAGED
-    delete process.env.TAU_MANAGED_SECRET_KEYS
+    delete process.env.FICUS_MANAGED
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
     const store = makeStore()
     await store.initialize()
     await store.set('exe-provider-ssh-key', 'self-hosted-pem')
@@ -1007,8 +1007,8 @@ describe('SecretStore — platform-managed keys', () => {
   })
 
   test('self-hosted: a superseded key stays an ordinary, listed, resolvable secret', async () => {
-    delete process.env.TAU_MANAGED
-    delete process.env.TAU_MANAGED_SECRET_KEYS
+    delete process.env.FICUS_MANAGED
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
     const store = makeStore()
     await store.initialize()
 

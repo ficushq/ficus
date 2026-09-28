@@ -1,4 +1,4 @@
-import type { OAuthClientBinding } from '@tau/shared/oauth-providers/types'
+import type { OAuthClientBinding } from '@ficus/shared/oauth-providers/types'
 
 export interface OAuthCredentialBundleV1 {
   version: 1

@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ThemePreset } from '@tau/shared'
-import { isHttpResponseError } from '@tau/client-core'
+import type { ThemePreset } from '@ficus/shared'
+import { isHttpResponseError } from '@ficus/client-core'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { selfServiceQueryEnabled, useOptionalAuth } from '../../providers/AuthProvider'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -126,7 +126,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
 
   /** A preset row's secondary actions, as plain rows in its overflow menu like the other OverflowMenu callers. */
   const presetSecondaryActions = (preset: ThemePreset) => {
-    const buttonClass = 'tau-button hover:text-primary'
+    const buttonClass = 'ficus-button hover:text-primary'
     return (
       <>
         <button className={buttonClass} onClick={() => setRenaming({ id: preset.id, name: preset.document.name })}>
@@ -160,7 +160,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
         <div className="mt-4 rounded-lg border border-th-border p-3 text-sm">
           <p>This shared theme is no longer available — keep a copy to keep using it.</p>
           <button
-            className="tau-button mt-2 min-h-[36px] px-2 py-1 tau-button-secondary"
+            className="ficus-button mt-2 min-h-[36px] px-2 py-1 ficus-button-secondary"
             disabled={keepCopy.isPending}
             onClick={() => keepCopy.mutate()}
           >
@@ -174,7 +174,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="tau-button min-h-[36px] px-3 py-1.5 tau-button-secondary"
+              className="ficus-button min-h-[36px] px-3 py-1.5 ficus-button-secondary"
               // Starts from the theme in use, with the assistant panel focused when it's shown (gated on
               // `chat:send` inside CustomThemeEditor); the editor's Based on changes the base.
               onClick={() => setEditing({ preset: null, baseId: value.themeId, focusAssistant: true })}
@@ -184,7 +184,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
             {/* The native file input stays hidden and only opens the file picker. */}
             <button
               type="button"
-              className="tau-button min-h-[36px] px-3 py-1.5 tau-button-secondary"
+              className="ficus-button min-h-[36px] px-3 py-1.5 ficus-button-secondary"
               onClick={() => importInput.current?.click()}
             >
               Import JSON…
@@ -218,17 +218,17 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                     }}
                   >
                     <input
-                      className="tau-field px-2 py-1"
+                      className="ficus-field px-2 py-1"
                       autoFocus
                       maxLength={40}
                       value={renaming.name}
                       onChange={(event) => setRenaming({ id: preset.id, name: event.target.value })}
                     />
-                    <button className="tau-button min-h-[36px] px-2 py-1 tau-button-primary" type="submit">
+                    <button className="ficus-button min-h-[36px] px-2 py-1 ficus-button-primary" type="submit">
                       Save
                     </button>
                     <button
-                      className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+                      className="ficus-button min-h-[36px] px-2 py-1 ficus-button-secondary"
                       type="button"
                       onClick={() => setRenaming(null)}
                     >
@@ -250,14 +250,14 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                 )}
                 <div className="flex flex-wrap items-center gap-1">
                   <button
-                    className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+                    className="ficus-button min-h-[36px] px-2 py-1 ficus-button-secondary"
                     disabled={active}
                     onClick={() => value.applyPreset(preset)}
                   >
                     Use
                   </button>
                   <button
-                    className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+                    className="ficus-button min-h-[36px] px-2 py-1 ficus-button-secondary"
                     onClick={() => setEditing({ preset, baseId: preset.document.base })}
                   >
                     Edit
@@ -333,14 +333,14 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                   </span>
                   <div className="flex flex-wrap gap-1">
                     <button
-                      className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+                      className="ficus-button min-h-[36px] px-2 py-1 ficus-button-secondary"
                       disabled={active}
                       onClick={() => value.applyPreset(preset)}
                     >
                       Use
                     </button>
                     <button
-                      className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+                      className="ficus-button min-h-[36px] px-2 py-1 ficus-button-secondary"
                       disabled={duplicate.isPending}
                       onClick={() => duplicate.mutate(preset)}
                     >
@@ -348,7 +348,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                     </button>
                     {can('theme-presets:moderate') && (
                       <button
-                        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+                        className="ficus-button min-h-[36px] px-2 py-1 ficus-button-secondary"
                         disabled={removeShare.isPending}
                         onClick={() => {
                           if (

@@ -1,4 +1,4 @@
-import type { Agent, DeliveryMode, ExecutionStatus, Message } from '@tau/shared'
+import type { Agent, DeliveryMode, ExecutionStatus, Message } from '@ficus/shared'
 import { parseSSEStream, type SSECallbacks } from '../sse'
 import type { Transport } from '../transport'
 
@@ -157,7 +157,7 @@ export function agentsResource(t: Transport) {
       t.request<{
         executionId: string
         agentId: string
-        status: import('@tau/shared').ExecutionStatus
+        status: import('@ficus/shared').ExecutionStatus
         executionVersion: number
         active: boolean
       }>(`/agents/${agentId}/executions/${executionId}`, signal ? { signal } : undefined),

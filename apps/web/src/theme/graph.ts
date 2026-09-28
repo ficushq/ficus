@@ -1,4 +1,4 @@
-import { AGENT_STATUS_ROLE, type Agent } from '@tau/shared'
+import { AGENT_STATUS_ROLE, type Agent } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import type { ThemeColors } from './tokenReader'
 

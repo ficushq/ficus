@@ -10,7 +10,7 @@ import {
   selectWorkStreamPresentationState,
   workStreamNeedsHumanAttention,
   buildWorkInterestSnapshot,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   db,
   squads,

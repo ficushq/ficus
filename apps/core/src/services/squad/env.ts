@@ -10,7 +10,7 @@ import { getSquadWorkspacePath } from './workspace'
 
 const USER_ENV_FILE = 'env.user'
 const GENERATED_ENV_FILE = '.env'
-const GENERATED_SECRET_MARKER = '# Generated from Tau Secret Store allowlist. Do not edit values here.'
+const GENERATED_SECRET_MARKER = '# Generated from Ficus Secret Store allowlist. Do not edit values here.'
 const GENERATED_INTEGRATION_MARKER = '# Generated protected integration bindings. Do not edit values here.'
 
 /**
@@ -31,7 +31,7 @@ function ensureTauDir(squadId: string): string {
   }
 
   // K8s sandboxes can write to the same workspace from container-root. Keep
-  // Tau's private workspace dir group-writable/setgid when Core owns it so
+  // Ficus's private workspace dir group-writable/setgid when Core owns it so
   // local k3d shared-volume files remain writable by the Core process.
   try {
     chmodSync(tauDir, 0o2775)
@@ -64,6 +64,18 @@ const IDENTITY_REASON =
   "the agent's identity is injected by tau; setting it here would make agents act as a different identity"
 
 export const RESERVED_SQUAD_ENV_KEYS: Readonly<Record<string, string>> = {
+  FICUS_TOKEN: IDENTITY_REASON,
+  FICUS_API_URL: IDENTITY_REASON,
+  FICUS_PASSWORD: IDENTITY_REASON,
+  FICUS_AUTH_STORE: IDENTITY_REASON,
+  FICUS_AGENT_CONTEXT: IDENTITY_REASON,
+  FICUS_AGENT_ID: IDENTITY_REASON,
+  FICUS_IDENTITY_API_URL: IDENTITY_REASON,
+  FICUS_IDENTITY_TOKEN: IDENTITY_REASON,
+  FICUS_IDENTITY_AUTH_STORE: IDENTITY_REASON,
+  FICUS_IDENTITY_AGENT_ID: IDENTITY_REASON,
+  // One release (Ficus rename): the legacy spellings stay reserved. Older `tau`
+  // CLIs read them directly, and the new CLI bridges an unset FICUS_ name from them.
   TAU_TOKEN: IDENTITY_REASON,
   TAU_API_URL: IDENTITY_REASON,
   TAU_PASSWORD: IDENTITY_REASON,
@@ -126,7 +138,7 @@ function normalizeSecretKeys(keys: string[]): string[] {
             key !== 'DEPLOY_GITHUB_PAGES_TOKEN'
         )
         // Same reasoning for the identity/PATH names: a Secret Store key called
-        // TAU_API_URL would otherwise be RENDERED into .tau/.env and sourced into
+        // FICUS_API_URL would otherwise be RENDERED into .tau/.env and sourced into
         // every agent shell, which is the very thing the write-time check refuses.
         .filter((key) => !(key in RESERVED_SQUAD_ENV_KEYS))
     )
@@ -361,30 +373,31 @@ export function renderEnvForSecrets(
  * Resolve credentials on each invocation so long-lived shells see rotation and detach.
  *
  * With `signingPublicKey`, agents' commits and tags are also signed: git calls
- * `tau` as its `gpg.ssh.program`, which has Core sign with the connection's key
+ * `ficus` as its `gpg.ssh.program`, which has Core sign with the connection's key
  * (the private half never enters the sandbox). Command-line `-c` outranks any
- * repo-local config. Signing applies only when `TAU_TOKEN` is set, i.e. to agent
+ * repo-local config. Signing applies only when `FICUS_TOKEN` is set, i.e. to agent
  * commands: a human terminal cannot reach the signer, and must not have every
  * commit fail.
  */
 export function githubCommandBindings(squadId: string, signingPublicKey?: string): string {
   const squad = shellQuote(squadId)
-  const credential = `-c credential.https://github.com.helper= -c ${shellQuote(`credential.https://github.com.helper=!f() { command tau integration exec github --squad ${squad} -- gh auth git-credential "$@"; }; f`)}`
+  const credential = `-c credential.https://github.com.helper= -c ${shellQuote(`credential.https://github.com.helper=!f() { command ficus integration exec github --squad ${squad} -- gh auth git-credential "$@"; }; f`)}`
   const signing = signingPublicKey
     ? [
         '-c gpg.format=ssh',
         '-c commit.gpgsign=true',
         '-c tag.gpgsign=true',
         `-c ${shellQuote(`user.signingkey=key::${signingPublicKey.trim()}`)}`,
-        '-c gpg.ssh.program=tau',
+        '-c gpg.ssh.program=ficus',
       ].join(' ')
     : undefined
   const git = signing
-    ? `git() { if [ -n "\${TAU_TOKEN:-}" ]; then TAU_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
+    ? // One release (Ficus rename): accept and emit both spellings, for an older `tau` signer.
+      `git() { if [ -n "\${FICUS_TOKEN:-\${TAU_TOKEN:-}}" ]; then FICUS_GIT_SIGNING_SQUAD=${squad} TAU_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
     : `git() { command git ${credential} "$@"; }`
   return (
     [
-      `gh() { command tau integration exec github --squad ${squad} -- gh "$@"; }`,
+      `gh() { command ficus integration exec github --squad ${squad} -- gh "$@"; }`,
       git,
       'if [ -n "${BASH_VERSION:-}" ]; then export -f gh git; fi',
     ].join('\n') + '\n'

@@ -122,12 +122,12 @@ describe('RBAC integration', () => {
   })
 
   it('legacy identity grants full access when no canonical admin exists', async () => {
-    // Legacy TAU_PASSWORD auth is intentionally disabled once any canonical
+    // Legacy FICUS_PASSWORD auth is intentionally disabled once any canonical
     // admin exists. The full suite creates canonical admins concurrently, so this
     // test accepts that secure branch while still proving the legacy token never
     // fails open to an unexpected status.
-    const original = process.env.TAU_PASSWORD
-    process.env.TAU_PASSWORD = `${prefix}-password`
+    const original = process.env.FICUS_PASSWORD
+    process.env.FICUS_PASSWORD = `${prefix}-password`
     try {
       const app = buildApp()
       const res = await app.request('/api/system/restart', {
@@ -136,15 +136,15 @@ describe('RBAC integration', () => {
       })
       expect([200, 401]).toContain(res.status)
     } finally {
-      if (original !== undefined) process.env.TAU_PASSWORD = original
-      else delete process.env.TAU_PASSWORD
+      if (original !== undefined) process.env.FICUS_PASSWORD = original
+      else delete process.env.FICUS_PASSWORD
     }
   })
 
   it('legacy identity is denied when a canonical admin holds a passkey', async () => {
-    const original = process.env.TAU_PASSWORD
+    const original = process.env.FICUS_PASSWORD
     const password = `${prefix}-admin-disabled-password`
-    process.env.TAU_PASSWORD = password
+    process.env.FICUS_PASSWORD = password
     // Normal operation: the admin has a real passkey, so legacy password auth is off.
     const admin = await createTestAdmin({ prefix: `${prefix}-canonical`, canonicalAdmin: true })
     await createTestCredential({ userId: admin.id })
@@ -157,8 +157,8 @@ describe('RBAC integration', () => {
       })
       expect(res.status).toBe(401)
     } finally {
-      if (original !== undefined) process.env.TAU_PASSWORD = original
-      else delete process.env.TAU_PASSWORD
+      if (original !== undefined) process.env.FICUS_PASSWORD = original
+      else delete process.env.FICUS_PASSWORD
     }
   })
 

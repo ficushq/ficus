@@ -13,28 +13,28 @@ machine, a Mac with Xcode, a Windows box with `sshd` — and a squad needs to
 reach it over SSH: deploy to it, run a build on it, copy files to/from it,
 inspect logs on it.
 
-**Remote hosts are not machines.** A `machines` row is substrate tau
-_colonizes_: tau bootstraps it, creates a Unix user on it, installs a sandbox
+**Remote hosts are not machines.** A `machines` row is substrate ficus
+_colonizes_: ficus bootstraps it, creates a Unix user on it, installs a sandbox
 server, and runs agent sandboxes on it. A remote host is the opposite — it's
-a target the team already owns and operates. tau never installs anything on
+a target the team already owns and operates. ficus never installs anything on
 it, never creates users on it, and never runs sandboxes on it. Agents just
 adapt to whatever the host already has (any OS with an `sshd`). If the goal
-is "give tau a new place to run agent sandboxes," that's the `machines`
+is "give ficus a new place to run agent sandboxes," that's the `machines`
 feature, not this one.
 
 ## Adding a Host
 
 ```bash
-tau remote-hosts add --name staging --host 10.1.2.3 --user deploy
+ficus remote-hosts add --name staging --host 10.1.2.3 --user deploy
 ```
 
 This mints a fresh ed25519 keypair for this host, registers it, grants your
-squad (`TAU_SQUAD_ID`) access, and prints:
+squad (`FICUS_SQUAD_ID`) access, and prints:
 
 1. The **public key** (one line, ready to paste).
 2. Install instructions for the human who owns the box.
 
-The private key never leaves tau's secret store and is never printed,
+The private key never leaves ficus's secret store and is never printed,
 returned by the API, or shown in the web UI — only the public key is ever
 surfaced. That means installation **requires a human**: hand the printed
 block to the box's owner (in chat, a ticket, however you'd reach them) and
@@ -46,7 +46,7 @@ installs it.
 Once they confirm, verify:
 
 ```bash
-tau remote-hosts check staging
+ficus remote-hosts check staging
 ```
 
 `"staging" is reachable.` means the connection works end-to-end. Only then
@@ -70,7 +70,7 @@ Docker/k8s sandboxes see it live (the squad's `~/.ssh` is mounted); a
 long-lived VM box may need one manual refresh if it predates the grant:
 
 ```bash
-tau remote-hosts sync
+ficus remote-hosts sync
 ```
 
 `sync` only refreshes the **calling agent's own box** — it has no notion of
@@ -78,7 +78,7 @@ tau remote-hosts sync
 for itself; one agent syncing does not refresh a teammate's box. (Fresh boxes
 and Docker/k8s sandboxes don't need this at all — see above.)
 
-After that, agents use completely normal SSH tooling — no tau-specific
+After that, agents use completely normal SSH tooling — no ficus-specific
 wrapper:
 
 ```bash
@@ -93,14 +93,14 @@ The first connection to a given host auto-accepts its host key
 
 ## Adapt to the Target
 
-A remote host is the **team's** box, not tau's. Before doing anything on it:
+A remote host is the **team's** box, not ficus's. Before doing anything on it:
 
 - Discover what's actually there — `uname -a`, `which <tool>`, check for a
   package manager, look at what's already deployed — rather than assuming a
   particular OS or toolchain.
 - Use what's installed. Work with the host's existing shell, package
   manager, and layout.
-- **Never install tau tooling on it** (no sandbox server, no tau CLI, no
+- **Never install ficus tooling on it** (no sandbox server, no ficus CLI, no
   background agents) and never make invasive changes (reformatting,
   package upgrades, service restarts affecting other consumers) without the
   owner's explicit ask. Treat it like someone else's production machine,
@@ -108,17 +108,17 @@ A remote host is the **team's** box, not tau's. Before doing anything on it:
 
 ## Managing
 
-- `tau remote-hosts list` / `show <name>` — squad surface by default
+- `ficus remote-hosts list` / `show <name>` — squad surface by default
   (`remote-hosts:read`, squad-scoped); `--all` for the whole registry
   (needs global `remote-hosts:read`).
-- `tau remote-hosts add` — squad managers can add-and-grant for their own
+- `ficus remote-hosts add` — squad managers can add-and-grant for their own
   squad (squad-scoped `remote-hosts:write`); `--global` needs global write.
-- `tau remote-hosts grant <name> --squad <id>` — grant another squad access.
+- `ficus remote-hosts grant <name> --squad <id>` — grant another squad access.
   **Global write only** — system managers, not squad managers.
-- `tau remote-hosts revoke <name>` — revoke your own squad's grant
+- `ficus remote-hosts revoke <name>` — revoke your own squad's grant
   (squad-scoped write); `--squad <id>` revokes a different squad's grant
   (needs global write).
-- `tau remote-hosts remove <name>` — delete the host entirely (registry row
+- `ficus remote-hosts remove <name>` — delete the host entirely (registry row
   - secret key), revoking it for every squad. **Global write only.**
 
 ## Troubleshooting
@@ -131,7 +131,7 @@ A remote host is the **team's** box, not tau's. Before doing anything on it:
     the account exists but the key wasn't installed for it).
 - **`ssh <name>` says "Permission denied (publickey)"**: same causes as
   above — the key isn't installed yet, or the box's `~/.ssh` material is
-  stale on this agent's box; run `tau remote-hosts sync` and retry.
+  stale on this agent's box; run `ficus remote-hosts sync` and retry.
 - **`sync` reports `live-mount`**: nothing to do — this box mounts the
   squad's SSH directory live, so the new grant is already visible.
 - **`sync` reports `box-unreachable`**: the box isn't reachable right now;
@@ -144,9 +144,9 @@ A remote host is the **team's** box, not tau's. Before doing anything on it:
   `apps/core/src/routes/remote-hosts.ts`.
 - CLI: `apps/cli/src/commands/remote-hosts.ts`
   (`registerRemoteHostsCommands`).
-- Materialized into the squad's SSH directory as one `tau_remote_<name>`
+- Materialized into the squad's SSH directory as one `ficus_remote_<name>`
   private key file (mode `0600`) plus a managed block in `config` delimited
-  by `# >>> tau remote hosts >>>` / `# <<< tau remote hosts <<<`
+  by `# >>> ficus remote hosts >>>` / `# <<< ficus remote hosts <<<`
   (`apps/core/src/services/remote-hosts/materialize.ts`). User-added config
   outside the managed block is always preserved.
 - Full walkthrough + security model: `docs/wiki/remote-hosts.md`.

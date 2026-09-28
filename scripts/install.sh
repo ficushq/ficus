@@ -1,12 +1,12 @@
 #!/usr/bin/env sh
 set -eu
 
-REPO="${TAU_INSTALL_REPO:-ficushq/tau}"
-INSTALL_DIR="${TAU_INSTALL_DIR:-$HOME/.tau/bin}"
-SHARE_DIR="${TAU_SHARE_DIR:-$HOME/.tau/share}"
-BIN_NAME="tau"
+REPO="${FICUS_INSTALL_REPO:-ficushq/tau}"
+INSTALL_DIR="${FICUS_INSTALL_DIR:-$HOME/.tau/bin}"
+SHARE_DIR="${FICUS_SHARE_DIR:-$HOME/.tau/share}"
+BIN_NAME="ficus"
 API_URL="${GITHUB_API_URL:-https://api.github.com}"
-DOWNLOAD_BASE_URL="${TAU_DOWNLOAD_BASE_URL:-https://ficus.sh/cli}"
+DOWNLOAD_BASE_URL="${FICUS_DOWNLOAD_BASE_URL:-https://ficus.sh/cli}"
 
 if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ]; then
   ESC=$(printf '\033')
@@ -78,7 +78,7 @@ prompt_hidden() {
   printf '\n' >&2
 }
 
-section "Tau CLI installer"
+section "Ficus CLI installer"
 if [ -n "$DOWNLOAD_BASE_URL" ]; then
   say "${DIM}Download:${RESET}   $DOWNLOAD_BASE_URL"
 else
@@ -117,10 +117,10 @@ esac
 if [ "$PLATFORM" = "windows" ]; then
   [ "$CPU" = "x64" ] || err "unsupported Windows architecture: $ARCH"
   need unzip
-  ASSET="tau-windows-x64.zip"
-  BIN_NAME="tau.exe"
+  ASSET="ficus-windows-x64.zip"
+  BIN_NAME="ficus.exe"
 else
-  ASSET="tau-$PLATFORM-$CPU.tar.gz"
+  ASSET="ficus-$PLATFORM-$CPU.tar.gz"
 fi
 
 AUTH_HEADER=""
@@ -232,15 +232,18 @@ fi
 
 chmod +x "$INSTALL_DIR/$BIN_NAME" 2>/dev/null || true
 
-success "Installed Tau CLI: $INSTALL_DIR/$BIN_NAME"
+success "Installed Ficus CLI: $INSTALL_DIR/$BIN_NAME"
 if [ -d "$SHARE_DIR/skills" ]; then
   success "Installed bundled skills: $SHARE_DIR/skills"
 fi
 
 configure_auth() {
-  AUTH_MODE="${TAU_INSTALL_AUTH:-prompt}"
+  # Rename window (K1): the pre-rename CLI (`tau install --auth`) and setup.sh
+  # hand the installer only TAU_INSTALL_AUTH, so it is still read after
+  # FICUS_INSTALL_AUTH. Every other input is read under its FICUS_ name only.
+  AUTH_MODE="${FICUS_INSTALL_AUTH:-${TAU_INSTALL_AUTH:-prompt}}"
   if [ "$AUTH_MODE" = "0" ] || [ "$AUTH_MODE" = "false" ]; then
-    warn "Skipping Tau auth setup because TAU_INSTALL_AUTH=$AUTH_MODE."
+    warn "Skipping Ficus auth setup because FICUS_INSTALL_AUTH=$AUTH_MODE."
     return 0
   fi
 
@@ -248,64 +251,65 @@ configure_auth() {
 
   if [ "$AUTH_MODE" != "1" ] && [ "$AUTH_MODE" != "true" ]; then
     if ! is_interactive; then
-      warn "Skipping Tau auth setup because install is non-interactive."
+      warn "Skipping Ficus auth setup because install is non-interactive."
       say "Run later: ${BOLD}$INSTALL_DIR/$BIN_NAME auth login <label> --api-url <url>${RESET}"
       return 0
     fi
-    prompt "Configure Tau authentication now? [Y/n] "
+    prompt "Configure Ficus authentication now? [Y/n] "
     case "$REPLY_VALUE" in
       n|N|no|NO)
-        warn "Skipping Tau auth setup."
+        warn "Skipping Ficus auth setup."
         return 0
         ;;
     esac
   fi
 
-  LABEL="${TAU_AUTH_LABEL:-}"
+  LABEL="${FICUS_AUTH_LABEL:-}"
   if [ -z "$LABEL" ]; then
     if ! is_interactive; then
-      err "TAU_AUTH_LABEL is required when TAU_INSTALL_AUTH=1 in non-interactive mode"
+      err "FICUS_AUTH_LABEL is required when FICUS_INSTALL_AUTH=1 in non-interactive mode"
     fi
     prompt "Backend label [default]: "
     LABEL="$REPLY_VALUE"
     [ -n "$LABEL" ] || LABEL="default"
   fi
 
-  API_URL_VALUE="${TAU_API_URL:-}"
+  API_URL_VALUE="${FICUS_API_URL:-}"
   if [ -z "$API_URL_VALUE" ]; then
     if ! is_interactive; then
-      err "TAU_API_URL is required when TAU_INSTALL_AUTH=1 in non-interactive mode"
+      err "FICUS_API_URL is required when FICUS_INSTALL_AUTH=1 in non-interactive mode"
     fi
     while [ -z "$API_URL_VALUE" ]; do
-      prompt "Tau Core API URL: "
+      prompt "Ficus Core API URL: "
       API_URL_VALUE="$REPLY_VALUE"
     done
   fi
 
-  PASSWORD_VALUE="${TAU_PASSWORD:-}"
+  PASSWORD_VALUE="${FICUS_PASSWORD:-}"
   if [ -z "$PASSWORD_VALUE" ]; then
     if ! is_interactive; then
-      err "TAU_PASSWORD is required when TAU_INSTALL_AUTH=1 in non-interactive mode"
+      err "FICUS_PASSWORD is required when FICUS_INSTALL_AUTH=1 in non-interactive mode"
     fi
     while [ -z "$PASSWORD_VALUE" ]; do
-      prompt_hidden "Tau password/token: "
+      prompt_hidden "Ficus password/token: "
       PASSWORD_VALUE="$REPLY_VALUE"
     done
   fi
 
   step "Saving backend '$LABEL'..."
-  TAU_PASSWORD="$PASSWORD_VALUE" "$INSTALL_DIR/$BIN_NAME" auth login "$LABEL" --api-url "$API_URL_VALUE"
+  FICUS_PASSWORD="$PASSWORD_VALUE" "$INSTALL_DIR/$BIN_NAME" auth login "$LABEL" --api-url "$API_URL_VALUE"
 
-  if [ "${TAU_INSTALL_VERIFY:-1}" = "0" ] || [ "${TAU_INSTALL_VERIFY:-1}" = "false" ]; then
-    warn "Skipping auth verification because TAU_INSTALL_VERIFY=${TAU_INSTALL_VERIFY:-1}."
+  INSTALL_VERIFY="${FICUS_INSTALL_VERIFY:-1}"
+  if [ "$INSTALL_VERIFY" = "0" ] || [ "$INSTALL_VERIFY" = "false" ]; then
+    warn "Skipping auth verification because FICUS_INSTALL_VERIFY=$INSTALL_VERIFY."
     return 0
   fi
 
   step "Verifying credentials with 'squad list'..."
   if "$INSTALL_DIR/$BIN_NAME" squad list >/dev/null; then
-    success "Tau auth verified."
+    success "Ficus auth verified."
   else
-    err "Tau auth verification failed. Check API URL, credentials, and backend availability."
+    err "Ficus auth verification failed. Check API URL, credentials, and backend availability."
   fi
 }
 
@@ -314,10 +318,10 @@ configure_auth
 section "Next steps"
 case ":$PATH:" in
   *":$INSTALL_DIR:"*)
-    success "Tau is already on PATH."
+    success "Ficus is already on PATH."
     ;;
   *)
-    warn "Tau is not on PATH yet. Add it with:"
+    warn "Ficus is not on PATH yet. Add it with:"
     say "  export PATH=\"$INSTALL_DIR:\$PATH\""
     say ""
     say "For zsh:  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc"
@@ -326,5 +330,5 @@ case ":$PATH:" in
 esac
 
 say ""
-say "Run: ${BOLD}tau --help${RESET}"
-say "Project memory skill: ${BOLD}tau skill install tau-memory --agent pi${RESET}"
+say "Run: ${BOLD}ficus --help${RESET}"
+say "Project memory skill: ${BOLD}ficus skill install ficus-memory --agent pi${RESET}"

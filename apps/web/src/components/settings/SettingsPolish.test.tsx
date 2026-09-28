@@ -148,7 +148,7 @@ test('assistant features show pending setup and an inline API key form without e
     return Response.json({})
   }) as typeof fetch
   const page = await render(<AssistantMemorySection onboarding />)
-  expect(page.textContent).toContain('Make Tau your own')
+  expect(page.textContent).toContain('Make Ficus your own')
   expect(page.textContent).toContain('Needs OpenAI API setup')
   expect(page.querySelector('input[type="password"]')?.hasAttribute('required')).toBe(true)
   expect(page.querySelectorAll('[role="switch"]:checked')).toHaveLength(3)

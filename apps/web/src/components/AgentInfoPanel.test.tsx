@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { isModelPriorityList, parseDisplayModelPriorityList, parseDisplayModelSpec } from '../lib/displayModelSpec'
 import { integrationQueryKeys, queryKeys } from '../queryKeys'
 import { AgentInfoPanel } from './AgentInfoPanel'

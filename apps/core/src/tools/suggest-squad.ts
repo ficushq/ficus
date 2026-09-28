@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import type { AgentToolResult, ToolDefinition } from '@earendil-works/pi-coding-agent'
-import type { SuggestSquadResponse } from '@tau/shared'
+import type { SuggestSquadResponse } from '@ficus/shared'
 import { suggestSquadWithRecommendation } from '../services/routing'
 
 const SuggestSquadSchema = Type.Object({

@@ -67,22 +67,22 @@ RUN git config -f .gitmodules --get-regexp 'submodule\..*\.path' | while read ke
 # Install production dependencies for extensions that have a package.json
 RUN find config/agent/extensions -name package.json -maxdepth 2 -execdir bun install --production \;
 
-ARG TAU_INCLUDE_WEB=0
+ARG FICUS_INCLUDE_WEB=0
 # PWA build id for the web UI. No .git in the build context, so pass e.g.
-# --build-arg TAU_BUILD_ID=$(git rev-parse --short=12 HEAD) for a stable id;
+# --build-arg FICUS_BUILD_ID=$(git rev-parse --short=12 HEAD) for a stable id;
 # unset falls back to a per-image timestamp.
-ARG TAU_BUILD_ID=
+ARG FICUS_BUILD_ID=
 
 # Build core + CLI in parallel. Optionally also build the web UI for
-# single-origin self-hosted deployments (TAU_SERVE_WEB=1 at runtime).
+# single-origin self-hosted deployments (FICUS_SERVE_WEB=1 at runtime).
 # Wait on each background job explicitly so any build failure fails the image build.
 RUN set -e; \
     bun run build:core & core_pid=$!; \
     bun run build:cli & cli_pid=$!; \
     wait "$core_pid"; \
     wait "$cli_pid"; \
-    if [ "$TAU_INCLUDE_WEB" = "1" ]; then \
-      TAU_BUILD_ID="$TAU_BUILD_ID" bun run --filter web build; \
+    if [ "$FICUS_INCLUDE_WEB" = "1" ]; then \
+      FICUS_BUILD_ID="$FICUS_BUILD_ID" bun run --filter web build; \
       test -f apps/web/dist/index.html; \
     fi
 
@@ -116,11 +116,11 @@ COPY --from=builder /app/apps/core/dist apps/core/dist/
 COPY --from=builder /app/apps/core/docs-dist apps/core/docs-dist/
 COPY --from=builder /app/apps/cli/dist apps/cli/dist/
 
-# Optionally include the built web UI (controlled by --build-arg TAU_INCLUDE_WEB=1).
+# Optionally include the built web UI (controlled by --build-arg FICUS_INCLUDE_WEB=1).
 # When omitted, this copies nothing into apps/web/dist.
-ARG TAU_INCLUDE_WEB=0
+ARG FICUS_INCLUDE_WEB=0
 COPY --from=builder /app/apps/web/ /tmp/web-src/
-RUN if [ "$TAU_INCLUDE_WEB" = "1" ] && [ -d /tmp/web-src/dist ]; then \
+RUN if [ "$FICUS_INCLUDE_WEB" = "1" ] && [ -d /tmp/web-src/dist ]; then \
       mkdir -p apps/web && cp -r /tmp/web-src/dist apps/web/dist; \
     fi && rm -rf /tmp/web-src
 
@@ -130,7 +130,7 @@ COPY apps/core/drizzle/ apps/core/drizzle/
 
 # Create data directory for sessions and symlink CLI to PATH
 RUN mkdir -p data/sessions && \
-    ln -s /app/apps/cli/dist/tau.js /usr/local/bin/tau
+    ln -s /app/apps/cli/dist/ficus.js /usr/local/bin/ficus
 
 # Default port (API server)
 EXPOSE 3000

@@ -4,7 +4,7 @@ import {
   workflowParticipantSchema,
   workflowStepSchema,
   type WorkflowDefinition,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 /** Copy shared settings for one step without changing other assignments or graph references. */
 export function separateWorkflowParticipant(definition: WorkflowDefinition, stepId: string) {

@@ -1,4 +1,4 @@
-import type { AgentQuestion } from '@tau/shared'
+import type { AgentQuestion } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 export function agentQuestionsResource(t: Transport) {

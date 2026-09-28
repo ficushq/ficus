@@ -1,5 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
+import { createHash } from 'crypto'
 import {
+  SANDBOX_EXECUTOR_PROTOCOL_VERSION,
   buildSandboxPodSpec,
   getSandboxImage,
   getSandboxImagePullPolicy,
@@ -9,6 +11,7 @@ import {
   sandboxPodName,
   sanitizeLabelValue,
   type BuildPodSpecInput,
+  type SquadSandboxConfig,
 } from './pod-spec'
 import { getSandboxSkillsDir } from '../../agent/skill-materializer'
 import * as workspaceLayoutModule from '../workspace-layout'
@@ -72,26 +75,31 @@ describe('image and API URL resolution', () => {
     )
     expect(getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: {} })).toBe('tau-sandbox-agent:latest')
     expect(
-      getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: { TAU_SANDBOX_AGENT_IMAGE: 'x/y:z' } })
+      getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: { FICUS_SANDBOX_AGENT_IMAGE: 'x/y:z' } })
     ).toBe('x/y:z')
     expect(getSandboxImage({ sandboxType: 'squad', isLocalDev: true, env: {} })).toBe(
       'tau-registry:5000/tau-sandbox:latest'
     )
   })
 
-  // TAU_K8S_* only applies to the k8s runtime, and the sandbox factory imports
-  // every manager eagerly — so a stale TAU_K8S_LOCAL=true left in a .env that
+  // FICUS_K8S_* only applies to the k8s runtime, and the sandbox factory imports
+  // every manager eagerly — so a stale FICUS_K8S_LOCAL=true left in a .env that
   // now says host/docker must not flip this module into local-k3d mode.
-  test('the isLocalDev default follows the runtime, not a bare TAU_K8S_LOCAL', () => {
-    expect(getSandboxImage({ env: { TAU_SANDBOX_RUNTIME: 'host', TAU_K8S_LOCAL: 'true' } })).toBe('tau-sandbox:latest')
+  test('the isLocalDev default follows the runtime, not a bare FICUS_K8S_LOCAL', () => {
+    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' } })).toBe(
+      'tau-sandbox:latest'
+    )
     expect(
-      getSandboxImage({ sandboxType: 'agent', env: { TAU_SANDBOX_RUNTIME: 'docker-socket', TAU_K8S_LOCAL: 'true' } })
+      getSandboxImage({
+        sandboxType: 'agent',
+        env: { FICUS_SANDBOX_RUNTIME: 'docker-socket', FICUS_K8S_LOCAL: 'true' },
+      })
     ).toBe('tau-sandbox-agent:latest')
     // Under the k8s runtime the key is honoured, as always.
-    expect(getSandboxImage({ env: { TAU_SANDBOX_RUNTIME: 'k8s', TAU_K8S_LOCAL: 'true' } })).toBe(
+    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' } })).toBe(
       'tau-registry:5000/tau-sandbox:latest'
     )
-    expect(getSandboxImage({ env: { TAU_SANDBOX_RUNTIME: 'k8s' } })).toBe('tau-sandbox:latest')
+    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'k8s' } })).toBe('tau-sandbox:latest')
   })
 
   test('resolveSandboxApiUrl: local dev points at host.k3d.internal on the live port', () => {
@@ -162,6 +170,31 @@ describe('reconcilableSpecHash', () => {
     )
   })
 
+  test('a pod stamped by a Core that predates the /usr/local/bin/ficus mount drifts (recreated when idle)', () => {
+    // The hash a pre-ficus Core stamped on every pod it created: the same three fields, no CLI mount.
+    // The CLI mount is immutable on a running pod, so a pod without the `ficus` mount must never be
+    // adopted as current; the spec-drift path recreates it once it is idle.
+    const preFicusStamp = (config?: SquadSandboxConfig) =>
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            executorProtocolVersion: SANDBOX_EXECUTOR_PROTOCOL_VERSION,
+            ephemeralStorage: resolveEphemeralStorageLimit(config?.ephemeralStorageLimitGi),
+            squadIds: config?.squadId ? [config.squadId] : [],
+          })
+        )
+        .digest('hex')
+        .slice(0, 16)
+    for (const config of [
+      undefined,
+      { ephemeralStorageLimitGi: 25 },
+      { squadId: '11111111-1111-4111-8111-111111111111', sandboxType: 'squad' as const },
+    ]) {
+      expect(reconcilableSpecHash(config)).not.toBe(preFicusStamp(config))
+      expect(reconcilableSpecHash(config)).toBe(reconcilableSpecHash(config))
+    }
+  })
+
   test('differs by squadId — a solo box must not be adopted for a squad member (drives recreation)', () => {
     // squadId determines the squad-scoped mounts (/workspace/<id>, /memory/<id>),
     // immutable on a running pod. A solo box (no squadId) and a squad box must
@@ -180,7 +213,7 @@ describe('reconcilableSpecHash', () => {
 })
 
 describe('buildSandboxPodSpec', () => {
-  test('mounts staged CLI from core-data at the tau executable path', async () => {
+  test('mounts staged CLI from core-data at the ficus executable path', async () => {
     const podSpec = await buildSpec({
       sandboxId: 'squad_11111111-1111-4111-8111-111111111111',
       podName: 'tau-sb-squad-11111111-1111-4111-8111-111111111111',
@@ -190,11 +223,30 @@ describe('buildSandboxPodSpec', () => {
 
     expect(container?.volumeMounts).toContainEqual({
       name: 'core-data',
-      mountPath: '/usr/local/bin/tau',
-      subPath: 'cli/tau.js',
+      mountPath: '/usr/local/bin/ficus',
+      subPath: 'cli/ficus.js',
       readOnly: true,
     })
     expect(podSpec.spec?.volumes?.filter((volume: { name?: string }) => volume.name === 'core-data')).toHaveLength(1)
+  })
+
+  test('the ficus mount is the only CLI on the PATH dirs, for squad, member and solo boxes', async () => {
+    for (const input of [
+      { sandboxId: 'squad_11111111-1111-4111-8111-111111111111', config: { sandboxType: 'squad' as const } },
+      {
+        sandboxId: 'agent_member',
+        config: { sandboxType: 'agent' as const, squadId: '11111111-1111-4111-8111-111111111111' },
+      },
+      { sandboxId: 'agent_solo', config: { sandboxType: 'agent' as const, privateStorageKey: 'agent_solo' } },
+    ]) {
+      const podSpec = await buildSpec({ ...input, podName: `pod-${input.sandboxId.replace(/_/g, '-')}` })
+      const onPath = (podSpec.spec?.containers?.[0]?.volumeMounts ?? []).filter((mount) =>
+        /^\/usr\/(local\/)?s?bin\//.test(mount.mountPath)
+      )
+      expect(onPath).toEqual([
+        { name: 'core-data', mountPath: '/usr/local/bin/ficus', subPath: 'cli/ficus.js', readOnly: true },
+      ])
+    }
   })
 
   test('mounts sandbox-scoped materialized skills from core-data', async () => {
@@ -336,8 +388,12 @@ describe('buildSandboxPodSpec', () => {
     })
     const c = podSpec.spec!.containers![0]
     const env = Object.fromEntries((c.env ?? []).map((e: any) => [e.name, e.value]))
+    expect(env.FICUS_SANDBOX_ROLE).toBe('agent')
+    expect(env.FICUS_DEVBOX_DIR).toBe('/private')
+    // One release (Ficus rename): every FICUS_ var is also emitted as TAU_ for old images and CLIs.
     expect(env.TAU_SANDBOX_ROLE).toBe('agent')
     expect(env.TAU_DEVBOX_DIR).toBe('/private')
+    expect(env.TAU_SANDBOX_ID).toBe(env.FICUS_SANDBOX_ID)
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/nix-cache')).toBe(false)
     // memory + ssh mounts remain for squad members
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/var/lib/tau/ssh-source')).toBe(true)
@@ -359,7 +415,7 @@ describe('buildSandboxPodSpec', () => {
     const env = Object.fromEntries((c.env ?? []).map((e: any) => [e.name, e.value]))
     // Solo agents work in /private — no /workspace at all.
     expect(env.WORKSPACE_PATH).toBe('/private')
-    expect(env.TAU_DEVBOX_DIR).toBe('/private')
+    expect(env.FICUS_DEVBOX_DIR).toBe('/private')
     const mountPaths = (c.volumeMounts ?? []).map((m: any) => m.mountPath)
     expect(mountPaths).toContain('/private')
     expect(mountPaths.some((p: string) => p === '/workspace' || p.startsWith('/workspace/'))).toBe(false)
@@ -376,7 +432,7 @@ describe('buildSandboxPodSpec', () => {
     })
     const c = podSpec.spec!.containers![0]
     const env = Object.fromEntries((c.env ?? []).map((e: any) => [e.name, e.value]))
-    expect(env.TAU_SANDBOX_ROLE).toBe('squad')
+    expect(env.FICUS_SANDBOX_ROLE).toBe('squad')
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/nix-cache')).toBe(true)
   })
 })

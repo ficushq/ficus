@@ -19,6 +19,7 @@ import type { CommandDestination } from '../lib/commandCenterSearch'
 import { AssistantConversationView, type AssistantViewControls } from './AssistantConversationView'
 import { AssistantPositionControl } from './AssistantPositionControl'
 import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon } from './icons'
+import { OPEN_ASSISTANT_EVENT, TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
 
 interface UnifiedAssistantProps {
   dependencies?: { ConversationComponent?: typeof AssistantConversationView; ChatComponent?: typeof AgentChat }
@@ -174,12 +175,12 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
         else navigationRef.current.close()
       }
     }
-    window.addEventListener('open-tau-assistant', show)
-    window.addEventListener('toggle-tau-assistant', toggle)
+    window.addEventListener(OPEN_ASSISTANT_EVENT, show)
+    window.addEventListener(TOGGLE_ASSISTANT_EVENT, toggle)
     document.addEventListener('keydown', key)
     return () => {
-      window.removeEventListener('open-tau-assistant', show)
-      window.removeEventListener('toggle-tau-assistant', toggle)
+      window.removeEventListener(OPEN_ASSISTANT_EVENT, show)
+      window.removeEventListener(TOGGLE_ASSISTANT_EVENT, toggle)
       document.removeEventListener('keydown', key)
     }
   }, [openRef, setState, navigationRef])
@@ -217,7 +218,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       data-assistant-drag-handle={small || undefined}
       style={{ ...style, display: !open && !live ? 'none' : undefined }}
       className={clsx(
-        'tau-assistant-panel fixed z-[60] tau-glass rounded-2xl overflow-hidden flex flex-col transition-[left,top] duration-200 motion-reduce:transition-none max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
+        'ficus-assistant-panel fixed z-[60] ficus-glass rounded-2xl overflow-hidden flex flex-col transition-[left,top] duration-200 motion-reduce:transition-none max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
         small ? 'w-64 touch-none cursor-grab' : 'w-[42rem]',
         !small &&
           (viewing || stack.length > 0 ? 'h-[min(42rem,calc(100dvh-1rem))]' : 'h-[min(36rem,calc(100dvh-1rem))]')
@@ -237,7 +238,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
             }
           >
             <button
-              className="tau-button p-2 rounded-lg hover:bg-selection disabled:opacity-40"
+              className="ficus-button p-2 rounded-lg hover:bg-selection disabled:opacity-40"
               disabled={Boolean(voiceReason) || live || controls?.connecting || stack.length > 0}
               aria-label={controls?.connecting ? 'Starting voice chat' : 'Start voice chat'}
               onClick={() => {
@@ -249,7 +250,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
             </button>
           </span>
           <button
-            className="tau-button p-2 rounded-lg hover:bg-surface-hover"
+            className="ficus-button p-2 rounded-lg hover:bg-surface-hover"
             title={live ? 'Collapse assistant' : 'Close assistant'}
             onClick={() => (live ? setState('closed') : navigation.close())}
           >
@@ -259,11 +260,11 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       )}
       {!small && open && viewing && (
         <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-xs">
-          <button className="tau-button text-muted py-1" onClick={navigation.back}>
+          <button className="ficus-button text-muted py-1" onClick={navigation.back}>
             {navigation.entries.length > 1 ? '← Back' : '← Back to search'}
           </button>
           <button
-            className="tau-button text-muted ml-auto py-1"
+            className="ficus-button text-muted ml-auto py-1"
             disabled={live}
             title={live ? 'End voice before switching conversations' : undefined}
             onClick={() => {
@@ -272,7 +273,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
           >
             Recent chats
           </button>
-          <button className="tau-button text-accent-light p-1" disabled={live} onClick={newChat}>
+          <button className="ficus-button text-accent-light p-1" disabled={live} onClick={newChat}>
             <PlusIcon className="h-4 w-4" />
             <span className="sr-only">New chat</span>
           </button>
@@ -283,7 +284,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
           <MicIcon className="h-3.5 w-3.5 text-accent-light" />
           <span>Talking to Assistant · Type below to message the selected agent</span>
           <button
-            className="tau-button ml-auto shrink-0 text-accent-light"
+            className="ficus-button ml-auto shrink-0 text-accent-light"
             onClick={() => {
               setCompact(false)
               while (navigationRef.current.entries.length && navigationRef.current.entries.at(-1)?.kind !== 'assistant')
@@ -316,14 +317,14 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       {!small && open && !viewing && browse && (
         <div className="min-h-0 overflow-y-auto">
           <section className="px-5 pb-4 space-y-2">
-            <button className="tau-button py-2 text-xs text-muted" onClick={navigation.back}>
+            <button className="ficus-button py-2 text-xs text-muted" onClick={navigation.back}>
               ← Back to search
             </button>
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-medium text-muted">Recent chats</h2>
               {existing && (
                 <button
-                  className="tau-button text-xs text-accent-light"
+                  className="ficus-button text-xs text-accent-light"
                   onClick={() => navigation.push({ kind: 'assistant', id, label: 'Assistant' })}
                 >
                   Continue current chat
@@ -334,7 +335,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
               <input
                 aria-label="Search conversations"
                 placeholder="Search conversations…"
-                className="tau-field w-full px-3 py-2 text-sm"
+                className="ficus-field w-full px-3 py-2 text-sm"
                 value={search}
                 onChange={(event) => {
                   setSearch(event.target.value)
@@ -360,7 +361,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
                   hash: location.hash,
                 }}
                 aria-disabled={live}
-                className="tau-button block px-3 py-2 hover:bg-selection rounded-lg"
+                className="ficus-button block px-3 py-2 hover:bg-selection rounded-lg"
                 onClick={(event) => {
                   if (live) {
                     event.preventDefault()
@@ -400,7 +401,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
             ))}
             {!browse && ((recent.data?.conversations.length ?? 0) > 5 || recent.data?.hasMore) && (
               <button
-                className="tau-button text-xs text-muted"
+                className="ficus-button text-xs text-muted"
                 onClick={() => navigation.push({ kind: 'recent', id: 'recent', label: 'Recent chats' })}
               >
                 View all chats →

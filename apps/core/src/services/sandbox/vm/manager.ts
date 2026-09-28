@@ -15,11 +15,11 @@
  * box-manager (DB row + tunnel health + /healthz).
  *
  * ## What differs from k8s (documented seams)
- *  - `TAU_API_URL`: the box reaches Core over an SSH reverse tunnel by default
+ *  - `FICUS_API_URL`: the box reaches Core over an SSH reverse tunnel by default
  *    (`resolveBoxApiUrl(machine)`; a direct `APP_URL` is only its degraded
  *    fallback when the tunnel can't be established).
  *  - Spec drift: the running spec hash is baked into the box env
- *    (`TAU_BOX_SPEC_HASH`) and mirrored in memory. Unlike k8s (which reads the
+ *    (`FICUS_BOX_SPEC_HASH`) and mirrored in memory. Unlike k8s (which reads the
  *    live pod annotation), the in-memory mirror is empty after a Core restart,
  *    so the first drift check for a box this process never ensured returns
  *    `null` and the box is simply re-ensured — acceptable, and the box-manager
@@ -35,7 +35,7 @@
 import { createHash } from 'crypto'
 import { relative } from 'path'
 import type { IPty } from 'bun-pty'
-import type { SandboxPressure } from '@tau/shared'
+import type { SandboxPressure } from '@ficus/shared'
 import {
   getSquadIdFromSandbox,
   type ISandboxManager,
@@ -206,7 +206,7 @@ function roleFromSandboxId(sandboxId: string): BoxRole {
  * when callers disagree. They did: ensureWorkspaceSandbox (the per-turn
  * runner path) hardcodes 'agent' for every non-squad box while the vm
  * lifecycle recovery ensures the same `system_manager_<userId>` box as
- * 'system-manager', so the box flip-flopped identity — role, TAU_SANDBOX_ROLE
+ * 'system-manager', so the box flip-flopped identity — role, FICUS_SANDBOX_ROLE
  * (light vs heavy runtime), spec hash, and therefore the provisioning
  * marker — depending on which caller ensured it last, restarting its systemd
  * unit on each flip. A caller-provided sandboxType that disagrees with the
@@ -290,7 +290,7 @@ export interface VmSandboxManagerDeps {
    * Release THIS process's local forwards to a machine on shutdown — never the
    * shared ControlMaster itself. The master (one control socket per machine) is
    * shared by BOTH core processes (api + worker adopt the same socket) and
-   * carries the reverse forward whose remote port boxes baked into TAU_API_URL,
+   * carries the reverse forward whose remote port boxes baked into FICUS_API_URL,
    * so an `-O exit` here would sever the OTHER process's forwards and every
    * box's callback URL; ensureBox's healthy fast-path never re-pushes
    * server.env, leaving the boxes' CLI pointed at a dead port until a full
@@ -739,7 +739,7 @@ export class VmSandboxManager implements ISandboxManager {
               machineId: machine.id,
               env,
               role,
-              // NOT the bare specHash (that's also baked into env.TAU_BOX_SPEC_HASH
+              // NOT the bare specHash (that's also baked into env.FICUS_BOX_SPEC_HASH
               // above) — computeProvisioningMarker folds a hash of `env` in too, so
               // box-manager's PARKED-box resume fast path also busts on a rotated
               // secret, not only a bundle/role/provision-script change. See its doc.
@@ -817,7 +817,7 @@ export class VmSandboxManager implements ISandboxManager {
         authToken: boxAuthToken,
         workspacePath: opts.workspacePath,
         workRoot: boxWorkRoot(sandboxId, role),
-        apiUrl: env.TAU_API_URL ?? '',
+        apiUrl: env.FICUS_API_URL ?? '',
         lastActivityAt: ensuredAt,
         // The heartbeat write above just refreshed the row (regardless of which
         // box-manager path the ensure took), so the first persisted touch can
@@ -831,7 +831,7 @@ export class VmSandboxManager implements ISandboxManager {
         // The vm-wide always-on default (see vmBoxAlwaysOnDefault's doc) wins over
         // the caller's requested value — a box is always-on if EITHER the caller
         // opted in OR the runtime default policy is on (the common case today).
-        // Setting TAU_VM_BOX_PARK_ON_IDLE=true drops the OR down to the caller's
+        // Setting FICUS_VM_BOX_PARK_ON_IDLE=true drops the OR down to the caller's
         // own opts.k8s.alwaysOn, restoring pre-policy behavior exactly.
         alwaysOn: (opts.k8s?.alwaysOn ?? false) || vmBoxAlwaysOnDefault(),
         specHash,
@@ -967,7 +967,7 @@ export class VmSandboxManager implements ISandboxManager {
               devboxInvocationId: computeDevboxInstallInvocationId(sandboxId, role),
               gitInvocationId: stableSetupInvocationId('git_config', 'credential-helper'),
               squadId: opts.squadId ?? (sandboxId.startsWith('squad_') ? sandboxId.slice('squad_'.length) : undefined),
-              initialReasons: env.TAU_API_URL?.startsWith('http://127.0.0.1:') ? [] : ['callback_transport_degraded'],
+              initialReasons: env.FICUS_API_URL?.startsWith('http://127.0.0.1:') ? [] : ['callback_transport_degraded'],
               now: setupAttemptNow,
               leaseAlreadyHeld: true,
             },
@@ -1164,7 +1164,7 @@ export class VmSandboxManager implements ISandboxManager {
    * this process's local forwards — never `-O exit` on the shared ControlMaster.
    * The master is one adoptable control socket per machine shared by the api
    * AND worker processes, and it carries the reverse forward whose remote port
-   * boxes baked into TAU_API_URL; exiting it here would sever the other
+   * boxes baked into FICUS_API_URL; exiting it here would sever the other
    * process's live forwards and every box's callback port (which the healthy
    * ensure fast-path never re-bakes). Masters are MEANT to survive process
    * death — `ensureMaster` re-adopts them on restart. Genuine machine teardown
@@ -1204,10 +1204,10 @@ export class VmSandboxManager implements ISandboxManager {
   /**
    * Write the box's interactive `.tau/.bashrc` (devbox activation + `.env`
    * sourcing) so `spawnShell` terminals get the same env as the seeded `/bash`
-   * PATH. The box's devbox lives at `TAU_DEVBOX_DIR` (`~/.tau/devbox`), OUTSIDE
+   * PATH. The box's devbox lives at `FICUS_DEVBOX_DIR` (`~/.tau/devbox`), OUTSIDE
    * the shell cwd, so the bashrc activates it from there explicitly (see
    * {@link buildBashrcContent}'s `devboxDir`). The physical `<workRoot>/.tau/`
-   * target is under `TAU_BOX_HOME`, so the box server's path allow-list permits
+   * target is under `FICUS_BOX_HOME`, so the box server's path allow-list permits
    * it and it lands exactly where `shell.ts` reads it (`WORKSPACE_PATH/.tau/
    * .bashrc`). Non-fatal.
    */
@@ -1367,7 +1367,7 @@ export class VmSandboxManager implements ISandboxManager {
         rows,
         cwd: state.workRoot,
         useDevboxRc: true,
-        env: state.apiUrl ? { TAU_API_URL: state.apiUrl } : undefined,
+        env: state.apiUrl ? { FICUS_API_URL: state.apiUrl } : undefined,
       },
     })
     return new HttpPtyWrapper(stream, cols, rows)
@@ -1394,7 +1394,7 @@ export class VmSandboxManager implements ISandboxManager {
    * that marker folds in an env hash too — otherwise a rotated secret would
    * resume a box on stale credentials. Keeping the two hashes separate means a
    * caller asking "has the box's SPEC drifted" (this method — used by
-   * recreateSandbox's drift check, and baked into TAU_BOX_SPEC_HASH) never
+   * recreateSandbox's drift check, and baked into FICUS_BOX_SPEC_HASH) never
    * gets a false positive from an unrelated env/secret rotation.
    *
    * Role limitation (contract only): the {@link ISandboxManager} contract
@@ -1904,7 +1904,7 @@ export class VmSandboxManager implements ISandboxManager {
   }
 
   /**
-   * The live Core URL injected as `TAU_API_URL` for bash tool commands. Unlike
+   * The live Core URL injected as `FICUS_API_URL` for bash tool commands. Unlike
    * k8s (which derives a cluster-DNS URL from the pod namespace), a box already
    * baked its correct callback URL at ensure time, so we re-inject exactly that,
    * keeping the box's `tau` CLI pointed at the right Core even if it baked a
@@ -2042,7 +2042,7 @@ export class VmSandboxManager implements ISandboxManager {
 
   /**
    * Build the box's env, mirroring pod-spec.ts:225-272's derivation. The three
-   * box-layout vars (EXECUTOR_PORT/WORKSPACE_PATH/TAU_DEVBOX_DIR) are baked by
+   * box-layout vars (EXECUTOR_PORT/WORKSPACE_PATH/FICUS_DEVBOX_DIR) are baked by
    * box-manager itself and intentionally NOT set here.
    */
   private async buildBoxEnv(
@@ -2054,24 +2054,24 @@ export class VmSandboxManager implements ISandboxManager {
   ): Promise<BoxEnv> {
     const squadId = opts.squadId ?? getSquadIdFromSandbox(sandboxId) ?? ''
     const env: BoxEnv = {
-      TAU_SANDBOX_ID: sandboxId,
-      TAU_SANDBOX_UMASK: process.env.TAU_SANDBOX_UMASK || '0002',
-      // TAU_SANDBOX_ROLE gates the box's runtime (server.ts:ensureDocker + the
+      FICUS_SANDBOX_ID: sandboxId,
+      FICUS_SANDBOX_UMASK: process.env.FICUS_SANDBOX_UMASK || '0002',
+      // FICUS_SANDBOX_ROLE gates the box's runtime (server.ts:ensureDocker + the
       // 30s docker-wait). Mirror pod-spec.ts exactly: only the light 'agent' box
       // is 'agent'; squad AND system-manager both map to 'squad'. Absent, an agent
       // box would run the heavy squad path and stall on the docker wait.
-      TAU_SANDBOX_ROLE: resolveRole(sandboxId, opts) === 'agent' ? 'agent' : 'squad',
+      FICUS_SANDBOX_ROLE: resolveRole(sandboxId, opts) === 'agent' ? 'agent' : 'squad',
       // vm-specific: baked so the running spec hash is inspectable on the box
       // (read back from the in-memory mirror for drift; see getRunningSandboxSpecHash).
-      TAU_BOX_SPEC_HASH: specHash,
+      FICUS_BOX_SPEC_HASH: specHash,
     }
-    if (squadId) env.TAU_SQUAD_ID = squadId
+    if (squadId) env.FICUS_SQUAD_ID = squadId
 
-    // TAU_API_URL — the box reaches Core over an SSH reverse tunnel by default
+    // FICUS_API_URL — the box reaches Core over an SSH reverse tunnel by default
     // (resolveBoxApiUrl; a direct APP_URL is only its degraded fallback when the
     // tunnel can't be established). Resolved against the machine already picked
     // for THIS ensure, so the tunnel and the box land on the SAME machine.
-    env.TAU_API_URL = await timer.time('tunnel', () => this.deps.resolveBoxApiUrl(machine))
+    env.FICUS_API_URL = await timer.time('tunnel', () => this.deps.resolveBoxApiUrl(machine))
 
     const appUrl = this.deps.getAppUrl()
     if (appUrl) env.APP_URL = appUrl

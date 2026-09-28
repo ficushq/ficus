@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { useState } from 'react'
-import { createBlankWorkflow, createWorkflowRun, workflowPresetSchema, workflowDefinitionSchema } from '@tau/shared'
+import { createBlankWorkflow, createWorkflowRun, workflowPresetSchema, workflowDefinitionSchema } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { WorkflowGraph } from './WorkflowGraph'
 test('flow preview exposes step instructions, outcome routing, and paused status without claiming work is active', async () => {
@@ -83,7 +83,7 @@ test('a scoped wait marks only its active branch as waiting', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/flow-wait' })
   const root = dom.createRoot()
   try {
-    const wait = { flowAttemptId: 99 } as import('@tau/shared').WorkStreamWait
+    const wait = { flowAttemptId: 99 } as import('@ficus/shared').WorkStreamWait
     await dom.act(async () => root.root.render(<WorkflowGraph definition={definition} run={run} openWaits={[wait]} />))
     expect(dom.window.document.querySelector('button[aria-label="execute: Active"]')).not.toBeNull()
     await dom.act(async () =>

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 
 let domHarness: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
@@ -128,7 +128,7 @@ function action(overrides: Partial<PendingAction> = {}): PendingAction {
       workStreamId: 'ws-1',
       workStreamTitle: 'Review mobile behavior',
       squadId: 'squad-1',
-      squadName: 'Tau',
+      squadName: 'Ficus',
       assigneeAgentId: null,
       assigneeName: null,
       completionMode: 'pr-merge',

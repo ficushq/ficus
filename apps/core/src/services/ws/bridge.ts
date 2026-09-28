@@ -1,5 +1,5 @@
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import type { EventMap, CollectionTopic, InstanceTopic } from '@tau/shared'
+import type { EventMap, CollectionTopic, InstanceTopic } from '@ficus/shared'
 import type { WebSocketManager } from './manager'
 import { listAgentQuestionAttentionUserIds } from '../agents/questions'
 import { assistantInboxOwner } from '../assistant-inbox'

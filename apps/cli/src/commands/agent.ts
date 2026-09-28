@@ -17,7 +17,7 @@ function collect(value: string, previous: string[]): string[] {
 export function registerAgentCommands(program: Command) {
   const agent = program.command('agent').description('Manage agents')
 
-  // tau agent list [--type <agentTypeId>] [--status <status>] [--orphaned] [--older-than <duration>]
+  // ficus agent list [--type <agentTypeId>] [--status <status>] [--orphaned] [--older-than <duration>]
   agent
     .command('list')
     .description('List agents')
@@ -51,7 +51,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent get <id>
+  // ficus agent get <id>
   agent
     .command('get <id>')
     .alias('info')
@@ -65,7 +65,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent sandbox-status <id>
+  // ficus agent sandbox-status <id>
   agent
     .command('sandbox-status <id>')
     .description("Get live sandbox status for an agent's individual sandbox")
@@ -80,7 +80,7 @@ export function registerAgentCommands(program: Command) {
 
   registerSandboxProcessCommands(agent, 'agent')
 
-  // tau agent rename <id> <name>
+  // ficus agent rename <id> <name>
   agent
     .command('rename <id> <name>')
     .description('Rename an agent')
@@ -93,7 +93,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent persist <id> <true|false>
+  // ficus agent persist <id> <true|false>
   agent
     .command('persist <id> <value>')
     .description("Set an agent's persist flag (must be false before unspawn)")
@@ -109,7 +109,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent model <id> [spec] [--clear]
+  // ficus agent model <id> [spec] [--clear]
   agent
     .command('model <id> [spec]')
     .description(
@@ -138,7 +138,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent active <id>
+  // ficus agent active <id>
   agent
     .command('active <id>')
     .description('Get active execution for an agent')
@@ -151,7 +151,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent executions <id>
+  // ficus agent executions <id>
   agent
     .command('executions <id>')
     .description('List executions for an agent')
@@ -164,7 +164,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent messages <id> [options]
+  // ficus agent messages <id> [options]
   agent
     .command('messages <id>')
     .description('Show conversation messages for an agent')
@@ -212,7 +212,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent worker-log <id> [options] — condensed activity log
+  // ficus agent worker-log <id> [options] — condensed activity log
   agent
     .command('worker-log <id>')
     .description('Show condensed activity log for an agent (tool calls and key actions)')
@@ -286,7 +286,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent message <id> <content> [--follow-up] [--image <imageId>...]
+  // ficus agent message <id> <content> [--follow-up] [--image <imageId>...]
   agent
     .command('message <id> <content>')
     .description('Send a message to an agent')
@@ -304,7 +304,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent stop <id>
+  // ficus agent stop <id>
   agent
     .command('stop <id>')
     .description('Stop the active execution')
@@ -317,7 +317,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent force-stop <id> [--reason <reason>]
+  // ficus agent force-stop <id> [--reason <reason>]
   agent
     .command('force-stop <id>')
     .description('Forcibly terminate a stuck execution (use when stop fails)')
@@ -333,7 +333,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent abort-tool <id>
+  // ficus agent abort-tool <id>
   agent
     .command('abort-tool <id>')
     .description('Abort the currently running tool')
@@ -346,7 +346,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent compact <id> [--instructions <text>]
+  // ficus agent compact <id> [--instructions <text>]
   agent
     .command('compact <id>')
     .description('Trigger manual context compaction for an idle agent')
@@ -363,7 +363,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent steer <id> <message>
+  // ficus agent steer <id> <message>
   agent
     .command('steer <id> <message>')
     .description('Interrupt a running agent with a message (delivered after current tool)')
@@ -376,7 +376,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent follow-up <id> <message>
+  // ficus agent follow-up <id> <message>
   agent
     .command('follow-up <id> <message>')
     .description('Queue a message for after the agent finishes its current turn')
@@ -389,7 +389,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent reset <id>
+  // ficus agent reset <id>
   agent
     .command('reset <id>')
     .description('Reset agent session history (only works on idle agents)')
@@ -402,7 +402,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent context <id>
+  // ficus agent context <id>
   agent
     .command('context <id>')
     .description("Get agent's working context (short-term memory, todos, etc.)")
@@ -415,7 +415,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent delete <id>
+  // ficus agent delete <id>
   agent
     .command('delete <id>')
     .alias('rm')
@@ -429,7 +429,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent clear-queue <id>
+  // ficus agent clear-queue <id>
   agent
     .command('clear-queue <id>')
     .description('Clear all pending steer/follow-up messages for an agent')
@@ -442,7 +442,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent prune --orphaned — bulk delete orphaned agents
+  // ficus agent prune --orphaned — bulk delete orphaned agents
   agent
     .command('prune')
     .description('Bulk delete orphaned agents')
@@ -455,7 +455,7 @@ export function registerAgentCommands(program: Command) {
       try {
         if (!options.orphaned) {
           console.error('Error: --orphaned flag is required for safety')
-          console.error('Usage: tau agent prune --orphaned [--older-than 7d] [--force]')
+          console.error('Usage: ficus agent prune --orphaned [--older-than 7d] [--force]')
           process.exit(1)
         }
 
@@ -521,7 +521,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent continue <id> — resume a single agent halted by a provider/rate-limit error
+  // ficus agent continue <id> — resume a single agent halted by a provider/rate-limit error
   agent
     .command('continue <id>')
     .description('Resume an agent halted by a provider/rate-limit error')
@@ -575,7 +575,7 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // tau agent continue-halted — bulk-resume every halted agent you can run (after a provider recovers)
+  // ficus agent continue-halted — bulk-resume every halted agent you can run (after a provider recovers)
   agent
     .command('continue-halted')
     .description('Resume every error-halted agent you can run (use after a provider recovers)')

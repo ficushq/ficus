@@ -3,8 +3,8 @@ import { squadPresets } from '../../db'
 import { SQUAD_PRESETS_DIR } from '../../lib/paths'
 import { SquadPreset } from '../../entities/SquadPreset'
 import { ConfigSync } from './ConfigSync'
-import { workflowSourceSchema, squadPresetWorkflowsSchema } from '@tau/shared'
-import type { WorkStreamCompletionMode } from '@tau/shared'
+import { workflowSourceSchema, squadPresetWorkflowsSchema } from '@ficus/shared'
+import type { WorkStreamCompletionMode } from '@ficus/shared'
 
 export interface ScheduleTemplateYaml {
   name: string
@@ -22,7 +22,7 @@ export interface ScheduleTemplateYaml {
     description?: string
     assignee?: string
     completionMode?: WorkStreamCompletionMode
-    workflow?: import('@tau/shared').WorkflowSource
+    workflow?: import('@ficus/shared').WorkflowSource
   }
   schedule: {
     interval?: string
@@ -32,7 +32,7 @@ export interface ScheduleTemplateYaml {
 }
 
 export interface SquadPresetYaml {
-  workflows?: import('@tau/shared').SquadPresetWorkflows | null
+  workflows?: import('@ficus/shared').SquadPresetWorkflows | null
   id: string
   name: string
   description?: string

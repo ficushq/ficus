@@ -1,5 +1,5 @@
-import { validateThemePreference, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@tau/shared'
-import { isHttpResponseError } from '@tau/client-core'
+import { validateThemePreference, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@ficus/shared'
+import { isHttpResponseError } from '@ficus/client-core'
 import {
   clearCustomTheme,
   hashCustomThemeDocument,
@@ -9,10 +9,11 @@ import {
   persistPresetOwnerId,
 } from './custom'
 import { persistThemeSelection, type ThemeStorage } from './storage'
+import { LEGACY_THEME_LOCAL_OVERRIDE_STORAGE_KEY } from '@ficus/shared/browser-keys'
 
 /** Written by versions that let a device keep its own theme instead of following the account. Every device now
  * follows the account, so the flag is only removed. */
-export const LEGACY_LOCAL_OVERRIDE_KEY = 'tau-theme-local-override'
+export const LEGACY_LOCAL_OVERRIDE_KEY = LEGACY_THEME_LOCAL_OVERRIDE_STORAGE_KEY
 const DEFAULT: ThemePreference = {
   themeId: 'tau',
   appearance: 'light',

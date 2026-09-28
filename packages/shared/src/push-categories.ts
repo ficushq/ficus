@@ -1,5 +1,5 @@
 /**
- * The kinds of push a user can mute independently. Every push Tau sends to a person falls into
+ * The kinds of push a user can mute independently. Every push Ficus sends to a person falls into
  * exactly one of these; the notification service derives the category from the built event and
  * checks it against the user's muted list alongside the raw routing event name (kept so mutes
  * stored before categories existed keep working).

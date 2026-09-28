@@ -1,3 +1,4 @@
+import '../boot/legacy-env'
 import { MONOREPO_ROOT } from '../lib/paths'
 import { loadRootEnvForStandaloneScript, resolveRootEnvDatabaseUrl } from './load-root-env'
 import { runGuardedMigration } from './run-migrations-guard'
@@ -12,7 +13,7 @@ await runGuardedMigration(
     explicitDatabaseUrl,
     resolvedDatabaseUrl: process.env.DATABASE_URL,
     rootDatabaseUrl,
-    liveEnvValue: process.env.TAU_MIGRATE_LIVE,
+    liveEnvValue: process.env.FICUS_MIGRATE_LIVE,
     argv: process.argv,
   },
   // Keep connection and migrator modules behind the safety check so refusal

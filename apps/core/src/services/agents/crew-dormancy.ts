@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { LIVE_AGENT_STATUSES } from '@tau/shared'
+import { LIVE_AGENT_STATUSES } from '@ficus/shared'
 import { agents } from '../../db/schema'
 import type { DbHandle } from '../work-streams/waits'
 

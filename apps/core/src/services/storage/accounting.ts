@@ -1,4 +1,4 @@
-import type { StorageFolder, StorageSquad } from '@tau/shared'
+import type { StorageFolder, StorageSquad } from '@ficus/shared'
 
 export interface StorageOwner {
   home: string

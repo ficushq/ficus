@@ -1,6 +1,6 @@
 import { eq, inArray } from 'drizzle-orm'
 import { db, agentTypes } from '../db'
-import type { AgentType as AgentTypeJson, AgentTypeIntegrationPolicyV1 } from '@tau/shared'
+import type { AgentType as AgentTypeJson, AgentTypeIntegrationPolicyV1 } from '@ficus/shared'
 import type { InferSelectModel } from 'drizzle-orm'
 
 export type AgentTypeRow = InferSelectModel<typeof agentTypes>

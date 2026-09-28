@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type WorkflowSource } from '@tau/shared'
+import { type WorkflowSource } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { updateSquad } from '../../api/squads'
@@ -51,7 +51,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
         {canEdit && !editing && (
           <button
             type="button"
-            className="tau-button text-sm font-medium text-accent-light hover:text-accent-hover"
+            className="ficus-button text-sm font-medium text-accent-light hover:text-accent-hover"
             onClick={() => {
               setSource(saved ?? { kind: 'preset', id: 'solo', customizations: [] })
               setGuidance(setup?.guidance ?? '')
@@ -78,7 +78,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
           <label className="block text-sm">
             When to use different workflows
             <textarea
-              className="tau-field mt-2 w-full rounded-md border border-th-border bg-surface px-3 py-2 text-sm"
+              className="ficus-field mt-2 w-full rounded-md border border-th-border bg-surface px-3 py-2 text-sm"
               value={guidance}
               onChange={(event) => setGuidance(event.target.value)}
               maxLength={16000}
@@ -95,7 +95,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
                 <label className="block text-sm">
                   When to use alternative {index + 1}
                   <input
-                    className="tau-field w-full p-2 border border-th-border rounded-md"
+                    className="ficus-field w-full p-2 border border-th-border rounded-md"
                     value={choice.when}
                     onChange={(event) =>
                       setChoices(
@@ -123,7 +123,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
             ))}
             <button
               type="button"
-              className="tau-button text-sm font-medium text-accent-light hover:text-accent-hover"
+              className="ficus-button text-sm font-medium text-accent-light hover:text-accent-hover"
               disabled={choices.length >= 32 || save.isPending}
               onClick={() => setChoices([...choices, { when: '' }])}
             >
@@ -133,7 +133,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
           <div className="flex flex-wrap items-center gap-3 border-t border-th-border pt-4">
             <button
               type="button"
-              className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
+              className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
               disabled={save.isPending || !source || choices.some((choice) => !choice.when.trim() || !choice.source)}
               onClick={() => save.mutate()}
             >

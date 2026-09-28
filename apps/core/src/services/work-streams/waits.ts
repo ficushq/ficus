@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
-import type { WorkStreamWait, WorkStreamWaitResolution, WorkStreamWaitType } from '@tau/shared'
+import type { WorkStreamWait, WorkStreamWaitResolution, WorkStreamWaitType } from '@ficus/shared'
 import { db } from '../../db'
 import { workStreams, workStreamWaits } from '../../db/schema'
 

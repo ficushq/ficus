@@ -26,23 +26,23 @@ async function makeAuthStore() {
 }
 
 beforeEach(() => {
-  delete process.env.TAU_PASSWORD
-  delete process.env.TAU_API_URL
-  delete process.env.TAU_TOKEN
+  delete process.env.FICUS_PASSWORD
+  delete process.env.FICUS_API_URL
+  delete process.env.FICUS_TOKEN
 })
 
 afterEach(async () => {
   setSelectedBackend(undefined)
-  delete process.env.TAU_AUTH_STORE
-  delete process.env.TAU_PASSWORD
-  delete process.env.TAU_API_URL
-  delete process.env.TAU_TOKEN
+  delete process.env.FICUS_AUTH_STORE
+  delete process.env.FICUS_PASSWORD
+  delete process.env.FICUS_API_URL
+  delete process.env.FICUS_TOKEN
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
 describe('selected backend config', () => {
   it('uses the selected backend for API requests without changing active backend', async () => {
-    process.env.TAU_AUTH_STORE = await makeAuthStore()
+    process.env.FICUS_AUTH_STORE = await makeAuthStore()
     setSelectedBackend('local')
 
     expect(config.apiUrl).toBe('http://localhost:3000')
@@ -53,9 +53,9 @@ describe('selected backend config', () => {
   it('keeps a selected backend paired ahead of implicit dotenv', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'tau-backend-dotenv-'))
     tempDirs.push(dir)
-    await writeFile(join(dir, '.env'), 'TAU_API_URL=https://stale.example.com\nTAU_PASSWORD=stale-token\n')
+    await writeFile(join(dir, '.env'), 'FICUS_API_URL=https://stale.example.com\nFICUS_PASSWORD=stale-token\n')
     loadEnv({ cwd: dir })
-    process.env.TAU_AUTH_STORE = await makeAuthStore()
+    process.env.FICUS_AUTH_STORE = await makeAuthStore()
     setSelectedBackend('local')
 
     expect(config.apiUrl).toBe('http://localhost:3000')
@@ -63,10 +63,10 @@ describe('selected backend config', () => {
   })
 
   it('keeps a selected backend indivisible ahead of conflicting ambient credentials', async () => {
-    process.env.TAU_AUTH_STORE = await makeAuthStore()
-    process.env.TAU_TOKEN = 'ambient-sandbox-token'
-    process.env.TAU_PASSWORD = 'ambient-password'
-    process.env.TAU_API_URL = 'https://ambient.example.com'
+    process.env.FICUS_AUTH_STORE = await makeAuthStore()
+    process.env.FICUS_TOKEN = 'ambient-sandbox-token'
+    process.env.FICUS_PASSWORD = 'ambient-password'
+    process.env.FICUS_API_URL = 'https://ambient.example.com'
     setSelectedBackend('local')
 
     expect(config.apiUrl).toBe('http://localhost:3000')
@@ -76,26 +76,26 @@ describe('selected backend config', () => {
 
   // The production shape: Bun auto-loads ./.env into process.env before any user code runs,
   // so by the time loadEnv() executes the keys are already set. A stale repo .env must not
-  // outrank the active stored backend — that made `tau squad list` fail with an expired token.
+  // outrank the active stored backend — that made `ficus squad list` fail with an expired token.
   it('keeps the active backend ahead of a dotenv value Bun auto-loaded into the process', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'tau-backend-dotenv-'))
     tempDirs.push(dir)
     // Values unique to this file, so leftover bookkeeping from an earlier test cannot be what
     // makes this pass.
-    await writeFile(join(dir, '.env'), 'TAU_API_URL=https://preloaded.example.com\nTAU_PASSWORD=preloaded-token\n')
-    process.env.TAU_API_URL = 'https://preloaded.example.com'
-    process.env.TAU_PASSWORD = 'preloaded-token'
+    await writeFile(join(dir, '.env'), 'FICUS_API_URL=https://preloaded.example.com\nFICUS_PASSWORD=preloaded-token\n')
+    process.env.FICUS_API_URL = 'https://preloaded.example.com'
+    process.env.FICUS_PASSWORD = 'preloaded-token'
     loadEnv({ cwd: dir })
-    process.env.TAU_AUTH_STORE = await makeAuthStore()
+    process.env.FICUS_AUTH_STORE = await makeAuthStore()
 
     expect(config.apiUrl).toBe('https://work.example.com')
     expect(config.password).toBe('work-token')
   })
 
   it('uses explicit ambient credentials when no backend is selected', async () => {
-    process.env.TAU_AUTH_STORE = await makeAuthStore()
-    process.env.TAU_TOKEN = 'ambient-sandbox-token'
-    process.env.TAU_API_URL = 'https://ambient.example.com'
+    process.env.FICUS_AUTH_STORE = await makeAuthStore()
+    process.env.FICUS_TOKEN = 'ambient-sandbox-token'
+    process.env.FICUS_API_URL = 'https://ambient.example.com'
 
     expect(config.apiUrl).toBe('https://ambient.example.com')
     expect(config.password).toBe('ambient-sandbox-token')

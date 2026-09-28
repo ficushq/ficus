@@ -86,7 +86,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
   // route non-admins can't act on. useOnboarding() already runs app-wide via
   // OnboardingBanner in App.tsx, so this is a cache read, not an extra query.
   const { isAdmin: showOnboardingLink } = useOnboarding()
-  // On a platform-managed instance (TAU_MANAGED=1) self-updates cannot work —
+  // On a platform-managed instance (FICUS_MANAGED=1) self-updates cannot work —
   // the checkout has no GitHub credentials and the hosting platform's upgrade
   // job owns the lifecycle — so the Updates tab disappears entirely. Only
   // queried when the viewer could see the tab at all; `managed` is absent from
@@ -229,7 +229,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
       </div>
 
       {/* Push Notifications */}
-      <div className="tau-section py-5">
+      <div className="ficus-section py-5">
         <h4 data-setting-target="push-notifications" className="text-md font-medium text-primary mb-4">
           Push Notifications
         </h4>
@@ -253,7 +253,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
                 onClick={isSubscribed ? unsubscribe : subscribe}
                 disabled={permission === 'denied'}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
                   isSubscribed
                     ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300'
@@ -290,7 +290,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
                       </div>
                       <button
                         onClick={() => removeSubscription(sub.id)}
-                        className="tau-button text-sm text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 py-2 sm:py-0 font-medium"
+                        className="ficus-button text-sm text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 py-2 sm:py-0 font-medium"
                       >
                         Remove
                       </button>
@@ -307,7 +307,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
       <NotificationPreferences />
 
       {/* Notification Sounds */}
-      <div className="tau-section py-5">
+      <div className="ficus-section py-5">
         <h4 data-setting-target="notification-sounds" className="text-md font-medium text-primary mb-4">
           Notification Sounds
         </h4>
@@ -326,7 +326,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
               }
             }}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
               notificationSound.enabled
                 ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300'
@@ -379,7 +379,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
       </div>
 
       {/* PWA Installation */}
-      <div className="tau-section py-5">
+      <div className="ficus-section py-5">
         <h4 data-setting-target="app-installation" className="text-md font-medium text-primary mb-4">
           App Installation
         </h4>
@@ -387,17 +387,19 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
           {pwa.isStandalone ? (
             <div className="flex items-center gap-3 text-status-success-700 dark:text-status-success-400">
               <CheckIcon />
-              <span>Tau is installed on your device</span>
+              <span>Ficus is installed on your device</span>
             </div>
           ) : pwa.canInstall ? (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="font-medium text-primary">Install Tau</p>
-                <p className="text-sm text-muted">Add Tau to your home screen for quick access and offline support.</p>
+                <p className="font-medium text-primary">Install Ficus</p>
+                <p className="text-sm text-muted">
+                  Add Ficus to your home screen for quick access and offline support.
+                </p>
               </div>
               <button
                 onClick={pwa.promptInstall}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
+                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
               >
                 Install
               </button>
@@ -407,7 +409,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               <p className="font-medium text-primary mb-2">Install on iOS</p>
               <p className="text-sm text-muted">
                 Tap the share button <ShareIcon className="w-4 h-4 inline-block align-text-bottom" /> then "Add to Home
-                Screen" to install Tau.
+                Screen" to install Ficus.
               </p>
             </div>
           ) : (
@@ -423,12 +425,12 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               <div>
                 <p className="font-medium text-status-progress-900 dark:text-status-progress-200">Update Available</p>
                 <p className="text-sm text-status-progress-700 dark:text-status-progress-300">
-                  A new version of Tau is ready to install.
+                  A new version of Ficus is ready to install.
                 </p>
               </div>
               <button
                 onClick={pwa.applyUpdate}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
+                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
               >
                 Update Now
               </button>
@@ -445,7 +447,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
       </div>
 
       {/* Offline Cache */}
-      <div className="tau-section py-5">
+      <div className="ficus-section py-5">
         <h4 data-setting-target="offline-cache" className="text-md font-medium text-primary mb-4">
           Offline Cache
         </h4>
@@ -470,7 +472,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
             <button
               onClick={handleClearCache}
               disabled={isClearing || (cacheStats?.entryCount ?? 0) === 0}
-              className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isClearing ? 'Clearing...' : 'Clear Offline Cache'}
             </button>
@@ -612,7 +614,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
         <div>
           <h3 className="text-lg font-semibold text-primary">Account</h3>
         </div>
-        <div className="tau-section py-5">
+        <div className="ficus-section py-5">
           <p className="text-sm text-muted">
             Authentication is not enabled. Configure authentication in your deployment, then sign in to manage your
             account here.
@@ -630,7 +632,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
 
       {/* User Info */}
       {isPasskeyMode && user && (
-        <div className="tau-section py-5">
+        <div className="ficus-section py-5">
           <h4 data-setting-target="profile" className="text-md font-medium text-primary mb-4">
             Profile
           </h4>
@@ -658,12 +660,12 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                   }}
                   placeholder="User display name (optional)"
                   autoComplete="name"
-                  className="tau-field flex-1 px-3 py-2 text-sm rounded-md border border-input-border bg-input-bg text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 min-h-[44px] md:min-h-0"
+                  className="ficus-field flex-1 px-3 py-2 text-sm rounded-md border border-input-border bg-input-bg text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 min-h-[44px] md:min-h-0"
                 />
                 <button
                   type="submit"
                   disabled={profileMutation.isPending}
-                  className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {profileMutation.isPending ? 'Saving...' : 'Save display name'}
                 </button>
@@ -691,7 +693,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
 
       {/* Passkeys */}
       {isPasskeyMode && (
-        <div className="tau-section py-5">
+        <div className="ficus-section py-5">
           <h4 data-setting-target="passkeys" className="text-md font-medium text-primary mb-4">
             Passkeys
           </h4>
@@ -714,13 +716,13 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                           onChange={(e) => setRenameDraft(e.target.value)}
                           placeholder="Passkey name"
                           autoFocus
-                          className="tau-field w-full px-3 py-2 text-sm rounded-md border border-input-border bg-input-bg text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 min-h-[44px] md:min-h-0"
+                          className="ficus-field w-full px-3 py-2 text-sm rounded-md border border-input-border bg-input-bg text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 min-h-[44px] md:min-h-0"
                         />
                         <div className="flex gap-2">
                           <button
                             type="submit"
                             disabled={renameMutation.isPending}
-                            className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover disabled:opacity-50"
+                            className="ficus-button ficus-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover disabled:opacity-50"
                           >
                             {renameMutation.isPending ? 'Saving…' : 'Save'}
                           </button>
@@ -730,7 +732,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                               setRenamingId(null)
                               setRenameError(null)
                             }}
-                            className="tau-button px-3 py-1.5 text-xs text-muted hover:text-primary"
+                            className="ficus-button px-3 py-1.5 text-xs text-muted hover:text-primary"
                           >
                             Cancel
                           </button>
@@ -750,7 +752,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                         <button
                           onClick={() => startRename(cred.id, cred.displayName)}
                           aria-label={`Rename passkey ${credLabel}`}
-                          className="tau-button text-sm font-medium py-2 sm:py-0 text-accent-light hover:text-accent-hover"
+                          className="ficus-button text-sm font-medium py-2 sm:py-0 text-accent-light hover:text-accent-hover"
                           title="Rename passkey"
                         >
                           Rename
@@ -766,7 +768,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                           disabled={deleteMutation.isPending || credentials.length <= 1}
                           ariaLabel={`Remove passkey ${credLabel}`}
                           className={clsx(
-                            'tau-button',
+                            'ficus-button',
                             'text-sm font-medium py-2 sm:py-0',
                             credentials.length <= 1
                               ? 'text-placeholder cursor-not-allowed'
@@ -797,12 +799,12 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                 value={passkeyName}
                 onChange={(e) => setPasskeyName(e.target.value)}
                 placeholder="Passkey name (optional)"
-                className="tau-field flex-1 px-3 py-2 text-sm rounded-md border border-input-border bg-input-bg text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 min-h-[44px] md:min-h-0"
+                className="ficus-field flex-1 px-3 py-2 text-sm rounded-md border border-input-border bg-input-bg text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 min-h-[44px] md:min-h-0"
               />
               <button
                 onClick={handleAddPasskey}
                 disabled={isAdding}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isAdding ? 'Adding…' : 'Add Passkey'}
               </button>
@@ -817,7 +819,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
       )}
 
       {/* Logout, or Disconnect when this window is a paired remote instance */}
-      <div className="tau-section py-5 space-y-2">
+      <div className="ficus-section py-5 space-y-2">
         <div className="flex items-center justify-between">
           {remoteInstance ? (
             <>
@@ -825,7 +827,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               <button
                 onClick={() => void handleDisconnect()}
                 disabled={isDisconnecting}
-                className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
               </button>
@@ -835,7 +837,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               <p className="text-sm text-muted">Sign out of this device</p>
               <button
                 onClick={logout}
-                className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
+                className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
               >
                 Logout
               </button>
@@ -902,7 +904,7 @@ function SystemSection() {
 
       {can('settings:read') && <AgentExecutionSection />}
       {canReadRuntime && (
-        <div className="tau-section py-5">
+        <div className="ficus-section py-5">
           <h4 data-setting-target="maintenance-pause" className="text-md font-medium text-primary mb-4">
             Maintenance pause
           </h4>
@@ -930,7 +932,7 @@ function SystemSection() {
                     pauseMutation.mutate(active)
                   }
                 }}
-                className="tau-button px-4 py-2 rounded-md bg-status-attention-100 text-status-attention-900 hover:bg-status-attention-200 dark:bg-status-attention-900/30 dark:text-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50"
+                className="ficus-button px-4 py-2 rounded-md bg-status-attention-100 text-status-attention-900 hover:bg-status-attention-200 dark:bg-status-attention-900/30 dark:text-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50"
               >
                 {pauseMutation.isPending
                   ? 'Updating…'
@@ -945,7 +947,7 @@ function SystemSection() {
         </div>
       )}
 
-      <div className="tau-section py-5">
+      <div className="ficus-section py-5">
         <h4 data-setting-target="restart" className="text-md font-medium text-primary mb-4">
           Restart
         </h4>
@@ -972,7 +974,7 @@ function SystemSection() {
                 restartMutation.mutate()
               }}
               disabled={isRestarting}
-              className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isRestarting ? 'Restarting…' : 'Restart System'}
             </button>

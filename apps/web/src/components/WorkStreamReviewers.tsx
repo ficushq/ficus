@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
@@ -35,7 +35,7 @@ function ActiveWorkStreamReviewers({ stream }: { stream: WorkStream }) {
           {can('workstreams:update') && (
             <button
               type="button"
-              className="tau-button text-xs text-muted"
+              className="ficus-button text-xs text-muted"
               disabled={update.isPending}
               onClick={() => update.mutate(ids.filter((value) => value !== id))}
             >
@@ -50,7 +50,7 @@ function ActiveWorkStreamReviewers({ stream }: { stream: WorkStream }) {
       {can('workstreams:update') && (
         <select
           aria-label="Assign reviewer"
-          className="tau-field w-full rounded-md border border-th-border px-3 py-2"
+          className="ficus-field w-full rounded-md border border-th-border px-3 py-2"
           value=""
           disabled={isLoading || !!error || update.isPending || ids.length >= 64}
           onChange={(event) => {

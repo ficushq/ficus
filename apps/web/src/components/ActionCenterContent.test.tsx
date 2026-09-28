@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
@@ -134,12 +134,12 @@ describe('ActionCenterContent bulk continuation', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         canRespond: true,
         squadId: 'squad-1',
-        squadName: 'Tau',
+        squadName: 'Ficus',
         data: {
           workStreamId: 'ws-1',
           workStreamTitle: 'Choose an option',
           squadId: 'squad-1',
-          squadName: 'Tau',
+          squadName: 'Ficus',
           waitId: `legacy-${waitId}`,
           wait: {
             id: waitId,

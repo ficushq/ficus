@@ -1,5 +1,5 @@
-export type { EventMap } from '@tau/shared'
-import type { EventMap } from '@tau/shared'
+export type { EventMap } from '@ficus/shared'
+import type { EventMap } from '@ficus/shared'
 import { createLogger } from './logger'
 
 const log = createLogger('events')

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
-import { ConversationClientProvider } from '@tau/client-react'
+import { ConversationClientProvider } from '@ficus/client-react'
 import { WebSocketContext } from '../hooks/useWebSocket'
 
 const agent = {

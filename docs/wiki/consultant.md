@@ -59,7 +59,7 @@ Consultants are identified by `agentTypeId: 'consultant'` (used for web agents-v
 For tracked work, the Consultant creates a work stream owned by the squad manager and chooses an explicit workflow. The shared runner's current flow instructions supersede older up-front staffing advice in the base prompt.
 
 ```sh
-tau workstream create "<deliverable title>" -q {{squad.id}} -d "<goal + context>" \
+ficus workstream create "<deliverable title>" -q {{squad.id}} -d "<goal + context>" \
   --owner {{manager.id}} --workflow solo
 ```
 
@@ -73,7 +73,7 @@ Manually staffed streams without a workflow remain a legacy path. Their assignme
 
 ### Orchestration belongs to the manager
 
-For efforts larger than a single staffed work stream (parallel tracks, multi-phase design→build→review, cross-stream coordination), the Consultant does **not** orchestrate across its ephemeral session — it briefs the manager via an inbox message to `{{manager.id}}` (`tau inbox send`) describing the goal and the orchestration it envisions, and lets the manager (the standing orchestrator) set it up and run it. It may seed the obvious first work stream(s), but ongoing coordination always rests with the manager. The manager's full orchestration playbook is intentionally **not** copied into the consultant prompt.
+For efforts larger than a single staffed work stream (parallel tracks, multi-phase design→build→review, cross-stream coordination), the Consultant does **not** orchestrate across its ephemeral session — it briefs the manager via an inbox message to `{{manager.id}}` (`ficus inbox send`) describing the goal and the orchestration it envisions, and lets the manager (the standing orchestrator) set it up and run it. It may seed the obvious first work stream(s), but ongoing coordination always rests with the manager. The manager's full orchestration playbook is intentionally **not** copied into the consultant prompt.
 
 ### Owner-on-creation notification
 

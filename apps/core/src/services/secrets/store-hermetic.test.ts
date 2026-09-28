@@ -10,11 +10,11 @@ import { createGeneratedSecretEnvironmentFixture, SecretStore } from './store'
 describe('SecretStore test environment isolation', () => {
   const generatedKey = `CANARY_KEY_${randomUUID().replaceAll('-', '_')}`
   const generatedValue = `CANARY_SECRET_${randomUUID()}`
-  const originalEncryptionKey = process.env.TAU_ENCRYPTION_KEY
+  const originalEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
   const createdDbKeys = new Set<string>()
 
   beforeEach(() => {
-    process.env.TAU_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+    process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
     process.env[generatedKey] = generatedValue
     createdDbKeys.clear()
   })
@@ -22,8 +22,8 @@ describe('SecretStore test environment isolation', () => {
   afterEach(async () => {
     delete process.env[generatedKey]
     if (createdDbKeys.size > 0) await db.delete(secrets).where(inArray(secrets.key, [...createdDbKeys]))
-    if (originalEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = originalEncryptionKey
+    if (originalEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = originalEncryptionKey
   })
 
   test('shared preload rejects a generated sentinel inherited by a controlled child', () => {
@@ -41,10 +41,10 @@ describe('SecretStore test environment isolation', () => {
           PATH: process.env.PATH ?? '',
           HOME: '/tmp',
           NODE_ENV: 'test',
-          TAU_TEST_MODE: '1',
+          FICUS_TEST_MODE: '1',
           DATABASE_URL: databaseUrl,
           SECRET_BOUNDARY_REQUIRE_ISOLATED_DB: process.env.SECRET_BOUNDARY_REQUIRE_ISOLATED_DB ?? '0',
-          TAU_TEST_PARENT_SENTINEL_KEY: childKey,
+          FICUS_TEST_PARENT_SENTINEL_KEY: childKey,
           [childKey]: childValue,
         },
         stdout: 'pipe',
@@ -85,10 +85,10 @@ describe('SecretStore test environment isolation', () => {
           PATH: process.env.PATH ?? '',
           HOME: '/tmp',
           NODE_ENV: 'test',
-          TAU_TEST_MODE: '1',
+          FICUS_TEST_MODE: '1',
           DATABASE_URL: databaseUrl,
           SECRET_BOUNDARY_REQUIRE_ISOLATED_DB: process.env.SECRET_BOUNDARY_REQUIRE_ISOLATED_DB ?? '0',
-          TAU_TEST_PARENT_SENTINEL_KEY: 'GITHUB_TOKEN',
+          FICUS_TEST_PARENT_SENTINEL_KEY: 'GITHUB_TOKEN',
           GITHUB_TOKEN: childValue,
         },
         stdout: 'pipe',

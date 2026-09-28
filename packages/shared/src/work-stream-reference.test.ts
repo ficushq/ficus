@@ -8,7 +8,7 @@ test('work labels and links prefer public numbers', () => {
 test('notifications distinguish events without private content, with explicit previews', () => {
   expect(pushAlertText({ eventType: 'question', workStreamNumber: 42 })).toEqual({
     title: 'Work #42 needs your answer',
-    body: 'Open Tau to see details.',
+    body: 'Open Ficus to see details.',
   })
   expect(pushAlertText({ eventType: 'review' }).title).toBe('Work is ready for review')
   expect(pushAlertText({ eventType: 'done', workStreamNumber: 42 }).title).toBe('Work #42 completed')
@@ -18,7 +18,7 @@ test('notifications distinguish events without private content, with explicit pr
   })
   const request = {
     version: 1,
-    bindingToken: `tau_prd_${'a'.repeat(43)}`,
+    bindingToken: `ficus_prd_${'a'.repeat(43)}`,
     eventId: crypto.randomUUID(),
     routing: { eventType: 'question', workStreamNumber: 42 },
   }

@@ -1,4 +1,4 @@
-import type { SandboxToolchainStatus } from '@tau/shared'
+import type { SandboxToolchainStatus } from '@ficus/shared'
 import { KeyedSerialQueue } from '../../../lib/infra/inflight'
 import { createLogger } from '../../../lib/infra/logger'
 import type { ISandboxManager, SandboxOptions } from '../types'

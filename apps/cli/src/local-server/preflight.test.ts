@@ -122,7 +122,7 @@ describe('runPreflight', () => {
       responses: { 'docker info --format': { stdout: '{"runc":{}}' } },
     })
     const failures = (await runPreflight(opts({ runtime: 'docker-sysbox' }), d)).failures.join('\n')
-    expect(failures).toMatch(/tau server bootstrap-sysbox/)
+    expect(failures).toMatch(/ficus server bootstrap-sysbox/)
     expect(failures).toMatch(/docs\/wiki\/sandbox-runtimes\.md#installing-sysbox/)
   })
   it('gives WSL hosts without systemd the /etc/wsl.conf recipe before the runtime probe', async () => {
@@ -164,10 +164,10 @@ describe('runPreflight', () => {
     expect(r.warnings.join('\n')).toMatch(/tmux/)
     expect(r.warnings.join('\n')).toMatch(/browser/i)
   })
-  it('treats TAU_BROWSER_CHANNEL as configured (no browser warning when set)', async () => {
+  it('treats FICUS_BROWSER_CHANNEL as configured (no browser warning when set)', async () => {
     const rec = recordingRunner({})
     const injectedEnv: NodeJS.ProcessEnv = {
-      TAU_BROWSER_CHANNEL: 'chrome',
+      FICUS_BROWSER_CHANNEL: 'chrome',
       HOME: '/home/user',
     }
     const defaultDeps = defaultPreflightDeps('/r', rec.runner, injectedEnv)
@@ -178,7 +178,7 @@ describe('runPreflight', () => {
     }
     const r = await runPreflight(opts({}), d)
     expect(r.failures).toEqual([])
-    // When TAU_BROWSER_CHANNEL is set, browserPaths() returns ['channel:chrome'], so no browser warning
+    // When FICUS_BROWSER_CHANNEL is set, browserPaths() returns ['channel:chrome'], so no browser warning
     expect(r.warnings).toEqual([])
   })
   it('discovers Playwright-managed Chromium in cache directory', async () => {
@@ -215,8 +215,8 @@ describe('runPreflight', () => {
 
       const rec = recordingRunner({})
       const injectedEnv: NodeJS.ProcessEnv = {
-        TAU_BROWSER_EXECUTABLE_PATH: chromePath,
-        TAU_BROWSER_CHANNEL: 'chrome',
+        FICUS_BROWSER_EXECUTABLE_PATH: chromePath,
+        FICUS_BROWSER_CHANNEL: 'chrome',
         HOME: tmpDir,
       }
       const defaultDeps = defaultPreflightDeps('/r', rec.runner, injectedEnv)
@@ -228,7 +228,7 @@ describe('runPreflight', () => {
       rmSync(tmpDir, { recursive: true, force: true })
     }
   })
-  it('(b) TAU_BROWSER_EXECUTABLE_PATH pointing at a directory → not reported', async () => {
+  it('(b) FICUS_BROWSER_EXECUTABLE_PATH pointing at a directory → not reported', async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'tau-preflight-test-'))
     try {
       const dirPath = join(tmpDir, 'fake-app')
@@ -237,7 +237,7 @@ describe('runPreflight', () => {
 
       const rec = recordingRunner({})
       const injectedEnv: NodeJS.ProcessEnv = {
-        TAU_BROWSER_EXECUTABLE_PATH: dirPath,
+        FICUS_BROWSER_EXECUTABLE_PATH: dirPath,
         HOME: tmpDir,
       }
       const defaultDeps = defaultPreflightDeps('/r', rec.runner, injectedEnv)
@@ -249,10 +249,10 @@ describe('runPreflight', () => {
       rmSync(tmpDir, { recursive: true, force: true })
     }
   })
-  it('(c) TAU_BROWSER_CHANNEL=typo → ignored (falls through to probe list)', async () => {
+  it('(c) FICUS_BROWSER_CHANNEL=typo → ignored (falls through to probe list)', async () => {
     const rec = recordingRunner({})
     const injectedEnv: NodeJS.ProcessEnv = {
-      TAU_BROWSER_CHANNEL: 'invalid-channel-name',
+      FICUS_BROWSER_CHANNEL: 'invalid-channel-name',
       HOME: '/nonexistent/home',
     }
     const defaultDeps = defaultPreflightDeps('/r', rec.runner, injectedEnv)
@@ -261,10 +261,10 @@ describe('runPreflight', () => {
     // Invalid channel should be ignored; should not return channel: format
     expect(paths.some((p) => p.startsWith('channel:'))).toBe(false)
   })
-  it('(d) TAU_BROWSER_CHANNEL=chrome still reported', async () => {
+  it('(d) FICUS_BROWSER_CHANNEL=chrome still reported', async () => {
     const rec = recordingRunner({})
     const injectedEnv: NodeJS.ProcessEnv = {
-      TAU_BROWSER_CHANNEL: 'chrome',
+      FICUS_BROWSER_CHANNEL: 'chrome',
       HOME: '/nonexistent/home',
     }
     const defaultDeps = defaultPreflightDeps('/r', rec.runner, injectedEnv)

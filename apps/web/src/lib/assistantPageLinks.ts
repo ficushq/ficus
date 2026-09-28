@@ -1,4 +1,4 @@
-import type { RenderItem } from '@tau/client-core'
+import type { RenderItem } from '@ficus/client-core'
 import { navItems } from '../components/navModel'
 import { ALL_SECTIONS } from '../components/settings/settingsSections'
 import { SQUAD_SETTINGS_SECTIONS, SQUAD_TABS } from './squadNavigation'

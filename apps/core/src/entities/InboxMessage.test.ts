@@ -6,7 +6,7 @@ import { AgentType } from './AgentType'
 import { Agent, setSendMessageLockedHookForTests } from './Agent'
 import { InboxMessage, setBeforeRecipientLifecycleLockHookForTest } from './InboxMessage'
 import { makeDormant, terminate } from '../services/agent/lifecycle'
-import { SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@ficus/shared'
 import { Execution } from './Execution'
 import { Squad } from './Squad'
 import { User } from './User'
@@ -322,7 +322,7 @@ describe('InboxMessage', () => {
       expect(execs[0].message).toContain('unread message')
       expect(execs[0].message).toContain('Test wake message')
       expect(execs[0].message).toContain('system')
-      expect(execs[0].message).toContain('tau inbox read')
+      expect(execs[0].message).toContain('ficus inbox read')
 
       const messages = await InboxMessage.listUnread('agent', agentId)
       expect(messages).toHaveLength(1)

@@ -1,6 +1,6 @@
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, test } from 'bun:test'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { ReactQueryHooksProvider } from '../reactQueryHooks'
 import { AccountFeedVisit } from './FeedVisitSummary'

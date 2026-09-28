@@ -6,16 +6,16 @@ description: Connect a Slack, Discord, or Telegram bot and route its conversatio
 import ModeContent from '../../../components/ModeContent.astro'
 
 Chat channels let you ask about work and send requests to a squad from Slack,
-Discord, or Telegram. A consultant in Tau answers questions and can create work in the routed squad,
+Discord, or Telegram. A consultant in Ficus answers questions and can create work in the routed squad,
 using its configured tools and permissions. Create a squad and
 [connect its model provider](/configure/models/) before testing a conversation.
 
 ## Prepare your bot
 
-You need permission to configure the provider's bot or app and to manage Tau
+You need permission to configure the provider's bot or app and to manage Ficus
 integrations and channel routing. Open **Settings → Integrations**, enable the
 provider's card, and expand **Settings**. Each card holds one bot: paste the
-token the provider gives you, and Tau checks it, shows who the bot is, and
+token the provider gives you, and Ficus checks it, shows who the bot is, and
 registers the provider-side endpoints it can register for you.
 
 <ModeContent mode="cloud">
@@ -39,21 +39,21 @@ reachable only from your computer will not receive provider webhooks. Check
 ### Telegram
 
 Message **@BotFather**, send `/newbot`, and copy the bot token. Paste it into
-Tau's Telegram card and save. Tau validates the token, records the bot's id
+Ficus's Telegram card and save. Ficus validates the token, records the bot's id
 and username, and registers its webhook with Telegram using a generated
 secret; nothing else needs to be done on Telegram's side. Turning the card
 off removes the webhook.
 
 ### Slack
 
-1. On Tau's Slack card, choose **Download the Slack app manifest**. It already
-   contains your instance's address for the `/tau` command and event
-   subscriptions, and the bot scopes Tau needs.
+1. On Ficus's Slack card, choose **Download the Slack app manifest**. It already
+   contains your instance's address for the `/ficus` command and event
+   subscriptions, and the bot scopes Ficus needs.
 2. At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App
    → From an app manifest**, pick the workspace, paste the manifest, and create
    the app. Then **Install to Workspace**.
 3. Copy the app's **Bot User OAuth Token** (OAuth & Permissions) and **Signing
-   Secret** (Basic Information) into the Slack card and save. Tau confirms the
+   Secret** (Basic Information) into the Slack card and save. Ficus confirms the
    workspace and bot user.
 4. Invite the bot to the channels you want it to use.
 
@@ -65,8 +65,8 @@ Reinstall the Slack app after changing its scopes.
    create an application, open **Bot**, choose **Reset Token**, and copy the
    token. Under **Privileged Gateway Intents**, enable **Message Content
    Intent** for thread replies.
-2. Paste the token into Tau's Discord card and save. Tau validates it, records
-   the application id and public key, registers the `/tau` commands, and
+2. Paste the token into Ficus's Discord card and save. Ficus validates it, records
+   the application id and public key, registers the `/ficus` commands, and
    connects the bot.
 3. Slash commands work through the bot connection without a public endpoint.
    To use HTTP delivery instead, save the card’s **Interactions Endpoint URL**
@@ -78,7 +78,7 @@ Reinstall the Slack app after changing its scopes.
    generated link and add the bot to your server.
 5. Back on the card, choose the **server**. When the bot is in exactly one
    server it is picked for you. Commands registered to a chosen server appear
-   immediately. Tau also registers a global copy for private bot DMs, which
+   immediately. Ficus also registers a global copy for private bot DMs, which
    can take up to an hour to show.
 
 ## Route messages to a squad
@@ -94,24 +94,24 @@ Discord threads inherit their parent channel's routing override.
 
 ## Link your chat account
 
-By default, only linked Tau users can send requests through a bot. Linking proves
+By default, only linked Ficus users can send requests through a bot. Linking proves
 which account you control; it does not give you new squad permissions.
 
-1. Sign in to Tau and open **Settings → Account → Linked chat accounts**.
-2. Choose **Link a chat account** and copy the `/tau link CODE` command.
+1. Sign in to Ficus and open **Settings → Account → Linked chat accounts**.
+2. Choose **Link a chat account** and copy the `/ficus link CODE` command.
 3. Send it to the bot from your own external account. In Slack or Discord you can
-   also mention Tau with `link CODE`.
-4. Return to Tau. Check the provider, account name, and account ID shown, then
+   also mention Ficus with `link CODE`.
+4. Return to Ficus. Check the provider, account name, and account ID shown, then
    choose **Link this account**. Only confirm an account from which you sent the code.
 
 Codes expire after 10 minutes. Choose **Cancel** and start again if a code expires
 or you lose it. Use **Unlink** to remove a connection to your external account.
-Your Tau account needs permission to chat in the squad selected by the routing
-rule. Tau checks that permission on every incoming message.
+Your Ficus account needs permission to chat in the squad selected by the routing
+rule. Ficus checks that permission on every incoming message.
 
 ## Talk to different squads in a private chat
 
-Send `/tau help` at any time for the command menu; it does not require a selected
+Send `/ficus help` at any time for the command menu; it does not require a selected
 squad. Telegram also accepts `/help` and shorthand commands such as `/squad`.
 
 **Allow private chats** is enabled by default under each integration's **Channel
@@ -120,37 +120,37 @@ bot DMs, including commands and account linking, and stop replies from existing
 private conversations. Shared channels continue working. Turning it back on
 preserves saved squad selections and conversation history.
 
-Link your account, then send `/tau squad` in a private chat with the bot. Tau lists
-squads you have permission to chat in, using the same slugs as their Tau page URLs.
-Choose one with `/tau squad my-squad`. A full squad name or ID also works. Tau
+Link your account, then send `/ficus squad` in a private chat with the bot. Ficus lists
+squads you have permission to chat in, using the same slugs as their Ficus page URLs.
+Choose one with `/ficus squad my-squad`. A full squad name or ID also works. Ficus
 confirms the selection before you send your request.
 
 - **Telegram and Discord:** the selection applies to your private bot chat.
-  Switch again with `/tau squad another-squad`. Returning to a squad resumes its
+  Switch again with `/ficus squad another-squad`. Returning to a squad resumes its
   consultant conversation. Discord bot DMs do not support server-style threads.
-- **Slack:** each new message in the bot DM starts a reply thread. `/tau squad
+- **Slack:** each new message in the bot DM starts a reply thread. `/ficus squad
 my-squad` starts a thread for that squad. Continue by replying in the thread;
   no mention is needed for ordinary DM replies. To switch squads within the
-  thread, send `@Tau squad another-squad`. Slack does not allow custom slash
+  thread, send `@Ficus squad another-squad`. Slack does not allow custom slash
   commands inside threads. Each thread keeps its own selection and a separate
   conversation for every squad used there.
 
-In Telegram or Discord, `/squad my-squad` or the plain message `tau squad my-squad`
-also works. In Slack threads, `tau squad my-squad` works without a mention too.
+In Telegram or Discord, `/squad my-squad` or the plain message `ficus squad my-squad`
+also works. In Slack threads, `ficus squad my-squad` works without a mention too.
 This is useful while Discord's native DM commands are still propagating.
 
 Squad switching requires a linked account, even if the chat is trusted. It does
 not change administrator routing for group chats or server channels. Existing
 work can still send updates after you switch.
-Tau keeps each squad's history separate instead of importing the whole private
+Ficus keeps each squad's history separate instead of importing the whole private
 chat. Permission changes apply to new messages and delayed replies, and unlinking
 removes your saved selections and conversation bindings.
 
 ### Trust a channel instead
 
 An administrator can enter specific **Trusted channel IDs** in the provider's
-routing settings. Everyone who can send messages to Tau in one of those channels
-can direct the squad's agents without linking a Tau account. For Discord, trusting
+routing settings. Everyone who can send messages to Ficus in one of those channels
+can direct the squad's agents without linking a Ficus account. For Discord, trusting
 a parent channel also covers its threads. Keep this list empty to require linked
 users everywhere.
 
@@ -160,22 +160,22 @@ choose the audience accordingly. Changing routing does not make a channel privat
 
 ## Test and continue a conversation
 
-Use **Copy** beside the linking command to copy the complete `/tau link CODE`
+Use **Copy** beside the linking command to copy the complete `/ficus link CODE`
 command when connecting an account.
 
-Send `/tau help` to check connectivity; help works before linking. After linking,
-send `/tau ask What is this squad working on?`.
+Send `/ficus help` to check connectivity; help works before linking. After linking,
+send `/ficus ask What is this squad working on?`.
 
-- **Slack channels:** start `/tau` in the channel composer. Mention the bot in its reply
+- **Slack channels:** start `/ficus` in the channel composer. Mention the bot in its reply
   thread to continue; ordinary unmentioned thread replies are ignored.
-- **Discord server channels:** use `/tau` or mention the bot. Mention it again in the thread for
+- **Discord server channels:** use `/ficus` or mention the bot. Mention it again in the thread for
   follow-ups, or use a slash command in that thread.
 - **Telegram:** messages in a private bot chat continue the selected squad’s conversation.
-  In a group, use `/tau` or reply to a bot message.
+  In a group, use `/ficus` or reply to a bot message.
 
-Tau uses a consultant for these conversations, with tools to reply and post
+Ficus uses a consultant for these conversations, with tools to reply and post
 updates to the originating channel. Questions are asked there, rather than in a
-separate Tau question form. Existing channel conversation history is retained.
+separate Ficus question form. Existing channel conversation history is retained.
 
 If there is no reply, check the card: the integration switch, the
 **Connection** status (a rejected token is explained there), the default
@@ -186,9 +186,9 @@ If the request arrives but the agent cannot answer, check the squad's model
 provider. To send work updates into this chat, configure
 [notifications](/connect/notifications/) separately.
 
-### Use a bot with one Tau instance
+### Use a bot with one Ficus instance
 
-Use a separate Telegram bot token for each Tau instance. Telegram stores one
+Use a separate Telegram bot token for each Ficus instance. Telegram stores one
 webhook destination per bot: configuring the same token on another instance
 replaces that destination. Turning either copy off can also remove the shared
 webhook. A healthy token alone does not prove messages are reaching this instance.
@@ -197,13 +197,13 @@ webhook. A healthy token alone does not prove messages are reaching this instanc
 
 For Slack and Discord, open **Settings → Integrations**, then the provider's
 **Channel routing and access** section. Enter channel IDs under **Allowed channel
-IDs** with **Add allowed channel** to restrict Tau to those channels. Leave it empty to allow all channels.
+IDs** with **Add allowed channel** to restrict Ficus to those channels. Leave it empty to allow all channels.
 Use **Denied channel IDs** for exclusions; denials take precedence over allowlists
 and trusted channels. Use the remove control beside a row to delete that ID,
 and **Add trusted channel** to add an explicit trust exception. Save the policy
 when finished.
 
-Threads follow their parent channel's policy. The same lists apply to private DM IDs; if you restrict allowed channels, include the DMs you want to permit. Tau ignores excluded channels,
+Threads follow their parent channel's policy. The same lists apply to private DM IDs; if you restrict allowed channels, include the DMs you want to permit. Ficus ignores excluded channels,
 including help and linking requests, and stops sending delayed replies or squad
 notifications there. Users still need their linked account's squad chat permission
 unless the channel is explicitly trusted.

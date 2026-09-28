@@ -1,9 +1,9 @@
-import type { EffectiveAppearance, ThemeInsightsVariant } from '@tau/shared'
+import type { EffectiveAppearance, ThemeInsightsVariant } from '@ficus/shared'
 import { tokenRgba } from './contrast'
 
 /** The small, model-facing set of "at a glance" colors — enough to judge
  * warmth/contrast/accent without walking the whole token grid. Keys match
- * `themeInsightsVariantSchema`'s `keyColors` enum in `@tau/shared`. */
+ * `themeInsightsVariantSchema`'s `keyColors` enum in `@ficus/shared`. */
 const KEY_COLOR_TOKENS: Record<string, string> = {
   primary: '--color-primary',
   surface: '--color-bg-surface',

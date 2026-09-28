@@ -10,9 +10,9 @@ export function setSelectedBackend(label: string | undefined) {
 }
 
 /**
- * True inside a shell the Tau runtime built for an agent (the sandbox/host
- * runtime injects TAU_AGENT_CONTEXT=1 alongside the agent's own TAU_API_URL,
- * TAU_TOKEN and TAU_AUTH_STORE).
+ * True inside a shell the Ficus runtime built for an agent (the sandbox/host
+ * runtime injects FICUS_AGENT_CONTEXT=1 alongside the agent's own FICUS_API_URL,
+ * FICUS_TOKEN and FICUS_AUTH_STORE).
  *
  * On the host runtime an agent runs as the operator's unix user, with the
  * operator's $HOME — so every fallback below (the auth store, the dotenv
@@ -21,7 +21,7 @@ export function setSelectedBackend(label: string | undefined) {
  * fails closed instead of falling back.
  */
 export function isAgentContext(): boolean {
-  return process.env.TAU_AGENT_CONTEXT === '1'
+  return process.env.FICUS_AGENT_CONTEXT === '1'
 }
 
 /** `--backend` names a stored human login, which an agent shell may never assume. */
@@ -34,38 +34,38 @@ function getSelectedBackend() {
   if (!selectedBackendLabel) return undefined
   const store = loadAuthStore()
   const backend = store.backends[selectedBackendLabel]
-  if (!backend) throw new Error(`Unknown Tau backend '${selectedBackendLabel}'`)
+  if (!backend) throw new Error(`Unknown Ficus backend '${selectedBackendLabel}'`)
   return { label: selectedBackendLabel, backend }
 }
 
 /** The instance an agent shell was pointed at. Raw env: no dotenv heuristic, no store. */
 function requireAgentApiUrl(): string {
-  const apiUrl = process.env.TAU_API_URL
+  const apiUrl = process.env.FICUS_API_URL
   if (!apiUrl)
     throw new Error(
-      'This is an agent shell (TAU_AGENT_CONTEXT=1) but TAU_API_URL is not set, so there is no instance to talk to.'
+      'This is an agent shell (FICUS_AGENT_CONTEXT=1) but FICUS_API_URL is not set, so there is no instance to talk to.'
     )
   return apiUrl
 }
 
 /** The agent's own scoped token. Raw env: no dotenv heuristic, no store. */
 function requireAgentToken(): string {
-  const token = process.env.TAU_TOKEN
+  const token = process.env.FICUS_TOKEN
   if (!token)
     throw new Error(
-      'This is an agent shell (TAU_AGENT_CONTEXT=1) but the agent token TAU_TOKEN is absent; ' +
-        'tau will not fall back to a human login.'
+      'This is an agent shell (FICUS_AGENT_CONTEXT=1) but the agent token FICUS_TOKEN is absent; ' +
+        'ficus will not fall back to a human login.'
     )
   return token
 }
 
 /** Webhook scripts run as the host user but must never borrow that user's backend. */
 function webhookAuth(): ResolvedAuth | undefined {
-  if (process.env.TAU_WEBHOOK_CONTEXT !== '1') return undefined
+  if (process.env.FICUS_WEBHOOK_CONTEXT !== '1') return undefined
   if (selectedBackendLabel) throw new Error('`--backend` cannot override a webhook script’s injected identity')
-  const apiUrl = process.env.TAU_API_URL ?? ''
-  const credential = process.env.TAU_TOKEN || process.env.TAU_PASSWORD
-  const missing = [...(!apiUrl ? ['TAU_API_URL'] : []), ...(!credential ? ['TAU_TOKEN or TAU_PASSWORD'] : [])]
+  const apiUrl = process.env.FICUS_API_URL ?? ''
+  const credential = process.env.FICUS_TOKEN || process.env.FICUS_PASSWORD
+  const missing = [...(!apiUrl ? ['FICUS_API_URL'] : []), ...(!credential ? ['FICUS_TOKEN or FICUS_PASSWORD'] : [])]
   return {
     source: 'webhook-context',
     apiUrl,
@@ -75,15 +75,15 @@ function webhookAuth(): ResolvedAuth | undefined {
 }
 
 /**
- * Read TAU_PASSWORD from env var, active auth store backend, or mounted K8s Secret file.
+ * Read FICUS_PASSWORD from env var, active auth store backend, or mounted K8s Secret file.
  * In sandbox pods, the password is mounted at /etc/tau/password
  * and auto-updated by K8s when the secret changes.
  */
 function getPassword(): string {
   if (webhookAuth()) {
-    const credential = process.env.TAU_TOKEN || process.env.TAU_PASSWORD
+    const credential = process.env.FICUS_TOKEN || process.env.FICUS_PASSWORD
     if (!credential)
-      throw new Error('Webhook credential missing: inject TAU_TOKEN or TAU_PASSWORD; no human login fallback')
+      throw new Error('Webhook credential missing: inject FICUS_TOKEN or FICUS_PASSWORD; no human login fallback')
     return credential
   }
   if (isAgentContext()) {
@@ -91,17 +91,17 @@ function getPassword(): string {
     return requireAgentToken()
   }
   // A per-agent scoped token (injected into the sandbox bash environment as
-  // TAU_TOKEN) takes precedence so an agent's `tau` commands authenticate AS that
-  // agent (RBAC squad-scoped) rather than via the shared TAU_PASSWORD.
+  // FICUS_TOKEN) takes precedence so an agent's `ficus` commands authenticate AS that
+  // agent (RBAC squad-scoped) rather than via the shared FICUS_PASSWORD.
   const selectedBackend = getSelectedBackend()
   if (selectedBackend) return selectedBackend.backend.password
-  const explicitToken = getExplicitEnv('TAU_TOKEN')
+  const explicitToken = getExplicitEnv('FICUS_TOKEN')
   if (explicitToken) return explicitToken
-  const explicitPassword = getExplicitEnv('TAU_PASSWORD')
+  const explicitPassword = getExplicitEnv('FICUS_PASSWORD')
   if (explicitPassword) return explicitPassword
   const activeBackend = getActiveBackend(loadAuthStore())
   if (activeBackend) return activeBackend.backend.password
-  const dotenvPassword = getDotenvEnv('TAU_PASSWORD')
+  const dotenvPassword = getDotenvEnv('FICUS_PASSWORD')
   if (dotenvPassword) return dotenvPassword
   const secretPath = '/etc/tau/password'
   if (existsSync(secretPath)) {
@@ -113,7 +113,7 @@ function getPassword(): string {
 function getApiUrl(): string {
   const webhook = webhookAuth()
   if (webhook) {
-    if (!webhook.apiUrl) throw new Error('Webhook TAU_API_URL is missing; no saved backend fallback')
+    if (!webhook.apiUrl) throw new Error('Webhook FICUS_API_URL is missing; no saved backend fallback')
     return webhook.apiUrl
   }
   if (isAgentContext()) {
@@ -122,21 +122,21 @@ function getApiUrl(): string {
   }
   const selectedBackend = getSelectedBackend()
   if (selectedBackend) return selectedBackend.backend.apiUrl
-  const explicitApiUrl = getExplicitEnv('TAU_API_URL')
+  const explicitApiUrl = getExplicitEnv('FICUS_API_URL')
   if (explicitApiUrl) return explicitApiUrl
   const activeBackend = getActiveBackend(loadAuthStore())
   if (activeBackend) return activeBackend.backend.apiUrl
-  return getDotenvEnv('TAU_API_URL') ?? 'http://localhost:3000'
+  return getDotenvEnv('FICUS_API_URL') ?? 'http://localhost:3000'
 }
 
 export type AuthSource =
   | 'webhook-context' // instance-bound identity injected into webhook scripts
-  | 'agent-context' // TAU_AGENT_CONTEXT=1: the identity the runtime injected into this agent shell
+  | 'agent-context' // FICUS_AGENT_CONTEXT=1: the identity the runtime injected into this agent shell
   | 'selected-backend' // --backend <label>
-  | 'env-token' // TAU_TOKEN (per-agent scoped token injected into a sandbox)
-  | 'env-password' // TAU_PASSWORD set explicitly in the environment
-  | 'auth-store' // the active `tau auth login` backend
-  | 'dotenv' // TAU_PASSWORD from a .env file
+  | 'env-token' // FICUS_TOKEN (per-agent scoped token injected into a sandbox)
+  | 'env-password' // FICUS_PASSWORD set explicitly in the environment
+  | 'auth-store' // the active `ficus auth login` backend
+  | 'dotenv' // FICUS_PASSWORD from a .env file
   | 'secret-file' // /etc/tau/password (mounted K8s Secret)
   | 'none'
 
@@ -148,7 +148,7 @@ export interface ResolvedAuth {
   agentId?: string
   /**
    * Identity variables an agent shell is missing. Reporting is deliberately
-   * non-throwing: `tau whoami` / `tau auth status` exist to diagnose exactly this
+   * non-throwing: `ficus whoami` / `ficus auth status` exist to diagnose exactly this
    * state, so they must be able to describe a broken agent shell rather than
    * exit on it. Applying the credential (config.apiUrl/config.password) still throws.
    */
@@ -158,10 +158,10 @@ export interface ResolvedAuth {
 }
 
 /**
- * Which credential `tau` is ACTUALLY using — the same precedence as
- * `config.password`, reported rather than applied. Lets `tau auth status` be
+ * Which credential `ficus` is ACTUALLY using — the same precedence as
+ * `config.password`, reported rather than applied. Lets `ficus auth status` be
  * truthful inside sandboxes, where agents authenticate via the injected
- * TAU_TOKEN and have no auth-store backend at all (the old "No active Tau
+ * FICUS_TOKEN and have no auth-store backend at all (the old "No active Ficus
  * backend configured" there read as "not logged in" while every command worked).
  */
 export function resolveAuth(): ResolvedAuth {
@@ -169,11 +169,11 @@ export function resolveAuth(): ResolvedAuth {
   if (webhook) return webhook
   if (isAgentContext()) {
     refuseSelectedBackendInAgentContext()
-    const missing = (['TAU_API_URL', 'TAU_TOKEN'] as const).filter((key) => !process.env[key])
+    const missing = (['FICUS_API_URL', 'FICUS_TOKEN'] as const).filter((key) => !process.env[key])
     return {
       source: 'agent-context',
-      apiUrl: process.env.TAU_API_URL ?? '',
-      ...(process.env.TAU_AGENT_ID ? { agentId: process.env.TAU_AGENT_ID } : {}),
+      apiUrl: process.env.FICUS_API_URL ?? '',
+      ...(process.env.FICUS_AGENT_ID ? { agentId: process.env.FICUS_AGENT_ID } : {}),
       ...(missing.length > 0 ? { missing: [...missing] } : {}),
       authenticated: missing.length === 0,
     }
@@ -181,11 +181,11 @@ export function resolveAuth(): ResolvedAuth {
   const apiUrl = getApiUrl()
   const selectedBackend = getSelectedBackend()
   if (selectedBackend) return { source: 'selected-backend', label: selectedBackend.label, apiUrl, authenticated: true }
-  if (getExplicitEnv('TAU_TOKEN')) return { source: 'env-token', apiUrl, authenticated: true }
-  if (getExplicitEnv('TAU_PASSWORD')) return { source: 'env-password', apiUrl, authenticated: true }
+  if (getExplicitEnv('FICUS_TOKEN')) return { source: 'env-token', apiUrl, authenticated: true }
+  if (getExplicitEnv('FICUS_PASSWORD')) return { source: 'env-password', apiUrl, authenticated: true }
   const activeBackend = getActiveBackend(loadAuthStore())
   if (activeBackend) return { source: 'auth-store', label: activeBackend.label, apiUrl, authenticated: true }
-  if (getDotenvEnv('TAU_PASSWORD')) return { source: 'dotenv', apiUrl, authenticated: true }
+  if (getDotenvEnv('FICUS_PASSWORD')) return { source: 'dotenv', apiUrl, authenticated: true }
   if (existsSync('/etc/tau/password')) return { source: 'secret-file', apiUrl, authenticated: true }
   return { source: 'none', apiUrl, authenticated: false }
 }

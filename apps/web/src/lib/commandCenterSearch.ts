@@ -1,4 +1,4 @@
-import type { Agent, PendingAction, Squad, WorkStream } from '@tau/shared'
+import type { Agent, PendingAction, Squad, WorkStream } from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
 import { getAgentPurpose, getAgentName } from './agentDisplay'
 import { matchesSetting, settingMatchRank } from '../components/settings/settingsSearch'

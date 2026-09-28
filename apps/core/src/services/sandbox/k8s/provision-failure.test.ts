@@ -120,11 +120,11 @@ describe('classifyProvisionFailure', () => {
 
 describe('parseProvisionConfig', () => {
   test('parses positive integer settings', () => {
-    expect(parseProvisionConfig({ TAU_K8S_PROVISION_MAX_CONCURRENT: '7' }).maxConcurrent).toBe(7)
+    expect(parseProvisionConfig({ FICUS_K8S_PROVISION_MAX_CONCURRENT: '7' }).maxConcurrent).toBe(7)
   })
 
   test.each(['0', '-1', 'nope', '1.5', ''])('uses defaults for invalid value %p', (value) => {
-    expect(parseProvisionConfig({ TAU_K8S_PROVISION_MAX_WAITERS: value }).maxWaiters).toBe(
+    expect(parseProvisionConfig({ FICUS_K8S_PROVISION_MAX_WAITERS: value }).maxWaiters).toBe(
       DEFAULT_PROVISION_CONFIG.maxWaiters
     )
   })

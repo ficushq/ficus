@@ -130,7 +130,7 @@ export function ensureSquadSshDir(squadId: string): string {
 
 /**
  * Prefix reserved for `apps/core/src/services/remote-hosts/materialize.ts`'s
- * `tau_remote_<hostName>` key files. That module's stale-sweep unlinks ANY
+ * `ficus_remote_<hostName>` key files. That module's stale-sweep unlinks ANY
  * file under this prefix that isn't in the squad's current grant set on
  * every materialize call (which runs on every VM box ensure) — so a
  * user-uploaded key sharing this prefix would be silently destroyed on the
@@ -138,7 +138,23 @@ export function ensureSquadSshDir(squadId: string): string {
  * constant is exported so `materialize.ts` derives its own filenames from
  * the same source instead of duplicating the literal.
  */
-export const REMOTE_HOST_KEY_PREFIX = 'tau_remote_'
+export const REMOTE_HOST_KEY_PREFIX = 'ficus_remote_'
+
+/**
+ * The prefix materialized remote-host key files had before the Ficus rename.
+ * It stays reserved, and materialize deletes every file under it, so a
+ * private key for a grant revoked after the upgrade is never left on disk or
+ * listed as an uploaded squad key (K2; removed by the Wave 3 sweep).
+ */
+export const LEGACY_REMOTE_HOST_KEY_PREFIX = 'tau_remote_'
+
+/** Every prefix whose files materialize owns: the current one and the pre-rename one. */
+export const RESERVED_REMOTE_HOST_KEY_PREFIXES = [REMOTE_HOST_KEY_PREFIX, LEGACY_REMOTE_HOST_KEY_PREFIX] as const
+
+/** The reserved remote-host key prefix a name starts with, if any. */
+function reservedRemoteHostKeyPrefix(name: string): string | undefined {
+  return RESERVED_REMOTE_HOST_KEY_PREFIXES.find((prefix) => name.startsWith(prefix))
+}
 
 /**
  * Validate key name (alphanumeric with _ or -)
@@ -153,8 +169,9 @@ function validateKeyName(keyName: string): void {
   }
   // Prevent collision with materialized remote-host key files (see
   // REMOTE_HOST_KEY_PREFIX doc comment).
-  if (keyName.startsWith(REMOTE_HOST_KEY_PREFIX)) {
-    throw new Error(`Key name cannot use the reserved "${REMOTE_HOST_KEY_PREFIX}" prefix`)
+  const reserved = reservedRemoteHostKeyPrefix(keyName)
+  if (reserved) {
+    throw new Error(`Key name cannot use the reserved "${reserved}" prefix`)
   }
 }
 
@@ -323,7 +340,7 @@ export async function listSshKeys(squadId: string): Promise<SshKeyInfo[]> {
       // Materialized remote-host key files aren't uploaded squad keys — they're
       // managed entirely by remote-hosts/materialize.ts and would otherwise show
       // up as phantom entries a user could try (and fail) to delete via this API.
-      !f.startsWith(REMOTE_HOST_KEY_PREFIX)
+      !reservedRemoteHostKeyPrefix(f)
   )
 
   return keyNames.map((name) => {

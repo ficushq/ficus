@@ -85,7 +85,7 @@ without `--registry-auth`.
 exe new --image=ghcr.io/ficushq/ficus-machine:latest
 ```
 
-The exe provider passes this via `TAU_EXE_MACHINE_IMAGE`
+The exe provider passes this via `FICUS_EXE_MACHINE_IMAGE`
 (default `ghcr.io/ficushq/ficus-machine:latest`).
 
 On a VM booted from this image, bootstrap.sh detects `/opt/tau/prebaked` and

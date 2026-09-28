@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { useState } from 'react'
-import { createBlankWorkflow, workflowDefinitionSchema } from '@tau/shared'
+import { createBlankWorkflow, workflowDefinitionSchema } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { WorkflowStructureEditor } from './WorkflowStructureEditor'
 

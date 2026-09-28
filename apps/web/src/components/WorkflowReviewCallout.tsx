@@ -10,8 +10,8 @@ import {
   type WorkflowStep,
   type WorkflowTransition,
   type WorkStream,
-} from '@tau/shared'
-import type { WorkflowRunDetail as RunDetail } from '@tau/client-core'
+} from '@ficus/shared'
+import type { WorkflowRunDetail as RunDetail } from '@ficus/client-core'
 import { client } from '../api/clientInstance'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { usePermissions } from '../hooks/usePermissions'
@@ -156,7 +156,7 @@ function HumanGate({
               placeholder="What you checked and why you decided"
               value={evidence}
               onChange={(event) => setEvidence(event.target.value)}
-              className="tau-field mt-1 w-full p-2 text-sm border border-th-border rounded-md"
+              className="ficus-field mt-1 w-full p-2 text-sm border border-th-border rounded-md"
             />
           </label>
           <p id={`decision-hint-${attempt.id}`} className="text-xs text-muted">
@@ -169,9 +169,9 @@ function HumanGate({
                 type="button"
                 title={outcomeEffect(run.state, transition)}
                 className={clsx(
-                  'tau-button px-3 py-2 text-sm rounded-md disabled:opacity-50',
+                  'ficus-button px-3 py-2 text-sm rounded-md disabled:opacity-50',
                   outcome === firstForward
-                    ? 'tau-button-primary text-on-accent bg-accent hover:bg-accent-hover'
+                    ? 'ficus-button-primary text-on-accent bg-accent hover:bg-accent-hover'
                     : 'text-secondary border border-th-border hover:bg-surface-hover'
                 )}
                 disabled={advance.isPending || !evidence.trim() || blockingWaits.length > 0}
@@ -261,13 +261,13 @@ function DeliveryApproval({
                 aria-label="Send-back feedback"
                 value={feedback}
                 onChange={(event) => setFeedback(event.target.value)}
-                className="tau-field mt-1 w-full p-2 text-sm border border-th-border rounded-md"
+                className="ficus-field mt-1 w-full p-2 text-sm border border-th-border rounded-md"
               />
             </label>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                className="tau-button tau-button-primary px-3 py-2 text-sm text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary px-3 py-2 text-sm text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
                 disabled={pending || !feedback.trim()}
                 onClick={() => sendBack.mutate()}
               >
@@ -275,7 +275,7 @@ function DeliveryApproval({
               </button>
               <button
                 type="button"
-                className="tau-button px-3 py-2 text-sm text-secondary rounded-md hover:bg-surface-hover"
+                className="ficus-button px-3 py-2 text-sm text-secondary rounded-md hover:bg-surface-hover"
                 onClick={() => setSendingBack(false)}
               >
                 Cancel
@@ -286,7 +286,7 @@ function DeliveryApproval({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="tau-button tau-button-primary px-3 py-2 text-sm text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+              className="ficus-button ficus-button-primary px-3 py-2 text-sm text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
               disabled={pending}
               onClick={() => finish.mutate()}
             >
@@ -295,7 +295,7 @@ function DeliveryApproval({
             {reworkAttempt && (
               <button
                 type="button"
-                className="tau-button px-3 py-2 text-sm text-secondary border border-th-border rounded-md hover:bg-surface-hover disabled:opacity-50"
+                className="ficus-button px-3 py-2 text-sm text-secondary border border-th-border rounded-md hover:bg-surface-hover disabled:opacity-50"
                 disabled={pending}
                 onClick={() => setSendingBack(true)}
               >

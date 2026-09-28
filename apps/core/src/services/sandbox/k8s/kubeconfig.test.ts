@@ -44,16 +44,16 @@ function tlsRejectAfterLoadKubeConfig(env: Record<string, string>): unknown {
 }
 
 describe('loadKubeConfig TLS downgrade (module-load gate)', () => {
-  test('a stale TAU_K8S_LOCAL under another runtime never disables TLS verification', () => {
+  test('a stale FICUS_K8S_LOCAL under another runtime never disables TLS verification', () => {
     // This is the whole point of gating the k8s modules: the downgrade is
     // process-wide, so a leftover k3d line in a host install's .env must not
     // reach it.
-    expect(tlsRejectAfterLoadKubeConfig({ TAU_SANDBOX_RUNTIME: 'host', TAU_K8S_LOCAL: 'true' })).toBeNull()
-    expect(tlsRejectAfterLoadKubeConfig({ TAU_SANDBOX_RUNTIME: 'vm', TAU_K8S_LOCAL: 'true' })).toBeNull()
+    expect(tlsRejectAfterLoadKubeConfig({ FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' })).toBeNull()
+    expect(tlsRejectAfterLoadKubeConfig({ FICUS_SANDBOX_RUNTIME: 'vm', FICUS_K8S_LOCAL: 'true' })).toBeNull()
   })
 
-  test('local k3d (k8s + TAU_K8S_LOCAL=true) still disables TLS verification', () => {
-    expect(tlsRejectAfterLoadKubeConfig({ TAU_SANDBOX_RUNTIME: 'k8s', TAU_K8S_LOCAL: 'true' })).toBe('0')
-    expect(tlsRejectAfterLoadKubeConfig({ TAU_SANDBOX_RUNTIME: 'k8s' })).toBeNull()
+  test('local k3d (k8s + FICUS_K8S_LOCAL=true) still disables TLS verification', () => {
+    expect(tlsRejectAfterLoadKubeConfig({ FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' })).toBe('0')
+    expect(tlsRejectAfterLoadKubeConfig({ FICUS_SANDBOX_RUNTIME: 'k8s' })).toBeNull()
   })
 })

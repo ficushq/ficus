@@ -8,7 +8,7 @@ import {
 } from './seat-pricing'
 
 const original = {
-  managed: process.env.TAU_MANAGED,
+  managed: process.env.FICUS_MANAGED,
   price: process.env[SEAT_PRICE_ENV],
   included: process.env[INCLUDED_SEATS_ENV],
 }
@@ -20,13 +20,13 @@ function setEnv(name: string, value: string | undefined) {
 
 /** Put the process on a managed instance with the given (possibly bogus) pricing vars. */
 function managedWith(price: string | undefined, included: string | undefined) {
-  process.env.TAU_MANAGED = '1'
+  process.env.FICUS_MANAGED = '1'
   setEnv(SEAT_PRICE_ENV, price)
   setEnv(INCLUDED_SEATS_ENV, included)
 }
 
 afterEach(() => {
-  setEnv('TAU_MANAGED', original.managed)
+  setEnv('FICUS_MANAGED', original.managed)
   setEnv(SEAT_PRICE_ENV, original.price)
   setEnv(INCLUDED_SEATS_ENV, original.included)
 })
@@ -38,7 +38,7 @@ describe('getSeatPricingConfig', () => {
   })
 
   test('self-hosted has no pricing even if the vars somehow exist', () => {
-    delete process.env.TAU_MANAGED
+    delete process.env.FICUS_MANAGED
     setEnv(SEAT_PRICE_ENV, '1000')
     setEnv(INCLUDED_SEATS_ENV, '1')
     expect(getSeatPricingConfig()).toBeUndefined()
@@ -74,7 +74,7 @@ describe('getSeatPricingConfig', () => {
     expect(getSeatPricingConfig()).toEqual({ seatPriceCents: 0, includedSeats: 0, currency: 'USD' })
   })
 
-  test('surrounding whitespace is tolerated the way TAU_MANAGED_SECRET_KEYS tolerates it', () => {
+  test('surrounding whitespace is tolerated the way FICUS_MANAGED_SECRET_KEYS tolerates it', () => {
     managedWith(' 1000 ', ' 1 ')
     expect(getSeatPricingConfig()).toEqual({ seatPriceCents: 1000, includedSeats: 1, currency: 'USD' })
   })
@@ -113,12 +113,12 @@ describe('summarizeSeatPricing', () => {
   })
 
   test('is undefined whenever there is no pricing to show', () => {
-    delete process.env.TAU_MANAGED
+    delete process.env.FICUS_MANAGED
     expect(summarizeSeatPricing(3)).toBeUndefined()
   })
 
   test('an explicitly passed config wins over the environment', () => {
-    delete process.env.TAU_MANAGED
+    delete process.env.FICUS_MANAGED
     expect(summarizeSeatPricing(2, { seatPriceCents: 500, includedSeats: 0, currency: 'USD' })).toEqual({
       seatPriceCents: 500,
       includedSeats: 0,

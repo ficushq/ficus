@@ -5,7 +5,7 @@ import {
   type ArtifactEntry,
   type ArtifactManifest,
   type ArtifactStatus,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { readUtf8RegularFileNoFollowBounded } from './artifactFiles'
 import { readArtifactManifest, resolveArtifactPath, updateArtifactManifestWithPublish } from './artifactWorkspace'
 

@@ -22,11 +22,11 @@ process.env (seed)          DB (secrets table)           In-memory cache
 
 On startup, the SecretStore:
 
-1. Loads `TAU_ENCRYPTION_KEY` from the environment (required for DB encryption)
+1. Loads `FICUS_ENCRYPTION_KEY` from the environment (required for DB encryption)
 2. Decrypts and loads all secrets from the DB into an in-memory cache
 3. Migrates env vars into the DB for any known keys not already stored
 
-If `TAU_ENCRYPTION_KEY` is not set, the store runs in **read-only env-fallback mode** — `get()` returns `process.env[key]` directly, and `set()`/`delete()` throw errors.
+If `FICUS_ENCRYPTION_KEY` is not set, the store runs in **read-only env-fallback mode** — `get()` returns `process.env[key]` directly, and `set()`/`delete()` throw errors.
 
 ### Reading Secrets
 
@@ -59,7 +59,7 @@ Both API and worker process-local caches call `startPeriodicRefresh()` to reload
 `apps/core/src/services/secrets/crypto.ts`
 
 - **Algorithm**: AES-256-GCM with 16-byte IV and 16-byte auth tag
-- **Key**: `TAU_ENCRYPTION_KEY` env var — either a 64-char hex string (used directly as 32 bytes) or any other string (SHA-256 hashed to derive 32 bytes)
+- **Key**: `FICUS_ENCRYPTION_KEY` env var — either a 64-char hex string (used directly as 32 bytes) or any other string (SHA-256 hashed to derive 32 bytes)
 - **Storage**: Each DB row stores hex-encoded `encryptedValue` (ciphertext + auth tag) and `iv`
 
 ## Known Keys
@@ -68,7 +68,7 @@ The store has a fixed list of known secret keys used across the application:
 
 | Category      | Keys                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------ |
-| Auth          | `TAU_PASSWORD`                                                                       |
+| Auth          | `FICUS_PASSWORD`                                                                     |
 | AI Providers  | `OPENAI_API_KEY`, `PROVIDER_AUTH_DATA`                                               |
 | Git           | `GIT_USER_NAME`, `GIT_USER_EMAIL`                                                    |
 | Linear        | `LINEAR_WEBHOOK_SECRET` (legacy; one-time import into integration webhook settings)  |
@@ -123,7 +123,7 @@ GitHub accounts and webhook signing are configured through **Settings → Integr
 Choose accounts in the squad's integration settings. Set non-secret commit author overrides with:
 
 ```bash
-tau squad set-meta <squad-id> githubIdentity '{"gitUserName":"Squad Bot","gitUserEmail":"squad-bot@example.com"}'
+ficus squad set-meta <squad-id> githubIdentity '{"gitUserName":"Squad Bot","gitUserEmail":"squad-bot@example.com"}'
 ```
 
 Commit author identity can use `GIT_USER_NAME`, `GIT_USER_EMAIL`, and host git config fallbacks. Repository credentials always come from an assigned [GitHub integration connection](github-integrations.md). Legacy `GH_TOKEN`, `GITHUB_TOKEN`, and token-key metadata overrides are no longer consumed.

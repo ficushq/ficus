@@ -21,32 +21,32 @@ function createProgram(): Command {
 describe('auth CLI commands', () => {
   let dir: string
   let authPath: string
-  const originalAuthStore = process.env.TAU_AUTH_STORE
-  const originalPassword = process.env.TAU_PASSWORD
-  const originalToken = process.env.TAU_TOKEN
-  const originalApiUrl = process.env.TAU_API_URL
+  const originalAuthStore = process.env.FICUS_AUTH_STORE
+  const originalPassword = process.env.FICUS_PASSWORD
+  const originalToken = process.env.FICUS_TOKEN
+  const originalApiUrl = process.env.FICUS_API_URL
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'tau-auth-test-'))
     authPath = join(dir, '.tau', 'cli', 'auth.json')
-    process.env.TAU_AUTH_STORE = authPath
-    delete process.env.TAU_PASSWORD
-    delete process.env.TAU_TOKEN
-    delete process.env.TAU_API_URL
+    process.env.FICUS_AUTH_STORE = authPath
+    delete process.env.FICUS_PASSWORD
+    delete process.env.FICUS_TOKEN
+    delete process.env.FICUS_API_URL
     ;(apiGet as ReturnType<typeof mock>).mockClear()
     ;(output as ReturnType<typeof mock>).mockClear()
     setOutputOptions({})
   })
 
   afterEach(() => {
-    if (originalAuthStore === undefined) delete process.env.TAU_AUTH_STORE
-    else process.env.TAU_AUTH_STORE = originalAuthStore
-    if (originalPassword === undefined) delete process.env.TAU_PASSWORD
-    else process.env.TAU_PASSWORD = originalPassword
-    if (originalToken === undefined) delete process.env.TAU_TOKEN
-    else process.env.TAU_TOKEN = originalToken
-    if (originalApiUrl === undefined) delete process.env.TAU_API_URL
-    else process.env.TAU_API_URL = originalApiUrl
+    if (originalAuthStore === undefined) delete process.env.FICUS_AUTH_STORE
+    else process.env.FICUS_AUTH_STORE = originalAuthStore
+    if (originalPassword === undefined) delete process.env.FICUS_PASSWORD
+    else process.env.FICUS_PASSWORD = originalPassword
+    if (originalToken === undefined) delete process.env.FICUS_TOKEN
+    else process.env.FICUS_TOKEN = originalToken
+    if (originalApiUrl === undefined) delete process.env.FICUS_API_URL
+    else process.env.FICUS_API_URL = originalApiUrl
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -149,26 +149,26 @@ describe('auth CLI commands', () => {
       },
       authPath
     )
-    writeFileSync(join(dir, '.env'), 'TAU_API_URL=https://stale.example.com\nTAU_PASSWORD=stale-secret\n')
+    writeFileSync(join(dir, '.env'), 'FICUS_API_URL=https://stale.example.com\nFICUS_PASSWORD=stale-secret\n')
     loadEnv({ cwd: dir })
 
     expect(config.apiUrl).toBe('https://work.example.com')
     expect(config.password).toBe('work-secret')
 
-    process.env.TAU_API_URL = 'https://override.example.com'
-    process.env.TAU_PASSWORD = 'override-secret'
+    process.env.FICUS_API_URL = 'https://override.example.com'
+    process.env.FICUS_PASSWORD = 'override-secret'
 
     expect(config.apiUrl).toBe('https://override.example.com')
     expect(config.password).toBe('override-secret')
   })
 
-  // Regression: a stale repo .env made `tau auth login` skip the browser device flow entirely
+  // Regression: a stale repo .env made `ficus auth login` skip the browser device flow entirely
   // and write the dotenv value into auth.json as the backend password. Bun auto-loads ./.env
   // into process.env before any user code runs, so seed process.env exactly as Bun would.
   it('login runs the device flow rather than storing a dotenv password', async () => {
     // A value unique to this file, so bookkeeping left by an earlier test cannot mask the bug.
-    writeFileSync(join(dir, '.env'), 'TAU_PASSWORD=preloaded-secret\n')
-    process.env.TAU_PASSWORD = 'preloaded-secret'
+    writeFileSync(join(dir, '.env'), 'FICUS_PASSWORD=preloaded-secret\n')
+    process.env.FICUS_PASSWORD = 'preloaded-secret'
     loadEnv({ cwd: dir })
 
     const exitCodes: number[] = []
@@ -226,16 +226,16 @@ describe('auth CLI commands', () => {
 
   it('status reports the injected agent token as the effective credential (sandbox case)', async () => {
     // No auth-store backend at all — exactly a sandbox, where every command
-    // works via TAU_TOKEN. Status must not claim "No active Tau backend".
-    process.env.TAU_TOKEN = 'agent-token'
-    process.env.TAU_API_URL = 'https://demo.hiretau.ai'
+    // works via FICUS_TOKEN. Status must not claim "No active Ficus backend".
+    process.env.FICUS_TOKEN = 'agent-token'
+    process.env.FICUS_API_URL = 'https://demo.hiretau.ai'
     const program = createProgram()
     await program.parseAsync(['node', 'tau', 'auth', 'status'])
     const [data, summary] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [any, string]
     expect(data.source).toBe('env-token')
     expect(data.authenticated).toBe(true)
     expect(data.apiUrl).toBe('https://demo.hiretau.ai')
-    expect(summary).toContain('agent token (TAU_TOKEN)')
+    expect(summary).toContain('agent token (FICUS_TOKEN)')
     expect(summary).toContain('https://demo.hiretau.ai')
     expect(JSON.stringify(data)).not.toContain('agent-token')
   })
@@ -248,7 +248,7 @@ describe('auth CLI commands', () => {
     expect(data.source).toBe('auth-store')
     expect(data.label).toBe('work')
     expect(data.backend.password).toBe('<redacted>')
-    expect(summary).toBe('Active Tau backend: work (https://work.example.com)')
+    expect(summary).toBe('Active Ficus backend: work (https://work.example.com)')
 
     saveAuthStore({ active: null, backends: {} })
     program = createProgram()
@@ -256,7 +256,7 @@ describe('auth CLI commands', () => {
     ;[data, summary] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [any, string]
     expect(data.source).toBe('none')
     expect(data.authenticated).toBe(false)
-    expect(summary).toContain('No active Tau backend configured')
+    expect(summary).toContain('No active Ficus backend configured')
   })
 
   it('redacts passwords for list/status output', () => {

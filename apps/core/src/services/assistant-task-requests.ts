@@ -11,7 +11,7 @@ import {
   chatPagePathSchema,
   type AssistantEntry,
   type AssistantMessageReceipt,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   assistantConversationAgents,
   assistantConversations,

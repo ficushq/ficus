@@ -30,10 +30,10 @@ describe('createSquadBashTool', () => {
     const docker = spyOn(dockerTools, 'createDockerSandboxedBashTool').mockImplementation(fakeBashTool)
     spies.push(docker)
 
-    const tool = createSquadBashTool('squad_S1', '/host/squads/S1', 'S1', 'tau_agent_tok')
+    const tool = createSquadBashTool('squad_S1', '/host/squads/S1', 'S1', 'ficus_agent_tok')
 
     // cwd + host workspace path are the squad host dir; sandboxId is the warm box; token threaded
-    expect(docker).toHaveBeenCalledWith('/host/squads/S1', '/host/squads/S1', 'squad_S1', 'tau_agent_tok')
+    expect(docker).toHaveBeenCalledWith('/host/squads/S1', '/host/squads/S1', 'squad_S1', 'ficus_agent_tok')
     expect(tool.name).toBe(SQUAD_BASH_TOOL_KEY)
     expect(tool.label).toBe(SQUAD_BASH_TOOL_KEY)
     expect(tool.key).toBe(SQUAD_BASH_TOOL_KEY)
@@ -115,9 +115,9 @@ describe('createSquadBashTool', () => {
   })
 
   it('(host runtime) builds the host bash tool bound to the shared squad workspace', () => {
-    const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     const prevHome = process.env.HOME_DIR
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     process.env.HOME_DIR = '/tmp/tau-squad-bash-host-test'
     const host = spyOn(hostTools, 'createHostBashTool').mockImplementation(fakeBashTool)
     spies.push(host)
@@ -137,8 +137,8 @@ describe('createSquadBashTool', () => {
       expect(tool.description).toContain('on this machine')
       expect(tool.description).toContain(expectedWorkspaceMount)
     } finally {
-      if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
       if (prevHome === undefined) delete process.env.HOME_DIR
       else process.env.HOME_DIR = prevHome
     }

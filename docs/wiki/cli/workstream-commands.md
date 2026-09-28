@@ -1,24 +1,24 @@
 # Work Stream CLI Commands
 
-The `tau workstream` (or `tau ws`) command provides functionality for managing work streams - units of work that can be assigned to agents within squads.
+The `ficus workstream` (or `ficus ws`) command provides functionality for managing work streams - units of work that can be assigned to agents within squads.
 
 ## Workflows
 
-New work can use a squad default, `--workflow PRESET_ID`, or `--flow-content '<JSON source>'` / `--flow-stdin` (or optional `--flow` for saved files) for a saved/customized or inline source. Flow participants are created lazily. Read [Workflows, flows, and squads](../workflows.md) for authoring, parallel joins, scoped waits, pause/resume, and delivery policies. Use `tau workstream flow/advance/finish` for flow-controlled handoffs and completion; the legacy direct assignment commands below apply to non-flow streams.
+New work can use a squad default, `--workflow PRESET_ID`, or `--flow-content '<JSON source>'` / `--flow-stdin` (or optional `--flow` for saved files) for a saved/customized or inline source. Flow participants are created lazily. Read [Workflows, flows, and squads](../workflows.md) for authoring, parallel joins, scoped waits, pause/resume, and delivery policies. Use `ficus workstream flow/advance/finish` for flow-controlled handoffs and completion; the legacy direct assignment commands below apply to non-flow streams.
 
 ### Inspect and advance an active flow
 
 ```bash
-tau workstream flow STREAM_ID
-tau workstream advance STREAM_ID --content '{"expectedVersion":1,"attemptId":1,"action":"complete","outcome":"completed","evidence":"Tests passed"}' --request-id REQUEST_UUID
-tau workstream finish STREAM_ID --version CURRENT_VERSION
+ficus workstream flow STREAM_ID
+ficus workstream advance STREAM_ID --content '{"expectedVersion":1,"attemptId":1,"action":"complete","outcome":"completed","evidence":"Tests passed"}' --request-id REQUEST_UUID
+ficus workstream finish STREAM_ID --version CURRENT_VERSION
 ```
 
 `flow` returns the stream's current steps, attempts, incoming handoff sources,
 evidence, return requests, and version. `advance` submits an outcome or an
 authorized return, delegation, or revision. `finish` checks the completion policy
-once the graph is complete. All three take a **work stream ID**; `tau ws` is an
-alias for `tau workstream`. `tau workflow` manages reusable presets/templates.
+once the graph is complete. All three take a **work stream ID**; `ficus ws` is an
+alias for `ficus workstream`. `ficus workflow` manages reusable presets/templates.
 
 When a transition immediately assigns work to the calling agent, its response
 includes `assignments` with the attempt ID, version, and full handoff content.
@@ -31,17 +31,17 @@ still receive inbox notifications when they can run.
 
 CI failures, requested changes, or merge conflicts can arrive after the graph reaches
 `completion-ready`. Verify that the feedback still applies to the current PR head,
-then read `tau workstream flow STREAM_ID` and submit:
+then read `ficus workstream flow STREAM_ID` and submit:
 
 ```bash
-tau workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'TAU_COMMAND'
+ficus workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'FICUS_COMMAND'
 {
   "action": "rework",
   "expectedVersion": 4,
   "attemptId": 3,
   "feedback": "Current CI failure and the correction required"
 }
-TAU_COMMAND
+FICUS_COMMAND
 ```
 
 Use the current version and the latest completed attempt ID for `completion.changeEventsTo.step`
@@ -70,7 +70,7 @@ before any workflow participant starts and attaches `metadata.git` and detected
 `metadata.codeHost` together with the work stream.
 
 ```bash
-tau workstream create 'Fix configuration loading' --squad <squad-id> \
+ficus workstream create 'Fix configuration loading' --squad <squad-id> \
   --repository llmctl --base-branch main --workflow reviewed-coding
 ```
 
@@ -104,7 +104,7 @@ and `baseBranch` with the same behavior. No schema migration is required.
 ## Overview
 
 ```bash
-tau workstream|ws [command] [options]
+ficus workstream|ws [command] [options]
 ```
 
 ## Commands
@@ -114,7 +114,7 @@ tau workstream|ws [command] [options]
 List work streams with optional filters.
 
 ```bash
-tau workstream list [options]
+ficus workstream list [options]
 ```
 
 **Options:**
@@ -128,16 +128,16 @@ tau workstream list [options]
 
 ```bash
 # List all work streams
-tau workstream list
+ficus workstream list
 
 # List work streams for a specific squad
-tau workstream list --squad abc123
+ficus workstream list --squad abc123
 
 # List work streams for a task
-tau ws list --task task-456
+ficus ws list --task task-456
 
 # List only blocked work streams
-tau ws list --status blocked
+ficus ws list --status blocked
 ```
 
 ---
@@ -147,7 +147,7 @@ tau ws list --status blocked
 Create a new work stream using an explicit workflow or the squad default. Every new stream has a flow; legacy manual staffing flags are rejected.
 
 ```bash
-tau workstream create|new [options] <title>
+ficus workstream create|new [options] <title>
 ```
 
 **Arguments:**
@@ -173,30 +173,30 @@ tau workstream create|new [options] <title>
 
 ```bash
 # Create a basic work stream
-tau workstream create "Implement user authentication"
+ficus workstream create "Implement user authentication"
 
 # Create with full details
-tau workstream create "Build login API" \
+ficus workstream create "Build login API" \
   --squad squad-123 \
   --task task-456 \
   --description "Implement JWT-based authentication endpoints"
 
 # Choose an explicit flow; workers start only when their steps are reached
-tau workstream create "Build feature X" \
+ficus workstream create "Build feature X" \
   --squad squad-123 --workflow planned-coding \
   -m "Start with high-level design"
 
 # Customize a preset for this task without a temporary file
-tau workstream create "Fix bug Y" --squad squad-123 --flow-content '{"kind":"preset","id":"solo-coding","customizations":[{"op":"set-name","name":"Fix bug Y"}]}'
+ficus workstream create "Fix bug Y" --squad squad-123 --flow-content '{"kind":"preset","id":"solo-coding","customizations":[{"op":"set-name","name":"Fix bug Y"}]}'
 
 # Create with dependencies
-tau workstream create "Integration tests" \
+ficus workstream create "Integration tests" \
   --depends-on ws-api \
   --depends-on ws-database
 
 # Create idempotently from an integration event (e.g. an issue-assignment
 # notification carrying "Event reference: <id>"); replays reuse the stream
-tau workstream create "Fix reported bug" --squad squad-123 --from-event b2b7c1d0-...
+ficus workstream create "Fix reported bug" --squad squad-123 --from-event b2b7c1d0-...
 ```
 
 ---
@@ -206,7 +206,7 @@ tau workstream create "Fix reported bug" --squad squad-123 --from-event b2b7c1d0
 Get detailed information about a work stream.
 
 ```bash
-tau workstream get|info <id>
+ficus workstream get|info <id>
 ```
 
 **Arguments:**
@@ -218,10 +218,10 @@ tau workstream get|info <id>
 
 ```bash
 # Get work stream details
-tau workstream get ws-123
+ficus workstream get ws-123
 
 # Using alias
-tau ws info ws-123
+ficus ws info ws-123
 ```
 
 When the stream tracks any issue or pull request, `get` prints a `Tracked:`
@@ -239,7 +239,7 @@ state only ever appears for pull requests — Linear has none.
 Update an existing work stream.
 
 ```bash
-tau workstream update|edit [options] <id>
+ficus workstream update|edit [options] <id>
 ```
 
 **Arguments:**
@@ -262,23 +262,23 @@ tau workstream update|edit [options] <id>
 
 ```bash
 # Update title
-tau workstream update ws-123 --title "Updated title"
+ficus workstream update ws-123 --title "Updated title"
 
 # Assign to an agent
-tau ws update ws-123 --assign agent-456
+ficus ws update ws-123 --assign agent-456
 
 # Unassign current agent
-tau ws update ws-123 --unassign
+ficus ws update ws-123 --unassign
 
 # Replace the dependency list
-tau ws update ws-123 --depends-on ws-api --depends-on ws-database
+ficus ws update ws-123 --depends-on ws-api --depends-on ws-database
 
 # Clear all dependencies (both spellings are equivalent)
-tau ws update ws-123 --clear-dependencies
-tau ws update ws-123 --remove-dependency
+ficus ws update ws-123 --clear-dependencies
+ficus ws update ws-123 --remove-dependency
 
 # Multiple updates
-tau ws update ws-123 --title "New title" --description "Updated description"
+ficus ws update ws-123 --title "New title" --description "Updated description"
 ```
 
 ---
@@ -288,7 +288,7 @@ tau ws update ws-123 --title "New title" --description "Updated description"
 Open a manual wait: the work stream needs input/action from the owner/operator.
 
 ```bash
-tau workstream request-input [options] <id>
+ficus workstream request-input [options] <id>
 ```
 
 **Arguments:**
@@ -305,7 +305,7 @@ tau workstream request-input [options] <id>
 **Examples:**
 
 ```bash
-tau workstream request-input ws-123 -m "Need the API key for X"
+ficus workstream request-input ws-123 -m "Need the API key for X"
 ```
 
 For flow agents, this defaults to their active attempt. `--scope stream` blocks the whole stream; `--scope attempt --attempt ID` selects an active attempt explicitly. Human/operator requests default to the whole stream. Sibling attempts may continue while one is waiting.
@@ -319,7 +319,7 @@ The request is resolved with `unblock`; the resolution note goes to the current 
 Resolve the work stream's open input request (manual wait).
 
 ```bash
-tau workstream unblock [options] <id>
+ficus workstream unblock [options] <id>
 ```
 
 **Options:**
@@ -331,11 +331,11 @@ tau workstream unblock [options] <id>
 **Examples:**
 
 ```bash
-tau workstream unblock ws-123 -m "API key added to the squad secrets as X_API_KEY"
+ficus workstream unblock ws-123 -m "API key added to the squad secrets as X_API_KEY"
 ```
 
 When more than one manual wait is open, `unblock` refuses to guess — list the
-waits with `tau workstream get ws-123` and pass `--wait <waitId>`. If `--wait`
+waits with `ficus workstream get ws-123` and pass `--wait <waitId>`. If `--wait`
 names a wait that is already closed (for example the system cleared it when
 the assignee's execution started), the command fails with a non-zero exit and
 names that wait, its recorded resolution, and that the `-m` note was not
@@ -349,7 +349,7 @@ Open the review wait: the work is ready for someone to review. Approving the
 review completes the stream by default.
 
 ```bash
-tau workstream request-review [options] <id>
+ficus workstream request-review [options] <id>
 ```
 
 **Options:**
@@ -363,10 +363,10 @@ tau workstream request-review [options] <id>
 
 ```bash
 # Ready for final review — approval completes the stream
-tau workstream request-review ws-123 -m "API implementation complete, ready for review"
+ficus workstream request-review ws-123 -m "API implementation complete, ready for review"
 
 # Mid-work checkpoint gate — approval resolves the gate, work continues
-tau workstream request-review ws-123 -m "checkpoint: schema design" --no-complete
+ficus workstream request-review ws-123 -m "checkpoint: schema design" --no-complete
 ```
 
 Idempotent while a review wait is already open.
@@ -380,7 +380,7 @@ in the same transaction; for a `--no-complete` checkpoint review it resolves
 the wait only and the stream continues.
 
 ```bash
-tau workstream approve [options] <id>
+ficus workstream approve [options] <id>
 ```
 
 **Options:**
@@ -392,10 +392,10 @@ tau workstream approve [options] <id>
 **Examples:**
 
 ```bash
-tau workstream approve ws-123
+ficus workstream approve ws-123
 
 # Approval notes are the durable home for completion-time findings
-tau workstream approve ws-123 -m "Approved. Follow-ups for a future stream: tighten rate limits, add metrics"
+ficus workstream approve ws-123 -m "Approved. Follow-ups for a future stream: tighten rate limits, add metrics"
 ```
 
 ---
@@ -406,7 +406,7 @@ Close the open review wait with required feedback; the stream stays
 schedulable and the closed wait counts as a review round. Alias: `reject`.
 
 ```bash
-tau workstream send-back [options] <id>
+ficus workstream send-back [options] <id>
 ```
 
 **Options:**
@@ -418,7 +418,7 @@ tau workstream send-back [options] <id>
 **Examples:**
 
 ```bash
-tau workstream send-back ws-123 -m "Missing error handling in edge cases"
+ficus workstream send-back ws-123 -m "Missing error handling in edge cases"
 ```
 
 ---
@@ -429,7 +429,7 @@ Hand off (reassign) a work stream to another agent. Reassignment only —
 opening a review is `request-review`.
 
 ```bash
-tau workstream handoff [options] <id>
+ficus workstream handoff [options] <id>
 ```
 
 **Options:**
@@ -442,11 +442,11 @@ tau workstream handoff [options] <id>
 **Examples:**
 
 ```bash
-tau workstream handoff ws-123 --to agent-456 -m "Implementation complete, ready for review"
+ficus workstream handoff ws-123 --to agent-456 -m "Implementation complete, ready for review"
 ```
 
 Message-only handoff (no `--to`) is an error — use
-`tau workstream request-review <id> -m "<msg>"` to ask for review.
+`ficus workstream request-review <id> -m "<msg>"` to ask for review.
 
 ---
 
@@ -458,7 +458,7 @@ LOWER-priority healthy stream so a critical arrival can run. Never park a
 stream because it is waiting — the scheduler's auto-park owns that.
 
 ```bash
-tau workstream park [options] <id>
+ficus workstream park [options] <id>
 ```
 
 **Options:**
@@ -475,7 +475,7 @@ slot is free, else queued), completion is cleared, and dependency waits are
 re-synced.
 
 ```bash
-tau workstream reopen <id>
+ficus workstream reopen <id>
 ```
 
 ---
@@ -487,7 +487,7 @@ Mark a work stream as complete. Completing is rejected while ANY wait is open
 the input request first.
 
 ```bash
-tau workstream done <id>
+ficus workstream done <id>
 ```
 
 **Arguments:**
@@ -498,12 +498,12 @@ tau workstream done <id>
 **Examples:**
 
 ```bash
-tau workstream done ws-123
+ficus workstream done ws-123
 
 # Rejected while a wait is open:
 #   Error: Cannot mark this work stream done — resolve or cancel the open waits first (review:wait-abc)
 # Fix: resolve the wait, then complete
-tau workstream approve ws-123        # a completing review approval also marks the stream done
+ficus workstream approve ws-123        # a completing review approval also marks the stream done
 ```
 
 ---
@@ -513,7 +513,7 @@ tau workstream approve ws-123        # a completing review approval also marks t
 Delete a work stream.
 
 ```bash
-tau workstream delete|rm <id>
+ficus workstream delete|rm <id>
 ```
 
 **Arguments:**
@@ -525,10 +525,10 @@ tau workstream delete|rm <id>
 
 ```bash
 # Delete a work stream
-tau workstream delete ws-123
+ficus workstream delete ws-123
 
 # Using alias
-tau ws rm ws-123
+ficus ws rm ws-123
 ```
 
 ---
@@ -538,7 +538,7 @@ tau ws rm ws-123
 List the issues and pull requests a work stream tracks, alongside its delivery PR.
 
 ```bash
-tau workstream tracked <id>
+ficus workstream tracked <id>
 ```
 
 **Arguments:**
@@ -551,7 +551,7 @@ tau workstream tracked <id>
 **Examples:**
 
 ```bash
-tau workstream tracked ws-123
+ficus workstream tracked ws-123
 
 # Table columns: Kind | Resource | Source | Delivery | Merge | Subscribed | URL
 # Resource is owner/repo#12 for GitHub, KEY-123 for a Linear issue
@@ -575,7 +575,7 @@ resolves atomically and is authorized against the squad's own integration
 connection; it never grants access from the link itself.
 
 ```bash
-tau workstream track <id> [options]
+ficus workstream track <id> [options]
 ```
 
 **Arguments:**
@@ -597,27 +597,27 @@ tau workstream track <id> [options]
 
 ```bash
 # From the event an integration notification referenced
-tau workstream track ws-123 --event b2b7c1d0-...
+ficus workstream track ws-123 --event b2b7c1d0-...
 
 # By explicit reference
-tau workstream track ws-123 --issue owner/repo#12
-tau workstream track ws-123 --issue KEY-123
-tau workstream track ws-123 --pr owner/repo#34 --connection conn-abc
+ficus workstream track ws-123 --issue owner/repo#12
+ficus workstream track ws-123 --issue KEY-123
+ficus workstream track ws-123 --pr owner/repo#34 --connection conn-abc
 
 # By resource URL
-tau workstream track ws-123 --url https://github.com/owner/repo/pull/34
-tau workstream track ws-123 --url https://linear.app/workspace/issue/KEY-123/slug
+ficus workstream track ws-123 --url https://github.com/owner/repo/pull/34
+ficus workstream track ws-123 --url https://linear.app/workspace/issue/KEY-123/slug
 
 # Flag an additional pull request as a delivery change request: it must also
 # be merged before the stream can finish
-tau workstream track ws-123 --pr owner/repo#35 --delivery
-tau workstream track ws-123 --url https://github.com/owner/repo/pull/35 --delivery
+ficus workstream track ws-123 --pr owner/repo#35 --delivery
+ficus workstream track ws-123 --url https://github.com/owner/repo/pull/35 --delivery
 ```
 
 Tracking a PR this way never changes the work stream's primary delivery PR
 (`metadata.codeHost.changeRequest`); it adds a followed resource without
 affecting `pr-merge`/`pr-auto-merge` completion, unless `--delivery` flags it,
-in which case `tau workstream finish` additionally requires it to be merged.
+in which case `ficus workstream finish` additionally requires it to be merged.
 `--delivery` combined with `--issue` or `--event` is rejected — an issue is
 never a delivery change request, and an event's resource kind isn't known
 until the server resolves it. Likewise, `--connection` combined with `--url`
@@ -637,7 +637,7 @@ is unreadable or unknown).
 Stop tracking an issue or pull request on a work stream.
 
 ```bash
-tau workstream untrack <id> [options]
+ficus workstream untrack <id> [options]
 ```
 
 **Arguments:**
@@ -656,8 +656,8 @@ tau workstream untrack <id> [options]
 **Examples:**
 
 ```bash
-tau workstream untrack ws-123 --issue owner/repo#12
-tau workstream untrack ws-123 --issue KEY-123
+ficus workstream untrack ws-123 --issue owner/repo#12
+ficus workstream untrack ws-123 --issue KEY-123
 ```
 
 Untracking the delivery PR is rejected — edit `metadata.codeHost.changeRequest`
@@ -670,10 +670,10 @@ instead of untracking it.
 A work stream inherits its squad's attention levels until you set its own. `decisions` covers its reviews and blockers; `progress` covers its presence in the feed and its completion notice. Levels are `mute`, `show`, or `notify`.
 
 ```bash
-tau workstream subscription STREAM_ID            # levels + whether they are inherited
-tau workstream watch STREAM_ID                   # both kinds at notify (alias of subscribe)
-tau workstream watch STREAM_ID --progress mute   # reviews still reach you, completions do not
-tau workstream unwatch STREAM_ID                 # drop the row; inherit the squad again
+ficus workstream subscription STREAM_ID            # levels + whether they are inherited
+ficus workstream watch STREAM_ID                   # both kinds at notify (alias of subscribe)
+ficus workstream watch STREAM_ID --progress mute   # reviews still reach you, completions do not
+ficus workstream unwatch STREAM_ID                 # drop the row; inherit the squad again
 ```
 
 An omitted flag keeps the kind at its current EFFECTIVE level — the level stored on this stream's own row, otherwise the level inherited from the squad, otherwise the default `show`. Changing one kind never turns the other one up, so setting one flag on an inheriting stream writes a row that preserves what the other kind already did.
@@ -702,66 +702,66 @@ one release with a deprecation note.
 
 ```bash
 # 1. Create work stream for a task
-tau ws create "Implement feature X" --squad squad-123 --task task-456
+ficus ws create "Implement feature X" --squad squad-123 --task task-456
 
 # 2. Agent picks up and works on it
 # (the derived state shows in_progress while an execution runs)
 
 # 3. If stuck, agent requests input (opens a manual wait)
-tau ws request-input ws-123 -m "Need API credentials"
+ficus ws request-input ws-123 -m "Need API credentials"
 
 # 4. Manager resolves the input request (note delivered to the assignee)
-tau ws unblock ws-123 -m "API key: abc123xyz"
+ficus ws unblock ws-123 -m "API key: abc123xyz"
 
 # 5. Agent completes and requests review
-tau ws request-review ws-123 -m "Implementation complete"
+ficus ws request-review ws-123 -m "Implementation complete"
 
 # 6. Manager approves — completes the stream in one transaction
-tau ws approve ws-123 -m "Approved. Follow-ups for a future stream: add rate-limit metrics"
+ficus ws approve ws-123 -m "Approved. Follow-ups for a future stream: add rate-limit metrics"
 ```
 
 ### Managing metadata
 
 ```bash
-tau workstream set-meta <id> ledger.current.sequence 7
-tau workstream get-meta <id> ledger.current.sequence
-tau workstream unset-meta <id> ledger.current.sequence
+ficus workstream set-meta <id> ledger.current.sequence 7
+ficus workstream get-meta <id> ledger.current.sequence
+ficus workstream unset-meta <id> ledger.current.sequence
 ```
 
 `set-meta` and `unset-meta` send only the requested dot-path delta. The server recursively merges objects, deletes keys set to `null`, and serializes concurrent updates so unrelated keys are preserved. Arrays replace the whole array; changing one element requires `get-meta`, local modification, and `set-meta` of the entire array key. Concurrent writers to the same key are last-serialized-writer-wins. Empty path segments and `__proto__`, `prototype`, or `constructor` segments are rejected. `get-meta` uses one entity GET, extracts the value client-side, and reports missing paths as errors.
 
 `set-meta <id> tracked '[...]'` is schema-validated shape-for-shape against the
 [canonical tracked-resource entry](../work-streams.md#tracked-issues-and-pull-requests),
-and any newly introduced entry is authorized exactly like `tau workstream track`.
+and any newly introduced entry is authorized exactly like `ficus workstream track`.
 `origin` is server-managed — a hand-written `origin` on a new entry is rejected
-with `400`. Prefer `tau workstream track`/`untrack`, which resolve identity and
+with `400`. Prefer `ficus workstream track`/`untrack`, which resolve identity and
 stamp `origin` for you instead of requiring the whole array to be rewritten.
 
 ### Code Review Workflow
 
 ```bash
 # Engineer submits for review
-tau ws request-review ws-123 \
+ficus ws request-review ws-123 \
   -m "PR ready for review" \
   --file src/feature.js
 
 # Reviewer approves (completes the stream) or sends back
-tau ws approve ws-123
+ficus ws approve ws-123
 # or
-tau ws send-back ws-123 -m "Need more test coverage"
+ficus ws send-back ws-123 -m "Need more test coverage"
 
 # Mid-work gate that should NOT complete the stream on approval
-tau ws request-review ws-123 -m "checkpoint: schema design" --no-complete
+ficus ws request-review ws-123 -m "checkpoint: schema design" --no-complete
 ```
 
 ### Managing Dependencies
 
 ```bash
 # Create dependent work streams
-tau ws create "Design database schema" --squad s1
+ficus ws create "Design database schema" --squad s1
 # Returns: ws-schema
 
-tau ws create "Implement data layer" --depends-on ws-schema --squad s1
+ficus ws create "Implement data layer" --depends-on ws-schema --squad s1
 # This work stream won't start until ws-schema is done
 ```
 
@@ -769,12 +769,12 @@ tau ws create "Implement data layer" --depends-on ws-schema --squad s1
 
 ```bash
 # Manager creates work stream and spawns agent
-tau squad spawn engineer squad-123 --workstream ws-feature
+ficus squad spawn engineer squad-123 --workstream ws-feature
 
 # Agent hands off to the reviewer when done
-tau ws handoff ws-feature --to agent-reviewer -m "Feature complete, ready for review"
+ficus ws handoff ws-feature --to agent-reviewer -m "Feature complete, ready for review"
 ```
 
 ## Pause and resume
 
-`tau workstream pause ID --reason "Hold for review"` stops current/queued work and suppresses automatic continuation until `tau workstream resume ID`. Pause retains the slot unless separately parked or auto-parked. Parking a paused stream does not resume it. See [the workflow guide](../workflows.md#pause-park-and-resume).
+`ficus workstream pause ID --reason "Hold for review"` stops current/queued work and suppresses automatic continuation until `ficus workstream resume ID`. Pause retains the slot unless separately parked or auto-parked. Parking a paused stream does not resume it. See [the workflow guide](../workflows.md#pause-park-and-resume).

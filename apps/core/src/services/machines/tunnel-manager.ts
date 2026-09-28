@@ -1,4 +1,4 @@
-import { advisoryLock } from '@tau/shared/advisory-lock'
+import { advisoryLock } from '@ficus/shared/advisory-lock'
 import { createHash, randomUUID } from 'crypto'
 import { access, chmod, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'fs/promises'
 import { createConnection, createServer } from 'net'
@@ -101,7 +101,7 @@ function allocateLocalPort(): Promise<number> {
  * machine's own sshd. One constant serves the WHOLE fleet — the listener lives
  * per-machine, so there is no cross-machine collision — and, crucially, it
  * survives ControlMaster death: after a core restart (`ControlPersist=no`) the
- * fresh master re-binds the SAME port, so the `TAU_API_URL` each box baked into
+ * fresh master re-binds the SAME port, so the `FICUS_API_URL` each box baked into
  * its `server.env` stays valid without a full re-provision. Chosen just below the
  * box-port floor (50100) and well above the privileged/ephemeral ranges.
  */
@@ -109,12 +109,12 @@ export const MACHINE_REVERSE_PORT = 50080
 
 /**
  * The effective pinned reverse port: {@link MACHINE_REVERSE_PORT} unless
- * `TAU_MACHINE_REVERSE_PORT` overrides it with a valid TCP port (1–65535). Any
+ * `FICUS_MACHINE_REVERSE_PORT` overrides it with a valid TCP port (1–65535). Any
  * malformed/out-of-range value falls back to the default. Read at call time so a
  * process-level override (or a test) takes effect without a rebuild.
  */
 export function resolveMachineReversePort(): number {
-  const raw = process.env.TAU_MACHINE_REVERSE_PORT?.trim()
+  const raw = process.env.FICUS_MACHINE_REVERSE_PORT?.trim()
   if (!raw || !/^\d+$/.test(raw)) return MACHINE_REVERSE_PORT
   const parsed = Number(raw)
   return parsed >= 1 && parsed <= 65535 ? parsed : MACHINE_REVERSE_PORT
@@ -883,7 +883,7 @@ export class MachineTunnelManager {
 
   /**
    * Remote-forward a local port onto the machine, preferring the pinned constant
-   * {@link MACHINE_REVERSE_PORT} (so a box's baked `TAU_API_URL` survives master
+   * {@link MACHINE_REVERSE_PORT} (so a box's baked `FICUS_API_URL` survives master
    * death); idempotent per (machine, localPort). Returns the bound remote port —
    * the pinned port on the normal path, or a dynamically-allocated one if the
    * pinned bind degraded to the `-R 0:` fallback (see {@link bindReverse}).
@@ -953,7 +953,7 @@ export class MachineTunnelManager {
    * `http://127.0.0.1:<pinned>` callbacks would silently route boxes to the
    * squatter. So on ANY nonzero pinned bind we warn and fall back to the legacy
    * dynamic `-R 0:` allocation (parsed). The tunnel still works, but its remote
-   * port will change on master death, so a baked `TAU_API_URL` then goes stale —
+   * port will change on master death, so a baked `FICUS_API_URL` then goes stale —
    * hence the warning.
    */
   private async bindReverse(machine: Machine, localPort: number, record: MasterRecord): Promise<number> {
@@ -1075,7 +1075,7 @@ export class MachineTunnelManager {
    * The ControlMaster is a per-machine singleton SHARED across core processes
    * (api + worker adopt the same control socket), and it also carries the
    * reverse forwards whose allocated remote ports boxes baked into their
-   * `TAU_API_URL`. An `-O exit` from one process's ROUTINE shutdown would
+   * `FICUS_API_URL`. An `-O exit` from one process's ROUTINE shutdown would
    * therefore kill the other process's live forwards and every box's callback
    * port in one stroke. This instead `-O cancel`s only the local forwards this
    * process's registry holds (per-process ephemeral ports nobody else uses) and

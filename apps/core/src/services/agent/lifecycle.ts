@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { isLiveAgentStatus, LIVE_AGENT_STATUSES } from '@tau/shared'
+import { isLiveAgentStatus, LIVE_AGENT_STATUSES } from '@ficus/shared'
 import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
 import { agents, agentTokens, db, executions } from '../../db'
 import { acquireAgentQueueLock } from '../execution/agent-admission'

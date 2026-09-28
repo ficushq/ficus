@@ -1,4 +1,4 @@
-import type { PushCategory } from '@tau/shared'
+import type { PushCategory } from '@ficus/shared'
 import type { NotificationEvent } from '../../channels/provider'
 
 /**

@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
 import { paintRoot } from './preview'
 import { findWebTheme } from './registry'
-import type { CustomThemeDocument } from '@tau/shared'
+import type { CustomThemeDocument } from '@ficus/shared'
 
 test('paintRoot applies a plain built-in, then layers a valid custom document; an invalid one falls back cleanly', async () => {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })

@@ -5,7 +5,7 @@
 [DataDog/dtln-rs](https://github.com/DataDog/dtln-rs) — DTLN noise suppression
 written in Rust, linked against TensorFlow Lite, with two quantized models
 embedded — compiled to WebAssembly with Emscripten and inlined into the
-generated JavaScript glue as a single file. Tau owns `processor.js` and the
+generated JavaScript glue as a single file. Ficus owns `processor.js` and the
 small wrapper additions described below; the binary is upstream's work and
 this directory carries its notices.
 
@@ -29,7 +29,7 @@ The build recipe is `apps/web/scripts/dtln/` (a Dockerfile plus `build.sh`):
 - three files overlaid on the checkout, each commented with why: `build.rs`
   (upstream's only defines `main` for macOS/Windows build hosts),
   `config.toml` (an Emscripten link flag whose quoted form emcc 4 rejects) and
-  `dtln_post.js` (Tau's wrapper: a `ready` getter, a `postRun` array, and
+  `dtln_post.js` (Ficus's wrapper: a `ready` getter, a `postRun` array, and
   reading the heap through the module-scope `HEAPF32` view);
 - after the link, `build.sh` appends `export default DtlnPlugin` so the glue is
   an ES module, and formats it with the repository's prettier config.
@@ -80,7 +80,7 @@ Notes from the inventory:
 
 ## History
 
-The asset first arrived in Tau (May 2026) as a prebuilt file with no recorded
+The asset first arrived in Ficus (May 2026) as a prebuilt file with no recorded
 build, and was carried with reference notices only. It was replaced in
 September 2026 by the pinned, reproducible build described above; the WASM
 hash changed with it (the earlier binary was from an unknown Emscripten 3.1.x

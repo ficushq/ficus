@@ -11,7 +11,7 @@ import {
   type Attention,
   type AttentionKind,
   type AttentionLevel,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import {
@@ -143,18 +143,18 @@ export function AttentionMenu({
       <summary
         ref={summaryRef}
         title="Choose what this notifies you about"
-        className="tau-button inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium text-secondary hover:bg-surface-hover"
+        className="ficus-button inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium text-secondary hover:bg-surface-hover"
       >
         <SummaryIcon summary={summary} />
         <span>{SUMMARY_LABEL[summary]}</span>
       </summary>
-      {/* `tau-overlay` + `bg-surface` is the repo's popover surface (AgentViewTabs,
+      {/* `ficus-overlay` + `bg-surface` is the repo's popover surface (AgentViewTabs,
           AgentConversationBody). The previous `bg-surface-primary` is not a defined token — there
           is no `surface.primary` in tailwind.config.js, only DEFAULT/secondary/hover — so the
           panel rendered with no background at all and the page showed through it. */}
       <div
         className={clsx(
-          'tau-overlay absolute top-full z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-th-border bg-surface p-3 shadow-theme-lg',
+          'ficus-overlay absolute top-full z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-th-border bg-surface p-3 shadow-theme-lg',
           align === 'right' ? 'right-0' : 'left-0'
         )}
       >
@@ -214,7 +214,7 @@ export function AttentionMenu({
             type="button"
             onClick={() => mutation.mutate(null)}
             disabled={mutation.isPending}
-            className="tau-button text-xs text-accent hover:underline"
+            className="ficus-button text-xs text-accent hover:underline"
           >
             Reset to squad
           </button>

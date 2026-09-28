@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { OperationsRemediation } from '@tau/shared'
+import type { OperationsRemediation } from '@ficus/shared'
 import { generatedEvidence } from './redaction'
 import type { ExtractedSignal, TaintedInboxMessage, TaintedToolCall } from './types'
 

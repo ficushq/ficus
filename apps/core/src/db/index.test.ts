@@ -7,7 +7,7 @@ import { withDedicatedDbTransaction } from './index'
 
 describe('database safeguards', () => {
   it('should be in test mode', () => {
-    expect(process.env.TAU_TEST_MODE).toBe('1')
+    expect(process.env.FICUS_TEST_MODE).toBe('1')
   })
 
   it('should be connected to tau_test database', () => {
@@ -24,64 +24,64 @@ describe('database safeguards', () => {
 
 describe('validateDatabaseConnection', () => {
   it('should throw when test mode uses non-tau_test database', () => {
-    const originalTestMode = process.env.TAU_TEST_MODE
-    process.env.TAU_TEST_MODE = '1'
+    const originalTestMode = process.env.FICUS_TEST_MODE
+    process.env.FICUS_TEST_MODE = '1'
     try {
       expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5433/tau', 'test')).toThrow(
         /TEST SAFETY VIOLATION.*database is "tau"/
       )
     } finally {
-      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
-      else process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.FICUS_TEST_MODE
+      else process.env.FICUS_TEST_MODE = originalTestMode
     }
   })
 
   it('should throw when test mode uses port 5432', () => {
-    const originalTestMode = process.env.TAU_TEST_MODE
-    process.env.TAU_TEST_MODE = '1'
+    const originalTestMode = process.env.FICUS_TEST_MODE
+    process.env.FICUS_TEST_MODE = '1'
     try {
       expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5432/tau_test', 'test')).toThrow(
         /TEST SAFETY VIOLATION.*port is 5432/
       )
     } finally {
-      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
-      else process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.FICUS_TEST_MODE
+      else process.env.FICUS_TEST_MODE = originalTestMode
     }
   })
 
   it('should throw when test mode uses default port (no port specified)', () => {
-    const originalTestMode = process.env.TAU_TEST_MODE
-    process.env.TAU_TEST_MODE = '1'
+    const originalTestMode = process.env.FICUS_TEST_MODE
+    process.env.FICUS_TEST_MODE = '1'
     try {
       expect(() => validateDatabaseConnection('postgres://user:pass@localhost/tau_test', 'test')).toThrow(
         /TEST SAFETY VIOLATION.*port is 5432/
       )
     } finally {
-      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
-      else process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.FICUS_TEST_MODE
+      else process.env.FICUS_TEST_MODE = originalTestMode
     }
   })
 
   it('should pass when test mode uses tau_test on non-5432 port', () => {
-    const originalTestMode = process.env.TAU_TEST_MODE
-    process.env.TAU_TEST_MODE = '1'
+    const originalTestMode = process.env.FICUS_TEST_MODE
+    process.env.FICUS_TEST_MODE = '1'
     try {
       expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5433/tau_test', 'test')).not.toThrow()
     } finally {
-      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
-      else process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.FICUS_TEST_MODE
+      else process.env.FICUS_TEST_MODE = originalTestMode
     }
   })
 
   it('should pass when not in test mode (no restrictions)', () => {
-    const originalTestMode = process.env.TAU_TEST_MODE
-    delete process.env.TAU_TEST_MODE
+    const originalTestMode = process.env.FICUS_TEST_MODE
+    delete process.env.FICUS_TEST_MODE
     try {
       // Should not throw even with production-like URL
       expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5432/tau', 'test')).not.toThrow()
     } finally {
-      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
-      else process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.FICUS_TEST_MODE
+      else process.env.FICUS_TEST_MODE = originalTestMode
     }
   })
 })

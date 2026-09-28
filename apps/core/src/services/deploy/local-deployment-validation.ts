@@ -1,4 +1,4 @@
-import type { CreateLocalDeploymentInput } from '@tau/shared'
+import type { CreateLocalDeploymentInput } from '@ficus/shared'
 import { normalizeAttachedLogPathInput } from './local-deployment-log-path'
 
 export function validateLocalDeploymentPort(port: number): number {

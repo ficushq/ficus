@@ -18,7 +18,7 @@
  * signals, and affirmative results from registered three-state probes.
  */
 
-import type { ProviderHealthKind, ProviderHealthRecord } from '@tau/shared/provider-health'
+import type { ProviderHealthKind, ProviderHealthRecord } from '@ficus/shared/provider-health'
 import { getSettingsStore } from '../settings'
 import { createLogger } from '../../lib/infra/logger'
 

@@ -5,26 +5,26 @@ description: Connect an AI account, choose model tiers, and understand model fal
 
 import ModeContent from '../../../components/ModeContent.astro'
 
-Tau uses your configured AI providers to run agents. A **provider account** supplies access to models; a **model tier** chooses which models an agent tries, in order. Start with the bundled tiers, then change them when you need a different provider or level of reasoning.
+Ficus uses your configured AI providers to run agents. A **provider account** supplies access to models; a **model tier** chooses which models an agent tries, in order. Start with the bundled tiers, then change them when you need a different provider or level of reasoning.
 
 ## Connect a provider
 
 <ModeContent mode="cloud">
 
-Open **Settings → AI Providers** in your Tau workspace. Provider accounts and model choices belong to that workspace. If the page is unavailable or read-only, ask a workspace administrator to connect the account or grant the relevant access.
+Open **Settings → AI Providers** in your Ficus workspace. Provider accounts and model choices belong to that workspace. If the page is unavailable or read-only, ask a workspace administrator to connect the account or grant the relevant access.
 
 </ModeContent>
 
 <ModeContent mode="self-hosted">
 
-Open **Settings → AI Providers** on your Tau instance. Credentials are stored encrypted by the server. Your installation must have its encryption key configured before you can save an account; see [Runtime and access](/self-host/runtime-and-access/) if setup reports an encryption-key error.
+Open **Settings → AI Providers** on your Ficus instance. Credentials are stored encrypted by the server. Your installation must have its encryption key configured before you can save an account; see [Runtime and access](/self-host/runtime-and-access/) if setup reports an encryption-key error.
 
 </ModeContent>
 
 1. Select the provider you want to use.
 2. Choose **Add account**. Enter an API key, or use the provider's sign-in option when offered.
-3. For browser sign-in, follow the authorization instructions and return to Tau. Complete any code-entry step Tau displays.
-4. Check that the account is enabled. If you have several accounts for a provider, put them in the order you want Tau to try them.
+3. For browser sign-in, follow the authorization instructions and return to Ficus. Complete any code-entry step Ficus displays.
+4. Check that the account is enabled. If you have several accounts for a provider, put them in the order you want Ficus to try them.
 
 Use **Add account** to connect a different account. Reauthorizing an existing account refreshes that account's login. Provider availability and sign-in methods depend on the provider catalog installed on your instance.
 
@@ -65,28 +65,28 @@ To change a tier, choose its provider, model, and reasoning level, then arrange 
 3. Select its **Tier**. Leave **Override chain (optional)** empty to inherit that tier.
 4. Choose **Save** and start a small new task to check the result.
 
-Tau resolves the model choice in this order: an individual agent override, an agent-type override, the type's enabled tier, then the instance default. A type override therefore prevents later tier edits from changing that type's model choice.
+Ficus resolves the model choice in this order: an individual agent override, an agent-type override, the type's enabled tier, then the instance default. A type override therefore prevents later tier edits from changing that type's model choice.
 
 An explicit model entry uses `provider:model-id:reasoning`, such as `openai-codex:gpt-5.6-sol:medium`. A chain is a comma-separated list of those entries. The model picker is the easiest way to use the IDs available on your instance.
 
 ## Use a compatible or local model
 
-In **AI Providers**, use the custom provider setup to enter an OpenAI-compatible API base URL, a provider ID, and the exact model ID. Supply an API key if the server requires one, then run the capability probe before assigning tiers. A model that fails the tool-calling probe cannot be assigned as Primary: Tau agents need tools to perform work.
+In **AI Providers**, use the custom provider setup to enter an OpenAI-compatible API base URL, a provider ID, and the exact model ID. Supply an API key if the server requires one, then run the capability probe before assigning tiers. A model that fails the tool-calling probe cannot be assigned as Primary: Ficus agents need tools to perform work.
 
 <ModeContent mode="cloud">
 
-The model endpoint must be reachable from your Tau server. A model listening only on your laptop's `localhost` is not reachable from a Cloud workspace.
+The model endpoint must be reachable from your Ficus server. A model listening only on your laptop's `localhost` is not reachable from a Cloud workspace.
 
 </ModeContent>
 
 <ModeContent mode="self-hosted">
 
-Use an endpoint reachable from the machine or container running Tau. Its `localhost` refers to that environment, which may differ from the browser or laptop you use to open Settings.
+Use an endpoint reachable from the machine or container running Ficus. Its `localhost` refers to that environment, which may differ from the browser or laptop you use to open Settings.
 
 </ModeContent>
 
 ## When a model will not start
 
-Check the account's enabled state, model ID, and tier warnings first. Tau skips candidates with missing authentication, disabled providers, unknown models, or a provider in cooldown. If none is usable, connect or correct one of the providers in the chain. If a provider is in cooldown but its limit window has already reset, clear the record with the **Reset** button on that account's row in AI Providers settings, or `tau provider-auth reset <provider>`; Tau re-marks exhaustion on the next failure. If Tau reports that no model chain resolves, select a tier or explicit override for the agent type.
+Check the account's enabled state, model ID, and tier warnings first. Ficus skips candidates with missing authentication, disabled providers, unknown models, or a provider in cooldown. If none is usable, connect or correct one of the providers in the chain. If a provider is in cooldown but its limit window has already reset, clear the record with the **Reset** button on that account's row in AI Providers settings, or `ficus provider-auth reset <provider>`; Ficus re-marks exhaustion on the next failure. If Ficus reports that no model chain resolves, select a tier or explicit override for the agent type.
 
 Continue with [Agent types](/configure/agents/) or try your choices on [your first task](/start/first-task/).

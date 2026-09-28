@@ -1,7 +1,7 @@
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { useMemo } from 'react'
 import clsx from 'clsx'
-import type { Agent, WorkStream } from '@tau/shared'
+import type { Agent, WorkStream } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
 import { Badge } from './Badge'
 import { workStreamStatusLabel, WS_STATUS_BADGE_COLORS, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'

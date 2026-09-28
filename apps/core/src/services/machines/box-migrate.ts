@@ -249,7 +249,7 @@ export interface MigrateOptions {
   allowSquad?: boolean
   /**
    * Operator override for the ACTIVE-EXECUTION refusal only (`--force` on
-   * `tau machines migrate-box`) with an attributable actor and durable reason.
+   * `ficus machines migrate-box`) with an attributable actor and durable reason.
    *
    * Exists for one situation: a machine is dying and its boxes must be
    * evacuated NOW, even though the fence reports live work — a fence with no
@@ -279,7 +279,7 @@ export interface MigrateOptions {
  *  Scoped to the TRANSFER alone. The state-dir probes on either side are
  *  O(top-level entries) and keep the runner default on every role, so an
  *  unreachable machine fails those fast instead of hanging for half an hour. */
-const SQUAD_ARCHIVE_EXEC_TIMEOUT_MS = Number(process.env.TAU_BOX_MIGRATE_ARCHIVE_TIMEOUT_MS) || 30 * 60_000
+const SQUAD_ARCHIVE_EXEC_TIMEOUT_MS = Number(process.env.FICUS_BOX_MIGRATE_ARCHIVE_TIMEOUT_MS) || 30 * 60_000
 
 /** Transfer SSH budget for an AGENT / system-manager migration.
  *
@@ -296,7 +296,7 @@ const SQUAD_ARCHIVE_EXEC_TIMEOUT_MS = Number(process.env.TAU_BOX_MIGRATE_ARCHIVE
  *  Env-overridable like its squad twin: 5 minutes is only ~600MB on a 2MB/s
  *  cross-region link, and an operator moving fat agent boxes over a slow link
  *  needs an escape hatch that is not a redeploy. */
-const AGENT_ARCHIVE_EXEC_TIMEOUT_MS = Number(process.env.TAU_BOX_MIGRATE_AGENT_ARCHIVE_TIMEOUT_MS) || 5 * 60_000
+const AGENT_ARCHIVE_EXEC_TIMEOUT_MS = Number(process.env.FICUS_BOX_MIGRATE_AGENT_ARCHIVE_TIMEOUT_MS) || 5 * 60_000
 
 /** All external effects, injectable for tests; each defaults to production. */
 export interface MigrateDeps extends BoxManagerDeps {
@@ -327,7 +327,7 @@ export interface MigrateDeps extends BoxManagerDeps {
   startBoxAndAwaitHealth?: typeof startBoxAndAwaitHealthReal
   teardownBoxOnMachine?: typeof teardownBoxOnMachineReal
   /** Reverse-tunnel callback URL resolver for the TARGET machine (see the
-   *  TAU_API_URL re-resolution note in migrateBox). */
+   *  FICUS_API_URL re-resolution note in migrateBox). */
   resolveBoxApiUrl?: (machine: Machine) => Promise<string>
   /** Terminate a squad box's local-deployment PROCESSES (not just mark the DB)
    *  before the archive; defaults to stopLocalDeploymentsForSandbox. */
@@ -357,8 +357,8 @@ const DERIVED_ENV_KEYS = new Set([
   'EXECUTOR_AUTH_TOKEN',
   'EXECUTOR_BIND',
   'WORKSPACE_PATH',
-  'TAU_DEVBOX_DIR',
-  'TAU_BOX_HOME',
+  'FICUS_DEVBOX_DIR',
+  'FICUS_BOX_HOME',
   'BUN_PTY_LIB',
   'DOCKER_HOST',
 ])
@@ -749,7 +749,7 @@ export async function migrateBox(
       }
       const callerEnv = parseServerEnv(envRes.stdout)
       for (const key of DERIVED_ENV_KEYS) delete callerEnv[key]
-      // TAU_API_URL is machine-specific: the reverse tunnel is the default
+      // FICUS_API_URL is machine-specific: the reverse tunnel is the default
       // box→core path, so it's a reverse SSH forward on the OLD machine's
       // control connection — carried verbatim it would point the new box's
       // callbacks at a port that only exists on the machine it just left. And
@@ -757,7 +757,7 @@ export async function migrateBox(
       // re-pushes env), it would stay broken indefinitely. ALWAYS re-resolve
       // against the TARGET machine (even a public-looking carried URL is just
       // the old ensure's degraded fallback, superseded by a fresh resolution).
-      callerEnv.TAU_API_URL = await resolveApiUrl(target)
+      callerEnv.FICUS_API_URL = await resolveApiUrl(target)
 
       await ensureArtifacts(target)
       // Peek (not reserve — the row still points at the old machine) the port

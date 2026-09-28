@@ -1,6 +1,6 @@
 import { decodeHTML } from 'entities'
 import { marked, type Token } from 'marked'
-import { parseEntityReference, type ActivityPreviewSpan } from '@tau/shared'
+import { parseEntityReference, type ActivityPreviewSpan } from '@ficus/shared'
 
 // Bound parser work and wire size independently of visible text. An oversized
 // destination degrades to its authored label, never to a partial URL.

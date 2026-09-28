@@ -1,7 +1,7 @@
-import type { AgentStatus, AgentType } from '@tau/shared'
+import type { AgentStatus, AgentType } from '@ficus/shared'
 import type { AgentSessionEvent, SessionStats } from '@earendil-works/pi-coding-agent'
 
-import type { SessionUsage, MessageMetadata } from '@tau/shared'
+import type { SessionUsage, MessageMetadata } from '@ficus/shared'
 import { Execution } from '../../entities/Execution'
 import { AgentRunner } from '../../entities/agent-runners/base'
 import { AgentSession } from '../../entities/AgentSession'

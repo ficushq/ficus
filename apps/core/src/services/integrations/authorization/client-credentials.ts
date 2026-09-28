@@ -1,6 +1,6 @@
 import { isPlatformManaged } from '../../secrets/managed'
 import type { OAuthAuthority } from './authority'
-import type { OAuthClientBinding } from '@tau/shared/oauth-providers/types'
+import type { OAuthClientBinding } from '@ficus/shared/oauth-providers/types'
 import { configureGitHubApp, resolveGitHubAppCredentials } from './github-app'
 
 export const SELF_HOSTED_OAUTH_APP_KEY = {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { messageSortAt } from '@tau/shared'
+import { messageSortAt } from '@ficus/shared'
 import { asc, eq, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { agents, agentTypes, messages } from '../db/schema'

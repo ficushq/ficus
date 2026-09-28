@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { QuestionData } from '@tau/shared'
+import type { QuestionData } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { QuestionInput } from './QuestionInput'
 

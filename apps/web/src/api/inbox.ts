@@ -1,7 +1,7 @@
-// Thin shim over @tau/client-core (see ./clientInstance).
+// Thin shim over @ficus/client-core (see ./clientInstance).
 import { client } from './clientInstance'
 
-export type { SendInboxMessageInput, InboxMessageResponse } from '@tau/client-core'
+export type { SendInboxMessageInput, InboxMessageResponse } from '@ficus/client-core'
 
 export const getMyInbox = client.inbox.getMyInbox
 export const getMyInboxUnreadCount = client.inbox.getMyInboxUnreadCount

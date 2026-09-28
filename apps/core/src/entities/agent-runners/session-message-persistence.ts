@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import type { SessionUsage, MessageMetadata } from '@tau/shared'
+import type { SessionUsage, MessageMetadata } from '@ficus/shared'
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import type { StreamBuffer } from '../../services/streaming/buffer'
 import type { StreamEventCollector } from '../../services/streaming/events'

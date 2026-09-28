@@ -481,7 +481,7 @@ export function createRemoteHostsRouter(
   //
   // Docker/k8s sandboxes need no sync (their materialized changes appear via
   // a live mount) — pushSquadSshToBox reports that as `{pushed:false,
-  // reason:'live-mount'}` rather than an error; the CLI's `tau remote-hosts
+  // reason:'live-mount'}` rather than an error; the CLI's `ficus remote-hosts
   // sync` surfaces the reason as a no-op hint.
   app.post('/squad/:squadId/sync', requireSquadPermission('remote-hosts:read', 'squadId'), async (c) => {
     const squadId = await getValidSquadId(c.req.param('squadId'))

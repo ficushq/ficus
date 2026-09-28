@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { SystemLogProviderError, type SystemLogComponent, type SystemLogProviderId } from './types'
 
 type Targets = Record<SystemLogComponent, string>
@@ -26,23 +26,23 @@ const targets = (env: NodeJS.ProcessEnv, prefix: string, fallback?: Targets): Ta
 })
 
 export function loadExplicitSystemLogConfig(env: NodeJS.ProcessEnv = process.env): ExplicitSystemLogConfig | undefined {
-  const configuredProvider = env.TAU_SYSTEM_LOG_PROVIDER?.trim()
+  const configuredProvider = env.FICUS_SYSTEM_LOG_PROVIDER?.trim()
   if (!configuredProvider) return undefined
   if (!['pm2', 'systemd', 'docker', 'file', 'k8s'].includes(configuredProvider)) {
-    throw new SystemLogProviderError('CONFIG_INVALID', 'TAU_SYSTEM_LOG_PROVIDER is invalid.')
+    throw new SystemLogProviderError('CONFIG_INVALID', 'FICUS_SYSTEM_LOG_PROVIDER is invalid.')
   }
   const provider = configuredProvider as Exclude<SystemLogProviderId, 'unavailable'>
   switch (provider) {
     case 'pm2':
-      return { provider, targets: targets(env, 'TAU_PM2', { api: 'tau-api', worker: 'tau-worker' }) }
+      return { provider, targets: targets(env, 'FICUS_PM2', { api: 'tau-api', worker: 'tau-worker' }) }
     case 'systemd':
-      return { provider, targets: targets(env, 'TAU_SYSTEMD', { api: 'tau-api', worker: 'tau-worker' }) }
+      return { provider, targets: targets(env, 'FICUS_SYSTEMD', { api: 'tau-api', worker: 'tau-worker' }) }
     case 'docker':
       return {
         provider,
         targets: {
-          api: clean(env.TAU_DOCKER_API_CONTAINER, 'TAU_DOCKER_API_CONTAINER'),
-          worker: clean(env.TAU_DOCKER_WORKER_CONTAINER, 'TAU_DOCKER_WORKER_CONTAINER'),
+          api: clean(env.FICUS_DOCKER_API_CONTAINER, 'FICUS_DOCKER_API_CONTAINER'),
+          worker: clean(env.FICUS_DOCKER_WORKER_CONTAINER, 'FICUS_DOCKER_WORKER_CONTAINER'),
         },
       }
     case 'file': {
@@ -52,7 +52,7 @@ export function loadExplicitSystemLogConfig(env: NodeJS.ProcessEnv = process.env
       // CONFIG_INVALID. The check itself still stands — a genuinely relative
       // path (and `~user/…`, which we deliberately do not expand) is still
       // refused.
-      const raw = targets(env, 'TAU_LOG_FILE')
+      const raw = targets(env, 'FICUS_LOG_FILE')
       const paths: Targets = { api: expandTilde(raw.api), worker: expandTilde(raw.worker) }
       for (const component of components)
         if (!isAbsolute(paths[component]))
@@ -62,25 +62,29 @@ export function loadExplicitSystemLogConfig(env: NodeJS.ProcessEnv = process.env
     case 'k8s':
       return {
         provider,
-        namespace: clean(env.TAU_SYSTEM_LOG_K8S_NAMESPACE, 'TAU_SYSTEM_LOG_K8S_NAMESPACE'),
+        namespace: clean(env.FICUS_SYSTEM_LOG_K8S_NAMESPACE, 'FICUS_SYSTEM_LOG_K8S_NAMESPACE'),
         selectors: {
           api: clean(
-            env.TAU_SYSTEM_LOG_K8S_API_SELECTOR,
-            'TAU_SYSTEM_LOG_K8S_API_SELECTOR',
+            env.FICUS_SYSTEM_LOG_K8S_API_SELECTOR,
+            'FICUS_SYSTEM_LOG_K8S_API_SELECTOR',
             'app=tau-core,component=api'
           ),
           worker: clean(
-            env.TAU_SYSTEM_LOG_K8S_WORKER_SELECTOR,
-            'TAU_SYSTEM_LOG_K8S_WORKER_SELECTOR',
+            env.FICUS_SYSTEM_LOG_K8S_WORKER_SELECTOR,
+            'FICUS_SYSTEM_LOG_K8S_WORKER_SELECTOR',
             'app=tau-core,component=worker'
           ),
         },
         containers: {
-          api: clean(env.TAU_SYSTEM_LOG_K8S_API_CONTAINER, 'TAU_SYSTEM_LOG_K8S_API_CONTAINER', 'tau-api'),
-          worker: clean(env.TAU_SYSTEM_LOG_K8S_WORKER_CONTAINER, 'TAU_SYSTEM_LOG_K8S_WORKER_CONTAINER', 'tau-worker'),
+          api: clean(env.FICUS_SYSTEM_LOG_K8S_API_CONTAINER, 'FICUS_SYSTEM_LOG_K8S_API_CONTAINER', 'tau-api'),
+          worker: clean(
+            env.FICUS_SYSTEM_LOG_K8S_WORKER_CONTAINER,
+            'FICUS_SYSTEM_LOG_K8S_WORKER_CONTAINER',
+            'tau-worker'
+          ),
         },
       }
     default:
-      throw new SystemLogProviderError('CONFIG_INVALID', 'TAU_SYSTEM_LOG_PROVIDER is invalid.')
+      throw new SystemLogProviderError('CONFIG_INVALID', 'FICUS_SYSTEM_LOG_PROVIDER is invalid.')
   }
 }

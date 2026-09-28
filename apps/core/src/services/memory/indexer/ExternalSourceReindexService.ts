@@ -1,4 +1,4 @@
-import type { MemorySourceType } from '@tau/shared'
+import type { MemorySourceType } from '@ficus/shared'
 import { SquadSourceConfig } from '../../../entities/SquadSourceConfig'
 import { createLogger } from '../../../lib/infra/logger'
 import { IndexingService } from './IndexingService'

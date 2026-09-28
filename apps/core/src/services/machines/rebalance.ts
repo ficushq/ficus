@@ -23,7 +23,7 @@ const log = createLogger('rebalance')
  * Manual fleet rebalance on top of the migrateBox primitive: re-pack EXISTING
  * boxes so the packed shared pool satisfies its two placement invariants again
  * after a weight/capacity change (the packer only ever places NEW boxes — a
- * `TAU_UNIT_WEIGHT_*` / `TAU_MACHINE_UNIT_CAPACITY` change can leave live boxes
+ * `FICUS_UNIT_WEIGHT_*` / `FICUS_MACHINE_UNIT_CAPACITY` change can leave live boxes
  * co-located in ways placement would now refuse):
  *
  *  (a) unit budget — Σ unitWeightForSandboxId over a VM's boxes ≤ the machine
@@ -105,7 +105,7 @@ export interface RebalanceDeps {
   isVmRuntime?: () => boolean
   queryReadyMachineLoads?: () => Promise<Array<{ machine: Machine; boxSandboxIds: string[] }>>
   countMachines?: () => Promise<number>
-  /** Fleet cap; defaults to `TAU_MAX_MACHINES` (or {@link DEFAULT_MAX_MACHINES}). */
+  /** Fleet cap; defaults to `FICUS_MAX_MACHINES` (or {@link DEFAULT_MAX_MACHINES}). */
   maxMachines?: number
   provisionMachine?: (opts: ProvisionMachineOpts) => Promise<Machine>
   migrateBox?: (sandboxId: string, targetMachineId: string) => Promise<MigrateResult>
@@ -221,7 +221,7 @@ export async function planRebalance(deps: RebalanceDeps = {}): Promise<Rebalance
   const unplaceable: string[] = []
   const virtualNewUsed: number[] = [] // index = provision group id
   let machineCount: number | null = null
-  const maxMachines = deps.maxMachines ?? positiveIntEnv('TAU_MAX_MACHINES', DEFAULT_MAX_MACHINES)
+  const maxMachines = deps.maxMachines ?? positiveIntEnv('FICUS_MAX_MACHINES', DEFAULT_MAX_MACHINES)
 
   for (const evacuee of evacuees) {
     const candidates = states.filter((s) => s !== evacuee.from && !s.hasSquad && capacity - s.used >= evacuee.weight)

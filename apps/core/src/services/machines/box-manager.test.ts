@@ -38,6 +38,8 @@ import {
   buildMachineSnapshotCommand,
   measureBoxStateDirs,
   parseListeningLoopbackPorts,
+  parseBoxUid,
+  parseMachineSnapshotOutput,
   parseStateDirFacts,
   pullPrivateArchive,
   removeBox,
@@ -126,10 +128,10 @@ function makeFakeRunner(
       if (reply instanceof Error) throw reply
       if (reply) return reply
       // box-provision prints the box user's useradd-assigned uid on stdout
-      // (`TAU_BOX_UID=<uid>`) so box-manager can bake the rootless DOCKER_HOST
+      // (`FICUS_BOX_UID=<uid>`) so box-manager can bake the rootless DOCKER_HOST
       // socket path. Default provisions report a stable fake uid.
       if (command.includes('box-provision.sh') && !command.includes('--remove')) {
-        return { exitCode: 0, stdout: 'TAU_BOX_UID=4321\n', stderr: '' }
+        return { exitCode: 0, stdout: 'FICUS_BOX_UID=4321\n', stderr: '' }
       }
       return { exitCode: 0, stdout: '', stderr: '' }
     },
@@ -274,6 +276,30 @@ function happyDeps(events: string[], machine: Machine, box: MachineBox) {
 // ---------------------------------------------------------------------------
 // boxUnixUser
 // ---------------------------------------------------------------------------
+
+describe('legacy TAU_ output markers (one release)', () => {
+  it('parses the box uid from either marker spelling', () => {
+    expect(parseBoxUid('noise\nFICUS_BOX_UID=1001\n')).toBe(1001)
+    expect(parseBoxUid('noise\nTAU_BOX_UID=1001\n')).toBe(1001)
+    expect(parseBoxUid('BOX_UID=1001\n')).toBeNull()
+  })
+
+  it('parses machine snapshot liveness and sections from either marker spelling', () => {
+    for (const prefix of ['FICUS', 'TAU']) {
+      expect(
+        parseMachineSnapshotOutput(
+          `${prefix}_BOX_LIVENESS=idle\n${prefix}_CONTAINER_STATES_BEGIN\nworker Up\n${prefix}_CONTAINER_STATES_END\n` +
+            `${prefix}_BOX_LOGS_BEGIN\nloaded\n${prefix}_BOX_LOGS_END\n`
+        )
+      ).toEqual({ liveness: 'idle', containerStates: 'worker Up', logTail: 'loaded' })
+    }
+    expect(parseMachineSnapshotOutput('FICUS_STATE_BEGIN\nx\nTAU_STATE_END\n')).toEqual({
+      liveness: undefined,
+      containerStates: undefined,
+      logTail: undefined,
+    })
+  })
+})
 
 describe('boxUnixUser', () => {
   it('is box_ + first 12 hex of sha256(sandboxId)', () => {
@@ -510,12 +536,12 @@ describe('ensureBox', () => {
       { ok: true, status: 200 },
     ])
     deps.runner = makeFakeRunner(events, (command) => {
-      if (!command.includes('TAU_BOX_LIVENESS')) return { exitCode: 0, stdout: '', stderr: '' }
+      if (!command.includes('FICUS_BOX_LIVENESS')) return { exitCode: 0, stdout: '', stderr: '' }
       events.push('machine-second-opinion')
       return {
         exitCode: 0,
         stdout:
-          'TAU_BOX_LIVENESS=running\nTAU_CONTAINER_STATES_BEGIN\nworker Up 5 minutes\nTAU_CONTAINER_STATES_END\nTAU_BOX_LOGS_BEGIN\nloaded\nTAU_BOX_LOGS_END\n',
+          'FICUS_BOX_LIVENESS=running\nFICUS_CONTAINER_STATES_BEGIN\nworker Up 5 minutes\nFICUS_CONTAINER_STATES_END\nFICUS_BOX_LOGS_BEGIN\nloaded\nFICUS_BOX_LOGS_END\n',
         stderr: '',
       }
     }).runner
@@ -550,8 +576,8 @@ describe('ensureBox', () => {
         return { ok: true, status: 200 } as Response
       }) as unknown as typeof fetch
       deps.runner = makeFakeRunner(events, (command) =>
-        command.includes('TAU_BOX_LIVENESS')
-          ? { exitCode: 0, stdout: 'TAU_BOX_LIVENESS=exited\n', stderr: '' }
+        command.includes('FICUS_BOX_LIVENESS')
+          ? { exitCode: 0, stdout: 'FICUS_BOX_LIVENESS=exited\n', stderr: '' }
           : undefined
       ).runner
       let clock = 0
@@ -609,8 +635,8 @@ describe('ensureBox', () => {
       return { ok: true, status: 200 } as Response
     }) as unknown as typeof fetch
     deps.runner = makeFakeRunner(events, (command) =>
-      command.includes('TAU_BOX_LIVENESS')
-        ? { exitCode: 0, stdout: 'TAU_BOX_LIVENESS=running\n', stderr: '' }
+      command.includes('FICUS_BOX_LIVENESS')
+        ? { exitCode: 0, stdout: 'FICUS_BOX_LIVENESS=running\n', stderr: '' }
         : undefined
     ).runner
     let elapsed = 0
@@ -648,8 +674,8 @@ describe('ensureBox', () => {
     deps.getMachineBox = async () => readyBox
     Object.assign(deps, establishedDeadFreshHealthyDeps(events))
     deps.runner = makeFakeRunner(events, (command) =>
-      command.includes('TAU_BOX_LIVENESS')
-        ? { exitCode: 0, stdout: 'TAU_BOX_LIVENESS=running\n', stderr: '' }
+      command.includes('FICUS_BOX_LIVENESS')
+        ? { exitCode: 0, stdout: 'FICUS_BOX_LIVENESS=running\n', stderr: '' }
         : undefined
     ).runner
     let elapsed = 0
@@ -685,8 +711,8 @@ describe('ensureBox', () => {
     deps.getMachineBox = async () => readyBox
     Object.assign(deps, establishedDeadFreshHealthyDeps(events))
     deps.runner = makeFakeRunner(events, (command) =>
-      command.includes('TAU_BOX_LIVENESS')
-        ? { exitCode: 0, stdout: 'TAU_BOX_LIVENESS=running\n', stderr: '' }
+      command.includes('FICUS_BOX_LIVENESS')
+        ? { exitCode: 0, stdout: 'FICUS_BOX_LIVENESS=running\n', stderr: '' }
         : undefined
     ).runner
     let elapsed = 0
@@ -719,11 +745,11 @@ describe('ensureBox', () => {
     deps.getMachineBox = async () => readyBox
     Object.assign(deps, establishedDeadFreshHealthyDeps(events))
     deps.runner = makeFakeRunner(events, (command) => {
-      if (command.includes('TAU_BOX_LIVENESS')) {
+      if (command.includes('FICUS_BOX_LIVENESS')) {
         return {
           exitCode: 0,
           stdout:
-            'TAU_BOX_LIVENESS=running\nTAU_CONTAINER_STATES_BEGIN\njob Up 1 minute\nTAU_CONTAINER_STATES_END\nTAU_BOX_LOGS_BEGIN\nstalled\nTAU_BOX_LOGS_END\n',
+            'FICUS_BOX_LIVENESS=running\nFICUS_CONTAINER_STATES_BEGIN\njob Up 1 minute\nFICUS_CONTAINER_STATES_END\nFICUS_BOX_LOGS_BEGIN\nstalled\nFICUS_BOX_LOGS_END\n',
           stderr: '',
         }
       }
@@ -775,10 +801,10 @@ describe('ensureBox', () => {
     deps.getMachineBox = async () => readyBox
     Object.assign(deps, establishedDeadFreshHealthyDeps(events))
     deps.runner = makeFakeRunner(events, (command) =>
-      command.includes('TAU_BOX_LIVENESS')
+      command.includes('FICUS_BOX_LIVENESS')
         ? {
             exitCode: 0,
-            stdout: 'TAU_BOX_LIVENESS=exited\nTAU_BOX_LOGS_BEGIN\nexit 137\nTAU_BOX_LOGS_END\n',
+            stdout: 'FICUS_BOX_LIVENESS=exited\nFICUS_BOX_LOGS_BEGIN\nexit 137\nFICUS_BOX_LOGS_END\n',
             stderr: '',
           }
         : undefined
@@ -807,7 +833,7 @@ describe('ensureBox', () => {
     deps.getMachineBox = async () => readyBox
     Object.assign(deps, establishedDeadFreshHealthyDeps(events))
     deps.runner = makeFakeRunner(events, (command) =>
-      command.includes('TAU_BOX_LIVENESS') ? new Error('ssh connect timeout') : undefined
+      command.includes('FICUS_BOX_LIVENESS') ? new Error('ssh connect timeout') : undefined
     ).runner
     let evidence: any
     Object.assign(deps, {
@@ -832,8 +858,8 @@ describe('ensureBox', () => {
     deps.getMachineBox = async () => readyBox
     deps.fetch = makeFakeFetch(events, [{ ok: false, status: 503 }])
     deps.runner = makeFakeRunner(events, (command) =>
-      command.includes('TAU_BOX_LIVENESS')
-        ? { exitCode: 0, stdout: 'TAU_BOX_LIVENESS=exited\n', stderr: '' }
+      command.includes('FICUS_BOX_LIVENESS')
+        ? { exitCode: 0, stdout: 'FICUS_BOX_LIVENESS=exited\n', stderr: '' }
         : undefined
     ).runner
     Object.assign(deps, {
@@ -883,10 +909,10 @@ describe('ensureBox', () => {
     expect(envCall!.stdin).toContain('EXECUTOR_PORT=50100')
     expect(envCall!.stdin).toContain('EXECUTOR_SERVICE_CGROUP=1')
     expect(envCall!.stdin).toContain(`WORKSPACE_PATH=/home/${user}/workspace`)
-    expect(envCall!.stdin).toContain('TAU_DEVBOX_DIR=')
-    // TAU_BOX_HOME is baked so the box's sandbox-server permits file-sync writes
+    expect(envCall!.stdin).toContain('FICUS_DEVBOX_DIR=')
+    // FICUS_BOX_HOME is baked so the box's sandbox-server permits file-sync writes
     // under the box HOME (~/bin, ~/.tau/skills, ~/memory).
-    expect(envCall!.stdin).toContain(`TAU_BOX_HOME=/home/${user}`)
+    expect(envCall!.stdin).toContain(`FICUS_BOX_HOME=/home/${user}`)
     // BUN_PTY_LIB points the bundled server's shell/PTY loader at the native lib
     // ensureServerBundle ships next to server.js; without it the server crashes at
     // boot when the shell path dlopens librust_pty.so.
@@ -1016,7 +1042,7 @@ describe('ensureBox', () => {
       async run(_m, command) {
         if (command.includes('box-provision.sh')) order.push('provision')
         else if (command.includes('server.env')) order.push('env')
-        return { exitCode: 0, stdout: 'TAU_BOX_UID=4321\n', stderr: '' }
+        return { exitCode: 0, stdout: 'FICUS_BOX_UID=4321\n', stderr: '' }
       },
     }
     const cleared: string[] = []
@@ -1147,7 +1173,7 @@ describe('ensureBox', () => {
     expect(provCall.command).toContain('--with-docker')
 
     const envCall = calls.find((c) => c.command.includes('server.env'))!
-    // The uid comes from box-provision's TAU_BOX_UID marker (fake runner → 4321).
+    // The uid comes from box-provision's FICUS_BOX_UID marker (fake runner → 4321).
     expect(envCall.stdin).toContain('DOCKER_HOST=unix:///run/user/4321/docker.sock')
   })
 
@@ -1184,13 +1210,13 @@ describe('ensureBox', () => {
     const machine = makeMachine()
     const box = makeBox()
     const { deps } = happyDeps(events, machine, box)
-    // Provision succeeds but emits no TAU_BOX_UID marker → DOCKER_HOST would be
+    // Provision succeeds but emits no FICUS_BOX_UID marker → DOCKER_HOST would be
     // wrong; fail before pushing a broken env. (Handler forces empty stdout on
     // every command, overriding the default provision uid marker.)
     deps.runner = makeFakeRunner(events, () => ({ exitCode: 0, stdout: '', stderr: '' })).runner
 
     await expect(ensureBox({ sandboxId: 'sb-1', machineId: machine.id, env: {}, role: 'squad' }, deps)).rejects.toThrow(
-      /TAU_BOX_UID/
+      /FICUS_BOX_UID/
     )
   })
 
@@ -1382,7 +1408,7 @@ describe('ensureBox', () => {
         {
           sandboxId: 'sb-1',
           machineId: machine.id,
-          env: { TAU_BOX_SPEC_HASH: 'bare-spec-fresh' },
+          env: { FICUS_BOX_SPEC_HASH: 'bare-spec-fresh' },
           role: 'squad',
           specHash: 'spec-fresh',
         },
@@ -1428,8 +1454,8 @@ describe('ensureBox', () => {
     // (bundle/role/provision-script) never changed.
     it('an env-only change (e.g. a rotated GITHUB_TOKEN) between provision and resume busts the marker and forces the full path; an unchanged env still takes the fast path', async () => {
       const specHash = 'spec-abc'
-      const envBefore: Record<string, string> = { GITHUB_TOKEN: 'tok-old', TAU_API_URL: 'http://127.0.0.1:1' }
-      const envAfter: Record<string, string> = { GITHUB_TOKEN: 'tok-rotated', TAU_API_URL: 'http://127.0.0.1:1' }
+      const envBefore: Record<string, string> = { GITHUB_TOKEN: 'tok-old', FICUS_API_URL: 'http://127.0.0.1:1' }
+      const envAfter: Record<string, string> = { GITHUB_TOKEN: 'tok-rotated', FICUS_API_URL: 'http://127.0.0.1:1' }
       const markerBefore = computeProvisioningMarker(specHash, envBefore)
       const markerAfter = computeProvisioningMarker(specHash, envAfter)
       expect(markerBefore).not.toBe(markerAfter) // sanity: the marker actually moved
@@ -1676,11 +1702,11 @@ describe('ensureBox', () => {
   }
 
   function withoutHealthBudgetEnv<T>(fn: () => T): T {
-    const prior = process.env.TAU_BOX_HEALTH_BUDGET_MS
-    delete process.env.TAU_BOX_HEALTH_BUDGET_MS
+    const prior = process.env.FICUS_BOX_HEALTH_BUDGET_MS
+    delete process.env.FICUS_BOX_HEALTH_BUDGET_MS
     const restore = () => {
-      if (prior === undefined) delete process.env.TAU_BOX_HEALTH_BUDGET_MS
-      else process.env.TAU_BOX_HEALTH_BUDGET_MS = prior
+      if (prior === undefined) delete process.env.FICUS_BOX_HEALTH_BUDGET_MS
+      else process.env.FICUS_BOX_HEALTH_BUDGET_MS = prior
     }
     let out: T
     try {
@@ -1791,14 +1817,14 @@ describe('ensureBox', () => {
     }
   })
 
-  it('TAU_BOX_HEALTH_BUDGET_MS overrides the default fresh-box health budget (positive int only)', () => {
+  it('FICUS_BOX_HEALTH_BUDGET_MS overrides the default fresh-box health budget (positive int only)', () => {
     withoutHealthBudgetEnv(() => {
       expect(resolveBoxHealthBudgetMs()).toBe(DEFAULT_BOX_HEALTH_BUDGET_MS)
-      process.env.TAU_BOX_HEALTH_BUDGET_MS = '600000'
+      process.env.FICUS_BOX_HEALTH_BUDGET_MS = '600000'
       expect(resolveBoxHealthBudgetMs()).toBe(600_000)
-      process.env.TAU_BOX_HEALTH_BUDGET_MS = '-5'
+      process.env.FICUS_BOX_HEALTH_BUDGET_MS = '-5'
       expect(resolveBoxHealthBudgetMs()).toBe(DEFAULT_BOX_HEALTH_BUDGET_MS)
-      process.env.TAU_BOX_HEALTH_BUDGET_MS = 'soon'
+      process.env.FICUS_BOX_HEALTH_BUDGET_MS = 'soon'
       expect(resolveBoxHealthBudgetMs()).toBe(DEFAULT_BOX_HEALTH_BUDGET_MS)
     })
   })
@@ -1927,7 +1953,7 @@ describe('ensureBox', () => {
       command.includes('tar czf')
         ? { exitCode: 0, stdout: Buffer.from('x').toString('base64'), stderr: '' }
         : command.includes('box-provision.sh') && !command.includes('--remove')
-          ? { exitCode: 0, stdout: 'TAU_BOX_UID=4321\n', stderr: '' }
+          ? { exitCode: 0, stdout: 'FICUS_BOX_UID=4321\n', stderr: '' }
           : { exitCode: 0, stdout: '', stderr: '' }
     )
     const written: Array<{ dest: string }> = []
@@ -1987,7 +2013,7 @@ describe('ensureBox', () => {
       command.includes('--remove')
         ? new Error('ssh: connect to host aaaa timed out')
         : command.includes('box-provision.sh')
-          ? { exitCode: 0, stdout: 'TAU_BOX_UID=4321\n', stderr: '' }
+          ? { exitCode: 0, stdout: 'FICUS_BOX_UID=4321\n', stderr: '' }
           : { exitCode: 0, stdout: '', stderr: '' }
     )
     const deleted: string[] = []
@@ -2056,7 +2082,7 @@ describe('ensureBox', () => {
       command.includes('--remove')
         ? new Error('ssh: connect to host aaaa timed out')
         : command.includes('box-provision.sh')
-          ? { exitCode: 0, stdout: 'TAU_BOX_UID=4321\n', stderr: '' }
+          ? { exitCode: 0, stdout: 'FICUS_BOX_UID=4321\n', stderr: '' }
           : { exitCode: 0, stdout: '', stderr: '' }
     )
     const deleted: string[] = []
@@ -3589,7 +3615,7 @@ describe('machine snapshot liveness (executed)', () => {
     })
     const stdout = await new Response(proc.stdout).text()
     await proc.exited
-    return stdout.match(/^TAU_BOX_LIVENESS=(\w+)$/m)?.[1] ?? `NONE:${stdout}`
+    return stdout.match(/^FICUS_BOX_LIVENESS=(\w+)$/m)?.[1] ?? `NONE:${stdout}`
   }
 
   it('reads socket active + service active as running', async () => {
@@ -3641,7 +3667,7 @@ describe('idle boxes are healthy, and are never woken by a keep-warm ensure', ()
         calls.push({ command, stdin: undefined })
         return {
           exitCode: 0,
-          stdout: command.includes('TAU_BOX_LIVENESS') ? livenessLine : '',
+          stdout: command.includes('FICUS_BOX_LIVENESS') ? livenessLine : '',
           stderr: '',
         } as SshResult
       },
@@ -3663,7 +3689,7 @@ describe('idle boxes are healthy, and are never woken by a keep-warm ensure', ()
   }
 
   it('returns an `idle` box as healthy instead of condemning it', async () => {
-    const { deps, events, machine, box } = idleBoxDeps('TAU_BOX_LIVENESS=idle\n')
+    const { deps, events, machine, box } = idleBoxDeps('FICUS_BOX_LIVENESS=idle\n')
     const result = await ensureBox(
       { sandboxId: box.sandboxId, machineId: machine.id, env: {}, role: 'squad', specHash: 'marker-1' },
       deps
@@ -3675,7 +3701,7 @@ describe('idle boxes are healthy, and are never woken by a keep-warm ensure', ()
   })
 
   it('with a `listening` hint, does not probe at all — probing IS what wakes the box', async () => {
-    const { deps, events, machine, box, calls } = idleBoxDeps('TAU_BOX_LIVENESS=idle\n')
+    const { deps, events, machine, box, calls } = idleBoxDeps('FICUS_BOX_LIVENESS=idle\n')
     const result = await ensureBox(
       {
         sandboxId: box.sandboxId,
@@ -3690,7 +3716,7 @@ describe('idle boxes are healthy, and are never woken by a keep-warm ensure', ()
     expect(result.box.status).toBe('ready')
     expect(events).not.toContain('health')
     // ...and no machine snapshot either: the hint answered the question.
-    expect(calls.some((c) => c.command.includes('TAU_BOX_LIVENESS'))).toBe(false)
+    expect(calls.some((c) => c.command.includes('FICUS_BOX_LIVENESS'))).toBe(false)
     // The tunnel forward IS still established — establishing an SSH -L does not
     // connect to the box port, so the endpoint is ready when work arrives.
     expect(events).toContain('forward')
@@ -3698,7 +3724,7 @@ describe('idle boxes are healthy, and are never woken by a keep-warm ensure', ()
   })
 
   it('without the hint, an unhealthy `running` box still takes the condemnation path', async () => {
-    const { deps, machine, box } = idleBoxDeps('TAU_BOX_LIVENESS=running\n')
+    const { deps, machine, box } = idleBoxDeps('FICUS_BOX_LIVENESS=running\n')
     const classifications: string[] = []
     // The condemnation is the assertion; the re-provision it falls through to
     // is not modelled by this fake runner and is allowed to fail.
@@ -3776,8 +3802,8 @@ describe('box unit commands by mode', () => {
       { ok: true, status: 200 },
     ])
     const { runner, calls } = makeFakeRunner(events, (command) =>
-      command.includes('TAU_BOX_LIVENESS')
-        ? { exitCode: 0, stdout: 'TAU_BOX_LIVENESS=running\n', stderr: '' }
+      command.includes('FICUS_BOX_LIVENESS')
+        ? { exitCode: 0, stdout: 'FICUS_BOX_LIVENESS=running\n', stderr: '' }
         : undefined
     )
     deps.runner = runner
@@ -3788,7 +3814,7 @@ describe('box unit commands by mode', () => {
       hasActiveExecution: async () => true,
     })
     await ensureBox({ sandboxId, machineId: machine.id, env: {}, role }, deps)
-    return calls.find((c) => c.command.includes('TAU_BOX_LIVENESS'))!.command
+    return calls.find((c) => c.command.includes('FICUS_BOX_LIVENESS'))!.command
   }
 
   async function stopCommand(sandboxId: string): Promise<string> {
@@ -4482,7 +4508,7 @@ describe('provisioning marker decomposition', () => {
   // fast-path miss can LOG which half drifted. A spurious full re-provision
   // restarts the box's systemd unit — killing shells and running agent
   // commands — so when it happens the log must say why, in one line.
-  const env: Record<string, string> = { GITHUB_TOKEN: 'tok', TAU_API_URL: 'http://127.0.0.1:1' }
+  const env: Record<string, string> = { GITHUB_TOKEN: 'tok', FICUS_API_URL: 'http://127.0.0.1:1' }
 
   it('embeds the spec hash verbatim ahead of the env hash', () => {
     const marker = computeProvisioningMarker('spec-abc', env)

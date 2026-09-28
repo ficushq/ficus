@@ -62,7 +62,7 @@ All provider credentials are stored as a single JSON blob in the SecretStore und
 }
 ```
 
-Credentials are managed exclusively through the Settings UI, the CLI (`tau provider-auth`), and the API below; there is no file-based credential store.
+Credentials are managed exclusively through the Settings UI, the CLI (`ficus provider-auth`), and the API below; there is no file-based credential store.
 
 ## SecretStoreAuthBackend
 
@@ -98,9 +98,9 @@ Both return the refreshed provider summary, and `404` for an unknown provider or
 
 ### Resetting provider health
 
-When a provider returns a rate limit or plan-window exhaustion, Tau records a cooldown and stops
+When a provider returns a rate limit or plan-window exhaustion, Ficus records a cooldown and stops
 routing to it until `retryAt`. That timestamp is only as good as what the provider told us: the
-error often carries no reset time at all (Tau then applies a default window — 30 minutes for a plan
+error often carries no reset time at all (Ficus then applies a default window — 30 minutes for a plan
 limit), and some providers reset their window earlier than they announced. Waiting out a window
 that is already over costs real throughput.
 
@@ -108,7 +108,7 @@ Codex reports a usage limit in two different shapes, and both are ambiguous betw
 throttle and an exhausted plan window. An HTTP 429 is rewritten by the bundled client into `You
 have hit your ChatGPT usage limit (<plan> plan). Try again in ~N min.`, while a limit hit mid-stream
 arrives as an in-stream error event (`Codex error: The usage limit has been reached`, with the raw
-`usage_limit_reached` code and an optional `resets_at` / `resets_in_seconds` in its payload). Tau
+`usage_limit_reached` code and an optional `resets_at` / `resets_in_seconds` in its payload). Ficus
 lets the announced reset window decide for both: under 30 minutes is treated as a transient rate
 limit with that reset, and a longer or absent window as a plan limit on its reset or the 30-minute
 default.
@@ -119,8 +119,8 @@ rather than a bare "Exhausted". Reset it early with the **Reset** button on that
 Providers settings, or from the CLI:
 
 ```bash
-tau provider-auth reset <provider>                     # provider + all of its accounts
-tau provider-auth reset <provider> --account <id>      # one account only
+ficus provider-auth reset <provider>                     # provider + all of its accounts
+ficus provider-auth reset <provider> --account <id>      # one account only
 ```
 
 Records for an invalid or expired credential are never cleared: routing already treats those as
@@ -128,7 +128,7 @@ ready, so the record is the only thing telling you to re-authorize. The account 
 `409 credential_health` for them, the provider endpoint skips them and lists them in
 `skippedCredentialHealth`, and the settings row shows re-authorize guidance instead of **Reset**.
 
-Resetting asserts nothing about the upstream state — it only removes Tau's record. If the provider
+Resetting asserts nothing about the upstream state — it only removes Ficus's record. If the provider
 is in fact still exhausted, the very next request re-marks it with a fresh cooldown, so the worst
 case is one wasted call.
 
@@ -219,8 +219,8 @@ identity afterwards (a blind re-set would reinstate a superseded flow over the l
 a concurrent start gets `409` rather than being silently orphaned.
 
 Note: a superseded, timed-out, or mismatched flow has usually already **minted real tokens upstream**,
-which tau then discards. Those tokens are simply abandoned; the user must run the login again to
-obtain a credential tau will store.
+which ficus then discards. Those tokens are simply abandoned; the user must run the login again to
+obtain a credential ficus will store.
 
 Identity: OpenAI Codex OAuth credentials carry `credential.accountId` (the ChatGPT
 `chatgpt_account_id` claim pi-ai decodes from the access-token JWT), which drives both the dedupe

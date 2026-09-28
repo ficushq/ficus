@@ -6,7 +6,7 @@ import {
   type AgentQuestion,
   type AgentQuestionStatus,
   type QuestionData,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db, agentQuestions } from '../../db'
 import {
   agentQuestionRecipients,

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { queryKeys } from '../../queryKeys'
-import type { Agent, Squad, WorkStream } from '@tau/shared'
+import type { Agent, Squad, WorkStream } from '@ficus/shared'
 
 const { AgentWorkStreamsPanel } = await import('./AgentWorkStreamsPanel')
 
@@ -10,8 +10,8 @@ const now = new Date('2026-01-01T00:00:00Z')
 
 const squad: Squad = {
   id: 'squad-1',
-  name: 'Tau',
-  purpose: 'Build Tau',
+  name: 'Ficus',
+  purpose: 'Build Ficus',
   status: 'active',
   squadPresetId: null,
   defaultAgents: [],

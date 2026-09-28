@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
-import { trackedResourceKey, type IntegrationOutputFact, type TrackedResource } from '@tau/shared'
+import { trackedResourceKey, type IntegrationOutputFact, type TrackedResource } from '@ficus/shared'
 import { db, squads, workStreams, integrationOutputEvents } from '../../db'
 import type { IntegrationOutputAuthority } from '../integrations/outputs/types'
 import { deliveryView, recordDeliveryObservation, recordDeliveryVerification } from './delivery-pull-requests'

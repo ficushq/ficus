@@ -14,4 +14,4 @@
 
 `source=all` refreshes `memory_file`, `workspace_file`, `slack_thread`, `slack_canvas`, and `github_issue`. It deliberately excludes `agent_thread`.
 
-External indexed sources are skipped when their `SquadSourceConfig.enabled` value is `false`. GitHub issue/PR documents are also refreshed from GitHub webhook events that carry an affected issue or pull request number, for squads whose `github_issue` source policy includes the repository. Agent threads are indexed automatically from execution lifecycle events, are not user-reindexable, and are stripped from search while `AGENT_THREAD_SEARCH_ENABLED` is `false` in `@tau/shared`.
+External indexed sources are skipped when their `SquadSourceConfig.enabled` value is `false`. GitHub issue/PR documents are also refreshed from GitHub webhook events that carry an affected issue or pull request number, for squads whose `github_issue` source policy includes the repository. Agent threads are indexed automatically from execution lifecycle events, are not user-reindexable, and are stripped from search while `AGENT_THREAD_SEARCH_ENABLED` is `false` in `@ficus/shared`.

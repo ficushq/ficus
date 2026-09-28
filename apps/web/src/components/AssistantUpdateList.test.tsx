@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test'
-import type { AssistantActivityUpdate } from '@tau/shared'
+import type { AssistantActivityUpdate } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { shouldAcknowledgeAssistantUpdate, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
 import { AssistantUpdateList, type AssistantUpdateObserverFactory } from './AssistantUpdateList'

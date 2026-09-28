@@ -26,8 +26,8 @@ class MemoryStore {
 }
 
 const priorEnv = {
-  managed: process.env.TAU_MANAGED,
-  keys: process.env.TAU_MANAGED_SECRET_KEYS,
+  managed: process.env.FICUS_MANAGED,
+  keys: process.env.FICUS_MANAGED_SECRET_KEYS,
   clientId: process.env.NOTION_OAUTH_CLIENT_ID,
   clientSecret: process.env.NOTION_OAUTH_CLIENT_SECRET,
 }
@@ -42,23 +42,23 @@ describe('OAuth application credentials', () => {
 
   beforeEach(() => {
     store = new MemoryStore()
-    delete process.env.TAU_MANAGED
-    delete process.env.TAU_MANAGED_SECRET_KEYS
+    delete process.env.FICUS_MANAGED
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
     delete process.env.NOTION_OAUTH_CLIENT_ID
     delete process.env.NOTION_OAUTH_CLIENT_SECRET
   })
 
   afterEach(() => {
-    restore('TAU_MANAGED', priorEnv.managed)
-    restore('TAU_MANAGED_SECRET_KEYS', priorEnv.keys)
+    restore('FICUS_MANAGED', priorEnv.managed)
+    restore('FICUS_MANAGED_SECRET_KEYS', priorEnv.keys)
     restore('NOTION_OAUTH_CLIENT_ID', priorEnv.clientId)
     restore('NOTION_OAUTH_CLIENT_SECRET', priorEnv.clientSecret)
   })
 
   test('hosted settings are authority-derived and no configuration exposes managed Notion credentials', () => {
-    process.env.TAU_MANAGED = '1'
-    process.env.TAU_MANAGED_SECRET_KEYS =
-      'NOTION_OAUTH_CLIENT_ID,NOTION_OAUTH_CLIENT_SECRET,TAU_PLATFORM_INSTANCE_TOKEN'
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS =
+      'NOTION_OAUTH_CLIENT_ID,NOTION_OAUTH_CLIENT_SECRET,FICUS_PLATFORM_INSTANCE_TOKEN'
     process.env.NOTION_OAUTH_CLIENT_ID = 'should-be-unreachable-id'
     process.env.NOTION_OAUTH_CLIENT_SECRET = 'should-be-unreachable-secret'
     store.values.set(
@@ -86,7 +86,7 @@ describe('OAuth application credentials', () => {
   })
 
   test('historical local credentials are refreshed and available only through the revoke-only resolver', async () => {
-    process.env.TAU_MANAGED = '1'
+    process.env.FICUS_MANAGED = '1'
     store.values.set(
       SELF_HOSTED_OAUTH_APP_KEY.notion,
       JSON.stringify({
@@ -106,7 +106,7 @@ describe('OAuth application credentials', () => {
   })
 
   test('hosted configuration rejects before parsing or writing local credentials', async () => {
-    process.env.TAU_MANAGED = '1'
+    process.env.FICUS_MANAGED = '1'
 
     await expect(
       configureOAuthApp(

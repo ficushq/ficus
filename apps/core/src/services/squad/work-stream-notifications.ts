@@ -4,7 +4,7 @@ import {
   workStreamTitle,
   type AttentionKind,
   type InboxPushPresentation,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, inbox, squads } from '../../db/schema'
@@ -459,7 +459,7 @@ export async function notifyWorkStreamAssigned(
       ...(ownerContext ? [ownerContext] : []),
       ...(workStream.handoffMessage ? [`Handoff message: ${workStream.handoffMessage}`] : []),
       ...(otherAgentsContext ? [otherAgentsContext] : []),
-      `Query the work stream with \`tau workstream get ${workStreamRef(workStream)}\` to see the full details.`,
+      `Query the work stream with \`ficus workstream get ${workStreamRef(workStream)}\` to see the full details.`,
     ]
     await sendDeduped({
       recipientType: 'agent',
@@ -680,9 +680,9 @@ export async function notifyWorkStreamOwnerOfNewStream(
     const content = [
       `A new work stream you now own was ${workStream.metadata?.integrationSource ? 'created' : 'started'} by ${creatorDescription}.`,
       requesterContext,
-      `Query it with \`tau workstream get ${workStreamRef(workStream)}\` to see the full details.`,
+      `Query it with \`ficus workstream get ${workStreamRef(workStream)}\` to see the full details.`,
       workStream.pause && workStream.metadata?.integrationSource && !workStream.agentIds?.length
-        ? `The workflow is paused before any workers start. Review the event and workflow, prepare its workspace if needed with \`tau workstream update ${workStreamRef(workStream)} --repository <checkout-path>\`, then start it with \`tau workstream resume ${workStreamRef(workStream)}\`. If no Git workspace is needed, resume after reviewing the task. Do not manually bypass repository setup guards.`
+        ? `The workflow is paused before any workers start. Review the event and workflow, prepare its workspace if needed with \`ficus workstream update ${workStreamRef(workStream)} --repository <checkout-path>\`, then start it with \`ficus workstream resume ${workStreamRef(workStream)}\`. If no Git workspace is needed, resume after reviewing the task. Do not manually bypass repository setup guards.`
         : null,
     ]
       .filter((part): part is string => Boolean(part))

@@ -77,7 +77,7 @@ export function MigrateControl({
         value={target}
         onChange={(e) => setTarget(e.target.value)}
         disabled={targets.length === 0 || mutation.isPending}
-        className={clsx('tau-field', selectClass, 'w-auto')}
+        className={clsx('ficus-field', selectClass, 'w-auto')}
       >
         <option value="">{targets.length === 0 ? 'No target machines' : 'Migrate to…'}</option>
         {targets.map((m) => (
@@ -106,7 +106,7 @@ export function MigrateControl({
           mutation.mutate()
         }}
         disabled={!target || mutation.isPending}
-        className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+        className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
       >
         {mutation.isPending ? 'Migrating…' : 'Migrate'}
       </button>

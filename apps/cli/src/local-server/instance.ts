@@ -6,7 +6,7 @@ import {
   LOCAL_INSTANCE_LABEL_RE,
   localProcessNames,
   normalizeLocalInstanceLabel,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { SetupOptionsError } from './types'
 
 /** The label of the instance every existing checkout already is: its names are today's names. */
@@ -14,7 +14,7 @@ export const DEFAULT_INSTANCE = DEFAULT_LOCAL_INSTANCE
 
 export interface InstanceNames {
   label: string
-  /** pm2 app names — also what TAU_PM2_*_NAME must say for system-log streaming. */
+  /** pm2 app names — also what FICUS_PM2_*_NAME must say for system-log streaming. */
   api: string
   worker: string
   /** docker container and volume of the installer-managed PostgreSQL. */
@@ -68,22 +68,22 @@ export function derivePorts(port: number): { workerPort: number; eventPort: numb
 }
 
 /**
- * The label a checkout belongs to. It is persisted as TAU_INSTANCE at setup;
+ * The label a checkout belongs to. It is persisted as FICUS_INSTANCE at setup;
  * a checkout without one is the default instance. An unusable value throws
  * rather than defaulting: acting on the wrong instance is worse than failing.
  */
 export function readInstanceLabel(root: string): string {
   const path = join(root, '.env')
   if (!existsSync(path)) return DEFAULT_INSTANCE
-  const raw = parseEnvFile(readFileSync(path, 'utf8')).TAU_INSTANCE?.trim()
+  const raw = parseEnvFile(readFileSync(path, 'utf8')).FICUS_INSTANCE?.trim()
   return raw ? normalizeLabel(raw) : DEFAULT_INSTANCE
 }
 
 const SUBSTITUTIONS = [
   { line: "name: 'tau-api',", of: (n: InstanceNames) => `name: '${n.api}',` },
   { line: "name: 'tau-worker',", of: (n: InstanceNames) => `name: '${n.worker}',` },
-  { line: "TAU_PM2_API_NAME: 'tau-api',", of: (n: InstanceNames) => `TAU_PM2_API_NAME: '${n.api}',` },
-  { line: "TAU_PM2_WORKER_NAME: 'tau-worker',", of: (n: InstanceNames) => `TAU_PM2_WORKER_NAME: '${n.worker}',` },
+  { line: "FICUS_PM2_API_NAME: 'tau-api',", of: (n: InstanceNames) => `FICUS_PM2_API_NAME: '${n.api}',` },
+  { line: "FICUS_PM2_WORKER_NAME: 'tau-worker',", of: (n: InstanceNames) => `FICUS_PM2_WORKER_NAME: '${n.worker}',` },
 ]
 
 /**

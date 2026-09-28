@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { THEME_TOKEN_FAMILIES } from '@tau/shared'
+import { THEME_TOKEN_FAMILIES } from '@ficus/shared'
 import { variants, contrastRatio } from './test/palette'
 import { readTokenColor } from './tokenReader'
 import { agentGraphColor, squadGraphColor, relationshipGraphColor } from './graph'

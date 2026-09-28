@@ -14,9 +14,9 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChatApiProvider } from '../api/ChatApiProvider'
 import { queryKeys } from '../queryKeys'
-import type { TauClient } from '@tau/client-core'
-import { ConversationClientProvider } from '@tau/client-react'
-import type { RenderItem } from '@tau/client-react'
+import type { FicusClient } from '@ficus/client-core'
+import { ConversationClientProvider } from '@ficus/client-react'
+import type { RenderItem } from '@ficus/client-react'
 import { acquireDomHarness } from '../test/domHarness'
 
 // ---------------------------------------------------------------------------
@@ -109,8 +109,8 @@ let _agentQuestionFetchCount = 0
 // Types
 // ---------------------------------------------------------------------------
 
-type StreamCb = Parameters<TauClient['agents']['subscribeToAgentStream']>[1]
-type ChatCb = Parameters<TauClient['chat']['sendChatMessage']>[1]
+type StreamCb = Parameters<FicusClient['agents']['subscribeToAgentStream']>[1]
+type ChatCb = Parameters<FicusClient['chat']['sendChatMessage']>[1]
 
 // ---------------------------------------------------------------------------
 // Mock client
@@ -144,15 +144,15 @@ function makeMockClient() {
         chatCb = cb
       },
     },
-  } as unknown as TauClient
+  } as unknown as FicusClient
 
   return {
     client,
     sent,
     chatSent,
     emit: (...args: Parameters<NonNullable<StreamCb>['onEvent']>) => streamCb?.onEvent(...args),
-    catchup: (events: import('@tau/shared').StreamEvent[]) => streamCb?.onCatchup?.(events),
-    emitChat: (event: import('@tau/shared').StreamEvent) => chatCb?.onEvent(event),
+    catchup: (events: import('@ficus/shared').StreamEvent[]) => streamCb?.onCatchup?.(events),
+    emitChat: (event: import('@ficus/shared').StreamEvent) => chatCb?.onEvent(event),
   }
 }
 
@@ -182,7 +182,7 @@ async function installDom() {
 
 const queryClients = new Set<QueryClient>()
 
-function makeProviders(client: TauClient) {
+function makeProviders(client: FicusClient) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClients.add(qc)
   function Providers({ children }: { children: React.ReactNode }) {
@@ -1172,7 +1172,7 @@ test('mounted web conversation preserves live response through repeated leading-
     )
   )
   await flush()
-  const events: import('@tau/shared').StreamEvent[] = [
+  const events: import('@ficus/shared').StreamEvent[] = [
     { type: 'agent', agentId: 'a1', executionId: 'e' },
     { type: 'flush_agent' },
     { type: 'thinking', text: 'Plan', streamGroupId: 'S' },

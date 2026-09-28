@@ -4,7 +4,7 @@ import {
   resolveProviderHealthRecord,
   type ProviderHealthRecord,
   type ProviderRoute,
-} from '@tau/shared/provider-health'
+} from '@ficus/shared/provider-health'
 import { db } from '../../db'
 import { fleetIncidents } from '../../db/schema'
 import { observeProvider } from './store'

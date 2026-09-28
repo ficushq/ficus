@@ -4,7 +4,7 @@ import {
   workflowDefinitionSchema,
   type WorkflowDefinition,
   type WorkflowSource,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { Modal } from '../Modal'
 import { WorkflowEditor } from './WorkflowEditor'
 
@@ -69,12 +69,12 @@ export function WorkflowEditorModal({
           </p>
         )}
         <div className="flex items-center justify-end gap-2">
-          <button type="button" className="tau-button text-sm text-secondary" onClick={onClose}>
+          <button type="button" className="ficus-button text-sm text-secondary" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
             onClick={save}
           >
             Use this flow

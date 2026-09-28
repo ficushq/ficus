@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import type { SandboxToolchainConfig } from '@tau/shared'
+import type { SandboxToolchainConfig } from '@ficus/shared'
 
 const MANAGED_DEVBOX_SCHEMA = 'https://raw.githubusercontent.com/jetify-com/devbox/0.14.0/.schema/devbox.schema.json'
 
@@ -50,7 +50,7 @@ export function fingerprintToolchain(config: ManagedToolchainConfig): string {
     .digest('hex')
 }
 
-/** The isolated Devbox configuration Tau writes without touching project files. */
+/** The isolated Devbox configuration Ficus writes without touching project files. */
 export function renderManagedDevbox(config: ManagedToolchainConfig): string {
   const normalized = normalizeToolchain(config)
   return `${JSON.stringify(

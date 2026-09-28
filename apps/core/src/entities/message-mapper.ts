@@ -1,5 +1,5 @@
 import { messages } from '../db'
-import { Message, MessageMetadata } from '@tau/shared'
+import { Message, MessageMetadata } from '@ficus/shared'
 
 /** Map a database row for internal delivery and state-management paths. */
 export function mapMessage(row: typeof messages.$inferSelect): Message {

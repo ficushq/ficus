@@ -6,7 +6,7 @@ import { Outbox, OUTBOX_MAX_ATTEMPTS } from '../../entities/Outbox'
 import { Peer } from '../../entities/Peer'
 import { drainOutboxOnce } from './outbox-delivery'
 import { verifyEnvelope, generateInstanceKeyPair, instanceIdFromPublicKeyPem } from './crypto'
-import type { AmtpEnvelope } from '@tau/shared'
+import type { AmtpEnvelope } from '@ficus/shared'
 
 const PEER_INSTANCE = 'peer-instance-fingerprint-00000000000000000000'
 const PEER_INSTANCE_2 = 'peer-instance-fingerprint-11111111111111111111'

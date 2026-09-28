@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
-import type { SharedPrompt as SharedPromptJson } from '@tau/shared'
+import type { SharedPrompt as SharedPromptJson } from '@ficus/shared'
 import { db, sharedPrompts } from '../db'
 
 export type SharedPromptRow = InferSelectModel<typeof sharedPrompts>

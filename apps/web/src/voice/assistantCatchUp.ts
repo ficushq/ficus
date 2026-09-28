@@ -1,4 +1,4 @@
-import type { AssistantMailboxUpdate } from '@tau/shared'
+import type { AssistantMailboxUpdate } from '@ficus/shared'
 
 export const CATCH_UP_MAX_UPDATES = 10
 export const CATCH_UP_MAX_CHARS = 12_000

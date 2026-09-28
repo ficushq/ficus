@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { PushCategory } from '@tau/shared'
+import type { PushCategory } from '@ficus/shared'
 import { db } from '../db'
 import { userNotificationPreferences } from '../db/schema'
 

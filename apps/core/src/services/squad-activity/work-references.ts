@@ -1,5 +1,5 @@
 import { inArray } from 'drizzle-orm'
-import type { SquadActivityItem } from '@tau/shared'
+import type { SquadActivityItem } from '@ficus/shared'
 import { db, workStreams } from '../../db'
 
 /** Work-stream id a ref wants enriched with a human-facing number, if it has one. */

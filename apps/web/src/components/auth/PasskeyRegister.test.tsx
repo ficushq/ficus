@@ -47,7 +47,7 @@ describe('PasskeyRegister', () => {
     // display-name helper line was removed as redundant.
     expect(findInputByPlaceholder('User display name (optional)')).not.toBeNull()
     expect(findInputByPlaceholder('Passkey name (optional)')).not.toBeNull()
-    expect(container.textContent).not.toContain('This names your Tau user account')
+    expect(container.textContent).not.toContain('This names your Ficus user account')
   })
 
   test('shows user display name during regular account registration', async () => {

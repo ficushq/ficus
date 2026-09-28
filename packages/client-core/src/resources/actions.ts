@@ -1,4 +1,4 @@
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 export function actionsResource(t: Transport) {

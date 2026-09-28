@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
-import { ACTIVE_THEME_TOKENS, compileCustomTheme, validateCustomTheme } from '@tau/shared'
+import { ACTIVE_THEME_TOKENS, compileCustomTheme, validateCustomTheme } from '@ficus/shared'
 import { TauLogo } from '../components/TauLogo'
 import { BUILT_IN_THEMES } from './registry'
 import { palettes } from './test/builtins'

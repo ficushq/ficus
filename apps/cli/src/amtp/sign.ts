@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { canonicalAgentSigBytes } from '@tau/shared'
+import { canonicalAgentSigBytes } from '@ficus/shared'
 import { deriveAgentKeyPem, signAgentSig } from './identity'
 
 export interface FederatedAttachmentRef {
@@ -24,7 +24,7 @@ export interface FederatedSendBody {
 
 /**
  * Assemble the signed POST /api/inbox body for a federated send. The CLI generates the
- * envelope id (the server's idempotency/dedup key), canonicalizes the subset in @tau/shared
+ * envelope id (the server's idempotency/dedup key), canonicalizes the subset in @ficus/shared
  * (identical to the server's verification), signs it, and attaches the derived SPKI agentKey.
  * The canonical subset excludes attachment ids, ts, and inReplyTo (D4) — only the four
  * attachment digest fields are bound.

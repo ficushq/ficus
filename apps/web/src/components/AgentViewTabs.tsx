@@ -64,7 +64,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
         aria-label={activeLabel}
         aria-pressed={isActive}
         className={clsx(
-          'tau-button',
+          'ficus-button',
           'flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors',
           index > 0 && 'border-l border-th-border',
           isActive ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary hover:bg-surface-hover'
@@ -116,13 +116,13 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
           aria-label={`Conversation options, ${tabs.find((tab) => tab.value === activeTab)?.label ?? activeTab} view`}
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
-          className="tau-button flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary"
+          className="ficus-button flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary"
         >
           <MoreIcon className="h-4 w-4" />
         </button>
         <Presence
           open={menuOpen}
-          className="tau-overlay absolute right-0 top-full z-30 mt-1 w-40 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
+          className="ficus-overlay absolute right-0 top-full z-30 mt-1 w-40 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
         >
           {tabs.map((tab) => (
             <button
@@ -135,7 +135,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
                 triggerRef.current?.focus()
               }}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 'block w-full rounded-md px-3 py-2 text-left text-sm',
                 activeTab === tab.value ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface-hover'
               )}
@@ -151,7 +151,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
           aria-label="Agent view"
           value={activeTab}
           onChange={handleSelectChange}
-          className="tau-field max-w-36 appearance-none rounded-md border border-th-border bg-surface py-1 pl-2 pr-7 text-xs font-medium text-primary  focus:ring-2 focus:ring-accent"
+          className="ficus-field max-w-36 appearance-none rounded-md border border-th-border bg-surface py-1 pl-2 pr-7 text-xs font-medium text-primary  focus:ring-2 focus:ring-accent"
         >
           {tabs.map((tab) => {
             const activeCount = tab.activeCount ?? 0

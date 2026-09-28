@@ -1,4 +1,4 @@
-import type { CreateSquadMemoryGrantInput, SquadMemoryGrantDTO } from '@tau/shared'
+import type { CreateSquadMemoryGrantInput, SquadMemoryGrantDTO } from '@ficus/shared'
 import { apiFetch } from './client'
 
 export async function listOutboundGrants(

@@ -8,8 +8,8 @@ export function assertLocalSetupFixtureEnvironment(env: Record<string, string | 
     env.GITHUB_ACTIONS !== 'true' ||
     env.DATABASE_URL !== 'postgres://postgres:postgres@localhost:5433/tau_local_setup' ||
     !env.GH_TOKEN ||
-    !env.TAU_PASSWORD ||
-    !/^[0-9a-f]{64}$/i.test(env.TAU_ENCRYPTION_KEY ?? '')
+    !env.FICUS_PASSWORD ||
+    !/^[0-9a-f]{64}$/i.test(env.FICUS_ENCRYPTION_KEY ?? '')
   ) {
     throw new Error('GitHub updater fixture requires the disposable local-setup CI environment')
   }
@@ -66,7 +66,7 @@ async function seed(): Promise<void> {
   }
   const response = await fetch('http://localhost:3100/api/updates/settings', {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${process.env.TAU_PASSWORD}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${process.env.FICUS_PASSWORD}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ githubConnectionId: id }),
     signal: AbortSignal.timeout(15_000),
   })

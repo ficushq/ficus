@@ -60,12 +60,17 @@ OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 # does connect, it fails immediately instead of hanging on an unroutable host
 # while CI burns its timeout.
 export DATABASE_URL="${DATABASE_URL:-postgres://build:build@localhost:5432/build}"
-# A builder must never inherit test or root-relocation state: TAU_TEST_MODE
-# swaps in test doubles, and TAU_ROOT/TAU_REPO_ROOT would point the builds and
+# A builder must never inherit test or root-relocation state: FICUS_TEST_MODE
+# swaps in test doubles, and FICUS_ROOT/FICUS_REPO_ROOT would point the builds and
 # the machine-bundle prebuild at a DIFFERENT tree than the one we are staging.
-unset TAU_TEST_MODE
-unset TAU_ROOT
-unset TAU_REPO_ROOT
+unset FICUS_TEST_MODE
+unset FICUS_ROOT
+unset FICUS_REPO_ROOT
+# ...and their legacy spellings, for one release (Ficus rename): the in-process
+# bridge would promote an inherited TAU_ name to FICUS_ inside the build.
+unset TAU_TEST_MODE # legacy-env
+unset TAU_ROOT # legacy-env
+unset TAU_REPO_ROOT # legacy-env
 
 # --- prerequisites ---
 if ! COMMIT="$(git rev-parse HEAD 2>/dev/null)"; then
@@ -145,7 +150,8 @@ echo "==> build: web" >&2
 bun run --filter web build
 
 for output in apps/core/dist/index.js apps/core/dist/worker.js apps/core/dist/migrate.js \
-  apps/core/dist/smoke-configured-extensions.js apps/core/dist/box-control.js apps/cli/dist/tau.js apps/web/dist/index.html \
+  apps/core/dist/smoke-configured-extensions.js apps/core/dist/box-control.js \
+  apps/core/dist/system-token-control.js apps/cli/dist/ficus.js apps/web/dist/index.html \
   apps/core/docs-dist/index.html apps/core/docs-dist/404.html apps/core/docs-dist/pagefind/pagefind.js; do
   if [[ ! -f "$output" ]]; then
     echo "error: build finished but $output does not exist" >&2

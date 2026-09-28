@@ -1,4 +1,4 @@
-import type { ArtifactEntry, ArtifactManifest, ArtifactStatus } from '@tau/shared'
+import type { ArtifactEntry, ArtifactManifest, ArtifactStatus } from '@ficus/shared'
 import { Agent, agentWorkspaceSandboxId } from '../../entities/Agent'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../../entities/agent-runners/constants'
 import { getAgentWorkspaceStoragePath } from '../sandbox/ensure'

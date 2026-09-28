@@ -11,7 +11,7 @@ import type {
   WorkStreamWait,
   IntegrationOutputDescriptor,
   IntegrationDeliveryView,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export interface WorkflowCatalogEntry extends WorkflowPreset {
   revision: string

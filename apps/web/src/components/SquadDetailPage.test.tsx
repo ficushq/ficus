@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import type { Agent, Squad, WorkStream, SquadActivityItem } from '@tau/shared'
+import type { Agent, Squad, WorkStream, SquadActivityItem } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { WebSocketContext } from '../hooks/useWebSocket'
 
@@ -25,7 +25,7 @@ const now = new Date('2026-01-01T00:00:00Z')
 
 const squad: Squad = {
   id: 'squad-1',
-  name: 'Tau Mobile Header Squad',
+  name: 'Ficus Mobile Header Squad',
   purpose: 'Build mobile layouts',
   status: 'active',
   squadPresetId: null,
@@ -282,7 +282,7 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
   const requests: string[] = []
   const pending = new Map<string, (response: Response) => void>()
   const dom = await acquireDomHarness({
-    url: 'http://localhost/squads/tau',
+    url: 'http://localhost/squads/ficus',
     configureWindow: (window) => {
       window.fetch = ((input: string) => {
         const path = new URL(input).pathname + new URL(input).search
@@ -292,7 +292,7 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
     },
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  const canonical = { ...squad, id: '11111111-1111-1111-1111-111111111111', name: 'Tau' }
+  const canonical = { ...squad, id: '11111111-1111-1111-1111-111111111111', name: 'Ficus' }
   const { root, container } = dom.createRoot()
   const flush = () =>
     dom.act(async () => {
@@ -301,7 +301,7 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
   try {
     await dom.act(async () =>
       root.render(
-        <MemoryRouter initialEntries={['/squads/tau']}>
+        <MemoryRouter initialEntries={['/squads/ficus']}>
           <QueryClientProvider client={client}>
             <Routes>
               <Route path="/squads/:squadId/:tab?" element={<SquadDetailPage dependencies={dependencies} />} />
@@ -311,9 +311,9 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
       )
     )
     const newChat = [...container.querySelectorAll('a')].find((link) => link.textContent?.includes('New chat'))!
-    expect(newChat.getAttribute('href')).toBe('/squads/tau/agents?newConsultant=1')
+    expect(newChat.getAttribute('href')).toBe('/squads/ficus/agents?newConsultant=1')
     expect(container.textContent).not.toContain('No active work streams')
-    expect(requests.some((path) => path.includes('/squads/tau'))).toBe(false)
+    expect(requests.some((path) => path.includes('/squads/ficus'))).toBe(false)
     await dom.act(async () => pending.get('/api/squads')!(new Response(JSON.stringify([canonical]))))
     await flush()
     expect(container.textContent).not.toContain('No active work streams')
@@ -330,7 +330,7 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
     await flush()
     expect(container.textContent).toContain('No active work streams')
     expect(container.contains(newChat)).toBe(true)
-    expect(requests.some((path) => path.includes('/squads/tau'))).toBe(false)
+    expect(requests.some((path) => path.includes('/squads/ficus'))).toBe(false)
     expect(requests.filter((path) => path === `/api/squads/${canonical.id}?includeRelationships=true`)).toHaveLength(1)
   } finally {
     client.clear()
@@ -340,9 +340,9 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
 
 test('Home New chat opens the Chats composer instead of selecting an existing conversation', async () => {
   const { acquireDomHarness } = await import('../test/domHarness')
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/tau' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/ficus' })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  const canonical = { ...squad, name: 'Tau' }
+  const canonical = { ...squad, name: 'Ficus' }
   const consultant = {
     id: 'consultant-1',
     agentTypeId: 'consultant',
@@ -368,7 +368,7 @@ test('Home New chat opens the Chats composer instead of selecting an existing co
   try {
     await dom.act(async () =>
       root.render(
-        <MemoryRouter initialEntries={['/squads/tau']}>
+        <MemoryRouter initialEntries={['/squads/ficus']}>
           <QueryClientProvider client={client}>
             <Routes>
               <Route

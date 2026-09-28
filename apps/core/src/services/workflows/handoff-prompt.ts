@@ -4,7 +4,7 @@ import {
   activeWorkflowAttempts,
   type WorkflowAttempt,
   type WorkflowRun,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { flowCapabilityInstructions } from './capability-instructions'
 
 type HandoffStream = {
@@ -68,7 +68,7 @@ export function flowMessage(
     attempt.branch || activeWorkflowAttempts(run.state).length > 1
       ? 'Parallel work is active in this shared workspace.'
       : '',
-    `Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer evidence; no temporary file is needed. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`bash\ntau workstream advance ${workStreamRef(stream)} --stdin <<'TAU_COMMAND'\n${JSON.stringify(example, null, 2)}\nTAU_COMMAND\n\`\`\``,
+    `Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer evidence; no temporary file is needed. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`bash\nficus workstream advance ${workStreamRef(stream)} --stdin <<'FICUS_COMMAND'\n${JSON.stringify(example, null, 2)}\nFICUS_COMMAND\n\`\`\``,
   ]
     .filter(Boolean)
     .join('\n\n')

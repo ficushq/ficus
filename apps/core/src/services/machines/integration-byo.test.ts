@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { randomUUID } from 'crypto'
 import { mkdtempSync } from 'fs'
 import { Hono } from 'hono'
@@ -43,18 +43,18 @@ import { MachineTunnelManager } from './tunnel-manager'
  *   opposite of the exe path's shared-account-key guard).
  *
  * ----------------------------------------------------------------------------
- * Separate gate from integration-vm.test.ts's TAU_TEST_SSH_HOST (a disposable
- * CONTAINER, no systemd) and integration-exe.test.ts's TAU_TEST_EXE_SSH_KEY (a
+ * Separate gate from integration-vm.test.ts's FICUS_TEST_SSH_HOST (a disposable
+ * CONTAINER, no systemd) and integration-exe.test.ts's FICUS_TEST_EXE_SSH_KEY (a
  * tau-provisioned exe VM): this needs a real systemd VM the operator supplies.
  * To run (host = a FRESH Ubuntu 24.04 VM you can root-SSH; the test installs
  * real packages on it and creates/removes box users — treat it as disposable):
  *
- *   TAU_TEST_BYO_SSH_HOST=<ip> \
- *   TAU_TEST_BYO_SSH_KEY=~/.ssh/<key with root access to it> \
- *   TAU_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
+ *   FICUS_TEST_BYO_SSH_HOST=<ip> \
+ *   FICUS_TEST_BYO_SSH_KEY=~/.ssh/<key with root access to it> \
+ *   FICUS_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
  *   bun test src/services/machines/integration-byo.test.ts
  *
- * Optional: TAU_TEST_BYO_SSH_PORT (default 22), TAU_TEST_BYO_SSH_USER (default
+ * Optional: FICUS_TEST_BYO_SSH_PORT (default 22), FICUS_TEST_BYO_SSH_USER (default
  * root — a passwordless sudoer works too, mirroring bootstrap.sh's contract).
  *
  * The VM itself is NOT destroyed (BYO semantics — the operator owns it); the
@@ -85,10 +85,10 @@ function bashCollect(client: SandboxClient, command: string): Promise<{ stdout: 
   })
 }
 
-describe.skipIf(!process.env.TAU_TEST_BYO_SSH_HOST)('BYO-SSH provider (integration, real VM)', () => {
-  const host = process.env.TAU_TEST_BYO_SSH_HOST!
-  const port = Number(process.env.TAU_TEST_BYO_SSH_PORT ?? 22)
-  const user = process.env.TAU_TEST_BYO_SSH_USER ?? 'root'
+describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integration, real VM)', () => {
+  const host = process.env.FICUS_TEST_BYO_SSH_HOST!
+  const port = Number(process.env.FICUS_TEST_BYO_SSH_PORT ?? 22)
+  const user = process.env.FICUS_TEST_BYO_SSH_USER ?? 'root'
 
   let priorKey: string | undefined
   let priorHome: string | undefined
@@ -108,7 +108,7 @@ describe.skipIf(!process.env.TAU_TEST_BYO_SSH_HOST)('BYO-SSH provider (integrati
    * other SSH in this test goes through tau's runner with tau's MINTED key.
    */
   function operatorSsh(command: string, stdin?: string): { exitCode: number; stderr: string } {
-    const keyPath = expandTilde(process.env.TAU_TEST_BYO_SSH_KEY!)
+    const keyPath = expandTilde(process.env.FICUS_TEST_BYO_SSH_KEY!)
     const proc = Bun.spawnSync(
       [
         'ssh',
@@ -135,8 +135,8 @@ describe.skipIf(!process.env.TAU_TEST_BYO_SSH_HOST)('BYO-SSH provider (integrati
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
     process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-byo-int-home-'))
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
     await getSecretStore().initialize()
 
@@ -174,8 +174,8 @@ describe.skipIf(!process.env.TAU_TEST_BYO_SSH_HOST)('BYO-SSH provider (integrati
       /* best-effort — may already be deleted by the main flow */
     }
     await cleanupTestRbac(prefix)
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     if (priorHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = priorHome
     resetSecretStore()

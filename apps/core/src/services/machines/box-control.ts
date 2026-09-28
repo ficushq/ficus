@@ -24,8 +24,8 @@ export type BoxControlRequest =
  * placed in a remote command.
  */
 export function parseBoxControlRequest(env: Record<string, string | undefined>): BoxControlRequest {
-  const sandboxId = env.TAU_BC_SANDBOX_ID ?? ''
-  const action = env.TAU_BC_ACTION || 'status'
+  const sandboxId = env.FICUS_BC_SANDBOX_ID ?? ''
+  const action = env.FICUS_BC_ACTION || 'status'
   if (!/^[A-Za-z0-9._:-]+$/.test(sandboxId)) {
     throw new Error(`invalid sandboxId '${sandboxId}' — expected [A-Za-z0-9._:-]+`)
   }
@@ -33,9 +33,9 @@ export function parseBoxControlRequest(env: Record<string, string | undefined>):
     throw new Error(`invalid action '${action}' — one of: ${BOX_CONTROL_ACTIONS.join(', ')}`)
   }
   if (action !== 'kill') return { sandboxId, action: action as Exclude<BoxControlAction, 'kill'> }
-  const pid = Number(env.TAU_BC_PID)
-  if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error(`invalid pid '${env.TAU_BC_PID ?? ''}'`)
-  const signal = (env.TAU_BC_SIGNAL || 'TERM').toUpperCase()
+  const pid = Number(env.FICUS_BC_PID)
+  if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error(`invalid pid '${env.FICUS_BC_PID ?? ''}'`)
+  const signal = (env.FICUS_BC_SIGNAL || 'TERM').toUpperCase()
   if (!BOX_CONTROL_SIGNALS.includes(signal as BoxControlSignal)) {
     throw new Error(`invalid signal '${signal}' — one of: ${BOX_CONTROL_SIGNALS.join(', ')}`)
   }

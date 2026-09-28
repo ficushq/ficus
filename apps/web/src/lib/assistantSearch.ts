@@ -1,5 +1,5 @@
-import { workStreamRef, workStreamTitle } from '@tau/shared'
-import type { Squad, WorkStream } from '@tau/shared'
+import { workStreamRef, workStreamTitle } from '@ficus/shared'
+import type { Squad, WorkStream } from '@ficus/shared'
 import { visibleNavItems } from '../components/navModel'
 import { ALL_SECTIONS } from '../components/settings/settingsSections'
 import {

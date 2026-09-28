@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { StreamEvent } from '@tau/shared'
+import type { StreamEvent } from '@ficus/shared'
 import { parseSSEStream } from './sse'
 
 function readerFromText(text: string): ReadableStreamDefaultReader<Uint8Array> {

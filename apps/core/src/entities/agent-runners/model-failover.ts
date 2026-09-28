@@ -8,7 +8,7 @@ import {
   providerErrorText,
   type CaughtProviderErrorClassification,
 } from '../../lib/error'
-import { routeDecision } from '@tau/shared/provider-health'
+import { routeDecision } from '@ficus/shared/provider-health'
 import { parseModelSpec, resolveAgentModelSpec } from '../../lib/utils/model-spec'
 import { providerHealth, type ProviderHealthAttempt } from '../../services/provider-health/registry'
 import {

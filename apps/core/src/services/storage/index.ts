@@ -1,4 +1,4 @@
-import type { StorageMachine, StorageSnapshot } from '@tau/shared'
+import type { StorageMachine, StorageSnapshot } from '@ficus/shared'
 import { agents, db, squads } from '../../db'
 import { mapWithConcurrency } from '../../lib/infra/mapWithConcurrency'
 import { parseDfOutput } from '../machines/machine-health'

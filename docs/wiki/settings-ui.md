@@ -12,7 +12,7 @@ The active page is stored in the URL query string (`?section=integrations`). Mob
 
 System Updates reads the current deployment mode and run history from the backend. It does not cache update runs in browser storage or infer runtime mode from a previous run.
 
-Inside Tau Desktop, System Updates shows the app's native updater instead of the git updater: installed app version, bundled Core commit, check/download progress, and **Restart to update** once an update is ready. When a desktop-managed instance (`flavor.supervisor` is `desktop`) is opened in an ordinary browser, the page only explains that updates come from the desktop app's **Check for Updates…** menu item and stops polling the git updater.
+Inside Ficus Desktop, System Updates shows the app's native updater instead of the git updater: installed app version, bundled Core commit, check/download progress, and **Restart to update** once an update is ready. When a desktop-managed instance (`flavor.supervisor` is `desktop`) is opened in an ordinary browser, the page only explains that updates come from the desktop app's **Check for Updates…** menu item and stops polling the git updater.
 
 ## User Sections
 
@@ -24,7 +24,7 @@ Inside Tau Desktop, System Updates shows the app's native updater instead of the
 
 ### Appearance
 
-**Theme** — A grid of preview dots: the built-in themes (Tau, Harbor, Ember, High contrast), the user's own saved theme presets, and the active shared preset if it isn't already one of theirs. Each dot is that theme's color-wheel swatch with its name underneath; the active one is ringed. Picking a built-in deactivates any active preset (kept in the library, not deleted); picking a preset applies it. Below the grid, a **Light/Dark/System** segmented control sets appearance — disabled with an explanatory hint for unified themes (High contrast), which have one appearance. The setup page (**Set up Tau**) has its own equivalent **Appearance** control. The choice is stored per browser. With no stored choice, browsers use light and Tau Desktop uses **System**. The **My themes** library below manages presets (new/edit/rename/share/duplicate/export/delete); see [custom themes](theme/custom-themes.md).
+**Theme** — A grid of preview dots: the built-in themes (Iris, Harbor, Ember, High contrast), the user's own saved theme presets, and the active shared preset if it isn't already one of theirs. Each dot is that theme's color-wheel swatch with its name underneath; the active one is ringed. Picking a built-in deactivates any active preset (kept in the library, not deleted); picking a preset applies it. Below the grid, a **Light/Dark/System** segmented control sets appearance — disabled with an explanatory hint for unified themes (High contrast), which have one appearance. The setup page (**Set up Ficus**) has its own equivalent **Appearance** control. The choice is stored per browser. With no stored choice, browsers use light and Ficus Desktop uses **System**. The **My themes** library below manages presets (new/edit/rename/share/duplicate/export/delete); see [custom themes](theme/custom-themes.md).
 
 ### App
 
@@ -50,10 +50,10 @@ Users, Roles, System Tokens, and Sign-up appear according to the caller's permis
 
 Connect agent-model accounts via API key or supported subscription OAuth. Provider cards show accounts, enable state, and connection status; model-provider enable states control selection and fallback. OpenAI API services for voice and embeddings are configured separately in Integrations.
 
-> **Requires `TAU_ENCRYPTION_KEY`.** Credentials are written to the encrypted
+> **Requires `FICUS_ENCRYPTION_KEY`.** Credentials are written to the encrypted
 > secret store, so without the key credential mutations fail with
-> `Cannot mutate secrets: TAU_ENCRYPTION_KEY not configured`. Generate one with
-> `echo "TAU_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env` and restart the
+> `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`. Generate one with
+> `echo "FICUS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env` and restart the
 > api + worker. There is no file-based alternative.
 
 Built-in subscription providers include:
@@ -137,7 +137,7 @@ CRUD management for squad preset definitions. Similar pattern to Agent Types.
 
 ### Channel integrations
 
-Discord, Slack, and Telegram each have a card in Integrations. Enable a card, paste the bot token (and Slack signing secret); Tau validates it, shows the discovered identity, the webhook URL to give the provider, and a **Default squad** picker that creates the routing entry. Saved secret values are never returned to the browser. Disabling an integration stops its transport access without deleting credentials or routes. Existing configured bots retain their enabled state on upgrade.
+Discord, Slack, and Telegram each have a card in Integrations. Enable a card, paste the bot token (and Slack signing secret); Ficus validates it, shows the discovered identity, the webhook URL to give the provider, and a **Default squad** picker that creates the routing entry. Saved secret values are never returned to the browser. Disabling an integration stops its transport access without deleting credentials or routes. Existing configured bots retain their enabled state on upgrade.
 
 Channel routing (per-channel overrides) stays in the existing channel system, with CRUD management embedded inside each provider’s card.
 
@@ -158,7 +158,7 @@ Channel routing (per-channel overrides) stays in the existing channel system, wi
 
 Configure which notification channels receive which events.
 
-**Desktop notifications** — Inside a Tau Desktop build that supports it, a personal switch turns the app's OS alerts for inbox updates on or off. It is stored by the desktop app, not in notification rules, so it does not need `settings:write`.
+**Desktop notifications** — Inside a Ficus Desktop build that supports it, a personal switch turns the app's OS alerts for inbox updates on or off. It is stored by the desktop app, not in notification rules, so it does not need `settings:write`.
 
 **Channels section** — Checkboxes to globally enable/disable each channel: `push`, `console`, `discord`, `slack`, `telegram`.
 
@@ -225,7 +225,7 @@ Workspace indexing settings (include/exclude patterns, reindex button, scan resu
 | Notification Rules section             | `apps/web/src/components/settings/NotificationsConfigSection.tsx` |
 | Template Diff dialog                   | `apps/web/src/components/settings/TemplateDiffDialog.tsx`         |
 | System Updates section                 | `apps/web/src/components/settings/SystemUpdateSection.tsx`        |
-| Tau Desktop updates panel              | `apps/web/src/components/settings/DesktopUpdatePanel.tsx`         |
+| Ficus Desktop updates panel            | `apps/web/src/components/settings/DesktopUpdatePanel.tsx`         |
 | Workspace Indexing (squad-level)       | `apps/web/src/components/squads/WorkspaceIndexingSettings.tsx`    |
 | Query options                          | `apps/web/src/queryOptions.ts`                                    |
 | Query keys                             | `apps/web/src/queryKeys.ts`                                       |

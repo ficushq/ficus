@@ -81,7 +81,7 @@ describe('telegramProvider.sendNotification', () => {
             message_id: 42,
             from: { id: 123, first_name: 'Ada', is_bot: false },
             chat: { id: -100123, type: 'supergroup' },
-            text: '/tau@example_bot link abcdef0123456789abcdef0123456789',
+            text: '/ficus@example_bot link abcdef0123456789abcdef0123456789',
           },
         },
         {}
@@ -93,6 +93,29 @@ describe('telegramProvider.sendNotification', () => {
         threadId: '-100123',
         messageId: '42',
       })
+    } finally {
+      bot.mockRestore()
+    }
+  })
+})
+
+describe('Telegram command word', () => {
+  it('ignores the pre-rename command word in groups (Ruling 39)', async () => {
+    const bot = spyOn(telegramProvider, 'getBotUserId').mockResolvedValue('99')
+    try {
+      const parsed = await telegramProvider.parseWebhook(
+        {
+          update_id: 1,
+          message: {
+            message_id: 3,
+            chat: { id: -100, type: 'group' },
+            from: { id: 7, first_name: 'U' },
+            text: '/tau help',
+          },
+        },
+        {}
+      )
+      expect(parsed).toBeNull()
     } finally {
       bot.mockRestore()
     }
@@ -111,7 +134,7 @@ describe('Telegram private squad switching', () => {
               message_id: 2,
               chat: { id: 123, type },
               from: { id: 7, first_name: 'User' },
-              text: '/tau squad my-squad',
+              text: '/ficus squad my-squad',
             },
           },
           {}

@@ -23,21 +23,21 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
     expect(html).toContain('Create the first admin account')
     expect(html).toContain('Create Admin Account')
     expect(html).not.toContain('Register with Passkey')
   })
 
   test('first-run requires the bootstrap password step when mode is password', async () => {
-    // Hosted per-tenant instances report mode:'password' (a TAU_PASSWORD bootstrap
+    // Hosted per-tenant instances report mode:'password' (a FICUS_PASSWORD bootstrap
     // credential is provisioned) with no admin yet — the setup UI must gate on it.
     authStatus = { authEnabled: true, mode: 'password', hasUsers: false, hasAdminUser: false }
     const html = renderToStaticMarkup(
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
     expect(html).toContain('Enter the instance password')
     expect(html).toContain('type="password"')
     // Passkey registration must not be reachable until the password step is satisfied.
@@ -53,7 +53,7 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
     expect(html).toContain('Create the first admin account')
     expect(html).not.toContain('Enter the instance password')
   })
@@ -102,7 +102,7 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Set up Tau')
+    expect(html).toContain('Set up Ficus')
     expect(html).toContain('Create the first admin account')
     expect(html).not.toContain('invite-only')
   })

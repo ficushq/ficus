@@ -27,11 +27,11 @@ export function coreTestPlan() {
 if (import.meta.main) {
   // The package contract needs the database: keep the preload's fail-fast exit
   // instead of its local no-database fallback (apps/core test-db-fallback.ts).
-  process.env.TAU_TEST_REQUIRE_DB = '1'
+  process.env.FICUS_TEST_REQUIRE_DB = '1'
   const plan = coreTestPlan()
   const subprocessOnly = process.argv.includes('--subprocess')
   const reverse = process.argv.includes('--reverse')
-  const coreOnly = process.env.TAU_TEST_SKIP_SUBPROCESS === '1' && !subprocessOnly
+  const coreOnly = process.env.FICUS_TEST_SKIP_SUBPROCESS === '1' && !subprocessOnly
   if (!subprocessOnly) await runTests({ cwd: coreRoot, roots: plan.shared, reverse })
   if (!coreOnly) await runTests({ cwd: coreRoot, roots: plan.isolated, isolated: true, reverse, cacheSchema: true })
 }

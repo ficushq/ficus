@@ -198,7 +198,7 @@ describe('B15 push self scoping', () => {
 
 describe('B15 images RBAC', () => {
   beforeEach(() => {
-    process.env.TAU_ENCRYPTION_KEY = 'c'.repeat(64)
+    process.env.FICUS_ENCRYPTION_KEY = 'c'.repeat(64)
     __resetSigningKeyForTests()
   })
 

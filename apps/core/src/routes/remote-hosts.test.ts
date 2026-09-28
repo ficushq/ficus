@@ -23,8 +23,8 @@ describe('remote-hosts routes', () => {
   let priorKey: string | undefined
 
   beforeAll(async () => {
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
     await getSecretStore().initialize()
 
@@ -34,8 +34,8 @@ describe('remote-hosts routes', () => {
 
   afterAll(async () => {
     await cleanupTestRbac(prefix)
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     resetSecretStore()
   })
 

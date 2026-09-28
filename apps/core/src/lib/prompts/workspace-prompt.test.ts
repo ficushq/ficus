@@ -138,12 +138,12 @@ describe('buildWorkspacePrompt — vm runtime (box-native paths)', () => {
   const home = (sandboxId: string) => `/home/${boxUnixUser(sandboxId)}`
   let prev: string | undefined
   beforeEach(() => {
-    prev = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    prev = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
   })
   afterEach(() => {
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   it('squad agent: shows the squad box workspace + own box private dir, never container literals', () => {
@@ -207,14 +207,14 @@ describe('buildWorkspacePrompt — host runtime', () => {
   let prevRuntime: string | undefined
   let prevHome: string | undefined
   beforeEach(() => {
-    prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     prevHome = process.env.HOME_DIR
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     process.env.HOME_DIR = '/tau-home'
   })
   afterEach(() => {
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     if (prevHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = prevHome
   })
@@ -244,7 +244,7 @@ describe('buildWorkspacePrompt — host runtime', () => {
 
   it('says tools run directly on the host, never "inside authorized sandboxes"', () => {
     const p = buildWorkspacePrompt({ squadId: 'S1', sandboxId: 'agent_a1', hasSquadBash: true })
-    expect(p).toContain('directly on the Tau host machine')
+    expect(p).toContain('directly on the Ficus host machine')
     expect(p).not.toContain('authorized sandboxes')
   })
 

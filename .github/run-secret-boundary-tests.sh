@@ -23,10 +23,10 @@ run_sterile() {
     CI=true \
     TERM="${TERM:-dumb}" \
     NODE_ENV=test \
-    TAU_TEST_MODE=1 \
+    FICUS_TEST_MODE=1 \
     SECRET_BOUNDARY_REQUIRE_ISOLATED_DB="${SECRET_BOUNDARY_REQUIRE_ISOLATED_DB:-0}" \
-    TAU_TEST_SCHEMA_PUSH_NO_FORCE=1 \
-    TAU_TEST_SKIP_SUBPROCESS=1 \
+    FICUS_TEST_SCHEMA_PUSH_NO_FORCE=1 \
+    FICUS_TEST_SKIP_SUBPROCESS=1 \
     timeout --foreground 30s bun test "$@" || {
       status=$?
       if [[ "$status" == "124" ]]; then

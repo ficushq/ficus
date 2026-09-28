@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import tinycolor from 'tinycolor2'
 import { css as xtermCss } from '@xterm/xterm/src/common/Color'
-import { compileCustomTheme, validateCustomTheme } from '@tau/shared/custom-theme'
+import { compileCustomTheme, validateCustomTheme } from '@ficus/shared/custom-theme'
 import { BUILT_IN_THEMES } from './registry'
 import { readTokenColor } from './tokenReader'
 import { readTerminalTheme, terminalTokenColor } from './terminal'

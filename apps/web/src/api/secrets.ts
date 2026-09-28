@@ -28,7 +28,7 @@ export interface SecretsListResponse {
    */
   managedKeys: string[]
   /**
-   * True when the hosted platform runs this instance (TAU_MANAGED=1). This is
+   * True when the hosted platform runs this instance (FICUS_MANAGED=1). This is
    * instance-level, not per-key: some credentials the platform provides are not
    * delivered as managed env vars and so never appear in `managedKeys` (the
    * exe.dev account SSH key ships as a file the setup config points at). The UI

@@ -178,7 +178,7 @@ export function MemoryTree({ squadId, onSelectFile, selectedPath }: MemoryTreePr
         <span className="text-xs font-medium text-secondary">Memory files</span>
         <button
           onClick={handleRefresh}
-          className="tau-button rounded-lg p-2 text-muted hover:text-primary hover:bg-surface-hover"
+          className="ficus-button rounded-lg p-2 text-muted hover:text-primary hover:bg-surface-hover"
           title="Refresh memory"
           aria-label="Refresh memory"
         >
@@ -205,7 +205,7 @@ export function MemoryTree({ squadId, onSelectFile, selectedPath }: MemoryTreePr
           {isError ? (
             <div className="p-3 text-sm text-muted">
               Couldn’t load memory.{' '}
-              <button onClick={handleRefresh} className="tau-button text-accent-light">
+              <button onClick={handleRefresh} className="ficus-button text-accent-light">
                 Retry
               </button>
             </div>

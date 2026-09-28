@@ -1,9 +1,9 @@
 /* eslint-disable react-refresh/only-export-components -- hook providers intentionally colocate their matching hooks */
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { permissionMatches } from '@tau/shared'
+import { permissionMatches } from '@ficus/shared'
 import { queries } from '../queryOptions'
-import type { AuthIdentity } from '@tau/client-core'
+import type { AuthIdentity } from '@ficus/client-core'
 
 export type PermissionsResult = {
   permissions: string[]

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { StreamEvent } from '@tau/shared'
+import type { StreamEvent } from '@ficus/shared'
 import { agentsResource } from './agents'
 import type { Transport, RequestOptions } from '../transport'
 

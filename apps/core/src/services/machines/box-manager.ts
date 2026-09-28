@@ -207,7 +207,7 @@ function computeEnvHash(env: BoxEnv): string {
  * the env re-push a full provision does (it never calls
  * installBoxOnMachine), so without folding env in here a rotated secret —
  * GITHUB_TOKEN/GH_TOKEN, GIT_USER_NAME/EMAIL, SANDBOX_CALLBACK_SECRET,
- * APP_URL, or a degraded-fallback TAU_API_URL — would silently resume the box
+ * APP_URL, or a degraded-fallback FICUS_API_URL — would silently resume the box
  * on STALE credentials. Park→resume used to be exactly where such a rotation
  * self-healed (every resume took the full path before the resume fast path
  * existed); this marker restores that property: a hash mismatch here costs
@@ -326,7 +326,7 @@ export interface BoxManagerDeps {
   /** Read a core-side archive file; null when absent (defaults to fs readFile). */
   readArchiveFile?: (src: string) => Promise<Uint8Array | null>
   /** Fresh-box health-poll shape (production: 2s interval within the
-   *  {@link resolveBoxHealthBudgetMs} budget — 240s default, `TAU_BOX_HEALTH_BUDGET_MS`). */
+   *  {@link resolveBoxHealthBudgetMs} budget — 240s default, `FICUS_BOX_HEALTH_BUDGET_MS`). */
   healthIntervalMs?: number
   healthBudgetMs?: number
   /** Fast-path re-check resilience (production: 3 attempts, 1s apart) — see {@link recheckBoxHealth}. */
@@ -365,7 +365,7 @@ const BOX_PROVISION_PATH = '/opt/tau/bin/box-provision.sh'
 /** Per-box browser auth token DIGEST files live here — a SIBLING of
  *  /opt/tau/browser (NOT inside it: bootstrap.sh recursively world-opens
  *  /opt/tau/browser). Kept in lockstep with the tau-browser service's
- *  TAU_BROWSER_TOKENS_DIR. See {@link installBoxOnMachine}. */
+ *  FICUS_BROWSER_TOKENS_DIR. See {@link installBoxOnMachine}. */
 const BROWSER_TOKENS_DIR = '/opt/tau/browser-tokens'
 /** box-provision (user + linger + rootless-docker setuptool) can take a minute+.
  *  Bounds ONLY that one SSH run (see {@link installBoxOnMachine}); it does NOT
@@ -388,15 +388,15 @@ const BOX_PROVISION_RUN_TIMEOUT_MS = 5 * 60_000
  * BOX_PROVISION_RUN_TIMEOUT_MS} (a sequential, independent bound on the
  * box-provision.sh run, so the two never race — a fresh ensure's worst case is
  * simply their sum), keeping "no single provisioning step exceeds ~5 minutes".
- * `TAU_BOX_HEALTH_BUDGET_MS` (positive-int env, same rule as the other machine
+ * `FICUS_BOX_HEALTH_BUDGET_MS` (positive-int env, same rule as the other machine
  * knobs) overrides it for unusually slow fleets. An established box's re-check
  * is a different, much shorter budget — see {@link recheckBoxHealth}.
  */
 export const DEFAULT_BOX_HEALTH_BUDGET_MS = 4 * 60_000
 
-/** The fresh-box health budget: `TAU_BOX_HEALTH_BUDGET_MS` else {@link DEFAULT_BOX_HEALTH_BUDGET_MS}. */
+/** The fresh-box health budget: `FICUS_BOX_HEALTH_BUDGET_MS` else {@link DEFAULT_BOX_HEALTH_BUDGET_MS}. */
 export function resolveBoxHealthBudgetMs(): number {
-  return positiveIntEnv('TAU_BOX_HEALTH_BUDGET_MS', DEFAULT_BOX_HEALTH_BUDGET_MS)
+  return positiveIntEnv('FICUS_BOX_HEALTH_BUDGET_MS', DEFAULT_BOX_HEALTH_BUDGET_MS)
 }
 
 /** Cadence of the "still waiting for box health" progress line while a fresh
@@ -439,8 +439,8 @@ function assertValidBoxEnv(env: BoxEnv): void {
  *  - `EXECUTOR_PORT` — the port the sandbox-server binds (the box's bound port)
  *  - `WORKSPACE_PATH` — the box's working root (squad → ~/workspace; agent/
  *    system-manager → ~/.private), mirroring workspace-layout.ts semantics
- *  - `TAU_DEVBOX_DIR` — the box's own minimal devbox dir (~/.tau/devbox)
- *  - `TAU_BOX_HOME` — the box user's HOME; the sandbox-server's path allow-list
+ *  - `FICUS_DEVBOX_DIR` — the box's own minimal devbox dir (~/.tau/devbox)
+ *  - `FICUS_BOX_HOME` — the box user's HOME; the sandbox-server's path allow-list
  *    (packages/k8s-sandbox resolvePath) permits writes under this prefix so
  *    file-sync can land agent assets in the box HOME (~/bin, ~/.tau/skills,
  *    ~/memory). k8s pods never set it, so it is a vm-only, per-box widening.
@@ -448,7 +448,7 @@ function assertValidBoxEnv(env: BoxEnv): void {
  *    system-manager). Points the sandbox-server's docker use at the box user's
  *    OWN rootless daemon socket (`unix:///run/user/<uid>/docker.sock`, started
  *    by box-provision.sh). `<uid>` is useradd-assigned and NOT deterministic, so
- *    box-provision REPORTS it on stdout (`TAU_BOX_UID=<uid>`) and ensureBox bakes
+ *    box-provision REPORTS it on stdout (`FICUS_BOX_UID=<uid>`) and ensureBox bakes
  *    the socket path from it. Agent (light) boxes get no docker and no
  *    DOCKER_HOST, mirroring k8s where the agent role skips dockerd.
  *  - `BUN_PTY_LIB` — absolute path to the native bun-pty lib ensureServerBundle
@@ -512,9 +512,9 @@ function derivedBoxEnv(
     // values override the unit's activation-time Environment fallback.
     EXECUTOR_SERVICE_CGROUP: '1',
     WORKSPACE_PATH: workspacePath,
-    TAU_DEVBOX_DIR: `${home}/.tau/devbox`,
-    TAU_TOOLCHAIN_DIR: `${home}/.tau/toolchain`,
-    TAU_BOX_HOME: home,
+    FICUS_DEVBOX_DIR: `${home}/.tau/devbox`,
+    FICUS_TOOLCHAIN_DIR: `${home}/.tau/toolchain`,
+    FICUS_BOX_HOME: home,
     BUN_PTY_LIB: SERVER_LIB_REMOTE_PATH,
   }
   // Docker-capable boxes (squad, system-manager) reach their OWN rootless daemon
@@ -540,12 +540,14 @@ export function roleWantsDocker(role: EnsureBoxOpts['role']): boolean {
 
 /**
  * Parse the box user's uid from box-provision.sh's stdout. The script prints
- * exactly one `TAU_BOX_UID=<uid>` line (the useradd-assigned, non-deterministic
+ * exactly one `FICUS_BOX_UID=<uid>` line (the useradd-assigned, non-deterministic
  * login uid) so box-manager can bake the rootless docker socket path. Returns
- * null when no valid marker is present.
+ * null when no valid marker is present. The legacy `TAU_BOX_UID=` spelling is
+ * accepted for one release (Ficus rename): a machine may still run an older
+ * box-provision.sh.
  */
 export function parseBoxUid(stdout: string): number | null {
-  const match = stdout.match(/^TAU_BOX_UID=(\d+)$/m)
+  const match = stdout.match(/^(?:FICUS|TAU)_BOX_UID=(\d+)$/m)
   if (!match) return null
   const uid = Number(match[1])
   return Number.isInteger(uid) ? uid : null
@@ -678,11 +680,11 @@ const ESTABLISHED_GRACE_INITIAL_GAP_MS = 2_000
 const ESTABLISHED_GRACE_MAX_GAP_MS = 30_000
 
 function resolveEstablishedActiveGraceMs(): number {
-  return positiveIntEnv('TAU_ESTABLISHED_BOX_ACTIVE_GRACE_MS', DEFAULT_ESTABLISHED_ACTIVE_GRACE_MS)
+  return positiveIntEnv('FICUS_ESTABLISHED_BOX_ACTIVE_GRACE_MS', DEFAULT_ESTABLISHED_ACTIVE_GRACE_MS)
 }
 
 function resolveEstablishedIdleGraceMs(): number {
-  return positiveIntEnv('TAU_ESTABLISHED_BOX_IDLE_GRACE_MS', DEFAULT_ESTABLISHED_IDLE_GRACE_MS)
+  return positiveIntEnv('FICUS_ESTABLISHED_BOX_IDLE_GRACE_MS', DEFAULT_ESTABLISHED_IDLE_GRACE_MS)
 }
 
 /**
@@ -720,9 +722,32 @@ async function recheckBoxHealth(endpoint: string, deps: BoxManagerDeps): Promise
   return (await recheckBoxHealthWithEvidence(endpoint, deps)).healthy
 }
 
+/**
+ * One `<P>_<name>_BEGIN … <P>_<name>_END` block of a machine snapshot. `<P>` is
+ * `FICUS` or, for one release (Ficus rename), the legacy `TAU`; both ends must
+ * use the same spelling.
+ */
 function section(stdout: string, name: string): string | undefined {
-  const match = stdout.match(new RegExp(`TAU_${name}_BEGIN\\n([\\s\\S]*?)\\nTAU_${name}_END`))
-  return match?.[1]?.trim() || undefined
+  const match = stdout.match(new RegExp(`(FICUS|TAU)_${name}_BEGIN\\n([\\s\\S]*?)\\n\\1_${name}_END`))
+  return match?.[2]?.trim() || undefined
+}
+
+/** The liveness marker and evidence sections of {@link buildMachineSnapshotCommand}'s output. */
+export function parseMachineSnapshotOutput(stdout: string): {
+  liveness: 'running' | 'idle' | 'exited' | undefined
+  containerStates: string | undefined
+  logTail: string | undefined
+} {
+  const liveness = stdout.match(/^(?:FICUS|TAU)_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
+    | 'running'
+    | 'idle'
+    | 'exited'
+    | undefined
+  return {
+    liveness,
+    containerStates: section(stdout, 'CONTAINER_STATES'),
+    logTail: section(stdout, 'BOX_LOGS'),
+  }
 }
 
 /**
@@ -742,18 +767,9 @@ async function inspectEstablishedBox(
     if (result.exitCode !== 0) {
       return { observedAt, error: `machine snapshot exited ${result.exitCode}: ${result.stderr.trim()}` }
     }
-    const liveness = result.stdout.match(/^TAU_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
-      | 'running'
-      | 'idle'
-      | 'exited'
-      | undefined
+    const { liveness, containerStates, logTail } = parseMachineSnapshotOutput(result.stdout)
     if (!liveness) return { observedAt, error: 'machine snapshot returned no liveness marker' }
-    return {
-      observedAt,
-      liveness,
-      containerStates: section(result.stdout, 'CONTAINER_STATES'),
-      logTail: section(result.stdout, 'BOX_LOGS'),
-    }
+    return { observedAt, liveness, containerStates, logTail }
   } catch (error) {
     return { observedAt, error: error instanceof Error ? error.message : String(error) }
   }
@@ -785,20 +801,20 @@ export function buildMachineSnapshotCommand(box: { sandboxId: string; unixUser: 
     `state=$(${ctl.isActiveCommand()} 2>/dev/null || true)`,
     legacyIsActive ? `legacy=$(${legacyIsActive} 2>/dev/null || true)` : 'legacy=',
     'if tau_live "$sock"; then ' +
-      'if tau_live "$state"; then echo TAU_BOX_LIVENESS=running; ' +
-      'elif [ "$state" = failed ]; then echo TAU_BOX_LIVENESS=exited; ' +
-      'else echo TAU_BOX_LIVENESS=idle; fi; ' +
-      'elif tau_live "$state" || tau_live "$legacy"; then echo TAU_BOX_LIVENESS=running; ' +
-      'else echo TAU_BOX_LIVENESS=exited; fi',
-    'echo TAU_CONTAINER_STATES_BEGIN',
+      'if tau_live "$state"; then echo FICUS_BOX_LIVENESS=running; ' +
+      'elif [ "$state" = failed ]; then echo FICUS_BOX_LIVENESS=exited; ' +
+      'else echo FICUS_BOX_LIVENESS=idle; fi; ' +
+      'elif tau_live "$state" || tau_live "$legacy"; then echo FICUS_BOX_LIVENESS=running; ' +
+      'else echo FICUS_BOX_LIVENESS=exited; fi',
+    'echo FICUS_CONTAINER_STATES_BEGIN',
     // Rootless docker is user-manager-only by construction, so this probe keeps
     // its `sudo -u … XDG_RUNTIME_DIR=` shape in BOTH modes: a system-unit box
     // is an agent box, which has no daemon and simply reports the error.
     `sudo -u ${shellQuote(unixUser)} env XDG_RUNTIME_DIR=/run/user/$uid DOCKER_HOST=unix:///run/user/$uid/docker.sock docker ps -a --format '{{.Names}} {{.Status}}' 2>&1 | tail -n 200 || true`,
-    'echo TAU_CONTAINER_STATES_END',
-    'echo TAU_BOX_LOGS_BEGIN',
+    'echo FICUS_CONTAINER_STATES_END',
+    'echo FICUS_BOX_LOGS_BEGIN',
     `${ctl.journalctl} -n 200 --no-pager 2>&1 || true`,
-    'echo TAU_BOX_LOGS_END',
+    'echo FICUS_BOX_LOGS_END',
   ].join('; ')
 }
 
@@ -1061,7 +1077,7 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
   // absent marker means we'd guess the socket, so fail loudly instead.
   const uid = parseBoxUid(provRes.stdout)
   if (withDocker && uid === null) {
-    throw new Error(`box-provision did not report TAU_BOX_UID for ${sandboxId}; cannot derive rootless DOCKER_HOST`)
+    throw new Error(`box-provision did not report FICUS_BOX_UID for ${sandboxId}; cannot derive rootless DOCKER_HOST`)
   }
 
   // Push server.env: 0600 (secret-bearing) + chown to the box user. `install`
@@ -1588,7 +1604,7 @@ export async function ensureBox(
       // when the caller supplied no specHash (only legacy/test callers) so a
       // future ensure never mistakes an unknown provisioned state for a match.
       provisionedSpecHash: opts.specHash ?? null,
-      reconcilableSpecHash: opts.env.TAU_BOX_SPEC_HASH ?? null,
+      reconcilableSpecHash: opts.env.FICUS_BOX_SPEC_HASH ?? null,
       // Seed the cross-process activity heartbeat so every ready box has a
       // baseline: the idle reaper (worker) reads max(process-local, row) and a
       // box ensured by ANOTHER process would otherwise carry no activity signal
@@ -1824,14 +1840,14 @@ export type ArchiveCodec = 'zstd' | 'gzip'
 export type ArchiveCodecPreference = 'auto' | ArchiveCodec
 
 /**
- * Codec preference, `TAU_BOX_ARCHIVE_CODEC`-overridable. Deliberately NOT
+ * Codec preference, `FICUS_BOX_ARCHIVE_CODEC`-overridable. Deliberately NOT
  * maximum compression: a migration is a same-datacenter transfer where CPU,
  * not bandwidth, is the constraint, so `xz -9` would be slower end to end than
  * a fast codec. zstd's own DEFAULT level is 3 — the fast end — which is why
  * {@link tarCodecFlag} needs no level argument.
  */
 const ARCHIVE_CODEC_PREFERENCE = ((): ArchiveCodecPreference => {
-  const raw = process.env.TAU_BOX_ARCHIVE_CODEC
+  const raw = process.env.FICUS_BOX_ARCHIVE_CODEC
   return raw === 'zstd' || raw === 'gzip' ? raw : 'auto'
 })()
 
@@ -1906,7 +1922,7 @@ export async function detectArchiveCodec(
   )
   if (answers.every((answer) => answer === 'zstd')) return 'zstd'
   if (preference === 'zstd') {
-    log.warn(`TAU_BOX_ARCHIVE_CODEC=zstd but not every host can produce a zstd tar; using gzip on both ends`)
+    log.warn(`FICUS_BOX_ARCHIVE_CODEC=zstd but not every host can produce a zstd tar; using gzip on both ends`)
   }
   return 'gzip'
 }

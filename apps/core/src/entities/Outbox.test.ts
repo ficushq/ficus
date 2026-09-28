@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { db, outbox } from '../db'
 import { Outbox, OUTBOX_CLAIM_STALE_MS } from './Outbox'
-import type { AmtpEnvelope } from '@tau/shared'
+import type { AmtpEnvelope } from '@ficus/shared'
 
 const ownedRowIds = new Set<string>()
 const createdRowIds = new Set<string>()

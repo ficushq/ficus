@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Message } from '@tau/shared'
+import type { Message } from '@ficus/shared'
 import { compareByKey, messageSortAt } from './ordering'
 
 function human(id: string, createdAt: string, consumedAt?: string): Message {

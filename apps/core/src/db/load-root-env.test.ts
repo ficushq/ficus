@@ -20,12 +20,12 @@ function tempRoot(envContent?: string): string {
 // This file's real-entrypoint suite below shells out to a real
 // `bun run db:migrate` subprocess — too jitter-prone for the shared CI
 // runner. It runs only in the dedicated `subprocess-tests` CI job (see
-// ci.yml); the main sweep sets TAU_TEST_SKIP_SUBPROCESS=1 to skip it here.
-const describeSubprocess = describe.skipIf(process.env.TAU_TEST_SKIP_SUBPROCESS === '1')
+// ci.yml); the main sweep sets FICUS_TEST_SKIP_SUBPROCESS=1 to skip it here.
+const describeSubprocess = describe.skipIf(process.env.FICUS_TEST_SKIP_SUBPROCESS === '1')
 
 describeSubprocess('loadRootEnvForStandaloneScript', () => {
   test('supplies a variable the process does not have', () => {
-    const key = `TAU_ROOT_ENV_TEST_${process.pid}`
+    const key = `FICUS_ROOT_ENV_TEST_${process.pid}`
     cleanups.push(() => delete process.env[key])
     const root = tempRoot(`${key}=from-file\n`)
 
@@ -36,7 +36,7 @@ describeSubprocess('loadRootEnvForStandaloneScript', () => {
   })
 
   test('NEVER overrides a variable that is already set — explicit env beats the file', () => {
-    const key = `TAU_ROOT_ENV_TEST_KEEP_${process.pid}`
+    const key = `FICUS_ROOT_ENV_TEST_KEEP_${process.pid}`
     process.env[key] = 'explicit'
     cleanups.push(() => delete process.env[key])
     const root = tempRoot(`${key}=from-file\n`)
@@ -63,6 +63,40 @@ describeSubprocess('loadRootEnvForStandaloneScript', () => {
 
     expect(resolveRootEnvDatabaseUrl(root)).toBe('postgres://root@localhost/root')
     expect(process.env.DATABASE_URL).toBe('postgres://explicit@localhost/explicit')
+  })
+})
+
+describe('loadRootEnvForStandaloneScript legacy TAU_ keys (one release)', () => {
+  test("bridges the file's TAU_X to FICUS_X in its own record before merging", () => {
+    const suffix = `ROOT_ENV_BRIDGE_${process.pid}`
+    cleanups.push(() => {
+      delete process.env[`FICUS_${suffix}`]
+      delete process.env[`TAU_${suffix}`]
+    })
+    const root = tempRoot(`TAU_${suffix}=from-file\n`)
+
+    const loaded = loadRootEnvForStandaloneScript(root)
+
+    expect(process.env[`FICUS_${suffix}`]).toBe('from-file')
+    expect(process.env[`TAU_${suffix}`]).toBeUndefined()
+    expect(loaded).toEqual([`FICUS_${suffix}`])
+  })
+
+  test("never lets the file's legacy encryption key replace an explicit FICUS_ one", () => {
+    const key = `FICUS_ROOT_ENV_ENCRYPTION_KEY_${process.pid}`
+    const legacy = `TAU_ROOT_ENV_ENCRYPTION_KEY_${process.pid}`
+    process.env[key] = 'explicit'
+    cleanups.push(() => {
+      delete process.env[key]
+      delete process.env[legacy]
+    })
+    const root = tempRoot(`${legacy}=from-file\n`)
+
+    const loaded = loadRootEnvForStandaloneScript(root)
+
+    expect(process.env[key]).toBe('explicit')
+    expect(process.env[legacy]).toBeUndefined()
+    expect(loaded).toEqual([])
   })
 })
 
@@ -101,7 +135,7 @@ async function runMigrateBare(): Promise<{ exitCode: number; stderr: string }> {
   return { exitCode, stderr: `${stderr}\n${stdout}` }
 }
 
-describe.skipIf(!canUseRealRoot || process.env.TAU_TEST_SKIP_SUBPROCESS === '1')(
+describe.skipIf(!canUseRealRoot || process.env.FICUS_TEST_SKIP_SUBPROCESS === '1')(
   'run-migrations env delivery (real entrypoint, toolkit invocation shape)',
   () => {
     test('with no root .env and no explicit DATABASE_URL, the runner fails closed', async () => {

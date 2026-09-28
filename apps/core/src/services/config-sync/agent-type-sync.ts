@@ -7,7 +7,7 @@ import { validateModelSpecList } from '../../lib/utils/model-spec'
 import { AgentType } from '../../entities/AgentType'
 import { ConfigSync, type SyncResult } from './ConfigSync'
 import { loadSharedPromptFiles } from './shared-prompt-sync'
-import { INTEGRATION_CAPABILITIES, type AgentTypeIntegrationPolicyV1 } from '@tau/shared'
+import { INTEGRATION_CAPABILITIES, type AgentTypeIntegrationPolicyV1 } from '@ficus/shared'
 
 // ---------------------------------------------------------------------------
 // Types

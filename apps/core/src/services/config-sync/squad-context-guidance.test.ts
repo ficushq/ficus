@@ -41,10 +41,10 @@ describe('squad context configuration guidance', () => {
     expect(normalizedGuidance, 'guidance should show --context').toContain('--context')
     expect(normalizedGuidance, 'guidance should show --type-context').toContain('--type-context')
     expect(normalizedGuidance, 'guidance should show null delete').toContain('"engineer":null')
-    expect(normalizedGuidance).toContain('tau squad update')
-    expect(normalizedGuidance).toContain('tau squad get')
+    expect(normalizedGuidance).toContain('ficus squad update')
+    expect(normalizedGuidance).toContain('ficus squad get')
     expect(normalizedGuidance).toContain('Handle simple context configuration directly when requested')
-    expect(normalizedGuidance).not.toContain('tau squad create')
+    expect(normalizedGuidance).not.toContain('ficus squad create')
   })
 
   test('shared squad context guidance lands in the composed manager and consultant prompts', async () => {

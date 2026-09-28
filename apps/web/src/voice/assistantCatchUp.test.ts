@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { AssistantMailboxUpdate } from '@tau/shared'
+import type { AssistantMailboxUpdate } from '@ficus/shared'
 import { buildAssistantCatchUpBatch, CATCH_UP_MAX_CHARS, CATCH_UP_MAX_UPDATES } from './assistantCatchUp'
 
 const update = (index: number, content: string): AssistantMailboxUpdate => ({

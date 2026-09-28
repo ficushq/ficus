@@ -9,6 +9,7 @@ import {
   launchHostChromium,
   resolveHostChromium,
   sweepStaleBrowserTokenDirs,
+  type BrowserService,
   type HostBrowserEngine,
 } from './browser'
 import { SandboxHttpError } from '../k8s/http-client'
@@ -169,9 +170,9 @@ class DisconnectableBrowser {
 // --- Tests -----------------------------------------------------------------
 
 describe('resolveHostChromium', () => {
-  test('prefers TAU_BROWSER_EXECUTABLE_PATH when it is an executable file', () => {
+  test('prefers FICUS_BROWSER_EXECUTABLE_PATH when it is an executable file', () => {
     const resolved = resolveHostChromium(
-      { TAU_BROWSER_EXECUTABLE_PATH: '/custom/chrome', TAU_BROWSER_CHANNEL: 'msedge' },
+      { FICUS_BROWSER_EXECUTABLE_PATH: '/custom/chrome', FICUS_BROWSER_CHANNEL: 'msedge' },
       deps({ present: ['/custom/chrome', MAC_CHROME] })
     )
     expect(resolved).toEqual({ executablePath: '/custom/chrome' })
@@ -179,7 +180,7 @@ describe('resolveHostChromium', () => {
 
   test('ignores a configured executable path that exists but is not executable', () => {
     const resolved = resolveHostChromium(
-      { TAU_BROWSER_EXECUTABLE_PATH: '/custom/chrome' },
+      { FICUS_BROWSER_EXECUTABLE_PATH: '/custom/chrome' },
       deps({ present: ['/custom/chrome', MAC_CHROME], executable: [MAC_CHROME] })
     )
     expect(resolved).toEqual({ executablePath: MAC_CHROME })
@@ -189,7 +190,7 @@ describe('resolveHostChromium', () => {
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const resolved = resolveHostChromium(
-        { TAU_BROWSER_EXECUTABLE_PATH: '/Applications/Google Chrome.app' },
+        { FICUS_BROWSER_EXECUTABLE_PATH: '/Applications/Google Chrome.app' },
         deps({ directories: ['/Applications/Google Chrome.app'], present: [MAC_CHROME] })
       )
       expect(resolved).toEqual({ executablePath: MAC_CHROME })
@@ -205,7 +206,7 @@ describe('resolveHostChromium', () => {
   test('expands a leading ~ in the configured executable path', () => {
     const chrome = join(homedir(), 'chrome')
     const resolved = resolveHostChromium(
-      { TAU_BROWSER_EXECUTABLE_PATH: '~/chrome' },
+      { FICUS_BROWSER_EXECUTABLE_PATH: '~/chrome' },
       deps({ present: [chrome, MAC_CHROME], home: homedir() })
     )
     expect(resolved).toEqual({ executablePath: chrome })
@@ -213,19 +214,19 @@ describe('resolveHostChromium', () => {
 
   test('rejects a relative configured path', () => {
     const resolved = resolveHostChromium(
-      { TAU_BROWSER_EXECUTABLE_PATH: 'chrome' },
+      { FICUS_BROWSER_EXECUTABLE_PATH: 'chrome' },
       deps({ present: ['chrome', MAC_CHROME] })
     )
     expect(resolved).toEqual({ executablePath: MAC_CHROME })
   })
 
-  test('uses TAU_BROWSER_CHANNEL ahead of the probe list', () => {
-    const resolved = resolveHostChromium({ TAU_BROWSER_CHANNEL: 'msedge' }, deps({ present: [MAC_CHROME] }))
+  test('uses FICUS_BROWSER_CHANNEL ahead of the probe list', () => {
+    const resolved = resolveHostChromium({ FICUS_BROWSER_CHANNEL: 'msedge' }, deps({ present: [MAC_CHROME] }))
     expect(resolved).toEqual({ channel: 'msedge' })
   })
 
   test('ignores an unsupported channel and falls through to the probe list', () => {
-    const resolved = resolveHostChromium({ TAU_BROWSER_CHANNEL: 'firefox' }, deps({ present: [MAC_CHROME] }))
+    const resolved = resolveHostChromium({ FICUS_BROWSER_CHANNEL: 'firefox' }, deps({ present: [MAC_CHROME] }))
     expect(resolved).toEqual({ executablePath: MAC_CHROME })
   })
 
@@ -252,15 +253,15 @@ describe('resolveHostChromium', () => {
   })
 
   // call() re-resolves the browser on every 502 to distinguish "restarted"
-  // from "unavailable", so an operator with a misconfigured TAU_BROWSER_*
+  // from "unavailable", so an operator with a misconfigured FICUS_BROWSER_*
   // value would otherwise get the same warning on every failing request.
   // Gate it: once per distinct message per process.
-  test('a TAU_BROWSER_* misconfiguration warns exactly once across repeated resolutions', () => {
+  test('a FICUS_BROWSER_* misconfiguration warns exactly once across repeated resolutions', () => {
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
     try {
       for (let i = 0; i < 3; i++) {
         const resolved = resolveHostChromium(
-          { TAU_BROWSER_CHANNEL: 'not-a-chromium-channel' },
+          { FICUS_BROWSER_CHANNEL: 'not-a-chromium-channel' },
           deps({ present: [MAC_CHROME] })
         )
         // Falls through to the probe list every time.
@@ -309,7 +310,7 @@ describe('buildHostLaunchOptions', () => {
       no_proxy: 'localhost',
       DATABASE_URL: 'postgres://canary',
       ANTHROPIC_API_KEY: 'sk-canary',
-      TAU_JWT_SECRET: 'canary',
+      FICUS_JWT_SECRET: 'canary',
     })
     expect(opts.env).toEqual({
       PATH: '/usr/bin:/bin',
@@ -394,6 +395,28 @@ describe('host browser backend', () => {
     expect(page.closed).toBe(true)
   })
 
+  // K3: the in-process engine is the machine script, which accepts either
+  // name; the host sender still sets both, like every other box-user sender.
+  test('sends the box user under both box-user header names with the same value', async () => {
+    const seen: Request[] = []
+    const engine = makeEngine(async () => new FakeBrowser(), {
+      wrapEngine: (real: BrowserService): BrowserService => ({
+        fetch: (request) => {
+          seen.push(request)
+          return real.fetch(request)
+        },
+        shutdown: () => real.shutdown(),
+        closeContext: (boxUser) => real.closeContext(boxUser),
+      }),
+    })
+    await engine.forSandbox('agent_abc').browserOpen('run-1', 'https://example.com')
+
+    const boxUser = `box_${createHash('sha256').update('agent_abc').digest('hex').slice(0, 12)}`
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.headers.get('x-ficus-box-user')).toBe(boxUser)
+    expect(seen[0]!.headers.get('x-tau-box-user')).toBe(boxUser) // K3
+  })
+
   test('writes a 0600 sha256 digest token for the sandbox synthetic box user', async () => {
     const engine = makeEngine(async () => new FakeBrowser())
     await engine.forSandbox('agent_abc').browserOpen('run-1', 'https://example.com')
@@ -419,7 +442,7 @@ describe('host browser backend', () => {
   // On the host runtime the browser runs on the user's own machine with the
   // same network reach the agent's `bash` already has, so the machine-host
   // SSRF blocklist protects nothing — and blocking loopback breaks the primary
-  // use case (screenshotting the agent's own local deployment, including Tau's
+  // use case (screenshotting the agent's own local deployment, including Ficus's
   // own http://localhost:<port>/api/app/... proxied URLs).
   test('allows a loopback URL — the host browser has the same reach as bash', async () => {
     const browser = new FakeBrowser()
@@ -754,7 +777,7 @@ describe('real local browser', () => {
         hostname: '127.0.0.1',
         port: 0,
         fetch: () =>
-          new Response('<!doctype html><html><head><title>Tau Host Smoke</title></head><body>hi</body></html>', {
+          new Response('<!doctype html><html><head><title>Ficus Host Smoke</title></head><body>hi</body></html>', {
             headers: { 'content-type': 'text/html' },
           }),
       })
@@ -762,7 +785,7 @@ describe('real local browser', () => {
       const engine = createHostBrowserBackend({ tokensDir: dir, installExitHooks: false })
       try {
         const opened = await engine.forSandbox('agent_real').browserOpen('run-1', `http://127.0.0.1:${server.port}/`)
-        expect(opened.title).toBe('Tau Host Smoke')
+        expect(opened.title).toBe('Ficus Host Smoke')
         expect(Buffer.from(opened.screenshotBase64, 'base64').subarray(0, 8)).toEqual(
           Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
         )

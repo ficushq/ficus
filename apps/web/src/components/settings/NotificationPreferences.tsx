@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { updateMyNotificationPrefs } from '../../api/config'
-import { PUSH_CATEGORIES } from '@tau/shared'
+import { PUSH_CATEGORIES } from '@ficus/shared'
 
 const categoryById = new Map(PUSH_CATEGORIES.map((category) => [category.id as string, category]))
 
@@ -42,7 +42,7 @@ export function NotificationPreferences() {
   }
 
   return (
-    <div className="tau-section py-5">
+    <div className="ficus-section py-5">
       <h4 className="text-md font-medium text-primary mb-1">Notification preferences</h4>
       <p className="text-sm text-muted mb-4">
         Control which notifications are pushed to you. These apply to your account across all your devices.
@@ -57,7 +57,7 @@ export function NotificationPreferences() {
           onClick={() => mutation.mutate({ pushEnabled: !pushEnabled })}
           disabled={mutation.isPending}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             pushEnabled
               ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'

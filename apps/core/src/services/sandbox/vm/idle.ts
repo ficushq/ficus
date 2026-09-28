@@ -47,7 +47,7 @@ export interface IdleCandidate {
  * The mechanism itself (`shouldParkBox` below, the lifecycle reaper's
  * `stopBox` call) is NOT removed — it stays fully alive and re-enablable, in
  * case a future capacity concern calls for it, via ONE global override:
- * `TAU_VM_BOX_PARK_ON_IDLE=true`. With the override set, a box's actual
+ * `FICUS_VM_BOX_PARK_ON_IDLE=true`. With the override set, a box's actual
  * requested `alwaysOn` (from `opts.k8s.alwaysOn` — e.g. a squad's own
  * always-on config, sourced by whichever caller — manager.ts or
  * lifecycle.ts — resolves the box's tracked/untracked `alwaysOn`) is honored
@@ -62,7 +62,7 @@ export interface IdleCandidate {
  * still be parkable at the old 15-minute timeout regardless of this policy.
  */
 export function vmBoxAlwaysOnDefault(): boolean {
-  return process.env.TAU_VM_BOX_PARK_ON_IDLE !== 'true'
+  return process.env.FICUS_VM_BOX_PARK_ON_IDLE !== 'true'
 }
 
 /**

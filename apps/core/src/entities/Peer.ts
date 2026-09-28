@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import { db } from '../db'
 import { peers } from '../db/schema'
-import type { PeerResponse } from '@tau/shared'
+import type { PeerResponse } from '@ficus/shared'
 
 export type PeerRow = InferSelectModel<typeof peers>
 

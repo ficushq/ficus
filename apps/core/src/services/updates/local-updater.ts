@@ -1,8 +1,17 @@
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
+import { ENV_PREFIX } from '@ficus/shared/legacy-env'
+import {
+  checkoutEnvPrefix,
+  migrateLocalInstallEnv,
+  planLocalInstallEnvMigration,
+  restoreLocalInstallEnv,
+  type LocalInstallEnvMigration,
+} from '@ficus/shared/node'
 import { InboxMessage } from '../../entities/InboxMessage'
+import { createLogger } from '../../lib/infra/logger'
 import { requireSandboxRuntime } from '../sandbox/runtime'
 import { CommandRunner, isKilledByOwnRestart } from './command-runner'
 import {
@@ -13,10 +22,12 @@ import {
   restartCommandsFor,
 } from './change-detector'
 import { detectDeploymentFlavor, resolveRepoRoot, supportsAutoUpdate } from './deployment-flavor'
-import type { DeploymentFlavor } from './deployment-flavor'
+import type { DeploymentFlavor, ProcessSupervisor } from './deployment-flavor'
 import { acquireUpdateRunLock, type UpdateRunLock } from './run-lock'
 import { DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS, MANUAL_UPDATE_TARGETS } from './types'
 import type { LocalAutoUpdateSettings, LocalUpdateRun, UpdateTask } from './types'
+
+const log = createLogger('local-updater')
 
 export class UpdateLockedError extends Error {
   constructor() {
@@ -65,7 +76,7 @@ function envFileValue(path: string, key: string): string | null {
  * update, or returns the operator-facing reason it is not.
  *
  * An update rewrites no environment: it merges, builds, and restarts. Since
- * TAU_SANDBOX_RUNTIME became mandatory and explicit, an install whose
+ * FICUS_SANDBOX_RUNTIME became mandatory and explicit, an install whose
  * environment never named a runtime (or still names a retired spelling) comes
  * back from that restart with BOTH services dead — with the new code already
  * checked out, which is the worst possible moment to find out.
@@ -85,19 +96,52 @@ export function sandboxRuntimeRestartBlocker(
   envFilePath: string,
   env: Record<string, string | undefined> = process.env
 ): string | null {
-  const declared = envFileValue(envFilePath, 'TAU_SANDBOX_RUNTIME')
-  const effective = declared ?? env.TAU_SANDBOX_RUNTIME
+  // The legacy spelling is read for one release (Ficus rename): the install's .env may predate it.
+  const declared =
+    envFileValue(envFilePath, 'FICUS_SANDBOX_RUNTIME') ?? envFileValue(envFilePath, 'TAU_SANDBOX_RUNTIME')
+  const effective = declared ?? env.FICUS_SANDBOX_RUNTIME
   try {
-    requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: effective })
+    requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: effective })
     return null
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     return (
       `${reason} Refusing to update: restarting tau-api and tau-worker with this configuration would bring them ` +
-      `back down. Set TAU_SANDBOX_RUNTIME in ${envFilePath} and retry.`
+      `back down. Set FICUS_SANDBOX_RUNTIME in ${envFilePath} and retry.`
     )
   }
 }
+
+/**
+ * Ficus rename: a local install's `.env` / `ecosystem.config.js` are hard-renamed TAU_ → FICUS_
+ * (byte-for-byte backups) before the update's commands run, and restored from those backups when
+ * the update fails, so the old processes restart on exactly the configuration they had.
+ */
+export interface LocalInstallEnvOps {
+  /** Throws a protected TAU_/FICUS_ conflict (names only) before anything is changed. */
+  preflight(root: string): void
+  migrate(root: string): Promise<LocalInstallEnvMigration>
+  restore(backups: string[]): Promise<void>
+}
+
+export const defaultLocalInstallEnv: LocalInstallEnvOps = {
+  preflight: (root) => {
+    planLocalInstallEnvMigration(root)
+  },
+  // Fail closed: only a checkout whose package.json is named `ficus` reads FICUS_. One that
+  // predates the rename (`tau`), or whose name cannot be read, is left as it is.
+  migrate: async (root) =>
+    checkoutEnvPrefix(root) === ENV_PREFIX
+      ? migrateLocalInstallEnv(root, new Date(), { warn: (line) => log.warn(line) })
+      : { renamed: [], backups: [] },
+  restore: (backups) => restoreLocalInstallEnv(backups),
+}
+
+/**
+ * The supervisors of CLI-managed local installs (`ficus server setup`). A `systemd` host is renamed
+ * by the setup toolkit, which journals it together with the host's other env files.
+ */
+const LOCAL_INSTALL_SUPERVISORS: readonly ProcessSupervisor[] = ['pm2', 'launchd', 'systemd-user']
 
 type GitRunner = (args: string[], options?: { env?: Record<string, string> }) => Promise<string>
 
@@ -120,6 +164,7 @@ export class LocalUpdateManager {
   private statusPath: string
   private acquireRunLock: () => Promise<UpdateRunLock | null>
   private sandboxRuntimePreflight: () => void
+  private localInstallEnv: LocalInstallEnvOps
 
   constructor(
     options: {
@@ -133,6 +178,8 @@ export class LocalUpdateManager {
       runLock?: () => Promise<UpdateRunLock | null>
       /** Throws to abort an update that would restart the services into a bad runtime. */
       sandboxRuntimePreflight?: () => void
+      /** The local-install env rename (Ficus); injectable for tests. */
+      localInstallEnv?: LocalInstallEnvOps
     } = {}
   ) {
     // Resolve to the git checkout root (walking up from cwd) so builds/git/status
@@ -156,11 +203,43 @@ export class LocalUpdateManager {
         const blocker = sandboxRuntimeRestartBlocker(join(this.repoRoot, '.env'))
         if (blocker) throw new Error(blocker)
       })
+    this.localInstallEnv = options.localInstallEnv ?? defaultLocalInstallEnv
+  }
+
+  /** Whether this deployment is a CLI-managed local install whose env files the updater renames. */
+  private renamesLocalInstallEnv(flavor: DeploymentFlavor): boolean {
+    return LOCAL_INSTALL_SUPERVISORS.includes(flavor.supervisor)
+  }
+
+  /**
+   * Runs `commands` with the install's env files renamed to FICUS_ first; when they fail, the
+   * files are restored byte-for-byte before the failure propagates (the restart commands are the
+   * last ones, so a failure means the old processes are still the ones that will run).
+   */
+  private async runWithRenamedEnv(flavor: DeploymentFlavor, commands: LocalUpdateRun['commands']): Promise<void> {
+    const backups = this.renamesLocalInstallEnv(flavor)
+      ? (await this.localInstallEnv.migrate(this.repoRoot)).backups
+      : []
+    try {
+      await this.commandRunner.runAll(commands)
+    } catch (err) {
+      if (backups.length === 0) throw err
+      try {
+        await this.localInstallEnv.restore(backups)
+      } catch (restoreErr) {
+        // Neither failure may hide the other: the update's comes first.
+        throw new AggregateError(
+          [err, restoreErr],
+          `${this.errorMessage(err)}; restoring ${backups.join(', ')} also failed: ${this.errorMessage(restoreErr)}`
+        )
+      }
+      throw err
+    }
   }
 
   /**
    * Refuses an update that would restart the services into an environment
-   * naming no supported TAU_SANDBOX_RUNTIME — they would come back dead.
+   * naming no supported FICUS_SANDBOX_RUNTIME — they would come back dead.
    *
    * `willRestart` is supplied by the caller because the two paths know it at
    * different times: runTargeted has its plan in hand, while runApply has to
@@ -336,6 +415,7 @@ export class LocalUpdateManager {
     // which does not exist until the merge and diff have happened.
     try {
       this.assertSafeToRestart(restartCommandsFor(flavor.supervisor).length > 0)
+      if (this.renamesLocalInstallEnv(flavor)) this.localInstallEnv.preflight(this.repoRoot)
     } catch (err) {
       run.status = 'failed'
       run.error = err instanceof Error ? err.message : String(err)
@@ -395,7 +475,7 @@ export class LocalUpdateManager {
       throw err
     }
     try {
-      await this.commandRunner.runAll(run.commands)
+      await this.runWithRenamedEnv(flavor, run.commands)
       run.status = 'succeeded'
     } catch (err) {
       run.status = 'failed'
@@ -440,7 +520,7 @@ export class LocalUpdateManager {
       // Targeted rebuilds have their plan already, so this is the precise
       // question: does THIS plan restart anything?
       this.assertSafeToRestart(run.commands.some((planned) => isServiceRestartCommand(planned.command)))
-      await this.commandRunner.runAll(run.commands)
+      await this.runWithRenamedEnv(flavor, run.commands)
       run.status = 'succeeded'
       run.message = `Rebuilt: ${tasks.join(', ')}`
     } catch (err) {
@@ -563,8 +643,8 @@ export class LocalUpdateManager {
         recipientId: SYSTEM_RECIPIENT_ID,
         senderType: 'system',
         wakeEligible: false,
-        subject: 'Local Tau update failed',
-        content: `Local Tau update ${run.id} failed: ${run.error ?? 'unknown error'}`,
+        subject: 'Local Ficus update failed',
+        content: `Local Ficus update ${run.id} failed: ${run.error ?? 'unknown error'}`,
         metadata: { runId: run.id, source: 'local-updater' },
       })
     } catch {

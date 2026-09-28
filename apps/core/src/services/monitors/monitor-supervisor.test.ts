@@ -94,11 +94,11 @@ describe('MonitorSupervisor', () => {
   }
 
   beforeEach(async () => {
-    // Monitor roots dispatch on TAU_SANDBOX_RUNTIME; pin a real container
+    // Monitor roots dispatch on FICUS_SANDBOX_RUNTIME; pin a real container
     // runtime so ambient env never changes what these tests assert (unset is
     // no longer a runtime — it is a boot failure). The vm test below sets 'vm'.
-    prevRuntime = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     agentTypeId = `monitor-supervisor-${Date.now()}-${Math.random().toString(36).slice(2)}`
     await AgentType.create({
       id: agentTypeId,
@@ -116,8 +116,8 @@ describe('MonitorSupervisor', () => {
     // cannot touch monitors owned by other test files).
     for (const supervisor of supervisors) supervisor.detachAll()
     supervisors.length = 0
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     await db.delete(monitors).where(eq(monitors.agentId, agentId))
     await db.delete(agents).where(eq(agents.id, agentId))
     await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
@@ -532,7 +532,7 @@ describe('MonitorSupervisor', () => {
     // Monitors exec in monitor.sandboxId (a squad member's light box on vm),
     // whose unix user cannot write the squad box's ~/workspace — the root must
     // resolve inside the monitor's own box (its ~/.private, like a solo box).
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squadId = 'sq1'
     const spy = spyOn(Agent, 'find').mockResolvedValue({ squadId } as any)
     try {

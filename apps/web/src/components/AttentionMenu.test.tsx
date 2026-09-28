@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { Attention } from '@tau/shared'
+import type { Attention } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { AttentionMenu } from './AttentionMenu'
 import { acquireDomHarness } from '../test/domHarness'
@@ -141,7 +141,7 @@ describe('AttentionMenu', () => {
     expect(panel).toBeDefined()
     expect(panel).toContain('bg-surface ')
     expect(panel).not.toContain('bg-surface-primary')
-    expect(panel).toContain('tau-overlay')
+    expect(panel).toContain('ficus-overlay')
     expect(panel).toContain('shadow-theme-lg')
     // A 16rem panel must never be wider than a phone viewport.
     expect(panel).toContain('max-w-[calc(100vw-2rem)]')

@@ -30,7 +30,7 @@
  *
  * ## Non-blocking, fault-isolated, idempotent
  * The entry point is fire-and-forget ({@link prewarmMachineDevboxBackground}) and
- * a no-op under `TAU_TEST_MODE=1`. Every failure is swallowed/logged — a
+ * a no-op under `FICUS_TEST_MODE=1`. Every failure is swallowed/logged — a
  * pre-warm can only ever make the first box faster, never fail machine bootstrap
  * or a later ensure. A re-run on an already-warm machine is cheap: `seedBoxDevbox`
  * short-circuits on the `~/.tau/devbox/.seeded` hash marker for a re-used
@@ -139,11 +139,11 @@ export async function prewarmMachineDevbox(machineId: string, deps: PrewarmMachi
 
 /**
  * Fire-and-forget {@link prewarmMachineDevbox}: returns immediately, no-op under
- * `TAU_TEST_MODE=1`, and swallows any rejection so it can never surface as an
+ * `FICUS_TEST_MODE=1`, and swallows any rejection so it can never surface as an
  * unhandled rejection or block/fail its caller (the bootstrap ready-transition).
  */
 export function prewarmMachineDevboxBackground(machineId: string, deps: PrewarmMachineDevboxDeps = {}): void {
-  if (process.env.TAU_TEST_MODE === '1') return
+  if (process.env.FICUS_TEST_MODE === '1') return
   prewarmMachineDevbox(machineId, deps).catch((err) => {
     log.error(`Background devbox pre-warm failed for machine ${machineId}:`, err)
   })

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, getByLabelText, getByText, queryByText } from '@testing-library/dom'
-import { createBlankWorkflow, type WorkflowDefinition, type WorkflowSource } from '@tau/shared'
+import { createBlankWorkflow, type WorkflowDefinition, type WorkflowSource } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
 import { WorkflowPicker } from './WorkflowPicker'

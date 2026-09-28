@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 import { layoutWorkStreamGraph } from './workStreamGraphLayout'
 
 function stream(overrides: Partial<WorkStream> & Pick<WorkStream, 'id'>): WorkStream {

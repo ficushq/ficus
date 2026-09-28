@@ -4,12 +4,12 @@ import { join } from 'path'
 import { createLogger } from '../../lib/infra/logger'
 import { getSecretStore } from '../secrets'
 import { isHostRuntime } from '../sandbox/runtime'
-import { ensureSquadSshDir, getSquadSshPath, REMOTE_HOST_KEY_PREFIX } from '../squad/ssh'
+import { ensureSquadSshDir, getSquadSshPath, LEGACY_REMOTE_HOST_KEY_PREFIX, REMOTE_HOST_KEY_PREFIX } from '../squad/ssh'
 import { listHostsGrantedToSquad, type RemoteHost } from './queries'
 
 /**
  * Materializes a squad's granted remote hosts into its existing SSH dir
- * (`apps/core/src/services/squad/ssh.ts`): one `tau_remote_<name>` private
+ * (`apps/core/src/services/squad/ssh.ts`): one `ficus_remote_<name>` private
  * key file per host, plus a managed block in `config` naming each host as an
  * ssh alias. See docs/history/superpowers/specs/2026-07-14-remote-hosts-design.md
  * § Materialization + § Security.
@@ -24,8 +24,16 @@ import { listHostsGrantedToSquad, type RemoteHost } from './queries'
 
 const log = createLogger('remote-hosts-materialize')
 
-export const MANAGED_BLOCK_BEGIN = '# >>> tau remote hosts >>>'
-export const MANAGED_BLOCK_END = '# <<< tau remote hosts <<<'
+export const MANAGED_BLOCK_BEGIN = '# >>> ficus remote hosts >>>'
+export const MANAGED_BLOCK_END = '# <<< ficus remote hosts <<<'
+/**
+ * The markers a pre-rename Core wrote. Never written; stripped like the current ones, so the next
+ * materialization replaces an old block instead of leaving two managed blocks. Wave 3 drops them.
+ */
+export const LEGACY_MANAGED_BLOCK_BEGIN = '# >>> tau remote hosts >>>'
+export const LEGACY_MANAGED_BLOCK_END = '# <<< tau remote hosts <<<'
+const BLOCK_BEGIN_MARKERS: readonly string[] = [MANAGED_BLOCK_BEGIN, LEGACY_MANAGED_BLOCK_BEGIN]
+const BLOCK_END_MARKERS: readonly string[] = [MANAGED_BLOCK_END, LEGACY_MANAGED_BLOCK_END]
 
 // `KEY_FILE_PREFIX` is exported from `squad/ssh.ts` (as `REMOTE_HOST_KEY_PREFIX`)
 // rather than defined here, so `validateKeyName` there can reserve the same
@@ -84,7 +92,7 @@ function filterValidHosts(hosts: RemoteHost[], context: string): RemoteHost[] {
  *   picked up by ssh's own default.
  * - Set (host runtime): the given ABSOLUTE directory. On host there is no
  *   mount — commands run as the operator, and `ssh -F <squadSshDir>/config`
- *   expands `~` to the OPERATOR's home, where the squad's `tau_remote_<name>`
+ *   expands `~` to the OPERATOR's home, where the squad's `ficus_remote_<name>`
  *   key does not exist (and with `IdentitiesOnly yes` the alias hard-fails).
  *   `UserKnownHostsFile` is pinned for the same reason: otherwise the squad's
  *   `known_hosts` is ignored and host keys land in the operator's own file.
@@ -172,13 +180,13 @@ export function stripManagedBlock(config: string): string {
 
   for (const line of lines) {
     const trimmed = line.trim()
-    if (trimmed === MANAGED_BLOCK_BEGIN) {
+    if (BLOCK_BEGIN_MARKERS.includes(trimmed)) {
       inBlock = true
       droppedAny = true
       dropping = true
       continue
     }
-    if (trimmed === MANAGED_BLOCK_END) {
+    if (BLOCK_END_MARKERS.includes(trimmed)) {
       inBlock = false
       droppedAny = true
       dropping = true
@@ -247,7 +255,7 @@ interface MaterializableHost {
  * never appear in either's output: if `getManagedBlockForSquad` rendered a
  * `Host` stanza for it while `materializeSquadRemoteHosts` skipped writing
  * its key file, a later `setSshConfig` call would re-inject an alias
- * pointing at a non-existent `~/.ssh/tau_remote_<name>` file, which (with
+ * pointing at a non-existent `~/.ssh/ficus_remote_<name>` file, which (with
  * `IdentitiesOnly yes`) hard-fails that alias.
  */
 async function listMaterializableHosts(squadId: string): Promise<MaterializableHost[]> {
@@ -279,8 +287,8 @@ export async function getManagedBlockForSquad(squadId: string): Promise<string> 
 
 /**
  * Materialize a squad's granted remote hosts into its SSH dir: idempotent
- * and complete — writes a `tau_remote_<name>` private key file (0600) per
- * granted host, removes any `tau_remote_*` key file no longer granted, and
+ * and complete — writes a `ficus_remote_<name>` private key file (0600) per
+ * granted host, removes any `ficus_remote_*` key file no longer granted, and
  * rewrites the managed block in `config` while preserving all user content
  * outside the markers. Call on every mutation that can affect a squad's
  * grants (create+grant, grant, revoke, host delete).
@@ -296,16 +304,6 @@ export async function materializeSquadRemoteHosts(squadId: string): Promise<void
     fs.writeFileSync(keyPath, privateKey, { mode: 0o600 })
     fs.chmodSync(keyPath, 0o600)
     materializedNames.add(host.name)
-  }
-
-  // Remove stale key files for hosts no longer granted (or no longer valid).
-  const existingFiles = fs.existsSync(sshPath) ? fs.readdirSync(sshPath) : []
-  for (const file of existingFiles) {
-    if (!file.startsWith(KEY_FILE_PREFIX)) continue
-    const name = file.slice(KEY_FILE_PREFIX.length)
-    if (!materializedNames.has(name)) {
-      fs.unlinkSync(join(sshPath, file))
-    }
   }
 
   const block = renderManagedBlock(
@@ -325,4 +323,42 @@ export async function materializeSquadRemoteHosts(squadId: string): Promise<void
   const tmpConfigPath = join(sshPath, `.config.tmp-${randomUUID()}`)
   fs.writeFileSync(tmpConfigPath, composeManagedConfig(userContent, block), { mode: 0o644 })
   fs.renameSync(tmpConfigPath, configPath)
+
+  // Only now sweep: the config names just the key files written above, so no
+  // removal (or failed removal) below can leave it pointing at a missing key.
+  sweepStaleKeyFiles(squadId, sshPath, materializedNames)
+}
+
+/**
+ * Remove key files for hosts no longer granted (or no longer valid), and every
+ * key file under the pre-rename prefix (K2): the current grants were re-written
+ * under KEY_FILE_PREFIX. Entries that are not files or symlinks (a directory
+ * someone created under a reserved name) are skipped, never recursed into. A
+ * failed removal does not stop the sweep; the failures are reported together
+ * after every other stale key is gone.
+ */
+function sweepStaleKeyFiles(squadId: string, sshPath: string, materializedNames: Set<string>): void {
+  const failures: string[] = []
+  for (const file of fs.readdirSync(sshPath)) {
+    const stale = file.startsWith(LEGACY_REMOTE_HOST_KEY_PREFIX)
+      ? true
+      : file.startsWith(KEY_FILE_PREFIX) && !materializedNames.has(file.slice(KEY_FILE_PREFIX.length))
+    if (!stale) continue
+    const path = join(sshPath, file)
+    try {
+      const entry = fs.lstatSync(path)
+      if (!entry.isFile() && !entry.isSymbolicLink()) {
+        log.warn(`remote-host key sweep for squad ${squadId}: skipping non-file entry ${file}`)
+        continue
+      }
+      fs.unlinkSync(path)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue
+      log.error(`remote-host key sweep for squad ${squadId}: could not remove ${file}`, err)
+      failures.push(file)
+    }
+  }
+  if (failures.length) {
+    throw new Error(`remote-host key sweep for squad ${squadId} could not remove: ${failures.join(', ')}`)
+  }
 }

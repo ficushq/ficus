@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import { fireEvent } from '@testing-library/dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { AssistantActivityUpdate, AssistantTaskSummary } from '@tau/shared'
+import type { AssistantActivityUpdate, AssistantTaskSummary } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { AssistantTaskQuestions, AssistantAgentQuestions } from './AssistantQuestions'

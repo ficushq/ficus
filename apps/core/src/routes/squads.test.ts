@@ -197,17 +197,17 @@ describe('squads routes', () => {
     let previousRuntime: string | undefined
 
     beforeEach(() => {
-      previousRuntime = process.env.TAU_SANDBOX_RUNTIME
+      previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
     })
 
     afterEach(() => {
-      if (previousRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = previousRuntime
+      if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
       clearHostWorkspaceOverrides()
     })
 
     it('reports host runtime and the real default workspace pattern', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       const response = await app.request('/api/squads/create-options', { headers: authHeaders(admin.token) })
       expect(response.status).toBe(200)
       expect(await response.json()).toMatchObject({
@@ -217,7 +217,7 @@ describe('squads routes', () => {
     })
 
     it('normalizes a host workspace before persisting it', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       const root = mkdtempSync(join(tmpdir(), 'tau-create-squad-normalize-'))
       const rawWorkspace = `${root}//nested/./workspace/`
       try {
@@ -246,7 +246,7 @@ describe('squads routes', () => {
     })
 
     it('rejects the displayed default-path placeholder', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       const workspace = join(getHomeDir(), 'workspaces', 'squads', '<new squad id>')
       const response = await app.request('/api/squads', {
         method: 'POST',
@@ -258,7 +258,7 @@ describe('squads routes', () => {
     })
 
     it('removes newly-created directories and the override cache entry when squad creation fails', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       const root = mkdtempSync(join(tmpdir(), 'tau-create-squad-rollback-'))
       const workspace = join(root, 'nested', 'workspace')
       const name = `${testPrefix} failed cwd`
@@ -281,7 +281,7 @@ describe('squads routes', () => {
     })
 
     it('creates and persists a usable host workspace override', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       const root = mkdtempSync(join(tmpdir(), 'tau-create-squad-workspace-'))
       const workspace = join(root, 'nested', 'workspace')
       try {
@@ -301,7 +301,7 @@ describe('squads routes', () => {
     })
 
     it('rejects host workspace overrides outside host runtime', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       const response = await app.request('/api/squads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
@@ -311,7 +311,7 @@ describe('squads routes', () => {
     })
 
     it('rejects a host workspace path that is an existing file', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       const root = mkdtempSync(join(tmpdir(), 'tau-create-squad-file-'))
       const workspace = join(root, 'file')
       writeFileSync(workspace, 'not a directory')
@@ -1328,8 +1328,8 @@ describe('squads routes', () => {
     let siblingDir: string
 
     beforeEach(() => {
-      prevRuntime = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       // An override like /srv/repo has a SIBLING /srv/repo-secrets whose path
       // is a string prefix match — the case a startsWith() boundary lets through.
       const base = mkdtempSync(join(tmpdir(), 'squad-route-override-'))
@@ -1343,8 +1343,8 @@ describe('squads routes', () => {
 
     afterEach(() => {
       clearHostWorkspaceOverrides()
-      if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
       rmSync(join(overrideDir, '..'), { recursive: true, force: true })
     })
 
@@ -1425,13 +1425,13 @@ describe('squads routes', () => {
 
     beforeEach(async () => {
       squad = await Squad.create({ name: `${testPrefix} host guard`, purpose: 'test' })
-      prevRuntime = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
     })
 
     afterEach(() => {
-      if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     })
 
     const post = (path: string) =>
@@ -1488,7 +1488,7 @@ describe('squads routes', () => {
       expect(body.runtime).toBe('host')
       expect(body).not.toHaveProperty('toolchain')
 
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       const docker = await (
         await app.request(`/api/squads/${declared.id}/sandbox/status`, { headers: authHeaders(admin.token) })
       ).json()
@@ -1521,7 +1521,7 @@ describe('squads routes', () => {
     })
 
     it('leaves the docker runtime behaviour unchanged', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       expect((await post('/sandbox/stop')).status).toBe(200)
       expect((await post('/toolchain/apply')).status).toBe(202)
     })
@@ -2200,14 +2200,14 @@ describe('squads routes', () => {
     let squad: Squad
     let previousRuntime: string | undefined
     beforeEach(async () => {
-      previousRuntime = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       squad = await Squad.create({ name: `${testPrefix}-hwp`, purpose: 'test' })
     })
 
     afterEach(() => {
-      if (previousRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = previousRuntime
+      if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
     })
 
     async function patch(body: unknown) {
@@ -2253,7 +2253,7 @@ describe('squads routes', () => {
     })
 
     it('rejects setting a host workspace outside host runtime', async () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       expect((await patch({ hostWorkspacePath: '/tmp/squad-workspace' })).status).toBe(400)
       expect((await Squad.mustFind(squad.id)).hostWorkspacePath).toBeNull()
     })
@@ -2267,24 +2267,24 @@ describe('squads routes', () => {
       expect((await patch({ hostWorkspacePath: '/' })).status).toBe(400)
     })
 
-    it('GET /sandbox/status reports runtime "host" under TAU_SANDBOX_RUNTIME=host', async () => {
-      const prev = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+    it('GET /sandbox/status reports runtime "host" under FICUS_SANDBOX_RUNTIME=host', async () => {
+      const prev = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       try {
         const res = await app.request(`/api/squads/${squad.id}/sandbox/status`, { headers: authHeaders(admin.token) })
         expect(res.status).toBe(200)
         expect((await res.json()).runtime).toBe('host')
       } finally {
-        if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-        else process.env.TAU_SANDBOX_RUNTIME = prev
+        if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+        else process.env.FICUS_SANDBOX_RUNTIME = prev
       }
     })
 
     // The ACTIVE directory agents/terminal/file routes use right now — the
     // override when one is primed, otherwise the storage path.
     it('GET /sandbox/status reports the resolved host workspace path', async () => {
-      const prev = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      const prev = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       const status = async () =>
         (await app.request(`/api/squads/${squad.id}/sandbox/status`, { headers: authHeaders(admin.token) })).json()
       try {
@@ -2295,8 +2295,8 @@ describe('squads routes', () => {
         expect((await status()).workspacePath).toBe('/srv/override-repo')
       } finally {
         clearHostWorkspaceOverrides()
-        if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-        else process.env.TAU_SANDBOX_RUNTIME = prev
+        if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+        else process.env.FICUS_SANDBOX_RUNTIME = prev
       }
     })
 
@@ -2304,8 +2304,8 @@ describe('squads routes', () => {
     // agents WILL work. The status endpoint must report where they ARE working:
     // the path the last host ensure recorded on the row.
     it('GET /sandbox/status prefers the applied path over a newer cached override', async () => {
-      const prev = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      const prev = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       try {
         await Squad.update(squad.id, { metadata: { hostRuntime: { activeWorkspacePath: '/srv/applied-repo' } } })
         setHostWorkspaceOverride(squad.id, '/srv/just-saved-repo')
@@ -2317,14 +2317,14 @@ describe('squads routes', () => {
       } finally {
         clearHostWorkspaceOverrides()
         await Squad.update(squad.id, { metadata: { hostRuntime: null } })
-        if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-        else process.env.TAU_SANDBOX_RUNTIME = prev
+        if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+        else process.env.FICUS_SANDBOX_RUNTIME = prev
       }
     })
 
     it('GET /sandbox/status falls back to the resolved path, flagged as not applied', async () => {
-      const prev = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'host'
+      const prev = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
       try {
         clearHostWorkspaceOverrides()
         setHostWorkspaceOverride(squad.id, '/srv/never-ensured')
@@ -2334,20 +2334,20 @@ describe('squads routes', () => {
         expect(body.workspacePathApplied).toBe(false)
       } finally {
         clearHostWorkspaceOverrides()
-        if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-        else process.env.TAU_SANDBOX_RUNTIME = prev
+        if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+        else process.env.FICUS_SANDBOX_RUNTIME = prev
       }
     })
 
     it('GET /sandbox/status omits workspacePath on a docker runtime', async () => {
-      const prev = process.env.TAU_SANDBOX_RUNTIME
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      const prev = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       try {
         const res = await app.request(`/api/squads/${squad.id}/sandbox/status`, { headers: authHeaders(admin.token) })
         expect(await res.json()).not.toHaveProperty('workspacePath')
       } finally {
-        if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-        else process.env.TAU_SANDBOX_RUNTIME = prev
+        if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+        else process.env.FICUS_SANDBOX_RUNTIME = prev
       }
     })
   })

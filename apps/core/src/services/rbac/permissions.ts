@@ -1,8 +1,8 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { db } from '../../db'
 import { agentExtraScopes, agents, agentTypes, roleAssignments, roles, users } from '../../db/schema'
 import { eq, and, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
-import { isLiveAgentStatus, permissionMatches } from '@tau/shared'
+import { isLiveAgentStatus, permissionMatches } from '@ficus/shared'
 
 export { permissionMatches }
 

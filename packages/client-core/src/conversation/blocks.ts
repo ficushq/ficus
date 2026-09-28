@@ -1,4 +1,4 @@
-import type { ContentBlock, StreamEvent } from '@tau/shared'
+import type { ContentBlock, StreamEvent } from '@ficus/shared'
 
 export type StreamingContentBlock =
   | (Extract<ContentBlock, { type: 'thinking' | 'text' }> & { streamGroupId?: string })

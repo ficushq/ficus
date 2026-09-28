@@ -9,7 +9,7 @@
 // once-per-receive snapshot), preserving today's per-pull settings read here.
 import { createDefaultAttachmentPull } from 'amtp-engine'
 import type { ReceiveCaps } from 'amtp-engine'
-import type { AmtpAttachmentRef } from '@tau/shared'
+import type { AmtpAttachmentRef } from '@ficus/shared'
 import { InstanceIdentity } from '../../entities/InstanceIdentity'
 import { getSettingsStore } from '../settings/store'
 

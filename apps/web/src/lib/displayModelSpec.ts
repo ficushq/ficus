@@ -1,4 +1,4 @@
-import type { ThinkingLevel as SharedThinkingLevel } from '@tau/shared'
+import type { ThinkingLevel as SharedThinkingLevel } from '@ficus/shared'
 type ThinkingLevel = SharedThinkingLevel | 'max'
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])

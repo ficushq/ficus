@@ -6,13 +6,13 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "TAU_CLI_VERSION=${TAU_CLI_VERSION:-dev} TAU_CLI_COMMIT=${TAU_CLI_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo dev)} TAU_CLI_BUILD_DATE=${TAU_CLI_BUILD_DATE:-$(git show -s --format=%cI HEAD 2>/dev/null || echo dev)} node -e \"const fs=require('fs');fs.writeFileSync('src/build-info.generated.ts', 'export const generatedBuildInfo = '+JSON.stringify({version:process.env.TAU_CLI_VERSION,commit:process.env.TAU_CLI_COMMIT,buildDate:process.env.TAU_CLI_BUILD_DATE}, null, 2)+' as const\\n')\" && bun build src/index.ts --outfile=dist/tau.js --target=bun && rm -rf dist/skills && mkdir -p dist/skills && cp -R ../../external/skills/. dist/skills/ && node -e \"const f='dist/tau.js';require('fs').writeFileSync(f,'#!/usr/bin/env bun\\n'+require('fs').readFileSync(f))\" && chmod +x dist/tau.js",
+    "build": "FICUS_CLI_VERSION=${FICUS_CLI_VERSION:-dev} FICUS_CLI_COMMIT=${FICUS_CLI_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo dev)} FICUS_CLI_BUILD_DATE=${FICUS_CLI_BUILD_DATE:-$(git show -s --format=%cI HEAD 2>/dev/null || echo dev)} node -e \"const fs=require('fs');fs.writeFileSync('src/build-info.generated.ts', 'export const generatedBuildInfo = '+JSON.stringify({version:process.env.FICUS_CLI_VERSION,commit:process.env.FICUS_CLI_COMMIT,buildDate:process.env.FICUS_CLI_BUILD_DATE}, null, 2)+' as const\\n')\" && bun build src/index.ts --outfile=dist/ficus.js --target=bun && rm -rf dist/skills && mkdir -p dist/skills && cp -R ../../external/skills/. dist/skills/ && node -e \"const f='dist/ficus.js';require('fs').writeFileSync(f,'#!/usr/bin/env bun\\n'+require('fs').readFileSync(f))\" && chmod +x dist/ficus.js",
     "test": "bun ../../scripts/test-runner.ts src",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tau/client-core": "workspace:*",
-    "@tau/shared": "workspace:*",
+    "@ficus/client-core": "workspace:*",
+    "@ficus/shared": "workspace:*",
     "commander": "^12.0.0",
     "yaml": "^2.9.0"
   },

@@ -2,7 +2,7 @@ import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stre
 import { describe, it, expect, beforeEach, afterEach, afterAll, spyOn } from 'bun:test'
 import { eq, inArray, like, sql } from 'drizzle-orm'
 import type postgres from 'postgres'
-import { WORK_STREAM_ADMITTED_STATUSES } from '@tau/shared'
+import { WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
 import { db } from '../../db'
 import { createPostgresConnection, getConnectionString } from '../../db/connection'
 import { agentTypes, agents, executions, inbox, squads, workStreams, workStreamContinuations } from '../../db/schema'
@@ -446,7 +446,7 @@ describe('work-stream admission', () => {
       expect(message).toContain('discard its in-flight turn and stop its sandbox')
       expect(message).toContain('asking it to stop at a safe point')
       expect(message).toContain('Wait for it to report that it has stopped')
-      expect(message).toContain(`tau workstream park ${active.id}`)
+      expect(message).toContain(`ficus workstream park ${active.id}`)
       expect(message).toContain('park a different stream')
       expect(message).toContain("lower this stream's priority")
       expect(message).toContain('--preempt-running')

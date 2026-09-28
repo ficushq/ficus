@@ -1,3 +1,4 @@
+import { withLegacyAppAliases } from '@ficus/shared/legacy-env'
 import type { ISandboxManager } from '../sandbox'
 import { getSandboxManager } from '../sandbox'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
@@ -43,18 +44,18 @@ const TIMESTAMP = `date -u '+%Y-%m-%dT%H:%M:%SZ'`
 
 const LAUNCHER_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
-mkdir -p "$TAU_LOCAL_DEPLOYMENT_DIR/logs"
-${TIMESTAMP} > "$TAU_LOCAL_DEPLOYMENT_DIR/startedAt" || true
-cd "$TAU_LOCAL_DEPLOYMENT_CWD"
+mkdir -p "$FICUS_LOCAL_DEPLOYMENT_DIR/logs"
+${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/startedAt" || true
+cd "$FICUS_LOCAL_DEPLOYMENT_CWD"
 set +e
 {
-  echo "[tau] starting localDeployment $TAU_LOCAL_DEPLOYMENT_ID on port $TAU_LOCAL_DEPLOYMENT_PORT"
-  bash -lc "$TAU_LOCAL_DEPLOYMENT_COMMAND"
-} 2>&1 | tee -a "$TAU_LOCAL_DEPLOYMENT_DIR/logs/current.log"
+  echo "[ficus] starting localDeployment $FICUS_LOCAL_DEPLOYMENT_ID on port $FICUS_LOCAL_DEPLOYMENT_PORT"
+  bash -lc "$FICUS_LOCAL_DEPLOYMENT_COMMAND"
+} 2>&1 | tee -a "$FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log"
 status=\${PIPESTATUS[0]}
 set -e
-echo "$status" > "$TAU_LOCAL_DEPLOYMENT_DIR/exitCode"
-${TIMESTAMP} > "$TAU_LOCAL_DEPLOYMENT_DIR/exitedAt" || true
+echo "$status" > "$FICUS_LOCAL_DEPLOYMENT_DIR/exitCode"
+${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/exitedAt" || true
 exit "$status"
 `
 
@@ -68,20 +69,35 @@ export class LocalDeploymentProcessSupervisor {
     const dir = localDeploymentDir(args.sandboxId, args.localDeploymentId)
     const script = `${dir}/run.sh`
     const cwd = args.cwd?.trim() || workspaceMount
+    // User apps read these names, so for one release (Ficus rename) each FICUS_
+    // name also goes out under its TAU_ spelling.
+    const appEnv = withLegacyAppAliases(
+      {
+        FICUS_LOCAL_DEPLOYMENT_ID: args.localDeploymentId,
+        FICUS_LOCAL_DEPLOYMENT_PORT: String(args.port),
+        // The conventional name. Ficus assigns the port now, so an app that reads
+        // $PORT needs no configuration and cannot collide with a sibling box on
+        // the same machine; FICUS_LOCAL_DEPLOYMENT_PORT stays for existing commands.
+        PORT: String(args.port),
+        // Hosted apps occupy their origin root; self-hosted apps keep the legacy
+        // proxy prefix. Passing both through one variable lets framework config
+        // stay portable without hardcoding a deployment id.
+        FICUS_APP_BASE_PATH: getHostedAppsDomain() ? '/' : localDeploymentProxyPath(args.localDeploymentId),
+        FICUS_LOCAL_DEPLOYMENT_CWD: cwd,
+        FICUS_LOCAL_DEPLOYMENT_DIR: dir,
+        FICUS_LOCAL_DEPLOYMENT_COMMAND: args.command,
+      },
+      [
+        'FICUS_APP_BASE_PATH',
+        'FICUS_LOCAL_DEPLOYMENT_ID',
+        'FICUS_LOCAL_DEPLOYMENT_PORT',
+        'FICUS_LOCAL_DEPLOYMENT_CWD',
+        'FICUS_LOCAL_DEPLOYMENT_DIR',
+        'FICUS_LOCAL_DEPLOYMENT_COMMAND',
+      ]
+    )
     const launchCommand = [
-      `TAU_LOCAL_DEPLOYMENT_ID=${shellQuote(args.localDeploymentId)}`,
-      `TAU_LOCAL_DEPLOYMENT_PORT=${shellQuote(args.port)}`,
-      // The conventional name. Tau assigns the port now, so an app that reads
-      // $PORT needs no configuration and cannot collide with a sibling box on
-      // the same machine; TAU_LOCAL_DEPLOYMENT_PORT stays for existing commands.
-      `PORT=${shellQuote(args.port)}`,
-      // Hosted apps occupy their origin root; self-hosted apps keep the legacy
-      // proxy prefix. Passing both through one variable lets framework config
-      // stay portable without hardcoding a deployment id.
-      `TAU_APP_BASE_PATH=${shellQuote(getHostedAppsDomain() ? '/' : localDeploymentProxyPath(args.localDeploymentId))}`,
-      `TAU_LOCAL_DEPLOYMENT_CWD=${shellQuote(cwd)}`,
-      `TAU_LOCAL_DEPLOYMENT_DIR=${shellQuote(dir)}`,
-      `TAU_LOCAL_DEPLOYMENT_COMMAND=${shellQuote(args.command)}`,
+      ...Object.entries(appEnv).map(([key, value]) => `${key}=${shellQuote(value)}`),
       `bash ${shellQuote(script)}`,
     ].join(' ')
 
@@ -182,7 +198,7 @@ export class LocalDeploymentProcessSupervisor {
   /**
    * Bounded read of an attached deployment's log file. `unavailable` (not an
    * exception) when the file is missing or cannot be read — the route renders
-   * a `[tau]` notice for that instead of failing the request.
+   * a `[ficus]` notice for that instead of failing the request.
    */
   async tailAttachedLogs(
     sandboxId: string,

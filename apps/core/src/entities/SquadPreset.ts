@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { db, squadPresets } from '../db'
-import { squadPresetWorkflowsSchema, type SquadPreset as SquadPresetJson } from '@tau/shared'
+import { squadPresetWorkflowsSchema, type SquadPreset as SquadPresetJson } from '@ficus/shared'
 import type { ScheduleTemplateYaml } from '../services/config-sync'
 import type { InferSelectModel } from 'drizzle-orm'
 
@@ -13,7 +13,7 @@ export interface UpsertSquadPresetInput {
   purpose?: string
   defaultAgents?: string[]
   managerInstructions?: string
-  workflows?: import('@tau/shared').SquadPresetWorkflows | null
+  workflows?: import('@ficus/shared').SquadPresetWorkflows | null
   scheduleTemplates?: ScheduleTemplateYaml[]
 }
 
@@ -33,7 +33,7 @@ export class SquadPreset implements SquadPresetRow {
   declare purpose: string | null
   declare defaultAgents: string[]
   declare managerInstructions: string | null
-  declare workflows: import('@tau/shared').SquadPresetWorkflows | null
+  declare workflows: import('@ficus/shared').SquadPresetWorkflows | null
   declare scheduleTemplates: ScheduleTemplateYaml[]
   declare yamlTemplate: unknown
   declare yamlFieldOverrides: string[]

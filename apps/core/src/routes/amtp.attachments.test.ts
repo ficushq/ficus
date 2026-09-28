@@ -14,7 +14,7 @@ import { Outbox } from '../entities/Outbox'
 import { getSettingsStore } from '../services/settings'
 import { generateInstanceKeyPair, instanceIdFromPublicKeyPem, signEnvelope } from '../services/amtp/crypto'
 import { canonicalPeerGetString } from 'amtp-protocol'
-import type { AmtpEnvelope } from '@tau/shared'
+import type { AmtpEnvelope } from '@ficus/shared'
 
 // Production-like app: sentinel wired exactly as in index.ts.
 // identityMiddleware must be mounted so the cookieless peer GET bypasses

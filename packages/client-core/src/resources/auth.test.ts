@@ -42,7 +42,7 @@ describe('authResource', () => {
   })
 
   test('pairClaim posts the code/name/platform body', async () => {
-    const { t, calls } = mockTransport(() => ({ token: 'tau_dev_x', user: { id: 'u1', email: 'a@b.c' } }))
+    const { t, calls } = mockTransport(() => ({ token: 'ficus_dev_x', user: { id: 'u1', email: 'a@b.c' } }))
     await authResource(t).pairClaim({ code: 'ABC123', name: 'iPhone', platform: 'ios' })
     expect(calls[0].path).toBe('/auth/pair/claim')
     expect(calls[0].options?.method).toBe('POST')

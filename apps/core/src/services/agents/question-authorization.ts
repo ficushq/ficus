@@ -1,4 +1,4 @@
-import { isAddressableAgentStatus, type AgentStatus } from '@tau/shared'
+import { isAddressableAgentStatus, type AgentStatus } from '@ficus/shared'
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents } from '../../db/schema'

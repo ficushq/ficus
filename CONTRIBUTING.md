@@ -1,6 +1,6 @@
-# Contributing to Tau
+# Contributing to Ficus
 
-Thanks for your interest in contributing to Tau! This page explains how to send changes and what you're agreeing to when you do.
+Thanks for your interest in contributing to Ficus! This page explains how to send changes and what you're agreeing to when you do.
 
 ## Quick start
 
@@ -12,9 +12,9 @@ Thanks for your interest in contributing to Tau! This page explains how to send 
 
 ## Licensing in plain English
 
-Tau is released under the **GNU Affero General Public License v3.0 only** (`AGPL-3.0-only`). When you contribute, you're submitting your changes under the same license. **You retain copyright in your contributions** — there is no copyright assignment.
+Ficus is released under the **GNU Affero General Public License v3.0 only** (`AGPL-3.0-only`). When you contribute, you're submitting your changes under the same license. **You retain copyright in your contributions** — there is no copyright assignment.
 
-In addition, by signing the CLA you grant Intentional Design LLC (the project owner) permission to also distribute your contribution under other licenses, including commercial ones. This is what lets the project offer a paid non-AGPL option to companies that can't comply with the AGPL's network-source-disclosure requirement. The open-source version of Tau will always remain AGPL-3.0-only.
+In addition, by signing the CLA you grant Intentional Design LLC (the project owner) permission to also distribute your contribution under other licenses, including commercial ones. This is what lets the project offer a paid non-AGPL option to companies that can't comply with the AGPL's network-source-disclosure requirement. The open-source version of Ficus will always remain AGPL-3.0-only.
 
 If you don't want your contribution to be available under any license other than AGPL-3.0-only, please don't open the PR — sign the CLA only if you're comfortable with the dual-licensing terms in [CLA.md](CLA.md).
 

@@ -5,30 +5,31 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createPostgresConnection, getConnectionString } from '../../db/connection'
 import type { MachineArtifact } from './machine-artifacts'
+import { CLI_BUNDLE_FILE, SANDBOX_CLI_PATH } from '../sandbox/cli-path'
 import { readPrebuiltMachineFile } from './machine-prebuilt'
 import { memoizeBuild, resolveRepoRoot } from './server-bundle'
 
 /**
- * tau CLI bundle pipeline.
+ * ficus CLI bundle pipeline.
  *
  * The CLI is bundled from its source entry (`apps/cli/src/index.ts`) to a single
  * file and pushed to every machine at {@link CLI_REMOTE_PATH}, plus a tiny
- * static wrapper at {@link CLI_WRAPPER_PATH} so `tau …` works in every box's
+ * static wrapper at {@link CLI_WRAPPER_PATH} so `ficus …` works in every box's
  * shell. Delivery goes through the generic machine-artifact pipeline
  * ({@link cliArtifact} + `ensureArtifact`), version-stamped under
  * `machines.artifact_versions['cli']` — a CLI rebuild with real code changes
  * re-pushes to every machine; an identical rebuild is a no-op.
  *
- * Determinism vs. an informative `tau --version`: the CLI's normal package
+ * Determinism vs. an informative `ficus --version`: the CLI's normal package
  * build (`apps/cli/package.json`) generates `src/build-info.generated.ts`
- * from TAU_CLI_BUILD_DATE — WALL-CLOCK content that `bun build` INLINES into
+ * from FICUS_CLI_BUILD_DATE — WALL-CLOCK content that `bun build` INLINES into
  * the bundle whenever the file exists (`--external './build-info.generated'`
  * does NOT prevent the inlining — verified), which would change the bundle
  * hash on every build of unchanged code and re-push forever. This pipeline
  * therefore writes its OWN generated file with values that are a pure
  * function of the checked-out commit — `git rev-parse --short HEAD` plus the
  * COMMIT's own date (`git show -s --format=%cI HEAD`, never the wall clock) —
- * so `tau --version` on every machine reports the real commit + commit-date
+ * so `ficus --version` on every machine reports the real commit + commit-date
  * while the output hash still moves only on real code changes. Any LEFTOVER
  * generated file (e.g. a dev/tenant-zero host where someone ran the CLI
  * package build) is saved aside for the duration of the bundle and restored
@@ -44,23 +45,26 @@ const CLI_ENTRY = 'apps/cli/src/index.ts'
  *  above — and restored (or removed) after. */
 const CLI_GENERATED_BUILD_INFO = 'apps/cli/src/build-info.generated.ts'
 /** Deterministic single-file output name inside the scratch dir. */
-const CLI_OUTPUT_NAME = 'tau.js'
+const CLI_OUTPUT_NAME = CLI_BUNDLE_FILE
 /** Where the bundle lands on the machine (dir created by bootstrap.sh's
  *  make_dirs; ensureArtifact's `install -D` also creates it). */
-export const CLI_REMOTE_PATH = '/opt/tau/cli/tau.js'
-/** The PATH-visible entrypoint every box shell resolves `tau` to. */
-export const CLI_WRAPPER_PATH = '/usr/local/bin/tau'
+export const CLI_REMOTE_PATH = '/opt/tau/cli/ficus.js'
+/** The PATH-visible entrypoint every box shell resolves `ficus` to — the only
+ *  CLI name a box gets (the same path docker and k8s sandboxes mount). */
+export const CLI_WRAPPER_PATH = SANDBOX_CLI_PATH
 /** Static wrapper script: exec the machine's bun against the pushed bundle.
  *  Pushed as an artifact file AND folded into the version hash, so editing
  *  this string re-stamps + re-pushes the artifact. */
-export const CLI_WRAPPER_BYTES = new TextEncoder().encode('#!/bin/sh\nexec /opt/tau/bin/bun /opt/tau/cli/tau.js "$@"\n')
+export const CLI_WRAPPER_BYTES = new TextEncoder().encode(
+  '#!/bin/sh\nexec /opt/tau/bin/bun /opt/tau/cli/ficus.js "$@"\n'
+)
 
 const repoRoot = resolveRepoRoot()
 
 export interface CliBundle {
-  /** The bundled `tau.js` bytes. */
+  /** The bundled `ficus.js` bytes. */
   js: Uint8Array
-  /** sha256 over `tau.js` AND the wrapper bytes — a change to EITHER re-stamps
+  /** sha256 over `ficus.js` AND the wrapper bytes — a change to EITHER re-stamps
    *  the version so both files re-push to every machine. */
   version: string
 }
@@ -93,7 +97,7 @@ export interface BuildCliBundleDeps {
    * artifact deployment (an `artifact.json` at the repo root — see
    * {@link readPrebuiltMachineFile}) reads `<MONOREPO_ROOT>/machine`, where a
    * missing/empty file is fatal; a git checkout never reads prebuilt files and
-   * always source-builds. In a shipped core artifact `tau.js` is prebuilt (the
+   * always source-builds. In a shipped core artifact `ficus.js` is prebuilt (the
    * artifact never carries `apps/cli/src`), so runtime reads it from disk
    * instead of running `bun build` — skipping the git-stamp / advisory lock
    * machinery entirely.
@@ -102,15 +106,15 @@ export interface BuildCliBundleDeps {
 }
 
 /** File name of the prebuilt CLI bundle under the prebuilt dir. */
-const PREBUILT_CLI_NAME = 'tau.js'
+const PREBUILT_CLI_NAME = CLI_BUNDLE_FILE
 
 /**
  * Read the prebuilt CLI bundle via the shared artifact-gated reader
  * ({@link readPrebuiltMachineFile}), hashing it with the EXACT same
- * `sha256(tau.js || wrapper)` contract as {@link buildCliBundle}'s source
+ * `sha256(ficus.js || wrapper)` contract as {@link buildCliBundle}'s source
  * path — so `machines.artifact_versions['cli']` drift detection is identical
  * whether the bytes were prebuilt or built here. Returns null when no
- * prebuilt `tau.js` exists (caller falls back to the source build; in an
+ * prebuilt `ficus.js` exists (caller falls back to the source build; in an
  * artifact deployment with no explicit `prebuiltDir` the reader itself throws
  * before that null is ever seen).
  */
@@ -168,13 +172,13 @@ async function withCliBuildAdvisoryLock<T>(section: () => Promise<T>): Promise<T
 
 /**
  * Build the tau CLI into a single-file bundle via
- * `bun build apps/cli/src/index.ts --outfile <scratch>/tau.js --target bun`,
+ * `bun build apps/cli/src/index.ts --outfile <scratch>/ficus.js --target bun`,
  * captured from a throwaway scratch dir. Returns the bundle bytes and the
  * combined sha256 hex over bundle + wrapper (the version stamp). Throws
  * (surfacing bun's stderr) if the build fails or the output is missing/empty.
  */
 export async function buildCliBundle(deps: BuildCliBundleDeps = {}): Promise<CliBundle> {
-  // A shipped core artifact carries a prebuilt tau.js and no apps/cli/src to
+  // A shipped core artifact carries a prebuilt ficus.js and no apps/cli/src to
   // build from: read it from disk and skip the git-stamp / advisory-lock
   // machinery entirely. Absent (dev / artifact builder), fall through to the
   // source build below.
@@ -239,7 +243,7 @@ async function buildCliBundleLocked(deps: BuildCliBundleDeps): Promise<CliBundle
   const entry = join(repoRoot, CLI_ENTRY)
 
   // Stamp a commit-stable build-info.generated.ts for the build, so `bun
-  // build` inlines an informative-but-deterministic `tau --version` (see
+  // build` inlines an informative-but-deterministic `ficus --version` (see
   // resolveStableBuildInfo). Any leftover file (a dev/tenant-zero host that
   // ran the CLI package build) carries a WALL-CLOCK stamp that would churn
   // the version hash on every rebuild of unchanged code, re-pushing the CLI
@@ -260,7 +264,7 @@ async function buildCliBundleLocked(deps: BuildCliBundleDeps): Promise<CliBundle
   const restore = bakExists || genExists
   await fs.writeFile(genPath, generated)
   try {
-    const outdir = await mkdtemp(join(tmpdir(), 'tau-cli-bundle-'))
+    const outdir = await mkdtemp(join(tmpdir(), 'ficus-cli-bundle-'))
     try {
       const outPath = join(outdir, CLI_OUTPUT_NAME)
       const proc = spawn(['bun', 'build', entry, '--outfile', outPath, '--target', 'bun'], {
@@ -304,7 +308,7 @@ async function buildCliBundleLocked(deps: BuildCliBundleDeps): Promise<CliBundle
 export const currentCliBundleCached: () => Promise<CliBundle> = memoizeBuild(buildCliBundle)
 
 /**
- * The tau CLI as a machine artifact: the bundle at {@link CLI_REMOTE_PATH} plus
+ * The ficus CLI as a machine artifact: the bundle at {@link CLI_REMOTE_PATH} plus
  * the static wrapper at {@link CLI_WRAPPER_PATH}, both 0755, versioned by the
  * combined sha256 over both files' bytes. `build` reuses
  * {@link currentCliBundleCached}, so ensuring N machines shares ONE `bun build`.

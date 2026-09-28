@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { GitHubConnectionConfiguration } from '@tau/shared/oauth-providers/github/config'
+import type { GitHubConnectionConfiguration } from '@ficus/shared/oauth-providers/github/config'
 import { createGitHubPlugin } from './plugin'
 import type { OAuthCredentialBundleV1 } from '../authorization/credential-bundle'
 

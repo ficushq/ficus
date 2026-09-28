@@ -65,8 +65,8 @@ test('failed credential deletion remains durable and a later retry succeeds', as
 })
 
 test('flow-owned cleanup atomically settles with database timestamps despite a skewed worker clock', async () => {
-  const priorEncryptionKey = process.env.TAU_ENCRYPTION_KEY
-  process.env.TAU_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+  const priorEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
+  process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
   const credentials = new SecretStore()
   credentials.bindContentSafetyConsumer({ replace: () => undefined, update: () => undefined })
   await credentials.initialize()
@@ -120,8 +120,8 @@ test('flow-owned cleanup atomically settles with database timestamps despite a s
     expect(receipt?.cleanupSettledAt).toBeInstanceOf(Date)
   } finally {
     credentials.stopPeriodicRefresh()
-    if (priorEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey
+    if (priorEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey
     await db
       .delete(integrationCredentialCleanupJobs)
       .where(eq(integrationCredentialCleanupJobs.credentialRef, credentialRef))

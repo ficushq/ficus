@@ -12,7 +12,7 @@ describe('vapid', () => {
   beforeEach(async () => {
     await mkdir(testDir, { recursive: true })
     // Reset SecretStore so VAPID keys aren't cached from other tests.
-    // Without TAU_ENCRYPTION_KEY, SecretStore falls back to process.env
+    // Without FICUS_ENCRYPTION_KEY, SecretStore falls back to process.env
     // which won't have VAPID keys, so the file path is used.
     resetSecretStore()
     delete process.env.VAPID_PUBLIC_KEY

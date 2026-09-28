@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import type { OAuthProviderAdapter, OAuthProviderGrant } from '@tau/shared/oauth-providers/types'
-import { registerOAuthProviderAdapterForTest } from '@tau/shared/oauth-providers'
+import type { OAuthProviderAdapter, OAuthProviderGrant } from '@ficus/shared/oauth-providers/types'
+import { registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-providers'
 import { createLocalTransport } from './transport'
 
 const grant: OAuthProviderGrant = {
@@ -36,14 +36,14 @@ function registerAdapter(overrides: Partial<OAuthProviderAdapter> = {}) {
 
 describe('local OAuth transport', () => {
   test('is permanently local regardless of managed deployment markers', () => {
-    const previous = process.env.TAU_MANAGED
-    process.env.TAU_MANAGED = '1'
+    const previous = process.env.FICUS_MANAGED
+    process.env.FICUS_MANAGED = '1'
     try {
       const transport = createLocalTransport({ resolveClientCredentials: () => undefined })
       expect(transport.authority).toBe('local')
     } finally {
-      if (previous === undefined) delete process.env.TAU_MANAGED
-      else process.env.TAU_MANAGED = previous
+      if (previous === undefined) delete process.env.FICUS_MANAGED
+      else process.env.FICUS_MANAGED = previous
     }
   })
 

@@ -17,7 +17,7 @@ import {
   workflowDefinitionSchema,
   type AssistantEditorState,
   type AssistantEditorSync,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   assistantConversations,
   assistantConversationAgents,

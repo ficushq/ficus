@@ -67,8 +67,8 @@ describe('ssh runner', () => {
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
     process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-ssh-test-'))
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
     await getSecretStore().initialize()
     await getSecretStore().set(SECRET_KEY, 'FAKE PRIVATE KEY MATERIAL', 'system')
@@ -76,8 +76,8 @@ describe('ssh runner', () => {
 
   afterAll(async () => {
     await getSecretStore().delete(SECRET_KEY)
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     if (priorHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = priorHome
     resetSecretStore()

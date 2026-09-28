@@ -15,7 +15,7 @@ import {
   messages,
 } from '../db/schema'
 import { getSettingsStore } from '../services/settings'
-import { agentAttachmentRoot } from '@tau/shared'
+import { agentAttachmentRoot } from '@ficus/shared'
 import { vmWorkspaceLayout } from '../services/sandbox/workspace-layout'
 import { boxHome } from '../services/machines/box-paths'
 import { AgentFileAttachment } from './AgentFileAttachment'
@@ -252,14 +252,14 @@ describe('AgentFileAttachment', () => {
     expect(agentAttachmentRoot(vmWorkspaceLayout({ sandboxId }).privateMount)).toBe(
       `${boxHome(sandboxId)}/.private/chat-attachments`
     )
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     try {
       const attachment = await create()
       expect(attachment.privatePath).toBe(
         `${boxHome(sandboxId)}/.private/chat-attachments/${ATTACHMENT_ID}/quarterly_report.pdf`
       )
     } finally {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     }
   })
 
@@ -267,7 +267,7 @@ describe('AgentFileAttachment', () => {
   // message text the composer produces there must be linked and consumed just
   // like a container `/private` reference.
   test('associates a host-runtime reference outside /private', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     try {
       const attachment = await create()
       expect(attachment.privatePath.startsWith(home)).toBe(true)
@@ -278,7 +278,7 @@ describe('AgentFileAttachment', () => {
       ).toEqual([{ messageId: message.id, attachmentId: attachment.id }])
       expect((await AgentFileAttachment.findById(attachment.id))?.status).toBe('used')
     } finally {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     }
   })
 

@@ -1,5 +1,5 @@
 {
-  "name": "tau",
+  "name": "ficus",
   "version": "0.2.0",
   "license": "AGPL-3.0-only",
   "private": true,
@@ -53,7 +53,7 @@
     "deploy:worker": "./scripts/deploy.sh --target worker",
     "deploy:sandbox": "./scripts/deploy.sh --target sandbox",
     "deploy:web": "./scripts/deploy.sh --target web",
-    "build": "bun run --filter '!@tau/docs' build",
+    "build": "bun run --filter '!@ficus/docs' build",
     "build:core": "bun run --filter core build",
     "build:cli": "bun run --filter cli build",
     "build:web": "bun run --filter web build && bash scripts/sync-web-dist-if-configured.sh",
@@ -101,9 +101,9 @@
     "k8s:ingress": "KUBECONFIG=~/.kube/tau-config kubectl -n ingress-nginx get svc ingress-nginx-controller",
     "patch:pi-coding-agent": "bash scripts/regenerate-pi-coding-agent-patch.sh",
     "test:core:fifo-restart": "bun --config=./bunfig.fifo-restart.toml test ./apps/core/src/db/message-enqueue-order-restart.standalone.ts",
-    "dev:docs": "bun run --filter @tau/docs dev",
-    "build:docs": "bun run --filter @tau/docs build",
-    "check:docs": "bun run --filter @tau/docs check",
+    "dev:docs": "bun run --filter @ficus/docs dev",
+    "build:docs": "bun run --filter @ficus/docs build",
+    "check:docs": "bun run --filter @ficus/docs check",
     "brand:generate": "bun run scripts/brand/generate.ts"
   },
   "devDependencies": {

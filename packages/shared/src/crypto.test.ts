@@ -53,7 +53,7 @@ describe('crypto', () => {
 
   describe('byte-compat with the pre-lift core implementation', () => {
     // Fixture captured from apps/core/src/services/secrets/crypto.ts BEFORE
-    // it was rewritten to re-export from @tau/shared (see task-5 report for
+    // it was rewritten to re-export from @ficus/shared (see task-5 report for
     // the generating script). Verifies the lifted implementation produces
     // ciphertexts that decrypt identically to what core already has at rest.
     const fixtureKey = Buffer.from('0000000000000000000000000000000000000000000000000000000000000001', 'hex')

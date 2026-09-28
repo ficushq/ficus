@@ -1,5 +1,5 @@
 import { useContext, createContext } from 'react'
-import type { CollectionTopic, InstanceTopic, TopicCallback } from '@tau/shared'
+import type { CollectionTopic, InstanceTopic, TopicCallback } from '@ficus/shared'
 
 /** Callback for an instance topic — receives the same events as its collection prefix. */
 type InstanceCallbackFor<T extends InstanceTopic> = T extends `${infer P}:${string}`

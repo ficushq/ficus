@@ -1,4 +1,4 @@
-import { workStreamTitle } from '@tau/shared'
+import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -6,7 +6,7 @@ import { queries } from '../../queryOptions'
 import { WorkStreamDetailModal, formatRelativeTime } from '../WorkStreamDetailModal'
 import { workStreamPullRequests } from '../../lib/workStreamGithub'
 import { PullRequestIcon, WorkStreamIcon } from '../icons'
-import { type Agent, type WorkStream } from '@tau/shared'
+import { type Agent, type WorkStream } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
 
@@ -95,7 +95,7 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
             <button
               key={ws.id}
               onClick={() => setSelectedWorkStream(ws)}
-              className="tau-button w-full text-left p-4 rounded-xl border-0 bg-transparent hover:bg-surface-hover transition-colors cursor-pointer"
+              className="ficus-button w-full text-left p-4 rounded-xl border-0 bg-transparent hover:bg-surface-hover transition-colors cursor-pointer"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">

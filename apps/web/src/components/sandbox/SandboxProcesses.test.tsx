@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { SandboxProcesses as SandboxProcessesData } from '@tau/shared'
+import type { SandboxProcesses as SandboxProcessesData } from '@ficus/shared'
 import * as workspaceApi from '../../api/workspace'
 import { acquireDomHarness } from '../../test/domHarness'
 import { formatAge, SandboxProcesses } from './SandboxProcesses'

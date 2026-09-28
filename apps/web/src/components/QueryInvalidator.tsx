@@ -1,6 +1,6 @@
 import { agentSlotWaitQueryKeys, assistantQueryKeys } from '../queryKeys'
 import { desktopQueryKeys } from '../queryKeys'
-import { parseAssistantInboxConversationId } from '@tau/shared'
+import { parseAssistantInboxConversationId } from '@ficus/shared'
 import { hashKey } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '../reactQueryHooks'

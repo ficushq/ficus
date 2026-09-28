@@ -28,7 +28,7 @@ describe('account-store', () => {
   let store: SecretStore
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
     resetSecretStore()
     store = getSecretStore()
@@ -37,7 +37,7 @@ describe('account-store', () => {
 
   afterEach(() => {
     store.stopPeriodicRefresh()
-    delete process.env.TAU_ENCRYPTION_KEY
+    delete process.env.FICUS_ENCRYPTION_KEY
   })
 
   test('empty blob returns empty store', () => {
@@ -728,7 +728,7 @@ describe('persistOAuthCredential', () => {
   // caller's serialized mutateAccountStore. Verified here by confirming the
   // durable store is untouched after a direct call.
   test('mutates only the passed store object; performs no durable write itself', async () => {
-    process.env.TAU_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+    process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
     await db.delete(secrets)
     resetSecretStore()
     const secretStore = getSecretStore()
@@ -742,7 +742,7 @@ describe('persistOAuthCredential', () => {
       expect(secretStore.get(PROVIDER_AUTH_DATA_KEY)).toBeUndefined()
     } finally {
       secretStore.stopPeriodicRefresh()
-      delete process.env.TAU_ENCRYPTION_KEY
+      delete process.env.FICUS_ENCRYPTION_KEY
     }
   })
 })

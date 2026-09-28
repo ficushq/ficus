@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { WorkflowSource } from '@tau/shared'
+import type { WorkflowSource } from '@ficus/shared'
 import { client } from '../../api/clientInstance'
 import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -42,7 +42,7 @@ export function CreateFlowWorkStream({ squadId }: { squadId: string }) {
             Title
             <input
               required
-              className="tau-field w-full p-2 border border-th-border rounded-md"
+              className="ficus-field w-full p-2 border border-th-border rounded-md"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
@@ -51,7 +51,7 @@ export function CreateFlowWorkStream({ squadId }: { squadId: string }) {
             What should be delivered?
             <textarea
               required
-              className="tau-field w-full p-2 border border-th-border rounded-md"
+              className="ficus-field w-full p-2 border border-th-border rounded-md"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />

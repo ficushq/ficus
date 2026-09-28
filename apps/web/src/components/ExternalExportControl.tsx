@@ -35,7 +35,7 @@ export function ExternalExportControl({
             Future eligible user/assistant text is exported. Tool data, thinking, images, and internal messages are
             excluded. Revoking stops future sends but does not delete remote data.
           </p>
-          <button className="tau-button" onClick={() => disable.mutate()}>
+          <button className="ficus-button" onClick={() => disable.mutate()}>
             Revoke export consent
           </button>
         </>
@@ -50,7 +50,7 @@ export function ExternalExportControl({
             <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> I
             explicitly consent to prospective export
           </label>
-          <button className="tau-button" disabled={!confirmed || !connectionId} onClick={() => enable.mutate()}>
+          <button className="ficus-button" disabled={!confirmed || !connectionId} onClick={() => enable.mutate()}>
             Enable export
           </button>
         </>

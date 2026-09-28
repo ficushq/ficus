@@ -1,8 +1,35 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { desktopInstance } from './desktop'
+import { desktopBridge, desktopInstance, type DesktopBridge } from './desktop'
 
 afterEach(() => {
   delete window.tauDesktopApp
+  delete window.ficusDesktopApp
+})
+
+function bridge(): DesktopBridge {
+  return { version: 1, notificationsEnabled: async () => false, deliverNotifications: async () => {} }
+}
+
+describe('desktopBridge (dual-read)', () => {
+  test('detects the bridge from window.ficusDesktopApp alone', () => {
+    const ficus = bridge()
+    window.ficusDesktopApp = ficus
+    expect(desktopBridge()).toBe(ficus)
+  })
+
+  test('detects the bridge from window.tauDesktopApp alone (D1 and older Desktop builds)', () => {
+    const tau = bridge()
+    window.tauDesktopApp = tau
+    expect(desktopBridge()).toBe(tau)
+  })
+
+  test('window.ficusDesktopApp wins when both are set', () => {
+    const ficus = bridge()
+    const tau = bridge()
+    window.ficusDesktopApp = ficus
+    window.tauDesktopApp = tau
+    expect(desktopBridge()).toBe(ficus)
+  })
 })
 
 describe('desktopInstance', () => {

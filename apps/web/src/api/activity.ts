@@ -3,7 +3,7 @@ import type {
   GlobalSquadActivityPage,
   NormalizedSquadActivityFilters,
   SquadActivityKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { apiFetch } from './client'
 
 export interface ListGlobalActivityOptions extends Partial<NormalizedSquadActivityFilters> {

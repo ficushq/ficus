@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { trackedResourceKey, trackedResourceLabel, type IntegrationSubscription } from '@tau/shared'
+import { trackedResourceKey, trackedResourceLabel, type IntegrationSubscription } from '@ficus/shared'
 import { resolveLinearAssignment, resolveLinearConnection } from '../linear/resolve-connection'
 import { linearQuery } from '../linear/plugin'
 import { TrackedResourceError } from '../../work-streams/tracked-resource-error'

@@ -79,7 +79,7 @@ const displayLatestArtifactTool: VoiceAssistantTool<WorkspaceVoiceEnvironment> =
 }
 
 const workspaceApiTools = [workspaceInboxMessageAgentTool, getWorkTool, readThreadTool].map(
-  // These shared Tau API tools do not read from the executor env; keep the workspace env route-free.
+  // These shared Ficus API tools do not read from the executor env; keep the workspace env route-free.
   (tool) => tool as unknown as VoiceAssistantTool<WorkspaceVoiceEnvironment>
 )
 

@@ -1,4 +1,4 @@
-import type { ThemePreset, ThemePresetScope, ThemePresetVisibility } from '@tau/shared'
+import type { ThemePreset, ThemePresetScope, ThemePresetVisibility } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 export function themePresetsResource(t: Transport) {

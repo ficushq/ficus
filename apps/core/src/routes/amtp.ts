@@ -8,7 +8,7 @@ import {
   createAmtpAllowRuleSchema,
   formatAmtpAddress,
   amtpSignedAgentCardSchema,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { verifyAgentCard, signedCardByteSize, SIGNED_CARD_MAX_BYTES } from 'amtp-protocol'
 import { requirePermission } from '../middleware/require-permission'
 import { requirePeerSignature } from '../middleware/require-peer-signature'
@@ -34,7 +34,7 @@ export { __setPullImpl, __setKeyFetchImpl } from '../services/amtp/seams'
  * Load the target agent + identity for an /agents/:id/... route. Returns a Response
  * on 401/404 so the handler can early-return; otherwise the loaded pair. The literal
  * id segment "me" resolves to the calling agent: the in-sandbox CLI authenticates with
- * TAU_TOKEN only (no TAU_AGENT_ID), so the server resolves identity → identity.agentId.
+ * FICUS_TOKEN only (no FICUS_AGENT_ID), so the server resolves identity → identity.agentId.
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

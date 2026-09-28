@@ -51,7 +51,7 @@ describe('notification event builders', () => {
         metadata: { name: 'Forge' },
       } as any)
     )
-    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Tau' } as any))
+    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
 
     expect(
       await buildNotificationEvent('agent-question.created', {
@@ -63,7 +63,7 @@ describe('notification event builders', () => {
       actionId: 'agent-question:00000000-0000-4000-8000-000000000001',
       agentId: 'a1',
       squadId: 's1',
-      squadName: 'Tau',
+      squadName: 'Ficus',
       title: '❓ Forge has a question',
       body: 'Which release should I target?',
       url: 'https://tau.example/squads/s1?agent=a1',
@@ -104,7 +104,7 @@ describe('notification event builders', () => {
       actionId: `agent-question:${persisted.id}`,
       agentId: 'a-personal',
       title: '❓ manager has a question',
-      body: 'Open Tau to respond',
+      body: 'Open Ficus to respond',
       url: 'https://tau.example/chat/a-personal',
     })
     expect(await buildNotificationEvent('agent-question.created', {})).toBeNull()
@@ -121,7 +121,7 @@ describe('notification event builders', () => {
         blockedPrompt: null,
       } as any)
     )
-    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Tau' } as any))
+    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
     track(
       spyOn(waitsModule, 'listOpenWaits').mockResolvedValue([
         { id: 'wait-review-1', workStreamId: 'ws1', type: 'review' } as any,
@@ -137,7 +137,7 @@ describe('notification event builders', () => {
     expect(event).toMatchObject({
       type: 'workStream.review',
       squadId: 's1',
-      squadName: 'Tau',
+      squadName: 'Ficus',
       workStreamId: 'ws1',
       waitId: 'wait-review-1',
       actionId: 'workstream-review:ws1:wait-review-1',
@@ -153,7 +153,7 @@ describe('notification event builders', () => {
 
   test('uses the exact concurrent manual wait message for the notification body', async () => {
     track(spyOn(WorkStream, 'find').mockResolvedValue({ id: 'ws1', squadId: 's1', title: 'Blocked stream' } as any))
-    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Tau' } as any))
+    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
     track(
       spyOn(waitsModule, 'listOpenWaits').mockResolvedValue([
         { id: 'newer', workStreamId: 'ws1', type: 'manual', message: 'Newer unrelated wait' } as any,
@@ -182,14 +182,14 @@ describe('notification event builders', () => {
       } as any)
     )
     track(spyOn(Execution, 'find').mockResolvedValue({ id: 'e1', error: null } as any))
-    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Tau' } as any))
+    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
 
     const event = await buildNotificationEvent('execution.completed', { executionId: 'e1', agentId: 'a1' })
 
     expect(event).toMatchObject({
       type: 'execution.completed',
       squadId: 's1',
-      squadName: 'Tau',
+      squadName: 'Ficus',
       agentId: 'a1',
     })
   })
@@ -383,7 +383,7 @@ describe('notification event builders', () => {
       })
     )
     const squadFindSpy = track(
-      spyOn(Squad, 'find').mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111', name: 'Tau' } as any)
+      spyOn(Squad, 'find').mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111', name: 'Ficus' } as any)
     )
 
     const squadAlert = await buildNotificationEvent('inbox.messageReceived', { messageId: 'fleet-squad' })
@@ -397,7 +397,7 @@ describe('notification event builders', () => {
       messageId: 'fleet-squad',
       source: 'fleet-alert',
       squadId: '11111111-1111-4111-8111-111111111111',
-      squadName: 'Tau',
+      squadName: 'Ficus',
     })
     expect(providerAlert).toMatchObject({
       type: 'inbox.messageReceived',
@@ -443,7 +443,7 @@ describe('notification event builders', () => {
 
 describe('getAppOrigin', () => {
   test('normalizes APP_URL to lowercase origin without a trailing slash, keeping a base path', () => {
-    expect(getAppOrigin('https://Tau.Example.com/')).toBe('https://tau.example.com')
+    expect(getAppOrigin('https://Ficus.Example.com/')).toBe('https://ficus.example.com')
     expect(getAppOrigin('https://tau.example.com')).toBe('https://tau.example.com')
     expect(getAppOrigin('http://localhost:3000/tau/')).toBe('http://localhost:3000/tau')
   })

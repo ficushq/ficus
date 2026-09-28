@@ -1,6 +1,6 @@
-import type { ServerInfo } from '@tau/shared'
+import type { ServerInfo } from '@ficus/shared'
 /**
- * `tau whoami` — where this CLI is pointed and as whom.
+ * `ficus whoami` — where this CLI is pointed and as whom.
  *
  * The confusion this exists to end: an agent shell, an operator terminal and a
  * laptop shell all run the same binary, and each can resolve a DIFFERENT
@@ -70,7 +70,7 @@ export async function resolveWhoami(dependencies: WhoamiDependencies): Promise<W
   }
 
   try {
-    // The route the CLI already uses for "who am I" (`tau auth introspect`); it
+    // The route the CLI already uses for "who am I" (`ficus auth introspect`); it
     // answers for agent tokens as well as human logins.
     const introspection = await apiGet<{ identity?: RemoteIdentity; server?: ServerInfo }>('/api/auth/introspect')
     local.identity = introspection.identity ?? null
@@ -93,9 +93,9 @@ export async function resolveWhoami(dependencies: WhoamiDependencies): Promise<W
 function describeSource(result: WhoamiResult): string {
   switch (result.source) {
     case 'webhook-context':
-      return `webhook identity injected by tau${result.missing?.length ? ', incomplete' : ''}`
+      return `webhook identity injected by Ficus${result.missing?.length ? ', incomplete' : ''}`
     case 'agent-context':
-      return `agent identity injected by tau${result.agentId ? ` (agent ${result.agentId})` : ''}${
+      return `agent identity injected by Ficus${result.agentId ? ` (agent ${result.agentId})` : ''}${
         result.missing?.length ? ', incomplete' : ''
       }`
     case 'selected-backend':
@@ -103,11 +103,11 @@ function describeSource(result: WhoamiResult): string {
     case 'auth-store':
       return `stored backend '${result.label}'`
     case 'env-token':
-      return 'TAU_TOKEN from the environment'
+      return 'FICUS_TOKEN from the environment'
     case 'env-password':
-      return 'TAU_PASSWORD from the environment'
+      return 'FICUS_PASSWORD from the environment'
     case 'dotenv':
-      return 'TAU_PASSWORD from a .env file'
+      return 'FICUS_PASSWORD from a .env file'
     case 'secret-file':
       return 'the mounted /etc/tau/password secret'
     case 'none':
@@ -125,7 +125,7 @@ export function renderWhoami(result: WhoamiResult): string {
   if (result.instance.server) {
     const server = result.instance.server
     lines.push(
-      `Server: Tau ${server.version} · API ${server.apiVersion}${server.revision ? ` · ${server.revision.slice(0, 12)}` : ''}`
+      `Server: Ficus ${server.version} · API ${server.apiVersion}${server.revision ? ` · ${server.revision.slice(0, 12)}` : ''}`
     )
   }
   if (!result.identity) {
@@ -147,7 +147,7 @@ export function renderWhoami(result: WhoamiResult): string {
 export function registerWhoamiCommands(program: Command, dependencies = defaultDependencies): void {
   program
     .command('whoami')
-    .description('Show which Tau instance this CLI talks to, as whom, and where that credential came from')
+    .description('Show which Ficus instance this CLI talks to, as whom, and where that credential came from')
     .action(async () => {
       try {
         const result = await resolveWhoami(dependencies)

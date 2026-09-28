@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import type { SessionUsage } from '@tau/shared'
+import type { SessionUsage } from '@ficus/shared'
 import { planAgentUsageBackfill, UsageBackfillOrderError, type UsageBackfillRow } from './usage-backfill'
 import { parseUsageBackfillArgs, runUsageBackfillCli } from '../../scripts/backfill-execution-usage'
 

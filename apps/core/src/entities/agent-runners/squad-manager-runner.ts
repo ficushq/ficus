@@ -1,4 +1,4 @@
-import type { SessionUsage, MessageMetadata, Squad as SquadJson } from '@tau/shared'
+import type { SessionUsage, MessageMetadata, Squad as SquadJson } from '@ficus/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { Squad } from '../Squad'
@@ -164,7 +164,7 @@ export class SquadManagerRunner extends AgentRunner {
     // Add manager instructions from squad preset if present
     p.section(
       'Declarative workflows',
-      `For new work, select a workflow with tau workstream create --workflow ID or --flow-content with single-quoted JSON for a short source; use --flow-stdin with a quoted heredoc for longer JSON/YAML. Files remain optional via --flow for saved definitions; do not create temporary files just to pass a payload. Use tau workflow list to inspect available presets. A squad default applies when no source is supplied. The effective squad default is: ${JSON.stringify(this.squad.metadata?.workflow ?? null)}. A workflow owns participants, models, routing, and completion: do not also pass --agents, --agent-ids, --assign-id, or --completion-mode. Never pre-spawn agents for future steps or queued streams. Solo performs the deliverable in one session with no mandatory architect/reviewer turns. You may provide an ad hoc inline flow without publishing it. Guided flows follow declared paths; flexible flows allow bounded rework and tracked specialist delegation; adaptive flows support authorized future-step revisions. Preserve required checks unless explicitly authorized to change policy. Read tau workstream flow before intervening; use versioned advance commands for revisions. The flow routes ordinary handoffs automatically and preserves return obligations. Do not substitute a bare assignee or status update. Squad presets only seed creation-time settings; this squad owns its context and work preferences.`
+      `For new work, select a workflow with ficus workstream create --workflow ID or --flow-content with single-quoted JSON for a short source; use --flow-stdin with a quoted heredoc for longer JSON/YAML. Files remain optional via --flow for saved definitions; do not create temporary files just to pass a payload. Use ficus workflow list to inspect available presets. A squad default applies when no source is supplied. The effective squad default is: ${JSON.stringify(this.squad.metadata?.workflow ?? null)}. A workflow owns participants, models, routing, and completion: do not also pass --agents, --agent-ids, --assign-id, or --completion-mode. Never pre-spawn agents for future steps or queued streams. Solo performs the deliverable in one session with no mandatory architect/reviewer turns. You may provide an ad hoc inline flow without publishing it. Guided flows follow declared paths; flexible flows allow bounded rework and tracked specialist delegation; adaptive flows support authorized future-step revisions. Preserve required checks unless explicitly authorized to change policy. Read ficus workstream flow before intervening; use versioned advance commands for revisions. The flow routes ordinary handoffs automatically and preserves return obligations. Do not substitute a bare assignee or status update. Squad presets only seed creation-time settings; this squad owns its context and work preferences.`
     )
     p.section(
       'Workflow setup',
@@ -196,7 +196,7 @@ export class SquadManagerRunner extends AgentRunner {
         [
           'You are a consultant speaking through an external channel. Incoming requests have passed the channel’s linked-user or trusted-channel access policy. Reply in the originating channel; users are responsible for choosing an appropriate audience.',
           'Use channel_respond once/early for each inbound inbox message. It replaces the thinking placeholder and marks the message read. Ask clarification questions there, not through ask_human.',
-          'Use channel_send for later progress and final results. Use channel_edit only for Tau-sent message IDs returned by these tools.',
+          'Use channel_send for later progress and final results. Use channel_edit only for Ficus-sent message IDs returned by these tools.',
           'For work requested here, create a work stream owned by you so its lifecycle updates return to this conversation. Coordinate operational decisions with the squad manager, and relay progress back through channel_send.',
         ].join('\n')
       )

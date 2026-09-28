@@ -56,7 +56,7 @@ export function MachinesSection() {
         </p>
       </div>
 
-      <div className="tau-section overflow-hidden">
+      <div className="ficus-section overflow-hidden">
         {machines.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted">No machines registered yet.</div>
         ) : (
@@ -113,7 +113,7 @@ export function MachineRow({
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setExpanded((v) => !v)}
-              className="tau-button text-sm font-medium text-primary hover:text-accent-light"
+              className="ficus-button text-sm font-medium text-primary hover:text-accent-light"
               aria-expanded={expanded}
             >
               {expanded ? '▾' : '▸'} {machine.name}
@@ -170,7 +170,7 @@ export function MachineRow({
                 <button
                   onClick={() => bootstrapMutation.mutate()}
                   disabled={isMutating}
-                  className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+                  className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
                 >
                   {bootstrapMutation.isPending ? 'Bootstrapping…' : 'Bootstrap'}
                 </button>
@@ -179,7 +179,7 @@ export function MachineRow({
             <button
               onClick={() => checkMutation.mutate()}
               disabled={isMutating}
-              className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+              className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
             >
               {checkMutation.isPending ? 'Checking…' : 'Check'}
             </button>
@@ -187,7 +187,7 @@ export function MachineRow({
             <button
               onClick={handleDelete}
               disabled={isMutating}
-              className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
+              className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
             >
               {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
             </button>
@@ -348,7 +348,7 @@ function RegisterMachineForm() {
     'text-sm bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent'
 
   return (
-    <div className="tau-section overflow-hidden">
+    <div className="ficus-section overflow-hidden">
       <div className="px-4 py-3 border-b border-th-border">
         <h4 className="text-sm font-medium text-secondary">Register a machine</h4>
         <p className="text-xs text-muted mt-0.5">
@@ -364,7 +364,7 @@ function RegisterMachineForm() {
               setProvider(e.target.value as 'ssh' | 'exe')
               setRegistered(null)
             }}
-            className={clsx('tau-field', inputClass, 'w-auto')}
+            className={clsx('ficus-field', inputClass, 'w-auto')}
           >
             <option value="ssh">BYO-SSH</option>
             <option value="exe">exe.dev VM</option>
@@ -372,7 +372,7 @@ function RegisterMachineForm() {
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value as 'shared' | 'dedicated')}
-            className={clsx('tau-field', inputClass, 'w-auto')}
+            className={clsx('ficus-field', inputClass, 'w-auto')}
           >
             <option value="shared">shared</option>
             <option value="dedicated">dedicated</option>
@@ -384,7 +384,7 @@ function RegisterMachineForm() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Name"
-            className={clsx('tau-field', inputClass, 'flex-1 min-w-[10rem]')}
+            className={clsx('ficus-field', inputClass, 'flex-1 min-w-[10rem]')}
           />
           {provider === 'ssh' && (
             <>
@@ -392,27 +392,27 @@ function RegisterMachineForm() {
                 value={sshHost}
                 onChange={(e) => setSshHost(e.target.value)}
                 placeholder="Host"
-                className={clsx('tau-field', inputClass, 'flex-1 min-w-[10rem]')}
+                className={clsx('ficus-field', inputClass, 'flex-1 min-w-[10rem]')}
               />
               <input
                 value={sshPort}
                 onChange={(e) => setSshPort(e.target.value)}
                 placeholder="Port"
                 inputMode="numeric"
-                className={clsx('tau-field', inputClass, 'w-24')}
+                className={clsx('ficus-field', inputClass, 'w-24')}
               />
               <input
                 value={sshUser}
                 onChange={(e) => setSshUser(e.target.value)}
                 placeholder="User"
-                className={clsx('tau-field', inputClass, 'w-32')}
+                className={clsx('ficus-field', inputClass, 'w-32')}
               />
             </>
           )}
           <button
             onClick={() => registerMutation.mutate()}
             disabled={!canSubmit}
-            className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
           >
             {registerMutation.isPending ? 'Registering…' : 'Register'}
           </button>

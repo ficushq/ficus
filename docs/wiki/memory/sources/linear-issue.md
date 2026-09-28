@@ -2,7 +2,7 @@
 
 `linear_issue` is a live, searchable, external source. Default sensitivity is `internal`.
 
-Linear is queried at `memory_search` time through Linear's GraphQL `issueSearch`; Tau does not persist Linear issues into `memory_documents` or `memory_chunks` in Phase 5.
+Linear is queried at `memory_search` time through Linear's GraphQL `issueSearch`; Ficus does not persist Linear issues into `memory_documents` or `memory_chunks` in Phase 5.
 
 ## Source IDs
 

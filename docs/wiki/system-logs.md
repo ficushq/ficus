@@ -1,18 +1,18 @@
 # System log providers
 
-`tau system logs -c api -t 100 --no-follow` requires `system:logs`. The initial control frame reports only the selected provider and target kinds; deployment targets remain server-side.
+`ficus system logs -c api -t 100 --no-follow` requires `system:logs`. The initial control frame reports only the selected provider and target kinds; deployment targets remain server-side.
 
-| Provider  | Required configuration                                                              | Access / behavior                                                                                                                                          |
-| --------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pm2`     | `TAU_PM2_API_NAME`, `TAU_PM2_WORKER_NAME` (default `tau-api`, `tau-worker`)         | Requires `pm2`; it is the only verified fallback when no provider is configured.                                                                           |
-| `systemd` | `TAU_SYSTEMD_API_UNIT`, `TAU_SYSTEMD_WORKER_UNIT` (default `tau-api`, `tau-worker`) | Requires `journalctl`; the Core user needs journal access to both units. Setup-generated installs select this provider.                                    |
-| `docker`  | `TAU_DOCKER_API_CONTAINER`, `TAU_DOCKER_WORKER_CONTAINER`                           | Requires Docker CLI/daemon access. `docker-compose.core.yml` uses deterministic names. Socket access is effectively host-root, including read-only mounts. |
-| `k8s`     | `TAU_SYSTEM_LOG_K8S_NAMESPACE`; optional selector/container mappings                | Requires the dedicated core-namespace `pods:list` and `pods/log:get` role. Matching replicas are snapshotted; reconnect to include later replicas.         |
-| `file`    | Absolute `TAU_LOG_FILE_API`, `TAU_LOG_FILE_WORKER`                                  | Requires readable files; `tail -F` follows rotation. Missing paths fail rather than falling back.                                                          |
+| Provider  | Required configuration                                                                  | Access / behavior                                                                                                                                          |
+| --------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pm2`     | `FICUS_PM2_API_NAME`, `FICUS_PM2_WORKER_NAME` (default `tau-api`, `tau-worker`)         | Requires `pm2`; it is the only verified fallback when no provider is configured.                                                                           |
+| `systemd` | `FICUS_SYSTEMD_API_UNIT`, `FICUS_SYSTEMD_WORKER_UNIT` (default `tau-api`, `tau-worker`) | Requires `journalctl`; the Core user needs journal access to both units. Setup-generated installs select this provider.                                    |
+| `docker`  | `FICUS_DOCKER_API_CONTAINER`, `FICUS_DOCKER_WORKER_CONTAINER`                           | Requires Docker CLI/daemon access. `docker-compose.core.yml` uses deterministic names. Socket access is effectively host-root, including read-only mounts. |
+| `k8s`     | `FICUS_SYSTEM_LOG_K8S_NAMESPACE`; optional selector/container mappings                  | Requires the dedicated core-namespace `pods:list` and `pods/log:get` role. Matching replicas are snapshotted; reconnect to include later replicas.         |
+| `file`    | Absolute `FICUS_LOG_FILE_API`, `FICUS_LOG_FILE_WORKER`                                  | Requires readable files; `tail -F` follows rotation. Missing paths fail rather than falling back.                                                          |
 
-Native local launchd and systemd-user installs intentionally set `TAU_SYSTEM_LOG_PROVIDER=file` and point both component targets at `~/.tau/logs/tau[-<label>]-api.log` and `~/.tau/logs/tau[-<label>]-worker.log`; each supervisor sends stdout and stderr to the same private component file. Hosted systemd installs remain journal-backed.
+Native local launchd and systemd-user installs intentionally set `FICUS_SYSTEM_LOG_PROVIDER=file` and point both component targets at `~/.tau/logs/tau[-<label>]-api.log` and `~/.tau/logs/tau[-<label>]-worker.log`; each supervisor sends stdout and stderr to the same private component file. Hosted systemd installs remain journal-backed.
 
-There is no auto-detection beyond the pm2 fallback: a systemd install shows "unavailable" until `TAU_SYSTEM_LOG_PROVIDER=systemd` is present in the service environment. The setup toolkit writes it into the generated `.env`; installs created before that line existed add it to `<dest>/.env` manually and restart `tau-api`/`tau-worker`.
+There is no auto-detection beyond the pm2 fallback: a systemd install shows "unavailable" until `FICUS_SYSTEM_LOG_PROVIDER=systemd` is present in the service environment. The setup toolkit writes it into the generated `.env`; installs created before that line existed add it to `<dest>/.env` manually and restart `tau-api`/`tau-worker`.
 
 Use `docker compose -f docker-compose.core.yml up -d` for the Compose deployment. It supports one deterministic API and worker container; use the file provider where Docker socket access is not acceptable.
 

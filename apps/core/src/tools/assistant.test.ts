@@ -158,6 +158,12 @@ test('the Assistant keeps every read the pre-durable web Assistant had', async (
     expect(names).toContain(name)
 })
 
+test('the entity search tool is search_ficus', () => {
+  const names = createAssistantTools(randomUUID(), randomUUID(), randomUUID()).map((tool) => tool.name)
+  expect(names).toContain('search_ficus')
+  expect(names.filter((name) => name.startsWith('search_'))).toEqual(['search_ficus'])
+})
+
 test('read_squad_files gates memory on memory:read and the workspace on workspace:read', async () => {
   const text = (result: { content: unknown[] }) => (result.content[0] as { text: string }).text
   const reader = async (permission: string) => {

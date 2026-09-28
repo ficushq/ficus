@@ -1,4 +1,4 @@
-import { createWsClient } from '@tau/client-core'
+import { createWsClient } from '@ficus/client-core'
 import { config } from '../config'
 
 /** Collection topics whose invalidation hints cover the user's attention surface. */

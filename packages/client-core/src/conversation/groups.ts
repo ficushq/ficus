@@ -1,4 +1,4 @@
-import type { StreamEvent } from '@tau/shared'
+import type { StreamEvent } from '@ficus/shared'
 import { createStreamingBlockState, reduceStreamingBlocks, type StreamingBlockState } from './blocks'
 import type { CompactionState, StreamGroupSnapshot, SystemMessageItem } from './types'
 

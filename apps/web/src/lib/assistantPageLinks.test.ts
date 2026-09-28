@@ -28,7 +28,7 @@ test('only offered app-relative navigations become page links', () => {
         { toolName: 'navigate', args: { path: 'https://evil.example', prompt: true } },
         { toolName: 'navigate', args: { path: '/activity', prompt: true }, isError: true },
         { toolName: 'navigate', args: '{not json' },
-        { toolName: 'search_tau', args: { path: '/squads', prompt: true } },
+        { toolName: 'search_ficus', args: { path: '/squads', prompt: true } },
       ])
     )
   ).toEqual(['/settings?section=appearance'])

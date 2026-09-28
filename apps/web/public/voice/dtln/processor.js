@@ -6,7 +6,7 @@ function hasValidAudioPort(ports) {
   return Boolean(ports && ports.length && ports[0] && ports[0].length)
 }
 
-class TauDtlnDenoiser extends AudioWorkletProcessor {
+class FicusDtlnDenoiser extends AudioWorkletProcessor {
   constructor(options) {
     super()
     this.handle = undefined
@@ -75,4 +75,4 @@ class TauDtlnDenoiser extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('tau-dtln-denoiser', TauDtlnDenoiser)
+registerProcessor('ficus-dtln-denoiser', FicusDtlnDenoiser)

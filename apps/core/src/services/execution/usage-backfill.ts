@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
-import type { ExecutionStatus, SessionUsage } from '@tau/shared'
+import type { ExecutionStatus, SessionUsage } from '@ficus/shared'
 import { db } from '../../db'
 import { agents, executions } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'

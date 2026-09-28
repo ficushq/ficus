@@ -4,7 +4,7 @@ import { Type, type TSchema, type Static } from '@sinclair/typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { and, desc, eq, inArray, isNull, lt, notInArray } from 'drizzle-orm'
 import { z } from 'zod'
-import { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, workStreamRef } from '@tau/shared'
+import { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, workStreamRef } from '@ficus/shared'
 import { agents, assistantEntries, assistantTasks, assistantUpdates, db, inbox, workStreams } from '../db'
 import { Agent } from '../entities/Agent'
 import { InboxMessage } from '../entities/InboxMessage'
@@ -295,7 +295,7 @@ export function createAssistantTools(agentId: string, executionId: string, conve
       async (input) => listVisibleSquads((await access()).user, input.limit)
     ),
     tool(
-      'search_tau',
+      'search_ficus',
       'Search visible squads, work streams and conversations. Results include full IDs for subsequent tools.',
       Type.Object({ q: Type.String({ minLength: 1, maxLength: 200 }), squadId: Type.Optional(uuid), limit }),
       async (input) => searchEntities((await access()).user, input)

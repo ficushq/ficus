@@ -98,7 +98,7 @@ describe('classifyCaughtProviderError', () => {
     })
   })
 
-  test('does not classify Tau internal or generic credential errors', () => {
+  test('does not classify Ficus internal or generic credential errors', () => {
     expect(classifyCaughtProviderError(new Error('Execution session capacity reservation was refused'))).toBeNull()
     expect(classifyCaughtProviderError({ status: 401, message: 'invalid api key' })).toBeNull()
   })
@@ -470,7 +470,7 @@ describe('internal errors are never attributed to the provider', () => {
 })
 
 /**
- * The bundled codex client rewrites a 429 body before Tau ever sees it: it
+ * The bundled codex client rewrites a 429 body before Ficus ever sees it: it
  * throws `new Error(friendlyMessage)` where `friendlyMessage` is built as
  * `You have hit your ChatGPT usage limit (<plan> plan). Try again in ~N min.`
  * (see node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js,

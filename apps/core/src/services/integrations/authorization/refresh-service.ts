@@ -7,7 +7,7 @@ import { PlatformRequestError } from '../../platform/instance-client'
 import { BrokerUnconfiguredError } from './authority'
 import type { OAuthControlPlaneAlert } from './oauth-operational-alert'
 import { assertNotionIdentity } from '../notion/identity'
-import { parseNotionConfiguration } from '@tau/shared/oauth-providers/notion/config'
+import { parseNotionConfiguration } from '@ficus/shared/oauth-providers/notion/config'
 import {
   parseOAuthCredential,
   rotateOAuthCredential,

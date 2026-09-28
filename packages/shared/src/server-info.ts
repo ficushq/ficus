@@ -1,6 +1,6 @@
 /** API feature contracts, independent of permissions, provider setup, and UI flags. */
 export interface ServerInfo {
-  product: 'tau'
+  product: 'ficus'
   /** Package release version; diagnostic, not a feature gate. */
   version: string
   /** Deployed artifact/checkout revision, or null when unavailable. */

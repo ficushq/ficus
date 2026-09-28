@@ -145,7 +145,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
         {canWrite && !showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
           >
             Add Host
           </button>
@@ -180,7 +180,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
       )}
 
       {canWrite && showAddForm && (
-        <form onSubmit={handleSubmit} className="tau-inset p-4">
+        <form onSubmit={handleSubmit} className="ficus-inset p-4">
           <h4 className="text-sm font-medium text-primary mb-3">Add Remote Host</h4>
 
           {!added && (
@@ -193,7 +193,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="staging-db"
                   className={clsx(
-                    'tau-field',
+                    'ficus-field',
                     'w-full px-3 py-2 text-sm rounded-md border bg-surface text-primary',
                     'placeholder:text-placeholder',
                     ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -215,7 +215,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
                     value={sshHost}
                     onChange={(e) => setSshHost(e.target.value)}
                     placeholder="203.0.113.10"
-                    className="tau-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                    className="ficus-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 focus:border-accent"
                   />
                 </div>
                 <div className="w-24">
@@ -227,7 +227,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
                     placeholder="22"
                     inputMode="numeric"
                     className={clsx(
-                      'tau-field',
+                      'ficus-field',
                       'w-full px-3 py-2 text-sm rounded-md border bg-surface text-primary',
                       'placeholder:text-placeholder',
                       ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -245,7 +245,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
                     value={sshUser}
                     onChange={(e) => setSshUser(e.target.value)}
                     placeholder="root"
-                    className="tau-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                    className="ficus-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 focus:border-accent"
                   />
                 </div>
               </div>
@@ -257,7 +257,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="What is this host for?"
-                  className="tau-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                  className="ficus-field w-full px-3 py-2 text-sm rounded-md border border-th-border bg-surface text-primary placeholder:text-placeholder  focus:ring-2 focus:ring-accent/50 focus:border-accent"
                 />
               </div>
             </div>
@@ -267,7 +267,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
             <button
               type="button"
               onClick={closeForm}
-              className="tau-button px-3 py-1.5 text-sm rounded-md font-medium text-secondary hover:bg-surface-hover transition-colors"
+              className="ficus-button px-3 py-1.5 text-sm rounded-md font-medium text-secondary hover:bg-surface-hover transition-colors"
             >
               {added ? 'Done' : 'Cancel'}
             </button>
@@ -276,7 +276,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
                 type="submit"
                 disabled={!canSubmit || addMutation.isPending}
                 className={clsx(
-                  'tau-button',
+                  'ficus-button',
                   'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
                   canSubmit
                     ? 'bg-accent text-on-accent hover:bg-accent/90'
@@ -363,7 +363,7 @@ function RemoteHostRow({
         {canWrite && <CheckControl squadId={squadId} hostId={host.id} />}
         <button
           onClick={handleCopy}
-          className="tau-button px-2 py-1 text-xs rounded border border-th-border text-secondary hover:bg-surface-hover transition-colors"
+          className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-secondary hover:bg-surface-hover transition-colors"
         >
           {copied ? '✓ Copied' : 'Copy Public Key'}
         </button>
@@ -372,7 +372,7 @@ function RemoteHostRow({
             onConfirm={onRevoke}
             label="Revoke"
             confirmLabel="Confirm?"
-            className="tau-button px-2 py-1 text-xs rounded border border-status-danger-300 dark:border-status-danger-800 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 transition-colors"
+            className="ficus-button px-2 py-1 text-xs rounded border border-status-danger-300 dark:border-status-danger-800 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 transition-colors"
             confirmClassName="px-2 py-1 text-xs rounded border border-status-danger-500 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 transition-colors"
             disabled={revoking}
           />
@@ -394,7 +394,7 @@ function CheckControl({ squadId, hostId }: { squadId: string; hostId: string }) 
       <button
         onClick={() => checkMutation.mutate()}
         disabled={checkMutation.isPending}
-        className="tau-button px-2 py-1 text-xs rounded border border-th-border text-secondary hover:bg-surface-hover transition-colors disabled:opacity-50"
+        className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-secondary hover:bg-surface-hover transition-colors disabled:opacity-50"
       >
         {checkMutation.isPending ? 'Checking…' : 'Check'}
       </button>

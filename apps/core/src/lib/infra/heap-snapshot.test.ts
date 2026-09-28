@@ -29,7 +29,7 @@ describe('captureHeapSnapshot', () => {
   })
 
   test('expands a leading ~ in the snapshot directory', async () => {
-    // TAU_HEAP_SNAPSHOT_DIR=~/heaps would otherwise mkdir a directory named
+    // FICUS_HEAP_SNAPSHOT_DIR=~/heaps would otherwise mkdir a directory named
     // `~` beside the process, and the snapshot (which contains secrets) would
     // land somewhere nobody thinks to lock down or clean up.
     const mkdir = mock(async () => undefined)

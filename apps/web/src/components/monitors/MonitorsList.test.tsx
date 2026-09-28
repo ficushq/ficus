@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { Monitor } from '@tau/shared'
+import type { Monitor } from '@ficus/shared'
 import { MonitorsList } from './MonitorsList'
 
 const monitor: Monitor = {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { NotionClientError } from '@tau/shared/oauth-providers/notion/client'
+import { NotionClientError } from '@ficus/shared/oauth-providers/notion/client'
 import { assertNotionIdentity } from './identity'
 
 const expected = {

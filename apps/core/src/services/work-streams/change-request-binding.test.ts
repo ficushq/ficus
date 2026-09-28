@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
-import { resolveBranchChangeRequest, type BranchChangeRequestCandidate } from '@tau/shared'
+import { resolveBranchChangeRequest, type BranchChangeRequestCandidate } from '@ficus/shared'
 import { db, squads, workStreams } from '../../db'
 import { recordChangeRequestBinding } from './change-request-binding'
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { computeWorkStreamElapsedMs } from './workStreamRuntime'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 
 const baseWs = {
   id: 'ws-1',

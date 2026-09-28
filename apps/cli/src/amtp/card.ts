@@ -3,7 +3,7 @@ import {
   type AmtpAgentCard,
   type AmtpSignedAgentCard,
   type AmtpSignedAgentCardSansSig,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { signAgentSig } from './identity'
 
 /**

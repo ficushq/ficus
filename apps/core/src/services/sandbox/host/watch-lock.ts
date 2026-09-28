@@ -12,7 +12,7 @@ import { mkdirSync } from 'fs'
 import { open } from 'fs/promises'
 import { join } from 'path'
 import { getHomeDir } from '../../../lib/utils/home'
-import { advisoryLock } from '@tau/shared/advisory-lock'
+import { advisoryLock } from '@ficus/shared/advisory-lock'
 
 export interface SquadWatchLock {
   release(): Promise<void>

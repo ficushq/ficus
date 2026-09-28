@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { RenderedPairing } from './pairingQr'
 
-// The deep link only resolves on a phone with the Tau app installed; hide it on desktop.
+// The deep link only resolves on a phone with the Ficus app installed; hide it on desktop.
 const IS_MOBILE = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
 
 /**
@@ -14,7 +14,7 @@ export function PairingCode({
   onExpired,
   onRegenerate,
   regenerating,
-  hint = 'Scan with the Tau app.',
+  hint = 'Scan with the Ficus app.',
 }: {
   pairing: RenderedPairing & { code: string }
   onExpired: () => void
@@ -43,7 +43,7 @@ export function PairingCode({
       <div className="flex items-center gap-2">
         <code className="rounded bg-surface-hover px-2 py-1 text-xs select-all">{pairing.code}</code>
         <button
-          className="tau-button text-xs text-secondary"
+          className="ficus-button text-xs text-secondary"
           onClick={() => navigator.clipboard.writeText(pairing.code)}
         >
           Copy code
@@ -54,13 +54,13 @@ export function PairingCode({
           href={pairing.deepLink}
           className="px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
         >
-          Open in the Tau app
+          Open in the Ficus app
         </a>
       )}
       <button
         onClick={onRegenerate}
         disabled={regenerating}
-        className="tau-button text-xs text-secondary hover:text-primary"
+        className="ficus-button text-xs text-secondary hover:text-primary"
       >
         Regenerate
       </button>

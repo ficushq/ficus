@@ -27,7 +27,7 @@ export function OnboardingBanner() {
       className="shrink-0 bg-accent text-on-accent px-4 py-2 flex items-center justify-between gap-4 text-sm font-medium hover:bg-accent-hover transition-colors"
     >
       <span>
-        Setup {resolvedCount}/{status.items.length} — finish setting up Tau
+        Setup {resolvedCount}/{status.items.length} — finish setting up Ficus
       </span>
       <span aria-hidden="true">→</span>
     </Link>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { AgentStatus } from '@tau/shared'
+import type { AgentStatus } from '@ficus/shared'
 import { AgentActivityDot } from './AgentActivityDot'
 
 const cases: Array<[AgentStatus, string, string]> = [

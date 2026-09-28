@@ -11,7 +11,7 @@ import {
   type ArtifactQuestionPriority,
   type ArtifactQuestionResponseMode,
   type ArtifactStatus,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { InboxMessage } from '../entities/InboxMessage'
 import { resolveAgentRequestingUserId } from '../services/inbox/agent-human-recipient'
 import { eventEmitter } from '../lib/infra/event-emitter'

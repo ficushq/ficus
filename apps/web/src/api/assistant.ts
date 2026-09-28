@@ -1,4 +1,4 @@
-import type { AssistantEditorState, AssistantEditorSync } from '@tau/shared'
+import type { AssistantEditorState, AssistantEditorSync } from '@ficus/shared'
 import type {
   AssistantActivityPage,
   AssistantActivityUpdate,
@@ -8,7 +8,7 @@ import type {
   AssistantEntry,
   AssistantMessageReceipt,
   AssistantMailbox,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { webTransport as t } from './transport'
 export const assistantApi = {
   readUpdates: (id: string, messageIds: string[]) =>
@@ -17,7 +17,7 @@ export const assistantApi = {
       body: { messageIds },
     }),
   ensureAgent: (id: string) => t.request<{ agentId: string }>(`/assistant/${id}/agent`, { method: 'POST', body: {} }),
-  editor: (id: string) => t.request<import('@tau/shared').AssistantEditorReadState>(`/assistant/${id}/editor`),
+  editor: (id: string) => t.request<import('@ficus/shared').AssistantEditorReadState>(`/assistant/${id}/editor`),
   syncEditor: (id: string, value: AssistantEditorSync) =>
     t.request<AssistantEditorState>(`/assistant/${id}/editor`, { method: 'PUT', body: value }),
   proposeEditor: (id: string, value: unknown) =>

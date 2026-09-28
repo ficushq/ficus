@@ -39,7 +39,7 @@ describe('localDeployment proxy', () => {
     return url.toString()
   }
 
-  /** The token is not on the DTO; it rides the URL Tau hands the browser. */
+  /** The token is not on the DTO; it rides the URL Ficus hands the browser. */
   function browserToken(localDeployment: { urlPathOrHost: string }): string {
     return new URL(`http://tau.test${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token') ?? ''
   }
@@ -60,7 +60,7 @@ describe('localDeployment proxy', () => {
     )
 
     expect(response.status).toBe(404)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(fetchCalls).toHaveLength(0)
   })
 
@@ -76,11 +76,11 @@ describe('localDeployment proxy', () => {
     )
 
     expect(response.status).toBe(404)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(fetchCalls).toHaveLength(0)
   })
 
-  it('rejects missing or invalid browser localDeployment tokens without Tau auth', async () => {
+  it('rejects missing or invalid browser localDeployment tokens without Ficus auth', async () => {
     const squad = await createTestSquad()
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
     await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
@@ -98,8 +98,8 @@ describe('localDeployment proxy', () => {
 
     expect(missing.status).toBe(401)
     expect(invalid.status).toBe(401)
-    expect(missing.headers.get('x-tau-app-proxy')).toBe('error')
-    expect(invalid.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(missing.headers.get('x-ficus-app-proxy')).toBe('error')
+    expect(invalid.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(fetchCalls).toHaveLength(0)
   })
 
@@ -169,7 +169,7 @@ describe('localDeployment proxy', () => {
         async () =>
           new Response('app-owned error', {
             status: 500,
-            headers: { 'x-tau-app-proxy': 'error', 'x-ficus-app-proxy': 'error', 'content-type': 'text/plain' },
+            headers: { 'x-tau-app-proxy': 'error', 'x-ficus-app-proxy': 'error', 'content-type': 'text/plain' }, // K4
           })
       ) as unknown as typeof fetch,
     })
@@ -181,7 +181,7 @@ describe('localDeployment proxy', () => {
     )
 
     expect(response.status).toBe(500)
-    expect(response.headers.get('x-tau-app-proxy')).toBeNull()
+    expect(response.headers.get('x-tau-app-proxy')).toBeNull() // K4
     // The control plane honours either spelling during the Ficus rename, so an app must not forge either.
     expect(response.headers.get('x-ficus-app-proxy')).toBeNull()
     expect(await response.text()).toBe('app-owned error')
@@ -214,9 +214,9 @@ describe('localDeployment proxy', () => {
     )
 
     const cookie = res.headers.get('set-cookie') ?? ''
-    expect(cookie).toContain(`tau_app_${localDeployment.id}=`)
+    expect(cookie).toContain(`ficus_app_${localDeployment.id}=`)
     // Path scoping is the security boundary — it keeps this credential off
-    // Tau's own API and off every other deployment.
+    // Ficus's own API and off every other deployment.
     expect(cookie).toContain(`Path=/api/app/${localDeployment.id}/`)
     expect(cookie).toContain('HttpOnly')
   })
@@ -229,7 +229,7 @@ describe('localDeployment proxy', () => {
     const res = await proxyLocalDeploymentRequest(
       localDeployment.id,
       new Request(`http://tau.test/api/app/${localDeployment.id}/assets/index-abc.js`, {
-        headers: { cookie: `tau_app_${localDeployment.id}=${browserToken(localDeployment)}` },
+        headers: { cookie: `ficus_app_${localDeployment.id}=${browserToken(localDeployment)}` },
       }),
       'assets/index-abc.js'
     )
@@ -247,7 +247,7 @@ describe('localDeployment proxy', () => {
     const res = await proxyLocalDeploymentRequest(
       localDeployment.id,
       new Request(`http://tau.test/api/app/${localDeployment.id}/assets/x.js`, {
-        headers: { cookie: `tau_app_${localDeployment.id}=nope` },
+        headers: { cookie: `ficus_app_${localDeployment.id}=nope` },
       }),
       'assets/x.js'
     )
@@ -255,7 +255,7 @@ describe('localDeployment proxy', () => {
     expect(res.status).toBe(401)
   })
 
-  it('does not forward Tau auth credentials', async () => {
+  it('does not forward Ficus auth credentials', async () => {
     const squad = await createTestSquad()
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
     await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
@@ -263,7 +263,7 @@ describe('localDeployment proxy', () => {
     await proxyLocalDeploymentRequest(
       localDeployment.id,
       // Use the valid signed URL (carries _tau_token) so the request authenticates,
-      // then assert the Tau auth credentials are not forwarded upstream.
+      // then assert the Ficus auth credentials are not forwarded upstream.
       new Request(localDeploymentUrl(localDeployment), {
         headers: {
           authorization: 'Bearer tau-token',
@@ -282,12 +282,12 @@ describe('localDeployment proxy', () => {
     expect(headers.get('x-keep')).toBe('yes')
   })
 
-  it('requires a valid browser token even when Tau auth credentials are present', async () => {
+  it('requires a valid browser token even when Ficus auth credentials are present', async () => {
     const squad = await createTestSquad()
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
     await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
 
-    // Tau auth header but NO _tau_token: previously a Tau auth header
+    // Ficus auth header but NO _tau_token: previously a Ficus auth header
     // short-circuited the token check and proxied (201). Must now be 401.
     const noToken = await proxyLocalDeploymentRequest(
       localDeployment.id,

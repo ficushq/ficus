@@ -1,12 +1,12 @@
 /* Explicit component roles; existing utilities can still supply layout and density. */
 @layer components {
-  .tau-section {
+  .ficus-section {
     background: transparent;
     border: 0;
     box-shadow: none;
   }
 
-  .tau-panel {
+  .ficus-panel {
     border: 1px solid
       rgb(
         var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
@@ -17,11 +17,11 @@
     box-shadow: none;
   }
 
-  .tau-glass {
+  .ficus-glass {
     background: rgb(var(--color-bg-surface));
   }
 
-  .tau-overlay {
+  .ficus-overlay {
     border: 1px solid
       rgb(
         var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
@@ -34,7 +34,7 @@
       0 2px 8px rgb(var(--color-shadow));
   }
 
-  .tau-inset {
+  .ficus-inset {
     border-radius: 8px;
     background: rgb(var(--color-bg-surface-secondary));
   }
@@ -146,7 +146,7 @@
   }
 
   /* Native color inputs render a padded inner square; fill the rounded control instead. */
-  .tau-color-input {
+  .ficus-color-input {
     -webkit-appearance: none;
     appearance: none;
     padding: 0;
@@ -160,19 +160,19 @@
       );
     outline-offset: -1px;
   }
-  .tau-color-input::-webkit-color-swatch-wrapper {
+  .ficus-color-input::-webkit-color-swatch-wrapper {
     padding: 0;
   }
-  .tau-color-input::-webkit-color-swatch {
+  .ficus-color-input::-webkit-color-swatch {
     border: 0;
     border-radius: inherit;
   }
-  .tau-color-input::-moz-color-swatch {
+  .ficus-color-input::-moz-color-swatch {
     border: 0;
     border-radius: inherit;
   }
 
-  .tau-section-title {
+  .ficus-section-title {
     color: rgb(var(--color-text-secondary));
     font-size: 12px;
     line-height: 1.5;
@@ -181,7 +181,7 @@
     text-transform: none;
   }
 
-  .tau-page-title {
+  .ficus-page-title {
     color: rgb(var(--color-text-primary));
     font-size: 22px;
     line-height: 1.3;
@@ -189,7 +189,7 @@
     letter-spacing: -0.025em;
   }
 
-  .tau-field {
+  .ficus-field {
     border: 1px solid
       rgb(
         var(--custom-rgb-color-input-border, var(--color-input-border)) /
@@ -204,19 +204,19 @@
       background-color 140ms ease;
   }
 
-  .tau-field::placeholder {
+  .ficus-field::placeholder {
     color: rgb(var(--color-text-placeholder));
   }
 
-  .tau-field:hover:not(:disabled) {
+  .ficus-field:hover:not(:disabled) {
     border-color: rgb(var(--color-border-hover));
   }
 
-  .tau-field:focus-visible {
+  .ficus-field:focus-visible {
     border-color: rgb(var(--color-focus));
   }
 
-  .tau-button {
+  .ficus-button {
     border-radius: 8px;
     font-weight: 500;
     transition:
@@ -225,26 +225,26 @@
       color 140ms ease;
   }
 
-  .tau-button:disabled {
+  .ficus-button:disabled {
     cursor: default;
   }
 
-  .tau-button-primary {
+  .ficus-button-primary {
     background: rgb(var(--color-primary));
     color: rgb(var(--on-accent-fg));
     box-shadow: inset 0 0 0 1px
       rgb(var(--custom-rgb-on-accent-fg, var(--on-accent-fg)) / calc(var(--custom-alpha-on-accent-fg, 1) * 0.08));
   }
 
-  .tau-button-primary:hover:not(:disabled) {
+  .ficus-button-primary:hover:not(:disabled) {
     background: rgb(var(--color-primary-hover));
   }
 
-  .tau-button-primary:active:not(:disabled) {
+  .ficus-button-primary:active:not(:disabled) {
     background: rgb(var(--color-primary-active));
   }
 
-  .tau-button-secondary {
+  .ficus-button-secondary {
     color: rgb(var(--color-text-secondary));
     background: rgb(var(--color-bg-surface-secondary));
     box-shadow: inset 0 0 0 1px
@@ -254,34 +254,34 @@
       );
   }
 
-  .tau-button-secondary:hover:not(:disabled) {
+  .ficus-button-secondary:hover:not(:disabled) {
     background: rgb(var(--color-bg-surface-hover));
     color: rgb(var(--color-text-primary));
   }
 
-  .tau-nav-item {
+  .ficus-nav-item {
     border-radius: 8px;
     transition:
       background-color 140ms ease,
       color 140ms ease;
   }
 
-  .tau-nav-item:hover {
+  .ficus-nav-item:hover {
     background: rgb(var(--color-bg-surface-hover));
   }
 
-  .tau-nav-item[aria-current='page'],
-  .tau-nav-item[aria-selected='true'] {
+  .ficus-nav-item[aria-current='page'],
+  .ficus-nav-item[aria-selected='true'] {
     background: rgb(var(--color-selection-bg));
     color: rgb(var(--color-primary-light));
   }
 
-  .tau-dock-item {
+  .ficus-dock-item {
     position: relative;
     isolation: isolate;
   }
 
-  .tau-dock-item::before {
+  .ficus-dock-item::before {
     content: '';
     position: absolute;
     inset: 4px;
@@ -292,46 +292,46 @@
     transition: background-color 140ms ease;
   }
 
-  .tau-dock-item[data-active='true']::before {
+  .ficus-dock-item[data-active='true']::before {
     background: rgb(var(--color-selection-bg));
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .tau-dock-item::before {
+    .ficus-dock-item::before {
       transition: none;
     }
   }
 
-  .tau-interactive-card {
+  .ficus-interactive-card {
     transition:
       background-color 140ms ease,
       border-color 140ms ease,
       box-shadow 140ms ease;
   }
 
-  .tau-interactive-card:hover {
+  .ficus-interactive-card:hover {
     border-color: rgb(var(--color-border-hover));
     background: rgb(var(--color-bg-surface-hover));
   }
 
-  .tau-table {
+  .ficus-table {
     border-collapse: separate;
     border-spacing: 0;
   }
 
-  .tau-table th {
+  .ficus-table th {
     color: rgb(var(--color-text-secondary));
     font-size: 12px;
     font-weight: 500;
     text-align: left;
   }
 
-  .tau-table tbody tr:hover {
+  .ficus-table tbody tr:hover {
     background: rgb(var(--color-bg-surface-hover));
   }
 
-  .tau-table th,
-  .tau-table td {
+  .ficus-table th,
+  .ficus-table td {
     border-color: rgb(
       var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
         calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
@@ -339,7 +339,7 @@
   }
 
   @supports (backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px)) {
-    .tau-glass {
+    .ficus-glass {
       background: rgb(var(--color-glass));
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
@@ -347,7 +347,7 @@
   }
 
   @media (prefers-reduced-transparency: reduce) {
-    .tau-glass {
+    .ficus-glass {
       background: rgb(var(--color-bg-surface));
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
@@ -355,10 +355,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .tau-button,
-    .tau-field,
-    .tau-nav-item,
-    .tau-interactive-card {
+    .ficus-button,
+    .ficus-field,
+    .ficus-nav-item,
+    .ficus-interactive-card {
       transition: none;
     }
   }
@@ -375,7 +375,7 @@
 }
 
 /* Short, non-spring motion keeps menus anchored and never shifts page layout. */
-@keyframes tau-surface-in {
+@keyframes ficus-surface-in {
   from {
     opacity: 0;
     translate: 0 4px;
@@ -387,14 +387,14 @@
     scale: 1;
   }
 }
-@keyframes tau-surface-out {
+@keyframes ficus-surface-out {
   to {
     opacity: 0;
     translate: 0 3px;
     scale: 0.99;
   }
 }
-@keyframes tau-backdrop-in {
+@keyframes ficus-backdrop-in {
   from {
     opacity: 0;
   }
@@ -402,35 +402,35 @@
     opacity: 1;
   }
 }
-@keyframes tau-backdrop-out {
+@keyframes ficus-backdrop-out {
   to {
     opacity: 0;
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .tau-overlay,
-  .tau-presence[data-state='open'] {
-    animation: tau-surface-in 160ms ease-out;
+  .ficus-overlay,
+  .ficus-presence[data-state='open'] {
+    animation: ficus-surface-in 160ms ease-out;
   }
-  .tau-presence[data-state='closed'] {
-    animation: tau-surface-out 120ms ease-in forwards;
+  .ficus-presence[data-state='closed'] {
+    animation: ficus-surface-out 120ms ease-in forwards;
     pointer-events: none;
   }
-  .tau-modal-backdrop[data-state='open'] {
-    animation: tau-backdrop-in 160ms ease-out;
+  .ficus-modal-backdrop[data-state='open'] {
+    animation: ficus-backdrop-in 160ms ease-out;
   }
-  .tau-modal-backdrop[data-state='closed'] {
-    animation: tau-backdrop-out 120ms ease-in forwards;
+  .ficus-modal-backdrop[data-state='closed'] {
+    animation: ficus-backdrop-out 120ms ease-in forwards;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tau-overlay,
-  .tau-presence {
+  .ficus-overlay,
+  .ficus-presence {
     animation: none;
   }
 }
 
-@keyframes tau-voice-settle {
+@keyframes ficus-voice-settle {
   from {
     opacity: 0.6;
     transform: translateY(6px) scale(0.98);
@@ -441,13 +441,13 @@
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .tau-voice-panel[data-state='open'][data-compact='true'] {
-    animation: tau-voice-settle 180ms ease-out;
+  .ficus-voice-panel[data-state='open'][data-compact='true'] {
+    animation: ficus-voice-settle 180ms ease-out;
   }
 }
 
 /* Fit assistant guides to content; supporting browsers interpolate intrinsic heights. */
-.tau-assistant-panel {
+.ficus-assistant-panel {
   border: 1px solid rgb(var(--color-border-hover));
   box-shadow:
     0 24px 64px -12px rgb(var(--color-shadow-lg)),
@@ -457,7 +457,7 @@
 
 @supports (backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px)) {
   /* The shared glass component is emitted later by Tailwind; keep this override more specific. */
-  .tau-assistant-panel.tau-glass {
+  .ficus-assistant-panel.ficus-glass {
     background: color-mix(in srgb, rgb(var(--color-bg-surface)) 80%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -465,7 +465,7 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .tau-assistant-panel.tau-glass {
+  .ficus-assistant-panel.ficus-glass {
     background: rgb(var(--color-bg-surface));
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -497,7 +497,7 @@
 
 /* Field geometry is shared across pages; utility classes must not vary the radius.
    Chat composers may round their outer surface independently. */
-.tau-field:not([type='checkbox']):not([type='radio']) {
+.ficus-field:not([type='checkbox']):not([type='radio']) {
   border-radius: 8px;
 }
 
@@ -505,18 +505,18 @@
 .workflow-inspector-form .grid {
   grid-template-columns: minmax(0, 1fr);
 }
-.workflow-inspector-form label:has(> .tau-field) {
+.workflow-inspector-form label:has(> .ficus-field) {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
 }
-.workflow-inspector-form label:has(> .tau-field) > .tau-field {
+.workflow-inspector-form label:has(> .ficus-field) > .ficus-field {
   order: 1;
   flex-shrink: 0;
   min-width: 0;
 }
-.workflow-inspector-form label:has(> .tau-field) > span {
+.workflow-inspector-form label:has(> .ficus-field) > span {
   order: 2;
   margin: 0;
   line-height: 1.5;
@@ -526,13 +526,13 @@
    control boundaries/focus using system colors; do not opt out of the user's
    palette. Theme choices (including custom themes) are cosmetic in this mode. */
 @media (forced-colors: active) {
-  .tau-button,
-  .tau-field {
+  .ficus-button,
+  .ficus-field {
     outline: 1px solid ButtonText;
     outline-offset: -1px;
   }
-  .tau-button:focus-visible,
-  .tau-field:focus-visible {
+  .ficus-button:focus-visible,
+  .ficus-field:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 3px;
   }

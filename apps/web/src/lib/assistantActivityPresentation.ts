@@ -1,4 +1,4 @@
-import type { AssistantConversationActivity, AssistantTaskStatus } from '@tau/shared'
+import type { AssistantConversationActivity, AssistantTaskStatus } from '@ficus/shared'
 
 /** Short task-state summary for a conversation row; empty when nothing is in progress. */
 export function summarizeAssistantTasks(

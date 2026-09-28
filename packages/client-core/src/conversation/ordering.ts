@@ -1,4 +1,4 @@
-export { messageSortAt } from '@tau/shared'
+export { messageSortAt } from '@ficus/shared'
 
 /** Epoch ms for a Date or ISO string. */
 export function ms(value: Date | string): number {

@@ -1,6 +1,6 @@
-# Tau Squad System Overview
+# Ficus Squad System Overview
 
-The Tau Squad System provides a way to organize agents into teams (squads) and manage their work through work streams. This enables coordinated multi-agent workflows where agents can collaborate, hand off work, and request human input when needed.
+The Ficus Squad System provides a way to organize agents into teams (squads) and manage their work through work streams. This enables coordinated multi-agent workflows where agents can collaborate, hand off work, and request human input when needed.
 
 See [Workflows, flows, and squads](../workflows.md) for the current flexible flow model. The quick start uses an explicit workflow; manual assignment is a separate legacy path for streams without a flow.
 
@@ -43,7 +43,7 @@ Squads can have relationships with each other:
 
 ```bash
 # Create an engineering squad
-tau squad create "Backend Team" \
+ficus squad create "Backend Team" \
   --type engineering \
   --purpose "Develop and maintain backend services"
 ```
@@ -52,7 +52,7 @@ tau squad create "Backend Team" \
 
 ```bash
 # Create work for the squad
-tau workstream create "Build user authentication API" \
+ficus workstream create "Build user authentication API" \
   --squad <squad-id> \
   --description "Implement JWT-based auth endpoints" \
   --workflow engineering
@@ -60,35 +60,35 @@ tau workstream create "Build user authentication API" \
 
 ### 3. Let the workflow route the work
 
-The selected flow creates participants as their steps become active. Do not spawn and assign a separate engineer for a flow-enabled work stream. Use `tau workstream flow <workstream-id>` to inspect the run and its current steps.
+The selected flow creates participants as their steps become active. Do not spawn and assign a separate engineer for a flow-enabled work stream. Use `ficus workstream flow <workstream-id>` to inspect the run and its current steps.
 
 ### 4. Monitor Progress
 
 ```bash
 # List work streams and their status
-tau workstream list --squad <squad-id>
+ficus workstream list --squad <squad-id>
 
 # Get details about a specific work stream
-tau workstream get <workstream-id>
+ficus workstream get <workstream-id>
 ```
 
 ## CLI Commands Reference
 
-| Command          | Description                           |
-| ---------------- | ------------------------------------- |
-| `tau squad`      | Manage squads (teams of agents)       |
-| `tau squad-preset` | View available squad preset definitions |
-| `tau workstream` | Manage work streams (units of work)   |
+| Command              | Description                             |
+| -------------------- | --------------------------------------- |
+| `ficus squad`        | Manage squads (teams of agents)         |
+| `ficus squad-preset` | View available squad preset definitions |
+| `ficus workstream`   | Manage work streams (units of work)     |
 
 ### Aliases
 
-- `tau ws` → `tau workstream`
-- `tau st` → `tau squad-preset`
+- `ficus ws` → `ficus workstream`
+- `ficus st` → `ficus squad-preset`
 
 ## Detailed Documentation
 
-- [Squad Commands](squad-commands.md) - Complete reference for `tau squad`
-- [Work Stream Commands](workstream-commands.md) - Complete reference for `tau workstream`
+- [Squad Commands](squad-commands.md) - Complete reference for `ficus squad`
+- [Work Stream Commands](workstream-commands.md) - Complete reference for `ficus workstream`
 
 ## Example legacy staffing
 
@@ -149,33 +149,33 @@ When an agent needs human input:
 
 ```bash
 # Agent requests input (opens a manual wait)
-tau ws request-input ws-123 -m "Which approach should I use: A or B?"
+ficus ws request-input ws-123 -m "Which approach should I use: A or B?"
 
 # Human resolves it (the note is delivered to the agent)
-tau ws unblock ws-123 -m "Approach A"
+ficus ws unblock ws-123 -m "Approach A"
 ```
 
 ### Agent Collaboration
 
 ```bash
 # Engineer hands off to the reviewer
-tau ws handoff ws-123 --to reviewer-agent-id -m "Implementation complete, ready for review"
+ficus ws handoff ws-123 --to reviewer-agent-id -m "Implementation complete, ready for review"
 
 # Reviewer requests final review (approval completes the stream)
-tau ws request-review ws-123 -m "Code review complete"
+ficus ws request-review ws-123 -m "Code review complete"
 
 # Manager approves (optionally with a note delivered to the owner)
-tau ws approve ws-123 -m "Approved. Follow-ups for a future stream: none"
+ficus ws approve ws-123 -m "Approved. Follow-ups for a future stream: none"
 ```
 
 ### Squad Coordination
 
 ```bash
 # Link related squads
-tau squad link frontend-squad backend-squad --type collaborates
+ficus squad link frontend-squad backend-squad --type collaborates
 
 # Check communication capability
-tau squad can-communicate frontend-squad backend-squad
+ficus squad can-communicate frontend-squad backend-squad
 ```
 
 ## Best Practices

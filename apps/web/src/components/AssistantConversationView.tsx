@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAssistantPageNavigation } from '../hooks/useAssistantPageNavigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { type AssistantEntry, type MessageMetadata } from '@tau/shared'
+import { type AssistantEntry, type MessageMetadata } from '@ficus/shared'
 import { assistantApi } from '../api/assistant'
 import { assistantQueries } from '../queryOptions'
 import { assistantQueryKeys, queryKeys } from '../queryKeys'
@@ -295,7 +295,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
         <div role="alert" className="px-3 py-2 text-sm text-danger">
           {voice.error}{' '}
           <button
-            className="tau-button"
+            className="ficus-button"
             onClick={() => {
               void voice.retryConnection()
             }}
@@ -306,7 +306,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
       )}
       {props.realtime && !voice.isLiveAudio && agentId && (
         <button
-          className="tau-button px-3 py-1 text-xs text-muted"
+          className="ficus-button px-3 py-1 text-xs text-muted"
           onClick={() => {
             void startVoice()
           }}
@@ -318,7 +318,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
         <div role="alert" className="px-3 py-2 text-sm text-danger">
           {error}{' '}
           {!agentId && (
-            <button className="tau-button" onClick={() => setAttempt((value) => value + 1)}>
+            <button className="ficus-button" onClick={() => setAttempt((value) => value + 1)}>
               Retry
             </button>
           )}
@@ -330,7 +330,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
             <summary className="cursor-pointer text-muted">Earlier conversation</summary>
             {archiveHasMore && (
               <button
-                className="tau-button"
+                className="ficus-button"
                 onClick={async () => {
                   const page = await api.history(props.id, archiveBefore)
                   setArchive((current) => [

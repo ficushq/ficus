@@ -1,5 +1,5 @@
 {
-  "name": "@tau/client-react",
+  "name": "@ficus/client-react",
   "version": "0.0.1",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -13,8 +13,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@tau/client-core": "workspace:*",
-    "@tau/shared": "workspace:*"
+    "@ficus/client-core": "workspace:*",
+    "@ficus/shared": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=18",

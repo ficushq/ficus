@@ -15,7 +15,7 @@ import {
   attentionSchema,
   DEFAULT_ATTENTION,
   type SquadActivityKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { requirePermission, requireSquadPermission } from '../middleware'
 import { getAccessibleSquadIds, type Identity } from '../services/rbac'
 import { resolveSquadActivityAccess } from '../services/squad-activity/access'
@@ -29,7 +29,7 @@ import {
 import { Squad } from '../entities/Squad'
 import type { Squad as SquadEntity } from '../entities/Squad'
 import { isInsideWorkspaceRoot, resolveSquadWorkspaceHostPath, searchWorkspaceFiles } from '../services/squad/workspace'
-import type { SquadStatus } from '@tau/shared'
+import type { SquadStatus } from '@ficus/shared'
 import { terminalManager } from '../services/sandbox/docker/terminal'
 import {
   getSandboxManager,
@@ -312,7 +312,7 @@ export const squadsRouter = new Hono()
 
     return c.json({ ...squad.toJson(), defaultWorkflow })
   })
-  // --- Squad attention (levels for the squad's decisions and progress; see @tau/shared/attention) ---
+  // --- Squad attention (levels for the squad's decisions and progress; see @ficus/shared/attention) ---
   .get('/:id/subscription', requireSquadPermission('squads:read'), async (c) => {
     const squadId = c.req.param('id')
     const identity = await resolveActingUser(c.get('identity'))
@@ -1110,7 +1110,7 @@ export const squadsRouter = new Hono()
     }
 
     // Remote runtime (k8s or vm) — query actual live sandbox status. `runtime`
-    // is server-driven config (TAU_SANDBOX_RUNTIME), never client-guessed: the
+    // is server-driven config (FICUS_SANDBOX_RUNTIME), never client-guessed: the
     // web UI switches its VM chain-health presentation off this field.
     const manager = getSandboxManager() as K8sSandboxManager
     const status = await manager.getSandboxStatus(squad.sandboxId)

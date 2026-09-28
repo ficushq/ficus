@@ -1,8 +1,10 @@
 /// <reference lib="webworker" />
 
 import { resolveNotificationTarget } from './lib/notificationTarget'
+import { runtimeServiceWorkerCaches, serviceWorkerCacheNames, staleServiceWorkerCaches } from './swCaches'
+import { bypassesServiceWorker } from './swRoutes'
 
-// Tau Service Worker
+// Ficus Service Worker
 // Provides offline caching and push notification support.
 // PWA updates are prompt-controlled: the app checks on resume/focus/online/pageshow
 // (plus hourly while visible) and only auto-applies on open/resume before interaction.
@@ -12,12 +14,10 @@ import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
 
 declare const self: ServiceWorkerGlobalScope
 
-declare const __TAU_SW_CACHE_VERSION__: string
+declare const __FICUS_SW_CACHE_VERSION__: string
 
-const CACHE_VERSION = __TAU_SW_CACHE_VERSION__
-const CACHE_NAME = `tau-cache-${CACHE_VERSION}`
-const API_CACHE_NAME = `tau-api-cache-${CACHE_VERSION}`
-const TAU_RUNTIME_CACHE_PREFIXES = ['tau-cache-', 'tau-api-cache-']
+const CACHE_VERSION = __FICUS_SW_CACHE_VERSION__
+const { api: API_CACHE_NAME } = serviceWorkerCacheNames(CACHE_VERSION)
 
 // Workbox injects the precache manifest here at build time
 // (replaces your PRECACHE_ASSETS array with content-hashed assets)
@@ -29,20 +29,10 @@ self.addEventListener('activate', (event) => {
     Promise.all([
       // Take control of open clients so a skip-waited update applies on reload.
       self.clients.claim(),
+      // Older builds' runtime caches, including the pre-rename ones, are never read again.
       caches
         .keys()
-        .then((keys) =>
-          Promise.all(
-            keys
-              .filter(
-                (key) =>
-                  TAU_RUNTIME_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
-                  key !== CACHE_NAME &&
-                  key !== API_CACHE_NAME
-              )
-              .map((key) => caches.delete(key))
-          )
-        ),
+        .then((keys) => Promise.all(staleServiceWorkerCaches(keys, CACHE_VERSION).map((key) => caches.delete(key)))),
     ])
   )
 })
@@ -61,8 +51,8 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   if (url.origin !== self.location.origin) return
   if (url.pathname.startsWith(p('/ws'))) return
-  // Docs have their own HTML routes; never replace them with the cached app shell.
-  if (url.pathname === p('/docs') || url.pathname.startsWith(p('/docs/'))) return
+  // Docs and the garden have their own HTML routes; never replace them with the cached app shell.
+  if (bypassesServiceWorker(url.pathname, BASE_PATH)) return
 
   if (url.pathname.startsWith(p('/api/'))) {
     if (url.pathname.includes('/stream')) return
@@ -93,7 +83,7 @@ async function handleCacheableApiRequest(request: Request, url: URL): Promise<Re
 
       // Add timestamp header for cache freshness tracking
       const headers = new Headers(responseToCache.headers)
-      headers.set('X-Tau-Cached-At', Date.now().toString())
+      headers.set('X-Ficus-Cached-At', Date.now().toString())
 
       const cachedResponse = new Response(responseToCache.body, {
         status: responseToCache.status,
@@ -116,7 +106,7 @@ async function handleCacheableApiRequest(request: Request, url: URL): Promise<Re
 
       // Add header to indicate this is cached data
       const headers = new Headers(cachedResponse.headers)
-      headers.set('X-Tau-From-Cache', 'true')
+      headers.set('X-Ficus-From-Cache', 'true')
 
       return new Response(cachedResponse.body, {
         status: cachedResponse.status,
@@ -155,7 +145,7 @@ self.addEventListener('push', (event) => {
     data = event.data.json()
   } catch (err) {
     console.error('[SW] Failed to parse push data:', err)
-    data = { title: 'Tau', body: event.data.text() }
+    data = { title: 'Ficus', body: event.data.text() }
   }
 
   // Same-origin only: a saved Assistant conversation link keeps its query string and base path.
@@ -167,13 +157,13 @@ self.addEventListener('push', (event) => {
     badge: p('/icons/icon-96x96.png'),
     data: { url: targetUrl },
     vibrate: [100, 50, 100],
-    tag: data.tag || 'tau-notification',
+    tag: data.tag || 'ficus-notification',
     renotify: Boolean(data.renotify),
     requireInteraction: Boolean(data.requireInteraction),
     actions: data.actions || [],
   }
 
-  event.waitUntil(self.registration.showNotification(data.title || 'Tau', options))
+  event.waitUntil(self.registration.showNotification(data.title || 'Ficus', options))
 })
 
 // Notification click event
@@ -247,11 +237,7 @@ self.addEventListener('message', (event) => {
   if (event.data?.type === 'CLEAR_CACHE') {
     event.waitUntil(
       caches.keys().then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => TAU_RUNTIME_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)))
-            .map((key) => caches.delete(key))
-        ).then(() => {
+        Promise.all(runtimeServiceWorkerCaches(keys).map((key) => caches.delete(key))).then(() => {
           event.ports[0]?.postMessage({ success: true })
         })
       )
@@ -293,7 +279,7 @@ async function getApiCacheStats() {
         const blob = await response.clone().blob()
         totalSize += blob.size
 
-        const cachedAt = response.headers.get('X-Tau-Cached-At')
+        const cachedAt = response.headers.get('X-Ficus-Cached-At')
         if (cachedAt) {
           const timestamp = parseInt(cachedAt, 10)
           oldestTimestamp = Math.min(oldestTimestamp, timestamp)

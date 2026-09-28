@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'fs'
 import { join } from 'path'
-import { sanitizeAgentAttachmentName } from '@tau/shared'
+import { sanitizeAgentAttachmentName } from '@ficus/shared'
 import { createLogger } from '../../lib/infra/logger'
 
 const log = createLogger('attachment-materialization')

@@ -7,7 +7,7 @@ import {
   type ThemePresetOwner,
   type ThemePresetScope,
   type ThemePresetVisibility,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db, themePresets, users, type DbTx } from '../db'
 
 type Store = typeof db | DbTx

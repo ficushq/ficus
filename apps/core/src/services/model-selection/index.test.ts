@@ -28,11 +28,11 @@ describe('model-selection account-aware environment wiring', () => {
   let originalEncryptionKey: string | undefined
 
   beforeEach(async () => {
-    originalEncryptionKey = process.env.TAU_ENCRYPTION_KEY
+    originalEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
     openRouterTestState = await isolateOpenRouterTestState()
     unrelatedSecretRows = await db.select().from(secrets)
     await db.delete(secrets)
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     resetSecretStore()
     store = getSecretStore()
     await store.initialize()
@@ -44,8 +44,8 @@ describe('model-selection account-aware environment wiring', () => {
     if (unrelatedSecretRows.length > 0) await db.insert(secrets).values(unrelatedSecretRows)
     resetSecretStore()
     PROVIDERS_WITHOUT_AUTH.delete('zai')
-    if (originalEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = originalEncryptionKey
+    if (originalEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = originalEncryptionKey
     await restoreOpenRouterTestState(openRouterTestState)
   })
 

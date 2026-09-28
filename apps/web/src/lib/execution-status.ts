@@ -1,4 +1,4 @@
-import { EXECUTION_STATUS_ROLE, type ExecutionStatus } from '@tau/shared'
+import { EXECUTION_STATUS_ROLE, type ExecutionStatus } from '@ficus/shared'
 import type { BadgeColor } from '../components/Badge'
 import { webStatus } from './statusPresentation'
 

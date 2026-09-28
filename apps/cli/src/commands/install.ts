@@ -9,8 +9,8 @@ const DEFAULT_MANIFEST_URL = 'https://ficus.sh/cli/manifest.json'
 interface InstallOptions {
   url?: string
   manifestUrl?: string
+  /** true for --auth, false for --no-auth (commander folds both into `auth`), else unset. */
   auth?: boolean
-  noAuth?: boolean
   force?: boolean
 }
 
@@ -38,10 +38,9 @@ function isCurrent(manifest: CliManifest): boolean {
 function runInstaller(url: string, options: InstallOptions): Promise<void> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...process.env }
-    if (options.auth === true) env.TAU_INSTALL_AUTH = '1'
-    if (options.noAuth === true) env.TAU_INSTALL_AUTH = '0'
+    if (options.auth !== undefined) env.FICUS_INSTALL_AUTH = options.auth ? '1' : '0'
 
-    const child = spawn('sh', ['-c', `curl -fsSL "$1" | sh`, 'tau-install', url], {
+    const child = spawn('sh', ['-c', `curl -fsSL "$1" | sh`, 'ficus-install', url], {
       stdio: 'inherit',
       env,
     })
@@ -58,7 +57,7 @@ function runInstaller(url: string, options: InstallOptions): Promise<void> {
 export function registerInstallCommands(program: Command) {
   program
     .command('install')
-    .description('Install or upgrade the Tau CLI from the public installer')
+    .description('Install or upgrade the Ficus CLI from the public installer')
     .option('--url <url>', 'Installer URL', DEFAULT_INSTALLER_URL)
     .option('--manifest-url <url>', 'CLI manifest URL', DEFAULT_MANIFEST_URL)
     .option('--auth', 'Force installer authentication prompts or env-based auth')
@@ -75,17 +74,17 @@ export function registerInstallCommands(program: Command) {
             current: buildInfo,
             latest,
           },
-          `Current Tau CLI: ${buildInfo.version} (${shortCommit(buildInfo.commit)}, ${buildInfo.buildDate})\n` +
-            `Latest Tau CLI:  ${latest.version} (${shortCommit(latest.commit)}, ${latest.buildDate})`
+          `Current Ficus CLI: ${buildInfo.version} (${shortCommit(buildInfo.commit)}, ${buildInfo.buildDate})\n` +
+            `Latest Ficus CLI:  ${latest.version} (${shortCommit(latest.commit)}, ${latest.buildDate})`
         )
 
         if (!options.force && isCurrent(latest)) {
-          output({ current: buildInfo, latest }, 'Tau CLI is already up to date. Use --force to reinstall.')
+          output({ current: buildInfo, latest }, 'Ficus CLI is already up to date. Use --force to reinstall.')
           return
         }
 
         await runInstaller(installerUrl, options)
-        output({ installer: installerUrl, latest }, 'Tau CLI install completed.')
+        output({ installer: installerUrl, latest }, 'Ficus CLI install completed.')
       } catch (error) {
         outputError(error as Error)
       }

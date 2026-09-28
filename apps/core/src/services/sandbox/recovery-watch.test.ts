@@ -395,8 +395,8 @@ describe('SandboxRecoveryWatch', () => {
   })
 
   it('retains a recovery subscription when its owner became dormant during the outage', async () => {
-    const previousRuntime = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'docker'
+    const previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker'
     await db
       .update(agents)
       .set({
@@ -424,8 +424,8 @@ describe('SandboxRecoveryWatch', () => {
       await db.delete(sandboxRecoverySubscriptions).where(eq(sandboxRecoverySubscriptions.agentId, A1))
       getManager.mockRestore()
       ensureSandbox.mockRestore()
-      if (previousRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = previousRuntime
+      if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
     }
   })
 
@@ -441,17 +441,17 @@ describe('SandboxRecoveryWatch', () => {
 })
 
 describe('defaultIsSandboxReady runtime gate', () => {
-  const prev = process.env.TAU_SANDBOX_RUNTIME
+  const prev = process.env.FICUS_SANDBOX_RUNTIME
   const spies: Array<{ mockRestore: () => void }> = []
   afterEach(() => {
     spies.forEach((s) => s.mockRestore())
     spies.length = 0
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   it('keeps a dormant agent recovery watch unavailable without recreating its box', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'docker'
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker'
     const agentId = crypto.randomUUID()
     const ensureSandbox = spyOn({ ensureSandbox: async () => 'unexpected' }, 'ensureSandbox')
     const manager = { ensureSandbox, hasSandbox: () => true }
@@ -474,7 +474,7 @@ describe('defaultIsSandboxReady runtime gate', () => {
   // A `system-manager_` id is neither a squad nor an `agent_` box, so the re-ensure
   // branch is a no-op — isolating the runtime status gate for this focused test.
   it('(vm runtime) requires running AND devbox-ready — not the coarse hasSandbox tracking', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const fakeVmManager = {
       getSandboxStatus: async (_id: string) => ({ status: 'running', devboxReady: false }),
       hasSandbox: () => true, // would wrongly report ready if the docker path were taken
@@ -485,7 +485,7 @@ describe('defaultIsSandboxReady runtime gate', () => {
   })
 
   it('(vm runtime) reports ready once the box is running and devbox-ready', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const fakeVmManager = {
       getSandboxStatus: async (_id: string) => ({ status: 'running', devboxReady: true }),
       hasSandbox: () => false,

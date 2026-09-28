@@ -26,11 +26,11 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
   } as Machine
 }
 
-const originalTestMode = process.env.TAU_TEST_MODE
+const originalTestMode = process.env.FICUS_TEST_MODE
 
 afterEach(() => {
-  if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
-  else process.env.TAU_TEST_MODE = originalTestMode
+  if (originalTestMode === undefined) delete process.env.FICUS_TEST_MODE
+  else process.env.FICUS_TEST_MODE = originalTestMode
 })
 
 describe('prewarmMachineDevbox', () => {
@@ -107,8 +107,8 @@ describe('prewarmMachineDevbox', () => {
 })
 
 describe('prewarmMachineDevboxBackground', () => {
-  it('is a no-op under TAU_TEST_MODE=1 (never touches the machine or realize)', () => {
-    process.env.TAU_TEST_MODE = '1'
+  it('is a no-op under FICUS_TEST_MODE=1 (never touches the machine or realize)', () => {
+    process.env.FICUS_TEST_MODE = '1'
     let getMachineCalled = false
     let realizeCalled = false
 
@@ -127,7 +127,7 @@ describe('prewarmMachineDevboxBackground', () => {
   })
 
   it('fires in the background (returns void immediately) and swallows a rejection', async () => {
-    delete process.env.TAU_TEST_MODE
+    delete process.env.FICUS_TEST_MODE
     const machine = makeMachine()
     let resolveRealize: () => void = () => {}
     const realizeStarted = new Promise<void>((r) => (resolveRealize = r))

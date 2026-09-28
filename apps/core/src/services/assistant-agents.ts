@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import type { AssistantConversationKind, AssistantEditorState } from '@tau/shared'
+import type { AssistantConversationKind, AssistantEditorState } from '@ficus/shared'
 import { assistantConversationAgents, assistantConversations, agents, db } from '../db'
 import { Agent } from '../entities/Agent'
 import { generateAgentName } from '../lib/utils/agent-names'

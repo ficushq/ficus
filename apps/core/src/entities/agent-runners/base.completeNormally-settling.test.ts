@@ -1,6 +1,6 @@
 import { describe, it, expect, spyOn } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import type { SessionUsage, MessageMetadata } from '@tau/shared'
+import type { SessionUsage, MessageMetadata } from '@ficus/shared'
 import { AgentRunner } from './base'
 import { MockAgentSession } from '../../services/execution/test-helpers'
 import { AgentSession } from '../AgentSession'

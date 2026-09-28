@@ -10,7 +10,12 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { type CustomThemeDocument, type ThemePreset, type ThemePresetOwner, type AppearanceSetting } from '@tau/shared'
+import {
+  type CustomThemeDocument,
+  type ThemePreset,
+  type ThemePresetOwner,
+  type AppearanceSetting,
+} from '@ficus/shared'
 import { findWebTheme, resolveWebTheme, type WebThemeDefinition } from '../theme/registry'
 import { tokenColor } from '../theme/tokenReader'
 import { applyResolvedTheme } from '../theme/apply'
@@ -169,7 +174,7 @@ function readOtherSideDerivedVars(
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // The stored selection is read once, synchronously: legacy 'tau-theme'
+  // The stored selection is read once, synchronously: legacy 'ficus-theme'
   // values migrate here, unreadable values fall back to the defaults.
   const [store] = useState(() => new ThemeSyncStore(getThemeStorage()))
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)

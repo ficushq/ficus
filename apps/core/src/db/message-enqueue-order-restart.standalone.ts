@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { findFreeTestDbPort } from '@tau/shared/testDbPort'
+import { findFreeTestDbPort } from '@ficus/shared/testDbPort'
 import { MONOREPO_ROOT } from '../lib/paths'
 
 const overlay = join(import.meta.dir, 'fixtures/message-enqueue-restart.compose.yml')

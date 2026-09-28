@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "tau",
+      "name": "ficus",
       "dependencies": {
         "eslint-plugin-prettier": "^5.5.5",
       },
@@ -30,8 +30,8 @@
       "name": "cli",
       "version": "0.2.0",
       "dependencies": {
-        "@tau/client-core": "workspace:*",
-        "@tau/shared": "workspace:*",
+        "@ficus/client-core": "workspace:*",
+        "@ficus/shared": "workspace:*",
         "commander": "^12.0.0",
         "yaml": "^2.9.0",
       },
@@ -51,6 +51,8 @@
         "@earendil-works/pi-ai": "0.87.1",
         "@earendil-works/pi-coding-agent": "0.87.1",
         "@earendil-works/pi-tui": "0.87.1",
+        "@ficus/k8s-sandbox": "workspace:*",
+        "@ficus/shared": "workspace:*",
         "@google-cloud/text-to-speech": "^6.4.0",
         "@hono/zod-validator": "^0.4.0",
         "@kubernetes/client-node": "^1.4.0",
@@ -59,8 +61,6 @@
         "@noble/hashes": "^2.0.1",
         "@simplewebauthn/server": "^13.3.0",
         "@sinclair/typebox": "^0.34.48",
-        "@tau/k8s-sandbox": "workspace:*",
-        "@tau/shared": "workspace:*",
         "amtp-engine": "^0.1.2",
         "amtp-protocol": "^0.1.2",
         "archiver": "^7.0.1",
@@ -99,7 +99,7 @@
       },
     },
     "apps/docs": {
-      "name": "@tau/docs",
+      "name": "@ficus/docs",
       "version": "0.0.0",
       "dependencies": {
         "@astrojs/markdown-remark": "7.3.0",
@@ -121,10 +121,10 @@
         "@dnd-kit/core": "^6.3.1",
         "@dnd-kit/sortable": "^10.0.0",
         "@dnd-kit/utilities": "^3.2.2",
+        "@ficus/client-core": "workspace:*",
+        "@ficus/shared": "workspace:*",
         "@simplewebauthn/browser": "^13.0.0",
         "@tanstack/react-query": "^5.64.0",
-        "@tau/client-core": "workspace:*",
-        "@tau/shared": "workspace:*",
         "@types/diff": "^8.0.0",
         "@xterm/addon-fit": "^0.10.0",
         "@xterm/addon-search": "^0.15.0",
@@ -173,10 +173,10 @@
       },
     },
     "packages/client-core": {
-      "name": "@tau/client-core",
+      "name": "@ficus/client-core",
       "version": "0.0.1",
       "dependencies": {
-        "@tau/shared": "workspace:*",
+        "@ficus/shared": "workspace:*",
         "zod": "^3.24.0",
       },
       "devDependencies": {
@@ -184,11 +184,11 @@
       },
     },
     "packages/client-react": {
-      "name": "@tau/client-react",
+      "name": "@ficus/client-react",
       "version": "0.0.1",
       "dependencies": {
-        "@tau/client-core": "workspace:*",
-        "@tau/shared": "workspace:*",
+        "@ficus/client-core": "workspace:*",
+        "@ficus/shared": "workspace:*",
       },
       "devDependencies": {
         "@tanstack/react-query": "^5.0.0",
@@ -203,10 +203,10 @@
       },
     },
     "packages/k8s-sandbox": {
-      "name": "@tau/k8s-sandbox",
+      "name": "@ficus/k8s-sandbox",
       "version": "0.2.0",
       "dependencies": {
-        "@tau/shared": "workspace:*",
+        "@ficus/shared": "workspace:*",
         "bun-pty": "^0.4.8",
         "chokidar": "5.0.0",
         "micromatch": "^4.0.8",
@@ -218,7 +218,7 @@
       },
     },
     "packages/shared": {
-      "name": "@tau/shared",
+      "name": "@ficus/shared",
       "version": "0.0.1",
       "dependencies": {
         "amtp-protocol": "^0.1.2",
@@ -744,6 +744,16 @@
 
     "@expressive-code/plugin-text-markers": ["@expressive-code/plugin-text-markers@0.44.2", "", { "dependencies": { "@expressive-code/core": "^0.44.2" } }, "sha512-SNI7EgUSiADqbqUzzMbj1ZeC/r2pa5eg3KyFOGAd3a7EsIA4qzjXQLp+ODWQtHVDKFCdGs4J3ovSJUqvKIK96g=="],
 
+    "@ficus/client-core": ["@ficus/client-core@workspace:packages/client-core"],
+
+    "@ficus/client-react": ["@ficus/client-react@workspace:packages/client-react"],
+
+    "@ficus/docs": ["@ficus/docs@workspace:apps/docs"],
+
+    "@ficus/k8s-sandbox": ["@ficus/k8s-sandbox@workspace:packages/k8s-sandbox"],
+
+    "@ficus/shared": ["@ficus/shared@workspace:packages/shared"],
+
     "@google-cloud/text-to-speech": ["@google-cloud/text-to-speech@6.4.0", "", { "dependencies": { "google-gax": "^5.0.0" } }, "sha512-KUnK+mBYz9aegxHrBbwEignOkGRqXvqOXs/EGY7CAJhMFKuNSieW02/PV/ipVRsJM11MP69qgTgEetoyAN0HAg=="],
 
     "@google/genai": ["@google/genai@2.21.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q=="],
@@ -1179,16 +1189,6 @@
     "@tanstack/query-core": ["@tanstack/query-core@5.90.20", "", {}, "sha512-OMD2HLpNouXEfZJWcKeVKUgQ5n+n3A2JFmBaScpNDUqSrQSjiveC7dKMe53uJUg1nDG16ttFPz2xfilz6i2uVg=="],
 
     "@tanstack/react-query": ["@tanstack/react-query@5.90.20", "", { "dependencies": { "@tanstack/query-core": "5.90.20" }, "peerDependencies": { "react": "^18 || ^19" } }, "sha512-vXBxa+qeyveVO7OA0jX1z+DeyCA4JKnThKv411jd5SORpBKgkcVnYKCiBgECvADvniBX7tobwBmg01qq9JmMJw=="],
-
-    "@tau/client-core": ["@tau/client-core@workspace:packages/client-core"],
-
-    "@tau/client-react": ["@tau/client-react@workspace:packages/client-react"],
-
-    "@tau/docs": ["@tau/docs@workspace:apps/docs"],
-
-    "@tau/k8s-sandbox": ["@tau/k8s-sandbox@workspace:packages/k8s-sandbox"],
-
-    "@tau/shared": ["@tau/shared@workspace:packages/shared"],
 
     "@testing-library/dom": ["@testing-library/dom@10.4.1", "", { "dependencies": { "@babel/code-frame": "^7.10.4", "@babel/runtime": "^7.12.5", "@types/aria-query": "^5.0.1", "aria-query": "5.3.0", "dom-accessibility-api": "^0.5.9", "lz-string": "^1.5.0", "picocolors": "1.1.1", "pretty-format": "^27.0.2" } }, "sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg=="],
 

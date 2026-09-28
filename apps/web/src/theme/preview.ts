@@ -1,5 +1,5 @@
-import type { EffectiveAppearance } from '@tau/shared/theme-schema'
-import type { CustomThemeDocument } from '@tau/shared/custom-theme'
+import type { EffectiveAppearance } from '@ficus/shared/theme-schema'
+import type { CustomThemeDocument } from '@ficus/shared/custom-theme'
 import { applyResolvedTheme } from './apply'
 import { applyCustomTheme, removeCustomProperties } from './custom'
 import type { WebThemeDefinition } from './registry'

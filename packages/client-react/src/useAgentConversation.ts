@@ -9,8 +9,8 @@ import {
   type PendingItem,
   type RenderItem,
   type StreamStatus,
-} from '@tau/client-core'
-import type { ChatScope, DeliveryMode, ExecutionStatus, Message, MessageMetadata, SessionUsage } from '@tau/shared'
+} from '@ficus/client-core'
+import type { ChatScope, DeliveryMode, ExecutionStatus, Message, MessageMetadata, SessionUsage } from '@ficus/shared'
 import { focusManager, onlineManager, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useConversationEnvironment } from './ConversationClientProvider'
@@ -416,7 +416,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   }, [invalidateConversationQueries, isStreamLive])
 
   // Centralized done handler — fires onDone/usage at most once per turn (dedup by streamGroupId ?? messageId).
-  const handleDone = useCallback((event: Extract<import('@tau/shared').StreamEvent, { type: 'done' }>) => {
+  const handleDone = useCallback((event: Extract<import('@ficus/shared').StreamEvent, { type: 'done' }>) => {
     const key = event.streamGroupId ?? event.messageId ?? ''
     if (key && firedDoneRef.current.has(key)) return
     if (key) firedDoneRef.current.add(key)
@@ -437,7 +437,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   // chat stream) so the activity indicator clears on turn end. Without this it would otherwise be
   // seeded once on mount and stick at 'running'.
   const applyExecStatus = useCallback(
-    (event: import('@tau/shared').StreamEvent) => {
+    (event: import('@ficus/shared').StreamEvent) => {
       lastStreamAtRef.current = Date.now()
       activityAtRef.current = performance.now()
       activitySequenceRef.current = ++conversationActivitySequence

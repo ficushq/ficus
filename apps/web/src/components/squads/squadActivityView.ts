@@ -1,5 +1,5 @@
-import type { AuthIdentity } from '@tau/client-core'
-import type { SquadActivityItem, SquadActivityKind } from '@tau/shared'
+import type { AuthIdentity } from '@ficus/client-core'
+import type { SquadActivityItem, SquadActivityKind } from '@ficus/shared'
 
 /**
  * Kind toggles as the user sees them (2026-08-27 audit): the three

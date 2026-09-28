@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { activeWorkflowAttempts } from '@tau/shared'
+import { activeWorkflowAttempts } from '@ficus/shared'
 import { db, workStreams, squads, executions, workStreamFlowRuns, type DbTx } from '../../db'
 import { WorkStream } from '../../entities/WorkStream'
 import { Execution } from '../../entities/Execution'

@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
-import { agentAttachmentRoot, buildAgentAttachmentPath, sanitizeAgentAttachmentName } from '@tau/shared'
+import { agentAttachmentRoot, buildAgentAttachmentPath, sanitizeAgentAttachmentName } from '@ficus/shared'
 import { db } from '../db'
 import { agentFileAttachments, inboxAttachments } from '../db/schema'
 import { getSettingsStore } from '../services/settings'

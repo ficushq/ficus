@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { IntegrationSubscription } from '@tau/shared'
+import type { IntegrationSubscription } from '@ficus/shared'
 import { discoverGitHubRelayInterests, type GitHubInterestSource } from './github-interests'
 const subscription = (
   output: string,
@@ -77,7 +77,7 @@ test('relay discovers every GitHub flow output and exact metadata without enumer
 })
 
 test('editable rules discover selected account repositories and drop disabled or ignored interests', async () => {
-  const { squadEventRuleSchema } = await import('@tau/shared')
+  const { squadEventRuleSchema } = await import('@ficus/shared')
   const account = 'bcbe4f3a-d2d1-4b91-b1ea-4c6c14485893'
   const rule = (id: string, repository: string) =>
     squadEventRuleSchema.parse({
@@ -136,7 +136,7 @@ test('tracked resources declare relay interest for their repositories, deduplica
 })
 
 test('wildcard rule repositories expand through the injected expander into exact interests', async () => {
-  const { squadEventRuleSchema } = await import('@tau/shared')
+  const { squadEventRuleSchema } = await import('@ficus/shared')
   const account = 'bcbe4f3a-d2d1-4b91-b1ea-4c6c14485893'
   const rule = (id: string, repository: string) =>
     squadEventRuleSchema.parse({

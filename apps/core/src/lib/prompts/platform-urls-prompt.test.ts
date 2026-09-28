@@ -41,15 +41,15 @@ describe('buildPlatformUrlsPrompt', () => {
     expect(prompt).not.toContain('api-noah')
   })
 
-  test('TAU_PUBLIC_API_URL overrides the same-origin default for split-domain deployments', () => {
+  test('FICUS_PUBLIC_API_URL overrides the same-origin default for split-domain deployments', () => {
     process.env.APP_URL = 'https://tau.example.com'
-    process.env.TAU_PUBLIC_API_URL = 'https://api.example.com'
+    process.env.FICUS_PUBLIC_API_URL = 'https://api.example.com'
     try {
       const prompt = buildPlatformUrlsPrompt()
       expect(prompt).toContain('- **API:** https://api.example.com')
       expect(prompt).toContain('https://api.example.com/api/webhooks/github')
     } finally {
-      delete process.env.TAU_PUBLIC_API_URL
+      delete process.env.FICUS_PUBLIC_API_URL
     }
   })
 

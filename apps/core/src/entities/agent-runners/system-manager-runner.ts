@@ -2,11 +2,11 @@ import { db, messages } from '../../db'
 import { eq } from 'drizzle-orm'
 import { createAssistantTools } from '../../tools/assistant'
 import { linkAssistantSummaries } from '../../services/assistant-conversation-updates'
-import { assistantEditorInstructionsByKind } from '@tau/shared'
+import { assistantEditorInstructionsByKind } from '@ficus/shared'
 import { createPageEditorTools } from '../../tools/page-editor'
 import { getAccessibleSquadIds, hasPermission, type Identity } from '../../services/rbac/permissions'
 import { findOwningConversation, isAssistantDelegate } from '../../services/assistant-agents'
-import type { SessionUsage, MessageMetadata } from '@tau/shared'
+import type { SessionUsage, MessageMetadata } from '@ficus/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 
@@ -41,8 +41,8 @@ export class SystemManagerRunner extends AgentRunner {
   protected async getPageEditorConversation(): Promise<
     | {
         id: string
-        kind: import('@tau/shared').AssistantConversationKind
-        editor: import('@tau/shared').AssistantEditorState | null
+        kind: import('@ficus/shared').AssistantConversationKind
+        editor: import('@ficus/shared').AssistantEditorState | null
       }
     | undefined
   > {

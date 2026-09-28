@@ -1,4 +1,4 @@
-import { SUBAGENT_STATUS_ROLE } from '@tau/shared'
+import { SUBAGENT_STATUS_ROLE } from '@ficus/shared'
 import { extractToolResultDetails } from './tool-inline-actions'
 import { webStatus } from './statusPresentation'
 import clsx from 'clsx'
@@ -232,7 +232,7 @@ function BashCodeBlock({
             setLocalAutoScroll(true)
             if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
           }}
-          className="tau-button absolute bottom-2 right-2 p-1 rounded bg-accent/90 hover:bg-accent text-on-accent text-[10px] shadow-sm"
+          className="ficus-button absolute bottom-2 right-2 p-1 rounded bg-accent/90 hover:bg-accent text-on-accent text-[10px] shadow-sm"
           title="Resume auto-scroll"
         >
           ↓ Follow
@@ -973,8 +973,8 @@ const taskUpdateRenderer: ToolRenderer = {
   },
 }
 
-const searchTauRenderer: ToolRenderer = {
-  summary: (args) => `Searched Tau for “${truncate(args.query ?? args.q ?? '', 40)}”`,
+const searchFicusRenderer: ToolRenderer = {
+  summary: (args) => `Searched Ficus for “${truncate(args.query ?? args.q ?? '', 40)}”`,
   ArgsView: ({ args }) => <InlineCode>{args.query ?? args.q ?? ''}</InlineCode>,
   ResultView: ({ result, isError }) => <CodeBlock isError={isError}>{extractResultText(result)}</CodeBlock>,
 }
@@ -988,5 +988,5 @@ export const siteAssistantToolRenderers: ToolRenderers = {
   notify_contact: notifyContactRenderer,
   delegate_task: delegateTaskRenderer,
   assistant_inbox: taskUpdateRenderer,
-  search_tau: searchTauRenderer,
+  search_ficus: searchFicusRenderer,
 }

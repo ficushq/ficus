@@ -3,7 +3,12 @@ useEnabledIntegrationFixtures('github', 'linear')
 import { afterAll, beforeAll, expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
-import { createBlankWorkflow, trackedResourceKey, type IntegrationOutputFact, type TrackedResource } from '@tau/shared'
+import {
+  createBlankWorkflow,
+  trackedResourceKey,
+  type IntegrationOutputFact,
+  type TrackedResource,
+} from '@ficus/shared'
 import {
   db,
   agents,

@@ -6,7 +6,7 @@ import { identityMiddleware } from '../middleware/identity'
 import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
 import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
 import { db, themePresets, users } from '../db'
-import { THEME_PRESET_MAX_PER_USER } from '@tau/shared'
+import { THEME_PRESET_MAX_PER_USER } from '@ficus/shared'
 
 const prefix = `theme-presets-${crypto.randomUUID()}`
 let a: TestUser

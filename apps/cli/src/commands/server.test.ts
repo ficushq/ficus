@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Command } from 'commander'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { isJsonMode, output, outputError, setOutputOptions } from '../output'
@@ -17,7 +27,7 @@ beforeEach(() => {
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
   writeFileSync(
     join(root, '.env'),
-    'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nTAU_SANDBOX_RUNTIME=host\n'
+    'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nFICUS_SANDBOX_RUNTIME=host\n'
   )
   statePath = join(root, 'state.json')
   upsertInstance(
@@ -85,7 +95,7 @@ function cloningRunner(installRoot: string) {
   return { runner, calls: rec.calls }
 }
 
-describe('tau server', () => {
+describe('ficus server', () => {
   it('start brings up the managed postgres container and pm2 from the state-file root', async () => {
     const { run, calls } = make({ 'docker inspect': { stdout: 'true\n' } })
     await run(['server', 'start'])
@@ -101,7 +111,7 @@ describe('tau server', () => {
   it('start creates the instance container, volume and port when it does not exist yet', async () => {
     writeFileSync(
       join(root, '.env'),
-      'TAU_INSTANCE=smoke\nPORT=3100\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nPORT=3100\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
     )
     const { run, calls } = make({ 'docker inspect': { code: 1, stderr: 'Error: No such object' } })
     await run(['server', 'start'])
@@ -161,6 +171,89 @@ describe('tau server', () => {
       'bunx pm2 restart tau-worker --update-env',
       'bunx pm2 restart tau-api --update-env',
     ])
+  })
+  describe('on a Ficus checkout whose .env predates the rename', () => {
+    const legacy =
+      'TAU_SANDBOX_RUNTIME=host\nTAU_PASSWORD=real-password\nDATABASE_URL=postgres://u:p@db.example:5432/x\n'
+    const renamed =
+      'FICUS_SANDBOX_RUNTIME=host\nFICUS_PASSWORD=real-password\nDATABASE_URL=postgres://u:p@db.example:5432/x\n'
+    beforeEach(() => {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
+      writeFileSync(join(root, '.env'), legacy)
+    })
+    /** A runner that remembers what .env said when the first supervisor command ran. */
+    function watching() {
+      const rec = recordingRunner({ 'bunx pm2 jlist': { stdout: '[]' } })
+      const seen: { env?: string } = {}
+      const runner: typeof rec.runner = async (command, options) => {
+        if (command[0] === 'bunx' && seen.env === undefined) seen.env = readFileSync(join(root, '.env'), 'utf8')
+        return rec.runner(command, options)
+      }
+      return { runner, seen, calls: rec.calls }
+    }
+    const backups = () => readdirSync(root).filter((name) => name.includes('.pre-ficus-'))
+
+    for (const verb of ['start', 'restart']) {
+      it(`${verb} renames TAU_ settings to FICUS_ before any process starts`, async () => {
+        const { runner, seen } = watching()
+        const { run } = make({}, { runner })
+        await run(['server', verb])
+        expect(outputError).not.toHaveBeenCalled()
+        expect(seen.env).toBe(renamed)
+        expect(backups()).toHaveLength(1)
+        expect(readFileSync(join(root, backups()[0]), 'utf8')).toBe(legacy)
+      })
+      it(`${verb} stops on conflicting passwords without touching a file or starting anything`, async () => {
+        const conflicting = 'TAU_PASSWORD=first-secret\nFICUS_PASSWORD=second-secret\n'
+        writeFileSync(join(root, '.env'), conflicting)
+        const { runner, calls } = watching()
+        const { run } = make({}, { runner })
+        await run(['server', verb])
+        expect(calls).toEqual([])
+        const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
+        expect(error.message).toContain('TAU_PASSWORD')
+        expect(error.message).toContain('remove the wrong value, then re-run')
+        expect(error.message).not.toContain('first-secret')
+        expect(error.message).not.toContain('second-secret')
+        expect(readFileSync(join(root, '.env'), 'utf8')).toBe(conflicting)
+        expect(backups()).toEqual([])
+      })
+    }
+    // M4. start/restart only reach a registered checkout (package.json "tau" or "ficus"), so the
+    // warning a --json run must carry here is the rename's own: a PM2 name line it left alone.
+    it('reports what the rename left alone in the --json document instead of on stdout', async () => {
+      writeFileSync(
+        join(root, 'ecosystem.config.js'),
+        "module.exports = { apps: [{ env: {\n  TAU_PM2_API_NAME:\n    'x',\n} }] }\n"
+      )
+      const warning =
+        "TAU_PM2_API_NAME in ecosystem.config.js was not renamed to FICUS_PM2_API_NAME: it is not a single `TAU_PM2_API_NAME: '<name>',` line; rename it by hand"
+      for (const verb of ['start', 'restart']) {
+        const { runner } = watching()
+        const { run } = make({}, { runner })
+        const printed: string[] = []
+        const realLog = console.log
+        console.log = (line?: unknown) => void printed.push(String(line))
+        ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
+        try {
+          await run(['server', verb])
+        } finally {
+          console.log = realLog
+          ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
+        }
+        const [data] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>]
+        expect(data.warnings).toEqual([warning])
+        expect(printed.some((line) => line.includes('not renamed'))).toBe(false)
+      }
+    })
+    it('start leaves a checkout that predates the rename alone: its code reads TAU_', async () => {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+      const { runner } = watching()
+      const { run } = make({}, { runner })
+      await run(['server', 'start'])
+      expect(readFileSync(join(root, '.env'), 'utf8')).toBe(legacy)
+      expect(backups()).toEqual([])
+    })
   })
   it('start and restart warn when the built web bundle was made for a different base path', async () => {
     writeFileSync(
@@ -235,7 +328,7 @@ describe('tau server', () => {
     })
   })
   it('status reports the instance label and its pm2 apps', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\nPORT=3100\n')
+    writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     const { run, calls } = make()
     await run(['server', 'status'])
     const [data, text] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>, string]
@@ -315,7 +408,7 @@ describe('tau server', () => {
     expect(message).toContain('docker rm -f postgres-tau && docker volume rm tau_postgres-data')
   })
   it('uninstall names the labelled instance own container, volume and data directory', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\nHOME_DIR=~/.tau-smoke\n')
+    writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nHOME_DIR=~/.tau-smoke\n')
     const { run, calls } = make()
     await run(['server', 'uninstall', '--yes'])
     // The registry resolves the default instance's names; the volume probe
@@ -473,9 +566,9 @@ describe('tau server', () => {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-other-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
-    // The pm2/container names come from the checkout's own TAU_INSTANCE, so a
+    // The pm2/container names come from the checkout's own FICUS_INSTANCE, so a
     // labelled instance has to look like one on disk too.
-    writeFileSync(join(other, '.env'), 'TAU_INSTANCE=lab\n')
+    writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=lab\n')
     const { run, deps, calls } = make({ 'docker inspect': { stdout: 'true\n' } })
     upsertInstance(
       'lab',
@@ -616,19 +709,24 @@ describe('tau server', () => {
       'git check-ref-format --branch v1',
       'git ls-remote --refs --exit-code origin refs/heads/v1 refs/tags/v1',
       'git fetch --no-tags origin refs/tags/v1:refs/tags/v1',
+      // The install already reads FICUS_: resolve what checkout lands on, the way checkout does,
+      // to make sure it does not predate the rename (nothing resolves in this fixture).
+      'git rev-parse --verify --quiet refs/heads/v1^{commit}',
+      'git rev-parse --verify --quiet v1^{commit}',
+      'git rev-parse --verify --quiet refs/remotes/origin/v1^{commit}',
       'git checkout --recurse-submodules v1',
       'git rev-parse HEAD',
       'bun run update:offline -- --from ' + sha,
       'bunx pm2 restart tau-worker --update-env',
       'bunx pm2 restart tau-api --update-env',
     ])
-    expect(calls.find((call) => call.command.includes('update:offline'))?.options.env?.TAU_UPDATE_SUPERVISOR).toBe(
+    expect(calls.find((call) => call.command.includes('update:offline'))?.options.env?.FICUS_UPDATE_SUPERVISOR).toBe(
       'pm2'
     )
     expect(calls.every((c) => c.options.cwd === root)).toBe(true)
   })
   it('setup re-run keeps the checkout own instance label and port when no flag says otherwise', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\nPORT=3100\nTAU_SANDBOX_RUNTIME=host\n')
+    writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\nFICUS_SANDBOX_RUNTIME=host\n')
     const seen: unknown[] = []
     const { run, deps } = make()
     deps.cwd = root
@@ -686,13 +784,13 @@ describe('tau server', () => {
   })
 })
 
-describe('tau server list', () => {
+describe('ficus server list', () => {
   /** A second registered instance, in its own checkout. */
   function secondInstance() {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
-    writeFileSync(join(other, '.env'), 'TAU_INSTANCE=smoke\nPORT=3100\n')
+    writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     upsertInstance(
       'smoke',
       { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
@@ -813,13 +911,13 @@ describe('tau server list', () => {
   })
 })
 
-describe('tau server <cmd> --instance', () => {
+describe('ficus server <cmd> --instance', () => {
   /** A second registered instance in its own checkout, labelled smoke. */
   function smokeCheckout(): string {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
-    writeFileSync(join(other, '.env'), 'TAU_INSTANCE=smoke\nPORT=3100\n')
+    writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     upsertInstance(
       'smoke',
       { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },

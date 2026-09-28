@@ -1,4 +1,4 @@
-import { createBlankWorkflow, createWorkflowRun } from '@tau/shared'
+import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { db } from '../../../db'

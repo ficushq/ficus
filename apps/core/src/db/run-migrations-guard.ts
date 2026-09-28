@@ -19,7 +19,7 @@ interface DatabaseTarget {
 }
 
 const OVERRIDE_REMEDIATION =
-  'Supply an explicit DATABASE_URL override for a test or scratch database, or deliberately permit a live migration with TAU_MIGRATE_LIVE=1 or pass --live.'
+  'Supply an explicit DATABASE_URL override for a test or scratch database, or deliberately permit a live migration with FICUS_MIGRATE_LIVE=1 or pass --live.'
 
 function parseDatabaseTarget(value: string): DatabaseTarget {
   let url: URL
@@ -82,7 +82,9 @@ function targetSuffix(value: string | undefined): string {
  */
 export function checkMigrationSafety(input: MigrationSafetyInput): MigrationSafetyResult {
   if (input.liveEnvValue !== undefined && input.liveEnvValue !== '1') {
-    throw new Error('TAU_MIGRATE_LIVE must be exactly 1 when set. Remove it, set TAU_MIGRATE_LIVE=1, or pass --live.')
+    throw new Error(
+      'FICUS_MIGRATE_LIVE must be exactly 1 when set. Remove it, set FICUS_MIGRATE_LIVE=1, or pass --live.'
+    )
   }
 
   const hasLiveFlag = input.argv.includes('--live')

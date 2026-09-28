@@ -5,7 +5,7 @@ import {
   OperationsRecommendationPage,
   OperationsRecommendationStatus,
   OperationsRemediation,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db } from '../../db'
 import {
   operationsExecutionAnalyses,

@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test'
-import type { AssistantEntry, AssistantMailbox, AssistantMailboxUpdate } from '@tau/shared'
+import type { AssistantEntry, AssistantMailbox, AssistantMailboxUpdate } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import type { AssistantCatchUpBatch } from '../voice/assistantCatchUp'
 import { useAssistantInboxConsumer, type AssistantInboxScheduler } from './useAssistantInboxConsumer'

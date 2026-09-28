@@ -27,8 +27,8 @@ const defaultFactoryDependencies: SystemLogFactoryDependencies = {
 
 function verifiedPm2Targets(dependencies: SystemLogFactoryDependencies): { api: string; worker: string } | undefined {
   const targets = {
-    api: process.env.TAU_PM2_API_NAME?.trim() || 'tau-api',
-    worker: process.env.TAU_PM2_WORKER_NAME?.trim() || 'tau-worker',
+    api: process.env.FICUS_PM2_API_NAME?.trim() || 'tau-api',
+    worker: process.env.FICUS_PM2_WORKER_NAME?.trim() || 'tau-worker',
   }
   try {
     const result = dependencies.listPm2Processes()
@@ -65,7 +65,7 @@ export function getSystemLogProvider(forceFresh = false, dependencies = defaultF
         : new UnavailableLogProvider(
             new SystemLogProviderError(
               'PROVIDER_UNAVAILABLE',
-              'System logs are unavailable; configure TAU_SYSTEM_LOG_PROVIDER.'
+              'System logs are unavailable; configure FICUS_SYSTEM_LOG_PROVIDER.'
             )
           )
     } else {

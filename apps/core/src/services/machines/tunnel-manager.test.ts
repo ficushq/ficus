@@ -239,8 +239,8 @@ describe('MachineTunnelManager', () => {
     priorHome = process.env.HOME_DIR
     testHome = mkdtempSync(join(tmpdir(), 'tau-tunnel-home-'))
     process.env.HOME_DIR = testHome
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
     await getSecretStore().initialize()
     await getSecretStore().set(SECRET_KEY, 'FAKE PRIVATE KEY MATERIAL', 'system')
@@ -248,8 +248,8 @@ describe('MachineTunnelManager', () => {
 
   afterAll(async () => {
     await getSecretStore().delete(SECRET_KEY)
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     if (priorHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = priorHome
     resetSecretStore()
@@ -495,25 +495,25 @@ describe('MachineTunnelManager', () => {
   })
 
   it('resolveMachineReversePort honours a valid override and rejects invalid values', () => {
-    const prior = process.env.TAU_MACHINE_REVERSE_PORT
+    const prior = process.env.FICUS_MACHINE_REVERSE_PORT
     try {
-      delete process.env.TAU_MACHINE_REVERSE_PORT
+      delete process.env.FICUS_MACHINE_REVERSE_PORT
       expect(resolveMachineReversePort()).toBe(MACHINE_REVERSE_PORT)
-      process.env.TAU_MACHINE_REVERSE_PORT = '51234'
+      process.env.FICUS_MACHINE_REVERSE_PORT = '51234'
       expect(resolveMachineReversePort()).toBe(51234)
-      process.env.TAU_MACHINE_REVERSE_PORT = 'not-a-port'
+      process.env.FICUS_MACHINE_REVERSE_PORT = 'not-a-port'
       expect(resolveMachineReversePort()).toBe(MACHINE_REVERSE_PORT)
-      process.env.TAU_MACHINE_REVERSE_PORT = '70000' // out of range
+      process.env.FICUS_MACHINE_REVERSE_PORT = '70000' // out of range
       expect(resolveMachineReversePort()).toBe(MACHINE_REVERSE_PORT)
     } finally {
-      if (prior === undefined) delete process.env.TAU_MACHINE_REVERSE_PORT
-      else process.env.TAU_MACHINE_REVERSE_PORT = prior
+      if (prior === undefined) delete process.env.FICUS_MACHINE_REVERSE_PORT
+      else process.env.FICUS_MACHINE_REVERSE_PORT = prior
     }
   })
 
-  it('addReverse binds the overridden pinned port when TAU_MACHINE_REVERSE_PORT is set', async () => {
-    const prior = process.env.TAU_MACHINE_REVERSE_PORT
-    process.env.TAU_MACHINE_REVERSE_PORT = '51234'
+  it('addReverse binds the overridden pinned port when FICUS_MACHINE_REVERSE_PORT is set', async () => {
+    const prior = process.env.FICUS_MACHINE_REVERSE_PORT
+    process.env.FICUS_MACHINE_REVERSE_PORT = '51234'
     try {
       const fake = new FakeSsh()
       const mgr = manager(fake)
@@ -521,8 +521,8 @@ describe('MachineTunnelManager', () => {
       expect(remote).toBe(51234)
       expect(fake.reverseCalls()[0]).toContain('51234:127.0.0.1:9000')
     } finally {
-      if (prior === undefined) delete process.env.TAU_MACHINE_REVERSE_PORT
-      else process.env.TAU_MACHINE_REVERSE_PORT = prior
+      if (prior === undefined) delete process.env.FICUS_MACHINE_REVERSE_PORT
+      else process.env.FICUS_MACHINE_REVERSE_PORT = prior
     }
   })
 
@@ -600,7 +600,7 @@ describe('MachineTunnelManager', () => {
     const mgr = manager(fake)
 
     // A machine that still has boxes: a local forward to a box port AND the
-    // reverse forward whose remote port boxes baked into TAU_API_URL.
+    // reverse forward whose remote port boxes baked into FICUS_API_URL.
     await mgr.addForward(makeMachine(), 50100)
     await mgr.addReverse(makeMachine(), 3000)
 
@@ -1358,20 +1358,20 @@ describe('MachineTunnelManager', () => {
 })
 
 /**
- * Integration: real ssh against a live host. Skipped unless TAU_TEST_SSH_HOST is
+ * Integration: real ssh against a live host. Skipped unless FICUS_TEST_SSH_HOST is
  * set. To run locally against a reachable box you can SSH into with a key:
  *
  *   # On the remote host, serve something on a port (e.g. 8000):
  *   #   python3 -m http.server 8000
- *   TAU_TEST_SSH_HOST=1.2.3.4 \
- *   TAU_TEST_SSH_USER=youruser \
- *   TAU_TEST_SSH_KEY_PATH=$HOME/.ssh/id_ed25519 \
- *   TAU_TEST_SSH_REMOTE_PORT=8000 \
- *   TAU_TEST_SSH_PORT=22 \
- *   TAU_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
+ *   FICUS_TEST_SSH_HOST=1.2.3.4 \
+ *   FICUS_TEST_SSH_USER=youruser \
+ *   FICUS_TEST_SSH_KEY_PATH=$HOME/.ssh/id_ed25519 \
+ *   FICUS_TEST_SSH_REMOTE_PORT=8000 \
+ *   FICUS_TEST_SSH_PORT=22 \
+ *   FICUS_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
  *   bun test src/services/machines/tunnel-manager.test.ts
  */
-describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('MachineTunnelManager (integration, real ssh)', () => {
+describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('MachineTunnelManager (integration, real ssh)', () => {
   const REAL_SECRET_KEY = 'machine-ssh:tunnel-integration'
   let priorKey: string | undefined
   let priorHome: string | undefined
@@ -1381,21 +1381,21 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('MachineTunnelManager (integrati
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
     process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-tunnel-int-'))
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
     await getSecretStore().initialize()
 
-    const keyPath = process.env.TAU_TEST_SSH_KEY_PATH
-    if (!keyPath) throw new Error('integration test requires TAU_TEST_SSH_KEY_PATH')
+    const keyPath = process.env.FICUS_TEST_SSH_KEY_PATH
+    if (!keyPath) throw new Error('integration test requires FICUS_TEST_SSH_KEY_PATH')
     const privateKey = await Bun.file(keyPath).text()
     await getSecretStore().set(REAL_SECRET_KEY, privateKey, 'system')
 
     realMachine = makeMachine({
       id: crypto.randomUUID(),
-      sshHost: process.env.TAU_TEST_SSH_HOST!,
-      sshPort: Number(process.env.TAU_TEST_SSH_PORT ?? 22),
-      sshUser: process.env.TAU_TEST_SSH_USER!,
+      sshHost: process.env.FICUS_TEST_SSH_HOST!,
+      sshPort: Number(process.env.FICUS_TEST_SSH_PORT ?? 22),
+      sshUser: process.env.FICUS_TEST_SSH_USER!,
       sshKeyId: REAL_SECRET_KEY,
     })
     mgr = new MachineTunnelManager({ controlDir: join(process.env.HOME_DIR!, 'machines', 'ctl') })
@@ -1404,8 +1404,8 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('MachineTunnelManager (integrati
   afterAll(async () => {
     if (mgr) await mgr.stop()
     await getSecretStore().delete(REAL_SECRET_KEY)
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     if (priorHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = priorHome
     resetSecretStore()
@@ -1415,7 +1415,7 @@ describe.skipIf(!process.env.TAU_TEST_SSH_HOST)('MachineTunnelManager (integrati
     await mgr.ensureMaster(realMachine)
     expect(await mgr.checkHealth(realMachine.id)).toBe(true)
 
-    const remotePort = Number(process.env.TAU_TEST_SSH_REMOTE_PORT ?? 8000)
+    const remotePort = Number(process.env.FICUS_TEST_SSH_REMOTE_PORT ?? 8000)
     const local = await mgr.addForward(realMachine, remotePort)
     expect(local).toBeGreaterThan(0)
 

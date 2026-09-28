@@ -2,11 +2,11 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import type { OAuthTransport } from './transport'
 import { createRuntimeOAuthTransport } from './runtime-transport'
 
-const originalManaged = process.env.TAU_MANAGED
+const originalManaged = process.env.FICUS_MANAGED
 
 afterEach(() => {
-  if (originalManaged === undefined) delete process.env.TAU_MANAGED
-  else process.env.TAU_MANAGED = originalManaged
+  if (originalManaged === undefined) delete process.env.FICUS_MANAGED
+  else process.env.FICUS_MANAGED = originalManaged
 })
 
 function fakeTransport(authority: OAuthTransport['authority']): OAuthTransport {
@@ -25,7 +25,7 @@ function fakeTransport(authority: OAuthTransport['authority']): OAuthTransport {
 
 describe('createRuntimeOAuthTransport', () => {
   test('self-hosted selects only the local transport', () => {
-    delete process.env.TAU_MANAGED
+    delete process.env.FICUS_MANAGED
     const calls: string[] = []
     const result = createRuntimeOAuthTransport({
       local: () => {
@@ -42,7 +42,7 @@ describe('createRuntimeOAuthTransport', () => {
   })
 
   test('managed selects only the broker transport and never constructs a local fallback', () => {
-    process.env.TAU_MANAGED = '1'
+    process.env.FICUS_MANAGED = '1'
     const calls: string[] = []
     const result = createRuntimeOAuthTransport({
       local: () => {

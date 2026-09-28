@@ -3,9 +3,9 @@ import type {
   DeploymentProviderAuth,
   DeploymentProviderBillingRisk,
   DeploymentProviderId,
-} from '@tau/shared'
+} from '@ficus/shared'
 
-export type { DeploymentProviderId } from '@tau/shared'
+export type { DeploymentProviderId } from '@ficus/shared'
 export type DeploymentProviderSupport = Exclude<DeploymentAppType, 'unknown'>
 
 export interface DeploymentProviderDefinition {

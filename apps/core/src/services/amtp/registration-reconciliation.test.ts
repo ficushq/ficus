@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import type { AmtpSignedAgentCard } from '@tau/shared'
+import type { AmtpSignedAgentCard } from '@ficus/shared'
 import { agents, db } from '../../db'
 import { Agent } from '../../entities/Agent'
 import { generateInstanceKeyPair } from './crypto'

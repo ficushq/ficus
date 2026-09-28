@@ -62,12 +62,12 @@ describe('agent file routes', () => {
   test('returns the container-mount path on a container runtime', async () => {
     const id = crypto.randomUUID()
     const body = (await (await upload(id)).json()) as { path: string }
-    expect(process.env.TAU_SANDBOX_RUNTIME).toBe('docker-socket')
+    expect(process.env.FICUS_SANDBOX_RUNTIME).toBe('docker-socket')
     expect(body.path).toBe(`/private/chat-attachments/${id}/quarterly_report.pdf`)
   })
 
   test('returns the real host path on the host runtime', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     try {
       const id = crypto.randomUUID()
       const body = (await (await upload(id)).json()) as { path: string }
@@ -75,7 +75,7 @@ describe('agent file routes', () => {
       expect(body.path).toBe(storagePath)
       expect(await readFile(storagePath, 'utf8')).toBe('hello')
     } finally {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     }
   })
 
@@ -87,7 +87,7 @@ describe('agent file routes', () => {
     const spaced = join(home, 'my home')
     await mkdir(spaced, { recursive: true })
     process.env.HOME_DIR = spaced
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     try {
       const id = crypto.randomUUID()
       const response = await upload(id)
@@ -100,7 +100,7 @@ describe('agent file routes', () => {
       expect(await AgentFileAttachment.findById(id)).toBeNull()
       expect(await readdir(join(spaced, 'private', `agent_${agentId}`)).catch(() => [])).toEqual([])
     } finally {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       process.env.HOME_DIR = home
     }
   })

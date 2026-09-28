@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import type { SquadActivityItem } from '@tau/shared'
+import type { SquadActivityItem } from '@ficus/shared'
 import { db } from '../../db'
 import { squads, workStreams } from '../../db/schema'
 import { addWorkReferences } from './work-references'

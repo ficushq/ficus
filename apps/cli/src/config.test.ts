@@ -23,13 +23,13 @@ async function makeOperatorAuthStore() {
 }
 
 function clearEnv() {
-  delete process.env.TAU_WEBHOOK_CONTEXT
-  delete process.env.TAU_AGENT_CONTEXT
-  delete process.env.TAU_AGENT_ID
-  delete process.env.TAU_API_URL
-  delete process.env.TAU_TOKEN
-  delete process.env.TAU_PASSWORD
-  delete process.env.TAU_AUTH_STORE
+  delete process.env.FICUS_WEBHOOK_CONTEXT
+  delete process.env.FICUS_AGENT_CONTEXT
+  delete process.env.FICUS_AGENT_ID
+  delete process.env.FICUS_API_URL
+  delete process.env.FICUS_TOKEN
+  delete process.env.FICUS_PASSWORD
+  delete process.env.FICUS_AUTH_STORE
 }
 
 beforeEach(clearEnv)
@@ -41,20 +41,20 @@ afterEach(async () => {
 })
 
 describe('agent context', () => {
-  it('is off unless TAU_AGENT_CONTEXT is exactly 1', () => {
+  it('is off unless FICUS_AGENT_CONTEXT is exactly 1', () => {
     expect(isAgentContext()).toBe(false)
-    process.env.TAU_AGENT_CONTEXT = '0'
+    process.env.FICUS_AGENT_CONTEXT = '0'
     expect(isAgentContext()).toBe(false)
-    process.env.TAU_AGENT_CONTEXT = '1'
+    process.env.FICUS_AGENT_CONTEXT = '1'
     expect(isAgentContext()).toBe(true)
   })
 
   it('resolves from the env and never consults the auth store', async () => {
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
-    process.env.TAU_AGENT_CONTEXT = '1'
-    process.env.TAU_AGENT_ID = 'agent-1'
-    process.env.TAU_API_URL = 'http://127.0.0.1:3000'
-    process.env.TAU_TOKEN = 'agent-token'
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_AGENT_CONTEXT = '1'
+    process.env.FICUS_AGENT_ID = 'agent-1'
+    process.env.FICUS_API_URL = 'http://127.0.0.1:3000'
+    process.env.FICUS_TOKEN = 'agent-token'
 
     expect(config.apiUrl).toBe('http://127.0.0.1:3000')
     expect(config.password).toBe('agent-token')
@@ -75,51 +75,54 @@ describe('agent context', () => {
     // dotenv-implicit there too and change ITS resolution (cross-file leakage).
     const dir = await mkdtemp(join(tmpdir(), 'tau-agent-dotenv-'))
     tempDirs.push(dir)
-    await writeFile(join(dir, '.env'), 'TAU_API_URL=http://127.0.0.1:39991\nTAU_TOKEN=agent-token-shadowed-by-dotenv\n')
-    process.env.TAU_API_URL = 'http://127.0.0.1:39991'
-    process.env.TAU_TOKEN = 'agent-token-shadowed-by-dotenv'
+    await writeFile(
+      join(dir, '.env'),
+      'FICUS_API_URL=http://127.0.0.1:39991\nFICUS_TOKEN=agent-token-shadowed-by-dotenv\n'
+    )
+    process.env.FICUS_API_URL = 'http://127.0.0.1:39991'
+    process.env.FICUS_TOKEN = 'agent-token-shadowed-by-dotenv'
     loadEnv({ cwd: dir })
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
-    process.env.TAU_AGENT_CONTEXT = '1'
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_AGENT_CONTEXT = '1'
 
     expect(config.apiUrl).toBe('http://127.0.0.1:39991')
     expect(config.password).toBe('agent-token-shadowed-by-dotenv')
   })
 
-  it('throws naming TAU_API_URL when the instance is not injected', () => {
-    process.env.TAU_AGENT_CONTEXT = '1'
-    process.env.TAU_TOKEN = 'agent-token'
+  it('throws naming FICUS_API_URL when the instance is not injected', () => {
+    process.env.FICUS_AGENT_CONTEXT = '1'
+    process.env.FICUS_TOKEN = 'agent-token'
 
-    expect(() => config.apiUrl).toThrow(/TAU_API_URL/)
+    expect(() => config.apiUrl).toThrow(/FICUS_API_URL/)
   })
 
   it('reports rather than throws for an incomplete agent shell, so it can be diagnosed', async () => {
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
-    process.env.TAU_AGENT_CONTEXT = '1'
-    process.env.TAU_AGENT_ID = 'agent-1'
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_AGENT_CONTEXT = '1'
+    process.env.FICUS_AGENT_ID = 'agent-1'
 
     const resolved = resolveAuth()
     expect(resolved.source).toBe('agent-context')
-    expect(resolved.missing).toEqual(['TAU_API_URL', 'TAU_TOKEN'])
+    expect(resolved.missing).toEqual(['FICUS_API_URL', 'FICUS_TOKEN'])
     expect(resolved.authenticated).toBe(false)
     // Still no leak to the operator's login.
     expect(resolved.apiUrl).toBe('')
   })
 
   it('throws rather than falling back to a human login when the agent token is absent', async () => {
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
-    process.env.TAU_AGENT_CONTEXT = '1'
-    process.env.TAU_API_URL = 'http://127.0.0.1:3000'
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_AGENT_CONTEXT = '1'
+    process.env.FICUS_API_URL = 'http://127.0.0.1:3000'
 
-    expect(() => config.password).toThrow(/TAU_TOKEN/)
+    expect(() => config.password).toThrow(/FICUS_TOKEN/)
     expect(() => config.password).toThrow(/human login/)
   })
 
   it('refuses --backend, which selects a human login', async () => {
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
-    process.env.TAU_AGENT_CONTEXT = '1'
-    process.env.TAU_API_URL = 'http://127.0.0.1:3000'
-    process.env.TAU_TOKEN = 'agent-token'
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_AGENT_CONTEXT = '1'
+    process.env.FICUS_API_URL = 'http://127.0.0.1:3000'
+    process.env.FICUS_TOKEN = 'agent-token'
     setSelectedBackend('cloud')
 
     expect(() => config.apiUrl).toThrow(/--backend/)
@@ -128,7 +131,7 @@ describe('agent context', () => {
   })
 
   it('leaves resolution outside agent context untouched', async () => {
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
 
     expect(config.apiUrl).toBe('https://cloud.example.com')
     expect(config.password).toBe('operator-token')
@@ -142,13 +145,13 @@ describe('webhook context', () => {
     tempDirs.push(dir)
     await writeFile(
       join(dir, '.env'),
-      'TAU_API_URL=http://127.0.0.1:39992\nTAU_TOKEN=webhook-token-shadowed-by-dotenv\n'
+      'FICUS_API_URL=http://127.0.0.1:39992\nFICUS_TOKEN=webhook-token-shadowed-by-dotenv\n'
     )
-    process.env.TAU_API_URL = 'http://127.0.0.1:39992'
-    process.env.TAU_TOKEN = 'webhook-token-shadowed-by-dotenv'
+    process.env.FICUS_API_URL = 'http://127.0.0.1:39992'
+    process.env.FICUS_TOKEN = 'webhook-token-shadowed-by-dotenv'
     loadEnv({ cwd: dir })
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
-    process.env.TAU_WEBHOOK_CONTEXT = '1'
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_WEBHOOK_CONTEXT = '1'
 
     expect(config.apiUrl).toBe('http://127.0.0.1:39992')
     expect(config.password).toBe('webhook-token-shadowed-by-dotenv')
@@ -156,18 +159,18 @@ describe('webhook context', () => {
   })
 
   it('fails closed when a webhook credential or instance is missing', async () => {
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
-    process.env.TAU_WEBHOOK_CONTEXT = '1'
-    expect(() => config.apiUrl).toThrow(/TAU_API_URL/)
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_WEBHOOK_CONTEXT = '1'
+    expect(() => config.apiUrl).toThrow(/FICUS_API_URL/)
     expect(() => config.password).toThrow(/credential/)
     expect(resolveAuth()).toMatchObject({ source: 'webhook-context', apiUrl: '', authenticated: false })
   })
 
   it('supports the injected bootstrap password without selecting a human login', async () => {
-    process.env.TAU_AUTH_STORE = await makeOperatorAuthStore()
-    process.env.TAU_WEBHOOK_CONTEXT = '1'
-    process.env.TAU_API_URL = 'http://127.0.0.1:39993'
-    process.env.TAU_PASSWORD = 'bootstrap-password'
+    process.env.FICUS_AUTH_STORE = await makeOperatorAuthStore()
+    process.env.FICUS_WEBHOOK_CONTEXT = '1'
+    process.env.FICUS_API_URL = 'http://127.0.0.1:39993'
+    process.env.FICUS_PASSWORD = 'bootstrap-password'
     expect(config.password).toBe('bootstrap-password')
     expect(resolveAuth().authenticated).toBe(true)
     setSelectedBackend('cloud')

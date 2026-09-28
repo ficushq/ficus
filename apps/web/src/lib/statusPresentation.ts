@@ -1,4 +1,4 @@
-import type { StatusRole } from '@tau/shared'
+import type { StatusRole } from '@ficus/shared'
 import { readTokenColor } from '../theme/tokenReader'
 
 export interface WebStatusTreatment {

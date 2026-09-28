@@ -418,9 +418,9 @@ describe('deployments routes', () => {
   })
 
   it('POST /api/squads/:id/local-deployments returns the hosted URL', async () => {
-    const previousAppsDomain = process.env.TAU_APPS_DOMAIN
+    const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     const previousAppUrl = process.env.APP_URL
-    process.env.TAU_APPS_DOMAIN = 'hiretau.app'
+    process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
     process.env.APP_URL = 'https://team--blue.hiretau.ai'
 
     try {
@@ -438,8 +438,8 @@ describe('deployments routes', () => {
         new RegExp(`^https://team--blue--${compactId}\\.hiretau\\.app/\\?_tau_token=.+$`)
       )
     } finally {
-      if (previousAppsDomain === undefined) delete process.env.TAU_APPS_DOMAIN
-      else process.env.TAU_APPS_DOMAIN = previousAppsDomain
+      if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
       if (previousAppUrl === undefined) delete process.env.APP_URL
       else process.env.APP_URL = previousAppUrl
     }
@@ -943,7 +943,7 @@ describe('deployments routes', () => {
     const body = await res.json()
     expect(body.lines).toHaveLength(1)
     expect(body.lines[0]).toContain('my-app/app.log')
-    expect(body.lines[0]).toContain('[tau]')
+    expect(body.lines[0]).toContain('[ficus]')
   })
 
   it('GET /logs/stream emits SSE lines for an attached log path', async () => {
@@ -1009,7 +1009,7 @@ describe('deployments routes', () => {
     expect(response.status).toBe(200)
     const text = await response.text()
     expect(text).toContain('event: lines')
-    expect(text).toContain('Tau did not start it')
+    expect(text).toContain('Ficus did not start it')
     expect(ensureSquadSandbox).not.toHaveBeenCalled()
   })
 })

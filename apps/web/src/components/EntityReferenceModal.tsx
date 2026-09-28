@@ -1,4 +1,4 @@
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStableRef } from '../hooks/useStableRef'

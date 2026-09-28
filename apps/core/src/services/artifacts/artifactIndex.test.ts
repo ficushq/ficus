@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, unlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
-import type { ArtifactManifest } from '@tau/shared'
+import type { ArtifactManifest } from '@ficus/shared'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../../entities/agent-runners/constants'
 import {
   appendArtifactRequest,

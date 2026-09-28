@@ -1,4 +1,5 @@
 import { visit, SKIP } from 'unist-util-visit'
+import { entityReferenceHref } from '@ficus/shared'
 
 /** Link work numbers in prose, leaving explicit links, code and PR/issue references alone. */
 export function remarkWorkStreamReferences() {
@@ -14,7 +15,11 @@ export function remarkWorkStreamReferences() {
         const start = match.index!
         if (Number(match[1]) > 2147483647 || /(?:PR|pull request|issue)\s*$/i.test(node.value.slice(0, start))) continue
         if (start > cursor) children.push({ type: 'text', value: node.value.slice(cursor, start) })
-        children.push({ type: 'link', url: `tau:ws:${match[1]}`, children: [{ type: 'text', value: match[0] }] })
+        children.push({
+          type: 'link',
+          url: entityReferenceHref('ws', match[1]!),
+          children: [{ type: 'text', value: match[0] }],
+        })
         cursor = start + match[0].length
       }
       if (!cursor) return

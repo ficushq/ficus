@@ -2,7 +2,7 @@
  * Runtime Selection Factory
  *
  * Provides a unified interface to select Docker or K8s sandbox managers
- * and tools based on the TAU_SANDBOX_RUNTIME environment variable.
+ * and tools based on the FICUS_SANDBOX_RUNTIME environment variable.
  *
  * Both managers are lazily instantiated on first use.
  */
@@ -108,10 +108,10 @@ function getHostManager(): ISandboxManager {
  * default: an unset, legacy, or unknown value throws {@link requireSandboxRuntime}'s
  * error rather than quietly falling through to Docker.
  *
- * - TAU_SANDBOX_RUNTIME=docker-sysbox | docker-socket: Docker sandbox manager
- * - TAU_SANDBOX_RUNTIME=k8s: Kubernetes-based sandbox manager
- * - TAU_SANDBOX_RUNTIME=vm: VM ("box") sandbox manager
- * - TAU_SANDBOX_RUNTIME=host: host (no-sandbox) manager
+ * - FICUS_SANDBOX_RUNTIME=docker-sysbox | docker-socket: Docker sandbox manager
+ * - FICUS_SANDBOX_RUNTIME=k8s: Kubernetes-based sandbox manager
+ * - FICUS_SANDBOX_RUNTIME=vm: VM ("box") sandbox manager
+ * - FICUS_SANDBOX_RUNTIME=host: host (no-sandbox) manager
  */
 export function getSandboxManagerForRuntime(rawRuntime: string | undefined): ISandboxManager {
   // Trimmed to match requireSandboxRuntime: anything the boot guard accepts
@@ -123,13 +123,13 @@ export function getSandboxManagerForRuntime(rawRuntime: string | undefined): ISa
   if (isHostRuntimeValue(runtime)) return getHostManager()
   if (isDockerRuntimeValue(runtime)) return getDockerManager()
   // Not a supported value — raise the one canonical error naming all five.
-  requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: runtime })
+  requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: runtime })
   // Unreachable: requireSandboxRuntime throws for every value that reaches here.
-  throw new Error(`Unsupported TAU_SANDBOX_RUNTIME: ${runtime}`)
+  throw new Error(`Unsupported FICUS_SANDBOX_RUNTIME: ${runtime}`)
 }
 
 export function getSandboxManager(): ISandboxManager {
-  return getSandboxManagerForRuntime(process.env.TAU_SANDBOX_RUNTIME)
+  return getSandboxManagerForRuntime(process.env.FICUS_SANDBOX_RUNTIME)
 }
 
 /**
@@ -147,7 +147,7 @@ export function createCodingTools(
 ): SandboxedToolWithKey[] {
   // Dispatch on the EXPLICIT value, same closed set as getSandboxManagerForRuntime.
   // Docker is a NAMED case below, not a fallthrough: an unset or legacy
-  // TAU_SANDBOX_RUNTIME used to hand the agent Docker tools by default.
+  // FICUS_SANDBOX_RUNTIME used to hand the agent Docker tools by default.
   const runtime = requireSandboxRuntime()
   if (isK8sRuntimeValue(runtime)) {
     const manager = getK8sManager() as K8sSandboxManager
@@ -184,12 +184,12 @@ export function createCodingTools(
   // Unreachable: requireSandboxRuntime above returns one of exactly five values,
   // and all five are named. Present so adding a sixth is a compile/runtime
   // error here rather than a silent docker default.
-  throw new Error(`Unsupported TAU_SANDBOX_RUNTIME: ${runtime}`)
+  throw new Error(`Unsupported FICUS_SANDBOX_RUNTIME: ${runtime}`)
 }
 
 /**
  * Validate that the sandbox environment is properly configured.
- * TAU_SANDBOX_RUNTIME must name one of the five supported runtimes (no default,
+ * FICUS_SANDBOX_RUNTIME must name one of the five supported runtimes (no default,
  * no auto-detection); for the Docker runtimes this also checks that the sandbox
  * image exists locally. Throws a clear error at startup rather than failing
  * silently when creating sandboxes.
@@ -202,7 +202,7 @@ export function validateSandboxSetup(): void {
 
   if (isHostRuntimeValue(configured)) {
     const bash = Bun.which('bash')
-    if (!bash) throw new Error('TAU_SANDBOX_RUNTIME=host requires `bash` on PATH')
+    if (!bash) throw new Error('FICUS_SANDBOX_RUNTIME=host requires `bash` on PATH')
     const user = process.env.USER ?? String(process.getuid?.() ?? 'unknown')
     log.warn(
       `Sandbox runtime is HOST: agents run UNSANDBOXED on this machine as user "${user}" with full filesystem access. ` +
@@ -212,7 +212,7 @@ export function validateSandboxSetup(): void {
   }
 
   const runtime = selectRuntime()
-  const image = process.env.TAU_SANDBOX_IMAGE || 'tau-sandbox:latest'
+  const image = process.env.FICUS_SANDBOX_IMAGE || 'tau-sandbox:latest'
 
   // Check if the sandbox image exists locally
   const result = Bun.spawnSync(['docker', 'image', 'inspect', image], {

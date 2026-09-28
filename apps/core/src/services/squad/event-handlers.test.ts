@@ -93,7 +93,7 @@ describe('squad-event-handlers', () => {
       expect(assignment!.content).toContain('Other agents assigned to this work stream:')
       expect(assignment!.content).toContain(`- Test Agent Type: Review Owl [${reviewerId}]`)
       expect(assignment!.content).not.toContain(workerId)
-      expect(assignment!.content).not.toContain('tau workstream handoff')
+      expect(assignment!.content).not.toContain('ficus workstream handoff')
     })
 
     it('includes other bound agents in handoff messages after reassignment', async () => {
@@ -115,7 +115,7 @@ describe('squad-event-handlers', () => {
       expect(handoff!.content).toContain('Other agents assigned to this work stream:')
       expect(handoff!.content).toContain(`- Test Agent Type: Worker Bee [${workerId}]`)
       expect(handoff!.content).not.toContain(reviewerId)
-      expect(handoff!.content).not.toContain('tau workstream handoff')
+      expect(handoff!.content).not.toContain('ficus workstream handoff')
     })
   })
 

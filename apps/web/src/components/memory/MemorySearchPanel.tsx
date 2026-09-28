@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { MEMORY_SOURCE_TYPE_METADATA } from '@tau/shared'
+import { MEMORY_SOURCE_TYPE_METADATA } from '@ficus/shared'
 import { useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import type { SearchMemoryParams } from '../../api/memory'
@@ -50,11 +50,11 @@ export function MemorySearchPanel({ squadId }: { squadId: string }) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           aria-label="Search memory"
-          className="tau-field min-w-0 flex-1 rounded-xl border border-th-border bg-surface px-3 py-2 text-sm"
+          className="ficus-field min-w-0 flex-1 rounded-xl border border-th-border bg-surface px-3 py-2 text-sm"
         />
         <button
           type="submit"
-          className="tau-button rounded-xl bg-accent/10 px-4 py-2 text-sm font-medium text-accent-light hover:bg-accent/15"
+          className="ficus-button rounded-xl bg-accent/10 px-4 py-2 text-sm font-medium text-accent-light hover:bg-accent/15"
         >
           Search
         </button>
@@ -89,7 +89,7 @@ export function MemorySearchPanel({ squadId }: { squadId: string }) {
           <select
             value={sourceType}
             onChange={(event) => setSourceType(event.target.value)}
-            className="tau-field rounded-lg border-0 bg-surface-hover px-2 py-1.5"
+            className="ficus-field rounded-lg border-0 bg-surface-hover px-2 py-1.5"
           >
             <option value="">Any</option>
             {MEMORY_SOURCE_TYPE_METADATA.map((type) => (
@@ -104,7 +104,7 @@ export function MemorySearchPanel({ squadId }: { squadId: string }) {
           <select
             value={sensitivity}
             onChange={(event) => setSensitivity(event.target.value)}
-            className="tau-field rounded-lg border-0 bg-surface-hover px-2 py-1.5"
+            className="ficus-field rounded-lg border-0 bg-surface-hover px-2 py-1.5"
           >
             <option value="">Any</option>
             {SENSITIVITIES.map((value) => (

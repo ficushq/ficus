@@ -1,4 +1,4 @@
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import type { getAgent, listAgents } from '../../api/agents'
 
 export type AgentResolutionDependencies = {

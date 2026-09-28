@@ -5,7 +5,12 @@
 
 import { and, eq, inArray, not, or } from 'drizzle-orm'
 import { db, squadRelationships, squads } from '../../db'
-import { SquadRelationship, SquadRelationshipSummary, SquadRelationshipType, SquadWithRelationships } from '@tau/shared'
+import {
+  SquadRelationship,
+  SquadRelationshipSummary,
+  SquadRelationshipType,
+  SquadWithRelationships,
+} from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import type { Squad } from '../../entities/Squad'
 

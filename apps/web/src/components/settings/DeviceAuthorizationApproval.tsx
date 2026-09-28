@@ -13,7 +13,7 @@ export function DeviceAuthorizationApproval(props: {
   return (
     <div className="rounded-lg border border-accent bg-surface p-4 space-y-2">
       <h3 className="text-sm font-medium text-primary">
-        {props.preview?.platform === 'desktop' ? 'Approve Tau Desktop sign-in' : 'Approve Tau CLI login'}
+        {props.preview?.platform === 'desktop' ? 'Approve Ficus Desktop sign-in' : 'Approve Ficus CLI login'}
       </h3>
       {props.isLoading ? (
         <LoadingSurface label="Loading authorization request" className="space-y-3 py-1">
@@ -33,7 +33,7 @@ export function DeviceAuthorizationApproval(props: {
           <button
             onClick={props.onApprove}
             disabled={props.isPending || props.isSuccess}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md disabled:opacity-50"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md disabled:opacity-50"
           >
             {props.isSuccess ? 'Approved' : props.isPending ? 'Approving…' : 'Approve'}
           </button>

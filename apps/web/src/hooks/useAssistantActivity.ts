@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { AssistantActivityPage } from '@tau/shared'
+import type { AssistantActivityPage } from '@ficus/shared'
 import { assistantQueries } from '../queryOptions'
 import { usePermissions } from './usePermissions'
 

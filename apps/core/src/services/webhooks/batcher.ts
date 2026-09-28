@@ -5,6 +5,7 @@
  * Supports primary + collected event patterns with configurable timeouts.
  */
 
+import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { MONOREPO_ROOT } from '../../lib/paths'
@@ -299,7 +300,8 @@ export class WebhookBatcher {
       try {
         const opts: { cwd: string; timeout?: number; env: Record<string, string> } = {
           cwd,
-          env: resolvedEnv as Record<string, string>,
+          // One release (Ficus rename): webhook scripts may still read the TAU_* names.
+          env: withLegacyEnvAliases(resolvedEnv),
         }
         if (command.timeout) opts.timeout = command.timeout
 

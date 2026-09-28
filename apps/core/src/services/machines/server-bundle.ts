@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { ensureArtifact } from './machine-artifacts'
 import type { EnsureArtifactDeps, MachineArtifact } from './machine-artifacts'
 import { readPrebuiltMachineFile } from './machine-prebuilt'
@@ -69,13 +69,13 @@ export const SERVER_LIB_REMOTE_PATH = '/opt/tau/server/librust_pty.so'
  * overshot the repo root and resolved to `/`, so the entry became the
  * filesystem-absolute `/packages/k8s-sandbox/src/server.ts` — a FileNotFound
  * that only surfaced in a production dist deployment, never in a source run.
- * `TAU_REPO_ROOT` overrides for non-standard deployments (e.g. dist and source
+ * `FICUS_REPO_ROOT` overrides for non-standard deployments (e.g. dist and source
  * trees separated). The optional `home` threads through to expandTilde so
  * callers that must not touch the real home (tests) can supply their own.
  */
 export function resolveRepoRoot(
   startDir: string = import.meta.dir,
-  override: string | undefined = process.env.TAU_REPO_ROOT,
+  override: string | undefined = process.env.FICUS_REPO_ROOT,
   home?: string
 ): string {
   const expandedOverride = override ? expandTilde(override, home) : override

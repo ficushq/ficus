@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { expandTilde } from '@tau/shared/node'
+import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared/identity'
+import { expandTilde } from '@ficus/shared/node'
 
 function findRepoRoot(start: string): string | undefined {
   let dir = start
@@ -13,7 +14,8 @@ function findRepoRoot(start: string): string | undefined {
           name?: string
           workspaces?: unknown
         }
-        if (json.name === 'tau' || Array.isArray(json.workspaces)) return dir
+        if (CORE_ROOT_PACKAGE_NAMES.includes(json.name as CoreRootPackageName) || Array.isArray(json.workspaces))
+          return dir
       } catch {
         // Keep walking if this package.json is unreadable or invalid.
       }
@@ -31,7 +33,7 @@ function findRepoRoot(start: string): string | undefined {
  * Resolves the absolute path to the built web UI directory.
  *
  * Search order:
- *  1. `TAU_WEB_DIST` env var, if set.
+ *  1. `FICUS_WEB_DIST` env var, if set.
  *  2. Repo root discovered by walking up from `searchFrom`.
  *  3. `<cwd>/apps/web/dist`.
  *
@@ -44,7 +46,7 @@ function findRepoRoot(start: string): string | undefined {
  * web app or a core artifact has been built) answers first, masking step 3.
  */
 export function resolveWebDist(searchFrom: string = import.meta.dir): string | undefined {
-  const explicit = process.env.TAU_WEB_DIST
+  const explicit = process.env.FICUS_WEB_DIST
   if (explicit) return resolve(expandTilde(explicit))
 
   const repoRoot = findRepoRoot(searchFrom)

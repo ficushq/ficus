@@ -205,13 +205,15 @@ async function req(
   opts: {
     method?: string
     user?: string | null
+    /** Which box-user header name carries `user` (default the Ficus name). */
+    userHeader?: string
     token?: string | null
     body?: unknown
     rawBody?: string
   } = {}
 ) {
   const headers: Record<string, string> = {}
-  if (opts.user !== null) headers['x-tau-box-user'] = opts.user ?? 'box_abcdef012345'
+  if (opts.user !== null) headers[opts.userHeader ?? 'x-ficus-box-user'] = opts.user ?? 'box_abcdef012345'
   if (opts.token !== null) headers['authorization'] = `Bearer ${opts.token ?? 'right-token'}`
   const init: RequestInit = {
     method: opts.method ?? 'POST',
@@ -294,6 +296,15 @@ describe('tau-browser service', () => {
       expect(status).toBe(401)
     })
 
+    // K3: box servers on older Cores and images send only the pre-Ficus name,
+    // newer ones send both; the service must accept either on its own.
+    const boxUserHeaderNames = ['x-ficus-box-user', 'x-tau-box-user'] // K3
+    it.each(boxUserHeaderNames)('accepts a request carrying the box user only under %s', async (userHeader) => {
+      const service = createService({ ...makeLaunch(), tokensDir })
+      const { status } = await req(service, '/open', { userHeader, body: { runId: 'r1', url: 'http://x' } })
+      expect(status).toBe(200)
+    })
+
     it('accepts the right token, checked against its stored digest', async () => {
       const service = createService({ ...makeLaunch(), tokensDir })
       const { status, json } = await req(service, '/open', { body: { runId: 'r1', url: 'http://x' } })
@@ -326,18 +337,36 @@ describe('tau-browser service', () => {
   })
 
   // R-B17: the docker-dev box server runs un-su-exec'd (as `root`), so
-  // browser-proxy sends x-tau-box-user:root, which never matches the prod
-  // box_<hex> gate. TAU_BROWSER_DEV_ALLOW_USER (an env prod NEVER sets) admits
+  // browser-proxy sends x-ficus-box-user:root, which never matches the prod
+  // box_<hex> gate. FICUS_BROWSER_DEV_ALLOW_USER (an env prod NEVER sets) admits
   // exactly that one non-box user, still filename-safe. These pin: dev user
   // authenticates ONLY with the env; the prod gate is intact without it; a
   // traversal-shaped dev user is refused; box_<hex> is unaffected either way.
   describe('R-B17 docker-dev auth escape hatch', () => {
-    const ENV_KEY = 'TAU_BROWSER_DEV_ALLOW_USER'
+    const ENV_KEY = 'FICUS_BROWSER_DEV_ALLOW_USER'
+    // One release (Ficus rename): the service still honours the legacy name.
+    const LEGACY_ENV_KEY = 'TAU_BROWSER_DEV_ALLOW_USER'
     const saved = process.env[ENV_KEY]
+    const savedLegacy = process.env[LEGACY_ENV_KEY]
 
     afterEach(() => {
       if (saved === undefined) delete process.env[ENV_KEY]
       else process.env[ENV_KEY] = saved
+      if (savedLegacy === undefined) delete process.env[LEGACY_ENV_KEY]
+      else process.env[LEGACY_ENV_KEY] = savedLegacy
+    })
+
+    it('still honours the legacy TAU_ name for one release', async () => {
+      writeFileSync(join(tokensDir, 'root.token'), sha256Hex('root-token'))
+      delete process.env[ENV_KEY]
+      process.env[LEGACY_ENV_KEY] = 'root'
+      const service = createService({ ...makeLaunch(), tokensDir })
+      const { status } = await req(service, '/open', {
+        user: 'root',
+        token: 'root-token',
+        body: { runId: 'r1', url: 'http://x' },
+      })
+      expect(status).toBe(200)
     })
 
     it('authenticates a non-box dev user (root) WITH the env set + matching digest', async () => {
@@ -692,7 +721,7 @@ describe('tau-browser service', () => {
     })
   })
 
-  // The host sandbox runtime (TAU_SANDBOX_RUNTIME=host) injects its own
+  // The host sandbox runtime (FICUS_SANDBOX_RUNTIME=host) injects its own
   // always-false blocklist: there the browser runs on the user's own machine
   // with exactly the reach the agent's `bash` already has, so the machine-host
   // SSRF guard protects nothing and breaks localhost screenshots.

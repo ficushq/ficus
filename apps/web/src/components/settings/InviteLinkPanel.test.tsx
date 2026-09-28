@@ -25,12 +25,12 @@ describe('InviteLinkPanel', () => {
   })
 
   afterEach(async () => {
-    delete window.tauDesktopApp
+    delete window.ficusDesktopApp
     await dom.cleanup()
   })
 
   function useDesktop() {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -38,7 +38,7 @@ describe('InviteLinkPanel', () => {
   }
 
   function useRemoteDesktop() {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -59,14 +59,14 @@ describe('InviteLinkPanel', () => {
 
   const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent === label)
 
-  test('inside Tau Desktop, a pending admin invite opens in this window through the app route', async () => {
+  test('inside Ficus Desktop, a pending admin invite opens in this window through the app route', async () => {
     useDesktop()
     await render({ url: LINK, forAdmin: true })
 
     expect(button('Copy')).toBeDefined()
-    expect(container.textContent).toContain('can’t be used in Tau Desktop')
+    expect(container.textContent).toContain('can’t be used in Ficus Desktop')
     await dom.act(async () => {
-      button('Open in Tau')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      button('Open in Ficus')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
     })
 
     expect(location).toBe('/register?token=invite%2Btoken')
@@ -76,15 +76,15 @@ describe('InviteLinkPanel', () => {
     await render({ url: LINK, forAdmin: true })
 
     expect(button('Copy')).toBeDefined()
-    expect(button('Open in Tau')).toBeUndefined()
+    expect(button('Open in Ficus')).toBeUndefined()
   })
 
-  test('inside Tau Desktop, an ordinary invite keeps only Copy', async () => {
+  test('inside Ficus Desktop, an ordinary invite keeps only Copy', async () => {
     useDesktop()
     await render({ url: LINK, forAdmin: false })
 
     expect(button('Copy')).toBeDefined()
-    expect(button('Open in Tau')).toBeUndefined()
+    expect(button('Open in Ficus')).toBeUndefined()
   })
 
   test('for a remote Desktop instance, a pending admin invite keeps only Copy', async () => {
@@ -92,6 +92,6 @@ describe('InviteLinkPanel', () => {
     await render({ url: LINK, forAdmin: true })
 
     expect(button('Copy')).toBeDefined()
-    expect(button('Open in Tau')).toBeUndefined()
+    expect(button('Open in Ficus')).toBeUndefined()
   })
 })

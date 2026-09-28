@@ -49,8 +49,8 @@ const shippedAssignment = {
 // This suite spins up a real scratch database and shells out to a real
 // migration test-runner process — too jitter-prone for the shared CI runner.
 // It runs only in the dedicated `subprocess-tests` CI job (see ci.yml); the
-// main sweep sets TAU_TEST_SKIP_SUBPROCESS=1 to skip it here.
-const describeSubprocess = describe.skipIf(process.env.TAU_TEST_SKIP_SUBPROCESS === '1')
+// main sweep sets FICUS_TEST_SKIP_SUBPROCESS=1 to skip it here.
+const describeSubprocess = describe.skipIf(process.env.FICUS_TEST_SKIP_SUBPROCESS === '1')
 
 describeSubprocess('model tiers migration (real runner, fresh DB)', () => {
   let admin: ReturnType<typeof createPostgresConnection>
@@ -100,7 +100,7 @@ describeSubprocess('model tiers migration (real runner, fresh DB)', () => {
       [process.execPath, join(MONOREPO_ROOT, 'apps/core/src/services/config-sync/model-tier-sync.test-runner.ts')],
       {
         cwd: MONOREPO_ROOT,
-        env: { ...process.env, TAU_TEST_MODE: '0', DATABASE_URL: urlFor(dbName) },
+        env: { ...process.env, FICUS_TEST_MODE: '0', DATABASE_URL: urlFor(dbName) },
         stdout: 'pipe',
         stderr: 'pipe',
       }

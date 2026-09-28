@@ -26,7 +26,7 @@ function getRpConfig() {
     /* keep the localhost fallback */
   }
   const rpId = process.env.WEBAUTHN_RP_ID ?? originHost
-  const rpName = process.env.WEBAUTHN_RP_NAME ?? 'Tau'
+  const rpName = process.env.WEBAUTHN_RP_NAME ?? 'Ficus'
   return { rpId, rpName, origin }
 }
 

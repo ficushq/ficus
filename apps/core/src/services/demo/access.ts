@@ -20,7 +20,7 @@ import { getSecretStore } from '../secrets'
  */
 
 /** Env flag: reviewer access is off unless explicitly on. */
-export const DEMO_REVIEWER_ACCESS_ENV = 'TAU_DEMO_REVIEWER_ACCESS'
+export const DEMO_REVIEWER_ACCESS_ENV = 'FICUS_DEMO_REVIEWER_ACCESS'
 /** Secret-store key holding the reviewer credential; rotate to revoke. */
 export const DEMO_REVIEWER_SECRET_KEY = 'DEMO_REVIEWER_SECRET'
 /** RFC 2606 reserved TLD: the demo account can never receive mail. */

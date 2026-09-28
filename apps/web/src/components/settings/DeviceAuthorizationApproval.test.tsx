@@ -7,7 +7,7 @@ import {
   parseDeviceRequest,
 } from './deviceAuthorizationApprovalLogic'
 
-const preview = { name: 'Tau CLI on atlas', platform: 'cli' as const, expiresAt: '2030-01-01T12:00:00.000Z' }
+const preview = { name: 'Ficus CLI on atlas', platform: 'cli' as const, expiresAt: '2030-01-01T12:00:00.000Z' }
 
 describe('DeviceAuthorizationApproval', () => {
   it('reads device_request safely and rejects malformed fragment escapes', () => {
@@ -18,7 +18,7 @@ describe('DeviceAuthorizationApproval', () => {
 
   it('shows the inspected client details and explicit approval action', () => {
     const html = renderToStaticMarkup(<DeviceAuthorizationApproval preview={preview} onApprove={() => {}} />)
-    expect(html).toContain('Tau CLI on atlas')
+    expect(html).toContain('Ficus CLI on atlas')
     expect(html).toContain('Approve')
     expect(html).toContain('2030')
   })
@@ -48,7 +48,7 @@ describe('DeviceAuthorizationApproval', () => {
     expect(cleared).toBe(false)
     const message = deviceApprovalErrorMessage(error)
     expect(message).toContain('expired or already used')
-    expect(message).toContain('tau auth login')
+    expect(message).toContain('ficus auth login')
     expect(
       renderToStaticMarkup(<DeviceAuthorizationApproval preview={preview} error={message} onApprove={() => {}} />)
     ).toContain(message)

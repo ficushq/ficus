@@ -5,11 +5,11 @@ import { join, relative } from 'node:path'
 
 /**
  * Provider adapters and the broker protocol belong on the server. Public constants
- * live in separate, dependency-free modules such as @tau/shared/github-app.
+ * live in separate, dependency-free modules such as @ficus/shared/github-app.
  * Scan shipped source conservatively (including dynamic imports and require calls).
  * Test files are not browser entrypoints and may reference server modules in fixtures.
  */
-const FORBIDDEN = ['@tau/shared/oauth-providers', '@tau/shared/oauth-broker']
+const FORBIDDEN = ['@ficus/shared/oauth-providers', '@ficus/shared/oauth-broker']
 
 function* sources(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -42,13 +42,13 @@ describe('web bundle boundary', () => {
     const root = mkdtempSync(join(tmpdir(), 'web-import-boundary-'))
     try {
       mkdirSync(join(root, 'nested'))
-      writeFileSync(join(root, 'nested/provider.tsx'), "import { adapter } from '@tau/shared/oauth-providers'\n")
-      writeFileSync(join(root, 'broker.ts'), "export * from '@tau/shared/oauth-broker'\n")
-      writeFileSync(join(root, 'dynamic.ts'), "import('@tau/shared/oauth-providers/github/client')\n")
-      writeFileSync(join(root, 'require.ts'), "require('@tau/shared/oauth-broker')\n")
-      writeFileSync(join(root, 'safe.ts'), "import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/github-app'\n")
+      writeFileSync(join(root, 'nested/provider.tsx'), "import { adapter } from '@ficus/shared/oauth-providers'\n")
+      writeFileSync(join(root, 'broker.ts'), "export * from '@ficus/shared/oauth-broker'\n")
+      writeFileSync(join(root, 'dynamic.ts'), "import('@ficus/shared/oauth-providers/github/client')\n")
+      writeFileSync(join(root, 'require.ts'), "require('@ficus/shared/oauth-broker')\n")
+      writeFileSync(join(root, 'safe.ts'), "import { FICUS_GITHUB_APP_CLIENT_ID } from '@ficus/shared/github-app'\n")
       for (const name of ['fixture.test.ts', 'fixture.test.tsx', 'fixture.spec.ts', 'fixture_spec.tsx']) {
-        writeFileSync(join(root, name), "const fixture = '@tau/shared/oauth-broker'\n")
+        writeFileSync(join(root, name), "const fixture = '@ficus/shared/oauth-broker'\n")
       }
       expect(offenders(root)).toEqual(['broker.ts', 'dynamic.ts', 'nested/provider.tsx', 'require.ts'])
     } finally {

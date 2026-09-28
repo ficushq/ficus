@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, test, expect } from 'bun:test'
-import { Permissions } from '@tau/shared'
+import { Permissions } from '@ficus/shared'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db, squads } from '../db'

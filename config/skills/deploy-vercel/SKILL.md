@@ -1,6 +1,6 @@
 ---
 name: deploy-vercel
-description: Deploy static, Vite/SPA, or Next.js apps to Vercel after Tau local app, tests, and explicit human consent.
+description: Deploy static, Vite/SPA, or Next.js apps to Vercel after Ficus local app, tests, and explicit human consent.
 ---
 
 # Deploying with Vercel
@@ -18,8 +18,8 @@ For squad project work, invoke the following project-directory commands through 
 ## Guardrails
 
 - Ask before project creation, production deployment, domain changes, paid features, or public exposure.
-- Required Tau secret: `DEPLOY_VERCEL_TOKEN`. Do not ask users to paste it in chat.
-- Ask a human admin/operator to expose only this secret in squad Environment settings or with `tau squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN` before running provider CLI commands.
+- Required Ficus secret: `DEPLOY_VERCEL_TOKEN`. Do not ask users to paste it in chat.
+- Ask a human admin/operator to expose only this secret in squad Environment settings or with `ficus squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN` before running provider CLI commands.
 - Do not store secrets in `.env` unless the human explicitly approves and they are needed by the app.
 
 ## If `DEPLOY_VERCEL_TOKEN` is not set
@@ -29,16 +29,16 @@ Walk the human through account/token setup before attempting CLI commands:
 1. Ask them to sign in or create a Vercel account at https://vercel.com/signup.
 2. Ask them to choose or create the Vercel team/account that should own the project. Mention that team-owned projects may have billing implications.
 3. Direct them to Vercel Account Settings → Tokens: https://vercel.com/account/settings/tokens.
-4. Ask them to create a token named `tau-deploy` with the minimum practical scope for the intended account/team.
-5. Do **not** ask them to paste the token in chat. Open Tau **Settings → Integrations → Vercel**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
+4. Ask them to create a token named `ficus-deploy` with the minimum practical scope for the intended account/team.
+5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Vercel**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
 
 6. Ask an admin/operator to expose only `DEPLOY_VERCEL_TOKEN` to this squad from the Squad Settings tab → Environment section. CLI fallback:
 
 ```bash
-tau squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN
+ficus squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN
 ```
 
-7. Verify non-secret access with `tau squad-env secrets <squad-id>` and then `VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel whoami`.
+7. Verify non-secret access with `ficus squad-env secrets <squad-id>` and then `VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel whoami`.
 
 ## Project directory and upload hygiene
 
@@ -84,12 +84,12 @@ VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel logs <deployment-url-or-id>
 - `vercel rollback`: https://vercel.com/docs/cli/rollback
 - `vercel remove` / project commands: https://vercel.com/docs/cli/remove and https://vercel.com/docs/cli/project
 
-## Tau deployment record
+## Ficus deployment record
 
 After deploying, record the external deployment and keep it updated. Do not put secrets in metadata. Archive old or superseded external deployment records once they are no longer useful; archived records move out of the active Apps tab list while preserving history.
 
 ```bash
-tau deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
-tau deploy external update <deployment-id> --status failed
-tau deploy external archive <deployment-id>
+ficus deploy external record <squad-id> --name <deployment-name> --provider <provider-id> --environment production --status ready --url <deployed-url> --provider-project-url <provider-dashboard-url>
+ficus deploy external update <deployment-id> --status failed
+ficus deploy external archive <deployment-id>
 ```

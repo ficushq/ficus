@@ -88,7 +88,7 @@ export function IntegrationCredentialSettings({
                   {field.multiline ? (
                     <textarea
                       id={`${fieldId}-${field.key}`}
-                      className="tau-field min-h-40 w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 font-mono text-xs text-primary"
+                      className="ficus-field min-h-40 w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 font-mono text-xs text-primary"
                       rows={6}
                       required={field.required && !field.configured && !field.managed}
                       aria-required={field.required}
@@ -108,7 +108,7 @@ export function IntegrationCredentialSettings({
                   ) : (
                     <input
                       id={`${fieldId}-${field.key}`}
-                      className="tau-field w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 text-primary"
+                      className="ficus-field w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 text-primary"
                       type={field.secret ? 'password' : 'text'}
                       required={field.required && !field.configured && !field.managed}
                       aria-required={field.required}
@@ -137,7 +137,7 @@ export function IntegrationCredentialSettings({
         )}
         {canWrite && (
           <button
-            className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
+            className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
             disabled={save.isPending || config.isError || !Object.keys(draft).length}
           >
             {saveLabel ?? (provider === 'web-push' ? 'Save' : 'Save credentials')}

@@ -21,7 +21,7 @@ import {
   SquadRelationshipType,
   SquadWithRelationships,
   Message,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { createLogger } from '../lib/infra/logger'
 import { removeCachedAgentToken } from '../services/rbac/token-cache'
@@ -112,11 +112,11 @@ export interface SquadSandboxConfig {
   /**
    * Per-squad ephemeral-storage limit for the sandbox pod, in GiB. Raise this
    * for squads with heavy toolchains whose nix install exceeds the global
-   * default. Falls back to the global default (TAU_SANDBOX_EPHEMERAL_STORAGE_LIMIT)
+   * default. Falls back to the global default (FICUS_SANDBOX_EPHEMERAL_STORAGE_LIMIT)
    * when unset.
    */
   ephemeralStorageLimitGi?: number
-  toolchain?: import('@tau/shared').SandboxToolchainConfig | null
+  toolchain?: import('@ficus/shared').SandboxToolchainConfig | null
 }
 
 export interface GitSyncProvider {
@@ -620,10 +620,10 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
    * Whether this squad's sandbox should stay running indefinitely.
    * Defaults to false if not configured.
    */
-  get toolchainConfig(): import('@tau/shared').SandboxToolchainConfig | undefined {
+  get toolchainConfig(): import('@ficus/shared').SandboxToolchainConfig | undefined {
     const toolchain = this.sandboxConfig?.toolchain
     if (!toolchain || typeof toolchain !== 'object') return undefined
-    return toolchain as import('@tau/shared').SandboxToolchainConfig
+    return toolchain as import('@ficus/shared').SandboxToolchainConfig
   }
 
   get isSandboxAlwaysOn(): boolean {

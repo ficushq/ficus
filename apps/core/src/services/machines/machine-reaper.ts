@@ -100,10 +100,10 @@ const log = createLogger('machine-reaper')
 export const DEFAULT_MACHINE_IDLE_GRACE_MS = 10 * 60_000
 
 /** How long a machine may sit empty before the reaper terminates it —
- *  `TAU_MACHINE_IDLE_GRACE_MS` (positive-int env, same rule as the other knobs),
+ *  `FICUS_MACHINE_IDLE_GRACE_MS` (positive-int env, same rule as the other knobs),
  *  else {@link DEFAULT_MACHINE_IDLE_GRACE_MS}. */
 export function resolveMachineIdleGraceMs(): number {
-  return positiveIntEnv('TAU_MACHINE_IDLE_GRACE_MS', DEFAULT_MACHINE_IDLE_GRACE_MS)
+  return positiveIntEnv('FICUS_MACHINE_IDLE_GRACE_MS', DEFAULT_MACHINE_IDLE_GRACE_MS)
 }
 
 /** The tunnel surface the reaper needs (`machineTunnels` satisfies it). */

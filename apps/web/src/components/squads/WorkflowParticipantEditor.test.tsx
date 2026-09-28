@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createBlankWorkflow } from '@tau/shared'
+import { createBlankWorkflow } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { acquireDomHarness } from '../../test/domHarness'
 import { WorkflowParticipantEditor } from './WorkflowParticipantEditor'

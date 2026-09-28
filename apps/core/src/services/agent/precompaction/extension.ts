@@ -47,10 +47,10 @@ export function createPrecompactionExtension(
   }
 
   return {
-    path: 'tau:precompaction',
-    resolvedPath: 'tau:precompaction',
-    sourceInfo: createSyntheticSourceInfo('tau:precompaction', {
-      source: 'tau',
+    path: 'ficus:precompaction',
+    resolvedPath: 'ficus:precompaction',
+    sourceInfo: createSyntheticSourceInfo('ficus:precompaction', {
+      source: 'ficus',
       scope: 'temporary',
       origin: 'top-level',
     }),

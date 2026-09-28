@@ -1,7 +1,7 @@
 import { getSettingsStore } from '../services/settings'
 import { listDesktopNotifications } from '../services/push/desktop'
 import { pushRelayConfig, enrollInstancePro } from '../services/push/relay'
-import { relayBindingTokenSchema, instanceEnrollmentSchema } from '@tau/shared/push-relay'
+import { relayBindingTokenSchema, instanceEnrollmentSchema } from '@ficus/shared/push-relay'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { getVapidContactSubject, getVapidKeys } from '../services/push/vapid'

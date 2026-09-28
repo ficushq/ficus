@@ -46,7 +46,7 @@ bun db:generate      # generates migration SQL from schema diff
 Migrations run automatically on API startup. To run manually:
 
 ```bash
-TAU_MIGRATE_LIVE=1 bun db:migrate  # deliberately migrate the root .env database
+FICUS_MIGRATE_LIVE=1 bun db:migrate  # deliberately migrate the root .env database
 DATABASE_URL=postgres://... bun db:migrate  # migrate an explicit test/scratch database
 bun db:push                         # push schema directly (dev only, no migration files)
 ```
@@ -64,7 +64,7 @@ Tests use an isolated Postgres instance running in Docker (separate from the dev
 When Docker cannot start the test DB, a direct local `bun test` still runs
 database-free files; every database use fails with `Core test database
 unavailable (...)`. CI and `bun run --filter core test` (via
-`TAU_TEST_REQUIRE_DB=1`) keep exiting instead.
+`FICUS_TEST_REQUIRE_DB=1`) keep exiting instead.
 
 For the full Core suite (including its isolated subprocess files), run:
 
@@ -87,7 +87,7 @@ bun run test:db:down && bun run --filter core test
   package scripts concurrently. Preserve that readiness dependency so suites
   cannot race container startup.
 - Run package suites with `bun run --filter <package> test` from the root (for
-  example, `core`, `cli`, or `@tau/k8s-sandbox`). These
+  example, `core`, `cli`, or `@ficus/k8s-sandbox`). These
   entrypoints own isolation and completion checks. Use `bun test <file>` for
   focused diagnosis, not as a replacement for the package/CI contract. A zero
   exit alone is not proof: require the final summary, zero failures, and every
@@ -120,7 +120,7 @@ bun run test:db:down && bun run --filter core test
   children, and await cleanup even on assertion failure. Never use broad
   process-name kills, fixed shared output paths, or another worktree's database.
   Reset only this worktree's disposable test DB after an interrupted DB suite;
-  orphan sweeping is explicit maintenance (`TAU_TEST_SWEEP_ORPHANS=1`), not a
+  orphan sweeping is explicit maintenance (`FICUS_TEST_SWEEP_ORPHANS=1`), not a
   normal test side effect.
 - Stress/load generators are owned fixtures too. Bound their worker count and
   runtime, retain every PID, and terminate/reap them in `finally` or a shell
@@ -134,7 +134,7 @@ bun run test:db:down && bun run --filter core test
   unbounded parallelism or concurrent cases that mutate one database/global.
   Core's sequential isolated runner reuses schema setup only while both source
   inputs and the live PostgreSQL DDL fingerprint match; do not bypass its drift
-  check or manually set `TAU_TEST_SCHEMA_CACHE_FILE` in fixtures.
+  check or manually set `FICUS_TEST_SCHEMA_CACHE_FILE` in fixtures.
 - The default timeout is a budget, not a contention workaround. Longer genuine
   integration budgets need a reason at the test site. No blanket retries,
   timeout increases, broad platform skips, or weakened assertions to turn red
@@ -198,9 +198,9 @@ and interaction patterns for the webapp.
 ### Theme colors
 
 Every color in `apps/web` comes from theme tokens, so it follows the selected
-theme (Tau, Harbor, Ember, High contrast, or a custom theme) in light and dark.
+theme (Iris, Harbor, Ember, High contrast, or a custom theme) in light and dark.
 
-- Use semantic token utilities and the `tau-*` component classes (`bg-surface`,
+- Use semantic token utilities and the `ficus-*` component classes (`bg-surface`,
   `text-primary`, `text-on-accent`, `border-th-border`,
   `text-status-danger-600`, ...). Never use Tailwind palette utilities
   (`text-red-600`, `bg-white`, `text-black`), literal colors (`#fff`, `rgb()`)
@@ -253,7 +253,7 @@ All SVG icons live in `apps/web/src/components/icons/`, one component per file.
 
 ## Browser Tools Login
 
-Browser authentication uses an HttpOnly session cookie. Writing `tau_password`
+Browser authentication uses an HttpOnly session cookie. Writing `ficus_password`
 to localStorage does not establish the current browser session and is not a
 login bypass.
 
@@ -264,7 +264,7 @@ login bypass.
   registration and create the administrator passkey. The bootstrap password
   stops being accepted once an administrator has a passkey.
 - When using `bun run dev:web`, enter its printed dev access token at the
-  development-server gate first. That gate is separate from Tau account
+  development-server gate first. That gate is separate from Ficus account
   authentication. For a paired backend, follow the [dev proxy workflow](docs/wiki/development.md#developing-against-a-remote-backend).
 - Keep first-run links, passkeys, device tokens and `.env` contents out of
   screenshots and logs. Wait for an observable signed-in UI or response before

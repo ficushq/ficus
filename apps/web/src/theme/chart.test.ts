@@ -120,7 +120,7 @@ test('explicit colors, signals, nulls, schemes, ranges, styles and partial palet
 })
 
 test('Vega and Vega-Lite SVG output retains parser-safe tiny custom alpha products', async () => {
-  const { compileCustomTheme, validateCustomTheme } = await import('@tau/shared/custom-theme')
+  const { compileCustomTheme, validateCustomTheme } = await import('@ficus/shared/custom-theme')
   const { BUILT_IN_THEMES } = await import('./registry')
   const { color: parseColor } = await import('d3-color')
   const raw = JSON.stringify({

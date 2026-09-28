@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { isGrantablePermission } from '@tau/shared'
+import { isGrantablePermission } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { createRole, updateRole, deleteRole } from '../../api/roles'
@@ -121,14 +121,14 @@ export function RolesSection() {
           type="button"
           aria-label="Create role"
           onClick={() => (showCreate ? resetCreate() : openCreate())}
-          className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover"
+          className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover"
         >
           Create Role
         </button>
       </div>
 
       {showCreate && (
-        <div ref={createCardRef} className="tau-section py-4">
+        <div ref={createCardRef} className="ficus-section py-4">
           <h4 className="text-sm font-medium text-primary mb-3">Create New Role</h4>
           <div className="space-y-3">
             <div>
@@ -143,7 +143,7 @@ export function RolesSection() {
                   const source = cloneSources.find((role) => role.id === event.target.value)
                   seedCreateFrom(source)
                 }}
-                className="tau-field w-full rounded border border-th-border bg-surface-secondary px-3 py-2 text-sm text-primary  focus:ring-1 focus:ring-accent"
+                className="ficus-field w-full rounded border border-th-border bg-surface-secondary px-3 py-2 text-sm text-primary  focus:ring-1 focus:ring-accent"
               >
                 <option value="">None — start with no permissions</option>
                 {cloneSources.map((role) => (
@@ -169,7 +169,7 @@ export function RolesSection() {
                 setCreateName(e.target.value)
               }}
               placeholder="Role name"
-              className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+              className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
               autoFocus
             />
             <label htmlFor="create-role-slug" className="sr-only">
@@ -184,7 +184,7 @@ export function RolesSection() {
                 setCreateSlug(e.target.value)
               }}
               placeholder="Slug (e.g. team-lead)"
-              className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+              className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
             />
             <div>
               <p className="text-xs font-medium text-secondary mb-1.5">Permissions</p>
@@ -207,11 +207,11 @@ export function RolesSection() {
                   })
                 }
                 disabled={!createName || !createSlug || createMutation.isPending}
-                className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
               >
                 {createMutation.isPending ? 'Creating...' : 'Create'}
               </button>
-              <button onClick={resetCreate} className="tau-button px-4 py-2 text-sm text-muted hover:text-primary">
+              <button onClick={resetCreate} className="ficus-button px-4 py-2 text-sm text-muted hover:text-primary">
                 Cancel
               </button>
             </div>
@@ -224,7 +224,7 @@ export function RolesSection() {
         </div>
       )}
 
-      <div className="tau-section overflow-hidden">
+      <div className="ficus-section overflow-hidden">
         {roles.length === 0 ? (
           <div className="px-4 py-8 text-center text-muted text-sm">No roles defined yet.</div>
         ) : (
@@ -242,7 +242,7 @@ export function RolesSection() {
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       placeholder="Role name"
-                      className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
+                      className="ficus-field w-full text-sm bg-surface-secondary border border-th-border rounded px-3 py-2 text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
                       autoFocus
                     />
                     <div>
@@ -253,13 +253,13 @@ export function RolesSection() {
                       <button
                         onClick={() => updateMutation.mutate(role.id)}
                         disabled={updateMutation.isPending}
-                        className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                        className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
                       >
                         {updateMutation.isPending ? 'Saving...' : 'Save'}
                       </button>
                       <button
                         onClick={() => setEditingId(null)}
-                        className="tau-button text-xs text-muted hover:text-primary px-3 py-1.5"
+                        className="ficus-button text-xs text-muted hover:text-primary px-3 py-1.5"
                       >
                         Cancel
                       </button>
@@ -320,7 +320,7 @@ export function RolesSection() {
                                   : undefined
                               }
                               className={clsx(
-                                'tau-button',
+                                'ficus-button',
                                 'text-xs font-medium text-accent-light hover:text-accent-hover',
                                 !canDuplicate && 'cursor-not-allowed opacity-50'
                               )}
@@ -345,7 +345,7 @@ export function RolesSection() {
                               setEditName(role.name)
                               setEditPermissions(role.permissions || [])
                             }}
-                            className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                            className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
                           >
                             Edit
                           </button>
@@ -362,7 +362,7 @@ export function RolesSection() {
                             }}
                             disabled={deleteMutation.isPending}
                             aria-label={`Delete role ${role.name}`}
-                            className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
+                            className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
                           >
                             Delete
                           </button>

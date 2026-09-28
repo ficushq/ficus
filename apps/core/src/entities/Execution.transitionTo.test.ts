@@ -7,7 +7,7 @@ maintenanceAfterAll(() => releaseMaintenanceIsolation?.())
 
 import { describe, it, expect, beforeEach, afterEach, setSystemTime, spyOn } from 'bun:test'
 import { eq, inArray, sql } from 'drizzle-orm'
-import { AgentStatus } from '@tau/shared'
+import { AgentStatus } from '@ficus/shared'
 import { db } from '../db'
 import {
   executions,

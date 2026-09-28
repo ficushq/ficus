@@ -1,5 +1,5 @@
-import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/oauth-providers/github/app'
-import type { OAuthClientBinding } from '@tau/shared/oauth-providers/types'
+import { FICUS_GITHUB_APP_CLIENT_ID } from '@ficus/shared/oauth-providers/github/app'
+import type { OAuthClientBinding } from '@ficus/shared/oauth-providers/types'
 import { parseOAuthClientBinding } from './credential-bundle'
 
 const SETTINGS_KEY = '__integration-oauth-app:github'
@@ -24,7 +24,7 @@ export function resolveGitHubAppCredentials(
       ? parseOAuthClientBinding(binding)
       : store.get(SETTINGS_KEY)
         ? parseOAuthClientBinding(JSON.parse(store.get(SETTINGS_KEY)!))
-        : { clientId: TAU_GITHUB_APP_CLIENT_ID }
+        : { clientId: FICUS_GITHUB_APP_CLIENT_ID }
     if (!selected.credentialRef) return { clientId: selected.clientId, clientSecret: '', clientBinding: selected }
     const raw = store.get(selected.credentialRef)
     if (!raw) return undefined
@@ -48,7 +48,7 @@ export async function configureGitHubApp(input: unknown, store: AppStore, actor:
     throw invalid()
   if (row.useDefault === true) {
     if (Object.keys(row).length !== 1) throw invalid()
-    await store.set(SETTINGS_KEY, JSON.stringify({ clientId: TAU_GITHUB_APP_CLIENT_ID }), actor)
+    await store.set(SETTINGS_KEY, JSON.stringify({ clientId: FICUS_GITHUB_APP_CLIENT_ID }), actor)
     return
   }
   if (

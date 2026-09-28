@@ -1,4 +1,4 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
 import { lockFlowInboxDelivery } from '../services/work-streams/wait-scope'
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
@@ -30,7 +30,7 @@ import {
   extractAgentAttachmentReferences,
   isLiveAgentStatus,
   LIVE_AGENT_STATUSES,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { AgentRunnerType } from './agent-runners/base'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID, ARTIFACT_BUILDER_RUNNER_TYPE } from './agent-runners/constants'
 import { generateAgentName } from '../lib/utils/agent-names'
@@ -54,6 +54,7 @@ import { splitModelPriorityList, supportsImageInput, validateModelSpecList } fro
 import { randomUUID, createHash } from 'crypto'
 import { chatSendRequestHashes } from '../services/agents/chat-send-request-hash'
 import { cacheAgentToken, getCachedAgentToken, removeCachedAgentToken } from '../services/rbac/token-cache'
+import { AGENT_TOKEN_PREFIX } from '../services/auth/token-prefixes'
 import * as pendingDelivery from '../services/agent/pending-delivery'
 import { maintenanceStore } from '../services/maintenance/store'
 import { decodeMessageCursor, encodeMessageCursor, InvalidMessageCursorError } from '../services/agent/message-cursor'
@@ -1349,12 +1350,12 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   }
 
   /**
-   * Create a new agent token for this agent. Generates a `tau_agent_<uuid>` token,
+   * Create a new agent token for this agent. Generates a `ficus_agent_<uuid>` token,
    * stores only its SHA-256 hash in the database, caches the plaintext, and returns
    * the plaintext token (only returned to the caller; never persisted).
    */
   async createAgentToken({ userId }: { userId?: string } = {}): Promise<{ id: string; token: string }> {
-    const token = `tau_agent_${randomUUID()}`
+    const token = `${AGENT_TOKEN_PREFIX}${randomUUID()}`
     const tokenHash = createHash('sha256').update(token).digest('hex')
     const accepted = await this.persistAgentTokenUnderLifecycleLock({ tokenHash, userId })
     if (!accepted?.id) throw new Error(`Agent ${this.id} cannot issue an agent token in its current lifecycle state.`)
@@ -1364,7 +1365,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
 
   /**
    * Return a usable plaintext agent token for sandbox CLI auth (injected as
-   * TAU_TOKEN into each bash command). Reuses the cached plaintext when present
+   * FICUS_TOKEN into each bash command). Reuses the cached plaintext when present
    * and mints + caches a fresh one on a cache miss (e.g. after a server restart,
    * where only the hash survives in the DB). Squad agents are scoped by their
    * squad; squad-less agents (system-managers) are scoped by their owning user so
@@ -1374,7 +1375,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   async getOrCreateToken(options: { expectedResourceGeneration?: string } = {}): Promise<string | undefined> {
     if (!this.squadId && !this.ownerUserId) return undefined
     const cached = getCachedAgentToken(this.id)
-    const replacement = `tau_agent_${randomUUID()}`
+    const replacement = `${AGENT_TOKEN_PREFIX}${randomUUID()}`
     const accepted = await this.persistAgentTokenUnderLifecycleLock({
       tokenHash: createHash('sha256').update(replacement).digest('hex'),
       cachedTokenHash: cached ? createHash('sha256').update(cached).digest('hex') : undefined,

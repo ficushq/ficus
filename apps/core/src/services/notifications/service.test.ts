@@ -24,7 +24,7 @@ function installApnsEnv(environment: 'production' | 'sandbox' = 'production') {
   process.env.APNS_KEY_P8 = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
   process.env.APNS_KEY_ID = 'KID123'
   process.env.APNS_TEAM_ID = 'TEAM456'
-  process.env.APNS_BUNDLE_ID = 'ai.hiretau.mobile'
+  process.env.APNS_BUNDLE_ID = 'sh.ficus.mobile'
   process.env.APNS_ENV = environment
   resetSecretStore()
 }
@@ -317,7 +317,7 @@ describe('NotificationService', () => {
     test('a newly registered push event reaches web, APNs, and desktop through shared recipient preferences', async () => {
       const prefix = `notification-fanout-${crypto.randomUUID()}`
       const eventType = `${prefix}.created`
-      const previousDesktop = process.env.TAU_DESKTOP_MANAGED
+      const previousDesktop = process.env.FICUS_DESKTOP_MANAGED
       const configureSpy = spyOn(service, 'configureVapid').mockResolvedValue()
       const webSpy = spyOn(service as any, 'sendWebPush').mockImplementation(async () => {})
       const apnsSpy = spyOn(service as any, 'sendApnsPush').mockImplementation(async () => {})
@@ -331,7 +331,7 @@ describe('NotificationService', () => {
       }
       try {
         const user = await createTestUser({ prefix })
-        process.env.TAU_DESKTOP_MANAGED = '1'
+        process.env.FICUS_DESKTOP_MANAGED = '1'
         eventBuilders[eventType] = async () => event
         service.setConfig({ rules: [{ event: eventType, channels: ['push'] }], channels: { push: { enabled: true } } })
         const data = { recipientType: 'user', recipientId: user.id }
@@ -365,8 +365,8 @@ describe('NotificationService', () => {
         ).toHaveLength(0)
       } finally {
         delete eventBuilders[eventType]
-        if (previousDesktop === undefined) delete process.env.TAU_DESKTOP_MANAGED
-        else process.env.TAU_DESKTOP_MANAGED = previousDesktop
+        if (previousDesktop === undefined) delete process.env.FICUS_DESKTOP_MANAGED
+        else process.env.FICUS_DESKTOP_MANAGED = previousDesktop
         configureSpy.mockRestore()
         webSpy.mockRestore()
         apnsSpy.mockRestore()
@@ -814,7 +814,7 @@ describe('NotificationService', () => {
         })
         expect(JSON.parse(sendSpy.mock.calls[1][1] as string)).toMatchObject({
           title: 'Work #42 needs your answer',
-          body: 'Open Tau to see details.',
+          body: 'Open Ficus to see details.',
           workStreamId: '42',
         })
       } finally {
@@ -853,7 +853,7 @@ describe('NotificationService', () => {
         platform: 'ios',
         environment: 'production',
       })
-      await db.update(apnsDevices).set({ relayBindingToken: 'tau_prd_test' }).where(eq(apnsDevices.userId, user.id))
+      await db.update(apnsDevices).set({ relayBindingToken: 'ficus_prd_test' }).where(eq(apnsDevices.userId, user.id))
       const stored = getSettingsStore().getStoredValue.bind(getSettingsStore())
       let enabled = false
       const settings = spyOn(getSettingsStore(), 'getStoredValue').mockImplementation((key) =>
@@ -895,7 +895,7 @@ describe('NotificationService', () => {
         platform: 'ios',
         environment: 'production',
       })
-      await db.update(apnsDevices).set({ relayBindingToken: 'tau_prd_test' }).where(eq(apnsDevices.userId, user.id))
+      await db.update(apnsDevices).set({ relayBindingToken: 'ficus_prd_test' }).where(eq(apnsDevices.userId, user.id))
       const relay = spyOn(relayModule, 'sendRelayAlert').mockResolvedValue({ accepted: true, reason: undefined })
       const config = spyOn(relayModule, 'pushRelayConfig').mockReturnValue({
         token: 'fixture',
@@ -1041,7 +1041,7 @@ describe('NotificationService', () => {
         const withoutPreview = sendSpy.mock.calls[1][1]
         expect(withoutPreview).toMatchObject({
           title: 'Work #197 has a new message',
-          body: 'Open Tau to see details.',
+          body: 'Open Ficus to see details.',
           collapseId: 'ws:abc',
           threadId: 'squad:def',
           interruptionLevel: 'passive',
@@ -1062,13 +1062,13 @@ describe('NotificationService', () => {
       })
       const sendSpy = spyOn(apnsModule, 'sendApnsNotification').mockResolvedValue({ ok: true, status: 200 })
       const previousAppUrl = process.env.APP_URL
-      process.env.APP_URL = 'https://Tau.Example.com/'
+      process.env.APP_URL = 'https://Ficus.Example.com/'
 
       try {
         await callSendApnsPush(service, [user.id], { title: 'Hello', body: 'World', url: '/inbox' })
 
         expect(sendSpy).toHaveBeenCalledTimes(1)
-        expect(sendSpy.mock.calls[0][1].data).toMatchObject({ origin: 'https://tau.example.com' })
+        expect(sendSpy.mock.calls[0][1].data).toMatchObject({ origin: 'https://ficus.example.com' })
       } finally {
         if (previousAppUrl === undefined) delete process.env.APP_URL
         else process.env.APP_URL = previousAppUrl

@@ -39,7 +39,7 @@ test('every split suite uses completion-checked execution', () => {
   expect(JSON.parse(read('apps/core/package.json')).scripts.test).toBe('bun ../../scripts/run-core-tests.ts')
   expect(read('scripts/run-core-tests.ts')).toContain("import { discoverTests, runTests } from './test-runner'")
   // The preload's local no-database fallback is for focused `bun test` only.
-  expect(read('scripts/run-core-tests.ts')).toContain("process.env.TAU_TEST_REQUIRE_DB = '1'")
+  expect(read('scripts/run-core-tests.ts')).toContain("process.env.FICUS_TEST_REQUIRE_DB = '1'")
 })
 
 test('replacing any guarded lane with bare bun test is red', () => {

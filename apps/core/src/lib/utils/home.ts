@@ -2,7 +2,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { mkdirSync } from 'fs'
 
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 /**
  * Resolve the tau home directory on every call (not cached at module load) so

@@ -221,7 +221,7 @@ describe('inbox delivery service', () => {
       })
       spyOn(Agent.prototype, 'getOrCreateToken').mockImplementation(async () => {
         if (injectFailure && failurePoint === 'token') throw new Error('injected token failure')
-        return 'tau_agent_test'
+        return 'ficus_agent_test'
       })
       await makeDormant(agent)
       const queuedEvents: string[] = []
@@ -339,9 +339,9 @@ describe('inbox delivery service', () => {
     }
     const firstBlock = blockFor('First attached file')
     const secondBlock = blockFor('Second attached file')
-    expect(firstBlock).toContain(`tau inbox download ${firstAttachmentId} --out '<save-path>'`)
+    expect(firstBlock).toContain(`ficus inbox download ${firstAttachmentId} --out '<save-path>'`)
     expect(firstBlock).not.toContain(secondAttachmentId)
-    expect(secondBlock).toContain(`tau inbox download ${secondAttachmentId} --out '<save-path>'`)
+    expect(secondBlock).toContain(`ficus inbox download ${secondAttachmentId} --out '<save-path>'`)
     expect(secondBlock).not.toContain(firstAttachmentId)
 
     sendSpy.mockRestore()

@@ -1,4 +1,4 @@
-import { workStreamTitle } from '@tau/shared'
+import { workStreamTitle } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
 import {
@@ -23,7 +23,7 @@ import type {
   WorkStreamActionData,
   WorkStreamPrompt,
   QuestionData,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { listActionableAgentQuestions } from './questions'
 import { listErrorHaltedAgents, errorHaltReason, ERROR_HALT_QUESTION_IDS } from './resume'
 import { WorkStream } from '../../entities/WorkStream'

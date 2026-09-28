@@ -5,21 +5,21 @@ import { getSecretStore, resetSecretStore } from '../secrets'
 
 const originalFetch = globalThis.fetch
 const originalEnv = {
-  baseUrl: process.env.TAU_PLATFORM_BASE_URL,
-  token: process.env.TAU_PLATFORM_INSTANCE_TOKEN,
+  baseUrl: process.env.FICUS_PLATFORM_BASE_URL,
+  token: process.env.FICUS_PLATFORM_INSTANCE_TOKEN,
 }
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  if (originalEnv.baseUrl === undefined) delete process.env.TAU_PLATFORM_BASE_URL
-  else process.env.TAU_PLATFORM_BASE_URL = originalEnv.baseUrl
-  if (originalEnv.token === undefined) delete process.env.TAU_PLATFORM_INSTANCE_TOKEN
-  else process.env.TAU_PLATFORM_INSTANCE_TOKEN = originalEnv.token
+  if (originalEnv.baseUrl === undefined) delete process.env.FICUS_PLATFORM_BASE_URL
+  else process.env.FICUS_PLATFORM_BASE_URL = originalEnv.baseUrl
+  if (originalEnv.token === undefined) delete process.env.FICUS_PLATFORM_INSTANCE_TOKEN
+  else process.env.FICUS_PLATFORM_INSTANCE_TOKEN = originalEnv.token
 })
 
 function configure() {
-  process.env.TAU_PLATFORM_BASE_URL = 'https://platform.example/'
-  process.env.TAU_PLATFORM_INSTANCE_TOKEN = 'instance-token-SENTINEL'
+  process.env.FICUS_PLATFORM_BASE_URL = 'https://platform.example/'
+  process.env.FICUS_PLATFORM_INSTANCE_TOKEN = 'instance-token-SENTINEL'
 }
 
 const responseSchema = z.object({ ok: z.literal(true) }).strict()
@@ -45,8 +45,8 @@ describe('platformRequest', () => {
   })
 
   test('allows an HTTP platform origin on IPv6 loopback', async () => {
-    process.env.TAU_PLATFORM_BASE_URL = 'http://[::1]:8080/'
-    process.env.TAU_PLATFORM_INSTANCE_TOKEN = 'instance-token'
+    process.env.FICUS_PLATFORM_BASE_URL = 'http://[::1]:8080/'
+    process.env.FICUS_PLATFORM_INSTANCE_TOKEN = 'instance-token'
     let requestedUrl = ''
     globalThis.fetch = (async (input: string | URL | Request) => {
       requestedUrl = new Request(input).url
@@ -58,16 +58,16 @@ describe('platformRequest', () => {
   })
 
   test('prefers the singleton secret store token over the environment fallback', async () => {
-    const priorEncryptionKey = process.env.TAU_ENCRYPTION_KEY
-    const priorManagedKeys = process.env.TAU_MANAGED_SECRET_KEYS
-    process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
-    delete process.env.TAU_MANAGED_SECRET_KEYS
-    process.env.TAU_PLATFORM_BASE_URL = 'https://platform.example'
-    process.env.TAU_PLATFORM_INSTANCE_TOKEN = 'environment-token-SENTINEL'
+    const priorEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
+    const priorManagedKeys = process.env.FICUS_MANAGED_SECRET_KEYS
+    process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
+    delete process.env.FICUS_MANAGED_SECRET_KEYS
+    process.env.FICUS_PLATFORM_BASE_URL = 'https://platform.example'
+    process.env.FICUS_PLATFORM_INSTANCE_TOKEN = 'environment-token-SENTINEL'
     resetSecretStore()
     const store = getSecretStore()
     await store.initialize()
-    await store.set('TAU_PLATFORM_INSTANCE_TOKEN', 'secret-store-token-SENTINEL', 'test')
+    await store.set('FICUS_PLATFORM_INSTANCE_TOKEN', 'secret-store-token-SENTINEL', 'test')
     const authorizations: string[] = []
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       authorizations.push(new Request(input, init).headers.get('authorization') ?? '')
@@ -79,12 +79,12 @@ describe('platformRequest', () => {
       expect(authorizations).toEqual(['Bearer secret-store-token-SENTINEL'])
       expect(authorizations[0]).not.toContain('environment-token-SENTINEL')
     } finally {
-      await store.delete('TAU_PLATFORM_INSTANCE_TOKEN')
+      await store.delete('FICUS_PLATFORM_INSTANCE_TOKEN')
       resetSecretStore()
-      if (priorEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-      else process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey
-      if (priorManagedKeys === undefined) delete process.env.TAU_MANAGED_SECRET_KEYS
-      else process.env.TAU_MANAGED_SECRET_KEYS = priorManagedKeys
+      if (priorEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+      else process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey
+      if (priorManagedKeys === undefined) delete process.env.FICUS_MANAGED_SECRET_KEYS
+      else process.env.FICUS_MANAGED_SECRET_KEYS = priorManagedKeys
     }
   })
 

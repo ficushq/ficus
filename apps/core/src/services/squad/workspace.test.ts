@@ -29,7 +29,7 @@ describe('squad-workspace', () => {
 
   describe('getSquadsBasePath', () => {
     it('uses the process-scoped test home', () => {
-      expect(process.env.TAU_TEST_MODE).toBe('1')
+      expect(process.env.FICUS_TEST_MODE).toBe('1')
       expect(process.env.HOME_DIR).toContain('tau-core-test-')
     })
 
@@ -250,31 +250,31 @@ describe('resolveSquadWorkspaceHostPath', () => {
   const SQUAD = '11111111-2222-4333-8444-555555555555'
   let prev: string | undefined
   beforeEach(() => {
-    prev = process.env.TAU_SANDBOX_RUNTIME
+    prev = process.env.FICUS_SANDBOX_RUNTIME
     clearHostWorkspaceOverrides()
     setHostWorkspaceOverride(SQUAD, '/srv/override')
   })
   afterEach(() => {
     clearHostWorkspaceOverrides()
-    if (prev === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prev
+    if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prev
   })
 
   test('host runtime uses the override', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     expect(resolveSquadWorkspaceHostPath(SQUAD)).toBe('/srv/override')
   })
 
   test('host runtime without an override uses the storage path', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     clearHostWorkspaceOverrides()
     expect(resolveSquadWorkspaceHostPath(SQUAD)).toBe(getSquadWorkspacePath(SQUAD))
   })
 
   test('other runtimes ignore the override', () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     expect(resolveSquadWorkspaceHostPath(SQUAD)).toBe(getSquadWorkspacePath(SQUAD))
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     expect(resolveSquadWorkspaceHostPath(SQUAD)).toBe(getSquadWorkspacePath(SQUAD))
   })
 })
@@ -285,7 +285,7 @@ describe('searchWorkspaceFiles honours the host workspace override', () => {
   let overrideDir: string
 
   beforeEach(() => {
-    prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     clearDirCache()
     clearHostWorkspaceOverrides()
 
@@ -298,14 +298,14 @@ describe('searchWorkspaceFiles honours the host workspace override', () => {
     writeFileSync(join(overrideDir, 'override-only.txt'), 'override')
 
     setHostWorkspaceOverride(SQUAD, overrideDir)
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
   })
 
   afterEach(() => {
     clearDirCache()
     clearHostWorkspaceOverrides()
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     rmSync(overrideDir, { recursive: true, force: true })
   })
 

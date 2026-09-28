@@ -24,8 +24,8 @@ import { DbIntegrationProjectionStateRepository } from '../projection/db-state-r
 import { resolveAssignedIntegrationRefs } from '../projection/agent-refs'
 import { IntegrationProjectionReconciler } from '../projection/reconciler'
 import { IntegrationProjectionWorker } from '../projection/worker'
-import { NotionClient, type NotionTokenResponse } from '@tau/shared/oauth-providers/notion/client'
-import { parseNotionConfiguration } from '@tau/shared/oauth-providers/notion/config'
+import { NotionClient, type NotionTokenResponse } from '@ficus/shared/oauth-providers/notion/client'
+import { parseNotionConfiguration } from '@ficus/shared/oauth-providers/notion/config'
 import { NotionConnectionAuthorizer } from './connection-authorizer'
 import { createNotionPlugin } from './plugin'
 import { expectCleanExit, expectFailedExit, runCapturedProcess } from '../../../test-utils/captured-process'
@@ -38,8 +38,8 @@ test('GitHub bindings work in POSIX sh and remain inherited by child Bash shells
   const bindings = githubCommandBindings(squadId)
   try {
     // Own the executable so this regression needs no provider or installed CLI.
-    const tau = join(root, 'tau')
-    writeFileSync(tau, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o700 })
+    const ficus = join(root, 'ficus')
+    writeFileSync(ficus, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o700 })
     for (const [shell, command] of [
       ['sh', 'gh pr list'],
       ['bash', "bash -c 'gh pr list'"],
@@ -70,8 +70,8 @@ test('Git credential operations reach the squad integration with their operation
   const root = mkdtempSync(join(tmpdir(), 'tau-git-credential-'))
   try {
     writeFileSync(
-      join(root, 'tau'),
-      '#!/bin/sh\nfor arg; do operation="$arg"; done\nprintf "%s\\n" "$@" >> "$TAU_TEST_ARGS"\ncat >/dev/null\nif [ "$operation" = get ]; then printf "username=fixture\\npassword=fixture-token\\n"; fi\n',
+      join(root, 'ficus'),
+      '#!/bin/sh\nfor arg; do operation="$arg"; done\nprintf "%s\\n" "$@" >> "$FICUS_TEST_ARGS"\ncat >/dev/null\nif [ "$operation" = get ]; then printf "username=fixture\\npassword=fixture-token\\n"; fi\n',
       { mode: 0o700 }
     )
     for (const operation of ['fill', 'approve', 'reject']) {
@@ -86,7 +86,7 @@ test('Git credential operations reach the squad integration with their operation
           env: {
             ...process.env,
             PATH: `${root}:${process.env.PATH}`,
-            TAU_TEST_ARGS: args,
+            FICUS_TEST_ARGS: args,
             GIT_CONFIG_NOSYSTEM: '1',
             GIT_CONFIG_GLOBAL: '/dev/null',
             GIT_TERMINAL_PROMPT: '0',
@@ -117,8 +117,8 @@ test('Git credential operations reach the squad integration with their operation
 })
 
 test('Core connect assign reconcile real CLI rotate without reinstall and unassign', async () => {
-  const priorEncryptionKey = process.env.TAU_ENCRYPTION_KEY
-  process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
+  const priorEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
+  process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
   const root = mkdtempSync(join(tmpdir(), 'tau-notion-core-e2e-'))
   const envFile = join(root, '.env')
   const egressLog = join(root, 'egress.log')
@@ -128,7 +128,7 @@ test('Core connect assign reconcile real CLI rotate without reinstall and unassi
     `const fs=require('node:fs');const net=require('node:net');const tls=require('node:tls');
 const host=a=>typeof a[0]==='object'?a[0]?.host:(typeof a[1]==='string'?a[1]:'localhost');
 const allowed=h=>!h||h==='localhost'||h==='127.0.0.1'||h==='::1';
-for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){const original=m[k];m[k]=function(...a){const h=host(a);if(!allowed(h)){fs.appendFileSync(process.env.TAU_EGRESS_LOG,h+'\\n');throw new Error('non-loopback egress blocked')}return original.apply(this,a)}};`
+for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){const original=m[k];m[k]=function(...a){const h=host(a);if(!allowed(h)){fs.appendFileSync(process.env.FICUS_EGRESS_LOG,h+'\\n');throw new Error('non-loopback egress blocked')}return original.apply(this,a)}};`
   )
   const secretStore = getSecretStore()
   await secretStore.initialize()
@@ -343,7 +343,7 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
         CI: '1',
         NO_PROXY: '127.0.0.1,localhost',
         NODE_OPTIONS: `--require ${egressGuard}`,
-        TAU_EGRESS_LOG: egressLog,
+        FICUS_EGRESS_LOG: egressLog,
         // So a panic carries a frame instead of only exit 101.
         RUST_BACKTRACE: '1',
       },
@@ -443,7 +443,7 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     await db.delete(squads).where(eq(squads.id, squad.id))
     await db.delete(squads).where(eq(squads.id, earlierSquad.id))
     rmSync(root, { recursive: true, force: true })
-    if (priorEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey
+    if (priorEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey
   }
 }, 30_000)

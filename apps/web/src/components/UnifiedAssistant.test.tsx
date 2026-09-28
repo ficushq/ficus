@@ -56,7 +56,7 @@ test('the assistant nav button toggles the panel like its keyboard shortcut whil
     await dom.act(async () => button.click())
     expect(panel.hidden).toBe(false)
     expect(button.getAttribute('aria-expanded')).toBe('true')
-    await dom.act(async () => window.dispatchEvent(new Event('open-tau-assistant')))
+    await dom.act(async () => window.dispatchEvent(new Event('open-ficus-assistant')))
     expect(panel.hidden).toBe(false)
     await dom.act(async () => button.click())
     expect(panel.hidden).toBe(true)

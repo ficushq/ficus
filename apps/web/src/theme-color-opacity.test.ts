@@ -1,4 +1,4 @@
-import { compileCustomTheme, validateCustomTheme, STATUS_TOKENS } from '@tau/shared'
+import { compileCustomTheme, validateCustomTheme, STATUS_TOKENS } from '@ficus/shared'
 import { palettes } from './theme/test/builtins'
 import { BUILT_IN_THEMES } from './theme/registry'
 import { describe, expect, test } from 'bun:test'

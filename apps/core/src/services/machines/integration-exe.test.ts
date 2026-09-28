@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { randomUUID } from 'crypto'
 import { mkdtempSync, readFileSync } from 'fs'
 import { Hono } from 'hono'
@@ -40,18 +40,18 @@ import { MachineTunnelManager } from './tunnel-manager'
  * placement.test.ts) runs against a FAKE `ExeApi`/`ExeExec`.
  *
  * ----------------------------------------------------------------------------
- * Separate gate from `integration-vm.test.ts`'s `TAU_TEST_SSH_HOST`: this test
+ * Separate gate from `integration-vm.test.ts`'s `FICUS_TEST_SSH_HOST`: this test
  * needs a real exe.dev account. The credential is the account's SSH PRIVATE key
  * (Settings → SSH keys on exe.dev), supplied as a FILE PATH. To run:
  *
- *   TAU_TEST_EXE_SSH_KEY=~/.ssh/tau-exe-test \
- *   TAU_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
+ *   FICUS_TEST_EXE_SSH_KEY=~/.ssh/tau-exe-test \
+ *   FICUS_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
  *   bun test src/services/machines/integration-exe.test.ts
  *
  * The test provisions ONE real VM, uses it for the whole flow, and destroys it
  * in the same `it()` (best-effort cleanup in `afterAll` too, in case an
  * assertion throws mid-flow). It costs real exe.dev usage; do not run it in CI.
- * Skipped-mode collection (no `TAU_TEST_EXE_SSH_KEY`) does ZERO exe.dev network
+ * Skipped-mode collection (no `FICUS_TEST_EXE_SSH_KEY`) does ZERO exe.dev network
  * calls and creates ZERO DB rows — `describe.skipIf` skips `beforeAll`/`afterAll`
  * too, so nothing in this file executes without the gate.
  *
@@ -103,7 +103,7 @@ function bashCollect(client: SandboxClient, command: string): Promise<{ stdout: 
   })
 }
 
-describe.skipIf(!process.env.TAU_TEST_EXE_SSH_KEY)('exe.dev provider (integration, real exe.dev VM)', () => {
+describe.skipIf(!process.env.FICUS_TEST_EXE_SSH_KEY)('exe.dev provider (integration, real exe.dev VM)', () => {
   let priorKey: string | undefined
   let priorHome: string | undefined
   let admin: TestUser
@@ -118,8 +118,8 @@ describe.skipIf(!process.env.TAU_TEST_EXE_SSH_KEY)('exe.dev provider (integratio
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
     process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-exe-int-home-'))
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
     await getSecretStore().initialize()
 
@@ -127,7 +127,7 @@ describe.skipIf(!process.env.TAU_TEST_EXE_SSH_KEY)('exe.dev provider (integratio
     // key production reads (provider-credentials.ts's EXE_PROVIDER_SSH_KEY) — by
     // reading the key FILE the gate points at, then register the real exe provider
     // (real defaultExeExec, real network).
-    const accountKey = readFileSync(expandTilde(process.env.TAU_TEST_EXE_SSH_KEY!), 'utf8')
+    const accountKey = readFileSync(expandTilde(process.env.FICUS_TEST_EXE_SSH_KEY!), 'utf8')
     await getSecretStore().set(EXE_PROVIDER_SSH_KEY, accountKey, 'system')
     await registerBuiltinMachineProviders()
 
@@ -168,8 +168,8 @@ describe.skipIf(!process.env.TAU_TEST_EXE_SSH_KEY)('exe.dev provider (integratio
       /* best-effort */
     }
     await cleanupTestRbac(prefix)
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     if (priorHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = priorHome
     resetSecretStore()

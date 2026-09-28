@@ -100,8 +100,8 @@ describe('agent-federation routes', () => {
     expect((await Agent.mustFind(agent.id)).identityPublicKey).toBe(agent.identityPublicKey)
   })
 
-  test('"me" resolves to the calling agent for register + status (TAU_TOKEN identity)', async () => {
-    // The in-sandbox CLI has only TAU_TOKEN (no agent id in the URL); the server resolves
+  test('"me" resolves to the calling agent for register + status (FICUS_TOKEN identity)', async () => {
+    // The in-sandbox CLI has only FICUS_TOKEN (no agent id in the URL); the server resolves
     // the literal "me" segment to identity.agentId.
     const { agent, token } = await makeAgent({ ownerUserId: admin.id })
     const handle = `${prefix}-me`

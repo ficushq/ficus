@@ -4,7 +4,7 @@ import {
   type BranchChangeRequestCandidate,
   type IntegrationSubscription,
   type ResolvedTrackedResource,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { resolveGitHubRelayAssignment } from './resolve-connection'
 import type { CodeHostingAdapter } from '../code-hosting/registry'
 import type { TrackedResourceAdapter } from '../tracked-resources/registry'

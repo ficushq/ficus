@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, mock, setSystemTime, spyOn, test } from 'bun:test'
 import { act, renderHook as renderHookBase, waitFor } from './test-utils'
 import { focusManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { TauClient } from '@tau/client-core'
-import { createClient, queryKeys, type Transport } from '@tau/client-core'
+import type { FicusClient } from '@ficus/client-core'
+import { createClient, queryKeys, type Transport } from '@ficus/client-core'
 import { ConversationClientProvider, type SubscribeToAgentEvents } from './ConversationClientProvider'
 import { useAgentConversation } from './useAgentConversation'
-import type { Message, StreamEvent } from '@tau/shared'
+import type { Message, StreamEvent } from '@ficus/shared'
 
 // Every mounted fixture owns its timers and focus/online subscriptions. Earlier
 // tests omitted unmount, letting later focus events wake unrelated conversations.
@@ -24,8 +24,8 @@ async function renderHook<T>(useHook: () => T, options?: Parameters<typeof rende
   return { ...hook, unmount }
 }
 
-type StreamCb = Parameters<TauClient['agents']['subscribeToAgentStream']>[1]
-type ChatCb = Parameters<TauClient['chat']['sendChatMessage']>[1]
+type StreamCb = Parameters<FicusClient['agents']['subscribeToAgentStream']>[1]
+type ChatCb = Parameters<FicusClient['chat']['sendChatMessage']>[1]
 
 function makeMockClient(opts?: {
   activeExecution?: { active: boolean; status?: string; executionId?: string }
@@ -150,7 +150,7 @@ function makeMockClient(opts?: {
         }
       },
     },
-  } as unknown as TauClient
+  } as unknown as FicusClient
   return {
     client,
     currentStream: () => streamCb!,
@@ -203,7 +203,7 @@ function makeMockClient(opts?: {
   }
 }
 
-function wrap(client: TauClient) {
+function wrap(client: FicusClient) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={qc}>
@@ -223,7 +223,7 @@ function wrapLive(mockClient: ReturnType<typeof makeMockClient>) {
   )
 }
 
-function wrapWith(qc: QueryClient, client: TauClient) {
+function wrapWith(qc: QueryClient, client: FicusClient) {
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={qc}>
       <ConversationClientProvider client={client}>{children}</ConversationClientProvider>
@@ -1152,7 +1152,7 @@ describe('useAgentConversation', () => {
     })
     await waitFor(() => expect(result.current.agentId).toBe('dedup-agent-1'))
 
-    const doneEvent: import('@tau/shared').StreamEvent = {
+    const doneEvent: import('@ficus/shared').StreamEvent = {
       type: 'done',
       response: 'Dedup response',
       metadata: { model: 'z' } as any,
@@ -2646,7 +2646,7 @@ test('parent adoption of the created agent keeps the subscription effective', as
 test('late exact reconciliation cannot complete a replacement execution', async () => {
   const m = makeMockClient({ activeExecution: { active: true, executionId: 'old', status: 'running' } })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  let finish!: (value: Awaited<ReturnType<FicusClient['agents']['getExecution']>>) => void
   m.client.agents.getExecution = () =>
     new Promise((resolve) => {
       finish = resolve
@@ -2868,7 +2868,7 @@ test('quiet backstop rearms for a silent foreground replacement and reconciles f
 test('terminal exact confirmation refetches history even if the pre-confirmation refresh was incomplete', async () => {
   const m = makeMockClient({ activeExecution: { active: true, executionId: 'e', status: 'running' } })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  let finish!: (value: Awaited<ReturnType<FicusClient['agents']['getExecution']>>) => void
   m.client.agents.getExecution = () =>
     new Promise((resolve) => {
       finish = resolve
@@ -2933,7 +2933,7 @@ test('terminal exact confirmation refetches history even if the pre-confirmation
 test('an in-flight quiet backstop result cannot terminalize a replacement execution', async () => {
   const m = makeMockClient({ activeExecution: { active: false } })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  let finish!: (value: Awaited<ReturnType<FicusClient['agents']['getExecution']>>) => void
   m.client.agents.getExecution = () =>
     new Promise((resolve) => {
       finish = resolve
@@ -3796,7 +3796,7 @@ test('two mounted views share silent-open exact/history recovery through real re
 test('pending exact probe times out honestly; late completion cannot mutate a switched conversation', async () => {
   const clock = reconciliationClock()
   const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
-  let resolve!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  let resolve!: (value: Awaited<ReturnType<FicusClient['agents']['getExecution']>>) => void
   let signal: AbortSignal | undefined
   let reads = 0
   m.client.agents.getExecution = async (_a, _e, s) => {
@@ -3924,7 +3924,7 @@ test.each(['execution', 'activity', 'foreground'] as const)(
   async (replacement) => {
     const clock = reconciliationClock()
     const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
-    let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+    let finish!: (value: Awaited<ReturnType<FicusClient['agents']['getExecution']>>) => void
     m.client.agents.getExecution = () =>
       new Promise((resolve) => {
         finish = resolve
@@ -4003,7 +4003,7 @@ test.each([true, false])(
   async (manual) => {
     const clock = reconciliationClock()
     const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
-    let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+    let finish!: (value: Awaited<ReturnType<FicusClient['agents']['getExecution']>>) => void
     m.client.agents.getExecution = () =>
       new Promise((resolve) => {
         finish = resolve
@@ -4146,7 +4146,7 @@ test.each(['failure', 'timeout'] as const)('two manual observers share the %s hi
 test('one replacement floor does not revoke a shared result from another valid observer', async () => {
   const clock = reconciliationClock()
   const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
-  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  let finish!: (value: Awaited<ReturnType<FicusClient['agents']['getExecution']>>) => void
   let reads = 0
   m.client.agents.getExecution = () => {
     reads++

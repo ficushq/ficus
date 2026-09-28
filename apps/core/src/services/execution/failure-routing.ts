@@ -1,4 +1,4 @@
-import { QuestionData } from '@tau/shared'
+import { QuestionData } from '@ficus/shared'
 import { getErrorSystemMessage } from '../../lib/error'
 
 /**

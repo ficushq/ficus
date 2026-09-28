@@ -1,12 +1,12 @@
 # Single-origin and reverse proxy deployment
 
-Tau can run behind one public hostname in two ways:
+Ficus can run behind one public hostname in two ways:
 
-| Mode                                       | Pick this when                                                                                                                 |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| Built-in single-origin (`TAU_SERVE_WEB=1`) | You want the simplest self-hosted VM or Docker deploy: `/`, `/api/*`, `/ws`, and `/ws/terminal` all come from Core on `:3000`. |
-| Split-port reverse proxy                   | You want Core on `:3000` and a separately served web build or Vite server on `:5173`.                                          |
-| Kubernetes/CDN split                       | You run the hosted-style Kubernetes topology with separate `tau-api`/`tau-web` deployments and CDN/static hosting.             |
+| Mode                                         | Pick this when                                                                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Built-in single-origin (`FICUS_SERVE_WEB=1`) | You want the simplest self-hosted VM or Docker deploy: `/`, `/api/*`, `/ws`, and `/ws/terminal` all come from Core on `:3000`. |
+| Split-port reverse proxy                     | You want Core on `:3000` and a separately served web build or Vite server on `:5173`.                                          |
+| Kubernetes/CDN split                         | You run the hosted-style Kubernetes topology with separate `tau-api`/`tau-web` deployments and CDN/static hosting.             |
 
 ## Built-in single-origin serving
 
@@ -14,7 +14,7 @@ Build the web UI, then let Core serve it on the same port as the API and WebSock
 
 ```bash
 bun run build:web
-TAU_SERVE_WEB=1 bun run start
+FICUS_SERVE_WEB=1 bun run start
 ```
 
 Core serves:
@@ -23,13 +23,13 @@ Core serves:
 - `/ws` and `/ws/*` -> Core WebSockets on `http://127.0.0.1:3000`
 - `/` and client-side routes -> `apps/web/dist`
 
-`TAU_SERVE_WEB=0` disables this even when `apps/web/dist` exists. When `TAU_SERVE_WEB` is unset, Core safely auto-enables only if `apps/web/dist/index.html` exists.
+`FICUS_SERVE_WEB=0` disables this even when `apps/web/dist` exists. When `FICUS_SERVE_WEB` is unset, Core safely auto-enables only if `apps/web/dist/index.html` exists.
 
 For Docker single-image deployments, build with the web assets included and enable serving at runtime:
 
 ```bash
-docker build --build-arg TAU_INCLUDE_WEB=1 -t tau-core:single-origin .
-docker run -e TAU_SERVE_WEB=1 -p 3000:3000 tau-core:single-origin
+docker build --build-arg FICUS_INCLUDE_WEB=1 -t tau-core:single-origin .
+docker run -e FICUS_SERVE_WEB=1 -p 3000:3000 tau-core:single-origin
 ```
 
 ## Caddy
@@ -141,7 +141,7 @@ server {
 }
 ```
 
-If `TAU_SERVE_WEB=1` is enabled, replace the `location /` file root with `proxy_pass http://127.0.0.1:3000;` so `/` is served by Core too. Core sets the correct PWA cache headers itself, which makes single-origin the least error-prone option.
+If `FICUS_SERVE_WEB=1` is enabled, replace the `location /` file root with `proxy_pass http://127.0.0.1:3000;` so `/` is served by Core too. Core sets the correct PWA cache headers itself, which makes single-origin the least error-prone option.
 
 > **CDN warning:** if a CDN fronts the site (Cloudflare et al.), it must see the `Cache-Control` headers above from the origin. Cloudflare's default behavior caches `.js` by extension for hours while treating HTML as dynamic — a recipe for a stale `sw.js` against a fresh `index.html`, which the app surfaces as spurious update prompts or blocked auto-updates. After fixing the origin headers, purge the CDN cache for `sw.js` once.
 
@@ -154,7 +154,7 @@ services:
   tau-core:
     image: tau-core:single-origin
     environment:
-      TAU_SERVE_WEB: '1'
+      FICUS_SERVE_WEB: '1'
     labels:
       - traefik.enable=true
       - traefik.http.routers.tau.rule=Host(`tau.example.com`)
@@ -167,22 +167,22 @@ For split-port deployments, create separate routers: `/api/*`, `/ws`, and `/ws/*
 
 ## Tailscale Serve
 
-If you use [Tailscale](https://tailscale.com/), it can expose tau over your
+If you use [Tailscale](https://tailscale.com/), it can expose ficus over your
 tailnet with automatic HTTPS and no public DNS at all. With the built-in
-single-origin mode (`TAU_SERVE_WEB=1`), point it at Core:
+single-origin mode (`FICUS_SERVE_WEB=1`), point it at Core:
 
 ```bash
 tailscale serve --bg --set-path=/tau http://localhost:3000
 ```
 
-Tau is then reachable at `https://<your-machine>.<tailnet>/tau`. Because that
+Ficus is then reachable at `https://<your-machine>.<tailnet>/tau`. Because that
 URL carries a path, set the base path and the WebAuthn origin explicitly, or
 passkeys break:
 
 ```bash
 APP_URL=https://<your-machine>.<tailnet>/tau
 APP_BASE_PATH=/tau
-TAU_WEB_ORIGIN=https://<your-machine>.<tailnet>   # bare origin, no path
+FICUS_WEB_ORIGIN=https://<your-machine>.<tailnet>   # bare origin, no path
 ```
 
 Serving at the tailnet root (`tailscale serve --bg http://localhost:3000`)

@@ -5,7 +5,7 @@ import { deviceTokens, users } from '../../db/schema'
 import { publishDeviceTokenRevocation } from './device-token-events'
 
 /** Per-device tokens carry this prefix so resolveToken can route them without a DB hit for other kinds. */
-export const DEVICE_TOKEN_PREFIX = 'tau_dev_'
+export const DEVICE_TOKEN_PREFIX = 'ficus_dev_'
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')

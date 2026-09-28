@@ -6,7 +6,7 @@
  * Containers are long-lived — shared between agent bash tools and terminal sessions.
  *
  * Supports two container runtimes for Docker-in-Docker, chosen EXPLICITLY by
- * TAU_SANDBOX_RUNTIME (there is no default and no auto-detection):
+ * FICUS_SANDBOX_RUNTIME (there is no default and no auto-detection):
  * - docker-sysbox: Secure, unprivileged DinD via sysbox-runc (Linux only)
  * - docker-socket: Docker socket mounting (macOS, Windows, Linux)
  */
@@ -15,6 +15,7 @@ import { spawn as ptySpawn, type IPty } from 'bun-pty'
 import { randomBytes } from 'node:crypto'
 import * as fs from 'fs'
 import * as path from 'path'
+import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
 import { MONOREPO_ROOT } from '../../../lib/paths'
 import { createLogger } from '../../../lib/infra/logger'
 import { getHomeDir } from '../../../lib/utils/home'
@@ -55,7 +56,24 @@ export type { SandboxOptions, SandboxRuntime } from '../types'
 
 const log = createLogger('sandbox')
 
-const SANDBOX_IMAGE = process.env.TAU_SANDBOX_IMAGE || 'tau-sandbox:latest'
+/**
+ * Append `-e KEY=value` pairs for a container env. One release (Ficus rename):
+ * every FICUS_X also goes in as TAU_X, because the sandbox image's startup
+ * script, user scripts and older `tau` CLIs in an existing container still read
+ * the legacy names.
+ */
+function pushEnvArgs(args: string[], env: Record<string, string | undefined>): void {
+  for (const [key, value] of Object.entries(withLegacyEnvAliases(env))) args.push('-e', `${key}=${value}`)
+}
+
+/** The interactive terminal's `docker exec` env flags: the live Core URL, in both spellings. */
+export function terminalApiUrlArgs(apiUrl: string): string {
+  const args: string[] = []
+  pushEnvArgs(args, { FICUS_API_URL: apiUrl })
+  return args.join(' ')
+}
+
+const SANDBOX_IMAGE = process.env.FICUS_SANDBOX_IMAGE || 'tau-sandbox:latest'
 const DOCKER_SANDBOX_MEMORY_LIMIT = '2g'
 // Chromium (the in-container tau-browser service, dev parity with VM machines)
 // needs far more shared memory than Docker's 64 MB /dev/shm default. A create
@@ -437,7 +455,7 @@ function getDockerSocketPath(): string {
 }
 
 /**
- * Resolve the Docker runtime named by TAU_SANDBOX_RUNTIME.
+ * Resolve the Docker runtime named by FICUS_SANDBOX_RUNTIME.
  *
  * No probing and no fallbacks: the operator picked `docker-sysbox` or
  * `docker-socket` explicitly, and anything else (including the k8s/vm/host
@@ -454,8 +472,8 @@ export function selectRuntime(): SandboxRuntime {
   if (runtime === 'docker-sysbox') {
     if (!isSysboxAvailable()) {
       throw new Error(
-        'TAU_SANDBOX_RUNTIME=docker-sysbox requested but the sysbox runtime is not installed on this host. ' +
-          'Install sysbox (Linux only), or set TAU_SANDBOX_RUNTIME=docker-socket.'
+        'FICUS_SANDBOX_RUNTIME=docker-sysbox requested but the sysbox runtime is not installed on this host. ' +
+          'Install sysbox (Linux only), or set FICUS_SANDBOX_RUNTIME=docker-socket.'
       )
     }
     cachedSelectedRuntime = 'docker-sysbox'
@@ -470,8 +488,8 @@ export function selectRuntime(): SandboxRuntime {
   }
 
   throw new Error(
-    `The Docker sandbox manager was used under TAU_SANDBOX_RUNTIME=${runtime}. ` +
-      'Set TAU_SANDBOX_RUNTIME to docker-sysbox or docker-socket to run Docker sandboxes.'
+    `The Docker sandbox manager was used under FICUS_SANDBOX_RUNTIME=${runtime}. ` +
+      'Set FICUS_SANDBOX_RUNTIME to docker-sysbox or docker-socket to run Docker sandboxes.'
   )
 }
 
@@ -538,7 +556,7 @@ export function resolveDockerApiUrl(opts: { port?: string } = {}): string {
  * bearing for that:
  *  - `volumes` is sorted, so a reordered list never churns the hash.
  *  - `env` is EXCLUDED: it carries per-ensure churn (the dynamic Core port in
- *    TAU_API_URL, GitHub tokens, the callback secret) and is re-injected per
+ *    FICUS_API_URL, GitHub tokens, the callback secret) and is re-injected per
  *    `docker exec` anyway, so it is not a create-immutable input. Hashing it
  *    would make the stamp never match the next ensure — an infinite recreate.
  */
@@ -1155,7 +1173,7 @@ export class DockerSandboxManager implements ISandboxManager {
       hostUid !== 65534 &&
       hostGid !== 65534
     ) {
-      args.push('-e', `TAU_HOST_UID=${hostUid}`, '-e', `TAU_HOST_GID=${hostGid}`)
+      pushEnvArgs(args, { FICUS_HOST_UID: String(hostUid), FICUS_HOST_GID: String(hostGid) })
     }
 
     // Mount per-agent private volume when provided
@@ -1243,7 +1261,7 @@ export class DockerSandboxManager implements ISandboxManager {
       hostUid !== 65534 &&
       hostGid !== 65534
     ) {
-      args.push('-e', `TAU_HOST_UID=${hostUid}`, '-e', `TAU_HOST_GID=${hostGid}`)
+      pushEnvArgs(args, { FICUS_HOST_UID: String(hostUid), FICUS_HOST_GID: String(hostGid) })
     }
 
     // Mount per-agent private volume when provided
@@ -1292,11 +1310,7 @@ export class DockerSandboxManager implements ISandboxManager {
     }
 
     // Extra environment variables
-    if (opts.env) {
-      for (const [key, value] of Object.entries(opts.env)) {
-        args.push('-e', `${key}=${value}`)
-      }
-    }
+    if (opts.env) pushEnvArgs(args, opts.env)
 
     // Extra volume mounts
     if (opts.volumes) {
@@ -1372,17 +1386,19 @@ export class DockerSandboxManager implements ISandboxManager {
       const userArgs = this.getSandboxUserArgs()
       // Inject the per-agent scoped token so `tau` CLI calls inside the sandbox
       // authenticate AS this agent (RBAC squad-scoped) rather than via the shared
-      // TAU_PASSWORD. Tokens are `tau_agent_<uuid>` (no shell metacharacters).
-      const tokenArgs = tauToken ? ['-e', `TAU_TOKEN=${tauToken}`] : []
+      // FICUS_PASSWORD. Tokens are `ficus_agent_<uuid>` (no shell metacharacters).
       // Re-inject the live Core URL so the CLI reaches the current Core even if the
       // container baked a now-stale dynamic port at creation (matches k8s behavior).
-      const apiUrlArgs = ['-e', `TAU_API_URL=${resolveDockerApiUrl()}`]
+      const identityArgs: string[] = []
+      pushEnvArgs(identityArgs, {
+        ...(tauToken ? { FICUS_TOKEN: tauToken } : {}),
+        FICUS_API_URL: resolveDockerApiUrl(),
+      })
       const execArgs = [
         'docker',
         'exec',
         ...userArgs,
-        ...tokenArgs,
-        ...apiUrlArgs,
+        ...identityArgs,
         '-w',
         sandbox.workspaceMount,
         sandbox.containerId,
@@ -1563,7 +1579,7 @@ export class DockerSandboxManager implements ISandboxManager {
     // Inject the live Core URL so the terminal's `tau` CLI reaches the current Core
     // even if the container baked a now-stale port. No token/password: the box is
     // shared with squad agents, so the terminal stays a token-free environment.
-    const apiUrlArg = `-e TAU_API_URL=${resolveDockerApiUrl()}`
+    const apiUrlArg = terminalApiUrlArgs(resolveDockerApiUrl())
     let dockerCmd: string
     if (hasDevboxBashrc) {
       dockerCmd = `docker exec ${userArgs.join(' ')} ${apiUrlArg} -it -w ${shellWorkspaceMount} ${containerId} bash --rcfile .tau/.bashrc`

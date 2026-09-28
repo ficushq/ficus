@@ -1,22 +1,22 @@
 ---
 title: CLI reference
-description: Log in to Tau from a terminal, inspect work, and create a work stream.
+description: Log in to Ficus from a terminal, inspect work, and create a work stream.
 ---
 
 import ModeContent from '../../../components/ModeContent.astro'
 
-The `tau` command connects your terminal to a Tau instance. Use it to inspect squads, create and follow work streams, and script supported actions. The examples below assume `tau` is installed and available on your `PATH`; check with `tau --version`.
+The `ficus` command connects your terminal to a Ficus instance. Use it to inspect squads, create and follow work streams, and script supported actions. The examples below assume `ficus` is installed and available on your `PATH`; check with `ficus --version`.
 
 ## Log in to an instance
 
-Choose a short label for the connection, such as `work`. Tau calls a saved connection a **backend**.
+Choose a short label for the connection, such as `work`. Ficus calls a saved connection a **backend**.
 
 <ModeContent mode="cloud">
 
-Use the URL of your own Tau workspace. Replace the fictional `https://tau.example.com` address before running:
+Use the URL of your own Ficus workspace. Replace the fictional `https://ficus.example.com` address before running:
 
 ```sh
-tau auth login work --api-url https://tau.example.com
+ficus auth login work --api-url https://ficus.example.com
 ```
 
 </ModeContent>
@@ -26,7 +26,7 @@ tau auth login work --api-url https://tau.example.com
 Use your instance's browser-facing base URL. If you are running the CLI on the same machine as a local instance on port 3000:
 
 ```sh
-tau auth login local --api-url http://localhost:3000
+ficus auth login local --api-url http://localhost:3000
 ```
 
 For a remote server, replace the URL with that server's address. See [Runtime and access](/self-host/runtime-and-access/) if the instance is not reachable.
@@ -38,9 +38,9 @@ Without an explicitly supplied credential, login opens browser approval or print
 Check the target and identity before creating work:
 
 ```sh
-tau auth status
-tau whoami
-tau auth introspect
+ficus auth status
+ficus whoami
+ficus auth introspect
 ```
 
 `auth status` explains how the CLI found its credentials. `whoami` identifies the instance and caller; `auth introspect` shows effective roles and permissions. Explicit environment credentials can affect authentication, so check these when the CLI appears to use the wrong account.
@@ -48,33 +48,33 @@ tau auth introspect
 ## Find a squad and workflow
 
 ```sh
-tau squad list
-tau workflow list
-tau agent-type list
+ficus squad list
+ficus workflow list
+ficus agent-type list
 ```
 
 Copy an actual squad ID from the list. This example value is fictional and must be replaced:
 
 ```sh
 SQUAD_ID='00000000-0000-4000-8000-000000000001'
-tau squad get "$SQUAD_ID"
-tau workstream list --squad "$SQUAD_ID"
+ficus squad get "$SQUAD_ID"
+ficus workstream list --squad "$SQUAD_ID"
 ```
 
 If you need a squad, this creates one with a name and purpose:
 
 ```sh
-tau squad create "Website refresh" --purpose "Improve the public website"
+ficus squad create "Website refresh" --purpose "Improve the public website"
 ```
 
 Read [Squads](/use/squads/) to choose its workspace and configuration before assigning work.
 
 ## Create and inspect a work stream
 
-Choose a workflow from `tau workflow list`. This example uses the bundled `solo` style, which gives one participant the deliverable:
+Choose a workflow from `ficus workflow list`. This example uses the bundled `solo` style, which gives one participant the deliverable:
 
 ```sh
-tau workstream create "Draft release notes" \
+ficus workstream create "Draft release notes" \
   --squad "$SQUAD_ID" \
   --workflow solo \
   --description "Draft release notes from the changes provided in the squad. Identify anything that needs verification."
@@ -86,15 +86,15 @@ Copy the returned work-stream ID. Replace this fictional value before running:
 
 ```sh
 WORKSTREAM_ID='00000000-0000-4000-8000-000000000002'
-tau workstream get "$WORKSTREAM_ID"
-tau workstream get "$WORKSTREAM_ID" --metrics
-tau workstream list --squad "$SQUAD_ID" --no-truncate
+ficus workstream get "$WORKSTREAM_ID"
+ficus workstream get "$WORKSTREAM_ID" --metrics
+ficus workstream list --squad "$SQUAD_ID" --no-truncate
 ```
 
 `ws` is an alias for `workstream`; `at` is an alias for `agent-type`. To find work by text:
 
 ```sh
-tau search "release notes" --squad "$SQUAD_ID" --limit 10
+ficus search "release notes" --squad "$SQUAD_ID" --limit 10
 ```
 
 ## Use multiple instances
@@ -102,26 +102,26 @@ tau search "release notes" --squad "$SQUAD_ID" --limit 10
 List saved backends, switch the default, or select one for a single command:
 
 ```sh
-tau auth list
-tau auth switch work
-tau --backend work squad list
+ficus auth list
+ficus auth switch work
+ficus --backend work squad list
 ```
 
-Replace `work` with a label you have saved. Backend selection is for a person's CLI session. Tau-built agent shells use their injected agent identity and reject `--backend` so they do not accidentally pick up an operator login.
+Replace `work` with a label you have saved. Backend selection is for a person's CLI session. Ficus-built agent shells use their injected agent identity and reject `--backend` so they do not accidentally pick up an operator login.
 
 ## Use JSON in scripts
 
 Add `--json` for machine-readable output:
 
 ```sh
-tau --json squad list
-tau --json workstream get "$WORKSTREAM_ID"
-tau --json auth introspect --squad "$SQUAD_ID"
+ficus --json squad list
+ficus --json workstream get "$WORKSTREAM_ID"
+ficus --json auth introspect --squad "$SQUAD_ID"
 ```
 
 Inspect the command's returned fields before writing a script around them. A successfully retrieved work-stream record is not evidence that its work is complete; check its status and any outstanding input or review request.
 
-For automation, use a separately scoped [system token](/configure/access/#give-automation-its-own-credential). Supply `TAU_API_URL` and `TAU_TOKEN` through your automation's secret/environment configuration rather than placing a token in a command or checked-in script.
+For automation, use a separately scoped [system token](/configure/access/#give-automation-its-own-credential). Supply `FICUS_API_URL` and `FICUS_TOKEN` through your automation's secret/environment configuration rather than placing a token in a command or checked-in script.
 
 ## Discover commands and troubleshoot
 
@@ -130,8 +130,8 @@ For automation, use a separately scoped [system token](/configure/access/#give-a
 Read the same cached breakdown shown in **Settings → Storage**, or request a background scan:
 
 ```sh
-tau system storage --json
-tau system storage --refresh --json
+ficus system storage --json
+ficus system storage --refresh --json
 ```
 
 Both commands return immediately with `scanning`, `scannedAt`, `error`, and the per-machine, squad, and folder sizes in bytes. While `scanning` is true, read again after a few seconds; existing results retain the previous scan's timestamp until the scan finishes. Check each machine's `status`: unavailable or partial measurements are not evidence of an empty disk. Folder totals include their children.
@@ -145,38 +145,38 @@ The API equivalents are `GET /api/system/storage` and `POST /api/system/storage/
 ### Get help
 
 ```sh
-tau --help
-tau workstream create --help
-tau agent-type update --help
-tau integration --help
-tau provider-auth --help
+ficus --help
+ficus workstream create --help
+ficus agent-type update --help
+ficus integration --help
+ficus provider-auth --help
 ```
 
-| Symptom                   | What to check                                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Wrong instance or account | Run `tau auth status` and `tau whoami`; inspect explicit environment overrides and the active backend. |
-| Unauthorized              | Log in again or check whether the paired device was revoked.                                           |
-| Forbidden                 | Run `tau auth introspect --squad "$SQUAD_ID"` and ask an administrator for the required access.        |
-| No usable model           | Check provider accounts and the selected [model tier](/configure/models/).                             |
-| Unknown option            | Read that command's `--help`; CLI and server versions may differ.                                      |
+| Symptom                   | What to check                                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Wrong instance or account | Run `ficus auth status` and `ficus whoami`; inspect explicit environment overrides and the active backend. |
+| Unauthorized              | Log in again or check whether the paired device was revoked.                                               |
+| Forbidden                 | Run `ficus auth introspect --squad "$SQUAD_ID"` and ask an administrator for the required access.          |
+| No usable model           | Check provider accounts and the selected [model tier](/configure/models/).                                 |
+| Unknown option            | Read that command's `--help`; CLI and server versions may differ.                                          |
 
 To disconnect a saved backend:
 
 ```sh
-tau auth logout work
+ficus auth logout work
 ```
 
-Normal logout revokes its paired device and removes the local credential. If the server is unreachable, `tau auth logout work --local-only` removes the local entry without revoking the remote device; revoke it later in **Settings → Paired Devices**.
+Normal logout revokes its paired device and removes the local credential. If the server is unreachable, `ficus auth logout work --local-only` removes the local entry without revoking the remote device; revoke it later in **Settings → Paired Devices**.
 
 For a guided first run, follow [Your first task](/start/first-task/).
 
 ## Work references
 
-Use the short number shown in Tau for work-stream commands:
+Use the short number shown in Ficus for work-stream commands:
 
 ```sh
-tau workstream get 42
-tau workstream get '#42'
+ficus workstream get 42
+ficus workstream get '#42'
 ```
 
 Full UUIDs and unique UUID prefixes remain accepted. `--json` responses retain the

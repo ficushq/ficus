@@ -12,9 +12,9 @@ integration follow-ups.
 ## AMTP: protocol behavior belongs to the engine
 
 Core consumes the external `amtp-engine` and `amtp-protocol` packages; its
-conformance tests also use `amtp-node`. The Tau adapters map instance identities,
+conformance tests also use `amtp-node`. The Ficus adapters map instance identities,
 peers, TOFU pins, replay records, outbox claims, attachments, handle lookup, and
-receive policy onto Tau storage. Delivery hooks translate accepted messages and
+receive policy onto Ficus storage. Delivery hooks translate accepted messages and
 terminal failures into local inbox behavior. Protocol logic should remain in the
 engine rather than being copied into these adapters. Handle registration and
 mailbox reachability remain separate: a registered handle still needs an open
@@ -28,7 +28,7 @@ The compatibility modules remain intentional interfaces:
   it is not required to provide a public identity record.
 - `attachment-pull.ts` and `peer-key-fetch.ts` preserve callers and route-test
   reset seams. The route re-exports of `__setPullImpl` and `__setKeyFetchImpl`
-  remain part of that compatibility arrangement. Attachment pulls read Tau's
+  remain part of that compatibility arrangement. Attachment pulls read Ficus's
   size/storage caps per call, preserving the wrapper's original behavior rather
   than sharing the engine's per-receive snapshot.
 - `send.ts` delegates enqueueing while preserving its original invalid-address
@@ -53,7 +53,7 @@ and portable protocol.
 ## Hosted apps: the host selects a route, Core validates access
 
 A configured app apex gives each deployment a browser origin of
-`<tenant>--<deploy12>.<apps-domain>`. A separate registrable domain from Tau's UI
+`<tenant>--<deploy12>.<apps-domain>`. A separate registrable domain from Ficus's UI
 provides cookie separation even if the UI later gains a domain-wide cookie;
 serving the app at `/` also supports root-absolute asset URLs. This separation
 depends on the operator's domain configuration. The encoded tenant and first
@@ -74,7 +74,7 @@ The first tokenized request redirects to the validated HTTPS host, removes
 Secure, HttpOnly, SameSite=Lax cookie. Platform forwards its credential to Core;
 setting that cookie is not token validation. Core validates the deployment token
 and deployment state. Platform removes unrelated cookies, authorization headers,
-client-supplied `x-tau-*` headers, and hop-by-hop headers before forwarding. Its
+client-supplied `x-ficus-*` headers, and hop-by-hop headers before forwarding. Its
 transport is HTTP streaming: `Upgrade` is stripped, so this route does not provide
 WebSocket tunneling.
 

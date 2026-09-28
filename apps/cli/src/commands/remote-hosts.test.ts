@@ -24,7 +24,7 @@ describe('renderInstallInstructions', () => {
     expect(lines[1]).toBe(
       'Ask the owner of build.example.com to append the line above to ~/.ssh/authorized_keys for user ci.'
     )
-    expect(lines[2]).toBe('Then verify with: tau remote-hosts check build-box.')
+    expect(lines[2]).toBe('Then verify with: ficus remote-hosts check build-box.')
   })
 
   it('trims trailing newlines off the public key so no blank line is inserted', () => {
@@ -38,11 +38,11 @@ describe('renderInstallInstructions', () => {
   })
 })
 
-describe('tau remote-hosts commands', () => {
-  const originalSquadId = process.env.TAU_SQUAD_ID
+describe('ficus remote-hosts commands', () => {
+  const originalSquadId = process.env.FICUS_SQUAD_ID
 
   beforeEach(() => {
-    delete process.env.TAU_SQUAD_ID
+    delete process.env.FICUS_SQUAD_ID
     ;(apiGet as ReturnType<typeof mock>).mockClear()
     ;(apiPost as ReturnType<typeof mock>).mockClear()
     ;(apiDelete as ReturnType<typeof mock>).mockClear()
@@ -55,8 +55,8 @@ describe('tau remote-hosts commands', () => {
   })
 
   afterEach(() => {
-    if (originalSquadId === undefined) delete process.env.TAU_SQUAD_ID
-    else process.env.TAU_SQUAD_ID = originalSquadId
+    if (originalSquadId === undefined) delete process.env.FICUS_SQUAD_ID
+    else process.env.FICUS_SQUAD_ID = originalSquadId
   })
 
   async function run(args: string[]): Promise<void> {
@@ -66,14 +66,14 @@ describe('tau remote-hosts commands', () => {
     await program.parseAsync(args, { from: 'user' })
   }
 
-  it('list uses the squad surface with TAU_SQUAD_ID by default', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+  it('list uses the squad surface with FICUS_SQUAD_ID by default', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run(['remote-hosts', 'list'])
     expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1')
     expect(outputTable).toHaveBeenCalledWith([HOST], ['name', 'sshUser', 'sshHost', 'sshPort', 'description'])
   })
 
-  it('list errors with guidance when TAU_SQUAD_ID is unset and no --squad given', async () => {
+  it('list errors with guidance when FICUS_SQUAD_ID is unset and no --squad given', async () => {
     await run(['remote-hosts', 'list'])
     expect(apiGet).not.toHaveBeenCalled()
     expect(outputError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('--squad') }))
@@ -84,24 +84,24 @@ describe('tau remote-hosts commands', () => {
     expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts')
   })
 
-  it('list --squad overrides TAU_SQUAD_ID', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+  it('list --squad overrides FICUS_SQUAD_ID', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run(['remote-hosts', 'list', '--squad', 'squad-2'])
     expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-2')
   })
 
   it('show resolves the host by name from the squad list and prints the install block', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run(['remote-hosts', 'show', 'build-box'])
     expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1')
     expect(output).toHaveBeenCalledWith(
       HOST,
-      expect.stringContaining('Then verify with: tau remote-hosts check build-box.')
+      expect.stringContaining('Then verify with: ficus remote-hosts check build-box.')
     )
   })
 
-  it('add defaults to TAU_SQUAD_ID and posts the squad add-and-grant surface, then prints the install block', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+  it('add defaults to FICUS_SQUAD_ID and posts the squad add-and-grant surface, then prints the install block', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run(['remote-hosts', 'add', '--name', 'build-box', '--host', 'build.example.com', '--user', 'ci'])
     expect(apiPost).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1', {
       name: 'build-box',
@@ -111,12 +111,12 @@ describe('tau remote-hosts commands', () => {
     expect(output).toHaveBeenCalledWith(HOST, expect.stringContaining('Registered "build-box"'))
     expect(output).toHaveBeenCalledWith(
       HOST,
-      expect.stringContaining('Then verify with: tau remote-hosts check build-box.')
+      expect.stringContaining('Then verify with: ficus remote-hosts check build-box.')
     )
   })
 
   it('add rejects a non-numeric --port before making any API call', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run([
       'remote-hosts',
       'add',
@@ -136,7 +136,7 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('add rejects an out-of-range --port before making any API call', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run([
       'remote-hosts',
       'add',
@@ -156,7 +156,7 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('add accepts a valid --port and passes it through as a number', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run([
       'remote-hosts',
       'add',
@@ -188,7 +188,7 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('add passes --port and --description through as sshPort/description', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run([
       'remote-hosts',
       'add',
@@ -218,8 +218,8 @@ describe('tau remote-hosts commands', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/remote-hosts/host-1/grants', { squadId: 'squad-2' })
   })
 
-  it('revoke without --squad uses TAU_SQUAD_ID on the squad surface', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+  it('revoke without --squad uses FICUS_SQUAD_ID on the squad surface', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     await run(['remote-hosts', 'revoke', 'build-box'])
     expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1')
     expect(apiDelete).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1/host-1')
@@ -232,7 +232,7 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('revoke surfaces the rotated public key and authorized_keys guidance', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     ;(apiDelete as ReturnType<typeof mock>).mockResolvedValue({
       revoked: true,
       rotated: true,
@@ -246,7 +246,7 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('revoke warns when rotation failed and the previous key remains valid', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     ;(apiDelete as ReturnType<typeof mock>).mockResolvedValue({
       revoked: true,
       rotated: false,
@@ -258,7 +258,7 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('revoke reports a friendly error when the name is not found', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([])
     await run(['remote-hosts', 'revoke', 'nope'])
     expect(apiDelete).not.toHaveBeenCalled()
@@ -278,8 +278,8 @@ describe('tau remote-hosts commands', () => {
     expect(outputError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Remote host "nope" not found.' }))
   })
 
-  it('check defaults to the squad surface using TAU_SQUAD_ID', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+  it('check defaults to the squad surface using FICUS_SQUAD_ID', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ reachable: true })
     await run(['remote-hosts', 'check', 'build-box'])
     expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1')
@@ -296,7 +296,7 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('check prints the unreachable message with the error detail', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ reachable: false, error: 'Connection refused' })
     await run(['remote-hosts', 'check', 'build-box'])
     expect(output).toHaveBeenCalledWith(
@@ -305,8 +305,8 @@ describe('tau remote-hosts commands', () => {
     )
   })
 
-  it('sync posts to the squad sync route using TAU_SQUAD_ID and explains live-mount', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+  it('sync posts to the squad sync route using FICUS_SQUAD_ID and explains live-mount', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ pushed: false, reason: 'live-mount' })
     await run(['remote-hosts', 'sync'])
     expect(apiPost).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1/sync')
@@ -317,7 +317,7 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('sync reports success when pushed:true', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ pushed: true })
     await run(['remote-hosts', 'sync'])
     expect(apiPost).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1/sync')
@@ -325,12 +325,12 @@ describe('tau remote-hosts commands', () => {
   })
 
   it('sync explains box-unreachable with a retry hint', async () => {
-    process.env.TAU_SQUAD_ID = 'squad-1'
+    process.env.FICUS_SQUAD_ID = 'squad-1'
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ pushed: false, reason: 'box-unreachable' })
     await run(['remote-hosts', 'sync'])
     expect(output).toHaveBeenCalledWith(
       { pushed: false, reason: 'box-unreachable' },
-      expect.stringContaining('try `tau remote-hosts sync` again')
+      expect.stringContaining('try `ficus remote-hosts sync` again')
     )
   })
 })

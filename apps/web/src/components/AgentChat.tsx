@@ -2,8 +2,8 @@ import { useStableRef } from '../hooks/useStableRef'
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useAgentConversation } from '@tau/client-react'
-import type { ChatScope, DeliveryMode, MessageMetadata } from '@tau/shared'
+import { useAgentConversation } from '@ficus/client-react'
+import type { ChatScope, DeliveryMode, MessageMetadata } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { ChatView } from './ChatView'
 import { QuestionInput } from './QuestionInput'
@@ -350,7 +350,7 @@ export function AgentChat({
             <div role="alert">
               {preparationError}
               {!initialMessageSent.current && initialMessage && (
-                <button className="tau-button" onClick={() => setInitialPreparationAttempt((value) => value + 1)}>
+                <button className="ficus-button" onClick={() => setInitialPreparationAttempt((value) => value + 1)}>
                   Retry sending
                 </button>
               )}

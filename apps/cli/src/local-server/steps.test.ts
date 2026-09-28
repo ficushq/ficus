@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test'
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { EnvPrefixConflictError } from '@ficus/shared/legacy-env'
 import { mergeEnvFile, parseEnvFile } from './env-file'
 import { generateEcosystem, instanceNames } from './instance'
 import { recordingRunner } from './runner'
@@ -37,58 +38,58 @@ describe('computeEnvUpdates', () => {
   it('maps host options onto the managed keys with explicit flags only where the operator chose', () => {
     const updates = computeEnvUpdates(opts({ explicit: new Set(['runtime', 'port']) }), secrets)
     const byKey = Object.fromEntries(updates.map((u) => [u.key, u]))
-    expect(byKey.TAU_SANDBOX_RUNTIME).toEqual({ key: 'TAU_SANDBOX_RUNTIME', value: 'host', explicit: true })
+    expect(byKey.FICUS_SANDBOX_RUNTIME).toEqual({ key: 'FICUS_SANDBOX_RUNTIME', value: 'host', explicit: true })
     expect(byKey.PORT).toEqual({ key: 'PORT', value: '3000', explicit: true })
-    expect(byKey.TAU_API_URL.explicit).toBe(true)
+    expect(byKey.FICUS_API_URL.explicit).toBe(true)
     expect(byKey.APP_URL.explicit).toBe(true)
-    expect(byKey.TAU_WEB_ORIGIN.value).toBe('http://localhost:3000')
-    expect(byKey.TAU_ENCRYPTION_KEY).toEqual({ key: 'TAU_ENCRYPTION_KEY', value: 'aa'.repeat(32), explicit: false })
-    expect(byKey.TAU_INTERNAL_EVENT_TOKEN.explicit).toBe(false)
-    expect(byKey.TAU_PASSWORD).toEqual({ key: 'TAU_PASSWORD', value: 'tok', explicit: false })
-    expect(byKey.TAU_SERVE_WEB.value).toBe('1')
-    expect(byKey.TAU_SYSTEM_LOG_PROVIDER.value).toBe('pm2')
+    expect(byKey.FICUS_WEB_ORIGIN.value).toBe('http://localhost:3000')
+    expect(byKey.FICUS_ENCRYPTION_KEY).toEqual({ key: 'FICUS_ENCRYPTION_KEY', value: 'aa'.repeat(32), explicit: false })
+    expect(byKey.FICUS_INTERNAL_EVENT_TOKEN.explicit).toBe(false)
+    expect(byKey.FICUS_PASSWORD).toEqual({ key: 'FICUS_PASSWORD', value: 'tok', explicit: false })
+    expect(byKey.FICUS_SERVE_WEB.value).toBe('1')
+    expect(byKey.FICUS_SYSTEM_LOG_PROVIDER.value).toBe('pm2')
     expect(byKey.DATABASE_URL.explicit).toBe(false)
     expect(byKey.HOME_DIR).toBeUndefined()
-    expect(byKey.TAU_K8S_LOCAL).toBeUndefined()
+    expect(byKey.FICUS_K8S_LOCAL).toBeUndefined()
   })
   it('writes the k3d block for the k3d runtime', () => {
     const byKey = Object.fromEntries(computeEnvUpdates(opts({ runtime: 'k3d' }), secrets).map((u) => [u.key, u]))
-    expect(byKey.TAU_SANDBOX_RUNTIME.value).toBe('k8s')
-    expect(byKey.TAU_K8S_LOCAL.value).toBe('true')
-    expect(byKey.TAU_K8S_NAMESPACE.value).toBe('tau-sandboxes-dev')
-    expect(byKey.TAU_K8S_RUNTIME_CLASS.value).toBe('')
+    expect(byKey.FICUS_SANDBOX_RUNTIME.value).toBe('k8s')
+    expect(byKey.FICUS_K8S_LOCAL.value).toBe('true')
+    expect(byKey.FICUS_K8S_NAMESPACE.value).toBe('tau-sandboxes-dev')
+    expect(byKey.FICUS_K8S_RUNTIME_CLASS.value).toBe('')
   })
 
-  // TAU_K8S_LOCAL only means anything under the k8s runtime, and a checkout
+  // FICUS_K8S_LOCAL only means anything under the k8s runtime, and a checkout
   // that moves off k3d keeps the line: leaving it in place used to make the
   // in-app updater treat a host install as local k3d forever.
-  it('blanks a stale TAU_K8S_LOCAL when the chosen runtime is not k3d', () => {
-    const before = 'TAU_SANDBOX_RUNTIME=k8s\nTAU_K8S_LOCAL=true\nTAU_K8S_NAMESPACE=tau-sandboxes-dev\n'
+  it('blanks a stale FICUS_K8S_LOCAL when the chosen runtime is not k3d', () => {
+    const before = 'FICUS_SANDBOX_RUNTIME=k8s\nFICUS_K8S_LOCAL=true\nFICUS_K8S_NAMESPACE=tau-sandboxes-dev\n'
     const logged: string[] = []
     const updates = computeEnvUpdates(opts({ runtime: 'host' }), secrets, {
       existingEnv: before,
       log: (line) => logged.push(line),
     })
     const byKey = Object.fromEntries(updates.map((u) => [u.key, u]))
-    expect(byKey.TAU_K8S_LOCAL).toEqual({ key: 'TAU_K8S_LOCAL', value: '', explicit: true })
+    expect(byKey.FICUS_K8S_LOCAL).toEqual({ key: 'FICUS_K8S_LOCAL', value: '', explicit: true })
     // Explicit, so the merge actually rewrites the line rather than keeping
     // the existing non-empty value.
-    expect(parseEnvFile(mergeEnvFile(before, updates)).TAU_K8S_LOCAL).toBe('')
+    expect(parseEnvFile(mergeEnvFile(before, updates)).FICUS_K8S_LOCAL).toBe('')
     // The other two keys are harmless once the runtime gates them.
-    expect(byKey.TAU_K8S_NAMESPACE).toBeUndefined()
-    expect(byKey.TAU_K8S_RUNTIME_CLASS).toBeUndefined()
-    expect(logged).toEqual(['warning: clearing stale TAU_K8S_LOCAL from .env (it applies only to the k8s runtime)'])
+    expect(byKey.FICUS_K8S_NAMESPACE).toBeUndefined()
+    expect(byKey.FICUS_K8S_RUNTIME_CLASS).toBeUndefined()
+    expect(logged).toEqual(['warning: clearing stale FICUS_K8S_LOCAL from .env (it applies only to the k8s runtime)'])
   })
 
-  it('leaves a TAU_K8S_LOCAL that is not "true" alone — only the stale k3d value is cleared', () => {
+  it('leaves a FICUS_K8S_LOCAL that is not "true" alone — only the stale k3d value is cleared', () => {
     const logged: string[] = []
     const byKey = Object.fromEntries(
       computeEnvUpdates(opts({ runtime: 'host' }), secrets, {
-        existingEnv: 'TAU_K8S_LOCAL=false\n',
+        existingEnv: 'FICUS_K8S_LOCAL=false\n',
         log: (line) => logged.push(line),
       }).map((u) => [u.key, u])
     )
-    expect(byKey.TAU_K8S_LOCAL).toBeUndefined()
+    expect(byKey.FICUS_K8S_LOCAL).toBeUndefined()
     expect(logged).toEqual([])
   })
 
@@ -96,21 +97,21 @@ describe('computeEnvUpdates', () => {
     const logged: string[] = []
     const byKey = Object.fromEntries(
       computeEnvUpdates(opts({ runtime: 'k3d' }), secrets, {
-        existingEnv: 'TAU_K8S_LOCAL=true\n',
+        existingEnv: 'FICUS_K8S_LOCAL=true\n',
         log: (line) => logged.push(line),
       }).map((u) => [u.key, u])
     )
-    expect(byKey.TAU_K8S_LOCAL.value).toBe('true')
-    expect(byKey.TAU_K8S_NAMESPACE.value).toBe('tau-sandboxes-dev')
+    expect(byKey.FICUS_K8S_LOCAL.value).toBe('true')
+    expect(byKey.FICUS_K8S_NAMESPACE.value).toBe('tau-sandboxes-dev')
     expect(logged).toEqual([])
   })
 
-  it('proposes no TAU_K8S_LOCAL update on a checkout with no .env', () => {
+  it('proposes no FICUS_K8S_LOCAL update on a checkout with no .env', () => {
     const logged: string[] = []
     const byKey = Object.fromEntries(
       computeEnvUpdates(opts({ runtime: 'host' }), secrets, { log: (line) => logged.push(line) }).map((u) => [u.key, u])
     )
-    expect(byKey.TAU_K8S_LOCAL).toBeUndefined()
+    expect(byKey.FICUS_K8S_LOCAL).toBeUndefined()
     expect(logged).toEqual([])
   })
 
@@ -139,11 +140,11 @@ describe('computeEnvUpdates (instances)', () => {
   it('derives the worker ports and leaves HOME_DIR unset for the default instance', () => {
     const byKey = Object.fromEntries(computeEnvUpdates(opts(), secrets).map((u) => [u.key, u]))
     // Not explicit: a re-run without --instance must never relabel a checkout.
-    expect(byKey.TAU_INSTANCE).toEqual({ key: 'TAU_INSTANCE', value: 'tau', explicit: false })
+    expect(byKey.FICUS_INSTANCE).toEqual({ key: 'FICUS_INSTANCE', value: 'tau', explicit: false })
     expect(byKey.WORKER_PORT.value).toBe('3002')
-    expect(byKey.TAU_WORKER_EVENT_PORT.value).toBe('3003')
-    expect(byKey.TAU_PM2_API_NAME.value).toBe('tau-api')
-    expect(byKey.TAU_PM2_WORKER_NAME.value).toBe('tau-worker')
+    expect(byKey.FICUS_WORKER_EVENT_PORT.value).toBe('3003')
+    expect(byKey.FICUS_PM2_API_NAME.value).toBe('tau-api')
+    expect(byKey.FICUS_PM2_WORKER_NAME.value).toBe('tau-worker')
     expect(byKey.HOME_DIR).toBeUndefined()
     expect(byKey.DATABASE_URL.value).toBe('postgres://postgres:postgres@localhost:5432/tau')
   })
@@ -162,13 +163,13 @@ describe('computeEnvUpdates (instances)', () => {
         secrets
       ).map((u) => [u.key, u])
     )
-    expect(byKey.TAU_INSTANCE.value).toBe('smoke')
+    expect(byKey.FICUS_INSTANCE.value).toBe('smoke')
     expect(byKey.PORT.value).toBe('3100')
     expect(byKey.WORKER_PORT).toEqual({ key: 'WORKER_PORT', value: '3102', explicit: true })
-    expect(byKey.TAU_WORKER_EVENT_PORT).toEqual({ key: 'TAU_WORKER_EVENT_PORT', value: '3103', explicit: true })
-    expect(byKey.TAU_PM2_API_NAME).toEqual({ key: 'TAU_PM2_API_NAME', value: 'tau-smoke-api', explicit: true })
-    expect(byKey.TAU_PM2_WORKER_NAME).toEqual({
-      key: 'TAU_PM2_WORKER_NAME',
+    expect(byKey.FICUS_WORKER_EVENT_PORT).toEqual({ key: 'FICUS_WORKER_EVENT_PORT', value: '3103', explicit: true })
+    expect(byKey.FICUS_PM2_API_NAME).toEqual({ key: 'FICUS_PM2_API_NAME', value: 'tau-smoke-api', explicit: true })
+    expect(byKey.FICUS_PM2_WORKER_NAME).toEqual({
+      key: 'FICUS_PM2_WORKER_NAME',
       value: 'tau-smoke-worker',
       explicit: true,
     })
@@ -177,11 +178,11 @@ describe('computeEnvUpdates (instances)', () => {
   })
   it('leaves an existing label alone when the operator did not pass --instance', () => {
     const merged = mergeEnvFile(
-      'TAU_INSTANCE=smoke\nTAU_PM2_API_NAME=tau-smoke-api\n',
+      'FICUS_INSTANCE=smoke\nFICUS_PM2_API_NAME=tau-smoke-api\n',
       computeEnvUpdates(opts(), secrets)
     )
-    expect(parseEnvFile(merged).TAU_INSTANCE).toBe('smoke')
-    expect(parseEnvFile(merged).TAU_PM2_API_NAME).toBe('tau-api')
+    expect(parseEnvFile(merged).FICUS_INSTANCE).toBe('smoke')
+    expect(parseEnvFile(merged).FICUS_PM2_API_NAME).toBe('tau-api')
   })
   it('keeps an explicit --home-dir over the label default', () => {
     const byKey = Object.fromEntries(
@@ -210,7 +211,7 @@ describe('computeEnvUpdates (instances)', () => {
 describe('the config-files step', () => {
   function fixture(): { root: string; deps: StepDeps; logs: string[] } {
     const root = mkdtempSync(join(tmpdir(), 'tau-steps-'))
-    writeFileSync(join(root, '.env.example'), 'TAU_SANDBOX_RUNTIME=\n')
+    writeFileSync(join(root, '.env.example'), 'FICUS_SANDBOX_RUNTIME=\n')
     copyFileSync(join(REPO_ROOT, 'ecosystem.config.example.js'), join(root, 'ecosystem.config.example.js'))
     const logs: string[] = []
     const deps: StepDeps = {
@@ -231,7 +232,7 @@ describe('the config-files step', () => {
       await stepOf(opts({ root, instance: 'smoke', explicit: new Set(['instance']) }), deps).run()
       const generated = readFileSync(join(root, 'ecosystem.config.js'), 'utf8')
       expect(generated).toContain("name: 'tau-smoke-api',")
-      expect(generated).toContain("TAU_PM2_WORKER_NAME: 'tau-smoke-worker',")
+      expect(generated).toContain("FICUS_PM2_WORKER_NAME: 'tau-smoke-worker',")
       expect(generated).not.toContain("'tau-api'")
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -252,12 +253,12 @@ describe('the config-files step', () => {
   it('refuses to relabel a checkout that already belongs to another instance', async () => {
     const { root, deps } = fixture()
     try {
-      writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\n')
+      writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\n')
       const step = stepOf(opts({ root, instance: 'other', explicit: new Set(['instance']) }), deps)
       await expect(step.run()).rejects.toThrow(SetupFailure)
       // The message must be the recipe: uninstall alone does not clear the label.
       await expect(step.run()).rejects.toThrow(
-        `this checkout is instance "smoke"; to relabel it, remove TAU_INSTANCE from .env (after unregistering its supervisor with tau server uninstall --root ${root}) — or set up a fresh checkout`
+        `this checkout is instance "smoke"; to relabel it, remove FICUS_INSTANCE from .env (after unregistering its supervisor with ficus server uninstall --root ${root}) — or set up a fresh checkout`
       )
       // A re-run without --instance is not a relabel attempt: it must go through.
       await stepOf(opts({ root, instance: 'tau', explicit: new Set() }), deps).run()
@@ -268,13 +269,13 @@ describe('the config-files step', () => {
   it('labels an unlabelled checkout and regenerates its default-named ecosystem, with a warning', async () => {
     const { root, deps, logs } = fixture()
     try {
-      // A hand-copied .env (or an install predating labels): no TAU_INSTANCE.
+      // A hand-copied .env (or an install predating labels): no FICUS_INSTANCE.
       writeFileSync(join(root, '.env'), 'PORT=3000\n')
       writeFileSync(join(root, 'ecosystem.config.js'), exampleText())
       await stepOf(opts({ root, instance: 'smoke', explicit: new Set(['instance']) }), deps).run()
       const generated = readFileSync(join(root, 'ecosystem.config.js'), 'utf8')
       expect(generated).toContain("name: 'tau-smoke-api',")
-      expect(generated).toContain("TAU_PM2_WORKER_NAME: 'tau-smoke-worker',")
+      expect(generated).toContain("FICUS_PM2_WORKER_NAME: 'tau-smoke-worker',")
       expect(generated).not.toContain("'tau-api'")
       expect(logs).toContain(
         'warning: regenerated ecosystem.config.js for instance "smoke" (hand edits were discarded)'
@@ -288,7 +289,7 @@ describe('the config-files step', () => {
 describe('the env step', () => {
   function fixture(): { root: string; deps: StepDeps; logs: string[] } {
     const root = mkdtempSync(join(tmpdir(), 'tau-steps-env-'))
-    writeFileSync(join(root, '.env.example'), 'TAU_SANDBOX_RUNTIME=\n')
+    writeFileSync(join(root, '.env.example'), 'FICUS_SANDBOX_RUNTIME=\n')
     copyFileSync(join(REPO_ROOT, 'ecosystem.config.example.js'), join(root, 'ecosystem.config.example.js'))
     const logs: string[] = []
     const deps: StepDeps = {
@@ -305,7 +306,7 @@ describe('the env step', () => {
   it('warns that a relabelled install now has a different HOME_DIR but the same database', async () => {
     const { root, deps, logs } = fixture()
     try {
-      // An install made before labels existed: a .env and an ecosystem, no TAU_INSTANCE.
+      // An install made before labels existed: a .env and an ecosystem, no FICUS_INSTANCE.
       writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\n')
       writeFileSync(join(root, 'ecosystem.config.js'), readFileSync(join(REPO_ROOT, 'ecosystem.config.example.js')))
       await stepOf(opts({ root, instance: 'smoke', explicit: new Set(['instance']) }), deps).run()
@@ -349,10 +350,122 @@ describe('the env step', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+  // Task 8 review carry: the TAU_ → FICUS_ rename must happen BEFORE the merge
+  // writes .env. Merged first, a regenerated FICUS_PASSWORD would be appended
+  // beside the real TAU_PASSWORD and win over it.
+  describe('on a .env that predates the Ficus rename', () => {
+    const legacy =
+      'TAU_ENCRYPTION_KEY=' +
+      'cd'.repeat(32) +
+      '\nTAU_INTERNAL_EVENT_TOKEN=event-token\nTAU_PASSWORD=real-password\nTAU_SANDBOX_RUNTIME=host\nPORT=3000\n'
+    const fresh = { hex32: () => 'ee'.repeat(32), token: () => 'regenerated-password' }
+    /** A checkout whose package.json is named "ficus": only its code reads FICUS_. */
+    const ficusFixture = () => {
+      const made = fixture()
+      writeFileSync(join(made.root, 'package.json'), JSON.stringify({ name: 'ficus' }))
+      return made
+    }
+
+    it('renames it before merging, so the existing secrets survive and no FICUS_ twin is appended', async () => {
+      const { root, deps } = ficusFixture()
+      try {
+        writeFileSync(join(root, '.env'), legacy)
+        await stepOf(opts({ root }), { ...deps, secrets: fresh }).run()
+        const after = readFileSync(join(root, '.env'), 'utf8')
+        expect(after).not.toMatch(/^TAU_/m)
+        expect(after.match(/^FICUS_PASSWORD=.*$/gm)).toEqual(['FICUS_PASSWORD=real-password'])
+        expect(after.match(/^FICUS_ENCRYPTION_KEY=.*$/gm)).toEqual([`FICUS_ENCRYPTION_KEY=${'cd'.repeat(32)}`])
+        expect(after.match(/^FICUS_INTERNAL_EVENT_TOKEN=.*$/gm)).toEqual(['FICUS_INTERNAL_EVENT_TOKEN=event-token'])
+        expect(after).not.toContain('regenerated-password')
+        expect(after).not.toContain('ee'.repeat(32))
+        const backups = readdirSync(root).filter((name) => name.startsWith('.env.pre-ficus-'))
+        expect(backups).toHaveLength(1)
+        expect(readFileSync(join(root, backups[0]), 'utf8')).toBe(legacy)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('plans against the renamed text: no generated secret, and the rename is announced', () => {
+      const { root, deps } = ficusFixture()
+      try {
+        writeFileSync(join(root, '.env'), legacy)
+        const plan = stepOf(opts({ root }), deps).plan()
+        expect(plan[0]).toBe('rename TAU_ settings to FICUS_ in .env (byte-for-byte backup .env.pre-ficus-<UTC time>)')
+        expect(plan.join('\n')).not.toContain('FICUS_PASSWORD')
+        expect(plan.join('\n')).not.toContain('FICUS_ENCRYPTION_KEY')
+        // Planning writes nothing.
+        expect(readFileSync(join(root, '.env'), 'utf8')).toBe(legacy)
+        expect(readdirSync(root).some((name) => name.includes('.pre-ficus-'))).toBe(false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('stops on conflicting passwords before writing anything, naming the key and not the values', async () => {
+      const { root, deps } = ficusFixture()
+      try {
+        const conflicting = 'TAU_PASSWORD=first-secret\nFICUS_PASSWORD=second-secret\n'
+        writeFileSync(join(root, '.env'), conflicting)
+        const error = (await stepOf(opts({ root }), deps)
+          .run()
+          .catch((e: unknown) => e)) as Error
+        expect(error).toBeInstanceOf(EnvPrefixConflictError)
+        expect(error.message).toContain('TAU_PASSWORD')
+        expect(error.message).toContain('remove the wrong value, then re-run')
+        expect(error.message).not.toContain('first-secret')
+        expect(error.message).not.toContain('second-secret')
+        expect(readFileSync(join(root, '.env'), 'utf8')).toBe(conflicting)
+        expect(readdirSync(root).some((name) => name.includes('.pre-ficus-'))).toBe(false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('renames the ecosystem.config.js PM2 name keys of an existing pm2 install too', async () => {
+      const { root, deps } = ficusFixture()
+      try {
+        writeFileSync(join(root, '.env'), legacy)
+        const oldEcosystem = readFileSync(join(REPO_ROOT, 'ecosystem.config.example.js'), 'utf8').replace(
+          /\bFICUS_/g,
+          'TAU_'
+        )
+        writeFileSync(join(root, 'ecosystem.config.js'), oldEcosystem)
+        await stepOf(opts({ root }), deps).run()
+        const ecosystem = readFileSync(join(root, 'ecosystem.config.js'), 'utf8')
+        expect(ecosystem).toContain(`FICUS_PM2_API_NAME: '${instanceNames('tau').api}',`)
+        // Ruling 28: only the generated PM2 name lines move; the bridge reads the other keys.
+        expect(ecosystem).toBe(
+          oldEcosystem
+            .replace('TAU_PM2_API_NAME', 'FICUS_PM2_API_NAME')
+            .replace('TAU_PM2_WORKER_NAME', 'FICUS_PM2_WORKER_NAME')
+        )
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('fails closed: renames nothing, and says so, when the package name is not "ficus"', async () => {
+      const { root, deps, logs } = fixture()
+      try {
+        writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'something-else' }))
+        writeFileSync(join(root, '.env'), legacy)
+        await stepOf(opts({ root }), deps).run()
+        expect(readFileSync(join(root, '.env'), 'utf8')).toMatch(/^TAU_PASSWORD=real-password$/m)
+        expect(readdirSync(root).some((name) => name.includes('.pre-ficus-'))).toBe(false)
+        expect(logs).toContain(
+          `warning: TAU_ settings in ${root} were not renamed to FICUS_: its package.json is named "something-else", not "ficus"`
+        )
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  })
+
   it('says nothing when the checkout already carries its label', async () => {
     const { root, deps, logs } = fixture()
     try {
-      writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\nHOME_DIR=~/.tau-smoke\n')
+      writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nHOME_DIR=~/.tau-smoke\n')
       writeFileSync(join(root, 'ecosystem.config.js'), readFileSync(join(REPO_ROOT, 'ecosystem.config.example.js')))
       await stepOf(opts({ root, instance: 'smoke', explicit: new Set(['instance']) }), deps).run()
       expect(logs.join('\n')).not.toContain('HOME_DIR now points at')
@@ -367,7 +480,7 @@ describe('root pm2 scripts', () => {
     const scripts = (
       JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
     ).scripts
-    // $(bun scripts/pm2-name.ts …), NOT ${TAU_PM2_API_NAME:-…}: bun does not
+    // $(bun scripts/pm2-name.ts …), NOT ${FICUS_PM2_API_NAME:-…}: bun does not
     // export the checkout's .env into the script shell, so a plain shell
     // expansion would silently address the default instance's apps.
     expect(scripts['start:core']).toContain('--only $(bun scripts/pm2-name.ts api),$(bun scripts/pm2-name.ts worker)')
@@ -375,7 +488,7 @@ describe('root pm2 scripts', () => {
     expect(scripts['reload:api']).toContain('--only $(bun scripts/pm2-name.ts api)')
     expect(scripts['reload:worker']).toContain('--only $(bun scripts/pm2-name.ts worker)')
     for (const name of ['start:core', 'stop:core', 'reload:api', 'reload:worker']) {
-      expect(scripts[name]).not.toMatch(/TAU_PM2_(API|WORKER)_NAME/)
+      expect(scripts[name]).not.toMatch(/FICUS_PM2_(API|WORKER)_NAME/)
     }
   })
 })
@@ -397,11 +510,15 @@ describe('native supervisor config', () => {
       const byKey = Object.fromEntries(
         computeEnvUpdates(opts({ supervisor, instance: 'smoke' }), secrets).map((u) => [u.key, u])
       )
-      expect(byKey.TAU_UPDATE_SUPERVISOR).toEqual({ key: 'TAU_UPDATE_SUPERVISOR', value: supervisor, explicit: true })
-      expect(byKey.TAU_SYSTEM_LOG_PROVIDER.value).toBe('file')
-      expect(byKey.TAU_LOG_FILE_API.value).toEndWith('/.tau/logs/tau-smoke-api.log')
-      expect(byKey.TAU_LOG_FILE_WORKER.value).toEndWith('/.tau/logs/tau-smoke-worker.log')
-      expect(byKey.TAU_PM2_API_NAME.value).toBe('')
+      expect(byKey.FICUS_UPDATE_SUPERVISOR).toEqual({
+        key: 'FICUS_UPDATE_SUPERVISOR',
+        value: supervisor,
+        explicit: true,
+      })
+      expect(byKey.FICUS_SYSTEM_LOG_PROVIDER.value).toBe('file')
+      expect(byKey.FICUS_LOG_FILE_API.value).toEndWith('/.tau/logs/tau-smoke-api.log')
+      expect(byKey.FICUS_LOG_FILE_WORKER.value).toEndWith('/.tau/logs/tau-smoke-worker.log')
+      expect(byKey.FICUS_PM2_API_NAME.value).toBe('')
     }
   })
 

@@ -28,12 +28,12 @@ module.exports = {
         NODE_ENV: 'production',
         // PORT and WORKER_PORT come from .env (bun auto-loads it from the repo root cwd).
         // Uncomment after running `bun run build:web` to serve the web UI from tau-api on PORT.
-        // TAU_SERVE_WEB: '1',
+        // FICUS_SERVE_WEB: '1',
         // System log streaming reads from PM2 by default in this deployment. Keep these
         // names aligned with the PM2 app names below if you customize them.
-        TAU_SYSTEM_LOG_PROVIDER: 'pm2',
-        TAU_PM2_API_NAME: 'tau-api',
-        TAU_PM2_WORKER_NAME: 'tau-worker',
+        FICUS_SYSTEM_LOG_PROVIDER: 'pm2',
+        FICUS_PM2_API_NAME: 'tau-api',
+        FICUS_PM2_WORKER_NAME: 'tau-worker',
         BUN_PTY_LIB,
         FORCE_COLOR: 1,
       },

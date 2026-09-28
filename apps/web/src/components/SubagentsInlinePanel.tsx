@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useURLStringState } from '../hooks/useURLState'
 import { queries } from '../queryOptions'
@@ -54,7 +54,7 @@ export function SubagentsInlinePanel({ parentAgentId }: SubagentsInlinePanelProp
               type="button"
               onClick={() => setSelectedId(child.id)}
               className={clsx(
-                'tau-button',
+                'ficus-button',
                 'w-full text-left px-2 py-2 rounded-md transition-colors',
                 active ? 'bg-surface-secondary text-primary' : 'text-secondary hover:bg-surface-hover'
               )}

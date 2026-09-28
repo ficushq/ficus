@@ -3,7 +3,7 @@ import type {
   IntegrationDeviceAuthorizationStatus,
   GitHubCommitSigningStatus,
   GitHubRepositoryAccess,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { apiFetch } from './client'
 
 type ApiFetcher = <T>(path: string, init?: RequestInit) => Promise<T>
@@ -360,4 +360,4 @@ export function getSquadGitAuthorDefaults(squadId: string): Promise<{
 }
 
 export const listIntegrationOutputs = () =>
-  apiFetch<import('@tau/shared').IntegrationOutputDescriptor[]>('/integrations/outputs')
+  apiFetch<import('@ficus/shared').IntegrationOutputDescriptor[]>('/integrations/outputs')

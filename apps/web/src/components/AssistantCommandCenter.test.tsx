@@ -56,10 +56,10 @@ async function fixture(
         ? { ...activityPage, conversations: [{ ...activityPage.conversations[0], unreadUpdates: 0 }] }
         : activityPage
     )
-  const squad = { id: 'tau', name: 'Tau', purpose: 'Build software', managerAgentId: 'manager' }
+  const squad = { id: 'ficus', name: 'Ficus', purpose: 'Build software', managerAgentId: 'manager' }
   const work = {
     id: 'work',
-    squadId: 'tau',
+    squadId: 'ficus',
     title: 'Fix OAuth',
     status: 'active',
     derivedState: 'in_progress',
@@ -70,7 +70,7 @@ async function fixture(
   }
   const worker = {
     id: 'worker',
-    squadId: 'tau',
+    squadId: 'ficus',
     agentTypeId: 'engineer',
     status: 'active',
     metadata: { purpose: 'Fix OAuth implementation' },
@@ -79,7 +79,7 @@ async function fixture(
     [queries.squads.list().queryKey, [squad]],
     [queries.squads.allWorkStreams().queryKey, [work]],
     [queries.squads.workStreamDetail('work').queryKey, work],
-    [queries.squads.agents('tau').queryKey, [worker]],
+    [queries.squads.agents('ficus').queryKey, [worker]],
     [queries.agents.detail('worker').queryKey, worker],
     [queries.agents.detail('manager').queryKey, { ...worker, id: 'manager', agentTypeId: 'manager' }],
     [
@@ -207,7 +207,7 @@ test('work opens inline, assigned chats stay mounted, and Back restores the quer
     expect(footer.closest('[style*="display: none"]')).toBeNull()
     await f.click('[data-command-preview] button')
     expect(f.container.querySelector('footer')).toBeNull()
-    expect(f.container.querySelector('a')?.getAttribute('href')).toBe('/squads/tau/agents?agent=worker')
+    expect(f.container.querySelector('a')?.getAttribute('href')).toBe('/squads/ficus/agents?agent=worker')
     const draft = f.container.querySelector<HTMLInputElement>('[aria-label="Inline draft"]')!
     await f.type(draft, 'A draft to keep')
     await f.click('[aria-label="Back to preview"]')
@@ -227,7 +227,7 @@ test('work opens inline, assigned chats stay mounted, and Back restores the quer
 test('a squad-targeted request opens a consultant chat with the exact initial prompt', async () => {
   const f = await fixture()
   try {
-    await f.type(f.container.querySelector<HTMLInputElement>('[role="combobox"]')!, 'Tau')
+    await f.type(f.container.querySelector<HTMLInputElement>('[role="combobox"]')!, 'Ficus')
     await f.click('[role="option"]')
     const input = f.container.querySelector<HTMLInputElement>('[role="combobox"]')!
     expect(document.activeElement === input).toBe(true)
@@ -237,11 +237,11 @@ test('a squad-targeted request opens a consultant chat with the exact initial pr
       input.closest('form')!.dispatchEvent(new f.dom.window.Event('submit', { bubbles: true, cancelable: true }))
     )
     const props = f.chats.mock.calls.at(-1)![0]
-    expect(props.scope).toEqual({ type: 'consultant', id: 'tau' })
+    expect(props.scope).toEqual({ type: 'consultant', id: 'ficus' })
     expect(props.initialMessage).toEqual({ content: 'Research database options' })
     expect(props.enableFullscreen).toBe(false)
     await f.dom.act(async () => props.onAgentCreated('new-consultant'))
-    expect(f.container.querySelector('a')?.getAttribute('href')).toBe('/squads/tau/agents?agent=new-consultant')
+    expect(f.container.querySelector('a')?.getAttribute('href')).toBe('/squads/ficus/agents?agent=new-consultant')
     expect(f.ask).not.toHaveBeenCalled()
   } finally {
     await f.cleanup()
@@ -298,7 +298,7 @@ test('conversation results show non-idle activity indicators and update when sta
   try {
     const consultant = {
       id: 'consultant',
-      squadId: 'tau',
+      squadId: 'ficus',
       agentTypeId: 'consultant',
       status: 'active',
       createdAt: '2026-09-06',
@@ -353,15 +353,15 @@ test('work preview has a skeleton until details arrive, then shows the status pi
 
 test('a restored conversation resolves its purpose in the breadcrumb with a single full-chat link', async () => {
   const f = await fixture(undefined, [
-    { kind: 'squad', id: 'tau', label: 'Squad' },
-    { kind: 'chat', id: 'worker', agentId: 'worker', squadId: 'tau', label: 'Conversation' },
+    { kind: 'squad', id: 'ficus', label: 'Squad' },
+    { kind: 'chat', id: 'worker', agentId: 'worker', squadId: 'ficus', label: 'Conversation' },
   ])
   try {
     expect(f.container.querySelector('[title="Fix OAuth implementation"]') !== null).toBe(true)
     expect(f.container.querySelectorAll('[aria-label="Open full conversation"]')).toHaveLength(1)
     expect(f.chats.mock.calls.at(-1)![0].header).toBeUndefined()
     await f.click('[aria-label="Back to preview"]')
-    expect(f.container.querySelector('[title="Tau"]') !== null).toBe(true)
+    expect(f.container.querySelector('[title="Ficus"]') !== null).toBe(true)
   } finally {
     await f.cleanup()
   }
@@ -388,7 +388,7 @@ for (const status of ['dormant', 'terminated', 'idle']) {
           creatorAgentId: creator.id,
           agentIds: ['worker', 'origin'],
         })
-        f.client.setQueryData(queries.squads.agents('tau').queryKey, [
+        f.client.setQueryData(queries.squads.agents('ficus').queryKey, [
           worker,
           owner,
           ...(status === 'idle' ? [creator] : []),
@@ -444,7 +444,7 @@ test('an owner explicitly assigned to the work remains an actionable conversatio
 })
 
 test('squad completed work starts collapsed and preserves its period after opening work and going back', async () => {
-  const f = await fixture(undefined, [{ kind: 'squad', id: 'tau', label: 'Tau' }])
+  const f = await fixture(undefined, [{ kind: 'squad', id: 'ficus', label: 'Ficus' }])
   try {
     const completed = {
       ...f.work,
@@ -493,7 +493,7 @@ test('squad search is scoped, restores its query, and reaches work conversations
   const f = await fixture()
   try {
     const input = f.container.querySelector<HTMLInputElement>('[role="combobox"]')!
-    await f.type(input, 'Tau')
+    await f.type(input, 'Ficus')
     await f.click('[role="option"]')
     await f.dom.act(async () =>
       f.client.setQueryData(queries.squads.allWorkStreams().queryKey, [
@@ -526,14 +526,14 @@ test('squad search is scoped, restores its query, and reaches work conversations
     expect(input.value).toBe('OAuth')
     expect(document.activeElement === input).toBe(true)
     await f.click('[aria-label="Back to search"]')
-    expect(input.value).toBe('Tau')
+    expect(input.value).toBe('Ficus')
   } finally {
     await f.cleanup()
   }
 })
 
 test('squad manager is a pinned row and can be searched and opened with Enter', async () => {
-  const f = await fixture(undefined, [{ kind: 'squad', id: 'tau', label: 'Tau' }])
+  const f = await fixture(undefined, [{ kind: 'squad', id: 'ficus', label: 'Ficus' }])
   try {
     const input = f.container.querySelector<HTMLInputElement>('[role="combobox"]')!
     const preview = f.container.querySelector<HTMLElement>('[data-command-preview]')!
@@ -559,7 +559,7 @@ test('squad manager is a pinned row and can be searched and opened with Enter', 
 })
 
 test('empty squad search arrows through preview rows and returns focus to search', async () => {
-  const f = await fixture(undefined, [{ kind: 'squad', id: 'tau', label: 'Tau' }])
+  const f = await fixture(undefined, [{ kind: 'squad', id: 'ficus', label: 'Ficus' }])
   try {
     const input = f.container.querySelector<HTMLInputElement>('[role="combobox"]')!
     await f.dom.act(async () =>
@@ -579,7 +579,7 @@ test('empty squad search arrows through preview rows and returns focus to search
 
 for (const scoped of [false, true]) {
   test(`${scoped ? 'squad Start' : 'Ask'} is the fallback Enter target and arrow selection stops at both ends`, async () => {
-    const f = await fixture(undefined, scoped ? [{ kind: 'squad', id: 'tau', label: 'Tau' }] : [])
+    const f = await fixture(undefined, scoped ? [{ kind: 'squad', id: 'ficus', label: 'Ficus' }] : [])
     try {
       const input = f.container.querySelector<HTMLInputElement>('[role="combobox"]')!
       const button = f.container.querySelector<HTMLButtonElement>(
@@ -607,7 +607,7 @@ for (const scoped of [false, true]) {
       )
       if (scoped) {
         expect(f.chats.mock.calls.at(-1)![0].initialMessage).toEqual({ content: 'OAuth' })
-        expect(f.chats.mock.calls.at(-1)![0].scope).toEqual({ type: 'consultant', id: 'tau' })
+        expect(f.chats.mock.calls.at(-1)![0].scope).toEqual({ type: 'consultant', id: 'ficus' })
       } else expect(f.ask.mock.calls).toEqual([['OAuth']])
     } finally {
       await f.cleanup()
@@ -625,13 +625,13 @@ for (const type of ['workstream-blocked', 'workstream-review']) {
             id: 'attention',
             type,
             canRespond: true,
-            squadId: 'tau',
-            squadName: 'Tau',
+            squadId: 'ficus',
+            squadName: 'Ficus',
             data: {
               workStreamId: 'work',
               workStreamTitle: 'Fix OAuth',
-              squadId: 'tau',
-              squadName: 'Tau',
+              squadId: 'ficus',
+              squadName: 'Ficus',
               prompt: { type: 'text', message: 'Please check this change' },
               wait: { id: 'wait', message: 'Please check this change', completesOnApproval: false },
               focus: { waitId: 'wait' },
@@ -727,7 +727,7 @@ test('conversations with only quiet unfinished tasks stay off the root Updates l
 })
 
 test('a squad preview never shows or queries Assistant updates', async () => {
-  const f = await fixture(undefined, [{ kind: 'squad', id: 'tau', label: 'Tau' }], false, { activity: true })
+  const f = await fixture(undefined, [{ kind: 'squad', id: 'ficus', label: 'Ficus' }], false, { activity: true })
   try {
     expect(f.container.textContent).not.toContain('Hosting comparison')
   } finally {

@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { Monitor, MonitorLogs, MonitorStatus } from '@tau/shared'
+import type { Monitor, MonitorLogs, MonitorStatus } from '@ficus/shared'
 
 export interface ListMonitorsParams {
   agentId?: string

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { TAU_DISCORD_COMMANDS, TAU_DISCORD_DM_COMMANDS } from '@tau/shared/discord-commands'
+import { FICUS_DISCORD_COMMANDS, FICUS_DISCORD_DM_COMMANDS } from '@ficus/shared/discord-commands'
 import type { ChannelConnectionState } from './connections'
 import { ChannelLifecycle } from './lifecycle'
 
@@ -123,7 +123,7 @@ describe('ChannelLifecycle', () => {
       {
         url: 'https://discord.com/api/v10/applications/app-1/commands',
         method: 'PUT',
-        body: TAU_DISCORD_COMMANDS,
+        body: FICUS_DISCORD_COMMANDS,
         auth: 'Bot bot-tok',
       },
     ])
@@ -133,7 +133,7 @@ describe('ChannelLifecycle', () => {
     expect(h.calls.at(-2)?.url).toBe('https://discord.com/api/v10/applications/app-1/guilds/g-9/commands')
     expect(h.calls.at(-1)).toMatchObject({
       url: 'https://discord.com/api/v10/applications/app-1/commands',
-      body: TAU_DISCORD_DM_COMMANDS,
+      body: FICUS_DISCORD_DM_COMMANDS,
     })
     expect(h.discordChanges).toEqual(['d1', 'd2'])
     h.states.discord = undefined

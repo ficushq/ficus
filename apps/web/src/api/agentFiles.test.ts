@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { uploadAgentFile } from './agentFiles'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 const originalFile = globalThis.File
 const originalFormData = globalThis.FormData
@@ -72,7 +73,7 @@ describe('uploadAgentFile', () => {
     expect(xhr.method).toBe('POST')
     expect(xhr.url.endsWith('/api/agents/agent/files')).toBe(true)
     expect(xhr.withCredentials).toBe(true)
-    expect(xhr.headers.get('X-Tau-Csrf')).toBe('1')
+    expect(xhr.headers.get(CSRF_HEADER)).toBe('1')
     expect(xhr.body?.get('attachmentId')).toBe('attachment')
     const uploaded = xhr.body?.get('file') as IsolatedFile
     expect(uploaded.name).toBe('report.pdf')

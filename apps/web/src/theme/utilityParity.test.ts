@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import postcss from 'postcss'
 import tailwindcss from 'tailwindcss'
 import config from '../../tailwind.config.js'
-import { STATUS_TOKENS, validateThemeTokenOverrides } from '@tau/shared'
+import { STATUS_TOKENS, validateThemeTokenOverrides } from '@ficus/shared'
 import fixture from './fixtures/legacy-utility-colors.json'
 import { palettes, tokenRgba } from './test/builtins'
 

@@ -20,14 +20,14 @@ import {
 test('deployment cards preserve existing tokens and exposure choices while enforcing global enable state', async () => {
   const keys = Object.values(deploymentCredentialProviders).map((entry) => entry.key)
   const settingKeys = Object.keys(deploymentCredentialProviders).map((provider) => `__integration-enabled:${provider}`)
-  const env = Object.fromEntries(['HOME_DIR', 'TAU_ENCRYPTION_KEY', ...keys].map((key) => [key, process.env[key]]))
+  const env = Object.fromEntries(['HOME_DIR', 'FICUS_ENCRYPTION_KEY', ...keys].map((key) => [key, process.env[key]]))
   const priorSecrets = await db.select().from(secrets).where(inArray(secrets.key, keys))
   const priorSettings = await db.select().from(settings).where(inArray(settings.key, settingKeys))
   const home = await mkdtemp(join(tmpdir(), 'tau-deployment-integrations-'))
   const squadId = crypto.randomUUID()
   try {
     process.env.HOME_DIR = home
-    process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     for (const key of keys) delete process.env[key]
     await db.delete(secrets).where(inArray(secrets.key, keys))
     await db.delete(settings).where(inArray(settings.key, settingKeys))

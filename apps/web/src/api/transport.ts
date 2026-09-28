@@ -1,5 +1,5 @@
-import type { Transport, RequestOptions } from '@tau/client-core'
-import { HttpResponseError, readApiErrorMessage } from '@tau/client-core'
+import type { Transport, RequestOptions } from '@ficus/client-core'
+import { HttpResponseError, readApiErrorMessage } from '@ficus/client-core'
 import { authFetch, apiUrl, getWsUrl } from './client'
 
 /** Translate a client-core RequestOptions into a browser fetch init (cookie + CSRF added by authFetch). */

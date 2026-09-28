@@ -67,7 +67,7 @@ systemPrompt: |
   you read. Before reverting:
 
   1. Check whether the work stream description was recently updated:
-     `tau workstream get <id>`.
+     `ficus workstream get <id>`.
   2. If the scope is still unclear, flag it to the manager as a question rather
      than reverting outright.
 

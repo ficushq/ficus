@@ -6,7 +6,7 @@
  * with metadata about the agent type and work stream context.
  */
 
-import { messageSortAt, type MessageMetadata } from '@tau/shared'
+import { messageSortAt, type MessageMetadata } from '@ficus/shared'
 import { eq, and, arrayContains, asc } from 'drizzle-orm'
 import { db } from '../../../db'
 import { agents, messages, memoryDocuments, workStreams } from '../../../db/schema'

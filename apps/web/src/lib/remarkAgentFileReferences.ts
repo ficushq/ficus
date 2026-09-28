@@ -1,4 +1,4 @@
-import { extractAgentAttachmentReferences } from '@tau/shared'
+import { extractAgentAttachmentReferences } from '@ficus/shared'
 import { visit } from 'unist-util-visit'
 
 export function remarkAgentFileReferences(options: { agentId: string }) {

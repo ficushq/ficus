@@ -1,4 +1,4 @@
-import { isWorkerAgentType } from '@tau/shared'
+import { isWorkerAgentType } from '@ficus/shared'
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
@@ -177,7 +177,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
               <label className="block text-xs font-medium text-secondary">{name}</label>
               <button
                 onClick={() => handleRemoveType(typeId)}
-                className="tau-button text-xs text-muted hover:text-status-danger-500 transition-colors"
+                className="ficus-button text-xs text-muted hover:text-status-danger-500 transition-colors"
                 aria-label={`Remove ${name} context field`}
               >
                 ✕
@@ -188,7 +188,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
               onInput={(e) => handleValueChange(typeId, e.currentTarget.value)}
               placeholder={`Instructions for ${name} agents...`}
               className={clsx(
-                'tau-field',
+                'ficus-field',
                 'w-full h-32 p-2.5 rounded-lg border bg-surface text-primary text-sm',
                 'font-mono leading-relaxed resize-y placeholder:text-placeholder',
                 ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
@@ -206,7 +206,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
               handleAddType(e.target.value)
             }}
             className={clsx(
-              'tau-field',
+              'ficus-field',
               'w-full px-3 py-1.5 text-sm rounded-md border bg-surface text-muted',
               ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
               'border-th-border'
@@ -227,7 +227,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
           onClick={handleSave}
           disabled={!dirty || mutation.isPending}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
             dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}

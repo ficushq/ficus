@@ -1,5 +1,5 @@
-import type { Agent, AgentStatus } from '@tau/shared'
-import { agentLabelParts } from '@tau/shared'
+import type { Agent, AgentStatus } from '@ficus/shared'
+import { agentLabelParts } from '@ficus/shared'
 
 export const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
   active: 'Working',

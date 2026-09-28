@@ -5,7 +5,7 @@ import {
   SYSTEM_RECIPIENT_ID,
   type SquadActivityProjectionEventData,
   type Topic,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { Identity } from '../rbac'
 import { getAccessibleSquadIds, hasPermission } from '../rbac'
 import { assistantInboxOwner } from '../assistant-inbox'

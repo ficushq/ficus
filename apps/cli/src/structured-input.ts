@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { Command, InvalidArgumentError } from 'commander'
 import { isScalar, parseDocument, visit } from 'yaml'
-import { workflowSourceSchema } from '@tau/shared'
+import { workflowSourceSchema } from '@ficus/shared'
 
 const MAX_INPUT_BYTES = 1024 * 1024
 export interface StructuredInputOptions {

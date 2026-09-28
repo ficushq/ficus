@@ -3,7 +3,7 @@
  *
  * Entities wrap database rows with domain logic. They:
  * - Load from DB via drizzle-orm InferSelectModel
- * - Serialize to JSON types from @tau/shared
+ * - Serialize to JSON types from @ficus/shared
  * - Cache relations via lazy-loading getters
  *
  * See Agent.ts for a full implementation example.
@@ -153,7 +153,7 @@ export abstract class BaseEntity<JsonType extends Record<string, any>, UpdateInp
   abstract reload(): Promise<this>
 
   /**
-   * Serialize to JSON type from @tau/shared:
+   * Serialize to JSON type from @ficus/shared:
    *
    *   toJson(): FooJson {
    *     return {

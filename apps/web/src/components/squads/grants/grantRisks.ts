@@ -1,4 +1,4 @@
-import type { GrantPolicy } from '@tau/shared'
+import type { GrantPolicy } from '@ficus/shared'
 
 export type GrantRiskSeverity = 'low' | 'medium' | 'high'
 

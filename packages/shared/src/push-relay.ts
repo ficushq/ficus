@@ -3,8 +3,8 @@ import { z } from 'zod'
 export const PUSH_RELAY_PROTOCOL = 1 as const
 export const PUSH_RELAY_BASE_URL = 'https://ficus.sh'
 export const relayInstanceTokenPattern =
-  /^tau_pri_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_[A-Za-z0-9_-]{43}$/
-export const relayBindingTokenSchema = z.string().regex(/^tau_prd_[A-Za-z0-9_-]{43}$/)
+  /^ficus_pri_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_[A-Za-z0-9_-]{43}$/
+export const relayBindingTokenSchema = z.string().regex(/^ficus_prd_[A-Za-z0-9_-]{43}$/)
 export const apnsTokenSchema = z.string().regex(/^(?:[0-9a-f]{2}){16,256}$/i)
 export const relayPairingSchema = z
   .object({
@@ -125,7 +125,7 @@ export function pushEventType(
 }
 export function pushAlertText(input: Pick<RelayRouting, 'eventType' | 'workStreamNumber' | 'preview'>) {
   if (input.preview) return input.preview
-  const work = input.workStreamNumber ? `Work #${input.workStreamNumber}` : 'Tau'
+  const work = input.workStreamNumber ? `Work #${input.workStreamNumber}` : 'Ficus'
   const text: Record<NonNullable<RelayRouting['eventType']>, string> = {
     question: 'needs your answer',
     review: 'is ready for review',
@@ -147,8 +147,8 @@ export function pushAlertText(input: Pick<RelayRouting, 'eventType' | 'workStrea
           canceled: 'Work canceled',
           created: 'Work created',
           message: 'New inbox message',
-          update: 'Tau update',
+          update: 'Ficus update',
         }[input.eventType ?? 'update'],
-    body: 'Open Tau to see details.',
+    body: 'Open Ficus to see details.',
   }
 }

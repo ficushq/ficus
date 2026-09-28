@@ -4,7 +4,7 @@ import { db } from '../db'
 import { agentFileAttachments, inboxAttachments } from '../db/schema'
 import { getSettingsStore } from '../services/settings'
 import { deleteAttachmentFile, sha256Hex, writeAttachmentFile } from '../services/inbox/attachment-storage'
-import type { InboxAttachment as InboxAttachmentJson } from '@tau/shared'
+import type { InboxAttachment as InboxAttachmentJson } from '@ficus/shared'
 
 export type InboxAttachmentRow = InferSelectModel<typeof inboxAttachments>
 

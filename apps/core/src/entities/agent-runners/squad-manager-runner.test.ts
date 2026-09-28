@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import type { AgentType } from '@tau/shared'
+import type { AgentType } from '@ficus/shared'
 import { AgentSession } from '../AgentSession'
 import { Squad } from '../Squad'
 import { SquadManagerRunner } from './squad-manager-runner'

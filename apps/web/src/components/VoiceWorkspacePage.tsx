@@ -19,6 +19,7 @@ import {
   handleManualVoiceOrbPointerUp,
   setStoredVoiceInputMode,
 } from './voiceWorkspaceInputMode'
+import { VOICE_HOLD_KEYDOWN_MESSAGE, VOICE_HOLD_KEYUP_MESSAGE } from '@ficus/shared/browser-keys'
 
 export type VoiceWorkspaceEnvironment = {
   mediaDevices: Pick<MediaDevices, 'getUserMedia'> | undefined
@@ -53,8 +54,8 @@ export function VoiceWorkspacePage({
     return (
       <main className="min-h-[100dvh] bg-chrome-paper text-status-neutral-950 flex items-center justify-center p-8">
         <p className="max-w-md text-center text-sm text-status-neutral-500">
-          Voice workspace requires microphone support in a secure browser context. Open Tau over HTTPS or localhost in a
-          browser that supports WebRTC.
+          Voice workspace requires microphone support in a secure browser context. Open Ficus over HTTPS or localhost in
+          a browser that supports WebRTC.
         </p>
       </main>
     )
@@ -209,7 +210,7 @@ function VoiceInputModeControl({
             event.currentTarget.blur()
           }}
           className={clsx(
-            'tau-button',
+            'ficus-button',
             'rounded-full px-3 py-1.5 font-medium',
             inputMode === mode
               ? 'bg-status-neutral-950 text-on-strong'
@@ -249,14 +250,14 @@ function useManualHoldToSpeakShortcut({
     }
     const handleMessage = (event: MessageEvent) => {
       const data = event.data as { type?: string; repeat?: boolean } | null
-      if (data?.type === 'tau:voice-hold-keydown') {
+      if (data?.type === VOICE_HOLD_KEYDOWN_MESSAGE) {
         handleManualHoldKeyDown(
           { code: 'Space', repeat: data.repeat, target: null, preventDefault: () => undefined },
           isHoldingRef.current,
           onStartRef.current
         )
       }
-      if (data?.type === 'tau:voice-hold-keyup') {
+      if (data?.type === VOICE_HOLD_KEYUP_MESSAGE) {
         handleManualHoldKeyUp(
           { code: 'Space', target: null, preventDefault: () => undefined },
           isHoldingRef.current,
@@ -367,7 +368,7 @@ export function VoiceDebugInspector({
             <button
               type="button"
               onClick={onToggle}
-              className="tau-button rounded-md px-2 py-1 text-xs text-status-neutral-500 hover:bg-status-neutral-100 hover:text-status-neutral-900"
+              className="ficus-button rounded-md px-2 py-1 text-xs text-status-neutral-500 hover:bg-status-neutral-100 hover:text-status-neutral-900"
             >
               Close
             </button>
@@ -405,7 +406,7 @@ export function VoiceDebugInspector({
         type="button"
         onClick={onToggle}
         aria-pressed={open}
-        className="tau-button rounded-full border border-status-neutral-200/70 bg-chrome-paper/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-status-neutral-600 shadow-lg backdrop-blur-md hover:bg-chrome-paper hover:text-status-neutral-950"
+        className="ficus-button rounded-full border border-status-neutral-200/70 bg-chrome-paper/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-status-neutral-600 shadow-lg backdrop-blur-md hover:bg-chrome-paper hover:text-status-neutral-950"
       >
         Debug
       </button>
@@ -522,7 +523,7 @@ function VoiceOrb({
         aria-label={actionLabel}
         style={{ '--voice-input-level': Math.max(0, Math.min(inputLevel, 1)) } as CSSProperties}
         className={clsx(
-          'tau-button',
+          'ficus-button',
           'voice-orb group relative h-24 w-24 rounded-full outline-none transition-transform duration-300 disabled:cursor-default disabled:opacity-100',
           canClickOrb && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-decoration-10-200/80',
           isConnected && 'voice-orb--live',

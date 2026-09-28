@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '../api/client'
-import type { PushSubscription } from '@tau/shared'
+import type { PushSubscription } from '@ficus/shared'
 import { desktopBridge } from '../lib/desktop'
-
-const SUBSCRIPTION_ID_KEY = 'tau_push_subscription_id'
+import { PUSH_SUBSCRIPTION_ID_STORAGE_KEY } from '@ficus/shared/browser-keys'
 
 interface UsePushNotificationsReturn {
   isSupported: boolean
@@ -25,7 +24,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   )
   const [subscriptions, setSubscriptions] = useState<PushSubscription[]>([])
   const [currentSubscriptionId, setCurrentSubscriptionId] = useState<string | null>(() =>
-    localStorage.getItem(SUBSCRIPTION_ID_KEY)
+    localStorage.getItem(PUSH_SUBSCRIPTION_ID_STORAGE_KEY)
   )
   const [error, setError] = useState<string | null>(null)
 
@@ -35,9 +34,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       setSubscriptions(subs)
 
       // Clear stale localStorage reference if server no longer has this subscription
-      const storedId = localStorage.getItem(SUBSCRIPTION_ID_KEY)
+      const storedId = localStorage.getItem(PUSH_SUBSCRIPTION_ID_STORAGE_KEY)
       if (storedId && !subs.some((s) => s.id === storedId)) {
-        localStorage.removeItem(SUBSCRIPTION_ID_KEY)
+        localStorage.removeItem(PUSH_SUBSCRIPTION_ID_STORAGE_KEY)
         setCurrentSubscriptionId(null)
       }
     } catch (err) {
@@ -58,7 +57,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     if (!isSupported) {
       setError(
         desktopBridge()
-          ? 'Enable desktop notifications from the Tau application menu.'
+          ? 'Enable desktop notifications from the Ficus application menu.'
           : 'Push notifications not supported'
       )
       return
@@ -104,7 +103,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         }),
       })
 
-      localStorage.setItem(SUBSCRIPTION_ID_KEY, saved.id)
+      localStorage.setItem(PUSH_SUBSCRIPTION_ID_STORAGE_KEY, saved.id)
       setCurrentSubscriptionId(saved.id)
       await refresh()
     } catch (err: any) {
@@ -130,7 +129,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         await pushSubscription.unsubscribe()
       }
 
-      localStorage.removeItem(SUBSCRIPTION_ID_KEY)
+      localStorage.removeItem(PUSH_SUBSCRIPTION_ID_STORAGE_KEY)
       setCurrentSubscriptionId(null)
       await refresh()
     } catch (err: any) {
@@ -145,7 +144,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         await apiFetch(`/push/subscribe/${id}`, { method: 'DELETE' })
 
         if (id === currentSubscriptionId) {
-          localStorage.removeItem(SUBSCRIPTION_ID_KEY)
+          localStorage.removeItem(PUSH_SUBSCRIPTION_ID_STORAGE_KEY)
           setCurrentSubscriptionId(null)
         }
 

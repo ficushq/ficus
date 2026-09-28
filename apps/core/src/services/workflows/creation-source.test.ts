@@ -14,7 +14,7 @@ test('explicit sources win over squad defaults', () => {
 import { afterEach, beforeEach, describe, spyOn } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
-import { createBlankWorkflow, type WorkflowSource } from '@tau/shared'
+import { createBlankWorkflow, type WorkflowSource } from '@ficus/shared'
 import { db, agents, agentTypes, squads, squadPresets, workStreams, workflows, executions } from '../../db'
 import { Squad } from '../../entities/Squad'
 import { SquadPreset } from '../../entities/SquadPreset'

@@ -1,4 +1,4 @@
-// Tau's amtp-engine wiring (§7.1): assembles the port adapters + delivery
+// Ficus's amtp-engine wiring (§7.1): assembles the port adapters + delivery
 // hooks into an AmtpEngine singleton. `fetch` is deliberately omitted from the
 // options below so the engine falls back to its own late-bound
 // `globalThis.fetch` resolution (§2) — this module must never capture a

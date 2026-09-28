@@ -351,7 +351,7 @@ When creating work from this request, attach this source with:
 \`--from-slack ${permalink}\`
 
 If the user asks to "index this thread" (or similar), ingest with:
-\`tau squad memory ingest ${targetSquad ?? '<your-squad-id>'} ${permalink}\``
+\`ficus squad memory ingest ${targetSquad ?? '<your-squad-id>'} ${permalink}\``
       }
     }
 
@@ -411,11 +411,11 @@ If the user asks to "index this thread" (or similar), ingest with:
     if (inbound.command === 'help') {
       return (
         `**Commands:**\n` +
-        `\`/tau status\` — Show active and queued work streams\n` +
-        `\`/tau notify <squad>\` — Subscribe this channel to squad notifications\n` +
-        `\`/tau unnotify <squad>\` — Unsubscribe from squad notifications\n` +
-        `\`/tau <message>\` — Ask questions or make requests\n` +
-        `\`/tau help\` — Show this help`
+        `\`/ficus status\` — Show active and queued work streams\n` +
+        `\`/ficus notify <squad>\` — Subscribe this channel to squad notifications\n` +
+        `\`/ficus unnotify <squad>\` — Unsubscribe from squad notifications\n` +
+        `\`/ficus <message>\` — Ask questions or make requests\n` +
+        `\`/ficus help\` — Show this help`
       )
     }
 
@@ -428,7 +428,7 @@ If the user asks to "index this thread" (or similar), ingest with:
   private async handleNotifyCommand(inbound: InboundMessage, unsubscribe: boolean): Promise<string> {
     const squadQuery = inbound.content.trim()
     if (!squadQuery) {
-      return `❌ Please specify a squad name or ID.\nUsage: \`/tau ${unsubscribe ? 'unnotify' : 'notify'} <squad>\``
+      return `❌ Please specify a squad name or ID.\nUsage: \`/ficus ${unsubscribe ? 'unnotify' : 'notify'} <squad>\``
     }
 
     // Find squad by ID. Notification subscriptions are not constrained by channel routing.

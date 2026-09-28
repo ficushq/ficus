@@ -1,6 +1,6 @@
 import { CronExpressionParser } from 'cron-parser'
 import { and, eq, isNotNull, lte } from 'drizzle-orm'
-import type { ScheduleConfig } from '@tau/shared'
+import type { ScheduleConfig } from '@ficus/shared'
 import { db } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'

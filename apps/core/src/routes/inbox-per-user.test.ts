@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { inboxRouter } from './inbox'
 import { identityMiddleware } from '../middleware/identity'
 import { db, inbox } from '../db'

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { PUSH_CATEGORIES } from '@tau/shared'
+import { PUSH_CATEGORIES } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { NotificationPreferences } from './NotificationPreferences'
 

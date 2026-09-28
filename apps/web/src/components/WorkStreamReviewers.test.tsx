@@ -1,7 +1,7 @@
 import { test, expect, spyOn } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { waitFor } from '@testing-library/dom'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { client } from '../api/clientInstance'

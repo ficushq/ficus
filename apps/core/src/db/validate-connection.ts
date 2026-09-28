@@ -11,7 +11,7 @@ export function validateDatabaseConnection(connectionString: string, context: st
   const dbName = url.pathname.slice(1) // Remove leading /
   const port = url.port || '5432'
 
-  if (process.env.TAU_TEST_MODE === '1') {
+  if (process.env.FICUS_TEST_MODE === '1') {
     const isIsolatedSecretBoundaryDb =
       process.env.SECRET_BOUNDARY_REQUIRE_ISOLATED_DB === '1' && dbName === 'tau_secret_boundary_test'
     if (dbName !== 'tau_test' && !isIsolatedSecretBoundaryDb) {
@@ -29,7 +29,7 @@ export function validateDatabaseConnection(connectionString: string, context: st
   }
 
   // Warn if connecting to test DB outside test mode
-  if (dbName === 'tau_test' && process.env.TAU_TEST_MODE !== '1') {
+  if (dbName === 'tau_test' && process.env.FICUS_TEST_MODE !== '1') {
     log.warn(`WARNING in ${context}: Connecting to tau_test database outside of test mode.`)
   }
 }

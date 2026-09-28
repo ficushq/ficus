@@ -13,13 +13,13 @@ import {
 
 let store: SecretStore
 const original = {
-  encryption: process.env.TAU_ENCRYPTION_KEY,
+  encryption: process.env.FICUS_ENCRYPTION_KEY,
   app: process.env.APP_URL,
   base: process.env.APP_BASE_PATH,
   legacy: process.env.LINEAR_WEBHOOK_SECRET,
 }
 beforeEach(async () => {
-  process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+  process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   process.env.APP_URL = 'https://tau.example/team'
   delete process.env.APP_BASE_PATH
   delete process.env.LINEAR_WEBHOOK_SECRET
@@ -32,7 +32,7 @@ afterEach(async () => {
   await db.delete(secrets).where(eq(secrets.key, LINEAR_WEBHOOK_SETTINGS_KEY))
   await db.delete(secrets).where(eq(secrets.key, LEGACY_LINEAR_WEBHOOK_SECRET_KEY))
   for (const [key, value] of Object.entries({
-    TAU_ENCRYPTION_KEY: original.encryption,
+    FICUS_ENCRYPTION_KEY: original.encryption,
     APP_URL: original.app,
     APP_BASE_PATH: original.base,
     LINEAR_WEBHOOK_SECRET: original.legacy,

@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { flushSync } from 'react-dom'
-import type { AgentQuestion } from '@tau/shared'
+import type { AgentQuestion } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { AgentQuestionCard } from './AgentQuestionCard'

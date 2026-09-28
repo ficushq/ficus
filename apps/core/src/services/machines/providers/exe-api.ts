@@ -251,10 +251,10 @@ export interface ExeExecObservation {
  * `create` on a running instance and confirm the theory in minutes.
  */
 export const EXE_EXEC_TIMEOUT_ENV_VARS = {
-  create: 'TAU_EXE_EXEC_CREATE_TIMEOUT_MS',
-  destroy: 'TAU_EXE_EXEC_DESTROY_TIMEOUT_MS',
-  list: 'TAU_EXE_EXEC_LIST_TIMEOUT_MS',
-  clone: 'TAU_EXE_EXEC_CLONE_TIMEOUT_MS',
+  create: 'FICUS_EXE_EXEC_CREATE_TIMEOUT_MS',
+  destroy: 'FICUS_EXE_EXEC_DESTROY_TIMEOUT_MS',
+  list: 'FICUS_EXE_EXEC_LIST_TIMEOUT_MS',
+  clone: 'FICUS_EXE_EXEC_CLONE_TIMEOUT_MS',
 } as const
 
 /**

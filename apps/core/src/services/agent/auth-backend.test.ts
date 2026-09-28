@@ -16,7 +16,7 @@ describe('SecretStoreCredentialStore', () => {
   let store: SecretStore
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
     resetSecretStore()
     store = getSecretStore()
@@ -25,7 +25,7 @@ describe('SecretStoreCredentialStore', () => {
 
   afterEach(() => {
     store.stopPeriodicRefresh()
-    delete process.env.TAU_ENCRYPTION_KEY
+    delete process.env.FICUS_ENCRYPTION_KEY
   })
 
   test('read returns undefined for a provider with no stored credential', async () => {
@@ -231,7 +231,7 @@ describe('getModelRuntime', () => {
   let store: SecretStore
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
     resetSecretStore()
     store = getSecretStore()
@@ -240,7 +240,7 @@ describe('getModelRuntime', () => {
 
   afterEach(() => {
     store.stopPeriodicRefresh()
-    delete process.env.TAU_ENCRYPTION_KEY
+    delete process.env.FICUS_ENCRYPTION_KEY
     // The refresh()/refreshModelRuntime() tests permanently rebuild the
     // process-singleton runtime's configuredProviders snapshot; without this
     // reset that leaked state flips hasRuntimeRoute() answers in every later

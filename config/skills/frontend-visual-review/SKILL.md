@@ -21,33 +21,33 @@ description: Use when previewing a UI, capturing screenshots, or iterating visua
 
 ## Command runtime
 
-Run every command in this skill with `squad_bash` from the project worktree. Start the server, localhost probe, `tau deploy local` commands, and diagnostics in that same shared runtime: a local deployment cannot reach a server started in private `bash`. If `squad_bash` is unavailable, **do not** start or attach a local app from private `bash`: delegate the shared-runtime server/deployment operation to an agent that has it. Use an available shell only for operations its Workspace & Sandbox prompt says can reach the required project/runtime.
+Run every command in this skill with `squad_bash` from the project worktree. Start the server, localhost probe, `ficus deploy local` commands, and diagnostics in that same shared runtime: a local deployment cannot reach a server started in private `bash`. If `squad_bash` is unavailable, **do not** start or attach a local app from private `bash`: delegate the shared-runtime server/deployment operation to an agent that has it. Use an available shell only for operations its Workspace & Sandbox prompt says can reach the required project/runtime.
 
 ## The 5-step loop
 
 1. **Start the dev server** bound to `0.0.0.0` so the sandbox's local-deployment proxy can reach it.
-2. **Register it as a private Tau local app** so Tau can authorize the browser handoff.
+2. **Register it as a private Ficus local app** so Ficus can authorize the browser handoff.
 3. **Open it** with `browser_open`.
 4. **Screenshot / read / interact** with the other `browser_*` tools.
 5. **Iterate** — edit code, the dev server hot-reloads, repeat steps 3–4.
 
-## Steps 1–2: Start a managed Tau local app
+## Steps 1–2: Start a managed Ficus local app
 
-Use the project's server command, but let Tau supervise it and assign `$PORT`. The command must bind to `0.0.0.0` and honor `$TAU_APP_BASE_PATH`. Use a unique `RUN_NAME` per project.
+Use the project's server command, but let Ficus supervise it and assign `$PORT`. The command must bind to `0.0.0.0` and honor `$FICUS_APP_BASE_PATH`. Use a unique `RUN_NAME` per project.
 
 ```bash
-SQUAD_ID=<your-squad-id> # from `tau workstream get <id> --json`
+SQUAD_ID=<your-squad-id> # from `ficus workstream get <id> --json`
 RUN_NAME=<unique-project-name>
 
 # Vite/React example (run through squad_bash)
-tau deploy local start "$SQUAD_ID" \
+ficus deploy local start "$SQUAD_ID" \
   --name "$RUN_NAME" \
   --cwd "$PWD" \
-  --command 'bun run dev -- --host 0.0.0.0 --port $PORT --base $TAU_APP_BASE_PATH' \
+  --command 'bun run dev -- --host 0.0.0.0 --port $PORT --base $FICUS_APP_BASE_PATH' \
   --json | jq '{id, name, status, port}'
 
 # Find an existing run without printing its credential URL.
-tau deploy local list "$SQUAD_ID" --json | \
+ficus deploy local list "$SQUAD_ID" --json | \
   jq --arg name "$RUN_NAME" '.[] | select(.name == $name) | {id, name, status, port}'
 ```
 
@@ -57,7 +57,7 @@ Verify app health directly in the shared runtime, without putting a launch crede
 
 ```bash
 DEPLOYMENT_ID=<full-id-from-the-output-above>
-APP_PORT=$(tau deploy local get "$DEPLOYMENT_ID" --json | jq -r '.port')
+APP_PORT=$(ficus deploy local get "$DEPLOYMENT_ID" --json | jq -r '.port')
 curl -sS -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:$APP_PORT/"
 # Use the app's own health route/base path if it does not serve /.
 ```
@@ -72,11 +72,11 @@ Pass the **full deployment UUID**, not its credential URL:
 { "localDeploymentId": "<full-deployment-uuid>" }
 ```
 
-Tau checks the calling agent's current `deployments:read` permission for that squad and the deployment's current state, resolves the issued URL internally, and passes it directly to the browser backend. Both hosted app origins and path-based proxy URLs are supported. The result includes a screenshot without echoing the launch URL or page title. The proxy's existing token/cookie authentication remains in force; subsequent asset requests use its app-scoped cookie.
+Ficus checks the calling agent's current `deployments:read` permission for that squad and the deployment's current state, resolves the issued URL internally, and passes it directly to the browser backend. Both hosted app origins and path-based proxy URLs are supported. The result includes a screenshot without echoing the launch URL or page title. The proxy's existing token/cookie authentication remains in force; subsequent asset requests use its app-scoped cookie.
 
 Never print, copy into tool arguments, or post `urlPathOrHost`/`_tau_token` values. Redaction is intentional, not something to work around. Ordinary non-credential URLs still use `browser_open({ "url": "https://example.com" })`; provide exactly one of `url` or `localDeploymentId`. On an older instance without the ID option, ask for an upgrade rather than copying a redacted credential.
 
-If opening fails, check the deployment status and your access, then the instance's `APP_URL` and browser-to-proxy connectivity. A `403` from an edge provider (for example Cloudflare error `1010`, even on unsigned requests) is not evidence that Tau rejected the launch credential. Report that separately to the operator; do not weaken authentication or change edge settings. Screenshots and page content can contain app-owned sensitive data: use synthetic fixtures and inspect before sharing.
+If opening fails, check the deployment status and your access, then the instance's `APP_URL` and browser-to-proxy connectivity. A `403` from an edge provider (for example Cloudflare error `1010`, even on unsigned requests) is not evidence that Ficus rejected the launch credential. Report that separately to the operator; do not weaken authentication or change edge settings. Screenshots and page content can contain app-owned sensitive data: use synthetic fixtures and inspect before sharing.
 
 ## Step 4: Capture / inspect / interact
 
@@ -107,7 +107,7 @@ To put a saved screenshot on a PR or issue, use `gh pr comment <n> --attach ./sh
 When you're done iterating, archive the local app so the Apps tab stays clean:
 
 ```bash
-tau deploy local archive <deployment-id>
+ficus deploy local archive <deployment-id>
 ```
 
 ## Troubleshooting
@@ -116,9 +116,9 @@ tau deploy local archive <deployment-id>
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Local preview cannot be opened.                   | Use the full `localDeploymentId`; check caller access, active deployment state, configured `APP_URL`, and browser connectivity. Do not guess a proxy origin or copy credentials. |
 | Page loads but is blank/white.                    | Check `browser_console` for JS errors and bundler messages first. Then verify the dev server actually serves index.html at `/` (some frameworks need a base path).               |
-| App-owned login redirect after the preview opens. | The app's login is separate from Tau preview access. Use its supported login flow with authorized synthetic test accounts; do not bypass either authentication layer.            |
+| App-owned login redirect after the preview opens. | The app's login is separate from Ficus preview access. Use its supported login flow with authorized synthetic test accounts; do not bypass either authentication layer.          |
 | Old screenshot is reused.                         | Browser session is per-run. Call `browser_open` with the same deployment ID to navigate again, or scroll to top with `browser_scroll`.                                           |
-| Squad has hit the local-deployment limit.         | `tau deploy local list --include-archived` then archive stale ones with `tau deploy local archive <id>`.                                                                         |
+| Squad has hit the local-deployment limit.         | `ficus deploy local list --include-archived` then archive stale ones with `ficus deploy local archive <id>`.                                                                     |
 
 ## See also
 

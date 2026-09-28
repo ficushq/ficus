@@ -84,7 +84,7 @@ describe('update apply offline fallback', () => {
     expect(offline).not.toHaveBeenCalled()
     const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
     expect(error.message).toContain('https://demo.hiretau.ai is unreachable')
-    expect(error.message).toContain('tau server update')
+    expect(error.message).toContain('ficus server update')
   })
   it("never falls back when the loopback port is not the checkout's port", async () => {
     ;(apiPost as ReturnType<typeof mock>).mockImplementationOnce(() => Promise.reject(new TypeError('fetch failed')))
@@ -164,15 +164,15 @@ describe('defaultUpdateDeps localPort', () => {
       statePath
     )
     upsertInstance('smoke', { root, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' }, {}, statePath)
-    const saved = process.env.TAU_LOCAL_SERVER_STATE
-    process.env.TAU_LOCAL_SERVER_STATE = statePath
+    const saved = process.env.FICUS_LOCAL_SERVER_STATE
+    process.env.FICUS_LOCAL_SERVER_STATE = statePath
     try {
       expect(defaultUpdateDeps().localPort(root)).toBe(3100)
       expect(defaultUpdateDeps().localPort(other)).toBe(4321)
       expect(defaultUpdateDeps().localPort(join(tmp, 'nope'))).toBeUndefined()
     } finally {
-      if (saved === undefined) delete process.env.TAU_LOCAL_SERVER_STATE
-      else process.env.TAU_LOCAL_SERVER_STATE = saved
+      if (saved === undefined) delete process.env.FICUS_LOCAL_SERVER_STATE
+      else process.env.FICUS_LOCAL_SERVER_STATE = saved
       rmSync(tmp, { recursive: true, force: true })
     }
   })

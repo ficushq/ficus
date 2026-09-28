@@ -83,7 +83,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
     try {
       if (!token) {
         token = tokenFromInviteUrl((await createInviteLink(account.id)).inviteUrl)
-        if (!token) throw new Error('Tau could not create a passkey setup link. Try again.')
+        if (!token) throw new Error('Ficus could not create a passkey setup link. Try again.')
         setLink({ accountId: account.id, token })
       }
       const context = await getTokenRegistrationOptions(token)
@@ -116,7 +116,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
 
   return (
     <div className="h-full flex items-center justify-center bg-page px-4">
-      <div className="tau-section w-full max-w-sm p-6">
+      <div className="ficus-section w-full max-w-sm p-6">
         <h1 className="text-lg font-semibold text-primary mb-2">Finish creating your admin account</h1>
         <p className="text-sm text-secondary mb-4">
           You're signed in with the instance password, which isn't an account. Create a passkey on this device to finish
@@ -155,7 +155,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
             autoComplete="name"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className={clsx('tau-field', inputClasses)}
+            className={clsx('ficus-field', inputClasses)}
           />
           <label htmlFor="finish-admin-passkey-name" className="sr-only">
             Passkey name (optional)
@@ -166,12 +166,12 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
             placeholder="Passkey name (optional)"
             value={credentialName}
             onChange={(e) => setCredentialName(e.target.value)}
-            className={clsx('tau-field', inputClasses)}
+            className={clsx('ficus-field', inputClasses)}
           />
           <button
             type="submit"
             disabled={loading}
-            className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Creating passkey…' : error ? 'Retry' : 'Create passkey'}
           </button>
@@ -182,7 +182,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
           )}
         </form>
         <p className="text-xs text-secondary mt-4 text-center">
-          <button type="button" onClick={onSignOut} className="tau-button text-accent-light hover:underline">
+          <button type="button" onClick={onSignOut} className="ficus-button text-accent-light hover:underline">
             Sign out
           </button>
         </p>

@@ -71,17 +71,17 @@ export function SharedPromptList({
           </div>
           <div className="flex gap-2 shrink-0 flex-wrap justify-end">
             {canWrite && (
-              <button className="tau-button text-sm text-accent-light" onClick={() => onEdit(include)}>
+              <button className="ficus-button text-sm text-accent-light" onClick={() => onEdit(include)}>
                 Edit
               </button>
             )}
             {canWrite && (
-              <button className="tau-button text-sm text-muted" onClick={() => onToggle(include)}>
+              <button className="ficus-button text-sm text-muted" onClick={() => onToggle(include)}>
                 {include.disabled ? 'Enable' : 'Disable'}
               </button>
             )}
             {canWrite && !include.hasTemplate && (
-              <button className="tau-button text-sm text-status-danger-600" onClick={() => onDelete(include)}>
+              <button className="ficus-button text-sm text-status-danger-600" onClick={() => onDelete(include)}>
                 Delete
               </button>
             )}
@@ -232,7 +232,7 @@ export function SharedPromptsTab() {
         </p>
         {canWrite && (
           <button
-            className="tau-button tau-button-primary shrink-0 px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
+            className="ficus-button ficus-button-primary shrink-0 px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
             onClick={openNew}
           >
             New shared prompt
@@ -276,7 +276,7 @@ export function SharedPromptsTab() {
             <div>
               <label className="text-xs text-muted mb-1 block">Include ID</label>
               <input
-                className="tau-field w-full px-3 py-2 bg-input border border-th-border"
+                className="ficus-field w-full px-3 py-2 bg-input border border-th-border"
                 aria-label="Include ID"
                 required
                 placeholder="squad-rules"
@@ -288,7 +288,7 @@ export function SharedPromptsTab() {
             <div>
               <label className="text-xs text-muted mb-1 block">Name</label>
               <input
-                className="tau-field w-full px-3 py-2 bg-input border border-th-border"
+                className="ficus-field w-full px-3 py-2 bg-input border border-th-border"
                 aria-label="Name"
                 required
                 value={editing.name}
@@ -298,7 +298,7 @@ export function SharedPromptsTab() {
             <div>
               <label className="text-xs text-muted mb-1 block">Description</label>
               <input
-                className="tau-field w-full px-3 py-2 bg-input border border-th-border"
+                className="ficus-field w-full px-3 py-2 bg-input border border-th-border"
                 aria-label="Description"
                 value={editing.description}
                 onChange={(event) => setEditing({ ...editing, description: event.target.value })}
@@ -310,7 +310,7 @@ export function SharedPromptsTab() {
                 {fieldActions('content')}
               </label>
               <textarea
-                className="tau-field w-full px-3 py-2 font-mono text-sm bg-input border border-th-border"
+                className="ficus-field w-full px-3 py-2 font-mono text-sm bg-input border border-th-border"
                 aria-label="Content"
                 required
                 rows={18}
@@ -320,14 +320,14 @@ export function SharedPromptsTab() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
+                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
                 disabled={save.isPending}
               >
                 {save.isPending ? 'Saving…' : 'Save'}
               </button>
               <button
                 type="button"
-                className="tau-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
+                className="ficus-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
                 onClick={() => setEditing(null)}
               >
                 Cancel
@@ -335,7 +335,7 @@ export function SharedPromptsTab() {
               {existing?.hasTemplate && existing.yamlFieldOverrides.length > 0 && (
                 <button
                   type="button"
-                  className="tau-button px-3 py-1.5 text-sm text-status-attention-600 dark:text-status-attention-400 disabled:opacity-50"
+                  className="ficus-button px-3 py-1.5 text-sm text-status-attention-600 dark:text-status-attention-400 disabled:opacity-50"
                   disabled={revertAll.isPending}
                   onClick={() => {
                     if (window.confirm(`Revert "${existing.id}" to its template?`)) revertAll.mutate(existing.id)

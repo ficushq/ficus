@@ -1,5 +1,5 @@
-import type { OAuthClientBinding } from '@tau/shared/oauth-providers/types'
-import { getOAuthProviderAdapter } from '@tau/shared/oauth-providers'
+import type { OAuthClientBinding } from '@ficus/shared/oauth-providers/types'
+import { getOAuthProviderAdapter } from '@ficus/shared/oauth-providers'
 import type { OAuthAuthority } from './authority'
 import { createBrokerTransport } from './broker-transport'
 import { OAuthTransportError, type OAuthTransport } from './transport'

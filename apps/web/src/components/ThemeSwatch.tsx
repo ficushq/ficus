@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import clsx from 'clsx'
-import type { CustomThemeDocument, EffectiveAppearance } from '@tau/shared'
+import type { CustomThemeDocument, EffectiveAppearance } from '@ficus/shared'
 import { findWebTheme, type WebThemeDefinition } from '../theme/registry'
 import { applyResolvedTheme } from '../theme/apply'
 import { applyCustomTheme, removeCustomProperties } from '../theme/custom'

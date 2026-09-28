@@ -11,10 +11,10 @@ import { createHash } from 'crypto'
  *    GET /healthz stays exempt;
  *  - no token configured → no enforcement (the k8s runtime / legacy VM boxes);
  *  - EXECUTOR_BIND honored (server answers on 127.0.0.1 when bound there);
- *  - VM boot without a token (EXECUTOR_BIND or TAU_BOX_PORT set, no
+ *  - VM boot without a token (EXECUTOR_BIND or FICUS_BOX_PORT set, no
  *    EXECUTOR_AUTH_TOKEN) → fails closed: exit 1, never binds.
  *
- * TAU_SANDBOX_ROLE=agent keeps boot light (no dockerd bring-up), mirroring how
+ * FICUS_SANDBOX_ROLE=agent keeps boot light (no dockerd bring-up), mirroring how
  * integration-vm.test.ts starts the box server unit-free.
  */
 
@@ -62,11 +62,11 @@ async function startServer(env: Record<string, string>): Promise<RunningServer> 
         EXECUTOR_SERVICE_CGROUP: '',
         EXECUTOR_AUTH_TOKEN: '',
         EXECUTOR_BIND: '',
-        TAU_BOX_PORT: '',
+        FICUS_BOX_PORT: '',
         EXECUTOR_DOCKER_RUNTIME: '',
         EXECUTOR_PORT: '0',
-        TAU_SANDBOX_ROLE: 'agent',
-        TAU_BOX_HOME: workspace,
+        FICUS_SANDBOX_ROLE: 'agent',
+        FICUS_BOX_HOME: workspace,
         HOME: workspace,
         // Runtime cache files must not populate this fixture's empty workspace.
         BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
@@ -385,11 +385,11 @@ describe('server fail-closed on a token-less VM boot (subprocess)', () => {
         EXECUTOR_SERVICE_CGROUP: '',
         EXECUTOR_AUTH_TOKEN: '',
         EXECUTOR_BIND: '',
-        TAU_BOX_PORT: '',
+        FICUS_BOX_PORT: '',
         EXECUTOR_DOCKER_RUNTIME: '',
         EXECUTOR_PORT: String(port),
-        TAU_SANDBOX_ROLE: 'agent',
-        TAU_BOX_HOME: workspace,
+        FICUS_SANDBOX_ROLE: 'agent',
+        FICUS_BOX_HOME: workspace,
         HOME: workspace,
         WORKSPACE_PATH: workspace,
         ...env,
@@ -411,11 +411,11 @@ describe('server fail-closed on a token-less VM boot (subprocess)', () => {
     expect(stderr).toContain('refusing to start unauthenticated')
   }, 30_000)
 
-  it('TAU_BOX_PORT set without a token → exit 1 (fresh-provision window: unit env only, no server.env)', async () => {
-    // TAU_BOX_PORT is baked into the box's systemd unit itself, so it is the
+  it('FICUS_BOX_PORT set without a token → exit 1 (fresh-provision window: unit env only, no server.env)', async () => {
+    // FICUS_BOX_PORT is baked into the box's systemd unit itself, so it is the
     // marker that catches a unit activated BEFORE server.env lands. An empty
     // token counts as unset.
-    const { code, stderr } = await spawnExpectingRefusal({ TAU_BOX_PORT: '50100', EXECUTOR_AUTH_TOKEN: '' })
+    const { code, stderr } = await spawnExpectingRefusal({ FICUS_BOX_PORT: '50100', EXECUTOR_AUTH_TOKEN: '' })
     expect(code).toBe(1)
     expect(stderr).toContain('refusing to start unauthenticated')
   }, 30_000)
@@ -508,7 +508,7 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
       body: { title: 'Example Domain', screenshotBase64: 'ZmFrZS1zY3JlZW5zaG90' },
     }))
     try {
-      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, TAU_BROWSER_SOCK: sockPath })
+      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, FICUS_BROWSER_SOCK: sockPath })
       const requestBody = { runId: 'run-1', url: 'https://example.com' }
       const res = await fetch(`${server.base}/browser/open`, {
         method: 'POST',
@@ -520,7 +520,9 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
 
       expect(received.length).toBe(1)
       expect(received[0].pathname).toBe('/open')
-      expect(received[0].headers['x-tau-box-user']).toBe(userInfo().username)
+      // K3: both names with the same value, for browser services on older machine images.
+      expect(received[0].headers['x-ficus-box-user']).toBe(userInfo().username)
+      expect(received[0].headers['x-tau-box-user']).toBe(userInfo().username) // K3
       expect(received[0].headers['authorization']).toBe(`Bearer ${token}`)
       expect(received[0].body).toEqual(requestBody)
     } finally {
@@ -538,7 +540,7 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
       body: { error: 'browser at capacity on this machine, retry shortly' },
     }))
     try {
-      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, TAU_BROWSER_SOCK: sockPath })
+      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, FICUS_BROWSER_SOCK: sockPath })
       const res = await fetch(`${server.base}/browser/open`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -557,7 +559,7 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
     const sockDir = mkdtempSync(join(tmpdir(), 'tau-browser-sock-'))
     const missingSock = join(sockDir, 'no-such-socket')
     try {
-      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, TAU_BROWSER_SOCK: missingSock })
+      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, FICUS_BROWSER_SOCK: missingSock })
       const res = await fetch(`${server.base}/browser/open`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -576,7 +578,7 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
     const sockPath = join(sockDir, 'sock')
     const { peer, received } = startFakePeer(sockPath, () => ({ status: 200, body: { ok: true } }))
     try {
-      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, TAU_BROWSER_SOCK: sockPath })
+      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, FICUS_BROWSER_SOCK: sockPath })
       const res = await fetch(`${server.base}/browser/open`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -616,8 +618,8 @@ describe('unix-socket listen + idle self-exit (subprocess)', () => {
         ...process.env,
         EXECUTOR_SOCKET: sock,
         EXECUTOR_SERVICE_CGROUP: '',
-        TAU_SANDBOX_ROLE: 'agent',
-        TAU_BOX_HOME: workspace,
+        FICUS_SANDBOX_ROLE: 'agent',
+        FICUS_BOX_HOME: workspace,
         HOME: workspace,
         WORKSPACE_PATH: workspace,
         ...env,
@@ -697,8 +699,8 @@ describe('unix-socket listen + idle self-exit (subprocess)', () => {
           EXECUTOR_SERVICE_CGROUP: '',
           EXECUTOR_AUTH_TOKEN: 'stale-socket-token',
           EXECUTOR_IDLE_EXIT_MS: '0',
-          TAU_SANDBOX_ROLE: 'agent',
-          TAU_BOX_HOME: workspace,
+          FICUS_SANDBOX_ROLE: 'agent',
+          FICUS_BOX_HOME: workspace,
           HOME: workspace,
           WORKSPACE_PATH: workspace,
         },
@@ -807,8 +809,8 @@ describe('unix-socket listen + idle self-exit (subprocess)', () => {
         ...mergedEnv,
         EXECUTOR_AUTH_TOKEN: 'marker-authority-token',
         EXECUTOR_IDLE_EXIT_MS: '1500',
-        TAU_SANDBOX_ROLE: 'agent',
-        TAU_BOX_HOME: workspace,
+        FICUS_SANDBOX_ROLE: 'agent',
+        FICUS_BOX_HOME: workspace,
         HOME: workspace,
         WORKSPACE_PATH: workspace,
       },

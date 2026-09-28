@@ -1,4 +1,4 @@
-import { extractAgentAttachmentReferences } from '@tau/shared'
+import { extractAgentAttachmentReferences } from '@ficus/shared'
 
 export interface TextSelection {
   start: number

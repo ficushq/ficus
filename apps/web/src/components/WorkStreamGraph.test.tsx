@@ -1,7 +1,7 @@
 import { acquireDomHarness } from '../test/domHarness'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { Root } from 'react-dom/client'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 import { WorkStreamGraph } from './WorkStreamGraph'
 
 let domHarness: Awaited<ReturnType<typeof acquireDomHarness>> | undefined

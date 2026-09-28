@@ -6,7 +6,7 @@
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { db, messages } from '../../db'
 import { jsonbObjectRecovered } from '../../db/jsonb'
-import { Message, MessageMetadata } from '@tau/shared'
+import { Message, MessageMetadata } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { mapMessage } from '../../entities/message-mapper'
 import { messageEventData } from '../../entities/message-event'

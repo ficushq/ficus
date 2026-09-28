@@ -14,11 +14,11 @@ import { AmtpAllowRule } from '../entities/AmtpAllowRule'
 import { AmtpKnownKey } from '../entities/AmtpKnownKey'
 import { generateInstanceKeyPair, instanceIdFromPublicKeyPem, signEnvelope } from '../services/amtp/crypto'
 import { formatAmtpAddress } from '../services/amtp/address'
-import { canonicalAgentSigBytes } from '@tau/shared'
+import { canonicalAgentSigBytes } from '@ficus/shared'
 import { ensureAgentIdentity, agentIdentityHostPath } from '../services/amtp/agent-identity'
 import { rmSync } from 'fs'
 import { dirname } from 'path'
-import type { AmtpEnvelope } from '@tau/shared'
+import type { AmtpEnvelope } from '@ficus/shared'
 
 // Sentinel discipline: mount identityMiddleware + authzSentinel exactly as the real app does,
 // so the cookieless/token-less peer request must clear the sentinel via requirePeerSignature's

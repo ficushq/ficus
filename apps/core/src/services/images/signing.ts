@@ -6,7 +6,7 @@ const DOMAIN = 'image-url-v1'
 let cachedKey: Buffer | null | undefined
 
 function baseSecret(): string | null {
-  return process.env.TAU_ENCRYPTION_KEY || process.env.TAU_PASSWORD || null
+  return process.env.FICUS_ENCRYPTION_KEY || process.env.FICUS_PASSWORD || null
 }
 
 function getKey(): Buffer | null {

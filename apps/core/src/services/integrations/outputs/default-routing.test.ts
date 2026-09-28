@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { matchesGitHubRouting, shouldNotifyManager, eventRuleTrigger } from './default-routing'
-import { workflowEventTriggerSchema, type WorkflowSource } from '@tau/shared'
+import { workflowEventTriggerSchema, type WorkflowSource } from '@ficus/shared'
 type Event = Parameters<typeof shouldNotifyManager>[1]
 const metadata = { github: [{ repo: 'acme/project', labels: ['bug'] }] }
 function event(output: string, data: Record<string, unknown> = {}, body = ''): Event {

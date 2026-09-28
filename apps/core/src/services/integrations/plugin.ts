@@ -15,7 +15,7 @@ export interface AuthorizationGrant<C, Credential> {
 
 export interface OAuth2Authorization<C, Credential> {
   readonly kind: 'oauth2'
-  /** Key into the server-only @tau/shared provider registry. */
+  /** Key into the server-only @ficus/shared provider registry. */
   readonly adapter: string
   /** Stable fields identifying the account/workspace, independent of display-name changes. */
   identity?(configuration: C): Readonly<Record<string, string | number>>

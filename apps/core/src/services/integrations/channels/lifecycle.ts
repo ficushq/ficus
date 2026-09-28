@@ -1,4 +1,4 @@
-import { TAU_DISCORD_COMMANDS, TAU_DISCORD_DM_COMMANDS, discordCommandsPath } from '@tau/shared/discord-commands'
+import { FICUS_DISCORD_COMMANDS, FICUS_DISCORD_DM_COMMANDS, discordCommandsPath } from '@ficus/shared/discord-commands'
 import { createLogger } from '../../../lib/infra/logger'
 import type { ChannelConnections, ChannelConnectionState } from './connections'
 
@@ -121,7 +121,7 @@ export class ChannelLifecycle {
       const response = await this.#fetch(`${api}${path}`, {
         method: 'PUT',
         headers: { authorization: `Bot ${state.credential.botToken}`, 'content-type': 'application/json' },
-        body: JSON.stringify(TAU_DISCORD_COMMANDS),
+        body: JSON.stringify(FICUS_DISCORD_COMMANDS),
         signal: AbortSignal.timeout(15_000),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -129,7 +129,7 @@ export class ChannelLifecycle {
         const dm = await this.#fetch(`${api}${discordCommandsPath(state.configuration.applicationId)}`, {
           method: 'PUT',
           headers: { authorization: `Bot ${state.credential.botToken}`, 'content-type': 'application/json' },
-          body: JSON.stringify(TAU_DISCORD_DM_COMMANDS),
+          body: JSON.stringify(FICUS_DISCORD_DM_COMMANDS),
           signal: AbortSignal.timeout(15_000),
         })
         if (!dm.ok) throw new Error(`DM commands HTTP ${dm.status}`)

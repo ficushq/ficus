@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import type { GrantPolicy, SensitivityTier } from '@tau/shared'
-import { MEMORY_SOURCE_TYPE_METADATA, SENSITIVITY_TIERS } from '@tau/shared'
+import type { GrantPolicy, SensitivityTier } from '@ficus/shared'
+import { MEMORY_SOURCE_TYPE_METADATA, SENSITIVITY_TIERS } from '@ficus/shared'
 import { evaluateGrantRisks } from './grantRisks'
 import { GrantRiskBadge } from './GrantRiskBadge'
 
@@ -75,7 +75,7 @@ export function GrantPolicyEditor({ policy, onChange }: Props) {
                 onChange={(event) => updateRead({ paths: splitLines(event.target.value) })}
                 rows={3}
                 placeholder="/memory/company/**"
-                className="tau-field w-full px-2 py-1 text-xs font-mono border border-th-border bg-surface text-primary rounded"
+                className="ficus-field w-full px-2 py-1 text-xs font-mono border border-th-border bg-surface text-primary rounded"
               />
             </div>
             <div>
@@ -85,7 +85,7 @@ export function GrantPolicyEditor({ policy, onChange }: Props) {
                 onChange={(event) =>
                   updateRead({ sensitivity: (event.target.value || undefined) as SensitivityTier | undefined })
                 }
-                className="tau-field px-2 py-1 text-xs border border-th-border bg-surface text-primary rounded"
+                className="ficus-field px-2 py-1 text-xs border border-th-border bg-surface text-primary rounded"
               >
                 <option value="">unrestricted</option>
                 {SENSITIVITY_TIERS.map((tier) => (
@@ -134,7 +134,7 @@ export function GrantPolicyEditor({ policy, onChange }: Props) {
                 onChange={(event) => updateWrite({ paths: splitLines(event.target.value) })}
                 rows={3}
                 placeholder="/memory/contributions/**"
-                className="tau-field w-full px-2 py-1 text-xs font-mono border border-th-border bg-surface text-primary rounded"
+                className="ficus-field w-full px-2 py-1 text-xs font-mono border border-th-border bg-surface text-primary rounded"
               />
             </div>
           </div>

@@ -1,8 +1,8 @@
-import { workStreamRef } from '@tau/shared'
-import { workStreamTitle } from '@tau/shared'
+import { workStreamRef } from '@ficus/shared'
+import { workStreamTitle } from '@ficus/shared'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useInfiniteQuery } from '../reactQueryHooks'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import { acknowledgeFeedVisit, type FeedVisit } from '../api/auth'
 import { feedQueries, queries } from '../queryOptions'
 import { usePermissions } from '../hooks/usePermissions'
@@ -88,7 +88,7 @@ export function AccountFeedVisit({
   if (!parts.length) return null
   return (
     <details open className="mb-4 group" data-testid="feed-visit-summary">
-      <summary className="tau-button flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 py-2 text-left hover:bg-surface-hover marker:hidden [&::-webkit-details-marker]:hidden">
+      <summary className="ficus-button flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 py-2 text-left hover:bg-surface-hover marker:hidden [&::-webkit-details-marker]:hidden">
         <span
           aria-hidden="true"
           className="shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none"
@@ -99,7 +99,7 @@ export function AccountFeedVisit({
         <span className="text-xs text-muted">{parts.join(' · ')}</span>
         <button
           type="button"
-          className="tau-button ml-auto shrink-0 rounded px-2 py-1 text-xs text-muted hover:text-primary"
+          className="ficus-button ml-auto shrink-0 rounded px-2 py-1 text-xs text-muted hover:text-primary"
           aria-label="Dismiss updates since your last visit"
           onClick={(event) => {
             event.preventDefault()
@@ -189,7 +189,7 @@ export function AccountFeedVisit({
         )}
         {completed.hasNextPage && (
           <button
-            className="tau-button ml-6 text-xs text-muted"
+            className="ficus-button ml-6 text-xs text-muted"
             disabled={completed.isFetchingNextPage}
             onClick={() => void completed.fetchNextPage()}
           >

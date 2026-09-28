@@ -16,9 +16,9 @@ import {
   type ThemeInsightsVariant,
   type ThemePalette,
   type ThemePreset,
-} from '@tau/shared'
-import { isHttpResponseError } from '@tau/client-core'
-import { suggestPaletteSeeds } from '@tau/shared/theme-derivation'
+} from '@ficus/shared'
+import { isHttpResponseError } from '@ficus/client-core'
+import { suggestPaletteSeeds } from '@ficus/shared/theme-derivation'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { useThemePreview } from '../../providers/ThemeProvider'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -157,13 +157,13 @@ function ColorField({
           aria-label={`${label} color swatch`}
           value={toSwatchHex(value)}
           onChange={(event) => (onSwatchChange ?? onChange)(event.target.value)}
-          className="tau-color-input h-9 w-9 shrink-0 cursor-pointer rounded-md"
+          className="ficus-color-input h-9 w-9 shrink-0 cursor-pointer rounded-md"
         />
         <div className="relative min-w-0 flex-1">
           <input
             id={id}
             type="text"
-            className={clsx('tau-field w-full px-3 py-2', clearable && 'pr-8')}
+            className={clsx('ficus-field w-full px-3 py-2', clearable && 'pr-8')}
             value={value}
             onChange={(event) => onChange(event.target.value)}
             onBlur={onBlur}
@@ -598,7 +598,7 @@ export function CustomThemeEditor({
           <div className="flex items-center justify-end gap-1">
             <button
               type="button"
-              className="tau-button flex h-8 w-8 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40"
+              className="ficus-button flex h-8 w-8 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40"
               aria-label="Undo"
               title="Undo"
               disabled={past.length === 0}
@@ -616,7 +616,7 @@ export function CustomThemeEditor({
             </button>
             <button
               type="button"
-              className="tau-button flex h-8 w-8 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40"
+              className="ficus-button flex h-8 w-8 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40"
               aria-label="Redo"
               title="Redo"
               disabled={future.length === 0}
@@ -638,7 +638,7 @@ export function CustomThemeEditor({
               <label className="flex flex-col gap-1">
                 Theme name
                 <input
-                  className="tau-field px-3 py-2"
+                  className="ficus-field px-3 py-2"
                   value={draft.name}
                   maxLength={40}
                   onChange={(event) => commitTypedDraft('name', { ...draft, name: event.target.value })}
@@ -648,7 +648,7 @@ export function CustomThemeEditor({
               <label className="flex flex-col gap-1">
                 Based on
                 <select
-                  className="tau-field px-3 py-2"
+                  className="ficus-field px-3 py-2"
                   value={draft.base}
                   aria-describedby={baseHintId}
                   onChange={(event) => {
@@ -758,8 +758,8 @@ export function CustomThemeEditor({
                         role="radio"
                         aria-checked={tab === variant}
                         className={clsx(
-                          'tau-button min-h-[44px] px-3 py-2',
-                          tab === variant ? 'tau-button-primary' : 'tau-button-secondary'
+                          'ficus-button min-h-[44px] px-3 py-2',
+                          tab === variant ? 'ficus-button-primary' : 'ficus-button-secondary'
                         )}
                         onClick={() => setTab(variant)}
                       >
@@ -772,7 +772,7 @@ export function CustomThemeEditor({
               <label className="flex flex-col gap-1">
                 Color token
                 <select
-                  className="tau-field px-3 py-2"
+                  className="ficus-field px-3 py-2"
                   value={token}
                   onChange={(event) => setToken(event.target.value)}
                 >
@@ -784,7 +784,7 @@ export function CustomThemeEditor({
               <label className="flex flex-col gap-1">
                 Color value
                 <input
-                  className="tau-field px-3 py-2"
+                  className="ficus-field px-3 py-2"
                   value={color}
                   onChange={(event) => setColor(event.target.value)}
                   aria-describedby="custom-color-help"
@@ -796,7 +796,7 @@ export function CustomThemeEditor({
                 {tab === 'constant' ? 'single' : tab} variant.
               </p>
               <button
-                className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary self-start"
+                className="ficus-button min-h-[44px] px-3 py-2 ficus-button-secondary self-start"
                 onClick={() => override(token, color)}
               >
                 Preview token
@@ -808,7 +808,7 @@ export function CustomThemeEditor({
                       {name}: {value}
                     </span>
                     <button
-                      className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+                      className="ficus-button min-h-[44px] px-3 py-2 ficus-button-secondary"
                       aria-label={`Remove ${name}`}
                       onClick={() => removeOverride(name)}
                     >
@@ -833,7 +833,7 @@ export function CustomThemeEditor({
                           : `${ratio.toFixed(2)}:1 (recommended ${pair.minimum}:1).`}
                         {safe && (
                           <button
-                            className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary ml-2"
+                            className="ficus-button min-h-[44px] px-3 py-2 ficus-button-secondary ml-2"
                             onClick={() => override(pair.fg, safe)}
                           >
                             Use safe value {safe}
@@ -848,7 +848,7 @@ export function CustomThemeEditor({
           </details>
           <div className="flex flex-wrap gap-2">
             <button
-              className="tau-button min-h-[44px] px-3 py-2 tau-button-primary"
+              className="ficus-button min-h-[44px] px-3 py-2 ficus-button-primary"
               disabled={!validation.ok || !!previewError || saving}
               onClick={() => {
                 closeTypingSession()
@@ -861,7 +861,7 @@ export function CustomThemeEditor({
             </button>
             {preset && (
               <button
-                className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+                className="ficus-button min-h-[44px] px-3 py-2 ficus-button-secondary"
                 disabled={!validation.ok || saving}
                 onClick={() => {
                   closeTypingSession()
@@ -872,14 +872,14 @@ export function CustomThemeEditor({
               </button>
             )}
             <button
-              className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+              className="ficus-button min-h-[44px] px-3 py-2 ficus-button-secondary"
               disabled={saving}
               onClick={onClose}
             >
               Cancel
             </button>
             <button
-              className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+              className="ficus-button min-h-[44px] px-3 py-2 ficus-button-secondary"
               disabled={!validation.ok}
               onClick={download}
             >

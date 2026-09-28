@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { createBlankWorkflow, createWorkflowRun, resolveWorkflow } from '@tau/shared'
+import { createBlankWorkflow, createWorkflowRun, resolveWorkflow } from '@ficus/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {

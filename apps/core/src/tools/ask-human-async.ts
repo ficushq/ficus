@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-agent'
-import type { QuestionItem, QuestionType } from '@tau/shared'
+import type { QuestionItem, QuestionType } from '@ficus/shared'
 import { createAgentQuestion } from '../services/agents/questions'
 
 const QUESTION_CONTEXT_MAX_LENGTH = 2000

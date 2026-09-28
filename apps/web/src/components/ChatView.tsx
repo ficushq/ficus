@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { useState, useRef, useEffect, useCallback, useMemo, useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { flushSync } from 'react-dom'
-import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@tau/shared'
+import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@ficus/shared'
 import { AssistantMessageContent, HumanMessageContent, ThinkingSection, ParsedTextContent } from './MessageContent'
 import { TypingIndicator } from './TypingIndicator'
 import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
@@ -36,7 +36,7 @@ import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
 import { ToolInlineActions } from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
-import type { RenderItem, StreamingContentBlock } from '@tau/client-react'
+import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
 import { useVoiceEnabled } from '../hooks/useVoiceEnabled'
 import { useVoiceKeyboardShortcuts } from '../hooks/useVoiceKeyboardShortcuts'
@@ -239,7 +239,7 @@ function AssistantMessageRow({
             <button
               type="button"
               onClick={() => tts.stop()}
-              className="tau-button flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors text-status-progress-600 dark:text-status-progress-400 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50"
+              className="ficus-button flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors text-status-progress-600 dark:text-status-progress-400 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50"
               title={tts.isSynthesizing ? 'Loading...' : 'Stop'}
             >
               {tts.isSynthesizing ? (
@@ -307,7 +307,7 @@ function PendingMessageRow({
           <button
             type="button"
             onClick={onRetry}
-            className="tau-button mt-1 text-xs text-on-accent underline hover:text-on-accent/80"
+            className="ficus-button mt-1 text-xs text-on-accent underline hover:text-on-accent/80"
           >
             Retry
           </button>
@@ -1387,7 +1387,7 @@ export function ChatView({
     <button
       onClick={onToggleRawText}
       className={clsx(
-        'tau-button',
+        'ficus-button',
         'p-1.5 rounded-md transition-colors shrink-0',
         showRawText
           ? 'text-status-progress-600 dark:text-status-progress-400 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50'
@@ -1403,7 +1403,7 @@ export function ChatView({
   const fullscreenButton = (enableFullscreen || isFullscreen) && (
     <button
       onClick={toggleFullscreen}
-      className="tau-button p-1.5 rounded-md text-placeholder hover:text-secondary hover:bg-surface-hover transition-colors shrink-0"
+      className="ficus-button p-1.5 rounded-md text-placeholder hover:text-secondary hover:bg-surface-hover transition-colors shrink-0"
       aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
       title={isFullscreen ? 'Exit fullscreen (Escape)' : 'Fullscreen'}
     >
@@ -1704,7 +1704,7 @@ export function ChatView({
                   onClick={handleCancelQueueClick}
                   disabled={isClearingQueue}
                   className={clsx(
-                    'tau-button',
+                    'ficus-button',
                     'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-50',
                     confirmingClearQueue
                       ? 'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50'
@@ -1748,13 +1748,13 @@ export function ChatView({
                         <span role="alert" className="text-status-danger-600 dark:text-status-danger-400">
                           {agentFileErrorText(file.error)}
                         </span>
-                        <button className="tau-button" type="button" onClick={() => agentFiles.retryFile(file.id)}>
+                        <button className="ficus-button" type="button" onClick={() => agentFiles.retryFile(file.id)}>
                           Retry
                         </button>
                       </>
                     )}
                     <button
-                      className="tau-button"
+                      className="ficus-button"
                       type="button"
                       onClick={() => void agentFiles.removeFile(file.id)}
                       aria-label={`Remove ${file.file.name}`}
@@ -1837,7 +1837,7 @@ export function ChatView({
                       <button
                         type="button"
                         onClick={() => retryImageUpload(img.id)}
-                        className="tau-button mt-1 block w-16 text-xs text-status-progress-600 dark:text-status-progress-400 hover:underline"
+                        className="ficus-button mt-1 block w-16 text-xs text-status-progress-600 dark:text-status-progress-400 hover:underline"
                         aria-label="Retry image upload"
                       >
                         Re-upload
@@ -1849,7 +1849,7 @@ export function ChatView({
                       <button
                         type="button"
                         onClick={() => removeImage(img.id)}
-                        className="tau-button absolute -top-1 -right-1 bg-status-danger-500 hover:bg-status-danger-600 text-on-strong rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="ficus-button absolute -top-1 -right-1 bg-status-danger-500 hover:bg-status-danger-600 text-on-strong rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Remove image"
                         aria-label="Remove image"
                       >
@@ -1864,7 +1864,7 @@ export function ChatView({
                   <button
                     type="button"
                     onClick={clearAllImages}
-                    className="tau-button flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors self-center"
+                    className="ficus-button flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors self-center"
                   >
                     <TrashIcon className="h-3 w-3" />
                     Clear all
@@ -1940,7 +1940,7 @@ export function ChatView({
                 disabled={disabled || isUploading || isSubmitting}
                 rows={1}
                 onFocus={(event) => resizeTextarea(event.currentTarget)}
-                className="tau-field w-full min-h-[46px] md:min-h-[38px] shrink-0 rounded-md border-input-border bg-input-bg text-primary focus:border-status-progress-500 focus:ring-status-progress-500 px-3 py-2.5 md:py-2 border disabled:bg-surface-secondary resize-none max-h-40 overflow-y-auto text-base md:text-sm"
+                className="ficus-field w-full min-h-[46px] md:min-h-[38px] shrink-0 rounded-md border-input-border bg-input-bg text-primary focus:border-status-progress-500 focus:ring-status-progress-500 px-3 py-2.5 md:py-2 border disabled:bg-surface-secondary resize-none max-h-40 overflow-y-auto text-base md:text-sm"
               />
               {/* File mention autocomplete dropdown */}
               {mentionState.isOpen && squadId && (
@@ -1973,7 +1973,7 @@ export function ChatView({
                   onClick={() => setAttachSheetOpen(true)}
                   aria-haspopup="dialog"
                   aria-expanded={attachSheetOpen}
-                  className="tau-button chat-composer-attach md:hidden p-2.5 rounded-md text-muted hover:text-secondary hover:bg-surface-hover transition-colors shrink-0"
+                  className="ficus-button chat-composer-attach md:hidden p-2.5 rounded-md text-muted hover:text-secondary hover:bg-surface-hover transition-colors shrink-0"
                   aria-label="Attach or change controls"
                 >
                   <PlusIcon className="w-5 h-5" />
@@ -1984,7 +1984,7 @@ export function ChatView({
                     type="button"
                     onClick={() => imageAttachState.allowed && fileInputRef.current?.click()}
                     disabled={!imageAttachState.allowed || disabled || isUploading}
-                    className="tau-button p-2.5 md:p-2 rounded-md text-muted hover:text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors shrink-0"
+                    className="ficus-button p-2.5 md:p-2 rounded-md text-muted hover:text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors shrink-0"
                     title={imageAttachState.title}
                   >
                     <ImageIcon className="h-5 w-5" />
@@ -2001,7 +2001,7 @@ export function ChatView({
                     }}
                     onClick={() => agentId && agentFileInputRef.current?.click()}
                     disabled={!agentId || disabled}
-                    className="tau-button p-2.5 md:p-2 rounded-md text-muted hover:text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors shrink-0"
+                    className="ficus-button p-2.5 md:p-2 rounded-md text-muted hover:text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors shrink-0"
                     title="Attach a file"
                     aria-label="Attach a file"
                   >
@@ -2037,7 +2037,7 @@ export function ChatView({
                         onTouchEnd={() => endPress()}
                         disabled={disabled || voiceState === 'transcribing'}
                         className={clsx(
-                          'tau-button',
+                          'ficus-button',
                           'relative z-10 p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors disabled:opacity-50',
                           voiceState === 'recording'
                             ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
@@ -2077,7 +2077,7 @@ export function ChatView({
                         type="button"
                         onClick={tts.toggle}
                         className={clsx(
-                          'tau-button',
+                          'ficus-button',
                           'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
                           tts.isPlaying || tts.isSynthesizing
                             ? 'bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-600 dark:text-status-progress-400'
@@ -2106,7 +2106,7 @@ export function ChatView({
                       if (next) pinTranscriptToBottom()
                     }}
                     className={clsx(
-                      'tau-button',
+                      'ficus-button',
                       'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
                       autoScroll
                         ? 'text-accent hover:bg-selection'
@@ -2122,7 +2122,7 @@ export function ChatView({
                     <button
                       type="button"
                       onClick={onStop}
-                      className="tau-button chat-composer-stop px-2.5 py-2 md:py-1.5 rounded-md text-on-strong text-sm font-medium min-h-[44px] md:min-h-0 bg-status-danger-600 hover:bg-status-danger-700 active:bg-status-danger-800 transition-colors"
+                      className="ficus-button chat-composer-stop px-2.5 py-2 md:py-1.5 rounded-md text-on-strong text-sm font-medium min-h-[44px] md:min-h-0 bg-status-danger-600 hover:bg-status-danger-700 active:bg-status-danger-800 transition-colors"
                       title="Stop"
                     >
                       Stop
@@ -2225,7 +2225,7 @@ export function ChatView({
                         (!hasInput && pendingImages.length === 0)
                       }
                       className={clsx(
-                        'tau-button',
+                        'ficus-button',
                         'px-3 py-2 md:py-1.5 rounded-md text-sm disabled:opacity-50 font-medium min-h-[44px] md:min-h-0',
                         sendButtonClassName ? 'text-on-strong' : 'text-on-accent',
                         sendButtonClassName ?? 'bg-accent hover:bg-accent-hover active:bg-accent-active'
@@ -2259,7 +2259,7 @@ export function ChatView({
                   }}
                   disabled={!imageAttachState.allowed || disabled || isUploading}
                   title={imageAttachState.title}
-                  className="tau-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50 disabled:hover:bg-transparent"
+                  className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50 disabled:hover:bg-transparent"
                 >
                   <ImageIcon className="w-5 h-5 text-muted" />
                   Attach image
@@ -2277,7 +2277,7 @@ export function ChatView({
                     setAttachSheetOpen(false)
                   }}
                   disabled={!agentId || disabled}
-                  className="tau-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
+                  className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
                 >
                   <FileIcon className="w-5 h-5 text-muted" />
                   Attach file
@@ -2294,7 +2294,7 @@ export function ChatView({
                       setAttachSheetOpen(false)
                     }}
                     disabled={disabled || voiceState === 'transcribing'}
-                    className="tau-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
+                    className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
                   >
                     <MicIcon className="w-5 h-5 text-muted" />
                     {voiceState === 'recording' ? 'Stop voice recording' : 'Voice message'}
@@ -2307,7 +2307,7 @@ export function ChatView({
                       tts.toggle()
                       setAttachSheetOpen(false)
                     }}
-                    className="tau-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover"
+                    className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover"
                   >
                     {tts.enabled ? (
                       <SpeakerOnIcon className="w-5 h-5 text-muted" />
@@ -2325,7 +2325,7 @@ export function ChatView({
                     if (next) pinTranscriptToBottom()
                     setAttachSheetOpen(false)
                   }}
-                  className="tau-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover"
+                  className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover"
                 >
                   <AutoScrollIcon className="w-5 h-5 text-muted" />
                   {autoScroll ? 'Auto-scroll on' : 'Auto-scroll off'}
@@ -2610,7 +2610,7 @@ function StreamingBlockGroupSection({
     <div className="text-xs">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="tau-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
+        className="ficus-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
       >
         <ChevronRightIcon
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
@@ -2685,7 +2685,7 @@ function StreamingToolCallItem({
       <div data-tool-call-row={toolCall.toolCallId} className="flex items-center">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="tau-button flex-1 flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
+          className="ficus-button flex-1 flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
         >
           {inProgress ? (
             <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin shrink-0" />
@@ -2715,7 +2715,7 @@ function StreamingToolCallItem({
               e.stopPropagation()
               onAbortTool()
             }}
-            className="tau-button px-2 py-0.5 ml-1 text-xs font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors shrink-0"
+            className="ficus-button px-2 py-0.5 ml-1 text-xs font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors shrink-0"
           >
             Abort
           </button>

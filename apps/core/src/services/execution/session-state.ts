@@ -198,7 +198,7 @@ export function precompactionLifecycleSink(agentId: string, event: Precompaction
 /**
  * Gracefully shut down all active sessions.
  * Aborts each session; any assistant message the Pi SDK persists before
- * shutdown completes is mirrored to Tau's DB by the runner's persistence event
+ * shutdown completes is mirrored to Ficus's DB by the runner's persistence event
  * handler. Returns execution IDs so the caller can re-queue them.
  */
 export async function shutdownActiveSessions(

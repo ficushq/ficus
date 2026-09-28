@@ -1,4 +1,4 @@
-import type { NotionConnectionConfiguration } from '@tau/shared/oauth-providers/notion/config'
+import type { NotionConnectionConfiguration } from '@ficus/shared/oauth-providers/notion/config'
 import {
   OAuthConnectionAuthorizer,
   type OAuthConnectionAuthorizerDependencies,

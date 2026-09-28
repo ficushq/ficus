@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
-import { SYNC_THEME_DESCRIPTORS, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@tau/shared'
-import { HttpResponseError } from '@tau/client-core'
+import { SYNC_THEME_DESCRIPTORS, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@ficus/shared'
+import { HttpResponseError } from '@ficus/client-core'
 import { ThemeSyncStore, LEGACY_LOCAL_OVERRIDE_KEY, type ThemeSyncApi, type ThemePresetLiveLinkApi } from './sync'
 import { BUILT_IN_THEMES } from './registry'
 
@@ -59,6 +59,10 @@ function server(theme: ThemePreference | null = harbor) {
   }
 }
 
+test('the retired local-override flag uses the ficus name', () => {
+  expect(LEGACY_LOCAL_OVERRIDE_KEY).toBe('ficus-theme-local-override')
+})
+
 test('sync metadata matches every web builtin (no duplicated palette)', () => {
   expect(SYNC_THEME_DESCRIPTORS).toEqual(BUILT_IN_THEMES.map(({ id, label, kind }) => ({ id, label, kind })))
 })
@@ -80,7 +84,7 @@ test('fresh device adopts; reload retains the adopted cache; adoption never echo
   reloaded.disconnect()
 })
 test('the flag older versions used to keep a device theme is removed, and no longer stops adoption', async () => {
-  const local = storage({ [LEGACY_LOCAL_OVERRIDE_KEY]: '1', 'tau-theme-id': 'ember' })
+  const local = storage({ [LEGACY_LOCAL_OVERRIDE_KEY]: '1', 'ficus-theme-id': 'ember' })
   const store = new ThemeSyncStore(local)
   expect(local.getItem(LEGACY_LOCAL_OVERRIDE_KEY)).toBeNull()
   const remote = server()
@@ -90,10 +94,10 @@ test('the flag older versions used to keep a device theme is removed, and no lon
   expect(remote.writes).toHaveLength(0)
   store.disconnect()
 })
-test.each(['tau-theme', 'tau-theme-id', 'tau-appearance'])(
+test.each(['ficus-theme', 'ficus-theme-id', 'ficus-appearance'])(
   'pre-sync %s is never uploaded on login; the account theme is adopted',
   async (key) => {
-    const store = new ThemeSyncStore(storage({ [key]: key === 'tau-theme-id' ? 'ember' : 'dark' }))
+    const store = new ThemeSyncStore(storage({ [key]: key === 'ficus-theme-id' ? 'ember' : 'dark' }))
     const remote = server()
     store.connect(remote.api)
     await store.refresh()
@@ -103,7 +107,7 @@ test.each(['tau-theme', 'tau-theme-id', 'tau-appearance'])(
   }
 )
 test('an account with no theme keeps the device theme and is not written to', async () => {
-  const store = new ThemeSyncStore(storage({ 'tau-theme-id': 'ember' }))
+  const store = new ThemeSyncStore(storage({ 'ficus-theme-id': 'ember' }))
   const remote = server(null)
   store.connect(remote.api)
   await store.refresh()
@@ -190,7 +194,7 @@ test('logout clears inherited custom preference; next empty account does not rec
   store.disconnect(true)
   expect(store.getSnapshot().custom).toBeNull()
   expect(store.getSnapshot().syncAvailable).toBe(false)
-  expect(local.getItem('tau-custom-theme')).toBeNull()
+  expect(local.getItem('ficus-custom-theme')).toBeNull()
   const next = server(null)
   store.connect(next.api)
   await store.refresh()
@@ -325,8 +329,8 @@ test('another tab choosing a theme invalidates slow reads without echo writes', 
     },
   })
   await started.promise
-  local.setItem('tau-theme-id', 'ember')
-  local.setItem('tau-appearance', 'light')
+  local.setItem('ficus-theme-id', 'ember')
+  local.setItem('ficus-appearance', 'light')
   store.reloadFromStorage()
   response.resolve({ userId: 'A', theme: harbor })
   await store.refresh()
@@ -355,8 +359,8 @@ test('failed in-flight PUT cannot resurrect a write invalidated by a newer stora
 
   // Another tab has published Harbor and persisted it on this device.
   remote.set(harbor)
-  local.setItem('tau-theme-id', 'harbor')
-  local.setItem('tau-appearance', 'dark')
+  local.setItem('ficus-theme-id', 'harbor')
+  local.setItem('ficus-appearance', 'dark')
   store.reloadFromStorage()
   const refresh = store.refresh()
   failed.reject(new Error('old Ember request failed'))
@@ -413,7 +417,7 @@ test('presetId round-trips through change/apply and clears when the custom theme
   }
   store.change(withPreset)
   expect(store.getSnapshot().presetId).toBe('p-1')
-  expect(local.getItem('tau-theme-preset-id')).toBe('p-1')
+  expect(local.getItem('ficus-theme-preset-id')).toBe('p-1')
   // Reloading a fresh store instance from the same storage recovers presetId.
   const reloaded = new ThemeSyncStore(local)
   expect(reloaded.getSnapshot().presetId).toBe('p-1')
@@ -421,7 +425,7 @@ test('presetId round-trips through change/apply and clears when the custom theme
   // locally without needing a server call — the library preset itself is untouched.
   store.change({ themeId: 'tau', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null })
   expect(store.getSnapshot().presetId).toBeNull()
-  expect(local.getItem('tau-theme-preset-id')).toBeNull()
+  expect(local.getItem('ficus-theme-preset-id')).toBeNull()
 })
 
 test('presetOwnerId round-trips alongside presetId, survives reload, and clears with the custom theme', () => {
@@ -436,7 +440,7 @@ test('presetOwnerId round-trips alongside presetId, survives reload, and clears 
   }
   store.change(withOwner)
   expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
-  expect(local.getItem('tau-theme-preset-owner-id')).toBe('owner-1')
+  expect(local.getItem('ficus-theme-preset-owner-id')).toBe('owner-1')
   const reloaded = new ThemeSyncStore(local)
   expect(reloaded.getSnapshot().presetOwnerId).toBe('owner-1')
   // Appearance changes (setAppearance/toggleTheme in ThemeProvider) must carry
@@ -446,7 +450,7 @@ test('presetOwnerId round-trips alongside presetId, survives reload, and clears 
   expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
   store.change({ themeId: 'tau', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null })
   expect(store.getSnapshot().presetOwnerId).toBeNull()
-  expect(local.getItem('tau-theme-preset-owner-id')).toBeNull()
+  expect(local.getItem('ficus-theme-preset-owner-id')).toBeNull()
 })
 
 test('presetOwnerId is retained (detached-shared) even when presetId alone is cleared', () => {
@@ -515,7 +519,7 @@ test('refreshLinkedPreset applies a changed document through the normal apply pa
   expect(store.getSnapshot().custom).toEqual(changedDoc)
   expect(store.getSnapshot().presetId).toBe('p-1')
   expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
-  expect(local.getItem('tau-custom-theme')).toBe(JSON.stringify(changedDoc))
+  expect(local.getItem('ficus-custom-theme')).toBe(JSON.stringify(changedDoc))
 })
 
 test('refreshLinkedPreset is a no-op when the document is unchanged (identical hash)', async () => {
@@ -550,8 +554,8 @@ test('refreshLinkedPreset on 404 marks detached: presetId cleared, presetOwnerId
   expect(store.getSnapshot().presetId).toBeNull()
   expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
   expect(store.getSnapshot().custom).toEqual(mineDoc) // the user keeps the last-seen copy
-  expect(local.getItem('tau-theme-preset-id')).toBeNull()
-  expect(local.getItem('tau-theme-preset-owner-id')).toBe('owner-1')
+  expect(local.getItem('ficus-theme-preset-id')).toBeNull()
+  expect(local.getItem('ficus-theme-preset-owner-id')).toBe('owner-1')
 })
 
 test('refreshLinkedPreset on a network/other error silently leaves state untouched (retried later, like account sync)', async () => {

@@ -1,12 +1,12 @@
 # Core API Authentication
 
-Tau authenticates people with accounts and passkeys, browser sessions, and revocable device tokens. Route permissions govern access to resources. `TAU_PASSWORD` remains a bootstrap/legacy credential while no administrator has a passkey; it is not the normal credential for an established instance.
+Ficus authenticates people with accounts and passkeys, browser sessions, and revocable device tokens. Route permissions govern access to resources. `FICUS_PASSWORD` remains a bootstrap/legacy credential while no administrator has a passkey; it is not the normal credential for an established instance.
 
 ## Security Model
 
 User identities resolve permissions from role assignments, including squad-scoped access. Agents and scoped system API tokens have their own identities and authorization rules. Authentication establishes the caller; each protected route also checks authorization.
 
-`TAU_PASSWORD` is read through the [Secret Store](secret-store.md), including deployment configuration. Setup generates it to protect first-admin registration. When configured, the first-user registration flow requires a valid bootstrap-password identity. A bare installation without it permits first-user registration without that bootstrap gate, but protected API routes still require an identity. Removing `TAU_PASSWORD` does not turn off account authentication or open all routes.
+`FICUS_PASSWORD` is read through the [Secret Store](secret-store.md), including deployment configuration. Setup generates it to protect first-admin registration. When configured, the first-user registration flow requires a valid bootstrap-password identity. A bare installation without it permits first-user registration without that bootstrap gate, but protected API routes still require an identity. Removing `FICUS_PASSWORD` does not turn off account authentication or open all routes.
 
 Password login and password bearer authentication stop working once an admin has a passkey. They remain available when admin records exist but no admin has a passkey, such as a restore that removed origin-bound credentials.
 
@@ -24,9 +24,9 @@ Some routes act for one person, such as connecting accounts, subscriptions, sess
 
 1. `Authorization: Bearer <token>`
 2. `X-Auth-Token: <token>`
-3. The browser's `tau_session` HttpOnly cookie
+3. The browser's `ficus_session` HttpOnly cookie
 
-The resolver recognizes unexpired user sessions, unrevoked agent tokens, scoped system tokens, paired-device tokens, and the bootstrap password when eligible. Missing or invalid credentials return `401`, apart from explicitly supported public or independently authenticated routes. Route permission checks can return `403` for authenticated callers without access.
+The resolver recognizes unexpired user sessions, unrevoked agent tokens, scoped system tokens, paired-device tokens, and the bootstrap password when eligible. Each credential kind carries its own prefix (sessions `ficus_sess_`, agent tokens `ficus_agent_`, system tokens `ficus_sys_`, device tokens `ficus_dev_`), and the resolver looks a token up only in the table its prefix names: a value minted as another kind, or under an earlier product prefix, never authenticates as one of these. Missing or invalid credentials return `401`, apart from explicitly supported public or independently authenticated routes. Route permission checks can return `403` for authenticated callers without access.
 
 ## Login Flow
 
@@ -46,7 +46,7 @@ Passkey sessions store only the token hash in the database and expire after 30 d
 
 ## Device pairing & device tokens
 
-The mobile app authenticates with a **per-device bearer token** (prefix `tau_dev_`) rather than the shared password. Tokens are minted via a short-lived pairing handshake, stored hashed, resolve to the pairing user's identity, and are individually revocable — so losing a phone never means rotating the shared password.
+The mobile app authenticates with a **per-device bearer token** (prefix `ficus_dev_`) rather than the shared password. Tokens are minted via a short-lived pairing handshake, stored hashed, resolve to the pairing user's identity, and are individually revocable — so losing a phone never means rotating the shared password.
 
 | Method   | Endpoint                | Auth          | Purpose                                         |
 | -------- | ----------------------- | ------------- | ----------------------------------------------- |
@@ -57,26 +57,26 @@ The mobile app authenticates with a **per-device bearer token** (prefix `tau_dev
 
 These live under `/api/auth` (mounted before the global auth middleware — see [Route Ordering](#route-ordering)); `pair/start` and the device routes do their own identity check, while `pair/claim` is intentionally public so an unpaired device can redeem a code. The claim is single-use (an atomic conditional update flips `claimedAt` from NULL, closing the concurrent-claim race). The issued token is then sent as a normal `Authorization: Bearer <token>` and accepted by the auth middleware like any other bearer credential.
 
-The mobile-side UX — QR scan, the `tau://pair` deep link, web auto-detection, and sign-out revoke — is documented in [Mobile App → Pairing & authentication](mobile-app.md#pairing--authentication).
+The mobile-side UX — QR scan, the `ficus://pair` deep link, web auto-detection, and sign-out revoke — is documented in [Mobile App → Pairing & authentication](mobile-app.md#pairing--authentication).
 
-### CLI and Tau Desktop browser authorization
+### CLI and Ficus Desktop browser authorization
 
-`tau auth login` and Tau Desktop pairing both bootstrap a revocable device token without requiring an existing credential, using the same device-authorization flow. It creates two independent 256-bit capabilities: a verification secret carried only in the browser URL fragment and a polling secret sent only in JSON request bodies. Core stores only SHA-256 hashes. Grants expire after five minutes, enforce a durable five-second polling interval, and are consumed once.
+`ficus auth login` and Ficus Desktop pairing both bootstrap a revocable device token without requiring an existing credential, using the same device-authorization flow. It creates two independent 256-bit capabilities: a verification secret carried only in the browser URL fragment and a polling secret sent only in JSON request bodies. Core stores only SHA-256 hashes. Grants expire after five minutes, enforce a durable five-second polling interval, and are consumed once.
 
-| Method | Endpoint                   | Auth                      | Purpose                                            |
-| ------ | -------------------------- | ------------------------- | -------------------------------------------------- |
-| `POST` | `/api/auth/device/start`   | public, rate limited      | Create a pending CLI or Tau Desktop grant          |
-| `POST` | `/api/auth/device/inspect` | authenticated user        | Preview the requesting CLI or Tau Desktop instance |
-| `POST` | `/api/auth/device/approve` | authenticated user + CSRF | Explicitly approve the request                     |
-| `POST` | `/api/auth/device/token`   | polling capability        | Atomically mint and return one `tau_dev_` token    |
+| Method | Endpoint                   | Auth                      | Purpose                                              |
+| ------ | -------------------------- | ------------------------- | ---------------------------------------------------- |
+| `POST` | `/api/auth/device/start`   | public, rate limited      | Create a pending CLI or Ficus Desktop grant          |
+| `POST` | `/api/auth/device/inspect` | authenticated user        | Preview the requesting CLI or Ficus Desktop instance |
+| `POST` | `/api/auth/device/approve` | authenticated user + CSRF | Explicitly approve the request                       |
+| `POST` | `/api/auth/device/token`   | polling capability        | Atomically mint and return one `ficus_dev_` token    |
 
-`/device/start` accepts an optional `platform: 'cli' | 'desktop'` in its JSON body (default `cli`); any other value answers `400 invalid_platform`. The response echoes `platform` back, and it is a desktop-pairing support signal only when it comes back exactly `'desktop'` — an older server ignores `platform` in the request and always issues a CLI grant, so a caller must check the echoed value and discard the grant when it isn't `'desktop'` rather than treating its mere presence as support. A desktop-initiated grant defaults its device name to "Tau Desktop" when the caller sends none, the same way a CLI grant defaults to "Tau CLI".
+`/device/start` accepts an optional `platform: 'cli' | 'desktop'` in its JSON body (default `cli`); any other value answers `400 invalid_platform`. The response echoes `platform` back, and it is a desktop-pairing support signal only when it comes back exactly `'desktop'` — an older server ignores `platform` in the request and always issues a CLI grant, so a caller must check the echoed value and discard the grant when it isn't `'desktop'` rather than treating its mere presence as support. A desktop-initiated grant defaults its device name to "Ficus Desktop" when the caller sends none, the same way a CLI grant defaults to "Ficus CLI".
 
-The raw token is returned exactly once, stored in the CLI auth store with mode `0600`, and listed with mobile tokens under Paired Devices. Platforms are `ios`, `android`, `cli`, or `desktop`; unknown historical values render generically. Paired Devices labels a `desktop` token "Tau Desktop", and the approval screen reads "Approve Tau Desktop sign-in" for a desktop-originated request instead of the CLI wording. Web revocation and default CLI logout both revoke the token. Existing mobile QR payloads and `/pair/start` plus `/pair/claim` contracts are unchanged.
+The raw token is returned exactly once, stored in the CLI auth store with mode `0600`, and listed with mobile tokens under Paired Devices. Platforms are `ios`, `android`, `cli`, or `desktop`; unknown historical values render generically. Paired Devices labels a `desktop` token "Ficus Desktop", and the approval screen reads "Approve Ficus Desktop sign-in" for a desktop-originated request instead of the CLI wording. Web revocation and default CLI logout both revoke the token. Existing mobile QR payloads and `/pair/start` plus `/pair/claim` contracts are unchanged.
 
-The verification URI a user is told to open is built from `TAU_WEB_ORIGIN` (via `primaryWebOrigin()`), never from the request. Core never terminates TLS — every HTTPS deployment fronts it with caddy/nginx on plain `127.0.0.1` — so deriving the origin from the request would see `http:` and reject its own CLI; and a caller-supplied `Origin` must never be echoed into a URL a human is asked to trust. If `TAU_WEB_ORIGIN` is missing or is not a secure origin, `/device/start` answers `400`.
+The verification URI a user is told to open is built from `FICUS_WEB_ORIGIN` (via `primaryWebOrigin()`), never from the request. Core never terminates TLS — every HTTPS deployment fronts it with caddy/nginx on plain `127.0.0.1` — so deriving the origin from the request would see `http:` and reject its own CLI; and a caller-supplied `Origin` must never be echoed into a URL a human is asked to trust. If `FICUS_WEB_ORIGIN` is missing or is not a secure origin, `/device/start` answers `400`.
 
-Device-start rate limiting keys direct connections by Bun's socket peer address. A **loopback** peer is trusted as a proxy hop implicitly, because a same-host reverse proxy is the standard deployment and without it every caller on the instance shares one bucket. `TAU_TRUSTED_PROXY_ADDRESSES` (comma-separated exact IPs) additionally trusts non-loopback proxies. `X-Forwarded-For` is honored **only** when the peer itself is trusted, so a remote caller cannot forge its way into the chain.
+Device-start rate limiting keys direct connections by Bun's socket peer address. A **loopback** peer is trusted as a proxy hop implicitly, because a same-host reverse proxy is the standard deployment and without it every caller on the instance shares one bucket. `FICUS_TRUSTED_PROXY_ADDRESSES` (comma-separated exact IPs) additionally trusts non-loopback proxies. `X-Forwarded-For` is honored **only** when the peer itself is trusted, so a remote caller cannot forge its way into the chain.
 
 ### Live-connection revocation
 
@@ -100,7 +100,7 @@ Browser WebSockets use a short-lived, single-use `?ticket=` minted by `/api/auth
 
 CSRF protection is mounted for `/api/*` before the auth and webhook routers. Those routers precede the global identity middleware because login, registration, pairing claims, and provider webhook ingress need their own access rules. This does **not** make every `/api/auth` endpoint public: account, device, settings, and approval operations apply their own identity and permission checks.
 
-Bearer/header-authenticated mutations skip the cookie-CSRF check only when they carry no `Origin` header at all (the normal CLI/agent shape); a bearer request that *does* carry an `Origin` — including the opaque `Origin: null` a sandboxed iframe sends — must match the same web-origin allowlist CORS uses (`apps/core/src/services/auth/web-origins.ts`), or it's rejected with 403. This closes the gap where a native shell that injects a device bearer into its web view makes that bearer ambient to any cross-origin, no-preflight request a hostile page can fire from inside it.
+Bearer/header-authenticated mutations skip the cookie-CSRF check only when they carry no `Origin` header at all (the normal CLI/agent shape); a bearer request that _does_ carry an `Origin` — including the opaque `Origin: null` a sandboxed iframe sends — must match the same web-origin allowlist CORS uses (`apps/core/src/services/auth/web-origins.ts`), or it's rejected with 403. This closes the gap where a native shell that injects a device bearer into its web view makes that bearer ambient to any cross-origin, no-preflight request a hostile page can fire from inside it.
 
 The remaining API routers run through `identityMiddleware` and the `authzSentinel` authorization backstop. Protected endpoints require identity and route-specific permissions. Explicit exceptions, such as signed image URLs, deployed-app access links, and federation requests, use their documented public or signature-authenticated paths. Webhook ingress verifies provider signatures; webhook status/management routes require normal authorization.
 
@@ -116,7 +116,7 @@ See [Secret Store](secret-store.md) for storage details and [Settings](settings-
 
 ## Agent identities
 
-Some API requests originate from agents rather than human users. Agent tokens (prefix `tau_agt_`) resolve an agent identity. Squad-bound agents use their type role and squad scope. The personal User Assistant retains the internal type ID `system-manager`; its permissions resolve through its owning user. Do not assume every agent token is user-less.
+Some API requests originate from agents rather than human users. Agent tokens (prefix `ficus_agent_`) resolve an agent identity. Squad-bound agents use their type role and squad scope. The personal User Assistant retains the internal type ID `system-manager`; its permissions resolve through its owning user. Do not assume every agent token is user-less.
 
 **Role mapping** (in `apps/core/src/services/rbac/permissions.ts`):
 

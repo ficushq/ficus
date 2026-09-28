@@ -1,5 +1,5 @@
-import type { RoutingEvidence, RoutingRecommendation, SquadSuggestion, SuggestSquadResponse } from '@tau/shared'
-export type { SquadSuggestion, SuggestSquadResponse } from '@tau/shared'
+import type { RoutingEvidence, RoutingRecommendation, SquadSuggestion, SuggestSquadResponse } from '@ficus/shared'
+export type { SquadSuggestion, SuggestSquadResponse } from '@ficus/shared'
 import { Squad } from '../../entities/Squad'
 import { expandReadScope } from '../memory/access'
 import { SearchService, type SearchResult } from '../memory/SearchService'

@@ -2,7 +2,7 @@ import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import type { Root } from 'react-dom/client'
-import type { AgentQuestion } from '@tau/shared'
+import type { AgentQuestion } from '@ficus/shared'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PendingQuestionsBanner } from './PendingQuestionsBanner'
 

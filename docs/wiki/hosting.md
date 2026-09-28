@@ -4,9 +4,9 @@
 
 > **Machine-host sizes (2026-08-06, Part 2):** do_droplet hosts come in a closed catalog (base/boost/power/max; base included, larger sizes are Stripe subscription items at passthrough+markup). Owners and admins resize from the instance/admin pages; a resize is a queued per-tenant job with brief host downtime (boxes restart) and never grows the disk, so downsizing stays possible. Prices shown in UIs are read from Stripe, never hardcoded. exe-mode surfaces are hidden everywhere unless a tenant is machine_mode='exe'.
 
-Where tau runs, post machine-stack merge (2026-07-24). Two independent axes:
+Where ficus runs, post machine-stack merge (2026-07-24). Two independent axes:
 **where the core runs** (api + worker + ParadeDB + web) and **which sandbox
-runtime executes agent work** (`TAU_SANDBOX_RUNTIME`). Any combination works.
+runtime executes agent work** (`FICUS_SANDBOX_RUNTIME`). Any combination works.
 
 > **How to choose:** this page is the map of what exists. If you are setting up
 > an install and just need to pick a runtime and turn it on, go to
@@ -19,16 +19,16 @@ runtime executes agent work** (`TAU_SANDBOX_RUNTIME`). Any combination works.
 2. **Single-VM hosted (the scripted path)** — the setup toolkit
    (`scripts/setup/`) takes a blank Ubuntu VM from nothing → running: config
    wizard, systemd units (`tau-api`/`tau-worker`), dockerized ParadeDB, built
-   dist, bootstrap `TAU_PASSWORD` that self-disables once a passkey exists.
+   dist, bootstrap `FICUS_PASSWORD` that self-disables once a passkey exists.
    `provision.sh` does the whole flow on a fresh VM in ~2–3 min (exe.dev, or
    Hetzner Cloud + Cloudflare DNS via `provision.provider: hetzner`). The
    flavor-aware self-updater (#629) keeps these installs current.
 3. **k8s-hosted core** (Hetzner/chart track) — deliberately **paused**; the
    chosen direction is VM-per-tenant (see “What prod looks like”).
 
-## Axis 2 — sandbox runtime (`TAU_SANDBOX_RUNTIME`)
+## Axis 2 — sandbox runtime (`FICUS_SANDBOX_RUNTIME`)
 
-`TAU_SANDBOX_RUNTIME` is required and has no default — the core refuses to
+`FICUS_SANDBOX_RUNTIME` is required and has no default — the core refuses to
 start without one of these five values.
 
 1. **`docker-sysbox` / `docker-socket`** — one container per sandbox
@@ -53,7 +53,7 @@ start without one of these five values.
      `docs/wiki/machines/exe-provider.md`).
 
    On top: dumb best-fit unit packer (squads effectively VM-exclusive,
-   ~10 agents/VM, `TAU_UNIT_WEIGHT_*`/`TAU_MACHINE_UNIT_CAPACITY` tunable),
+   ~10 agents/VM, `FICUS_UNIT_WEIGHT_*`/`FICUS_MACHINE_UNIT_CAPACITY` tunable),
    pins + `dedicated` scope + sticky placement, idle park + empty-machine
    reaping, manual rebalance/migrate-box (CLI + Settings UI), per-host
    content-hashed server+CLI delivery, pinned reverse-port core callbacks,
@@ -68,7 +68,7 @@ start without one of these five values.
 
 ## Managed hosting
 
-[Tau Cloud](https://ficus.sh) provides managed instances. For your own deployment,
+[Ficus Cloud](https://ficus.sh) provides managed instances. For your own deployment,
 use the setup toolkit and choose a sandbox runtime appropriate for your workload
 and isolation requirements.
 

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
-import { createBlankWorkflow } from '@tau/shared'
+import { createBlankWorkflow } from '@ficus/shared'
 import { db, agentTypes, agents, squads, squadPresets } from '../../db'
 import { Squad } from '../../entities/Squad'
 import { SquadPreset } from '../../entities/SquadPreset'

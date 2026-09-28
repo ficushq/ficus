@@ -1,5 +1,5 @@
-import type { RenderItem } from '@tau/client-core'
-import type { Agent } from '@tau/shared'
+import type { RenderItem } from '@ficus/client-core'
+import type { Agent } from '@ficus/shared'
 import { z } from 'zod'
 import type { VoiceTranscriptEntry } from '../voice/types'
 import { getAgentPrimaryLabel } from './agentDisplay'

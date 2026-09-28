@@ -16,62 +16,65 @@ describe('detectDeploymentFlavor', () => {
   })
 
   it('env override wins over ambient signals and ignores invalid values', () => {
-    expect(detectDeploymentFlavor({ env: { TAU_UPDATE_SUPERVISOR: 'systemd', pm_id: '0' } }).supervisor).toBe('systemd')
-    expect(detectDeploymentFlavor({ env: { TAU_UPDATE_SUPERVISOR: 'launchd' } }).supervisor).toBe('launchd')
-    expect(detectDeploymentFlavor({ env: { TAU_UPDATE_SUPERVISOR: 'systemd-user' } }).supervisor).toBe('systemd-user')
+    expect(detectDeploymentFlavor({ env: { FICUS_UPDATE_SUPERVISOR: 'systemd', pm_id: '0' } }).supervisor).toBe(
+      'systemd'
+    )
+    expect(detectDeploymentFlavor({ env: { FICUS_UPDATE_SUPERVISOR: 'launchd' } }).supervisor).toBe('launchd')
+    expect(detectDeploymentFlavor({ env: { FICUS_UPDATE_SUPERVISOR: 'systemd-user' } }).supervisor).toBe('systemd-user')
   })
 
   it('maps sandbox runtime envs', () => {
     // k3d-local — the one flavor whose sandbox image is rebuilt/imported
-    // locally (bun run k3d:import) — is the k8s runtime PLUS TAU_K8S_LOCAL.
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'k8s', TAU_K8S_LOCAL: 'true' } }).sandboxRuntime).toBe(
-      'k3d-local'
-    )
-    // TAU_K8S_LOCAL on its own names no runtime the core would boot on, so it
+    // locally (bun run k3d:import) — is the k8s runtime PLUS FICUS_K8S_LOCAL.
+    expect(
+      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime
+    ).toBe('k3d-local')
+    // FICUS_K8S_LOCAL on its own names no runtime the core would boot on, so it
     // labels nothing (it used to short-circuit to k3d-local before the runtime
     // was even read).
-    expect(detectDeploymentFlavor({ env: { TAU_K8S_LOCAL: 'true' } }).sandboxRuntime).toBe('other')
+    expect(detectDeploymentFlavor({ env: { FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime).toBe('other')
     // A plain k8s server (toolkit runtime.sandbox=k8s) pulls images from a
     // registry — it must NOT be treated as k3d-local or it would get k3d tasks.
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'k8s' } }).sandboxRuntime).toBe('k8s')
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'vm' } }).sandboxRuntime).toBe('vm')
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'docker-sysbox' } }).sandboxRuntime).toBe(
+    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'k8s' } }).sandboxRuntime).toBe('k8s')
+    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'vm' } }).sandboxRuntime).toBe('vm')
+    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'docker-sysbox' } }).sandboxRuntime).toBe(
       'docker-sysbox'
     )
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'docker-socket' } }).sandboxRuntime).toBe(
+    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'docker-socket' } }).sandboxRuntime).toBe(
       'docker-socket'
     )
     // The removed spellings are no longer runtimes at all — they are unlabelled.
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'docker' } }).sandboxRuntime).toBe('other')
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'auto' } }).sandboxRuntime).toBe('other')
+    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'docker' } }).sandboxRuntime).toBe('other')
+    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'auto' } }).sandboxRuntime).toBe('other')
     expect(detectDeploymentFlavor({ env: {} }).sandboxRuntime).toBe('other')
   })
 
-  it('labels TAU_SANDBOX_RUNTIME=host as the host flavor', () => {
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'host' } }).sandboxRuntime).toBe('host')
+  it('labels FICUS_SANDBOX_RUNTIME=host as the host flavor', () => {
+    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'host' } }).sandboxRuntime).toBe('host')
   })
 
-  it('ignores a stale TAU_K8S_LOCAL under another runtime (regression)', () => {
-    // An operator moved a local k3d checkout to TAU_SANDBOX_RUNTIME=host and
-    // left TAU_K8S_LOCAL=true in .env. TAU_K8S_LOCAL used to be read BEFORE the
+  it('ignores a stale FICUS_K8S_LOCAL under another runtime (regression)', () => {
+    // An operator moved a local k3d checkout to FICUS_SANDBOX_RUNTIME=host and
+    // left FICUS_K8S_LOCAL=true in .env. FICUS_K8S_LOCAL used to be read BEFORE the
     // runtime, so the install stayed labelled k3d-local and the in-app updater
     // planned `bun run k3d:import` on every update. The runtime decides.
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'host', TAU_K8S_LOCAL: 'true' } }).sandboxRuntime).toBe(
-      'host'
-    )
     expect(
-      detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'docker-sysbox', TAU_K8S_LOCAL: 'true' } }).sandboxRuntime
+      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime
+    ).toBe('host')
+    expect(
+      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'docker-sysbox', FICUS_K8S_LOCAL: 'true' } })
+        .sandboxRuntime
     ).toBe('docker-sysbox')
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: 'vm', TAU_K8S_LOCAL: 'true' } }).sandboxRuntime).toBe(
-      'vm'
-    )
+    expect(
+      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'vm', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime
+    ).toBe('vm')
   })
 
-  it('trims whitespace around TAU_SANDBOX_RUNTIME before matching, like the boot guard', () => {
+  it('trims whitespace around FICUS_SANDBOX_RUNTIME before matching, like the boot guard', () => {
     // A stray .env/shell newline can pad the value (' host '); the boot guard
     // (requireSandboxRuntime) trims before comparing, so this label must too or
     // it silently reports 'other' for a runtime that actually booted.
-    expect(detectDeploymentFlavor({ env: { TAU_SANDBOX_RUNTIME: ' host ' } }).sandboxRuntime).toBe('host')
+    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: ' host ' } }).sandboxRuntime).toBe('host')
   })
 
   it('detects git-checkout source from a .git directory', () => {
@@ -152,7 +155,7 @@ describe('supportsAutoUpdate', () => {
     expect(noGit.reason).toContain('git checkout')
     const noSup = supportsAutoUpdate({ source: 'git-checkout', supervisor: 'unknown', sandboxRuntime: 'other' })
     expect(noSup.ok).toBe(false)
-    expect(noSup.reason).toContain('TAU_UPDATE_SUPERVISOR')
+    expect(noSup.reason).toContain('FICUS_UPDATE_SUPERVISOR')
   })
 
   it('rejects an artifact deployment with a control-plane-specific reason', () => {
@@ -174,10 +177,10 @@ function findRepoRoot(): string {
 }
 
 it('desktop-owned runtimes cannot invoke the checkout updater', () => {
-  const flavor = detectDeploymentFlavor({ repoRoot: findRepoRoot(), env: { TAU_DESKTOP_MANAGED: '1', pm_id: '0' } })
+  const flavor = detectDeploymentFlavor({ repoRoot: findRepoRoot(), env: { FICUS_DESKTOP_MANAGED: '1', pm_id: '0' } })
   expect(flavor.supervisor).toBe('desktop')
   expect(supportsAutoUpdate(flavor)).toEqual({
     ok: false,
-    reason: 'This instance is managed by Tau Desktop. Update it through the desktop application.',
+    reason: 'This instance is managed by Ficus Desktop. Update it through the desktop application.',
   })
 })

@@ -75,7 +75,7 @@ test('GitHub callbacks also remove token exchange material before bootstrap', ()
 })
 
 test('a broker callback carries the sessionStorage provider hint into the persisted (reload-surviving) history state', () => {
-  window.sessionStorage.setItem('tauOAuthProviderHint', 'slack')
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'slack')
 
   prepareOAuthCallbackHistory()
 
@@ -85,7 +85,7 @@ test('a broker callback carries the sessionStorage provider hint into the persis
     provider: 'slack',
   })
   // Consumed once, same as before: an abandoned later flow cannot inherit it.
-  expect(window.sessionStorage.getItem('tauOAuthProviderHint')).toBeNull()
+  expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBeNull()
 })
 
 test('a broker callback with no provider hint carries none (defaults are unaffected)', () => {

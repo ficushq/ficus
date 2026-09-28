@@ -1,4 +1,4 @@
-import type { AgentTypeIntegrationPolicyV1 } from '@tau/shared'
+import type { AgentTypeIntegrationPolicyV1 } from '@ficus/shared'
 import { apiFetch } from './client'
 
 export interface AgentType {

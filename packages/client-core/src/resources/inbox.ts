@@ -1,4 +1,4 @@
-import type { DeliveryMode, InboxMessage, InboxRecipientType } from '@tau/shared'
+import type { DeliveryMode, InboxMessage, InboxRecipientType } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 // The sender is derived server-side from the authenticated session — you always author as yourself.

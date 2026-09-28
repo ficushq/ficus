@@ -584,7 +584,7 @@ async function createTauAgent(
   }
   await ensureAgentIdentity(created, sandboxId)
   if (opts.identityPublicKeyPem && created.identityPublicKey !== opts.identityPublicKeyPem) {
-    throw new Error('Tau agent fixture private key does not match its requested public key')
+    throw new Error('Ficus agent fixture private key does not match its requested public key')
   }
   await created.update({ amtpHandle: handle, inboundOpen: opts.open })
   return created
@@ -1422,7 +1422,7 @@ async function exerciseBidirectionalHints(casePrefix: string): Promise<void> {
     v: 1 as const,
     instanceId: tauInstanceId,
     handle: tauHandle,
-    card: { name: 'Discoverable Tau', description: 'Tau hint test' },
+    card: { name: 'Discoverable Ficus', description: 'Ficus hint test' },
   }
   const signed: AmtpSignedAgentCard = { ...sansSig, cardSig: signAgentCard(kp.privateKeyPem, sansSig) }
   await tauAgent.update({ cardJson: signed })
@@ -1459,8 +1459,8 @@ async function exerciseBidirectionalHints(casePrefix: string): Promise<void> {
 
   const remoteHandles = await cli<Array<{ handle: string; name?: string; description?: string }>>(['handles', 'tau'])
   const tauHint = remoteHandles.find((candidate) => candidate.handle === tauHandle)
-  expect(tauHint?.name).toBe('Discoverable Tau')
-  expect(tauHint?.description).toBe('Tau hint test')
+  expect(tauHint?.name).toBe('Discoverable Ficus')
+  expect(tauHint?.description).toBe('Ficus hint test')
 }
 
 async function exerciseCardlessFetch(
@@ -1527,7 +1527,7 @@ describe('#11 agent cards', () => {
       v: 1 as const,
       instanceId: tauInstanceId,
       handle: tauHandle,
-      card: { name: 'Tau Agent', description: 'A tau-hosted agent' },
+      card: { name: 'Ficus Agent', description: 'A tau-hosted agent' },
     }
     const signed: AmtpSignedAgentCard = { ...sansSig, cardSig: signAgentCard(kp.privateKeyPem, sansSig) }
     await tauAgent.update({ cardJson: signed })
@@ -1540,7 +1540,7 @@ describe('#11 agent cards', () => {
       tauInstanceId,
     ])
     expect(result.ok).toBe(true)
-    expect(result.card.name).toBe('Tau Agent')
+    expect(result.card.name).toBe('Ficus Agent')
     expect(result.card.description).toBe('A tau-hosted agent')
   })
 

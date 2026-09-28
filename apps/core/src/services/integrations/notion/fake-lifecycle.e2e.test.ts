@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
-import { createFakeAdapter, fakeGrant } from '@tau/shared/oauth-providers/fake'
-import { registerOAuthProviderAdapterForTest } from '@tau/shared/oauth-providers'
+import { createFakeAdapter, fakeGrant } from '@ficus/shared/oauth-providers/fake'
+import { registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-providers'
 import { createLocalTransport } from '../authorization/transport'
 import { projectIntegrationAssignments } from '../projection/projector'
 import { resolveProtectedBindings } from '../projection/protected-env'

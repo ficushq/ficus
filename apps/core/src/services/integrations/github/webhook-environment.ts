@@ -11,5 +11,5 @@ export async function githubWebhookEnvironment(): Promise<NodeJS.ProcessEnv> {
         key !== 'DEPLOY_GITHUB_PAGES_TOKEN'
     )
   )
-  return { ...environment, TAU_GITHUB_LOGINS_JSON: JSON.stringify(await connectedGitHubLogins()) }
+  return { ...environment, FICUS_GITHUB_LOGINS_JSON: JSON.stringify(await connectedGitHubLogins()) }
 }

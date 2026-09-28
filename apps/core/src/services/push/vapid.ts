@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { dirname, join } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import webpush from 'web-push'
 import { CONFIG_DIR } from '../../lib/paths'
 import { getSecretStore } from '../secrets'

@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { createHandleAgentWaitingInputEvent } from './agentInputAnnouncements'
 import type { VoiceAssistantRuntime } from './useRealtimeVoiceAssistant'
 

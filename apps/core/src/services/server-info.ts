@@ -1,4 +1,4 @@
-import type { ServerInfo } from '@tau/shared'
+import type { ServerInfo } from '@ficus/shared'
 import corePackage from '../../package.json'
 import { getBuildVersion } from './machines/usage-reporter'
 
@@ -6,7 +6,7 @@ import { getBuildVersion } from './machines/usage-reporter'
 export async function getServerInfo(): Promise<ServerInfo> {
   const build = await getBuildVersion().catch(() => null)
   return {
-    product: 'tau',
+    product: 'ficus',
     version: corePackage.version,
     revision: build?.commitSha ?? null,
     apiVersion: 1,

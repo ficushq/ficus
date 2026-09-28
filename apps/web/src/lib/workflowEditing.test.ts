@@ -1,6 +1,6 @@
 import { FLOW_START_ID, layoutWorkflowGraph } from './workflowGraph'
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, workflowDefinitionSchema } from '@tau/shared'
+import { createBlankWorkflow, workflowDefinitionSchema } from '@ficus/shared'
 import {
   insertWorkflowStep,
   separateWorkflowParticipant,

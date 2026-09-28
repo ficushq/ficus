@@ -1,4 +1,4 @@
-import { DEFAULT_ATTENTION, parseAttention, type Attention, type AttentionKind } from '@tau/shared'
+import { DEFAULT_ATTENTION, parseAttention, type Attention, type AttentionKind } from '@ficus/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { squadSubscriptions, workStreamSubscriptions } from '../../db/schema'

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { IntegrationOutputFact } from '@tau/shared'
+import type { IntegrationOutputFact } from '@ficus/shared'
 import { linearOutputAdapter } from './outputs'
 
 const issueUrl = 'https://linear.app/acme/issue/ENG-123'

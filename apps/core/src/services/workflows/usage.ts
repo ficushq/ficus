@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { activeWorkflowAttempts, summarizeWorkflowUsage, type SessionUsage, type WorkflowRun } from '@tau/shared'
+import { activeWorkflowAttempts, summarizeWorkflowUsage, type SessionUsage, type WorkflowRun } from '@ficus/shared'
 import { db, executions, workflowBindings, workStreamFlowRuns, type DbTx } from '../../db'
 
 /** Capture at acceptance, never at settlement: an agent may hand off before its turn's usage arrives. */

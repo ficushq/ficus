@@ -111,7 +111,7 @@ describe('api subsystem ownership', () => {
   })
 
   // The bind-address decision (0.0.0.0 vs localhost) used to compare
-  // process.env.TAU_SANDBOX_RUNTIME directly against 'k8s', which — unlike
+  // process.env.FICUS_SANDBOX_RUNTIME directly against 'k8s', which — unlike
   // every other runtime predicate (isK8sRuntime, isHostRuntime, ...) — does
   // NOT trim. A padded value (' k8s ' from a stray .env/shell newline) would
   // then bind to localhost inside a k8s pod, silently failing readiness
@@ -120,7 +120,7 @@ describe('api subsystem ownership', () => {
   // driven directly by a unit test.
   it('derives the k8s bind-address check from isK8sRuntime(), not a raw env comparison', () => {
     expect(indexSrc).toContain('isK8sRuntime() || !!process.env.KUBERNETES_SERVICE_HOST')
-    expect(indexSrc).not.toContain("process.env.TAU_SANDBOX_RUNTIME === 'k8s'")
+    expect(indexSrc).not.toContain("process.env.FICUS_SANDBOX_RUNTIME === 'k8s'")
   })
 })
 
@@ -163,7 +163,7 @@ describe('api internal event route', () => {
   it('rejects a wrong token', async () => {
     const res = await app.request(INTERNAL_EVENTS_PATH, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-tau-internal-token': 'nope' },
+      headers: { 'content-type': 'application/json', 'x-ficus-internal-token': 'nope' },
       body,
     })
     expect(res.status).toBe(401)
@@ -175,7 +175,7 @@ describe('api internal event route', () => {
     try {
       const res = await app.request(INTERNAL_EVENTS_PATH, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-tau-internal-token': internalEventToken() },
+        headers: { 'content-type': 'application/json', 'x-ficus-internal-token': internalEventToken() },
         body,
       })
       expect(res.status).toBe(204)
@@ -191,6 +191,22 @@ describe('api internal event route', () => {
   })
 })
 
+describe('CORS preflight', () => {
+  it('allows the x-ficus-csrf header, and only that spelling, from an allowlisted web origin', async () => {
+    const res = await app.request('/api/auth/me', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'http://localhost:5173',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'x-ficus-csrf',
+      },
+    })
+    const allowed = (res.headers.get('access-control-allow-headers') ?? '').toLowerCase().split(/\s*,\s*/)
+    expect(allowed).toContain('x-ficus-csrf')
+    expect(allowed).not.toContain('x-tau-csrf') // D14
+  })
+})
+
 // validateSandboxSetup() stays NON-FATAL for the api (a missing sandbox image
 // must not take the server down), but "non-fatal" must not mean invisible: the
 // catch used to be empty on the claim that the error was "already logged",
@@ -202,7 +218,7 @@ describe('runSandboxSetupValidation', () => {
     try {
       expect(() =>
         runSandboxSetupValidation(() => {
-          throw new Error('TAU_SANDBOX_RUNTIME=docker-sysbox requested but the sysbox runtime is not installed')
+          throw new Error('FICUS_SANDBOX_RUNTIME=docker-sysbox requested but the sysbox runtime is not installed')
         })
       ).not.toThrow()
       const logged = errorSpy.mock.calls.some(
@@ -227,25 +243,25 @@ describe('runSandboxSetupValidation', () => {
   })
 })
 
-// TAU_SANDBOX_RUNTIME is mandatory and explicit. These BOOT THE REAL ENTRYPOINT
+// FICUS_SANDBOX_RUNTIME is mandatory and explicit. These BOOT THE REAL ENTRYPOINT
 // in a child process — the only way to prove the contract end to end, since the
 // `import.meta.main` block cannot be driven from a unit test. A junk DATABASE_URL
 // and an unused port make the run safe: the guard fires before either is used.
-describe('api requires an explicit TAU_SANDBOX_RUNTIME at boot', () => {
-  const RUNTIME_LIST = 'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
+describe('api requires an explicit FICUS_SANDBOX_RUNTIME at boot', () => {
+  const RUNTIME_LIST = 'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
 
   async function bootApi(runtime: string | null): Promise<{ exitCode: number; stderr: string }> {
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       // Unreachable (port 1) but named tau_test, because the child inherits
-      // TAU_TEST_MODE=1 from this suite and db/index.ts refuses to load in test
+      // FICUS_TEST_MODE=1 from this suite and db/index.ts refuses to load in test
       // mode against any other database name.
       DATABASE_URL: 'postgres://x:x@127.0.0.1:1/tau_test',
       PORT: '39901',
       HOST: '127.0.0.1',
     }
-    if (runtime === null) delete env.TAU_SANDBOX_RUNTIME
-    else env.TAU_SANDBOX_RUNTIME = runtime
+    if (runtime === null) delete env.FICUS_SANDBOX_RUNTIME
+    else env.FICUS_SANDBOX_RUNTIME = runtime
     const proc = Bun.spawn([process.execPath, join(import.meta.dir, 'index.ts')], {
       env,
       stdout: 'pipe',

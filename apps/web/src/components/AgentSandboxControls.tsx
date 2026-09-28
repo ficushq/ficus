@@ -8,7 +8,7 @@ import { SandboxStatusBadge } from './sandbox/SandboxStatusBadge'
 import { resolveVmChainDisplay } from './sandbox/vmChainHealth'
 import { HOST_RUNTIME_NOTE } from './sandbox/hostRuntime'
 import { webStatus } from '../lib/statusPresentation'
-import { isSandboxOverloaded } from '@tau/shared'
+import { isSandboxOverloaded } from '@ficus/shared'
 import { PressureSummary, SandboxProcesses } from './sandbox/SandboxProcesses'
 
 interface AgentSandboxControlsProps {
@@ -106,7 +106,7 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
         {canStop && (
           <button
             onClick={() => stopMutation.mutate()}
-            className="tau-button ml-auto rounded bg-status-danger-600/15 px-2 py-0.5 text-xs font-medium text-status-danger-600 transition-colors hover:bg-status-danger-600/25 dark:text-status-danger-400"
+            className="ficus-button ml-auto rounded bg-status-danger-600/15 px-2 py-0.5 text-xs font-medium text-status-danger-600 transition-colors hover:bg-status-danger-600/25 dark:text-status-danger-400"
             title="Stop sandbox"
           >
             Stop
@@ -116,7 +116,7 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
           <button
             onClick={() => restartMutation.mutate()}
             className={clsx(
-              'tau-button',
+              'ficus-button',
               'rounded bg-status-progress-600/15 px-2 py-0.5 text-xs font-medium text-status-progress-600 transition-colors hover:bg-status-progress-600/25 dark:text-status-progress-400',
               !canStop && 'ml-auto'
             )}

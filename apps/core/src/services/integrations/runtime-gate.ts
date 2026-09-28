@@ -1,4 +1,4 @@
-import type { AgentTypeIntegrationPolicyV1, IntegrationCapability } from '@tau/shared'
+import type { AgentTypeIntegrationPolicyV1, IntegrationCapability } from '@ficus/shared'
 import type { AssignedConnectionResolver, AssignedIntegrationConnectionRecord } from './connection-repository'
 import type { IntegrationProjectionTarget } from './projection/reconciler'
 import type { SandboxOptions } from '../sandbox/types'

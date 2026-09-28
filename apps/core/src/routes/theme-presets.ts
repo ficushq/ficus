@@ -8,7 +8,7 @@ import {
   isThemePresetScope,
   updateThemePresetRequestSchema,
   updateThemePresetVisibilityRequestSchema,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { resolveActingUser, auditActor, type Identity } from '../services/rbac'
 import { requirePermission } from '../middleware/require-permission'
 import { createLogger } from '../lib/infra/logger'

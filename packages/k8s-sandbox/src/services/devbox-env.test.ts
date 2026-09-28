@@ -61,20 +61,20 @@ describe('devboxHasPackages', () => {
 
 describe('cacheDevboxShellEnv skip paths (no event-loop-blocking devbox shellenv)', () => {
   const prevWorkspace = process.env.WORKSPACE_PATH
-  const prevDevboxDir = process.env.TAU_DEVBOX_DIR
+  const prevDevboxDir = process.env.FICUS_DEVBOX_DIR
 
   afterEach(() => {
     if (prevWorkspace === undefined) delete process.env.WORKSPACE_PATH
     else process.env.WORKSPACE_PATH = prevWorkspace
-    if (prevDevboxDir === undefined) delete process.env.TAU_DEVBOX_DIR
-    else process.env.TAU_DEVBOX_DIR = prevDevboxDir
+    if (prevDevboxDir === undefined) delete process.env.FICUS_DEVBOX_DIR
+    else process.env.FICUS_DEVBOX_DIR = prevDevboxDir
   })
 
   test('empty-packages devbox.json is skipped — cache stays empty, no shellenv run', () => {
     const dir = mkdtempSync(join(tmpdir(), 'devbox-env-ws-'))
     writeFileSync(join(dir, 'devbox.json'), '{"packages":[]}')
     process.env.WORKSPACE_PATH = dir
-    delete process.env.TAU_DEVBOX_DIR
+    delete process.env.FICUS_DEVBOX_DIR
 
     // Must return promptly without invoking `devbox shellenv` (which would hang
     // ~30s against an un-realized empty devbox and block the server event loop).
@@ -90,7 +90,7 @@ describe('cacheDevboxShellEnv skip paths (no event-loop-blocking devbox shellenv
   test('missing devbox.json is skipped — cache stays empty', () => {
     const dir = mkdtempSync(join(tmpdir(), 'devbox-env-ws-'))
     process.env.WORKSPACE_PATH = dir
-    delete process.env.TAU_DEVBOX_DIR
+    delete process.env.FICUS_DEVBOX_DIR
     cacheDevboxShellEnv()
     expect(getDevboxShellEnv()).toBe('')
     rmSync(dir, { recursive: true, force: true })
@@ -98,20 +98,20 @@ describe('cacheDevboxShellEnv skip paths (no event-loop-blocking devbox shellenv
 })
 
 describe('managed toolchain shellenv cache', () => {
-  const previousToolchainDir = process.env.TAU_TOOLCHAIN_DIR
+  const previousToolchainDir = process.env.FICUS_TOOLCHAIN_DIR
   const dirs: string[] = []
 
   afterEach(() => {
     clearManagedToolchainEnv()
-    if (previousToolchainDir === undefined) delete process.env.TAU_TOOLCHAIN_DIR
-    else process.env.TAU_TOOLCHAIN_DIR = previousToolchainDir
+    if (previousToolchainDir === undefined) delete process.env.FICUS_TOOLCHAIN_DIR
+    else process.env.FICUS_TOOLCHAIN_DIR = previousToolchainDir
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   })
 
   test('appends managed activation after the existing cache when Core requests it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'managed-devbox-'))
     dirs.push(dir)
-    process.env.TAU_TOOLCHAIN_DIR = dir
+    process.env.FICUS_TOOLCHAIN_DIR = dir
     writeFileSync(join(dir, 'devbox.json'), '{"packages":["python3@latest"]}')
     const existingCache = getDevboxShellEnv()
 
@@ -130,7 +130,7 @@ describe('managed toolchain shellenv cache', () => {
   test('reuses the active environment for an unchanged fingerprint and re-resolves a new one', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'managed-devbox-'))
     dirs.push(dir)
-    process.env.TAU_TOOLCHAIN_DIR = dir
+    process.env.FICUS_TOOLCHAIN_DIR = dir
     writeFileSync(join(dir, 'devbox.json'), '{"packages":["python3@latest"]}')
     let runs = 0
     const shellenv = () => `export MANAGED=${++runs}`
@@ -152,7 +152,7 @@ describe('managed toolchain shellenv cache', () => {
   test('a timed-out activation is reported as a timeout and leaves no stale environment', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'managed-devbox-'))
     dirs.push(dir)
-    process.env.TAU_TOOLCHAIN_DIR = dir
+    process.env.FICUS_TOOLCHAIN_DIR = dir
     writeFileSync(join(dir, 'devbox.json'), '{"packages":["python3@latest"]}')
     await expect(
       cacheManagedToolchainEnv(true, 'fp', () => Promise.reject(new ManagedToolchainTimeoutError()))
@@ -163,7 +163,7 @@ describe('managed toolchain shellenv cache', () => {
   test('clears stale activation when files disappear', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'managed-devbox-'))
     dirs.push(dir)
-    process.env.TAU_TOOLCHAIN_DIR = dir
+    process.env.FICUS_TOOLCHAIN_DIR = dir
     writeFileSync(join(dir, 'devbox.json'), '{"packages":["python3@latest"]}')
     writeFileSync(join(dir, '.ready'), 'fingerprint')
     await cacheManagedToolchainEnv(true, undefined, () => 'export MANAGED=1')
@@ -175,8 +175,8 @@ describe('managed toolchain shellenv cache', () => {
 
 describe('combined Devbox PATH', () => {
   test('keeps comfort tools discoverable with managed tools taking precedence', async () => {
-    const previousDevbox = process.env.TAU_DEVBOX_DIR
-    const previousToolchain = process.env.TAU_TOOLCHAIN_DIR
+    const previousDevbox = process.env.FICUS_DEVBOX_DIR
+    const previousToolchain = process.env.FICUS_TOOLCHAIN_DIR
     const dir = mkdtempSync(join(tmpdir(), 'devbox-path-'))
     const comfort = join(dir, 'comfort tools')
     const managed = join(dir, 'managed tools')
@@ -187,8 +187,8 @@ describe('combined Devbox PATH', () => {
         writeFileSync(join(path, 'node'), '#!/bin/sh\n', { mode: 0o755 })
       }
       writeFileSync(join(comfort, 'gh'), '#!/bin/sh\n', { mode: 0o755 })
-      process.env.TAU_DEVBOX_DIR = comfort
-      process.env.TAU_TOOLCHAIN_DIR = managed
+      process.env.FICUS_DEVBOX_DIR = comfort
+      process.env.FICUS_TOOLCHAIN_DIR = managed
       // Use only fixture directories: CI may have its own gh in /usr/bin.
       // The absolute shell and its command/printf builtins need no system PATH.
       cacheDevboxShellEnv(() => `export PATH='${comfort}'`)
@@ -206,29 +206,29 @@ describe('combined Devbox PATH', () => {
       clearManagedToolchainEnv()
       writeFileSync(join(comfort, 'devbox.json'), '{"packages":[]}')
       prepareDevboxShellEnv()
-      if (previousDevbox === undefined) delete process.env.TAU_DEVBOX_DIR
-      else process.env.TAU_DEVBOX_DIR = previousDevbox
-      if (previousToolchain === undefined) delete process.env.TAU_TOOLCHAIN_DIR
-      else process.env.TAU_TOOLCHAIN_DIR = previousToolchain
+      if (previousDevbox === undefined) delete process.env.FICUS_DEVBOX_DIR
+      else process.env.FICUS_DEVBOX_DIR = previousDevbox
+      if (previousToolchain === undefined) delete process.env.FICUS_TOOLCHAIN_DIR
+      else process.env.FICUS_TOOLCHAIN_DIR = previousToolchain
       rmSync(dir, { recursive: true, force: true })
     }
   })
 })
 
 describe('refreshDevboxShellEnvIfDirty', () => {
-  const previousBoxHome = process.env.TAU_BOX_HOME
-  const previousDevboxDir = process.env.TAU_DEVBOX_DIR
+  const previousBoxHome = process.env.FICUS_BOX_HOME
+  const previousDevboxDir = process.env.FICUS_DEVBOX_DIR
   afterEach(() => {
-    if (previousBoxHome === undefined) delete process.env.TAU_BOX_HOME
-    else process.env.TAU_BOX_HOME = previousBoxHome
-    if (previousDevboxDir === undefined) delete process.env.TAU_DEVBOX_DIR
-    else process.env.TAU_DEVBOX_DIR = previousDevboxDir
+    if (previousBoxHome === undefined) delete process.env.FICUS_BOX_HOME
+    else process.env.FICUS_BOX_HOME = previousBoxHome
+    if (previousDevboxDir === undefined) delete process.env.FICUS_DEVBOX_DIR
+    else process.env.FICUS_DEVBOX_DIR = previousDevboxDir
   })
 
   test('consumes VM dirty markers', () => {
     const dir = mkdtempSync(join(tmpdir(), 'devbox-dirty-'))
-    process.env.TAU_BOX_HOME = '/home/box_x'
-    process.env.TAU_DEVBOX_DIR = dir
+    process.env.FICUS_BOX_HOME = '/home/box_x'
+    process.env.FICUS_DEVBOX_DIR = dir
     writeFileSync(join(dir, 'devbox.json'), '{"packages":[]}')
     const marker = join(dir, '.shellenv-dirty.123')
     writeFileSync(marker, '')
@@ -241,8 +241,8 @@ describe('refreshDevboxShellEnvIfDirty', () => {
 
   test('replaces the cached shellenv from a non-empty VM devbox after consuming a marker', () => {
     const dir = mkdtempSync(join(tmpdir(), 'devbox-dirty-'))
-    process.env.TAU_BOX_HOME = '/home/box_x'
-    process.env.TAU_DEVBOX_DIR = dir
+    process.env.FICUS_BOX_HOME = '/home/box_x'
+    process.env.FICUS_DEVBOX_DIR = dir
     writeFileSync(join(dir, 'devbox.json'), '{"packages":["cowsay@latest"]}')
 
     cacheDevboxShellEnv(() => 'export CACHED_TOOL=before')
@@ -259,8 +259,8 @@ describe('refreshDevboxShellEnvIfDirty', () => {
 
   test('does not consume markers outside VM boxes', () => {
     const dir = mkdtempSync(join(tmpdir(), 'devbox-dirty-'))
-    delete process.env.TAU_BOX_HOME
-    process.env.TAU_DEVBOX_DIR = dir
+    delete process.env.FICUS_BOX_HOME
+    process.env.FICUS_DEVBOX_DIR = dir
     const marker = join(dir, '.shellenv-dirty.123')
     writeFileSync(marker, '')
 
@@ -272,8 +272,8 @@ describe('refreshDevboxShellEnvIfDirty', () => {
 })
 
 describe('shouldSelfCacheDevboxEnvOnBoot (vm box boot self-cache gate)', () => {
-  const prevBoxHome = process.env.TAU_BOX_HOME
-  const prevDevboxDir = process.env.TAU_DEVBOX_DIR
+  const prevBoxHome = process.env.FICUS_BOX_HOME
+  const prevDevboxDir = process.env.FICUS_DEVBOX_DIR
   const prevWorkspace = process.env.WORKSPACE_PATH
   const dirs: string[] = []
 
@@ -283,8 +283,8 @@ describe('shouldSelfCacheDevboxEnvOnBoot (vm box boot self-cache gate)', () => {
   }
 
   afterEach(() => {
-    restore('TAU_BOX_HOME', prevBoxHome)
-    restore('TAU_DEVBOX_DIR', prevDevboxDir)
+    restore('FICUS_BOX_HOME', prevBoxHome)
+    restore('FICUS_DEVBOX_DIR', prevDevboxDir)
     restore('WORKSPACE_PATH', prevWorkspace)
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   })
@@ -296,15 +296,15 @@ describe('shouldSelfCacheDevboxEnvOnBoot (vm box boot self-cache gate)', () => {
     return dir
   }
 
-  test('TAU_BOX_HOME set + devbox.json declaring packages → true (vm box, seeded)', () => {
-    process.env.TAU_BOX_HOME = '/home/box_x'
-    process.env.TAU_DEVBOX_DIR = devboxDirWith('{"packages":["ripgrep@latest"]}')
+  test('FICUS_BOX_HOME set + devbox.json declaring packages → true (vm box, seeded)', () => {
+    process.env.FICUS_BOX_HOME = '/home/box_x'
+    process.env.FICUS_DEVBOX_DIR = devboxDirWith('{"packages":["ripgrep@latest"]}')
     expect(shouldSelfCacheDevboxEnvOnBoot()).toBe(true)
   })
 
   test('boot self-cache reports success only when shellenv was actually cached', () => {
-    process.env.TAU_BOX_HOME = '/home/box_x'
-    process.env.TAU_DEVBOX_DIR = devboxDirWith('{"packages":["ripgrep@latest"]}')
+    process.env.FICUS_BOX_HOME = '/home/box_x'
+    process.env.FICUS_DEVBOX_DIR = devboxDirWith('{"packages":["ripgrep@latest"]}')
     expect(selfCacheDevboxEnvOnBoot(() => 'export PATH=/realized/bin')).toBe(true)
     expect(
       selfCacheDevboxEnvOnBoot(() => {
@@ -313,31 +313,31 @@ describe('shouldSelfCacheDevboxEnvOnBoot (vm box boot self-cache gate)', () => {
     ).toBe(false)
   })
 
-  test('TAU_BOX_HOME set + empty-packages devbox.json → false (un-realized; shellenv would hang)', () => {
-    process.env.TAU_BOX_HOME = '/home/box_x'
-    process.env.TAU_DEVBOX_DIR = devboxDirWith('{"packages":[]}')
+  test('FICUS_BOX_HOME set + empty-packages devbox.json → false (un-realized; shellenv would hang)', () => {
+    process.env.FICUS_BOX_HOME = '/home/box_x'
+    process.env.FICUS_DEVBOX_DIR = devboxDirWith('{"packages":[]}')
     expect(shouldSelfCacheDevboxEnvOnBoot()).toBe(false)
   })
 
-  test('TAU_BOX_HOME set + missing devbox.json → false (nothing to cache)', () => {
-    process.env.TAU_BOX_HOME = '/home/box_x'
-    process.env.TAU_DEVBOX_DIR = devboxDirWith(null)
+  test('FICUS_BOX_HOME set + missing devbox.json → false (nothing to cache)', () => {
+    process.env.FICUS_BOX_HOME = '/home/box_x'
+    process.env.FICUS_DEVBOX_DIR = devboxDirWith(null)
     expect(shouldSelfCacheDevboxEnvOnBoot()).toBe(false)
   })
 
-  test('TAU_BOX_HOME UNSET → false even with a packaged devbox.json (k8s/docker boot parity)', () => {
-    delete process.env.TAU_BOX_HOME
-    process.env.TAU_DEVBOX_DIR = devboxDirWith('{"packages":["ripgrep@latest"]}')
+  test('FICUS_BOX_HOME UNSET → false even with a packaged devbox.json (k8s/docker boot parity)', () => {
+    delete process.env.FICUS_BOX_HOME
+    process.env.FICUS_DEVBOX_DIR = devboxDirWith('{"packages":["ripgrep@latest"]}')
     expect(shouldSelfCacheDevboxEnvOnBoot()).toBe(false)
   })
 })
 
 describe('prepareDevboxShellEnv readiness proof', () => {
   test('accepts empty global-profile config and rejects unrealized populated config', () => {
-    const previous = process.env.TAU_DEVBOX_DIR
+    const previous = process.env.FICUS_DEVBOX_DIR
     const dir = mkdtempSync(join(tmpdir(), 'devbox-prepare-'))
     try {
-      process.env.TAU_DEVBOX_DIR = dir
+      process.env.FICUS_DEVBOX_DIR = dir
       writeFileSync(join(dir, 'devbox.json'), '{"packages":[]}')
       expect(
         prepareDevboxShellEnv(() => {
@@ -351,17 +351,17 @@ describe('prepareDevboxShellEnv readiness proof', () => {
         })
       ).toBe(false)
     } finally {
-      if (previous === undefined) delete process.env.TAU_DEVBOX_DIR
-      else process.env.TAU_DEVBOX_DIR = previous
+      if (previous === undefined) delete process.env.FICUS_DEVBOX_DIR
+      else process.env.FICUS_DEVBOX_DIR = previous
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
   test('map-form packages are a real environment: empty map is ready, populated map runs shellenv', () => {
-    const previous = process.env.TAU_DEVBOX_DIR
+    const previous = process.env.FICUS_DEVBOX_DIR
     const dir = mkdtempSync(join(tmpdir(), 'devbox-prepare-map-'))
     try {
-      process.env.TAU_DEVBOX_DIR = dir
+      process.env.FICUS_DEVBOX_DIR = dir
       writeFileSync(join(dir, 'devbox.json'), '{"packages":{}}')
       expect(
         prepareDevboxShellEnv(() => {
@@ -382,8 +382,8 @@ describe('prepareDevboxShellEnv readiness proof', () => {
       expect(ran).toBe(1)
       expect(getDevboxShellEnv()).toContain('/nix/store/abc/bin')
     } finally {
-      if (previous === undefined) delete process.env.TAU_DEVBOX_DIR
-      else process.env.TAU_DEVBOX_DIR = previous
+      if (previous === undefined) delete process.env.FICUS_DEVBOX_DIR
+      else process.env.FICUS_DEVBOX_DIR = previous
       rmSync(dir, { recursive: true, force: true })
     }
   })

@@ -2,7 +2,7 @@ import { apiFetch } from './client'
 
 export interface SquadPreset {
   disabled?: boolean
-  workflows?: import('@tau/shared').SquadPresetWorkflows | null
+  workflows?: import('@ficus/shared').SquadPresetWorkflows | null
   id: string
   name: string
   description: string | null

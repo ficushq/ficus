@@ -16,7 +16,7 @@ export function CatalogSearch({
       placeholder={placeholder}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="tau-field w-full min-w-0 bg-surface px-3 py-2 text-sm"
+      className="ficus-field w-full min-w-0 bg-surface px-3 py-2 text-sm"
     />
   )
 }

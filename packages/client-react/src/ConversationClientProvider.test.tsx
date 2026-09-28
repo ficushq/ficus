@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { renderHook } from './test-utils'
-import type { TauClient } from '@tau/client-core'
+import type { FicusClient } from '@ficus/client-core'
 import {
   ConversationClientProvider,
   useConversationClient,
@@ -9,7 +9,7 @@ import {
 
 describe('ConversationClientProvider', () => {
   test('provides the client to consumers', async () => {
-    const client = { marker: true } as unknown as TauClient
+    const client = { marker: true } as unknown as FicusClient
     const { result } = await renderHook(() => useConversationClient(), {
       wrapper: ({ children }) => <ConversationClientProvider client={client}>{children}</ConversationClientProvider>,
     })
@@ -17,7 +17,7 @@ describe('ConversationClientProvider', () => {
   })
 
   test('provides the optional agent event subscriber in the conversation environment', async () => {
-    const client = { marker: true } as unknown as TauClient
+    const client = { marker: true } as unknown as FicusClient
     const subscribeToAgentEvents = mock(() => () => undefined)
     const { result } = await renderHook(() => useConversationEnvironment(), {
       wrapper: ({ children }) => (

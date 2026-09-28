@@ -1,4 +1,4 @@
-import type { EventMap } from '@tau/shared'
+import type { EventMap } from '@ficus/shared'
 
 type EventMessage = {
   id: string

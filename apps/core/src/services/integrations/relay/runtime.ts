@@ -1,6 +1,6 @@
 import { isPlatformManaged } from '../../secrets/managed'
 import { platformRequest, PlatformRequestError } from '../../platform/instance-client'
-import { relayPullResponse } from '@tau/shared/integration-relay'
+import { relayPullResponse } from '@ficus/shared/integration-relay'
 import {
   resolveGitHubConnection,
   resolveGitHubRelayAssignment,
@@ -15,7 +15,7 @@ import { materializeGitHubDispatch } from '../../squad-activity/materialize'
 import { createLogger } from '../../../lib/infra/logger'
 import { discoverGitHubRelayInterests } from './github-interests'
 import { HostedIntegrationRelayRunner, type HostedRelayProvider } from './runner'
-import type { RelayDelivery } from '@tau/shared/integration-relay'
+import type { RelayDelivery } from '@ficus/shared/integration-relay'
 import type { RepositoryInterest } from './github-interests'
 
 const log = createLogger('hosted-integration-relay')

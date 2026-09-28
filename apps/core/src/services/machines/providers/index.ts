@@ -37,7 +37,7 @@ export async function registerBuiltinMachineProviders(
 
   const sshKey = await getSshKey()
   if (sshKey) {
-    // TAU_EXE_MACHINE_IMAGE selects the OCI image exe VMs boot from (the prebaked
+    // FICUS_EXE_MACHINE_IMAGE selects the OCI image exe VMs boot from (the prebaked
     // ficus-machine image by default; empty ⇒ exe's default). Threaded to every
     // exe provision via the provider.
     register(createExeMachineProvider({ api: createExeApi({ token: sshKey }), image: getExeMachineImage() }))

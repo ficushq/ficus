@@ -2,7 +2,7 @@
 peer = false
 
 [install.scopes]
-"@tau" = { token = "", url = "" }
+"@ficus" = { token = "", url = "" }
 
 [test]
 # Explicit, not inherited. Bun's default is 5000 ms, which was an invisible

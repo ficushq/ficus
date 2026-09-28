@@ -1,4 +1,4 @@
-import { providerLabel, type ModelCatalogEntry, type Agent } from '@tau/shared'
+import { providerLabel, type ModelCatalogEntry, type Agent } from '@ficus/shared'
 import type { AgentTypeConfig } from '../api/config'
 import { AgentSandboxControls } from './AgentSandboxControls'
 import { AgentScopesPanel } from './AgentScopesPanel'
@@ -147,7 +147,7 @@ export function AgentInfoPanel({ agent, agentType }: AgentInfoPanelProps) {
           aria-label="Sandbox status"
           className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-panel-border pt-5"
         >
-          <h4 className="tau-section-title">Sandboxes</h4>
+          <h4 className="ficus-section-title">Sandboxes</h4>
           <AgentSandboxControls agentId={agent.id} compact />
           {agent.squadId && <SquadSandboxStatusCard squadId={agent.squadId} compact />}
         </div>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@tau/shared'
+import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@ficus/shared'
 import {
   WS_STATUS_BADGE_COLORS,
   WS_STATUS_LABELS,

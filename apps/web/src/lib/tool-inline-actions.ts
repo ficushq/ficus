@@ -1,4 +1,4 @@
-import type { MessageToolCall } from '@tau/shared'
+import type { MessageToolCall } from '@ficus/shared'
 
 type JsonRecord = Record<string, unknown>
 

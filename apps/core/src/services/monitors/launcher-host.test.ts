@@ -37,9 +37,9 @@ describe('monitor launcher on the host runtime', () => {
   beforeEach(async () => {
     home = mkdtempSync(join(tmpdir(), 'tau-monitor-host-'))
     prevHome = process.env.HOME_DIR
-    prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     clearHostWorkspaceOverrides()
     manager = new HostSandboxManager({ baseEnv: () => ({ PATH: process.env.PATH!, HOME: home }) })
     await manager.ensureSandbox(SANDBOX, { workspacePath: '', squadId: SQUAD })
@@ -50,8 +50,8 @@ describe('monitor launcher on the host runtime', () => {
     clearHostWorkspaceOverrides()
     if (prevHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = prevHome
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     rmSync(home, { recursive: true, force: true })
   })
 
@@ -61,10 +61,10 @@ describe('monitor launcher on the host runtime', () => {
     const dir = monitorDir(workRoot, monitorId)
     const script = `${dir}/run.sh`
     const envPrefix = [
-      `TAU_MONITOR_ID=${shellQuote(monitorId)}`,
-      `TAU_MONITOR_CWD=${shellQuote(workRoot)}`,
-      `TAU_MONITOR_DIR=${shellQuote(dir)}`,
-      `TAU_MONITOR_COMMAND=${shellQuote(command)}`,
+      `FICUS_MONITOR_ID=${shellQuote(monitorId)}`,
+      `FICUS_MONITOR_CWD=${shellQuote(workRoot)}`,
+      `FICUS_MONITOR_DIR=${shellQuote(dir)}`,
+      `FICUS_MONITOR_COMMAND=${shellQuote(command)}`,
       `bash ${shellQuote(script)}`,
     ].join(' ')
     return {

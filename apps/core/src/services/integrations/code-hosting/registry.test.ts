@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, integrationSubscriptionSchema } from '@tau/shared'
+import { createBlankWorkflow, integrationSubscriptionSchema } from '@ficus/shared'
 import { CodeHostingRegistry, isDeliveryFeedbackSubscription, type CodeHostingAdapter } from './registry'
 import { subscriptionTargetsResource } from '../tracked-resources'
 import { githubCodeHostingAdapter } from '../github/code-hosting'

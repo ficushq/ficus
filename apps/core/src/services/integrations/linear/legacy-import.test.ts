@@ -10,7 +10,7 @@ test('legacy Linear credentials migrate once without enabling access or restorin
   const ref = '__integration-credential:linear-legacy-import:bearer'
   const keys = ['LINEAR_API_KEY', 'LINEAR_USER_ID', ref]
   const env = Object.fromEntries(
-    ['TAU_ENCRYPTION_KEY', 'LINEAR_API_KEY', 'LINEAR_USER_ID'].map((key) => [key, process.env[key]])
+    ['FICUS_ENCRYPTION_KEY', 'LINEAR_API_KEY', 'LINEAR_USER_ID'].map((key) => [key, process.env[key]])
   )
   const priorSecrets = await db.select().from(secrets).where(inArray(secrets.key, keys))
   const priorMarker = await db.select().from(settings).where(eq(settings.key, marker))
@@ -19,7 +19,7 @@ test('legacy Linear credentials migrate once without enabling access or restorin
     await db.delete(secrets).where(inArray(secrets.key, keys))
     await db.delete(settings).where(eq(settings.key, marker))
     await db.delete(integrationConnections).where(eq(integrationConnections.id, id))
-    process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     delete process.env.LINEAR_API_KEY
     delete process.env.LINEAR_USER_ID
     const store = new SecretStore()

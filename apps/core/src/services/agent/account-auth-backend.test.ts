@@ -11,7 +11,7 @@ describe('AccountScopedCredentialStore', () => {
   let store: SecretStore
 
   beforeEach(async () => {
-    process.env.TAU_ENCRYPTION_KEY = testKey
+    process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
     resetSecretStore()
     store = getSecretStore()
@@ -22,7 +22,7 @@ describe('AccountScopedCredentialStore', () => {
   afterEach(() => {
     store.stopPeriodicRefresh()
     resetProviderHealthForTests()
-    delete process.env.TAU_ENCRYPTION_KEY
+    delete process.env.FICUS_ENCRYPTION_KEY
   })
 
   test('projects only selected account per provider', async () => {

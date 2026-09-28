@@ -5,7 +5,7 @@ import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
 import { buildSignedImageUrlPath, verifyImageUrlSignature } from '../services/images/signing'
 import { hasPermission, identityUserId, type Identity } from '../services/rbac'
-import { IMAGE_ATTACHMENT_MIME_TYPES, MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@tau/shared'
+import { IMAGE_ATTACHMENT_MIME_TYPES, MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@ficus/shared'
 
 // Image access folds into the owning agent's conversation: read uses agents:read,
 // write (upload) uses agents:write, scoped to the agent's squad. Squad-less /

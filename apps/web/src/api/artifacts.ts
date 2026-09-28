@@ -5,7 +5,7 @@ import type {
   ArtifactReference,
   ArtifactRequest,
   ArtifactRequestAction,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { apiFetch } from './client'
 
 export interface ArtifactIndexItem {

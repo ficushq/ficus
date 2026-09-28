@@ -117,7 +117,7 @@ describe('token deep-link registration + passkey recovery UI', () => {
     // one that actually needed disambiguating. Removed at the operator's
     // request — PasskeyRegister lost the same line earlier, but an invite deep
     // link renders THIS page, so it survived here until now.
-    expect(container.textContent).not.toContain('This names your Tau user account')
+    expect(container.textContent).not.toContain('This names your Ficus user account')
   })
 
   // Enter must submit. This is the first screen an invited user ever sees, and

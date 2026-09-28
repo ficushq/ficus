@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { compileCustomTheme, validateCustomTheme } from '@tau/shared'
+import { compileCustomTheme, validateCustomTheme } from '@ficus/shared'
 import { BUILT_IN_THEMES } from './registry'
 import { palettes } from './test/builtins'
 import { composite, contrast, pairBackground, pairRatio, tokenRgba } from './contrast'

@@ -15,7 +15,7 @@ import {
   type TrackedResource,
   type TrackedResourceKind,
   type TrackedResourcesView,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db, squads, workStreams, workStreamFlowRuns, integrationOutputEvents, type DbTx } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { codeHostingRegistry } from '../integrations/code-hosting'
