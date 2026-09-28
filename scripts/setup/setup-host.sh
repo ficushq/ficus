@@ -1369,6 +1369,15 @@ phase_services() {
     # Activation migrates, flips <dest>/current, restarts, health-checks, and
     # auto-rolls-back on a failed health check — on a fresh box there is no
     # rollback target, which artifact_activate already handles.
+    # On a re-run that renamed this host's settings (migrate_env_prefix_host
+    # above), a rollback swaps back to a release that reads the pre-rename
+    # names: the hook restores the backup set (and daemon-reloads) BEFORE the
+    # rollback restart, exactly as in upgrade-host.sh — otherwise the old
+    # release would come back up on the renamed files, without its key or its
+    # managed credentials, and still answer /health. A no-op when nothing was
+    # renamed this run.
+    # shellcheck disable=SC2034 # read by lib.sh's artifact_activate
+    ARTIFACT_ROLLBACK_HOOK=env_prefix_restore_pending
     artifact_activate "${SRC_DEST}" "${ARTIFACT_RELEASE_DIR}" "${CORE_PORT}"
     artifact_retention "${SRC_DEST}"
   else

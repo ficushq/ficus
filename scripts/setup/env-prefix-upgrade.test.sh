@@ -842,6 +842,14 @@ if [[ -d /run/systemd/system ]] && grep -q '^ID=ubuntu' /etc/os-release && grep 
   expect_eq 'setup-host.sh re-run, unhealthy new release: no journal, the staged copy untouched' \
     "$(pending):$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.pristine" && echo same)" 'none:same'
   assert_converged 'setup-host.sh re-run, unhealthy new release'
+  # I1: the backup set is restored (its daemon-reload) BEFORE the rollback
+  # restart of the old release — never after it, which would leave the old
+  # release running on the renamed files.
+  expect_match 'setup-host.sh re-run, unhealthy new release: the restore ran before the rollback restart' \
+    "$(tr '\n' '|' <"${CALLS}")" 'systemctl restart[^|]*\|.*systemctl daemon-reload\|.*systemctl restart'
+  expect_eq 'setup-host.sh re-run, unhealthy new release: the rollback restart is the last service action (no restore after it)' \
+    "$(grep -E '^systemctl (restart|daemon-reload)' "${CALLS}" | tail -n 1 | cut -d' ' -f2)" 'restart'
+
 
   # N-I2 in setup-host.sh's preflight: a conflict — here in the staged
   # managed.env it would install — stops the run before any phase.
