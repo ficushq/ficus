@@ -443,7 +443,10 @@ describe('the whole farm', () => {
     const layout = layoutFarm(busyFarm(4, 8, 6))
     expect(layout.farmhouse).toEqual({ i: -4.5, j: -2 })
     expect(layout.seedShed).toEqual({ i: -7, j: 2 })
-    expect(layout.mailbox).toEqual({ i: -1.2, j: 3.5 })
+    // Between the seed shed and the porch, inside the homestead.
+    expect(layout.mailbox).toEqual({ i: -6, j: 0.2 })
+    expect(layout.mailbox.i).toBeGreaterThan(layout.seedShed.i)
+    expect(layout.mailbox.i).toBeLessThan(layout.porch.i)
     expect(layout.porch).toMatchObject({ i: -4.15, j: 0.35 })
     const lastFront = Math.max(...layout.yards.map((y) => y.j0 + y.h))
     expect(layout.crates).toMatchObject({ count: 12 })

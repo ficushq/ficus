@@ -1,5 +1,6 @@
 import type { PresenceFocus } from '@ficus/shared'
 import { farmPersonInitials } from '@ficus/shared'
+import { ChatBubblesIcon } from '../../icons'
 import { useMultiplayer } from '../../multiplayer/MultiplayerProvider'
 import { agentLabel } from '../agentLabels'
 import { findPlot } from '../find'
@@ -57,8 +58,14 @@ export function PersonCard({ userId }: { userId: string }) {
       <p className="g-card-text">{person || isMe ? doing : 'Just left the farm'}</p>
       <div className="g-card-actions">
         {!isMe && (
-          <button type="button" className="g-button g-button-primary" onClick={() => env.messagePerson(userId)}>
-            Message
+          <button
+            type="button"
+            className="g-button g-button-primary g-person-dm"
+            title={`Open a private chat with ${name}`}
+            onClick={() => env.messagePerson(userId)}
+          >
+            <ChatBubblesIcon />
+            Message privately
           </button>
         )}
         {goTo && (

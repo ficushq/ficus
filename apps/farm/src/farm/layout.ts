@@ -48,7 +48,8 @@ export const FARMHOUSE = { i: -4.5, j: -2 } as const
 export const SEED_SHED = { i: -7, j: 2 } as const
 /** At the foot of the farmhouse porch steps (house centre + door offset, front wall + porch + steps). */
 export const PORCH = { i: -4.15, j: 0.35 } as const
-export const MAILBOX = { i: -1.2, j: 3.5 } as const
+/** Between the seed shed and the porch, where the path to the house starts. */
+export const MAILBOX = { i: -6, j: 0.2 } as const
 /** Top-left tile of the first yard. */
 export const GRID_ORIGIN = { i: 1, j: -4 } as const
 /** Tiles of lane between neighbouring yards. */

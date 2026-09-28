@@ -14,7 +14,7 @@ export const FARM_CHAT_ROOM_DESCRIPTION_MAX = 200
 export const FARM_CHAT_TYPING_EVERY_MS = 3000
 export const FARM_CHAT_TYPING_SHOWS_MS = 6000
 /** The quick-pick reactions; any single emoji is accepted. */
-export const FARM_CHAT_REACTIONS = ['👍', '❤️', '😂', '🎉', '🌱', '👀', '🙏', '✅'] as const
+export const FARM_CHAT_REACTIONS = ['👍', '❤️', '😂', '🔥', '🎉', '🌱', '👀', '❓', '🙏', '✅'] as const
 
 export type FarmChatRoomKind = 'general' | 'room' | 'dm'
 

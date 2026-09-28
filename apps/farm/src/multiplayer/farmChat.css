@@ -303,6 +303,17 @@
   margin: 0;
 }
 
+.g-person-dm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.g-person-dm .g-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .g-person-initials {
   display: inline-grid;
   place-items: center;
@@ -372,13 +383,13 @@
 }
 
 .g-farmchat-palette {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: inline-grid;
+  grid-template-columns: repeat(5, 30px);
   gap: 2px;
   margin: 4px 0;
-  padding: 3px;
+  padding: 4px;
   border: var(--g-border-hair) solid var(--g-outline);
-  border-radius: var(--g-radius-pill);
+  border-radius: var(--g-radius-md);
   background: var(--g-card);
   box-shadow: var(--g-drop);
 }
