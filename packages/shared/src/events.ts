@@ -269,5 +269,9 @@ export type EventMap = {
   // `farmChat` topic: a public room's messages to everyone, a DM's to its two
   // people; room changes (create, rename, delete) just ask clients to refetch.
   'farmChat.messageCreated': { message: FarmChatMessage }
+  /** A message was edited or its reactions changed: the whole message, as it is now. */
+  'farmChat.messageUpdated': { message: FarmChatMessage }
   'farmChat.roomsChanged': Record<string, never>
+  /** Someone is typing in a room (ephemeral; never stored). */
+  'farmChat.typing': { roomId: string; userId: string }
 }

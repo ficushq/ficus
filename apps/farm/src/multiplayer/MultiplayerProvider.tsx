@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createWsClient, type WsClient } from '@ficus/client-core'
 import {
+  FARM_CHAT_TYPING_EVERY_MS,
+  FARM_CHAT_TYPING_SHOWS_MS,
   farmPersonName,
   type FarmChatMessage,
   type FarmChatMessagePage,
@@ -51,6 +53,10 @@ export interface Multiplayer {
   rooms: FarmChatRooms | undefined
   /** Unread messages across them. */
   unread: number
+  /** Who else is typing in a room right now (user ids). */
+  typingIn: (roomId: string) => string[]
+  /** Say you're typing in a room (sent at most every few seconds). */
+  sendTyping: (roomId: string) => void
 }
 
 const MultiplayerContext = createContext<Multiplayer | null>(null)
@@ -83,7 +89,9 @@ export type MultiplayerEvent =
   | { event: 'presence.updated'; data: { person: PresencePerson } }
   | { event: 'presence.left'; data: { userId: string } }
   | { event: 'farmChat.messageCreated'; data: { message: FarmChatMessage } }
+  | { event: 'farmChat.messageUpdated'; data: { message: FarmChatMessage } }
   | { event: 'farmChat.roomsChanged'; data: Record<string, never> }
+  | { event: 'farmChat.typing'; data: { roomId: string; userId: string } }
 
 /** A stand-in for demo mode: pretend neighbours and an in-memory chat (loaded only in dev). */
 export interface DemoMultiplayer {
@@ -102,6 +110,9 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
   const [bubbles, setBubbles] = useState<ReadonlyMap<string, ChatBubble>>(new Map())
   const [focus, setFocusState] = useState<PresenceFocus | null>(null)
   const [demo, setDemo] = useState<DemoMultiplayer | null>(null)
+  // roomId → userId → when their "typing" lapses.
+  const [typing, setTyping] = useState<ReadonlyMap<string, ReadonlyMap<string, number>>>(new Map())
+  const lastTypingSent = useRef(new Map<string, number>())
   const socket = useRef<WsClient | null>(null)
   const sentFocus = useRef<string | null>(null)
   const focusRef = useRef<PresenceFocus | null>(null)
@@ -147,8 +158,41 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
         case 'presence.left':
           setPeople((list) => list.filter((p) => p.userId !== entry.data.userId))
           return
+        case 'farmChat.typing': {
+          const { roomId, userId } = entry.data
+          const until = Date.now() + FARM_CHAT_TYPING_SHOWS_MS
+          setTyping((map) => new Map(map).set(roomId, new Map(map.get(roomId)).set(userId, until)))
+          window.setTimeout(
+            () =>
+              setTyping((map) => {
+                if (map.get(roomId)?.get(userId) !== until) return map
+                const room = new Map(map.get(roomId))
+                room.delete(userId)
+                return new Map(map).set(roomId, room)
+              }),
+            FARM_CHAT_TYPING_SHOWS_MS
+          )
+          return
+        }
+        case 'farmChat.messageUpdated': {
+          const { message } = entry.data
+          queryClient.setQueryData<FarmChatMessagePage>(chatKeys.messages(message.roomId), (page) =>
+            page ? { ...page, messages: page.messages.map((m) => (m.id === message.id ? message : m)) } : page
+          )
+          return
+        }
         case 'farmChat.messageCreated': {
           const { message } = entry.data
+          // Their message landed: they've stopped typing.
+          if (message.senderUserId) {
+            const sender = message.senderUserId
+            setTyping((map) => {
+              if (!map.get(message.roomId)?.has(sender)) return map
+              const room = new Map(map.get(message.roomId))
+              room.delete(sender)
+              return new Map(map).set(message.roomId, room)
+            })
+          }
           queryClient.setQueryData<FarmChatMessagePage>(chatKeys.messages(message.roomId), (page) =>
             page && !page.messages.some((m) => m.id === message.id)
               ? { ...page, messages: [...page.messages, message] }
@@ -215,6 +259,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     let disposed = false
     let retry: ReturnType<typeof setTimeout> | null = null
     let attempt = 0
+    let opened = false
     const connect = async () => {
       try {
         const { ticket } = await client.auth.fetchWsTicket()
@@ -227,6 +272,9 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
             attempt = 0
             sentFocus.current = null
             announce()
+            // Back after a drop: catch up on chat that happened while we were away.
+            if (opened) void queryClient.invalidateQueries({ queryKey: chatKeys.all })
+            opened = true
           },
           onMessage: (data) => {
             if (!isLiveEvent(data) || (data.topic !== 'presence' && data.topic !== 'farmChat')) return
@@ -253,7 +301,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       socket.current?.close()
       socket.current = null
     }
-  }, [signedIn, announce, handle, enabledRef])
+  }, [signedIn, announce, handle, enabledRef, queryClient])
 
   const setFocus = useCallback(
     (next: PresenceFocus | null) => {
@@ -284,6 +332,22 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     [announce, save]
   )
 
+  const typingIn = useCallback(
+    (roomId: string) => {
+      const now = Date.now()
+      return [...(typing.get(roomId) ?? new Map<string, number>())]
+        .filter(([, until]) => until > now)
+        .map(([userId]) => userId)
+    },
+    [typing]
+  )
+
+  const sendTyping = useCallback((roomId: string) => {
+    const now = Date.now()
+    if (now - (lastTypingSent.current.get(roomId) ?? 0) < FARM_CHAT_TYPING_EVERY_MS) return
+    if (socket.current?.send?.({ type: 'farmChat.typing', roomId })) lastTypingSent.current.set(roomId, now)
+  }, [])
+
   const value = useMemo<Multiplayer>(
     () => ({
       enabled,
@@ -296,8 +360,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       chat,
       rooms: rooms.data,
       unread: rooms.data?.rooms.reduce((n, room) => n + room.unread, 0) ?? 0,
+      typingIn,
+      sendTyping,
     }),
-    [enabled, setEnabled, me, people, bubbles, setFocus, focus, chat, rooms.data]
+    [enabled, setEnabled, me, people, bubbles, setFocus, focus, chat, rooms.data, typingIn, sendTyping]
   )
   return <MultiplayerContext.Provider value={value}>{children}</MultiplayerContext.Provider>
 }

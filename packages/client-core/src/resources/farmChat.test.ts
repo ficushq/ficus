@@ -25,6 +25,8 @@ test('farm chat calls the farm chat routes over the shared transport', async () 
   await chat.messages('r1')
   await chat.messages('r1', '2026-09-27T12:00:00.000Z')
   await chat.send('r1', 'hi')
+  await chat.editMessage('r1', 'm1', 'fixed')
+  await chat.react('r1', 'm1', '👍', true)
   await chat.markRead('r1')
   expect(calls).toEqual([
     { path: '/farm-chat/people', options: undefined },
@@ -36,6 +38,11 @@ test('farm chat calls the farm chat routes over the shared transport', async () 
     { path: '/farm-chat/rooms/r1/messages', options: undefined },
     { path: '/farm-chat/rooms/r1/messages?before=2026-09-27T12%3A00%3A00.000Z', options: undefined },
     { path: '/farm-chat/rooms/r1/messages', options: { method: 'POST', body: { body: 'hi' } } },
+    { path: '/farm-chat/rooms/r1/messages/m1', options: { method: 'PATCH', body: { body: 'fixed' } } },
+    {
+      path: '/farm-chat/rooms/r1/messages/m1/reactions',
+      options: { method: 'POST', body: { emoji: '👍', on: true } },
+    },
     { path: '/farm-chat/rooms/r1/read', options: { method: 'POST' } },
   ])
 })

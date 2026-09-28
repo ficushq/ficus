@@ -16,6 +16,7 @@ import type { ClientMessage, ServerMessage } from './types'
 import { isValidTopic } from './types'
 import { agentTopicScope, eventSquadId, topicScope, type TopicScope } from './topic-scope'
 import { PresenceRegistry, presenceName, type PresentPerson } from './presence'
+import { audienceOf, FarmChatError, roomFor } from '../farm-chat/rooms'
 import {
   activityAccessSignature,
   activityEventVisible,
@@ -32,11 +33,15 @@ interface Client {
   activityTopicGenerations: Map<string, symbol>
   activityAccessEpoch: symbol
   accessCache?: { value: string[] | 'all'; expires: number }
+  /** When this connection last said it was typing, per farm chat room (to keep it to one every few seconds). */
+  typingAt?: Map<string, number>
 }
 
 const ACCESS_CACHE_TTL_MS = 60_000
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MAX_PENDING_ACTIVITY_SUBSCRIPTIONS = 64
+/** Typing pings from one connection for one room are passed on at most this often. */
+const FARM_CHAT_TYPING_MIN_GAP_MS = 2000
 
 /** Topics only people (never agents or tokens) may subscribe to: the farm's multiplayer. */
 const PEOPLE_TOPICS = new Set<string>(['presence', 'farmChat'])
@@ -415,6 +420,11 @@ export class WebSocketManager {
         case 'presence':
           this.announcePresence(client, message.focus)
           break
+        case 'farmChat.typing':
+          void this.farmChatTyping(client, message.roomId).catch((error) =>
+            console.error('[ws] farm chat typing failed:', error)
+          )
+          break
         case 'presence.leave': {
           const change = this.presence.withdraw(client.id)
           if (change)
@@ -602,20 +612,41 @@ export class WebSocketManager {
     )
   }
 
+  /** Passes on that someone is typing in a room they can use, at most every couple of seconds per room. */
+  private async farmChatTyping(client: Client, roomId: unknown): Promise<void> {
+    if (client.identity.type !== 'user' || typeof roomId !== 'string' || !UUID_PATTERN.test(roomId)) return
+    const now = Date.now()
+    client.typingAt ??= new Map()
+    if (now - (client.typingAt.get(roomId) ?? 0) < FARM_CHAT_TYPING_MIN_GAP_MS) return
+    client.typingAt.set(roomId, now)
+    const userId = client.identity.userId
+    let room
+    try {
+      room = await roomFor(roomId, userId)
+    } catch (error) {
+      if (error instanceof FarmChatError) return
+      throw error
+    }
+    this.sendFarmChat('farmChat.typing', { roomId, userId }, audienceOf(room) ?? undefined, userId)
+  }
+
   /**
    * Sends a farm chat event to the people subscribed to farmChat: everyone for
-   * the general room and public rooms, only the given people for a DM.
+   * the general room and public rooms, only the given people for a DM; never
+   * back to `except` (someone's own typing).
    */
   sendFarmChat(
-    event: 'farmChat.messageCreated' | 'farmChat.roomsChanged',
+    event: 'farmChat.messageCreated' | 'farmChat.messageUpdated' | 'farmChat.roomsChanged' | 'farmChat.typing',
     data: unknown,
-    only?: Iterable<string>
+    only?: Iterable<string>,
+    except?: string
   ): void {
     const audience = only ? new Set(only) : null
     const json = JSON.stringify({ type: 'event', topic: 'farmChat', event, data } satisfies ServerMessage)
     for (const client of this.clients.values()) {
       if (client.identity.type !== 'user' || !this.isActiveSubscriber(client, 'farmChat')) continue
       if (audience && !audience.has(client.identity.userId)) continue
+      if (except && client.identity.userId === except) continue
       try {
         client.ws.send(json)
       } catch {

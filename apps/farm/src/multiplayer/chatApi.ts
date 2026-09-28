@@ -11,6 +11,8 @@ export interface FarmChatApi {
   directRoom(userId: string): Promise<FarmChatRoom>
   messages(id: string, before?: string): Promise<FarmChatMessagePage>
   send(id: string, body: string): Promise<FarmChatMessage>
+  editMessage(id: string, messageId: string, body: string): Promise<FarmChatMessage>
+  react(id: string, messageId: string, emoji: string, on: boolean): Promise<FarmChatMessage>
   markRead(id: string): Promise<void>
 }
 

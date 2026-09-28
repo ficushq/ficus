@@ -119,7 +119,10 @@ export type TopicEventMap = {
   onboarding: Extract<keyof EventMap, 'onboarding.updated'>
   squadActivity: Extract<keyof EventMap, 'squadActivity.projected' | 'squadActivity.accessRevoked'>
   presence: Extract<keyof EventMap, 'presence.snapshot' | 'presence.updated' | 'presence.left'>
-  farmChat: Extract<keyof EventMap, 'farmChat.messageCreated' | 'farmChat.roomsChanged'>
+  farmChat: Extract<
+    keyof EventMap,
+    'farmChat.messageCreated' | 'farmChat.messageUpdated' | 'farmChat.roomsChanged' | 'farmChat.typing'
+  >
 }
 
 // ---------------------------------------------------------------------------

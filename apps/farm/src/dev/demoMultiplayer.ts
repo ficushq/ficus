@@ -65,6 +65,8 @@ export function demoMultiplayer(): DemoMultiplayer {
           senderUserId: SAM.id,
           body: 'Welcome to the farm, everyone.',
           createdAt: iso(),
+          editedAt: null,
+          reactions: [{ emoji: '🌱', userIds: [ROSA.id] }],
         },
       ],
     ],
@@ -74,7 +76,15 @@ export function demoMultiplayer(): DemoMultiplayer {
   let emit: (event: MultiplayerEvent) => void = () => {}
 
   const post = (roomId: string, senderUserId: string, body: string): FarmChatMessage => {
-    const message = { id: id('m'), roomId, senderUserId, body, createdAt: iso() }
+    const message: FarmChatMessage = {
+      id: id('m'),
+      roomId,
+      senderUserId,
+      body,
+      createdAt: iso(),
+      editedAt: null,
+      reactions: [],
+    }
     messages.get(roomId)?.push(message)
     const room = rooms.find((r) => r.id === roomId)
     if (room) {
@@ -83,6 +93,22 @@ export function demoMultiplayer(): DemoMultiplayer {
     }
     emit({ event: 'farmChat.messageCreated', data: { message } })
     return message
+  }
+
+  const find = (roomId: string, messageId: string) => messages.get(roomId)?.find((m) => m.id === messageId)
+  const changed = (message: FarmChatMessage) => {
+    emit({ event: 'farmChat.messageUpdated', data: { message: { ...message } } })
+    return { ...message }
+  }
+  const react = (message: FarmChatMessage, userId: string, emoji: string, on: boolean) => {
+    const entry = message.reactions.find((r) => r.emoji === emoji)
+    if (on && !entry) message.reactions.push({ emoji, userIds: [userId] })
+    else if (on && entry && !entry.userIds.includes(userId)) entry.userIds.push(userId)
+    else if (!on && entry) {
+      entry.userIds = entry.userIds.filter((u) => u !== userId)
+      if (!entry.userIds.length) message.reactions = message.reactions.filter((r) => r !== entry)
+    }
+    return changed(message)
   }
 
   const chat: FarmChatApi = {
@@ -138,10 +164,20 @@ export function demoMultiplayer(): DemoMultiplayer {
     send: async (roomId, body) => {
       const message = post(roomId, ME.userId, body)
       const room = rooms.find((r) => r.id === roomId)
-      if (room?.kind === 'dm' && room.withUserId === ROSA.id)
-        window.setTimeout(() => post(roomId, ROSA.id, 'Ha, yes! Let’s pair on it later 🌻'), 1500)
+      if (room?.kind === 'dm' && room.withUserId === ROSA.id) {
+        // Rosa likes it, types a bit, then answers.
+        window.setTimeout(() => react(message, ROSA.id, '👍', true), 700)
+        window.setTimeout(() => emit({ event: 'farmChat.typing', data: { roomId, userId: ROSA.id } }), 900)
+        window.setTimeout(() => post(roomId, ROSA.id, 'Ha, yes! Let’s pair on it later 🌻'), 3200)
+      }
       return message
     },
+    editMessage: async (roomId, messageId, body) => {
+      const message = find(roomId, messageId)!
+      Object.assign(message, { body, editedAt: iso() })
+      return changed(message)
+    },
+    react: async (roomId, messageId, emoji, on) => react(find(roomId, messageId)!, ME.userId, emoji, on),
     markRead: async (roomId) => {
       const room = rooms.find((r) => r.id === roomId)
       if (room) room.unread = 0

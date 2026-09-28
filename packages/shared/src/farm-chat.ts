@@ -2,13 +2,19 @@
  * The farm's chat: people talking to each other (not to agents). A general
  * room everyone is always in, public rooms that anyone holding
  * `chat:manage-rooms` can create, rename and delete, and private DMs between
- * two people. Messages are kept for FARM_CHAT_RETENTION_DAYS.
+ * two people. Messages are kept for FARM_CHAT_RETENTION_DAYS; their senders
+ * can edit them, anyone in the room can react, and typing shows live.
  */
 
 export const FARM_CHAT_RETENTION_DAYS = 30
 export const FARM_CHAT_MESSAGE_MAX = 4000
 export const FARM_CHAT_ROOM_NAME_MAX = 40
 export const FARM_CHAT_ROOM_DESCRIPTION_MAX = 200
+/** How often (ms) a client may say someone is typing, and how long the indicator lasts without another. */
+export const FARM_CHAT_TYPING_EVERY_MS = 3000
+export const FARM_CHAT_TYPING_SHOWS_MS = 6000
+/** The quick-pick reactions; any single emoji is accepted. */
+export const FARM_CHAT_REACTIONS = ['👍', '❤️', '😂', '🎉', '🌱', '👀', '🙏', '✅'] as const
 
 export type FarmChatRoomKind = 'general' | 'room' | 'dm'
 
@@ -25,6 +31,12 @@ export interface FarmChatRoom {
   unread: number
 }
 
+export interface FarmChatReaction {
+  emoji: string
+  /** Who reacted with it, in the order they did. */
+  userIds: string[]
+}
+
 export interface FarmChatMessage {
   id: string
   roomId: string
@@ -32,6 +44,10 @@ export interface FarmChatMessage {
   senderUserId: string | null
   body: string
   createdAt: string
+  /** When the sender last edited it; null if never. */
+  editedAt: string | null
+  /** Reactions in the order they were first used. */
+  reactions: FarmChatReaction[]
 }
 
 /** Someone on the instance, as the farm names them. */
@@ -72,6 +88,16 @@ export function validateFarmChatBody(input: unknown): { ok: true; body: string }
   if (!body) return { ok: false, error: 'A message can’t be empty.' }
   if (body.length > FARM_CHAT_MESSAGE_MAX) return { ok: false, error: 'That message is too long.' }
   return { ok: true, body }
+}
+
+/** A reaction is one emoji (a single grapheme, emoji presentation), nothing else. */
+export function validateFarmChatReaction(input: unknown): { ok: true; emoji: string } | { ok: false; error: string } {
+  if (typeof input !== 'string' || !input || input.length > 16)
+    return { ok: false, error: 'A reaction is a single emoji.' }
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(input)]
+  if (graphemes.length !== 1 || !/\p{Extended_Pictographic}/u.test(input))
+    return { ok: false, error: 'A reaction is a single emoji.' }
+  return { ok: true, emoji: input }
 }
 
 export function validateFarmChatRoom(

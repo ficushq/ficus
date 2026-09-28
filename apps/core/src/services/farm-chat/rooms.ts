@@ -3,10 +3,11 @@ import {
   farmPersonName,
   type FarmChatMessage,
   type FarmChatMessagePage,
+  type FarmChatReaction,
   type FarmChatRoom,
   type FarmPerson,
 } from '@ficus/shared'
-import { db, farmChatMessages, farmChatReads, farmChatRooms, users } from '../../db'
+import { db, farmChatMessages, farmChatReactions, farmChatReads, farmChatRooms, users } from '../../db'
 
 /*
  * The farm's chat rooms and messages (packages/shared farm-chat.ts). There's
@@ -194,14 +195,48 @@ export async function directRoom(userId: string, otherId: string): Promise<RoomR
   return room!
 }
 
-function serializeMessage(row: typeof farmChatMessages.$inferSelect): FarmChatMessage {
-  return {
+type MessageRow = typeof farmChatMessages.$inferSelect
+
+/** Each message's reactions, grouped by emoji in the order each was first used. */
+async function reactionsFor(messageIds: string[]): Promise<Map<string, FarmChatReaction[]>> {
+  const byMessage = new Map<string, FarmChatReaction[]>()
+  if (!messageIds.length) return byMessage
+  const rows = await db
+    .select()
+    .from(farmChatReactions)
+    .where(inArray(farmChatReactions.messageId, messageIds))
+    .orderBy(farmChatReactions.createdAt)
+  for (const row of rows) {
+    const list = byMessage.get(row.messageId) ?? []
+    const entry = list.find((reaction) => reaction.emoji === row.emoji)
+    if (entry) entry.userIds.push(row.userId)
+    else list.push({ emoji: row.emoji, userIds: [row.userId] })
+    byMessage.set(row.messageId, list)
+  }
+  return byMessage
+}
+
+async function serializeMessages(rows: MessageRow[]): Promise<FarmChatMessage[]> {
+  const reactions = await reactionsFor(rows.map((row) => row.id))
+  return rows.map((row) => ({
     id: row.id,
     roomId: row.roomId,
     senderUserId: row.senderUserId,
     body: row.body,
     createdAt: row.createdAt.toISOString(),
-  }
+    editedAt: row.editedAt?.toISOString() ?? null,
+    reactions: reactions.get(row.id) ?? [],
+  }))
+}
+
+/** A message in a room, or a 404. */
+async function messageIn(roomId: string, messageId: string): Promise<MessageRow> {
+  const [row] = await db
+    .select()
+    .from(farmChatMessages)
+    .where(and(eq(farmChatMessages.id, messageId), eq(farmChatMessages.roomId, roomId)))
+  if (!row) throw new FarmChatError('Message not found', 404)
+  return row
 }
 
 /** The latest messages in a room (oldest first), or the page before `before`. */
@@ -217,13 +252,56 @@ export async function listMessages(roomId: string, before: Date | null, limit: n
     .orderBy(desc(farmChatMessages.createdAt), desc(farmChatMessages.id))
     .limit(limit + 1)
   const hasMore = rows.length > limit
-  return { messages: rows.slice(0, limit).reverse().map(serializeMessage), hasMore }
+  return { messages: await serializeMessages(rows.slice(0, limit).reverse()), hasMore }
 }
 
 export async function postMessage(roomId: string, userId: string, body: string): Promise<FarmChatMessage> {
   const [row] = await db.insert(farmChatMessages).values({ roomId, senderUserId: userId, body }).returning()
   await markRead(roomId, userId, row!.createdAt)
-  return serializeMessage(row!)
+  const [message] = await serializeMessages([row!])
+  return message!
+}
+
+/** Changes a message's text. Only its sender may. */
+export async function editMessage(
+  roomId: string,
+  messageId: string,
+  userId: string,
+  body: string
+): Promise<FarmChatMessage> {
+  const row = await messageIn(roomId, messageId)
+  if (row.senderUserId !== userId) throw new FarmChatError('Only the sender can edit a message', 403)
+  const [updated] = await db
+    .update(farmChatMessages)
+    .set({ body, editedAt: new Date() })
+    .where(eq(farmChatMessages.id, messageId))
+    .returning()
+  const [message] = await serializeMessages([updated!])
+  return message!
+}
+
+/** Adds (on) or takes back (off) someone's emoji reaction to a message. */
+export async function reactToMessage(
+  roomId: string,
+  messageId: string,
+  userId: string,
+  emoji: string,
+  on: boolean
+): Promise<FarmChatMessage> {
+  const row = await messageIn(roomId, messageId)
+  if (on) await db.insert(farmChatReactions).values({ messageId, userId, emoji }).onConflictDoNothing()
+  else
+    await db
+      .delete(farmChatReactions)
+      .where(
+        and(
+          eq(farmChatReactions.messageId, messageId),
+          eq(farmChatReactions.userId, userId),
+          eq(farmChatReactions.emoji, emoji)
+        )
+      )
+  const [message] = await serializeMessages([row])
+  return message!
 }
 
 /** Marks a room read up to now (or the given moment), never moving backwards. */

@@ -1837,11 +1837,29 @@ export const farmChatMessages = pgTable(
     senderUserId: uuid('sender_user_id').references(() => users.id, { onDelete: 'set null' }),
     body: text('body').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** When the sender last edited it. */
+    editedAt: timestamp('edited_at', { withTimezone: true }),
   },
   (table) => [
     index('farm_chat_messages_room_created').on(table.roomId, table.createdAt),
     index('farm_chat_messages_created').on(table.createdAt),
   ]
+)
+
+/** One person's emoji reaction to a message (each person reacts with each emoji at most once). */
+export const farmChatReactions = pgTable(
+  'farm_chat_reactions',
+  {
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => farmChatMessages.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    emoji: text('emoji').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.messageId, table.userId, table.emoji] })]
 )
 
 /** How far each person has read each room, for unread counts. */

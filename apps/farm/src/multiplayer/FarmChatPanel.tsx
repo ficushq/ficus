@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import clsx from 'clsx'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FARM_CHAT_MESSAGE_MAX, farmPersonInitials, type FarmChatMessagePage, type FarmChatRoom } from '@ficus/shared'
+import {
+  FARM_CHAT_MESSAGE_MAX,
+  FARM_CHAT_REACTIONS,
+  farmPersonInitials,
+  type FarmChatMessage,
+  type FarmChatMessagePage,
+  type FarmChatRoom,
+} from '@ficus/shared'
 import { CloseIcon } from '../icons'
 import { chatKeys } from './chatApi'
 import { useMultiplayer } from './MultiplayerProvider'
@@ -237,7 +244,7 @@ function RoomForm({ room, onDone }: { room?: FarmChatRoom; onDone: (room: FarmCh
 }
 
 function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void }) {
-  const { chat, me, rooms } = useMultiplayer()
+  const { chat, rooms, sendTyping } = useMultiplayer()
   const queryClient = useQueryClient()
   const messages = useQuery({ queryKey: chatKeys.messages(room.id), queryFn: () => chat.messages(room.id) })
   const people = useQuery({ queryKey: chatKeys.people(), queryFn: () => chat.people(), staleTime: 300_000 })
@@ -339,27 +346,19 @@ function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void
             {room.kind === 'dm' ? `Say hi to ${room.name}.` : 'No messages yet. Say hello to the farm.'}
           </li>
         )}
-        {list.map((message, k) => {
-          const mine = message.senderUserId === me?.userId
-          const sender = mine
-            ? 'You'
-            : message.senderUserId
-              ? (names.get(message.senderUserId) ?? 'Someone')
-              : 'Someone'
-          const sameAsBefore = k > 0 && list[k - 1]!.senderUserId === message.senderUserId
-          return (
-            <li key={message.id} className={clsx('g-farmchat-message', mine && 'g-farmchat-mine')}>
-              {!sameAsBefore && (
-                <p className="g-farmchat-meta">
-                  <b>{sender}</b> <time dateTime={message.createdAt}>{time(message.createdAt)}</time>
-                </p>
-              )}
-              <p className="g-farmchat-text">{message.body}</p>
-            </li>
-          )
-        })}
+        {list.map((message, k) => (
+          <MessageItem
+            key={message.id}
+            room={room}
+            message={message}
+            names={names}
+            showMeta={k === 0 || list[k - 1]!.senderUserId !== message.senderUserId}
+            onError={setError}
+          />
+        ))}
       </ol>
       {error && <p className="g-farmchat-error">{error}</p>}
+      <TypingLine roomId={room.id} names={names} />
       <form
         className="g-farmchat-composer"
         onSubmit={(e) => {
@@ -374,7 +373,10 @@ function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void
           maxLength={FARM_CHAT_MESSAGE_MAX}
           rows={2}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            if (e.target.value.trim()) sendTyping(room.id)
+          }}
           onKeyDown={onKeyDown}
         />
         <button type="submit" className="g-button g-button-primary" disabled={sending || !draft.trim()}>
@@ -382,5 +384,181 @@ function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void
         </button>
       </form>
     </div>
+  )
+}
+
+/** "Rosa is typing…", for everyone else typing in the room right now. */
+function TypingLine({ roomId, names }: { roomId: string; names: ReadonlyMap<string, string> }) {
+  const { typingIn } = useMultiplayer()
+  const who = typingIn(roomId).map((userId) => (names.get(userId) ?? 'Someone').split(/\s+/)[0]!)
+  const text =
+    who.length === 0
+      ? ''
+      : who.length === 1
+        ? `${who[0]} is typing…`
+        : who.length === 2
+          ? `${who[0]} and ${who[1]} are typing…`
+          : `${who.length} people are typing…`
+  return (
+    <p className="g-farmchat-typing" aria-live="polite">
+      {text}
+    </p>
+  )
+}
+
+/** One message: who and when, the text (or its editor), reactions, and actions on hover. */
+function MessageItem({
+  room,
+  message,
+  names,
+  showMeta,
+  onError,
+}: {
+  room: FarmChatRoom
+  message: FarmChatMessage
+  names: ReadonlyMap<string, string>
+  showMeta: boolean
+  onError: (error: string | null) => void
+}) {
+  const { chat, me } = useMultiplayer()
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(message.body)
+  const [picking, setPicking] = useState(false)
+  const mine = message.senderUserId === me?.userId
+  const nameOf = (userId: string | null) =>
+    userId === me?.userId ? 'You' : userId ? (names.get(userId) ?? 'Someone') : 'Someone'
+
+  /** Puts the message as the server now has it into the cache (the live event will agree). */
+  const settle = (updated: FarmChatMessage) =>
+    queryClient.setQueryData<FarmChatMessagePage>(chatKeys.messages(room.id), (page) =>
+      page ? { ...page, messages: page.messages.map((m) => (m.id === updated.id ? updated : m)) } : page
+    )
+
+  const react = async (emoji: string) => {
+    setPicking(false)
+    const on = !message.reactions.some((r) => r.emoji === emoji && me && r.userIds.includes(me.userId))
+    try {
+      settle(await chat.react(room.id, message.id, emoji, on))
+    } catch (e) {
+      onError(errorText(e))
+    }
+  }
+
+  const cancel = () => {
+    setDraft(message.body)
+    setEditing(false)
+  }
+
+  const save = async () => {
+    const body = draft.trim()
+    if (!body || body === message.body) return cancel()
+    try {
+      settle(await chat.editMessage(room.id, message.id, body))
+      setEditing(false)
+    } catch (e) {
+      onError(errorText(e))
+    }
+  }
+
+  return (
+    <li className={clsx('g-farmchat-message', mine && 'g-farmchat-mine')}>
+      {showMeta && (
+        <p className="g-farmchat-meta">
+          <b>{nameOf(message.senderUserId)}</b> <time dateTime={message.createdAt}>{time(message.createdAt)}</time>
+        </p>
+      )}
+      {editing ? (
+        <div className="g-farmchat-edit">
+          <textarea
+            className="g-field"
+            aria-label="Edit your message"
+            maxLength={FARM_CHAT_MESSAGE_MAX}
+            rows={2}
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void save()
+              } else if (e.key === 'Escape') {
+                e.stopPropagation()
+                cancel()
+              }
+            }}
+          />
+          <div className="g-farmchat-edit-actions">
+            <button type="button" className="g-button g-button-primary" onClick={() => void save()}>
+              Save
+            </button>
+            <button type="button" className="g-button" onClick={cancel}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="g-farmchat-line">
+          <p className="g-farmchat-text">
+            {message.body}
+            {message.editedAt && <span className="g-farmchat-edited"> (edited)</span>}
+          </p>
+          <span className="g-farmchat-actions">
+            <button
+              type="button"
+              className="g-farmchat-action"
+              aria-label="React"
+              aria-expanded={picking}
+              onClick={() => setPicking((open) => !open)}
+            >
+              ☺︎
+            </button>
+            {mine && (
+              <button
+                type="button"
+                className="g-farmchat-action"
+                aria-label="Edit"
+                onClick={() => {
+                  setDraft(message.body)
+                  setEditing(true)
+                }}
+              >
+                ✎
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {picking && (
+        <div className="g-farmchat-palette" role="group" aria-label="Pick a reaction">
+          {FARM_CHAT_REACTIONS.map((emoji) => (
+            <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => void react(emoji)}>
+              {emoji}
+            </button>
+          ))}
+        </div>
+      )}
+      {message.reactions.length > 0 && (
+        <div className="g-farmchat-reactions">
+          {message.reactions.map((reaction) => {
+            const mineToo = me ? reaction.userIds.includes(me.userId) : false
+            const who = reaction.userIds.map(nameOf).join(', ')
+            return (
+              <button
+                key={reaction.emoji}
+                type="button"
+                className={clsx('g-farmchat-reaction', mineToo && 'g-farmchat-reaction-mine')}
+                aria-pressed={mineToo}
+                aria-label={`${reaction.emoji} ${reaction.userIds.length}: ${who}`}
+                title={who}
+                onClick={() => void react(reaction.emoji)}
+              >
+                {reaction.emoji} <b>{reaction.userIds.length}</b>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </li>
   )
 }

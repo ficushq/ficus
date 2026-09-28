@@ -322,3 +322,138 @@
   border-width: var(--g-border-hair);
   font-size: 9.5px;
 }
+
+/* ---- Message actions, reactions, edits and typing ---- */
+
+.g-farmchat-line {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.g-farmchat-mine .g-farmchat-line {
+  flex-direction: row-reverse;
+}
+
+.g-farmchat-actions {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.g-farmchat-message:hover .g-farmchat-actions,
+.g-farmchat-message:focus-within .g-farmchat-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .g-farmchat-actions {
+    opacity: 0.7;
+  }
+}
+
+.g-farmchat-action {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-card);
+  color: var(--g-text-soft);
+  font: 400 13px/1 var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-farmchat-edited {
+  color: var(--g-text-soft);
+  font-size: 12px;
+}
+
+.g-farmchat-palette {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 3px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card);
+  box-shadow: var(--g-drop);
+}
+
+.g-farmchat-palette button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--g-radius-round);
+  background: transparent;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.g-farmchat-palette button:hover {
+  background: var(--g-row-hover);
+}
+
+.g-farmchat-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 3px 0 2px;
+}
+
+.g-farmchat-mine .g-farmchat-reactions {
+  justify-content: flex-end;
+}
+
+.g-farmchat-reaction {
+  padding: 1px 8px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card);
+  color: var(--g-text);
+  font: 400 13px var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-farmchat-reaction b {
+  font-size: 11.5px;
+}
+
+.g-farmchat-reaction-mine {
+  border-color: var(--g-accent);
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+.g-farmchat-edit {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.g-farmchat-edit textarea {
+  resize: none;
+  font: 400 14px/1.4 var(--g-font-body);
+}
+
+.g-farmchat-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.g-farmchat-edit-actions .g-button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.g-farmchat-typing {
+  min-height: 18px;
+  margin: 4px 2px 0;
+  color: var(--g-text-soft);
+  font: italic 400 12px var(--g-font-body);
+}

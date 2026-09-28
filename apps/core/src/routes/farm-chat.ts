@@ -4,6 +4,7 @@ import { z } from 'zod'
 import {
   FARM_CHAT_MESSAGE_MAX,
   validateFarmChatBody,
+  validateFarmChatReaction,
   validateFarmChatRoom,
   type FarmChatRoom,
   type FarmChatRooms,
@@ -15,6 +16,8 @@ import {
   createRoom,
   deleteRoom,
   directRoom,
+  editMessage,
+  reactToMessage,
   FarmChatError,
   listMessages,
   listPeople,
@@ -147,6 +150,37 @@ farmChatRouter.post('/rooms/:id/messages', async (c) => {
   const message = await postMessage(room.id, me.userId, input.body)
   wsManager.sendFarmChat('farmChat.messageCreated', { message }, audienceOf(room) ?? undefined)
   return c.json(message, 201)
+})
+
+/** Edits a message; only its sender may. */
+farmChatRouter.patch('/rooms/:id/messages/:messageId', async (c) => {
+  const me = person(c)
+  if (!me) return c.json({ error: 'Unauthorized' }, 401)
+  c.set('authzChecked', true)
+  if (!uuidParam.safeParse(c.req.param('messageId')).success) return c.json({ error: 'Message not found' }, 404)
+  const room = await roomFor(c.req.param('id'), me.userId)
+  const { body } = await parseOptionalJsonObjectBody(c, {} as { body?: unknown })
+  const input = validateFarmChatBody(body)
+  if (!input.ok) return c.json({ error: input.error }, 400)
+  const message = await editMessage(room.id, c.req.param('messageId'), me.userId, input.body)
+  wsManager.sendFarmChat('farmChat.messageUpdated', { message }, audienceOf(room) ?? undefined)
+  return c.json(message)
+})
+
+/** Adds (`on: true`) or takes back your emoji reaction to a message. */
+farmChatRouter.post('/rooms/:id/messages/:messageId/reactions', async (c) => {
+  const me = person(c)
+  if (!me) return c.json({ error: 'Unauthorized' }, 401)
+  c.set('authzChecked', true)
+  if (!uuidParam.safeParse(c.req.param('messageId')).success) return c.json({ error: 'Message not found' }, 404)
+  const room = await roomFor(c.req.param('id'), me.userId)
+  const { emoji, on } = await parseOptionalJsonObjectBody(c, {} as { emoji?: unknown; on?: unknown })
+  const input = validateFarmChatReaction(emoji)
+  if (!input.ok) return c.json({ error: input.error }, 400)
+  if (typeof on !== 'boolean') return c.json({ error: 'Say whether the reaction is on or off.' }, 400)
+  const message = await reactToMessage(room.id, c.req.param('messageId'), me.userId, input.emoji, on)
+  wsManager.sendFarmChat('farmChat.messageUpdated', { message }, audienceOf(room) ?? undefined)
+  return c.json(message)
 })
 
 farmChatRouter.post('/rooms/:id/read', async (c) => {

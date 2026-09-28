@@ -4,6 +4,7 @@ import { db, squads } from '../../db'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
 import { WebSocketManager } from './manager'
 import { PresenceRegistry } from './presence'
+import { directRoom, ensureGeneralRoom } from '../farm-chat'
 
 const SQUAD = { kind: 'squad' as const, squadId: '9a0a4f0e-8b0e-4c3d-9f6a-1d2e3f4a5b6c' }
 const OTHER = { kind: 'squad' as const, squadId: '0b1c2d3e-4f50-4617-8a9b-0c1d2e3f4a5b' }
@@ -168,5 +169,34 @@ describe('farm presence over the WebSocket', () => {
     manager.sendFarmChat('farmChat.messageCreated', { message: { id: 'm' } }, [alice.id])
     expect(events(aliceWs, 'farmChat.messageCreated')).toHaveLength(1)
     expect(events(bobWs, 'farmChat.messageCreated')).toHaveLength(0)
+  })
+
+  test("typing reaches the room's other people, a DM's other person, never yourself, and not too often", async () => {
+    const manager = new WebSocketManager()
+    const aliceWs = socket()
+    const bobWs = socket()
+    await manager.subscribe(manager.addClient(aliceWs, { type: 'user', userId: alice.id }), 'farmChat')
+    await manager.subscribe(manager.addClient(bobWs, { type: 'user', userId: bob.id }), 'farmChat')
+    const general = await ensureGeneralRoom()
+    manager.handleMessage(aliceWs, JSON.stringify({ type: 'farmChat.typing', roomId: general.id }))
+    await until(() => events(bobWs, 'farmChat.typing').length === 1, 'the typing ping')
+    expect(events(bobWs, 'farmChat.typing')[0]!.data).toEqual({ roomId: general.id, userId: alice.id })
+    expect(events(aliceWs, 'farmChat.typing')).toEqual([])
+    // Again straight away: held back (one every couple of seconds per room).
+    manager.handleMessage(aliceWs, JSON.stringify({ type: 'farmChat.typing', roomId: general.id }))
+    const dm = await directRoom(alice.id, bob.id)
+    manager.handleMessage(bobWs, JSON.stringify({ type: 'farmChat.typing', roomId: dm.id }))
+    await until(() => events(aliceWs, 'farmChat.typing').length === 1, 'the DM typing ping')
+    expect(events(bobWs, 'farmChat.typing')).toHaveLength(1)
+    // Someone outside the DM can't say they're typing in it.
+    const carol = await createTestUser({ prefix, displayName: 'Carol' })
+    const carolWs = socket()
+    await manager.subscribe(manager.addClient(carolWs, { type: 'user', userId: carol.id }), 'farmChat')
+    await (manager as unknown as { farmChatTyping: (c: unknown, r: string) => Promise<void> }).farmChatTyping(
+      manager.getClientByWs(carolWs),
+      dm.id
+    )
+    expect(events(aliceWs, 'farmChat.typing')).toHaveLength(1)
+    expect(events(bobWs, 'farmChat.typing')).toHaveLength(1)
   })
 })

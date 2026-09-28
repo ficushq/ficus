@@ -24,6 +24,15 @@ export function farmChatResource(t: Transport) {
       t.request(`${room(id)}/messages${before ? `?before=${encodeURIComponent(before)}` : ''}`),
     send: (id: string, body: string): Promise<FarmChatMessage> =>
       t.request(`${room(id)}/messages`, { method: 'POST', body: { body } }),
+    /** Changes the text of a message you sent. */
+    editMessage: (id: string, messageId: string, body: string): Promise<FarmChatMessage> =>
+      t.request(`${room(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: { body } }),
+    /** Adds (`on`) or takes back your emoji reaction to a message. */
+    react: (id: string, messageId: string, emoji: string, on: boolean): Promise<FarmChatMessage> =>
+      t.request(`${room(id)}/messages/${encodeURIComponent(messageId)}/reactions`, {
+        method: 'POST',
+        body: { emoji, on },
+      }),
     markRead: (id: string): Promise<void> => t.request(`${room(id)}/read`, { method: 'POST' }),
   }
 }

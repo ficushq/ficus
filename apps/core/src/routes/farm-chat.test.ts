@@ -140,6 +140,52 @@ describe('farm chat', () => {
     expect((await call(alice, 'POST', '/dms', { userId: 'nope' })).status).toBe(404)
   })
 
+  test('senders can edit their own messages, and edits are marked', async () => {
+    const room = await general(alice)
+    const sent = await json(await call(alice, 'POST', `/rooms/${room.id}/messages`, { body: 'teh plan' }))
+    expect(sent.editedAt).toBeNull()
+    expect((await call(bob, 'PATCH', `/rooms/${room.id}/messages/${sent.id}`, { body: 'hijack' })).status).toBe(403)
+    expect((await call(alice, 'PATCH', `/rooms/${room.id}/messages/${sent.id}`, { body: '  ' })).status).toBe(400)
+    const edited = await json(await call(alice, 'PATCH', `/rooms/${room.id}/messages/${sent.id}`, { body: 'the plan' }))
+    expect(edited).toMatchObject({ id: sent.id, body: 'the plan' })
+    expect(edited.editedAt).not.toBeNull()
+    const page = await json(await call(bob, 'GET', `/rooms/${room.id}/messages`))
+    expect(page.messages.find((m: any) => m.id === sent.id)).toMatchObject({ body: 'the plan' })
+    // A message from another room is not this room's to edit.
+    const dm = await json(await call(alice, 'POST', '/dms', { userId: bob.id }))
+    expect((await call(alice, 'PATCH', `/rooms/${dm.id}/messages/${sent.id}`, { body: 'x' })).status).toBe(404)
+    expect((await call(alice, 'PATCH', `/rooms/${room.id}/messages/nope`, { body: 'x' })).status).toBe(404)
+  })
+
+  test('anyone in a room can react; reactions toggle and group by emoji', async () => {
+    const room = await general(alice)
+    const sent = await json(await call(alice, 'POST', `/rooms/${room.id}/messages`, { body: 'ship it?' }))
+    const react = (user: TestUser, emoji: string, on: boolean) =>
+      call(user, 'POST', `/rooms/${room.id}/messages/${sent.id}/reactions`, { emoji, on })
+    expect((await react(bob, '👍', true)).status).toBe(200)
+    await react(carol, '👍', true)
+    await react(bob, '👍', true) // again: no double count
+    const both = await json(await react(alice, '🎉', true))
+    expect(both.reactions).toEqual([
+      { emoji: '👍', userIds: [bob.id, carol.id] },
+      { emoji: '🎉', userIds: [alice.id] },
+    ])
+    const off = await json(await react(bob, '👍', false))
+    expect(off.reactions[0]).toEqual({ emoji: '👍', userIds: [carol.id] })
+    const page = await json(await call(bob, 'GET', `/rooms/${room.id}/messages`))
+    expect(page.messages.find((m: any) => m.id === sent.id).reactions).toEqual(off.reactions)
+    for (const emoji of ['ok', '👍👍', '', 7]) expect((await react(bob, emoji as string, true)).status).toBe(400)
+    expect((await call(bob, 'POST', `/rooms/${room.id}/messages/${sent.id}/reactions`, { emoji: '👍' })).status).toBe(
+      400
+    )
+    // Not in a DM you aren't part of.
+    const dm = await json(await call(alice, 'POST', '/dms', { userId: bob.id }))
+    const secret = await json(await call(alice, 'POST', `/rooms/${dm.id}/messages`, { body: 'psst' }))
+    expect(
+      (await call(carol, 'POST', `/rooms/${dm.id}/messages/${secret.id}/reactions`, { emoji: '👀', on: true })).status
+    ).toBe(404)
+  })
+
   test('a malformed room id is a 404', async () => {
     expect((await call(alice, 'GET', '/rooms/nope/messages')).status).toBe(404)
   })

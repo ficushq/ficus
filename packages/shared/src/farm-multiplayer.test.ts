@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  FARM_CHAT_REACTIONS,
+  validateFarmChatReaction,
   FARM_CHAT_MESSAGE_MAX,
   farmPersonInitials,
   farmPersonName,
@@ -43,6 +45,14 @@ describe('farm chat input', () => {
     expect(validateFarmChatRoom({ name: 'design' })).toEqual({ ok: true, name: 'design', description: null })
     for (const bad of [null, [], { name: '' }, { name: 'x'.repeat(41) }, { name: 'ok', description: 3 }])
       expect(validateFarmChatRoom(bad).ok).toBe(false)
+  })
+})
+
+describe('farm chat reactions', () => {
+  test('are one emoji each', () => {
+    for (const emoji of [...FARM_CHAT_REACTIONS, '🦄', '👍🏽', '🧑‍🌾'])
+      expect(validateFarmChatReaction(emoji)).toEqual({ ok: true, emoji })
+    for (const bad of ['', 'a', 'ok', '👍👍', '👍 ', 3, null]) expect(validateFarmChatReaction(bad).ok).toBe(false)
   })
 })
 
