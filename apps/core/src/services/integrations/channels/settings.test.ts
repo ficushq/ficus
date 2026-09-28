@@ -93,5 +93,5 @@ test('the Slack manifest is generated with this instance URLs and no placeholder
   expect(manifest).toContain('url: https://tau.example.test/api/webhooks/channels/slack')
   expect(manifest).toContain('request_url: https://tau.example.test/api/webhooks/channels/slack')
   expect(manifest).not.toContain('YOUR_DOMAIN')
-  expect(manifest).toContain('command: /tau')
+  expect(manifest).toContain('command: /ficus')
 })
