@@ -1,6 +1,7 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { Agent, FarmLook } from '@ficus/shared'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { LookEditor } from '../multiplayer/LookBuilder'
 import { useMultiplayer } from '../multiplayer/MultiplayerProvider'
 import { SKINS, useSkin, type FarmSkin, type SkinId } from '../skins'
@@ -75,6 +76,9 @@ export function Welcome({ narrow, onDone }: { narrow: boolean; onDone: () => voi
   const [step, setStep] = useState<'style' | 'look'>('style')
   const [draft, setDraft] = useState<FarmLook>(myLook)
   const titleId = useId()
+  const dialog = useRef<HTMLElement>(null)
+  // A modal: focus starts on the chosen style and stays inside until it's done.
+  useDialogFocus(dialog, { trap: true, initial: '.g-welcome-style-on' })
   const finish = () => {
     setMyLook(draft)
     onDone()
@@ -83,6 +87,7 @@ export function Welcome({ narrow, onDone }: { narrow: boolean; onDone: () => voi
   return (
     <div className="g-welcome-backdrop">
       <section
+        ref={dialog}
         className={clsx('g-card g-welcome', step === 'look' && 'g-welcome-wide', narrow && 'g-welcome-sheet')}
         role="dialog"
         aria-modal="true"

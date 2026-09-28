@@ -9,6 +9,7 @@ import {
   type FarmChatMessagePage,
   type FarmChatRoom,
 } from '@ficus/shared'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { CloseIcon } from '../icons'
 import { chatKeys } from './chatApi'
 import { useMultiplayer } from './MultiplayerProvider'
@@ -39,6 +40,9 @@ export function FarmChatPanel({
   narrow: boolean
 }) {
   const { rooms } = useMultiplayer()
+  const panel = useRef<HTMLElement>(null)
+  // Focus moves in (to the composer, when a room is open) and back to what opened it on closing.
+  useDialogFocus(panel, { initial: '.g-farmchat-composer textarea' })
   const list = rooms?.rooms ?? []
   const current =
     list.find((room) => room.id === roomId) ?? (narrow ? undefined : list.find((r) => r.kind === 'general'))
@@ -46,6 +50,7 @@ export function FarmChatPanel({
   const showConversation = Boolean(current) && (!narrow || roomId !== null)
   return (
     <section
+      ref={panel}
       className={clsx('g-card g-farmchat', narrow && 'g-farmchat-sheet')}
       aria-label="Farm chat"
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
