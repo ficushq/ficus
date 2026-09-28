@@ -188,5 +188,11 @@ async function spawnProcess(
 if (import.meta.main) {
   // This file lives at apps/core/src/scripts/: the checkout root is four levels up.
   const root = resolve(import.meta.dir, '../../../..')
-  process.exit(await bootstrapOfflineUpdate({ root, args: process.argv.slice(2), run: spawnProcess }))
+  try {
+    process.exit(await bootstrapOfflineUpdate({ root, args: process.argv.slice(2), run: spawnProcess }))
+  } catch (err) {
+    // e.g. bun or git missing from PATH: report it like every other offline-update failure.
+    console.error(`offline update failed: ${(err as Error).message}`)
+    process.exit(1)
+  }
 }
