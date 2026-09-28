@@ -510,11 +510,11 @@ export default defineConfig(({ mode, command }) => {
           scope: base,
           display: 'standalone',
           orientation: 'portrait-primary',
-          // Match the dark launch splash (splash.html) so install-time chrome
-          // doesn't flash violet/light-gray; runtime chrome color comes from
-          // the dynamic theme-color meta.
-          background_color: '#04050a',
-          theme_color: '#0d0e18',
+          // Ficus brand: linen background, leaf theme color (brand/README.md).
+          // Install-time chrome only — runtime chrome color comes from the
+          // dynamic theme-color meta, kept in sync with the active theme.
+          background_color: '#f1e9db',
+          theme_color: '#3f6b4f',
           icons: [
             { src: 'icons/icon-72x72.png', sizes: '72x72', type: 'image/png', purpose: 'any' },
             { src: 'icons/icon-96x96.png', sizes: '96x96', type: 'image/png', purpose: 'any' },

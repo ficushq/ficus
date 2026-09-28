@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { SettingsIcon, PencilIcon, InboxIcon, MoreIcon } from './icons'
-import { TauLogo } from './TauLogo'
+import { FicusLogo } from './FicusLogo'
 import { pendingActionsPresentation, usePendingActions } from '../hooks/usePendingActions'
 import { desktopInstance } from '../lib/desktop'
 import { queries } from '../queryOptions'
@@ -104,7 +104,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
           {/* Left: Logo */}
           <h1 className="ficus-app-header-logo text-xl md:text-2xl font-bold text-primary">
             <Link to="/" className="flex items-center gap-2 hover:text-status-progress-600 transition-colors">
-              <TauLogo />
+              <FicusLogo />
               Ficus
               {instance && (
                 <span

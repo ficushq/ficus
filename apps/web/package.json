@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "icons:generate": "bun run scripts/generate-icons.ts",
     "typecheck": "tsc --noEmit",
     "test:ci": "bun scripts/run-full-test-gate.ts",
     "test:dom-order:ci": "bun scripts/run-dom-order-gate.ts"

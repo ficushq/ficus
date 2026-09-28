@@ -35,7 +35,7 @@ const ALLOWLIST: Readonly<Record<RawCategoryType, readonly string[]>> = {
     'components/artifacts/PresentationRenderer.tsx',
   ],
   'palette-lookup': [],
-  'literal-hex': ['components/settings/CustomThemeEditor.tsx'],
+  'literal-hex': ['components/settings/CustomThemeEditor.tsx', 'components/FicusLogo.tsx'],
   'color-function': ['theme/flash.ts'],
   'inline-color-style': ['components/squads/SquadUniverse.tsx'],
 }
@@ -47,6 +47,8 @@ const ENTRY_REASONS: Readonly<Record<string, string>> = {
   'components/settings/CustomThemeEditor.tsx': 'Theme-authoring sample and contrast endpoints, not app chrome.',
   'theme/flash.ts': 'Minimal pre-CSS builtin surface definitions, verified against authored CSS.',
   'components/squads/SquadUniverse.tsx': 'Hovered-node swatch comes from the live graph/status token reader.',
+  'components/FicusLogo.tsx':
+    'The brand mark is fixed identity artwork (brand/ficus-mark*.svg) — it renders its own palette by resolved light/dark appearance, not the selected in-app theme.',
 }
 
 describe('no-raw-colors guard', () => {
