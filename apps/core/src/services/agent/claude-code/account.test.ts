@@ -14,7 +14,10 @@ import { addAccount, listAccounts, mutateAccountStore, readAccountStore } from '
 import { selectAccount } from '../account-selection'
 import { CLAUDE_CODE_ACCOUNT_ID, setClaudeCodeAccountEnabled } from './account'
 import { anthropicWithClaudeCode } from './anthropic'
-import { setClaudeCodeStatusForTests } from './availability'
+import { primeClaudeCodeStatus, setClaudeCodeStatusForTests, type RunClaude } from './availability'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const signedIn = { offered: true, enabled: true, loggedIn: true, executable: '/usr/local/bin/claude' }
 const signedOut = { offered: true, enabled: true, loggedIn: false, reason: 'Claude Code is not signed in' }
@@ -66,6 +69,30 @@ test('account selection uses Claude Code while signed in and fails over to the A
   setClaudeCodeStatusForTests(signedIn)
   const exhausted = { isAccountHealthy: (_provider: string, id: string) => id !== CLAUDE_CODE_ACCOUNT_ID }
   expect(selectAccount('anthropic', readAccountStore(), exhausted)?.kind).toBeUndefined()
+})
+
+test('an agent start waits for the sign-in status, so the first selection after boot uses Claude Code', async () => {
+  await mutateAccountStore((store) => {
+    addAccount(store, 'anthropic', { type: 'api_key', key: 'sk-ant-api03-key' })
+  }, 'admin')
+  await setClaudeCodeAccountEnabled(true, 'admin')
+  // Nothing cached yet, as in a freshly started worker: selection alone cannot see Claude Code.
+  setClaudeCodeStatusForTests(undefined)
+  expect(selectAccount('anthropic', readAccountStore(), healthy)?.kind).toBeUndefined()
+
+  const bin = mkdtempSync(join(tmpdir(), 'claude-code-bin-'))
+  try {
+    writeFileSync(join(bin, 'claude'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(bin, 'claude'), 0o755)
+    const run: RunClaude = async (_executable, args) => ({
+      exitCode: 0,
+      stdout: args[0] === '--version' ? '2.1.281' : JSON.stringify({ loggedIn: true, authMethod: 'claude.ai' }),
+    })
+    await primeClaudeCodeStatus({ env: { PATH: bin, HOME: '/nonexistent' }, run })
+    expect(selectAccount('anthropic', readAccountStore(), healthy)?.id).toBe(CLAUDE_CODE_ACCOUNT_ID)
+  } finally {
+    rmSync(bin, { recursive: true, force: true })
+  }
 })
 
 test('the Anthropic provider sends only Claude Code account turns through the bridge', async () => {

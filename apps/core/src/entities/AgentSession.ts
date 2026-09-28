@@ -20,6 +20,7 @@ import {
 } from '../services/agent/account-auth-backend'
 import { registerOpenAICompatibleAccounts } from '../services/agent/auth-backend'
 import { registerAnthropicWithClaudeCode } from '../services/agent/claude-code/anthropic'
+import { primeClaudeCodeStatus } from '../services/agent/claude-code/availability'
 import { selectAccount } from '../services/agent/account-selection'
 import * as accountStore from '../services/agent/account-store'
 import { AGENT_DIR } from '../lib/paths'
@@ -133,6 +134,8 @@ export class AgentSession {
     currentSelectedModel,
     onStoredToolResult,
   }: CreateAgentSessionOptions): Promise<AgentSession> {
+    // Selection below reads Claude Code's sign-in status synchronously; make it current first.
+    await primeClaudeCodeStatus()
     const { selected, switchedBack } = selectModelSpecForCurrentEnvWithSwitchBack(modelId, currentSelectedModel)
     const { model, thinkingLevel } = resolveAgentModelSpec(selected)
 
