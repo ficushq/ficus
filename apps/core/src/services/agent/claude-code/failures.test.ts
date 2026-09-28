@@ -18,6 +18,10 @@ test('a too-old Claude Code fails the account over until it is updated', () => {
   )
   expect(text).toContain('Claude Code is too old')
   expect(classifyCaughtProviderError(text)).toEqual({ kind: 'invalid-credential' })
+  // Names the install it ran, so a stray old copy can be found.
+  expect(describeClaudeCodeFailure('version 2.1.280 or newer is required', undefined, '/opt/old/claude')).toContain(
+    '(ran /opt/old/claude)'
+  )
 })
 
 test("Anthropic's out-of-extra-usage refusal is exhausted plan credit, not a stop", () => {

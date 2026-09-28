@@ -106,6 +106,8 @@ class Bridge {
    */
   private pendingResults = 0
   closed = false
+  /** The `claude` this session runs, named in failures the user must fix. */
+  readonly executable: string | undefined
   private readonly waiting = new Map<string, (result: CallToolResult) => void>()
   private readonly ready = new Map<string, CallToolResult>()
   private idleTimer: ReturnType<typeof setTimeout> | undefined
@@ -118,6 +120,7 @@ class Bridge {
     runQuery: QueryFn,
     private readonly onSession: (bridge: Bridge) => void
   ) {
+    this.executable = options.pathToClaudeCodeExecutable
     this.query = runQuery({
       prompt: this.input,
       options: { ...options, mcpServers: { [TOOL_SERVER]: this.toolServer(tools) } },
@@ -254,7 +257,10 @@ class Bridge {
         .join('')
         .trim()
       const turn = this.turn
-      turn.fail('error', describeClaudeCodeFailure(text || `Claude Code error: ${message.error}`, message.error))
+      turn.fail(
+        'error',
+        describeClaudeCodeFailure(text || `Claude Code error: ${message.error}`, message.error, this.executable)
+      )
       this.completed(turn)
       return
     }
@@ -273,7 +279,11 @@ class Bridge {
             : (message.errors?.join('\n') ?? `Claude Code stopped: ${message.subtype}`)
         turn.fail(
           aborted ? 'aborted' : 'error',
-          describeClaudeCodeFailure(detail || 'Claude Code ended the turn without a response')
+          describeClaudeCodeFailure(
+            detail || 'Claude Code ended the turn without a response',
+            undefined,
+            this.executable
+          )
         )
         this.completed(turn)
       }
