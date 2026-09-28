@@ -4,6 +4,7 @@ import { agentLabel } from './agentLabels'
 import type { FarmLayout, RobotPlacement } from './types'
 import type { Selection } from './selection'
 import { CloseIcon } from '../icons'
+import { useStacking } from './stacking'
 
 /**
  * The whole farm as a plain list: a quick overview, and a straightforward way
@@ -19,6 +20,7 @@ export function FarmList({
   onClose: () => void
 }) {
   const ref = useRef<HTMLElement>(null)
+  const stack = useStacking('list')
   useEffect(() => {
     ref.current?.focus({ preventScroll: true })
   }, [])
@@ -37,6 +39,9 @@ export function FarmList({
       ref={ref}
       tabIndex={-1}
       className="g-card g-farm-list"
+      style={{ zIndex: stack.zIndex }}
+      onPointerDownCapture={stack.onPointerDownCapture}
+      onFocusCapture={stack.onFocusCapture}
       aria-label="Farm list"
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
     >

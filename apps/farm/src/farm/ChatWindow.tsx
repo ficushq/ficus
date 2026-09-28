@@ -1,5 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { ChatWindowState, Rect } from './chatWindowState'
+import { useStacking } from './stacking'
 
 /**
  * A floating frame around one conversation. Drag by the chat's title bar,
@@ -19,6 +20,8 @@ export function ChatWindow({
   onCommit: () => void
   children: ReactNode
 }) {
+  // In the farm's one stacking order; raised again whenever something brings it forward (its z bumps).
+  const stack = useStacking(`chat:${win.key}`, win.z)
   const gesture = useRef<{ kind: 'move' | 'resize'; x: number; y: number; start: Rect } | null>(null)
 
   const begin = (kind: 'move' | 'resize', e: ReactPointerEvent<HTMLElement>) => {
@@ -56,12 +59,16 @@ export function ChatWindow({
   return (
     <div
       className="g-chat-window"
-      style={{ left: win.x, top: win.y, width: win.w, height: win.h, zIndex: 40 + win.z }}
+      style={{ left: win.x, top: win.y, width: win.w, height: win.h, zIndex: stack.zIndex }}
+      onPointerDownCapture={stack.onPointerDownCapture}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
-      onFocusCapture={onFocus}
+      onFocusCapture={() => {
+        stack.onFocusCapture()
+        onFocus()
+      }}
     >
       {children}
       <div

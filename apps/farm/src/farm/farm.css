@@ -688,11 +688,6 @@
   opacity: 0.55;
 }
 
-/* The pop-up card floats above chat windows: it's about what you just clicked. */
-.g-farm-card {
-  z-index: 1000;
-}
-
 /* Phones: the frontmost chat is a full sheet, with chips to switch between open chats. */
 .g-chat-tabs {
   position: fixed;

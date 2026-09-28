@@ -15,6 +15,7 @@ import {
   type FarmPiercing,
 } from '@ficus/shared'
 import { useDialogFocus } from '../hooks/useDialogFocus'
+import { useStacking } from '../farm/stacking'
 import { CloseIcon } from '../icons'
 import { SKINS, useSkin, type SkinId } from '../skins'
 import { useMultiplayer } from './MultiplayerProvider'
@@ -355,6 +356,7 @@ export function LookBuilder({ onClose, narrow }: { onClose: () => void; narrow: 
   const [draft, setDraft] = useState<FarmLook>(myLook)
   const titleId = useId()
   const panel = useRef<HTMLElement>(null)
+  const stack = useStacking('look')
   // A side panel, not a modal: focus moves in on opening and back on closing, but isn't held.
   useDialogFocus(panel)
   const save = () => {
@@ -366,6 +368,9 @@ export function LookBuilder({ onClose, narrow }: { onClose: () => void; narrow: 
     <section
       ref={panel}
       className={clsx('g-card g-look', narrow && 'g-look-sheet')}
+      style={{ zIndex: stack.zIndex }}
+      onPointerDownCapture={stack.onPointerDownCapture}
+      onFocusCapture={stack.onFocusCapture}
       aria-labelledby={titleId}
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
     >

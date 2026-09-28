@@ -15,6 +15,7 @@ import { SeedShedCard } from './cards/SeedShedCard'
 import { MailboxCard } from './cards/MailboxCard'
 import { PersonCard } from './cards/PersonCard'
 import { webAppUrl } from '../api/base'
+import { useStacking } from './stacking'
 import { CloseIcon } from '../icons'
 
 /** World point a card for this selection points at, or null if it's no longer on the farm. */
@@ -81,6 +82,8 @@ interface FarmCardProps {
  * screens it becomes a bottom sheet.
  */
 export function FarmCard({ selection, screen, viewport, onClose, dock }: FarmCardProps) {
+  // It comes to the front whenever it shows something new, or you use it.
+  const stack = useStacking('card', selection)
   const ref = useRef<HTMLElement>(null)
   useEffect(() => {
     ref.current?.focus({ preventScroll: true })
@@ -107,7 +110,9 @@ export function FarmCard({ selection, screen, viewport, onClose, dock }: FarmCar
         'g-card g-farm-card',
         narrow ? 'g-sheet' : dock ? 'g-docked' : right ? 'g-point-left' : 'g-point-right'
       )}
-      style={style}
+      style={{ ...style, zIndex: stack.zIndex }}
+      onPointerDownCapture={stack.onPointerDownCapture}
+      onFocusCapture={stack.onFocusCapture}
       aria-label="Details"
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
     >
