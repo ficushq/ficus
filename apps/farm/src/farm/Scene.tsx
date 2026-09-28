@@ -241,7 +241,19 @@ function buildDrawables(
     })
     // The consulting stand: one sprite whatever the count; its card lists the squad's consultant chats.
     const chats = yard.stand.ids?.length ?? 0
+    const asking = yard.stand.asking?.length ?? 0
     const [sx2, sy2] = iso(yard.stand.i, yard.stand.j)
+    // A consultant here is asking you something: a "?" over the stand's left side (its count bubble is on the right).
+    if (asking)
+      badges.push(
+        <g
+          key={`stand:${squad.id}:badge`}
+          transform={`translate(${sx2 - skin.boxes.stand[2] / 4} ${sy2 + skin.boxes.stand[1] + 12})`}
+          aria-hidden="true"
+        >
+          <skin.Badge kind="question" />
+        </g>
+      )
     items.push({
       key: `stand:${squad.id}`,
       depth: depth(yard.stand.i, yard.stand.j),
@@ -251,7 +263,7 @@ function buildDrawables(
           key={`stand:${squad.id}`}
           x={sx2}
           y={sy2}
-          label={`Consulting stand, ${chats ? `${chats} consultant chat${chats === 1 ? '' : 's'}` : 'no consultant chats yet'}`}
+          label={`Consulting stand, ${chats ? `${chats} consultant chat${chats === 1 ? '' : 's'}` : 'no consultant chats yet'}${asking ? `, ${asking} asking you something` : ''}`}
           selected={selected === `stand:${squad.id}`}
           box={skin.boxes.stand}
           onActivate={() => onSelect({ kind: 'stand', squadId: squad.id })}

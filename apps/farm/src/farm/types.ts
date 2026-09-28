@@ -58,6 +58,8 @@ export interface CrowdSpot {
   overflow: number
   /** Everyone at this spot, drawn or not (the charging hut lists them). */
   ids?: string[]
+  /** Those of them with a question open for you (the consulting stand wears a "?"). */
+  asking?: string[]
 }
 
 export interface YardLayout {

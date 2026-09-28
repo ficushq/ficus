@@ -383,6 +383,30 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.stand.robots[0]!.agent.status).not.toBe('dormant')
     expect(yard!.stand.overflow).toBe(3)
   })
+
+  it('knows which consultants at the stand are asking you something, and puts them first', () => {
+    const consultant = (id: string, status: Agent['status']) =>
+      makeAgent({
+        id,
+        squadId: 'sq',
+        agentTypeId: 'consultant',
+        status,
+        context: { scope: { type: 'consultant', id: 'sq' }, origin: 'user' },
+      })
+    const question = { ...makeAgentError('c-asks'), id: 'q', type: 'agent-question' as const }
+    const agents = [
+      boss,
+      consultant('c-idle', 'idle'),
+      consultant('c-asks', 'active'),
+      consultant('c-waits', 'waiting-input'),
+    ]
+    const [yard] = layoutFarm(farm({ squads: [squad], agents, pendingActions: [question] })).yards
+    expect([...yard!.stand.asking!].sort()).toEqual(['c-asks', 'c-waits'])
+    expect(yard!.stand.ids!.slice(0, 2).sort()).toEqual(['c-asks', 'c-waits'])
+    expect(
+      layoutFarm(farm({ squads: [squad], agents: [boss, consultant('c-idle', 'idle')] })).yards[0]!.stand.asking
+    ).toEqual([])
+  })
 })
 
 describe('who is drawn', () => {

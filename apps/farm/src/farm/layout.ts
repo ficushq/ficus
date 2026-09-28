@@ -321,14 +321,11 @@ export function layoutFarm(input: FarmInput): FarmLayout {
     // squad (not channel or Assistant-task consultants), waiting-on-you first, then most recently active.
     const standAt = { i: i0 - 1.25, j: j0 + h - 0.8 }
     const lastActive = (agent: Agent) => Math.max(toMs(agent.updatedAt), toMs(agent.lastMessageAt))
+    const asksYou = (agent: Agent) =>
+      !halted.has(agent.id) && (agent.status === 'waiting-input' || askingIds.has(agent.id))
     const consultants = members
       .filter((agent) => agent.id !== managerId && agent.status !== 'terminated' && isUserStartedConsultant(agent))
-      .sort(
-        (a, b) =>
-          Number(b.status === 'waiting-input') - Number(a.status === 'waiting-input') ||
-          lastActive(b) - lastActive(a) ||
-          byId(a, b)
-      )
+      .sort((a, b) => Number(asksYou(b)) - Number(asksYou(a)) || lastActive(b) - lastActive(a) || byId(a, b))
     // One awake consultant stands behind the counter; the stand's card lists them all.
     const host = consultants.find((agent) => !isAsleep(agent))
     const stand: CrowdSpot = {
@@ -336,6 +333,7 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       robots: host ? [place(host, 'consultant', standAt.i, standAt.j)] : [],
       overflow: Math.max(0, consultants.length - (host ? 1 : 0)),
       ids: consultants.map((agent) => agent.id),
+      asking: consultants.filter(asksYou).map((agent) => agent.id),
     }
     for (const robot of [...dock.robots, ...stand.robots]) drawn.add(robot.agent.id)
 

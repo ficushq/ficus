@@ -31,6 +31,7 @@ export function StandCard({ squadId }: { squadId: string }) {
             halted={env.halted}
             onOpenAgent={(id) => env.select({ kind: 'robot', agentId: id })}
             onTalk={env.openChat}
+            notes={Object.fromEntries((yard.stand.asking ?? []).map((id) => [id, 'Has a question for you']))}
           />
         </>
       )}
