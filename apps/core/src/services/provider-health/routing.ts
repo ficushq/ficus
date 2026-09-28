@@ -1,3 +1,4 @@
+import { isAccountUsable } from '../agent/account-usable'
 import {
   routeDecision,
   type ProviderHealthRecord,
@@ -20,7 +21,7 @@ export function providerRouteDecision(
       ? accounts.map((account) => ({
           provider,
           accountId: account.id,
-          credentialUsable: account.enabled && account.credential != null,
+          credentialUsable: isAccountUsable(account),
         }))
       : [{ provider, credentialUsable: runtimeAuthConfigured }]
   return aggregateRouteDecision(routes, records, now)
@@ -40,7 +41,7 @@ export function providerSwitchBackEligible(
       ? accounts.map((account) => ({
           provider,
           accountId: account.id,
-          credentialUsable: account.enabled && account.credential != null,
+          credentialUsable: isAccountUsable(account),
         }))
       : [{ provider, credentialUsable: runtimeAuthConfigured }]
   return routeSwitchBackEligible(routes, records, windowMs, now)

@@ -304,6 +304,7 @@ export const queryKeys = {
     catalog: () => [...queryKeys.providerAuth.all, 'catalog'] as const,
     openRouterRouting: () => [...queryKeys.providerAuth.all, 'openRouterRouting'] as const,
     oauthProviders: () => [...queryKeys.providerAuth.all, 'oauthProviders'] as const,
+    claudeCode: () => [...queryKeys.providerAuth.all, 'claudeCode'] as const,
     oauthStatus: (provider: string) => [...queryKeys.providerAuth.all, 'oauthStatus', provider] as const,
     accounts: (provider: string) => [...queryKeys.providerAuth.all, 'accounts', provider] as const,
   },

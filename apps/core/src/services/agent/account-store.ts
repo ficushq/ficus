@@ -9,7 +9,7 @@ export interface Account {
   enabled: boolean
   credential: Credential
   lastUsedAt?: number
-  kind?: 'openai-compatible'
+  kind?: 'openai-compatible' | 'claude-code'
   providerId?: string
   baseUrl?: string
   model?: string

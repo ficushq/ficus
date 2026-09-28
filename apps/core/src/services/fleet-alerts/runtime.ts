@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import { isAccountUsable } from '../agent/account-usable'
 import type { ProviderRoute } from '@ficus/shared/provider-health'
 import { createLogger } from '../../lib/infra/logger'
 import { parseModelSpec, splitModelPriorityList } from '../../lib/utils/model-spec'
@@ -41,9 +42,7 @@ export function buildProviderChains(
   return chainSpecs.map((chain) =>
     splitModelPriorityList(chain).flatMap((candidate) => {
       const provider = parseModelSpec(candidate).provider
-      const accounts = listAccounts(accountStore, provider).filter(
-        (account) => account.enabled && account.credential != null
-      )
+      const accounts = listAccounts(accountStore, provider).filter(isAccountUsable)
       if (accounts.length > 0) {
         return accounts.map((account) => ({ provider, accountId: account.id, credentialUsable: true }))
       }

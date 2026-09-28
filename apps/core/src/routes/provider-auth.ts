@@ -14,6 +14,7 @@
  * but this API exposes a per-provider interface.
  */
 import { Hono } from 'hono'
+import { isAccountUsable } from '../services/agent/account-usable'
 import { asc } from 'drizzle-orm'
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import {
@@ -28,6 +29,12 @@ import { providerLabel, resolveProviderHealthRecord, type ProviderHealthKind } f
 import { db, modelTiers } from '../db'
 import { detectLocalServers, probeOpenAICompatible } from '../services/model-selection/openai-compatible'
 import { getModelRuntime, refreshModelRuntime, tryGetModelRuntime } from '../services/agent/auth-backend'
+import {
+  claudeCodeOffered,
+  getClaudeCodeStatus,
+  type ClaudeCodeStatus,
+} from '../services/agent/claude-code/availability'
+import { setClaudeCodeAccountEnabled } from '../services/agent/claude-code/account'
 import {
   addAccount,
   deleteAccount,
@@ -103,10 +110,7 @@ async function createOAuthLoginRuntime(source: ModelRuntime): Promise<ModelRunti
  */
 export function isProviderConfigured(provider: string): boolean {
   const accounts = listAccounts(readAccountStore(), provider)
-  return (
-    accounts.some((account) => account.enabled && account.credential != null) ||
-    (tryGetModelRuntime()?.hasConfiguredAuth(provider) ?? false)
-  )
+  return accounts.some(isAccountUsable) || (tryGetModelRuntime()?.hasConfiguredAuth(provider) ?? false)
 }
 
 export function accountSummary(provider: string, account: Account) {
@@ -345,6 +349,41 @@ app.put('/openrouter/routing', requirePermission('provider-auth:write'), async (
 })
 
 /** List available OAuth providers */
+/**
+ * The user's own Claude Code (`claude`) for agents: offered wherever Core runs on the user's machine
+ * (not Ficus Cloud) as an account of the Anthropic provider, off until the owner turns it on.
+ * Status only — Claude Code keeps its own sign-in; Ficus never sees it.
+ */
+function claudeCodeStatusJson(status: ClaudeCodeStatus) {
+  return {
+    offered: status.offered,
+    enabled: status.enabled,
+    installed: Boolean(status.executable),
+    loggedIn: status.loggedIn,
+    ...(status.version ? { version: status.version } : {}),
+    ...(status.authMethod ? { authMethod: status.authMethod } : {}),
+    ...(status.subscriptionType ? { subscriptionType: status.subscriptionType } : {}),
+    ...(status.reason ? { reason: status.reason } : {}),
+  }
+}
+
+app.get('/claude-code/status', requirePermission('provider-auth:read'), async (c) => {
+  const refresh = c.req.query('refresh') === '1'
+  const status = await getClaudeCodeStatus({ refresh })
+  if (refresh) await refreshModelRuntime()
+  return c.json(claudeCodeStatusJson(status))
+})
+
+app.put('/claude-code/enabled', requirePermission('provider-auth:write'), async (c) => {
+  const body = await parseOptionalJsonObjectBody<{ enabled?: unknown }>(c, {})
+  if (typeof body.enabled !== 'boolean') return c.json({ error: 'Missing boolean "enabled" in request body' }, 400)
+  if (!claudeCodeOffered()) return c.json({ error: 'Claude Code is not available on Ficus Cloud' }, 409)
+  await setClaudeCodeAccountEnabled(body.enabled, auditActor(c.get('identity') as Identity))
+  const status = await getClaudeCodeStatus({ refresh: true })
+  await refreshModelRuntime()
+  return c.json(claudeCodeStatusJson(status))
+})
+
 app.get('/oauth/providers', requirePermission('provider-auth:read'), async (c) => {
   const runtime = await getModelRuntime()
   const oauthProviders = runtime.getProviders().filter((p) => p.auth.oauth)

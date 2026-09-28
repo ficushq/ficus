@@ -14,7 +14,7 @@ export interface ProviderAccountEntry {
   /** Human summary of the health record backing `healthReason`. */
   healthMessage?: string
   lastUsedAt?: number
-  kind?: 'openai-compatible'
+  kind?: 'openai-compatible' | 'claude-code'
   providerId?: string
   baseUrl?: string
   model?: string
@@ -170,6 +170,31 @@ export async function resetProviderHealth(provider: string, accountId?: string):
     ? `/provider-auth/${provider}/accounts/${accountId}/health/reset`
     : `/provider-auth/${provider}/health/reset`
   return apiFetch<ProviderAuthEntry>(path, { method: 'POST' })
+}
+
+/** The user's own Claude Code sign-in for agents (not on Ficus Cloud). Status only, never a credential. */
+export interface ClaudeCodeStatus {
+  /** Core runs on the user's machine, so Claude Code can be offered at all. */
+  offered: boolean
+  /** The owner turned it on for agents. */
+  enabled: boolean
+  installed: boolean
+  loggedIn: boolean
+  version?: string
+  authMethod?: string
+  subscriptionType?: string
+  reason?: string
+}
+
+export async function getClaudeCodeStatus(refresh = false): Promise<ClaudeCodeStatus> {
+  return apiFetch<ClaudeCodeStatus>(`/provider-auth/claude-code/status${refresh ? '?refresh=1' : ''}`)
+}
+
+export async function setClaudeCodeEnabled(enabled: boolean): Promise<ClaudeCodeStatus> {
+  return apiFetch<ClaudeCodeStatus>('/provider-auth/claude-code/enabled', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  })
 }
 
 export async function listOAuthProviders(): Promise<OAuthProvider[]> {

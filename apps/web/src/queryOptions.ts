@@ -72,6 +72,7 @@ import {
   listProviderAccounts,
   listProviderAuth,
   listOAuthProviders,
+  getClaudeCodeStatus,
   listProviderCatalog,
 } from './api/providerAuth'
 import { listChannelInstances } from './api/channelInstances'
@@ -838,6 +839,11 @@ export const queries = {
         queryKey: queryKeys.providerAuth.catalog(),
         queryFn: () => listProviderCatalog(),
         staleTime: Infinity,
+      }),
+    claudeCode: () =>
+      queryOptions({
+        queryKey: queryKeys.providerAuth.claudeCode(),
+        queryFn: () => getClaudeCodeStatus(),
       }),
     oauthProviders: () =>
       queryOptions({

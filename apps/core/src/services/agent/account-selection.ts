@@ -1,4 +1,5 @@
 import type { Account, AccountStoreV1 } from './account-store'
+import { isAccountUsable } from './account-usable'
 
 export interface AccountSelectionDeps {
   isAccountHealthy: (provider: string, accountId: string) => boolean
@@ -16,7 +17,7 @@ export interface AccountSelectionDeps {
  */
 export function selectAccount(provider: string, store: AccountStoreV1, deps: AccountSelectionDeps): Account | null {
   const accounts = store.accounts[provider] ?? []
-  return accounts.find((account) => account.enabled && deps.isAccountHealthy(provider, account.id)) ?? null
+  return accounts.find((account) => isAccountUsable(account) && deps.isAccountHealthy(provider, account.id)) ?? null
 }
 
 export function hasUsableAccount(provider: string, store: AccountStoreV1, deps: AccountSelectionDeps): boolean {

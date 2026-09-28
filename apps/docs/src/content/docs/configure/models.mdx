@@ -30,6 +30,21 @@ Use **Add account** to connect a different account. Reauthorizing an existing ac
 
 Viewing provider settings requires `provider-auth:read`; changing provider accounts requires `provider-auth:write`. Connecting an AI provider does not also connect GitHub or other work integrations.
 
+<ModeContent mode="self-hosted">
+
+### Use your own Claude Code
+
+When Ficus runs on your own computer, agents can use Claude through [Claude Code](https://code.claude.com/docs/en/setup) on your own Claude plan:
+
+1. Install Claude Code and sign in with its own login in a terminal: `claude auth login`.
+2. In **Settings → AI Providers**, open **Claude Code** and choose **Turn on**.
+
+Claude Code becomes the first Anthropic account, so Claude models use your plan before any Anthropic API key. Reorder, disable or delete it under Anthropic like any account. When Claude Code is signed out or your plan reaches its limit, agents fall back to the next Anthropic account.
+
+Ficus runs Claude Code and only reads whether it is signed in; it never sees or stores your Claude sign-in. Requests count against your plan's usage limits, and Anthropic may bill some to extra usage. Use it for your own agents only. Claude Code is not available on Ficus Cloud.
+
+</ModeContent>
+
 ## Enable the live Assistant
 
 Live Assistant sessions use **OpenAI API services**, a separate connection from agent model accounts. Signing in to a ChatGPT subscription under AI Providers does not configure that service.
