@@ -50,7 +50,9 @@
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
   overflow: auto;
-  padding: 2px;
+  /* Room inside the scroller for the focus ring, which draws outside a card. */
+  margin: -6px;
+  padding: 6px;
 }
 
 .g-welcome-style {
@@ -73,8 +75,9 @@
 
 .g-welcome-style-on,
 .g-welcome-style-on:hover {
-  outline: 3px solid var(--g-accent);
-  outline-offset: 1px;
+  /* Inside the card's own edge, so the scroller never clips it. */
+  border-color: var(--g-accent);
+  box-shadow: inset 0 0 0 2px var(--g-accent);
 }
 
 .g-welcome-style:focus-visible {
