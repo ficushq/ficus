@@ -836,6 +836,7 @@ jobs:
           src/services/secrets/store-hermetic.test.ts
           src/boot/legacy-env.test.ts
           src/system-token-control.test.ts
+          src/scripts/update-offline-bootstrap.test.ts
         working-directory: apps/core
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
