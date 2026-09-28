@@ -155,6 +155,12 @@ for a in "\$@"; do
     done <"${CTL}/healthy"
     exit 7
   fi
+  # setup-host.sh's seed and report phases: an instance that already has an
+  # admin (a re-run on an existing host), so neither seeds anything.
+  if [[ \${a} == */api/auth/status ]]; then
+    printf '{"mode":"password","hasAdminUser":true,"emailConfigured":false}'
+    exit 0
+  fi
 done
 exec ${REAL_CURL} "\$@"
 SHIMEOF
@@ -682,6 +688,38 @@ run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
 expect_eq 'apply-artifacts --config, journaled rename on a TAU release: reconciled (restored), then applied' \
   "${RC}:$(pending):$(grep -c '^TAU_ENCRYPTION_KEY=' "${DEST}/.env")" '0:none:1' # legacy-env
 
+# P6 B2: managed.env always goes in in the prefix the host uses.
+# A TAU_ render on a TAU host: byte for byte (what the control plane relies on).
+printf '# managed\nTAU_MANAGED=1\nTAU_MANAGED_SECRET_KEYS=TAU_PLATFORM_INSTANCE_TOKEN\nTAU_PLATFORM_INSTANCE_TOKEN=tok-2\n' >"${H}/stage/managed.env" # legacy-env
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'apply-artifacts --config, a TAU_ render on a TAU host: installed byte for byte' \
+  "${RC}:$(cmp -s "${H}/stage/managed.env" "${H}/etc/managed.env" && echo same)" '0:same'
+# The same host, renamed by an upgrade onto the Ficus release.
+printf '%s-*\n' "${SHA_NEW}" >>"${CTL}/healthy"
+upgrade "${SCRATCH}/ficus.artifact.env"
+expect_eq 'apply fixture: the host is renamed and on the Ficus release' "${RC}:$(tau_names)" '0:0'
+# The same TAU_ render again: the upgrade already renamed what it installed,
+# so the renamed staged copy is no change (compared in the host's prefix).
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_match 'apply-artifacts --config, the TAU_ render the upgrade already renamed: no change' "${OUT}" '(^|'$'\n'')FICUS_MANAGED_ENV_CHANGED=0'
+# A new TAU_ render (a rotated token) on the FICUS host.
+printf '# managed\nTAU_MANAGED=1\nTAU_MANAGED_SECRET_KEYS=TAU_PLATFORM_INSTANCE_TOKEN\nTAU_PLATFORM_INSTANCE_TOKEN=tok-3\n' >"${H}/stage/managed.env" # legacy-env
+cp -p "${H}/stage/managed.env" "${H}/stage.managed.before"
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'apply-artifacts --config, a staged TAU_ render on a FICUS host: applies (exit 0)' "${RC}" '0'
+expect_eq 'apply-artifacts --config, a staged TAU_ render on a FICUS host: installed with FICUS_ names' \
+  "$(cat "${H}/etc/managed.env")" $'# managed\nFICUS_MANAGED=1\nFICUS_MANAGED_SECRET_KEYS=FICUS_PLATFORM_INSTANCE_TOKEN\nFICUS_PLATFORM_INSTANCE_TOKEN=tok-3'
+expect_eq 'apply-artifacts --config, a staged TAU_ render on a FICUS host: the staged copy is untouched' \
+  "$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.before" && echo same)" 'same'
+expect_match 'apply-artifacts --config, a staged TAU_ render on a FICUS host: the new value is a change' "${OUT}" '(^|'$'\n'')FICUS_MANAGED_ENV_CHANGED=1'
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_match 'apply-artifacts --config, the same TAU_ render again: no change (compared renamed)' "${OUT}" '(^|'$'\n'')FICUS_MANAGED_ENV_CHANGED=0'
+# A FICUS_ render on a FICUS host: byte for byte.
+printf '# managed\nFICUS_MANAGED=1\nFICUS_PLATFORM_INSTANCE_TOKEN="tok 3"\n' >"${H}/stage/managed.env"
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'apply-artifacts --config, a FICUS_ render on a FICUS host: installed byte for byte' \
+  "${RC}:$(cmp -s "${H}/stage/managed.env" "${H}/etc/managed.env" && echo same)" '0:same'
+
 # ================================ 9. setup-host.sh: Ficus releases only (N-I8)
 # setup-host.sh really preflights (Linux + systemd + Ubuntu 24.04, packages,
 # bun, the managed runtime) before it reaches its source phase; that needs a
@@ -732,6 +770,51 @@ if [[ -d /run/systemd/system ]] && grep -q '^ID=ubuntu' /etc/os-release && grep 
   expect_eq 'setup-host.sh restore: the rendered .env holds the ARCHIVED (TAU_) key' \
     "$(grep -c '^FICUS_ENCRYPTION_KEY=archived-key-42$' "${DEST}/.env" 2>/dev/null || true)" '1'
   expect_eq 'setup-host.sh restore: and no TAU_ name' "$(grep -c '^TAU_' "${DEST}/.env" 2>/dev/null || true)" '0'
+
+  # P6 B1 + B2: setup-host.sh RE-RUN on a host that predates the rename, with
+  # its own pre-rename config (TAU_ core.env keys) and the staging dir the
+  # pre-rename control plane pushed (a TAU_ managed.env). The rename runs
+  # before phase_env; nothing after it may write a TAU_ name back.
+  setup_rerun_host() { # NAME
+    new_host "$1"
+    printf 'TAU_INTERNAL_EVENT_TOKEN=evt-1\n' >>"${DEST}/.env" # legacy-env
+    cp -p "${H}/etc/managed.env" "${H}/stage/managed.env"
+    STAGE="${H}/stage" yq -i '.source.repo = "https://example.invalid/core.git" | .artifacts.dir = strenv(STAGE) | .core.env.TAU_MAX_MACHINES = "5"' "${CONFIG}" # legacy-env
+    snapshot "${H}/pristine"
+    cp -p "${H}/stage/managed.env" "${H}/stage.managed.pristine"
+  }
+  setup_rerun_host setup-rerun
+  printf '%s-*\n' "${SHA_NEW}" >>"${CTL}/healthy"
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  expect_eq 'setup-host.sh re-run on a TAU host: exits 0' "${RC}" '0'
+  [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+  expect_eq 'setup-host.sh re-run on a TAU host: no TAU_ name in .env (B1)' "$(grep -cE '^(export )?TAU_' "${DEST}/.env" || true)" '0'
+  expect_eq 'setup-host.sh re-run on a TAU host: the yaml core.env keys are rendered FICUS_ (B1)' \
+    "$(grep -c '^FICUS_MAX_MACHINES=5$' "${DEST}/.env"):$(grep -c '^FICUS_PLATFORM_INGEST_URL=https://ingest.ficus.sh$' "${DEST}/.env"):$(grep -c '^FICUS_PLATFORM_USAGE_TOKEN=usage-token$' "${DEST}/.env")" '1:1:1'
+  expect_eq 'setup-host.sh re-run on a TAU host: encryption key, event token and password unchanged' \
+    "$(grep -c '^FICUS_ENCRYPTION_KEY=enc-key-1$' "${DEST}/.env"):$(grep -c '^FICUS_INTERNAL_EVENT_TOKEN=evt-1$' "${DEST}/.env"):$(grep -c '^FICUS_PASSWORD=pw-1$' "${DEST}/.env")" '1:1:1'
+  expect_eq 'setup-host.sh re-run on a TAU host: the staged TAU_ managed.env is installed renamed (B2)' \
+    "$(cat "${H}/etc/managed.env")" $'FICUS_MANAGED=1\nFICUS_MANAGED_SECRET_KEYS=FICUS_PLATFORM_INSTANCE_TOKEN\nFICUS_PLATFORM_INSTANCE_TOKEN=tok'
+  expect_eq 'setup-host.sh re-run on a TAU host: the staged copy itself is untouched' \
+    "$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.pristine" && echo same)" 'same'
+  expect_eq 'setup-host.sh re-run on a TAU host: no TAU_ name in any env-bearing file' "$(tau_names)" '0'
+  expect_eq 'setup-host.sh re-run on a TAU host: one set, no journal' "$(sets):$(pending)" '1:none'
+  rerun_set=$(find "${H}/bk" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  expect_eq 'setup-host.sh re-run on a TAU host: the set holds the pre-rename bytes (.env, managed.env)' \
+    "$(cmp -s "${rerun_set}/1" "${H}/pristine/dest/.env" && echo same):$(cmp -s "${rerun_set}/2" "${H}/pristine/etc/managed.env" && echo same)" 'same:same'
+  expect_match 'setup-host.sh re-run on a TAU host: current is the new release' "$(readlink "${DEST}/current")" "${SHA_NEW}-"
+  assert_converged 'setup-host.sh re-run on a TAU host'
+
+  # The same re-run with an unhealthy new release: rolled back, and every
+  # env-bearing file — managed.env included — restored byte for byte.
+  setup_rerun_host setup-rerun-rollback
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  expect_eq 'setup-host.sh re-run, unhealthy new release: fails and rolls back' \
+    "$([[ ${RC} -ne 0 ]] && echo failed):$(readlink "${DEST}/current")" "failed:${OLD_REL}"
+  expect_eq 'setup-host.sh re-run, unhealthy new release: every env-bearing file is restored byte for byte' "$(same_as "${H}/pristine")" 'same'
+  expect_eq 'setup-host.sh re-run, unhealthy new release: no journal, the staged copy untouched' \
+    "$(pending):$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.pristine" && echo same)" 'none:same'
+  assert_converged 'setup-host.sh re-run, unhealthy new release'
 else
   printf 'SKIP: the setup-host.sh cases need a systemd Ubuntu 24.04 host (/run/systemd/system)\n' >&2
   FAIL=$((FAIL + 1))

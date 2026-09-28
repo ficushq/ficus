@@ -176,26 +176,35 @@ BUN_BIN=/usr/local/bin/bun
 # resolution — see cfg_env_pairs in lib.sh) happens once here so a bad
 # core.env fails fast, before any host mutation, in BOTH dry-run and real
 # execution.
-CORE_ENV_PAIRS=$(cfg_env_pairs '.core.env' real)
-while IFS='=' read -r core_env_key _; do
-  [[ -z ${core_env_key} ]] && continue
-  case "${core_env_key}" in
-    # Both spellings of every built-in (Ficus rename): the TAU_ one would reach
-    # the core through its one-release fallback and override the built-in.
-    APP_URL | DATABASE_URL | FICUS_WEB_ORIGIN | FICUS_ENCRYPTION_KEY | FICUS_PASSWORD | FICUS_INTERNAL_EVENT_TOKEN | \
-      TAU_WEB_ORIGIN | TAU_ENCRYPTION_KEY | TAU_PASSWORD | TAU_INTERNAL_EVENT_TOKEN) # legacy-env
-      die "config: core.env may not set '${core_env_key}' — it is a built-in derived from core.origin/database/secrets, not a passthrough knob" ;;
-    # FICUS_ROOT is owned by the systemd units (Environment=FICUS_ROOT=<run root>)
-    # and decides which tree core reads its config, migrations and web dist
-    # from. systemd applies EnvironmentFile= AFTER Environment=, so a FICUS_ROOT
-    # in <dest>/.env WINS over the unit's — on an artifact box that means the
-    # services silently run one release's code against another tree's files,
-    # with no error anywhere. Refuse it at render time, where it is a one-line
-    # config fix instead of a mystery.
-    FICUS_ROOT | TAU_ROOT)
-      die "config: core.env may not set '${core_env_key}' — it is unit-managed (Environment=FICUS_ROOT in tau-api/tau-worker, pointing at the active release) and a value in .env would override the unit and detach the running code from its own tree" ;;
-  esac
-done <<<"${CORE_ENV_PAIRS}"
+#
+# Re-run after the Ficus env rename (below, right before phase_env): the rename
+# rewrites this yaml's .core.env TAU_* keys to FICUS_*, and CORE_ENV_PAIRS read
+# at config load still carries the old names — rendering those into the fresh
+# .env would undo the rename there (P6 B1).
+load_core_env_pairs() {
+  local core_env_key
+  CORE_ENV_PAIRS=$(cfg_env_pairs '.core.env' real)
+  while IFS='=' read -r core_env_key _; do
+    [[ -z ${core_env_key} ]] && continue
+    case "${core_env_key}" in
+      # Both spellings of every built-in (Ficus rename): the TAU_ one would reach
+      # the core through its one-release fallback and override the built-in.
+      APP_URL | DATABASE_URL | FICUS_WEB_ORIGIN | FICUS_ENCRYPTION_KEY | FICUS_PASSWORD | FICUS_INTERNAL_EVENT_TOKEN | \
+        TAU_WEB_ORIGIN | TAU_ENCRYPTION_KEY | TAU_PASSWORD | TAU_INTERNAL_EVENT_TOKEN) # legacy-env
+        die "config: core.env may not set '${core_env_key}' — it is a built-in derived from core.origin/database/secrets, not a passthrough knob" ;;
+      # FICUS_ROOT is owned by the systemd units (Environment=FICUS_ROOT=<run root>)
+      # and decides which tree core reads its config, migrations and web dist
+      # from. systemd applies EnvironmentFile= AFTER Environment=, so a FICUS_ROOT
+      # in <dest>/.env WINS over the unit's — on an artifact box that means the
+      # services silently run one release's code against another tree's files,
+      # with no error anywhere. Refuse it at render time, where it is a one-line
+      # config fix instead of a mystery.
+      FICUS_ROOT | TAU_ROOT)
+        die "config: core.env may not set '${core_env_key}' — it is unit-managed (Environment=FICUS_ROOT in tau-api/tau-worker, pointing at the active release) and a value in .env would override the unit and detach the running code from its own tree" ;;
+    esac
+  done <<<"${CORE_ENV_PAIRS}"
+}
+load_core_env_pairs
 
 # Optional caddy ingress (TLS-terminating vhost in front of core.origin) — off
 # by default; the cloud control plane renders tenant configs with
@@ -1272,7 +1281,11 @@ phase_env() {
 # empty — the self-hosted / no-artifacts case, byte-identical to before.
 phase_artifacts() {
   phase_step artifacts "phase 5.5/8: platform-managed artifacts"
-  install_managed_env "${ARTIFACTS_DIR}"
+  # In the prefix of the release being installed (P6 B2): the staged copy may
+  # have been rendered in TAU_* names before this host was renamed, and
+  # installing it verbatim would put them back over the renamed managed.env.
+  # A staged copy already in that prefix installs byte for byte.
+  install_managed_env "${ARTIFACTS_DIR}" "${TARGET_ENV_PREFIX}"
   install_artifacts "${ARTIFACTS_DIR}"
   # Reconcile parity with the sync path (apply-artifacts.sh): a re-run on an
   # existing droplet (provision retries reuse the VM) must also DROP files for
@@ -1452,6 +1465,7 @@ require_ficus_target_release() {
     die "could not tell which env prefix ${ARTIFACT_RELEASE_DIR:-${SRC_DEST}} reads"
   [[ ${p} == FICUS ]] ||
     die "this toolkit installs Ficus releases only; use the toolkit from the release you are installing"
+  TARGET_ENV_PREFIX=${p}
   # A non-root (sudo) re-run on a host whose settings predate the rename
   # cannot rename them: refuse before any phase changes the host (Ruling 30).
   require_env_rename_privilege FICUS
@@ -1466,7 +1480,10 @@ phase_database
 # An existing host that predates the Ficus rename (a re-run of this script on
 # it) has its TAU_* settings renamed, with a journaled backup set, right
 # before phase_env renders the .env from the resolved (either-spelling) values.
-migrate_env_prefix_host FICUS "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"
+migrate_env_prefix_host "${TARGET_ENV_PREFIX}" "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"
+# The rename rewrote this config's .core.env keys: read the passthrough pairs
+# again, so phase_env renders the renamed names (P6 B1).
+load_core_env_pairs
 phase_env
 phase_migrate
 [[ -n ${ARTIFACTS_DIR} ]] && phase_artifacts

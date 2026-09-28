@@ -1210,18 +1210,60 @@ TAU_ARTIFACTS_DIR=${FICUS_ARTIFACTS_DIR}
 TAU_MANAGED_ENV_PATH=${FICUS_MANAGED_ENV_PATH}
 TAU_SYSTEMD_UNIT_DIR=${FICUS_SYSTEMD_UNIT_DIR}
 
+# What installing <stage>/managed.env puts on a host whose settings use
+# PREFIX_* (TAU or FICUS; empty or NONE = unknown, installed as staged). The
+# staged copy may name its keys in the OTHER prefix: the control plane
+# renders it for the release it believes the host runs, and a staging dir
+# pushed before the Ficus rename (setup-host.sh re-run on a pre-rename host)
+# is TAU_ while the host has just been renamed FICUS_ (P6 B2). Its keys are
+# then renamed to PREFIX_ with the env rename's own rules (_epr_rename_content:
+# *_MANAGED_SECRET_KEYS items too; a protected conflict dies naming keys only,
+# before anything is written). A copy already in PREFIX_ — or with no
+# prefixed key at all — installs BYTE FOR BYTE: the control plane relies on a
+# TAU_ render reaching a TAU_ host, and a FICUS_ one a FICUS_ host, unchanged.
+# Runs in the CURRENT shell (never inside `$(...)`, so the die is real) and
+# sets _MANAGED_ENV_SRC, and _MANAGED_ENV_RENAMED=1 with the renamed bytes in
+# _MANAGED_ENV_CONTENT when a rename applies (0 = install the staged file).
+# Returns 1 — nothing to install — when the stage has no managed.env.
+managed_env_prepare() { # STAGE_DIR [PREFIX]
+  local src="$1/managed.env" want=${2:-} from raw rc=0 LC_ALL=C
+  _MANAGED_ENV_SRC=${src} _MANAGED_ENV_RENAMED=0 _MANAGED_ENV_CONTENT='' _MANAGED_ENV_NOTE=''
+  [[ -f ${src} ]] || return 1
+  [[ -n ${want} && ${want} != NONE ]] || return 0
+  _epr_is_prefix "${want}" || die "managed_env_prepare: the prefix must be TAU or FICUS (got '${want}')"
+  from=TAU
+  [[ ${want} == TAU ]] && from=FICUS
+  read_file_exact "${src}" raw || die "managed_env_prepare: could not read ${src}"
+  _epr_rename_content "${raw}" "${from}" "${want}" || rc=$?
+  if [[ ${rc} -eq 2 ]]; then
+    die "refusing to install ${src}: $(_epr_conflict_message "${src}" "${from}" "${want}" "${_EPR_PROTECTED[@]#"${from}_"}")"
+  fi
+  [[ ${_EPR_RESULT} != "${raw}" ]] || return 0
+  _MANAGED_ENV_RENAMED=1
+  _MANAGED_ENV_CONTENT=${_EPR_RESULT}
+  _MANAGED_ENV_NOTE=" with ${_EPR_RENAMED_LINES} line(s) renamed ${from}_ -> ${want}_ (the staged copy names them ${from}_*; this host's settings are ${want}_*)"
+}
+
+# Print the prepared managed.env bytes (see managed_env_prepare).
+_managed_env_emit() {
+  if [[ ${_MANAGED_ENV_RENAMED} -eq 1 ]]; then
+    printf '%s' "${_MANAGED_ENV_CONTENT}"
+  else
+    cat -- "${_MANAGED_ENV_SRC}"
+  fi
+}
+
 # Install the staged managed.env (all platform-managed env credentials) to the
-# canonical path the units reference. 0600 root — it holds live credentials.
+# canonical path the units reference, in the host's PREFIX when one is given
+# (managed_env_prepare). 0600 root — it holds live credentials.
 # No-op when the staging dir carries no managed.env. Atomic via
 # install_rendered: staged to a private tmp, verified non-empty, then
 # install(1)ed over the destination — never a truncating direct write.
-install_managed_env() { # STAGE_DIR
-  local stage=$1
-  local src="${stage}/managed.env"
-  [[ -f ${src} ]] || return 0
+install_managed_env() { # STAGE_DIR [PREFIX]
+  managed_env_prepare "$1" "${2:-}" || return 0
   as_root install -d -m 0755 -o root -g root "$(dirname "${FICUS_MANAGED_ENV_PATH}")"
-  install_rendered 0600 root root "${FICUS_MANAGED_ENV_PATH}" cat "${src}"
-  log_info "installed ${FICUS_MANAGED_ENV_PATH} (0600)"
+  install_rendered 0600 root root "${FICUS_MANAGED_ENV_PATH}" _managed_env_emit
+  log_info "installed ${FICUS_MANAGED_ENV_PATH} (0600)${_MANAGED_ENV_NOTE}"
 }
 
 # Install staged artifact FILES to FICUS_ARTIFACTS_DIR, each with the mode
@@ -1265,19 +1307,24 @@ install_artifacts() { # STAGE_DIR
 #                                on a tenant with no env artifacts must NOT
 #                                restart the whole fleet's services for a
 #                                semantic no-op.
-# No-op (prints 0) when the staging dir has no managed.env at all.
-managed_env_would_change() { # STAGE_DIR
-  local stage=$1
-  local src="${stage}/managed.env"
-  if [[ ! -f ${src} ]]; then
+# No-op (prints 0) when the staging dir has no managed.env at all. With a
+# PREFIX it compares what install_managed_env would install in that prefix.
+managed_env_would_change() { # STAGE_DIR [PREFIX]
+  if ! managed_env_prepare "$1" "${2:-}"; then
     echo 0
     return 0
   fi
-  if [[ -f ${FICUS_MANAGED_ENV_PATH} ]]; then
-    if cmp -s "${src}" "${FICUS_MANAGED_ENV_PATH}"; then echo 0; else echo 1; fi
+  if [[ ${_MANAGED_ENV_RENAMED} -eq 0 ]]; then
+    if [[ -f ${FICUS_MANAGED_ENV_PATH} ]]; then
+      if cmp -s "${_MANAGED_ENV_SRC}" "${FICUS_MANAGED_ENV_PATH}"; then echo 0; else echo 1; fi
+    else
+      # KEY=VALUE lines start with a non-#, non-blank character.
+      if grep -q '^[^#[:space:]]' "${_MANAGED_ENV_SRC}"; then echo 1; else echo 0; fi
+    fi
+  elif [[ -f ${FICUS_MANAGED_ENV_PATH} ]]; then
+    if cmp -s <(printf '%s' "${_MANAGED_ENV_CONTENT}") "${FICUS_MANAGED_ENV_PATH}"; then echo 0; else echo 1; fi
   else
-    # KEY=VALUE lines start with a non-#, non-blank character.
-    if grep -q '^[^#[:space:]]' "${src}"; then echo 1; else echo 0; fi
+    if grep -q '^[^#[:space:]]' <<<"${_MANAGED_ENV_CONTENT}"; then echo 1; else echo 0; fi
   fi
 }
 

@@ -2748,6 +2748,57 @@ printf '# header\nKEY=v1\n' >"${AR_STAGE5}/managed.env"
 expect_eq 'managed_env_would_change: absent dest + staged vars -> 1' \
   "$(managed_env_would_change "${AR_STAGE5}")" '1'
 
+# --- managed.env in the host's env prefix (P6 B2) -----------------------------
+# A staged copy the control plane rendered in the OTHER prefix (a staging dir
+# pushed before the host was renamed) is installed renamed to the host's
+# prefix; a copy already in it installs byte for byte. Legacy TAU_ fixture
+# lines carry the `legacy-env` marker.
+AR_STAGE7="${AR_TMP}/stage7"
+mkdir -p "${AR_STAGE7}"
+printf '# rendered by the control plane\nTAU_MANAGED=1\nTAU_MANAGED_SECRET_KEYS=TAU_PLATFORM_INSTANCE_TOKEN\nTAU_PLATFORM_INSTANCE_TOKEN=tok\nSES_SMTP_USER=u\n' >"${AR_STAGE7}/managed.env" # legacy-env
+cp -p "${AR_STAGE7}/managed.env" "${AR_TMP}/stage7.orig"
+rm -f "${FICUS_MANAGED_ENV_PATH}"
+install_managed_env "${AR_STAGE7}" FICUS 2>/dev/null
+expect_eq 'install_managed_env FICUS: a staged TAU_ copy is installed with FICUS_ names (list items too)' \
+  "$(cat "${FICUS_MANAGED_ENV_PATH}")" $'# rendered by the control plane\nFICUS_MANAGED=1\nFICUS_MANAGED_SECRET_KEYS=FICUS_PLATFORM_INSTANCE_TOKEN\nFICUS_PLATFORM_INSTANCE_TOKEN=tok\nSES_SMTP_USER=u'
+expect_eq 'install_managed_env FICUS: ...0600' "$(file_mode "${FICUS_MANAGED_ENV_PATH}")" '600'
+expect_eq 'install_managed_env FICUS: ...and the staged copy is left as it was' \
+  "$(cmp -s "${AR_STAGE7}/managed.env" "${AR_TMP}/stage7.orig" && echo same)" 'same'
+expect_eq 'managed_env_would_change FICUS: the same staged TAU_ copy again -> 0 (compares the renamed bytes)' \
+  "$(managed_env_would_change "${AR_STAGE7}" FICUS 2>/dev/null)" '0'
+expect_eq 'managed_env_would_change without a prefix: the staged TAU_ bytes differ -> 1' \
+  "$(managed_env_would_change "${AR_STAGE7}")" '1'
+for ar_p in TAU '' NONE; do
+  rm -f "${FICUS_MANAGED_ENV_PATH}"
+  install_managed_env "${AR_STAGE7}" "${ar_p}" 2>/dev/null
+  expect_eq "install_managed_env '${ar_p}': a staged copy in that prefix (or none known) installs byte for byte" \
+    "$(cmp -s "${AR_STAGE7}/managed.env" "${FICUS_MANAGED_ENV_PATH}" && echo same)" 'same'
+done
+# A FICUS_ render passes through unchanged, whatever its bytes look like.
+AR_STAGE8="${AR_TMP}/stage8"
+mkdir -p "${AR_STAGE8}"
+printf '# c\r\nFICUS_MANAGED=1\r\nFICUS_X="a b"\nexport FICUS_Y=2\nPLAIN=1' >"${AR_STAGE8}/managed.env"
+install_managed_env "${AR_STAGE8}" FICUS 2>/dev/null
+expect_eq 'install_managed_env FICUS: a FICUS_ render (CRLF, quotes, no final newline) installs byte for byte' \
+  "$(cmp -s "${AR_STAGE8}/managed.env" "${FICUS_MANAGED_ENV_PATH}" && echo same)" 'same'
+expect_eq 'managed_env_would_change FICUS: ...and reads as unchanged next time' \
+  "$(managed_env_would_change "${AR_STAGE8}" FICUS)" '0'
+# The other way round: a FICUS_ render on a host whose settings are TAU_.
+install_managed_env "${AR_STAGE8}" TAU 2>/dev/null
+expect_eq 'install_managed_env TAU: a FICUS_ render is installed with TAU_ names' \
+  "$(grep -c '^\(export \)\{0,1\}TAU_' "${FICUS_MANAGED_ENV_PATH}"):$(grep -c 'FICUS_' "${FICUS_MANAGED_ENV_PATH}" || true)" '3:0' # legacy-env
+# A protected conflict in the staged copy dies naming keys only, and writes nothing.
+AR_STAGE9="${AR_TMP}/stage9"
+mkdir -p "${AR_STAGE9}"
+printf 'TAU_SMTP_PASSWORD=value-aaa\nFICUS_SMTP_PASSWORD=value-bbb\n' >"${AR_STAGE9}/managed.env" # legacy-env
+printf 'GOOD=1\n' >"${FICUS_MANAGED_ENV_PATH}"
+ar_rc=0
+ar_err=$( (install_managed_env "${AR_STAGE9}" FICUS) 2>&1 >/dev/null) || ar_rc=$?
+expect_eq 'install_managed_env FICUS: a protected conflict in the staged copy dies' "${ar_rc}" '1'
+expect_match 'install_managed_env FICUS: ...naming the keys' "${ar_err}" 'TAU_SMTP_PASSWORD and FICUS_SMTP_PASSWORD disagree'
+expect_eq 'install_managed_env FICUS: ...never a value, and the installed file is untouched' \
+  "$(grep -c 'value-aaa\|value-bbb' <<<"${ar_err}" || true):$(cat "${FICUS_MANAGED_ENV_PATH}")" '0:GOOD=1'
+
 # --- prune_artifacts --------------------------------------------------------
 # The deletion half of reconciliation: files not in the manifest are removed,
 # listed ones are kept, and everything stays inside FICUS_ARTIFACTS_DIR.

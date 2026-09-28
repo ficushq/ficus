@@ -232,7 +232,13 @@ pre-rename Core or running an older toolkit on a renamed host. Two caveats:
 `apply-artifacts.sh --config <yaml> <stage>` (what the control plane's sync
 runs) refuses to install anything — exit 3, `FICUS_ENV_PREFIX_MISMATCH=1` on
 stdout — while a rename is journaled or the host's `.env` and its active
-release disagree; the fix is the tenant upgrade, which reconciles. The retarget
+release disagree; the fix is the tenant upgrade, which reconciles. When they
+agree, the staged `managed.env` is installed in that prefix: a copy rendered
+in the other one (a staging dir pushed before the host was renamed) is renamed
+on install with the same rules, and a copy already in the host's prefix is
+installed byte for byte. `setup-host.sh` does the same with `artifacts.dir`,
+and re-reads `core.env` from the renamed config before it renders the `.env`,
+so a re-run on a pre-rename host leaves no `TAU_` name behind. The retarget
 primitives (`retarget-origin.sh`, `retarget-backup.sh`) read and write
 `FICUS_*` only and refuse a host that has not been renamed yet. Until phase 5
 the `*_SETUP_*` inputs (`FICUS_SETUP_DATABASE_DSN`, `…_RESTORE_*`, `…_RRSYNC`,
