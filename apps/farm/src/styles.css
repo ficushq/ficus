@@ -1,0 +1,103 @@
+/*
+ * The farm has its own art direction and does not read the web app's theme
+ * tokens. Each style defines the interface tokens in its own theme.css.
+ */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  background: var(--g-page);
+  color: var(--g-ink);
+  font-family: var(--g-font-body);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+.g-card {
+  background: var(--g-card);
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius);
+  box-shadow: var(--g-card-shadow);
+}
+
+.g-wordmark {
+  margin: 0;
+  font: var(--g-display-weight) 28px/1 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  color: var(--g-accent);
+}
+
+.g-muted {
+  color: var(--g-ink-soft);
+  font-size: 13px;
+}
+
+.g-splash {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 24px;
+}
+
+.g-splash-card {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  max-width: 360px;
+  padding: 24px 28px;
+  text-align: center;
+}
+
+.g-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 20px;
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-button-fill);
+  box-shadow: var(--g-lift);
+  color: var(--g-ink);
+  font: var(--g-display-weight) 17px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.g-button:active {
+  translate: var(--g-press);
+  box-shadow: var(--g-lift-pressed);
+}
+
+.g-button:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: 3px;
+}
+
+.g-button-primary {
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+  text-shadow: var(--g-text-emboss);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

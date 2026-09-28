@@ -1,7 +1,7 @@
 /**
  * Browser-side names shared by every Ficus web surface served from one origin
  * (the web app, the embedded docs at /docs, and any sibling app such as the
- * garden UI): localStorage/sessionStorage keys, in-page event and postMessage
+ * farm UI): localStorage/sessionStorage keys, in-page event and postMessage
  * names, and service-worker cache prefixes. Same-origin apps share these
  * stores, so import the names from here rather than repeating the strings.
  *

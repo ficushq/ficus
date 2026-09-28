@@ -62,32 +62,32 @@ export function resolveWebDist(searchFrom: string = import.meta.dir): string | u
 }
 
 /**
- * Resolves the absolute path to the built garden UI (`apps/garden`), served at
- * `/garden` beside the web UI.
+ * Resolves the absolute path to the built farm UI (`apps/farm`), served at
+ * `/farm` beside the web UI.
  *
  * Search order:
- *  1. `FICUS_GARDEN_DIST` env var, if set.
- *  2. `<web dist>/garden`: the web app's build writes the garden there, so
+ *  1. `FICUS_FARM_DIST` env var, if set.
+ *  2. `<web dist>/farm`: the web app's build writes the farm there, so
  *     every install, artifact and image that ships the web UI ships it too.
- *  3. The repo root's `apps/garden/dist` (a standalone `bun run build:garden`).
- *  4. `<cwd>/apps/garden/dist`.
+ *  3. The repo root's `apps/farm/dist` (a standalone `bun run build:farm`).
+ *  4. `<cwd>/apps/farm/dist`.
  *
  * Returns `undefined` if no candidate exists on disk.
  */
-export function resolveGardenDist(searchFrom: string = import.meta.dir): string | undefined {
-  const explicit = process.env.FICUS_GARDEN_DIST
+export function resolveFarmDist(searchFrom: string = import.meta.dir): string | undefined {
+  const explicit = process.env.FICUS_FARM_DIST
   if (explicit) return resolve(expandTilde(explicit))
 
   const webDist = resolveWebDist(searchFrom)
-  if (webDist && existsSync(join(webDist, 'garden', 'index.html'))) return join(webDist, 'garden')
+  if (webDist && existsSync(join(webDist, 'farm', 'index.html'))) return join(webDist, 'farm')
 
   const repoRoot = findRepoRoot(searchFrom)
   if (repoRoot) {
-    const candidate = join(repoRoot, 'apps', 'garden', 'dist')
+    const candidate = join(repoRoot, 'apps', 'farm', 'dist')
     if (existsSync(candidate)) return candidate
   }
 
-  const cwdCandidate = resolve(process.cwd(), 'apps', 'garden', 'dist')
+  const cwdCandidate = resolve(process.cwd(), 'apps', 'farm', 'dist')
   if (existsSync(cwdCandidate)) return cwdCandidate
 
   return undefined

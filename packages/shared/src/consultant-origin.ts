@@ -1,7 +1,7 @@
 /**
  * Why a consultant agent exists, stamped on `agent.context.origin` when Core
  * creates it:
- * - `user`: someone started the chat (web "New consultant", the garden's seed shed)
+ * - `user`: someone started the chat (web "New consultant", the farm's seed shed)
  * - `integration`: a squad event rule (`notify-consultant`) started it
  * - `assistant`: the Assistant delegated a task to the squad
  * - `channel`: an external channel thread or DM (Slack, Telegram, Discord, email)

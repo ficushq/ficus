@@ -47,8 +47,8 @@ const TASK_DEFINITIONS: readonly TaskDefinition[] = [
   },
   {
     task: 'web',
-    // build:web also builds the garden into apps/web/dist/garden.
-    paths: combinePaths(dependencyPaths(), sharedPaths(), clientPaths(), { prefixes: ['apps/web/', 'apps/garden/'] }),
+    // build:web also builds the farm into apps/web/dist/farm.
+    paths: combinePaths(dependencyPaths(), sharedPaths(), clientPaths(), { prefixes: ['apps/web/', 'apps/farm/'] }),
     commands: [['bun', 'run', 'build:web']],
   },
 ] as const

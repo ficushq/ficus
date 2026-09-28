@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import { resolveGardenDist, resolveWebDist } from './web-dist'
+import { resolveFarmDist, resolveWebDist } from './web-dist'
 
 describe('resolveWebDist', () => {
   const origEnv = process.env.FICUS_WEB_DIST
@@ -82,46 +82,46 @@ describe('resolveWebDist', () => {
   })
 })
 
-describe('resolveGardenDist', () => {
-  const origEnv = process.env.FICUS_GARDEN_DIST
+describe('resolveFarmDist', () => {
+  const origEnv = process.env.FICUS_FARM_DIST
   let tmp: string
 
   beforeEach(() => {
-    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-garden-dist-')))
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-farm-dist-')))
   })
 
   afterEach(() => {
-    if (origEnv === undefined) delete process.env.FICUS_GARDEN_DIST
-    else process.env.FICUS_GARDEN_DIST = origEnv
+    if (origEnv === undefined) delete process.env.FICUS_FARM_DIST
+    else process.env.FICUS_FARM_DIST = origEnv
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it('honours FICUS_GARDEN_DIST when set', () => {
-    process.env.FICUS_GARDEN_DIST = join(tmp, 'custom')
-    expect(resolveGardenDist(tmp)).toBe(join(tmp, 'custom'))
+  it('honours FICUS_FARM_DIST when set', () => {
+    process.env.FICUS_FARM_DIST = join(tmp, 'custom')
+    expect(resolveFarmDist(tmp)).toBe(join(tmp, 'custom'))
   })
 
-  it('prefers the garden the web build placed inside the web dist', () => {
-    delete process.env.FICUS_GARDEN_DIST
+  it('prefers the farm the web build placed inside the web dist', () => {
+    delete process.env.FICUS_FARM_DIST
     const origWeb = process.env.FICUS_WEB_DIST
     const webDist = join(tmp, 'web-dist')
-    mkdirSync(join(webDist, 'garden'), { recursive: true })
-    writeFileSync(join(webDist, 'garden', 'index.html'), 'garden')
+    mkdirSync(join(webDist, 'farm'), { recursive: true })
+    writeFileSync(join(webDist, 'farm', 'index.html'), 'farm')
     process.env.FICUS_WEB_DIST = webDist
     try {
-      expect(resolveGardenDist(tmp)).toBe(join(webDist, 'garden'))
+      expect(resolveFarmDist(tmp)).toBe(join(webDist, 'farm'))
     } finally {
       if (origWeb === undefined) delete process.env.FICUS_WEB_DIST
       else process.env.FICUS_WEB_DIST = origWeb
     }
   })
 
-  it('finds apps/garden/dist under the discovered repo root', () => {
-    delete process.env.FICUS_GARDEN_DIST
+  it('finds apps/farm/dist under the discovered repo root', () => {
+    delete process.env.FICUS_FARM_DIST
     const repoRoot = join(tmp, 'repo')
-    const dist = join(repoRoot, 'apps', 'garden', 'dist')
+    const dist = join(repoRoot, 'apps', 'farm', 'dist')
     mkdirSync(dist, { recursive: true })
     writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
-    expect(resolveGardenDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
+    expect(resolveFarmDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
   })
 })
