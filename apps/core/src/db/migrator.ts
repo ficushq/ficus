@@ -11,6 +11,7 @@ import { backfillTrackedIssues } from './tracked-issue-backfill'
 import { backfillAssistantActivity } from './assistant-activity-backfill'
 import { backfillAssistantConversationKinds } from './assistant-conversation-kind-backfill'
 import { reportLegacySecretRowConflicts } from './legacy-secret-rows'
+import { assertMigrationsMatchBuild } from './migration-build-manifest'
 
 const CREATE_CONCURRENT_INDEX =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+"([^"]+)"\s+ON\s+(?:ONLY\s+)?(?:(?:"([^"]+)"\.)?)"([^"]+)"/i
@@ -427,6 +428,10 @@ export async function applyMigrations(
 }
 
 export async function migrateDatabase(connection: postgres.ReservedSql, config: MigrationConfig): Promise<void> {
+  // Backstop for direct callers; the entry points check before connecting. The backfill
+  // hooks above only exist in code built with these migrations, so refuse before any
+  // transaction or DDL.
+  assertMigrationsMatchBuild(config.migrationsFolder)
   await applyMigrations(connection, readMigrationFiles(config), config)
   await backfillMessageEnqueueOrder(connection)
   await backfillTrackedIssues(connection)

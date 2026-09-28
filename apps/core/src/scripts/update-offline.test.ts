@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { OfflineUpdateBlockedError, STALE_RUN_MS, planOfflineUpdate, runOfflineUpdate } from './update-offline'
+import { migrationListFingerprint } from '../db/migration-journal'
 import type { DeploymentFlavor } from '../services/updates/deployment-flavor'
 
 const flavor: DeploymentFlavor = { source: 'git-checkout', supervisor: 'pm2', sandboxRuntime: 'host' }
@@ -23,6 +24,11 @@ describe('planOfflineUpdate', () => {
   })
   it('is empty when nothing relevant changed', () => {
     expect(planOfflineUpdate(['README.md'], flavor).commands).toEqual([])
+  })
+  it('plans the Core build when a built bundle does not match the checkout, even with an empty diff', () => {
+    const plan = planOfflineUpdate([], flavor, { staleCoreBundle: true })
+    expect(plan.tasks).toEqual(['core'])
+    expect(plan.commands.map((c) => c.command.join(' '))).toEqual(['bun run build:core'])
   })
   it('plans every dependency-change task when the bootstrap found the dependencies stale', () => {
     expect(planOfflineUpdate([], flavor, { staleDependencies: true }).tasks).toEqual(['install', 'cli', 'core', 'web'])
@@ -275,6 +281,64 @@ describe('runOfflineUpdate', () => {
     expect(ran).toEqual([])
     expect(run.status).toBe('succeeded')
     expect(run.message).toBe('No build tasks needed for the changed files.')
+    expect(run.commands).toEqual([])
+  })
+})
+
+describe('runOfflineUpdate after an update whose Core build failed', () => {
+  let root: string
+  const entries = [
+    { idx: 0, version: '7', when: 1, tag: '0000_first', breakpoints: true },
+    { idx: 1, version: '7', when: 2, tag: '0001_second', breakpoints: true },
+  ]
+  // The checkout already moved to the release with 0001; the re-run's pull is a no-op.
+  const rerun = async () => {
+    const ran: string[] = []
+    const run = await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: 'b'.repeat(40),
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
+      git: async (args) => (args[0] === 'diff' ? '' : 'b'.repeat(40)),
+      runProcess: async (command) => {
+        ran.push(command.join(' '))
+        return { exitCode: 0, output: '' }
+      },
+    })
+    return { run, ran }
+  }
+  const writeBundles = (fingerprint: string) => {
+    for (const bundle of ['index.js', 'worker.js']) {
+      writeFileSync(join(root, 'apps/core/dist', bundle), `var built = { fingerprint: "${fingerprint}" };\n`)
+    }
+  }
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'tau-offline-bundle-'))
+    mkdirSync(join(root, '.git'))
+    mkdirSync(join(root, 'apps/core/drizzle/meta'), { recursive: true })
+    mkdirSync(join(root, 'apps/core/dist'), { recursive: true })
+    writeFileSync(join(root, 'apps/core/drizzle/meta/_journal.json'), JSON.stringify({ version: '7', entries }))
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  it('rebuilds Core when the bundles were built from an older migration list', async () => {
+    writeBundles(migrationListFingerprint(entries.slice(0, 1)))
+    const { run, ran } = await rerun()
+    expect(ran).toEqual(['bun run build:core'])
+    expect(run.changedFiles).toEqual([])
+    expect(run.selectedTasks).toEqual(['core'])
+    expect(run.commands[0]!.note).toBe(
+      "apps/core/dist/index.js, apps/core/dist/worker.js not built from this checkout's migrations."
+    )
+  })
+  it('rebuilds Core when a bundle predates the embedded migration list', async () => {
+    writeBundles(migrationListFingerprint(entries))
+    writeFileSync(join(root, 'apps/core/dist/worker.js'), '// built before the migration guard\n')
+    expect((await rerun()).ran).toEqual(['bun run build:core'])
+  })
+  it('stays a no-op when the bundles match the checkout', async () => {
+    writeBundles(migrationListFingerprint(entries))
+    const { run, ran } = await rerun()
+    expect(ran).toEqual([])
     expect(run.commands).toEqual([])
   })
 })

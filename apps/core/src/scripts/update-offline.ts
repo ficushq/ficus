@@ -31,6 +31,10 @@ import {
   touchesDependencies,
 } from '../services/updates/dependency-install'
 import type { LocalUpdateRun, PlannedCommand, UpdateTask } from '../services/updates/types'
+import { staleCoreBundles } from '../db/migration-build-manifest'
+
+/** Planned as changed when a built Core bundle does not match the checkout's migrations. */
+export const CORE_BUNDLE_MARKER_PATH = 'apps/core/drizzle/meta/_journal.json'
 
 export class OfflineUpdateBlockedError extends Error {}
 
@@ -55,12 +59,15 @@ export interface OfflineUpdateBootstrap {
 export function planOfflineUpdate(
   changedFiles: string[],
   flavor: DeploymentFlavor,
-  options: { staleDependencies?: boolean } = {}
+  options: { staleDependencies?: boolean; staleCoreBundle?: boolean } = {}
 ): { tasks: UpdateTask[]; commands: PlannedCommand[] } {
-  const planned =
-    options.staleDependencies && !touchesDependencies(changedFiles)
-      ? [...changedFiles, DEPENDENCY_MARKER_PATH]
-      : changedFiles
+  const planned = [
+    ...changedFiles,
+    ...(options.staleDependencies && !touchesDependencies(changedFiles) ? [DEPENDENCY_MARKER_PATH] : []),
+    // An earlier update may have moved the checkout but failed before its build, so a
+    // re-run sees no diff; the bundle would then refuse to migrate at the restart.
+    ...(options.staleCoreBundle ? [CORE_BUNDLE_MARKER_PATH] : []),
+  ]
   const tasks = detectUpdateTasks(planned, flavor)
   const commands = commandsForTasks(tasks, planned, flavor).filter((c) => !isServiceRestartCommand(c.command))
   return { tasks, commands }
@@ -127,9 +134,14 @@ export async function runOfflineUpdate(options: OfflineUpdateOptions): Promise<L
     .map((l) => l.trim())
     .filter(Boolean)
   const bootstrap = options.bootstrap
+  const staleBundles = staleCoreBundles(options.repoRoot)
   const { tasks, commands } = planOfflineUpdate(changedFiles, flavor, {
     staleDependencies: bootstrap?.staleDependencies,
+    staleCoreBundle: staleBundles.length > 0,
   })
+  for (const c of commands.filter((command) => command.task === 'core' && staleBundles.length > 0)) {
+    c.note = `${staleBundles.join(', ')} not built from this checkout's migrations.`
+  }
   const installedByBootstrap = (c: PlannedCommand) => bootstrap?.installed === true && c.task === 'install'
   for (const c of commands.filter(installedByBootstrap)) {
     c.status = 'succeeded'
