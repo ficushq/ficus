@@ -69,7 +69,7 @@ export function sampleFarm(): FarmInput {
   let n = 0
   const stream = (squadId: string, title: string, o: Partial<WorkStream> = {}) => {
     n += 1
-    return makeStream({ id: `ws-${n}`, squadId, title, createdAt: at(10 + n), ...o })
+    return makeStream({ id: `ws-${n}`, number: n, squadId, title, createdAt: at(10 + n), ...o })
   }
   const review = (id: string) => ({
     derivedState: 'in_review' as const,

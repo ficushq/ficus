@@ -21,6 +21,8 @@ const MAX_ZOOM = 2.2
 const FIT_MIN_ZOOM = 0.6
 /** A small farm shouldn't be blown up to fill the screen. */
 const FIT_MAX_ZOOM = 1.25
+/** How long flyTo takes, ms. */
+const FLY_MS = 650
 const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z))
 
 /** The zoom that fits a world box into a viewport, with a little padding. */
@@ -92,6 +94,33 @@ export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldB
     [update]
   )
 
+  /** Glides the camera to a point (and zoom) instead of jumping; any drag, pinch or wheel takes over. */
+  const flight = useRef(0)
+  const flyTo = useCallback(
+    (x: number, y: number, zoom?: number) => {
+      cancelAnimationFrame(flight.current)
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return focus(x, y, zoom)
+      let from: Camera | null = null
+      const start = performance.now()
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / FLY_MS)
+        const ease = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
+        update((c) => {
+          from ??= c
+          const to = { x, y, zoom: zoom ?? Math.max(from.zoom, 1) }
+          return {
+            x: from.x + (to.x - from.x) * ease,
+            y: from.y + (to.y - from.y) * ease,
+            zoom: from.zoom + (to.zoom - from.zoom) * ease,
+          }
+        })
+        if (t < 1) flight.current = requestAnimationFrame(step)
+      }
+      flight.current = requestAnimationFrame(step)
+    },
+    [focus, update]
+  )
+
   useEffect(() => {
     const el = viewport.current
     if (!el) return
@@ -102,12 +131,14 @@ export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldB
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
+      cancelAnimationFrame(flight.current)
       const [dx, dy] = centreOffset(e.clientX, e.clientY)
       // Trackpad pinch arrives as ctrl+wheel with small deltas; mouse wheels step.
       const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015))
       update((c) => zoomAround(c, factor, dx, dy))
     }
     const onDown = (e: PointerEvent) => {
+      cancelAnimationFrame(flight.current)
       // Without this a mouse drag over the drawing can start the browser's own drag of the
       // SVG (Safari shows a ghost image of the scene) instead of panning. Clicks still fire.
       if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
@@ -172,5 +203,5 @@ export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldB
     [update]
   )
 
-  return { camera, fit, focus, zoomBy, panBy }
+  return { camera, fit, focus, flyTo, zoomBy, panBy }
 }

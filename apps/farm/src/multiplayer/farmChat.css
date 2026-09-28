@@ -504,3 +504,119 @@
   color: var(--g-text-soft);
   font: italic 400 12px var(--g-font-body);
 }
+
+/* ---- Mentions, farm chips, links, suggestions, the bell ---- */
+
+.g-farmchat-mention {
+  padding: 0 3px;
+  border-radius: var(--g-radius-xs);
+  background: var(--g-row-hover);
+  font-weight: 700;
+}
+
+.g-farmchat-mention-me {
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+.g-farmchat-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.g-farmchat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin: 1px 1px;
+  padding: 1px 8px 1px 6px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card);
+  color: var(--g-text);
+  font: 600 13px/1.5 var(--g-font-body);
+  text-decoration: none;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.g-farmchat-chip:hover {
+  background: var(--g-row-hover);
+}
+
+.g-farmchat-chip-away {
+  opacity: 0.75;
+  cursor: default;
+}
+
+a.g-farmchat-chip-away {
+  cursor: pointer;
+}
+
+.g-farmchat-composer {
+  position: relative;
+}
+
+.g-farmchat-suggest {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  min-width: 220px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-card);
+  box-shadow: var(--g-drop);
+}
+
+.g-farmchat-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--g-radius-sm);
+  background: transparent;
+  color: var(--g-text);
+  font: 600 14px var(--g-font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-farmchat-suggestion-on,
+.g-farmchat-suggestion:hover {
+  background: var(--g-row-hover);
+}
+
+.g-farmchat-bell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 46px 0 auto;
+  padding: 4px 10px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card);
+  color: var(--g-text);
+  font: 600 12.5px var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-farmchat-bell[aria-pressed='true'] {
+  border-color: var(--g-accent);
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+@media (max-width: 640px) {
+  .g-farmchat-bell-label {
+    display: none;
+  }
+}

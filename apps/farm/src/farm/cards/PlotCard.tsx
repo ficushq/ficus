@@ -7,6 +7,7 @@ import { useFarmCard } from './context'
 import { PlotActions } from './slots'
 import { workStreamPullRequests } from '../pullRequests'
 import { PullRequestIcon } from '../../icons'
+import { farmRefText } from '../../multiplayer/messageTokens'
 
 /**
  * Who's on a plant's crew: everyone who worked on it, plus its owner and
@@ -68,6 +69,13 @@ export function PlotCard({ streamId }: { streamId: string }) {
         </p>
       )}
       {stream.description && <p className="g-card-text g-clamp">{stream.description}</p>}
+      <button
+        type="button"
+        className="g-link g-share"
+        onClick={() => env.shareInChat(farmRefText({ kind: 'ws', id: String(stream.number ?? stream.id) }))}
+      >
+        Share in farm chat
+      </button>
       <PlotActions stream={stream} />
       <h3 className="g-card-subtitle">Crew</h3>
       <Crew

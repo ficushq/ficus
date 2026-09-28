@@ -5,6 +5,7 @@ import { findRobot } from '../find'
 import { RobotAvatar } from '../RobotAvatar'
 import { roleFor } from '../appearance'
 import { roleLabel } from '../selection'
+import { farmRefText } from '../../multiplayer/messageTokens'
 import { useFarmCard } from './context'
 import { RobotActions } from './slots'
 import { AssistantCard } from './AssistantCard'
@@ -61,6 +62,13 @@ export function RobotCard({ agentId }: { agentId: string }) {
         {role === 'manager' ? 'Talk to farmer' : 'Talk to robot'}
       </button>
       <RobotActions agentId={agentId} />
+      <button
+        type="button"
+        className="g-link g-share"
+        onClick={() => env.shareInChat(farmRefText({ kind: 'agent', id: agentId }))}
+      >
+        Share in farm chat
+      </button>
       {working.length > 0 && (
         <>
           <h3 className="g-card-subtitle">Tending</h3>

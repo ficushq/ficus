@@ -21,6 +21,10 @@ export interface FarmCardEnv {
   messagePerson: (userId: string) => void
   /** Opens the character builder (how you look on the farm). */
   changeLook: () => void
+  /** Selects something and glides the camera to it (a chip in chat). */
+  flyTo: (selection: Selection) => void
+  /** Opens farm chat with this added to what you're writing (e.g. a reference to a plant). */
+  shareInChat: (text: string) => void
 }
 
 export const FarmCardContext = createContext<FarmCardEnv | null>(null)

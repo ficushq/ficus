@@ -852,3 +852,11 @@ a.g-pr-link:focus-visible {
     transform: scale(1);
   }
 }
+
+/* "Share in farm chat" on a plant's or robot's card: a quiet link, on its own line. */
+.g-link.g-share {
+  display: block;
+  min-height: 0;
+  margin: 8px 0 2px;
+  font-size: 13px;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import clsx from 'clsx'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -7,11 +7,14 @@ import {
   farmPersonInitials,
   type FarmChatMessage,
   type FarmChatMessagePage,
+  type FarmPerson,
   type FarmChatRoom,
 } from '@ficus/shared'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { CloseIcon } from '../icons'
 import { chatKeys } from './chatApi'
+import { mentionCandidates, mentionQuery } from './mentions'
+import { MessageBody } from './MessageBody'
 import { useMultiplayer } from './MultiplayerProvider'
 
 /*
@@ -24,6 +27,8 @@ const roomTitle = (room: FarmChatRoom) => (room.kind === 'dm' ? room.name : `# $
 
 const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
+const NO_PEOPLE: readonly FarmPerson[] = []
+
 function errorText(error: unknown): string {
   return error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.'
 }
@@ -33,13 +38,19 @@ export function FarmChatPanel({
   onRoom,
   onClose,
   narrow,
+  insert,
+  onInserted,
 }: {
   roomId: string | null
   onRoom: (roomId: string | null) => void
   onClose: () => void
   narrow: boolean
+  /** Something to add to what you're writing (sharing a plant or robot), until a room takes it. */
+  insert?: { text: string; at: number }
+  onInserted?: () => void
 }) {
-  const { rooms } = useMultiplayer()
+  const { rooms, notify, setNotify } = useMultiplayer()
+  const [notifyError, setNotifyError] = useState<string | null>(null)
   const panel = useRef<HTMLElement>(null)
   // Focus moves in (to the composer, when a room is open) and back to what opened it on closing.
   useDialogFocus(panel, { initial: '.g-farmchat-composer textarea' })
@@ -65,13 +76,42 @@ export function FarmChatPanel({
           <p className="g-eyebrow">Farm chat</p>
           <h2 className="g-card-title">{current ? roomTitle(current) : 'Rooms'}</h2>
         </div>
+        {notify !== 'unsupported' && (
+          <button
+            type="button"
+            className="g-farmchat-bell"
+            aria-pressed={notify === 'on'}
+            title={
+              notify === 'on'
+                ? 'Notifying you about DMs and @mentions while the farm is in the background. Turn off'
+                : 'Notify me about DMs and @mentions while the farm is in the background'
+            }
+            onClick={() =>
+              void setNotify(notify !== 'on').then((ok) =>
+                setNotifyError(ok ? null : 'Your browser is blocking notifications from the farm.')
+              )
+            }
+          >
+            <span aria-hidden="true">{notify === 'on' ? '🔔' : '🔕'}</span>
+            <span className="g-farmchat-bell-label">{notify === 'on' ? 'Notifying' : 'Notify me'}</span>
+          </button>
+        )}
         <button type="button" className="g-card-close" aria-label="Close the farm chat" onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
+      {notifyError && <p className="g-farmchat-error">{notifyError}</p>}
       <div className="g-farmchat-body">
         {showList && <RoomList currentId={current?.id ?? null} onRoom={onRoom} />}
-        {showConversation && current && <Conversation key={current.id} room={current} onGone={() => onRoom(null)} />}
+        {showConversation && current && (
+          <Conversation
+            key={current.id}
+            room={current}
+            onGone={() => onRoom(null)}
+            insert={insert}
+            onInserted={onInserted}
+          />
+        )}
       </div>
     </section>
   )
@@ -248,8 +288,18 @@ function RoomForm({ room, onDone }: { room?: FarmChatRoom; onDone: (room: FarmCh
   )
 }
 
-function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void }) {
-  const { chat, rooms, sendTyping } = useMultiplayer()
+function Conversation({
+  room,
+  onGone,
+  insert,
+  onInserted,
+}: {
+  room: FarmChatRoom
+  onGone: () => void
+  insert?: { text: string; at: number }
+  onInserted?: () => void
+}) {
+  const { chat, me, rooms, sendTyping, setViewing } = useMultiplayer()
   const queryClient = useQueryClient()
   const messages = useQuery({ queryKey: chatKeys.messages(room.id), queryFn: () => chat.messages(room.id) })
   const people = useQuery({ queryKey: chatKeys.people(), queryFn: () => chat.people(), staleTime: 300_000 })
@@ -259,7 +309,36 @@ function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const scroller = useRef<HTMLOListElement>(null)
+  const textarea = useRef<HTMLTextAreaElement>(null)
+  // Where the caret goes after a suggestion is chosen, set as soon as the new text is in (before more typing lands).
+  const caretAfter = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    if (caretAfter.current === null) return
+    textarea.current?.setSelectionRange(caretAfter.current, caretAfter.current)
+    caretAfter.current = null
+  }, [draft])
+  // Where the caret is, for @mention suggestions (and which suggestion is picked, or that they were dismissed).
+  const [caret, setCaret] = useState(0)
+  const [pick, setPick] = useState(0)
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null)
+  const typed = mentionQuery(draft, caret)
+  const suggestions =
+    typed && typed.start !== dismissedAt ? mentionCandidates(typed.query, people.data ?? [], me?.userId ?? null) : []
   const list = messages.data?.messages ?? []
+
+  // While this room is open, its messages don't need to alert you.
+  useEffect(() => {
+    setViewing(room.id)
+    return () => setViewing(null)
+  }, [room.id, setViewing])
+
+  // Something shared into chat (a plant, a robot) joins what you're writing.
+  useEffect(() => {
+    if (!insert) return
+    setDraft((d) => (d.trim() ? `${d.trimEnd()} ${insert.text} ` : `${insert.text} `))
+    onInserted?.()
+    textarea.current?.focus()
+  }, [insert, onInserted])
   const manageable = room.kind === 'room' && rooms?.canManageRooms
 
   // Reading the room: mark it read as messages arrive while it's open.
@@ -315,7 +394,38 @@ function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void
     }
   }
 
+  const trackCaret = (el: HTMLTextAreaElement) => setCaret(el.selectionStart ?? el.value.length)
+
+  const choose = (person: { name: string }) => {
+    if (!typed) return
+    const next = `${draft.slice(0, typed.start)}@${person.name} ${draft.slice(caret)}`
+    const at = typed.start + person.name.length + 2
+    caretAfter.current = at
+    setDraft(next)
+    setCaret(at)
+    setPick(0)
+  }
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (suggestions.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const step = e.key === 'ArrowDown' ? 1 : -1
+        setPick((p) => (p + step + suggestions.length) % suggestions.length)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        choose(suggestions[Math.min(pick, suggestions.length - 1)]!)
+        return
+      }
+      if (e.key === 'Escape') {
+        // Close the suggestions, not the chat.
+        e.stopPropagation()
+        setDismissedAt(typed?.start ?? null)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       void send()
@@ -357,6 +467,7 @@ function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void
             room={room}
             message={message}
             names={names}
+            people={people.data ?? NO_PEOPLE}
             showMeta={k === 0 || list[k - 1]!.senderUserId !== message.senderUserId}
             onError={setError}
           />
@@ -371,7 +482,28 @@ function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void
           void send()
         }}
       >
+        {suggestions.length > 0 && (
+          <ul className="g-farmchat-suggest" role="listbox" aria-label="Mention someone">
+            {suggestions.map((person, k) => (
+              <li key={person.id} role="option" aria-selected={k === pick}>
+                <button
+                  type="button"
+                  className={clsx('g-farmchat-suggestion', k === pick && 'g-farmchat-suggestion-on')}
+                  // Keep focus (and the caret) in the composer.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => choose(person)}
+                >
+                  <span className="g-person-initials g-person-initials-sm" aria-hidden="true">
+                    {farmPersonInitials(person.name)}
+                  </span>
+                  {person.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
+          ref={textarea}
           className="g-field"
           aria-label={`Message ${roomTitle(room)}`}
           placeholder={room.kind === 'dm' ? `Message ${room.name}` : `Message # ${room.name}`}
@@ -380,8 +512,11 @@ function Conversation({ room, onGone }: { room: FarmChatRoom; onGone: () => void
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value)
+            trackCaret(e.target)
+            setPick(0)
             if (e.target.value.trim()) sendTyping(room.id)
           }}
+          onSelect={(e) => trackCaret(e.currentTarget)}
           onKeyDown={onKeyDown}
         />
         <button type="submit" className="g-button g-button-primary" disabled={sending || !draft.trim()}>
@@ -416,12 +551,14 @@ function MessageItem({
   room,
   message,
   names,
+  people,
   showMeta,
   onError,
 }: {
   room: FarmChatRoom
   message: FarmChatMessage
   names: ReadonlyMap<string, string>
+  people: readonly FarmPerson[]
   showMeta: boolean
   onError: (error: string | null) => void
 }) {
@@ -507,7 +644,7 @@ function MessageItem({
       ) : (
         <div className="g-farmchat-line">
           <p className="g-farmchat-text">
-            {message.body}
+            <MessageBody body={message.body} people={people} meId={me?.userId ?? null} />
             {message.editedAt && <span className="g-farmchat-edited"> (edited)</span>}
           </p>
           <span className="g-farmchat-actions">

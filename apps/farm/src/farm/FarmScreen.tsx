@@ -80,7 +80,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     const b = screenBounds(Math.min(...is), Math.max(...is), Math.min(...js), Math.max(...js))
     return { minX: b.minX, maxX: b.maxX, minY: b.minY - 120, maxY: b.maxY }
   }, [layout])
-  const { camera, fit, zoomBy, focus } = useCamera(viewport, world, focusBox)
+  const { camera, fit, zoomBy, focus, flyTo } = useCamera(viewport, world, focusBox)
   const cameraRef = useStableRef(camera)
   const sizeRef = useStableRef(size)
   /** Pan just enough to bring a world point into the comfortable middle of the screen. */
@@ -117,7 +117,12 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   useEffect(() => {
     setFocus(JSON.parse(focusKey))
   }, [focusKey, setFocus])
-  const [farmChat, setFarmChat] = useState<{ open: boolean; roomId: string | null }>({ open: false, roomId: null })
+  const [farmChat, setFarmChat] = useState<{
+    open: boolean
+    roomId: string | null
+    /** Something to add to what you're writing in the open room (sharing a plant or robot). */
+    insert?: { text: string; at: number }
+  }>({ open: false, roomId: null })
   const [lookOpen, setLookOpen] = useState(false)
   // First time here: pick a style, then make your farmer.
   const { firstVisit, welcomed } = useFirstVisit()
@@ -163,6 +168,23 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     setFarmChat({ open: true, roomId: room.id })
   })
 
+  // A notification was clicked: open its room.
+  const requested = multiplayer.openRoom
+  useEffect(() => {
+    if (!requested) return
+    setLookOpen(false)
+    setFarmChat((c) => ({ ...c, open: true, roomId: requested.roomId }))
+  }, [requested])
+
+  const flyToRef = useStableRef((s: Selection) => {
+    const phone = sizeRef.current.width < 640
+    // A phone's chat covers the farm: close it so you see where you went (the card's own lift moves the camera).
+    if (phone) setFarmChat((c) => ({ ...c, open: false }))
+    setSelection(s)
+    const point = selectionAnchor(layout, s)
+    if (point && !phone) flyTo(point[0], point[1])
+  })
+
   const env = useMemo<FarmCardEnv>(
     () => ({
       layout,
@@ -181,8 +203,13 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         setFarmChat((c) => ({ ...c, open: false }))
         setLookOpen(true)
       },
+      flyTo: (s) => flyToRef.current(s),
+      shareInChat: (text) => {
+        setLookOpen(false)
+        setFarmChat((c) => ({ ...c, open: true, insert: { text, at: Date.now() } }))
+      },
     }),
-    [layout, input, agentsById, openDmRef]
+    [layout, input, agentsById, openDmRef, flyToRef]
   )
 
   // On phones the card is a bottom sheet: lift the selected thing into the top of the screen.
@@ -401,15 +428,17 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
           />
         )}
         <ChatWindows chats={chats} narrow={size.width < 640} />
+        {farmChat.open && (
+          <FarmChatPanel
+            roomId={farmChat.roomId}
+            onRoom={(roomId) => setFarmChat((c) => ({ ...c, open: true, roomId }))}
+            insert={farmChat.insert}
+            onInserted={() => setFarmChat((c) => ({ ...c, insert: undefined }))}
+            onClose={() => setFarmChat((c) => ({ ...c, open: false }))}
+            narrow={narrow}
+          />
+        )}
       </FarmCardContext.Provider>
-      {farmChat.open && (
-        <FarmChatPanel
-          roomId={farmChat.roomId}
-          onRoom={(roomId) => setFarmChat({ open: true, roomId })}
-          onClose={() => setFarmChat((c) => ({ ...c, open: false }))}
-          narrow={narrow}
-        />
-      )}
       {lookOpen && <LookBuilder narrow={narrow} onClose={() => setLookOpen(false)} />}
       {firstVisit && <Welcome narrow={narrow} onDone={welcomed} />}
     </div>

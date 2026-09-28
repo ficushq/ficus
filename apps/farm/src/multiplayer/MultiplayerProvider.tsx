@@ -8,7 +8,9 @@ import {
   isFarmLook,
   type FarmChatMessage,
   type FarmChatMessagePage,
+  type FarmChatRoom,
   type FarmChatRooms,
+  type FarmPerson,
   type FarmLook,
   type PresenceFocus,
   type PresencePerson,
@@ -22,6 +24,9 @@ import { useStableRef } from '../hooks/useStableRef'
 import { chatKeys, liveChatApi, type FarmChatApi } from './chatApi'
 import './farmChat.css'
 import { lookFor } from './personLook'
+import { mentionsUser } from './mentions'
+import { bubbleText } from './messageTokens'
+import { playChime, readSoundPreference } from '../sound/chimes'
 
 /*
  * The farm's multiplayer: who else is here (and what they're at), and chat
@@ -32,6 +37,7 @@ import { lookFor } from './personLook'
 
 const STORAGE_KEY = 'ficus-farm:multiplayer'
 const LOOK_KEY = 'ficus-farm:look'
+const NOTIFY_KEY = 'ficus-farm:chat-notify'
 const BUBBLE_MS = 6000
 /** How long an emote (a wave, a reaction) floats over someone. */
 const EMOTE_MS = 2800
@@ -75,6 +81,14 @@ export interface Multiplayer {
   typingIn: (roomId: string) => string[]
   /** Say you're typing in a room (sent at most every few seconds). */
   sendTyping: (roomId: string) => void
+  /** Browser notifications for DMs and @mentions while the farm is in the background (this browser's choice). */
+  notify: 'on' | 'off' | 'unsupported'
+  /** Turns them on (asking the browser's permission) or off; false if the browser won't allow them. */
+  setNotify: (on: boolean) => Promise<boolean>
+  /** A room something (a notification) asked to open, for the farm to show. */
+  openRoom: { roomId: string; at: number } | null
+  /** The room you're looking at in farm chat (no alerts for it while the farm has focus). */
+  setViewing: (roomId: string | null) => void
   /** How you look on the farm: your choice, else the farm's pick for you. */
   myLook: FarmLook
   /** Dresses you (the character builder): saved to your account, and everyone on the farm sees it. */
@@ -112,6 +126,19 @@ function writeLook(look: FarmLook) {
     localStorage.setItem(LOOK_KEY, JSON.stringify(look))
   } catch {
     // Storage unavailable: the account (if any) still has it.
+  }
+}
+
+function notifySupported(): boolean {
+  return typeof window !== 'undefined' && 'Notification' in window
+}
+
+function readNotify(): 'on' | 'off' | 'unsupported' {
+  if (!notifySupported()) return 'unsupported'
+  try {
+    return localStorage.getItem(NOTIFY_KEY) === 'on' && Notification.permission === 'granted' ? 'on' : 'off'
+  } catch {
+    return 'off'
   }
 }
 
@@ -153,6 +180,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
   const [people, setPeople] = useState<PresencePerson[]>([])
   const [bubbles, setBubbles] = useState<ReadonlyMap<string, ChatBubble>>(new Map())
   const [emotes, setEmotes] = useState<ReadonlyMap<string, Emote>>(new Map())
+  const [notify, setNotifyState] = useState(readNotify)
+  const notifyRef = useStableRef(notify)
+  const [openRoom, setOpenRoom] = useState<{ roomId: string; at: number } | null>(null)
+  const viewing = useRef<string | null>(null)
   const [focus, setFocusState] = useState<PresenceFocus | null>(null)
   const [demo, setDemo] = useState<DemoMultiplayer | null>(null)
   // roomId → userId → when their "typing" lapses.
@@ -219,6 +250,27 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       EMOTE_MS
     )
   }, [])
+
+  /** A DM or an @mention of you: a chime (with sound on) and, in the background, a notification. */
+  const alertAbout = useCallback(
+    (message: FarmChatMessage, room: FarmChatRoom | undefined, people: FarmPerson[]) => {
+      const focused = document.hasFocus() && !document.hidden
+      if (focused && viewing.current === message.roomId) return
+      if (readSoundPreference()) playChime('mention')
+      if (focused || notifyRef.current !== 'on' || Notification.permission !== 'granted') return
+      const who = people.find((p) => p.id === message.senderUserId)?.name ?? 'Someone'
+      const notification = new Notification(room && room.kind !== 'dm' ? `${who} in # ${room.name}` : who, {
+        body: bubbleText(message.body).slice(0, 160),
+        tag: message.roomId,
+      })
+      notification.onclick = () => {
+        window.focus()
+        setOpenRoom({ roomId: message.roomId, at: Date.now() })
+        notification.close()
+      }
+    },
+    [notifyRef]
+  )
 
   const handle = useCallback(
     (entry: MultiplayerEvent) => {
@@ -295,9 +347,16 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
             .getQueryData<FarmChatRooms>(chatKeys.rooms())
             ?.rooms.find((r) => r.id === message.roomId)
           const sender = message.senderUserId
+          // A DM (a room you don't know yet is a new DM) or an @mention of you: let them know.
+          const me = meRef.current
+          if (sender && me && sender !== me.userId) {
+            const people = queryClient.getQueryData<FarmPerson[]>(chatKeys.people()) ?? []
+            if (!room || room.kind === 'dm' || mentionsUser(message.body, people, me.userId))
+              alertAbout(message, room, people)
+          }
           if (enabledRef.current && sender && sender !== meRef.current?.userId && room && room.kind !== 'dm') {
             const at = Date.now()
-            setBubbles((map) => new Map(map).set(sender, { text: message.body, at }))
+            setBubbles((map) => new Map(map).set(sender, { text: bubbleText(message.body), at }))
             window.setTimeout(
               () =>
                 setBubbles((map) => {
@@ -316,7 +375,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
           return
       }
     },
-    [queryClient, enabledRef, meRef, showEmote]
+    [queryClient, enabledRef, meRef, showEmote, alertAbout]
   )
 
   // Demo mode: pretend neighbours and chat, loaded only in dev builds.
@@ -455,6 +514,24 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     [enabledRef, meRef, showEmote]
   )
 
+  const setNotify = useCallback(async (on: boolean) => {
+    if (!notifySupported()) return false
+    if (on && Notification.permission !== 'granted') {
+      if (Notification.permission === 'denied' || (await Notification.requestPermission()) !== 'granted') return false
+    }
+    setNotifyState(on ? 'on' : 'off')
+    try {
+      localStorage.setItem(NOTIFY_KEY, on ? 'on' : 'off')
+    } catch {
+      // Storage unavailable: the choice holds for this visit.
+    }
+    return true
+  }, [])
+
+  const setViewing = useCallback((roomId: string | null) => {
+    viewing.current = roomId
+  }, [])
+
   const sendTyping = useCallback((roomId: string) => {
     const now = Date.now()
     if (now - (lastTypingSent.current.get(roomId) ?? 0) < FARM_CHAT_TYPING_EVERY_MS) return
@@ -480,6 +557,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       sendTyping,
       myLook,
       setMyLook,
+      notify,
+      setNotify,
+      openRoom,
+      setViewing,
     }),
     [
       enabled,
@@ -498,6 +579,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       sendTyping,
       myLook,
       setMyLook,
+      notify,
+      setNotify,
+      openRoom,
+      setViewing,
     ]
   )
   return <MultiplayerContext.Provider value={value}>{children}</MultiplayerContext.Provider>

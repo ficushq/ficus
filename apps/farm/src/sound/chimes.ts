@@ -3,7 +3,7 @@
  * turns sound on; the choice is remembered in this browser under the farm's
  * own prefix, and on the account (see useFarmSounds.ts).
  */
-export type Chime = 'needsYou' | 'planted' | 'harvested'
+export type Chime = 'needsYou' | 'planted' | 'harvested' | 'mention'
 
 const STORAGE_KEY = 'ficus-farm:sound'
 
@@ -17,6 +17,11 @@ const NOTES: Record<Chime, Array<[freq: number, at: number, length: number]>> = 
   planted: [
     [392, 0, 0.1],
     [587, 0.08, 0.16],
+  ],
+  // A bright little "ping-ping" when someone DMs or @mentions you in farm chat.
+  mention: [
+    [988, 0, 0.09],
+    [1319, 0.08, 0.18],
   ],
   // A little major arpeggio for a harvest.
   harvested: [

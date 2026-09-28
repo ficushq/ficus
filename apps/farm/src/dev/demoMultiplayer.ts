@@ -34,7 +34,11 @@ const ROSA_ROUTE: Array<PresenceFocus | null> = [
   null,
 ]
 const SAM_ROUTE: Array<PresenceFocus | null> = [null, { kind: 'agent', agentId: 'mgr-docs' }]
-const ROSA_LINES = ['Morning! 🌱', 'The docs squad is flying today', 'Anyone looked at the flaky webhook one?']
+const ROSA_LINES = [
+  'Morning! 🌱',
+  'The docs squad is flying today',
+  'Anyone looked at ficus:ws:2? @You I think it’s yours',
+]
 
 const iso = () => new Date().toISOString()
 let nextId = 0
