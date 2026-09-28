@@ -8,6 +8,10 @@ import { migrationListFingerprint, readMigrationJournal, type MigrationJournalEn
  * `bun --watch` module graph, so `db:generate` rewriting the journal does not
  * restart `bun run dev` into applying a just-generated (possibly still
  * placeholder `--custom`) migration.
+ *
+ * Keep this function read-only: it runs every time a consuming file is
+ * transpiled (dev start, tests, `bun build`), not once. No writes, network or
+ * process side effects here.
  */
 export function builtMigrationJournal(): { entries: MigrationJournalEntry[]; fingerprint: string } {
   const entries = readMigrationJournal(join(import.meta.dir, '../../drizzle'))
