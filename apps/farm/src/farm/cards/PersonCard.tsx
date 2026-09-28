@@ -7,45 +7,42 @@ import { findPlot } from '../find'
 import type { Selection } from '../selection'
 import { useFarmCard } from './context'
 
-/** What someone's focus looks like in words, and where "Go there" takes you. */
+/** What someone's focus looks like in words: the thing they're at is named, and linked when it's on the farm. */
 function describe(
   focus: PresenceFocus | null,
   env: ReturnType<typeof useFarmCard>
-): { doing: string; goTo: Selection | null } {
-  if (!focus) return { doing: 'Around the farm', goTo: null }
+): { before: string; name?: string; after?: string; goTo: Selection | null } {
+  if (!focus) return { before: 'Around the farm', goTo: null }
   switch (focus.kind) {
     case 'agent': {
       const agent = env.agentsById.get(focus.agentId)
-      return {
-        doing: agent ? `Talking to ${agentLabel(agent).primary}` : 'Talking to a robot',
-        goTo: { kind: 'robot', agentId: focus.agentId },
-      }
+      return agent
+        ? { before: 'Talking to ', name: agentLabel(agent).primary, goTo: { kind: 'robot', agentId: focus.agentId } }
+        : { before: 'Talking to a robot', goTo: null }
     }
     case 'workstream': {
       const plot = findPlot(env.layout, focus.workstreamId)
-      return {
-        doing: plot ? `At “${plot.stream.title}”` : 'At a plant',
-        goTo: plot ? { kind: 'plot', streamId: focus.workstreamId } : null,
-      }
+      return plot
+        ? { before: 'At ', name: plot.stream.title, goTo: { kind: 'plot', streamId: focus.workstreamId } }
+        : { before: 'At a plant', goTo: null }
     }
     case 'squad': {
       const squad = env.squadsById.get(focus.squadId)
-      return {
-        doing: squad ? `In the ${squad.name} yard` : 'In a yard',
-        goTo: squad ? { kind: 'yard', squadId: focus.squadId } : null,
-      }
+      return squad
+        ? { before: 'In the ', name: squad.name, after: ' yard', goTo: { kind: 'yard', squadId: focus.squadId } }
+        : { before: 'In a yard', goTo: null }
     }
   }
 }
 
-/** Someone on the farm: what they're at, and a way to message them or go there. */
+/** Someone on the farm: what they're at (a link there), and ways to message or wave at them. */
 export function PersonCard({ userId }: { userId: string }) {
   const env = useFarmCard()
   const { people, me, focus, wave, enabled } = useMultiplayer()
   const isMe = me?.userId === userId
   const person = people.find((p) => p.userId === userId)
   const name = isMe ? (me?.name ?? 'You') : (person?.name ?? 'Someone')
-  const { doing, goTo } = describe(isMe ? focus : (person?.focus ?? null), env)
+  const doing = describe(isMe ? focus : (person?.focus ?? null), env)
   return (
     <>
       <p className="g-eyebrow">{isMe ? 'You' : 'On the farm'}</p>
@@ -55,7 +52,29 @@ export function PersonCard({ userId }: { userId: string }) {
         </span>
         <h2 className="g-card-title">{name}</h2>
       </div>
-      <p className="g-card-text">{person || isMe ? doing : 'Just left the farm'}</p>
+      <p className="g-card-text">
+        {person || isMe ? (
+          <>
+            {doing.before}
+            {doing.name &&
+              (doing.goTo ? (
+                <button
+                  type="button"
+                  className="g-inline-link"
+                  title={`Show ${doing.name} on the farm`}
+                  onClick={() => env.flyTo(doing.goTo!)}
+                >
+                  {doing.name}
+                </button>
+              ) : (
+                doing.name
+              ))}
+            {doing.after}
+          </>
+        ) : (
+          'Just left the farm'
+        )}
+      </p>
       <div className="g-card-actions">
         {!isMe && (
           <button
@@ -76,11 +95,6 @@ export function PersonCard({ userId }: { userId: string }) {
         {isMe && (
           <button type="button" className="g-button g-button-primary" onClick={env.changeLook}>
             Change your look
-          </button>
-        )}
-        {goTo && (
-          <button type="button" className="g-button" onClick={() => env.select(goTo)}>
-            Go there
           </button>
         )}
       </div>

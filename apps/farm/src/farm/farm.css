@@ -860,3 +860,22 @@ a.g-pr-link:focus-visible {
   margin: 8px 0 2px;
   font-size: 13px;
 }
+
+/* A name in running text that takes you to it (a person's "Talking to Docs"). */
+.g-inline-link {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--g-accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.g-inline-link:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight-strong);
+  outline-offset: 2px;
+}
