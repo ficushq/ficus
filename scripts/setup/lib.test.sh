@@ -3152,6 +3152,16 @@ EOF
       "$([[ $(dr_sums) == "${dr_before}" ]] && echo same || echo changed)" 'same'
   done
   rm -rf "${DRT}" "${DRS}"
+  # N-E: a staged managed.env the dry run cannot read is said so, never
+  # skipped silently (root reads everything, so only a non-root pass can).
+  if [[ ${EUID} -ne 0 ]]; then
+    chmod 000 "${DR}/stage/managed.env"
+    dr_rc=0
+    dr_out=$(dr_run) || dr_rc=$?
+    chmod 600 "${DR}/stage/managed.env"
+    expect_eq 'setup-host --dry-run, an unreadable staged managed.env: exits 0 and says it cannot read it' \
+      "${dr_rc}:$(grep -c 'the staged copy is not readable by' <<<"${dr_out}")" '0:1'
+  fi
   # The same host once renamed: the same planned core.env, and no rename phase.
   # (The host globals are set in a subshell on purpose: they stay local to it.)
   # shellcheck disable=SC2030,SC2031

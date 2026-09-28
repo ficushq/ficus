@@ -830,10 +830,19 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     printf '\nPhase 5.5 — platform-managed artifacts (from %s)\n' "${ARTIFACTS_DIR}"
     if [[ -f ${ARTIFACTS_DIR}/managed.env ]]; then
       plan "install managed.env → ${FICUS_MANAGED_ENV_PATH} (0600 root; env credential VALUES never printed)"
-      # Installed in the release's prefix (managed_env_prepare); names only.
-      if [[ -r ${ARTIFACTS_DIR}/managed.env ]] && managed_env_prepare "${ARTIFACTS_DIR}" FICUS 2>/dev/null &&
-        [[ ${_MANAGED_ENV_RENAMED} -eq 1 ]]; then
-        plan "  the staged copy predates the rename: installed with ${_EPR_RENAMED_LINES} setting(s) under their FICUS_* names (the staged file is left as it is)"
+      # Installed in the release's prefix (managed_env_prepare), in a
+      # subshell so nothing it reads stays in this shell; names only. Its log
+      # lines are dropped (they would name the pre-rename keys), but a
+      # failure is reported: the real run would stop on it at phase 5.5.
+      if [[ ! -r ${ARTIFACTS_DIR}/managed.env ]]; then
+        plan "  the staged copy is not readable by $(id -un) — the real run (as root) checks whether it predates the rename"
+      elif ! dry_managed=$(
+        managed_env_prepare "${ARTIFACTS_DIR}" FICUS 2>/dev/null || exit 1
+        printf '%s %s' "${_MANAGED_ENV_RENAMED}" "${_EPR_RENAMED_LINES:-0}"
+      ); then
+        die "dry run: ${ARTIFACTS_DIR}/managed.env could not be prepared for install (the real run would stop on it at phase 5.5) — check that it is a readable text file"
+      elif [[ ${dry_managed%% *} -eq 1 ]]; then
+        plan "  the staged copy predates the rename: installed with ${dry_managed#* } setting(s) under their FICUS_* names (the staged file is left as it is)"
       fi
     fi
     if [[ -f ${ARTIFACTS_DIR}/manifest ]]; then
