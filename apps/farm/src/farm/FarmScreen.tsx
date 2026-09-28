@@ -6,6 +6,7 @@ import { layoutFarm, type FarmInput } from './layout'
 import { SceneWorld } from './Scene'
 import { PlantingWalker, usePlantings } from './Planting'
 import { RobotWalker, useRobotWalks } from './RobotWalkers'
+import { FlyingLetters } from './FlyingLetters'
 import { useCamera } from './useCamera'
 import { useViewportSize } from './useViewportSize'
 import { FarmCard, selectionAnchor } from './FarmCard'
@@ -331,6 +332,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
               selectedUserId={selection?.kind === 'person' ? selection.userId : null}
               onSelect={selectPerson}
             />
+            <FlyingLetters layout={layout} me={placed.find((p) => p.isMe)?.spot.at ?? null} />
           </g>
         </svg>
       </div>

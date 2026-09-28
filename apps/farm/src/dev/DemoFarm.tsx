@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FarmScreen } from '../farm/FarmScreen'
 import { ActionsApiProvider, type ActionsApi } from '../actions'
+import { sendLetter } from '../farm/letters'
 import { makeStream } from '../farm/testFixtures'
 import { SAMPLE_FARMER_QUESTION, SAMPLE_QUESTION, sampleFarm } from './sampleFarm'
 
@@ -61,7 +62,12 @@ export default function DemoFarm() {
   const [shift, setShift] = useState(0)
   useEffect(() => {
     if (mode !== 'moves') return
-    const timer = window.setInterval(() => setShift((n) => n + 1), 4500)
+    const timer = window.setInterval(() => {
+      setShift((n) => n + 1)
+      // Mail between robots, and an answer from the mailbox.
+      sendLetter({ from: { kind: 'agent', agentId: 'mgr-platform' }, toAgentId: 'w-bo' })
+      window.setTimeout(() => sendLetter({ from: { kind: 'mailbox' }, toAgentId: 'w-gus' }), 1500)
+    }, 4500)
     return () => window.clearInterval(timer)
   }, [mode])
   const shifted = useMemo(() => {

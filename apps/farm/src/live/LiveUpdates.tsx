@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createWsClient, type WsClient } from '@ficus/client-core'
 import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { client } from '../api/client'
+import { letterForEvent, sendLetter } from '../farm/letters'
 import { dedupeKeys, FARM_TOPICS, isLiveEvent, keysForEvent } from './invalidation'
 
 export type LiveStatus = 'connecting' | 'live' | 'offline'
@@ -54,7 +55,11 @@ export function useLiveUpdates(enabled: boolean): LiveStatus {
             if (retry !== null || pending.length) schedule([['squads'], ['actions'], ['agents']])
           },
           onMessage: (data) => {
-            if (isLiveEvent(data)) schedule(keysForEvent(data))
+            if (!isLiveEvent(data)) return
+            schedule(keysForEvent(data))
+            // Mail to a robot, or an answer to its question: a letter flies to it.
+            const letter = letterForEvent(data)
+            if (letter) sendLetter(letter)
           },
           onClose: () => {
             socket = null

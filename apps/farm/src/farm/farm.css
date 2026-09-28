@@ -902,3 +902,36 @@ a.g-pr-link:focus-visible {
   opacity: 0;
   transition: opacity 0.35s ease-in;
 }
+
+/* Letters flying to robots (FlyingLetters.tsx): a little envelope that pops as it lands. */
+.g-letter rect {
+  fill: var(--g-paper);
+  stroke: var(--g-outline);
+  stroke-width: 1.4;
+}
+
+.g-letter path {
+  stroke: var(--g-outline);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.g-letter-seal {
+  fill: var(--g-accent);
+}
+
+.g-letter-landed {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: g-letter-land 0.45s ease-out forwards;
+}
+
+@keyframes g-letter-land {
+  40% {
+    transform: scale(1.4);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}

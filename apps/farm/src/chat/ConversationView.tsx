@@ -6,6 +6,7 @@ import { chatQueries } from './queries'
 import { Composer } from './Composer'
 import { QuestionCard } from './QuestionCard'
 import { Transcript } from './Transcript'
+import { sendLetter } from '../farm/letters'
 
 const NEAR_BOTTOM_PX = 80
 
@@ -141,6 +142,8 @@ export function ConversationView({
   const handleSend = async (text: string) => {
     if (inputDisabled) return
     stick.current = true
+    // Your message flies across the farm to the robot as a letter.
+    if (conv.agentId) sendLetter({ from: { kind: 'me' }, toAgentId: conv.agentId })
     await conv.sendAccepted(text, { deliveryMode }).accepted
   }
 
@@ -196,6 +199,7 @@ export function ConversationView({
               disabled={inputDisabled}
               onSubmit={(answer) => {
                 setQuestionSubmitted(true)
+                if (conv.agentId) sendLetter({ from: { kind: 'me' }, toAgentId: conv.agentId })
                 conv.send(answer)
               }}
             />
