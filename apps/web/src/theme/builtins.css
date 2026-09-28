@@ -1155,7 +1155,6 @@
     --log-cursor-accent: 0 0 0;
     --log-selection-background: 62 68 81;
     --log-selection-foreground: none;
-    /* Ficus brand: leaf / moss tile, white ink (see brand/README.md palette). */
     --brand-gradient-from: 138 154 91;
     --brand-gradient-to: 63 107 79;
     --brand-tile: 63 107 79;
@@ -1638,7 +1637,6 @@
     --log-cursor-accent: 0 0 0;
     --log-selection-background: 62 68 81;
     --log-selection-foreground: none;
-    /* Ficus brand: dark-mode leaf tile, sage accent, white ink (see brand/README.md palette). */
     --brand-gradient-from: 135 148 90;
     --brand-gradient-to: 159 181 127;
     --brand-tile: 94 127 78;
