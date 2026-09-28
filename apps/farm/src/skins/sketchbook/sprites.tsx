@@ -74,12 +74,12 @@ export const SketchbookGround = memo(function SketchbookGround({ bounds }: { bou
  * The glyphs in a badge, drawn as pencil strokes centred on the bubble (a handwriting font's "?" and "!"
  * sit off-centre and lean), each with an optional dot.
  */
-const GLYPHS: Record<BadgeKind, { d: string; dot?: boolean }> = {
+const GLYPHS: Record<BadgeKind, { d: string; dot?: number }> = {
   question: {
-    d: 'M-3.8 -21.6 Q-3.6 -25.6 0.2 -25.6 Q4.2 -25.6 4.2 -21.9 Q4.2 -19.3 1.2 -17.9 Q0.1 -17.3 0.1 -14.6',
-    dot: true,
+    d: 'M-3 -21.2 Q-2.8 -24.2 0.2 -24.2 Q3.4 -24.2 3.4 -21.4 Q3.4 -19.3 1 -18.2 Q0.1 -17.7 0.1 -15.6',
+    dot: -11.9,
   },
-  blocked: { d: 'M0 -25.4 L0.1 -14.8', dot: true },
+  blocked: { d: 'M0 -23.8 L0.1 -15.8', dot: -11.9 },
   harvest: { d: 'M-5 -17.4 L-1.4 -13.4 L5.4 -21.6' },
 }
 
@@ -90,8 +90,8 @@ function Badge({ kind }: { kind: BadgeKind }) {
     <g className="ln-float">
       <Path d="M-3 -7 L0 0 L3 -7" fill={BG} stroke={FG} strokeLinejoin="round" />
       <Circle cy={-17} r={11} fill={BG} stroke={FG} />
-      <Path d={glyph.d} fill="none" stroke={ACCENT} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-      {glyph.dot && <Circle cy={-10.6} r={1.5} fill={ACCENT} stroke="none" />}
+      <Path d={glyph.d} fill="none" stroke={ACCENT} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
+      {glyph.dot !== undefined && <Circle cy={glyph.dot} r={1.35} fill={ACCENT} stroke="none" />}
     </g>
   )
 }
