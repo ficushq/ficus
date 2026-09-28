@@ -5,6 +5,7 @@ import { db, integrationCredentialCleanupJobs, integrationRevocationJobs, secret
 import {
   createGeneratedSecretEnvironmentFixture,
   isMatchableSecret,
+  SecretDecryptError,
   SecretStore,
   SECRET_CHANGED_CHANNEL,
 } from './store'
@@ -495,7 +496,7 @@ describe('SecretStore', () => {
           mutateRan = true
           return 'fresh-empty-overwrite'
         })
-      ).rejects.toThrow()
+      ).rejects.toThrow(new SecretDecryptError('GITHUB_TOKEN', undefined).message)
       expect(mutateRan).toBe(false)
 
       const [row] = await db.select().from(secrets).where(eq(secrets.key, 'GITHUB_TOKEN'))

@@ -35,6 +35,7 @@ import {
   type ClaudeCodeStatus,
 } from '../services/agent/claude-code/availability'
 import { setClaudeCodeAccountEnabled } from '../services/agent/claude-code/account'
+import { SecretDecryptError } from '../services/secrets'
 import {
   addAccount,
   deleteAccount,
@@ -378,7 +379,13 @@ app.put('/claude-code/enabled', requirePermission('provider-auth:write'), async 
   const body = await parseOptionalJsonObjectBody<{ enabled?: unknown }>(c, {})
   if (typeof body.enabled !== 'boolean') return c.json({ error: 'Missing boolean "enabled" in request body' }, 400)
   if (!claudeCodeOffered()) return c.json({ error: 'Claude Code is not available on Ficus Cloud' }, 409)
-  await setClaudeCodeAccountEnabled(body.enabled, auditActor(c.get('identity') as Identity))
+  try {
+    await setClaudeCodeAccountEnabled(body.enabled, auditActor(c.get('identity') as Identity))
+  } catch (error) {
+    if (error instanceof SecretDecryptError)
+      return c.json({ error: 'AI provider accounts cannot be updated: ' + error.message }, 500)
+    throw error
+  }
   const status = await getClaudeCodeStatus({ refresh: true })
   await refreshModelRuntime()
   return c.json(claudeCodeStatusJson(status))

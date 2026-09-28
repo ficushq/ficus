@@ -128,6 +128,24 @@ export function claudeCodeReady(): boolean {
   return cached?.status.loggedIn === true
 }
 
+/**
+ * Make account selection see a current status. Selection is synchronous and reads the cache, so an
+ * agent start must wait for it here while a Claude Code account is enabled: otherwise the first start
+ * after boot (or within a minute of signing in) would skip the account as not signed in.
+ */
+export async function primeClaudeCodeStatus(
+  options: { env?: Record<string, string | undefined>; run?: RunClaude } = {}
+): Promise<void> {
+  const env = options.env ?? process.env
+  if (!claudeCodeOffered(env) || !accountEnabled()) return
+  if (cached && Date.now() - cached.at < STATUS_TTL_MS) return
+  try {
+    cached = { at: Date.now(), status: await readStatus(env, options.run ?? runClaude, true) }
+  } catch {
+    // An unreadable status leaves the account unusable; selection fails over.
+  }
+}
+
 /** Forget the cached status, so the next read runs `claude` again. */
 export function invalidateClaudeCodeStatus() {
   cached = undefined
