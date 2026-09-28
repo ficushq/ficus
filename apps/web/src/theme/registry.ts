@@ -26,7 +26,7 @@ export interface WebThemeDefinition extends ThemeDescriptor {
 /** The original default pair, with the narrow phase-5 contrast corrections. */
 export const TAU_THEME: WebThemeDefinition = {
   id: 'tau',
-  label: 'Ficus',
+  label: 'Iris',
   kind: 'dual',
   variantClass: { light: null, dark: 'dark' },
 }

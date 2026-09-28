@@ -158,8 +158,8 @@ test('trigger exposes aria-haspopup/aria-expanded and opens a labelled dialog', 
 test('lists all four built-ins with the stored theme checked, none other', async () => {
   const { container } = await renderPicker({ themeId: 'harbor' })
   await open(container)
-  const circles = getAllByRole(container, 'radio', { name: /Ficus|Harbor|Ember|High contrast/ })
-  expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual(['Ficus', 'Harbor', 'Ember', 'High contrast'])
+  const circles = getAllByRole(container, 'radio', { name: /Iris|Harbor|Ember|High contrast/ })
+  expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual(['Iris', 'Harbor', 'Ember', 'High contrast'])
   expect(circles.map((c) => c.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false', 'false'])
   circles.forEach((c) => expect(c.getAttribute('role')).toBe('radio'))
 })
@@ -167,9 +167,9 @@ test('lists all four built-ins with the stored theme checked, none other', async
 test('adds a circle per saved preset, selected instead of its base built-in when active; High contrast stays last', async () => {
   const { container } = await renderPicker({ presets: [midnight], presetId: midnight.id })
   await open(container)
-  const circles = getAllByRole(container, 'radio', { name: /Ficus|Harbor|Ember|High contrast|Midnight/ })
+  const circles = getAllByRole(container, 'radio', { name: /Iris|Harbor|Ember|High contrast|Midnight/ })
   expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual([
-    'Ficus',
+    'Iris',
     'Harbor',
     'Ember',
     'Midnight',
@@ -197,13 +197,13 @@ test('each built-in circle resolves its own real --color-primary token under the
   const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
   await open(container)
   const values = new Map<string, string>()
-  for (const label of ['Ficus', 'Harbor', 'Ember', 'High contrast']) {
+  for (const label of ['Iris', 'Harbor', 'Ember', 'High contrast']) {
     const circle = getByRole(container, 'radio', { name: label })
     const swatch = circle.querySelector('[data-theme-scope]')!
     values.set(label, window.getComputedStyle(swatch).getPropertyValue('--color-primary').trim())
   }
   // Every theme's swatch resolves a distinct, non-empty accent token.
-  expect(values.get('Ficus')).toBe('91 33 182')
+  expect(values.get('Iris')).toBe('91 33 182')
   expect(values.get('Harbor')).toBe('14 95 109')
   expect(values.get('Ember')).toBe('151 55 29')
   expect(values.get('High contrast')).toBe('0 0 0')
@@ -272,7 +272,7 @@ test('Enter and Space activate a circle exactly like a click', async () => {
   const harbor = getByRole(container, 'radio', { name: 'Harbor' })
   await act(async () => fireEvent.keyDown(harbor, { key: 'Enter' }))
   expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
-  await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Ficus' })))
+  await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Iris' })))
   expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
   await act(async () => fireEvent.keyDown(getByRole(container, 'radio', { name: 'Ember' }), { key: ' ' }))
   expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
@@ -395,7 +395,7 @@ test('moving straight from one circle to the next swaps the preview without rest
   await open(container)
   const hover = useHoverTimer()
   try {
-    const tau = getByRole(container, 'radio', { name: 'Ficus' })
+    const tau = getByRole(container, 'radio', { name: 'Iris' })
     const harbor = getByRole(container, 'radio', { name: 'Harbor' })
     const ember = getByRole(container, 'radio', { name: 'Ember' })
     await hoverEnter(harbor)

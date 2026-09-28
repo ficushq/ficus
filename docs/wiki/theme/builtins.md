@@ -2,7 +2,7 @@
 
 ## Intent and compatibility
 
-- **Ficus** (`tau`, dual) remains the default theme and light remains the fresh-install appearance.
+- **Iris** (`tau`, dual) remains the default theme and light remains the fresh-install appearance.
 - **Harbor** (`harbor`, dual): cool slate surfaces, restrained teal actions, dark blue-gray code/graph islands.
 - **Forest** (`forest`, dual): the owner's own palette preset — pine-green actions, a warm bark secondary and mossy tertiary swatch, and an olive-gray chrome tint. See [Forest palette](#forest-palette) below.
 - **Ember** (`ember`, dual): warm paper/charcoal surfaces and terracotta actions, warm dark code/graph islands.

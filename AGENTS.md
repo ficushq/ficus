@@ -198,7 +198,7 @@ and interaction patterns for the webapp.
 ### Theme colors
 
 Every color in `apps/web` comes from theme tokens, so it follows the selected
-theme (Ficus, Harbor, Ember, High contrast, or a custom theme) in light and dark.
+theme (Iris, Harbor, Ember, High contrast, or a custom theme) in light and dark.
 
 - Use semantic token utilities and the `ficus-*` component classes (`bg-surface`,
   `text-primary`, `text-on-accent`, `border-th-border`,
