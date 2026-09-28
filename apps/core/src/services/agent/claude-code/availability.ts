@@ -4,7 +4,8 @@
  * Anthropic permits an end user to sign in to the unmodified Claude Code program with their own
  * Claude subscription; it does not permit a product to collect, store, or route requests through
  * those credentials. So Claude Code is offered only where Core runs on the user's own machine
- * (never a Ficus Cloud instance), as an Anthropic account the owner turns on, and Core only ever
+ * (not a Ficus Cloud instance unless the platform opts that tenant in with FICUS_CLAUDE_CODE=1), as
+ * an Anthropic account the owner turns on, and Core only ever
  * runs `claude` and reads its sign-in STATUS. It never reads, copies, or stores the credential,
  * and sign-in happens in Claude Code's own `claude auth login` flow.
  */
@@ -15,7 +16,7 @@ import { claudeCodeAccount } from './account'
 const log = createLogger('claude-code')
 
 export interface ClaudeCodeStatus {
-  /** This deployment can offer Claude Code: Core runs on the user's machine, not Ficus Cloud. */
+  /** This deployment can offer Claude Code: Core runs on the user's machine, or an opted-in tenant. */
   offered: boolean
   /** The owner turned Claude Code on: its Anthropic account exists and is enabled. */
   enabled: boolean
@@ -30,9 +31,13 @@ export interface ClaudeCodeStatus {
   reason?: string
 }
 
-/** Ficus Cloud hosts Core on Ficus machines; Claude Code there is not offered. */
+/**
+ * Ficus Cloud hosts Core on Ficus machines, where Claude Code is not offered unless that tenant is
+ * explicitly opted in with FICUS_CLAUDE_CODE=1 (Claude Code is then installed and signed in on the
+ * tenant host, for the tenant's own owner).
+ */
 export function claudeCodeOffered(env: Record<string, string | undefined> = process.env): boolean {
-  return env.FICUS_MANAGED !== '1'
+  return env.FICUS_MANAGED !== '1' || env.FICUS_CLAUDE_CODE === '1'
 }
 
 /** The first `claude` on PATH or in Claude Code's install locations. */
