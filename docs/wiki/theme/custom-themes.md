@@ -101,9 +101,11 @@ shape is what gets saved back on the next edit.
 
 Exports always carry `format: "ficus-custom-theme"`. Imports also accept files
 exported before the Ficus rename, which carry the old product name's marker,
-and rewrite it to `ficus-custom-theme`; that acceptance is removed in the
-Wave 3 sweep. Core migration `0192_theme_ids_ficus` rewrote the marker in
-stored documents (account snapshots and saved presets).
+and rewrite it to `ficus-custom-theme`. Such a file's base keeps its look: the
+purple base resolves to `iris` and Forest to `ficus`. That acceptance is
+removed in the Wave 3 sweep. Core migration `0192_theme_ids_ficus` applied the
+same marker and base rewrite to stored documents (account snapshots and saved
+presets).
 
 ## Seed-color derivation (`palette`)
 

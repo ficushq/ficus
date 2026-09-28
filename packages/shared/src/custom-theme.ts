@@ -40,6 +40,14 @@ export const CUSTOM_THEME_FORMAT = 'ficus-custom-theme'
  * to CUSTOM_THEME_FORMAT. Remove the old marker in the Wave 3 sweep. */
 const ACCEPTED_CUSTOM_THEME_FORMATS: readonly string[] = [CUSTOM_THEME_FORMAT, 'tau-custom-theme']
 
+/** Built-in bases renamed with the Ficus rename, applied only to a document carrying the pre-rename marker (the same
+ * mapping Core migration 0192 applied to stored documents): the purple base keeps its look as Iris, and Forest is
+ * now Ficus. Remove with the old marker in the Wave 3 sweep. */
+const PRE_RENAME_BASES: ReadonlyMap<unknown, string> = new Map([
+  ['tau', 'iris'],
+  ['forest', 'ficus'],
+])
+
 /** v2: a preset covers both light and dark (or a single constant variant for
  * unified bases) so it follows the Light/Dark/System toggle. v1 documents
  * (one concrete `appearance` + `overrides`) still load; validateCustomTheme
@@ -121,7 +129,8 @@ export function validateCustomTheme(raw: string, builtins: readonly ThemeDescrip
     return fail('Unsupported theme version. This app supports version 1 or 2.')
   if (typeof doc.name !== 'string' || !doc.name.trim() || [...doc.name].length > 40)
     return fail('Theme name must be 1–40 characters.')
-  const base = builtins.find((theme) => theme.id === doc.base)
+  const baseId = doc.format === CUSTOM_THEME_FORMAT ? doc.base : (PRE_RENAME_BASES.get(doc.base) ?? doc.base)
+  const base = builtins.find((theme) => theme.id === baseId)
   if (!base) return fail('Choose a known built-in base theme.')
 
   let palette: ThemePalette | undefined

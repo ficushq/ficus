@@ -106,6 +106,22 @@ describe('format marker', () => {
       expect(result.ok && result.document.format).toBe('ficus-custom-theme')
     }
   })
+
+  test('a pre-rename file keeps its look: the purple base resolves to iris and Forest to ficus', () => {
+    const renamed = [...builtins, { id: 'ficus', label: 'Ficus', kind: 'dual' as const }]
+    const load = (base: string, format: string) =>
+      validateCustomTheme(JSON.stringify({ ...v2doc, base, format }), renamed)
+    const purple = load('tau', 'tau-custom-theme')
+    expect(purple.ok && purple.document.base).toBe('iris')
+    expect(purple.ok && purple.document.format).toBe('ficus-custom-theme')
+    const forest = load('forest', 'tau-custom-theme')
+    expect(forest.ok && forest.document.base).toBe('ficus')
+    const iris = load('iris', 'tau-custom-theme')
+    expect(iris.ok && iris.document.base).toBe('iris')
+    // A current-format document names current ids only.
+    expect(load('tau', 'ficus-custom-theme').ok).toBe(false)
+    expect(load('forest', 'ficus-custom-theme').ok).toBe(false)
+  })
 })
 
 describe('v1 documents load and normalize into v2 pairs', () => {

@@ -9,7 +9,7 @@
 - **High contrast** (`high-contrast`, unified): constant light ink-on-paper chrome, strong black boundaries and black code/graph backgrounds. This is not an application-wide AAA certification.
 - Six palettes ported from the BigBrain project's own design tokens (`web/ui/src/design/tokens.css`), each a constant-appearance built-in like High contrast: **nurebairo** (`nurebairo`, dark), **Phosphorus** (`phosphorus`, light), **yamabukiiro** (`yamabukiiro`, light), **moegiiro** (`moegiiro`, dark), **adzukiiro** (`adzukiiro`, dark), **asagiiro** (`asagiiro`, dark). See [BigBrain palettes](#bigbrain-palettes) below.
 
-Core migration `0192_theme_ids_ficus` moved every stored selection of the pre-rename purple and Forest ids to `ficus`, in account selections and in saved custom-theme documents, so Iris is opt-in. An id the registry does not know falls back to Ficus.
+Core migration `0192_theme_ids_ficus` moved stored ids from before the rename. A plain account selection of the purple or Forest id became `ficus`, so Iris is opt-in. A custom theme keeps its look: a purple base became `iris` and a Forest base `ficus`, in the account's custom-theme snapshot and in saved presets, and an importer maps a pre-rename file's base the same way. An id the registry does not know falls back to Ficus.
 
 `packages/shared/src/theme-triples.ts` (`@ficus/shared/theme-triples`) exports each built-in's page background, primary text and primary colour per appearance as `#rrggbb`, for surfaces that paint a theme without its CSS. `apps/web/src/theme/themeTriples.test.ts` keeps it equal to the CSS.
 

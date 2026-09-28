@@ -7,7 +7,7 @@ import { createPostgresConnection, getConnectionString } from './connection'
 import { applyMigrations } from './migrator'
 
 // Migration history: the retired theme ids and format marker below are the values this migration rewrites.
-const marker = `jsonb_set("theme", '{themeId}', '"ficus"')`
+const marker = `jsonb_set("theme", '{themeId}'`
 const migrations = readMigrationFiles({ migrationsFolder: join(MONOREPO_ROOT, 'apps/core/drizzle') })
 const target = migrations.find((migration) => migration.sql.join('\n').includes(marker))
 const predecessors = target ? migrations.filter((migration) => migration.folderMillis < target.folderMillis) : []
@@ -55,7 +55,7 @@ describe('theme ids migration (real runner, isolated database)', () => {
     await admin?.end()
   })
 
-  test('moves tau and forest to ficus in selections, custom snapshots and presets; leaves iris and custom ids', async () => {
+  test('plain selections move to ficus; custom themes keep their look (purple base to iris, forest to ficus); iris and custom ids stay', async () => {
     expect(target).toBeDefined()
     await applyMigrations(connection, predecessors)
 
@@ -67,6 +67,7 @@ describe('theme ids migration (real runner, isolated database)', () => {
       [user(5), selection('tau', doc('tau', 'tau-custom-theme'))],
       [user(6), selection('harbor', doc('harbor', 'tau-custom-theme'))],
       [user(7), selection('iris', doc('iris', 'ficus-custom-theme'))],
+      [user(8), selection('forest', doc('forest', 'tau-custom-theme'))],
     ]
     for (const [id] of preferences)
       await connection.unsafe('INSERT INTO users (id, email) VALUES ($1, $2)', [id, `${id}@example.test`])
@@ -101,9 +102,11 @@ describe('theme ids migration (real runner, isolated database)', () => {
     expect(themes[user(2)]).toEqual(selection('ficus'))
     expect(themes[user(3)]).toEqual(selection('iris'))
     expect(themes[user(4)]).toEqual(selection('my-own-theme'))
-    expect(themes[user(5)]).toEqual(selection('ficus', doc('ficus', 'ficus-custom-theme')))
+    // A selection carrying a custom theme follows its base (themeId must equal customTheme.base).
+    expect(themes[user(5)]).toEqual(selection('iris', doc('iris', 'ficus-custom-theme')))
     expect(themes[user(6)]).toEqual(selection('harbor', doc('harbor', 'ficus-custom-theme')))
     expect(themes[user(7)]).toEqual(selection('iris', doc('iris', 'ficus-custom-theme')))
+    expect(themes[user(8)]).toEqual(selection('ficus', doc('ficus', 'ficus-custom-theme')))
 
     const documents = Object.fromEntries(
       (
@@ -112,7 +115,7 @@ describe('theme ids migration (real runner, isolated database)', () => {
         )
       ).map((row) => [row.id, row.document])
     )
-    expect(documents[presets[0]![0]]).toEqual(doc('ficus', 'ficus-custom-theme'))
+    expect(documents[presets[0]![0]]).toEqual(doc('iris', 'ficus-custom-theme'))
     expect(documents[presets[1]![0]]).toEqual(doc('ficus', 'ficus-custom-theme'))
     expect(documents[presets[2]![0]]).toEqual(doc('harbor', 'ficus-custom-theme'))
     expect(documents[presets[3]![0]]).toEqual(doc('iris', 'ficus-custom-theme'))
