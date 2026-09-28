@@ -11,6 +11,11 @@
  * commands: the CLI restarts through pm2 afterwards, so a failed build never
  * leaves a half-restarted pair. This module must not import anything that
  * opens a database connection at load time.
+ *
+ * `bun run update:offline` does not load this module directly: it runs
+ * `update-offline-bootstrap.ts`, which installs the dependencies first when they
+ * changed or are stale, then runs this file. Its imports need this release's
+ * workspace packages, which a checkout just moved to a new release may not have yet.
  */
 import '../boot/legacy-env'
 import { randomUUID } from 'crypto'
@@ -19,6 +24,12 @@ import { dirname, join } from 'path'
 import { commandsForTasks, detectUpdateTasks, isServiceRestartCommand } from '../services/updates/change-detector'
 import { CommandRunner, type RunProcess } from '../services/updates/command-runner'
 import { detectDeploymentFlavor, resolveRepoRoot, type DeploymentFlavor } from '../services/updates/deployment-flavor'
+import {
+  BOOTSTRAP_INSTALLED_FLAG,
+  BOOTSTRAP_STALE_FLAG,
+  DEPENDENCY_MARKER_PATH,
+  touchesDependencies,
+} from '../services/updates/dependency-install'
 import type { LocalUpdateRun, PlannedCommand, UpdateTask } from '../services/updates/types'
 
 export class OfflineUpdateBlockedError extends Error {}
@@ -29,12 +40,29 @@ export class OfflineUpdateBlockedError extends Error {}
  */
 export const STALE_RUN_MS = 2 * 60 * 60 * 1000
 
+/** What the bootstrap did before it ran this module (see update-offline-bootstrap.ts). */
+export interface OfflineUpdateBootstrap {
+  /** It already ran the install: the plan's install command is recorded, not run again. */
+  installed: boolean
+  /**
+   * `node_modules` did not match this checkout whatever the diff says (say, an earlier
+   * update checked this release out but failed before installing): plan every task a
+   * dependency change plans, so the builds catch up too.
+   */
+  staleDependencies: boolean
+}
+
 export function planOfflineUpdate(
   changedFiles: string[],
-  flavor: DeploymentFlavor
+  flavor: DeploymentFlavor,
+  options: { staleDependencies?: boolean } = {}
 ): { tasks: UpdateTask[]; commands: PlannedCommand[] } {
-  const tasks = detectUpdateTasks(changedFiles, flavor)
-  const commands = commandsForTasks(tasks, changedFiles, flavor).filter((c) => !isServiceRestartCommand(c.command))
+  const planned =
+    options.staleDependencies && !touchesDependencies(changedFiles)
+      ? [...changedFiles, DEPENDENCY_MARKER_PATH]
+      : changedFiles
+  const tasks = detectUpdateTasks(planned, flavor)
+  const commands = commandsForTasks(tasks, planned, flavor).filter((c) => !isServiceRestartCommand(c.command))
   return { tasks, commands }
 }
 
@@ -46,6 +74,7 @@ export interface OfflineUpdateOptions {
   runProcess?: RunProcess
   statusPath?: string
   now?: () => string
+  bootstrap?: OfflineUpdateBootstrap
 }
 
 export async function runOfflineUpdate(options: OfflineUpdateOptions): Promise<LocalUpdateRun> {
@@ -97,7 +126,16 @@ export async function runOfflineUpdate(options: OfflineUpdateOptions): Promise<L
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
-  const { tasks, commands } = planOfflineUpdate(changedFiles, flavor)
+  const bootstrap = options.bootstrap
+  const { tasks, commands } = planOfflineUpdate(changedFiles, flavor, {
+    staleDependencies: bootstrap?.staleDependencies,
+  })
+  const installedByBootstrap = (c: PlannedCommand) => bootstrap?.installed === true && c.task === 'install'
+  for (const c of commands.filter(installedByBootstrap)) {
+    c.status = 'succeeded'
+    c.exitCode = 0
+    c.note = 'Run by the update bootstrap before this release loaded.'
+  }
 
   const run: LocalUpdateRun = {
     id: randomUUID(),
@@ -121,7 +159,7 @@ export async function runOfflineUpdate(options: OfflineUpdateOptions): Promise<L
     onUpdate: () => persist(run),
   })
   try {
-    await runner.runAll(commands)
+    await runner.runAll(commands.filter((c) => !installedByBootstrap(c)))
     run.status = 'succeeded'
     run.message =
       commands.length === 0 ? 'No build tasks needed for the changed files.' : `Ran ${commands.length} command(s).`
@@ -157,7 +195,16 @@ if (import.meta.main) {
   }
   const repoRoot = resolveRepoRoot()
   try {
-    const run = await runOfflineUpdate({ repoRoot, fromSha, env: process.env, git: (args) => gitOut(repoRoot, args) })
+    const run = await runOfflineUpdate({
+      repoRoot,
+      fromSha,
+      env: process.env,
+      git: (args) => gitOut(repoRoot, args),
+      bootstrap: {
+        installed: process.argv.includes(BOOTSTRAP_INSTALLED_FLAG),
+        staleDependencies: process.argv.includes(BOOTSTRAP_STALE_FLAG),
+      },
+    })
     console.log(`offline update ${run.status}: ${run.message ?? ''} (${run.selectedTasks.join(', ') || 'no tasks'})`)
   } catch (err) {
     console.error(`offline update failed: ${(err as Error).message}`)

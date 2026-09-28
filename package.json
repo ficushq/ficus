@@ -10,7 +10,7 @@
   "scripts": {
     "start": "docker compose up -d && pm2 start ecosystem.config.js",
     "setup": "bun apps/cli/src/index.ts server setup",
-    "update:offline": "bun apps/core/src/scripts/update-offline.ts",
+    "update:offline": "bun apps/core/src/scripts/update-offline-bootstrap.ts",
     "start:core": "pm2 start ecosystem.config.js --only $(bun scripts/pm2-name.ts api),$(bun scripts/pm2-name.ts worker)",
     "stop": "pm2 stop ecosystem.config.js && docker compose down",
     "stop:core": "pm2 stop $(bun scripts/pm2-name.ts api) $(bun scripts/pm2-name.ts worker)",

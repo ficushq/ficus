@@ -24,6 +24,15 @@ describe('planOfflineUpdate', () => {
   it('is empty when nothing relevant changed', () => {
     expect(planOfflineUpdate(['README.md'], flavor).commands).toEqual([])
   })
+  it('plans every dependency-change task when the bootstrap found the dependencies stale', () => {
+    expect(planOfflineUpdate([], flavor, { staleDependencies: true }).tasks).toEqual(['install', 'cli', 'core', 'web'])
+    expect(planOfflineUpdate(['apps/core/src/x.ts'], flavor, { staleDependencies: true }).tasks).toEqual([
+      'install',
+      'cli',
+      'core',
+      'web',
+    ])
+  })
 })
 
 describe('runOfflineUpdate', () => {
@@ -56,6 +65,46 @@ describe('runOfflineUpdate', () => {
     const persisted = JSON.parse(readFileSync(join(root, '.tau', 'local-update-status.json'), 'utf8'))
     expect(persisted.id).toBe(run.id)
     expect(persisted.status).toBe('succeeded')
+  })
+  it('records, but does not re-run, the install the bootstrap already ran', async () => {
+    const ran: string[] = []
+    const run = await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: 'a'.repeat(40),
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
+      git: async (args) => (args[0] === 'diff' ? 'bun.lock\n' : 'b'.repeat(40)),
+      runProcess: async (command) => {
+        ran.push(command.join(' '))
+        return { exitCode: 0, output: '' }
+      },
+      bootstrap: { installed: true, staleDependencies: false },
+    })
+    expect(ran).toEqual(['bun run build:cli', 'bun run build:core', 'bun run build:web'])
+    expect(run.selectedTasks).toEqual(['install', 'cli', 'core', 'web'])
+    expect(run.commands[0]).toMatchObject({
+      task: 'install',
+      command: ['bun', 'install', '--frozen-lockfile'],
+      status: 'succeeded',
+      exitCode: 0,
+    })
+    expect(run.status).toBe('succeeded')
+  })
+  it('rebuilds everything after the bootstrap repaired stale dependencies, even with an empty diff', async () => {
+    const ran: string[] = []
+    const run = await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: 'a'.repeat(40),
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
+      git: async (args) => (args[0] === 'diff' ? '' : 'b'.repeat(40)),
+      runProcess: async (command) => {
+        ran.push(command.join(' '))
+        return { exitCode: 0, output: '' }
+      },
+      bootstrap: { installed: true, staleDependencies: true },
+    })
+    expect(ran).toEqual(['bun run build:cli', 'bun run build:core', 'bun run build:web'])
+    expect(run.changedFiles).toEqual([])
+    expect(run.commands.map((c) => c.status)).toEqual(['succeeded', 'succeeded', 'succeeded', 'succeeded'])
   })
   it('honours an explicit FICUS_UPDATE_SUPERVISOR', async () => {
     const run = await runOfflineUpdate({

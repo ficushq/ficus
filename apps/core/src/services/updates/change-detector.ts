@@ -1,6 +1,7 @@
 import type { DeploymentFlavor, ProcessSupervisor } from './deployment-flavor'
 import type { PlannedCommand, UpdateTask } from './types'
 import { localProcessNames } from '@ficus/shared'
+import { DEPENDENCY_INSTALL_COMMAND, DEPENDENCY_PATHS } from './dependency-install'
 
 type PathMatcher = {
   exact?: string[]
@@ -24,7 +25,7 @@ const TASK_DEFINITIONS: readonly TaskDefinition[] = [
   {
     task: 'install',
     paths: dependencyPaths(),
-    commands: [['bun', 'install', '--frozen-lockfile']],
+    commands: [[...DEPENDENCY_INSTALL_COMMAND]],
   },
   {
     task: 'cli',
@@ -52,7 +53,7 @@ const TASK_DEFINITIONS: readonly TaskDefinition[] = [
 ] as const
 
 function dependencyPaths(): PathMatcher {
-  return { exact: ['package.json', 'bun.lock'], prefixes: ['patches/'] }
+  return { exact: [...DEPENDENCY_PATHS.exact], prefixes: [...DEPENDENCY_PATHS.prefixes] }
 }
 
 function sharedPaths(): PathMatcher {
