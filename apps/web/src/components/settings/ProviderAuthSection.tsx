@@ -965,6 +965,15 @@ export function ProviderAccountsList({
                     healthDetail(account.healthReason, account.retryAt) && (
                       <span className="text-xs text-muted">{healthDetail(account.healthReason, account.retryAt)}</span>
                     )}
+                  {account.enabled && account.health === 'exhausted' && account.kind === 'claude-code' && (
+                    <span className="text-xs text-muted">
+                      {account.healthReason === 'invalid-credential'
+                        ? 'Claude Code is too old: run `claude update`, then Reset.'
+                        : account.healthReason === 'expired-oauth'
+                          ? 'Claude Code sign-in failed: run `claude auth login`, then Reset.'
+                          : null}
+                    </span>
+                  )}
                   {account.capabilities && (
                     <span
                       className={clsx(
@@ -1005,7 +1014,7 @@ export function ProviderAccountsList({
                     <>
                       {account.enabled &&
                         account.health === 'exhausted' &&
-                        (isCredentialHealthReason(account.healthReason) ? (
+                        (isCredentialHealthReason(account.healthReason) && account.kind !== 'claude-code' ? (
                           <span className="text-muted">Re-authorize to clear</span>
                         ) : (
                           <button

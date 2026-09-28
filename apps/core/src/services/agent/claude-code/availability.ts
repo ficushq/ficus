@@ -8,6 +8,7 @@
  * runs `claude` and reads its sign-in STATUS. It never reads, copies, or stores the credential,
  * and sign-in happens in Claude Code's own `claude auth login` flow.
  */
+import { realpathSync } from 'node:fs'
 import { createLogger } from '../../../lib/infra/logger'
 import { claudeCodeAccount } from './account'
 
@@ -34,9 +35,45 @@ export function claudeCodeOffered(env: Record<string, string | undefined> = proc
   return env.FICUS_MANAGED !== '1'
 }
 
-/** The `claude` executable: the first on PATH or in Claude Code's install locations. */
+/** The first `claude` on PATH or in Claude Code's install locations. */
 export function findClaudeExecutable(env: Record<string, string | undefined> = process.env): string | undefined {
   return Bun.which('claude', { PATH: claudeSearchPath(env) }) ?? undefined
+}
+
+/** Every distinct `claude` on PATH and in Claude Code's install locations. */
+export function claudeExecutableCandidates(env: Record<string, string | undefined> = process.env): string[] {
+  const seen = new Set<string>()
+  const found: string[] = []
+  for (const dir of claudeSearchPath(env).split(':')) {
+    if (!dir) continue
+    const path = Bun.which('claude', { PATH: dir })
+    if (!path) continue
+    let real = path
+    try {
+      real = realpathSync(path)
+    } catch {
+      // Keep the unresolved path.
+    }
+    if (seen.has(real)) continue
+    seen.add(real)
+    found.push(path)
+  }
+  return found
+}
+
+/** The `claude` agents run: the newest one found by the last status check, else the first on PATH. */
+export function claudeCodeExecutable(): string | undefined {
+  return cached?.status.executable ?? findClaudeExecutable()
+}
+
+function versionOf(output: string): number[] | undefined {
+  const match = output.match(/(\d+)\.(\d+)\.(\d+)/)
+  return match ? match.slice(1).map(Number) : undefined
+}
+
+function newer(a: number[], b: number[]): boolean {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! > b[i]!
+  return false
 }
 
 /** PATH plus the locations Claude Code's installers use; a desktop app does not inherit a login shell's PATH. */
@@ -162,10 +199,22 @@ async function readStatus(
 ): Promise<ClaudeCodeStatus> {
   if (!claudeCodeOffered(env))
     return { offered: false, enabled: false, loggedIn: false, reason: 'Not available on Ficus Cloud' }
-  const executable = findClaudeExecutable(env)
-  if (!executable) return { offered: true, enabled, loggedIn: false, reason: 'Claude Code is not installed' }
+  // Several installs can coexist (native installer, npm, Homebrew, the Claude desktop app), and a
+  // background worker's PATH can differ from the user's shell. Run the newest.
+  const candidates = claudeExecutableCandidates(env)
+  if (!candidates.length) return { offered: true, enabled, loggedIn: false, reason: 'Claude Code is not installed' }
+  let executable = candidates[0]!
+  let version: string | undefined
+  let best: number[] | undefined
+  for (const candidate of candidates) {
+    const parsed = versionOf((await run(candidate, ['--version']).catch(() => ({ stdout: '' }))).stdout)
+    if (parsed && (!best || newer(parsed, best))) {
+      best = parsed
+      executable = candidate
+      version = parsed.join('.')
+    }
+  }
   try {
-    const version = (await run(executable, ['--version'])).stdout.trim().split(/\s+/)[0]
     const result = await run(executable, ['auth', 'status', '--json'])
     // Only these fields are read; the status output never carries the credential itself.
     const parsed = JSON.parse(result.stdout || '{}') as {

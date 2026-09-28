@@ -50,4 +50,23 @@ describe('Claude Code on the Anthropic card', () => {
       render(<ProviderAccountsList providerId="anthropic" accounts={accounts} canWrite={false} claudeCode={signedIn} />)
     ).toContain('Available')
   })
+
+  test('a parked Claude Code account says how to fix it and can be reset, not re-authorized', () => {
+    const accounts = [
+      {
+        id: 'acc_claude_code',
+        enabled: true,
+        type: 'api_key',
+        kind: 'claude-code',
+        health: 'exhausted',
+        healthReason: 'invalid-credential',
+      },
+    ] as ProviderAuthEntry['accounts'] & object
+    const html = render(
+      <ProviderAccountsList providerId="anthropic" accounts={accounts} canWrite claudeCode={signedIn} />
+    )
+    expect(html).toContain('Claude Code is too old')
+    expect(html).toContain('Reset')
+    expect(html).not.toContain('Re-authorize to clear')
+  })
 })
