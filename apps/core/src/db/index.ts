@@ -12,6 +12,7 @@ import { waitForDb } from './wait'
 import { createLogger } from '../lib/infra/logger'
 import { MONOREPO_ROOT } from '../lib/paths'
 import { migrateDatabase } from './migrator'
+import { assertMigrationsMatchBuild } from './migration-build-manifest'
 
 const log = createLogger('db')
 
@@ -83,6 +84,10 @@ export async function withDedicatedDbTransaction<T>(
 }
 
 export async function waitForDbAndMigrate(): Promise<void> {
+  const migrationsFolder = join(MONOREPO_ROOT, 'apps/core/drizzle')
+  // A bundle older or newer than the migrations folder refuses before connecting,
+  // taking the advisory lock, or opening any transaction or DDL.
+  assertMigrationsMatchBuild(migrationsFolder)
   await waitForDb(() => client`SELECT 1`)
 
   // PostgreSQL advisory locks are session-scoped, so locking, migration, and
@@ -93,7 +98,7 @@ export async function waitForDbAndMigrate(): Promise<void> {
     let migrationError: unknown
     let unlockError: unknown
     try {
-      await migrateDatabase(connection, { migrationsFolder: join(MONOREPO_ROOT, 'apps/core/drizzle') })
+      await migrateDatabase(connection, { migrationsFolder })
     } catch (error) {
       migrationError = error
       throw error

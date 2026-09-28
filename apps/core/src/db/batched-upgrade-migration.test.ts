@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type postgres from 'postgres'
 import { MONOREPO_ROOT } from '../lib/paths'
 import { createPostgresConnection, getConnectionString } from './connection'
-import { assertMigrationsMatchBuild } from './migration-build-manifest'
+import { assertMigrationsMatchBuild, MIGRATION_BUILD_MISMATCH } from './migration-build-manifest'
 import { applyMigrations, migrateDatabase } from './migrator'
 
 const migrationsFolder = join(MONOREPO_ROOT, 'apps/core/drizzle')
@@ -111,14 +111,14 @@ describe('migrations that do not match the build', () => {
   afterAll(() => rmSync(folder, { recursive: true, force: true }))
   const writeJournal = (entries: typeof journal.entries) =>
     writeFileSync(journalPath(folder), JSON.stringify({ ...journal, entries }))
+  const last = journal.entries.at(-1)!
+  const future = { ...last, idx: last.idx + 1, when: last.when + 1, tag: `${last.idx + 1}_future_backfill` }
 
   test('the checked-out migrations match this build', () => {
     expect(() => assertMigrationsMatchBuild(migrationsFolder)).not.toThrow()
   })
 
-  test('a stale build refuses newer on-disk migrations before touching the database', async () => {
-    const last = journal.entries.at(-1)!
-    const future = { ...last, idx: last.idx + 1, when: last.when + 1, tag: `${last.idx + 1}_future_backfill` }
+  test('a build older than the folder refuses in migrateDatabase before touching the database', async () => {
     writeFileSync(join(folder, `${future.tag}.sql`), 'SELECT 1')
     writeJournal([...journal.entries, future])
     let queried = false
@@ -130,17 +130,65 @@ describe('migrations that do not match the build', () => {
     })
     await expect(migrateDatabase(connection, { migrationsFolder: folder })).rejects.toThrow(
       new RegExp(
-        `this build has ${journal.entries.length} migrations .*first difference at #${future.idx}: ` +
-          `build none, folder ${future.tag}.*bun run build:core`
+        `^\\[${MIGRATION_BUILD_MISMATCH}\\] Refusing to migrate: .* has ${journal.entries.length} migrations .*` +
+          `first differ at #${future.idx} \\(build none, folder ${future.tag}\\), so the build predates the folder\\.`
       )
     )
     expect(queried).toBe(false)
   })
 
-  test('a build newer than the checkout, or a rewritten migration, is refused too', () => {
+  test('names the direction of the mismatch', () => {
     writeJournal(journal.entries.slice(0, -1))
-    expect(() => assertMigrationsMatchBuild(folder)).toThrow(`folder none`)
+    expect(() => assertMigrationsMatchBuild(folder)).toThrow(
+      `(build ${last.tag}, folder none), so the build is newer than the folder.`
+    )
     writeJournal(journal.entries.map((entry, i) => (i === 179 ? { ...entry, tag: `${entry.tag}_edited` } : entry)))
-    expect(() => assertMigrationsMatchBuild(folder)).toThrow(`first difference at #179`)
+    expect(() => assertMigrationsMatchBuild(folder)).toThrow('first differ at #179')
+    expect(() => assertMigrationsMatchBuild(folder)).toThrow('so the build and the folder have diverged.')
+  })
+
+  test('gives the remedy for the install shape without printing connection strings', () => {
+    writeJournal([...journal.entries, future])
+    const refusal = (context: Parameters<typeof assertMigrationsMatchBuild>[1]) => {
+      try {
+        assertMigrationsMatchBuild(folder, context)
+      } catch (error) {
+        return (error as Error).message
+      }
+      throw new Error('expected a refusal')
+    }
+    // Source run: the build list is this tree's own journal, so only the root can be wrong.
+    expect(refusal({ fromSource: true, ficusRoot: '/elsewhere' })).toContain(
+      'This is a source run, so ' +
+        folder +
+        " is not this source tree's migrations folder: check FICUS_ROOT (/elsewhere)"
+    )
+    // Bundle in a tree without .git: an artifact, image or Desktop install.
+    const artifact = refusal({ fromSource: false, ficusRoot: undefined })
+    expect(artifact).toContain('install a matching release or image, or reinstall.')
+    expect(artifact).not.toContain('build:core')
+    expect(artifact).not.toContain('FICUS_ROOT')
+    // Bundle in a source checkout.
+    const checkoutRoot = mkdtempSync(join(tmpdir(), 'migration-build-checkout-'))
+    try {
+      mkdirSync(join(checkoutRoot, '.git'))
+      mkdirSync(join(checkoutRoot, 'apps/core'), { recursive: true })
+      cpSync(folder, join(checkoutRoot, 'apps/core/drizzle'), { recursive: true })
+      let message = ''
+      try {
+        assertMigrationsMatchBuild(join(checkoutRoot, 'apps/core/drizzle'), {
+          fromSource: false,
+          ficusRoot: checkoutRoot,
+        })
+      } catch (error) {
+        message = (error as Error).message
+      }
+      expect(message).toContain('In this source checkout, rebuild Core (`bun run build:core`), then restart.')
+      expect(message).toContain(`FICUS_ROOT is ${checkoutRoot}; check that it points at this build's install.`)
+      expect(message).not.toContain('reinstall')
+    } finally {
+      rmSync(checkoutRoot, { recursive: true, force: true })
+    }
+    for (const message of [artifact, refusal({ fromSource: true })]) expect(message).not.toMatch(/postgres(ql)?:\/\//)
   })
 })

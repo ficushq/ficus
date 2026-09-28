@@ -428,7 +428,9 @@ export async function applyMigrations(
 }
 
 export async function migrateDatabase(connection: postgres.ReservedSql, config: MigrationConfig): Promise<void> {
-  // Before any DDL: the backfill hooks above only exist in code built with these migrations.
+  // Backstop for direct callers; the entry points check before connecting. The backfill
+  // hooks above only exist in code built with these migrations, so refuse before any
+  // transaction or DDL.
   assertMigrationsMatchBuild(config.migrationsFolder)
   await applyMigrations(connection, readMigrationFiles(config), config)
   await backfillMessageEnqueueOrder(connection)
