@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { nostalgicSkin } from './nostalgic'
+import { cozySkin } from './cozy'
 import { futuristSkin } from './futurist'
 import { blueprintSkin } from './blueprint'
 import { sketchbookSkin } from './sketchbook'
@@ -10,7 +11,7 @@ import { useAccountStyle } from './useAccountStyle'
 
 export type { FarmSkin, SkinId } from './types'
 
-export const SKINS: readonly FarmSkin[] = [nostalgicSkin, futuristSkin, blueprintSkin, sketchbookSkin]
+export const SKINS: readonly FarmSkin[] = [nostalgicSkin, cozySkin, futuristSkin, blueprintSkin, sketchbookSkin]
 
 const IDS = SKINS.map((s) => s.id)
 

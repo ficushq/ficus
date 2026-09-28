@@ -1,0 +1,170 @@
+/*
+ * Cozy style motion: soft bobs, sways and twinkles. Every class is `cz-`
+ * prefixed. As in the Nostalgic style, an animated class never sits on an
+ * element that also has a `transform=` attribute (the CSS transform would
+ * replace it); sprites wrap instead.
+ */
+.cz-bob {
+  animation: cz-bob 2.6s ease-in-out infinite;
+}
+@keyframes cz-bob {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.cz-hover {
+  animation: cz-bob 3.2s ease-in-out infinite;
+}
+
+.cz-sway,
+.cz-nod {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cz-sway 4.4s ease-in-out infinite;
+}
+.cz-nod {
+  transform-origin: 50% 50%;
+  animation-duration: 5.2s;
+}
+@keyframes cz-sway {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2deg);
+  }
+}
+
+.cz-pulse {
+  animation: cz-pulse 2.4s ease-in-out infinite;
+}
+@keyframes cz-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.cz-twinkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cz-twinkle 1.8s ease-in-out infinite;
+}
+.cz-late {
+  animation-delay: 0.9s;
+}
+@keyframes cz-twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.cz-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cz-blink 5s infinite;
+}
+@keyframes cz-blink {
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  97% {
+    transform: scaleY(0.15);
+  }
+}
+
+.cz-pour {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+  animation: cz-pour 2s ease-in-out infinite;
+}
+@keyframes cz-pour {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
+}
+
+.cz-drip circle {
+  animation: cz-drip 0.9s linear infinite;
+}
+.cz-drip circle:nth-child(2) {
+  animation-delay: 0.3s;
+}
+.cz-drip circle:nth-child(3) {
+  animation-delay: 0.6s;
+}
+@keyframes cz-drip {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.cz-smoke {
+  animation: cz-smoke 3.4s ease-out infinite;
+}
+@keyframes cz-smoke {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  30% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+.cz-wave {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: cz-wave 1.8s ease-in-out infinite;
+}
+@keyframes cz-wave {
+  50% {
+    transform: skewY(-8deg) scaleX(0.92);
+  }
+}
+
+.cz-glint {
+  animation: cz-pulse 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cz-bob,
+  .cz-hover,
+  .cz-sway,
+  .cz-nod,
+  .cz-pulse,
+  .cz-twinkle,
+  .cz-blink,
+  .cz-pour,
+  .cz-drip circle,
+  .cz-smoke,
+  .cz-wave,
+  .cz-glint {
+    animation: none;
+  }
+}

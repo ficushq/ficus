@@ -7,7 +7,7 @@
  * The garden (apps/garden) draws the same farm in several visual styles; the
  * one a person picks follows their account, like the web app's theme does.
  */
-export const GARDEN_STYLES = ['nostalgic', 'futurist', 'blueprint', 'sketchbook'] as const
+export const GARDEN_STYLES = ['nostalgic', 'cozy', 'futurist', 'blueprint', 'sketchbook'] as const
 
 export type GardenStyle = (typeof GARDEN_STYLES)[number]
 
