@@ -1,4 +1,4 @@
-import '@fontsource-variable/caveat'
+import '@fontsource-variable/shantell-sans/infm.css'
 import '../line/motion.css'
 import './theme.css'
 import type { FarmSkin } from '../types'

@@ -1,6 +1,6 @@
 /*
  * Interface tokens for the Sketchbook style: graphite on cream graph paper,
- * red pencil for what needs you, cards as white notes taped to the page and
+ * red pencil for what needs you, cards as white notes on the page and
  * handwritten titles. Derived from three colours like the other line styles;
  * surfaces are lighter than the page rather than darker.
  */
@@ -12,7 +12,7 @@
   --ln-bg: var(--sk-bg);
   --ln-fg: var(--sk-fg);
   --ln-accent: var(--sk-accent);
-  --ln-letter: 'Caveat Variable', 'Bradley Hand', cursive;
+  --ln-letter: 'Shantell Sans Variable', 'Bradley Hand', cursive;
   --ln-letter-case: none;
   --ln-letter-tracking: 0.02em;
   /* Graph-paper rules, the green-pencil wash and ripe fruit */
@@ -21,7 +21,6 @@
   --sk-leaf-ink: #4d7a3c;
   --sk-fruit: color-mix(in srgb, var(--sk-accent) 45%, var(--sk-bg));
   --sk-note: #fffdf8;
-  --sk-tape: rgb(236 226 190 / 0.85);
 
   color-scheme: light;
 
@@ -84,7 +83,7 @@
   --g-drop: 0 8px 20px -12px rgb(60 50 30 / 0.3);
 
   /* Type: handwritten titles, plain body */
-  --g-font-display: 'Caveat Variable', 'Bradley Hand', cursive;
+  --g-font-display: 'Shantell Sans Variable', 'Bradley Hand', cursive;
   --g-font-body: 'Instrument Sans Variable', system-ui, sans-serif;
   --g-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
   --g-display-weight: 650;
@@ -216,16 +215,9 @@
 }
 
 /*
- * Handwriting runs small: titles a size up. Cards are notes with a strip of
- * tape across the top, painted into the background so it stays put while the
- * card scrolls.
+ * The handwriting is Shantell Sans, a hand-drawn print made to stay easy to
+ * read, with its informal axis part way up for a little wobble.
  */
-.g-skin-sketchbook .g-card-title {
-  font-size: 25px;
-}
-
-.g-skin-sketchbook .g-card {
-  background:
-    linear-gradient(var(--sk-tape), var(--sk-tape)) top center / 88px 14px no-repeat,
-    var(--g-card);
+.g-skin-sketchbook {
+  font-variation-settings: 'INFM' 55;
 }
