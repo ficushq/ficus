@@ -531,3 +531,29 @@
   text-transform: var(--g-display-transform);
   letter-spacing: var(--g-display-tracking);
 }
+
+/* A robot's pending questions in its chat: folded to one row until opened, with room above. */
+.g-chat-log .g-action,
+.g-questions-folded {
+  margin-top: 16px;
+}
+
+.g-questions-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--g-text);
+  font: 700 14px var(--g-font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-questions-toggle:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: 2px;
+}

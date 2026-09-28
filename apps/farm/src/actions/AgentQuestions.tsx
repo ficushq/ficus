@@ -5,6 +5,7 @@ import type { AgentQuestion, WorkStreamWait } from '@ficus/shared'
 import { useActionsApi } from './ActionsApiProvider'
 import { QuestionForm } from './QuestionForm'
 import { actionQueries } from './queries'
+import { ChevronIcon } from '../icons'
 import { VerbButton } from './ui'
 
 function questionSource(question: AgentQuestion) {
@@ -26,11 +27,15 @@ export function AgentPendingQuestions({
   agentId,
   agentName,
   onOpenAgent,
+  collapsible = false,
 }: {
   agentId: string
   agentName: string
   onOpenAgent?: (agentId: string) => void
+  /** Folded to one "N pending questions" row until opened (as in a chat, like the web's banner). */
+  collapsible?: boolean
 }) {
+  const [open, setOpen] = useState(!collapsible)
   const api = useActionsApi()
   const { data: questions = [] } = useQuery(actionQueries.openAgentQuestions(api, agentId))
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
@@ -43,11 +48,28 @@ export function AgentPendingQuestions({
       else next.delete(id)
       return next
     })
+  const count = `${visible.length} pending question${visible.length === 1 ? '' : 's'}`
+  if (collapsible && !open)
+    return (
+      <section className="g-action g-questions-folded" aria-label={`Questions from ${agentName}`}>
+        <button type="button" className="g-questions-toggle" aria-expanded={false} onClick={() => setOpen(true)}>
+          <ChevronIcon className="g-chevron" />
+          <span aria-hidden="true">❓</span> {count} from {agentName}
+        </button>
+      </section>
+    )
   return (
     <section className="g-action" aria-label={`Questions from ${agentName}`}>
+      {collapsible && (
+        <button type="button" className="g-questions-toggle" aria-expanded onClick={() => setOpen(false)}>
+          <ChevronIcon className="g-chevron g-open" />
+          <span aria-hidden="true">❓</span> {count} from {agentName}
+        </button>
+      )}
       <p className="g-action-note">
-        {visible.length} question{visible.length === 1 ? '' : 's'} from {agentName}. Answering each one wakes the robot
-        to continue.
+        {/* Folded, the row above already says how many. */}
+        {collapsible ? '' : `${visible.length} question${visible.length === 1 ? '' : 's'} from ${agentName}. `}
+        Answering each one wakes the robot to continue.
       </p>
       {visible.map((question) => (
         <div key={question.id} className="g-action-sub">

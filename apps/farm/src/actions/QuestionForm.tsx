@@ -1,8 +1,9 @@
 import clsx from 'clsx'
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isHttpResponseError } from '@ficus/client-core'
 import type { AgentQuestionAnswerDelivery, QuestionData, QuestionItem } from '@ficus/shared'
+import { Markdown } from '../chat/Markdown'
 import { useStableRef } from '../hooks/useStableRef'
 import { useActionsApi } from './ActionsApiProvider'
 import {
@@ -241,6 +242,13 @@ export function QuestionFields({
   dismissBusy = false,
 }: QuestionFieldsProps) {
   const [answers, setAnswers] = useState<Answers>(() => initialAnswers(questionData))
+  // Dismissing throws the question away, so it takes a second click (within a few seconds).
+  const [confirmDismiss, setConfirmDismiss] = useState(false)
+  useEffect(() => {
+    if (!confirmDismiss) return
+    const timer = window.setTimeout(() => setConfirmDismiss(false), DISMISS_CONFIRM_MS)
+    return () => window.clearTimeout(timer)
+  }, [confirmDismiss])
   const [otherTexts, setOtherTexts] = useState<OtherTexts>({})
   const complete = isAnswerComplete(questionData, answers, otherTexts)
   const canSubmit = !disabled && complete
@@ -289,19 +297,26 @@ export function QuestionFields({
         )}
         {onDismiss && (
           <VerbButton
-            verb="Dismiss"
+            verb={confirmDismiss ? 'Really dismiss?' : 'Dismiss'}
             busyVerb="Dismissing…"
-            help="Close without answering"
-            tone="quiet"
+            help={confirmDismiss ? 'Click again to close it unanswered' : 'Close without answering'}
+            tone={confirmDismiss ? 'prune' : 'quiet'}
             busy={dismissBusy}
             disabled={disabled}
-            onClick={onDismiss}
+            onClick={() => {
+              if (!confirmDismiss) return setConfirmDismiss(true)
+              setConfirmDismiss(false)
+              onDismiss()
+            }}
           />
         )}
       </div>
     </form>
   )
 }
+
+/** How long Dismiss waits for its confirming second click, ms. */
+const DISMISS_CONFIRM_MS = 4000
 
 function QuestionField({
   question,
@@ -329,10 +344,11 @@ function QuestionField({
       {question.optional && <span className="g-question-optional"> (optional)</span>}
     </>
   )
+  // Agents write context in markdown, with links to work streams and agents (farm chips).
   const context = question.context ? (
-    <p id={`${id}-context`} className="g-question-context">
-      {question.context}
-    </p>
+    <div id={`${id}-context`}>
+      <Markdown className="g-question-context">{question.context}</Markdown>
+    </div>
   ) : null
   const describedBy = question.context ? `${id}-context` : undefined
   const otherInput = (

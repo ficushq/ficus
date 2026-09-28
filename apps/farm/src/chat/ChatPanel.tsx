@@ -44,6 +44,7 @@ export function AgentConversation({
         <>
           {/* Questions it asked without stopping (ask_human), answerable here like on its card. */}
           <AgentPendingQuestions
+            collapsible
             agentId={agentId}
             agentName={agent.data ? agentLabel(agent.data).primary : (agentName ?? 'This robot')}
           />

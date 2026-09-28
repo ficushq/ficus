@@ -6,6 +6,7 @@ import { FarmCardContext, type FarmCardEnv } from '../farm/cards/context'
 import { layoutFarm } from '../farm/layout'
 import { FarmChatPanel } from './FarmChatPanel'
 import { MessageBody } from './MessageBody'
+import { Markdown } from '../chat/Markdown'
 import { fakeMultiplayer, renderWith } from './testing'
 
 const mounted: Array<() => void> = []
@@ -108,5 +109,27 @@ describe('MessageBody', () => {
     await click(chip)
     expect(flyTo).toHaveBeenCalledWith({ kind: 'plot', streamId: 'ws-2' })
     expect(byText(view.container, 'span.g-farmchat-chip', /Work stream 999/)).toBeDefined()
+  })
+
+  it('turns work stream links in markdown (agents write them in questions and chat) into chips', async () => {
+    const input = sampleFarm()
+    const flyTo = mock(() => {})
+    const env = {
+      layout: layoutFarm(input),
+      input,
+      agentsById: new Map<string, Agent>(input.agents.map((a) => [a.id, a])),
+      squadsById: new Map(input.squads.map((s) => [s.id, s])),
+      flyTo,
+    } as unknown as FarmCardEnv
+    const view = await renderWith(
+      <FarmCardContext.Provider value={env}>
+        <Markdown>{'See [#2](tau:ws:2) and [the docs](https://example.com).'}</Markdown>
+      </FarmCardContext.Provider>,
+      await fakeMultiplayer()
+    )
+    mounted.push(view.unmount)
+    await click(byText(view.container, 'button.g-farmchat-chip', /Retry flaky webhook deliveries/))
+    expect(flyTo).toHaveBeenCalledWith({ kind: 'plot', streamId: 'ws-2' })
+    expect(view.container.querySelector('a[href="https://example.com"]')).not.toBeNull()
   })
 })

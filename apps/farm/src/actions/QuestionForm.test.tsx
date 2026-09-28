@@ -133,7 +133,10 @@ describe('QuestionForm · agent question', () => {
       <QuestionForm questionData={oneTextQuestion} source={agentSource} />,
       api
     )
+    // It takes a confirming second click.
     await click(button(container, 'Dismiss'))
+    expect(api.dismissAgentQuestion).not.toHaveBeenCalled()
+    await click(button(container, 'Really dismiss?'))
     expect(api.dismissAgentQuestion).toHaveBeenCalledWith('q-1')
     expect(api.answerAgentQuestion).not.toHaveBeenCalled()
     expect(hasKey(invalidated(), queryKeys.agentQuestions.all)).toBe(true)
@@ -146,7 +149,10 @@ describe('QuestionForm · agent question', () => {
       <QuestionForm questionData={oneTextQuestion} source={agentSource} />,
       api
     )
+    // It takes a confirming second click.
     await click(button(container, 'Dismiss'))
+    expect(api.dismissAgentQuestion).not.toHaveBeenCalled()
+    await click(button(container, 'Really dismiss?'))
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('This question is no longer waiting for you.')
     expect(hasKey(invalidated(), queryKeys.agentQuestions.all)).toBe(true)
   })

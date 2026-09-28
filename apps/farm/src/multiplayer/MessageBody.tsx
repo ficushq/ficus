@@ -40,6 +40,36 @@ function resolve(ref: FarmRef, env: FarmCardEnv | null): { icon: string; label: 
 }
 
 /**
+ * Something on the farm, as a chip with its name: clicking it selects it and
+ * glides the camera there. Not on this farm, it's a plain chip, or a link to
+ * `href` if there is one.
+ */
+export function FarmRefChip({ farmRef, href }: { farmRef: FarmRef; href?: string }) {
+  const env = useContext(FarmCardContext)
+  const { icon, label, goTo } = resolve(farmRef, env)
+  if (goTo && env)
+    return (
+      <button
+        type="button"
+        className="g-farmchat-chip"
+        title={`Show ${label} on the farm`}
+        onClick={() => env.flyTo(goTo)}
+      >
+        <span aria-hidden="true">{icon}</span> {label}
+      </button>
+    )
+  return href ? (
+    <a className="g-farmchat-chip g-farmchat-chip-away" href={href} target="_blank" rel="noopener noreferrer">
+      <span aria-hidden="true">{icon}</span> {label}
+    </a>
+  ) : (
+    <span className="g-farmchat-chip g-farmchat-chip-away" title="Not on the farm right now">
+      <span aria-hidden="true">{icon}</span> {label}
+    </span>
+  )
+}
+
+/**
  * A chat message's text: @mentions highlighted (yours more so), things on the
  * farm as chips that fly the camera to them, and other links clickable.
  */
@@ -52,7 +82,6 @@ export function MessageBody({
   people: readonly FarmPerson[]
   meId: string | null
 }) {
-  const env = useContext(FarmCardContext)
   const tokens = useMemo(() => tokenize(body, people), [body, people])
   return (
     <>
@@ -72,37 +101,8 @@ export function MessageBody({
                 {token.text}
               </a>
             )
-          case 'ref': {
-            const { icon, label, goTo } = resolve(token.ref, env)
-            if (goTo && env)
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  className="g-farmchat-chip"
-                  title={`Show ${label} on the farm`}
-                  onClick={() => env.flyTo(goTo)}
-                >
-                  <span aria-hidden="true">{icon}</span> {label}
-                </button>
-              )
-            // Not on this farm (finished, or elsewhere): a link to it if there is one, else just its name.
-            return token.href ? (
-              <a
-                key={k}
-                className="g-farmchat-chip g-farmchat-chip-away"
-                href={token.href}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <span aria-hidden="true">{icon}</span> {label}
-              </a>
-            ) : (
-              <span key={k} className="g-farmchat-chip g-farmchat-chip-away" title="Not on the farm right now">
-                <span aria-hidden="true">{icon}</span> {label}
-              </span>
-            )
-          }
+          case 'ref':
+            return <FarmRefChip key={k} farmRef={token.ref} href={token.href} />
         }
       })}
     </>
