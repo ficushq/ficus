@@ -77,17 +77,17 @@ describe('ThemeProvider (themeId × appearance application)', () => {
     })
 
     const rootEl = document.documentElement
-    expect(rootEl.getAttribute('data-theme')).toBe('tau')
+    expect(rootEl.getAttribute('data-theme')).toBe('ficus')
     expect(rootEl.getAttribute('data-appearance')).toBe('dark')
     expect(rootEl.classList.contains('dark')).toBe(true)
 
     const probe = document.querySelector('[data-testid="probe"]')!
-    expect(probe.getAttribute('data-theme-id')).toBe('tau')
+    expect(probe.getAttribute('data-theme-id')).toBe('ficus')
     expect(probe.getAttribute('data-appearance')).toBe('dark')
     expect(probe.getAttribute('data-resolved')).toBe('dark')
   })
 
-  test('legacy tau-theme values migrate to the new keys and clear the legacy key', async () => {
+  test('legacy ficus-theme values migrate to the new keys and clear the legacy key', async () => {
     const { dom } = await installThemeDom()
     localStorage.setItem('ficus-theme', 'dark')
     const { root } = dom.createRoot()
@@ -100,7 +100,7 @@ describe('ThemeProvider (themeId × appearance application)', () => {
       )
     })
 
-    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('ficus')
     expect(localStorage.getItem('ficus-appearance')).toBe('dark')
     expect(localStorage.getItem('ficus-theme')).toBeNull()
   })
@@ -123,7 +123,7 @@ describe('ThemeProvider (themeId × appearance application)', () => {
     expect(document.documentElement.getAttribute('data-appearance')).toBe('light')
     expect(document.documentElement.classList.contains('dark')).toBe(false)
     // The normalized selection is persisted back, repairing the storage.
-    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('ficus')
     expect(localStorage.getItem('ficus-appearance')).toBe('light')
   })
 
@@ -155,7 +155,7 @@ describe('ThemeProvider (themeId × appearance application)', () => {
 
   test("a 'system' appearance follows live OS scheme changes without a reload", async () => {
     const { dom, setSystemPrefersDark } = await installThemeDom()
-    localStorage.setItem('ficus-theme-id', 'tau')
+    localStorage.setItem('ficus-theme-id', 'iris')
     localStorage.setItem('ficus-appearance', 'system')
     const { root } = dom.createRoot()
 
@@ -193,10 +193,10 @@ test('custom brand tile updates the OS tile metadata, not only the logo', async 
   localStorage.setItem(
     'ficus-custom-theme',
     JSON.stringify({
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Tile',
-      base: 'tau',
+      base: 'iris',
       variants: { light: { '--brand-tile': '#123456' }, dark: {} },
     })
   )
@@ -233,13 +233,13 @@ test('a storage-driven rerender never writes an older selection over another tab
     dom.window.dispatchEvent(
       new dom.window.StorageEvent('storage', { key: 'ficus-theme-local-override', newValue: '1' })
     )
-    localStorage.setItem('ficus-theme-id', 'tau')
+    localStorage.setItem('ficus-theme-id', 'iris')
   })
-  expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('iris')
   await act(async () => {
-    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'ficus-theme-id', newValue: 'tau' }))
+    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'ficus-theme-id', newValue: 'iris' }))
   })
-  expect(document.documentElement.dataset.theme).toBe('tau')
+  expect(document.documentElement.dataset.theme).toBe('iris')
 })
 
 test('live custom surface alpha is serialized consistently for root, metadata and reload snapshot', async () => {
@@ -263,10 +263,10 @@ test('live custom surface alpha is serialized consistently for root, metadata an
   for (const alpha of ['0.0000001', '0.5', '0.0000002']) {
     await act(async () => {
       theme.applyCustom({
-        format: 'tau-custom-theme',
+        format: 'ficus-custom-theme',
         version: 2,
         name: 'Surface',
-        base: 'tau',
+        base: 'iris',
         variants: { light: { '--color-bg-surface': `rgba(10,20,30,${alpha})` }, dark: {} },
       })
     })
@@ -279,7 +279,7 @@ test('live custom surface alpha is serialized consistently for root, metadata an
     // `resetTheme` was removed with the Settings "Reset to default" button —
     // selecting the Ficus built-in (setThemeId) covers the same "return to
     // default" surface path this test exercises.
-    theme.setThemeId('tau')
+    theme.setThemeId('iris')
   })
   expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('rgb(255, 255, 255)')
   expect(JSON.parse(localStorage.getItem('ficus-theme-surface')!).surface).toBe('rgb(255, 255, 255)')
@@ -306,10 +306,10 @@ test('setAppearance and toggleTheme keep the active custom theme and preset, res
       id: 'preset-1',
       owner: { id: 'owner-1' },
       document: {
-        format: 'tau-custom-theme',
+        format: 'ficus-custom-theme',
         version: 2,
         name: 'Pair',
-        base: 'tau',
+        base: 'iris',
         variants: { light: { '--color-primary': '#111111' }, dark: { '--color-primary': '#eeeeee' } },
       },
     })
@@ -353,10 +353,10 @@ test('setThemeId deactivates the custom theme/preset ring without deleting anyth
       id: 'preset-1',
       owner: { id: 'owner-1' },
       document: {
-        format: 'tau-custom-theme',
+        format: 'ficus-custom-theme',
         version: 2,
         name: 'Pair',
-        base: 'tau',
+        base: 'iris',
         variants: { light: {}, dark: {} },
       },
     })
@@ -388,10 +388,10 @@ test('a real root paint persists a resolved pre-paint snapshot matching the appl
     )
   })
   const doc = {
-    format: 'tau-custom-theme' as const,
+    format: 'ficus-custom-theme' as const,
     version: 2 as const,
     name: 'Pair',
-    base: 'tau',
+    base: 'iris',
     variants: { light: { '--color-primary': '#123456' }, dark: {} },
   }
   await act(async () => {
@@ -495,7 +495,7 @@ test('a system-appearance palette preset snapshots BOTH resolved sides, not just
     )
   })
   const doc = {
-    format: 'tau-custom-theme' as const,
+    format: 'ficus-custom-theme' as const,
     version: 2 as const,
     name: 'System palette',
     base: 'harbor',

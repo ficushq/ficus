@@ -57,8 +57,8 @@ export function isAppearanceSetting(value: unknown): value is AppearanceSetting 
   return typeof value === 'string' && (APPEARANCE_SETTINGS as readonly string[]).includes(value)
 }
 
-/** The built-in theme every fallback rule lands on (today's light/dark pair). */
-export const DEFAULT_THEME_ID = 'tau'
+/** The built-in theme every fallback rule lands on: the Ficus brand pair. */
+export const DEFAULT_THEME_ID = 'ficus'
 
 /** The appearance a fresh install starts with — must match today's behavior. */
 export const DEFAULT_APPEARANCE: AppearanceSetting = 'light'

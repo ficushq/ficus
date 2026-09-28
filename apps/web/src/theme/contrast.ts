@@ -93,6 +93,8 @@ add('--term-fg', '--term-bg')
 add('--term-muted', '--term-bg')
 add('--term-cursor', '--term-bg', 3)
 for (const bg of ['--color-primary', '--color-primary-hover', '--color-primary-active']) add('--on-accent-fg', bg)
+// The checked checkbox's tick is drawn on the accent fill (index.css), a graphical object: 3:1.
+add('--checkbox-check', '--color-primary', 3)
 add('--graph-label', '--graph-bg')
 add('--graph-label-muted', '--graph-bg')
 for (let i = 1; i <= 6; i++) add(`--graph-link-${i}`, '--graph-bg', 3)

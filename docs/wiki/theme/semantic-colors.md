@@ -1,6 +1,6 @@
 # Semantic colors
 
-The default Ficus light/dark colors are unchanged, except for intentional text-selection styling. Status meanings and precedence still come from `packages/shared/src/status-presentation.ts`, which is unchanged.
+Iris's light/dark colors are unchanged, except for intentional text-selection styling. Status meanings and precedence still come from `packages/shared/src/status-presentation.ts`, which is unchanged.
 
 ## Compatibility
 
@@ -30,13 +30,13 @@ Every caller of the shared `Badge` component is classified below. The color prop
 | `components/schedules/SchedulesList.tsx`                                              | Health → neutral/success/danger; **action kind** → accent-2/1/3; squad/agent **scope** identity → accent-6/7                                                                                                 |
 | `components/squads/LocalDeploymentsPanel.tsx`                                         | Existing starting/running/restarting/unhealthy/crashed/stopped status and filter palette → review/success/progress/externalWait/danger/neutral                                                               |
 
-The seven decorative accents are purple, blue, green, violet, orange, amber, and cyan in the default theme. They have independent tokens, so recoloring a lifecycle role does not recolor unrelated entity/mode badges. Neutral decoration shares the neutral role treatment. Only used decorative colors are registered; the legacy entries lime, emerald, teal, sky, indigo, fuchsia, pink, and rose are not. Simplification of the used decorative colors is a separate, deferred effort.
+The seven decorative accents are purple, blue, green, violet, orange, amber, and cyan: Iris's values, which the default Ficus theme and the other recolors keep. They have independent tokens, so recoloring a lifecycle role does not recolor unrelated entity/mode badges. Neutral decoration shares the neutral role treatment. Only used decorative colors are registered; the legacy entries lime, emerald, teal, sky, indigo, fuchsia, pink, and rose are not. Simplification of the used decorative colors is a separate, deferred effort.
 
 Other components whose names contain “Badge” but do not use the shared `Badge` API are not part of this table; sandbox status components already delegate to the shared web status adapter.
 
 ## Miscellaneous chrome
 
-- `::selection` uses `--color-selection-bg` with `--color-text-primary`: a soft lavender background and readable primary text in both appearances, replacing the unstyled browser default. `--color-selection-border` remains for bordered selection controls; CSS selection highlights do not support borders.
+- `::selection` uses `--color-selection-bg` with `--color-text-primary`: a soft accent-tinted background (leaf-green in Ficus, lavender in Iris) and readable primary text in both appearances, replacing the unstyled browser default. `--color-selection-border` remains for bordered selection controls; CSS selection highlights do not support borders.
 - The WebKit thin scrollbar remains RGB 156/163/175 at 50% opacity, now via `--scrollbar-thumb`.
 - The custom dark checkbox check remains white, now via `--checkbox-check`.
 - Verified `bg-accent` fills use `text-on-accent` (including the primary button component rule and its 8% inset highlight). Active tab count pills use the same foreground token at 20% for their overlay. Filled-control ink, paper surfaces, scrims, highlights and switch thumbs now have independent tokens; only image/document canvases retain bounded content exceptions. ChatView's custom `sendButtonClassName` takes the filled-control ink token; its default accent fill takes the accent ink token.

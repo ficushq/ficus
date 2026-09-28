@@ -136,8 +136,9 @@ export function MemorySettings({ squadId }: Props) {
         >
           <span
             className={clsx(
-              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-chrome-toggle-thumb shadow ring-0 transition duration-200 ease-in-out',
-              memoryConfig.enabled ? 'translate-x-5' : 'translate-x-0'
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out',
+              // On the accent track the thumb takes the on-accent ink, like text on an accent button.
+              memoryConfig.enabled ? 'translate-x-5 bg-on-accent' : 'translate-x-0 bg-chrome-toggle-thumb'
             )}
           />
         </button>

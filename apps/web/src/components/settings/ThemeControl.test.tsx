@@ -23,7 +23,7 @@ function presetFixture(id: string, name: string, base: string, ownerId: string):
   return {
     id,
     document: {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name,
       base,
@@ -38,7 +38,7 @@ function presetFixture(id: string, name: string, base: string, ownerId: string):
   }
 }
 async function renderControl(
-  themeId = 'tau',
+  themeId = 'iris',
   appearance = 'light',
   dark = false,
   enabled = true,
@@ -66,7 +66,7 @@ async function renderControl(
     localStorage.setItem(
       'ficus-custom-theme',
       JSON.stringify({
-        format: 'tau-custom-theme',
+        format: 'ficus-custom-theme',
         version: 2,
         name: custom.customTheme.name,
         base: custom.customTheme.base,
@@ -166,7 +166,7 @@ test('an own preset dot applies it via applyPreset (same path as the quick picke
 })
 
 test('Enter and Space activate a dot exactly like a click', async () => {
-  const container = await renderControl('tau', 'light', false, true, {
+  const container = await renderControl('iris', 'light', false, true, {
     minePresets: [presetFixture('p1', 'Midnight', 'harbor', 'u1')],
   })
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
@@ -179,24 +179,24 @@ test('Enter and Space activate a dot exactly like a click', async () => {
 })
 
 test('arrow keys rove within the grid, wrapping at both ends, and select as they move', async () => {
-  const container = await renderControl('tau', 'light')
+  const container = await renderControl('ficus', 'light')
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
-  const tau = getByRole(grid, 'radio', { name: 'Iris' })
-  const harbor = getByRole(grid, 'radio', { name: 'Harbor' })
+  const ficus = getByRole(grid, 'radio', { name: 'Ficus' })
+  const iris = getByRole(grid, 'radio', { name: 'Iris' })
   // Wrapping lands on the last dot: High contrast, which every picker lists
   // last (see registry.ts's highContrastLast).
   const last = getByRole(grid, 'radio', { name: 'High contrast' })
-  expect(tau.tabIndex).toBe(0)
-  await act(async () => fireEvent.keyDown(tau, { key: 'ArrowRight' }))
-  expect(document.activeElement).toBe(harbor)
-  expect(harbor.getAttribute('aria-checked')).toBe('true')
-  expect(harbor.tabIndex).toBe(0)
-  expect(tau.tabIndex).toBe(-1)
-  await act(async () => fireEvent.keyDown(harbor, { key: 'ArrowLeft' }))
-  expect(document.activeElement).toBe(tau)
-  expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+  expect(ficus.tabIndex).toBe(0)
+  await act(async () => fireEvent.keyDown(ficus, { key: 'ArrowRight' }))
+  expect(document.activeElement).toBe(iris)
+  expect(iris.getAttribute('aria-checked')).toBe('true')
+  expect(iris.tabIndex).toBe(0)
+  expect(ficus.tabIndex).toBe(-1)
+  await act(async () => fireEvent.keyDown(iris, { key: 'ArrowLeft' }))
+  expect(document.activeElement).toBe(ficus)
+  expect(localStorage.getItem('ficus-theme-id')).toBe('ficus')
   // Wraps from the first dot backward to the last.
-  await act(async () => fireEvent.keyDown(tau, { key: 'ArrowLeft' }))
+  await act(async () => fireEvent.keyDown(ficus, { key: 'ArrowLeft' }))
   expect(document.activeElement).toBe(last)
   expect(localStorage.getItem('ficus-theme-id')).toBe('high-contrast')
 })
@@ -206,36 +206,36 @@ function pointer(type: 'mouseover' | 'mouseout', element: Element, relatedTarget
 }
 
 test('hovering a dot previews the whole app without saving; sweeping to the next never restores in between', async () => {
-  const container = await renderControl('tau', 'light')
+  const container = await renderControl('iris', 'light')
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
-  const tau = getByRole(grid, 'radio', { name: 'Iris' })
+  const iris = getByRole(grid, 'radio', { name: 'Iris' })
   const harbor = getByRole(grid, 'radio', { name: 'Harbor' })
   const ember = getByRole(grid, 'radio', { name: 'Ember' })
   const hover = useHoverTimer()
   try {
     await pointer('mouseover', harbor)
-    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('iris')
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     await pointer('mouseout', harbor, ember)
     await pointer('mouseover', ember, harbor)
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     expect(ember.querySelector('[data-ring="on"]')).not.toBeNull()
-    expect(tau.querySelector('[data-ring="on"]')).toBeNull()
+    expect(iris.querySelector('[data-ring="on"]')).toBeNull()
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
     // Leaving the grid restores the stored selection; nothing was saved.
     await pointer('mouseout', ember)
-    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
-    expect(tau.querySelector('[data-ring="on"]')).not.toBeNull()
-    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('iris')
+    expect(iris.querySelector('[data-ring="on"]')).not.toBeNull()
+    expect(localStorage.getItem('ficus-theme-id')).toBe('iris')
   } finally {
     hover.restore()
   }
 })
 
 test('clicking the previewed dot ends the preview and saves that theme', async () => {
-  const container = await renderControl('tau', 'light')
+  const container = await renderControl('iris', 'light')
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   const ember = getByRole(grid, 'radio', { name: 'Ember' })
   const hover = useHoverTimer()
@@ -254,7 +254,7 @@ test('clicking the previewed dot ends the preview and saves that theme', async (
 })
 
 test('High contrast is the last dot, after the caller’s own presets', async () => {
-  const container = await renderControl('tau', 'light', false, true, {
+  const container = await renderControl('iris', 'light', false, true, {
     minePresets: [presetFixture('p1', 'Mine', 'harbor', 'me')],
   })
   const labels = getAllByRole(getByRole(container, 'radiogroup', { name: 'Color theme' }), 'radio').map((dot) =>
@@ -300,8 +300,8 @@ test('a foreign preset already present in the caller’s own presets list is not
 })
 
 test('a detached custom theme (no presetId) has no matching dot: none show as checked', async () => {
-  const container = await renderControl('tau', 'light', false, true, {
-    customTheme: { name: 'One-off', base: 'tau' },
+  const container = await renderControl('iris', 'light', false, true, {
+    customTheme: { name: 'One-off', base: 'iris' },
   })
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   for (const dot of getAllByRole(grid, 'radio')) expect(dot.getAttribute('aria-checked')).toBe('false')
@@ -358,13 +358,13 @@ for (const theme of BUILT_IN_THEMES)
     }
 
 test('the "My themes" library section renders (Phase 1: owner-only, own presets)', async () => {
-  const container = await renderControl('tau', 'light')
+  const container = await renderControl('iris', 'light')
   expect(container.textContent).toContain('My themes')
   expect(getByRole(container, 'button', { name: 'New theme' })).not.toBeNull()
 })
 
 test('release flag rollback keeps a working legacy appearance toggle', async () => {
-  const container = await renderControl('tau', 'light', false, false)
+  const container = await renderControl('iris', 'light', false, false)
   expect(container.querySelector('select')).toBeNull()
   expect(container.querySelectorAll('[role="radiogroup"]')).toHaveLength(0)
   const button = container.querySelector('button')!

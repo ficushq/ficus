@@ -4,10 +4,10 @@ import { deriveThemeOverrides, suggestPaletteSeeds, validateThemePalette, type T
 import { STATUS_ROLES, STATUS_TOKENS } from './theme-schema'
 import { srgbToOklch } from './color-oklch'
 
-// A representative subset of a real base theme's resolved token values (Ficus
+// A representative subset of a real base theme's resolved token values (Iris
 // light/dark, taken from apps/web/src/index.css), enough to exercise every
 // derivation bucket without needing the full 431-token registry.
-const TAU_LIGHT: Record<string, string> = {
+const IRIS_LIGHT: Record<string, string> = {
   '--swatch-secondary': '168 85 247',
   '--swatch-tertiary': '196 181 253',
   '--color-bg-page': '250 249 252',
@@ -48,18 +48,18 @@ for (const [role, solid, fg, surface] of [
   ['success', '34 197 94', '21 128 61', '240 253 244'],
   ['neutral', '107 114 128', '55 65 81', '249 250 251'],
 ] as const) {
-  TAU_LIGHT[`--status-${role}-solid`] = solid
-  TAU_LIGHT[`--status-${role}-fg`] = fg
-  TAU_LIGHT[`--status-${role}-surface`] = surface
-  TAU_LIGHT[`--status-${role}-border`] = surface
-  TAU_LIGHT[`--status-${role}-badge-fg`] = fg
-  TAU_LIGHT[`--status-${role}-badge-surface`] = surface
-  TAU_LIGHT[`--status-${role}-badge-hover`] = surface
+  IRIS_LIGHT[`--status-${role}-solid`] = solid
+  IRIS_LIGHT[`--status-${role}-fg`] = fg
+  IRIS_LIGHT[`--status-${role}-surface`] = surface
+  IRIS_LIGHT[`--status-${role}-border`] = surface
+  IRIS_LIGHT[`--status-${role}-badge-fg`] = fg
+  IRIS_LIGHT[`--status-${role}-badge-surface`] = surface
+  IRIS_LIGHT[`--status-${role}-badge-hover`] = surface
 }
 
-// The dark-appearance counterpart of TAU_LIGHT (same real base theme, Ficus
+// The dark-appearance counterpart of IRIS_LIGHT (same real base theme, Iris
 // dark, taken from apps/web/src/index.css's [data-appearance='dark'] block).
-const TAU_DARK: Record<string, string> = {
+const IRIS_DARK: Record<string, string> = {
   '--color-bg-page': '9 10 18',
   '--color-bg-surface': '16 17 28',
   '--color-text-primary': '226 232 240',
@@ -98,13 +98,13 @@ for (const [role, solid, fg, surface, badgeFg, badgeSurface] of [
   ['success', '34 197 94', '74 222 128', '20 83 45', '187 247 208', '20 83 45'],
   ['neutral', '107 114 128', '156 163 175', '17 24 39', '229 231 235', '31 41 55'],
 ] as const) {
-  TAU_DARK[`--status-${role}-solid`] = solid
-  TAU_DARK[`--status-${role}-fg`] = fg
-  TAU_DARK[`--status-${role}-surface`] = surface
-  TAU_DARK[`--status-${role}-border`] = surface
-  TAU_DARK[`--status-${role}-badge-fg`] = badgeFg
-  TAU_DARK[`--status-${role}-badge-surface`] = badgeSurface
-  TAU_DARK[`--status-${role}-badge-hover`] = badgeSurface
+  IRIS_DARK[`--status-${role}-solid`] = solid
+  IRIS_DARK[`--status-${role}-fg`] = fg
+  IRIS_DARK[`--status-${role}-surface`] = surface
+  IRIS_DARK[`--status-${role}-border`] = surface
+  IRIS_DARK[`--status-${role}-badge-fg`] = badgeFg
+  IRIS_DARK[`--status-${role}-badge-surface`] = badgeSurface
+  IRIS_DARK[`--status-${role}-badge-hover`] = badgeSurface
 }
 
 const palette: ThemePalette = { primary: '#0ea5e9' }
@@ -133,7 +133,7 @@ describe('validateThemePalette', () => {
 })
 
 describe('deriveThemeOverrides buckets', () => {
-  const derived = deriveThemeOverrides({ baseTokens: TAU_LIGHT, palette, appearance: 'light' })
+  const derived = deriveThemeOverrides({ baseTokens: IRIS_LIGHT, palette, appearance: 'light' })
 
   test('neutral/chrome tokens take the neutral tint hue but preserve base lightness', () => {
     const baseOklch = srgbToOklch([255, 255, 255])
@@ -167,9 +167,9 @@ describe('deriveThemeOverrides buckets', () => {
     // unchanged — it should NOT be additionally darkened to hit a body-text
     // 4.5:1 target. --color-primary is a UI accent (buttons/borders/icons);
     // text-level contrast for content ON it is --on-accent-fg's separate job.
-    const seed = '#0ea5e9' // #0ea5e9 vs TAU_LIGHT's page (250 249 252) is ~2.61:1 (below even 3:1)
+    const seed = '#0ea5e9' // #0ea5e9 vs IRIS_LIGHT's page (250 249 252) is ~2.61:1 (below even 3:1)
     const passesAt3 = deriveThemeOverrides({
-      baseTokens: TAU_LIGHT,
+      baseTokens: IRIS_LIGHT,
       palette: { primary: seed, contrast: 'standard' },
       appearance: 'light',
     })
@@ -180,7 +180,7 @@ describe('deriveThemeOverrides buckets', () => {
         .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
         .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0)
     }
-    const pageRgb = TAU_LIGHT['--color-bg-page']!.split(' ').map(Number)
+    const pageRgb = IRIS_LIGHT['--color-bg-page']!.split(' ').map(Number)
     const ratio = (a: number[], b: number[]) => {
       const la = relLuminance(a)
       const lb = relLuminance(b)
@@ -215,7 +215,7 @@ describe('deriveThemeOverrides buckets', () => {
 describe('swatch colors', () => {
   test('use the palette secondary and tertiary seeds', () => {
     const derived = deriveThemeOverrides({
-      baseTokens: TAU_LIGHT,
+      baseTokens: IRIS_LIGHT,
       palette: { primary: '#0ea5e9', secondary: '#f97316', tertiary: '#22c55e' },
       appearance: 'light',
     })
@@ -225,7 +225,7 @@ describe('swatch colors', () => {
 
   test('fall back to the colour-theory companions (+30 and +150 degrees) when seeds are unset', () => {
     const derived = deriveThemeOverrides({
-      baseTokens: TAU_LIGHT,
+      baseTokens: IRIS_LIGHT,
       palette: { primary: '#0ea5e9' },
       appearance: 'light',
     })
@@ -265,7 +265,7 @@ describe('suggestPaletteSeeds', () => {
 
 describe('secondary and tertiary seeds', () => {
   const base: Record<string, string> = {
-    ...TAU_LIGHT,
+    ...IRIS_LIGHT,
     '--color-bg-surface-secondary': '245 244 249',
     '--color-bg-surface-hover': '241 240 245',
     '--color-bg-pill': '241 240 245',
@@ -327,7 +327,7 @@ describe('secondary and tertiary seeds', () => {
 describe('harmonized status', () => {
   test('shifts each role toward the nearest seed, bounded, and keeps roles mutually separated', () => {
     const harmonized = deriveThemeOverrides({
-      baseTokens: TAU_LIGHT,
+      baseTokens: IRIS_LIGHT,
       palette: { ...palette, status: 'harmonized' },
       appearance: 'light',
     })
@@ -411,8 +411,8 @@ describe('contrast pass (property spread over many seeds)', () => {
   }
 
   test.each([
-    ['light', TAU_LIGHT],
-    ['dark', TAU_DARK],
+    ['light', IRIS_LIGHT],
+    ['dark', IRIS_DARK],
   ] as const)(
     '%s: text/surface (text target) and primary/page (UI target) clear the standard target for every seed',
     (appearance, baseTokens) => {
@@ -446,12 +446,12 @@ describe('contrast pass (property spread over many seeds)', () => {
     let checked = 0
     for (const seed of seeds(40)) {
       const derived = deriveThemeOverrides({
-        baseTokens: TAU_LIGHT,
+        baseTokens: IRIS_LIGHT,
         palette: { primary: seed, contrast: 'high' },
         appearance: 'light',
       })
       const rgb = (token: string) =>
-        customColorChannels(derived[token] ?? TAU_LIGHT[token]!)!
+        customColorChannels(derived[token] ?? IRIS_LIGHT[token]!)!
           .split(' ')
           .map(Number) as [number, number, number]
       expect(wcag(rgb('--color-text-primary'), rgb('--color-bg-surface'))).toBeGreaterThanOrEqual(7 - 1e-6)
@@ -506,8 +506,8 @@ describe('contrast pass (property spread over many seeds)', () => {
     // both appearances.
     let checked = 0
     for (const [appearance, baseTokens] of [
-      ['light', TAU_LIGHT],
-      ['dark', TAU_DARK],
+      ['light', IRIS_LIGHT],
+      ['dark', IRIS_DARK],
     ] as const) {
       for (const seed of seeds(60)) {
         const derived = deriveThemeOverrides({
@@ -536,7 +536,7 @@ describe('contrast pass (property spread over many seeds)', () => {
     let checked = 0
     for (const seed of seeds(40)) {
       const derived = deriveThemeOverrides({
-        baseTokens: TAU_LIGHT,
+        baseTokens: IRIS_LIGHT,
         palette: { primary: seed, contrast: 'high' },
         appearance: 'light',
       })
@@ -562,7 +562,7 @@ describe('contrast pass (property spread over many seeds)', () => {
     let checked = 0
     for (const seed of seeds(40)) {
       const derived = deriveThemeOverrides({
-        baseTokens: TAU_LIGHT,
+        baseTokens: IRIS_LIGHT,
         palette: { primary: seed, status: 'harmonized', contrast: 'standard' },
         appearance: 'light',
       })

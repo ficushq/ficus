@@ -4,7 +4,7 @@ import type { ITheme } from '@xterm/xterm'
 import { acquireDomHarness } from '../test/domHarness'
 import { observeTerminalTheme, readTerminalTheme } from './terminal'
 import { applyResolvedTheme } from './apply'
-import { TAU_THEME } from './registry'
+import { IRIS_THEME } from './registry'
 
 // Test the real DOM observer and computed-style bridge, without replacing global
 // modules or opening a real terminal socket. Minimal CSS scopes mirror real tokens.
@@ -21,7 +21,7 @@ test('terminal initializes from applied CSS and repaints the same instance on ap
     document.head.append(style)
     const container = document.createElement('div')
     document.body.append(container)
-    applyResolvedTheme(root as unknown as HTMLElement, TAU_THEME, 'dark')
+    applyResolvedTheme(root as unknown as HTMLElement, IRIS_THEME, 'dark')
 
     const paints: ITheme[] = []
     const options = {
@@ -38,7 +38,7 @@ test('terminal initializes from applied CSS and repaints the same instance on ap
     dispose = observeTerminalTheme({ options }, container as unknown as HTMLElement)
     expect(container.hasAttribute('data-terminal-scrollbar')).toBe(false)
 
-    applyResolvedTheme(root as unknown as HTMLElement, TAU_THEME, 'light')
+    applyResolvedTheme(root as unknown as HTMLElement, IRIS_THEME, 'light')
     await window.happyDOM.waitUntilComplete()
     expect(options.theme?.background).toBe('rgb(1, 2, 3)')
     expect(options.theme?.red).toBe('rgb(190, 40, 50)')

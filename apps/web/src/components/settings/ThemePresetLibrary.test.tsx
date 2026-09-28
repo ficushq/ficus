@@ -18,7 +18,7 @@ afterEach(async () => {
 const mine: ThemePreset = {
   id: 'preset-1',
   document: {
-    format: 'tau-custom-theme',
+    format: 'ficus-custom-theme',
     version: 2,
     name: 'Mine',
     base: 'harbor',
@@ -35,7 +35,7 @@ const mine: ThemePreset = {
 const sharedByAuthor: ThemePreset = {
   id: 'preset-shared',
   document: {
-    format: 'tau-custom-theme',
+    format: 'ficus-custom-theme',
     version: 2,
     name: 'Author theme',
     base: 'harbor',
@@ -255,7 +255,7 @@ test('a palette-only preset (no explicit overrides) still resolves a real swatch
   const paletteOnly: ThemePreset = {
     id: 'preset-2',
     document: {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Palette only',
       base: 'harbor',

@@ -38,8 +38,8 @@ describe('generatePaletteThemes', () => {
     expect(first.map((t) => t.css)).toEqual(second.map((t) => t.css))
   })
 
-  test('forest keeps status static: the utility-ramp parity gate freezes --status-ROLE-{50..950} byte-identical to Ficus across every built-in', async () => {
-    const forest = PALETTE_BUILTINS.find((b) => b.id === 'forest')!
-    expect(forest.palette.status).toBe('static')
+  test('ficus keeps status static: the utility-ramp parity gate freezes --status-ROLE-{50..950} byte-identical to Iris across every built-in', async () => {
+    const ficus = PALETTE_BUILTINS.find((b) => b.id === 'ficus')!
+    expect(ficus.palette.status).toBe('static')
   })
 })

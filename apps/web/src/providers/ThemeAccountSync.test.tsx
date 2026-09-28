@@ -152,7 +152,7 @@ test('fresh device adopts only after paint; logout removes inherited document an
   expect(remote.reads()).toBe(1)
   expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
   await act(async () => root.render(render(null)))
-  expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+  expect(document.documentElement.getAttribute('data-theme')).toBe('ficus')
   expect(store.getSnapshot().syncAvailable).toBe(false)
   await act(async () => {
     window.dispatchEvent(new Event('online'))
@@ -162,7 +162,7 @@ test('fresh device adopts only after paint; logout removes inherited document an
 })
 
 const sharedDoc = {
-  format: 'tau-custom-theme' as const,
+  format: 'ficus-custom-theme' as const,
   version: 2 as const,
   name: 'Shared',
   base: 'harbor',

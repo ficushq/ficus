@@ -6,8 +6,8 @@ import type { WebThemeDefinition } from './registry'
  *
  * - `data-theme="<theme id>"` and `data-appearance="light|dark"` on <html>
  *   (unified themes omit `data-appearance` — they have no variant);
- * - the theme's variant class, keeping the literal `dark` class for the tau
- *   dark variant so existing Tailwind `dark:` variants keep working during
+ * - the theme's variant class, keeping the literal `dark` class for the dual
+ *   themes' dark variant so existing Tailwind `dark:` variants keep working during
  *   the migration.
  *
  * Kept as a pure DOM function so both the provider and tests can drive it.

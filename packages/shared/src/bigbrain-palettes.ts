@@ -25,7 +25,7 @@ export interface BigBrainPalette {
   /** Activity/accent base color (`#rrggbb`). */
   readonly activity: string
   /** The appearance BigBrain itself pairs this palette with; the generated
-   * built-in is unified (constant), starting from Ficus's own tokens for this
+   * built-in is unified (constant), starting from Iris's own tokens for this
    * scheme. */
   readonly scheme: 'light' | 'dark'
 }

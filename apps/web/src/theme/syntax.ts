@@ -30,7 +30,7 @@ import type { CSSProperties } from 'react'
  * previously used oneDark style, but every painted color is a token. CSS selects
  * the palette from the resolved theme/appearance before first paint and updates
  * already-mounted blocks (including scoped previews) without React remounting.
- * Ficus deliberately keeps the same dark code palette in BOTH appearances.
+ * Iris deliberately keeps the same dark code palette in BOTH appearances.
  *
  * Only inline selectors supported by react-syntax-highlighter are included;
  * upstream Prism plugin CSS selectors never applied in this renderer.

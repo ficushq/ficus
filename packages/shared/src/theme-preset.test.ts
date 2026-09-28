@@ -10,8 +10,21 @@ import {
   validateThemePresetDocument,
 } from './theme-preset'
 
-const v2doc = { format: 'tau-custom-theme', version: 2, name: 'Mine', base: 'tau', variants: { light: {}, dark: {} } }
-const v1doc = { format: 'tau-custom-theme', version: 1, name: 'Mine', base: 'tau', appearance: 'dark', overrides: {} }
+const v2doc = {
+  format: 'ficus-custom-theme',
+  version: 2,
+  name: 'Mine',
+  base: 'iris',
+  variants: { light: {}, dark: {} },
+}
+const v1doc = {
+  format: 'ficus-custom-theme',
+  version: 1,
+  name: 'Mine',
+  base: 'iris',
+  appearance: 'dark',
+  overrides: {},
+}
 
 test('validateThemePresetDocument accepts a v2 document object or JSON string, normalizing v1', () => {
   expect(validateThemePresetDocument(v2doc).ok).toBe(true)

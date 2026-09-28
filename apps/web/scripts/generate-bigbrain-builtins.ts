@@ -3,10 +3,10 @@
 // markers. Regenerate with: bun apps/web/scripts/generate-bigbrain-builtins.ts
 //
 // Design: each palette becomes a UNIFIED built-in (single constant
-// appearance, like High contrast) starting from Ficus's own light or dark
+// appearance, like High contrast) starting from Iris's own light or dark
 // token set (matching the palette's native scheme) as the derivation base:
 //
-// 1. Parse Ficus's `:root`/`.dark` blocks in index.css into a token->value map
+// 1. Parse Iris's `:root`/`.dark` blocks in index.css into a token->value map
 //    (the same declarations the running app itself uses — "no runtime color
 //    derivation" for built-ins means this script bakes the CSS once, not
 //    that it invents its own separate palette math).
@@ -14,7 +14,7 @@
 //    checks against (`--color-bg-page`, `--color-bg-surface`) with this
 //    palette's OWN mixed values first, so that pass (which nudges
 //    `--color-primary`'s lightness for 3:1 against page) operates against
-//    the real shipped background, not Ficus's.
+//    the real shipped background, not Iris's.
 // 3. Run the shared palette derivation (`deriveThemeOverrides`, the same
 //    pure engine `packages/shared/src/theme-derivation.ts` uses for custom
 //    themes) with primary=activity, secondary=bg, tertiary=fg, neutral=bg,
@@ -22,7 +22,7 @@
 //    (verified against the actual CSS: harbor/ember/high-contrast share
 //    byte-identical status, agent-type, badge-decoration, voice-material,
 //    utility-decoration/-chrome, log-terminal, ansi and brand tokens with
-//    Ficus — "two recolors [that] preserve status meanings and all seven used
+//    Iris — "two recolors [that] preserve status meanings and all seven used
 //    decorative Badge palettes", not a semantic recolor) that only the
 //    `chrome` token family, `--swatch-secondary`/`-tertiary`, and
 //    `--on-accent-fg` actually vary between built-ins; this script applies
@@ -36,7 +36,7 @@
 //    `variants` win over palette derivation.
 // 5. Any token untouched by both (status/agent-type/badge-decoration/voice-
 //    material/etc., ANSI-named terminal/log slots, var()-aliased tokens, the
-//    `none`/`auto` xterm sentinels) is copied verbatim from Ficus's own value.
+//    `none`/`auto` xterm sentinels) is copied verbatim from Iris's own value.
 // 6. `--opacity-*` intrinsic-alpha metadata (input-border, panel-border, the
 //    seven badge-decoration surfaces/hovers, and the nine status roles'
 //    surface/badge-surface/badge-hover) is INDEPENDENT of the color token's
@@ -45,11 +45,11 @@
 //    via an opacity utility" constant, not something derivable from the
 //    channel string. `--opacity-input-border` is set to 1: input borders
 //    are an explicit subtle mix drawn solid. `--opacity-panel-border` keeps
-//    Ficus's 12%, like Harbor and Ember: the derived panel border is a strong
+//    Iris's 12%, like Harbor and Ember: the derived panel border is a strong
 //    accent/text color, which drawn solid made every card and header rule
 //    too bright. Everything else (badge-decoration
 //    and status metadata) is outside BigBrain's own palette scope, so it is
-//    copied verbatim from Ficus's matching-scheme block, unchanged.
+//    copied verbatim from Iris's matching-scheme block, unchanged.
 import { resolve } from 'node:path'
 import { BIGBRAIN_PALETTES, mixSrgb, type BigBrainPalette } from '@ficus/shared/bigbrain-palettes'
 import { deriveThemeOverrides } from '@ficus/shared/theme-derivation'
@@ -83,7 +83,7 @@ function mapExplicitTokens(palette: BigBrainPalette): Record<string, string> {
     '--color-code-text': fg,
     '--color-selection-bg': mixSrgb(activity, 15, bg),
     '--color-selection-border': mixSrgb(activity, 40, bg),
-    // Header and sidebar glass: the page itself at Ficus's 88% glass opacity.
+    // Header and sidebar glass: the page itself at Iris's 88% glass opacity.
     '--color-glass': `${bg}e0`,
   }
   return Object.fromEntries(Object.entries(hex).map(([k, v]) => [k, customColorChannels(v)!]))
@@ -134,13 +134,17 @@ function fitTextContrast(fg: string, bg: string, nominalPct: number): string {
 }
 
 /** Builds the full compiled token map for one palette's unified built-in. */
-function buildThemeTokens(palette: BigBrainPalette, tauLight: Record<string, string>, tauDark: Record<string, string>) {
-  const baseTokens = { ...(palette.scheme === 'light' ? tauLight : tauDark) }
+function buildThemeTokens(
+  palette: BigBrainPalette,
+  irisLight: Record<string, string>,
+  irisDark: Record<string, string>
+) {
+  const baseTokens = { ...(palette.scheme === 'light' ? irisLight : irisDark) }
   const explicit = mapExplicitTokens(palette)
   // See the module doc comment step 2: substitute the real shipped
   // page/surface so the shared derivation's own internal contrast pass (which
   // nudges --color-primary for 3:1 against --color-bg-page, and would
-  // otherwise check against Ficus's own page/surface colors) operates against
+  // otherwise check against Iris's own page/surface colors) operates against
   // what this theme actually ships.
   baseTokens['--color-bg-page'] = explicit['--color-bg-page']!
   baseTokens['--color-bg-surface'] = explicit['--color-bg-surface']!
@@ -170,9 +174,9 @@ function buildThemeTokens(palette: BigBrainPalette, tauLight: Record<string, str
   }
   // --on-accent-fg is derived-only (chosen by contrast against the final
   // primary); it is never a baseTokens key filter miss since baseTokens
-  // (Ficus's own block) already declares it.
-  // Input borders are an explicit subtle mix (above), drawn solid. Panel borders keep Ficus's translucency: the derived
-  // panel border is a strong accent/text color, which Ficus, Harbor and Ember all draw at 12%, never solid.
+  // (Iris's own block) already declares it.
+  // Input borders are an explicit subtle mix (above), drawn solid. Panel borders keep Iris's translucency: the derived
+  // panel border is a strong accent/text color, which Iris, Harbor and Ember all draw at 12%, never solid.
   const SOLID_OPACITY_TOKENS = new Set(['--opacity-input-border'])
   const finalOpacity: Record<string, string> = {}
   for (const token of Object.keys(baseTokens)) {
@@ -184,6 +188,8 @@ function buildThemeTokens(palette: BigBrainPalette, tauLight: Record<string, str
   for (const token of Object.keys(baseTokens)) {
     combined[token] = token.startsWith('--opacity-') ? finalOpacity[token]! : finalColors[token]!
   }
+  // The checked checkbox's tick sits on the accent fill, so it takes the same ink as text on that fill.
+  combined['--checkbox-check'] = combined['--on-accent-fg']!
   return repairContrastPairs(combined)
 }
 
@@ -204,10 +210,10 @@ export interface GeneratedTheme {
 
 export async function generateBigBrainThemes(): Promise<GeneratedTheme[]> {
   const indexCss = await Bun.file(resolve(import.meta.dir, '../src/index.css')).text()
-  const tauLight = cssBlockDeclarations(indexCss, ':root')
-  const tauDark = cssBlockDeclarations(indexCss, '.dark')
+  const irisLight = cssBlockDeclarations(indexCss, ':root')
+  const irisDark = cssBlockDeclarations(indexCss, '.dark')
   return BIGBRAIN_PALETTES.map((palette) => {
-    const { tokens, adjusted } = buildThemeTokens(palette, tauLight, tauDark)
+    const { tokens, adjusted } = buildThemeTokens(palette, irisLight, irisDark)
     return { palette, css: themeCssBlock(palette, tokens), adjusted }
   })
 }

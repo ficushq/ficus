@@ -16,7 +16,7 @@ const dependencies = {
   }),
   useTheme: () => ({
     theme: 'light' as const,
-    themeId: 'tau',
+    themeId: 'iris',
     appearance: 'light' as const,
     toggleTheme: () => undefined,
     setTheme: () => undefined,

@@ -10,10 +10,10 @@ for (const alpha of ['0.5', '0.0000001', `0.${'0'.repeat(323)}5`, '0', '1']) {
   test(`validator → compiler → actual graph/xterm parsers preserve alpha ${alpha}`, () => {
     const value = `rgba(10,20,30,${alpha})`
     const raw = JSON.stringify({
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 1,
       name: 'Parser boundary',
-      base: 'tau',
+      base: 'iris',
       appearance: 'light',
       overrides: {
         '--graph-link-2': value,

@@ -118,8 +118,9 @@ export function SandboxSettings({ squadId }: Props) {
           >
             <span
               className={clsx(
-                'inline-block h-4 w-4 transform rounded-full bg-chrome-toggle-thumb transition-transform',
-                config.alwaysOn ? 'translate-x-4' : 'translate-x-0'
+                'inline-block h-4 w-4 transform rounded-full transition-transform',
+                // On the accent track the thumb takes the on-accent ink, like text on an accent button.
+                config.alwaysOn ? 'translate-x-4 bg-on-accent' : 'translate-x-0 bg-chrome-toggle-thumb'
               )}
             />
           </button>

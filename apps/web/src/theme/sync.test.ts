@@ -179,7 +179,7 @@ test('logout clears inherited custom preference; next empty account does not rec
   const remote = server({
     ...harbor,
     customTheme: {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 1,
       name: 'Private palette',
       base: 'harbor',
@@ -198,7 +198,7 @@ test('logout clears inherited custom preference; next empty account does not rec
   const next = server(null)
   store.connect(next.api)
   await store.refresh()
-  expect(store.getSnapshot().selection.themeId).toBe('tau')
+  expect(store.getSnapshot().selection.themeId).toBe('ficus')
   expect(next.writes).toHaveLength(0)
   store.disconnect()
 })
@@ -294,7 +294,7 @@ test('cookie identity change during reconnect discards cached preference and que
   userId = 'B'
   await store.refresh()
   expect(store.getSnapshot().syncAvailable).toBe(false)
-  expect(store.getSnapshot().selection.themeId).toBe('tau')
+  expect(store.getSnapshot().selection.themeId).toBe('ficus')
   store.change(ember)
   expect(remote.writes).toHaveLength(0)
 })
@@ -398,7 +398,7 @@ test('failed in-flight PUT retries on reconnect when the deliberate intent is st
 })
 
 const mineDoc = {
-  format: 'tau-custom-theme' as const,
+  format: 'ficus-custom-theme' as const,
   version: 2 as const,
   name: 'Mine',
   base: 'harbor',
@@ -423,7 +423,7 @@ test('presetId round-trips through change/apply and clears when the custom theme
   expect(reloaded.getSnapshot().presetId).toBe('p-1')
   // Deactivating the custom theme (built-in selection) clears the preset ring
   // locally without needing a server call — the library preset itself is untouched.
-  store.change({ themeId: 'tau', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null })
+  store.change({ themeId: 'iris', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null })
   expect(store.getSnapshot().presetId).toBeNull()
   expect(local.getItem('ficus-theme-preset-id')).toBeNull()
 })
@@ -448,7 +448,7 @@ test('presetOwnerId round-trips alongside presetId, survives reload, and clears 
   // the same custom/presetId/presetOwnerId, only appearance flipped.
   store.change({ ...withOwner, appearance: 'light' })
   expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
-  store.change({ themeId: 'tau', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null })
+  store.change({ themeId: 'iris', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null })
   expect(store.getSnapshot().presetOwnerId).toBeNull()
   expect(local.getItem('ficus-theme-preset-owner-id')).toBeNull()
 })

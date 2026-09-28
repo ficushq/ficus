@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
-import { BUILT_IN_THEMES } from '../registry'
+import { BUILT_IN_THEMES, IRIS_THEME } from '../registry'
 export { resolveToken, tokenRgba, composite, contrast, contrastPairs, pairRatio } from '../contrast'
 
 export interface Palette {
@@ -12,13 +12,13 @@ export interface Palette {
 export const palettes: Palette[] = BUILT_IN_THEMES.flatMap((theme) =>
   (theme.kind === 'unified' ? (['constant'] as const) : (['light', 'dark'] as const)).map((appearance) => {
     const selector =
-      theme.id === 'tau'
+      theme.id === IRIS_THEME.id
         ? appearance === 'dark'
           ? '.dark'
           : ':root'
         : `:root[data-theme="${theme.id}"]${appearance === 'constant' ? '' : `[data-appearance="${appearance}"]`}`
     const css = postcss.parse(
-      readFileSync(new URL(theme.id === 'tau' ? '../../index.css' : '../builtins.css', import.meta.url), 'utf8')
+      readFileSync(new URL(theme.id === IRIS_THEME.id ? '../../index.css' : '../builtins.css', import.meta.url), 'utf8')
     )
     const tokens: Record<string, string> = {}
     css.walkRules((rule) => {

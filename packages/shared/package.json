@@ -12,6 +12,7 @@
     "./theme-preferences": "./src/theme-preferences.ts",
     "./theme-preset": "./src/theme-preset.ts",
     "./theme-derivation": "./src/theme-derivation.ts",
+    "./theme-triples": "./src/theme-triples.ts",
     "./color-oklch": "./src/color-oklch.ts",
     "./bigbrain-palettes": "./src/bigbrain-palettes.ts",
     "./crypto": "./src/crypto.ts",

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { act } from 'react'
 import { acquireDomHarness } from '../test/domHarness'
 import { applyResolvedTheme } from './apply'
-import { TAU_THEME } from './registry'
+import { IRIS_THEME } from './registry'
 import { createTokenReader, readTokenColor, tokenColor } from './tokenReader'
 import { useThemeColors } from './useThemeColors'
 import { agentGraphColor, squadGraphColor } from './graph'
@@ -33,7 +33,7 @@ test('memoized reader re-reads on appearance, theme, inline override and reset; 
     style.textContent =
       ':root { --graph-bg: 1 2 3; } .dark { --graph-bg: 4 5 6; } [data-theme="other"] { --graph-bg: 7 8 9; }'
     document.head.append(style)
-    applyResolvedTheme(root, TAU_THEME, 'light')
+    applyResolvedTheme(root, IRIS_THEME, 'light')
     const reader = createTokenReader(root)
     const first = reader.getSnapshot()
     expect(first['--graph-bg']).toBe('rgb(1, 2, 3)')
@@ -42,7 +42,7 @@ test('memoized reader re-reads on appearance, theme, inline override and reset; 
     dispose = reader.subscribe(() => {
       notifications++
     })
-    applyResolvedTheme(root, TAU_THEME, 'dark')
+    applyResolvedTheme(root, IRIS_THEME, 'dark')
     // Synchronous imperative read must not suppress the later React notification.
     expect(reader.getSnapshot()['--graph-bg']).toBe('rgb(4, 5, 6)')
     await window.happyDOM.waitUntilComplete()
@@ -62,7 +62,7 @@ test('memoized reader re-reads on appearance, theme, inline override and reset; 
     expect(reader.getSnapshot()['--graph-bg']).toBe('rgb(7, 8, 9)')
     const last = notifications
     dispose()
-    applyResolvedTheme(root, TAU_THEME, 'light')
+    applyResolvedTheme(root, IRIS_THEME, 'light')
     await window.happyDOM.waitUntilComplete()
     expect(notifications).toBe(last)
     expect(reader.getSnapshot()['--graph-bg']).toBe('rgb(1, 2, 3)')
@@ -97,7 +97,7 @@ test('mounted consumers refresh graph and status colors without remounting or pr
     expect(host.textContent).toBe('rgb(1, 2, 3)|rgb(4, 5, 6)')
     const node = host.firstChild
     await act(async () => {
-      applyResolvedTheme(root, TAU_THEME, 'dark')
+      applyResolvedTheme(root, IRIS_THEME, 'dark')
       await harness.window.happyDOM.waitUntilComplete()
     })
     expect(host.firstChild).toBe(node)

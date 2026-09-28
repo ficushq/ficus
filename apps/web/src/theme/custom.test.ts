@@ -27,7 +27,7 @@ import type { ThemeStorage } from './storage'
 // v2: a preset covers both light and dark. This fixture is dark-only (light
 // stays empty), matching what a v1 dark document normalizes to.
 export const custom: CustomThemeDocument = {
-  format: 'tau-custom-theme',
+  format: 'ficus-custom-theme',
   version: 2,
   name: 'Test theme',
   base: 'ember',
@@ -60,7 +60,7 @@ test('custom theme storage keys are the ficus names', () => {
 test('every authored built-in scope also defines the nested preview base (no copied runtime palette)', () => {
   for (const p of palettes) {
     const css = postcss.parse(
-      readFileSync(new URL(p.id === 'tau' ? '../index.css' : './builtins.css', import.meta.url), 'utf8')
+      readFileSync(new URL(p.id === 'iris' ? '../index.css' : './builtins.css', import.meta.url), 'utf8')
     )
     const expected = `[data-theme-scope][data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
     let matches = 0
@@ -114,7 +114,7 @@ test('recovery matrix: invalid documents clear storage/snapshots, retain a known
 
 test('a v1 document (raw string) still loads and normalizes to a v2 pair', () => {
   const v1 = JSON.stringify({
-    format: 'tau-custom-theme',
+    format: 'ficus-custom-theme',
     version: 1,
     name: 'Legacy',
     base: 'ember',
@@ -123,7 +123,7 @@ test('a v1 document (raw string) still loads and normalizes to a v2 pair', () =>
   })
   const state = loadCustomTheme(storageFor(v1))
   expect(state.custom).toEqual({
-    format: 'tau-custom-theme',
+    format: 'ficus-custom-theme',
     version: 2,
     name: 'Legacy',
     base: 'ember',
@@ -174,7 +174,7 @@ test('preview isolation, inheritance, alpha/fractions/sentinels, graph/xterm liv
       })
       .join('\n')
     document.head.append(style)
-    applyResolvedTheme(root, findWebTheme('tau'), 'light')
+    applyResolvedTheme(root, findWebTheme('iris'), 'light')
     const preview = document.createElement('div')
     preview.setAttribute('data-theme-scope', '')
     document.body.append(preview)
@@ -209,7 +209,7 @@ test('preview isolation, inheritance, alpha/fractions/sentinels, graph/xterm liv
     expect(paints).toBeGreaterThan(0)
     expect(terminal.options.theme.background).toBe('rgb(18, 52, 86)')
     removeCustomProperties(root)
-    applyResolvedTheme(root, findWebTheme('tau'), 'light')
+    applyResolvedTheme(root, findWebTheme('iris'), 'light')
     await dom.window.happyDOM.waitUntilComplete()
     expect(terminal.options.theme.background).not.toBe('rgb(18, 52, 86)')
     expect(reader.getSnapshot()['--graph-bg']).not.toBe('rgb(35, 69, 103)')
@@ -235,10 +235,10 @@ test('a light/dark pair resolves the correct side per requested appearance', asy
       .join('\n')
     document.head.append(style)
     const pair: CustomThemeDocument = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Pair',
-      base: 'tau',
+      base: 'iris',
       variants: {
         light: { '--color-primary': '#111111' },
         dark: { '--color-primary': '#eeeeee' },
@@ -304,7 +304,7 @@ test('shipped pre-paint custom matrix (v2 pair) and broken-document fallback run
     for (const p of palettes) {
       const patch = { ...custom.variants.dark, '--brand-tile': '#123456' }
       const doc: CustomThemeDocument = {
-        format: 'tau-custom-theme',
+        format: 'ficus-custom-theme',
         version: 2,
         name: custom.name,
         base: p.id,
@@ -368,10 +368,10 @@ test('a palette derives most tokens from the real built-in CSS cascade, explicit
     preview.setAttribute('data-theme-scope', '')
     document.body.append(preview)
     const doc: CustomThemeDocument = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Palette',
-      base: 'tau',
+      base: 'iris',
       palette: { primary: '#0ea5e9' },
       variants: { light: { '--color-primary': '#ff0000' }, dark: {} },
     }
@@ -381,7 +381,7 @@ test('a palette derives most tokens from the real built-in CSS cascade, explicit
     expect(get('--color-primary')).toBe('255 0 0')
     // A neutral/chrome token not explicitly overridden is derived (differs
     // from the plain base value, since the base's own primary isn't sky blue).
-    const base = palettes.find((p) => p.id === 'tau' && p.appearance === 'light')!
+    const base = palettes.find((p) => p.id === 'iris' && p.appearance === 'light')!
     expect(get('--color-primary-hover')).not.toBe(resolveToken(base.tokens, '--color-primary-hover'))
     // Status stays static (semantic) by default: untouched by the palette.
     expect(get('--status-danger-solid')).toBe(resolveToken(base.tokens, '--status-danger-solid'))
@@ -397,10 +397,10 @@ test('the pre-paint flash script skips palette derivation (no reliable computed 
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   try {
     const doc: CustomThemeDocument = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Palette',
-      base: 'tau',
+      base: 'iris',
       palette: { primary: '#0ea5e9' },
       variants: { light: { '--color-primary': '#ff0000' }, dark: {} },
     }
@@ -427,7 +427,7 @@ function memoryStorage(): ThemeStorage {
 }
 
 const paletteDoc: CustomThemeDocument = {
-  format: 'tau-custom-theme',
+  format: 'ficus-custom-theme',
   version: 2,
   name: 'Palette preset',
   base: 'harbor',

@@ -7,10 +7,10 @@ import { composite, contrast, pairBackground, pairRatio, tokenRgba } from './con
 const pair = { fg: '--color-text-primary', bg: '--color-bg-surface', minimum: 4.5 }
 function customTokens(overrides: Record<string, string>) {
   const raw = JSON.stringify({
-    format: 'tau-custom-theme',
+    format: 'ficus-custom-theme',
     version: 1,
     name: 'Contrast regression',
-    base: 'tau',
+    base: 'iris',
     appearance: 'dark',
     overrides,
   })
@@ -18,7 +18,7 @@ function customTokens(overrides: Record<string, string>) {
   expect(result.ok).toBe(true)
   if (!result.ok) throw new Error(result.error)
   return {
-    ...palettes.find((p) => p.id === 'tau' && p.appearance === 'dark')!.tokens,
+    ...palettes.find((p) => p.id === 'iris' && p.appearance === 'dark')!.tokens,
     ...compileCustomTheme(result.document, 'dark'),
   }
 }

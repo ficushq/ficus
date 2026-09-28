@@ -13,7 +13,7 @@ test('paintRoot applies a plain built-in, then layers a valid custom document; a
     expect(root.getAttribute('data-appearance')).toBe('dark')
 
     const doc: CustomThemeDocument = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Preview',
       base: 'harbor',

@@ -190,7 +190,7 @@ describe('tailwind theme color opacity after variable substitution', () => {
           (STATUS_TOKENS.includes(token) ? STATUS_TOKENS : [token]).map((key) => [key, 'rgba(12,34,56,0.5)'])
         )
         const variables = compileRaw(
-          { format: 'tau-custom-theme', version: 1, name: 'Alpha', base: 'tau', appearance, overrides },
+          { format: 'ficus-custom-theme', version: 1, name: 'Alpha', base: 'iris', appearance, overrides },
           appearance
         )
         const declared = declarations(rules.get(`border-${name}/50`)!)
@@ -272,10 +272,10 @@ test('actual spinner and narrow Stop CSS follows custom status colors without ch
   expect(stop).toEqual(['rgb(var(--status-danger-600))', 'rgb(var(--status-danger-400))'])
   const custom = compileRaw(
     {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 1,
       name: 'Spinner',
-      base: 'tau',
+      base: 'iris',
       appearance: 'light',
       overrides: Object.fromEntries(STATUS_TOKENS.map((name) => [name, 'rgba(12, 34, 56, 0.5)'])),
     },
@@ -344,10 +344,10 @@ test('new storage warnings preserve main shades and opacity while accepting cust
   })
   const custom = compileRaw(
     {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 1,
       name: 'Storage',
-      base: 'tau',
+      base: 'iris',
       appearance: 'light',
       overrides: Object.fromEntries(STATUS_TOKENS.map((key) => [key, 'rgba(12,34,56,0.5)'])),
     },

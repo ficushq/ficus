@@ -1,5 +1,6 @@
 import { validateThemePreference, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@ficus/shared'
 import { isHttpResponseError } from '@ficus/client-core'
+import { DEFAULT_THEME_ID } from '@ficus/shared/theme-schema'
 import {
   clearCustomTheme,
   hashCustomThemeDocument,
@@ -15,7 +16,7 @@ import { LEGACY_THEME_LOCAL_OVERRIDE_STORAGE_KEY } from '@ficus/shared/browser-k
  * follows the account, so the flag is only removed. */
 export const LEGACY_LOCAL_OVERRIDE_KEY = LEGACY_THEME_LOCAL_OVERRIDE_STORAGE_KEY
 const DEFAULT: ThemePreference = {
-  themeId: 'tau',
+  themeId: DEFAULT_THEME_ID,
   appearance: 'light',
   customTheme: null,
   presetId: null,

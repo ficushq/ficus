@@ -30,7 +30,7 @@
   }
 
   :root,
-  [data-theme-scope][data-theme='tau'][data-appearance='light'] {
+  [data-theme-scope][data-theme='iris'][data-appearance='light'] {
     /* Tell the browser/OS the real scheme so its chrome (iOS glass tint,
        scrollbars, form controls) matches the page instead of guessing. */
     color-scheme: light;
@@ -375,7 +375,7 @@
     --status-neutral-badge-hover: 229 231 235;
     --opacity-status-neutral-badge-hover: 1;
 
-    /* Graph scenes stay dark in both Ficus appearances. Links are contrast-corrected
+    /* Graph scenes stay dark in both Iris appearances. Links are contrast-corrected
        (see docs/wiki/theme/graph-colors.md); all other graph/chart colors retain parity. */
     --graph-bg: 17 24 39;
     --graph-loading-bg: 15 23 42;
@@ -553,7 +553,7 @@
   }
 
   .dark,
-  [data-theme-scope][data-theme='tau'][data-appearance='dark'] {
+  [data-theme-scope][data-theme='iris'][data-appearance='dark'] {
     color-scheme: dark;
 
     /* Backgrounds - from splash.html */
@@ -888,7 +888,7 @@
     --status-neutral-badge-hover: 55 65 81;
     --opacity-status-neutral-badge-hover: 1;
 
-    /* Graph scenes stay dark in both Ficus appearances. Links are contrast-corrected
+    /* Graph scenes stay dark in both Iris appearances. Links are contrast-corrected
        (see docs/wiki/theme/graph-colors.md); all other graph/chart colors retain parity. */
     --graph-bg: 17 24 39;
     --graph-loading-bg: 15 23 42;
@@ -1208,7 +1208,7 @@
   }
 }
 
-/* xterm 5.5 uses native scrollbars. Leave them native for Ficus (auto tokens),
+/* xterm 5.5 uses native scrollbars. Leave them native for Iris (auto tokens),
    but allow later themes to supply the complete thumb/hover/active palette. */
 .ficus-terminal[data-terminal-scrollbar] .xterm-viewport {
   scrollbar-color: rgb(var(--term-scrollbar-thumb)) rgb(var(--term-bg));
