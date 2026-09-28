@@ -85,9 +85,10 @@ export function Chat({
 
   const showHeaderActions = !hideHeaderActions && headerLayout === 'controls' && !!agentId
 
+  // Loaded whenever there is an agent: its squad decides chat permission even without header actions.
   const { data: agent } = useQuery({
     ...queries.agents.detail(agentId!),
-    enabled: showHeaderActions,
+    enabled: !!agentId,
   })
 
   const { data: activeExecution } = useQuery({
@@ -95,7 +96,10 @@ export function Chat({
     enabled: showHeaderActions,
   })
 
-  const { can, isLoading: permissionsLoading } = usePermissionsHook(agent?.squadId ?? undefined)
+  // The same squad the server checks chat:send against (routes/chat.ts): the agent's squad, or the
+  // scope's squad for a new scoped chat. Without it a squad-scoped role would read as app-wide only.
+  const permissionSquadId = agent?.squadId ?? (scope?.id && scope.type !== 'system-manager' ? scope.id : undefined)
+  const { can, isLoading: permissionsLoading } = usePermissionsHook(permissionSquadId)
   const canSendChat = !permissionsLoading && can('chat:send')
 
   const invalidateAgentStatus = useCallback(() => {
