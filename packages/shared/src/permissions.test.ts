@@ -25,6 +25,16 @@ describe('slot permissions', () => {
   })
 })
 
+describe('farm chat room management permission', () => {
+  it('declares a dedicated permission that chat:* (Operator) covers and chat:send does not', () => {
+    expect(Permissions.CHAT_MANAGE_ROOMS).toBe('chat:manage-rooms')
+    expect(isGrantablePermission(Permissions.CHAT_MANAGE_ROOMS)).toBe(true)
+    // Operators hold chat:*, which covers it.
+    expect(permissionMatches('chat:*', Permissions.CHAT_MANAGE_ROOMS)).toBe(true)
+    expect(permissionMatches(Permissions.CHAT_SEND, Permissions.CHAT_MANAGE_ROOMS)).toBe(false)
+  })
+})
+
 describe('theme preset moderation permission', () => {
   it('declares a dedicated moderation permission distinct from settings/users management', () => {
     expect(Permissions.THEME_PRESETS_MODERATE).toBe('theme-presets:moderate')

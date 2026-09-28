@@ -11,6 +11,8 @@
     "./custom-theme": "./src/custom-theme.ts",
     "./theme-preferences": "./src/theme-preferences.ts",
     "./farm-preferences": "./src/farm-preferences.ts",
+    "./farm-chat": "./src/farm-chat.ts",
+    "./farm-presence": "./src/farm-presence.ts",
     "./theme-preset": "./src/theme-preset.ts",
     "./theme-derivation": "./src/theme-derivation.ts",
     "./theme-triples": "./src/theme-triples.ts",

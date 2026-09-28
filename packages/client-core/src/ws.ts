@@ -23,6 +23,13 @@ export interface WsClientOptions {
 export interface WsClient {
   subscribe(topic: string): void
   unsubscribe(topic: string): void
+  /**
+   * Sends a message now, if connected (nothing is queued; returns whether it
+   * went). State the server should keep across reconnects, like farm presence,
+   * is re-sent from `onOpen`. Optional so existing hand-written clients (fakes,
+   * vendored copies) still satisfy the interface; `createWsClient` always has it.
+   */
+  send?(message: object): boolean
   /** Permanently close (disables reconnect). */
   close(): void
 }
@@ -45,8 +52,10 @@ export function createWsClient(options: WsClientOptions): WsClient {
   let attempt = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
-  function send(obj: unknown) {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj))
+  function send(obj: unknown): boolean {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false
+    ws.send(JSON.stringify(obj))
+    return true
   }
 
   function connect() {
@@ -92,6 +101,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
     unsubscribe(topic: string) {
       topics.delete(topic)
       send({ type: 'unsubscribe', topic })
+    },
+    send(message: object) {
+      return send(message)
     },
     close() {
       closedByUser = true

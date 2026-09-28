@@ -1,8 +1,11 @@
 import type { ServerWebSocket } from 'bun'
 import {
+  parsePresenceFocus,
   parseWorkspaceVoiceUserId,
   parseAssistantInboxConversationId,
   SYSTEM_RECIPIENT_ID,
+  type PresenceFocus,
+  type PresencePerson,
   type SquadActivityProjectionEventData,
   type Topic,
 } from '@ficus/shared'
@@ -12,6 +15,7 @@ import { assistantInboxOwner } from '../assistant-inbox'
 import type { ClientMessage, ServerMessage } from './types'
 import { isValidTopic } from './types'
 import { agentTopicScope, eventSquadId, topicScope, type TopicScope } from './topic-scope'
+import { PresenceRegistry, presenceName, type PresentPerson } from './presence'
 import {
   activityAccessSignature,
   activityEventVisible,
@@ -34,9 +38,13 @@ const ACCESS_CACHE_TTL_MS = 60_000
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MAX_PENDING_ACTIVITY_SUBSCRIPTIONS = 64
 
+/** Topics only people (never agents or tokens) may subscribe to: the farm's multiplayer. */
+const PEOPLE_TOPICS = new Set<string>(['presence', 'farmChat'])
+
 export class WebSocketManager {
   private clients: Map<string, Client> = new Map()
   private clientIdCounter = 0
+  private readonly presence = new PresenceRegistry()
 
   constructor(private readonly resolveActivityAccess: typeof resolveSquadActivityAccess = resolveSquadActivityAccess) {}
 
@@ -55,12 +63,21 @@ export class WebSocketManager {
   }
 
   removeClient(clientId: string): void {
-    this.clients.delete(clientId)
+    const client = this.clients.get(clientId)
+    if (client) this.forget(client)
   }
 
   removeByWs(ws: ServerWebSocket<unknown>): void {
     const client = this.getClientByWs(ws)
-    if (client) this.clients.delete(client.id)
+    if (client) this.forget(client)
+  }
+
+  /** Drops a connection, and its person from the farm when it was their last. */
+  private forget(client: Client): void {
+    if (this.clients.get(client.id) === client) this.clients.delete(client.id)
+    const change = this.presence.withdraw(client.id)
+    if (change)
+      void this.deliverPresence(change).catch((error) => console.error('[ws] presence delivery failed:', error))
   }
 
   getClientByWs(ws: ServerWebSocket<unknown>): Client | undefined {
@@ -93,6 +110,17 @@ export class WebSocketManager {
 
     if (!isValidTopic(topic)) {
       this.send(client.ws, { type: 'error', message: `Invalid topic: ${topic}` })
+      return
+    }
+
+    if (PEOPLE_TOPICS.has(topic)) {
+      if (client.identity.type !== 'user') {
+        this.send(client.ws, { type: 'error', code: 'FORBIDDEN_TOPIC', topic, message: 'Forbidden topic' })
+        return
+      }
+      client.subscriptions.add(topic)
+      this.send(client.ws, { type: 'subscribed', topic })
+      if (topic === 'presence') await this.sendPresenceSnapshot(client)
       return
     }
 
@@ -221,7 +249,7 @@ export class WebSocketManager {
       try {
         client.ws.send(json)
       } catch {
-        if (this.clients.get(client.id) === client) this.clients.delete(client.id)
+        this.forget(client)
       }
     }
   }
@@ -235,7 +263,7 @@ export class WebSocketManager {
     const clients = [...this.clients.values()]
     const candidates = clients.filter((client) => {
       if (client.ws.readyState !== undefined && client.ws.readyState !== WebSocket.OPEN) {
-        if (this.clients.get(client.id) === client) this.clients.delete(client.id)
+        this.forget(client)
         return false
       }
       return client.subscriptions.has(topic)
@@ -384,6 +412,15 @@ export class WebSocketManager {
         case 'unsubscribe':
           this.unsubscribe(client.id, message.topic)
           break
+        case 'presence':
+          this.announcePresence(client, message.focus)
+          break
+        case 'presence.leave': {
+          const change = this.presence.withdraw(client.id)
+          if (change)
+            void this.deliverPresence(change).catch((error) => console.error('[ws] presence delivery failed:', error))
+          break
+        }
         default:
           this.send(ws, { type: 'error', message: 'Unknown message type' })
       }
@@ -464,6 +501,127 @@ export class WebSocketManager {
     // Null-scope agent resources were authorized against their current DB scope above.
     // Unrelated null-scope collections and unresolved instance resources remain fail-closed.
     return false
+  }
+
+  /* ---- The farm's multiplayer: presence and chat ---- */
+
+  private announcePresence(client: Client, focusInput: unknown): void {
+    if (client.identity.type !== 'user') {
+      this.send(client.ws, { type: 'error', message: 'Only people can be on the farm' })
+      return
+    }
+    const parsed = parsePresenceFocus(focusInput)
+    if (!parsed.ok) {
+      this.send(client.ws, { type: 'error', message: 'Invalid presence' })
+      return
+    }
+    const person = this.presence.announce(client.id, client.identity.userId, parsed.focus)
+    if (person)
+      void this.deliverPresence({ person }).catch((error) => console.error('[ws] presence delivery failed:', error))
+  }
+
+  /** The scope a focus lives in, so each recipient sees it only if they may see that thing. */
+  private async focusScope(focus: PresenceFocus): Promise<TopicScope> {
+    switch (focus.kind) {
+      case 'agent':
+        return topicScope(`agents:${focus.agentId}`)
+      case 'workstream':
+        return topicScope(`workstreams:${focus.workstreamId}`)
+      case 'squad':
+        return { kind: 'squad', squadId: focus.squadId }
+    }
+  }
+
+  /** A person as one recipient may see them: their focus only when the recipient can see it too. */
+  private async personFor(
+    client: Client,
+    person: PresentPerson,
+    name: string,
+    scope: TopicScope | null
+  ): Promise<PresencePerson> {
+    const visible = person.focus && scope ? await this.canAccessTopicScope(client, scope) : false
+    return {
+      userId: person.userId,
+      name,
+      focus: visible ? person.focus : null,
+      since: new Date(person.since).toISOString(),
+    }
+  }
+
+  /** Everyone else on the farm, for a person who just subscribed to presence. */
+  private async sendPresenceSnapshot(client: Client): Promise<void> {
+    const self = client.identity.type === 'user' ? client.identity.userId : null
+    const people = await Promise.all(
+      this.presence
+        .people()
+        .filter((person) => person.userId !== self)
+        .map(async (person) =>
+          this.personFor(
+            client,
+            person,
+            await presenceName(person.userId),
+            person.focus ? await this.focusScope(person.focus) : null
+          )
+        )
+    )
+    if (this.isActiveSubscriber(client, 'presence'))
+      this.send(client.ws, { type: 'event', topic: 'presence', event: 'presence.snapshot', data: { people } })
+  }
+
+  /** Tells everyone else subscribed to presence that someone moved, arrived or left. */
+  private async deliverPresence(change: { person: PresentPerson } | { left: string }): Promise<void> {
+    const userId = 'left' in change ? change.left : change.person.userId
+    const audience = [...this.clients.values()].filter(
+      (client) =>
+        client.identity.type === 'user' &&
+        client.identity.userId !== userId &&
+        this.isActiveSubscriber(client, 'presence')
+    )
+    if (!audience.length) return
+    if ('left' in change) {
+      const json = JSON.stringify({
+        type: 'event',
+        topic: 'presence',
+        event: 'presence.left',
+        data: { userId },
+      } satisfies ServerMessage)
+      for (const client of audience) client.ws.send(json)
+      return
+    }
+    const { person } = change
+    const [name, scope] = await Promise.all([
+      presenceName(person.userId),
+      person.focus ? this.focusScope(person.focus) : null,
+    ])
+    await Promise.all(
+      audience.map(async (client) => {
+        const data = { person: await this.personFor(client, person, name, scope) }
+        if (this.isActiveSubscriber(client, 'presence'))
+          this.send(client.ws, { type: 'event', topic: 'presence', event: 'presence.updated', data })
+      })
+    )
+  }
+
+  /**
+   * Sends a farm chat event to the people subscribed to farmChat: everyone for
+   * the general room and public rooms, only the given people for a DM.
+   */
+  sendFarmChat(
+    event: 'farmChat.messageCreated' | 'farmChat.roomsChanged',
+    data: unknown,
+    only?: Iterable<string>
+  ): void {
+    const audience = only ? new Set(only) : null
+    const json = JSON.stringify({ type: 'event', topic: 'farmChat', event, data } satisfies ServerMessage)
+    for (const client of this.clients.values()) {
+      if (client.identity.type !== 'user' || !this.isActiveSubscriber(client, 'farmChat')) continue
+      if (audience && !audience.has(client.identity.userId)) continue
+      try {
+        client.ws.send(json)
+      } catch {
+        this.forget(client)
+      }
+    }
   }
 
   private send(ws: ServerWebSocket<unknown>, message: ServerMessage): void {

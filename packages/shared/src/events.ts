@@ -1,5 +1,7 @@
 import type { WorkStreamWaitType, InboxRecipientType } from './types'
 import type { SquadActivityItem } from './squad-activity'
+import type { FarmChatMessage } from './farm-chat'
+import type { PresencePerson } from './farm-presence'
 
 /**
  * Minimal event payloads — IDs and basic fields only.
@@ -255,4 +257,17 @@ export type EventMap = {
   // only; the owner refetches activity. Routed through the inbox topic family as
   // `inbox:assistant:<conversationId>` and delivered to the conversation owner alone.
   'assistant.activityChanged': { conversationId: string; recipientId: string }
+
+  // Farm presence (see farm-presence.ts). Sent by the API process itself on the
+  // `presence` topic, per recipient (each sees only the focus they may see);
+  // never emitted through the event bus, so the WS bridge ignores them.
+  'presence.snapshot': { people: PresencePerson[] }
+  'presence.updated': { person: PresencePerson }
+  'presence.left': { userId: string }
+
+  // Farm chat (see farm-chat.ts). Sent by the farm chat routes on the
+  // `farmChat` topic: a public room's messages to everyone, a DM's to its two
+  // people; room changes (create, rename, delete) just ask clients to refetch.
+  'farmChat.messageCreated': { message: FarmChatMessage }
+  'farmChat.roomsChanged': Record<string, never>
 }

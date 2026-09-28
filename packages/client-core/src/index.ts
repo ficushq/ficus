@@ -28,4 +28,5 @@ export * from './resources/workStreams'
 
 export * from './resources/userPreferences'
 export * from './resources/farmPreferences'
+export * from './resources/farmChat'
 export * from './resources/themePresets'

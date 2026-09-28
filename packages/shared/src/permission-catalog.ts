@@ -138,6 +138,7 @@ export const PERMISSION_DESCRIPTIONS = {
   'system-tokens:manage': 'Create, list, and revoke system API tokens, including choosing their permission scopes.',
   'theme-presets:moderate':
     'Remove another user’s theme preset from the instance-wide shared list. The owner keeps a private copy.',
+  'chat:manage-rooms': 'Create, rename, and delete the farm’s chat rooms. The general room always stays.',
 } satisfies Record<Permission, string>
 
 export const PERMISSION_CATALOG = Object.values(Permissions)

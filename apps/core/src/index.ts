@@ -69,6 +69,7 @@ import { routingRouter } from './routes/routing'
 import { amtpRouter } from './routes/amtp'
 import { userPreferencesRouter } from './routes/user-preferences'
 import { farmPreferencesRouter } from './routes/farm-preferences'
+import { farmChatRouter } from './routes/farm-chat'
 import { themePresetsRouter } from './routes/theme-presets'
 import { notificationConfigRouter } from './routes/notification-config'
 import secretsRouter from './routes/secrets'
@@ -326,6 +327,7 @@ app.route('/api/routing', routingRouter)
 app.route('/api/notification-config', notificationConfigRouter)
 app.route('/api/user-preferences', userPreferencesRouter)
 app.route('/api/farm-preferences', farmPreferencesRouter)
+app.route('/api/farm-chat', farmChatRouter)
 app.route('/api/theme-presets', themePresetsRouter)
 app.route('/api/secrets', secretsRouter)
 app.route('/api/settings', settingsRouter)

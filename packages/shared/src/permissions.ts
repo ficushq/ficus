@@ -228,6 +228,11 @@ export const Permissions = {
   // (owner-only, resolveActingUser — see routes/theme-presets.ts). Only removing
   // someone ELSE's preset from the instance-wide shared list is privileged.
   THEME_PRESETS_MODERATE: 'theme-presets:moderate',
+
+  // Farm chat: every signed-in person can read and post in the farm's rooms
+  // and send DMs (routes/farm-chat.ts); creating, renaming and deleting rooms
+  // (never the general room) is privileged. Operators hold it through chat:*.
+  CHAT_MANAGE_ROOMS: 'chat:manage-rooms',
 } as const
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions]
