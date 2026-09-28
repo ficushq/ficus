@@ -9,6 +9,8 @@ import {
   validateFarmChatRoom,
 } from './farm-chat'
 import { parsePresenceFocus } from './farm-presence'
+import { isFarmLook, type FarmLook } from './farm-look'
+import { readFarmSettings, validateFarmSettingsPatch } from './farm-preferences'
 
 const ID = '11111111-1111-4111-8111-111111111111'
 
@@ -70,5 +72,45 @@ describe('presence focus', () => {
   test('rejects anything else', () => {
     for (const bad of [undefined, 'agent', { kind: 'agent' }, { kind: 'agent', agentId: 'nope' }, { kind: 'house' }])
       expect(parsePresenceFocus(bad).ok).toBe(false)
+  })
+})
+
+describe('farm looks', () => {
+  const look: FarmLook = {
+    skin: '#d9a37a',
+    hair: 'curly',
+    hairColor: '#3b2a20',
+    hat: 'none',
+    hatColor: '#e36c5a',
+    shirt: 'flannel',
+    shirtColor: '#e36c5a',
+    pants: 'overalls',
+    pantsColor: '#4b5d7a',
+    shoes: 'boots',
+    shoesColor: '#5a3a24',
+    piercings: ['ears', 'nose'],
+  }
+
+  test('are complete and exact', () => {
+    expect(isFarmLook(look)).toBe(true)
+    expect(isFarmLook({ ...look, piercings: [] })).toBe(true)
+    for (const bad of [
+      null,
+      [],
+      { ...look, hair: 'dreadlocks-ish' },
+      { ...look, skin: 'tan' },
+      { ...look, shirtColor: '#abc' },
+      { ...look, piercings: ['ears', 'ears'] },
+      { ...look, piercings: ['tongue'] },
+      { ...look, glasses: true },
+      (({ shoes: _shoes, ...rest }) => rest)(look),
+    ])
+      expect(isFarmLook(bad)).toBe(false)
+  })
+
+  test('are a farm setting', () => {
+    expect(validateFarmSettingsPatch({ look })).toEqual({ ok: true, patch: { look } })
+    expect(validateFarmSettingsPatch({ look: { ...look, hat: 'crown' } }).ok).toBe(false)
+    expect(readFarmSettings({ style: 'cozy', look: { ...look, hat: 'crown' } })).toEqual({ style: 'cozy' })
   })
 })

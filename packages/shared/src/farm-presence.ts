@@ -1,3 +1,5 @@
+import type { FarmLook } from './farm-look'
+
 /**
  * Who's on the farm and what they're working on. The farm tells Core (over the
  * WebSocket, `{ type: 'presence', focus }`) what you're focused on; Core tells
@@ -20,6 +22,8 @@ export interface PresencePerson {
   focus: PresenceFocus | null
   /** When their focus last changed (ISO). */
   since: string
+  /** How they chose to look (the character builder), or null for the farm's pick for them. */
+  look: FarmLook | null
 }
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i

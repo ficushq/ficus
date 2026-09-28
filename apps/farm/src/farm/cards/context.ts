@@ -19,6 +19,8 @@ export interface FarmCardEnv {
   startAssistant: () => void
   /** Opens the farm chat on your DM with someone. */
   messagePerson: (userId: string) => void
+  /** Opens the character builder (how you look on the farm). */
+  changeLook: () => void
 }
 
 export const FarmCardContext = createContext<FarmCardEnv | null>(null)

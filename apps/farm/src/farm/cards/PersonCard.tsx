@@ -68,6 +68,11 @@ export function PersonCard({ userId }: { userId: string }) {
             Message privately
           </button>
         )}
+        {isMe && (
+          <button type="button" className="g-button g-button-primary" onClick={env.changeLook}>
+            Change your look
+          </button>
+        )}
         {goTo && (
           <button type="button" className="g-button" onClick={() => env.select(goTo)}>
             Go there

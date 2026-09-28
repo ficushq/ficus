@@ -15,7 +15,13 @@ import { assistantInboxOwner } from '../assistant-inbox'
 import type { ClientMessage, ServerMessage } from './types'
 import { isValidTopic } from './types'
 import { agentTopicScope, eventSquadId, topicScope, type TopicScope } from './topic-scope'
-import { PresenceRegistry, presenceName, type PresentPerson } from './presence'
+import {
+  PresenceRegistry,
+  forgetPresenceProfile,
+  presenceProfile,
+  type PresenceProfile,
+  type PresentPerson,
+} from './presence'
 import { audienceOf, FarmChatError, roomFor } from '../farm-chat/rooms'
 import {
   activityAccessSignature,
@@ -546,15 +552,16 @@ export class WebSocketManager {
   private async personFor(
     client: Client,
     person: PresentPerson,
-    name: string,
+    profile: PresenceProfile,
     scope: TopicScope | null
   ): Promise<PresencePerson> {
     const visible = person.focus && scope ? await this.canAccessTopicScope(client, scope) : false
     return {
       userId: person.userId,
-      name,
+      name: profile.name,
       focus: visible ? person.focus : null,
       since: new Date(person.since).toISOString(),
+      look: profile.look,
     }
   }
 
@@ -569,7 +576,7 @@ export class WebSocketManager {
           this.personFor(
             client,
             person,
-            await presenceName(person.userId),
+            await presenceProfile(person.userId),
             person.focus ? await this.focusScope(person.focus) : null
           )
         )
@@ -599,17 +606,25 @@ export class WebSocketManager {
       return
     }
     const { person } = change
-    const [name, scope] = await Promise.all([
-      presenceName(person.userId),
+    const [profile, scope] = await Promise.all([
+      presenceProfile(person.userId),
       person.focus ? this.focusScope(person.focus) : null,
     ])
     await Promise.all(
       audience.map(async (client) => {
-        const data = { person: await this.personFor(client, person, name, scope) }
+        const data = { person: await this.personFor(client, person, profile, scope) }
         if (this.isActiveSubscriber(client, 'presence'))
           this.send(client.ws, { type: 'event', topic: 'presence', event: 'presence.updated', data })
       })
     )
+  }
+
+  /** Shows everyone someone's new look straight away (after they save it), if they're on the farm. */
+  refreshPresence(userId: string): void {
+    forgetPresenceProfile(userId)
+    const person = this.presence.person(userId)
+    if (person)
+      void this.deliverPresence({ person }).catch((error) => console.error('[ws] presence delivery failed:', error))
   }
 
   /** Passes on that someone is typing in a room they can use, at most every couple of seconds per room. */

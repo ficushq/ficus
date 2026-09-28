@@ -16,7 +16,9 @@ import { iso } from './iso'
 import { useMultiplayer } from '../multiplayer/MultiplayerProvider'
 import { focusFor, huddle, spotFor } from '../multiplayer/spots'
 import { People, type PlacedPerson } from '../multiplayer/People'
+import { lookFor } from '../multiplayer/personLook'
 import { FarmChatPanel } from '../multiplayer/FarmChatPanel'
+import { LookBuilder } from '../multiplayer/LookBuilder'
 import { chatKeys } from '../multiplayer/chatApi'
 import { useQueryClient } from '@tanstack/react-query'
 import { haltedAgentIds } from './state'
@@ -38,6 +40,7 @@ import {
   PlusIcon,
   MoreIcon,
   PeopleIcon,
+  ShirtIcon,
   SeedPacketIcon,
   SpeakerIcon,
   StyleIcon,
@@ -113,18 +116,39 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     setFocus(JSON.parse(focusKey))
   }, [focusKey, setFocus])
   const [farmChat, setFarmChat] = useState<{ open: boolean; roomId: string | null }>({ open: false, roomId: null })
+  const [lookOpen, setLookOpen] = useState(false)
   const agentsById = useMemo(
     () => new Map([...input.agents, ...input.assistants].map((a) => [a.id, a])),
     [input.agents, input.assistants]
   )
   const placed = useMemo<PlacedPerson[]>(() => {
     if (!multiplayer.enabled) return []
-    const everyone = multiplayer.people.map((p) => ({ userId: p.userId, name: p.name, focus: p.focus, isMe: false }))
+    const everyone = multiplayer.people.map((p) => ({
+      userId: p.userId,
+      name: p.name,
+      focus: p.focus,
+      isMe: false,
+      look: lookFor(p.userId, p.look),
+    }))
     if (multiplayer.me)
-      everyone.push({ userId: multiplayer.me.userId, name: multiplayer.me.name, focus: multiplayer.focus, isMe: true })
+      everyone.push({
+        userId: multiplayer.me.userId,
+        name: multiplayer.me.name,
+        focus: multiplayer.focus,
+        isMe: true,
+        look: multiplayer.myLook,
+      })
     const spots = huddle(everyone.map((p) => ({ key: p.userId, spot: spotFor(layout, p.focus, agentsById) })))
-    return everyone.map((p) => ({ userId: p.userId, name: p.name, isMe: p.isMe, spot: spots.get(p.userId)! }))
-  }, [multiplayer.enabled, multiplayer.people, multiplayer.me, multiplayer.focus, layout, agentsById])
+    return everyone.map(({ focus: _focus, ...p }) => ({ ...p, spot: spots.get(p.userId)! }))
+  }, [
+    multiplayer.enabled,
+    multiplayer.people,
+    multiplayer.me,
+    multiplayer.focus,
+    multiplayer.myLook,
+    layout,
+    agentsById,
+  ])
   const selectPerson = useCallback((userId: string) => setSelection({ kind: 'person', userId }), [])
   const chatApi = multiplayer.chat
   const openDmRef = useStableRef(async (userId: string) => {
@@ -148,6 +172,11 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       openAssistant: (conversationId) => openChatRef.current({ kind: 'assistant', conversationId }),
       startAssistant: () => openChatRef.current({ kind: 'assistant', fresh: crypto.randomUUID() }),
       messagePerson: (userId) => void openDmRef.current(userId),
+      changeLook: () => {
+        setSelection(null)
+        setFarmChat((c) => ({ ...c, open: false }))
+        setLookOpen(true)
+      },
     }),
     [layout, input, agentsById, openDmRef]
   )
@@ -189,6 +218,9 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         onClick={() => multiplayer.setEnabled(!multiplayer.enabled)}
       >
         <PeopleIcon solo={!multiplayer.enabled} />
+      </ToolButton>
+      <ToolButton label="Change your look" short="Look" expanded={lookOpen} onClick={() => env.changeLook()}>
+        <ShirtIcon />
       </ToolButton>
       <ToolButton label="List everything on the farm" short="List" onClick={() => setListOpen((o) => !o)}>
         <ListIcon />
@@ -301,7 +333,10 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
           badge={multiplayer.unread || undefined}
           badgeLabel="unread"
           expanded={farmChat.open}
-          onClick={() => setFarmChat((c) => ({ ...c, open: !c.open }))}
+          onClick={() => {
+            setLookOpen(false)
+            setFarmChat((c) => ({ ...c, open: !c.open }))
+          }}
         >
           <ChatBubblesIcon />
         </ToolButton>
@@ -370,6 +405,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
           narrow={narrow}
         />
       )}
+      {lookOpen && <LookBuilder narrow={narrow} onClose={() => setLookOpen(false)} />}
     </div>
   )
 }

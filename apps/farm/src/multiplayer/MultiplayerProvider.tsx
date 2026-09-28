@@ -5,9 +5,11 @@ import {
   FARM_CHAT_TYPING_EVERY_MS,
   FARM_CHAT_TYPING_SHOWS_MS,
   farmPersonName,
+  isFarmLook,
   type FarmChatMessage,
   type FarmChatMessagePage,
   type FarmChatRooms,
+  type FarmLook,
   type PresenceFocus,
   type PresencePerson,
 } from '@ficus/shared'
@@ -19,6 +21,7 @@ import { useAccountSettings } from '../settings/useAccountSettings'
 import { useStableRef } from '../hooks/useStableRef'
 import { chatKeys, liveChatApi, type FarmChatApi } from './chatApi'
 import './farmChat.css'
+import { lookFor } from './personLook'
 
 /*
  * The farm's multiplayer: who else is here (and what they're at), and chat
@@ -28,6 +31,7 @@ import './farmChat.css'
  */
 
 const STORAGE_KEY = 'ficus-farm:multiplayer'
+const LOOK_KEY = 'ficus-farm:look'
 const BUBBLE_MS = 6000
 const MAX_BACKOFF_MS = 30_000
 
@@ -57,6 +61,10 @@ export interface Multiplayer {
   typingIn: (roomId: string) => string[]
   /** Say you're typing in a room (sent at most every few seconds). */
   sendTyping: (roomId: string) => void
+  /** How you look on the farm: your choice, else the farm's pick for you. */
+  myLook: FarmLook
+  /** Dresses you (the character builder): saved to your account, and everyone on the farm sees it. */
+  setMyLook: (look: FarmLook) => void
 }
 
 const MultiplayerContext = createContext<Multiplayer | null>(null)
@@ -72,6 +80,24 @@ function readEnabled(): boolean {
     return localStorage.getItem(STORAGE_KEY) !== 'off'
   } catch {
     return true
+  }
+}
+
+/** The look this browser last saw you choose, for an instant start (the account's wins when it arrives). */
+function readLook(): FarmLook | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LOOK_KEY) ?? 'null') as unknown
+    return isFarmLook(stored) ? stored : null
+  } catch {
+    return null
+  }
+}
+
+function writeLook(look: FarmLook) {
+  try {
+    localStorage.setItem(LOOK_KEY, JSON.stringify(look))
+  } catch {
+    // Storage unavailable: the account (if any) still has it.
   }
 }
 
@@ -106,6 +132,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
   const session = useQuery({ ...farmQueries.session(), enabled: !isDemo })
   const { saved, save } = useAccountSettings()
   const [enabled, setEnabledState] = useState(readEnabled)
+  const [chosenLook, setChosenLook] = useState(readLook)
   const [people, setPeople] = useState<PresencePerson[]>([])
   const [bubbles, setBubbles] = useState<ReadonlyMap<string, ChatBubble>>(new Map())
   const [focus, setFocusState] = useState<PresenceFocus | null>(null)
@@ -124,6 +151,23 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     return user ? { userId: user.id, name: farmPersonName(user) } : null
   }, [demo, session.data])
   const meRef = useStableRef(me)
+
+  // The account's look wins when it arrives (or changes on another device).
+  const accountLook = saved?.look
+  useEffect(() => {
+    if (!accountLook) return
+    setChosenLook(accountLook)
+    writeLook(accountLook)
+  }, [accountLook])
+  const myLook = useMemo(() => lookFor(me?.userId ?? 'you', chosenLook), [me?.userId, chosenLook])
+  const setMyLook = useCallback(
+    (look: FarmLook) => {
+      setChosenLook(look)
+      writeLook(look)
+      void save({ look })
+    },
+    [save]
+  )
 
   // The account's choice wins when it arrives (or changes on another device).
   const accountEnabled = saved?.multiplayer
@@ -362,8 +406,24 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       unread: rooms.data?.rooms.reduce((n, room) => n + room.unread, 0) ?? 0,
       typingIn,
       sendTyping,
+      myLook,
+      setMyLook,
     }),
-    [enabled, setEnabled, me, people, bubbles, setFocus, focus, chat, rooms.data, typingIn, sendTyping]
+    [
+      enabled,
+      setEnabled,
+      me,
+      people,
+      bubbles,
+      setFocus,
+      focus,
+      chat,
+      rooms.data,
+      typingIn,
+      sendTyping,
+      myLook,
+      setMyLook,
+    ]
   )
   return <MultiplayerContext.Provider value={value}>{children}</MultiplayerContext.Provider>
 }

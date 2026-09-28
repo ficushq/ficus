@@ -1,29 +1,55 @@
+import {
+  FARM_CLOTHES_COLORS,
+  FARM_HAIR_COLORS,
+  FARM_HAIR_STYLES,
+  FARM_HATS,
+  FARM_PANTS,
+  FARM_SHIRTS,
+  FARM_SHOES,
+  FARM_SKIN_TONES,
+  type FarmLook,
+} from '@ficus/shared'
 import { hash, pick } from '../farm/appearance'
 
-/** Everything that makes one person look like themselves on the farm. Stable per user id; each style draws it its own way. */
-export interface PersonLook {
-  skin: string
-  hair: string
-  shirt: string
-  pants: string
-  hat: 'straw' | 'cap' | 'beanie' | 'sunhat' | null
-  hatColor: string
-}
+/*
+ * How a person looks on the farm: what they chose in the character builder
+ * (a farm setting, sent with their presence), else a look the farm picks for
+ * them, stable per user id. Each style draws a FarmLook its own way.
+ */
 
-const SKINS = ['#f6d7bd', '#eec39f', '#d9a37a', '#b87c55', '#8d5a3b', '#f3cfb3'] as const
-const HAIR = ['#3b2a20', '#6b4426', '#a8612e', '#e1b35c', '#2d2d3a', '#8a8a92'] as const
-const SHIRTS = ['#e36c5a', '#5f9fd6', '#f2c14e', '#7cbf7a', '#b58ad6', '#f29bb4', '#4fb3a6'] as const
-const PANTS = ['#4b5d7a', '#6b5a45', '#3f6b4f', '#5a4b7a'] as const
-const HATS: readonly PersonLook['hat'][] = ['straw', 'cap', 'beanie', 'sunhat', null]
+// The farm's picks stay everyday: natural hair colours, no piercings.
+const NATURAL_HAIR = FARM_HAIR_COLORS.slice(0, 8)
+const SHOE_COLORS = ['#5a3a24', '#6b5a45', '#4b4b55', '#f4efe6', '#8c3b22'] as const
 
-export function personLookFor(userId: string): PersonLook {
+/** The look the farm picks for someone who hasn't chosen one. */
+export function defaultLookFor(userId: string): FarmLook {
   const seed = (part: string) => hash(`person:${userId}:${part}`)
   return {
-    skin: pick(SKINS, seed('skin')),
-    hair: pick(HAIR, seed('hair')),
-    shirt: pick(SHIRTS, seed('shirt')),
-    pants: pick(PANTS, seed('pants')),
-    hat: pick(HATS, seed('hat')),
-    hatColor: pick(SHIRTS, seed('hat-color')),
+    skin: pick(FARM_SKIN_TONES, seed('skin')),
+    hair: pick(FARM_HAIR_STYLES.slice(1), seed('hair-style')),
+    hairColor: pick(NATURAL_HAIR, seed('hair')),
+    hat: pick(FARM_HATS, seed('hat')),
+    hatColor: pick(FARM_CLOTHES_COLORS, seed('hat-color')),
+    shirt: pick(FARM_SHIRTS, seed('shirt-style')),
+    shirtColor: pick(FARM_CLOTHES_COLORS, seed('shirt')),
+    pants: pick(FARM_PANTS, seed('pants-style')),
+    pantsColor: pick(['#4b5d7a', '#6b5a45', '#3f8f5f', '#3d4a7a', '#4b4b55'], seed('pants')),
+    shoes: pick(FARM_SHOES, seed('shoes-style')),
+    shoesColor: pick(SHOE_COLORS, seed('shoes')),
+    piercings: [],
   }
+}
+
+/** Someone's look: theirs if they chose one, else the farm's pick. */
+export function lookFor(userId: string, chosen: FarmLook | null | undefined): FarmLook {
+  return chosen ?? defaultLookFor(userId)
+}
+
+/** A colour mixed toward black (amount < 0) or white (amount > 0), -1…1. */
+export function tint(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  const target = amount < 0 ? 0 : 255
+  const t = Math.min(1, Math.abs(amount))
+  const channel = (shift: number) => Math.round(((n >> shift) & 255) + (target - ((n >> shift) & 255)) * t)
+  return `#${((channel(16) << 16) | (channel(8) << 8) | channel(0)).toString(16).padStart(6, '0')}`
 }

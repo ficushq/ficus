@@ -1,3 +1,5 @@
+import { isFarmLook, type FarmLook } from './farm-look'
+
 /**
  * The farm UI's per-account settings: one small document per user, so new
  * durable farm state is a new key here rather than a new column. Every key is
@@ -17,6 +19,8 @@ export interface FarmSettings {
   sound?: boolean
   /** Seen by and seeing other people on the farm (on unless turned off: single-player). */
   multiplayer?: boolean
+  /** How they look on the farm (the character builder); absent until they choose. */
+  look?: FarmLook
 }
 
 export interface MyFarmPreferences {
@@ -33,6 +37,7 @@ const CHECKS: { [K in keyof Required<FarmSettings>]: (value: unknown) => value i
   style: isFarmStyle,
   sound: (value): value is boolean => typeof value === 'boolean',
   multiplayer: (value): value is boolean => typeof value === 'boolean',
+  look: isFarmLook,
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>

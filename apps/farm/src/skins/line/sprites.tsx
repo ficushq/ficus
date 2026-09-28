@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Agent } from '@ficus/shared'
+import type { Agent, FarmLook } from '@ficus/shared'
 import { iso } from '../../farm/iso'
 import type {
   BadgeKind,
@@ -11,7 +11,7 @@ import type {
   RobotRole,
 } from '../../farm/types'
 import type { YardRect } from '../types'
-import type { PersonLook } from '../../multiplayer/personLook'
+import { HATS, hairUnderHat } from '../../multiplayer/personParts'
 import { at, boxEdges, diamond, gridLines } from './draw'
 
 /*
@@ -395,14 +395,24 @@ export function LineDecor({ decor }: { decor: DecorPlacement }) {
 }
 
 /** A person on the farm, Futurist style: a hollow head and a line body, a light in their chest. */
-export function LinePerson({ look }: { look: PersonLook }) {
+export function LinePerson({ look }: { look: FarmLook }) {
+  const hair = hairUnderHat(look)
+  const line = { fill: 'none', stroke: FG, strokeWidth: 1.3, vectorEffect: 'non-scaling-stroke' as const }
   return (
     <g>
       <ellipse rx={8} ry={3} fill="none" stroke={FG} strokeOpacity={0.3} />
       <g className="ln-float">
-        <path d="M-5 -1 L0 -14 L5 -1 M0 -14 V-27 M-8 -18 L0 -24 L8 -18" fill="none" stroke={FG} strokeWidth={1.3} />
+        <path d="M-5 -1 L0 -14 L5 -1 M0 -14 V-27 M-8 -18 L0 -24 L8 -18" {...line} />
+        {look.pants === 'skirt' && <path d="M-3 -13 L-6.5 -5 H6.5 L3 -13" {...line} />}
+        <g transform="translate(0 -33) scale(0.6)">
+          {hair.back && <path d={hair.back} {...line} strokeOpacity={0.6} />}
+        </g>
         <circle cy={-33} r={6} fill={BG} stroke={FG} strokeWidth={1.3} />
-        {look.hat && <path d="M-9 -38 H9" stroke={FG} strokeOpacity={0.8} strokeWidth={1.3} />}
+        <g transform="translate(0 -33) scale(0.6)">
+          {hair.front && <path d={hair.front} {...line} strokeOpacity={0.8} />}
+          {look.hat !== 'none' && HATS[look.hat].map((piece, k) => <path key={k} d={piece.d} {...line} fill={BG} />)}
+          {look.piercings.length > 0 && <circle cx={10.2} cy={3.8} r={1.6} fill={ACCENT} />}
+        </g>
         <circle cy={-22} r={1.8} fill={ACCENT} className="ln-pulse" />
       </g>
     </g>

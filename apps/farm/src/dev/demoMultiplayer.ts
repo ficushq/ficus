@@ -1,4 +1,4 @@
-import type { FarmChatMessage, FarmChatRoom, PresenceFocus, PresencePerson } from '@ficus/shared'
+import type { FarmChatMessage, FarmChatRoom, FarmLook, PresenceFocus, PresencePerson } from '@ficus/shared'
 import type { FarmChatApi } from '../multiplayer/chatApi'
 import type { DemoMultiplayer, MultiplayerEvent } from '../multiplayer/MultiplayerProvider'
 
@@ -11,6 +11,21 @@ import type { DemoMultiplayer, MultiplayerEvent } from '../multiplayer/Multiplay
 const ME = { userId: 'demo-you', name: 'You' }
 const ROSA = { id: 'demo-rosa', name: 'Rosa Díaz' }
 const SAM = { id: 'demo-sam', name: 'sam@example.com' }
+/** Rosa has dressed herself in the character builder; Sam wears the farm's pick. */
+const ROSA_LOOK: FarmLook = {
+  skin: '#c68a5f',
+  hair: 'long',
+  hairColor: '#8c3b22',
+  hat: 'sunhat',
+  hatColor: '#f2c14e',
+  shirt: 'flannel',
+  shirtColor: '#e36c5a',
+  pants: 'overalls',
+  pantsColor: '#4b5d7a',
+  shoes: 'boots',
+  shoesColor: '#6b5a45',
+  piercings: ['ears', 'nose'],
+}
 
 const ROSA_ROUTE: Array<PresenceFocus | null> = [
   { kind: 'agent', agentId: 'mgr-platform' },
@@ -197,6 +212,7 @@ export function demoMultiplayer(): DemoMultiplayer {
         name: who.name,
         focus,
         since: iso(),
+        look: who === ROSA ? ROSA_LOOK : null,
       })
       sink({ event: 'presence.snapshot', data: { people: [person(ROSA, ROSA_ROUTE[0]!), person(SAM, SAM_ROUTE[0]!)] } })
       const moves = window.setInterval(() => {

@@ -1,9 +1,9 @@
 import { memo, type ReactNode } from 'react'
-import type { Agent } from '@ficus/shared'
+import type { Agent, FarmLook } from '@ficus/shared'
 import { iso } from '../../farm/iso'
 import type { DecorPlacement, FarmLayout, PlotLayout, RobotFace, RobotPlacement, RobotRole } from '../../farm/types'
 import type { YardRect } from '../types'
-import type { PersonLook } from '../../multiplayer/personLook'
+import { HATS, hairUnderHat, PIERCINGS } from '../../multiplayer/personParts'
 import { at, diamond, gridLines, poly, type TilePoint } from '../line/draw'
 import { LineDefs } from '../line/sprites'
 import { Circle, Ellipse, Path, Rect, useDrafting } from './drafting'
@@ -869,44 +869,83 @@ export function BlueprintDecor({ decor }: { decor: DecorPlacement }) {
   }
 }
 
-/** A person on the farm, drawn like the robots: a technical figure, a hat by their look. */
-export function BlueprintPerson({ look }: { look: PersonLook }) {
+/** A person on the farm, drawn like the robots: a technical figure, dressed by shape (hair, hat, clothes, shoes). */
+export function BlueprintPerson({ look }: { look: FarmLook }) {
+  const { shade } = useDrafting()
   const ink = { fill: BG, stroke: FG, strokeLinejoin: 'round' as const }
+  // Hair reads as tone: hatched in pencil, a light wash on the blueprint.
+  const hairTone = shade ? { fill: shade, stroke: FG } : { fill: FG, fillOpacity: 0.28, stroke: FG }
   const hy = -40
+  const head = `translate(0 ${hy}) scale(0.8)`
+  const hair = hairUnderHat(look)
+  const sleeves = look.shirt !== 'tank'
   return (
     <g>
       <Ellipse rx={10} ry={3.5} fill="none" stroke={FG} strokeOpacity={0.3} strokeDasharray="2 2" />
+      {hair.back && (
+        <g transform={head}>
+          <Path d={hair.back} {...hairTone} />
+        </g>
+      )}
+      {look.shirt === 'hoodie' && <Path d="M-9.5 -30 Q-10.5 -38 0 -38.5 Q10.5 -38 9.5 -30" {...ink} />}
       <Path d="M-5 0 L-3 -15 M5 0 L3 -15" fill="none" stroke={FG} />
-      <Path d="M-8 -31 L-11 -17 M8 -31 L11 -17" fill="none" stroke={FG} />
+      {look.pants === 'shorts' && <Path d="M-6.5 -16 H6.5 L6 -9.5 H1 L0 -13 L-1 -9.5 H-6 Z" {...ink} />}
+      {look.pants === 'skirt' && <Path d="M-6 -16 H6 L9 -6 H-9 Z" {...ink} />}
+      {look.shoes === 'boots' ? (
+        <Path d="M-7 -4 H-3 V1 H-7 Z M3 -4 H7 V1 H3 Z" {...ink} />
+      ) : look.shoes === 'clogs' ? (
+        <g>
+          <Ellipse cx={-5} cy={-0.5} rx={3} ry={1.8} {...ink} />
+          <Ellipse cx={5} cy={-0.5} rx={3} ry={1.8} {...ink} />
+        </g>
+      ) : look.shoes === 'sandals' ? (
+        <Path d="M-7.5 0.5 H-2.5 M2.5 0.5 H7.5" fill="none" stroke={FG} strokeWidth={1.6} />
+      ) : (
+        <Path d="M-7.5 1 Q-7.5 -2 -4 -2 L-2.5 1 Z M2.5 1 L4 -2 Q7.5 -2 7.5 1 Z" {...ink} />
+      )}
+      <Path
+        d="M-8 -31 L-11 -17 M8 -31 L11 -17"
+        fill="none"
+        stroke={FG}
+        strokeDasharray={sleeves ? undefined : '2 1.6'}
+      />
+      {look.shirt === 'tee' && <Path d="M-9.9 -26.5 L-7.4 -26 M9.9 -26.5 L7.4 -26" fill="none" stroke={FG} />}
       <Rect x={-8} y={-33} width={16} height={18} rx={4} {...ink} />
-      <Path d="M-4 -33 L0 -29 L4 -33" fill="none" stroke={FG} strokeOpacity={0.6} />
+      {look.shirt === 'flannel' && (
+        <Path d="M-3 -32 V-16 M3 -32 V-16 M-7.5 -27 H7.5 M-7.5 -21 H7.5" fill="none" stroke={FG} strokeOpacity={0.45} />
+      )}
+      {look.shirt === 'hoodie' && <Path d="M-5 -22 H5 L6 -18 H-6 Z" fill="none" stroke={FG} strokeOpacity={0.6} />}
+      {look.pants === 'overalls' ? (
+        <Path d="M-5 -26 H5 V-15 H-5 Z M-5 -26 L-6 -33 M5 -26 L6 -33" {...ink} />
+      ) : (
+        <Path d="M-4 -33 L0 -29 L4 -33" fill="none" stroke={FG} strokeOpacity={0.6} />
+      )}
       <Circle cy={hy} r={8} {...ink} />
       <Circle cx={-2.8} cy={hy + 1} r={1} fill={FG} />
       <Circle cx={2.8} cy={hy + 1} r={1} fill={FG} />
       <Path d={`M-2.2 ${hy + 4} q2.2 1.8 4.4 0`} fill="none" stroke={FG} strokeOpacity={0.7} />
-      {look.hat === 'straw' || look.hat === 'sunhat' ? (
-        <g>
-          <Ellipse cy={hy - 6} rx={13} ry={3} {...ink} />
-          <Path d={`M-6 ${hy - 6} Q-6 ${hy - 13} 0 ${hy - 13} Q6 ${hy - 13} 6 ${hy - 6}`} {...ink} />
-        </g>
-      ) : look.hat === 'cap' ? (
-        <Path
-          d={`M-8 ${hy - 3} Q-8 ${hy - 11} 0 ${hy - 11} Q8 ${hy - 11} 8 ${hy - 3} Z M7 ${hy - 4} L14 ${hy - 3}`}
-          {...ink}
-        />
-      ) : look.hat === 'beanie' ? (
-        <g>
-          <Path d={`M-8 ${hy - 2} Q-8 ${hy - 12} 0 ${hy - 12} Q8 ${hy - 12} 8 ${hy - 2} Z`} {...ink} />
-          <Circle cy={hy - 13} r={2} {...ink} />
-        </g>
-      ) : (
-        <Path
-          d={`M-8 ${hy - 2} Q-7 ${hy - 9} 0 ${hy - 9} Q7 ${hy - 9} 8 ${hy - 2}`}
-          fill="none"
-          stroke={FG}
-          strokeOpacity={0.7}
-        />
-      )}
+      <g transform={head}>
+        {hair.front && <Path d={hair.front} {...hairTone} />}
+        {look.piercings.flatMap((kind) =>
+          PIERCINGS[kind].map((p, k) => (
+            <Path
+              key={`${kind}${k}`}
+              d={p.d}
+              fill={p.ring ? 'none' : ACCENT}
+              stroke={ACCENT}
+              strokeWidth={p.ring ? 1.2 : 0.6}
+            />
+          ))
+        )}
+        {look.hat !== 'none' &&
+          HATS[look.hat].map((piece, k) =>
+            piece.line ? (
+              <Path key={k} d={piece.d} fill="none" stroke={FG} strokeOpacity={0.7} />
+            ) : (
+              <Path key={k} d={piece.d} {...ink} />
+            )
+          )}
+      </g>
     </g>
   )
 }

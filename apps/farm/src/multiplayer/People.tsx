@@ -1,11 +1,11 @@
 import { memo, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import type { FarmLook } from '@ficus/shared'
 import { useSkin } from '../skins'
 import { useStableRef } from '../hooks/useStableRef'
 import { iso } from '../farm/iso'
 import { along, pathLength, routeTo, type TilePoint } from '../farm/plantingRoute'
 import type { Spot } from './spots'
 import type { ChatBubble } from './MultiplayerProvider'
-import { personLookFor } from './personLook'
 
 /** Walking speed, tiles per second. */
 const SPEED = 2.2
@@ -16,6 +16,7 @@ export interface PlacedPerson {
   name: string
   spot: Spot
   isMe: boolean
+  look: FarmLook
 }
 
 function inside(point: TilePoint, spot: Spot): boolean {
@@ -122,7 +123,7 @@ const Walker = memo(function Walker({
         <rect className="g-hit-area" x={bl} y={bt} width={bw} height={bh} rx={14} />
         <g className={walking ? 'g-walking' : undefined}>
           <g transform={facing === 'left' ? 'scale(-1 1)' : undefined}>
-            <skin.Person look={personLookFor(person.userId)} />
+            <skin.Person look={person.look} />
           </g>
         </g>
         <g className={person.isMe ? 'g-person-tag g-person-me' : 'g-person-tag'} transform="translate(0 14)">

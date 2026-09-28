@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { db, squads } from '../../db'
+import type { FarmLook } from '@ficus/shared'
+import { db, farmPreferences, squads } from '../../db'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
 import { WebSocketManager } from './manager'
 import { PresenceRegistry } from './presence'
@@ -116,6 +117,43 @@ describe('farm presence over the WebSocket', () => {
     expect(events(aliceWs, 'presence.snapshot')[0]!.data.people).toEqual([
       expect.objectContaining({ userId: bob.id, name: bob.email, focus: null }),
     ])
+  })
+
+  test('people are seen as they chose to look, and a new look shows straight away', async () => {
+    const manager = new WebSocketManager()
+    const aliceWs = socket()
+    const bobWs = socket()
+    manager.addClient(aliceWs, { type: 'user', userId: alice.id })
+    const bobClient = manager.addClient(bobWs, { type: 'user', userId: bob.id })
+    await manager.subscribe(bobClient, 'presence')
+    manager.handleMessage(aliceWs, JSON.stringify({ type: 'presence', focus: null }))
+    await until(() => events(bobWs, 'presence.updated').length === 1, 'the arrival')
+    // No look chosen yet: the farm picks one.
+    expect(events(bobWs, 'presence.updated')[0]!.data.person.look).toBeNull()
+
+    const look: FarmLook = {
+      skin: '#8d5a3b',
+      hair: 'afro',
+      hairColor: '#2a211c',
+      hat: 'cowboy',
+      hatColor: '#6b5a45',
+      shirt: 'flannel',
+      shirtColor: '#e36c5a',
+      pants: 'long',
+      pantsColor: '#4b5d7a',
+      shoes: 'boots',
+      shoesColor: '#5a3a24',
+      piercings: ['ears'],
+    }
+    await db.insert(farmPreferences).values({ userId: alice.id, settings: { look } })
+    manager.refreshPresence(alice.id)
+    await until(() => events(bobWs, 'presence.updated').length === 2, 'the new look')
+    expect(events(bobWs, 'presence.updated')[1]!.data.person).toMatchObject({ userId: alice.id, look })
+    // Someone who isn't on the farm changes nothing.
+    manager.refreshPresence(bob.id)
+    expect(events(aliceWs, 'presence.updated')).toEqual([])
+    await db.delete(farmPreferences).where(eq(farmPreferences.userId, alice.id))
+    manager.refreshPresence(alice.id)
   })
 
   test('leaving for single-player takes you off the farm; a second tab keeps you on it', async () => {

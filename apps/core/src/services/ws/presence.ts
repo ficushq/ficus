@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
-import { farmPersonName, type PresenceFocus } from '@ficus/shared'
-import { db, users } from '../../db'
+import { farmPersonName, readFarmSettings, type FarmLook, type PresenceFocus } from '@ficus/shared'
+import { db, farmPreferences, users } from '../../db'
 
 /*
  * Farm presence, in memory in the API process (the only process holding
@@ -76,18 +76,33 @@ function sameFocus(a: PresenceFocus | null, b: PresenceFocus | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-const NAME_TTL_MS = 60_000
-const names = new Map<string, { name: string; expires: number }>()
+const PROFILE_TTL_MS = 60_000
+const profiles = new Map<string, { profile: PresenceProfile; expires: number }>()
 
-/** What the farm calls someone (display name, else email), cached briefly. */
-export async function presenceName(userId: string): Promise<string> {
-  const cached = names.get(userId)
-  if (cached && cached.expires > Date.now()) return cached.name
+/** What others see of someone besides their focus: their name and how they chose to look. */
+export interface PresenceProfile {
+  name: string
+  look: FarmLook | null
+}
+
+/** Someone's name (display name, else email) and chosen look, cached briefly. */
+export async function presenceProfile(userId: string): Promise<PresenceProfile> {
+  const cached = profiles.get(userId)
+  if (cached && cached.expires > Date.now()) return cached.profile
   const [user] = await db
-    .select({ displayName: users.displayName, email: users.email })
+    .select({ displayName: users.displayName, email: users.email, settings: farmPreferences.settings })
     .from(users)
+    .leftJoin(farmPreferences, eq(farmPreferences.userId, users.id))
     .where(eq(users.id, userId))
-  const name = user ? farmPersonName(user) : 'Someone'
-  names.set(userId, { name, expires: Date.now() + NAME_TTL_MS })
-  return name
+  const profile = {
+    name: user ? farmPersonName(user) : 'Someone',
+    look: readFarmSettings(user?.settings).look ?? null,
+  }
+  profiles.set(userId, { profile, expires: Date.now() + PROFILE_TTL_MS })
+  return profile
+}
+
+/** Drops someone's cached profile, after they change how they look. */
+export function forgetPresenceProfile(userId: string): void {
+  profiles.delete(userId)
 }

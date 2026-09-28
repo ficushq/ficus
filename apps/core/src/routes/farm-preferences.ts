@@ -5,6 +5,7 @@ import { readFarmSettings, validateFarmSettingsPatch } from '@ficus/shared'
 import { db, farmPreferences } from '../db'
 import { resolveActingUser } from '../services/rbac'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
+import { wsManager } from '../services/ws/manager'
 
 /** The caller's own farm settings (self-service, like /user-preferences). */
 export const farmPreferencesRouter = new Hono()
@@ -37,5 +38,6 @@ farmPreferencesRouter.patch('/me', async (c) => {
       set: { settings: sql`${farmPreferences.settings} || excluded.settings`, updatedAt: new Date() },
     })
     .returning({ settings: farmPreferences.settings })
+  if (result.patch.look) wsManager.refreshPresence(identity.userId)
   return c.json({ userId: identity.userId, settings: readFarmSettings(row?.settings) })
 })

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import type { Agent, FarmStyle } from '@ficus/shared'
+import type { Agent, FarmLook, FarmStyle } from '@ficus/shared'
 import type {
   BadgeKind,
   DecorPlacement,
@@ -9,7 +9,6 @@ import type {
   RobotPlacement,
   RobotRole,
 } from '../farm/types'
-import type { PersonLook } from '../multiplayer/personLook'
 
 /** A tap area around a sprite's anchor: [left, top, width, height] in world pixels. */
 export type HitBox = readonly [left: number, top: number, width: number, height: number]
@@ -63,7 +62,7 @@ export interface FarmSkin {
   Avatar: ComponentType<{ agent: Agent; role: RobotRole; face: RobotFace }>
   avatarViewBox: string
   /** A person on the farm (multiplayer), feet on the anchor, facing right; the engine walks and mirrors them. */
-  Person: ComponentType<{ look: PersonLook }>
+  Person: ComponentType<{ look: FarmLook }>
   Hut: ComponentType<{ count: number; peek?: RobotPlacement }>
   Stand: ComponentType<{ count: number; host?: RobotPlacement }>
   Farmhouse: ComponentType
