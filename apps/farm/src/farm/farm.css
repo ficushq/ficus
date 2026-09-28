@@ -233,14 +233,31 @@
   font: 600 13px var(--g-font-body);
 }
 
-/* The pop-up card */
+/*
+ * The pop-up card. Its content scrolls inside it (.g-farm-card-body), not the
+ * card itself, so the pointer toward the thing it describes can stick out past
+ * the edge without being clipped or making the card scroll sideways.
+ */
 .g-farm-card {
   position: absolute;
+  display: flex;
+  flex-direction: column;
   width: 320px;
   max-height: calc(100% - 32px);
-  overflow: auto;
-  padding: 16px 16px 14px;
   outline: none;
+}
+
+.g-farm-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 16px 14px;
+  border-radius: inherit;
+}
+
+.g-card-close {
+  z-index: 1;
 }
 
 .g-farm-card.g-sheet {

@@ -114,7 +114,9 @@ export function FarmCard({ selection, screen, viewport, onClose, dock }: FarmCar
       <button type="button" className="g-card-close" aria-label="Close" onClick={onClose}>
         <CloseIcon />
       </button>
-      <CardBody selection={selection} />
+      <div className="g-farm-card-body">
+        <CardBody selection={selection} />
+      </div>
     </section>
   )
 }
