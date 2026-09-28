@@ -21,7 +21,7 @@ import {
   publishedPort,
 } from './postgres'
 import { defaultPreflightDeps, runPreflight, type PreflightDeps } from './preflight'
-import { terminalPrompter } from './prompt'
+import { canPrompt, terminalPrompter } from './prompt'
 import { defaultRunner, type Runner } from './runner'
 import { canonicalRoot, getStatePath, readRegistryStrict, upsertInstance } from './state'
 import { buildSteps, SetupFailure, type Secrets, type StepDeps } from './steps'
@@ -52,7 +52,7 @@ export function defaultSetupDeps(root: string, runner: Runner = defaultRunner): 
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: () => new Date().toISOString(),
     statePath: getStatePath(),
-    isTTY: Boolean(process.stdin.isTTY && process.stderr.isTTY),
+    isTTY: canPrompt(),
     confirm: (question) => terminalPrompter().confirm(question),
     log: narrate,
   }

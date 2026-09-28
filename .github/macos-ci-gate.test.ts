@@ -35,6 +35,8 @@ const relevantPaths = [
   'apps/core/src/services/updates/command-runner.ts',
   'apps/core/src/services/updates/local-updater.ts',
   '.github/native-local-supervisor-launchd.test.ts',
+  'apps/cli/src/local-server/prompt.ts',
+  'apps/cli/src/local-server/prompt.test.ts',
 ]
 
 describe('macOS path classification', () => {
@@ -165,6 +167,14 @@ if grep -qE '^[[:space:]]*[1-9][0-9]* skip' /tmp/attachment-materialization-maco
   exit 1
 fi
 `
+const PROMPT_SUITE_COMMAND = `set -o pipefail
+bun test src/local-server/prompt.test.ts 2>&1 | tee /tmp/cli-prompt-macos.log
+grep -E '^[[:space:]]*[0-9]+ (pass|fail|skip)' /tmp/cli-prompt-macos.log >> "$GITHUB_STEP_SUMMARY"
+if grep -qE '^[[:space:]]*[1-9][0-9]* skip' /tmp/cli-prompt-macos.log; then
+  echo "Terminal prompt tests must not skip on macOS." >&2
+  exit 1
+fi
+`
 const suiteStep = (job: Job | undefined, name: string) => job?.steps?.find((step) => step.name === name)
 const stepCount = (job: Job | undefined, predicate: (step: Step) => boolean) =>
   job?.steps?.filter(predicate).length ?? 0
@@ -243,6 +253,12 @@ export function validateMacosWorkflow(workflow: Workflow): string[] {
   ]) {
     if (!attachmentRun.includes(contract)) errors.push(`attachment materialization suite missing ${contract}`)
   }
+  // The /dev/tty prompt regression reproduces only on Darwin (kqueue), so this
+  // is the one lane where its pty case can fail; a skip means it did not run.
+  const prompt = suiteStep(suite, 'Run terminal prompt tests')
+  if (prompt?.run !== PROMPT_SUITE_COMMAND) errors.push('terminal prompt suite contract changed')
+  if (prompt?.['working-directory'] !== 'apps/cli' || prompt.if || prompt['continue-on-error'])
+    errors.push('terminal prompt suite must run unconditionally from apps/cli')
 
   const aggregate = jobs['macos-portability-required']
   if (aggregate?.name !== 'macOS portability') errors.push('aggregate must have stable check name')
@@ -330,6 +346,24 @@ describe('workflow mutation contract', () => {
         const s = suiteStep(w.jobs!['macos-portability-suite'], 'Run portable attachment materialization tests')!
         s.run = s.run!.replace("grep -qE '^[[:space:]]*[1-9][0-9]* skip'", "grep -qE '^[[:space:]]*0 skip'")
       },
+    ],
+    [
+      'remove terminal prompt suite step',
+      (w) =>
+        (w.jobs!['macos-portability-suite'].steps = w.jobs!['macos-portability-suite'].steps!.filter(
+          (s) => s.name !== 'Run terminal prompt tests'
+        )),
+    ],
+    [
+      'allow the terminal prompt pty case to skip',
+      (w) => {
+        const s = suiteStep(w.jobs!['macos-portability-suite'], 'Run terminal prompt tests')!
+        s.run = s.run!.replace("grep -qE '^[[:space:]]*[1-9][0-9]* skip'", "grep -qE '^[[:space:]]*0 skip'")
+      },
+    ],
+    [
+      'gate the terminal prompt suite behind a condition',
+      (w) => (suiteStep(w.jobs!['macos-portability-suite'], 'Run terminal prompt tests')!.if = '${{ false }}'),
     ],
     [
       'add continue-on-error to a suite',

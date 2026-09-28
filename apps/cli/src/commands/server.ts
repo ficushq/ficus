@@ -28,7 +28,7 @@ import {
   uninstallSupervisor,
   type SupervisorContext,
 } from '../local-server/supervisor'
-import { terminalPrompter } from '../local-server/prompt'
+import { canPrompt, terminalPrompter } from '../local-server/prompt'
 import { defaultRunner, type Runner } from '../local-server/runner'
 import { defaultSetupDeps, runSetup, type SetupDeps } from '../local-server/setup'
 import {
@@ -72,7 +72,7 @@ export function defaultServerDeps(): ServerDeps {
     cwd: process.cwd(),
     statePath: getStatePath(),
     fetch,
-    isTTY: Boolean(process.stdin.isTTY && process.stderr.isTTY),
+    isTTY: canPrompt(),
     prompter: terminalPrompter(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     which: (cmd) => Bun.which(cmd),
