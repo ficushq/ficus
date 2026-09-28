@@ -17,6 +17,8 @@ export interface ChatWindowState extends Rect {
   target: ChatTarget
   /** Stacking order: higher is in front. */
   z: number
+  /** Where it's snapped, if it is: it keeps that place as the screen resizes, until it's dragged. */
+  snap?: Snap
 }
 
 export interface Viewport {
@@ -65,12 +67,73 @@ export function placeNew(windows: ChatWindowState[], viewport: Viewport, remembe
   return clampRect({ x: viewport.width - w - MARGIN - n * CASCADE, y: TOP + n * CASCADE, w, h }, viewport)
 }
 
+/** Places a window can snap to, like a desktop's window tiling. */
+export const SNAPS = [
+  'left',
+  'right',
+  'top',
+  'bottom',
+  'top-left',
+  'top-right',
+  'bottom-left',
+  'bottom-right',
+  'left-third',
+  'middle-third',
+  'right-third',
+  'full',
+] as const
+export type Snap = (typeof SNAPS)[number]
+
+/** Space between snapped windows. */
+const SNAP_GAP = 10
+
+/**
+ * Where a snapped window goes: a share of the space between the HUD and the
+ * tools (the tools run along the bottom right), with a gap between neighbours.
+ */
+export function snapRect(snap: Snap, viewport: Viewport): Rect {
+  const left = MARGIN
+  const top = TOP
+  const width = viewport.width - MARGIN * 2
+  const height = viewport.height - TOP - TOOLS_CLEARANCE
+  const half = (size: number) => (size - SNAP_GAP) / 2
+  const third = (width - SNAP_GAP * 2) / 3
+  const box = (x: number, y: number, w: number, h: number) => ({ x, y, w, h })
+  switch (snap) {
+    case 'left':
+      return box(left, top, half(width), height)
+    case 'right':
+      return box(left + half(width) + SNAP_GAP, top, half(width), height)
+    case 'top':
+      return box(left, top, width, half(height))
+    case 'bottom':
+      return box(left, top + half(height) + SNAP_GAP, width, half(height))
+    case 'top-left':
+      return box(left, top, half(width), half(height))
+    case 'top-right':
+      return box(left + half(width) + SNAP_GAP, top, half(width), half(height))
+    case 'bottom-left':
+      return box(left, top + half(height) + SNAP_GAP, half(width), half(height))
+    case 'bottom-right':
+      return box(left + half(width) + SNAP_GAP, top + half(height) + SNAP_GAP, half(width), half(height))
+    case 'left-third':
+      return box(left, top, third, height)
+    case 'middle-third':
+      return box(left + third + SNAP_GAP, top, third, height)
+    case 'right-third':
+      return box(left + (third + SNAP_GAP) * 2, top, third, height)
+    case 'full':
+      return box(left, top, width, height)
+  }
+}
+
 export type ChatWindowAction =
   | { type: 'open'; target: ChatTarget; viewport: Viewport; remembered?: Rect }
   | { type: 'close'; key: string }
   | { type: 'focus'; key: string }
   | { type: 'rect'; key: string; rect: Rect; viewport: Viewport }
   | { type: 'fit'; viewport: Viewport }
+  | { type: 'snap'; key: string; snap: Snap; viewport: Viewport }
 
 const topZ = (windows: ChatWindowState[]) => windows.reduce((z, w) => Math.max(z, w.z), 0)
 
@@ -91,9 +154,23 @@ export function chatWindowsReducer(windows: ChatWindowState[], action: ChatWindo
       return windows.map((w) => (w.key === action.key ? { ...w, z } : w))
     }
     case 'rect':
-      return windows.map((w) => (w.key === action.key ? { ...w, ...clampRect(action.rect, action.viewport) } : w))
+      return windows.map((w) =>
+        w.key === action.key ? { ...w, ...clampRect(action.rect, action.viewport), snap: undefined } : w
+      )
     case 'fit':
-      return windows.map((w) => ({ ...w, ...clampRect(w, action.viewport) }))
+      return windows.map((w) => ({
+        ...w,
+        ...(w.snap ? snapRect(w.snap, action.viewport) : clampRect(w, action.viewport)),
+      }))
+    case 'snap': {
+      // Snapping brings the window to the front, too.
+      const z = topZ(windows) + 1
+      return windows.map((w) =>
+        w.key === action.key
+          ? { ...w, ...snapRect(action.snap, action.viewport), snap: action.snap, z: w.z === z - 1 ? w.z : z }
+          : w
+      )
+    }
   }
 }
 

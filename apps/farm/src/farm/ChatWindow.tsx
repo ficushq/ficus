@@ -1,5 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import type { ChatWindowState, Rect } from './chatWindowState'
+import type { ChatWindowState, Rect, Snap } from './chatWindowState'
+import { ChatWindowControls, SnapMenu } from './SnapMenu'
 import { useStacking } from './stacking'
 
 /**
@@ -12,12 +13,15 @@ export function ChatWindow({
   onFocus,
   onRect,
   onCommit,
+  onSnap,
   children,
 }: {
   win: ChatWindowState
   onFocus: () => void
   onRect: (rect: Rect) => void
   onCommit: () => void
+  /** Snaps it into a place on screen (the layout button in its header). */
+  onSnap: (snap: Snap) => void
   children: ReactNode
 }) {
   // In the farm's one stacking order; raised again whenever something brings it forward (its z bumps).
@@ -34,7 +38,11 @@ export function ChatWindow({
     onFocus()
     const target = e.target as HTMLElement
     // The title bar drags, except its buttons (close) and anything interactive.
-    if (e.button === 0 && target.closest('.g-chat-header') && !target.closest('button, a, input, select, textarea'))
+    if (
+      e.button === 0 &&
+      target.closest('.g-chat-header') &&
+      !target.closest('button, a, input, select, textarea, .g-snap')
+    )
       begin('move', e)
   }
 
@@ -70,7 +78,7 @@ export function ChatWindow({
         onFocus()
       }}
     >
-      {children}
+      <ChatWindowControls.Provider value={<SnapMenu onSnap={onSnap} />}>{children}</ChatWindowControls.Provider>
       <div
         className="g-chat-resize"
         aria-hidden="true"

@@ -1,4 +1,6 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import clsx from 'clsx'
+import { ChatWindowControls } from '../farm/SnapMenu'
 import { CloseIcon } from '../icons'
 import { useStableRef } from '../hooks/useStableRef'
 
@@ -24,6 +26,8 @@ export function ChatShell({
   children: ReactNode
 }) {
   const titleId = useId()
+  // A floating chat window adds its layout button here.
+  const controls = useContext(ChatWindowControls)
   const ref = useRef<HTMLElement>(null)
   const onCloseRef = useStableRef(onClose)
   // Captured on first render, before the conversation's effects move focus into the chat.
@@ -52,7 +56,7 @@ export function ChatShell({
         }
       }}
     >
-      <header className="g-chat-header">
+      <header className={clsx('g-chat-header', controls && 'g-chat-header-controls')}>
         {leading && <div className="g-chat-leading">{leading}</div>}
         <div className="g-chat-heading">
           {subtitle && <p className="g-eyebrow g-chat-subtitle">{subtitle}</p>}
@@ -60,6 +64,7 @@ export function ChatShell({
             {title}
           </h2>
         </div>
+        {controls && <div className="g-chat-controls">{controls}</div>}
         <button type="button" className="g-card-close g-chat-close" aria-label="Close chat" onClick={onClose}>
           <CloseIcon />
         </button>

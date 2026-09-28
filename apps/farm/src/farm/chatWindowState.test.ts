@@ -8,6 +8,8 @@ import {
   MIN_W,
   readRemembered,
   remember,
+  snapRect,
+  SNAPS,
   type ChatWindowState,
 } from './chatWindowState'
 
@@ -83,5 +85,45 @@ describe('chat windows', () => {
     remember('agent:a', { x: 10.4, y: 80, w: 400.6, h: 500 }, storage)
     expect(readRemembered(storage)).toEqual({ 'agent:a': { x: 10, y: 80, w: 401, h: 500 } })
     expect([...store.keys()]).toEqual(['ficus-farm:chat-windows'])
+  })
+
+  it('snaps a window to halves, quarters and thirds that tile the space without overlapping, and brings it forward', () => {
+    const left = snapRect('left', viewport)
+    const right = snapRect('right', viewport)
+    expect(left.x + left.w).toBeLessThan(right.x)
+    expect(right.x + right.w).toBe(viewport.width - 12)
+    const thirds = (['left-third', 'middle-third', 'right-third'] as const).map((s) => snapRect(s, viewport))
+    expect(thirds[0]!.x + thirds[0]!.w).toBeLessThan(thirds[1]!.x)
+    expect(thirds[1]!.x + thirds[1]!.w).toBeLessThan(thirds[2]!.x)
+    expect(thirds.every((t) => Math.abs(t.w - thirds[0]!.w) < 0.01)).toBe(true)
+    const quarters = (['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((s) =>
+      snapRect(s, viewport)
+    )
+    expect(quarters[0]!.y + quarters[0]!.h).toBeLessThan(quarters[2]!.y)
+    for (const snap of SNAPS) {
+      const r = snapRect(snap, viewport)
+      expect(r.x).toBeGreaterThanOrEqual(12)
+      expect(r.x + r.w).toBeLessThanOrEqual(viewport.width - 12 + 0.01)
+    }
+
+    let windows = open(open([], 'a'), 'b')
+    windows = chatWindowsReducer(windows, { type: 'snap', key: 'agent:a', snap: 'left', viewport })
+    const a = windows.find((w) => w.key === 'agent:a')!
+    expect(a).toMatchObject({ ...left, snap: 'left' })
+    expect(frontmost(windows)?.key).toBe('agent:a')
+  })
+
+  it('keeps a snapped window snapped as the screen resizes, until it is dragged', () => {
+    let windows = chatWindowsReducer(open([], 'a'), { type: 'snap', key: 'agent:a', snap: 'right', viewport })
+    const smaller = { width: 1200, height: 800 }
+    windows = chatWindowsReducer(windows, { type: 'fit', viewport: smaller })
+    expect(windows[0]).toMatchObject(snapRect('right', smaller))
+    windows = chatWindowsReducer(windows, {
+      type: 'rect',
+      key: 'agent:a',
+      rect: { x: 100, y: 100, w: 400, h: 500 },
+      viewport: smaller,
+    })
+    expect(windows[0]!.snap).toBeUndefined()
   })
 })

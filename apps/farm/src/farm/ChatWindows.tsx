@@ -7,13 +7,16 @@ import {
   frontmost,
   readRemembered,
   remember,
+  snapRect,
   type ChatWindowState,
   type Rect,
+  type Snap,
   type Viewport,
 } from './chatWindowState'
 import { useStableRef } from '../hooks/useStableRef'
 import { useFarmCard } from './cards/context'
 import { agentLabel } from './agentLabels'
+import { snapForKey } from './SnapMenu'
 
 export interface ChatWindowsApi {
   windows: ChatWindowState[]
@@ -22,6 +25,8 @@ export interface ChatWindowsApi {
   focus: (key: string) => void
   setRect: (key: string, rect: Rect) => void
   commit: (key: string) => void
+  /** Snaps a window into a place on screen (and remembers it there). */
+  snap: (key: string, snap: Snap) => void
 }
 
 export function useChatWindows(viewport: Viewport): ChatWindowsApi {
@@ -50,6 +55,13 @@ export function useChatWindows(viewport: Viewport): ChatWindowsApi {
     (key: string, rect: Rect) => dispatch({ type: 'rect', key, rect, viewport: viewportRef.current }),
     [viewportRef]
   )
+  const snap = useCallback(
+    (key: string, to: Snap) => {
+      dispatch({ type: 'snap', key, snap: to, viewport: viewportRef.current })
+      remember(key, snapRect(to, viewportRef.current))
+    },
+    [viewportRef]
+  )
   const commit = useCallback(
     (key: string) => {
       const win = windowsRef.current.find((w) => w.key === key)
@@ -58,8 +70,8 @@ export function useChatWindows(viewport: Viewport): ChatWindowsApi {
     [windowsRef]
   )
   return useMemo(
-    () => ({ windows, open, close, focus, setRect, commit }),
-    [windows, open, close, focus, setRect, commit]
+    () => ({ windows, open, close, focus, setRect, commit, snap }),
+    [windows, open, close, focus, setRect, commit, snap]
   )
 }
 
@@ -70,6 +82,21 @@ export function useChatWindows(viewport: Viewport): ChatWindowsApi {
 export function ChatWindows({ chats, narrow }: { chats: ChatWindowsApi; narrow: boolean }) {
   const env = useFarmCard()
   const { windows } = chats
+  const chatsRef = useStableRef(chats)
+
+  // Ctrl+Option (Ctrl+Alt) shortcuts snap the window you used last, wherever focus is.
+  useEffect(() => {
+    if (narrow) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      const to = snapForKey(e)
+      const top = to && frontmost(chatsRef.current.windows)
+      if (!to || !top) return
+      e.preventDefault()
+      chatsRef.current.snap(top.key, to)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [narrow, chatsRef])
   if (!windows.length) return null
 
   const label = (target: ChatTarget) => {
@@ -114,6 +141,7 @@ export function ChatWindows({ chats, narrow }: { chats: ChatWindowsApi; narrow: 
           onFocus={() => chats.focus(w.key)}
           onRect={(rect) => chats.setRect(w.key, rect)}
           onCommit={() => chats.commit(w.key)}
+          onSnap={(to) => chats.snap(w.key, to)}
         >
           <ChatSlot target={w.target} onClose={() => chats.close(w.key)} />
         </ChatWindow>

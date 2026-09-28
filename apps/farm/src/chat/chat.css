@@ -1008,3 +1008,107 @@
 .g-chat-avatar:focus-visible {
   outline: none;
 }
+
+/* A floating chat window's layout button (farm/SnapMenu.tsx), left of its close button. */
+.g-chat-header-controls {
+  padding-right: 108px;
+}
+
+.g-chat-controls {
+  position: absolute;
+  top: 50%;
+  right: 62px;
+  translate: 0 -50%;
+}
+
+.g-snap {
+  position: relative;
+}
+
+.g-snap-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-button-fill);
+  color: var(--g-text);
+  cursor: pointer;
+}
+
+.g-snap-button .g-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.g-snap-button[aria-expanded='true'] {
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+.g-snap-button:focus-visible,
+.g-snap-item:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: 2px;
+}
+
+.g-snap-menu {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 8px);
+  right: -52px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  width: 296px;
+  padding: 8px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-card);
+  box-shadow: var(--g-drop);
+}
+
+.g-snap-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 2px 5px;
+  border: none;
+  border-radius: var(--g-radius-sm);
+  background: transparent;
+  color: var(--g-text);
+  cursor: pointer;
+}
+
+.g-snap-item:hover {
+  background: var(--g-row-hover);
+}
+
+.g-snap-diagram {
+  width: 40px;
+  height: 28px;
+}
+
+.g-snap-screen {
+  fill: none;
+  stroke: var(--g-text-soft);
+  stroke-width: 1.2;
+}
+
+.g-snap-area {
+  fill: var(--g-accent);
+  opacity: 0.8;
+}
+
+.g-snap-label {
+  font: 600 11.5px/1.2 var(--g-font-body);
+  text-align: center;
+}
+
+.g-snap-key {
+  color: var(--g-text-soft);
+  font: 500 10.5px var(--g-font-mono);
+}
