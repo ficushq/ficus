@@ -42,11 +42,11 @@ describe('local app deployment guidance', () => {
 
   test('visual review uses a Ficus-managed app with an assigned port', async () => {
     const skill = await readRepoFile('config/skills/frontend-visual-review/SKILL.md')
-    expect(skill).toContain('tau deploy local start')
+    expect(skill).toContain('ficus deploy local start')
     expect(skill).toContain('$PORT')
     expect(skill).toContain('$FICUS_APP_BASE_PATH')
     expect(skill).not.toContain('nohup')
-    expect(skill).not.toContain('tau deploy local attach')
+    expect(skill).not.toContain('ficus deploy local attach')
   })
 })
 
@@ -74,7 +74,7 @@ describe('shared-first shell guidance', () => {
     }
     expect(visual).toContain('RUN_NAME')
     expect(visual).toContain('--name "$RUN_NAME"')
-    expect(visual).toContain('tau deploy local start')
+    expect(visual).toContain('ficus deploy local start')
     expect(visual).toContain('port $PORT')
     expect(visual).not.toContain('--port 5173')
     expect(visual).not.toContain('http.server 5173')
@@ -94,7 +94,7 @@ describe('shared-first shell guidance', () => {
       expect(content).not.toMatch(/\/workspace(?:\/|\b)/)
     }
     const worktrees = await readRepoFile('config/skills/using-git-worktrees/SKILL.md')
-    expect(worktrees).toContain('tau workstream get')
+    expect(worktrees).toContain('ficus workstream get')
     expect(worktrees).toContain('git.worktree')
     expect(worktrees).toContain('git.branch')
     expect(worktrees).toContain('do not create a second worktree')

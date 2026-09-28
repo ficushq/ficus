@@ -11,7 +11,7 @@ async function readRepoFile(path: string): Promise<string> {
 describe('work stream context guidance', () => {
   test('flow outcomes route work while scoped waits request input without advancing a review', async () => {
     const guidance = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
-    expect(guidance).toContain('tau workstream advance')
+    expect(guidance).toContain('ficus workstream advance')
     expect(guidance).toContain('expectedVersion')
     expect(guidance).toContain('attemptId')
     expect(guidance).toContain('Never advance by changing the assignee, calling legacy handoff, or editing status')
@@ -25,7 +25,7 @@ describe('work stream context guidance', () => {
     const shared = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
     const manager = (await readRepoFile('config/agent-types/manager.yaml')).replace(/\s+/g, ' ')
     expect(shared).toContain('completion-ready')
-    expect(shared).toContain('tau workstream finish')
+    expect(shared).toContain('ficus workstream finish')
     expect(shared).toContain('not evidence of merge')
     expect(shared).toContain('no role may grant itself that authority')
     expect(manager).toContain('No role inherently owns PR creation')
