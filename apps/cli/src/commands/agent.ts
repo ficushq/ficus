@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import { apiGet, apiPatch, apiPost, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode } from '../output'
-import * as readline from 'readline'
+import { readLine } from '../local-server/prompt'
 import { registerSandboxProcessCommands } from './sandbox-processes'
 
 function truncate(s: string, max: number): string {
@@ -590,18 +590,15 @@ export function registerAgentCommands(program: Command) {
 }
 
 /**
- * Prompt for yes/no confirmation from the user.
+ * Prompt for yes/no confirmation from the user. End-of-input counts as no.
+ * readLine, not readline: see its note on Bun, kqueue and /dev/tty.
  */
 async function promptConfirm(question: string): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  })
-
-  return new Promise((resolve) => {
-    rl.question(`${question} [y/N] `, (answer) => {
-      rl.close()
-      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes')
-    })
-  })
+  let answer: string
+  try {
+    answer = readLine(`${question} [y/N] `, 1).trim().toLowerCase()
+  } catch {
+    return false
+  }
+  return answer === 'y' || answer === 'yes'
 }
