@@ -225,7 +225,7 @@ sudo bash scripts/setup/upgrade-host.sh --config /root/tau-setup/tau-setup.yaml 
 
 It verifies every file against the set's `MANIFEST`, puts it back, clears the
 journal if it names that set, and exits. Run it before downgrading to a
-pre-rename Core or running an older toolkit on a renamed host. Two caveats:
+pre-rename Core or running an older toolkit on a renamed host. Caveats:
 
 - it also reverts **any secret changed since that set was taken** (a rotated
   password or key is rolled back with everything else);
