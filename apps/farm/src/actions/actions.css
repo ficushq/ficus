@@ -532,10 +532,20 @@
   letter-spacing: var(--g-display-tracking);
 }
 
-/* A robot's pending questions in its chat: folded to one row until opened, with room above. */
-.g-chat-log .g-action,
+/* A robot's pending questions in its chat: folded to one row until opened, with room around them. */
+.g-chat-scroll > .g-action,
 .g-questions-folded {
   margin-top: 16px;
+}
+
+/* Opened, they get more air: between the questions, and before the composer. */
+.g-chat-scroll > .g-action:not(.g-questions-folded) {
+  gap: 16px;
+  margin: 24px 0 20px;
+}
+
+.g-chat-scroll > .g-action:not(.g-questions-folded) .g-action-sub {
+  padding-top: 18px;
 }
 
 .g-questions-toggle {
