@@ -1,0 +1,184 @@
+import type { FarmChatMessage, FarmChatRoom, PresenceFocus, PresencePerson } from '@ficus/shared'
+import type { FarmChatApi } from '../multiplayer/chatApi'
+import type { DemoMultiplayer, MultiplayerEvent } from '../multiplayer/MultiplayerProvider'
+
+/*
+ * Demo mode's neighbours (dev only): two pretend people who wander the sample
+ * farm, and an in-memory chat where Rosa answers your DMs. Nothing leaves the
+ * browser.
+ */
+
+const ME = { userId: 'demo-you', name: 'You' }
+const ROSA = { id: 'demo-rosa', name: 'Rosa Díaz' }
+const SAM = { id: 'demo-sam', name: 'sam@example.com' }
+
+const ROSA_ROUTE: Array<PresenceFocus | null> = [
+  { kind: 'agent', agentId: 'mgr-platform' },
+  { kind: 'workstream', workstreamId: 'ws-3' },
+  { kind: 'squad', squadId: 'sq-docs' },
+  null,
+]
+const SAM_ROUTE: Array<PresenceFocus | null> = [null, { kind: 'agent', agentId: 'mgr-docs' }]
+const ROSA_LINES = ['Morning! 🌱', 'The docs squad is flying today', 'Anyone looked at the flaky webhook one?']
+
+const iso = () => new Date().toISOString()
+let nextId = 0
+const id = (prefix: string) => `${prefix}-${++nextId}`
+
+export function demoMultiplayer(): DemoMultiplayer {
+  const rooms: FarmChatRoom[] = [
+    {
+      id: 'room-general',
+      kind: 'general',
+      name: 'general',
+      description: null,
+      withUserId: null,
+      lastMessageAt: null,
+      unread: 0,
+    },
+    {
+      id: 'room-design',
+      kind: 'room',
+      name: 'design',
+      description: 'Pixels and plants',
+      withUserId: null,
+      lastMessageAt: null,
+      unread: 0,
+    },
+    {
+      id: 'room-rosa',
+      kind: 'dm',
+      name: ROSA.name,
+      description: null,
+      withUserId: ROSA.id,
+      lastMessageAt: null,
+      unread: 0,
+    },
+  ]
+  const messages = new Map<string, FarmChatMessage[]>([
+    [
+      'room-general',
+      [
+        {
+          id: id('m'),
+          roomId: 'room-general',
+          senderUserId: SAM.id,
+          body: 'Welcome to the farm, everyone.',
+          createdAt: iso(),
+        },
+      ],
+    ],
+    ['room-design', []],
+    ['room-rosa', []],
+  ])
+  let emit: (event: MultiplayerEvent) => void = () => {}
+
+  const post = (roomId: string, senderUserId: string, body: string): FarmChatMessage => {
+    const message = { id: id('m'), roomId, senderUserId, body, createdAt: iso() }
+    messages.get(roomId)?.push(message)
+    const room = rooms.find((r) => r.id === roomId)
+    if (room) {
+      room.lastMessageAt = message.createdAt
+      if (senderUserId !== ME.userId) room.unread += 1
+    }
+    emit({ event: 'farmChat.messageCreated', data: { message } })
+    return message
+  }
+
+  const chat: FarmChatApi = {
+    people: async () => [{ id: ME.userId, name: ME.name }, ROSA, SAM],
+    rooms: async () => ({ rooms: rooms.map((room) => ({ ...room })), canManageRooms: true }),
+    createRoom: async ({ name, description }) => {
+      const room: FarmChatRoom = {
+        id: id('room'),
+        kind: 'room',
+        name,
+        description: description ?? null,
+        withUserId: null,
+        lastMessageAt: null,
+        unread: 0,
+      }
+      rooms.push(room)
+      messages.set(room.id, [])
+      emit({ event: 'farmChat.roomsChanged', data: {} })
+      return room
+    },
+    updateRoom: async (roomId, { name, description }) => {
+      const room = rooms.find((r) => r.id === roomId)!
+      Object.assign(room, { name, description: description ?? null })
+      emit({ event: 'farmChat.roomsChanged', data: {} })
+      return room
+    },
+    deleteRoom: async (roomId) => {
+      rooms.splice(
+        rooms.findIndex((r) => r.id === roomId),
+        1
+      )
+      emit({ event: 'farmChat.roomsChanged', data: {} })
+    },
+    directRoom: async (userId) => {
+      let room = rooms.find((r) => r.kind === 'dm' && r.withUserId === userId)
+      if (!room) {
+        room = {
+          id: id('room'),
+          kind: 'dm',
+          name: userId === ROSA.id ? ROSA.name : SAM.name,
+          description: null,
+          withUserId: userId,
+          lastMessageAt: null,
+          unread: 0,
+        }
+        rooms.push(room)
+        messages.set(room.id, [])
+        emit({ event: 'farmChat.roomsChanged', data: {} })
+      }
+      return room
+    },
+    messages: async (roomId) => ({ messages: [...(messages.get(roomId) ?? [])], hasMore: false }),
+    send: async (roomId, body) => {
+      const message = post(roomId, ME.userId, body)
+      const room = rooms.find((r) => r.id === roomId)
+      if (room?.kind === 'dm' && room.withUserId === ROSA.id)
+        window.setTimeout(() => post(roomId, ROSA.id, 'Ha, yes! Let’s pair on it later 🌻'), 1500)
+      return message
+    },
+    markRead: async (roomId) => {
+      const room = rooms.find((r) => r.id === roomId)
+      if (room) room.unread = 0
+    },
+  }
+
+  return {
+    me: ME,
+    chat,
+    start(sink) {
+      emit = sink
+      let rosa = 0
+      let sam = 0
+      let line = 0
+      const person = (who: { id: string; name: string }, focus: PresenceFocus | null): PresencePerson => ({
+        userId: who.id,
+        name: who.name,
+        focus,
+        since: iso(),
+      })
+      sink({ event: 'presence.snapshot', data: { people: [person(ROSA, ROSA_ROUTE[0]!), person(SAM, SAM_ROUTE[0]!)] } })
+      const moves = window.setInterval(() => {
+        rosa = (rosa + 1) % ROSA_ROUTE.length
+        sink({ event: 'presence.updated', data: { person: person(ROSA, ROSA_ROUTE[rosa]!) } })
+        if (rosa % 2 === 0) {
+          sam = (sam + 1) % SAM_ROUTE.length
+          sink({ event: 'presence.updated', data: { person: person(SAM, SAM_ROUTE[sam]!) } })
+        }
+      }, 7000)
+      const talk = window.setInterval(() => {
+        post('room-general', ROSA.id, ROSA_LINES[line++ % ROSA_LINES.length]!)
+      }, 11000)
+      return () => {
+        window.clearInterval(moves)
+        window.clearInterval(talk)
+        emit = () => {}
+      }
+    },
+  }
+}

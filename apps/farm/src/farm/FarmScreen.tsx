@@ -11,6 +11,14 @@ import { FarmCard, selectionAnchor } from './FarmCard'
 import { FarmCardContext, type FarmCardEnv } from './cards/context'
 import { type ChatTarget } from './cards/ChatSlot'
 import { ChatWindows, useChatWindows } from './ChatWindows'
+import { frontmost } from './chatWindowState'
+import { iso } from './iso'
+import { useMultiplayer } from '../multiplayer/MultiplayerProvider'
+import { focusFor, huddle, spotFor } from '../multiplayer/spots'
+import { People, type PlacedPerson } from '../multiplayer/People'
+import { FarmChatPanel } from '../multiplayer/FarmChatPanel'
+import { chatKeys } from '../multiplayer/chatApi'
+import { useQueryClient } from '@tanstack/react-query'
 import { haltedAgentIds } from './state'
 import { useStableRef } from '../hooks/useStableRef'
 import { useDesktopShellChrome } from '../desktop/shell'
@@ -20,6 +28,7 @@ import type { LiveStatus } from '../live/LiveUpdates'
 import {
   AssistantIcon,
   BasketIcon,
+  ChatBubblesIcon,
   EnvelopeIcon,
   FitIcon,
   LeafIcon,
@@ -28,6 +37,7 @@ import {
   MinusIcon,
   PlusIcon,
   MoreIcon,
+  PeopleIcon,
   SeedPacketIcon,
   SpeakerIcon,
   StyleIcon,
@@ -89,11 +99,47 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   })
   const onSelect = useCallback((s: Selection) => setSelection(s), [])
 
+  // Multiplayer: tell everyone what you're at (your frontmost chat, else your card; looking at
+  // someone's card keeps you where you were), and place everyone on the farm.
+  const multiplayer = useMultiplayer()
+  const queryClient = useQueryClient()
+  const frontChat = frontmost(chats.windows)?.target
+  const lastFocus = useRef<ReturnType<typeof focusFor>>(null)
+  const myFocus = selection?.kind === 'person' ? lastFocus.current : focusFor(selection, frontChat)
+  lastFocus.current = myFocus
+  const focusKey = JSON.stringify(myFocus)
+  const setFocus = multiplayer.setFocus
+  useEffect(() => {
+    setFocus(JSON.parse(focusKey))
+  }, [focusKey, setFocus])
+  const [farmChat, setFarmChat] = useState<{ open: boolean; roomId: string | null }>({ open: false, roomId: null })
+  const agentsById = useMemo(
+    () => new Map([...input.agents, ...input.assistants].map((a) => [a.id, a])),
+    [input.agents, input.assistants]
+  )
+  const placed = useMemo<PlacedPerson[]>(() => {
+    if (!multiplayer.enabled) return []
+    const everyone = multiplayer.people.map((p) => ({ userId: p.userId, name: p.name, focus: p.focus, isMe: false }))
+    if (multiplayer.me)
+      everyone.push({ userId: multiplayer.me.userId, name: multiplayer.me.name, focus: multiplayer.focus, isMe: true })
+    const spots = huddle(everyone.map((p) => ({ key: p.userId, spot: spotFor(layout, p.focus, agentsById) })))
+    return everyone.map((p) => ({ userId: p.userId, name: p.name, isMe: p.isMe, spot: spots.get(p.userId)! }))
+  }, [multiplayer.enabled, multiplayer.people, multiplayer.me, multiplayer.focus, layout, agentsById])
+  const selectPerson = useCallback((userId: string) => setSelection({ kind: 'person', userId }), [])
+  const chatApi = multiplayer.chat
+  const openDmRef = useStableRef(async (userId: string) => {
+    const room = await chatApi.directRoom(userId)
+    await queryClient.invalidateQueries({ queryKey: chatKeys.rooms() })
+    // The DM takes over from the person's card.
+    setSelection(null)
+    setFarmChat({ open: true, roomId: room.id })
+  })
+
   const env = useMemo<FarmCardEnv>(
     () => ({
       layout,
       input,
-      agentsById: new Map([...input.agents, ...input.assistants].map((a) => [a.id, a])),
+      agentsById,
       squadsById: new Map(input.squads.map((s) => [s.id, s])),
       halted: haltedAgentIds(input.pendingActions),
       select: setSelection,
@@ -101,8 +147,9 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       startConsultant: (squadId) => openChatRef.current({ kind: 'consultant', squadId }),
       openAssistant: (conversationId) => openChatRef.current({ kind: 'assistant', conversationId }),
       startAssistant: () => openChatRef.current({ kind: 'assistant', fresh: crypto.randomUUID() }),
+      messagePerson: (userId) => void openDmRef.current(userId),
     }),
-    [layout, input]
+    [layout, input, agentsById, openDmRef]
   )
 
   // On phones the card is a bottom sheet: lift the selected thing into the top of the screen.
@@ -124,8 +171,25 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   // Phones have room for four tools; the rest sit behind More.
   const narrow = size.width > 0 && size.width < 640
   const [moreOpen, setMoreOpen] = useState(false)
+  const fitTool = (
+    <ToolButton label="Show the whole farm" short="Fit" onClick={fit}>
+      <FitIcon />
+    </ToolButton>
+  )
   const extraTools = (
     <>
+      {narrow && fitTool}
+      <ToolButton
+        label={
+          multiplayer.enabled
+            ? 'Multiplayer: others can see you. Switch to single-player'
+            : 'Single-player: nobody sees you. Rejoin everyone'
+        }
+        short={multiplayer.enabled ? 'Together' : 'Solo'}
+        onClick={() => multiplayer.setEnabled(!multiplayer.enabled)}
+      >
+        <PeopleIcon solo={!multiplayer.enabled} />
+      </ToolButton>
       <ToolButton label="List everything on the farm" short="List" onClick={() => setListOpen((o) => !o)}>
         <ListIcon />
       </ToolButton>
@@ -148,12 +212,15 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   // A robot reached from a list or a chat may not stand anywhere on the farm (finished, asleep):
   // its card opens where the previous card was, else mid-screen, rather than not at all.
   const lastAnchor = useRef<readonly [number, number] | null>(null)
+  const person = selection?.kind === 'person' ? placed.find((p) => p.userId === selection.userId) : undefined
   const anchor =
     selection?.kind === 'assistant'
       ? ([camera.x, camera.y] as const)
-      : selection
-        ? (selectionAnchor(layout, selection) ?? lastAnchor.current ?? ([camera.x, camera.y] as const))
-        : null
+      : person
+        ? iso(person.spot.at[0], person.spot.at[1])
+        : selection
+          ? (selectionAnchor(layout, selection) ?? lastAnchor.current ?? ([camera.x, camera.y] as const))
+          : null
   if (anchor) lastAnchor.current = anchor
   const toScreen = (x: number, y: number) =>
     [(x - camera.x) * camera.zoom + size.width / 2, (y - camera.y) * camera.zoom + size.height / 2] as const
@@ -181,6 +248,12 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
                 onDone={plantings.done}
               />
             ))}
+            <People
+              people={placed}
+              bubbles={multiplayer.bubbles}
+              selectedUserId={selection?.kind === 'person' ? selection.userId : null}
+              onSelect={selectPerson}
+            />
           </g>
         </svg>
       </div>
@@ -222,6 +295,16 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         <ToolButton label="Mail" badge={needsYou} onClick={() => setSelection({ kind: 'mailbox' })}>
           <MailboxIcon />
         </ToolButton>
+        <ToolButton
+          label="Farm chat"
+          short="Chat"
+          badge={multiplayer.unread || undefined}
+          badgeLabel="unread"
+          expanded={farmChat.open}
+          onClick={() => setFarmChat((c) => ({ ...c, open: !c.open }))}
+        >
+          <ChatBubblesIcon />
+        </ToolButton>
         <ToolButton label="Seeds" onClick={() => setSelection({ kind: 'seedShed' })}>
           <SeedPacketIcon />
         </ToolButton>
@@ -231,9 +314,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         <ToolButton label="Zoom out" short="Out" wideOnly onClick={() => zoomBy(0.8)}>
           <MinusIcon />
         </ToolButton>
-        <ToolButton label="Show the whole farm" short="Fit" onClick={fit}>
-          <FitIcon />
-        </ToolButton>
+        {!narrow && fitTool}
         {narrow ? (
           <ToolButton label="More tools" short="More" expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
             <MoreIcon />
@@ -281,6 +362,14 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         )}
         <ChatWindows chats={chats} narrow={size.width < 640} />
       </FarmCardContext.Provider>
+      {farmChat.open && (
+        <FarmChatPanel
+          roomId={farmChat.roomId}
+          onRoom={(roomId) => setFarmChat({ open: true, roomId })}
+          onClose={() => setFarmChat((c) => ({ ...c, open: false }))}
+          narrow={narrow}
+        />
+      )}
     </div>
   )
 }

@@ -12,6 +12,8 @@ export type Selection =
   | { kind: 'seedShed' }
   | { kind: 'crates' }
   | { kind: 'compost' }
+  /** Another person on the farm (multiplayer), or you. */
+  | { kind: 'person'; userId: string }
 
 export function selectionKey(s: Selection | null): string | null {
   if (!s) return null
@@ -26,6 +28,8 @@ export function selectionKey(s: Selection | null): string | null {
       return `hut:${s.squadId}`
     case 'stand':
       return `stand:${s.squadId}`
+    case 'person':
+      return `person:${s.userId}`
     default:
       return s.kind
   }

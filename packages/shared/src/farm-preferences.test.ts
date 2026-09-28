@@ -15,6 +15,8 @@ describe('farm settings patches', () => {
       patch: { style: 'futurist', sound: false },
     })
     for (const sound of ['on', 1, null, {}]) expect(validateFarmSettingsPatch({ sound }).ok).toBe(false)
+    expect(validateFarmSettingsPatch({ multiplayer: false })).toEqual({ ok: true, patch: { multiplayer: false } })
+    expect(validateFarmSettingsPatch({ multiplayer: 'solo' }).ok).toBe(false)
   })
 
   test('reject unknown keys, invalid values and non-objects', () => {

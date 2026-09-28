@@ -9,6 +9,7 @@ import './styles.css'
 import { App } from './app/App'
 import { ChatProvider } from './chat'
 import { SkinProvider } from './skins'
+import { MultiplayerProvider } from './multiplayer/MultiplayerProvider'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: true } },
@@ -18,9 +19,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <SkinProvider>
-        <ChatProvider>
-          <App />
-        </ChatProvider>
+        <MultiplayerProvider>
+          <ChatProvider>
+            <App />
+          </ChatProvider>
+        </MultiplayerProvider>
       </SkinProvider>
     </QueryClientProvider>
   </StrictMode>

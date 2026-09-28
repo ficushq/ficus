@@ -17,6 +17,8 @@ export interface FarmCardEnv {
   openAssistant: (conversationId?: string) => void
   /** A brand-new Assistant conversation. */
   startAssistant: () => void
+  /** Opens the farm chat on your DM with someone. */
+  messagePerson: (userId: string) => void
 }
 
 export const FarmCardContext = createContext<FarmCardEnv | null>(null)

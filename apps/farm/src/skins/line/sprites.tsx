@@ -11,6 +11,7 @@ import type {
   RobotRole,
 } from '../../farm/types'
 import type { YardRect } from '../types'
+import type { PersonLook } from '../../multiplayer/personLook'
 import { at, boxEdges, diamond, gridLines } from './draw'
 
 /*
@@ -391,4 +392,19 @@ export const LineCompost = ({ count }: { count: number }) => (
 export function LineDecor({ decor }: { decor: DecorPlacement }) {
   const big = decor.kind === 'tree' || decor.kind === 'fruitTree'
   return <path d={big ? 'M-4 0 H4 M0 -4 V4' : 'M-2 0 H2'} stroke={FG} strokeOpacity={0.3} />
+}
+
+/** A person on the farm, Futurist style: a hollow head and a line body, a light in their chest. */
+export function LinePerson({ look }: { look: PersonLook }) {
+  return (
+    <g>
+      <ellipse rx={8} ry={3} fill="none" stroke={FG} strokeOpacity={0.3} />
+      <g className="ln-float">
+        <path d="M-5 -1 L0 -14 L5 -1 M0 -14 V-27 M-8 -18 L0 -24 L8 -18" fill="none" stroke={FG} strokeWidth={1.3} />
+        <circle cy={-33} r={6} fill={BG} stroke={FG} strokeWidth={1.3} />
+        {look.hat && <path d="M-9 -38 H9" stroke={FG} strokeOpacity={0.8} strokeWidth={1.3} />}
+        <circle cy={-22} r={1.8} fill={ACCENT} className="ln-pulse" />
+      </g>
+    </g>
+  )
 }

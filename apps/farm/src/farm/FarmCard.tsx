@@ -13,6 +13,7 @@ import { StandCard } from './cards/StandCard'
 import { AssistantCard } from './cards/AssistantCard'
 import { SeedShedCard } from './cards/SeedShedCard'
 import { MailboxCard } from './cards/MailboxCard'
+import { PersonCard } from './cards/PersonCard'
 import { webAppUrl } from '../api/base'
 import { CloseIcon } from '../icons'
 
@@ -57,6 +58,9 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
       return iso(layout.crates.i, layout.crates.j)
     case 'compost':
       return iso(layout.compost.i, layout.compost.j)
+    case 'person':
+      // People move; FarmScreen anchors their card where they stand now.
+      return null
   }
 }
 
@@ -134,6 +138,8 @@ function CardBody({ selection }: { selection: Selection }) {
       return <SeedShedCard />
     case 'mailbox':
       return <MailboxCard />
+    case 'person':
+      return <PersonCard userId={selection.userId} />
     case 'farmhouse':
       return (
         <>

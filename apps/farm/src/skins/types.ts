@@ -9,6 +9,7 @@ import type {
   RobotPlacement,
   RobotRole,
 } from '../farm/types'
+import type { PersonLook } from '../multiplayer/personLook'
 
 /** A tap area around a sprite's anchor: [left, top, width, height] in world pixels. */
 export type HitBox = readonly [left: number, top: number, width: number, height: number]
@@ -61,6 +62,8 @@ export interface FarmSkin {
   /** A robot's portrait for cards and chat headers, drawn inside the given viewBox. */
   Avatar: ComponentType<{ agent: Agent; role: RobotRole; face: RobotFace }>
   avatarViewBox: string
+  /** A person on the farm (multiplayer), feet on the anchor, facing right; the engine walks and mirrors them. */
+  Person: ComponentType<{ look: PersonLook }>
   Hut: ComponentType<{ count: number; peek?: RobotPlacement }>
   Stand: ComponentType<{ count: number; host?: RobotPlacement }>
   Farmhouse: ComponentType
@@ -71,6 +74,7 @@ export interface FarmSkin {
   Decor: ComponentType<{ decor: DecorPlacement }>
   boxes: {
     robot: HitBox
+    person: HitBox
     plant: HitBox
     sign: HitBox
     hut: HitBox

@@ -15,6 +15,8 @@ export interface FarmSettings {
   style?: FarmStyle
   /** Chimes when the farm changes (off unless turned on). */
   sound?: boolean
+  /** Seen by and seeing other people on the farm (on unless turned off: single-player). */
+  multiplayer?: boolean
 }
 
 export interface MyFarmPreferences {
@@ -30,6 +32,7 @@ export function isFarmStyle(value: unknown): value is FarmStyle {
 const CHECKS: { [K in keyof Required<FarmSettings>]: (value: unknown) => value is FarmSettings[K] } = {
   style: isFarmStyle,
   sound: (value): value is boolean => typeof value === 'boolean',
+  multiplayer: (value): value is boolean => typeof value === 'boolean',
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>

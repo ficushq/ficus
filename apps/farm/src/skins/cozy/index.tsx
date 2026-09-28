@@ -17,6 +17,7 @@ import {
 import { CozyDecor } from './sprites/Decor'
 import { CozyGround, CozyPlot, CozySign, CozyYardBack, cozyYardFront } from './sprites/Ground'
 import { CozyDefs } from './sprites/kit'
+import { CozyPerson } from './sprites/Person'
 import { cozyBadgeLift, CozyPlant } from './sprites/Plant'
 import { COZY_AVATAR_VIEWBOX, CozyRobot } from './sprites/Robot'
 
@@ -49,6 +50,7 @@ export const cozySkin: FarmSkin = {
       flip={placement.facing === 'left'}
     />
   ),
+  Person: CozyPerson,
   Avatar: ({ agent, role, face }) => (
     <CozyRobot look={robotLookFor(agent, role)} face={face} prop={null} shadow={false} />
   ),
@@ -63,6 +65,7 @@ export const cozySkin: FarmSkin = {
   Decor: CozyDecor,
   boxes: {
     robot: [-24, -80, 48, 86],
+    person: [-20, -64, 40, 68],
     plant: [-30, -72, 60, 84],
     sign: [-96, -64, 192, 70],
     hut: [-58, -84, 116, 104],

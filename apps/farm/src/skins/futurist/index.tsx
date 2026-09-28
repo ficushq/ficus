@@ -13,6 +13,7 @@ import {
   LineHut,
   LineMailbox,
   LinePlant,
+  LinePerson,
   LinePlot,
   LineRobot,
   LineSeedShed,
@@ -36,6 +37,7 @@ export const futuristSkin: FarmSkin = {
   Badge: LineBadge,
   badgeLift: (plot) => (plot.state === 'review' ? -40 : -34),
   Robot: LineRobot,
+  Person: LinePerson,
   Avatar: LineAvatar,
   avatarViewBox: '-20 -20 40 40',
   Hut: LineHut,
@@ -48,6 +50,7 @@ export const futuristSkin: FarmSkin = {
   Decor: LineDecor,
   boxes: {
     robot: [-18, -46, 36, 52],
+    person: [-14, -44, 28, 48],
     plant: [-26, -44, 52, 56],
     sign: [-10, -36, 140, 42],
     hut: [-44, -48, 88, 64],

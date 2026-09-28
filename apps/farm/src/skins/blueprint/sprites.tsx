@@ -3,6 +3,7 @@ import type { Agent } from '@ficus/shared'
 import { iso } from '../../farm/iso'
 import type { DecorPlacement, FarmLayout, PlotLayout, RobotFace, RobotPlacement, RobotRole } from '../../farm/types'
 import type { YardRect } from '../types'
+import type { PersonLook } from '../../multiplayer/personLook'
 import { at, diamond, gridLines, poly, type TilePoint } from '../line/draw'
 import { LineDefs } from '../line/sprites'
 import { Circle, Ellipse, Path, Rect, useDrafting } from './drafting'
@@ -866,4 +867,46 @@ export function BlueprintDecor({ decor }: { decor: DecorPlacement }) {
       )
     }
   }
+}
+
+/** A person on the farm, drawn like the robots: a technical figure, a hat by their look. */
+export function BlueprintPerson({ look }: { look: PersonLook }) {
+  const ink = { fill: BG, stroke: FG, strokeLinejoin: 'round' as const }
+  const hy = -40
+  return (
+    <g>
+      <Ellipse rx={10} ry={3.5} fill="none" stroke={FG} strokeOpacity={0.3} strokeDasharray="2 2" />
+      <Path d="M-5 0 L-3 -15 M5 0 L3 -15" fill="none" stroke={FG} />
+      <Path d="M-8 -31 L-11 -17 M8 -31 L11 -17" fill="none" stroke={FG} />
+      <Rect x={-8} y={-33} width={16} height={18} rx={4} {...ink} />
+      <Path d="M-4 -33 L0 -29 L4 -33" fill="none" stroke={FG} strokeOpacity={0.6} />
+      <Circle cy={hy} r={8} {...ink} />
+      <Circle cx={-2.8} cy={hy + 1} r={1} fill={FG} />
+      <Circle cx={2.8} cy={hy + 1} r={1} fill={FG} />
+      <Path d={`M-2.2 ${hy + 4} q2.2 1.8 4.4 0`} fill="none" stroke={FG} strokeOpacity={0.7} />
+      {look.hat === 'straw' || look.hat === 'sunhat' ? (
+        <g>
+          <Ellipse cy={hy - 6} rx={13} ry={3} {...ink} />
+          <Path d={`M-6 ${hy - 6} Q-6 ${hy - 13} 0 ${hy - 13} Q6 ${hy - 13} 6 ${hy - 6}`} {...ink} />
+        </g>
+      ) : look.hat === 'cap' ? (
+        <Path
+          d={`M-8 ${hy - 3} Q-8 ${hy - 11} 0 ${hy - 11} Q8 ${hy - 11} 8 ${hy - 3} Z M7 ${hy - 4} L14 ${hy - 3}`}
+          {...ink}
+        />
+      ) : look.hat === 'beanie' ? (
+        <g>
+          <Path d={`M-8 ${hy - 2} Q-8 ${hy - 12} 0 ${hy - 12} Q8 ${hy - 12} 8 ${hy - 2} Z`} {...ink} />
+          <Circle cy={hy - 13} r={2} {...ink} />
+        </g>
+      ) : (
+        <Path
+          d={`M-8 ${hy - 2} Q-7 ${hy - 9} 0 ${hy - 9} Q7 ${hy - 9} 8 ${hy - 2}`}
+          fill="none"
+          stroke={FG}
+          strokeOpacity={0.7}
+        />
+      )}
+    </g>
+  )
 }

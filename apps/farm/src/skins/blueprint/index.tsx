@@ -12,6 +12,7 @@ import {
   BlueprintGround,
   BlueprintHut,
   BlueprintMailbox,
+  BlueprintPerson,
   BlueprintPlant,
   BlueprintPlot,
   BlueprintRobot,
@@ -37,6 +38,7 @@ export const blueprintSkin: FarmSkin = {
   Badge: LineBadge,
   badgeLift: (plot) => (plot.state === 'review' ? -42 : -34),
   Robot: BlueprintRobot,
+  Person: BlueprintPerson,
   Avatar: BlueprintAvatar,
   avatarViewBox: '-21 -52 42 42',
   Hut: BlueprintHut,
@@ -49,6 +51,7 @@ export const blueprintSkin: FarmSkin = {
   Decor: BlueprintDecor,
   boxes: {
     robot: [-20, -54, 40, 60],
+    person: [-16, -58, 32, 62],
     plant: [-26, -44, 52, 56],
     sign: [-150, -36, 160, 42],
     hut: [-44, -50, 96, 70],
