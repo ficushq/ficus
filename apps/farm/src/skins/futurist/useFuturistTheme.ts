@@ -19,17 +19,22 @@ function usePrefersDark(): boolean {
 export function useFuturistTheme(active: boolean) {
   const preference = useQuery({ ...farmQueries.themePreference(), enabled: active })
   const prefersDark = usePrefersDark()
-  const triple = tripleFor(preference.data?.theme, prefersDark)
+  const theme = preference.data?.theme
+  const triple = tripleFor(theme, prefersDark)
+  // Native controls (scrollbars, pickers) match the theme's appearance; Futurist's own palette is dark.
+  const scheme = !theme ? 'dark' : theme.appearance === 'system' ? (prefersDark ? 'dark' : 'light') : theme.appearance
   useEffect(() => {
     if (!active) return
     const root = document.documentElement.style
-    root.setProperty('--fu-bg', triple.background)
-    root.setProperty('--fu-fg', triple.foreground)
-    root.setProperty('--fu-accent', triple.accent)
+    root.setProperty('--fu-theme-bg', triple.background)
+    root.setProperty('--fu-theme-fg', triple.foreground)
+    root.setProperty('--fu-theme-accent', triple.accent)
+    root.setProperty('color-scheme', scheme)
     return () => {
-      root.removeProperty('--fu-bg')
-      root.removeProperty('--fu-fg')
-      root.removeProperty('--fu-accent')
+      root.removeProperty('color-scheme')
+      root.removeProperty('--fu-theme-bg')
+      root.removeProperty('--fu-theme-fg')
+      root.removeProperty('--fu-theme-accent')
     }
-  }, [active, triple.background, triple.foreground, triple.accent])
+  }, [active, triple.background, triple.foreground, triple.accent, scheme])
 }

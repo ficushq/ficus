@@ -1,12 +1,15 @@
 /*
  * Interface tokens for the Futurist style. Everything derives from three colours
- * (the same shape as the web app's three-colour themes), so following a theme
- * only means setting --fu-bg, --fu-fg and --fu-accent.
+ * (the same shape as the web app's three-colour themes). The user's theme sets
+ * --fu-theme-bg, --fu-theme-fg and --fu-theme-accent on the root (see
+ * useFuturistTheme.ts); without them it's Futurist's own neon. They're read
+ * through fallbacks, not re-declared, so every element wearing this class (the
+ * page, the farm screen, a preview) follows the theme.
  */
 .g-skin-futurist {
-  --fu-bg: #05070a;
-  --fu-fg: #8fe3ff;
-  --fu-accent: #ff4fd8;
+  --fu-bg: var(--fu-theme-bg, #05070a);
+  --fu-fg: var(--fu-theme-fg, #8fe3ff);
+  --fu-accent: var(--fu-theme-accent, #ff4fd8);
   /* The line kit's colours */
   --ln-bg: var(--fu-bg);
   --ln-fg: var(--fu-fg);

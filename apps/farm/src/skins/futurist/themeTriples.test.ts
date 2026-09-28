@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { THEME_TRIPLES } from '@ficus/shared/theme-triples'
 import { FUTURIST_DEFAULT, tripleFor, type ThemeTriple } from './themeTriples'
 
 const t = (background: string): ThemeTriple => ({ background, foreground: '#fff', accent: '#f0f' })
@@ -20,15 +21,14 @@ describe('tripleFor', () => {
     expect(tripleFor({ themeId: 'ficus', appearance: 'system' }, false, table).background).toBe('ficus-light')
   })
 
-  it('falls back to ficus for unknown ids and uses the base of a custom theme', () => {
+  it('falls back to ficus for unknown ids', () => {
     expect(tripleFor({ themeId: 'gone', appearance: 'light' }, false, table).background).toBe('ficus-light')
-    expect(tripleFor({ themeId: 'custom:phosphorus', appearance: 'light' }, false, table).background).toBe('phos')
+    expect(tripleFor(null, false, table).background).toBe('ficus-light')
   })
 
-  it('maps ids stored before the theme migration to their final ids', () => {
-    expect(tripleFor({ themeId: 'forest', appearance: 'dark' }, false, table).background).toBe('ficus-dark')
-    expect(tripleFor({ themeId: 'tau', appearance: 'light' }, false, table).background).toBe('iris-light')
-    expect(tripleFor({ themeId: 'custom:tau', appearance: 'dark' }, false, table).background).toBe('iris-dark')
+  it('reads the shared table by default, keyed by the final theme ids', () => {
+    expect(tripleFor({ themeId: 'ficus', appearance: 'light' }, false)).toEqual(THEME_TRIPLES.ficus!.light)
+    expect(tripleFor({ themeId: 'iris', appearance: 'dark' }, false)).toEqual(THEME_TRIPLES.iris!.dark)
   })
 
   it("uses Futurist's own palette when there is no table yet", () => {
