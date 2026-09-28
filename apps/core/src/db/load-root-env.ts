@@ -4,7 +4,8 @@ import { bridgeLegacyEnv, formatLegacyEnvBridge } from '@ficus/shared/legacy-env
 import dotenv from 'dotenv'
 import { createLogger } from '../lib/infra/logger'
 
-const log = createLogger('legacy-env')
+// stderr only, like the boot module: the migrate child's stdout carries the toolkit's markers.
+const log = createLogger('legacy-env', undefined, { stderr: true })
 
 /**
  * Load the repo-root `.env` into `process.env` for STANDALONE entrypoints
