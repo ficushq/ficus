@@ -3044,7 +3044,7 @@ EOF
   cp "${DR}/etc/managed.env" "${DR}/stage/managed.env"
   printf "TAU_BACKUP_PASSPHRASE='dr-pp'\n" >"${DR}/etc/backup.env" # legacy-env
   for dr_u in api worker; do
-    printf '[Service]\nEnvironment=TAU_ROOT=%s/current\n' "${DR}/dest" >"${DR}/units/tau-${dr_u}.service" # legacy-env
+    printf '[Service]\nEnvironment=TAU_ROOT=%s/current\n' "${DR}/dest" >"${DR}/units/tau-${dr_u}.service" # legacy-env phase5-unit-name
   done
   cat >"${DR}/cfg.yaml" <<EOF
 source:
@@ -3095,7 +3095,7 @@ EOF
     "$(grep -c '^  | FICUS_MAX_MACHINES=5$' <<<"${dr_out}"):$(grep -c '^  | FICUS_PLATFORM_USAGE_TOKEN=' <<<"${dr_out}")" '1:1'
   expect_eq 'setup-host --dry-run on a TAU host: ...with the *_ENV secret still redacted' "$(grep -c 'dr-usage-secret' <<<"${dr_out}" || true)" '0'
   expect_eq 'setup-host --dry-run on a TAU host: the rename is planned, naming each file to be renamed' \
-    "$(grep -c 'Phase 3.9 — env settings renamed to FICUS_\*' <<<"${dr_out}"):$(grep -cE "^  (/private)?(${DR}/dest/\.env|${DR}/etc/managed\.env|${DR}/etc/backup\.env|${DR}/cfg\.yaml|${DR}/units/tau-(api|worker)\.service)$" <<<"${dr_out}")" '1:6'
+    "$(grep -c 'Phase 3.9 — env settings renamed to FICUS_\*' <<<"${dr_out}"):$(grep -cE "^  (/private)?(${DR}/dest/\.env|${DR}/etc/managed\.env|${DR}/etc/backup\.env|${DR}/cfg\.yaml|${DR}/units/tau-(api|worker)\.service)$" <<<"${dr_out}")" '1:6' # phase5-unit-name
   expect_match 'setup-host --dry-run on a TAU host: the staged managed.env is planned under its FICUS_ names' \
     "${dr_out}" 'installed with 3 setting\(s\) under their FICUS_\* names'
   expect_eq 'setup-host --dry-run on a TAU host: no value from any host file is printed' \
