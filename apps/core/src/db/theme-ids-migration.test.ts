@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type postgres from 'postgres'
+import { validateThemePreference } from '@ficus/shared/theme-preferences'
+import { validateThemePresetDocument } from '@ficus/shared/theme-preset'
 import { MONOREPO_ROOT } from '../lib/paths'
 import { createPostgresConnection, getConnectionString } from './connection'
 import { applyMigrations } from './migrator'
@@ -13,7 +15,8 @@ const target = migrations.find((migration) => migration.sql.join('\n').includes(
 const predecessors = target ? migrations.filter((migration) => migration.folderMillis < target.folderMillis) : []
 const dbName = `theme_ids_mig_${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`
 
-const user = (n: number) => `50000000-0000-4000-8000-00000000010${n}`
+const user = (n: number) => `50000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+const preset = (n: number) => `60000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const selection = (themeId: string, customTheme: Record<string, unknown> | null = null) => ({
   themeId,
   appearance: 'dark',
@@ -28,6 +31,15 @@ const doc = (base: string, format: string) => ({
   base,
   palette: { primary: '#0ea5e9' },
   variants: { light: {}, dark: { '--color-primary': '#0ea5e9' } },
+})
+// A v1 document (one concrete appearance plus overrides), still accepted and stored by older clients.
+const v1 = (base: string, format: string) => ({
+  format,
+  version: 1,
+  name: 'Old',
+  base,
+  appearance: 'dark',
+  overrides: { '--color-primary': '#0ea5e9' },
 })
 
 function urlFor(name: string): string {
@@ -59,65 +71,84 @@ describe('theme ids migration (real runner, isolated database)', () => {
     expect(target).toBeDefined()
     await applyMigrations(connection, predecessors)
 
-    const preferences: Array<[string, ReturnType<typeof selection>]> = [
-      [user(1), selection('tau')],
-      [user(2), selection('forest')],
-      [user(3), selection('iris')],
-      [user(4), selection('my-own-theme')],
-      [user(5), selection('tau', doc('tau', 'tau-custom-theme'))],
-      [user(6), selection('harbor', doc('harbor', 'tau-custom-theme'))],
-      [user(7), selection('iris', doc('iris', 'ficus-custom-theme'))],
-      [user(8), selection('forest', doc('forest', 'tau-custom-theme'))],
+    // [seeded row, expected row after the migration]
+    const preferences: Array<[string, Record<string, unknown>, Record<string, unknown>]> = [
+      [user(1), selection('tau'), selection('ficus')],
+      [user(2), selection('forest'), selection('ficus')],
+      [user(3), selection('iris'), selection('iris')],
+      [user(4), selection('my-own-theme'), selection('my-own-theme')],
+      // A selection carrying a custom theme follows its base (themeId must equal customTheme.base).
+      [user(5), selection('tau', doc('tau', 'tau-custom-theme')), selection('iris', doc('iris', 'ficus-custom-theme'))],
+      [
+        user(6),
+        selection('harbor', doc('harbor', 'tau-custom-theme')),
+        selection('harbor', doc('harbor', 'ficus-custom-theme')),
+      ],
+      [
+        user(7),
+        selection('iris', doc('iris', 'ficus-custom-theme')),
+        selection('iris', doc('iris', 'ficus-custom-theme')),
+      ],
+      [
+        user(8),
+        selection('forest', doc('forest', 'tau-custom-theme')),
+        selection('ficus', doc('ficus', 'ficus-custom-theme')),
+      ],
+      [user(9), selection('tau', v1('tau', 'tau-custom-theme')), selection('iris', v1('iris', 'ficus-custom-theme'))],
+      // No customTheme key at all: SQL NULL, not a JSON null, takes the plain-selection branch.
+      [user(10), { themeId: 'tau', appearance: 'light' }, { themeId: 'ficus', appearance: 'light' }],
     ]
-    for (const [id] of preferences)
+    const presets: Array<[string, Record<string, unknown>, Record<string, unknown>]> = [
+      [preset(1), doc('tau', 'tau-custom-theme'), doc('iris', 'ficus-custom-theme')],
+      [preset(2), doc('forest', 'ficus-custom-theme'), doc('ficus', 'ficus-custom-theme')],
+      [preset(3), doc('harbor', 'tau-custom-theme'), doc('harbor', 'ficus-custom-theme')],
+      [preset(4), doc('iris', 'ficus-custom-theme'), doc('iris', 'ficus-custom-theme')],
+      [preset(5), v1('tau', 'tau-custom-theme'), v1('iris', 'ficus-custom-theme')],
+    ]
+    for (const [id, theme] of preferences) {
       await connection.unsafe('INSERT INTO users (id, email) VALUES ($1, $2)', [id, `${id}@example.test`])
-    for (const [id, theme] of preferences)
       await connection.unsafe('INSERT INTO user_preferences (user_id, theme) VALUES ($1, $2::text::jsonb)', [
         id,
         JSON.stringify(theme),
       ])
-    const presets: Array<[string, ReturnType<typeof doc>]> = [
-      ['60000000-0000-4000-8000-000000000001', doc('tau', 'tau-custom-theme')],
-      ['60000000-0000-4000-8000-000000000002', doc('forest', 'ficus-custom-theme')],
-      ['60000000-0000-4000-8000-000000000003', doc('harbor', 'tau-custom-theme')],
-      ['60000000-0000-4000-8000-000000000004', doc('iris', 'ficus-custom-theme')],
-    ]
+    }
     for (const [id, document] of presets)
       await connection.unsafe(
         'INSERT INTO theme_presets (id, owner_user_id, document) VALUES ($1, $2, $3::text::jsonb)',
         [id, user(1), JSON.stringify(document)]
       )
 
-    await applyMigrations(connection, [...predecessors, target!])
-    await applyMigrations(connection, [...predecessors, target!])
+    const verify = async () => {
+      const themes = new Map(
+        (
+          await connection.unsafe<{ user_id: string; theme: Record<string, unknown> }[]>(
+            'SELECT user_id, theme FROM user_preferences'
+          )
+        ).map((row) => [row.user_id, row.theme])
+      )
+      for (const [id, , expected] of preferences) {
+        expect(themes.get(id)).toEqual(expected)
+        // Every row ends in a state the current validators accept. The custom id and the missing-key row were not
+        // valid before the rename either (unknown id; the contract requires customTheme), so they are only compared.
+        if (id !== user(4) && id !== user(10)) expect(validateThemePreference(themes.get(id)).ok).toBe(true)
+      }
+      const documents = new Map(
+        (
+          await connection.unsafe<{ id: string; document: Record<string, unknown> }[]>(
+            'SELECT id, document FROM theme_presets'
+          )
+        ).map((row) => [row.id, row.document])
+      )
+      for (const [id, , expected] of presets) {
+        expect(documents.get(id)).toEqual(expected)
+        expect(validateThemePresetDocument(documents.get(id)).ok).toBe(true)
+      }
+    }
 
-    const themes = Object.fromEntries(
-      (
-        await connection.unsafe<{ user_id: string; theme: ReturnType<typeof selection> }[]>(
-          'SELECT user_id, theme FROM user_preferences'
-        )
-      ).map((row) => [row.user_id, row.theme])
-    )
-    expect(themes[user(1)]).toEqual(selection('ficus'))
-    expect(themes[user(2)]).toEqual(selection('ficus'))
-    expect(themes[user(3)]).toEqual(selection('iris'))
-    expect(themes[user(4)]).toEqual(selection('my-own-theme'))
-    // A selection carrying a custom theme follows its base (themeId must equal customTheme.base).
-    expect(themes[user(5)]).toEqual(selection('iris', doc('iris', 'ficus-custom-theme')))
-    expect(themes[user(6)]).toEqual(selection('harbor', doc('harbor', 'ficus-custom-theme')))
-    expect(themes[user(7)]).toEqual(selection('iris', doc('iris', 'ficus-custom-theme')))
-    expect(themes[user(8)]).toEqual(selection('ficus', doc('ficus', 'ficus-custom-theme')))
-
-    const documents = Object.fromEntries(
-      (
-        await connection.unsafe<{ id: string; document: ReturnType<typeof doc> }[]>(
-          'SELECT id, document FROM theme_presets'
-        )
-      ).map((row) => [row.id, row.document])
-    )
-    expect(documents[presets[0]![0]]).toEqual(doc('iris', 'ficus-custom-theme'))
-    expect(documents[presets[1]![0]]).toEqual(doc('ficus', 'ficus-custom-theme'))
-    expect(documents[presets[2]![0]]).toEqual(doc('harbor', 'ficus-custom-theme'))
-    expect(documents[presets[3]![0]]).toEqual(doc('iris', 'ficus-custom-theme'))
+    await applyMigrations(connection, [...predecessors, target!])
+    await verify()
+    // The ledger skips an applied migration, so run the SQL itself a second time: every statement is idempotent.
+    for (const statement of target!.sql) if (statement.trim()) await connection.unsafe(statement)
+    await verify()
   })
 })

@@ -7,6 +7,8 @@
  *   built-in).
  * - Every value is a lowercase `#rrggbb` hex string. The CSS stores these tokens as space-separated sRGB channels
  *   (`63 107 79`), so each triple is the same colour, written as hex.
+ * - `accent` is the accent fill (buttons, selected state), not a text colour: it is not guaranteed to reach 3:1 as
+ *   text on `background` (Iris dark's `#5b21b6` on `#090a12` is about 2.2:1).
  * - Keys are the built-in theme ids. A theme with one constant appearance repeats the same triple for light and dark.
  *
  * `apps/web/src/theme/themeTriples.test.ts` checks every value against the CSS, so the two cannot drift.
