@@ -5889,6 +5889,40 @@ epr_matches_manifest() { # SETDIR
   printf '%s' "${ok}"
 }
 
+# A managed.env the host did not have when the set was taken (the run installs
+# one, in the new names, before the flip): the set records it as ABSENT and a
+# restore removes it, so the host is exactly what the set saw.
+epr_host absent-managed '{"name":"tau"}' '{"schema":1}'
+rm -f "${FICUS_MANAGED_ENV_PATH}"
+ENV_RENAME_PENDING=0
+migrate_env_prefix_host FICUS "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'backup set: a managed.env absent at rename time is recorded in ABSENT, not the MANIFEST' \
+  "$(cat "${ENV_RENAME_BACKUP_SET}/ABSENT"):$(grep -c 'managed.env' "${ENV_RENAME_BACKUP_SET}/MANIFEST" || true)" "${FICUS_MANAGED_ENV_PATH}:0"
+printf 'FICUS_MANAGED=1\n' >"${FICUS_MANAGED_ENV_PATH}"
+env_prefix_settle_pending 2>/dev/null
+expect_eq 'restore: the managed.env created since the set was taken is removed' \
+  "$([[ -e ${FICUS_MANAGED_ENV_PATH} ]] && echo present || echo removed)" 'removed'
+expect_eq 'restore: ...and every file of the set is byte-identical, PENDING gone' \
+  "$(epr_matches_manifest "${ENV_RENAME_BACKUP_SET}"):$([[ -e ${ENV_RENAME_BACKUP_ROOT}/PENDING ]] && echo left || echo gone)" 'yes:gone'
+# A host that HAS a managed.env records nothing absent.
+epr_host present-managed '{"name":"tau"}' '{"schema":1}'
+ENV_RENAME_PENDING=0
+migrate_env_prefix_host FICUS "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'backup set: nothing is recorded absent when managed.env exists' \
+  "$([[ -e ${ENV_RENAME_BACKUP_SET}/ABSENT ]] && echo listed || echo none)" 'none'
+env_prefix_settle_pending 2>/dev/null
+# The create refuses an "absent" file that exists, and a malformed ABSENT list
+# stops a restore before it touches anything.
+expect_eq 'env_rename_backup_create: an absent: entry that exists is refused, with no set left' \
+  "$( (env_rename_backup_create FICUS "${SRC_DEST}/releases/new" "${SRC_DEST}/.env" "absent:${SRC_DEST}/.env") >/dev/null 2>&1; echo "rc=$?"):$([[ -e ${ENV_RENAME_BACKUP_ROOT}/PENDING ]] && echo pending || echo none)" 'rc=1:none'
+epr_abs_set=$(env_rename_backup_create FICUS "${SRC_DEST}/releases/new" "${SRC_DEST}/.env" 2>/dev/null)
+printf 'relative/path\n' >"${epr_abs_set}/ABSENT"
+cp -p "${SRC_DEST}/.env" "${EPR}/abs.env.orig"
+printf 'CHANGED=1\n' >"${SRC_DEST}/.env"
+expect_eq 'env_rename_backup_restore: a malformed ABSENT line refuses the restore' \
+  "$(env_rename_backup_restore "${epr_abs_set}" >/dev/null 2>&1; echo "rc=$?"):$(cat "${SRC_DEST}/.env")" 'rc=1:CHANGED=1'
+rm -f "${ENV_RENAME_BACKUP_ROOT}/PENDING"
+
 # Reconcile, active release TAU (package.json tau, no envPrefix): restore.
 epr_host tau-active '{"name":"tau"}' '{"schema":1}'
 EPR_SET=$(env_rename_backup_create FICUS "${SRC_DEST}/releases/new" "${SRC_DEST}/.env" "${FICUS_MANAGED_ENV_PATH}" 2>/dev/null)

@@ -4245,9 +4245,12 @@ _epr_sha256() { # FILE -> hex on stdout
 # Create a backup set of FILE... (resolved paths) and journal it. Prints the
 # set dir. Dies — having removed the partial set and never having written
 # PENDING — on any failure, so nothing is ever renamed without a verified,
-# journaled copy of what it replaces.
-env_rename_backup_create() { # TARGET RELEASE_DIR FILE...
-  local target=$1 release=$2 root setdir ts f idx=0 sha manifest='' tmp
+# journaled copy of what it replaces. An `absent:<path>` argument records a
+# file that does NOT exist yet (in the set's ABSENT list): the run may create
+# it in the new names, and a restore removes it again, so the host goes back
+# to exactly what the set saw.
+env_rename_backup_create() { # TARGET RELEASE_DIR FILE... [absent:PATH...]
+  local target=$1 release=$2 root setdir ts f idx=0 sha manifest='' tmp absent=''
   shift 2
   root=$(env_rename_backup_root)
   _epr_is_prefix "${target}" || die "env_rename_backup_create: target must be TAU or FICUS"
@@ -4267,6 +4270,11 @@ env_rename_backup_create() { # TARGET RELEASE_DIR FILE...
   }
   chmod 0700 "${setdir}" || _epr_backup_fail "could not chmod ${setdir}"
   for f in "$@"; do
+    if [[ ${f} == absent:/?* ]]; then
+      [[ ! -e ${f#absent:} && ! -L ${f#absent:} ]] || _epr_backup_fail "'${f#absent:}' was listed as absent but exists"
+      absent+="${f#absent:}"$'\n'
+      continue
+    fi
     idx=$((idx + 1))
     _epr_resolve "${f}" f || _epr_backup_fail "'${f}' is not an existing file"
     cp -p -- "${f}" "${setdir}/${idx}" || _epr_backup_fail "could not copy ${f}"
@@ -4276,6 +4284,9 @@ env_rename_backup_create() { # TARGET RELEASE_DIR FILE...
     manifest+="${idx}"$'\t'"${sha}"$'\t'"${f}"$'\n'
   done
   printf '%s' "${manifest}" >"${setdir}/MANIFEST" || _epr_backup_fail "could not write the MANIFEST"
+  if [[ -n ${absent} ]]; then
+    printf '%s' "${absent}" >"${setdir}/ABSENT" || _epr_backup_fail "could not write the ABSENT list"
+  fi
   if [[ ${ARTIFACT_CONVERTED_THIS_RUN:-0} -eq 1 ]]; then
     : >"${setdir}/UNITS_EXCLUDED" || _epr_backup_fail "could not write the UNITS_EXCLUDED marker"
   fi
@@ -4341,6 +4352,22 @@ env_rename_backup_restore() { # SETDIR
       return 1
     fi
   done
+  # Files the set saw as absent (created since, in the new names): removed.
+  local -a absents=()
+  if [[ -f ${setdir}/ABSENT ]]; then
+    read_file_exact "${setdir}/ABSENT" raw || return 1
+    rest=${raw}
+    while [[ -n ${rest} ]]; do
+      line=${rest%%$'\n'*}
+      if [[ ${line} == "${rest}" ]]; then rest=''; else rest=${rest#*$'\n'}; fi
+      [[ -n ${line} ]] || continue
+      if [[ ${line} != /?* || ${line} == *$'\t'* ]]; then
+        log_error "env restore: ${setdir}/ABSENT has a malformed line — nothing was restored"
+        return 1
+      fi
+      absents+=("${line}")
+    done
+  fi
   if [[ -e ${setdir}/UNITS_EXCLUDED ]] && ! _epr_have_unit_templates; then
     log_warn "env restore: ${setdir} excluded the units (a git->artifact conversion ran in the same upgrade) and the unit templates are not next to this script — leaving it journaled for the next upgrade"
     return 3
@@ -4377,6 +4404,14 @@ env_rename_backup_restore() { # SETDIR
       log_error "env restore: ${path} does not match its sha256 after the restore"
       return 1
     fi
+  done
+  for path in ${absents[@]+"${absents[@]}"}; do
+    [[ -e ${path} || -L ${path} ]] || continue
+    if ! rm -f -- "${path}"; then
+      log_error "env restore: could not remove ${path}, which did not exist when ${setdir} was taken"
+      return 1
+    fi
+    log_info "env restore: removed ${path} (it did not exist when ${setdir} was taken)"
   done
   if [[ -e ${setdir}/UNITS_EXCLUDED ]]; then
     # The pre-conversion units are never copied back: they point at the git
@@ -4589,7 +4624,18 @@ migrate_env_prefix_host() { # TARGET [RELEASE_DIR]
     return 0
   fi
 
-  ENV_RENAME_BACKUP_SET=$(env_rename_backup_create FICUS "${release}" "${files[@]}") && [[ -n ${ENV_RENAME_BACKUP_SET} ]] ||
+  # managed.env is the one env file a run creates in the NEW names before the
+  # flip (setup-host.sh's phase_artifacts installs the staged copy renamed):
+  # when this host has none yet, the set records it as absent, so a restore
+  # removes it instead of leaving FICUS_ names under a pre-rename release.
+  # (backup.env and tau-backup.sh are written only after the flip, as a pair
+  # that works under either release, and a unit or .env never appears on a
+  # host that already needs renaming — so none of them is recorded.)
+  local -a absent=()
+  if [[ ! -e ${FICUS_MANAGED_ENV_PATH} && ! -L ${FICUS_MANAGED_ENV_PATH} ]]; then
+    absent=("absent:${FICUS_MANAGED_ENV_PATH}")
+  fi
+  ENV_RENAME_BACKUP_SET=$(env_rename_backup_create FICUS "${release}" "${files[@]}" ${absent[@]+"${absent[@]}"}) && [[ -n ${ENV_RENAME_BACKUP_SET} ]] ||
     die "could not create the env backup set — nothing was renamed"
   ENV_RENAME_BACKUP_SET=${ENV_RENAME_BACKUP_SET%$'\n'}
   ENV_RENAME_PENDING=1

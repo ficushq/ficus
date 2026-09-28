@@ -850,6 +850,20 @@ if [[ -d /run/systemd/system ]] && grep -q '^ID=ubuntu' /etc/os-release && grep 
   expect_eq 'setup-host.sh re-run, unhealthy new release: the rollback restart is the last service action (no restore after it)' \
     "$(grep -E '^systemctl (restart|daemon-reload)' "${CALLS}" | tail -n 1 | cut -d' ' -f2)" 'restart'
 
+  # M1: the same rollback on a host that had NO managed.env when it was
+  # renamed. The run installs the staged copy renamed; the restore removes it
+  # again, so the old release does not find FICUS_ names it cannot read.
+  setup_rerun_host setup-rerun-rollback-nomanaged
+  rm -f "${H}/etc/managed.env"
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  rerun_set=$(find "${H}/bk" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  expect_eq 'setup-host.sh re-run with no managed.env, rolled back: the set recorded managed.env as absent' \
+    "$([[ ${RC} -ne 0 ]] && echo failed):$(cat "${rerun_set}/ABSENT" 2>/dev/null)" "failed:${H}/etc/managed.env"
+  expect_eq 'setup-host.sh re-run with no managed.env, rolled back: the managed.env it installed is removed again' \
+    "$([[ -e ${H}/etc/managed.env ]] && echo present || echo removed)" 'removed'
+  expect_eq 'setup-host.sh re-run with no managed.env, rolled back: every other file byte for byte, no journal' \
+    "$(for f in dest/.env etc/backup.env setup/tau-setup.yaml bin/tau-backup.sh; do cmp -s "${H}/pristine/${f}" "${H}/${f}" || printf ' %s' "${f}"; done):$(pending)" ':none'
+
 
   # N-I2 in setup-host.sh's preflight: a conflict — here in the staged
   # managed.env it would install — stops the run before any phase.
