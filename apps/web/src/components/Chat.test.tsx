@@ -146,6 +146,33 @@ describe('Chat header rendering', () => {
     expect(capturedAgentChatProps.squadId).toBe('squad-1')
   })
 
+  test('checks chat permission in the squad the server checks, for a squad-scoped role', () => {
+    // A squad-scoped operator: chat:send only inside squad-1, nothing app-wide.
+    const squadOnly = (squadId?: string) => ({
+      permissions: [],
+      can: (action: string) => action === 'chat:send' && squadId === 'squad-1',
+      isLoading: false,
+      isError: false,
+    })
+    const render = (element: React.ReactElement) =>
+      renderToStaticMarkup(
+        <MemoryRouter initialEntries={['/chat']}>
+          <ReactQueryHooksProvider hooks={reactQueryOverrides}>
+            {{
+              ...element,
+              props: { ...element.props, dependencies: { ...chatDependencies, usePermissionsHook: squadOnly } },
+            }}
+          </ReactQueryHooksProvider>
+        </MemoryRouter>
+      )
+
+    render(<Chat scope={{ type: 'consultant', id: 'squad-1' }} />)
+    expect(capturedAgentChatProps.inputDisabled).toBe(false)
+
+    render(<Chat scope={{ type: 'system-manager' }} />)
+    expect(capturedAgentChatProps.inputDisabled).toBe(true)
+  })
+
   test('preserves squadless system-manager chats', () => {
     renderChat(<Chat scope={{ type: 'system-manager' }} />)
 

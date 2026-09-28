@@ -605,7 +605,8 @@ export async function getAccessibleSquadIds(identity: Identity): Promise<string[
   // User identity
   const userId = identity.userId
 
-  // Check system-scoped roles — if any has '*', return 'all'
+  // A system-scoped role applies to every squad (as in permissionsFromAssignments), so one that can
+  // read squads sees them all — not only a literal '*' (admin); operator and viewer included.
   const systemAssignments = await db
     .select({ permissions: roles.permissions })
     .from(roleAssignments)
@@ -619,7 +620,7 @@ export async function getAccessibleSquadIds(identity: Identity): Promise<string[
     )
 
   for (const row of systemAssignments) {
-    if ((row.permissions as string[]).includes('*')) return 'all'
+    if ((row.permissions as string[]).some((permission) => permissionMatches(permission, 'squads:read'))) return 'all'
   }
 
   // Check for squad_default assignments — if any exist, return 'all'

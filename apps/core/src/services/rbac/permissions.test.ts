@@ -733,6 +733,26 @@ describe('getAccessibleSquadIds', () => {
     expect(await getAccessibleSquadIds({ type: 'user', userId: user.id })).toBe('all')
   })
 
+  test('user with a system role that can read squads (operator, viewer) returns "all"', async () => {
+    // Not only a literal '*': a system-scoped grant applies to every squad.
+    const operator = await createTestUser({ prefix: PREFIX })
+    const operatorRole = await createTestRole({ prefix: PREFIX, permissions: ['squads:*', 'chat:*'] })
+    await assignRole({ userId: operator.id, roleId: operatorRole.id, scope: 'system' })
+    expect(await getAccessibleSquadIds({ type: 'user', userId: operator.id })).toBe('all')
+
+    const viewer = await createTestUser({ prefix: PREFIX })
+    const viewerRole = await createTestRole({ prefix: PREFIX, permissions: ['squads:read'] })
+    await assignRole({ userId: viewer.id, roleId: viewerRole.id, scope: 'system' })
+    expect(await getAccessibleSquadIds({ type: 'user', userId: viewer.id })).toBe('all')
+  })
+
+  test('user with a system role that cannot read squads sees none', async () => {
+    const user = await createTestUser({ prefix: PREFIX })
+    const role = await createTestRole({ prefix: PREFIX, permissions: ['provider-auth:read'] })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'system' })
+    expect(await getAccessibleSquadIds({ type: 'user', userId: user.id })).toEqual([])
+  })
+
   test('user with squad_default returns "all"', async () => {
     const user = await createTestUser({ prefix: PREFIX })
     const role = await createTestRole({ prefix: PREFIX, permissions: ['squads:read'] })
