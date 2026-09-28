@@ -49,7 +49,8 @@ interface SkinContextValue {
   setSkin: (id: SkinId) => void
 }
 
-const SkinContext = createContext<SkinContextValue>({ skin: nostalgicSkin, setSkin: () => {} })
+/** The chosen style; exported so tests can provide their own. */
+export const SkinContext = createContext<SkinContextValue>({ skin: nostalgicSkin, setSkin: () => {} })
 
 /**
  * The chosen style: saved on the signed-in account so it follows you (see

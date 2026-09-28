@@ -95,7 +95,8 @@ export interface Multiplayer {
   setMyLook: (look: FarmLook) => void
 }
 
-const MultiplayerContext = createContext<Multiplayer | null>(null)
+/** The farm's multiplayer; exported so tests (and previews) can provide their own. */
+export const MultiplayerContext = createContext<Multiplayer | null>(null)
 
 export function useMultiplayer(): Multiplayer {
   const value = useContext(MultiplayerContext)
