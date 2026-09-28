@@ -196,11 +196,15 @@ export function BlueprintSign({ name, flag }: { name: string; flag: boolean }) {
         {label}
       </Lettering>
       {flag && (
-        <g transform={`translate(${-26 - width} -18)`} className="ln-pulse">
-          <Path d="M0 -8 L8 6 H-8 Z" fill={BG} stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />
-          <text y={4} textAnchor="middle" fontFamily={LETTER} fontSize={9} fontWeight={700} fill={ACCENT}>
-            !
-          </text>
+        // The pulse sits inside the placing group: an animated class on an element with a transform
+        // attribute replaces that transform (the warning slid about).
+        <g transform={`translate(${-26 - width} -18)`}>
+          <g className="ln-pulse">
+            <Path d="M0 -8 L8 6 H-8 Z" fill={BG} stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />
+            <text y={4} textAnchor="middle" fontFamily={LETTER} fontSize={9} fontWeight={700} fill={ACCENT}>
+              !
+            </text>
+          </g>
         </g>
       )}
     </g>
@@ -427,14 +431,16 @@ export function BlueprintRobot({ placement, extra }: { placement: RobotPlacement
     <g>
       <Figure role={role} face={face} />
       {helpers > 0 && (
-        <g transform="translate(20 -36)" className="ln-float">
-          <Path d="M-5 -4 H5 M0 -4 V-1.5" stroke={FG} />
-          <Circle r={2.6} fill={BG} stroke={FG} />
-          {helpers > 1 && (
-            <text x={5} y={3} fontFamily={LETTER} fontSize={8} fill={FG}>
-              ×{helpers}
-            </text>
-          )}
+        <g transform="translate(20 -36)">
+          <g className="ln-float">
+            <Path d="M-5 -4 H5 M0 -4 V-1.5" stroke={FG} />
+            <Circle r={2.6} fill={BG} stroke={FG} />
+            {helpers > 1 && (
+              <text x={5} y={3} fontFamily={LETTER} fontSize={8} fill={FG}>
+                ×{helpers}
+              </text>
+            )}
+          </g>
         </g>
       )}
       {extra ? (
