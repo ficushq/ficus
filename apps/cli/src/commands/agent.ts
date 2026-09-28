@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import { apiGet, apiPatch, apiPost, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode } from '../output'
-import { readLine } from '../local-server/prompt'
+import { readLine, StdinClosedError } from '../local-server/prompt'
 import { registerSandboxProcessCommands } from './sandbox-processes'
 
 function truncate(s: string, max: number): string {
@@ -597,8 +597,10 @@ async function promptConfirm(question: string): Promise<boolean> {
   let answer: string
   try {
     answer = readLine(`${question} [y/N] `, 1).trim().toLowerCase()
-  } catch {
-    return false
+  } catch (error) {
+    // No one left to answer is a no; a failing terminal is an error, not a decline.
+    if (error instanceof StdinClosedError) return false
+    throw error
   }
   return answer === 'y' || answer === 'yes'
 }

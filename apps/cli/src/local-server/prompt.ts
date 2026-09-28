@@ -6,6 +6,14 @@ import type { Prompter } from './options'
 let pending = ''
 const decoder = new TextDecoder()
 
+/** stdin reached end-of-file before a line was typed: nobody is there to answer. */
+export class StdinClosedError extends Error {
+  constructor() {
+    super('stdin closed before an answer was given')
+    this.name = 'StdinClosedError'
+  }
+}
+
 function retryable(error: unknown): boolean {
   const code = (error as { code?: string }).code
   return code === 'EAGAIN' || code === 'EWOULDBLOCK' || code === 'EINTR'
@@ -22,7 +30,7 @@ function retryable(error: unknown): boolean {
  * inherits it, so readline would print the question and never see a keystroke.
  * A blocking read(2) works on any terminal, pipe or file.
  *
- * Rejects when stdin reaches end-of-file before a line was typed.
+ * Throws StdinClosedError when stdin reaches end-of-file before a line was typed.
  */
 export function readLine(question: string, outputFd = 2): string {
   writeSync(outputFd, question)
@@ -48,7 +56,7 @@ export function readLine(question: string, outputFd = 2): string {
       const last = pending + decoder.decode()
       pending = ''
       if (last) return last.replace(/\r$/, '')
-      throw new Error('stdin closed before an answer was given')
+      throw new StdinClosedError()
     }
     pending += decoder.decode(chunk.subarray(0, n), { stream: true })
   }

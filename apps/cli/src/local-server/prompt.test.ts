@@ -26,7 +26,7 @@ try {
   const ok = await p.confirm('Proceed?')
   process.stdout.write('GOT=' + runtime + ',' + ok + '\\n')
 } catch (error) {
-  process.stdout.write('ERR=' + (error as Error).message + '\\n')
+  process.stdout.write('ERR=' + (error as Error).name + ': ' + (error as Error).message + '\\n')
 }
 `
 )
@@ -50,7 +50,7 @@ describe('terminalPrompter', () => {
   })
 
   it('fails instead of spinning when stdin ends before an answer', async () => {
-    expect(await runPiped('')).toBe('ERR=stdin closed before an answer was given\n')
+    expect(await runPiped('')).toBe('ERR=StdinClosedError: stdin closed before an answer was given\n')
   })
 
   // The installer regression. `curl … | bash` gives the CLI its terminal back
