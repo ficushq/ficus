@@ -35,6 +35,7 @@ import {
   listAccounts,
   mutateAccountStore,
   persistOAuthCredential,
+  isClaudeSubscriptionToken,
   readAccountStore,
   reorderAccounts,
   updateAccount,
@@ -162,6 +163,11 @@ function providerSummary(provider: string, accounts: Account[]) {
 
 function apiKeyCredential(key: string): Credential {
   return { type: 'api_key', key }
+}
+
+const CLAUDE_SUBSCRIPTION_TOKEN_REFUSED = {
+  error:
+    'Claude subscription tokens (sk-ant-oat…) cannot be used here: Anthropic only permits them in its own apps. Add an Anthropic API key from platform.claude.com instead.',
 }
 
 // --- Pending OAuth flows ---
@@ -408,6 +414,7 @@ app.post('/openai-compatible/accounts', requirePermission('provider-auth:write')
     return c.json({ error: 'baseUrl, model, and providerId are required' }, 400)
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(body.providerId))
     return c.json({ error: 'providerId must be kebab-case' }, 400)
+  if (isClaudeSubscriptionToken(body.apiKey)) return c.json(CLAUDE_SUBSCRIPTION_TOKEN_REFUSED, 400)
   try {
     const result = await probeOpenAICompatible({ baseUrl: body.baseUrl, model: body.model, apiKey: body.apiKey })
     let created: Account | undefined
@@ -437,6 +444,7 @@ app.post('/:provider/accounts', requirePermission('provider-auth:write'), async 
   const body = await c.req.json<{ key?: string; label?: string }>()
   const key = body.key
   if (!key) return c.json({ error: 'Missing "key" in request body' }, 400)
+  if (isClaudeSubscriptionToken(key)) return c.json(CLAUDE_SUBSCRIPTION_TOKEN_REFUSED, 400)
 
   let account!: Account
   await mutateAccountStore(
@@ -598,6 +606,7 @@ app.put('/:provider', requirePermission('provider-auth:write'), async (c) => {
   if (!key) {
     return c.json({ error: 'Missing "key" in request body' }, 400)
   }
+  if (isClaudeSubscriptionToken(key)) return c.json(CLAUDE_SUBSCRIPTION_TOKEN_REFUSED, 400)
 
   await mutateAccountStore(
     (store) => {
@@ -684,6 +693,17 @@ app.post('/:provider/oauth/start', requirePermission('provider-auth:write'), asy
   // POST body is optional (the ADD case sends none), so tolerate a missing body.
   const body = await parseOptionalJsonObjectBody<{ accountId?: string }>(c, {})
   const accountId = typeof body.accountId === 'string' && body.accountId.length > 0 ? body.accountId : undefined
+
+  if (!(await getModelRuntime()).getProviders().some((p) => p.id === provider && p.auth.oauth))
+    return c.json(
+      provider === 'anthropic'
+        ? {
+            error:
+              'Claude Pro/Max login is not available: Anthropic does not permit third-party products to use Claude subscriptions. Add an Anthropic API key instead.',
+          }
+        : { error: `Provider "${provider}" has no OAuth login` },
+      400
+    )
 
   // Fail fast on a reauthorize whose target cannot legally receive an OAuth
   // credential, rather than running a whole round-trip whose completion would

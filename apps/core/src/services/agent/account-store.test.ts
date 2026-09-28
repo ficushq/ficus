@@ -18,6 +18,7 @@ import {
   reorderAccounts,
   credentialIdentity,
   persistOAuthCredential,
+  purgeClaudeSubscriptionCredentials,
   PROVIDER_AUTH_DATA_KEY,
   type AccountStoreV1,
 } from './account-store'
@@ -281,7 +282,7 @@ describe('account-store', () => {
         {
           version: 1,
           accounts: {
-            anthropic: [{ id: 'acc_key', enabled: true, credential: { type: 'api_key', key: 'sk-1' } }],
+            'openai-codex': [{ id: 'acc_key', enabled: true, credential: { type: 'api_key', key: 'sk-1' } }],
           },
         },
         'admin'
@@ -292,7 +293,7 @@ describe('account-store', () => {
       const apiStore = new SecretStore()
       await apiStore.initialize()
       const apiView = JSON.parse(apiStore.get(PROVIDER_AUTH_DATA_KEY)!) as AccountStoreV1
-      apiView.accounts.anthropic.push({
+      apiView.accounts['openai-codex'].push({
         id: 'acc_oauth',
         enabled: true,
         credential: { type: 'oauth', refresh: 'rt', access: 'at', expires: 0 } as never,
@@ -300,19 +301,19 @@ describe('account-store', () => {
       await apiStore.set(PROVIDER_AUTH_DATA_KEY, JSON.stringify(apiView), 'admin')
 
       // Worker-side lastUsedAt stamp through the (stale-cached) singleton.
-      expect(readAccountStore().accounts.anthropic).toHaveLength(1) // cache is stale
+      expect(readAccountStore().accounts['openai-codex']).toHaveLength(1) // cache is stale
       await mutateAccountStore((s) => {
-        const account = getAccount(s, 'anthropic', 'acc_key')
+        const account = getAccount(s, 'openai-codex', 'acc_key')
         if (!account) return false
         account.lastUsedAt = 1234
       }, 'system')
 
       // The OAuth account SURVIVES and the stamp landed.
       const final = await readFinalDbStore()
-      expect(final.accounts.anthropic.map((a) => a.id).sort()).toEqual(['acc_key', 'acc_oauth'])
-      expect(getAccount(final, 'anthropic', 'acc_key')!.lastUsedAt).toBe(1234)
+      expect(final.accounts['openai-codex'].map((a) => a.id).sort()).toEqual(['acc_key', 'acc_oauth'])
+      expect(getAccount(final, 'openai-codex', 'acc_key')!.lastUsedAt).toBe(1234)
       // The mutating process's cache also converged on the merged state.
-      expect(readAccountStore().accounts.anthropic).toHaveLength(2)
+      expect(readAccountStore().accounts['openai-codex']).toHaveLength(2)
     })
 
     test('mutate returning false writes nothing', async () => {
@@ -327,6 +328,42 @@ describe('account-store', () => {
 
       await mutateAccountStore(() => false, 'system')
 
+      const [after] = await db.select().from(secrets).where(eq(secrets.key, PROVIDER_AUTH_DATA_KEY))
+      expect(after).toEqual(before)
+    })
+
+    test('Claude subscription credentials are dropped on read and purged from the database', async () => {
+      const subscriptionToken = 'sk-ant-oat01-test-fixture'
+      const raw = {
+        version: 1,
+        accounts: {
+          anthropic: [
+            { id: 'api', enabled: true, credential: { type: 'api_key', key: 'sk-ant-api03-keep' } },
+            { id: 'pro', enabled: true, credential: { type: 'oauth', refresh: 'r', access: 'a', expires: 1 } },
+            { id: 'pasted', enabled: true, credential: { type: 'api_key', key: subscriptionToken } },
+          ],
+          'openai-codex': [
+            { id: 'chatgpt', enabled: true, credential: { type: 'oauth', refresh: 'r', access: 'a', expires: 1 } },
+          ],
+          proxy: [{ id: 'proxy', enabled: true, credential: { type: 'api_key', key: subscriptionToken } }],
+        },
+      }
+      // Written raw, as a store saved before this rule existed would be.
+      await store.set(PROVIDER_AUTH_DATA_KEY, JSON.stringify(raw), 'admin')
+
+      expect(listAccounts(readAccountStore(), 'anthropic').map((a) => a.id)).toEqual(['api'])
+      expect(listAccounts(readAccountStore(), 'openai-codex').map((a) => a.id)).toEqual(['chatgpt'])
+      expect(listAccounts(readAccountStore(), 'proxy')).toEqual([])
+
+      expect(await purgeClaudeSubscriptionCredentials()).toBe(3)
+      const final = await readFinalDbStore()
+      expect(final.accounts.anthropic.map((a) => a.id)).toEqual(['api'])
+      expect(final.accounts['openai-codex'].map((a) => a.id)).toEqual(['chatgpt'])
+      expect(JSON.stringify(final)).not.toContain('sk-ant-oat')
+
+      // Nothing left to purge: no second write.
+      const [before] = await db.select().from(secrets).where(eq(secrets.key, PROVIDER_AUTH_DATA_KEY))
+      expect(await purgeClaudeSubscriptionCredentials()).toBe(0)
       const [after] = await db.select().from(secrets).where(eq(secrets.key, PROVIDER_AUTH_DATA_KEY))
       expect(after).toEqual(before)
     })

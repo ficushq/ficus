@@ -22,8 +22,11 @@ the example with those names substituted in). Both are gitignored.
 **Provider API keys:** AI provider credentials (Anthropic, OpenAI, Google, etc.)
 are managed from the web UI (**Settings > AI Providers**), or with
 `ficus provider-auth set <provider> <key>` for an API key (`list`, `get`, `delete`
-and `oauth-providers` round out the command). OAuth logins for Claude Pro/Max,
-ChatGPT Plus/Pro and GitHub Copilot subscriptions are web-UI only. This requires
+and `oauth-providers` round out the command). OAuth logins for ChatGPT Plus/Pro
+and GitHub Copilot subscriptions are web-UI only. Anthropic takes an API key
+only: Anthropic does not permit third-party products to use Claude Pro/Max
+logins, so Core refuses subscription tokens (`sk-ant-oat…`) and deletes any
+stored one at startup. This requires
 `FICUS_ENCRYPTION_KEY` — without it the page fails with
 `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`. Generate a key with
 `echo "FICUS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env`.

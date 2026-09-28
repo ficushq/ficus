@@ -419,12 +419,12 @@ describe('provider-auth routes', () => {
     expect(typeof zai.disabled).toBe('boolean')
   })
 
-  test('GET /catalog marks oauth-capable providers', async () => {
+  test('GET /catalog marks oauth-capable providers, and Anthropic takes an API key only', async () => {
     const res = await app.request('/catalog', jsonReq())
     expect(res.status).toBe(200)
     const data = await res.json()
-    const anthropic = data.find((p: any) => p.id === 'anthropic')
-    expect(anthropic.oauthAvailable).toBe(true)
+    expect(data.find((p: any) => p.id === 'openai-codex').oauthAvailable).toBe(true)
+    expect(data.find((p: any) => p.id === 'anthropic').oauthAvailable).toBe(false)
   })
 
   test('OpenRouter routing switch defaults off and reports valid derived tier positions', async () => {
@@ -526,10 +526,10 @@ describe('provider-auth routes', () => {
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(Array.isArray(data)).toBe(true)
-    // Should include at least anthropic and openai-codex
+    // Includes ChatGPT, never a Claude Pro/Max login (Anthropic does not permit it in third-party products)
     const ids = data.map((p: any) => p.id)
-    expect(ids).toContain('anthropic')
     expect(ids).toContain('openai-codex')
+    expect(ids).not.toContain('anthropic')
     // Each provider has id and name
     for (const p of data) {
       expect(p.id).toBeDefined()
@@ -603,19 +603,55 @@ describe('provider-auth routes', () => {
   })
 
   test('POST /:provider/oauth/callback returns 400 without code', async () => {
-    await app.request('/anthropic/oauth/start', jsonReq('POST'))
-    const res = await app.request('/anthropic/oauth/callback', jsonReq('POST', {}))
-    expect(res.status).toBe(400)
-    expect((await res.json()).error).toContain('Missing "code"')
+    await withCodeFlow('mock-missing-code', async () => {
+      await app.request('/mock-missing-code/oauth/start', jsonReq('POST'))
+      const res = await app.request('/mock-missing-code/oauth/callback', jsonReq('POST', {}))
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toContain('Missing "code"')
+    })
   })
 
-  test('POST /:provider/oauth/callback with invalid code returns 500', async () => {
-    await app.request('/anthropic/oauth/start', jsonReq('POST'))
-    // Provide a bogus code — the token exchange will fail
-    const res = await app.request('/anthropic/oauth/callback', jsonReq('POST', { code: 'bogus-code#bogus-state' }))
-    expect(res.status).toBe(500)
-    const data = await res.json()
-    expect(data.error).toContain('OAuth flow failed')
+  test('POST /:provider/oauth/callback with a code the login rejects returns 500', async () => {
+    await registerMockProvider('mock-bad-code', async (cb) => {
+      cb.onAuth({ url: 'https://example.com/oauth/authorize' })
+      await cb.onPrompt({ message: 'Authorization code' })
+      throw new Error('token exchange failed')
+    })
+    try {
+      await app.request('/mock-bad-code/oauth/start', jsonReq('POST'))
+      const res = await app.request('/mock-bad-code/oauth/callback', jsonReq('POST', { code: 'bogus-code' }))
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('OAuth flow failed')
+    } finally {
+      await app.request('/mock-bad-code/oauth/cancel', jsonReq('POST'))
+      await unregisterOAuthProvider('mock-bad-code')
+    }
+  })
+
+  test('POST /anthropic/oauth/start refuses: there is no Claude subscription login', async () => {
+    const res = await app.request('/anthropic/oauth/start', jsonReq('POST'))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain('Anthropic API key')
+    expect((await (await app.request('/anthropic/oauth/status', jsonReq())).json()).status).toBe('none')
+  })
+
+  test('a Claude subscription token is refused wherever an API key is accepted', async () => {
+    const subscriptionToken = 'sk-ant-oat01-test-fixture'
+    for (const [path, method, body] of [
+      ['/anthropic/accounts', 'POST', { key: subscriptionToken }],
+      ['/anthropic', 'PUT', { key: ` ${subscriptionToken}` }],
+      [
+        '/openai-compatible/accounts',
+        'POST',
+        { providerId: 'proxy', baseUrl: 'http://127.0.0.1:9', model: 'm', apiKey: subscriptionToken },
+      ],
+    ] as const) {
+      const res = await app.request(path, jsonReq(method, body))
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toContain('Claude subscription tokens')
+    }
+    expect(listAccounts(readAccountStore(), 'anthropic')).toHaveLength(0)
+    expect(listAccounts(readAccountStore(), 'proxy')).toHaveLength(0)
   })
 
   test('GET / surfaces the exhaustion reason and message alongside health', async () => {
@@ -1987,6 +2023,7 @@ describe('provider-auth routes', () => {
     // "authenticated" having written nothing, and the slot stayed occupied.
     test('a runtime-build failure leaves no phantom flow occupying the provider slot', async () => {
       const provider = 'mock-build-failure'
+      await registerMockProvider(provider, async () => DUMMY_CREDS)
       const runtime = await getModelRuntime()
       const spy = spyOn(runtime, 'getRegisteredProviderIds').mockImplementation(() => {
         throw new Error('runtime build exploded')
@@ -1996,6 +2033,7 @@ describe('provider-auth routes', () => {
         expect(res.status).toBeGreaterThanOrEqual(500)
       } finally {
         spy.mockRestore()
+        await unregisterOAuthProvider(provider)
       }
 
       // No phantom left behind...

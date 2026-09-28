@@ -139,7 +139,7 @@ describe('SecretStoreCredentialStore', () => {
       {
         version: 1,
         accounts: {
-          anthropic: [
+          'openai-codex': [
             { id: 'key', enabled: true, credential: { type: 'api_key', key: 'sk-keep' } },
             { id: 'oauth-off', enabled: false, credential: { type: 'oauth', refresh: 'r0', access: 'a0', expires: 1 } },
             { id: 'oauth-on', enabled: true, credential: { type: 'oauth', refresh: 'r1', access: 'a1', expires: 2 } },
@@ -150,7 +150,7 @@ describe('SecretStoreCredentialStore', () => {
     )
 
     const cs = new SecretStoreCredentialStore()
-    const resolved = await cs.modify('anthropic', async () => ({
+    const resolved = await cs.modify('openai-codex', async () => ({
       type: 'oauth' as const,
       refresh: 'r2',
       access: 'a2',
@@ -158,7 +158,7 @@ describe('SecretStoreCredentialStore', () => {
     }))
 
     expect(resolved?.type).toBe('oauth')
-    const accounts = readAccountStore().accounts.anthropic
+    const accounts = readAccountStore().accounts['openai-codex']
     expect(accounts[0].credential).toEqual({ type: 'api_key', key: 'sk-keep' })
     expect(accounts[1].credential).toEqual({ type: 'oauth', refresh: 'r0', access: 'a0', expires: 1 })
     expect(accounts[2].credential).toEqual({ type: 'oauth', refresh: 'r2', access: 'a2', expires: 3 })

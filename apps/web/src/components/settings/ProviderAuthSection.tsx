@@ -49,13 +49,11 @@ import { SearchIcon } from '../icons'
  * Known providers with display info.
  * OAuth-capable providers include oauthId to match against the OAuth providers list.
  */
-const PROVIDER_REGISTRY = [
+const PROVIDER_REGISTRY: readonly ProviderDefinition[] = [
   {
     id: 'anthropic',
     name: 'Anthropic',
     description: 'Claude models (Sonnet, Opus, Haiku)',
-    oauthId: 'anthropic',
-    oauthLabel: 'Claude Pro/Max',
   },
   {
     id: 'openai',
@@ -85,7 +83,7 @@ const PROVIDER_REGISTRY = [
     oauthId: 'google-antigravity',
     oauthLabel: 'Antigravity',
   },
-] as const
+]
 
 type ProviderDefinition = {
   id: string
@@ -138,12 +136,13 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
   const providerCards: ProviderCard[] = [
     ...PROVIDER_REGISTRY.map((provider) => {
       const entry = providerMap.get(provider.id)
-      const oauthEntry = provider.oauthId !== provider.id ? providerMap.get(provider.oauthId) : undefined
+      const oauthEntry =
+        provider.oauthId && provider.oauthId !== provider.id ? providerMap.get(provider.oauthId) : undefined
       return {
         provider,
         entry,
         oauthEntry,
-        oauthAvailable: oauthSet.has(provider.oauthId),
+        oauthAvailable: !!provider.oauthId && oauthSet.has(provider.oauthId),
         rank: providerActivityRank([entry, oauthEntry]),
       }
     }),
