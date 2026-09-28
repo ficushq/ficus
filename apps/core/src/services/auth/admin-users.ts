@@ -2,9 +2,15 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { roles, roleAssignments, userCredentials, users } from '../../db/schema'
 
-/** True if at least one enabled user holds the system-scoped `admin` role. */
-export async function hasAdminUsers(): Promise<boolean> {
-  const result = await db
+type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/**
+ * True if at least one enabled user holds the system-scoped `admin` role. An
+ * assignment whose user no longer exists does not count: `role_assignments.subject_id`
+ * has no foreign key to `users`, so deleting users directly leaves such rows behind.
+ */
+export async function hasAdminUsers(executor: DbExecutor = db): Promise<boolean> {
+  const result = await executor
     .select({ id: roleAssignments.id })
     .from(roleAssignments)
     .innerJoin(roles, eq(roles.id, roleAssignments.roleId))

@@ -5,13 +5,13 @@ import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { createHash, timingSafeEqual } from 'crypto'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getSecretStore } from '../services/secrets'
 import { User } from '../entities/User'
 import { createSelfRegisteredUser } from '../services/auth/signup'
 import { Role, isUserAssignable } from '../entities/Role'
 import { db } from '../db'
-import { users, roles, roleAssignments, userCredentials, sessions, type EmailVerificationPurpose } from '../db/schema'
+import { users, roleAssignments, userCredentials, sessions, type EmailVerificationPurpose } from '../db/schema'
 import {
   generateRegOptions,
   verifyRegResponse,
@@ -112,14 +112,10 @@ async function assignFirstAdminIfNone(userId: string): Promise<boolean> {
     // (the per-subject unique indexes don't stop two distinct users each
     // inserting an admin assignment). The lock auto-releases at commit.
     await tx.execute(sql`select pg_advisory_xact_lock(${ADMIN_BOOTSTRAP_LOCK_KEY})`)
-    // Double-check inside transaction
-    const adminCheck = await tx
-      .select({ id: roleAssignments.id })
-      .from(roleAssignments)
-      .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
-      .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.scope, 'system'), eq(roles.slug, 'admin')))
-      .limit(1)
-    if (adminCheck.length > 0) return false
+    // Double-check inside the transaction, with the same definition of "an admin
+    // exists" as the gate above: a leftover assignment for a deleted user must not
+    // stop the first admin being made.
+    if (await hasAdminUsers(tx)) return false
 
     // Admin role must exist (created by config sync)
     const adminRole = await Role.findBySlug('admin')
