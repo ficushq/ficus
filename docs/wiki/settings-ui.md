@@ -56,11 +56,11 @@ Connect agent-model accounts via API key or supported subscription OAuth. Provid
 > `echo "FICUS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env` and restart the
 > api + worker. There is no file-based alternative.
 
-Built-in subscription providers include:
+Built-in subscription providers include (Anthropic is API key only; Anthropic
+does not permit third-party products to use Claude Pro/Max logins):
 
 | Provider           | OAuth Login      | Description                          |
 | ------------------ | ---------------- | ------------------------------------ |
-| Anthropic          | Claude Pro/Max   | Claude models (Sonnet, Opus, Haiku)  |
 | OpenAI             | ChatGPT Plus/Pro | GPT and o-series models              |
 | Google             | Google Cloud     | Gemini models                        |
 | GitHub Copilot     | GitHub Copilot   | GitHub Copilot subscription models   |

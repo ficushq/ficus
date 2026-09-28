@@ -1,3 +1,20 @@
+diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
+index 5dd85f19db51b73dcd0c5c4cd8c28ad99e09ee6f..14dea88db99c9efeb1d2eeeb1184e4d5256b3116 100644
+--- a/dist/api/anthropic-messages.js
++++ b/dist/api/anthropic-messages.js
+@@ -692,8 +692,10 @@ export const streamSimple = (model, context, options) => {
+         thinkingBudgetTokens: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
+     });
+ };
+-function isOAuthToken(apiKey) {
+-    return apiKey.includes("sk-ant-oat");
++// Ficus: never present a request as Claude Code. A subscription token that slips past the
++// provider's refusal is sent as a plain API key, which Anthropic rejects.
++function isOAuthToken(_apiKey) {
++    return false;
+ }
+ function createClient(model, apiKey, optionsHeaders, fetch, dynamicHeaders, sessionId) {
+     // Copilot: Bearer auth.
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
 index dfdb6ec3651febbba6b8788f16118ecbf4b38fa8..f7da469d3cd621ef95bf1197cbaf67083fcf4e5d 100644
 --- a/dist/api/openai-codex-responses.js
@@ -11,6 +28,78 @@ index dfdb6ec3651febbba6b8788f16118ecbf4b38fa8..f7da469d3cd621ef95bf1197cbaf6708
  }
  function isRetryableError(status, errorText) {
      if (status === 429 && isTerminalRateLimitError(errorText)) {
+diff --git a/dist/env-api-keys.js b/dist/env-api-keys.js
+index 2e9484a7d764ff17b5ced8bf25bb4f6525b333d4..b31517e453c1e2d2648e57681283c7d0584d45f2 100644
+--- a/dist/env-api-keys.js
++++ b/dist/env-api-keys.js
+@@ -67,7 +67,8 @@ function getApiKeyEnvVars(provider) {
+     // ANTHROPIC_AUTH_TOKEN participates in env discovery/status, but
+     // getEnvApiKey() skips it because requests must pass it as Authorization: Bearer.
+     if (provider === "anthropic") {
+-        return [ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV];
++        // Ficus: ANTHROPIC_OAUTH_TOKEN (a Claude subscription token) is not an Anthropic credential here.
++        return [ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV];
+     }
+     const envMap = {
+         "ant-ling": "ANT_LING_API_KEY",
+diff --git a/dist/providers/anthropic.js b/dist/providers/anthropic.js
+index 88cf6d040c1806c2760e119826355a4f6ce5f5e5..e5970bb9e00bec47d9beee9dd1dd1693e12c22ec 100644
+--- a/dist/providers/anthropic.js
++++ b/dist/providers/anthropic.js
+@@ -1,9 +1,11 @@
+ import { anthropicMessagesApi } from "../api/anthropic-messages.lazy.js";
+-import { lazyOAuth } from "../auth/helpers.js";
+-import { loadAnthropicOAuth } from "../auth/oauth/load.js";
+-import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV } from "../env-api-keys.js";
++import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV } from "../env-api-keys.js";
+ import { createProvider } from "../models.js";
+ import { ANTHROPIC_MODELS } from "./anthropic.models.js";
++// Ficus: Anthropic does not permit third-party products to sign in with, store, or route
++// requests through Claude.ai subscription credentials. Claude Pro/Max OAuth is removed, and
++// subscription tokens (sk-ant-oat…) are refused wherever an API key would be accepted.
++const isClaudeSubscriptionToken = (value) => typeof value === "string" && value.trim().startsWith("sk-ant-oat");
+ function anthropicApiKeyAuth() {
+     return {
+         name: "Anthropic API key",
+@@ -15,21 +17,23 @@ function anthropicApiKeyAuth() {
+         },
+         resolve: async ({ ctx, credential, signal }) => {
+             signal.throwIfAborted();
++            if (isClaudeSubscriptionToken(credential?.key))
++                return undefined;
+             if (credential?.key) {
+                 return { auth: { apiKey: credential.key }, env: credential.env, source: "stored credential" };
+             }
+             const authToken = await ctx.env(ANTHROPIC_AUTH_TOKEN_ENV);
+             signal.throwIfAborted();
+-            if (authToken) {
++            if (authToken && !isClaudeSubscriptionToken(authToken)) {
+                 return {
+                     auth: { headers: { Authorization: `Bearer ${authToken}` } },
+                     source: ANTHROPIC_AUTH_TOKEN_ENV,
+                 };
+             }
+-            for (const envVar of [ANTHROPIC_OAUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV]) {
++            for (const envVar of [ANTHROPIC_API_KEY_ENV]) {
+                 const apiKey = await ctx.env(envVar);
+                 signal.throwIfAborted();
+-                if (apiKey)
++                if (apiKey && !isClaudeSubscriptionToken(apiKey))
+                     return { auth: { apiKey }, source: envVar };
+             }
+             return undefined;
+@@ -43,11 +47,6 @@ export function anthropicProvider() {
+         baseUrl: "https://api.anthropic.com",
+         auth: {
+             apiKey: anthropicApiKeyAuth(),
+-            oauth: lazyOAuth({
+-                name: "Anthropic (Claude Pro/Max)",
+-                isSubscription: true,
+-                load: loadAnthropicOAuth,
+-            }),
+         },
+         models: Object.values(ANTHROPIC_MODELS),
+         api: anthropicMessagesApi(),
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
 index 6538c63c99f75a4f232ebd413adf80571a0f39b4..3884086ab1659a6ebaec29f4d47b7d67708c619c 100644
 --- a/dist/utils/retry.js

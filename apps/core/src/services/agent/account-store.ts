@@ -35,10 +35,36 @@ export function readAccountStore(): AccountStoreV1 {
 }
 
 /** Parse/normalize a raw PROVIDER_AUTH_DATA blob. Throws on malformed JSON. */
-function parseAccountStore(raw: string): AccountStoreV1 {
+function parseAccountStore(raw: string, removed?: RemovedCredentials): AccountStoreV1 {
   const parsed = JSON.parse(raw)
-  if (isAccountStoreV1(parsed)) return normalizeAccountStore(parsed)
-  return migrateLegacyAuthData(parsed as Record<string, Credential>)
+  if (isAccountStoreV1(parsed)) return normalizeAccountStore(parsed, removed)
+  return normalizeAccountStore(migrateLegacyAuthData(parsed as Record<string, Credential>), removed)
+}
+
+type RemovedCredentials = { count: number }
+
+/** A Claude subscription token (Claude Pro/Max OAuth access token, or a `claude setup-token` token). */
+export const isClaudeSubscriptionToken = (key: unknown): boolean =>
+  typeof key === 'string' && key.trim().startsWith('sk-ant-oat')
+
+/**
+ * Anthropic does not permit third-party products to store, or route requests through, Claude.ai
+ * subscription credentials. The account store never holds one: an Anthropic OAuth login, or a
+ * subscription token saved as any provider's API key, is dropped on read and purged on write.
+ */
+export function isClaudeSubscriptionCredential(provider: string, credential: Credential): boolean {
+  if (credential.type === 'oauth') return provider === 'anthropic'
+  return isClaudeSubscriptionToken(credential.key)
+}
+
+/** Delete stored Claude subscription credentials; returns how many were removed. */
+export async function purgeClaudeSubscriptionCredentials(actor = 'system:claude-subscription-purge'): Promise<number> {
+  let purged = 0
+  await mutateAccountStore((_store, removed) => {
+    purged = removed
+    return false
+  }, actor)
+  return purged
 }
 
 export async function writeAccountStore(store: AccountStoreV1, actor: string): Promise<void> {
@@ -68,7 +94,10 @@ export async function writeAccountStore(store: AccountStoreV1, actor: string): P
  */
 const mutateQueue = new KeyedSerialQueue()
 
-export function mutateAccountStore(mutate: (store: AccountStoreV1) => boolean | void, actor: string): Promise<void> {
+export function mutateAccountStore(
+  mutate: (store: AccountStoreV1, removedClaudeSubscriptionCredentials: number) => boolean | void,
+  actor: string
+): Promise<void> {
   return mutateQueue.run(PROVIDER_AUTH_DATA_KEY, async () => {
     // Tracks whether the transaction actually wrote (vs. `mutate` returning
     // `false`, a no-op skip) — set from inside mutateSecret's callback, which
@@ -80,9 +109,11 @@ export function mutateAccountStore(mutate: (store: AccountStoreV1) => boolean | 
       PROVIDER_AUTH_DATA_KEY,
       (raw) => {
         // Malformed JSON throws → transaction rolls back, row untouched.
-        const store = raw ? parseAccountStore(raw) : emptyAccountStore()
+        const removed = { count: 0 }
+        const store = raw ? parseAccountStore(raw, removed) : emptyAccountStore()
         fingerprintBefore = onboardingFingerprint(store)
-        if (mutate(store) === false) return undefined
+        // A dropped Claude subscription credential is written out even when `mutate` skips.
+        if (mutate(store, removed.count) === false && removed.count === 0) return undefined
         wrote = true
         return JSON.stringify(normalizeAccountStore(store))
       },
@@ -385,18 +416,23 @@ function isAccountStoreV1(value: unknown): value is AccountStoreV1 {
   )
 }
 
-function normalizeAccountStore(store: AccountStoreV1): AccountStoreV1 {
+function normalizeAccountStore(store: AccountStoreV1, removed?: RemovedCredentials): AccountStoreV1 {
   const normalized = emptyAccountStore()
   for (const [provider, accounts] of Object.entries(store.accounts ?? {})) {
     if (!Array.isArray(accounts)) continue
     normalized.accounts[provider] = accounts
       .filter((account): account is Account => isAccount(account))
+      .filter((account) => {
+        if (!isClaudeSubscriptionCredential(provider, account.credential)) return true
+        if (removed) removed.count++
+        return false
+      })
       .map((account) => ({
         ...account,
         enabled: account.enabled !== false,
       }))
   }
-  salvageStrayCredentials(store, normalized)
+  salvageStrayCredentials(store, normalized, removed)
   return normalized
 }
 
@@ -411,13 +447,21 @@ function normalizeAccountStore(store: AccountStoreV1): AccountStoreV1 {
  * deterministic ids and skips providers that already hold a credential of the
  * same type.
  */
-function salvageStrayCredentials(store: AccountStoreV1, normalized: AccountStoreV1): void {
+function salvageStrayCredentials(
+  store: AccountStoreV1,
+  normalized: AccountStoreV1,
+  removed?: RemovedCredentials
+): void {
   for (const [provider, value] of Object.entries(store as unknown as Record<string, unknown>)) {
     if (provider === 'version' || provider === 'accounts') continue
     if (value == null || typeof value !== 'object') continue
     const type = (value as { type?: unknown }).type
     if (type !== 'api_key' && type !== 'oauth') continue
     const credential = value as Credential
+    if (isClaudeSubscriptionCredential(provider, credential)) {
+      if (removed) removed.count++
+      continue
+    }
     const accounts = (normalized.accounts[provider] ??= [])
     if (accounts.some((account) => account.credential.type === credential.type)) continue
     const id = accounts.some((account) => account.id === 'acc_migrated') ? 'acc_salvaged' : 'acc_migrated'

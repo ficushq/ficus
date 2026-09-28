@@ -470,8 +470,8 @@ not override browser authorization. `ficus auth status` shows the active source.
 ### AI provider
 
 Sign in to a model provider in the web UI: **Settings > AI Providers** — API
-keys, or the OAuth logins for Claude Pro/Max, ChatGPT Plus/Pro and GitHub
-Copilot subscriptions. This needs `FICUS_ENCRYPTION_KEY`, which setup wrote for
+keys, or the OAuth logins for ChatGPT Plus/Pro and GitHub Copilot
+subscriptions. Anthropic takes an API key only. This needs `FICUS_ENCRYPTION_KEY`, which setup wrote for
 you; without it saving credentials in AI Providers or Integrations fails with
 `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`.
 From the CLI, `ficus provider-auth set <provider> <key>` stores an API key

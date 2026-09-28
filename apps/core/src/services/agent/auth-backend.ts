@@ -19,7 +19,12 @@ import type { Credential, CredentialInfo, CredentialStore } from '@earendil-work
 import { registerBunOAuthFlows } from '@earendil-works/pi-ai/bun-oauth'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
 import { createLogger } from '../../lib/infra/logger'
-import { mutateAccountStoreAsync, readAccountStore, type AccountStoreV1 } from './account-store'
+import {
+  mutateAccountStoreAsync,
+  purgeClaudeSubscriptionCredentials,
+  readAccountStore,
+  type AccountStoreV1,
+} from './account-store'
 
 // pi-ai loads OAuth flow modules through deliberately bundler-opaque dynamic
 // imports (auth/oauth/load.js), which cannot resolve from our bundled
@@ -336,6 +341,12 @@ export function registerOpenAICompatibleAccounts(
  * back to account-store-only configuration checks in that case.
  */
 export async function warmModelRuntimeForStartup(): Promise<void> {
+  try {
+    const purged = await purgeClaudeSubscriptionCredentials()
+    if (purged) log.warn(`Removed ${purged} stored Claude subscription credential(s); add an Anthropic API key instead`)
+  } catch (error) {
+    log.warn('Could not purge stored Claude subscription credentials', error)
+  }
   await getModelRuntime()
 }
 
