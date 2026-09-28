@@ -3027,6 +3027,82 @@ EOF
   expect_match 'setup-host --dry-run: ...naming the key' "${sh_conflict_out}" 'TAU_ENCRYPTION_KEY and FICUS_ENCRYPTION_KEY disagree on this host'
   expect_eq 'setup-host --dry-run: ...never a value' "$(grep -c -e 'old-key' -e 'other-key' <<<"${sh_conflict_out}" || true)" '0'
 
+  # A dry run on a host that predates the Ficus rename previews what the real
+  # run writes AFTER renaming — no pre-rename name the run would rename
+  # appears anywhere in its output — and changes nothing on disk.
+  DR="${SH_TMP}/tau-host"
+  mkdir -p "${DR}/dest" "${DR}/etc" "${DR}/units" "${DR}/bin" "${DR}/stage"
+  printf 'TAU_ENCRYPTION_KEY=dr-key\nTAU_PASSWORD=dr-pw\nTAU_INTERNAL_EVENT_TOKEN=dr-tok\nTAU_SANDBOX_RUNTIME=docker-socket\n' >"${DR}/dest/.env" # legacy-env
+  printf 'TAU_MANAGED=1\nTAU_MANAGED_SECRET_KEYS=TAU_PLATFORM_INSTANCE_TOKEN\nTAU_PLATFORM_INSTANCE_TOKEN=dr-inst\n' >"${DR}/etc/managed.env" # legacy-env
+  cp "${DR}/etc/managed.env" "${DR}/stage/managed.env"
+  printf "TAU_BACKUP_PASSPHRASE='dr-pp'\n" >"${DR}/etc/backup.env" # legacy-env
+  for dr_u in api worker; do
+    printf '[Service]\nEnvironment=TAU_ROOT=%s/current\n' "${DR}/dest" >"${DR}/units/tau-${dr_u}.service" # legacy-env
+  done
+  cat >"${DR}/cfg.yaml" <<EOF
+source:
+  mode: git-https
+  repo: https://github.com/ficushq/core.git
+  ref: main
+  dest: ${DR}/dest
+core:
+  origin: https://acme.ficus.sh
+  env:
+    # a platform knob
+    TAU_MAX_MACHINES: "5"
+    TAU_PLATFORM_USAGE_TOKEN_ENV: DR_USAGE_TOKEN
+database:
+  mode: external
+runtime:
+  sandbox: docker-socket
+artifacts:
+  dir: ${DR}/stage
+EOF
+  dr_sums() {
+    local f
+    find "${DR}" -type f | LC_ALL=C sort | while IFS= read -r f; do
+      printf '%s %s\n' "$(sha256sum -- "${f}" 2>/dev/null || shasum -a 256 -- "${f}")" "${f}"
+    done
+  }
+  dr_run() {
+    FICUS_SETUP_DATABASE_DSN='postgres://u:p@h/db' DR_USAGE_TOKEN='dr-usage-secret' \
+      FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env" BACKUP_ENV_TARGET="${DR}/etc/backup.env" \
+      FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/tau-backup.sh" ENV_RENAME_BACKUP_ROOT="${DR}/bk" \
+      bash "${SCRIPT_DIR}/setup-host.sh" --config "${DR}/cfg.yaml" --dry-run 2>&1
+  }
+  dr_before=$(dr_sums)
+  dr_rc=0
+  dr_out=$(dr_run) || dr_rc=$?
+  expect_eq 'setup-host --dry-run on a TAU host: exits 0' "${dr_rc}" '0'
+  [[ ${dr_rc} -eq 0 ]] || printf '%s\n' "${dr_out}" >&2
+  expect_eq 'setup-host --dry-run on a TAU host: no pre-rename (TAU_) name anywhere in its output' \
+    "$(grep -cE '(^|[^A-Za-z0-9_])TAU_' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: the planned .env carries the core.env keys under their FICUS_ names' \
+    "$(grep -c '^  | FICUS_MAX_MACHINES=5$' <<<"${dr_out}"):$(grep -c '^  | FICUS_PLATFORM_USAGE_TOKEN=' <<<"${dr_out}")" '1:1'
+  expect_eq 'setup-host --dry-run on a TAU host: ...with the *_ENV secret still redacted' "$(grep -c 'dr-usage-secret' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: the rename is planned, naming each file to be renamed' \
+    "$(grep -c 'Phase 3.9 — env settings renamed to FICUS_\*' <<<"${dr_out}"):$(grep -cE "^  (/private)?(${DR}/dest/\.env|${DR}/etc/managed\.env|${DR}/etc/backup\.env|${DR}/cfg\.yaml|${DR}/units/tau-(api|worker)\.service)$" <<<"${dr_out}")" '1:6'
+  expect_match 'setup-host --dry-run on a TAU host: the staged managed.env is planned under its FICUS_ names' \
+    "${dr_out}" 'installed with 3 setting\(s\) under their FICUS_\* names'
+  expect_eq 'setup-host --dry-run on a TAU host: no value from any host file is printed' \
+    "$(grep -c -e 'dr-key' -e 'dr-pw' -e 'dr-tok' -e 'dr-inst' -e 'dr-pp' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: nothing on disk changed (sha256 of every file), no backup set' \
+    "$([[ $(dr_sums) == "${dr_before}" ]] && echo same || echo changed):$([[ -e ${DR}/bk ]] && echo created || echo none)" 'same:none'
+  expect_eq 'setup-host --dry-run on a TAU host: the config keeps its pre-rename keys (renamed only in the preview)' \
+    "$(yq -r '.core.env | keys | .[]' "${DR}/cfg.yaml" | grep -c '^TAU_')" '2' # legacy-env
+  # The same host once renamed: the same planned core.env, and no rename phase.
+  # (The host globals are set in a subshell on purpose: they stay local to it.)
+  # shellcheck disable=SC2030,SC2031
+  (
+    SRC_DEST="${DR}/dest" CFG_FILE="${DR}/cfg.yaml" FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env"
+    BACKUP_ENV_TARGET="${DR}/etc/backup.env" FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/tau-backup.sh"
+    _env_prefix_rename_files
+  ) >/dev/null 2>&1
+  expect_eq 'setup-host --dry-run fixture: the host is now renamed' "$(grep -c '^TAU_' "${DR}/dest/.env" || true)" '0' # legacy-env
+  dr_out=$(dr_run) || true
+  expect_eq 'setup-host --dry-run on a renamed host: the same planned core.env, no rename phase, no TAU_ name' \
+    "$(grep -c '^  | FICUS_MAX_MACHINES=5$' <<<"${dr_out}"):$(grep -c 'Phase 3.9' <<<"${dr_out}" || true):$(grep -cE '(^|[^A-Za-z0-9_])TAU_' <<<"${dr_out}" || true)" '1:0:0'
+
   rm -rf "${SH_TMP}"
 else
   log_warn "mikefarah yq not on PATH — skipping setup-host.sh restore dry-run tests"

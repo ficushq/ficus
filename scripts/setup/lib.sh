@@ -4478,6 +4478,28 @@ _env_prefix_rename_files() { # [--no-units]
   fi
 }
 
+# For a PREVIEW (setup-host.sh --dry-run): the host env files a rename to
+# FICUS would change, one per line — or, for a file this user cannot read,
+# "<file>\tunreadable". Read-only; never dies on a file it cannot read.
+env_prefix_rename_preview() {
+  local listing f kind
+  listing=$(host_env_files) || return 1
+  while IFS= read -r f; do
+    [[ -n ${f} ]] || continue
+    if [[ ! -r ${f} ]]; then
+      printf '%s\tunreadable\n' "${f}"
+      continue
+    fi
+    kind=dotenv
+    [[ ${f} == "$(readlink -f -- "${CFG_FILE:-/nonexistent}" 2>/dev/null)" ]] && kind=yaml
+    [[ ${f} == *.service || ${f} == *.conf ]] && kind=unit
+    [[ ${f} == "$(readlink -f -- "${BACKUP_SCRIPT_PATH}" 2>/dev/null)" ]] && kind=backup_script
+    if (_epr_needs_rename "${f}" "${kind}") 2>/dev/null; then
+      printf '%s\n' "${f}"
+    fi
+  done <<<"${listing}"
+}
+
 # Ruling 24 / N-I2: stop — naming the keys, never a value — when TAU_X and
 # FICUS_X hold different values for a PROTECTED suffix (ENCRYPTION_KEY,
 # PASSWORD) in any file the rename would touch: <dest>/.env, managed.env,

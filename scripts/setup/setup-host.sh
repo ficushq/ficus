@@ -600,8 +600,9 @@ build_env_content() { # redact|real
     [[ ${DB_MODE} == external ]] && dsn='<external dsn, redacted>'
     # *_ENV-indirected core.env values are secrets — redact them too. Literal
     # entries are re-resolved identically either way (cfg_env_pairs redact
-    # only changes *_ENV rendering), so this is just CORE_ENV_PAIRS redacted.
-    core_env=$(cfg_env_pairs '.core.env' redact)
+    # only changes *_ENV rendering), so this is just CORE_ENV_PAIRS redacted —
+    # read, like the real render, from the config as the rename leaves it.
+    core_env=$(preview_core_env_redacted) || die "dry run: could not preview the core.env passthrough of ${CFG_FILE}"
   else
     enc=${FICUS_ENC_VALUE} pw=${FICUS_PW_VALUE} key=${AI_KEY_VALUE} tok=${FICUS_EVENT_TOKEN_VALUE}
     dsn=$(db_dsn "${DB_PASSWORD}")
@@ -708,6 +709,29 @@ install_update_sudoers() {
 
 # ============================================================== dry run
 
+# The core.env passthrough exactly as a real run renders it, redacted. On a
+# host that predates the Ficus rename the real run renames the config's
+# .core.env keys first (migrate_env_prefix_host) and renders from that, so the
+# preview reads a renamed COPY of the config: the same renamer, on a private
+# temp file that is removed at once. The config itself is never written.
+preview_core_env_redacted() {
+  local copy out rc=0
+  if ! (_epr_needs_rename "${CFG_FILE}" yaml) 2>/dev/null; then
+    cfg_env_pairs '.core.env' redact
+    return
+  fi
+  copy=$(mktemp) || return 1
+  if ! cat -- "${CFG_FILE}" >"${copy}" ||
+    ! (yaml_rename_env_prefix "${copy}" TAU FICUS) >/dev/null 2>&1; then
+    rm -f -- "${copy}"
+    return 1
+  fi
+  out=$(CFG_FILE=${copy} cfg_env_pairs '.core.env' redact) || rc=$?
+  rm -f -- "${copy}"
+  [[ ${rc} -eq 0 ]] || return "${rc}"
+  printf '%s\n' "${out}"
+}
+
 if [[ ${DRY_RUN} -eq 1 ]]; then
   log_step "DRY RUN — printing the plan; nothing will be executed or modified"
   printf '\nPhase 0 — preflight\n'
@@ -769,6 +793,20 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
       plan "cross-subdomain restore: DELETE FROM user_credentials (WebAuthn passkeys are origin-bound; users are kept)"
     plan "temp dir + downloaded archive are removed regardless of outcome; any failure dies (a half-restored instance fails the provision)"
   fi
+  # The Ficus env rename (migrate_env_prefix_host) — files named, never their
+  # contents; everything previewed below is what the run writes after it.
+  dry_rename=$(env_prefix_rename_preview) || dry_rename=''
+  if [[ -n ${dry_rename} ]]; then
+    printf '\nPhase 3.9 — env settings renamed to FICUS_* (journaled backup set under %s)\n' "$(env_rename_backup_root)"
+    while IFS=$'\t' read -r dry_f dry_state; do
+      [[ -n ${dry_f} ]] || continue
+      if [[ ${dry_state} == unreadable ]]; then
+        plan "${dry_f} (not readable by $(id -un) — checked, and renamed if needed, by the real run as root)"
+      else
+        plan "${dry_f}"
+      fi
+    done <<<"${dry_rename}"
+  fi
   printf '\nPhase 4 — %s (umask 077; secrets redacted below)\n' "${ENV_FILE}"
   plan "FICUS_ENCRYPTION_KEY from: ${ENC_SOURCE}"
   plan "FICUS_PASSWORD (bootstrap bearer) from: ${PW_SOURCE}"
@@ -785,6 +823,11 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     printf '\nPhase 5.5 — platform-managed artifacts (from %s)\n' "${ARTIFACTS_DIR}"
     if [[ -f ${ARTIFACTS_DIR}/managed.env ]]; then
       plan "install managed.env → ${FICUS_MANAGED_ENV_PATH} (0600 root; env credential VALUES never printed)"
+      # Installed in the release's prefix (managed_env_prepare); names only.
+      if [[ -r ${ARTIFACTS_DIR}/managed.env ]] && managed_env_prepare "${ARTIFACTS_DIR}" FICUS &&
+        [[ ${_MANAGED_ENV_RENAMED} -eq 1 ]]; then
+        plan "  the staged copy predates the rename: installed with ${_EPR_RENAMED_LINES} setting(s) under their FICUS_* names (the staged file is left as it is)"
+      fi
     fi
     if [[ -f ${ARTIFACTS_DIR}/manifest ]]; then
       plan "install files → ${FICUS_ARTIFACTS_DIR}/ per manifest (modes + names below; file CONTENTS never printed):"

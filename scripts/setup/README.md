@@ -243,7 +243,10 @@ in the other one (a staging dir pushed before the host was renamed) is renamed
 on install with the same rules, and a copy already in the host's prefix is
 installed byte for byte. `setup-host.sh` does the same with `artifacts.dir`,
 and re-reads `core.env` from the renamed config before it renders the `.env`,
-so a re-run on a pre-rename host leaves no `TAU_` name behind. The retarget
+so a re-run on a pre-rename host leaves no `TAU_` name behind. Its `--dry-run`
+previews exactly that: it lists the files the rename would change, and shows
+the planned `.env` and `managed.env` under their renamed names (read from a
+renamed temporary copy of the config), while writing nothing. The retarget
 primitives (`retarget-origin.sh`, `retarget-backup.sh`) read and write
 `FICUS_*` only and refuse a host that has not been renamed yet. Until phase 5
 the `*_SETUP_*` inputs (`FICUS_SETUP_DATABASE_DSN`, `…_RESTORE_*`, `…_RRSYNC`,
