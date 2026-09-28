@@ -712,24 +712,27 @@ install_update_sudoers() {
 # The core.env passthrough exactly as a real run renders it, redacted. On a
 # host that predates the Ficus rename the real run renames the config's
 # .core.env keys first (migrate_env_prefix_host) and renders from that, so the
-# preview reads a renamed COPY of the config: the same renamer, on a private
-# temp file that is removed at once. The config itself is never written.
+# preview reads a renamed COPY of the config: the same renamer, run inside a
+# private 0700 temp DIR (the renamer's own staging file lands there too). The
+# copy can hold a literal database.dsn, so a subshell owns that dir and
+# removes it on every exit — success, failure, or INT/TERM/HUP mid-preview. The
+# config itself is never written.
 preview_core_env_redacted() {
-  local copy out rc=0
   if ! (_epr_needs_rename "${CFG_FILE}" yaml) 2>/dev/null; then
     cfg_env_pairs '.core.env' redact
     return
   fi
-  copy=$(mktemp) || return 1
-  if ! cat -- "${CFG_FILE}" >"${copy}" ||
-    ! (yaml_rename_env_prefix "${copy}" TAU FICUS) >/dev/null 2>&1; then
-    rm -f -- "${copy}"
-    return 1
-  fi
-  out=$(CFG_FILE=${copy} cfg_env_pairs '.core.env' redact) || rc=$?
-  rm -f -- "${copy}"
-  [[ ${rc} -eq 0 ]] || return "${rc}"
-  printf '%s\n' "${out}"
+  (
+    umask 077
+    preview_dir=$(mktemp -d "${TMPDIR:-/tmp}/ficus-preview.XXXXXX") || exit 1
+    trap 'rm -rf -- "${preview_dir}"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    cat -- "${CFG_FILE}" >"${preview_dir}/config.yaml" || exit 1
+    (yaml_rename_env_prefix "${preview_dir}/config.yaml" TAU FICUS) >/dev/null 2>&1 || exit 1
+    CFG_FILE=${preview_dir}/config.yaml cfg_env_pairs '.core.env' redact
+  )
 }
 
 if [[ ${DRY_RUN} -eq 1 ]]; then

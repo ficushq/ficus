@@ -3090,6 +3090,54 @@ EOF
     "$([[ $(dr_sums) == "${dr_before}" ]] && echo same || echo changed):$([[ -e ${DR}/bk ]] && echo created || echo none)" 'same:none'
   expect_eq 'setup-host --dry-run on a TAU host: the config keeps its pre-rename keys (renamed only in the preview)' \
     "$(yq -r '.core.env | keys | .[]' "${DR}/cfg.yaml" | grep -c '^TAU_')" '2' # legacy-env
+  # A dry run interrupted while it builds that preview (Ctrl-C reaches the
+  # whole process group) leaves nothing in TMPDIR: the renamed copy of the
+  # config — which can hold a literal database.dsn — and the renamer's staging
+  # file live in a private temp dir its subshell removes on INT/TERM/HUP.
+  DRT="${SH_TMP}/dr-tmp"
+  DRS="${SH_TMP}/dr-shim"
+  mkdir -p "${DRT}" "${DRS}"
+  # yq: block (until signalled) in the renamer's first in-place edit.
+  cat >"${DRS}/yq" <<EOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  if [[ \${a} == -i ]]; then
+    : >"${DRS}/blocked"
+    exec perl -e 'sleep 30'
+  fi
+done
+exec $(command -v yq) "\$@"
+EOF
+  chmod +x "${DRS}/yq"
+  for dr_sig in INT TERM HUP; do
+    rm -f "${DRS}/blocked"
+    # Its own process group, with INT back at its default (a background job
+    # of a non-interactive shell starts with INT ignored).
+    PATH="${DRS}:${PATH}" TMPDIR="${DRT}" FICUS_SETUP_DATABASE_DSN='postgres://u:p@h/db' DR_USAGE_TOKEN='dr-usage-secret' \
+      FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env" BACKUP_ENV_TARGET="${DR}/etc/backup.env" \
+      FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/nightly-backup.sh" ENV_RENAME_BACKUP_ROOT="${DR}/bk" \
+      perl -e '$SIG{INT} = "DEFAULT"; $SIG{QUIT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV' \
+      bash "${SCRIPT_DIR}/setup-host.sh" --config "${DR}/cfg.yaml" --dry-run >/dev/null 2>&1 &
+    dr_pid=$!
+    for _ in $(seq 1 300); do
+      [[ -e ${DRS}/blocked ]] && break
+      perl -e 'select(undef, undef, undef, 0.1)'
+    done
+    expect_eq "setup-host --dry-run, SIG${dr_sig} mid-preview: the run was stopped inside the preview's rename" \
+      "$([[ -e ${DRS}/blocked ]] && echo blocked || echo never)" 'blocked'
+    dr_left_mid=$(find "${DRT}" -mindepth 1 | wc -l | tr -d ' ')
+    kill "-${dr_sig}" -- "-${dr_pid}" 2>/dev/null || true
+    wait "${dr_pid}" 2>/dev/null || true
+    for _ in $(seq 1 50); do
+      [[ -z $(find "${DRT}" -mindepth 1) ]] && break
+      perl -e 'select(undef, undef, undef, 0.1)'
+    done
+    expect_eq "setup-host --dry-run, SIG${dr_sig} mid-preview: its temp dir existed, and nothing is left in TMPDIR" \
+      "$([[ ${dr_left_mid} -gt 0 ]] && echo had-temp):$(find "${DRT}" -mindepth 1 | wc -l | tr -d ' ')" 'had-temp:0'
+    expect_eq "setup-host --dry-run, SIG${dr_sig} mid-preview: every host file is unchanged" \
+      "$([[ $(dr_sums) == "${dr_before}" ]] && echo same || echo changed)" 'same'
+  done
+  rm -rf "${DRT}" "${DRS}"
   # The same host once renamed: the same planned core.env, and no rename phase.
   # (The host globals are set in a subshell on purpose: they stay local to it.)
   # shellcheck disable=SC2030,SC2031
