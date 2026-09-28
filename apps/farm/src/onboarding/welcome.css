@@ -1,0 +1,135 @@
+/*
+ * The farm's welcome (Welcome.tsx): a dialog over a dimmed farm, which
+ * re-dresses itself behind it as a style is picked. Reads the interface
+ * tokens; each style card's art wears that style's class.
+ */
+
+.g-welcome-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 16 10 / 0.35);
+}
+
+.g-welcome {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 40px);
+  padding: 18px 18px 14px;
+  overflow: hidden;
+}
+
+.g-welcome-wide {
+  width: min(900px, 100%);
+  height: min(680px, calc(100vh - 40px));
+}
+
+.g-welcome-sheet {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  padding: 14px 12px 10px;
+}
+
+.g-welcome-head .g-card-title {
+  margin-bottom: 4px;
+}
+
+.g-welcome-head .g-card-text {
+  margin: 0 0 12px;
+  max-width: 60ch;
+}
+
+.g-welcome-styles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.g-welcome-style {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 8px 10px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-card);
+  color: var(--g-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-welcome-style:hover {
+  background: var(--g-row-hover);
+}
+
+.g-welcome-style-on,
+.g-welcome-style-on:hover {
+  outline: 3px solid var(--g-accent);
+  outline-offset: 1px;
+}
+
+.g-welcome-style:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight-strong);
+  outline-offset: 2px;
+}
+
+.g-welcome-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 120 / 84;
+  margin-bottom: 6px;
+  border-radius: var(--g-radius-sm);
+  background: var(--g-chat-backdrop);
+  overflow: hidden;
+}
+
+.g-welcome-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.g-welcome-style-name {
+  font: 700 15px var(--g-font-body);
+}
+
+.g-welcome-style-blurb {
+  color: var(--g-text-soft);
+  font: 400 12.5px/1.35 var(--g-font-body);
+}
+
+.g-welcome-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.g-welcome-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.g-welcome-spacer {
+  flex: 1;
+}
+
+.g-welcome-sheet .g-welcome-styles {
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.g-welcome-sheet .g-welcome-style-blurb {
+  display: none;
+}

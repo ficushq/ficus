@@ -10,6 +10,8 @@ export interface AccountSettings {
   saved: FarmSettings | null
   /** Whose account a save would go to (null: saves are skipped and the browser's copy is all there is). */
   userId: string | null
+  /** Whether it's known yet: who's signed in, and (if anyone) what their account says or that it can't say. */
+  ready: boolean
   /** Saves the settings given, leaving the rest as they are. */
   save: (patch: FarmSettings) => Promise<void>
 }
@@ -51,5 +53,6 @@ export function useAccountSettings(): AccountSettings {
     [queryClient, userId]
   )
 
-  return { saved, userId, save }
+  const ready = !isDemo && session.isFetched && (!userId || account.isFetched)
+  return { saved, userId, ready, save }
 }

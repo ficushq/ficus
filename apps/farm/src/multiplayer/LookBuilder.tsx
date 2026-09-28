@@ -186,15 +186,22 @@ function Part({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-/** The character builder, as a panel beside the farm (a full sheet on phones). */
-export function LookBuilder({ onClose, narrow }: { onClose: () => void; narrow: boolean }) {
-  const { myLook, setMyLook } = useMultiplayer()
-  const { skin } = useSkin()
-  const [draft, setDraft] = useState<FarmLook>(myLook)
-  const [previewId, setPreviewId] = useState<SkinId>(skin.id)
-  const preview = SKINS.find((s) => s.id === previewId) ?? skin
-  const titleId = useId()
-  const set = <K extends keyof FarmLook>(key: K, value: FarmLook[K]) => setDraft((d) => ({ ...d, [key]: value }))
+/**
+ * Dressing up: a preview (in any style) beside every part to choose. The
+ * builder panel and the farm's welcome both use it; the caller owns the draft.
+ */
+export function LookEditor({
+  draft,
+  onChange,
+  initialPreview,
+}: {
+  draft: FarmLook
+  onChange: (look: FarmLook) => void
+  initialPreview: SkinId
+}) {
+  const [previewId, setPreviewId] = useState<SkinId>(initialPreview)
+  const preview = SKINS.find((s) => s.id === previewId) ?? SKINS[0]!
+  const set = <K extends keyof FarmLook>(key: K, value: FarmLook[K]) => onChange({ ...draft, [key]: value })
   const togglePiercing = (kind: FarmPiercing) =>
     set(
       'piercings',
@@ -202,6 +209,150 @@ export function LookBuilder({ onClose, narrow }: { onClose: () => void; narrow: 
         ? draft.piercings.filter((p) => p !== kind)
         : FARM_PIERCINGS.filter((p) => p === kind || draft.piercings.includes(p))
     )
+  return (
+    <div className="g-look-body">
+      <div className="g-look-stage">
+        {/* The preview wears its style's class, so it draws in that style's own colours. */}
+        <div className={clsx('g-look-preview', preview.className)}>
+          <svg viewBox={previewBox(preview.boxes.person)} role="img" aria-label={`You, in the ${preview.label} style`}>
+            <preview.Defs />
+            <preview.Person look={draft} />
+          </svg>
+        </div>
+        <div className="g-look-styles" role="radiogroup" aria-label="Preview in">
+          {PREVIEW_STYLES.map((id) => {
+            const style = SKINS.find((s) => s.id === id)!
+            return (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={id === previewId}
+                className={clsx('g-look-chip', id === previewId && 'g-look-chip-on')}
+                onClick={() => setPreviewId(id)}
+              >
+                {style.label}
+              </button>
+            )
+          })}
+        </div>
+        <button type="button" className="g-button g-look-random" onClick={() => onChange(randomLook())}>
+          Surprise me
+        </button>
+      </div>
+
+      <div className="g-look-parts">
+        <Part title="Skin tone">
+          <Swatches label="Skin tone" colors={FARM_SKIN_TONES} value={draft.skin} onChange={(c) => set('skin', c)} />
+        </Part>
+        <Part title="Hair">
+          <Choices
+            label="Hairstyle"
+            options={FARM_HAIR_STYLES}
+            labels={HAIR_LABELS}
+            value={draft.hair}
+            onChange={(v) => set('hair', v)}
+          />
+          {draft.hair !== 'bald' && (
+            <Swatches
+              label="Hair colour"
+              colors={FARM_HAIR_COLORS}
+              value={draft.hairColor}
+              onChange={(c) => set('hairColor', c)}
+            />
+          )}
+        </Part>
+        <Part title="Hat">
+          <Choices
+            label="Hat"
+            options={FARM_HATS}
+            labels={HAT_LABELS}
+            value={draft.hat}
+            onChange={(v) => set('hat', v)}
+          />
+          {draft.hat !== 'none' && (
+            <Swatches
+              label="Hat colour"
+              colors={FARM_CLOTHES_COLORS}
+              value={draft.hatColor}
+              onChange={(c) => set('hatColor', c)}
+            />
+          )}
+        </Part>
+        <Part title="Top">
+          <Choices
+            label="Top"
+            options={FARM_SHIRTS}
+            labels={SHIRT_LABELS}
+            value={draft.shirt}
+            onChange={(v) => set('shirt', v)}
+          />
+          <Swatches
+            label="Top colour"
+            colors={FARM_CLOTHES_COLORS}
+            value={draft.shirtColor}
+            onChange={(c) => set('shirtColor', c)}
+          />
+        </Part>
+        <Part title="Bottoms">
+          <Choices
+            label="Bottoms"
+            options={FARM_PANTS}
+            labels={PANTS_LABELS}
+            value={draft.pants}
+            onChange={(v) => set('pants', v)}
+          />
+          <Swatches
+            label="Bottoms colour"
+            colors={FARM_CLOTHES_COLORS}
+            value={draft.pantsColor}
+            onChange={(c) => set('pantsColor', c)}
+          />
+        </Part>
+        <Part title="Shoes">
+          <Choices
+            label="Shoes"
+            options={FARM_SHOES}
+            labels={SHOES_LABELS}
+            value={draft.shoes}
+            onChange={(v) => set('shoes', v)}
+          />
+          <Swatches
+            label="Shoe colour"
+            colors={FARM_CLOTHES_COLORS}
+            value={draft.shoesColor}
+            onChange={(c) => set('shoesColor', c)}
+          />
+        </Part>
+        <Part title="Piercings">
+          <div className="g-look-choices" role="group" aria-label="Piercings">
+            {FARM_PIERCINGS.map((kind) => {
+              const on = draft.piercings.includes(kind)
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  aria-pressed={on}
+                  className={clsx('g-look-chip', on && 'g-look-chip-on')}
+                  onClick={() => togglePiercing(kind)}
+                >
+                  {PIERCING_LABELS[kind]}
+                </button>
+              )
+            })}
+          </div>
+        </Part>
+      </div>
+    </div>
+  )
+}
+
+/** The character builder, as a panel beside the farm (a full sheet on phones). */
+export function LookBuilder({ onClose, narrow }: { onClose: () => void; narrow: boolean }) {
+  const { myLook, setMyLook } = useMultiplayer()
+  const { skin } = useSkin()
+  const [draft, setDraft] = useState<FarmLook>(myLook)
+  const titleId = useId()
   const save = () => {
     setMyLook(draft)
     onClose()
@@ -224,146 +375,7 @@ export function LookBuilder({ onClose, narrow }: { onClose: () => void; narrow: 
           <CloseIcon />
         </button>
       </header>
-
-      <div className="g-look-body">
-        <div className="g-look-stage">
-          {/* The preview wears its style's class, so it draws in that style's own colours. */}
-          <div className={clsx('g-look-preview', preview.className)}>
-            <svg
-              viewBox={previewBox(preview.boxes.person)}
-              role="img"
-              aria-label={`You, in the ${preview.label} style`}
-            >
-              <preview.Defs />
-              <preview.Person look={draft} />
-            </svg>
-          </div>
-          <div className="g-look-styles" role="radiogroup" aria-label="Preview in">
-            {PREVIEW_STYLES.map((id) => {
-              const style = SKINS.find((s) => s.id === id)!
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={id === previewId}
-                  className={clsx('g-look-chip', id === previewId && 'g-look-chip-on')}
-                  onClick={() => setPreviewId(id)}
-                >
-                  {style.label}
-                </button>
-              )
-            })}
-          </div>
-          <button type="button" className="g-button g-look-random" onClick={() => setDraft(randomLook())}>
-            Surprise me
-          </button>
-        </div>
-
-        <div className="g-look-parts">
-          <Part title="Skin tone">
-            <Swatches label="Skin tone" colors={FARM_SKIN_TONES} value={draft.skin} onChange={(c) => set('skin', c)} />
-          </Part>
-          <Part title="Hair">
-            <Choices
-              label="Hairstyle"
-              options={FARM_HAIR_STYLES}
-              labels={HAIR_LABELS}
-              value={draft.hair}
-              onChange={(v) => set('hair', v)}
-            />
-            {draft.hair !== 'bald' && (
-              <Swatches
-                label="Hair colour"
-                colors={FARM_HAIR_COLORS}
-                value={draft.hairColor}
-                onChange={(c) => set('hairColor', c)}
-              />
-            )}
-          </Part>
-          <Part title="Hat">
-            <Choices
-              label="Hat"
-              options={FARM_HATS}
-              labels={HAT_LABELS}
-              value={draft.hat}
-              onChange={(v) => set('hat', v)}
-            />
-            {draft.hat !== 'none' && (
-              <Swatches
-                label="Hat colour"
-                colors={FARM_CLOTHES_COLORS}
-                value={draft.hatColor}
-                onChange={(c) => set('hatColor', c)}
-              />
-            )}
-          </Part>
-          <Part title="Top">
-            <Choices
-              label="Top"
-              options={FARM_SHIRTS}
-              labels={SHIRT_LABELS}
-              value={draft.shirt}
-              onChange={(v) => set('shirt', v)}
-            />
-            <Swatches
-              label="Top colour"
-              colors={FARM_CLOTHES_COLORS}
-              value={draft.shirtColor}
-              onChange={(c) => set('shirtColor', c)}
-            />
-          </Part>
-          <Part title="Bottoms">
-            <Choices
-              label="Bottoms"
-              options={FARM_PANTS}
-              labels={PANTS_LABELS}
-              value={draft.pants}
-              onChange={(v) => set('pants', v)}
-            />
-            <Swatches
-              label="Bottoms colour"
-              colors={FARM_CLOTHES_COLORS}
-              value={draft.pantsColor}
-              onChange={(c) => set('pantsColor', c)}
-            />
-          </Part>
-          <Part title="Shoes">
-            <Choices
-              label="Shoes"
-              options={FARM_SHOES}
-              labels={SHOES_LABELS}
-              value={draft.shoes}
-              onChange={(v) => set('shoes', v)}
-            />
-            <Swatches
-              label="Shoe colour"
-              colors={FARM_CLOTHES_COLORS}
-              value={draft.shoesColor}
-              onChange={(c) => set('shoesColor', c)}
-            />
-          </Part>
-          <Part title="Piercings">
-            <div className="g-look-choices" role="group" aria-label="Piercings">
-              {FARM_PIERCINGS.map((kind) => {
-                const on = draft.piercings.includes(kind)
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    aria-pressed={on}
-                    className={clsx('g-look-chip', on && 'g-look-chip-on')}
-                    onClick={() => togglePiercing(kind)}
-                  >
-                    {PIERCING_LABELS[kind]}
-                  </button>
-                )
-              })}
-            </div>
-          </Part>
-        </div>
-      </div>
-
+      <LookEditor draft={draft} onChange={setDraft} initialPreview={skin.id} />
       <footer className="g-look-actions">
         <button type="button" className="g-button" onClick={onClose}>
           Cancel

@@ -21,6 +21,8 @@ export interface FarmSettings {
   multiplayer?: boolean
   /** How they look on the farm (the character builder); absent until they choose. */
   look?: FarmLook
+  /** They've been through the farm's welcome (pick a style, make your farmer). */
+  welcomed?: boolean
 }
 
 export interface MyFarmPreferences {
@@ -38,6 +40,7 @@ const CHECKS: { [K in keyof Required<FarmSettings>]: (value: unknown) => value i
   sound: (value): value is boolean => typeof value === 'boolean',
   multiplayer: (value): value is boolean => typeof value === 'boolean',
   look: isFarmLook,
+  welcomed: (value): value is boolean => typeof value === 'boolean',
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>

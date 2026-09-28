@@ -19,6 +19,8 @@ import { People, type PlacedPerson } from '../multiplayer/People'
 import { lookFor } from '../multiplayer/personLook'
 import { FarmChatPanel } from '../multiplayer/FarmChatPanel'
 import { LookBuilder } from '../multiplayer/LookBuilder'
+import { useFirstVisit } from '../onboarding/useFirstVisit'
+import { Welcome } from '../onboarding/Welcome'
 import { chatKeys } from '../multiplayer/chatApi'
 import { useQueryClient } from '@tanstack/react-query'
 import { haltedAgentIds } from './state'
@@ -117,6 +119,8 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   }, [focusKey, setFocus])
   const [farmChat, setFarmChat] = useState<{ open: boolean; roomId: string | null }>({ open: false, roomId: null })
   const [lookOpen, setLookOpen] = useState(false)
+  // First time here: pick a style, then make your farmer.
+  const { firstVisit, welcomed } = useFirstVisit()
   const agentsById = useMemo(
     () => new Map([...input.agents, ...input.assistants].map((a) => [a.id, a])),
     [input.agents, input.assistants]
@@ -406,6 +410,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         />
       )}
       {lookOpen && <LookBuilder narrow={narrow} onClose={() => setLookOpen(false)} />}
+      {firstVisit && <Welcome narrow={narrow} onDone={welcomed} />}
     </div>
   )
 }
