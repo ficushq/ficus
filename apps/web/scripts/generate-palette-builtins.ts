@@ -89,7 +89,18 @@ export const PALETTE_BUILTINS: readonly WebPaletteBuiltin[] = [
     },
     // Sage is already the light accent of the dark UI, so its link/focus tone is sage itself (the derived offset from
     // a dark base primary would wash out to white), and text on a sage fill is soil.
-    pinned: { dark: { '--color-primary-light': '#9fb57f', '--color-focus': '#9fb57f', '--on-accent-fg': '#1c1a17' } },
+    // The logo tile is the brand mark's own greens (brand/README.md), not a derivation of the base theme's purple.
+    pinned: {
+      light: { '--brand-gradient-from': '#8a9a5b', '--brand-gradient-to': '#3f6b4f', '--brand-tile': '#3f6b4f' },
+      dark: {
+        '--color-primary-light': '#9fb57f',
+        '--color-focus': '#9fb57f',
+        '--on-accent-fg': '#1c1a17',
+        '--brand-gradient-from': '#87945a',
+        '--brand-gradient-to': '#9fb57f',
+        '--brand-tile': '#5e7f4e',
+      },
+    },
     // Dark hover/selection surfaces tint from the leaf: pale sage would only grey the soil.
     interactionTint: { dark: '#3f6b4f' },
   },
