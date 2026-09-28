@@ -13,8 +13,10 @@
 # TAU_* -> FICUS_*): it reconciles a journaled rename an interrupted upgrade
 # left behind, and when the two still disagree it installs NOTHING, prints
 # FICUS_ENV_PREFIX_MISMATCH=1 and exits 3 — the control plane then does not
-# restart anything and runs the tenant upgrade instead. Without --config it
-# behaves exactly as before.
+# restart anything and runs the tenant upgrade instead. When they agree, the
+# staged managed.env is installed in that prefix: a copy that names the other
+# one is renamed on install (lib.sh managed_env_prepare), and a copy already
+# in it installs byte for byte. Without --config it behaves exactly as before.
 #
 # The staging dir is the FULL current artifact set (not a delta) and this
 # script RECONCILES the host against it: managed.env is installed whole,
@@ -66,8 +68,24 @@ env_prefix_mismatch() { # REASON
   exit "${EXIT_ENV_PREFIX_MISMATCH}"
 }
 
+# The prefix the installed managed.env is written in (see below); empty =
+# unknown, installed exactly as staged (the behaviour without --config).
+APPLY_PREFIX=''
+
 if [[ -n ${CONFIG} ]]; then
   [[ -f ${CONFIG} ]] || die "config file '${CONFIG}' not found"
+  # N-I2 / Ruling 24, before the lock, the reconcile or any write: the staged
+  # managed.env is installed in this host's prefix (renamed when it names the
+  # other one), and conflicting protected values in it stop the run here,
+  # naming the keys only. The reconcile below re-checks the host's own files
+  # before it finishes a journaled rename.
+  if [[ -f ${STAGE_DIR}/managed.env ]]; then
+    staged_conflicts=$(envfile_prefix_conflicts "${STAGE_DIR}/managed.env" TAU FICUS) ||
+      die "could not check ${STAGE_DIR}/managed.env for conflicting settings"
+    # shellcheck disable=SC2086 # one suffix per line, split on purpose
+    [[ -z ${staged_conflicts} ]] ||
+      die "refusing to install ${STAGE_DIR}/managed.env: $(_epr_conflict_message "${STAGE_DIR}/managed.env" TAU FICUS ${staged_conflicts})"
+  fi
   ensure_yq
   cfg_load "${CONFIG}"
   SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
@@ -103,12 +121,18 @@ if [[ -n ${CONFIG} ]]; then
   if [[ ${HOST_PREFIX} != NONE && ${RELEASE_PREFIX} != NONE && ${HOST_PREFIX} != "${RELEASE_PREFIX}" ]]; then
     env_prefix_mismatch "${SRC_DEST}/.env uses ${HOST_PREFIX}_* but the active release reads ${RELEASE_PREFIX}_*"
   fi
+  # The two agree (or one side is unknown): managed.env goes in in that
+  # prefix — the active release's when it can be told, else the .env's.
+  # A staged copy already in it installs byte for byte (lib.sh
+  # managed_env_prepare).
+  APPLY_PREFIX=${RELEASE_PREFIX}
+  [[ ${APPLY_PREFIX} != NONE ]] || APPLY_PREFIX=${HOST_PREFIX}
 fi
 
 # Detect BEFORE installing (the install overwrites the file being compared).
-ENV_CHANGED=$(managed_env_would_change "${STAGE_DIR}")
+ENV_CHANGED=$(managed_env_would_change "${STAGE_DIR}" "${APPLY_PREFIX}")
 
-install_managed_env "${STAGE_DIR}"
+install_managed_env "${STAGE_DIR}" "${APPLY_PREFIX}"
 install_artifacts "${STAGE_DIR}"
 prune_artifacts "${STAGE_DIR}"
 ensure_managed_env_dropins

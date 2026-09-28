@@ -163,13 +163,23 @@ release on an already renamed host is refused (see `--restore-env-backup`).
   different values and `X` contains `ENCRYPTION_KEY` or `PASSWORD`, nothing is
   written: the message names both keys (never a value) — keep the right one,
   delete the other, re-run. Identical values collapse silently; for any other
-  key the `FICUS_` value wins and the dropped `TAU_` key is logged.
+  key the `FICUS_` value wins and the dropped `TAU_` key is logged. The check
+  runs in each entry point's preflight — `upgrade-host.sh` and `setup-host.sh`
+  right after the reconcile, before anything is downloaded, staged or
+  migrated; `apply-artifacts.sh --config` on the staged `managed.env` before
+  anything is installed — so a conflicting host gets no backup set and no
+  journal. The rename checks again right before it writes. The check does not
+  depend on the target release: a host with a conflict can neither upgrade
+  nor downgrade until it is fixed (`--restore-env-backup` is not gated).
 - **Backup sets.** Before the first byte is renamed, every env-bearing file is
   copied byte for byte (`cp -p`, verified with `cmp`, sha256 recorded in a
   `MANIFEST`) into `/var/backups/ficus-env-rename/<UTC time>-<random>/`
   (override: `ENV_RENAME_BACKUP_ROOT`). **These sets hold plaintext secrets**
   — the encryption key, the database DSN, passwords. The directory is root
   0700, and the newest five sets are kept until pruned.
+- **Files the run creates.** When the host has no `managed.env` yet, the set
+  records it as absent (an `ABSENT` list next to the `MANIFEST`), and a
+  restore removes the one the run installed in the new names.
 - **The journal.** `/var/backups/ficus-env-rename/PENDING` names the set, the
   target prefix and the release; it is flushed to disk before the first rename
   and removed only when the release that reads the new names is serving (or
@@ -215,10 +225,14 @@ sudo bash scripts/setup/upgrade-host.sh --config /root/tau-setup/tau-setup.yaml 
 
 It verifies every file against the set's `MANIFEST`, puts it back, clears the
 journal if it names that set, and exits. Run it before downgrading to a
-pre-rename Core or running an older toolkit on a renamed host. Two caveats:
+pre-rename Core or running an older toolkit on a renamed host. Caveats:
 
 - it also reverts **any secret changed since that set was taken** (a rotated
   password or key is rolled back with everything else);
+- it **removes `managed.env`** when the set recorded it as absent (the host
+  had none when it was renamed) — including one the control plane synced
+  since. Under a pre-rename release that `FICUS_` file is unreadable anyway,
+  and the next sync installs a fresh one;
 - backup archives taken **after** the rename carry a `FICUS_` `.env`. Restoring
   one needs this toolkit or newer: an older `setup-host.sh` looks only for
   `TAU_ENCRYPTION_KEY` in the archive and dies. (This toolkit reads either
@@ -232,7 +246,16 @@ pre-rename Core or running an older toolkit on a renamed host. Two caveats:
 `apply-artifacts.sh --config <yaml> <stage>` (what the control plane's sync
 runs) refuses to install anything — exit 3, `FICUS_ENV_PREFIX_MISMATCH=1` on
 stdout — while a rename is journaled or the host's `.env` and its active
-release disagree; the fix is the tenant upgrade, which reconciles. The retarget
+release disagree; the fix is the tenant upgrade, which reconciles. When they
+agree, the staged `managed.env` is installed in that prefix: a copy rendered
+in the other one (a staging dir pushed before the host was renamed) is renamed
+on install with the same rules, and a copy already in the host's prefix is
+installed byte for byte. `setup-host.sh` does the same with `artifacts.dir`,
+and re-reads `core.env` from the renamed config before it renders the `.env`,
+so a re-run on a pre-rename host leaves no `TAU_` name behind. Its `--dry-run`
+previews exactly that: it lists the files the rename would change, and shows
+the planned `.env` and `managed.env` under their renamed names (read from a
+renamed temporary copy of the config), while writing nothing. The retarget
 primitives (`retarget-origin.sh`, `retarget-backup.sh`) read and write
 `FICUS_*` only and refuse a host that has not been renamed yet. Until phase 5
 the `*_SETUP_*` inputs (`FICUS_SETUP_DATABASE_DSN`, `…_RESTORE_*`, `…_RRSYNC`,

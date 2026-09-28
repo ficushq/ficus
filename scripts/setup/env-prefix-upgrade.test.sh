@@ -155,6 +155,12 @@ for a in "\$@"; do
     done <"${CTL}/healthy"
     exit 7
   fi
+  # setup-host.sh's seed and report phases: an instance that already has an
+  # admin (a re-run on an existing host), so neither seeds anything.
+  if [[ \${a} == */api/auth/status ]]; then
+    printf '{"mode":"password","hasAdminUser":true,"emailConfigured":false}'
+    exit 0
+  fi
 done
 exec ${REAL_CURL} "\$@"
 SHIMEOF
@@ -334,6 +340,8 @@ tau_names() { # how many TAU_ names are left across the env-bearing files
     grep -c "${legacy}_BACKUP_" "${H}/bin/tau-backup.sh" || true
   } | sum_counts
 }
+# How many trees the upgrade downloaded or staged for the new release.
+staged_new() { find "${DEST}/releases" -mindepth 1 -maxdepth 1 \( -name "${SHA_NEW}-*" -o -name .incoming \) 2>/dev/null | wc -l | tr -d ' '; }
 sets() { find "${H}/bk" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' '; }
 pending() { [[ -e ${H}/bk/PENDING ]] && echo pending || echo none; }
 # Ruling 29's invariant: without a journal, the .env prefix is the prefix
@@ -643,6 +651,22 @@ expect_eq 'conflicting encryption keys: never prints either value' \
 expect_eq 'conflicting encryption keys: nothing was written' "$(same_as "${H}/pristine")" 'same'
 expect_eq 'conflicting encryption keys: no set, no journal' "$(sets):$(pending)" '0:none'
 expect_eq 'conflicting encryption keys: current did not move' "$(readlink "${DEST}/current")" "${OLD_REL}"
+# N-I2: refused in the PREFLIGHT — before the download, the staging and the
+# candidate migration (P6 step 8 saw it only after all three).
+expect_eq 'conflicting encryption keys: refused before any download or staging (no release dir, no incoming dir)' \
+  "$(staged_new)" '0'
+expect_eq 'conflicting encryption keys: no candidate migration ran' "$([[ -e ${H}/migrate-proof ]] && echo migrated || echo none)" 'none'
+expect_eq 'conflicting encryption keys: nothing was restarted or reloaded' "$(grep -c 'systemctl' "${CALLS}" || true)" '0'
+# The same stop for a conflict in another env-bearing file (managed.env).
+new_host conflict-managed
+printf 'FICUS_PLATFORM_PASSWORD=pw-other\nTAU_PLATFORM_PASSWORD=pw-mine\n' >>"${H}/etc/managed.env" # legacy-env
+snapshot "${H}/pristine"
+upgrade "${SCRATCH}/ficus.artifact.env"
+expect_eq 'conflicting managed.env passwords: the upgrade stops' "${RC}" '1'
+expect_match 'conflicting managed.env passwords: names the keys and the file' "${OUT}" "TAU_PLATFORM_PASSWORD and FICUS_PLATFORM_PASSWORD disagree on this host \\(${H}/etc/managed\\.env\\)"
+expect_eq 'conflicting managed.env passwords: never prints either value' "$(grep -c -e 'pw-other' -e 'pw-mine' <<<"${OUT}" || true)" '0'
+expect_eq 'conflicting managed.env passwords: nothing written, no set, no journal, no staging, no migration' \
+  "$(same_as "${H}/pristine"):$(sets):$(pending):$(staged_new):$([[ -e ${H}/migrate-proof ]] && echo migrated || echo none)" 'same:0:none:0:none'
 # (No convergence check here: the host carried both spellings before the run,
 # which is exactly what the operator is asked to fix; the run changed nothing.)
 
@@ -681,6 +705,47 @@ expect_eq 'apply-artifacts fixture: a journal is pending' "$(pending)" 'pending'
 run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
 expect_eq 'apply-artifacts --config, journaled rename on a TAU release: reconciled (restored), then applied' \
   "${RC}:$(pending):$(grep -c '^TAU_ENCRYPTION_KEY=' "${DEST}/.env")" '0:none:1' # legacy-env
+
+# P6 B2: managed.env always goes in in the prefix the host uses.
+# A TAU_ render on a TAU host: byte for byte (what the control plane relies on).
+printf '# managed\nTAU_MANAGED=1\nTAU_MANAGED_SECRET_KEYS=TAU_PLATFORM_INSTANCE_TOKEN\nTAU_PLATFORM_INSTANCE_TOKEN=tok-2\n' >"${H}/stage/managed.env" # legacy-env
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'apply-artifacts --config, a TAU_ render on a TAU host: installed byte for byte' \
+  "${RC}:$(cmp -s "${H}/stage/managed.env" "${H}/etc/managed.env" && echo same)" '0:same'
+# The same host, renamed by an upgrade onto the Ficus release.
+printf '%s-*\n' "${SHA_NEW}" >>"${CTL}/healthy"
+upgrade "${SCRATCH}/ficus.artifact.env"
+expect_eq 'apply fixture: the host is renamed and on the Ficus release' "${RC}:$(tau_names)" '0:0'
+# The same TAU_ render again: the upgrade already renamed what it installed,
+# so the renamed staged copy is no change (compared in the host's prefix).
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_match 'apply-artifacts --config, the TAU_ render the upgrade already renamed: no change' "${OUT}" '(^|'$'\n'')FICUS_MANAGED_ENV_CHANGED=0'
+# A new TAU_ render (a rotated token) on the FICUS host.
+printf '# managed\nTAU_MANAGED=1\nTAU_MANAGED_SECRET_KEYS=TAU_PLATFORM_INSTANCE_TOKEN\nTAU_PLATFORM_INSTANCE_TOKEN=tok-3\n' >"${H}/stage/managed.env" # legacy-env
+cp -p "${H}/stage/managed.env" "${H}/stage.managed.before"
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'apply-artifacts --config, a staged TAU_ render on a FICUS host: applies (exit 0)' "${RC}" '0'
+expect_eq 'apply-artifacts --config, a staged TAU_ render on a FICUS host: installed with FICUS_ names' \
+  "$(cat "${H}/etc/managed.env")" $'# managed\nFICUS_MANAGED=1\nFICUS_MANAGED_SECRET_KEYS=FICUS_PLATFORM_INSTANCE_TOKEN\nFICUS_PLATFORM_INSTANCE_TOKEN=tok-3'
+expect_eq 'apply-artifacts --config, a staged TAU_ render on a FICUS host: the staged copy is untouched' \
+  "$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.before" && echo same)" 'same'
+expect_match 'apply-artifacts --config, a staged TAU_ render on a FICUS host: the new value is a change' "${OUT}" '(^|'$'\n'')FICUS_MANAGED_ENV_CHANGED=1'
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_match 'apply-artifacts --config, the same TAU_ render again: no change (compared renamed)' "${OUT}" '(^|'$'\n'')FICUS_MANAGED_ENV_CHANGED=0'
+# A FICUS_ render on a FICUS host: byte for byte.
+printf '# managed\nFICUS_MANAGED=1\nFICUS_PLATFORM_INSTANCE_TOKEN="tok 3"\n' >"${H}/stage/managed.env"
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'apply-artifacts --config, a FICUS_ render on a FICUS host: installed byte for byte' \
+  "${RC}:$(cmp -s "${H}/stage/managed.env" "${H}/etc/managed.env" && echo same)" '0:same'
+# A staged copy with conflicting protected values: refused before anything is
+# written, naming the keys only.
+printf 'TAU_SMTP_PASSWORD=smtp-aaa\nFICUS_SMTP_PASSWORD=smtp-bbb\n' >"${H}/stage/managed.env" # legacy-env
+cp -p "${H}/etc/managed.env" "${H}/managed.before"
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'apply-artifacts --config, a conflicting staged managed.env: refused' "${RC}" '1'
+expect_match 'apply-artifacts --config, a conflicting staged managed.env: names the keys' "${OUT}" 'TAU_SMTP_PASSWORD and FICUS_SMTP_PASSWORD disagree'
+expect_eq 'apply-artifacts --config, a conflicting staged managed.env: no value, nothing installed, no markers' \
+  "$(grep -c -e 'smtp-aaa' -e 'smtp-bbb' <<<"${OUT}" || true):$(cmp -s "${H}/etc/managed.env" "${H}/managed.before" && echo same):$(grep -c '_CHANGED=' <<<"${OUT}" || true)" '0:same:0'
 
 # ================================ 9. setup-host.sh: Ficus releases only (N-I8)
 # setup-host.sh really preflights (Linux + systemd + Ubuntu 24.04, packages,
@@ -732,6 +797,108 @@ if [[ -d /run/systemd/system ]] && grep -q '^ID=ubuntu' /etc/os-release && grep 
   expect_eq 'setup-host.sh restore: the rendered .env holds the ARCHIVED (TAU_) key' \
     "$(grep -c '^FICUS_ENCRYPTION_KEY=archived-key-42$' "${DEST}/.env" 2>/dev/null || true)" '1'
   expect_eq 'setup-host.sh restore: and no TAU_ name' "$(grep -c '^TAU_' "${DEST}/.env" 2>/dev/null || true)" '0'
+
+  # P6 B1 + B2: setup-host.sh RE-RUN on a host that predates the rename, with
+  # its own pre-rename config (TAU_ core.env keys) and the staging dir the
+  # pre-rename control plane pushed (a TAU_ managed.env). The rename runs
+  # before phase_env; nothing after it may write a TAU_ name back.
+  setup_rerun_host() { # NAME
+    new_host "$1"
+    printf 'TAU_INTERNAL_EVENT_TOKEN=evt-1\n' >>"${DEST}/.env" # legacy-env
+    cp -p "${H}/etc/managed.env" "${H}/stage/managed.env"
+    STAGE="${H}/stage" yq -i '.source.repo = "https://example.invalid/core.git" | .artifacts.dir = strenv(STAGE) | .core.env.TAU_MAX_MACHINES = "5" | .secrets.password_env = "PLATFORM_TAU_PASSWORD"' "${CONFIG}" # legacy-env
+    snapshot "${H}/pristine"
+    cp -p "${H}/stage/managed.env" "${H}/stage.managed.pristine"
+  }
+  setup_rerun_host setup-rerun
+  printf '%s-*\n' "${SHA_NEW}" >>"${CTL}/healthy"
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  expect_eq 'setup-host.sh re-run on a TAU host: exits 0' "${RC}" '0'
+  [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+  expect_eq 'setup-host.sh re-run on a TAU host: no TAU_ name in .env (B1)' "$(grep -cE '^(export )?TAU_' "${DEST}/.env" || true)" '0'
+  expect_eq 'setup-host.sh re-run on a TAU host: the yaml core.env keys are rendered FICUS_ (B1)' \
+    "$(grep -c '^FICUS_MAX_MACHINES=5$' "${DEST}/.env"):$(grep -c '^FICUS_PLATFORM_INGEST_URL=https://ingest.ficus.sh$' "${DEST}/.env"):$(grep -c '^FICUS_PLATFORM_USAGE_TOKEN=usage-token$' "${DEST}/.env")" '1:1:1'
+  expect_eq 'setup-host.sh re-run on a TAU host: encryption key, event token and password unchanged' \
+    "$(grep -c '^FICUS_ENCRYPTION_KEY=enc-key-1$' "${DEST}/.env"):$(grep -c '^FICUS_INTERNAL_EVENT_TOKEN=evt-1$' "${DEST}/.env"):$(grep -c '^FICUS_PASSWORD=pw-1$' "${DEST}/.env")" '1:1:1'
+  expect_eq 'setup-host.sh re-run on a TAU host: the staged TAU_ managed.env is installed renamed (B2)' \
+    "$(cat "${H}/etc/managed.env")" $'FICUS_MANAGED=1\nFICUS_MANAGED_SECRET_KEYS=FICUS_PLATFORM_INSTANCE_TOKEN\nFICUS_PLATFORM_INSTANCE_TOKEN=tok'
+  expect_eq 'setup-host.sh re-run on a TAU host: the staged copy itself is untouched' \
+    "$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.pristine" && echo same)" 'same'
+  expect_eq 'setup-host.sh re-run on a TAU host: no TAU_ name in any env-bearing file' "$(tau_names)" '0'
+  expect_eq 'setup-host.sh re-run on a TAU host: one set, no journal' "$(sets):$(pending)" '1:none'
+  expect_eq 'setup-host.sh re-run on a TAU host: the control plane password variable in the config is renamed' \
+    "$(yq -r '.secrets.password_env' "${CONFIG}")" 'PLATFORM_FICUS_PASSWORD'
+  expect_eq 'setup-host.sh re-run on a TAU host: no pre-rename spelling of it anywhere in the output' \
+    "$(grep -c 'PLATFORM_TAU_' <<<"${OUT}" || true)" '0' # legacy-env
+  rerun_set=$(find "${H}/bk" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  expect_eq 'setup-host.sh re-run on a TAU host: the set holds the pre-rename bytes (.env, managed.env)' \
+    "$(cmp -s "${rerun_set}/1" "${H}/pristine/dest/.env" && echo same):$(cmp -s "${rerun_set}/2" "${H}/pristine/etc/managed.env" && echo same)" 'same:same'
+  expect_match 'setup-host.sh re-run on a TAU host: current is the new release' "$(readlink "${DEST}/current")" "${SHA_NEW}-"
+  assert_converged 'setup-host.sh re-run on a TAU host'
+
+  # The same re-run with an unhealthy new release: rolled back, and every
+  # env-bearing file — managed.env included — restored byte for byte.
+  setup_rerun_host setup-rerun-rollback
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  expect_eq 'setup-host.sh re-run, unhealthy new release: fails and rolls back' \
+    "$([[ ${RC} -ne 0 ]] && echo failed):$(readlink "${DEST}/current")" "failed:${OLD_REL}"
+  expect_eq 'setup-host.sh re-run, unhealthy new release: every env-bearing file is restored byte for byte' "$(same_as "${H}/pristine")" 'same'
+  expect_eq 'setup-host.sh re-run, unhealthy new release: no journal, the staged copy untouched' \
+    "$(pending):$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.pristine" && echo same)" 'none:same'
+  assert_converged 'setup-host.sh re-run, unhealthy new release'
+  # I1: the backup set is restored (its daemon-reload) BEFORE the rollback
+  # restart of the old release — never after it, which would leave the old
+  # release running on the renamed files.
+  expect_match 'setup-host.sh re-run, unhealthy new release: the restore ran before the rollback restart' \
+    "$(tr '\n' '|' <"${CALLS}")" 'systemctl restart[^|]*\|.*systemctl daemon-reload\|.*systemctl restart'
+  expect_eq 'setup-host.sh re-run, unhealthy new release: the rollback restart is the last service action (no restore after it)' \
+    "$(grep -E '^systemctl (restart|daemon-reload)' "${CALLS}" | tail -n 1 | cut -d' ' -f2)" 'restart'
+
+  # M1: the same rollback on a host that had NO managed.env when it was
+  # renamed. The run installs the staged copy renamed; the restore removes it
+  # again, so the old release does not find FICUS_ names it cannot read.
+  setup_rerun_host setup-rerun-rollback-nomanaged
+  rm -f "${H}/etc/managed.env"
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  rerun_set=$(find "${H}/bk" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  expect_eq 'setup-host.sh re-run with no managed.env, rolled back: the set recorded managed.env as absent' \
+    "$([[ ${RC} -ne 0 ]] && echo failed):$(cat "${rerun_set}/ABSENT" 2>/dev/null)" "failed:${H}/etc/managed.env"
+  expect_eq 'setup-host.sh re-run with no managed.env, rolled back: the managed.env it installed is removed again' \
+    "$([[ -e ${H}/etc/managed.env ]] && echo present || echo removed)" 'removed'
+  expect_eq 'setup-host.sh re-run with no managed.env, rolled back: every other file byte for byte, no journal' \
+    "$(for f in "${ENV_FILES[@]}"; do [[ ${f} == etc/managed.env ]] || cmp -s "${H}/pristine/${f}" "${H}/${f}" || printf ' %s' "${f}"; done):$(pending)" ':none'
+
+  # M2: a re-run on a host that is ALREADY renamed (the likely re-run after
+  # the window) whose artifacts.dir still holds the pre-rename render.
+  setup_rerun_host setup-rerun-renamed
+  printf '%s-*\n' "${SHA_NEW}" >>"${CTL}/healthy"
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  expect_eq 'renamed-host fixture: the first re-run renamed the host' "${RC}:$(tau_names):$(sets)" '0:0:1'
+  cp -p "${DEST}/.env" "${H}/env.after-first"
+  cp -p "${CONFIG}" "${H}/yaml.after-first"
+  rm -f "${H}/etc/managed.env"
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  expect_eq 'setup-host.sh re-run on an already renamed host: exits 0, makes no new set, no journal' \
+    "${RC}:$(sets):$(pending)" '0:1:none'
+  [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+  expect_eq 'setup-host.sh re-run on an already renamed host: the pre-rename staged managed.env is installed renamed' \
+    "$(cat "${H}/etc/managed.env")" $'FICUS_MANAGED=1\nFICUS_MANAGED_SECRET_KEYS=FICUS_PLATFORM_INSTANCE_TOKEN\nFICUS_PLATFORM_INSTANCE_TOKEN=tok'
+  expect_eq 'setup-host.sh re-run on an already renamed host: the config is untouched, and the .env differs only in its generated-at date line' \
+    "$(cmp -s "${CONFIG}" "${H}/yaml.after-first" && echo same):$(diff <(grep -v '^# Generated by' "${DEST}/.env") <(grep -v '^# Generated by' "${H}/env.after-first") >/dev/null && echo same)" 'same:same'
+  expect_eq 'setup-host.sh re-run on an already renamed host: no TAU_ name anywhere, the staged copy untouched' \
+    "$(tau_names):$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.pristine" && echo same)" '0:same'
+  assert_converged 'setup-host.sh re-run on an already renamed host'
+
+  # N-I2 in setup-host.sh's preflight: a conflict — here in the staged
+  # managed.env it would install — stops the run before any phase.
+  setup_rerun_host setup-rerun-conflict
+  printf 'TAU_SMTP_PASSWORD=smtp-aaa\nFICUS_SMTP_PASSWORD=smtp-bbb\n' >>"${H}/stage/managed.env" # legacy-env
+  printf '%s-*\n' "${SHA_NEW}" >>"${CTL}/healthy"
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  expect_eq 'setup-host.sh, a conflicting staged managed.env: refused' "${RC}" '1'
+  expect_match 'setup-host.sh, a conflicting staged managed.env: names the keys' "${OUT}" 'TAU_SMTP_PASSWORD and FICUS_SMTP_PASSWORD disagree on this host'
+  expect_eq 'setup-host.sh, a conflicting staged managed.env: no value; nothing written, no set, no journal, no staging, no phase ran' \
+    "$(grep -c -e 'smtp-aaa' -e 'smtp-bbb' <<<"${OUT}" || true):$(same_as "${H}/pristine"):$(sets):$(pending):$(staged_new):$(grep -c 'FICUS_PHASE=' <<<"${OUT}" || true)" '0:same:0:none:0:0'
 else
   printf 'SKIP: the setup-host.sh cases need a systemd Ubuntu 24.04 host (/run/systemd/system)\n' >&2
   FAIL=$((FAIL + 1))

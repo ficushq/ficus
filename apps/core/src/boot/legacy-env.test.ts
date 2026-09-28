@@ -62,6 +62,32 @@ describe('core legacy-env boot module', () => {
   })
 })
 
+describe('core legacy-env boot module output stream', () => {
+  // The setup toolkit runs dist/migrate.js (which imports this module first) as a child whose
+  // stdout is the upgrade's stdout, where the control plane parses the FICUS_*= result markers.
+  // Every bridge line, at every level, belongs on stderr (P6 O1).
+  const CASES: Array<[label: string, extra: Record<string, string>, expected: string]> = [
+    ['moved (warn)', { TAU_X: '1' }, 'legacy TAU_* environment moved to FICUS_*'],
+    ['shadowed (debug)', { TAU_X: 'old', FICUS_X: 'new' }, 'legacy TAU_* variables ignored (FICUS_ already set): 1'],
+    [
+      'conflict (error)',
+      { TAU_ENCRYPTION_KEY: 'a-key', FICUS_ENCRYPTION_KEY: 'b-key' },
+      'legacy TAU_* and FICUS_* disagree for: TAU_ENCRYPTION_KEY',
+    ],
+  ]
+
+  test.each(CASES)('%s: the bridge line is on stderr, never stdout', (_label, extra, expected) => {
+    // LOG_LEVEL=debug so the shadowed line is printed at all (the migrate child's default).
+    const result = runBoot(`console.log('FICUS_RELEASE_ROLLED_BACK=0')`, { ...extra, LOG_LEVEL: 'debug' })
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toContain(expected)
+    expect(result.stderr).toContain('[legacy-env]')
+    expect(result.stdout).not.toContain('legacy-env')
+    expect(result.stdout).not.toContain('legacy TAU_')
+    expect(result.stdout.trim()).toBe('FICUS_RELEASE_ROLLED_BACK=0')
+  })
+})
+
 describe('entrypoints import the legacy-env boot module first', () => {
   // Later imports read process.env at module load, so the bridge must run before any of them.
   const ENTRYPOINTS: Array<[file: string, specifier: string]> = [

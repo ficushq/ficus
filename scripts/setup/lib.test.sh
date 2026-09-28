@@ -2748,6 +2748,64 @@ printf '# header\nKEY=v1\n' >"${AR_STAGE5}/managed.env"
 expect_eq 'managed_env_would_change: absent dest + staged vars -> 1' \
   "$(managed_env_would_change "${AR_STAGE5}")" '1'
 
+# --- managed.env in the host's env prefix (P6 B2) -----------------------------
+# A staged copy the control plane rendered in the OTHER prefix (a staging dir
+# pushed before the host was renamed) is installed renamed to the host's
+# prefix; a copy already in it installs byte for byte. Legacy TAU_ fixture
+# lines carry the `legacy-env` marker.
+AR_STAGE7="${AR_TMP}/stage7"
+mkdir -p "${AR_STAGE7}"
+printf '# rendered by the control plane\nTAU_MANAGED=1\nTAU_MANAGED_SECRET_KEYS=TAU_PLATFORM_INSTANCE_TOKEN\nTAU_PLATFORM_INSTANCE_TOKEN=tok\nSES_SMTP_USER=u\n' >"${AR_STAGE7}/managed.env" # legacy-env
+cp -p "${AR_STAGE7}/managed.env" "${AR_TMP}/stage7.orig"
+rm -f "${FICUS_MANAGED_ENV_PATH}"
+install_managed_env "${AR_STAGE7}" FICUS 2>/dev/null
+expect_eq 'install_managed_env FICUS: a staged TAU_ copy is installed with FICUS_ names (list items too)' \
+  "$(cat "${FICUS_MANAGED_ENV_PATH}")" $'# rendered by the control plane\nFICUS_MANAGED=1\nFICUS_MANAGED_SECRET_KEYS=FICUS_PLATFORM_INSTANCE_TOKEN\nFICUS_PLATFORM_INSTANCE_TOKEN=tok\nSES_SMTP_USER=u'
+expect_eq 'install_managed_env FICUS: ...0600' "$(file_mode "${FICUS_MANAGED_ENV_PATH}")" '600'
+expect_eq 'install_managed_env FICUS: no plaintext value is left in the parser or install globals' \
+  "${_EPR_LINES+lines}${_E_VALUE+values}${_E_FIRST+first}${_EPR_OUT+out}${_MANAGED_ENV_CONTENT}${_EPR_RESULT:-}" ''
+ar_read=''
+printf 'TAU_ENCRYPTION_KEY=ar-read-key\n' >"${AR_TMP}/read.env" # legacy-env
+envfile_read_prefixed ar_read "${AR_TMP}/read.env" ENCRYPTION_KEY
+expect_eq 'envfile_read_prefixed: reads the value, then leaves no copy in the parser globals' \
+  "${ar_read}:${_EPR_LINES+lines}${_E_VALUE+values}${_E_FIRST+first}${_EPR_OUT+out}" 'ar-read-key:'
+expect_eq 'install_managed_env FICUS: ...and the staged copy is left as it was' \
+  "$(cmp -s "${AR_STAGE7}/managed.env" "${AR_TMP}/stage7.orig" && echo same)" 'same'
+expect_eq 'managed_env_would_change FICUS: the same staged TAU_ copy again -> 0 (compares the renamed bytes)' \
+  "$(managed_env_would_change "${AR_STAGE7}" FICUS 2>/dev/null)" '0'
+expect_eq 'managed_env_would_change without a prefix: the staged TAU_ bytes differ -> 1' \
+  "$(managed_env_would_change "${AR_STAGE7}")" '1'
+for ar_p in TAU '' NONE; do
+  rm -f "${FICUS_MANAGED_ENV_PATH}"
+  install_managed_env "${AR_STAGE7}" "${ar_p}" 2>/dev/null
+  expect_eq "install_managed_env '${ar_p}': a staged copy in that prefix (or none known) installs byte for byte" \
+    "$(cmp -s "${AR_STAGE7}/managed.env" "${FICUS_MANAGED_ENV_PATH}" && echo same)" 'same'
+done
+# A FICUS_ render passes through unchanged, whatever its bytes look like.
+AR_STAGE8="${AR_TMP}/stage8"
+mkdir -p "${AR_STAGE8}"
+printf '# c\r\nFICUS_MANAGED=1\r\nFICUS_X="a b"\nexport FICUS_Y=2\nPLAIN=1' >"${AR_STAGE8}/managed.env"
+install_managed_env "${AR_STAGE8}" FICUS 2>/dev/null
+expect_eq 'install_managed_env FICUS: a FICUS_ render (CRLF, quotes, no final newline) installs byte for byte' \
+  "$(cmp -s "${AR_STAGE8}/managed.env" "${FICUS_MANAGED_ENV_PATH}" && echo same)" 'same'
+expect_eq 'managed_env_would_change FICUS: ...and reads as unchanged next time' \
+  "$(managed_env_would_change "${AR_STAGE8}" FICUS)" '0'
+# The other way round: a FICUS_ render on a host whose settings are TAU_.
+install_managed_env "${AR_STAGE8}" TAU 2>/dev/null
+expect_eq 'install_managed_env TAU: a FICUS_ render is installed with TAU_ names' \
+  "$(grep -c '^\(export \)\{0,1\}TAU_' "${FICUS_MANAGED_ENV_PATH}"):$(grep -c 'FICUS_' "${FICUS_MANAGED_ENV_PATH}" || true)" '3:0' # legacy-env
+# A protected conflict in the staged copy dies naming keys only, and writes nothing.
+AR_STAGE9="${AR_TMP}/stage9"
+mkdir -p "${AR_STAGE9}"
+printf 'TAU_SMTP_PASSWORD=value-aaa\nFICUS_SMTP_PASSWORD=value-bbb\n' >"${AR_STAGE9}/managed.env" # legacy-env
+printf 'GOOD=1\n' >"${FICUS_MANAGED_ENV_PATH}"
+ar_rc=0
+ar_err=$( (install_managed_env "${AR_STAGE9}" FICUS) 2>&1 >/dev/null) || ar_rc=$?
+expect_eq 'install_managed_env FICUS: a protected conflict in the staged copy dies' "${ar_rc}" '1'
+expect_match 'install_managed_env FICUS: ...naming the keys' "${ar_err}" 'TAU_SMTP_PASSWORD and FICUS_SMTP_PASSWORD disagree'
+expect_eq 'install_managed_env FICUS: ...never a value, and the installed file is untouched' \
+  "$(grep -c 'value-aaa\|value-bbb' <<<"${ar_err}" || true):$(cat "${FICUS_MANAGED_ENV_PATH}")" '0:GOOD=1'
+
 # --- prune_artifacts --------------------------------------------------------
 # The deletion half of reconciliation: files not in the manifest are removed,
 # listed ones are kept, and everything stays inside FICUS_ARTIFACTS_DIR.
@@ -2917,7 +2975,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   provider: openai-codex
   key_env: ''
@@ -2976,6 +3034,147 @@ EOF
   expect_match 'setup-host --dry-run: ...naming the key' "${sh_conflict_out}" 'TAU_ENCRYPTION_KEY and FICUS_ENCRYPTION_KEY disagree on this host'
   expect_eq 'setup-host --dry-run: ...never a value' "$(grep -c -e 'old-key' -e 'other-key' <<<"${sh_conflict_out}" || true)" '0'
 
+  # A dry run on a host that predates the Ficus rename previews what the real
+  # run writes AFTER renaming — no pre-rename name the run would rename
+  # appears anywhere in its output — and changes nothing on disk.
+  DR="${SH_TMP}/tau-host"
+  mkdir -p "${DR}/dest" "${DR}/etc" "${DR}/units" "${DR}/bin" "${DR}/stage"
+  printf 'TAU_ENCRYPTION_KEY=dr-key\nTAU_PASSWORD=dr-pw\nTAU_INTERNAL_EVENT_TOKEN=dr-tok\nTAU_SANDBOX_RUNTIME=docker-socket\n' >"${DR}/dest/.env" # legacy-env
+  printf 'TAU_MANAGED=1\nTAU_MANAGED_SECRET_KEYS=TAU_PLATFORM_INSTANCE_TOKEN\nTAU_PLATFORM_INSTANCE_TOKEN=dr-inst\n' >"${DR}/etc/managed.env" # legacy-env
+  cp "${DR}/etc/managed.env" "${DR}/stage/managed.env"
+  printf "TAU_BACKUP_PASSPHRASE='dr-pp'\n" >"${DR}/etc/backup.env" # legacy-env
+  for dr_u in api worker; do
+    printf '[Service]\nEnvironment=TAU_ROOT=%s/current\n' "${DR}/dest" >"${DR}/units/tau-${dr_u}.service" # legacy-env phase5-unit-name
+  done
+  cat >"${DR}/cfg.yaml" <<EOF
+source:
+  mode: git-https
+  repo: https://github.com/ficushq/core.git
+  ref: main
+  dest: ${DR}/dest
+core:
+  origin: https://acme.ficus.sh
+  env:
+    # a platform knob
+    TAU_MAX_MACHINES: "5" # legacy-env
+    TAU_PLATFORM_USAGE_TOKEN_ENV: DR_USAGE_TOKEN # legacy-env
+database:
+  mode: external
+runtime:
+  sandbox: docker-socket
+artifacts:
+  dir: ${DR}/stage
+secrets:
+  password_env: PLATFORM_TAU_PASSWORD # legacy-env
+EOF
+  dr_sums() {
+    local f
+    find "${DR}" -type f | LC_ALL=C sort | while IFS= read -r f; do
+      printf '%s %s\n' "$(sha256sum -- "${f}" 2>/dev/null || shasum -a 256 -- "${f}")" "${f}"
+    done
+  }
+  dr_run() {
+    PLATFORM_TAU_PASSWORD='dr-old-bearer' PLATFORM_FICUS_PASSWORD='dr-bearer' \
+      FICUS_SETUP_DATABASE_DSN='postgres://u:p@h/db' DR_USAGE_TOKEN='dr-usage-secret' \
+      FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env" BACKUP_ENV_TARGET="${DR}/etc/backup.env" \
+      FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/nightly-backup.sh" ENV_RENAME_BACKUP_ROOT="${DR}/bk" \
+      bash "${SCRIPT_DIR}/setup-host.sh" --config "${DR}/cfg.yaml" --dry-run 2>&1
+  }
+  dr_before=$(dr_sums)
+  dr_rc=0
+  dr_out=$(dr_run) || dr_rc=$?
+  expect_eq 'setup-host --dry-run on a TAU host: exits 0' "${dr_rc}" '0'
+  [[ ${dr_rc} -eq 0 ]] || printf '%s\n' "${dr_out}" >&2
+  expect_eq 'setup-host --dry-run on a TAU host: no pre-rename (TAU_) name anywhere in its output' \
+    "$(grep -cE '(^|[^A-Za-z0-9_])TAU_' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: no pre-rename spelling at all, the control plane password variable included' \
+    "$(grep -c 'TAU_' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: the bootstrap bearer comes from the renamed password variable' \
+    "$(grep -c 'FICUS_PASSWORD (bootstrap bearer) from: \$PLATFORM_FICUS_PASSWORD' <<<"${dr_out}")" '1'
+  expect_eq 'setup-host --dry-run on a TAU host: the planned .env carries the core.env keys under their FICUS_ names' \
+    "$(grep -c '^  | FICUS_MAX_MACHINES=5$' <<<"${dr_out}"):$(grep -c '^  | FICUS_PLATFORM_USAGE_TOKEN=' <<<"${dr_out}")" '1:1'
+  expect_eq 'setup-host --dry-run on a TAU host: ...with the *_ENV secret still redacted' "$(grep -c 'dr-usage-secret' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: the rename is planned, naming each file to be renamed' \
+    "$(grep -c 'Phase 3.9 — env settings renamed to FICUS_\*' <<<"${dr_out}"):$(grep -cE "^  (/private)?(${DR}/dest/\.env|${DR}/etc/managed\.env|${DR}/etc/backup\.env|${DR}/cfg\.yaml|${DR}/units/tau-(api|worker)\.service)$" <<<"${dr_out}")" '1:6' # phase5-unit-name
+  expect_match 'setup-host --dry-run on a TAU host: the staged managed.env is planned under its FICUS_ names' \
+    "${dr_out}" 'installed with 3 setting\(s\) under their FICUS_\* names'
+  expect_eq 'setup-host --dry-run on a TAU host: no value from any host file is printed' \
+    "$(grep -c -e 'dr-key' -e 'dr-pw' -e 'dr-tok' -e 'dr-inst' -e 'dr-pp' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: nothing on disk changed (sha256 of every file), no backup set' \
+    "$([[ $(dr_sums) == "${dr_before}" ]] && echo same || echo changed):$([[ -e ${DR}/bk ]] && echo created || echo none)" 'same:none'
+  expect_eq 'setup-host --dry-run on a TAU host: the config keeps its pre-rename keys (renamed only in the preview)' \
+    "$(yq -r '.core.env | keys | .[]' "${DR}/cfg.yaml" | grep -c '^TAU_'):$(yq -r '.secrets.password_env' "${DR}/cfg.yaml")" '2:PLATFORM_TAU_PASSWORD' # legacy-env
+  # A dry run interrupted while it builds that preview (Ctrl-C reaches the
+  # whole process group) leaves nothing in TMPDIR: the renamed copy of the
+  # config — which can hold a literal database.dsn — and the renamer's staging
+  # file live in a private temp dir its subshell removes on INT/TERM/HUP.
+  DRT="${SH_TMP}/dr-tmp"
+  DRS="${SH_TMP}/dr-shim"
+  mkdir -p "${DRT}" "${DRS}"
+  # yq: block (until signalled) in the renamer's first in-place edit.
+  cat >"${DRS}/yq" <<EOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  if [[ \${a} == -i ]]; then
+    : >"${DRS}/blocked"
+    exec perl -e 'sleep 30'
+  fi
+done
+exec $(command -v yq) "\$@"
+EOF
+  chmod +x "${DRS}/yq"
+  for dr_sig in INT TERM HUP; do
+    rm -f "${DRS}/blocked"
+    # Its own process group, with INT back at its default (a background job
+    # of a non-interactive shell starts with INT ignored).
+    PATH="${DRS}:${PATH}" TMPDIR="${DRT}" FICUS_SETUP_DATABASE_DSN='postgres://u:p@h/db' DR_USAGE_TOKEN='dr-usage-secret' \
+      FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env" BACKUP_ENV_TARGET="${DR}/etc/backup.env" \
+      FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/nightly-backup.sh" ENV_RENAME_BACKUP_ROOT="${DR}/bk" \
+      perl -e '$SIG{INT} = "DEFAULT"; $SIG{QUIT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV' \
+      bash "${SCRIPT_DIR}/setup-host.sh" --config "${DR}/cfg.yaml" --dry-run >/dev/null 2>&1 &
+    dr_pid=$!
+    for _ in $(seq 1 300); do
+      [[ -e ${DRS}/blocked ]] && break
+      perl -e 'select(undef, undef, undef, 0.1)'
+    done
+    expect_eq "setup-host --dry-run, SIG${dr_sig} mid-preview: the run was stopped inside the preview's rename" \
+      "$([[ -e ${DRS}/blocked ]] && echo blocked || echo never)" 'blocked'
+    dr_left_mid=$(find "${DRT}" -mindepth 1 | wc -l | tr -d ' ')
+    kill "-${dr_sig}" -- "-${dr_pid}" 2>/dev/null || true
+    wait "${dr_pid}" 2>/dev/null || true
+    for _ in $(seq 1 50); do
+      [[ -z $(find "${DRT}" -mindepth 1) ]] && break
+      perl -e 'select(undef, undef, undef, 0.1)'
+    done
+    expect_eq "setup-host --dry-run, SIG${dr_sig} mid-preview: its temp dir existed, and nothing is left in TMPDIR" \
+      "$([[ ${dr_left_mid} -gt 0 ]] && echo had-temp):$(find "${DRT}" -mindepth 1 | wc -l | tr -d ' ')" 'had-temp:0'
+    expect_eq "setup-host --dry-run, SIG${dr_sig} mid-preview: every host file is unchanged" \
+      "$([[ $(dr_sums) == "${dr_before}" ]] && echo same || echo changed)" 'same'
+  done
+  rm -rf "${DRT}" "${DRS}"
+  # N-E: a staged managed.env the dry run cannot read is said so, never
+  # skipped silently (root reads everything, so only a non-root pass can).
+  if [[ ${EUID} -ne 0 ]]; then
+    chmod 000 "${DR}/stage/managed.env"
+    dr_rc=0
+    dr_out=$(dr_run) || dr_rc=$?
+    chmod 600 "${DR}/stage/managed.env"
+    expect_eq 'setup-host --dry-run, an unreadable staged managed.env: exits 0 and says it cannot read it' \
+      "${dr_rc}:$(grep -c 'the staged copy is not readable by' <<<"${dr_out}")" '0:1'
+  fi
+  # The same host once renamed: the same planned core.env, and no rename phase.
+  # (The host globals are set in a subshell on purpose: they stay local to it.)
+  # shellcheck disable=SC2030,SC2031
+  (
+    SRC_DEST="${DR}/dest" CFG_FILE="${DR}/cfg.yaml" FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env"
+    BACKUP_ENV_TARGET="${DR}/etc/backup.env" FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/nightly-backup.sh"
+    _env_prefix_rename_files
+  ) >/dev/null 2>&1
+  expect_eq 'setup-host --dry-run fixture: the host is now renamed' "$(grep -c '^TAU_' "${DR}/dest/.env" || true)" '0' # legacy-env
+  dr_out=$(dr_run) || true
+  expect_eq 'setup-host --dry-run on a renamed host: the same planned core.env, no rename phase, no TAU_ name' \
+    "$(grep -c '^  | FICUS_MAX_MACHINES=5$' <<<"${dr_out}"):$(grep -c 'Phase 3.9' <<<"${dr_out}" || true):$(grep -cE '(^|[^A-Za-z0-9_])TAU_' <<<"${dr_out}" || true)" '1:0:0'
+
   rm -rf "${SH_TMP}"
 else
   log_warn "mikefarah yq not on PATH — skipping setup-host.sh restore dry-run tests"
@@ -3003,7 +3202,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   provider: openai-codex
   key_env: ''
@@ -3065,7 +3264,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   provider: openai
   key_env: ''
@@ -3091,7 +3290,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 EOF
 
   # -- seed.sh --dry-run directly: explicit ai:+squad keeps today's exact plan
@@ -3192,7 +3391,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   model: openai:gpt-5.5
 EOF
@@ -3232,7 +3431,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 squad:
   name: starter
 EOF
@@ -3267,7 +3466,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   provider: openai-codex
   key_env: ''
@@ -5200,7 +5399,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 backup:
   enabled: true
   s3_endpoint: https://nyc3.digitaloceanspaces.com
@@ -5614,6 +5813,28 @@ if yq_is_mikefarah; then
     "$( (yaml_rename_env_prefix "${EPR}/yconf.yaml" TAU FICUS) >/dev/null 2>&1; echo "rc=$?")" 'rc=1'
   expect_eq 'yaml_rename_env_prefix: ...before writing anything' "$(cmp -s "${EPR}/yconf.yaml" "${EPR}/yconf.orig" && echo same)" 'same'
   expect_eq 'yaml_prefix_conflicts: names the suffix' "$(yaml_prefix_conflicts "${EPR}/yconf.yaml" TAU FICUS)" 'PASSWORD_ENV'
+  # The control plane's bootstrap-password variable NAME in secrets.password_env:
+  # the exact pre-rename value is renamed with the rest of the config; any other
+  # name is left alone, and a config with nothing to change is not written.
+  expect_eq 'epr_map_password_env: the exact pre-rename name maps; anything else is unchanged' \
+    "$(epr_map_password_env PLATFORM_TAU_PASSWORD TAU FICUS) $(epr_map_password_env PLATFORM_TAU_PASSWORD_2 TAU FICUS) $(epr_map_password_env MY_PASSWORD TAU FICUS) $(epr_map_password_env PLATFORM_FICUS_PASSWORD TAU FICUS)" \
+    'PLATFORM_FICUS_PASSWORD PLATFORM_TAU_PASSWORD_2 MY_PASSWORD PLATFORM_FICUS_PASSWORD' # legacy-env
+  printf '# tenant config\nsecrets:\n  # bootstrap bearer\n  password_env: PLATFORM_TAU_PASSWORD\ncore:\n  origin: https://a.example\n' >"${EPR}/pw.yaml" # legacy-env
+  expect_eq '_epr_needs_rename yaml: a pre-rename password_env alone needs the rename' "$(_epr_needs_rename "${EPR}/pw.yaml" yaml && echo yes)" 'yes'
+  yaml_rename_env_prefix "${EPR}/pw.yaml" TAU FICUS 2>/dev/null
+  expect_eq 'yaml_rename_env_prefix: password_env is renamed, comments and the rest kept' \
+    "$(<"${EPR}/pw.yaml")" $'# tenant config\nsecrets:\n  # bootstrap bearer\n  password_env: PLATFORM_FICUS_PASSWORD\ncore:\n  origin: https://a.example'
+  expect_eq '_epr_needs_rename yaml: ...and then needs nothing' "$(_epr_needs_rename "${EPR}/pw.yaml" yaml && echo yes || echo no)" 'no'
+  cp -p "${EPR}/pw.yaml" "${EPR}/pw.orig"
+  yaml_rename_env_prefix "${EPR}/pw.yaml" TAU FICUS 2>/dev/null
+  expect_eq 'yaml_rename_env_prefix: an already renamed config stays byte for byte' "$(cmp -s "${EPR}/pw.yaml" "${EPR}/pw.orig" && echo same)" 'same'
+  for epr_pw in PLATFORM_TAU_PASSWORD_2 MY_TAU_PASSWORD OPERATOR_PASSWORD; do
+    printf 'secrets:\n  password_env: %s\n' "${epr_pw}" >"${EPR}/pw-other.yaml"
+    cp -p "${EPR}/pw-other.yaml" "${EPR}/pw-other.orig"
+    yaml_rename_env_prefix "${EPR}/pw-other.yaml" TAU FICUS 2>/dev/null
+    expect_eq "yaml_rename_env_prefix: an operator-chosen password_env (${epr_pw}) is left byte for byte" \
+      "$(cmp -s "${EPR}/pw-other.yaml" "${EPR}/pw-other.orig" && echo same):$(_epr_needs_rename "${EPR}/pw-other.yaml" yaml && echo needs || echo clean)" 'same:clean'
+  done
 else
   log_warn 'mikefarah yq not on PATH — skipping the yaml_rename_env_prefix cases'
 fi
@@ -5761,6 +5982,63 @@ epr_matches_manifest() { # SETDIR
   done <"$1/MANIFEST"
   printf '%s' "${ok}"
 }
+
+# A managed.env the host did not have when the set was taken (the run installs
+# one, in the new names, before the flip): the set records it as ABSENT and a
+# restore removes it, so the host is exactly what the set saw.
+epr_host absent-managed '{"name":"tau"}' '{"schema":1}'
+rm -f "${FICUS_MANAGED_ENV_PATH}"
+ENV_RENAME_PENDING=0
+migrate_env_prefix_host FICUS "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'backup set: a managed.env absent at rename time is recorded in ABSENT, not the MANIFEST' \
+  "$(cat "${ENV_RENAME_BACKUP_SET}/ABSENT"):$(grep -c 'managed.env' "${ENV_RENAME_BACKUP_SET}/MANIFEST" || true)" "${FICUS_MANAGED_ENV_PATH}:0"
+printf 'FICUS_MANAGED=1\n' >"${FICUS_MANAGED_ENV_PATH}"
+env_prefix_settle_pending 2>/dev/null
+expect_eq 'restore: the managed.env created since the set was taken is removed' \
+  "$([[ -e ${FICUS_MANAGED_ENV_PATH} ]] && echo present || echo removed)" 'removed'
+expect_eq 'restore: ...and every file of the set is byte-identical, PENDING gone' \
+  "$(epr_matches_manifest "${ENV_RENAME_BACKUP_SET}"):$([[ -e ${ENV_RENAME_BACKUP_ROOT}/PENDING ]] && echo left || echo gone)" 'yes:gone'
+# A host that HAS a managed.env records nothing absent.
+epr_host present-managed '{"name":"tau"}' '{"schema":1}'
+ENV_RENAME_PENDING=0
+migrate_env_prefix_host FICUS "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'backup set: nothing is recorded absent when managed.env exists' \
+  "$([[ -e ${ENV_RENAME_BACKUP_SET}/ABSENT ]] && echo listed || echo none)" 'none'
+env_prefix_settle_pending 2>/dev/null
+# The create refuses an "absent" file that exists, and a malformed ABSENT list
+# stops a restore before it touches anything.
+expect_eq 'env_rename_backup_create: an absent: entry that exists is refused, with no set left' \
+  "$( (env_rename_backup_create FICUS "${SRC_DEST}/releases/new" "${SRC_DEST}/.env" "absent:${SRC_DEST}/.env") >/dev/null 2>&1; echo "rc=$?"):$([[ -e ${ENV_RENAME_BACKUP_ROOT}/PENDING ]] && echo pending || echo none)" 'rc=1:none'
+epr_abs_set=$(env_rename_backup_create FICUS "${SRC_DEST}/releases/new" "${SRC_DEST}/.env" 2>/dev/null)
+printf 'relative/path\n' >"${epr_abs_set}/ABSENT"
+cp -p "${SRC_DEST}/.env" "${EPR}/abs.env.orig"
+printf 'CHANGED=1\n' >"${SRC_DEST}/.env"
+expect_eq 'env_rename_backup_restore: a malformed ABSENT line refuses the restore' \
+  "$(env_rename_backup_restore "${epr_abs_set}" >/dev/null 2>&1; echo "rc=$?"):$(cat "${SRC_DEST}/.env")" 'rc=1:CHANGED=1'
+# N-A: an ABSENT entry the restore may not remove refuses the whole restore,
+# before anything is touched — a . or .. segment, a path the MANIFEST also
+# holds, a directory, or a file outside the host env files the rename covers.
+mkdir -p "${EPR_H}/etc/dir-entry"
+FICUS_MANAGED_ENV_PATH_SAVED=${FICUS_MANAGED_ENV_PATH}
+for epr_bad in "${EPR_H}/etc/../etc/managed.env" "${EPR_H}/etc/./managed.env" "$(readlink -f -- "${SRC_DEST}/.env")" dir "${EPR_H}/elsewhere.env"; do
+  if [[ ${epr_bad} == dir ]]; then
+    epr_bad="${EPR_H}/etc/dir-entry"
+    FICUS_MANAGED_ENV_PATH=${epr_bad} # in scope, so only "a directory" refuses it
+  fi
+  printf '%s\n' "${epr_bad}" >"${epr_abs_set}/ABSENT"
+  printf 'CHANGED=1\n' >"${SRC_DEST}/.env"
+  expect_match "env_rename_backup_restore: ABSENT entry ${epr_bad##*/host-present-managed} is refused, nothing restored" \
+    "$(env_rename_backup_restore "${epr_abs_set}" 2>&1; echo "rc=$?"):$(cat "${SRC_DEST}/.env")" 'a restore may not remove .*rc=1:CHANGED=1$'
+  FICUS_MANAGED_ENV_PATH=${FICUS_MANAGED_ENV_PATH_SAVED}
+done
+expect_eq 'env_rename_backup_restore: the directory is still there' "$([[ -d ${EPR_H}/etc/dir-entry ]] && echo kept)" 'kept'
+# ...while the managed.env path itself is accepted and removed.
+printf '%s\n' "${FICUS_MANAGED_ENV_PATH}" >"${epr_abs_set}/ABSENT"
+printf 'X=1\n' >"${FICUS_MANAGED_ENV_PATH}"
+expect_eq 'env_rename_backup_restore: an in-scope ABSENT managed.env is removed, the set restored' \
+  "$(env_rename_backup_restore "${epr_abs_set}" >/dev/null 2>&1; echo "rc=$?"):$([[ -e ${FICUS_MANAGED_ENV_PATH} ]] && echo present || echo removed):$(cmp -s "${SRC_DEST}/.env" "${EPR}/abs.env.orig" && echo same)" 'rc=0:removed:same'
+unset FICUS_MANAGED_ENV_PATH_SAVED
+rm -f "${ENV_RENAME_BACKUP_ROOT}/PENDING"
 
 # Reconcile, active release TAU (package.json tau, no envPrefix): restore.
 epr_host tau-active '{"name":"tau"}' '{"schema":1}'
@@ -5922,6 +6200,44 @@ expect_eq 'migrate_env_prefix_host: ...never the value' \
   "$( (migrate_env_prefix_host FICUS "${SRC_DEST}/releases/rel") 2>&1 | grep -c -e '=a' -e '=b')" '0'
 expect_eq 'migrate_env_prefix_host: ...before renaming even the clean .env' "$(cmp -s "${SRC_DEST}/.env" "${EPR}/conflict.env.orig" && echo same)" 'same'
 expect_eq 'migrate_env_prefix_host: ...and creates no set' "$([[ -d ${ENV_RENAME_BACKUP_ROOT} ]] && echo made || echo none)" 'none'
+
+# N-I2 as a preflight: the entry points call the same stop before anything is
+# downloaded, staged or migrated. Read-only, and it also covers an EXTRA dotenv
+# file (a staged managed.env about to be installed).
+expect_match 'require_no_env_prefix_conflicts: the managed.env conflict stops it, naming the key' \
+  "$( (require_no_env_prefix_conflicts) 2>&1; echo "rc=$?")" 'refusing to rename this host.s settings: TAU_PLATFORM_PASSWORD and FICUS_PLATFORM_PASSWORD disagree.*rc=1'
+expect_eq 'require_no_env_prefix_conflicts: ...never the value, nothing written, no set' \
+  "$( (require_no_env_prefix_conflicts) 2>&1 | grep -c -e '=a' -e '=b'):$(cmp -s "${SRC_DEST}/.env" "${EPR}/conflict.env.orig" && echo same):$([[ -d ${ENV_RENAME_BACKUP_ROOT} ]] && echo made || echo none)" '0:same:none'
+epr_host preflight '{"name":"ficus"}'
+expect_eq 'require_no_env_prefix_conflicts: a clean (unrenamed) host passes' "$( (require_no_env_prefix_conflicts) 2>&1; echo "rc=$?")" 'rc=0'
+printf 'TAU_SMTP_PASSWORD=x1\nFICUS_SMTP_PASSWORD=x2\n' >"${EPR}/staged-conflict.env" # legacy-env
+expect_match 'require_no_env_prefix_conflicts: an EXTRA staged file with a conflict stops it' \
+  "$( (require_no_env_prefix_conflicts "${EPR}/staged-conflict.env" "${EPR}/no-such.env") 2>&1; echo "rc=$?")" "TAU_SMTP_PASSWORD and FICUS_SMTP_PASSWORD disagree on this host \\(${EPR}/staged-conflict\\.env\\).*rc=1"
+expect_eq 'require_no_env_prefix_conflicts: an absent EXTRA file is nothing to check' \
+  "$( (require_no_env_prefix_conflicts "${EPR}/no-such.env") 2>&1; echo "rc=$?")" 'rc=0'
+if [[ ${EUID} -ne 0 ]]; then
+  chmod 0000 "${EPR}/staged-conflict.env"
+  expect_eq 'require_no_env_prefix_conflicts: non-root skips a file it cannot read (Ruling 31 refuses that run by name)' \
+    "$( (_epr_is_root() { return 1; }; require_no_env_prefix_conflicts "${EPR}/staged-conflict.env") 2>&1; echo "rc=$?")" 'rc=0'
+  chmod 0600 "${EPR}/staged-conflict.env"
+fi
+
+# The reconcile's finish-forward re-checks before its first write: a conflict
+# that appeared after the set was taken keeps the journal and changes nothing.
+epr_host finish-conflict '{"name":"ficus"}'
+ENV_RENAME_PENDING=0
+migrate_env_prefix_host FICUS "${SRC_DEST}/releases/rel" 2>/dev/null
+epr_fc_set=${ENV_RENAME_BACKUP_SET}
+printf 'TAU_ENCRYPTION_KEY=late-other-key\n' >>"${SRC_DEST}/.env" # legacy-env
+printf 'TAU_MANAGED=2\n' >>"${FICUS_MANAGED_ENV_PATH}" # legacy-env
+cp -p "${SRC_DEST}/.env" "${EPR}/fc.env.orig"
+cp -p "${FICUS_MANAGED_ENV_PATH}" "${EPR}/fc.managed.orig"
+expect_eq '_env_prefix_finish_forward: a conflict found before its first write fails it' \
+  "$( (_env_prefix_finish_forward "${epr_fc_set}") >/dev/null 2>&1; echo "rc=$?")" 'rc=1'
+expect_eq '_env_prefix_finish_forward: ...with nothing renamed and the journal kept' \
+  "$(cmp -s "${SRC_DEST}/.env" "${EPR}/fc.env.orig" && echo same):$(cmp -s "${FICUS_MANAGED_ENV_PATH}" "${EPR}/fc.managed.orig" && echo same):$([[ -e ${ENV_RENAME_BACKUP_ROOT}/PENDING ]] && echo kept || echo gone)" 'same:same:kept'
+rm -f "${ENV_RENAME_BACKUP_ROOT}/PENDING"
+ENV_RENAME_PENDING=0
 
 # N-I3: with ARTIFACT_CONVERTED_THIS_RUN=1 the units stay out of the set, and
 # a restore renders them for the CURRENT layout with TAU_ROOT.

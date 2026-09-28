@@ -1210,18 +1210,68 @@ TAU_ARTIFACTS_DIR=${FICUS_ARTIFACTS_DIR}
 TAU_MANAGED_ENV_PATH=${FICUS_MANAGED_ENV_PATH}
 TAU_SYSTEMD_UNIT_DIR=${FICUS_SYSTEMD_UNIT_DIR}
 
+# What installing <stage>/managed.env puts on a host whose settings use
+# PREFIX_* (TAU or FICUS; empty or NONE = unknown, installed as staged). The
+# staged copy may name its keys in the OTHER prefix: the control plane
+# renders it for the release it believes the host runs, and a staging dir
+# pushed before the Ficus rename (setup-host.sh re-run on a pre-rename host)
+# is TAU_ while the host has just been renamed FICUS_ (P6 B2). Its keys are
+# then renamed to PREFIX_ with the env rename's own rules (_epr_rename_content:
+# *_MANAGED_SECRET_KEYS items too; a protected conflict dies naming keys only,
+# before anything is written). A copy already in PREFIX_ — or with no
+# prefixed key at all — installs BYTE FOR BYTE: the control plane relies on a
+# TAU_ render reaching a TAU_ host, and a FICUS_ one a FICUS_ host, unchanged.
+# Runs in the CURRENT shell (never inside `$(...)`, so the die is real) and
+# sets _MANAGED_ENV_SRC, and _MANAGED_ENV_RENAMED=1 with the renamed bytes in
+# _MANAGED_ENV_CONTENT when a rename applies (0 = install the staged file).
+# Returns 1 — nothing to install — when the stage has no managed.env.
+managed_env_prepare() { # STAGE_DIR [PREFIX]
+  local src="$1/managed.env" want=${2:-} from raw rc=0 LC_ALL=C
+  _MANAGED_ENV_SRC=${src} _MANAGED_ENV_RENAMED=0 _MANAGED_ENV_CONTENT='' _MANAGED_ENV_NOTE=''
+  [[ -f ${src} ]] || return 1
+  [[ -n ${want} && ${want} != NONE ]] || return 0
+  _epr_is_prefix "${want}" || die "managed_env_prepare: the prefix must be TAU or FICUS (got '${want}')"
+  from=TAU
+  [[ ${want} == TAU ]] && from=FICUS
+  read_file_exact "${src}" raw || die "managed_env_prepare: could not read ${src}"
+  _epr_rename_content "${raw}" "${from}" "${want}" || rc=$?
+  if [[ ${rc} -eq 2 ]]; then
+    die "refusing to install ${src}: $(_epr_conflict_message "${src}" "${from}" "${want}" "${_EPR_PROTECTED[@]#"${from}_"}")"
+  fi
+  if ((${#_EPR_CONFLICTS[@]} > 0)); then
+    log_warn "${src}: kept the ${want}_ value and dropped the differing ${from}_ line for: ${_EPR_CONFLICTS[*]}"
+  fi
+  if [[ ${_EPR_RESULT} == "${raw}" ]]; then
+    _EPR_RESULT=''
+    return 0
+  fi
+  _MANAGED_ENV_RENAMED=1
+  _MANAGED_ENV_CONTENT=${_EPR_RESULT}
+  _EPR_RESULT=''
+  _MANAGED_ENV_NOTE=" with ${_EPR_RENAMED_LINES} line(s) renamed ${from}_ -> ${want}_ (the staged copy names them ${from}_*; this host's settings are ${want}_*)"
+}
+
+# Print the prepared managed.env bytes (see managed_env_prepare).
+_managed_env_emit() {
+  if [[ ${_MANAGED_ENV_RENAMED} -eq 1 ]]; then
+    printf '%s' "${_MANAGED_ENV_CONTENT}"
+  else
+    cat -- "${_MANAGED_ENV_SRC}"
+  fi
+}
+
 # Install the staged managed.env (all platform-managed env credentials) to the
-# canonical path the units reference. 0600 root — it holds live credentials.
+# canonical path the units reference, in the host's PREFIX when one is given
+# (managed_env_prepare). 0600 root — it holds live credentials.
 # No-op when the staging dir carries no managed.env. Atomic via
 # install_rendered: staged to a private tmp, verified non-empty, then
 # install(1)ed over the destination — never a truncating direct write.
-install_managed_env() { # STAGE_DIR
-  local stage=$1
-  local src="${stage}/managed.env"
-  [[ -f ${src} ]] || return 0
+install_managed_env() { # STAGE_DIR [PREFIX]
+  managed_env_prepare "$1" "${2:-}" || return 0
   as_root install -d -m 0755 -o root -g root "$(dirname "${FICUS_MANAGED_ENV_PATH}")"
-  install_rendered 0600 root root "${FICUS_MANAGED_ENV_PATH}" cat "${src}"
-  log_info "installed ${FICUS_MANAGED_ENV_PATH} (0600)"
+  install_rendered 0600 root root "${FICUS_MANAGED_ENV_PATH}" _managed_env_emit
+  _MANAGED_ENV_CONTENT='' # live credentials: not kept around for the rest of the run
+  log_info "installed ${FICUS_MANAGED_ENV_PATH} (0600)${_MANAGED_ENV_NOTE}"
 }
 
 # Install staged artifact FILES to FICUS_ARTIFACTS_DIR, each with the mode
@@ -1265,20 +1315,26 @@ install_artifacts() { # STAGE_DIR
 #                                on a tenant with no env artifacts must NOT
 #                                restart the whole fleet's services for a
 #                                semantic no-op.
-# No-op (prints 0) when the staging dir has no managed.env at all.
-managed_env_would_change() { # STAGE_DIR
-  local stage=$1
-  local src="${stage}/managed.env"
-  if [[ ! -f ${src} ]]; then
+# No-op (prints 0) when the staging dir has no managed.env at all. With a
+# PREFIX it compares what install_managed_env would install in that prefix.
+managed_env_would_change() { # STAGE_DIR [PREFIX]
+  if ! managed_env_prepare "$1" "${2:-}"; then
     echo 0
     return 0
   fi
-  if [[ -f ${FICUS_MANAGED_ENV_PATH} ]]; then
-    if cmp -s "${src}" "${FICUS_MANAGED_ENV_PATH}"; then echo 0; else echo 1; fi
+  if [[ ${_MANAGED_ENV_RENAMED} -eq 0 ]]; then
+    if [[ -f ${FICUS_MANAGED_ENV_PATH} ]]; then
+      if cmp -s "${_MANAGED_ENV_SRC}" "${FICUS_MANAGED_ENV_PATH}"; then echo 0; else echo 1; fi
+    else
+      # KEY=VALUE lines start with a non-#, non-blank character.
+      if grep -q '^[^#[:space:]]' "${_MANAGED_ENV_SRC}"; then echo 1; else echo 0; fi
+    fi
+  elif [[ -f ${FICUS_MANAGED_ENV_PATH} ]]; then
+    if cmp -s <(printf '%s' "${_MANAGED_ENV_CONTENT}") "${FICUS_MANAGED_ENV_PATH}"; then echo 0; else echo 1; fi
   else
-    # KEY=VALUE lines start with a non-#, non-blank character.
-    if grep -q '^[^#[:space:]]' "${src}"; then echo 1; else echo 0; fi
+    if grep -q '^[^#[:space:]]' <<<"${_MANAGED_ENV_CONTENT}"; then echo 1; else echo 0; fi
   fi
+  _MANAGED_ENV_CONTENT='' # live credentials: not kept around for the rest of the run
 }
 
 # Remove every file under FICUS_ARTIFACTS_DIR that the staging manifest does NOT
@@ -3573,6 +3629,12 @@ _epr_map_value() { # RAW FROM TO -> _EPR_OUT
 
 # Split RAW exactly like JavaScript's split('\n') into _EPR_LINES (a trailing
 # newline yields a final empty element, so a join restores RAW byte for byte).
+# Drop the parser's copies of a file's lines and values (plaintext secrets)
+# once a top-level reader or renamer is done with them (review N-C).
+_epr_forget_values() {
+  unset _EPR_LINES _E_VALUE _E_FIRST _EPR_OUT
+}
+
 _epr_split_lines() { # RAW
   local rest=$1
   _EPR_LINES=()
@@ -3717,6 +3779,7 @@ _epr_rename_content() { # RAW FROM TO
   done
   if ((${#_EPR_PROTECTED[@]} > 0)); then
     unset -f _epr_target
+    _epr_forget_values
     return 2
   fi
 
@@ -3781,6 +3844,7 @@ _epr_rename_content() { # RAW FROM TO
     i=$((i + 1))
   done
   _EPR_RESULT=${out}
+  _epr_forget_values
   return 0
 }
 
@@ -3886,10 +3950,12 @@ envfile_rename_prefix() { # FILE FROM TO
     log_warn "${target}: kept the ${to}_ value and dropped the differing ${from}_ line for: ${_EPR_CONFLICTS[*]}"
   fi
   if [[ ${_EPR_RESULT} == "${raw}" ]]; then
+    _EPR_RESULT=''
     printf '0\n'
     return 0
   fi
   _epr_write_atomic "${target}" "${_EPR_RESULT}" || die "envfile_rename_prefix: ${target} was left unchanged"
+  _EPR_RESULT=
   if ((_EPR_RENAMED_LINES > 0)); then
     log_info "${target}: renamed ${_EPR_RENAMED_LINES} line(s) ${from}_ -> ${to}_ (${_EPR_RENAMED[*]})"
   fi
@@ -3899,6 +3965,23 @@ envfile_rename_prefix() { # FILE FROM TO
 # The .core.env keys of YAML, one per line (none when absent).
 _epr_yaml_env_keys() { # YAML
   yq -r '(.core.env // {}) | keys | .[]' "$1" 2>/dev/null
+}
+
+# The control plane's bootstrap-password env var NAME, which it writes into a
+# tenant config's secrets.password_env: PLATFORM_<P>_PASSWORD for prefix P.
+# Print NAME mapped from the FROM spelling to the TO one — only that exact
+# value; any other (operator-chosen) name is printed unchanged.
+epr_map_password_env() { # NAME FROM TO
+  if [[ $1 == "PLATFORM_$2_PASSWORD" ]]; then
+    printf 'PLATFORM_%s_PASSWORD' "$3"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+# The host config's secrets.password_env, or nothing.
+_epr_yaml_password_env() { # YAML
+  yq -r '.secrets.password_env // ""' "$1" 2>/dev/null
 }
 
 # Like envfile_prefix_conflicts, for the host config's .core.env map.
@@ -3922,14 +4005,20 @@ yaml_prefix_conflicts() { # YAML FROM TO
 # Rename the host config's .core.env.<FROM>_* keys to <TO>_* (comments and
 # order kept), with renameEnvPrefix's conflict rules: a protected conflict
 # dies before any write; otherwise a non-empty TO_ key wins and the FROM_ key
-# is dropped (logged when the values differ). The edit is made on a copy next
-# to the resolved file and renamed over it, so a symlinked yaml stays a link.
+# is dropped (logged when the values differ). A secrets.password_env that is
+# exactly the control plane's FROM-spelled bootstrap-password variable
+# (epr_map_password_env) is set to its TO spelling in the same edit; any other
+# value is left alone. The edit is made on a copy next to the resolved file
+# and renamed over it, so a symlinked yaml stays a link; a config with nothing
+# to change is not written at all.
 yaml_rename_env_prefix() { # YAML FROM TO
-  local yaml=$1 from=$2 to=$3 target keys key suffix twin fv tv tmp conflicts dropped=() renamed=0
+  local yaml=$1 from=$2 to=$3 target keys key suffix twin fv tv tmp conflicts dropped=() renamed=0 pw pw_to=''
   _epr_require_prefixes yaml_rename_env_prefix "${from}" "${to}"
   _epr_resolve "${yaml}" target || return 0
   keys=$(_epr_yaml_env_keys "${target}") || die "yaml_rename_env_prefix: could not read .core.env from ${target}"
-  grep -q -- "^${from}_." <<<"${keys}" || return 0
+  pw=$(_epr_yaml_password_env "${target}") || die "yaml_rename_env_prefix: could not read secrets.password_env from ${target}"
+  [[ -n ${pw} && $(epr_map_password_env "${pw}" "${from}" "${to}") != "${pw}" ]] && pw_to=$(epr_map_password_env "${pw}" "${from}" "${to}")
+  grep -q -- "^${from}_." <<<"${keys}" || [[ -n ${pw_to} ]] || return 0
   conflicts=$(yaml_prefix_conflicts "${target}" "${from}" "${to}") || die "yaml_rename_env_prefix: could not check ${target} for conflicting settings"
   if [[ -n ${conflicts} ]]; then
     # shellcheck disable=SC2086 # one suffix per line, split on purpose
@@ -3973,12 +4062,17 @@ yaml_rename_env_prefix() { # YAML FROM TO
     fi
     renamed=$((renamed + 1))
   done <<<"${keys}"
+  if [[ -n ${pw_to} ]] && ! N=${pw_to} yq -i '.secrets.password_env = strenv(N)' "${tmp}"; then
+    rm -f -- "${tmp}"
+    die "yaml_rename_env_prefix: failed to edit the staged copy of ${target}"
+  fi
   if ! _epr_copy_mode_owner "${target}" "${tmp}" || ! mv -f -- "${tmp}" "${target}"; then
     rm -f -- "${tmp}"
     die "yaml_rename_env_prefix: failed to replace ${target} — it was left unchanged"
   fi
   ((${#dropped[@]} == 0)) || log_warn "${target}: kept the ${to}_ value and dropped the differing ${from}_ key for: ${dropped[*]}"
   log_info "${target}: renamed ${renamed} .core.env key(s) ${from}_ -> ${to}_"
+  [[ -z ${pw_to} ]] || log_info "${target}: secrets.password_env now names ${pw_to}"
 }
 
 # Rename the Environment=<FROM>_… (and Environment="<FROM>_…") assignments of
@@ -3999,6 +4093,7 @@ _epr_unit_rename_content() { # RAW FROM TO
     sep=$'\n'
   done
   _EPR_RESULT=${out}
+  _epr_forget_values
 }
 
 unitfile_rename_env_prefix() { # FILE FROM TO
@@ -4053,6 +4148,7 @@ envfile_read_prefixed() { # VAR FILE SUFFIX
       _erp_has_tau=1
     fi
   done
+  _epr_forget_values
   if ((_erp_has_ficus && _erp_has_tau)) && _epr_protected "${_erp_suffix}" &&
     [[ -n ${_erp_nf} && -n ${_erp_nt} && ${_erp_nf} != "${_erp_nt}" ]]; then
     die "$(_epr_conflict_message "${_erp_file}" TAU FICUS "${_erp_suffix}")"
@@ -4198,9 +4294,12 @@ _epr_sha256() { # FILE -> hex on stdout
 # Create a backup set of FILE... (resolved paths) and journal it. Prints the
 # set dir. Dies — having removed the partial set and never having written
 # PENDING — on any failure, so nothing is ever renamed without a verified,
-# journaled copy of what it replaces.
-env_rename_backup_create() { # TARGET RELEASE_DIR FILE...
-  local target=$1 release=$2 root setdir ts f idx=0 sha manifest='' tmp
+# journaled copy of what it replaces. An `absent:<path>` argument records a
+# file that does NOT exist yet (in the set's ABSENT list): the run may create
+# it in the new names, and a restore removes it again, so the host goes back
+# to exactly what the set saw.
+env_rename_backup_create() { # TARGET RELEASE_DIR FILE... [absent:PATH...]
+  local target=$1 release=$2 root setdir ts f idx=0 sha manifest='' tmp absent=''
   shift 2
   root=$(env_rename_backup_root)
   _epr_is_prefix "${target}" || die "env_rename_backup_create: target must be TAU or FICUS"
@@ -4220,6 +4319,11 @@ env_rename_backup_create() { # TARGET RELEASE_DIR FILE...
   }
   chmod 0700 "${setdir}" || _epr_backup_fail "could not chmod ${setdir}"
   for f in "$@"; do
+    if [[ ${f} == absent:/?* ]]; then
+      [[ ! -e ${f#absent:} && ! -L ${f#absent:} ]] || _epr_backup_fail "'${f#absent:}' was listed as absent but exists"
+      absent+="${f#absent:}"$'\n'
+      continue
+    fi
     idx=$((idx + 1))
     _epr_resolve "${f}" f || _epr_backup_fail "'${f}' is not an existing file"
     cp -p -- "${f}" "${setdir}/${idx}" || _epr_backup_fail "could not copy ${f}"
@@ -4229,6 +4333,9 @@ env_rename_backup_create() { # TARGET RELEASE_DIR FILE...
     manifest+="${idx}"$'\t'"${sha}"$'\t'"${f}"$'\n'
   done
   printf '%s' "${manifest}" >"${setdir}/MANIFEST" || _epr_backup_fail "could not write the MANIFEST"
+  if [[ -n ${absent} ]]; then
+    printf '%s' "${absent}" >"${setdir}/ABSENT" || _epr_backup_fail "could not write the ABSENT list"
+  fi
   if [[ ${ARTIFACT_CONVERTED_THIS_RUN:-0} -eq 1 ]]; then
     : >"${setdir}/UNITS_EXCLUDED" || _epr_backup_fail "could not write the UNITS_EXCLUDED marker"
   fi
@@ -4255,6 +4362,42 @@ _epr_pending_set() {
   [[ -f ${root}/PENDING ]] || return 0
   read_file_exact "${root}/PENDING" line || return 1
   printf '%s' "${line%%$'\t'*}"
+}
+
+# May a restore remove PATH, listed in a set's ABSENT file? Only a host env
+# file this toolkit renames (the rename records managed.env), spelled plainly
+# (no `.`/`..` segment, no `//`), not also in the set's MANIFEST (a file the set
+# copied cannot have been absent), and never a directory. MANIFEST_PATH... are
+# the set's MANIFEST paths. On refusal the reason is in _EPR_ABSENT_WHY.
+_epr_absent_ok() { # PATH MANIFEST_PATH...
+  local path=$1 m listing c ok=0
+  shift
+  _EPR_ABSENT_WHY=''
+  case "/${path#/}/" in
+    */./* | */../* | *//*)
+      _EPR_ABSENT_WHY='it has a . or .. segment'
+      return 1
+      ;;
+  esac
+  for m in "$@"; do
+    if [[ ${m} == "${path}" ]]; then
+      _EPR_ABSENT_WHY='the set also holds a copy of it'
+      return 1
+    fi
+  done
+  if [[ -d ${path} && ! -L ${path} ]]; then
+    _EPR_ABSENT_WHY='it is a directory'
+    return 1
+  fi
+  listing=$(SRC_DEST=${SRC_DEST:-} CFG_FILE=${CFG_FILE:-} _host_env_candidates 2>/dev/null) || listing=''
+  while IFS= read -r c; do
+    [[ -n ${c} && ${c} == "${path}" ]] && ok=1
+  done <<<"${listing}"
+  [[ ${path} == "${FICUS_MANAGED_ENV_PATH}" ]] && ok=1
+  if ((ok == 0)); then
+    _EPR_ABSENT_WHY='it is not one of the host env files the rename covers'
+    return 1
+  fi
 }
 
 # Put a backup set back, byte for byte, and verify every file's sha256.
@@ -4294,6 +4437,26 @@ env_rename_backup_restore() { # SETDIR
       return 1
     fi
   done
+  # Files the set saw as absent (created since, in the new names): removed.
+  local -a absents=()
+  if [[ -f ${setdir}/ABSENT ]]; then
+    read_file_exact "${setdir}/ABSENT" raw || return 1
+    rest=${raw}
+    while [[ -n ${rest} ]]; do
+      line=${rest%%$'\n'*}
+      if [[ ${line} == "${rest}" ]]; then rest=''; else rest=${rest#*$'\n'}; fi
+      [[ -n ${line} ]] || continue
+      if [[ ${line} != /?* || ${line} == *$'\t'* ]]; then
+        log_error "env restore: ${setdir}/ABSENT has a malformed line — nothing was restored"
+        return 1
+      fi
+      if ! _epr_absent_ok "${line}" ${paths[@]+"${paths[@]}"}; then
+        log_error "env restore: ${setdir}/ABSENT lists ${line}, which a restore may not remove (${_EPR_ABSENT_WHY}) — nothing was restored"
+        return 1
+      fi
+      absents+=("${line}")
+    done
+  fi
   if [[ -e ${setdir}/UNITS_EXCLUDED ]] && ! _epr_have_unit_templates; then
     log_warn "env restore: ${setdir} excluded the units (a git->artifact conversion ran in the same upgrade) and the unit templates are not next to this script — leaving it journaled for the next upgrade"
     return 3
@@ -4330,6 +4493,14 @@ env_rename_backup_restore() { # SETDIR
       log_error "env restore: ${path} does not match its sha256 after the restore"
       return 1
     fi
+  done
+  for path in ${absents[@]+"${absents[@]}"}; do
+    [[ -e ${path} || -L ${path} ]] || continue
+    if ! rm -f -- "${path}"; then
+      log_error "env restore: could not remove ${path}, which did not exist when ${setdir} was taken"
+      return 1
+    fi
+    log_info "env restore: removed ${path} (it did not exist when ${setdir} was taken)"
   done
   if [[ -e ${setdir}/UNITS_EXCLUDED ]]; then
     # The pre-conversion units are never copied back: they point at the git
@@ -4384,7 +4555,7 @@ env_rename_backup_prune() {
 
 # Does FILE have a line that step 8 below would rename? $2 is the kind.
 _epr_needs_rename() { # FILE dotenv|yaml|unit|backup_script
-  local rc=0 from=TAU keys raw rrc=0 LC_ALL=C
+  local rc=0 from=TAU keys raw rrc=0 pw LC_ALL=C
   case "$2" in
     dotenv | unit)
       # Exactly what the rename would do: a TAU_ line inside a multi-line
@@ -4403,6 +4574,10 @@ _epr_needs_rename() { # FILE dotenv|yaml|unit|backup_script
     yaml)
       keys=$(_epr_yaml_env_keys "$1") || die "could not read .core.env from $1"
       grep -q "^${from}_." <<<"${keys}" || rc=$?
+      if [[ ${rc} -eq 1 ]]; then
+        pw=$(_epr_yaml_password_env "$1") || die "could not read secrets.password_env from $1"
+        [[ -z ${pw} || $(epr_map_password_env "${pw}" "${from}" FICUS) == "${pw}" ]] || rc=0
+      fi
       ;;
     backup_script) grep -qF "${from}_BACKUP_" -- "$1" || rc=$? ;;
   esac
@@ -4431,6 +4606,57 @@ _env_prefix_rename_files() { # [--no-units]
   fi
 }
 
+# For a PREVIEW (setup-host.sh --dry-run): the host env files a rename to
+# FICUS would change, one per line — or, for a file this user cannot read,
+# "<file>\tunreadable". Read-only; never dies on a file it cannot read.
+env_prefix_rename_preview() {
+  local listing f kind
+  listing=$(host_env_files) || return 1
+  while IFS= read -r f; do
+    [[ -n ${f} ]] || continue
+    if [[ ! -r ${f} ]]; then
+      printf '%s\tunreadable\n' "${f}"
+      continue
+    fi
+    kind=dotenv
+    [[ ${f} == "$(readlink -f -- "${CFG_FILE:-/nonexistent}" 2>/dev/null)" ]] && kind=yaml
+    [[ ${f} == *.service || ${f} == *.conf ]] && kind=unit
+    [[ ${f} == "$(readlink -f -- "${BACKUP_SCRIPT_PATH}" 2>/dev/null)" ]] && kind=backup_script
+    if (_epr_needs_rename "${f}" "${kind}") 2>/dev/null; then
+      printf '%s\n' "${f}"
+    fi
+  done <<<"${listing}"
+}
+
+# Ruling 24 / N-I2: stop — naming the keys, never a value — when
+# TAU_X and FICUS_X hold different values for a PROTECTED suffix (ENCRYPTION_KEY,
+# PASSWORD) in any file the rename would touch: <dest>/.env, managed.env,
+# backup.env and the config's .core.env, plus each EXTRA dotenv file (a staged
+# managed.env about to be installed). Read-only. The entry points call it in
+# their preflight — before anything is downloaded, staged, migrated or
+# written — so a conflicting host gets no backup set and no journal; the
+# rename calls it again right before its first write. A file a NON-ROOT run
+# cannot read is skipped here: require_env_rename_privilege refuses that run
+# by name (Ruling 31) before any rename could happen.
+# shellcheck disable=SC2120 # the EXTRA files are optional; most callers pass none
+require_no_env_prefix_conflicts() { # [EXTRA_DOTENV...]
+  local f c conflicts=''
+  # (${c} is one suffix per line, split into arguments on purpose.)
+  # shellcheck disable=SC2086
+  for f in "${SRC_DEST}/.env" "${FICUS_MANAGED_ENV_PATH}" "${BACKUP_ENV_TARGET}" "$@"; do
+    [[ -n ${f} && -e ${f} ]] || continue
+    [[ -r ${f} ]] || _epr_is_root || continue
+    c=$(envfile_prefix_conflicts "${f}" TAU FICUS) || die "could not check ${f} for conflicting settings"
+    [[ -z ${c} ]] || conflicts+="${conflicts:+; }$(_epr_conflict_message "${f}" TAU FICUS ${c})"
+  done
+  if [[ -n ${CFG_FILE:-} && -e ${CFG_FILE} ]] && { [[ -r ${CFG_FILE} ]] || _epr_is_root; }; then
+    c=$(yaml_prefix_conflicts "${CFG_FILE}" TAU FICUS) || die "could not check ${CFG_FILE} for conflicting settings"
+    # shellcheck disable=SC2086 # one suffix per line, split on purpose
+    [[ -z ${c} ]] || conflicts+="${conflicts:+; }$(_epr_conflict_message "${CFG_FILE} .core.env" TAU FICUS ${c})"
+  fi
+  [[ -z ${conflicts} ]] || die "refusing to rename this host's settings: ${conflicts}"
+}
+
 # Hard-rename this host's settings to the TARGET prefix, with a journaled
 # backup set (see the section header). TAU as the target renames nothing and
 # refuses a host whose settings are already FICUS_. Leaves ENV_RENAME_PENDING=1
@@ -4439,7 +4665,7 @@ _env_prefix_rename_files() { # [--no-units]
 # release (env_prefix_settle_pending). Root-only: a non-root run refuses when a
 # rename is needed (require_env_rename_privilege) and proceeds otherwise.
 migrate_env_prefix_host() { # TARGET [RELEASE_DIR]
-  local target=$1 release=${2:-} root current listing f kind c conflicts='' need=0 no_units=''
+  local target=$1 release=${2:-} root current listing f kind need=0 no_units=''
   local -a files=()
   _epr_is_prefix "${target}" || die "migrate_env_prefix_host: target must be TAU or FICUS (got '${target}')"
   root=$(env_rename_backup_root)
@@ -4468,18 +4694,11 @@ migrate_env_prefix_host() { # TARGET [RELEASE_DIR]
   done <<<"${listing}"
 
   # Ruling 24: a protected conflict anywhere stops the run before any write.
-  # (${c} is one suffix per line, split into arguments on purpose.)
-  # shellcheck disable=SC2086
-  for f in "${SRC_DEST}/.env" "${FICUS_MANAGED_ENV_PATH}" "${BACKUP_ENV_TARGET}"; do
-    c=$(envfile_prefix_conflicts "${f}" TAU FICUS) || die "could not check ${f} for conflicting settings"
-    [[ -z ${c} ]] || conflicts+="${conflicts:+; }$(_epr_conflict_message "${f}" TAU FICUS ${c})"
-  done
-  if [[ -n ${CFG_FILE:-} ]]; then
-    c=$(yaml_prefix_conflicts "${CFG_FILE}" TAU FICUS) || die "could not check ${CFG_FILE} for conflicting settings"
-    # shellcheck disable=SC2086 # one suffix per line, split on purpose
-    [[ -z ${c} ]] || conflicts+="${conflicts:+; }$(_epr_conflict_message "${CFG_FILE} .core.env" TAU FICUS ${c})"
-  fi
-  [[ -z ${conflicts} ]] || die "refusing to rename this host's settings: ${conflicts}"
+  # The entry points already checked this in their preflight, before staging
+  # or migrating anything (N-I2); this is the same check again, right before
+  # the first write, in case a file changed in between.
+  # shellcheck disable=SC2119 # no EXTRA files here
+  require_no_env_prefix_conflicts
 
   # Per file: will anything change? (No ".env is already FICUS" shortcut —
   # a half-renamed host is finished file by file.)
@@ -4498,7 +4717,18 @@ migrate_env_prefix_host() { # TARGET [RELEASE_DIR]
     return 0
   fi
 
-  ENV_RENAME_BACKUP_SET=$(env_rename_backup_create FICUS "${release}" "${files[@]}") && [[ -n ${ENV_RENAME_BACKUP_SET} ]] ||
+  # managed.env is the one env file a run creates in the NEW names before the
+  # flip (setup-host.sh's phase_artifacts installs the staged copy renamed):
+  # when this host has none yet, the set records it as absent, so a restore
+  # removes it instead of leaving FICUS_ names under a pre-rename release.
+  # (backup.env and the backup script are written only after the flip, as a pair
+  # that works under either release, and a unit or .env never appears on a
+  # host that already needs renaming — so none of them is recorded.)
+  local -a absent=()
+  if [[ ! -e ${FICUS_MANAGED_ENV_PATH} && ! -L ${FICUS_MANAGED_ENV_PATH} ]]; then
+    absent=("absent:${FICUS_MANAGED_ENV_PATH}")
+  fi
+  ENV_RENAME_BACKUP_SET=$(env_rename_backup_create FICUS "${release}" "${files[@]}" ${absent[@]+"${absent[@]}"}) && [[ -n ${ENV_RENAME_BACKUP_SET} ]] ||
     die "could not create the env backup set — nothing was renamed"
   ENV_RENAME_BACKUP_SET=${ENV_RENAME_BACKUP_SET%$'\n'}
   ENV_RENAME_PENDING=1
@@ -4566,6 +4796,8 @@ _env_prefix_finish_forward() { # SETDIR
   [[ -e ${setdir}/UNITS_EXCLUDED ]] && no_units=--no-units
   # shellcheck disable=SC2086 # an empty ${no_units} must vanish, not pass ''
   if ! (
+    # shellcheck disable=SC2119 # no EXTRA files here
+    require_no_env_prefix_conflicts || exit 1
     _env_prefix_rename_files ${no_units} || exit 1
     listing=$(host_env_files ${no_units}) || exit 1
     while IFS= read -r f; do

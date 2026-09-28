@@ -228,6 +228,11 @@ export function installConsoleContentSanitizer(): () => void {
 export interface LoggerOptions {
   /** Color for the prefix and message text */
   color?: LogColor
+  /**
+   * Write every level to stderr (debug/info otherwise go to stdout). For output that must never
+   * mix with a stdout another program parses, e.g. the setup toolkit's `FICUS_*=` result markers.
+   */
+  stderr?: boolean
 }
 
 /** Core logging function */
@@ -279,7 +284,8 @@ function log(
     switch (level) {
       case 'debug':
       case 'info':
-        console.log(...parts)
+        if (options?.stderr) console.error(...parts)
+        else console.log(...parts)
         break
       case 'warn':
         console.warn(...parts)
