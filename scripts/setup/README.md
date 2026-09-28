@@ -177,6 +177,9 @@ release on an already renamed host is refused (see `--restore-env-backup`).
   (override: `ENV_RENAME_BACKUP_ROOT`). **These sets hold plaintext secrets**
   — the encryption key, the database DSN, passwords. The directory is root
   0700, and the newest five sets are kept until pruned.
+- **Files the run creates.** When the host has no `managed.env` yet, the set
+  records it as absent (an `ABSENT` list next to the `MANIFEST`), and a
+  restore removes the one the run installed in the new names.
 - **The journal.** `/var/backups/ficus-env-rename/PENDING` names the set, the
   target prefix and the release; it is flushed to disk before the first rename
   and removed only when the release that reads the new names is serving (or
@@ -226,6 +229,10 @@ pre-rename Core or running an older toolkit on a renamed host. Two caveats:
 
 - it also reverts **any secret changed since that set was taken** (a rotated
   password or key is rolled back with everything else);
+- it **removes `managed.env`** when the set recorded it as absent (the host
+  had none when it was renamed) — including one the control plane synced
+  since. Under a pre-rename release that `FICUS_` file is unreadable anyway,
+  and the next sync installs a fresh one;
 - backup archives taken **after** the rename carry a `FICUS_` `.env`. Restoring
   one needs this toolkit or newer: an older `setup-host.sh` looks only for
   `TAU_ENCRYPTION_KEY` in the archive and dies. (This toolkit reads either
