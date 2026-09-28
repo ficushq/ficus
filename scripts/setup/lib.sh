@@ -4637,7 +4637,7 @@ migrate_env_prefix_host() { # TARGET [RELEASE_DIR]
   # flip (setup-host.sh's phase_artifacts installs the staged copy renamed):
   # when this host has none yet, the set records it as absent, so a restore
   # removes it instead of leaving FICUS_ names under a pre-rename release.
-  # (backup.env and tau-backup.sh are written only after the flip, as a pair
+  # (backup.env and the backup script are written only after the flip, as a pair
   # that works under either release, and a unit or .env never appears on a
   # host that already needs renaming — so none of them is recorded.)
   local -a absent=()

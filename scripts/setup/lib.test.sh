@@ -3067,7 +3067,7 @@ EOF
   dr_run() {
     FICUS_SETUP_DATABASE_DSN='postgres://u:p@h/db' DR_USAGE_TOKEN='dr-usage-secret' \
       FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env" BACKUP_ENV_TARGET="${DR}/etc/backup.env" \
-      FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/tau-backup.sh" ENV_RENAME_BACKUP_ROOT="${DR}/bk" \
+      FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/nightly-backup.sh" ENV_RENAME_BACKUP_ROOT="${DR}/bk" \
       bash "${SCRIPT_DIR}/setup-host.sh" --config "${DR}/cfg.yaml" --dry-run 2>&1
   }
   dr_before=$(dr_sums)
@@ -3095,7 +3095,7 @@ EOF
   # shellcheck disable=SC2030,SC2031
   (
     SRC_DEST="${DR}/dest" CFG_FILE="${DR}/cfg.yaml" FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env"
-    BACKUP_ENV_TARGET="${DR}/etc/backup.env" FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/tau-backup.sh"
+    BACKUP_ENV_TARGET="${DR}/etc/backup.env" FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/nightly-backup.sh"
     _env_prefix_rename_files
   ) >/dev/null 2>&1
   expect_eq 'setup-host --dry-run fixture: the host is now renamed' "$(grep -c '^TAU_' "${DR}/dest/.env" || true)" '0' # legacy-env

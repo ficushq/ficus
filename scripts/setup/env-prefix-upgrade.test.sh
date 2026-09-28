@@ -862,7 +862,7 @@ if [[ -d /run/systemd/system ]] && grep -q '^ID=ubuntu' /etc/os-release && grep 
   expect_eq 'setup-host.sh re-run with no managed.env, rolled back: the managed.env it installed is removed again' \
     "$([[ -e ${H}/etc/managed.env ]] && echo present || echo removed)" 'removed'
   expect_eq 'setup-host.sh re-run with no managed.env, rolled back: every other file byte for byte, no journal' \
-    "$(for f in dest/.env etc/backup.env setup/tau-setup.yaml bin/tau-backup.sh; do cmp -s "${H}/pristine/${f}" "${H}/${f}" || printf ' %s' "${f}"; done):$(pending)" ':none'
+    "$(for f in "${ENV_FILES[@]}"; do [[ ${f} == etc/managed.env ]] || cmp -s "${H}/pristine/${f}" "${H}/${f}" || printf ' %s' "${f}"; done):$(pending)" ':none'
 
   # M2: a re-run on a host that is ALREADY renamed (the likely re-run after
   # the window) whose artifacts.dir still holds the pre-rename render.
