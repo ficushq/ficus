@@ -24,6 +24,8 @@
 
   /* Ink and text */
   --g-ink: color-mix(in srgb, var(--bp-fg) 55%, transparent);
+  /* Outlines of cards, buttons and fields (ink, in this style) */
+  --g-outline: var(--g-ink);
   --g-ink-soft: color-mix(in srgb, var(--bp-fg) 55%, var(--bp-bg));
   --g-text: var(--bp-fg);
   --g-text-soft: color-mix(in srgb, var(--bp-fg) 62%, var(--bp-bg));

@@ -21,6 +21,8 @@
 
   /* Ink and text */
   --g-ink: #3b2415;
+  /* Outlines of cards, buttons and fields (ink, in this style) */
+  --g-outline: var(--g-ink);
   --g-ink-soft: #6e5b3f;
   --g-text: #4a3524;
   --g-text-soft: #6e5b3f;

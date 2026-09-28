@@ -62,7 +62,7 @@
 /* Wooden panels shared by the HUD */
 .g-panel {
   background: var(--g-panel-fill);
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-tile);
   box-shadow: var(--g-lift);
 }
@@ -135,7 +135,7 @@
   place-items: center;
   width: 38px;
   height: 38px;
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-round);
   color: var(--g-ink);
   background-image: var(--g-counter-gloss);
@@ -161,7 +161,7 @@
   width: 60px;
   height: 60px;
   padding: 0;
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-round);
   background: var(--g-tool-fill);
   box-shadow: var(--g-lift);
@@ -214,7 +214,7 @@
   min-width: 24px;
   height: 24px;
   padding: 0 5px;
-  border: var(--g-border-mid) solid var(--g-ink);
+  border: var(--g-border-mid) solid var(--g-outline);
   border-radius: var(--g-radius-tile);
   background: var(--g-badge-fill);
   color: var(--g-on-badge);
@@ -261,7 +261,7 @@
   width: 36px;
   height: 36px;
   padding: 0;
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-round);
   background: var(--g-danger-fill);
   color: var(--g-on-danger);
@@ -300,7 +300,7 @@
   display: inline-block;
   margin: 0;
   padding: 3px 10px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-pill);
   background: var(--g-good-tint);
   font: 700 12.5px var(--g-font-body);
@@ -343,7 +343,7 @@
   width: 16px;
   height: 16px;
   background: var(--g-card);
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   rotate: 45deg;
 }
 
@@ -450,14 +450,14 @@
 
 .g-crew-row:hover,
 .g-crew-row:focus-visible {
-  border-color: var(--g-ink);
+  border-color: var(--g-outline);
   background: var(--g-paper);
   outline: none;
 }
 
 .g-avatar {
   flex: none;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-round);
   background: var(--g-avatar-fill);
 }
@@ -512,7 +512,7 @@
   width: 100%;
   min-height: 48px;
   padding: 6px 12px;
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-tile);
   background: var(--g-plank-fill);
   box-shadow: var(--g-lift-md);
@@ -571,7 +571,7 @@
 
 .g-list-row:hover,
 .g-list-row:focus-visible {
-  border-color: var(--g-ink);
+  border-color: var(--g-outline);
   background: var(--g-paper);
   outline: none;
 }
@@ -658,9 +658,9 @@
   background: linear-gradient(
     135deg,
     transparent 0 55%,
-    var(--g-ink) 55% 62%,
+    var(--g-outline) 55% 62%,
     transparent 62% 72%,
-    var(--g-ink) 72% 79%,
+    var(--g-outline) 72% 79%,
     transparent 79%
   );
   opacity: 0.55;
@@ -696,7 +696,7 @@
   min-height: 36px;
   padding: 4px 12px;
   overflow: hidden;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-pill);
   background: var(--g-paper);
   color: var(--g-ink);
@@ -726,7 +726,7 @@
   flex: none;
   min-height: 36px;
   padding: 0 12px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-sm);
   background: var(--g-accent-fill);
   box-shadow: var(--g-lift-sm);
@@ -750,7 +750,7 @@
   gap: 6px;
   min-height: 34px;
   padding: 0 12px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-pill);
   background: var(--g-field);
   box-shadow: var(--g-lift-sm);

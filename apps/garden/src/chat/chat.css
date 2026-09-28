@@ -13,7 +13,7 @@
   width: min(440px, calc(100vw - 32px));
   overflow: hidden;
   background: var(--g-chat-linen);
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-lg);
   box-shadow: var(--g-window-shadow);
   color: var(--g-ink);
@@ -43,7 +43,7 @@
   min-height: 60px;
   padding: 10px 60px 10px 16px;
   background: var(--g-panel-fill);
-  border-bottom: var(--g-border) solid var(--g-ink);
+  border-bottom: var(--g-border) solid var(--g-outline);
 }
 
 .g-chat-subtitle {
@@ -107,7 +107,7 @@
   min-height: 44px;
   margin: 0 auto 12px;
   padding: 0 16px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-pill);
   background: var(--g-chat-paper);
   color: var(--g-ink);
@@ -136,7 +136,7 @@
 
 .g-chat-human .g-chat-bubble {
   padding: 8px 12px;
-  border: var(--g-border-mid) solid var(--g-ink);
+  border: var(--g-border-mid) solid var(--g-outline);
   border-radius: var(--g-radius) var(--g-radius) var(--g-radius-tail) var(--g-radius);
   background: var(--g-bubble-human);
   box-shadow: var(--g-lift-md);
@@ -176,7 +176,7 @@
   width: 100%;
   max-width: 94%;
   padding: 10px 12px;
-  border: var(--g-border-mid) solid var(--g-ink);
+  border: var(--g-border-mid) solid var(--g-outline);
   border-radius: var(--g-radius) var(--g-radius) var(--g-radius) var(--g-radius-tail);
   background: var(--g-bubble-agent);
   box-shadow: var(--g-lift-md);
@@ -327,7 +327,7 @@
 .g-chat-code {
   overflow-x: auto;
   padding: 10px 12px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-sm);
   background: var(--g-code-bg);
   color: var(--g-code-text);
@@ -501,7 +501,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-pill);
   background: var(--g-chat-paper);
   color: var(--g-ink-soft);
@@ -546,7 +546,7 @@
 .g-chat-mail {
   width: 100%;
   padding: 10px 12px;
-  border: var(--g-border-mid) solid var(--g-ink);
+  border: var(--g-border-mid) solid var(--g-outline);
   border-radius: var(--g-radius-tile);
   background: var(--g-chat-mail-fill);
   box-shadow: var(--g-lift-md);
@@ -579,7 +579,7 @@
   text-transform: none;
   letter-spacing: normal;
   padding: 1px 8px;
-  border: var(--g-border-hair) solid var(--g-ink);
+  border: var(--g-border-hair) solid var(--g-outline);
   border-radius: var(--g-radius-pill);
   font: 700 11px var(--g-font-body);
 }
@@ -605,7 +605,7 @@
 .g-chat-notice {
   margin: 12px 0 0;
   padding: 8px 12px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-tile);
   background: var(--g-chat-paper);
   color: var(--g-ink-soft);
@@ -631,7 +631,7 @@
 .g-chat-ask {
   margin-top: 14px;
   padding: 12px 14px 14px;
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-md);
   background: var(--g-ask-fill);
   box-shadow: var(--g-lift);
@@ -652,7 +652,7 @@
   place-items: center;
   width: 26px;
   height: 26px;
-  border: var(--g-border-mid) solid var(--g-ink);
+  border: var(--g-border-mid) solid var(--g-outline);
   border-radius: var(--g-radius-round);
   background: var(--g-danger-fill);
   color: var(--g-on-danger);
@@ -689,7 +689,7 @@
   display: block;
   width: 100%;
   padding: 10px 12px;
-  border: var(--g-border-mid) solid var(--g-ink);
+  border: var(--g-border-mid) solid var(--g-outline);
   border-radius: var(--g-radius-tile);
   background: var(--g-chat-paper);
   color: var(--g-ink);
@@ -727,7 +727,7 @@
 }
 
 .g-chat-option.g-selected {
-  border-color: var(--g-ink);
+  border-color: var(--g-outline);
   background: var(--g-good-tint);
 }
 
@@ -752,7 +752,7 @@
 .g-chat-chip {
   min-height: 36px;
   padding: 0 12px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-pill);
   background: var(--g-chat-paper);
   color: var(--g-ink);
@@ -775,7 +775,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px max(12px, env(safe-area-inset-bottom));
-  border-top: var(--g-border) solid var(--g-ink);
+  border-top: var(--g-border) solid var(--g-outline);
   background: var(--g-chat-composer-fill);
 }
 
@@ -826,7 +826,7 @@
   display: flex;
   align-items: stretch;
   min-height: 44px;
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-md);
   background: var(--g-accent-fill);
   box-shadow: var(--g-lift);
@@ -884,7 +884,7 @@
   align-self: flex-end;
   min-height: 36px;
   padding: 0 12px;
-  border: var(--g-border-thin) solid var(--g-ink);
+  border: var(--g-border-thin) solid var(--g-outline);
   border-radius: var(--g-radius-pill);
   background: var(--g-caution-tint);
   color: var(--g-caution-text);

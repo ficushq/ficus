@@ -24,7 +24,7 @@ body {
 
 .g-card {
   background: var(--g-card);
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius);
   box-shadow: var(--g-card-shadow);
 }
@@ -65,7 +65,7 @@ body {
   justify-content: center;
   min-height: 44px;
   padding: 0 20px;
-  border: var(--g-border) solid var(--g-ink);
+  border: var(--g-border) solid var(--g-outline);
   border-radius: var(--g-radius-md);
   background: var(--g-button-fill);
   box-shadow: var(--g-lift);
