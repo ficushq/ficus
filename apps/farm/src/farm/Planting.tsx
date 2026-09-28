@@ -14,7 +14,7 @@ const POP_MS = 700
 
 type Phase = 'out' | 'plant' | 'back'
 
-function usePrefersReducedMotion(): boolean {
+export function usePrefersReducedMotion(): boolean {
   const query = typeof window === 'undefined' ? null : window.matchMedia?.('(prefers-reduced-motion: reduce)')
   const [reduce, setReduce] = useState(() => query?.matches ?? false)
   useEffect(() => {
@@ -37,10 +37,11 @@ interface Plantings {
 /**
  * Watches the farm for new work streams and has their robots plant them: the
  * new plant stays hidden until its robot arrives, the robot's usual spot is
- * empty while it's out, and a robot with several to plant does them in turn.
+ * empty while it's out, and a robot with several to plant does them in turn
+ * (and not while it's walking somewhere else).
  * With reduced motion, new plants simply appear.
  */
-export function usePlantings(layout: FarmLayout): Plantings {
+export function usePlantings(layout: FarmLayout, busy: ReadonlySet<string> = new Set()): Plantings {
   const reduce = usePrefersReducedMotion()
   const previous = useRef<FarmLayout | null>(null)
   const [queue, setQueue] = useState<Planting[]>([])
@@ -58,14 +59,15 @@ export function usePlantings(layout: FarmLayout): Plantings {
       setQueue((queue) => [...queue, ...fresh.filter((f) => !queue.some((q) => q.streamId === f.streamId))])
   }, [layout, reduce])
 
+  // A robot out walking somewhere (see RobotWalkers.tsx) plants once it's back.
   const active = useMemo(() => {
-    const busy = new Set<string>()
+    const taken = new Set(busy)
     return queue.filter((planting) => {
-      if (busy.has(planting.planter.agent.id)) return false
-      busy.add(planting.planter.agent.id)
+      if (taken.has(planting.planter.agent.id)) return false
+      taken.add(planting.planter.agent.id)
       return true
     })
-  }, [queue])
+  }, [queue, busy])
 
   const hidden = useMemo<SceneHidden>(() => {
     if (!queue.length && !popping.size) return NOTHING_HIDDEN

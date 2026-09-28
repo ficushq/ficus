@@ -5,6 +5,7 @@ import { screenBounds } from './iso'
 import { layoutFarm, type FarmInput } from './layout'
 import { SceneWorld } from './Scene'
 import { PlantingWalker, usePlantings } from './Planting'
+import { RobotWalker, useRobotWalks } from './RobotWalkers'
 import { useCamera } from './useCamera'
 import { useViewportSize } from './useViewportSize'
 import { FarmCard, selectionAnchor } from './FarmCard'
@@ -55,7 +56,16 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   useDesktopShellChrome()
   const { skin, setSkin } = useSkin()
   const layout = useMemo(() => layoutFarm(input), [input])
-  const plantings = usePlantings(layout)
+  // Robots walk to new jobs (and home to rest); one out walking plants when it's back.
+  const walks = useRobotWalks(layout)
+  const plantings = usePlantings(layout, walks.walking)
+  const hidden = useMemo(
+    () =>
+      walks.walking.size
+        ? { ...plantings.hidden, robots: new Set([...plantings.hidden.robots, ...walks.walking]) }
+        : plantings.hidden,
+    [plantings.hidden, walks.walking]
+  )
   const viewport = useRef<HTMLDivElement>(null)
   const size = useViewportSize(viewport)
   const world = useMemo(() => {
@@ -301,8 +311,11 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
               mailboxCount={needsYou}
               onSelect={onSelect}
               onReveal={reveal}
-              hidden={plantings.hidden}
+              hidden={hidden}
             />
+            {walks.walks.map((walk) => (
+              <RobotWalker key={`${walk.agentId}:${walk.serial}`} walk={walk} onStep={walks.step} onDone={walks.done} />
+            ))}
             {plantings.active.map((planting) => (
               <PlantingWalker
                 key={planting.streamId}

@@ -896,3 +896,9 @@ a.g-pr-link:focus-visible {
   outline: var(--g-focus-width) solid var(--g-highlight-strong);
   outline-offset: 2px;
 }
+
+/* A robot going in to rest fades into its hut. */
+.g-robot-walker-in {
+  opacity: 0;
+  transition: opacity 0.35s ease-in;
+}
