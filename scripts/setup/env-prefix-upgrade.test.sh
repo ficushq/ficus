@@ -806,7 +806,7 @@ if [[ -d /run/systemd/system ]] && grep -q '^ID=ubuntu' /etc/os-release && grep 
     new_host "$1"
     printf 'TAU_INTERNAL_EVENT_TOKEN=evt-1\n' >>"${DEST}/.env" # legacy-env
     cp -p "${H}/etc/managed.env" "${H}/stage/managed.env"
-    STAGE="${H}/stage" yq -i '.source.repo = "https://example.invalid/core.git" | .artifacts.dir = strenv(STAGE) | .core.env.TAU_MAX_MACHINES = "5"' "${CONFIG}" # legacy-env
+    STAGE="${H}/stage" yq -i '.source.repo = "https://example.invalid/core.git" | .artifacts.dir = strenv(STAGE) | .core.env.TAU_MAX_MACHINES = "5" | .secrets.password_env = "PLATFORM_TAU_PASSWORD"' "${CONFIG}" # legacy-env
     snapshot "${H}/pristine"
     cp -p "${H}/stage/managed.env" "${H}/stage.managed.pristine"
   }
@@ -826,6 +826,10 @@ if [[ -d /run/systemd/system ]] && grep -q '^ID=ubuntu' /etc/os-release && grep 
     "$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.pristine" && echo same)" 'same'
   expect_eq 'setup-host.sh re-run on a TAU host: no TAU_ name in any env-bearing file' "$(tau_names)" '0'
   expect_eq 'setup-host.sh re-run on a TAU host: one set, no journal' "$(sets):$(pending)" '1:none'
+  expect_eq 'setup-host.sh re-run on a TAU host: the control plane password variable in the config is renamed' \
+    "$(yq -r '.secrets.password_env' "${CONFIG}")" 'PLATFORM_FICUS_PASSWORD'
+  expect_eq 'setup-host.sh re-run on a TAU host: no pre-rename spelling of it anywhere in the output' \
+    "$(grep -c 'PLATFORM_TAU_' <<<"${OUT}" || true)" '0' # legacy-env
   rerun_set=$(find "${H}/bk" -mindepth 1 -maxdepth 1 -type d | head -n 1)
   expect_eq 'setup-host.sh re-run on a TAU host: the set holds the pre-rename bytes (.env, managed.env)' \
     "$(cmp -s "${rerun_set}/1" "${H}/pristine/dest/.env" && echo same):$(cmp -s "${rerun_set}/2" "${H}/pristine/etc/managed.env" && echo same)" 'same:same'

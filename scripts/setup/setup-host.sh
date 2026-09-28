@@ -391,7 +391,11 @@ if [[ ${AI_SECTION_PRESENT} -eq 1 ]]; then
 fi
 
 SEC_ENC_ENV=$(cfg_get '.secrets.encryption_key_env')
-SEC_PW_ENV=$(cfg_get '.secrets.password_env')
+# The control plane's pre-rename bootstrap-password variable name is read in
+# its renamed spelling: the rename below rewrites this config's
+# secrets.password_env to it (yaml_rename_env_prefix), and the current control
+# plane sends only that one. Any other name is used as written.
+SEC_PW_ENV=$(epr_map_password_env "$(cfg_get '.secrets.password_env')" TAU FICUS)
 
 ENV_FILE="${SRC_DEST}/.env"
 

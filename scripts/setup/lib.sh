@@ -3957,6 +3957,23 @@ _epr_yaml_env_keys() { # YAML
   yq -r '(.core.env // {}) | keys | .[]' "$1" 2>/dev/null
 }
 
+# The control plane's bootstrap-password env var NAME, which it writes into a
+# tenant config's secrets.password_env: PLATFORM_<P>_PASSWORD for prefix P.
+# Print NAME mapped from the FROM spelling to the TO one — only that exact
+# value; any other (operator-chosen) name is printed unchanged.
+epr_map_password_env() { # NAME FROM TO
+  if [[ $1 == "PLATFORM_$2_PASSWORD" ]]; then
+    printf 'PLATFORM_%s_PASSWORD' "$3"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+# The host config's secrets.password_env, or nothing.
+_epr_yaml_password_env() { # YAML
+  yq -r '.secrets.password_env // ""' "$1" 2>/dev/null
+}
+
 # Like envfile_prefix_conflicts, for the host config's .core.env map.
 yaml_prefix_conflicts() { # YAML FROM TO
   local yaml=$1 from=$2 to=$3 target keys key suffix fv tv
@@ -3978,14 +3995,20 @@ yaml_prefix_conflicts() { # YAML FROM TO
 # Rename the host config's .core.env.<FROM>_* keys to <TO>_* (comments and
 # order kept), with renameEnvPrefix's conflict rules: a protected conflict
 # dies before any write; otherwise a non-empty TO_ key wins and the FROM_ key
-# is dropped (logged when the values differ). The edit is made on a copy next
-# to the resolved file and renamed over it, so a symlinked yaml stays a link.
+# is dropped (logged when the values differ). A secrets.password_env that is
+# exactly the control plane's FROM-spelled bootstrap-password variable
+# (epr_map_password_env) is set to its TO spelling in the same edit; any other
+# value is left alone. The edit is made on a copy next to the resolved file
+# and renamed over it, so a symlinked yaml stays a link; a config with nothing
+# to change is not written at all.
 yaml_rename_env_prefix() { # YAML FROM TO
-  local yaml=$1 from=$2 to=$3 target keys key suffix twin fv tv tmp conflicts dropped=() renamed=0
+  local yaml=$1 from=$2 to=$3 target keys key suffix twin fv tv tmp conflicts dropped=() renamed=0 pw pw_to=''
   _epr_require_prefixes yaml_rename_env_prefix "${from}" "${to}"
   _epr_resolve "${yaml}" target || return 0
   keys=$(_epr_yaml_env_keys "${target}") || die "yaml_rename_env_prefix: could not read .core.env from ${target}"
-  grep -q -- "^${from}_." <<<"${keys}" || return 0
+  pw=$(_epr_yaml_password_env "${target}") || die "yaml_rename_env_prefix: could not read secrets.password_env from ${target}"
+  [[ -n ${pw} && $(epr_map_password_env "${pw}" "${from}" "${to}") != "${pw}" ]] && pw_to=$(epr_map_password_env "${pw}" "${from}" "${to}")
+  grep -q -- "^${from}_." <<<"${keys}" || [[ -n ${pw_to} ]] || return 0
   conflicts=$(yaml_prefix_conflicts "${target}" "${from}" "${to}") || die "yaml_rename_env_prefix: could not check ${target} for conflicting settings"
   if [[ -n ${conflicts} ]]; then
     # shellcheck disable=SC2086 # one suffix per line, split on purpose
@@ -4029,12 +4052,17 @@ yaml_rename_env_prefix() { # YAML FROM TO
     fi
     renamed=$((renamed + 1))
   done <<<"${keys}"
+  if [[ -n ${pw_to} ]] && ! N=${pw_to} yq -i '.secrets.password_env = strenv(N)' "${tmp}"; then
+    rm -f -- "${tmp}"
+    die "yaml_rename_env_prefix: failed to edit the staged copy of ${target}"
+  fi
   if ! _epr_copy_mode_owner "${target}" "${tmp}" || ! mv -f -- "${tmp}" "${target}"; then
     rm -f -- "${tmp}"
     die "yaml_rename_env_prefix: failed to replace ${target} — it was left unchanged"
   fi
   ((${#dropped[@]} == 0)) || log_warn "${target}: kept the ${to}_ value and dropped the differing ${from}_ key for: ${dropped[*]}"
   log_info "${target}: renamed ${renamed} .core.env key(s) ${from}_ -> ${to}_"
+  [[ -z ${pw_to} ]] || log_info "${target}: secrets.password_env now names ${pw_to}"
 }
 
 # Rename the Environment=<FROM>_… (and Environment="<FROM>_…") assignments of
@@ -4475,7 +4503,7 @@ env_rename_backup_prune() {
 
 # Does FILE have a line that step 8 below would rename? $2 is the kind.
 _epr_needs_rename() { # FILE dotenv|yaml|unit|backup_script
-  local rc=0 from=TAU keys raw rrc=0 LC_ALL=C
+  local rc=0 from=TAU keys raw rrc=0 pw LC_ALL=C
   case "$2" in
     dotenv | unit)
       # Exactly what the rename would do: a TAU_ line inside a multi-line
@@ -4494,6 +4522,10 @@ _epr_needs_rename() { # FILE dotenv|yaml|unit|backup_script
     yaml)
       keys=$(_epr_yaml_env_keys "$1") || die "could not read .core.env from $1"
       grep -q "^${from}_." <<<"${keys}" || rc=$?
+      if [[ ${rc} -eq 1 ]]; then
+        pw=$(_epr_yaml_password_env "$1") || die "could not read secrets.password_env from $1"
+        [[ -z ${pw} || $(epr_map_password_env "${pw}" "${from}" FICUS) == "${pw}" ]] || rc=0
+      fi
       ;;
     backup_script) grep -qF "${from}_BACKUP_" -- "$1" || rc=$? ;;
   esac

@@ -2968,7 +2968,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   provider: openai-codex
   key_env: ''
@@ -3057,6 +3057,8 @@ runtime:
   sandbox: docker-socket
 artifacts:
   dir: ${DR}/stage
+secrets:
+  password_env: PLATFORM_TAU_PASSWORD # legacy-env
 EOF
   dr_sums() {
     local f
@@ -3065,7 +3067,8 @@ EOF
     done
   }
   dr_run() {
-    FICUS_SETUP_DATABASE_DSN='postgres://u:p@h/db' DR_USAGE_TOKEN='dr-usage-secret' \
+    PLATFORM_TAU_PASSWORD='dr-old-bearer' PLATFORM_FICUS_PASSWORD='dr-bearer' \
+      FICUS_SETUP_DATABASE_DSN='postgres://u:p@h/db' DR_USAGE_TOKEN='dr-usage-secret' \
       FICUS_MANAGED_ENV_PATH="${DR}/etc/managed.env" BACKUP_ENV_TARGET="${DR}/etc/backup.env" \
       FICUS_SYSTEMD_UNIT_DIR="${DR}/units" BACKUP_SCRIPT_PATH="${DR}/bin/nightly-backup.sh" ENV_RENAME_BACKUP_ROOT="${DR}/bk" \
       bash "${SCRIPT_DIR}/setup-host.sh" --config "${DR}/cfg.yaml" --dry-run 2>&1
@@ -3077,6 +3080,10 @@ EOF
   [[ ${dr_rc} -eq 0 ]] || printf '%s\n' "${dr_out}" >&2
   expect_eq 'setup-host --dry-run on a TAU host: no pre-rename (TAU_) name anywhere in its output' \
     "$(grep -cE '(^|[^A-Za-z0-9_])TAU_' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: no pre-rename spelling at all, the control plane password variable included' \
+    "$(grep -c 'TAU_' <<<"${dr_out}" || true)" '0'
+  expect_eq 'setup-host --dry-run on a TAU host: the bootstrap bearer comes from the renamed password variable' \
+    "$(grep -c 'FICUS_PASSWORD (bootstrap bearer) from: \$PLATFORM_FICUS_PASSWORD' <<<"${dr_out}")" '1'
   expect_eq 'setup-host --dry-run on a TAU host: the planned .env carries the core.env keys under their FICUS_ names' \
     "$(grep -c '^  | FICUS_MAX_MACHINES=5$' <<<"${dr_out}"):$(grep -c '^  | FICUS_PLATFORM_USAGE_TOKEN=' <<<"${dr_out}")" '1:1'
   expect_eq 'setup-host --dry-run on a TAU host: ...with the *_ENV secret still redacted' "$(grep -c 'dr-usage-secret' <<<"${dr_out}" || true)" '0'
@@ -3089,7 +3096,7 @@ EOF
   expect_eq 'setup-host --dry-run on a TAU host: nothing on disk changed (sha256 of every file), no backup set' \
     "$([[ $(dr_sums) == "${dr_before}" ]] && echo same || echo changed):$([[ -e ${DR}/bk ]] && echo created || echo none)" 'same:none'
   expect_eq 'setup-host --dry-run on a TAU host: the config keeps its pre-rename keys (renamed only in the preview)' \
-    "$(yq -r '.core.env | keys | .[]' "${DR}/cfg.yaml" | grep -c '^TAU_')" '2' # legacy-env
+    "$(yq -r '.core.env | keys | .[]' "${DR}/cfg.yaml" | grep -c '^TAU_'):$(yq -r '.secrets.password_env' "${DR}/cfg.yaml")" '2:PLATFORM_TAU_PASSWORD' # legacy-env
   # A dry run interrupted while it builds that preview (Ctrl-C reaches the
   # whole process group) leaves nothing in TMPDIR: the renamed copy of the
   # config — which can hold a literal database.dsn — and the renamer's staging
@@ -3178,7 +3185,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   provider: openai-codex
   key_env: ''
@@ -3240,7 +3247,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   provider: openai
   key_env: ''
@@ -3266,7 +3273,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 EOF
 
   # -- seed.sh --dry-run directly: explicit ai:+squad keeps today's exact plan
@@ -3367,7 +3374,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   model: openai:gpt-5.5
 EOF
@@ -3407,7 +3414,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 squad:
   name: starter
 EOF
@@ -3442,7 +3449,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 ai:
   provider: openai-codex
   key_env: ''
@@ -5375,7 +5382,7 @@ database:
 runtime:
   sandbox: docker-socket
 secrets:
-  password_env: PLATFORM_TAU_PASSWORD
+  password_env: PLATFORM_FICUS_PASSWORD
 backup:
   enabled: true
   s3_endpoint: https://nyc3.digitaloceanspaces.com
@@ -5789,6 +5796,28 @@ if yq_is_mikefarah; then
     "$( (yaml_rename_env_prefix "${EPR}/yconf.yaml" TAU FICUS) >/dev/null 2>&1; echo "rc=$?")" 'rc=1'
   expect_eq 'yaml_rename_env_prefix: ...before writing anything' "$(cmp -s "${EPR}/yconf.yaml" "${EPR}/yconf.orig" && echo same)" 'same'
   expect_eq 'yaml_prefix_conflicts: names the suffix' "$(yaml_prefix_conflicts "${EPR}/yconf.yaml" TAU FICUS)" 'PASSWORD_ENV'
+  # The control plane's bootstrap-password variable NAME in secrets.password_env:
+  # the exact pre-rename value is renamed with the rest of the config; any other
+  # name is left alone, and a config with nothing to change is not written.
+  expect_eq 'epr_map_password_env: the exact pre-rename name maps; anything else is unchanged' \
+    "$(epr_map_password_env PLATFORM_TAU_PASSWORD TAU FICUS) $(epr_map_password_env PLATFORM_TAU_PASSWORD_2 TAU FICUS) $(epr_map_password_env MY_PASSWORD TAU FICUS) $(epr_map_password_env PLATFORM_FICUS_PASSWORD TAU FICUS)" \
+    'PLATFORM_FICUS_PASSWORD PLATFORM_TAU_PASSWORD_2 MY_PASSWORD PLATFORM_FICUS_PASSWORD' # legacy-env
+  printf '# tenant config\nsecrets:\n  # bootstrap bearer\n  password_env: PLATFORM_TAU_PASSWORD\ncore:\n  origin: https://a.example\n' >"${EPR}/pw.yaml" # legacy-env
+  expect_eq '_epr_needs_rename yaml: a pre-rename password_env alone needs the rename' "$(_epr_needs_rename "${EPR}/pw.yaml" yaml && echo yes)" 'yes'
+  yaml_rename_env_prefix "${EPR}/pw.yaml" TAU FICUS 2>/dev/null
+  expect_eq 'yaml_rename_env_prefix: password_env is renamed, comments and the rest kept' \
+    "$(<"${EPR}/pw.yaml")" $'# tenant config\nsecrets:\n  # bootstrap bearer\n  password_env: PLATFORM_FICUS_PASSWORD\ncore:\n  origin: https://a.example'
+  expect_eq '_epr_needs_rename yaml: ...and then needs nothing' "$(_epr_needs_rename "${EPR}/pw.yaml" yaml && echo yes || echo no)" 'no'
+  cp -p "${EPR}/pw.yaml" "${EPR}/pw.orig"
+  yaml_rename_env_prefix "${EPR}/pw.yaml" TAU FICUS 2>/dev/null
+  expect_eq 'yaml_rename_env_prefix: an already renamed config stays byte for byte' "$(cmp -s "${EPR}/pw.yaml" "${EPR}/pw.orig" && echo same)" 'same'
+  for epr_pw in PLATFORM_TAU_PASSWORD_2 MY_TAU_PASSWORD OPERATOR_PASSWORD; do
+    printf 'secrets:\n  password_env: %s\n' "${epr_pw}" >"${EPR}/pw-other.yaml"
+    cp -p "${EPR}/pw-other.yaml" "${EPR}/pw-other.orig"
+    yaml_rename_env_prefix "${EPR}/pw-other.yaml" TAU FICUS 2>/dev/null
+    expect_eq "yaml_rename_env_prefix: an operator-chosen password_env (${epr_pw}) is left byte for byte" \
+      "$(cmp -s "${EPR}/pw-other.yaml" "${EPR}/pw-other.orig" && echo same):$(_epr_needs_rename "${EPR}/pw-other.yaml" yaml && echo needs || echo clean)" 'same:clean'
+  done
 else
   log_warn 'mikefarah yq not on PATH — skipping the yaml_rename_env_prefix cases'
 fi
