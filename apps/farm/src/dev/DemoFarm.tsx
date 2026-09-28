@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { FarmScreen } from '../farm/FarmScreen'
 import { ActionsApiProvider, type ActionsApi } from '../actions'
 import { makeStream } from '../farm/testFixtures'
-import { SAMPLE_QUESTION, sampleFarm } from './sampleFarm'
+import { SAMPLE_FARMER_QUESTION, SAMPLE_QUESTION, sampleFarm } from './sampleFarm'
 
 /** Actions in the demo succeed without a server and log what they would have sent. */
 function demoActionsApi(): ActionsApi {
@@ -13,7 +13,8 @@ function demoActionsApi(): ActionsApi {
       return undefined as never
     }
   return {
-    getAgentQuestions: async (agentId) => (agentId === SAMPLE_QUESTION.agentId ? [SAMPLE_QUESTION] : []),
+    getAgentQuestions: async (agentId) =>
+      [SAMPLE_QUESTION, SAMPLE_FARMER_QUESTION].filter((q) => q.agentId === agentId),
     answerAgentQuestion: ok('answerAgentQuestion'),
     dismissAgentQuestion: ok('dismissAgentQuestion'),
     retryAgentQuestionAnswerDelivery: ok('retryAgentQuestionAnswerDelivery'),

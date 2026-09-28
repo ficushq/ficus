@@ -390,6 +390,11 @@
   margin-top: 10px;
 }
 
+/* A robot's Talk button comes before its questions and decisions, with room between. */
+.g-card-talk {
+  margin-bottom: 12px;
+}
+
 .g-clamp {
   display: -webkit-box;
   -webkit-line-clamp: 4;

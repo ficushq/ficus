@@ -6,7 +6,7 @@ import {
   type WorkStreamPresentationState,
 } from '@ficus/shared'
 import { WORK_STREAM_PRESENTATION_CASES } from '@ficus/shared/test-fixtures/work-stream-presentation'
-import { badgeFor, faceFor, haltedAgentIds, isHaltedAgent, isRunning, plantStateFor } from './state'
+import { askingAgentIds, badgeFor, faceFor, haltedAgentIds, isHaltedAgent, isRunning, plantStateFor } from './state'
 import type { PlantState } from './types'
 import { makeAgent, makeAgentError, makeStream, makeWait } from './testFixtures'
 
@@ -254,6 +254,12 @@ describe('faces', () => {
     expect(isHaltedAgent(agent, [question])).toBe(false)
     expect(isHaltedAgent(agent, [makeAgentError('b')])).toBe(false)
     expect([...haltedAgentIds([makeAgentError('a'), makeAgentError('b'), question])]).toEqual(['a', 'b'])
+  })
+
+  it('finds agents asking you something, from agent and squad questions only', () => {
+    const agentQuestion = { ...makeAgentError('a'), type: 'agent-question' as const }
+    const squadQuestion = { ...makeAgentError('m'), type: 'squad-question' as const }
+    expect([...askingAgentIds([agentQuestion, squadQuestion, makeAgentError('b')])]).toEqual(['a', 'm'])
   })
 })
 

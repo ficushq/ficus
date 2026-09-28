@@ -111,9 +111,20 @@ function buildDrawables(
   const items: Drawable[] = []
   const badges: ReactNode[] = []
 
-  const robot = (r: RobotPlacement, extra = 0, keyPrefix = 'robot') => {
+  const robot = (r: RobotPlacement, extra = 0, keyPrefix = 'robot', plantAsks = false) => {
     if (hidden.robots.has(r.agent.id)) return
     const [x, y] = iso(r.i, r.j)
+    // A robot asking you something wears a "?" (unless the plant it tends already shows that question).
+    if (r.asking && !plantAsks)
+      badges.push(
+        <g
+          key={`${keyPrefix}:${r.agent.id}:badge`}
+          transform={`translate(${x} ${y + skin.boxes.robot[1] + 4})`}
+          aria-hidden="true"
+        >
+          <skin.Badge kind="question" />
+        </g>
+      )
     const key = `robot:${r.agent.id}`
     items.push({
       key: `${keyPrefix}:${r.agent.id}`,
@@ -139,7 +150,7 @@ function buildDrawables(
     const key = `plot:${p.stream.id}`
     const isSelected = selected === key
     ground.push(<skin.PlotGround key={`${key}:ground`} i={p.i} j={p.j} selected={isSelected} />)
-    if (p.tender) robot(p.tender, p.extraTenders)
+    if (p.tender) robot(p.tender, p.extraTenders, 'robot', p.badge === 'question')
     // Not planted yet: only its soil shows until its robot gets there.
     if (hidden.plants.has(p.stream.id)) return
     const [x, y] = iso(p.i + 0.5, p.j + 0.5)

@@ -235,6 +235,14 @@ describe('tenders', () => {
     expect(plot.extraTenders).toBe(2)
   })
 
+  it('counts a question asked without stopping: the asker tends, with the question face', () => {
+    const question = { ...makeAgentError('b-asks'), id: 'q-1', type: 'agent-question' as const }
+    const plot = plotFor([worker('a-active', 'active'), worker('b-asks', 'active')], [question])
+    expect(plot.tender).toMatchObject({ agent: { id: 'b-asks' }, face: 'question', asking: true })
+    // The others aren't asking.
+    expect(plotFor([worker('a-active', 'active')]).tender).toMatchObject({ face: 'happy', asking: false })
+  })
+
   it('stands in the path beside its plot, not on the plant', () => {
     const plot = plotFor([worker('w', 'active')])
     expect([plot.tender!.i, plot.tender!.j]).toEqual([plot.i + 1.1, plot.j + 0.7])

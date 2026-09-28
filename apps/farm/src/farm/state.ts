@@ -4,6 +4,7 @@ import {
   type Agent,
   type AgentErrorActionData,
   type PendingAction,
+  type QuestionActionData,
   type WorkStream,
 } from '@ficus/shared'
 import type { BadgeKind, PlantState, RobotFace } from './types'
@@ -108,6 +109,21 @@ export function haltedAgentIds(pendingActions: readonly PendingAction[]): Set<st
   for (const action of pendingActions) {
     if (action.type !== 'agent-error') continue
     const agentId = (action.data as AgentErrorActionData | undefined)?.agentId
+    if (agentId) ids.add(agentId)
+  }
+  return ids
+}
+
+/**
+ * Ids of agents with a question open for you: a pending `agent-question` or
+ * `squad-question`. An agent that asks without stopping (ask_human) stays
+ * `active`, so its status alone doesn't say it's asking.
+ */
+export function askingAgentIds(pendingActions: readonly PendingAction[]): Set<string> {
+  const ids = new Set<string>()
+  for (const action of pendingActions) {
+    if (action.type !== 'agent-question' && action.type !== 'squad-question') continue
+    const agentId = (action.data as QuestionActionData | undefined)?.agentId
     if (agentId) ids.add(agentId)
   }
   return ids

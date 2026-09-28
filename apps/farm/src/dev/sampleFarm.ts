@@ -38,6 +38,28 @@ export const SAMPLE_QUESTION: AgentQuestion = {
   answeredAt: null,
 }
 
+/** A question the Docs farmer asked without stopping (ask_human): it keeps working, and wears a "?". */
+export const SAMPLE_FARMER_QUESTION: AgentQuestion = {
+  ...SAMPLE_QUESTION,
+  id: 'q-mgr-docs',
+  agentId: 'mgr-docs',
+  squadId: 'sq-docs',
+  questionData: {
+    questions: [
+      {
+        id: 'tone',
+        type: 'select',
+        question: 'Should the new guides be casual or formal?',
+        context: 'I am drafting three guides this week and want them to sound the same.',
+        options: [
+          { label: 'Casual', value: 'casual' },
+          { label: 'Formal', value: 'formal' },
+        ],
+      },
+    ],
+  },
+}
+
 export function sampleFarm(): FarmInput {
   const squads = [
     makeSquad({ id: 'sq-platform', name: 'Platform', managerAgentId: 'mgr-platform', createdAt: at(0) }),
@@ -179,6 +201,25 @@ export function sampleFarm(): FarmInput {
         squadId: questionFor.squadId,
         squadName: 'Mobile',
         data: questionData,
+      },
+      {
+        id: `agent-question:${SAMPLE_FARMER_QUESTION.id}`,
+        type: 'agent-question',
+        priority: 2,
+        createdAt: at(72).toISOString(),
+        canRespond: true,
+        squadId: 'sq-docs',
+        squadName: 'Docs',
+        data: {
+          ...questionData,
+          questionId: SAMPLE_FARMER_QUESTION.id,
+          agentId: 'mgr-docs',
+          agentName: 'Docs farmer',
+          agentTypeId: 'manager',
+          squadId: 'sq-docs',
+          squadName: 'Docs',
+          questionData: SAMPLE_FARMER_QUESTION.questionData,
+        },
       },
       makeAgentError('w-ivy', 'sq-mobile'),
     ],

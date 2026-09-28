@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAgentConversation, useConversationClient } from '@ficus/client-react'
+import { AgentPendingQuestions } from '../actions/AgentQuestions'
+import { agentLabel } from '../farm/agentLabels'
 import { ChatShell } from './ChatShell'
 import { ConversationView, useCanSendChat } from './ConversationView'
 import { chatQueries } from './queries'
@@ -12,6 +14,8 @@ export interface AgentConversationProps {
   draftKey?: string
   afterConversation?: ReactNode
   beforeConversation?: ReactNode
+  /** What to call it before it has loaded (e.g. the chat window's title). */
+  agentName?: string
 }
 
 /** A live conversation with an existing agent (manager, worker, consultant or the assistant's agent). */
@@ -22,6 +26,7 @@ export function AgentConversation({
   draftKey,
   afterConversation,
   beforeConversation,
+  agentName,
 }: AgentConversationProps) {
   const client = useConversationClient()
   const conv = useAgentConversation({ agentId })
@@ -35,7 +40,16 @@ export function AgentConversation({
       hideInboxMessages={hideInboxMessages}
       placeholder={placeholder}
       draftKey={draftKey ?? `manager:${agentId}`}
-      afterConversation={afterConversation}
+      afterConversation={
+        <>
+          {/* Questions it asked without stopping (ask_human), answerable here like on its card. */}
+          <AgentPendingQuestions
+            agentId={agentId}
+            agentName={agent.data ? agentLabel(agent.data).primary : (agentName ?? 'This robot')}
+          />
+          {afterConversation}
+        </>
+      }
       beforeConversation={beforeConversation}
     />
   )
@@ -54,7 +68,7 @@ export interface ChatPanelProps {
 export function ChatPanel({ agentId, title, subtitle, onClose, header, leading }: ChatPanelProps) {
   return (
     <ChatShell title={title} subtitle={subtitle} header={header} leading={leading} onClose={onClose}>
-      <AgentConversation key={agentId} agentId={agentId} />
+      <AgentConversation key={agentId} agentId={agentId} agentName={title} />
     </ChatShell>
   )
 }

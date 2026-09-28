@@ -34,6 +34,8 @@ export interface RobotPlacement {
   helpers: number
   /** Which way the robot looks on screen: toward the plant it tends, otherwise the default right. */
   facing: 'left' | 'right'
+  /** It has a question open for you, blocking or not: a "?" floats over it. */
+  asking: boolean
 }
 
 export interface PlotLayout {

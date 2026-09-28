@@ -8,7 +8,7 @@ import type {
 } from '@ficus/shared'
 import { hash, roleFor } from './appearance'
 import { isUserStartedConsultant } from './consultants'
-import { badgeFor, faceFor, haltedAgentIds, isAsleep, isRunning, plantStateFor } from './state'
+import { askingAgentIds, badgeFor, faceFor, haltedAgentIds, isAsleep, isRunning, plantStateFor } from './state'
 import type {
   CrowdSpot,
   DecorKind,
@@ -135,8 +135,8 @@ function compareStreams(a: WorkStream, b: WorkStream): number {
 }
 
 /** Most relevant tender first: asking a question, then halted, then working. */
-function tenderRank(agent: Agent, halted: boolean): number {
-  if (agent.status === 'waiting-input' && !halted) return 0
+function tenderRank(agent: Agent, halted: boolean, asking: boolean): number {
+  if ((asking || agent.status === 'waiting-input') && !halted) return 0
   if (halted) return 1
   if (agent.status === 'active') return 2
   return 3
@@ -157,6 +157,7 @@ interface LiveStream {
 
 export function layoutFarm(input: FarmInput): FarmLayout {
   const halted = haltedAgentIds(input.pendingActions)
+  const askingIds = askingAgentIds(input.pendingActions)
 
   // --- Lookup maps (one pass each) ---
   const agentsById = new Map<string, Agent>()
@@ -206,13 +207,15 @@ export function layoutFarm(input: FarmInput): FarmLayout {
     j: number,
     facing: RobotPlacement['facing'] = 'right'
   ): RobotPlacement => {
-    const face = faceFor(agent, halted.has(agent.id))
+    const asking = !halted.has(agent.id) && (agent.status === 'waiting-input' || askingIds.has(agent.id))
+    const face = asking ? 'question' : faceFor(agent, halted.has(agent.id))
     return {
       agent,
       role,
       i,
       j,
       face,
+      asking,
       helpers: helpers.get(agent.id) ?? 0,
       facing,
     }
@@ -278,7 +281,8 @@ export function layoutFarm(input: FarmInput): FarmLayout {
         const agent = agentsById.get(id)
         if (!agent || agent.parentAgentId || isAsleep(agent) || !isWorker(agent)) continue
         const agentHalted = halted.has(id)
-        if (isRunning(agent, agentHalted)) candidates.push({ agent, rank: tenderRank(agent, agentHalted) })
+        if (isRunning(agent, agentHalted))
+          candidates.push({ agent, rank: tenderRank(agent, agentHalted, askingIds.has(agent.id)) })
       }
       candidates.sort((a, b) => a.rank - b.rank || byId(a.agent, b.agent))
       // One robot per agent: someone already tending an earlier plot isn't drawn twice.

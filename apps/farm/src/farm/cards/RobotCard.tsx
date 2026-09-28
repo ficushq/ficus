@@ -46,11 +46,21 @@ export function RobotCard({ agentId }: { agentId: string }) {
         </div>
       </div>
       {label.secondary && <p className="g-card-text">{label.secondary}</p>}
-      <p className="g-state-tag">{halted ? 'Halted — needs a nudge' : AGENT_STATUS_LABELS[agent.status]}</p>
-      <RobotActions agentId={agentId} />
-      <button type="button" className="g-button g-button-primary g-card-wide" onClick={() => env.openChat(agentId)}>
+      <p className="g-state-tag">
+        {halted
+          ? 'Halted — needs a nudge'
+          : placed?.asking
+            ? 'Has a question for you'
+            : AGENT_STATUS_LABELS[agent.status]}
+      </p>
+      <button
+        type="button"
+        className="g-button g-button-primary g-card-wide g-card-talk"
+        onClick={() => env.openChat(agentId)}
+      >
         {role === 'manager' ? 'Talk to farmer' : 'Talk to robot'}
       </button>
+      <RobotActions agentId={agentId} />
       {working.length > 0 && (
         <>
           <h3 className="g-card-subtitle">Tending</h3>
