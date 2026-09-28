@@ -52,6 +52,8 @@ import {
 import { FarmList } from './FarmList'
 import { useFarmSounds } from '../sound/useFarmSounds'
 import { webAppUrl } from '../api/base'
+// The one source of the mark (brand/), so fixes to it reach the farm without a copy to update.
+import ficusMark from '../../../../brand/ficus-mark.svg'
 
 export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus }) {
   useDesktopShellChrome()
@@ -341,7 +343,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       <div className="g-titlebar" aria-hidden="true" />
       <header className="g-hud">
         <div className="g-logo g-panel">
-          <img src={`${import.meta.env.BASE_URL}ficus-mark.svg`} alt="" width={32} height={32} />
+          <img src={ficusMark} alt="" width={32} height={32} />
           <span>ficus farm</span>
         </div>
         <div className="g-counters" aria-live="polite">
