@@ -60,7 +60,7 @@ jobs:
     needs: macos-paths
     if: ${{ needs.macos-paths.result == 'success' && needs.macos-paths.outputs.run_macos == 'true' }}
     runs-on: macos-14
-    # Native lifecycle and attachment checks run on a real Darwin host.
+    # Native lifecycle, attachment and terminal prompt checks run on a real Darwin host.
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
@@ -95,6 +95,20 @@ jobs:
           grep -E '^[[:space:]]*[0-9]+ (pass|fail|skip)' /tmp/attachment-materialization-macos.log >> "$GITHUB_STEP_SUMMARY"
           if grep -qE '^[[:space:]]*[1-9][0-9]* skip' /tmp/attachment-materialization-macos.log; then
             echo "Portable attachment materialization tests must not skip on macOS." >&2
+            exit 1
+          fi
+      - name: Run terminal prompt tests
+        # The pty case reopens stdin from /dev/tty, which macOS kqueue refuses
+        # and Linux epoll accepts: only a Darwin host can catch a prompter that
+        # goes back to Bun's async stdin reader. It needs python3 (on the
+        # image), so a skip here means the regression test did not run.
+        working-directory: apps/cli
+        run: |
+          set -o pipefail
+          bun test src/local-server/prompt.test.ts 2>&1 | tee /tmp/cli-prompt-macos.log
+          grep -E '^[[:space:]]*[0-9]+ (pass|fail|skip)' /tmp/cli-prompt-macos.log >> "$GITHUB_STEP_SUMMARY"
+          if grep -qE '^[[:space:]]*[1-9][0-9]* skip' /tmp/cli-prompt-macos.log; then
+            echo "Terminal prompt tests must not skip on macOS." >&2
             exit 1
           fi
   macos-portability-required:
