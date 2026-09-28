@@ -19,9 +19,18 @@ const signedIn: RunClaude = async (_executable, args) =>
         stdout: JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max', email: 'x@y.z' }),
       }
 
-test('never offered on Ficus Cloud, even when turned on', async () => {
+test('not offered on Ficus Cloud, even when turned on', async () => {
   const status = await getClaudeCodeStatus({ env: { ...local, FICUS_MANAGED: '1' }, run: signedIn, enabled: true })
   expect(status).toMatchObject({ offered: false, enabled: false, loggedIn: false })
+})
+
+test('offered on a Ficus Cloud tenant the platform opts in with FICUS_CLAUDE_CODE=1', async () => {
+  const status = await getClaudeCodeStatus({
+    env: { ...local, FICUS_MANAGED: '1', FICUS_CLAUDE_CODE: '1' },
+    run: signedIn,
+    enabled: true,
+  })
+  expect(status).toMatchObject({ offered: true, enabled: true, loggedIn: true })
 })
 
 test('reports sign-in status without keeping anything else from the status output', async () => {
