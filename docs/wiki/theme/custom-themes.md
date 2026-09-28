@@ -81,7 +81,7 @@ provider state, with no extra fetch.
 
 ```json
 {
-  "format": "tau-custom-theme",
+  "format": "ficus-custom-theme",
   "version": 2,
   "name": "My night theme",
   "base": "harbor",
@@ -98,6 +98,12 @@ loads everywhere: `validateCustomTheme` normalizes it into a v2 document with
 the opposite dual side empty (or into a single `constant` variant for a
 unified base). There is no user-visible "upgrade" step; the normalized v2
 shape is what gets saved back on the next edit.
+
+Exports always carry `format: "ficus-custom-theme"`. Imports also accept files
+exported before the Ficus rename, which carry the old product name's marker,
+and rewrite it to `ficus-custom-theme`; that acceptance is removed in the
+Wave 3 sweep. Core migration `0192_theme_ids_ficus` rewrote the marker in
+stored documents (account snapshots and saved presets).
 
 ## Seed-color derivation (`palette`)
 
@@ -150,7 +156,7 @@ into one of these buckets, keyed off `THEME_TOKEN_FAMILIES`:
 | Bucket                             | Tokens                                                                                                         | Rule                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Neutral/chrome                     | Backgrounds, text, borders, inputs, shadows, overlays, scrims, terminal/log **backgrounds**                    | Hue/chroma replaced by the neutral tint; **lightness and alpha preserved** from the base token, so the base theme's own contrast structure carries over.                                                                                                                                                                                                                                                              |
-| Primary/accent                     | `--color-primary(-hover/-active/-light)`, selection bg/border, focus ring                                      | Derived from the `primary` seed with a **lightness offset** and **chroma ratio** modeled on how that same token differs from the base theme's own `--color-primary` (so "hover" stays proportionally lighter than the seed the same way it is in Ficus).                                                                                                                                                              |
+| Primary/accent                     | `--color-primary(-hover/-active/-light)`, selection bg/border, focus ring                                      | Derived from the `primary` seed with a **lightness offset** and **chroma ratio** modeled on how that same token differs from the base theme's own `--color-primary` (so "hover" stays proportionally lighter than the seed the same way it is in the base theme).                                                                                                                                                     |
 | Interaction surfaces (secondary)   | Hover, pill, inset, secondary surface, selection bg/border                                                     | With a `secondary` seed: its hue at the base lightness, chroma capped as a tint (as Harbor/Ember tint theirs). Without one, the neutral/primary rules above.                                                                                                                                                                                                                                                          |
 | Ink                                | `--on-accent-fg`                                                                                               | Chosen as pure black or white by contrast against the _final_ primary (after the contrast pass below, not before — see there), not hue-derived.                                                                                                                                                                                                                                                                       |
 | Brand/voice                        | Brand gradient/tile/ink, voice-material glows                                                                  | The tertiary hue; base lightness/chroma preserved.                                                                                                                                                                                                                                                                                                                                                                    |

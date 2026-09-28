@@ -543,10 +543,10 @@ function blankThemeDraft() {
     target: {},
     revision: 0,
     document: {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'My theme',
-      base: 'tau',
+      base: 'iris',
       variants: { light: {}, dark: {} },
     },
     selection: { tab: 'light' as const },

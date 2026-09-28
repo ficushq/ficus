@@ -18,7 +18,7 @@ const fullThemeValue: ReturnType<typeof useTheme> = {
   presetOwnerId: null,
   applyCustom: () => undefined,
   applyPreset: () => undefined,
-  themeId: 'tau',
+  themeId: 'iris',
   appearance: 'light',
   theme: 'light',
   toggleTheme: () => undefined,

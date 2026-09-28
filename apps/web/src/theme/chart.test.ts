@@ -124,10 +124,10 @@ test('Vega and Vega-Lite SVG output retains parser-safe tiny custom alpha produc
   const { BUILT_IN_THEMES } = await import('./registry')
   const { color: parseColor } = await import('d3-color')
   const raw = JSON.stringify({
-    format: 'tau-custom-theme',
+    format: 'ficus-custom-theme',
     version: 1,
     name: 'Tiny chart',
-    base: 'tau',
+    base: 'iris',
     appearance: 'light',
     overrides: { '--graph-chart-mark': 'rgba(10,20,30,0.0000001)' },
   })

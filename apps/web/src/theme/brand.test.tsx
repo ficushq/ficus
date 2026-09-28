@@ -13,10 +13,10 @@ test('brand colors are active, complete in every builtin, and custom-overridable
     for (const palette of palettes) expect(palette.tokens[token]).toBeDefined()
     const result = validateCustomTheme(
       JSON.stringify({
-        format: 'tau-custom-theme',
+        format: 'ficus-custom-theme',
         version: 1,
         name: 'Brand',
-        base: 'tau',
+        base: 'iris',
         appearance: 'light',
         overrides: { [token]: '#12345680' },
       }),

@@ -27,7 +27,7 @@ test('a preset on a light/dark base is split too', () => {
       spec={{
         kind: 'preset',
         document: {
-          format: 'tau-custom-theme',
+          format: 'ficus-custom-theme',
           version: 2,
           name: 'Mine',
           base: 'ember',

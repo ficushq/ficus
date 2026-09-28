@@ -12,7 +12,7 @@ const theme: ThemePreference = {
   presetOwnerId: null,
 }
 const custom: CustomThemeDocument = {
-  format: 'tau-custom-theme',
+  format: 'ficus-custom-theme',
   version: 2,
   name: 'Shared',
   base: 'harbor',
@@ -94,7 +94,7 @@ test('rejects missing fields, unknowns, unsafe values, incoherent status sets, b
     {},
     { ...theme, appearance: 'constant' },
     { ...theme, themeId: 'unknown' },
-    { themeId: 'tau', appearance: 'dark' },
+    { themeId: 'iris', appearance: 'dark' },
     ...[
       { ...custom, base: 'ember' },
       { ...custom, version: 3 },

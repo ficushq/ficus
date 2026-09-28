@@ -138,72 +138,72 @@ describe('pre-paint flash script: default appearance by host', () => {
 })
 
 describe('pre-paint flash script (cold load, every stored state)', () => {
-  test('legacy dark: applies the dark class, attribute state, and the legacy surface snapshot', async () => {
+  test('legacy dark: applies the dark class and attribute state on the default, ignoring the Iris-only legacy surface', async () => {
     const result = await runFlashScript({ legacyTheme: 'dark', legacySurface: '#10111c' })
-    expect(result.dataTheme).toBe('tau')
+    expect(result.dataTheme).toBe('ficus')
     expect(result.dataAppearance).toBe('dark')
     expect(result.hasDarkClass).toBe(true)
-    expect(result.backgroundColor).toBe('#10111c')
-    expect(result.metaThemeColor).toBe('#10111c')
+    expect(result.backgroundColor).toBe('rgb(47 42 36)')
+    expect(result.metaThemeColor).toBe('rgb(47 42 36)')
   })
 
   test('legacy light: light state, no dark class', async () => {
     const result = await runFlashScript({ legacyTheme: 'light' })
-    expect(result.dataTheme).toBe('tau')
+    expect(result.dataTheme).toBe('ficus')
     expect(result.dataAppearance).toBe('light')
     expect(result.hasDarkClass).toBe(false)
-    expect(result.backgroundColor).toBe('rgb(255 255 255)')
+    expect(result.backgroundColor).toBe('rgb(245 240 230)')
   })
 
   test('new keys, dark: identical paint to the legacy dark path', async () => {
-    const result = await runFlashScript({ themeId: 'tau', appearance: 'dark', legacySurface: '#10111c' })
+    const result = await runFlashScript({ themeId: 'iris', appearance: 'dark', legacySurface: '#10111c' })
     expect(result.dataAppearance).toBe('dark')
     expect(result.hasDarkClass).toBe(true)
     expect(result.backgroundColor).toBe('#10111c')
   })
 
   test('new keys, system + OS dark preference: resolves dark before paint', async () => {
-    const result = await runFlashScript({ themeId: 'tau', appearance: 'system', systemPrefersDark: true })
+    const result = await runFlashScript({ themeId: 'iris', appearance: 'system', systemPrefersDark: true })
     expect(result.dataAppearance).toBe('dark')
     expect(result.hasDarkClass).toBe(true)
   })
 
   test('new keys, system + OS light preference: resolves light before paint', async () => {
-    const result = await runFlashScript({ themeId: 'tau', appearance: 'system', systemPrefersDark: false })
+    const result = await runFlashScript({ themeId: 'iris', appearance: 'system', systemPrefersDark: false })
     expect(result.dataAppearance).toBe('light')
     expect(result.hasDarkClass).toBe(false)
   })
 
   test('no keys at all: default light surface before CSS', async () => {
     const result = await runFlashScript({})
-    expect(result.dataTheme).toBe('tau')
+    expect(result.dataTheme).toBe('ficus')
     expect(result.dataAppearance).toBe('light')
     expect(result.hasDarkClass).toBe(false)
-    expect(result.backgroundColor).toBe('rgb(255 255 255)')
+    expect(result.backgroundColor).toBe('rgb(245 240 230)')
   })
 
   test('unreadable values degrade to the default pair instead of guessing', async () => {
     for (const garbage of ['banana', 'ultraviolet', '']) {
       const result = await runFlashScript({ themeId: 'martian', appearance: garbage, legacyTheme: garbage })
-      expect(result.dataTheme).toBe('tau')
+      expect(result.dataTheme).toBe('ficus')
       expect(result.dataAppearance).toBe('light')
       expect(result.hasDarkClass).toBe(false)
     }
   })
 
   test('state-keyed surface snapshot paints only for its captured state', async () => {
-    const snapshot = JSON.stringify({ theme: 'tau', appearance: 'dark', surface: 'rgb(16 17 28)' })
-    const matched = await runFlashScript({ themeId: 'tau', appearance: 'dark', snapshot })
+    const snapshot = JSON.stringify({ theme: 'iris', appearance: 'dark', surface: 'rgb(16 17 28)' })
+    const matched = await runFlashScript({ themeId: 'iris', appearance: 'dark', snapshot })
     expect(matched.backgroundColor).toBe('rgb(16 17 28)')
     expect(matched.metaThemeColor).toBe('rgb(16 17 28)')
 
-    const mismatched = await runFlashScript({ themeId: 'tau', appearance: 'light', snapshot })
+    const mismatched = await runFlashScript({ themeId: 'iris', appearance: 'light', snapshot })
     expect(mismatched.backgroundColor).toBe('rgb(255 255 255)')
   })
 
   test('a corrupt structured snapshot does not fall back to a possibly-stale legacy value', async () => {
     const result = await runFlashScript({
-      themeId: 'tau',
+      themeId: 'iris',
       appearance: 'dark',
       snapshot: '{oops',
       legacySurface: '#10111c',
@@ -212,17 +212,17 @@ describe('pre-paint flash script (cold load, every stored state)', () => {
   })
 
   test('a stale dark class from a restored document is removed on a light cold load', async () => {
-    const result = await runFlashScript({ themeId: 'tau', appearance: 'light', staleDarkClass: true })
+    const result = await runFlashScript({ themeId: 'iris', appearance: 'light', staleDarkClass: true })
     expect(result.hasDarkClass).toBe(false)
   })
 })
 
 describe('flash script parity with the shared resolution rules', () => {
   const cases: FlashScenario[] = [
-    { themeId: 'tau', appearance: 'light', systemPrefersDark: false },
-    { themeId: 'tau', appearance: 'dark', systemPrefersDark: false },
-    { themeId: 'tau', appearance: 'system', systemPrefersDark: false },
-    { themeId: 'tau', appearance: 'system', systemPrefersDark: true },
+    { themeId: 'iris', appearance: 'light', systemPrefersDark: false },
+    { themeId: 'iris', appearance: 'dark', systemPrefersDark: false },
+    { themeId: 'iris', appearance: 'system', systemPrefersDark: false },
+    { themeId: 'iris', appearance: 'system', systemPrefersDark: true },
     { legacyTheme: 'dark' },
     { legacyTheme: 'light' },
     { themeId: 'martian', appearance: 'dark', systemPrefersDark: true },
@@ -296,7 +296,7 @@ describe('pre-paint flash script: custom theme documents (v1 still loads; v2 res
       [THEME_ID_KEY]: 'harbor',
       [APPEARANCE_KEY]: 'dark',
       'ficus-custom-theme': JSON.stringify({
-        format: 'tau-custom-theme',
+        format: 'ficus-custom-theme',
         version: 1,
         name: 'Legacy',
         base: 'harbor',
@@ -316,7 +316,7 @@ describe('pre-paint flash script: custom theme documents (v1 still loads; v2 res
 
   test('a v2 pair resolves the requested side (light vs dark) at cold load', async () => {
     const doc = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Pair',
       base: 'harbor',
@@ -347,7 +347,7 @@ describe('pre-paint flash script: custom theme documents (v1 still loads; v2 res
 
   test("a v2 pair with 'system' appearance resolves against the OS preference at cold load", async () => {
     const doc = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Pair',
       base: 'harbor',
@@ -390,7 +390,7 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
     const { validateCustomTheme } = await import('@ficus/shared')
     const rawDoc = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Palette preset',
       base: 'harbor',
@@ -433,7 +433,7 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
     const { validateCustomTheme } = await import('@ficus/shared')
     const doc = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Palette preset',
       base: 'harbor',
@@ -490,7 +490,7 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     const { validateCustomTheme } = await import('@ficus/shared')
     const { acquireDomHarness } = await import('../test/domHarness')
     const doc = {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Full palette',
       base: 'harbor',

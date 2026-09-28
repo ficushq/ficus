@@ -3,9 +3,9 @@ import { validateCustomTheme, type CustomThemeDocument } from './custom-theme'
 
 /** Cross-platform metadata only; palettes and variant classes remain web-owned. */
 export const SYNC_THEME_DESCRIPTORS: readonly ThemeDescriptor[] = [
-  { id: 'tau', label: 'Iris', kind: 'dual' },
+  { id: 'ficus', label: 'Ficus', kind: 'dual' },
+  { id: 'iris', label: 'Iris', kind: 'dual' },
   { id: 'harbor', label: 'Harbor', kind: 'dual' },
-  { id: 'forest', label: 'Forest', kind: 'dual' },
   { id: 'ember', label: 'Ember', kind: 'dual' },
   // Six BigBrain-ported palettes (docs/wiki/theme/builtins.md) — see
   // apps/web/src/theme/registry.ts's BUILT_IN_THEMES for the web-owned

@@ -14,7 +14,7 @@ const dbName = `theme_presets_mig_${crypto.randomUUID().replaceAll('-', '').slic
 
 const userId = '50000000-0000-4000-8000-000000000002'
 const document = {
-  format: 'tau-custom-theme',
+  format: 'ficus-custom-theme',
   version: 2,
   name: 'Mine',
   base: 'harbor',

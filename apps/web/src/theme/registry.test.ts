@@ -2,8 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { validateThemeRegistry } from '@ficus/shared'
 import {
   BUILT_IN_THEMES,
+  FICUS_THEME,
   KNOWN_THEME_IDS,
-  TAU_THEME,
+  IRIS_THEME,
   THEME_PICKER_ENABLED,
   findWebTheme,
   highContrastLast,
@@ -15,14 +16,17 @@ describe('web theme registry', () => {
   test('enables the picker after the built-in contrast and cold-load gates', () => {
     expect(THEME_PICKER_ENABLED).toBe(true)
   })
-  test('ships Ficus, three dual recolors, a constant high-contrast theme, and six BigBrain-ported constants', () => {
+  test('ships the Ficus default, Iris, two more dual recolors, a constant high-contrast theme, and six BigBrain-ported constants', () => {
     expect(BUILT_IN_THEMES).toHaveLength(11)
     expect(findWebTheme('high-contrast').kind).toBe('unified')
-    expect(TAU_THEME.kind).toBe('dual')
+    expect(FICUS_THEME.kind).toBe('dual')
+    expect(IRIS_THEME.kind).toBe('dual')
+    expect(BUILT_IN_THEMES).toContainEqual(expect.objectContaining({ id: 'ficus', label: 'Ficus' }))
+    expect(BUILT_IN_THEMES).toContainEqual(expect.objectContaining({ id: 'iris', label: 'Iris' }))
     expect(KNOWN_THEME_IDS).toEqual([
-      'tau',
+      'ficus',
+      'iris',
       'harbor',
-      'forest',
       'ember',
       'nurebairo',
       'phosphorus',
@@ -43,30 +47,36 @@ describe('web theme registry', () => {
     for (const id of lightIds) expect(findWebTheme(id).variantClass).toEqual({ constant: null })
   })
 
-  test('the tau theme keeps the literal dark class as its dark variant scope', () => {
+  test('the dual themes keep the literal dark class as their dark variant scope', () => {
     // Migration invariant (report §4.1): the .dark class stays applied so all
     // existing Tailwind dark: variants keep working.
-    expect(TAU_THEME.variantClass).toEqual({ light: null, dark: 'dark' })
+    expect(FICUS_THEME.variantClass).toEqual({ light: null, dark: 'dark' })
+    expect(IRIS_THEME.variantClass).toEqual({ light: null, dark: 'dark' })
   })
 
-  test('unknown ids resolve to tau; findWebTheme never returns undefined', () => {
-    expect(findWebTheme('tau').id).toBe('tau')
-    expect(findWebTheme('nonsense').id).toBe('tau')
-    expect(findWebTheme(undefined).id).toBe('tau')
+  test('unknown ids resolve to ficus; findWebTheme never returns undefined', () => {
+    expect(findWebTheme('iris').id).toBe('iris')
+    expect(findWebTheme('nonsense').id).toBe('ficus')
+    expect(findWebTheme(undefined).id).toBe('ficus')
+  })
+
+  test('an unknown stored id falls back to the Ficus default', () => {
+    expect(findWebTheme('no-such-theme').id).toBe('ficus')
+    expect(findWebTheme('iris').id).toBe('iris')
   })
 })
 
 describe('resolveWebTheme', () => {
   test('light and dark resolve directly; system resolves against the OS preference', () => {
-    expect(resolveWebTheme('tau', 'light', true)).toEqual({ theme: TAU_THEME, appearance: 'light' })
-    expect(resolveWebTheme('tau', 'dark', false)).toEqual({ theme: TAU_THEME, appearance: 'dark' })
-    expect(resolveWebTheme('tau', 'system', true)).toEqual({ theme: TAU_THEME, appearance: 'dark' })
-    expect(resolveWebTheme('tau', 'system', false)).toEqual({ theme: TAU_THEME, appearance: 'light' })
+    expect(resolveWebTheme('iris', 'light', true)).toEqual({ theme: IRIS_THEME, appearance: 'light' })
+    expect(resolveWebTheme('iris', 'dark', false)).toEqual({ theme: IRIS_THEME, appearance: 'dark' })
+    expect(resolveWebTheme('iris', 'system', true)).toEqual({ theme: IRIS_THEME, appearance: 'dark' })
+    expect(resolveWebTheme('iris', 'system', false)).toEqual({ theme: IRIS_THEME, appearance: 'light' })
   })
 
   test('unknown theme ids fall back to the default pair', () => {
-    expect(resolveWebTheme('atlantis', 'dark', false)).toEqual({ theme: TAU_THEME, appearance: 'dark' })
-    expect(resolveWebTheme(null, null, false)).toEqual({ theme: TAU_THEME, appearance: 'light' })
+    expect(resolveWebTheme('atlantis', 'dark', false)).toEqual({ theme: FICUS_THEME, appearance: 'dark' })
+    expect(resolveWebTheme(null, null, false)).toEqual({ theme: FICUS_THEME, appearance: 'light' })
   })
 })
 
@@ -92,8 +102,8 @@ function freshRoot(): HTMLElement {
 describe('applyResolvedTheme', () => {
   test('dark resolution sets data-theme, data-appearance, and keeps the dark class', () => {
     const root = freshRoot()
-    applyResolvedTheme(root, TAU_THEME, 'dark')
-    expect(root.getAttribute('data-theme')).toBe('tau')
+    applyResolvedTheme(root, IRIS_THEME, 'dark')
+    expect(root.getAttribute('data-theme')).toBe('iris')
     expect(root.getAttribute('data-appearance')).toBe('dark')
     expect(root.classList.contains('dark')).toBe(true)
   })
@@ -101,8 +111,8 @@ describe('applyResolvedTheme', () => {
   test('light resolution sets attributes and removes the dark class', () => {
     const root = freshRoot()
     root.classList.add('dark')
-    applyResolvedTheme(root, TAU_THEME, 'light')
-    expect(root.getAttribute('data-theme')).toBe('tau')
+    applyResolvedTheme(root, IRIS_THEME, 'light')
+    expect(root.getAttribute('data-theme')).toBe('iris')
     expect(root.getAttribute('data-appearance')).toBe('light')
     expect(root.classList.contains('dark')).toBe(false)
   })
@@ -120,9 +130,9 @@ describe('applyResolvedTheme', () => {
 
   test('switching variants swaps the scoped class instead of stacking them', () => {
     const root = freshRoot()
-    applyResolvedTheme(root, TAU_THEME, 'dark')
+    applyResolvedTheme(root, IRIS_THEME, 'dark')
     expect(root.classList.contains('dark')).toBe(true)
-    applyResolvedTheme(root, TAU_THEME, 'light')
+    applyResolvedTheme(root, IRIS_THEME, 'light')
     expect(root.classList.contains('dark')).toBe(false)
     expect(root.className.trim()).toBe('')
   })
@@ -131,13 +141,13 @@ describe('applyResolvedTheme', () => {
 describe('highContrastLast', () => {
   test('moves only the built-in High contrast to the end, after presets', () => {
     const options = [
-      { kind: 'builtin', id: 'tau' },
+      { kind: 'builtin', id: 'iris' },
       { kind: 'builtin', id: 'high-contrast' },
       { kind: 'preset', id: 'high-contrast' },
       { kind: 'preset', id: 'mine' },
     ]
     expect(highContrastLast(options)).toEqual([
-      { kind: 'builtin', id: 'tau' },
+      { kind: 'builtin', id: 'iris' },
       { kind: 'preset', id: 'high-contrast' },
       { kind: 'preset', id: 'mine' },
       { kind: 'builtin', id: 'high-contrast' },

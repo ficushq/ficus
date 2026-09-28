@@ -9,9 +9,12 @@
 // neutral seeds, the same shape a user's own custom theme uses), so no
 // explicit-token layer is needed:
 //
-// 1. Parse Ficus's own `:root`/`.dark` blocks in index.css into a token->value
+// 1. Parse Iris's own `:root`/`.dark` blocks in index.css into a token->value
 //    map per appearance (the derivation BASE — built-ins still involve no
-//    runtime color generation; this script bakes the CSS once).
+//    runtime color generation; this script bakes the CSS once). A built-in
+//    with pinned surfaces (Ficus) swaps its page/surface colors into that
+//    base first and moves the surface-relative chrome (borders, inputs, code,
+//    glass, overlay) by the same lightness step, so the hierarchy holds.
 // 2. Run the shared palette derivation (`deriveThemeOverrides`, the same pure
 //    engine `packages/shared/src/theme-derivation.ts` uses for custom
 //    themes) against that appearance's own base tokens, restricted to the
@@ -20,7 +23,7 @@
 //    `--on-accent-fg` vary between built-ins; every other family — status,
 //    agent-type, badge-decoration, voice-material, utility-decoration/
 //    -chrome, log-terminal, ansi, brand, most of syntax/terminal/graph — is
-//    copied verbatim from Ficus, matching Harbor/Ember/every BigBrain-ported
+//    copied verbatim from Iris, matching Harbor/Ember/every BigBrain-ported
 //    built-in).
 // 3. Run the same strict-gate contrast repair pass
 //    (`repairContrastPairs`, shared with generate-bigbrain-builtins.ts)
@@ -28,7 +31,7 @@
 //
 // Status mode: `utilityParity.test.ts`'s legacy-utility-colors fixture
 // freezes every built-in's `--status-ROLE-{50..950}` ramp tokens
-// byte-identical to Ficus's own (they share the STATUS_TOKENS family with the
+// byte-identical to Iris's own (they share the STATUS_TOKENS family with the
 // semantic fg/surface/badge slots, and `deriveThemeOverrides`'s harmonized
 // mode moves every token sharing a role's `--status-ROLE-` prefix, ramp steps
 // included). So even where a source preset requests `status: 'harmonized'`,
@@ -38,6 +41,7 @@
 import { resolve } from 'node:path'
 import { deriveThemeOverrides, type ThemePalette } from '@ficus/shared/theme-derivation'
 import { customColorChannels } from '@ficus/shared/theme-schema'
+import { oklchToSrgb, srgbToOklch } from '@ficus/shared/color-oklch'
 import type { ResolvedAppearance } from '@ficus/shared/theme-schema'
 import { cssBlockDeclarations, DERIVABLE_TOKENS, repairContrastPairs } from './theme-builtin-shared'
 
@@ -52,31 +56,96 @@ export interface WebPaletteBuiltin {
   /** Short intent blurb, echoed into the generated CSS comment. */
   intent: string
   palette: ThemePalette
+  /** Seeds that differ in one appearance (Ficus's dark UI uses sage as its leaf). */
+  appearancePalette?: Partial<Record<ResolvedAppearance, Partial<ThemePalette>>>
+  /** Exact page and surface colors per appearance, pinned before and after derivation. */
+  surfaces?: Record<ResolvedAppearance, { page: string; surface: string }>
+  /** Exact token values (hex) pinned after derivation, before the interaction tints and contrast repair. */
+  pinned?: Partial<Record<ResolvedAppearance, Record<string, string>>>
+  /** The colour the interaction surfaces tint from (hex), when it is not the appearance's own primary. */
+  interactionTint?: Partial<Record<ResolvedAppearance, string>>
 }
 
-/** Owner's own "Forest" preset (docs/wiki/theme/builtins.md): deep pine
- * primary, warm bark secondary, mossy tertiary, and a dark olive-gray
- * neutral tint for chrome surfaces. */
+/** The Ficus brand palette (docs/wiki/theme/builtins.md): leaf primary, terracotta secondary and moss tertiary over
+ * linen surfaces in light, and sage as the leaf over soil surfaces in dark. Chrome takes a warm soil tint. */
 export const PALETTE_BUILTINS: readonly WebPaletteBuiltin[] = [
   {
-    id: 'forest',
-    label: 'Forest',
-    intent: 'Owner palette preset: pine primary, bark secondary, moss tertiary, olive-gray chrome.',
+    id: 'ficus',
+    label: 'Ficus',
+    intent: 'Brand palette: leaf primary, terracotta secondary, moss tertiary, linen and soil surfaces.',
     palette: {
       primary: '#3f6b4f',
-      secondary: '#7a5c3e',
+      secondary: '#b0582f',
       tertiary: '#8a9a5b',
-      neutral: '#4a4a3f',
+      neutral: '#2f2a24',
       contrast: 'standard',
       status: 'static',
     },
+    appearancePalette: { dark: { primary: '#9fb57f' } },
+    surfaces: {
+      light: { page: '#f1e9db', surface: '#f5f0e6' },
+      dark: { page: '#1c1a17', surface: '#2f2a24' },
+    },
+    // Sage is already the light accent of the dark UI, so its link/focus tone is sage itself (the derived offset from
+    // a dark base primary would wash out to white), and text on a sage fill is soil.
+    pinned: { dark: { '--color-primary-light': '#9fb57f', '--color-focus': '#9fb57f', '--on-accent-fg': '#1c1a17' } },
+    // Dark hover/selection surfaces tint from the leaf: pale sage would only grey the soil.
+    interactionTint: { dark: '#3f6b4f' },
   },
 ]
+
+/** Chrome tokens that sit on or beside the surface; pinned surfaces move them by the surface's lightness step. */
+const SURFACE_RELATIVE_TOKENS = [
+  '--color-bg-surface-secondary',
+  '--color-bg-pill',
+  '--color-bg-surface-hover',
+  '--color-bg-inset',
+  '--color-border',
+  '--color-border-hover',
+  '--color-input-bg',
+  '--color-code-bg',
+  '--color-glass',
+  '--color-overlay',
+]
+
+/** Parses "r g b" or "r g b / a" channels. */
+function parseChannels(value: string): { rgb: [number, number, number]; alpha: string | undefined } {
+  const [rgb, alpha] = value.split('/').map((part) => part.trim())
+  const [r, g, b] = rgb!.split(/\s+/).map(Number)
+  return { rgb: [r!, g!, b!], alpha }
+}
+
+function formatChannels(rgb: readonly number[], alpha: string | undefined): string {
+  const channels = rgb.map((channel) => Math.round(Math.min(255, Math.max(0, channel)))).join(' ')
+  return alpha === undefined ? channels : `${channels} / ${alpha}`
+}
+
+/** Swaps pinned page/surface colors into the derivation base and shifts the surface-relative chrome's lightness by
+ * the surface's own step, keeping each token's hue, chroma and alpha. */
+function withPinnedSurfaces(
+  baseTokens: Record<string, string>,
+  surfaces: { page: string; surface: string }
+): Record<string, string> {
+  const next = { ...baseTokens }
+  const surface = customColorChannels(surfaces.surface)!
+  const step =
+    srgbToOklch(parseChannels(surface).rgb).l - srgbToOklch(parseChannels(baseTokens['--color-bg-surface']!).rgb).l
+  for (const token of SURFACE_RELATIVE_TOKENS) {
+    const value = next[token]
+    if (!value) continue
+    const { rgb, alpha } = parseChannels(value)
+    const oklch = srgbToOklch(rgb)
+    next[token] = formatChannels(oklchToSrgb({ ...oklch, l: Math.min(1, Math.max(0, oklch.l + step)) }), alpha)
+  }
+  next['--color-bg-page'] = customColorChannels(surfaces.page)!
+  next['--color-bg-surface'] = surface
+  return next
+}
 
 /**
  * Harbor and Ember paint every interactive surface (hover, pill, inset and selection) with one tint of their accent
  * over the surface, the secondary surface with a lighter one, and the selection border (in light, the input border
- * too) with a stronger mix. The shared derivation leaves those close to the plain surface for a palette (Forest's light
+ * too) with a stronger mix. The shared derivation leaves those close to the plain surface for a palette (a palette's light
  * selection came out lighter than its own page), so palette built-ins apply the same structure after deriving, before
  * the contrast repair. Dark tints from the primary itself: a pale dark-mode accent would only grey the surface.
  */
@@ -94,33 +163,50 @@ function mixChannels(a: string, pct: number, b: string): string {
   return x!.map((channel, i) => Math.round((channel * pct + y![i]! * (100 - pct)) / 100)).join(' ')
 }
 
-function applyInteractionTints(tokens: Record<string, string>, appearance: ResolvedAppearance): void {
+function applyInteractionTints(
+  tokens: Record<string, string>,
+  appearance: ResolvedAppearance,
+  tintColor: string | undefined
+): void {
   const { tint, secondary, border, inputBorder } = INTERACTION_TINTS[appearance]
   const surface = tokens['--color-bg-surface']!
-  const tinted = mixChannels(tokens[tint[0]]!, tint[1], surface)
+  const source = tintColor ? customColorChannels(tintColor)! : tokens[tint[0]]!
+  const tinted = mixChannels(source, tint[1], surface)
   for (const token of ['--color-bg-surface-hover', '--color-bg-pill', '--color-bg-inset', '--color-selection-bg'])
     tokens[token] = tinted
-  tokens['--color-bg-surface-secondary'] = mixChannels(tokens[tint[0]]!, secondary, surface)
+  tokens['--color-bg-surface-secondary'] = mixChannels(source, secondary, surface)
   tokens['--color-selection-border'] = mixChannels(tokens[border[0]]!, border[1], surface)
   if (inputBorder) tokens['--color-input-border'] = tokens['--color-selection-border']
 }
 
 /** Builds the full compiled token map for one built-in's one appearance. */
-function buildThemeTokens(palette: ThemePalette, baseTokens: Record<string, string>, appearance: ResolvedAppearance) {
+function buildThemeTokens(
+  builtin: WebPaletteBuiltin,
+  sourceTokens: Record<string, string>,
+  appearance: ResolvedAppearance
+) {
+  const palette = { ...builtin.palette, ...builtin.appearancePalette?.[appearance] }
+  const surfaces = builtin.surfaces?.[appearance]
+  const baseTokens = surfaces ? withPinnedSurfaces(sourceTokens, surfaces) : sourceTokens
   const derivedHex = deriveThemeOverrides({ baseTokens, palette, appearance })
+  if (surfaces) {
+    derivedHex['--color-bg-page'] = surfaces.page
+    derivedHex['--color-bg-surface'] = surfaces.surface
+  }
+  Object.assign(derivedHex, builtin.pinned?.[appearance])
   const combined: Record<string, string> = {}
   for (const token of Object.keys(baseTokens)) {
     if (token.startsWith('--opacity-')) {
       // Intrinsic-alpha metadata is independent of the color token's own
       // stored channels (see generate-bigbrain-builtins.ts's doc comment
-      // step 6); Forest keeps Ficus's own translucent values, like Harbor/Ember.
+      // step 6); Ficus keeps Iris's own translucent values, like Harbor/Ember.
       combined[token] = baseTokens[token]!
       continue
     }
     const derived = DERIVABLE_TOKENS.has(token) ? derivedHex[token] : undefined
     combined[token] = derived ? (customColorChannels(derived) ?? baseTokens[token]!) : baseTokens[token]!
   }
-  applyInteractionTints(combined, appearance)
+  applyInteractionTints(combined, appearance, builtin.interactionTint?.[appearance])
   return repairContrastPairs(combined)
 }
 
@@ -145,15 +231,15 @@ export interface GeneratedPaletteTheme {
 
 export async function generatePaletteThemes(): Promise<GeneratedPaletteTheme[]> {
   const indexCss = await Bun.file(resolve(import.meta.dir, '../src/index.css')).text()
-  const tauLight = cssBlockDeclarations(indexCss, ':root')
-  const tauDark = cssBlockDeclarations(indexCss, '.dark')
+  const irisLight = cssBlockDeclarations(indexCss, ':root')
+  const irisDark = cssBlockDeclarations(indexCss, '.dark')
   const results: GeneratedPaletteTheme[] = []
   for (const builtin of PALETTE_BUILTINS) {
     for (const [appearance, baseTokens] of [
-      ['light', tauLight],
-      ['dark', tauDark],
+      ['light', irisLight],
+      ['dark', irisDark],
     ] as const) {
-      const { tokens, adjusted } = buildThemeTokens(builtin.palette, baseTokens, appearance)
+      const { tokens, adjusted } = buildThemeTokens(builtin, baseTokens, appearance)
       results.push({ builtin, appearance, css: themeCssBlock(builtin, appearance, tokens), adjusted })
     }
   }
@@ -178,10 +264,10 @@ if (import.meta.main) {
     await Bun.write(target, current.replace(markerRe, generated))
   } else {
     // First run: insert right after Harbor's dark block, right before
-    // Ember's light block — matches the registry's Harbor/Forest/Ember order.
+    // Ember's light block.
     const anchor = "  :root[data-theme='ember'][data-appearance='light'],"
     const anchorIndex = current.indexOf(anchor)
-    if (anchorIndex < 0) throw new Error('could not find the ember light block to insert Forest before')
+    if (anchorIndex < 0) throw new Error('could not find the ember light block to insert the palette built-ins before')
     await Bun.write(target, current.slice(0, anchorIndex) + generated + current.slice(anchorIndex))
   }
   for (const theme of themes) {

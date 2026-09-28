@@ -3,7 +3,7 @@
 The registered theme's resolved CSS scope is the source of truth for all colors
 (`index.css`). The syntax object references variables directly, so changing the
 resolved appearance updates mounted blocks without a hook, duplicate JS palettes,
-or a first-render fallback. Ficus keeps its dark syntax and terminal palettes in **both** appearances; the strict
+or a first-render fallback. Iris keeps its dark syntax and terminal palettes in **both** appearances; the strict
 contrast gate minimally raises comment/property and terminal-muted ink for contrast. Streamed
 ANSI retains its distinct light/dark palettes. Additional built-ins define their
 complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../../../../docs/wiki/theme/builtins.md).
@@ -27,7 +27,7 @@ complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../..
 - xterm **5.5 has no scrollbar fields in `ITheme`**. The three scrollbar tokens
   default to `auto`, leaving the existing native scrollbar unchanged. To opt into
   themed viewport scrollbars, supply RGB channels for all three thumb states;
-  the adapter enables the CSS rules. Ficus’s hover/active tokens alias the normal
+  the adapter enables the CSS rules. Iris’s hover/active tokens alias the normal
   thumb, so a partial override of just that thumb also stays valid. This is not a
   dependency upgrade.
 - `--term-*` and `--ansi-*` use the same sixteen slot **names**, not identical
@@ -45,7 +45,7 @@ complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../..
   all inherited status/badge intrinsic-opacity metadata from the semantic palette.
 
 Future built-in/custom-theme adapters must preserve the selection/scrollbar
-sentinels when inheriting Ficus, support numeric fractional channels, and retain
+sentinels when inheriting Iris, support numeric fractional channels, and retain
 intrinsic-opacity metadata. Completeness alone does not establish contrast.
 The strict contrast gate checks the defined critical pairs for every built-in, including
 code comments. Arbitrary ANSI/terminal combinations (including terminal black),

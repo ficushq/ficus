@@ -19,7 +19,7 @@ import {
   type ThemeDescriptor,
 } from './theme-schema'
 
-const TAU: ThemeDescriptor = { id: 'tau', label: 'Iris', kind: 'dual' }
+const FICUS: ThemeDescriptor = { id: 'ficus', label: 'Ficus', kind: 'dual' }
 const NORD: ThemeDescriptor = { id: 'nord', label: 'Nord', kind: 'dual' }
 const CONTRAST: ThemeDescriptor = { id: 'high-contrast', label: 'High Contrast', kind: 'unified' }
 
@@ -118,19 +118,19 @@ describe('validateThemeTokenSet (completeness schema)', () => {
 
 describe('theme registry validation', () => {
   test('accepts a well-formed registry containing the default theme', () => {
-    expect(validateThemeRegistry([TAU, NORD, CONTRAST])).toEqual([])
+    expect(validateThemeRegistry([FICUS, NORD, CONTRAST])).toEqual([])
   })
 
   test('rejects duplicate ids, malformed ids, empty labels, and bad kinds', () => {
     const issues = validateThemeRegistry([
-      { ...TAU },
-      { ...TAU, label: 'Ficus again' },
+      { ...FICUS },
+      { ...FICUS, label: 'Ficus again' },
       { id: 'Bad Id', label: 'x', kind: 'dual' },
       { id: 'empty-label', label: '', kind: 'dual' },
       { id: 'bad-kind', label: 'x', kind: 'recolor' as unknown as 'dual' },
     ])
     const issueText = issues.map((i) => `${i.themeId}:${i.issue}`)
-    expect(issueText).toContain('tau:duplicate id')
+    expect(issueText).toContain('ficus:duplicate id')
     expect(issueText).toContain('Bad Id:id must be kebab-case')
     expect(issueText).toContain('empty-label:label must be a non-empty string')
     expect(issueText).toContain('bad-kind:invalid kind recolor')
@@ -142,17 +142,17 @@ describe('theme registry validation', () => {
 })
 
 describe('resolveThemeSelection (themeId × appearance model)', () => {
-  const registry = [TAU, NORD, CONTRAST]
+  const registry = [FICUS, NORD, CONTRAST]
 
   test('dual themes resolve light and dark directly', () => {
-    expect(resolveThemeSelection(registry, 'tau', 'light', false)).toEqual({ theme: TAU, appearance: 'light' })
-    expect(resolveThemeSelection(registry, 'tau', 'dark', false)).toEqual({ theme: TAU, appearance: 'dark' })
+    expect(resolveThemeSelection(registry, 'ficus', 'light', false)).toEqual({ theme: FICUS, appearance: 'light' })
+    expect(resolveThemeSelection(registry, 'ficus', 'dark', false)).toEqual({ theme: FICUS, appearance: 'dark' })
     expect(resolveThemeSelection(registry, 'nord', 'dark', true)).toEqual({ theme: NORD, appearance: 'dark' })
   })
 
   test("appearance 'system' resolves against the OS preference", () => {
-    expect(resolveThemeSelection(registry, 'tau', 'system', true)).toEqual({ theme: TAU, appearance: 'dark' })
-    expect(resolveThemeSelection(registry, 'tau', 'system', false)).toEqual({ theme: TAU, appearance: 'light' })
+    expect(resolveThemeSelection(registry, 'ficus', 'system', true)).toEqual({ theme: FICUS, appearance: 'dark' })
+    expect(resolveThemeSelection(registry, 'ficus', 'system', false)).toEqual({ theme: FICUS, appearance: 'light' })
   })
 
   test('unified themes ignore appearance entirely (PD-6)', () => {
@@ -165,9 +165,12 @@ describe('resolveThemeSelection (themeId × appearance model)', () => {
   })
 
   test('unknown or missing theme id falls back to the default theme, keeping the appearance', () => {
-    expect(resolveThemeSelection(registry, 'does-not-exist', 'dark', false)).toEqual({ theme: TAU, appearance: 'dark' })
-    expect(resolveThemeSelection(registry, undefined, 'system', true)).toEqual({ theme: TAU, appearance: 'dark' })
-    expect(resolveThemeSelection(registry, null, undefined, false)).toEqual({ theme: TAU, appearance: 'light' })
+    expect(resolveThemeSelection(registry, 'does-not-exist', 'dark', false)).toEqual({
+      theme: FICUS,
+      appearance: 'dark',
+    })
+    expect(resolveThemeSelection(registry, undefined, 'system', true)).toEqual({ theme: FICUS, appearance: 'dark' })
+    expect(resolveThemeSelection(registry, null, undefined, false)).toEqual({ theme: FICUS, appearance: 'light' })
   })
 
   test('missing appearance falls back to DEFAULT_APPEARANCE, never to system probing', () => {
@@ -186,8 +189,8 @@ describe('resolveThemeSelection (themeId × appearance model)', () => {
   })
 
   test('resolution is pure selection: identical inputs return identical values', () => {
-    const a = resolveThemeSelection(registry, 'tau', 'system', true)
-    const b = resolveThemeSelection(registry, 'tau', 'system', true)
+    const a = resolveThemeSelection(registry, 'ficus', 'system', true)
+    const b = resolveThemeSelection(registry, 'ficus', 'system', true)
     expect(a.theme).toBe(b.theme)
     expect(a.appearance).toBe(b.appearance)
   })
@@ -196,60 +199,75 @@ describe('resolveThemeSelection (themeId × appearance model)', () => {
 describe('normalizeStoredThemeSelection (localStorage migration)', () => {
   test('valid new-key values pass through', () => {
     expect(
-      normalizeStoredThemeSelection({ themeId: 'tau', appearance: 'dark', legacyTheme: null, knownThemeIds: ['tau'] })
-    ).toEqual({ themeId: 'tau', appearance: 'dark' })
+      normalizeStoredThemeSelection({
+        themeId: 'ficus',
+        appearance: 'dark',
+        legacyTheme: null,
+        knownThemeIds: ['ficus'],
+      })
+    ).toEqual({ themeId: 'ficus', appearance: 'dark' })
     expect(
-      normalizeStoredThemeSelection({ themeId: 'tau', appearance: 'system', legacyTheme: null, knownThemeIds: ['tau'] })
-    ).toEqual({ themeId: 'tau', appearance: 'system' })
+      normalizeStoredThemeSelection({
+        themeId: 'ficus',
+        appearance: 'system',
+        legacyTheme: null,
+        knownThemeIds: ['ficus'],
+      })
+    ).toEqual({ themeId: 'ficus', appearance: 'system' })
   })
 
-  test('legacy tau-theme light/dark migrates onto the default theme', () => {
+  test('legacy ficus-theme light/dark migrates onto the default theme', () => {
     expect(normalizeStoredThemeSelection({ themeId: null, appearance: null, legacyTheme: 'dark' })).toEqual({
-      themeId: 'tau',
+      themeId: 'ficus',
       appearance: 'dark',
     })
     expect(normalizeStoredThemeSelection({ themeId: null, appearance: null, legacyTheme: 'light' })).toEqual({
-      themeId: 'tau',
+      themeId: 'ficus',
       appearance: 'light',
     })
   })
 
   test('unreadable or unknown values fall back to the defaults', () => {
     expect(normalizeStoredThemeSelection({ themeId: null, appearance: null, legacyTheme: null })).toEqual({
-      themeId: 'tau',
+      themeId: 'ficus',
       appearance: 'light',
     })
     expect(normalizeStoredThemeSelection({ themeId: null, appearance: null, legacyTheme: 'banana' })).toEqual({
-      themeId: 'tau',
+      themeId: 'ficus',
       appearance: 'light',
     })
     expect(normalizeStoredThemeSelection({ themeId: null, appearance: 'ultraviolet', legacyTheme: 'dark' })).toEqual({
-      themeId: 'tau',
+      themeId: 'ficus',
       appearance: 'dark',
     })
     expect(normalizeStoredThemeSelection({ themeId: 'hologram', appearance: 'light', legacyTheme: null })).toEqual({
-      themeId: 'tau',
+      themeId: 'ficus',
       appearance: 'light',
     })
   })
 
   test('new appearance key wins over the legacy value once written', () => {
-    expect(normalizeStoredThemeSelection({ themeId: 'tau', appearance: 'light', legacyTheme: 'dark' })).toEqual({
-      themeId: 'tau',
+    expect(normalizeStoredThemeSelection({ themeId: 'ficus', appearance: 'light', legacyTheme: 'dark' })).toEqual({
+      themeId: 'ficus',
       appearance: 'light',
     })
   })
 
   test('unknown theme ids are rejected against the known id list', () => {
     expect(
-      normalizeStoredThemeSelection({ themeId: 'nord', appearance: 'dark', legacyTheme: null, knownThemeIds: ['tau'] })
-    ).toEqual({ themeId: 'tau', appearance: 'dark' })
+      normalizeStoredThemeSelection({
+        themeId: 'nord',
+        appearance: 'dark',
+        legacyTheme: null,
+        knownThemeIds: ['ficus'],
+      })
+    ).toEqual({ themeId: 'ficus', appearance: 'dark' })
     expect(
       normalizeStoredThemeSelection({
         themeId: 'nord',
         appearance: 'dark',
         legacyTheme: null,
-        knownThemeIds: ['tau', 'nord'],
+        knownThemeIds: ['ficus', 'nord'],
       })
     ).toEqual({ themeId: 'nord', appearance: 'dark' })
   })
@@ -284,4 +302,8 @@ describe('coherent partial theme overrides', () => {
       '--future-brand-tile',
     ])
   })
+})
+
+test('the default theme is ficus', () => {
+  expect(DEFAULT_THEME_ID).toBe('ficus')
 })

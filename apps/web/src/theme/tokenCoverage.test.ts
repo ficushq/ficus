@@ -36,7 +36,7 @@ function cssBlock(selector: string): string {
 const rootBlock = cssBlock(':root')
 const darkBlock = cssBlock('.dark')
 
-describe('built-in theme token completeness (tau dual variant)', () => {
+describe('built-in theme token completeness (iris dual variant)', () => {
   test('the light scope (:root) defines exactly the registry active token set', () => {
     const result = validateThemeTokenSet(new Set(declaredTokens(rootBlock)))
     expect(result.missing).toEqual([])

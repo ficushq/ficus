@@ -14,7 +14,7 @@
  * - the primary/accent family: derived from the primary seed, with a
  *   lightness OFFSET and a chroma RATIO both modeled on how that token
  *   differs from the base theme's own --color-primary (so e.g. "hover" stays
- *   proportionally different from the seed the same way it differs in Ficus).
+ *   proportionally different from the seed the same way it differs in the base theme).
  * - --on-accent-fg is chosen (black or white) by contrast against the
  *   derived primary, not hue-derived.
  * - interaction surfaces (hover, pill, inset, secondary surface, selection

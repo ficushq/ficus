@@ -966,10 +966,10 @@
   }
 
   /* BEGIN GENERATED PALETTE BUILTINS — apps/web/scripts/generate-palette-builtins.ts. Do not edit by hand. */
-  :root[data-theme='forest'][data-appearance='light'],
-  [data-theme-scope][data-theme='forest'][data-appearance='light'] {
+  :root[data-theme='ficus'][data-appearance='light'],
+  [data-theme-scope][data-theme='ficus'][data-appearance='light'] {
     color-scheme: light;
-    /* Forest: Owner palette preset: pine primary, bark secondary, moss tertiary, olive-gray chrome. See docs/wiki/theme/builtins.md. */
+    /* Ficus: Brand palette: leaf primary, terracotta secondary, moss tertiary, linen and soil surfaces. See docs/wiki/theme/builtins.md. */
     --status-progress-50: 239 246 255;
     --status-progress-100: 219 234 254;
     --status-progress-200: 191 219 254;
@@ -1159,38 +1159,38 @@
     --brand-gradient-to: 124 58 237;
     --brand-tile: 124 58 237;
     --brand-ink: 255 255 255;
-    --swatch-secondary: 122 92 62;
+    --swatch-secondary: 176 88 47;
     --swatch-tertiary: 138 154 91;
-    --color-bg-page: 251 251 237;
-    --color-bg-surface: 255 255 243;
-    --color-bg-surface-secondary: 242 245 232;
-    --color-bg-pill: 232 237 223;
-    --color-bg-surface-hover: 232 237 223;
-    --color-bg-inset: 232 237 223;
-    --color-text-primary: 38 38 28;
-    --color-text-secondary: 96 96 85;
-    --color-text-muted: 108 107 97;
-    --color-text-placeholder: 108 107 97;
-    --color-border: 228 228 215;
-    --color-border-hover: 207 207 194;
-    --color-input-bg: 255 255 243;
-    --color-input-border: 182 199 181;
+    --color-bg-page: 241 233 219;
+    --color-bg-surface: 245 240 230;
+    --color-bg-surface-secondary: 232 231 219;
+    --color-bg-pill: 223 224 212;
+    --color-bg-surface-hover: 223 224 212;
+    --color-bg-inset: 223 224 212;
+    --color-text-primary: 41 36 30;
+    --color-text-secondary: 100 94 87;
+    --color-text-muted: 104 98 92;
+    --color-text-placeholder: 104 98 92;
+    --color-border: 218 212 204;
+    --color-border-hover: 198 191 184;
+    --color-input-bg: 246 239 231;
+    --color-input-border: 176 189 173;
     --opacity-input-border: 1;
-    --color-shadow: 30 30 20 / 0.043137254901960784;
-    --color-shadow-lg: 30 30 20 / 0.10196078431372549;
-    --color-code-bg: 242 242 228;
-    --color-code-text: 65 65 55;
+    --color-shadow: 33 28 23 / 0.043137254901960784;
+    --color-shadow-lg: 33 28 23 / 0.10196078431372549;
+    --color-code-bg: 232 226 218;
+    --color-code-text: 69 64 57;
     --color-primary: 63 107 79;
     --color-primary-hover: 74 126 93;
     --color-primary-active: 55 91 67;
     --color-primary-light: 74 126 93;
-    --color-selection-bg: 232 237 223;
-    --color-selection-border: 182 199 181;
-    --color-focus: 87 141 107;
-    --color-panel-border: 88 88 77;
+    --color-selection-bg: 223 224 212;
+    --color-selection-border: 176 189 173;
+    --color-focus: 85 138 105;
+    --color-panel-border: 92 86 80;
     --opacity-panel-border: 0.12;
-    --color-glass: 255 255 243 / 0.8784313725490196;
-    --color-overlay: 254 254 240;
+    --color-glass: 246 239 231 / 0.8784313725490196;
+    --color-overlay: 243 237 229;
     --color-status-bar-scrim: var(--color-bg-surface);
     --status-progress-fg: 29 78 216;
     --status-progress-solid: 59 130 246;
@@ -1352,7 +1352,7 @@
     --opacity-badge-accent-7-hover: 1;
     --agent-type-1-fg: 109 40 217;
     --agent-type-2-fg: 29 78 216;
-    --agent-type-3-fg: 4 120 87;
+    --agent-type-3-fg: 0 113 81;
     --agent-type-4-fg: 146 64 14;
     --agent-type-5-fg: 190 18 60;
     --agent-type-6-fg: 21 94 117;
@@ -1448,10 +1448,10 @@
     --ansi-on-bright-white: 26 32 44;
   }
 
-  :root[data-theme='forest'][data-appearance='dark'],
-  [data-theme-scope][data-theme='forest'][data-appearance='dark'] {
+  :root[data-theme='ficus'][data-appearance='dark'],
+  [data-theme-scope][data-theme='ficus'][data-appearance='dark'] {
     color-scheme: dark;
-    /* Forest: Owner palette preset: pine primary, bark secondary, moss tertiary, olive-gray chrome. See docs/wiki/theme/builtins.md. */
+    /* Ficus: Brand palette: leaf primary, terracotta secondary, moss tertiary, linen and soil surfaces. See docs/wiki/theme/builtins.md. */
     --status-progress-50: 239 246 255;
     --status-progress-100: 219 234 254;
     --status-progress-200: 191 219 254;
@@ -1641,38 +1641,38 @@
     --brand-gradient-to: 124 58 237;
     --brand-tile: 124 58 237;
     --brand-ink: 255 255 255;
-    --swatch-secondary: 122 92 62;
+    --swatch-secondary: 176 88 47;
     --swatch-tertiary: 138 154 91;
-    --color-bg-page: 11 11 4;
-    --color-bg-surface: 19 19 9;
-    --color-bg-surface-secondary: 24 30 17;
-    --color-bg-pill: 30 40 26;
-    --color-bg-surface-hover: 30 40 26;
-    --color-bg-inset: 30 40 26;
-    --color-text-primary: 232 233 219;
-    --color-text-secondary: 163 163 150;
-    --color-text-muted: 154 154 141;
-    --color-text-placeholder: 154 154 141;
-    --color-border: 48 48 37;
-    --color-border-hover: 72 72 61;
-    --color-input-bg: 25 25 15;
-    --color-input-border: 208 208 195;
+    --color-bg-page: 28 26 23;
+    --color-bg-surface: 47 42 36;
+    --color-bg-surface-secondary: 49 50 41;
+    --color-bg-pill: 51 58 46;
+    --color-bg-surface-hover: 51 58 46;
+    --color-bg-inset: 51 58 46;
+    --color-text-primary: 237 230 222;
+    --color-text-secondary: 167 161 153;
+    --color-text-muted: 166 160 151;
+    --color-text-placeholder: 166 160 151;
+    --color-border: 79 74 67;
+    --color-border-hover: 105 99 93;
+    --color-input-bg: 54 49 43;
+    --color-input-border: 212 206 198;
     --opacity-input-border: 0.16;
     --color-shadow: 0 0 0 / 0.1411764705882353;
     --color-shadow-lg: 0 0 0 / 0.30196078431372547;
-    --color-code-bg: 29 29 20;
-    --color-code-text: 163 164 151;
-    --color-primary: 63 107 79;
-    --color-primary-hover: 74 126 93;
-    --color-primary-active: 55 91 67;
-    --color-primary-light: 195 218 202;
-    --color-selection-bg: 30 40 26;
-    --color-selection-border: 75 83 71;
-    --color-focus: 195 218 202;
-    --color-panel-border: 188 188 175;
+    --color-code-bg: 59 54 47;
+    --color-code-text: 168 161 154;
+    --color-primary: 159 181 127;
+    --color-primary-hover: 175 201 138;
+    --color-primary-active: 145 163 119;
+    --color-primary-light: 159 181 127;
+    --color-selection-bg: 51 58 46;
+    --color-selection-border: 83 86 65;
+    --color-focus: 159 181 127;
+    --color-panel-border: 192 186 178;
     --opacity-panel-border: 0.12;
-    --color-glass: 19 19 9 / 0.8784313725490196;
-    --color-overlay: 29 29 19;
+    --color-glass: 47 42 36 / 0.8784313725490196;
+    --color-overlay: 59 54 47;
     --color-status-bar-scrim: var(--color-bg-surface);
     --status-progress-fg: 96 165 250;
     --status-progress-solid: 59 130 246;
@@ -1734,7 +1734,7 @@
     --opacity-status-attention-badge-surface: 0.3;
     --status-attention-badge-hover: 120 53 15;
     --opacity-status-attention-badge-hover: 0.7;
-    --status-danger-fg: 248 113 113;
+    --status-danger-fg: 252 117 116;
     --status-danger-solid: 239 68 68;
     --status-danger-surface: 127 29 29;
     --opacity-status-danger-surface: 0.2;
@@ -1838,8 +1838,8 @@
     --agent-type-4-fg: 252 211 77;
     --agent-type-5-fg: 253 164 175;
     --agent-type-6-fg: 103 232 249;
-    --scrollbar-thumb: 156 163 175 / 0.6;
-    --on-accent-fg: 255 255 255;
+    --scrollbar-thumb: 170 178 190 / 0.6;
+    --on-accent-fg: 28 26 23;
     --checkbox-check: 255 255 255;
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;

@@ -24,7 +24,7 @@ afterEach(async () => {
 const existing: ThemePreset = {
   id: 'preset-1',
   document: {
-    format: 'tau-custom-theme',
+    format: 'ficus-custom-theme',
     version: 2,
     name: 'Mine',
     base: 'harbor',
@@ -291,7 +291,7 @@ test('status picker authors the complete grid as a set, and removing one clears 
 })
 
 test('contrast warnings offer a safe value that improves the pair and clears the warning', async () => {
-  const { container } = await render({ baseId: 'tau', appearance: 'light' })
+  const { container } = await render({ baseId: 'iris', appearance: 'light' })
   // A near-invisible pair: white text on a near-white surface.
   await change(container, 'Color token', '--color-bg-surface')
   await change(container, 'Color value', '#ffffff')
@@ -422,7 +422,7 @@ test("an unset seed swatch reflects the active base theme's own --color-border t
 })
 
 test('setting Primary fills blank Secondary and Tertiary with its companions, which follow Primary until edited', async () => {
-  const { container } = await render({ baseId: 'tau', appearance: 'light' })
+  const { container } = await render({ baseId: 'iris', appearance: 'light' })
   const field = (name: string) => getByLabelText(container, name) as HTMLInputElement
   await change(container, 'Primary', '#3f6b4f')
   const first = suggestPaletteSeeds('#3f6b4f')!
@@ -661,7 +661,7 @@ test('the theme assistant panel proposes a live-previewing edit, shares undo/red
       <CustomThemeEditor
         value={value}
         preset={null}
-        baseId="tau"
+        baseId="iris"
         onClose={() => {}}
         assistantDependencies={dependencies}
       />
@@ -777,7 +777,7 @@ test('typing bumps the revision every keystroke (stale assistant edits are still
       <CustomThemeEditor
         value={value}
         preset={null}
-        baseId="tau"
+        baseId="iris"
         onClose={() => {}}
         assistantDependencies={dependencies}
       />

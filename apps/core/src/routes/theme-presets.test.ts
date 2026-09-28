@@ -18,7 +18,7 @@ app.use('*', identityMiddleware)
 app.route('/theme-presets', themePresetsRouter)
 
 const doc = (name = 'Mine') => ({
-  format: 'tau-custom-theme',
+  format: 'ficus-custom-theme',
   version: 2,
   name,
   base: 'harbor',

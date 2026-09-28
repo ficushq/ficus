@@ -17,7 +17,7 @@ app.use('*', identityMiddleware)
 app.route('/user-preferences', userPreferencesRouter)
 const theme = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null }
 const customTheme = {
-  format: 'tau-custom-theme',
+  format: 'ficus-custom-theme',
   version: 2,
   name: 'Synced',
   base: 'harbor',

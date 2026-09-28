@@ -3,7 +3,7 @@ import { applyThemeOperations, themeAssistantContract, themeOperationSchema } fr
 import type { CustomThemeDocument } from './custom-theme'
 
 function dualDoc(): CustomThemeDocument {
-  return { format: 'tau-custom-theme', version: 2, name: 'My theme', base: 'tau', variants: { light: {}, dark: {} } }
+  return { format: 'ficus-custom-theme', version: 2, name: 'My theme', base: 'iris', variants: { light: {}, dark: {} } }
 }
 
 test('set-palette starts, patches, and clears a palette without disturbing other fields', () => {
@@ -57,7 +57,7 @@ test('set-base reshapes variants for the new base kind (dual -> unified merges; 
   const unified = applyThemeOperations(dual, [{ op: 'set-base', base: 'high-contrast' }])
   expect(unified.base).toBe('high-contrast')
   expect(unified.variants).toEqual({ constant: { '--color-primary': '#222222' } })
-  const backToDual = applyThemeOperations(unified, [{ op: 'set-base', base: 'tau' }])
+  const backToDual = applyThemeOperations(unified, [{ op: 'set-base', base: 'iris' }])
   expect(backToDual.variants).toEqual({
     light: { '--color-primary': '#222222' },
     dark: { '--color-primary': '#222222' },
@@ -103,7 +103,7 @@ test('themeOperationSchema accepts every documented op literal', () => {
     const sample = {
       'set-palette': { op, primary: '#000000' },
       'set-overrides': { op, variant: 'light', tokens: { '--color-primary': '#000000' } },
-      'set-base': { op, base: 'tau' },
+      'set-base': { op, base: 'iris' },
       rename: { op, name: 'x' },
       'clear-overrides': { op },
     }[op as 'set-palette']
@@ -115,7 +115,7 @@ test('the model-facing contract lists palette fields, token families, and built-
   expect(themeAssistantContract).toContain('primary')
   expect(themeAssistantContract).toContain('harmonized')
   expect(themeAssistantContract).toContain('chrome')
-  expect(themeAssistantContract).toContain('tau')
+  expect(themeAssistantContract).toContain('iris')
   expect(themeAssistantContract).toContain('high-contrast')
   expect(themeAssistantContract.length).toBeLessThan(20_000)
 })

@@ -35,7 +35,7 @@ type Theme = 'light' | 'dark'
 
 interface ThemeContextValue {
   syncAvailable: boolean
-  /** The registered theme id currently applied (e.g. 'tau'). */
+  /** The registered theme id currently applied (e.g. 'ficus'). */
   customTheme: CustomThemeDocument | null
   customThemeError: string | null
   /** The library preset `customTheme` came from, or null when detached

@@ -4,7 +4,7 @@ import {
   type EffectiveAppearance,
   type StoredThemeSelection,
 } from '@ficus/shared/theme-schema'
-import { KNOWN_THEME_IDS } from './registry'
+import { IRIS_THEME, KNOWN_THEME_IDS } from './registry'
 import {
   APPEARANCE_STORAGE_KEY,
   LEGACY_SURFACE_COLOR_STORAGE_KEY,
@@ -172,7 +172,8 @@ export function readSurfaceSnapshot(
       // CSS rather than trusting a possibly-stale value.
       return null
     }
-    if (themeId === 'tau') {
+    // The legacy string was only ever written for Iris (the one theme before the theme architecture).
+    if (themeId === IRIS_THEME.id) {
       const legacy = storage.getItem(LEGACY_SURFACE_COLOR_KEY)
       if (legacy) return legacy
     }

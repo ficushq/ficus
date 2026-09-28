@@ -9,24 +9,24 @@ import {
 } from './custom-theme'
 
 const builtins = [
-  { id: 'tau', label: 'Iris', kind: 'dual' as const },
+  { id: 'iris', label: 'Iris', kind: 'dual' as const },
   { id: 'high-contrast', label: 'High contrast', kind: 'unified' as const },
 ]
 // v1 input: one concrete appearance per document.
 const v1doc = {
-  format: 'tau-custom-theme',
+  format: 'ficus-custom-theme',
   version: 1,
   name: 'My theme',
-  base: 'tau',
+  base: 'iris',
   appearance: 'dark',
   overrides: {},
 }
 // v2 input: a light/dark pair (dual base) that follows the appearance toggle.
 const v2doc = {
-  format: 'tau-custom-theme',
+  format: 'ficus-custom-theme',
   version: 2,
   name: 'My theme',
-  base: 'tau',
+  base: 'iris',
   variants: { light: {}, dark: {} },
 }
 const validate = (value: unknown) => validateCustomTheme(JSON.stringify(value), builtins)
@@ -89,6 +89,25 @@ describe('closed custom color grammar', () => {
   }
 })
 
+describe('format marker', () => {
+  test('exports carry ficus-custom-theme and an unknown marker is rejected', () => {
+    const result = validate(v2doc)
+    expect(result.ok && result.document.format).toBe('ficus-custom-theme')
+    expect(validate({ ...v2doc, format: 'other-custom-theme' })).toEqual({
+      ok: false,
+      error: 'Expected format ficus-custom-theme.',
+    })
+  })
+
+  // Files exported before the Ficus rename. Remove with the old marker in the Wave 3 sweep.
+  test('an import with the pre-rename marker is accepted and rewritten to ficus-custom-theme', () => {
+    for (const doc of [v1doc, v2doc]) {
+      const result = validate({ ...doc, format: 'tau-custom-theme' })
+      expect(result.ok && result.document.format).toBe('ficus-custom-theme')
+    }
+  })
+})
+
 describe('v1 documents load and normalize into v2 pairs', () => {
   test('required fields, types, version, base and concrete appearance are enforced', () => {
     for (const key of Object.keys(v1doc)) {
@@ -125,10 +144,10 @@ describe('v1 documents load and normalize into v2 pairs', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.document).toEqual({
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'My theme',
-      base: 'tau',
+      base: 'iris',
       variants: { light: {}, dark: { '--color-primary': '#0ea5e9' } },
     })
   })
@@ -219,7 +238,13 @@ test('a full light+dark override of every active token (worst-case pair) fits th
   // cap already rejects regardless of this test).
   const light = Object.fromEntries(ACTIVE_THEME_TOKENS.map((t) => [t, '#ffffffaa']))
   const dark = Object.fromEntries(ACTIVE_THEME_TOKENS.map((t) => [t, '#000000aa']))
-  const doc = { format: 'tau-custom-theme', version: 2, name: 'x'.repeat(40), base: 'tau', variants: { light, dark } }
+  const doc = {
+    format: 'ficus-custom-theme',
+    version: 2,
+    name: 'x'.repeat(40),
+    base: 'iris',
+    variants: { light, dark },
+  }
   const raw = JSON.stringify(doc)
   expect(new TextEncoder().encode(raw).length).toBeLessThan(CUSTOM_THEME_MAX_BYTES)
   const result = validateCustomTheme(raw, builtins)

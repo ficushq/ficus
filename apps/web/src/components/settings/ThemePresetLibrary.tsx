@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ThemePreset } from '@ficus/shared'
+import { CUSTOM_THEME_FORMAT, type ThemePreset } from '@ficus/shared'
 import { isHttpResponseError } from '@ficus/client-core'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { selfServiceQueryEnabled, useOptionalAuth } from '../../providers/AuthProvider'
@@ -116,7 +116,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
       const url = URL.createObjectURL(new Blob([exportCustomTheme(preset.document)], { type: 'application/json' }))
       const link = document.createElement('a')
       link.href = url
-      link.download = `${preset.document.name || 'tau-custom-theme'}.json`
+      link.download = `${preset.document.name || CUSTOM_THEME_FORMAT}.json`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 0)
     } catch (error) {

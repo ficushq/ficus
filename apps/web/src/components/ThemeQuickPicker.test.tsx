@@ -18,7 +18,7 @@ afterEach(async () => {
 const midnight: ThemePreset = {
   id: 'preset-midnight',
   document: {
-    format: 'tau-custom-theme',
+    format: 'ficus-custom-theme',
     version: 2,
     name: 'Midnight',
     base: 'harbor',
@@ -194,7 +194,7 @@ test('preset circle swatch resolves the compiled override, not the plain harbor 
 })
 
 test('each built-in circle resolves its own real --color-primary token under the current appearance', async () => {
-  const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  const { container } = await renderPicker({ themeId: 'iris', appearance: 'light' })
   await open(container)
   const values = new Map<string, string>()
   for (const label of ['Iris', 'Harbor', 'Ember', 'High contrast']) {
@@ -211,7 +211,7 @@ test('each built-in circle resolves its own real --color-primary token under the
 })
 
 test('clicking a circle swaps the palette only, preserving the stored appearance', async () => {
-  const { container } = await renderPicker({ themeId: 'tau', appearance: 'dark' })
+  const { container } = await renderPicker({ themeId: 'iris', appearance: 'dark' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Ember' })))
   expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
@@ -221,7 +221,7 @@ test('clicking a circle swaps the palette only, preserving the stored appearance
 })
 
 test('clicking a preset circle applies it via applyPreset and rings it as active', async () => {
-  const { container } = await renderPicker({ presets: [midnight], themeId: 'tau', appearance: 'dark' })
+  const { container } = await renderPicker({ presets: [midnight], themeId: 'iris', appearance: 'dark' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Midnight' })))
   expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
@@ -233,7 +233,7 @@ test('the active shared (foreign) preset gets its own circle even though it is n
   const teamTheme: ThemePreset = {
     id: 'shared-1',
     document: {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Team theme',
       base: 'harbor',
@@ -267,19 +267,19 @@ test('a foreign preset already present in the caller’s own presets list is not
 })
 
 test('Enter and Space activate a circle exactly like a click', async () => {
-  const { container } = await renderPicker({ themeId: 'tau' })
+  const { container } = await renderPicker({ themeId: 'iris' })
   await open(container)
   const harbor = getByRole(container, 'radio', { name: 'Harbor' })
   await act(async () => fireEvent.keyDown(harbor, { key: 'Enter' }))
   expect(localStorage.getItem('ficus-theme-id')).toBe('harbor')
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Iris' })))
-  expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+  expect(localStorage.getItem('ficus-theme-id')).toBe('iris')
   await act(async () => fireEvent.keyDown(getByRole(container, 'radio', { name: 'Ember' }), { key: ' ' }))
   expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
 })
 
 test('appearance toggle applies light/dark/system and stays wired to the existing setAppearance', async () => {
-  const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  const { container } = await renderPicker({ themeId: 'iris', appearance: 'light' })
   await open(container)
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Dark' })))
   expect(localStorage.getItem('ficus-appearance')).toBe('dark')
@@ -322,7 +322,7 @@ test('shows no account-sync notice or button once synced', async () => {
     storeRef.current.connect({
       getMine: async () => ({
         userId: 'u1',
-        theme: { themeId: 'tau', appearance: 'light', customTheme: null, presetId: null },
+        theme: { themeId: 'iris', appearance: 'light', customTheme: null, presetId: null },
       }),
       updateMine: async (input) => ({ userId: 'u1', theme: input.theme }),
     })
@@ -336,25 +336,25 @@ test('shows no account-sync notice or button once synced', async () => {
 // --- Hover preview -----------------------------------------------------
 
 test('hovering a circle previews the whole app after the intent delay, pure DOM only', async () => {
-  const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  const { container } = await renderPicker({ themeId: 'iris', appearance: 'light' })
   await open(container)
   const hover = useHoverTimer()
   try {
     const ember = getByRole(container, 'radio', { name: 'Ember' })
     await hoverEnter(ember)
     // Not yet: the debounce has not elapsed.
-    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('iris')
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
     // Zero persistence during preview.
-    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('iris')
   } finally {
     hover.restore()
   }
 })
 
 test('previewing a one-appearance dark theme from a light theme paints it dark, like selecting it', async () => {
-  const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  const { container } = await renderPicker({ themeId: 'iris', appearance: 'light' })
   await open(container)
   const hover = useHoverTimer()
   try {
@@ -372,7 +372,7 @@ test('previewing a one-appearance dark theme from a light theme paints it dark, 
 })
 
 test('sweeping quickly across circles cancels the pending preview (no strobe)', async () => {
-  const { container } = await renderPicker({ themeId: 'tau' })
+  const { container } = await renderPicker({ themeId: 'iris' })
   await open(container)
   const hover = useHoverTimer()
   try {
@@ -384,18 +384,18 @@ test('sweeping quickly across circles cancels the pending preview (no strobe)', 
     expect(hover.pending()).toBe(1)
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
-    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+    expect(localStorage.getItem('ficus-theme-id')).toBe('iris')
   } finally {
     hover.restore()
   }
 })
 
 test('moving straight from one circle to the next swaps the preview without restoring in between', async () => {
-  const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  const { container } = await renderPicker({ themeId: 'iris', appearance: 'light' })
   await open(container)
   const hover = useHoverTimer()
   try {
-    const tau = getByRole(container, 'radio', { name: 'Iris' })
+    const iris = getByRole(container, 'radio', { name: 'Iris' })
     const harbor = getByRole(container, 'radio', { name: 'Harbor' })
     const ember = getByRole(container, 'radio', { name: 'Ember' })
     await hoverEnter(harbor)
@@ -407,22 +407,22 @@ test('moving straight from one circle to the next swaps the preview without rest
     // The ring follows the previewed circle; the stored selection's ring dims.
     expect(ember.querySelector('[data-ring="on"]')).not.toBeNull()
     expect(harbor.querySelector('[data-ring="on"]')).toBeNull()
-    expect(tau.querySelector('[data-ring="on"]')).toBeNull()
-    expect(tau.querySelector('[data-ring="dim"]')).not.toBeNull()
-    expect(tau.getAttribute('aria-checked')).toBe('true')
+    expect(iris.querySelector('[data-ring="on"]')).toBeNull()
+    expect(iris.querySelector('[data-ring="dim"]')).not.toBeNull()
+    expect(iris.getAttribute('aria-checked')).toBe('true')
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
     await hoverLeave(ember)
-    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
-    expect(tau.querySelector('[data-ring="on"]')).not.toBeNull()
-    expect(localStorage.getItem('ficus-theme-id')).toBe('tau')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('iris')
+    expect(iris.querySelector('[data-ring="on"]')).not.toBeNull()
+    expect(localStorage.getItem('ficus-theme-id')).toBe('iris')
   } finally {
     hover.restore()
   }
 })
 
 test('leaving a circle after the preview committed fully restores the stored selection', async () => {
-  const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  const { container } = await renderPicker({ themeId: 'iris', appearance: 'light' })
   await open(container)
   const hover = useHoverTimer()
   const setItem = spyOn(window.localStorage, 'setItem')
@@ -432,7 +432,7 @@ test('leaving a circle after the preview committed fully restores the stored sel
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     await hoverLeave(harbor)
-    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('iris')
     expect(document.documentElement.getAttribute('data-appearance')).toBe('light')
     // No store/localStorage write happened anywhere in the preview+restore cycle.
     expect(setItem).not.toHaveBeenCalled()
@@ -443,21 +443,21 @@ test('leaving a circle after the preview committed fully restores the stored sel
 })
 
 test('keyboard focus never triggers the live preview', async () => {
-  const { container } = await renderPicker({ themeId: 'tau' })
+  const { container } = await renderPicker({ themeId: 'iris' })
   await open(container)
   const hover = useHoverTimer()
   try {
     const harbor = getByRole(container, 'radio', { name: 'Harbor' })
     await act(async () => harbor.focus())
     await hover.advance(1000)
-    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('iris')
   } finally {
     hover.restore()
   }
 })
 
 test('Escape closes the flyout, restores any live preview, and returns focus to the trigger', async () => {
-  const { container } = await renderPicker({ themeId: 'tau' })
+  const { container } = await renderPicker({ themeId: 'iris' })
   await open(container)
   const hover = useHoverTimer()
   try {
@@ -466,7 +466,7 @@ test('Escape closes the flyout, restores any live preview, and returns focus to 
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     await act(async () => fireEvent.keyDown(document, { key: 'Escape', bubbles: true }))
-    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('iris')
     expect(queryByRole(container, 'dialog')).toBeNull()
     expect(document.activeElement).toBe(trigger(container))
   } finally {
@@ -475,7 +475,7 @@ test('Escape closes the flyout, restores any live preview, and returns focus to 
 })
 
 test('restore re-reads the store at leave time, reflecting a selection changed during preview', async () => {
-  const { container, storeRef } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  const { container, storeRef } = await renderPicker({ themeId: 'iris', appearance: 'light' })
   await open(container)
   const hover = useHoverTimer()
   try {
@@ -496,7 +496,7 @@ test('restore re-reads the store at leave time, reflecting a selection changed d
 })
 
 test('click-outside closes the flyout and restores any live preview', async () => {
-  const { container } = await renderPicker({ themeId: 'tau' })
+  const { container } = await renderPicker({ themeId: 'iris' })
   await open(container)
   const hover = useHoverTimer()
   try {
@@ -505,7 +505,7 @@ test('click-outside closes the flyout and restores any live preview', async () =
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     await act(async () => document.body.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true })))
-    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('iris')
     expect(queryByRole(container, 'dialog')).toBeNull()
   } finally {
     hover.restore()
@@ -516,7 +516,7 @@ test('a palette-only preset circle resolves a real derived color, not an empty/u
   const paletteOnly: ThemePreset = {
     id: 'preset-palette',
     document: {
-      format: 'tau-custom-theme',
+      format: 'ficus-custom-theme',
       version: 2,
       name: 'Palette only',
       base: 'harbor',
@@ -530,7 +530,7 @@ test('a palette-only preset circle resolves a real derived color, not an empty/u
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   }
-  const { container } = await renderPicker({ presets: [paletteOnly], themeId: 'tau', appearance: 'light' })
+  const { container } = await renderPicker({ presets: [paletteOnly], themeId: 'iris', appearance: 'light' })
   await open(container)
   const circle = getByRole(container, 'radio', { name: 'Palette only' })
   const swatch = circle.querySelector('[data-theme-scope]')!

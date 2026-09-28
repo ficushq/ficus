@@ -6,6 +6,7 @@ import {
   STATUS_TOKENS,
   assistantEditorInstructionsByKind,
   assistantEditorToolDefinitionsByKind,
+  CUSTOM_THEME_FORMAT,
   customColorChannels,
   reshapeCustomThemeForBase,
   validateCustomTheme,
@@ -58,7 +59,7 @@ type VariantTab = 'light' | 'dark' | 'constant'
 function emptyThemeDocument(baseId: string): CustomThemeDocument {
   const base = findWebTheme(baseId)
   return {
-    format: 'tau-custom-theme',
+    format: CUSTOM_THEME_FORMAT,
     version: 2,
     name: 'New theme',
     base: base.id,
@@ -526,7 +527,7 @@ export function CustomThemeEditor({
       const url = URL.createObjectURL(new Blob([exportCustomTheme(draft)], { type: 'application/json' }))
       const link = document.createElement('a')
       link.href = url
-      link.download = 'tau-custom-theme.json'
+      link.download = `${CUSTOM_THEME_FORMAT}.json`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 0)
     } catch (error) {

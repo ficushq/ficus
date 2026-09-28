@@ -4,7 +4,7 @@ Approved direction, September 5, 2026. This guide covers `apps/web`; the coverag
 
 ## Direction
 
-Ficus is a focused workspace with flat content, frosted framing, softly rounded controls, restrained purple accents, and quiet supporting information. Keep useful density for work, settings, and diagnostics. Give conversations and page sections room to breathe. Information should be grouped by headings, spacing, and occasional separators rather than stacks of raised cards.
+Ficus is a focused workspace with flat content, frosted framing, softly rounded controls, restrained leaf-green accents, and quiet supporting information. Keep useful density for work, settings, and diagnostics. Give conversations and page sections room to breathe. Information should be grouped by headings, spacing, and occasional separators rather than stacks of raised cards.
 
 Local layout improvements are authorized. Broader navigation changes require a concrete proposal; the approved changes are recorded in information architecture.
 
@@ -18,7 +18,7 @@ Local layout improvements are authorized. Broader navigation changes require a c
 | Inset (`ficus-inset`)     | Subtle tonal fill, 8px corners, no shadow        | An open editor or a locally grouped control                              |
 | Overlay (`ficus-overlay`) | Opaque reading surface, thin border, soft shadow | Menus, dialogs, floating tools                                           |
 
-Ordinary tables and lists sit on the page. Avoid gray header bars over white rows, outlined cards around every setting, and double dividers between adjacent groups. Rows use a subtle hover fill; selection uses a restrained purple wash. A status or attention callout can retain a semantic fill when it conveys information.
+Ordinary tables and lists sit on the page. Avoid gray header bars over white rows, outlined cards around every setting, and double dividers between adjacent groups. Rows use a subtle hover fill; selection uses a restrained accent wash. A status or attention callout can retain a semantic fill when it conveys information.
 
 Glass belongs on app framing and sidebars. Use an approximately 88% surface fill and 16px backdrop blur, with opaque fallbacks for unsupported filtering or reduced transparency. Do not blur every row, nest blur boundaries, or animate blur strength. Reading surfaces, inputs, code, and terminal content remain sufficiently opaque.
 
@@ -26,7 +26,7 @@ Glass belongs on app framing and sidebars. Use an approximately 88% surface fill
 
 Colors are theme tokens. `packages/shared/src/theme-schema.ts` lists them; `src/index.css` and `src/theme/builtins.css` define them for every built-in theme and appearance; `tailwind.config.js` exposes them to components; `src/design-system.css` contains explicit shared component roles. Add or change a token before introducing a color; palette utilities and literal colors fail `src/no-raw-colors.test.ts`. See [web themes](theme/README.md).
 
-In the default Ficus theme the light canvas is nearly white, with a white reading surface and muted lavender-neutral secondary fill. Dark mode uses a near-black canvas, a subtle navy-neutral surface, and lighter control fills. Purple is Ficus's primary action and selection color; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`.
+In the default Ficus theme the light canvas is linen (`#f1e9db`), with a lighter linen reading surface (`#f5f0e6`) and leaf-tinted secondary fills. Dark mode uses a soil canvas (`#1c1a17`), a warmer soil surface (`#2f2a24`), and leaf-tinted control fills. Leaf green (`#3f6b4f`, sage `#9fb57f` in dark mode) is Ficus's primary action and selection color, with terracotta and moss as its secondary and tertiary swatch colors. Iris keeps the original purple; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`.
 
 Use `ficus-field`, `ficus-button`, `ficus-button-primary`, `ficus-nav-item`, and `ficus-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
 
@@ -67,7 +67,7 @@ Initial agent-history loading uses message-shaped skeletons in the transcript, r
 
 ## Action Center
 
-Needs you actions use a subtle neutral surface without colored frames or shadows. Keep semantic color on the small status icon; identify the squad and requester in a quiet subtitle. Use purple for the primary action, a neutral outline for secondary choices, and quiet text for navigation or dismissal. Embedded question forms share the surrounding action's surface and padding.
+Needs you actions use a subtle neutral surface without colored frames or shadows. Keep semantic color on the small status icon; identify the squad and requester in a quiet subtitle. Use the primary accent for the primary action, a neutral outline for secondary choices, and quiet text for navigation or dismissal. Embedded question forms share the surrounding action's surface and padding.
 
 A delegated Assistant task whose delegate reported `needs-input` is a Needs-you item (“Assistant task · needs your answer”), grouped with the other questions and visible only to the conversation owner. The card shows the question and an “Answer in Assistant” action that opens the conversation; the exact task answer form opens there so the reply stays correlated to the task, and the item clears once the task leaves `needs-input`. Unanswered task forms are independent of unread updates and remain visible after read/processed acknowledgments or update pagination. Ordinary `ask_human` questions use the shared pending-question form.
 
