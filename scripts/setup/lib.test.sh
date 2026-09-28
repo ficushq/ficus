@@ -3049,8 +3049,8 @@ core:
   origin: https://acme.ficus.sh
   env:
     # a platform knob
-    TAU_MAX_MACHINES: "5"
-    TAU_PLATFORM_USAGE_TOKEN_ENV: DR_USAGE_TOKEN
+    TAU_MAX_MACHINES: "5" # legacy-env
+    TAU_PLATFORM_USAGE_TOKEN_ENV: DR_USAGE_TOKEN # legacy-env
 database:
   mode: external
 runtime:

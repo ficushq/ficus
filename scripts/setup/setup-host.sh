@@ -824,7 +824,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     if [[ -f ${ARTIFACTS_DIR}/managed.env ]]; then
       plan "install managed.env → ${FICUS_MANAGED_ENV_PATH} (0600 root; env credential VALUES never printed)"
       # Installed in the release's prefix (managed_env_prepare); names only.
-      if [[ -r ${ARTIFACTS_DIR}/managed.env ]] && managed_env_prepare "${ARTIFACTS_DIR}" FICUS &&
+      if [[ -r ${ARTIFACTS_DIR}/managed.env ]] && managed_env_prepare "${ARTIFACTS_DIR}" FICUS 2>/dev/null &&
         [[ ${_MANAGED_ENV_RENAMED} -eq 1 ]]; then
         plan "  the staged copy predates the rename: installed with ${_EPR_RENAMED_LINES} setting(s) under their FICUS_* names (the staged file is left as it is)"
       fi

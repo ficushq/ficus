@@ -168,7 +168,9 @@ release on an already renamed host is refused (see `--restore-env-backup`).
   right after the reconcile, before anything is downloaded, staged or
   migrated; `apply-artifacts.sh --config` on the staged `managed.env` before
   anything is installed — so a conflicting host gets no backup set and no
-  journal. The rename checks again right before it writes.
+  journal. The rename checks again right before it writes. The check does not
+  depend on the target release: a host with a conflict can neither upgrade
+  nor downgrade until it is fixed (`--restore-env-backup` is not gated).
 - **Backup sets.** Before the first byte is renamed, every env-bearing file is
   copied byte for byte (`cp -p`, verified with `cmp`, sha256 recorded in a
   `MANIFEST`) into `/var/backups/ficus-env-rename/<UTC time>-<random>/`

@@ -1238,9 +1238,16 @@ managed_env_prepare() { # STAGE_DIR [PREFIX]
   if [[ ${rc} -eq 2 ]]; then
     die "refusing to install ${src}: $(_epr_conflict_message "${src}" "${from}" "${want}" "${_EPR_PROTECTED[@]#"${from}_"}")"
   fi
-  [[ ${_EPR_RESULT} != "${raw}" ]] || return 0
+  if ((${#_EPR_CONFLICTS[@]} > 0)); then
+    log_warn "${src}: kept the ${want}_ value and dropped the differing ${from}_ line for: ${_EPR_CONFLICTS[*]}"
+  fi
+  if [[ ${_EPR_RESULT} == "${raw}" ]]; then
+    _EPR_RESULT=''
+    return 0
+  fi
   _MANAGED_ENV_RENAMED=1
   _MANAGED_ENV_CONTENT=${_EPR_RESULT}
+  _EPR_RESULT=''
   _MANAGED_ENV_NOTE=" with ${_EPR_RENAMED_LINES} line(s) renamed ${from}_ -> ${want}_ (the staged copy names them ${from}_*; this host's settings are ${want}_*)"
 }
 
@@ -1263,6 +1270,7 @@ install_managed_env() { # STAGE_DIR [PREFIX]
   managed_env_prepare "$1" "${2:-}" || return 0
   as_root install -d -m 0755 -o root -g root "$(dirname "${FICUS_MANAGED_ENV_PATH}")"
   install_rendered 0600 root root "${FICUS_MANAGED_ENV_PATH}" _managed_env_emit
+  _MANAGED_ENV_CONTENT='' # live credentials: not kept around for the rest of the run
   log_info "installed ${FICUS_MANAGED_ENV_PATH} (0600)${_MANAGED_ENV_NOTE}"
 }
 
@@ -1326,6 +1334,7 @@ managed_env_would_change() { # STAGE_DIR [PREFIX]
   else
     if grep -q '^[^#[:space:]]' <<<"${_MANAGED_ENV_CONTENT}"; then echo 1; else echo 0; fi
   fi
+  _MANAGED_ENV_CONTENT='' # live credentials: not kept around for the rest of the run
 }
 
 # Remove every file under FICUS_ARTIFACTS_DIR that the staging manifest does NOT
@@ -4535,8 +4544,8 @@ env_prefix_rename_preview() {
   done <<<"${listing}"
 }
 
-# Ruling 24 / N-I2: stop — naming the keys, never a value — when TAU_X and
-# FICUS_X hold different values for a PROTECTED suffix (ENCRYPTION_KEY,
+# Ruling 24 / N-I2: stop — naming the keys, never a value — when
+# TAU_X and FICUS_X hold different values for a PROTECTED suffix (ENCRYPTION_KEY,
 # PASSWORD) in any file the rename would touch: <dest>/.env, managed.env,
 # backup.env and the config's .core.env, plus each EXTRA dotenv file (a staged
 # managed.env about to be installed). Read-only. The entry points call it in
