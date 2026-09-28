@@ -74,6 +74,18 @@ APPLY_PREFIX=''
 
 if [[ -n ${CONFIG} ]]; then
   [[ -f ${CONFIG} ]] || die "config file '${CONFIG}' not found"
+  # N-I2 / Ruling 24, before the lock, the reconcile or any write: the staged
+  # managed.env is installed in this host's prefix (renamed when it names the
+  # other one), and conflicting protected values in it stop the run here,
+  # naming the keys only. The reconcile below re-checks the host's own files
+  # before it finishes a journaled rename.
+  if [[ -f ${STAGE_DIR}/managed.env ]]; then
+    staged_conflicts=$(envfile_prefix_conflicts "${STAGE_DIR}/managed.env" TAU FICUS) ||
+      die "could not check ${STAGE_DIR}/managed.env for conflicting settings"
+    # shellcheck disable=SC2086 # one suffix per line, split on purpose
+    [[ -z ${staged_conflicts} ]] ||
+      die "refusing to install ${STAGE_DIR}/managed.env: $(_epr_conflict_message "${STAGE_DIR}/managed.env" TAU FICUS ${staged_conflicts})"
+  fi
   ensure_yq
   cfg_load "${CONFIG}"
   SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"

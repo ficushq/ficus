@@ -4478,6 +4478,35 @@ _env_prefix_rename_files() { # [--no-units]
   fi
 }
 
+# Ruling 24 / N-I2: stop — naming the keys, never a value — when TAU_X and
+# FICUS_X hold different values for a PROTECTED suffix (ENCRYPTION_KEY,
+# PASSWORD) in any file the rename would touch: <dest>/.env, managed.env,
+# backup.env and the config's .core.env, plus each EXTRA dotenv file (a staged
+# managed.env about to be installed). Read-only. The entry points call it in
+# their preflight — before anything is downloaded, staged, migrated or
+# written — so a conflicting host gets no backup set and no journal; the
+# rename calls it again right before its first write. A file a NON-ROOT run
+# cannot read is skipped here: require_env_rename_privilege refuses that run
+# by name (Ruling 31) before any rename could happen.
+# shellcheck disable=SC2120 # the EXTRA files are optional; most callers pass none
+require_no_env_prefix_conflicts() { # [EXTRA_DOTENV...]
+  local f c conflicts=''
+  # (${c} is one suffix per line, split into arguments on purpose.)
+  # shellcheck disable=SC2086
+  for f in "${SRC_DEST}/.env" "${FICUS_MANAGED_ENV_PATH}" "${BACKUP_ENV_TARGET}" "$@"; do
+    [[ -n ${f} && -e ${f} ]] || continue
+    [[ -r ${f} ]] || _epr_is_root || continue
+    c=$(envfile_prefix_conflicts "${f}" TAU FICUS) || die "could not check ${f} for conflicting settings"
+    [[ -z ${c} ]] || conflicts+="${conflicts:+; }$(_epr_conflict_message "${f}" TAU FICUS ${c})"
+  done
+  if [[ -n ${CFG_FILE:-} && -e ${CFG_FILE} ]] && { [[ -r ${CFG_FILE} ]] || _epr_is_root; }; then
+    c=$(yaml_prefix_conflicts "${CFG_FILE}" TAU FICUS) || die "could not check ${CFG_FILE} for conflicting settings"
+    # shellcheck disable=SC2086 # one suffix per line, split on purpose
+    [[ -z ${c} ]] || conflicts+="${conflicts:+; }$(_epr_conflict_message "${CFG_FILE} .core.env" TAU FICUS ${c})"
+  fi
+  [[ -z ${conflicts} ]] || die "refusing to rename this host's settings: ${conflicts}"
+}
+
 # Hard-rename this host's settings to the TARGET prefix, with a journaled
 # backup set (see the section header). TAU as the target renames nothing and
 # refuses a host whose settings are already FICUS_. Leaves ENV_RENAME_PENDING=1
@@ -4486,7 +4515,7 @@ _env_prefix_rename_files() { # [--no-units]
 # release (env_prefix_settle_pending). Root-only: a non-root run refuses when a
 # rename is needed (require_env_rename_privilege) and proceeds otherwise.
 migrate_env_prefix_host() { # TARGET [RELEASE_DIR]
-  local target=$1 release=${2:-} root current listing f kind c conflicts='' need=0 no_units=''
+  local target=$1 release=${2:-} root current listing f kind need=0 no_units=''
   local -a files=()
   _epr_is_prefix "${target}" || die "migrate_env_prefix_host: target must be TAU or FICUS (got '${target}')"
   root=$(env_rename_backup_root)
@@ -4515,18 +4544,11 @@ migrate_env_prefix_host() { # TARGET [RELEASE_DIR]
   done <<<"${listing}"
 
   # Ruling 24: a protected conflict anywhere stops the run before any write.
-  # (${c} is one suffix per line, split into arguments on purpose.)
-  # shellcheck disable=SC2086
-  for f in "${SRC_DEST}/.env" "${FICUS_MANAGED_ENV_PATH}" "${BACKUP_ENV_TARGET}"; do
-    c=$(envfile_prefix_conflicts "${f}" TAU FICUS) || die "could not check ${f} for conflicting settings"
-    [[ -z ${c} ]] || conflicts+="${conflicts:+; }$(_epr_conflict_message "${f}" TAU FICUS ${c})"
-  done
-  if [[ -n ${CFG_FILE:-} ]]; then
-    c=$(yaml_prefix_conflicts "${CFG_FILE}" TAU FICUS) || die "could not check ${CFG_FILE} for conflicting settings"
-    # shellcheck disable=SC2086 # one suffix per line, split on purpose
-    [[ -z ${c} ]] || conflicts+="${conflicts:+; }$(_epr_conflict_message "${CFG_FILE} .core.env" TAU FICUS ${c})"
-  fi
-  [[ -z ${conflicts} ]] || die "refusing to rename this host's settings: ${conflicts}"
+  # The entry points already checked this in their preflight, before staging
+  # or migrating anything (N-I2); this is the same check again, right before
+  # the first write, in case a file changed in between.
+  # shellcheck disable=SC2119 # no EXTRA files here
+  require_no_env_prefix_conflicts
 
   # Per file: will anything change? (No ".env is already FICUS" shortcut —
   # a half-renamed host is finished file by file.)
@@ -4613,6 +4635,8 @@ _env_prefix_finish_forward() { # SETDIR
   [[ -e ${setdir}/UNITS_EXCLUDED ]] && no_units=--no-units
   # shellcheck disable=SC2086 # an empty ${no_units} must vanish, not pass ''
   if ! (
+    # shellcheck disable=SC2119 # no EXTRA files here
+    require_no_env_prefix_conflicts || exit 1
     _env_prefix_rename_files ${no_units} || exit 1
     listing=$(host_env_files ${no_units}) || exit 1
     while IFS= read -r f; do

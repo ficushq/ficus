@@ -242,6 +242,13 @@ env_prefix_reconcile || reconcile_rc=$?
 [[ ${reconcile_rc} -eq 0 ]] ||
   die "a journaled env rename could not be reconciled (${reconcile_rc}) — push the complete toolkit (systemd/*.service.tmpl, tau-backup.sh.tmpl) and re-run"
 env_prefix_install_traps
+# N-I2 / Ruling 24: conflicting protected values (TAU_X and FICUS_X holding
+# different ENCRYPTION_KEY / PASSWORD values) in any env-bearing file stop the
+# upgrade HERE — naming the keys only, with no backup set and no journal —
+# before either mode's preflight, conversion, download, staging or candidate
+# migration. The pre-flip rename re-checks right before it writes.
+# shellcheck disable=SC2119 # no EXTRA files: an upgrade installs no staged managed.env
+require_no_env_prefix_conflicts
 
 # ============================================================== artifact mode
 

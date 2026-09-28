@@ -5974,6 +5974,44 @@ expect_eq 'migrate_env_prefix_host: ...never the value' \
 expect_eq 'migrate_env_prefix_host: ...before renaming even the clean .env' "$(cmp -s "${SRC_DEST}/.env" "${EPR}/conflict.env.orig" && echo same)" 'same'
 expect_eq 'migrate_env_prefix_host: ...and creates no set' "$([[ -d ${ENV_RENAME_BACKUP_ROOT} ]] && echo made || echo none)" 'none'
 
+# N-I2 as a preflight: the entry points call the same stop before anything is
+# downloaded, staged or migrated. Read-only, and it also covers an EXTRA dotenv
+# file (a staged managed.env about to be installed).
+expect_match 'require_no_env_prefix_conflicts: the managed.env conflict stops it, naming the key' \
+  "$( (require_no_env_prefix_conflicts) 2>&1; echo "rc=$?")" 'refusing to rename this host.s settings: TAU_PLATFORM_PASSWORD and FICUS_PLATFORM_PASSWORD disagree.*rc=1'
+expect_eq 'require_no_env_prefix_conflicts: ...never the value, nothing written, no set' \
+  "$( (require_no_env_prefix_conflicts) 2>&1 | grep -c -e '=a' -e '=b'):$(cmp -s "${SRC_DEST}/.env" "${EPR}/conflict.env.orig" && echo same):$([[ -d ${ENV_RENAME_BACKUP_ROOT} ]] && echo made || echo none)" '0:same:none'
+epr_host preflight '{"name":"ficus"}'
+expect_eq 'require_no_env_prefix_conflicts: a clean (unrenamed) host passes' "$( (require_no_env_prefix_conflicts) 2>&1; echo "rc=$?")" 'rc=0'
+printf 'TAU_SMTP_PASSWORD=x1\nFICUS_SMTP_PASSWORD=x2\n' >"${EPR}/staged-conflict.env" # legacy-env
+expect_match 'require_no_env_prefix_conflicts: an EXTRA staged file with a conflict stops it' \
+  "$( (require_no_env_prefix_conflicts "${EPR}/staged-conflict.env" "${EPR}/no-such.env") 2>&1; echo "rc=$?")" "TAU_SMTP_PASSWORD and FICUS_SMTP_PASSWORD disagree on this host \\(${EPR}/staged-conflict\\.env\\).*rc=1"
+expect_eq 'require_no_env_prefix_conflicts: an absent EXTRA file is nothing to check' \
+  "$( (require_no_env_prefix_conflicts "${EPR}/no-such.env") 2>&1; echo "rc=$?")" 'rc=0'
+if [[ ${EUID} -ne 0 ]]; then
+  chmod 0000 "${EPR}/staged-conflict.env"
+  expect_eq 'require_no_env_prefix_conflicts: non-root skips a file it cannot read (Ruling 31 refuses that run by name)' \
+    "$( (_epr_is_root() { return 1; }; require_no_env_prefix_conflicts "${EPR}/staged-conflict.env") 2>&1; echo "rc=$?")" 'rc=0'
+  chmod 0600 "${EPR}/staged-conflict.env"
+fi
+
+# The reconcile's finish-forward re-checks before its first write: a conflict
+# that appeared after the set was taken keeps the journal and changes nothing.
+epr_host finish-conflict '{"name":"ficus"}'
+ENV_RENAME_PENDING=0
+migrate_env_prefix_host FICUS "${SRC_DEST}/releases/rel" 2>/dev/null
+epr_fc_set=${ENV_RENAME_BACKUP_SET}
+printf 'TAU_ENCRYPTION_KEY=late-other-key\n' >>"${SRC_DEST}/.env" # legacy-env
+printf 'TAU_MANAGED=2\n' >>"${FICUS_MANAGED_ENV_PATH}" # legacy-env
+cp -p "${SRC_DEST}/.env" "${EPR}/fc.env.orig"
+cp -p "${FICUS_MANAGED_ENV_PATH}" "${EPR}/fc.managed.orig"
+expect_eq '_env_prefix_finish_forward: a conflict found before its first write fails it' \
+  "$( (_env_prefix_finish_forward "${epr_fc_set}") >/dev/null 2>&1; echo "rc=$?")" 'rc=1'
+expect_eq '_env_prefix_finish_forward: ...with nothing renamed and the journal kept' \
+  "$(cmp -s "${SRC_DEST}/.env" "${EPR}/fc.env.orig" && echo same):$(cmp -s "${FICUS_MANAGED_ENV_PATH}" "${EPR}/fc.managed.orig" && echo same):$([[ -e ${ENV_RENAME_BACKUP_ROOT}/PENDING ]] && echo kept || echo gone)" 'same:same:kept'
+rm -f "${ENV_RENAME_BACKUP_ROOT}/PENDING"
+ENV_RENAME_PENDING=0
+
 # N-I3: with ARTIFACT_CONVERTED_THIS_RUN=1 the units stay out of the set, and
 # a restore renders them for the CURRENT layout with TAU_ROOT.
 epr_host converted '{"name":"tau"}'

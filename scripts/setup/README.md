@@ -163,7 +163,12 @@ release on an already renamed host is refused (see `--restore-env-backup`).
   different values and `X` contains `ENCRYPTION_KEY` or `PASSWORD`, nothing is
   written: the message names both keys (never a value) — keep the right one,
   delete the other, re-run. Identical values collapse silently; for any other
-  key the `FICUS_` value wins and the dropped `TAU_` key is logged.
+  key the `FICUS_` value wins and the dropped `TAU_` key is logged. The check
+  runs in each entry point's preflight — `upgrade-host.sh` and `setup-host.sh`
+  right after the reconcile, before anything is downloaded, staged or
+  migrated; `apply-artifacts.sh --config` on the staged `managed.env` before
+  anything is installed — so a conflicting host gets no backup set and no
+  journal. The rename checks again right before it writes.
 - **Backup sets.** Before the first byte is renamed, every env-bearing file is
   copied byte for byte (`cp -p`, verified with `cmp`, sha256 recorded in a
   `MANIFEST`) into `/var/backups/ficus-env-rename/<UTC time>-<random>/`

@@ -553,6 +553,13 @@ if [[ ${DRY_RUN} -eq 0 ]]; then
   env_prefix_install_traps
 fi
 
+# N-I2 / Ruling 24, as a preflight: TAU_X and FICUS_X holding different values
+# for a protected suffix (ENCRYPTION_KEY, PASSWORD) in any env-bearing file —
+# or in the staged managed.env phase_artifacts installs — stop the run HERE,
+# naming the keys only, before a single phase downloads, stages, migrates or
+# writes anything (the rename itself re-checks right before it writes).
+require_no_env_prefix_conflicts ${ARTIFACTS_DIR:+"${ARTIFACTS_DIR}/managed.env"}
+
 resolve_secrets
 
 # On a restore, FICUS_ENCRYPTION_KEY is carried forward from the archived .env

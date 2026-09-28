@@ -340,6 +340,8 @@ tau_names() { # how many TAU_ names are left across the env-bearing files
     grep -c "${legacy}_BACKUP_" "${H}/bin/tau-backup.sh" || true
   } | sum_counts
 }
+# How many trees the upgrade downloaded or staged for the new release.
+staged_new() { find "${DEST}/releases" -mindepth 1 -maxdepth 1 \( -name "${SHA_NEW}-*" -o -name .incoming \) 2>/dev/null | wc -l | tr -d ' '; }
 sets() { find "${H}/bk" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' '; }
 pending() { [[ -e ${H}/bk/PENDING ]] && echo pending || echo none; }
 # Ruling 29's invariant: without a journal, the .env prefix is the prefix
@@ -649,6 +651,22 @@ expect_eq 'conflicting encryption keys: never prints either value' \
 expect_eq 'conflicting encryption keys: nothing was written' "$(same_as "${H}/pristine")" 'same'
 expect_eq 'conflicting encryption keys: no set, no journal' "$(sets):$(pending)" '0:none'
 expect_eq 'conflicting encryption keys: current did not move' "$(readlink "${DEST}/current")" "${OLD_REL}"
+# N-I2: refused in the PREFLIGHT — before the download, the staging and the
+# candidate migration (P6 step 8 saw it only after all three).
+expect_eq 'conflicting encryption keys: refused before any download or staging (no release dir, no incoming dir)' \
+  "$(staged_new)" '0'
+expect_eq 'conflicting encryption keys: no candidate migration ran' "$([[ -e ${H}/migrate-proof ]] && echo migrated || echo none)" 'none'
+expect_eq 'conflicting encryption keys: nothing was restarted or reloaded' "$(grep -c 'systemctl' "${CALLS}" || true)" '0'
+# The same stop for a conflict in another env-bearing file (managed.env).
+new_host conflict-managed
+printf 'FICUS_PLATFORM_PASSWORD=pw-other\nTAU_PLATFORM_PASSWORD=pw-mine\n' >>"${H}/etc/managed.env" # legacy-env
+snapshot "${H}/pristine"
+upgrade "${SCRATCH}/ficus.artifact.env"
+expect_eq 'conflicting managed.env passwords: the upgrade stops' "${RC}" '1'
+expect_match 'conflicting managed.env passwords: names the keys and the file' "${OUT}" "TAU_PLATFORM_PASSWORD and FICUS_PLATFORM_PASSWORD disagree on this host \\(${H}/etc/managed\\.env\\)"
+expect_eq 'conflicting managed.env passwords: never prints either value' "$(grep -c -e 'pw-other' -e 'pw-mine' <<<"${OUT}" || true)" '0'
+expect_eq 'conflicting managed.env passwords: nothing written, no set, no journal, no staging, no migration' \
+  "$(same_as "${H}/pristine"):$(sets):$(pending):$(staged_new):$([[ -e ${H}/migrate-proof ]] && echo migrated || echo none)" 'same:0:none:0:none'
 # (No convergence check here: the host carried both spellings before the run,
 # which is exactly what the operator is asked to fix; the run changed nothing.)
 
@@ -719,6 +737,15 @@ printf '# managed\nFICUS_MANAGED=1\nFICUS_PLATFORM_INSTANCE_TOKEN="tok 3"\n' >"$
 run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
 expect_eq 'apply-artifacts --config, a FICUS_ render on a FICUS host: installed byte for byte' \
   "${RC}:$(cmp -s "${H}/stage/managed.env" "${H}/etc/managed.env" && echo same)" '0:same'
+# A staged copy with conflicting protected values: refused before anything is
+# written, naming the keys only.
+printf 'TAU_SMTP_PASSWORD=smtp-aaa\nFICUS_SMTP_PASSWORD=smtp-bbb\n' >"${H}/stage/managed.env" # legacy-env
+cp -p "${H}/etc/managed.env" "${H}/managed.before"
+run_script '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'apply-artifacts --config, a conflicting staged managed.env: refused' "${RC}" '1'
+expect_match 'apply-artifacts --config, a conflicting staged managed.env: names the keys' "${OUT}" 'TAU_SMTP_PASSWORD and FICUS_SMTP_PASSWORD disagree'
+expect_eq 'apply-artifacts --config, a conflicting staged managed.env: no value, nothing installed, no markers' \
+  "$(grep -c -e 'smtp-aaa' -e 'smtp-bbb' <<<"${OUT}" || true):$(cmp -s "${H}/etc/managed.env" "${H}/managed.before" && echo same):$(grep -c '_CHANGED=' <<<"${OUT}" || true)" '0:same:0'
 
 # ================================ 9. setup-host.sh: Ficus releases only (N-I8)
 # setup-host.sh really preflights (Linux + systemd + Ubuntu 24.04, packages,
@@ -815,6 +842,17 @@ if [[ -d /run/systemd/system ]] && grep -q '^ID=ubuntu' /etc/os-release && grep 
   expect_eq 'setup-host.sh re-run, unhealthy new release: no journal, the staged copy untouched' \
     "$(pending):$(cmp -s "${H}/stage/managed.env" "${H}/stage.managed.pristine" && echo same)" 'none:same'
   assert_converged 'setup-host.sh re-run, unhealthy new release'
+
+  # N-I2 in setup-host.sh's preflight: a conflict — here in the staged
+  # managed.env it would install — stops the run before any phase.
+  setup_rerun_host setup-rerun-conflict
+  printf 'TAU_SMTP_PASSWORD=smtp-aaa\nFICUS_SMTP_PASSWORD=smtp-bbb\n' >>"${H}/stage/managed.env" # legacy-env
+  printf '%s-*\n' "${SHA_NEW}" >>"${CTL}/healthy"
+  run_script "${SCRATCH}/ficus.artifact.env" setup-host.sh --config "${CONFIG}"
+  expect_eq 'setup-host.sh, a conflicting staged managed.env: refused' "${RC}" '1'
+  expect_match 'setup-host.sh, a conflicting staged managed.env: names the keys' "${OUT}" 'TAU_SMTP_PASSWORD and FICUS_SMTP_PASSWORD disagree on this host'
+  expect_eq 'setup-host.sh, a conflicting staged managed.env: no value; nothing written, no set, no journal, no staging, no phase ran' \
+    "$(grep -c -e 'smtp-aaa' -e 'smtp-bbb' <<<"${OUT}" || true):$(same_as "${H}/pristine"):$(sets):$(pending):$(staged_new):$(grep -c 'FICUS_PHASE=' <<<"${OUT}" || true)" '0:same:0:none:0:0'
 else
   printf 'SKIP: the setup-host.sh cases need a systemd Ubuntu 24.04 host (/run/systemd/system)\n' >&2
   FAIL=$((FAIL + 1))
