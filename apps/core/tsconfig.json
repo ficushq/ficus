@@ -10,6 +10,7 @@
   "include": [
     "src/**/*",
     "../../scripts/artifact/**/*.ts",
-    "package.json"
+    "package.json",
+    "drizzle/meta/_journal.json"
   ]
 }

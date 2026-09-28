@@ -50,6 +50,12 @@ describeSubprocess('migrate bundle build contract', () => {
       const buildStderr = await new Response(build.stderr).text()
       expect(buildExitCode, `bun build failed:\n${buildStderr}`).toBe(0)
       expect(statSync(outfile).size).toBeGreaterThan(0)
+      // The migration manifest is frozen into the bundle rather than read at
+      // runtime; otherwise a stale bundle cannot detect newer migrations.
+      const journal = JSON.parse(readFileSync(join(CORE_DIR, 'drizzle/meta/_journal.json'), 'utf8')) as {
+        entries: { tag: string }[]
+      }
+      expect(readFileSync(outfile, 'utf8')).toContain(`"${journal.entries.at(-1)!.tag}"`)
 
       // Strip DATABASE_URL and FICUS_MIGRATE_LIVE from the child env, and run
       // from a cwd with no .env of its own, so the guard's refusal can only
