@@ -12,6 +12,18 @@ interface Drawable {
   node: ReactNode
 }
 
+/** What a planting in progress keeps off the map (see Planting.tsx). */
+export interface SceneHidden {
+  /** Plants not planted yet: their robot is still on its way. */
+  plants: ReadonlySet<string>
+  /** Robots out planting: drawn walking instead of at their spot. */
+  robots: ReadonlySet<string>
+  /** Plants just planted, which pop up out of the soil. */
+  popping: ReadonlySet<string>
+}
+
+export const NOTHING_HIDDEN: SceneHidden = { plants: new Set(), robots: new Set(), popping: new Set() }
+
 interface SceneProps {
   layout: FarmLayout
   selection: Selection | null
@@ -19,6 +31,7 @@ interface SceneProps {
   onSelect: (selection: Selection) => void
   /** Keyboard focus landed on a sprite at this world point: bring it into view. */
   onReveal: (x: number, y: number) => void
+  hidden?: SceneHidden
 }
 
 /** Wraps a sprite at a world position as a keyboard- and screen-reader-reachable button. */
@@ -90,7 +103,8 @@ function buildDrawables(
   selected: string | null,
   mailboxCount: number,
   onSelect: (s: Selection) => void,
-  onReveal: (x: number, y: number) => void
+  onReveal: (x: number, y: number) => void,
+  hidden: SceneHidden
 ): { ground: ReactNode[]; items: Drawable[]; badges: ReactNode[] } {
   const yardGround: ReactNode[] = []
   const ground: ReactNode[] = []
@@ -98,6 +112,7 @@ function buildDrawables(
   const badges: ReactNode[] = []
 
   const robot = (r: RobotPlacement, extra = 0, keyPrefix = 'robot') => {
+    if (hidden.robots.has(r.agent.id)) return
     const [x, y] = iso(r.i, r.j)
     const key = `robot:${r.agent.id}`
     items.push({
@@ -124,6 +139,9 @@ function buildDrawables(
     const key = `plot:${p.stream.id}`
     const isSelected = selected === key
     ground.push(<skin.PlotGround key={`${key}:ground`} i={p.i} j={p.j} selected={isSelected} />)
+    if (p.tender) robot(p.tender, p.extraTenders)
+    // Not planted yet: only its soil shows until its robot gets there.
+    if (hidden.plants.has(p.stream.id)) return
     const [x, y] = iso(p.i + 0.5, p.j + 0.5)
     items.push({
       key,
@@ -139,7 +157,13 @@ function buildDrawables(
           box={skin.boxes.plant}
           onActivate={() => onSelect({ kind: 'plot', streamId: p.stream.id })}
         >
-          <skin.Plant plot={p} />
+          {hidden.popping.has(p.stream.id) ? (
+            <g className="g-pop">
+              <skin.Plant plot={p} />
+            </g>
+          ) : (
+            <skin.Plant plot={p} />
+          )}
         </Hit>
       ),
     })
@@ -150,7 +174,6 @@ function buildDrawables(
         </g>
       )
     }
-    if (p.tender) robot(p.tender, p.extraTenders)
   }
 
   for (const yard of layout.yards) {
@@ -222,7 +245,7 @@ function buildDrawables(
           box={skin.boxes.stand}
           onActivate={() => onSelect({ kind: 'stand', squadId: squad.id })}
         >
-          <skin.Stand count={chats} host={yard.stand.robots[0]} />
+          <skin.Stand count={chats} host={yard.stand.robots.find((host) => !hidden.robots.has(host.agent.id))} />
         </Hit>
       ),
     })
@@ -322,12 +345,13 @@ export const SceneWorld = memo(function SceneWorld({
   mailboxCount,
   onSelect,
   onReveal,
+  hidden = NOTHING_HIDDEN,
 }: SceneProps) {
   const { skin } = useSkin()
   const selected = selectionKey(selection)
   const { ground, items, badges } = useMemo(
-    () => buildDrawables(skin, layout, selected, mailboxCount, onSelect, onReveal),
-    [skin, layout, selected, mailboxCount, onSelect, onReveal]
+    () => buildDrawables(skin, layout, selected, mailboxCount, onSelect, onReveal, hidden),
+    [skin, layout, selected, mailboxCount, onSelect, onReveal, hidden]
   )
   const { bounds } = layout
   return (

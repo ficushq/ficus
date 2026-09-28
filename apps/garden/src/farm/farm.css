@@ -780,3 +780,70 @@ a.g-pr-link:focus-visible {
 .g-tools-more {
   bottom: max(104px, calc(env(safe-area-inset-bottom) + 94px));
 }
+
+/*
+ * Planting (farm/Planting.tsx): a robot walks to a new plot, crouches to plant
+ * it with a little burst, and the new plant pops out of the soil. Every style
+ * draws its own robot; these only move it.
+ */
+.g-planter {
+  pointer-events: none;
+}
+.g-walking {
+  animation: g-walk 0.42s ease-in-out infinite;
+}
+@keyframes g-walk {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.g-planting {
+  animation: g-plant 0.65s ease-in-out 2;
+}
+@keyframes g-plant {
+  50% {
+    transform: translateY(3px) scaleY(0.94);
+  }
+}
+.g-sow circle {
+  fill: var(--g-highlight-strong);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: g-sow 1.2s ease-out both;
+}
+.g-sow circle:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.g-sow circle:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.g-sow circle:nth-child(4) {
+  animation-delay: 0.45s;
+}
+@keyframes g-sow {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6) translateY(-6px);
+  }
+}
+.g-pop {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: g-pop 0.6s cubic-bezier(0.3, 1.7, 0.5, 1) both;
+}
+@keyframes g-pop {
+  0% {
+    transform: scale(0.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}

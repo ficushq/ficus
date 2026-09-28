@@ -4,6 +4,7 @@ import './farm.css'
 import { screenBounds } from './iso'
 import { layoutFarm, type FarmInput } from './layout'
 import { SceneWorld } from './Scene'
+import { PlantingWalker, usePlantings } from './Planting'
 import { useCamera } from './useCamera'
 import { useViewportSize } from './useViewportSize'
 import { FarmCard, selectionAnchor } from './FarmCard'
@@ -39,6 +40,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   useDesktopShellChrome()
   const { skin, setSkin } = useSkin()
   const layout = useMemo(() => layoutFarm(input), [input])
+  const plantings = usePlantings(layout)
   const viewport = useRef<HTMLDivElement>(null)
   const size = useViewportSize(viewport)
   const world = useMemo(() => {
@@ -169,7 +171,16 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
               mailboxCount={needsYou}
               onSelect={onSelect}
               onReveal={reveal}
+              hidden={plantings.hidden}
             />
+            {plantings.active.map((planting) => (
+              <PlantingWalker
+                key={planting.streamId}
+                planting={planting}
+                onPlanted={plantings.planted}
+                onDone={plantings.done}
+              />
+            ))}
           </g>
         </svg>
       </div>
