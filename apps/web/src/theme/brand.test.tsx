@@ -42,3 +42,22 @@ test('refresh still uses the scoped brand channel rather than a literal color', 
   expect(refresh).toContain('var(--brand-gradient-to)')
   expect(refresh).not.toContain('#7c3aed')
 })
+
+test('a decorative logo is hidden from assistive tech; a standalone one is labelled', () => {
+  const standalone = renderToStaticMarkup(<FicusLogo />)
+  expect(standalone).toContain('role="img"')
+  expect(standalone).toContain('aria-label="Ficus"')
+  const decorative = renderToStaticMarkup(<FicusLogo decorative />)
+  expect(decorative).toContain('aria-hidden="true"')
+  expect(decorative).not.toContain('aria-label')
+})
+
+test('the page head carries the Ficus tile color and the dark-scheme favicons', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
+  const head = html.slice(0, html.indexOf('<script data-ficus-theme-flash>'))
+  expect(head).toContain('<meta name="msapplication-TileColor" content="#3f6b4f" />')
+  expect(head.match(/media="\(prefers-color-scheme: dark\)"/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+  for (const [, href] of head.matchAll(/href="\/icons\/([^"]+)"/g)) {
+    expect(() => readFileSync(new URL(`../../public/icons/${href}`, import.meta.url))).not.toThrow()
+  }
+})

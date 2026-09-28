@@ -35,12 +35,39 @@
       media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)"
     />
 
-    <!-- Favicons -->
-    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+    <!-- Favicons: media-queried so the tab icon follows the OS scheme even
+         before ThemeProvider resolves an in-app appearance. -->
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/icons/favicon-32x32.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/icons/favicon-16x16.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/icons/dark/favicon-32x32.png"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/icons/dark/favicon-16x16.png"
+      media="(prefers-color-scheme: dark)"
+    />
 
     <!-- Microsoft Tile -->
-    <meta name="msapplication-TileColor" content="#7c3aed" />
+    <meta name="msapplication-TileColor" content="#3f6b4f" />
     <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
 
     <!-- Description for SEO and sharing. __FICUS_ORIGIN__ is replaced by the

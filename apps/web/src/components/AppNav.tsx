@@ -104,7 +104,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
           {/* Left: Logo */}
           <h1 className="ficus-app-header-logo text-xl md:text-2xl font-bold text-primary">
             <Link to="/" className="flex items-center gap-2 hover:text-status-progress-600 transition-colors">
-              <FicusLogo />
+              <FicusLogo decorative />
               Ficus
               {instance && (
                 <span

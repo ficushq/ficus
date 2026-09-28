@@ -6,6 +6,9 @@ interface FicusLogoProps {
    * detail survives at favicon scale; the full mark (leaf + pot) is used above
    * that. Omit it to size the mark with CSS instead (as the header wordmark does). */
   size?: number
+  /** Hide the mark from assistive tech when visible text next to it already
+   * names the product (e.g. the header wordmark), so it isn't announced twice. */
+  decorative?: boolean
 }
 
 /**
@@ -17,10 +20,11 @@ interface FicusLogoProps {
  * simplified mark) but always renders the dark palette — see its own doc
  * comment for why.
  */
-export function FicusLogo({ className = 'w-8 h-8', size }: FicusLogoProps) {
+export function FicusLogo({ className = 'w-8 h-8', size, decorative = false }: FicusLogoProps) {
   const theme = useOptionalTheme()
   const dark = theme?.theme === 'dark'
   const dimensions = size !== undefined ? { width: size, height: size } : {}
+  const a11y = decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': 'Ficus' }
 
   if (size !== undefined && size <= 16) {
     // Same recolor the generator applies to brand/ficus-favicon-16.svg for
@@ -28,14 +32,7 @@ export function FicusLogo({ className = 'w-8 h-8', size }: FicusLogoProps) {
     const leaf = dark ? '#5e7f4e' : '#3f6b4f'
     const pot = dark ? '#c46a3c' : '#b0582f'
     return (
-      <svg
-        className={className}
-        {...dimensions}
-        viewBox="0 0 64 64"
-        xmlns="http://www.w3.org/2000/svg"
-        role="img"
-        aria-label="Ficus"
-      >
+      <svg className={className} {...dimensions} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" {...a11y}>
         <g transform="translate(32 38) scale(1.2)">
           <path
             d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
@@ -53,14 +50,7 @@ export function FicusLogo({ className = 'w-8 h-8', size }: FicusLogoProps) {
   const pot = dark ? '#c46a3c' : '#b0582f'
 
   return (
-    <svg
-      className={className}
-      {...dimensions}
-      viewBox="0 0 64 64"
-      xmlns="http://www.w3.org/2000/svg"
-      role="img"
-      aria-label="Ficus"
-    >
+    <svg className={className} {...dimensions} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" {...a11y}>
       {/* translate(0 -2.5) centers the artwork's bounding box in the viewBox
           — see brand/ficus-mark.svg / brand/ficus-mark-dark.svg. */}
       <g transform="translate(0 -2.5)">
