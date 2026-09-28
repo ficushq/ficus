@@ -19,7 +19,7 @@ export default defineConfig({
     starlight({
       title: 'Ficus Docs',
       description: 'Practical guides to working with Ficus, in the cloud or on your own machine.',
-      logo: { src: './public/favicon.svg' },
+      logo: { light: './src/assets/ficus-mark.svg', dark: './src/assets/ficus-mark-dark.svg' },
       favicon: '/favicon.svg',
       customCss: ['./src/styles/ficus.css'],
       components: {

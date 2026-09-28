@@ -1,9 +1,12 @@
 /* Ficus's web palette, with a larger reading scale for documentation. */
 :root {
   --sl-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --sl-color-accent-low: #261b3b;
-  --sl-color-accent: #8b5cf6;
-  --sl-color-accent-high: #c4b5fd;
+  /* Ficus brand accents (brand/README.md): sage — the dark-UI leaf accent —
+     for links/UI, warm terracotta for high-emphasis text, a dark leaf tint
+     for low-contrast backgrounds. */
+  --sl-color-accent-low: #1c2b20;
+  --sl-color-accent: #9fb57f;
+  --sl-color-accent-high: #d98a5c;
   --sl-color-white: #f4f3f8;
   --sl-color-gray-1: #e6e4ed;
   --sl-color-gray-2: #c4c1d0;
@@ -18,9 +21,11 @@
   --sl-text-body: 1rem;
 }
 :root[data-theme='light'] {
-  --sl-color-accent-low: #eee8fa;
-  --sl-color-accent: #6d28d9;
-  --sl-color-accent-high: #55209f;
+  /* Ficus brand accents, light mode: leaf for links/UI, a darkened
+     terracotta for high-emphasis text, a light linen tint for backgrounds. */
+  --sl-color-accent-low: #eee8d9;
+  --sl-color-accent: #3f6b4f;
+  --sl-color-accent-high: #8a3e20;
   --sl-color-white: #20202c;
   --sl-color-gray-1: #353240;
   --sl-color-gray-2: #514c60;

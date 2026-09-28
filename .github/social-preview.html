@@ -3,14 +3,15 @@
   Source for .github/social-preview.png (GitHub → Settings → Social preview).
   Render at exactly 1280×640, device scale 1, after fonts load:
     playwright: page.goto(file://…/social-preview.html); page.screenshot({clip:{0,0,1280,640}})
-  The mark is the same artwork as the app's TauLogo component.
+  The mark is the dark-mode Ficus mark artwork (brand/ficus-mark-dark.svg, Core
+  repo), the same source apps/web/src/components/FicusLogo.tsx inlines.
 -->
 <html>
   <head>
     <meta charset="utf-8" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
-      href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@700&family=Geist:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Schibsted+Grotesk:wght@700&family=Geist:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -61,15 +62,20 @@
       .brand .mark {
         width: 150px;
         height: 150px;
-        border-radius: 24px;
-        box-shadow: 0 20px 60px rgba(124, 58, 237, 0.35);
+        filter: drop-shadow(0 20px 40px rgba(94, 127, 78, 0.45));
       }
       .brand .word {
-        font-family: 'Schibsted Grotesk', system-ui, sans-serif;
-        font-weight: 700;
+        display: block;
+        height: 150px;
+      }
+      .brand .word text {
+        font-family: 'Fraunces', serif;
+        font-weight: 600;
         font-size: 132px;
-        letter-spacing: -0.035em;
-        line-height: 1;
+        letter-spacing: -0.02em;
+        fill: none;
+        stroke: #edeaf5;
+        stroke-width: 2.5px;
       }
       .tag {
         position: absolute;
@@ -115,27 +121,33 @@
       <div class="glow"></div>
       <div class="stars" id="stars"></div>
       <div class="brand">
-        <svg class="mark" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="tau-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#a855f7" />
-              <stop offset="100%" stop-color="#7c3aed" />
-            </linearGradient>
-          </defs>
-          <rect width="512" height="512" rx="76" fill="url(#tau-logo-grad)" />
-          <text
-            x="256"
-            y="340"
-            font-family="system-ui, -apple-system, sans-serif"
-            font-size="280"
-            font-weight="bold"
-            fill="white"
-            text-anchor="middle"
-          >
-            τ
-          </text>
+        <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <g transform="translate(0 -2.5)">
+            <g transform="translate(32 39) rotate(-36) scale(0.78 0.84)">
+              <path
+                d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
+                fill="#87945a"
+              />
+            </g>
+            <g transform="translate(32 39) rotate(36) scale(0.78 0.84)">
+              <path
+                d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
+                fill="#87945a"
+              />
+            </g>
+            <g transform="translate(32 39)">
+              <path
+                d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
+                fill="#5e7f4e"
+              />
+            </g>
+            <rect x="18" y="39" width="28" height="5" rx="2.5" fill="#c46a3c" />
+            <path d="M20 44 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill="#c46a3c" />
+          </g>
         </svg>
-        <div class="word">Ficus</div>
+        <svg class="word" width="380" height="150" viewBox="0 0 380 150" xmlns="http://www.w3.org/2000/svg">
+          <text x="0" y="122.5">ficus</text>
+        </svg>
       </div>
       <div class="tag">A workspace for <em>teams of AI agents.</em></div>
       <div class="sub">Self-hosted on your machine, with an optional cloud.</div>
