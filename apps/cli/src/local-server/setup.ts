@@ -1,6 +1,8 @@
 import { randomBytes } from 'crypto'
 import { existsSync, readFileSync } from 'fs'
+import { homedir } from 'os'
 import { join } from 'path'
+import { checkCliOnPath, cliPathHintLines, detectShell, safeRealpath } from './cli-path'
 import { parseEnvFile } from './env-file'
 import { LEGACY_ENV_PREFIX } from '@ficus/shared/legacy-env'
 import {
@@ -37,6 +39,10 @@ export interface SetupDeps extends StepDeps {
   /** A real terminal on both stdin and stderr — the only case that may prompt. */
   isTTY: boolean
   confirm(question: string): Promise<boolean>
+  /** For the end-of-setup PATH check: resolve a command on PATH, null when not found. */
+  which(cmd: string): string | null
+  env: Record<string, string | undefined>
+  home: string
 }
 
 export function defaultSetupDeps(root: string, runner: Runner = defaultRunner): SetupDeps {
@@ -55,6 +61,9 @@ export function defaultSetupDeps(root: string, runner: Runner = defaultRunner): 
     isTTY: canPrompt(),
     confirm: (question) => terminalPrompter().confirm(question),
     log: narrate,
+    which: (cmd) => Bun.which(cmd),
+    env: process.env,
+    home: process.env.HOME ?? homedir(),
   }
 }
 
@@ -67,7 +76,13 @@ export function bootstrapLoginUrl(appUrl: string, password: string): string {
   return `${appUrl}/#setup=${encodeURIComponent(password)}`
 }
 
-export function handoffLines(opts: SetupOptions, password?: string): string[] {
+/**
+ * `cliHint` is the pre-computed {@link cliPathHintLines} block: whether
+ * `ficus` is on PATH depends on the process environment, so `runSetup`
+ * resolves it and hands the finished lines in, keeping this function pure
+ * and easy to test with any combination directly.
+ */
+export function handoffLines(opts: SetupOptions, password?: string, cliHint: string[] = []): string[] {
   return [
     '',
     `Ficus is running at ${opts.appUrl}`,
@@ -80,6 +95,7 @@ export function handoffLines(opts: SetupOptions, password?: string): string[] {
     '     the first passkey becomes the admin. Email is not configured, so the verification code is shown in the page.',
     '  2. Sign in to an AI provider: Settings > AI Providers.',
     `  3. CLI: \`ficus auth login local --api-url ${opts.apiUrl}\` (after step 1; until then \`ficus\` works from ${opts.root}).`,
+    ...(cliHint.length > 0 ? ['', ...cliHint] : []),
     '',
     'Manage it:  ficus server status | logs -f | restart | stop      Update:  ficus server update',
     opts.supervisor === 'launchd'
@@ -174,7 +190,10 @@ export async function resolveDatabase(opts: SetupOptions, deps: SetupDeps): Prom
   return { ...opts, dbPort, dbName, databaseUrl: composeDatabaseUrl(dbPort, dbName), explicit }
 }
 
-export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<{ handoff: string[] }> {
+export async function runSetup(
+  options: SetupOptions,
+  deps: SetupDeps
+): Promise<{ handoff: string[]; cliOnPath: boolean }> {
   const registry = readRegistryStrict(deps.statePath)
   const root = canonicalRoot(options.root)
   const canonicalOptions = { ...options, root }
@@ -225,7 +244,9 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
     deps.log('')
     deps.log('Dry run — nothing will be changed. Plan:')
     logPlan()
-    return { handoff: ['Dry run complete.'] }
+    // A read-only PATH lookup, not a change — safe to report even in a dry run.
+    const onPath = checkCliOnPath({ env: deps.env, home: deps.home, which: deps.which, realpath: safeRealpath }).onPath
+    return { handoff: ['Dry run complete.'], cliOnPath: onPath }
   }
 
   // Spec §4.1: one confirmation showing the plan. Skipped by --yes, and never
@@ -269,9 +290,15 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
   persistState()
 
   const password = parseEnvFile(readFileSync(join(opts.root, '.env'), 'utf8')).FICUS_PASSWORD || undefined
+  // Re-check PATH right next to the steps that need it (step 3 runs `ficus`):
+  // buried earlier in a long install log, the installer's own PATH warning is
+  // easy to miss, and a `ficus` that only worked because it was invoked by an
+  // absolute path so far offers no nearby sign that it is about to stop working.
+  const cliStatus = checkCliOnPath({ env: deps.env, home: deps.home, which: deps.which, realpath: safeRealpath })
+  const cliHint = cliPathHintLines(cliStatus, detectShell(deps.env))
   const handoff = opts.start
-    ? handoffLines(opts, password)
+    ? handoffLines(opts, password, cliHint)
     : ['', `Setup complete (not started). Start it with: ficus server start --root ${opts.root}`]
   for (const line of handoff) deps.log(line)
-  return { handoff }
+  return { handoff, cliOnPath: cliStatus.onPath }
 }

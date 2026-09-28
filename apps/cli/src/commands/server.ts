@@ -59,7 +59,7 @@ export interface ServerDeps {
   prompter: Prompter
   sleep(ms: number): Promise<void>
   setupDeps?(root: string): SetupDeps
-  runSetup?(opts: SetupOptions, deps: SetupDeps): Promise<{ handoff: string[] }>
+  runSetup?(opts: SetupOptions, deps: SetupDeps): Promise<{ handoff: string[]; cliOnPath: boolean }>
   which(cmd: string): string | null
   sysboxHost?: SysboxHostDeps
   supervisorContext?(root: string, label: string, supervisor: LocalSupervisor): SupervisorContext
@@ -284,6 +284,12 @@ Examples:
               statePath: deps.statePath,
               isTTY: deps.isTTY,
               confirm: (question: string) => deps.prompter.confirm(question),
+              // Reuse the CLI's own injected env/which (defaultSetupDeps otherwise reads
+              // process.env/Bun.which directly) so the end-of-setup PATH check honours
+              // the same test doubles as the rest of this command.
+              env: deps.env,
+              which: deps.which,
+              home: deps.env.HOME ?? homedir(),
             }
         await (deps.runSetup ?? runSetup)(options, setupDeps)
       })

@@ -75,8 +75,15 @@ function deps(responses: Record<string, { code?: number; stdout?: string; stderr
   })
   const lines: string[] = []
   const confirms: string[] = []
+  // Defaults to "ficus is on PATH" (matches the installed binary these deps imply) so
+  // the existing assertions below stay about setup itself, not the PATH hint — tests
+  // for the hint construct their own SetupDeps directly (see "end-of-setup CLI PATH check").
+  const home = '/home/fixture'
   const d: SetupDeps = {
     runner: rec.runner,
+    env: { HOME: home },
+    home,
+    which: (cmd) => (cmd === 'ficus' ? join(home, '.tau', 'bin', 'ficus') : null),
     preflight: {
       runner: rec.runner,
       platform: 'darwin',
@@ -792,6 +799,81 @@ describe('PM2 handoff guidance', () => {
   it('prints the optional startup command only for explicit PM2 supervision', () => {
     expect(handoffLines(opts({ supervisor: 'pm2' })).join('\n')).toContain(`cd ${root} && bunx pm2 startup`)
     expect(handoffLines(opts({ supervisor: 'launchd' })).join('\n')).not.toContain('pm2 startup')
+  })
+})
+
+describe('handoffLines PATH hint', () => {
+  it('adds nothing next to step 3 when no hint is given (ficus is on PATH)', () => {
+    const lines = handoffLines(opts())
+    expect(lines.join('\n')).not.toContain('not on PATH')
+  })
+
+  it('inserts the given hint right after step 3, before "Manage it:"', () => {
+    const lines = handoffLines(opts(), undefined, [
+      'ficus is not on PATH yet (installed at /x/ficus).',
+      '  ...or open a new terminal.',
+    ])
+    const step3 = lines.findIndex((l) => l.includes('3. CLI:'))
+    const hint = lines.findIndex((l) => l.includes('not on PATH yet'))
+    const manage = lines.findIndex((l) => l.includes('Manage it:'))
+    expect(step3).toBeGreaterThan(-1)
+    expect(hint).toBeGreaterThan(step3)
+    expect(manage).toBeGreaterThan(hint)
+  })
+})
+
+describe('end-of-setup CLI PATH check', () => {
+  const home = '/home/fixture'
+  const installedBinary = join(home, '.tau', 'bin', 'ficus')
+
+  it('runSetup reports cliOnPath: true and prints no PATH hint when ficus resolves to the installed binary', async () => {
+    const { d } = deps()
+    const result = await runSetup(opts(), {
+      ...d,
+      env: { HOME: home },
+      home,
+      which: (cmd) => (cmd === 'ficus' ? installedBinary : null),
+    })
+    expect(result.cliOnPath).toBe(true)
+    expect(result.handoff.join('\n')).not.toContain('not on PATH')
+  })
+
+  it('runSetup reports cliOnPath: false and prints a zsh-flavored copy-pasteable fix when ficus is not on PATH', async () => {
+    const { d } = deps()
+    const result = await runSetup(opts(), {
+      ...d,
+      env: { HOME: home, SHELL: '/bin/zsh' },
+      home,
+      which: () => null,
+    })
+    expect(result.cliOnPath).toBe(false)
+    const handoff = result.handoff.join('\n')
+    expect(handoff).toContain(`ficus is not on PATH yet (installed at ${installedBinary})`)
+    expect(handoff).toContain(`export PATH="${join(home, '.tau', 'bin')}:$PATH"`)
+    expect(handoff).toContain(`>> ~/.zshrc`)
+    expect(handoff).toContain('or open a new terminal')
+  })
+
+  it('runSetup gives the fish equivalent (no ~/.zshrc / ~/.bashrc guess) when $SHELL is fish', async () => {
+    const { d } = deps()
+    const result = await runSetup(opts(), {
+      ...d,
+      env: { HOME: home, SHELL: '/usr/local/bin/fish' },
+      home,
+      which: () => null,
+    })
+    const handoff = result.handoff.join('\n')
+    expect(handoff).toContain(`set -gx PATH "${join(home, '.tau', 'bin')}" $PATH`)
+    expect(handoff).toContain(`fish_add_path ${join(home, '.tau', 'bin')}`)
+    expect(handoff).not.toContain('.zshrc')
+    expect(handoff).not.toContain('.bashrc')
+  })
+
+  it('runSetup never logs the setup password/link as part of the PATH hint', async () => {
+    const { d, lines } = deps()
+    await runSetup(opts(), { ...d, env: { HOME: home }, home, which: () => null })
+    const pathHintLines = lines.filter((l) => l.includes('not on PATH') || l.includes('export PATH'))
+    expect(pathHintLines.some((l) => l.includes('#setup='))).toBe(false)
   })
 })
 

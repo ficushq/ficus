@@ -732,7 +732,7 @@ describe('ficus server', () => {
     deps.cwd = root
     deps.runSetup = async (opts) => {
       seen.push(opts)
-      return { handoff: [] }
+      return { handoff: [], cliOnPath: true }
     }
     await run(['server', 'setup', '--runtime', 'host', '--no-start', '--yes'])
     expect(seen[0]).toMatchObject({ instance: 'smoke', port: 3100, apiUrl: 'http://localhost:3100' })
@@ -749,7 +749,7 @@ describe('ficus server', () => {
     deps.cwd = nested
     deps.runSetup = async (opts) => {
       seen.push(opts)
-      return { handoff: [] }
+      return { handoff: [], cliOnPath: true }
     }
     await run(['server', 'setup', '--runtime', 'host', '--no-start', '--yes'])
     expect((seen[0] as { root: string }).root).toBe(other)
@@ -760,7 +760,7 @@ describe('ficus server', () => {
     const { run, deps } = make()
     deps.runSetup = async (opts) => {
       seen.push(opts)
-      return { handoff: [] }
+      return { handoff: [], cliOnPath: true }
     }
     await run(['server', 'setup', '--root', root, '--runtime', 'host', '--port', '3100', '--no-start', '--yes'])
     expect(seen).toHaveLength(1)
@@ -777,7 +777,7 @@ describe('ficus server', () => {
     const { run, deps } = make()
     deps.runSetup = async (opts) => {
       seen.push(opts)
-      return { handoff: [] }
+      return { handoff: [], cliOnPath: true }
     }
     await run(['server', 'setup', '--root', root, '--instance', 'smoke', '--runtime', 'host', '--no-start', '--yes'])
     expect(seen[0]).toMatchObject({ instance: 'smoke' })
