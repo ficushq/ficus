@@ -2762,6 +2762,13 @@ install_managed_env "${AR_STAGE7}" FICUS 2>/dev/null
 expect_eq 'install_managed_env FICUS: a staged TAU_ copy is installed with FICUS_ names (list items too)' \
   "$(cat "${FICUS_MANAGED_ENV_PATH}")" $'# rendered by the control plane\nFICUS_MANAGED=1\nFICUS_MANAGED_SECRET_KEYS=FICUS_PLATFORM_INSTANCE_TOKEN\nFICUS_PLATFORM_INSTANCE_TOKEN=tok\nSES_SMTP_USER=u'
 expect_eq 'install_managed_env FICUS: ...0600' "$(file_mode "${FICUS_MANAGED_ENV_PATH}")" '600'
+expect_eq 'install_managed_env FICUS: no plaintext value is left in the parser or install globals' \
+  "${_EPR_LINES+lines}${_E_VALUE+values}${_E_FIRST+first}${_EPR_OUT+out}${_MANAGED_ENV_CONTENT}${_EPR_RESULT:-}" ''
+ar_read=''
+printf 'TAU_ENCRYPTION_KEY=ar-read-key\n' >"${AR_TMP}/read.env" # legacy-env
+envfile_read_prefixed ar_read "${AR_TMP}/read.env" ENCRYPTION_KEY
+expect_eq 'envfile_read_prefixed: reads the value, then leaves no copy in the parser globals' \
+  "${ar_read}:${_EPR_LINES+lines}${_E_VALUE+values}${_E_FIRST+first}${_EPR_OUT+out}" 'ar-read-key:'
 expect_eq 'install_managed_env FICUS: ...and the staged copy is left as it was' \
   "$(cmp -s "${AR_STAGE7}/managed.env" "${AR_TMP}/stage7.orig" && echo same)" 'same'
 expect_eq 'managed_env_would_change FICUS: the same staged TAU_ copy again -> 0 (compares the renamed bytes)' \

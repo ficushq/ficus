@@ -3629,6 +3629,12 @@ _epr_map_value() { # RAW FROM TO -> _EPR_OUT
 
 # Split RAW exactly like JavaScript's split('\n') into _EPR_LINES (a trailing
 # newline yields a final empty element, so a join restores RAW byte for byte).
+# Drop the parser's copies of a file's lines and values (plaintext secrets)
+# once a top-level reader or renamer is done with them (review N-C).
+_epr_forget_values() {
+  unset _EPR_LINES _E_VALUE _E_FIRST _EPR_OUT
+}
+
 _epr_split_lines() { # RAW
   local rest=$1
   _EPR_LINES=()
@@ -3773,6 +3779,7 @@ _epr_rename_content() { # RAW FROM TO
   done
   if ((${#_EPR_PROTECTED[@]} > 0)); then
     unset -f _epr_target
+    _epr_forget_values
     return 2
   fi
 
@@ -3837,6 +3844,7 @@ _epr_rename_content() { # RAW FROM TO
     i=$((i + 1))
   done
   _EPR_RESULT=${out}
+  _epr_forget_values
   return 0
 }
 
@@ -3942,10 +3950,12 @@ envfile_rename_prefix() { # FILE FROM TO
     log_warn "${target}: kept the ${to}_ value and dropped the differing ${from}_ line for: ${_EPR_CONFLICTS[*]}"
   fi
   if [[ ${_EPR_RESULT} == "${raw}" ]]; then
+    _EPR_RESULT=''
     printf '0\n'
     return 0
   fi
   _epr_write_atomic "${target}" "${_EPR_RESULT}" || die "envfile_rename_prefix: ${target} was left unchanged"
+  _EPR_RESULT=
   if ((_EPR_RENAMED_LINES > 0)); then
     log_info "${target}: renamed ${_EPR_RENAMED_LINES} line(s) ${from}_ -> ${to}_ (${_EPR_RENAMED[*]})"
   fi
@@ -4083,6 +4093,7 @@ _epr_unit_rename_content() { # RAW FROM TO
     sep=$'\n'
   done
   _EPR_RESULT=${out}
+  _epr_forget_values
 }
 
 unitfile_rename_env_prefix() { # FILE FROM TO
@@ -4137,6 +4148,7 @@ envfile_read_prefixed() { # VAR FILE SUFFIX
       _erp_has_tau=1
     fi
   done
+  _epr_forget_values
   if ((_erp_has_ficus && _erp_has_tau)) && _epr_protected "${_erp_suffix}" &&
     [[ -n ${_erp_nf} && -n ${_erp_nt} && ${_erp_nf} != "${_erp_nt}" ]]; then
     die "$(_epr_conflict_message "${_erp_file}" TAU FICUS "${_erp_suffix}")"
