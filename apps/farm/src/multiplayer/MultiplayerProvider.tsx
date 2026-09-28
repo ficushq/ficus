@@ -33,7 +33,15 @@ import { lookFor } from './personLook'
 const STORAGE_KEY = 'ficus-farm:multiplayer'
 const LOOK_KEY = 'ficus-farm:look'
 const BUBBLE_MS = 6000
+/** How long an emote (a wave, a reaction) floats over someone. */
+const EMOTE_MS = 2800
 const MAX_BACKOFF_MS = 30_000
+
+/** An emoji floating over someone for a moment: a wave, or a reaction they just made. */
+export interface Emote {
+  emoji: string
+  at: number
+}
 
 export interface ChatBubble {
   text: string
@@ -48,6 +56,12 @@ export interface Multiplayer {
   people: PresencePerson[]
   /** What people just said in a public room, by user id, for a moment. */
   bubbles: ReadonlyMap<string, ChatBubble>
+  /** Emotes floating over people right now, by user id (you included). */
+  emotes: ReadonlyMap<string, Emote>
+  /** Waves at someone on the farm: a 👋 over both of you, for everyone to see. */
+  wave: (toUserId: string) => void
+  /** An emoji over your own head for a moment (a reaction you just made). */
+  emote: (emoji: string) => void
   /** Tells everyone what you're at (sent only when it changes). */
   setFocus: (focus: PresenceFocus | null) => void
   /** Your own focus, as last set. */
@@ -118,6 +132,7 @@ export type MultiplayerEvent =
   | { event: 'farmChat.messageUpdated'; data: { message: FarmChatMessage } }
   | { event: 'farmChat.roomsChanged'; data: Record<string, never> }
   | { event: 'farmChat.typing'; data: { roomId: string; userId: string } }
+  | { event: 'presence.waved'; data: { fromUserId: string; toUserId: string } }
 
 /** A stand-in for demo mode: pretend neighbours and an in-memory chat (loaded only in dev). */
 export interface DemoMultiplayer {
@@ -125,6 +140,8 @@ export interface DemoMultiplayer {
   chat: FarmChatApi
   /** Starts the pretend neighbours; returns a stop function. */
   start(emit: (event: MultiplayerEvent) => void): () => void
+  /** You waved at a pretend neighbour. */
+  wave(toUserId: string): void
 }
 
 export function MultiplayerProvider({ children }: { children: ReactNode }) {
@@ -135,6 +152,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
   const [chosenLook, setChosenLook] = useState(readLook)
   const [people, setPeople] = useState<PresencePerson[]>([])
   const [bubbles, setBubbles] = useState<ReadonlyMap<string, ChatBubble>>(new Map())
+  const [emotes, setEmotes] = useState<ReadonlyMap<string, Emote>>(new Map())
   const [focus, setFocusState] = useState<PresenceFocus | null>(null)
   const [demo, setDemo] = useState<DemoMultiplayer | null>(null)
   // roomId → userId → when their "typing" lapses.
@@ -187,6 +205,21 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     [enabledRef]
   )
 
+  const showEmote = useCallback((userId: string, emoji: string) => {
+    const at = Date.now()
+    setEmotes((map) => new Map(map).set(userId, { emoji, at }))
+    window.setTimeout(
+      () =>
+        setEmotes((map) => {
+          if (map.get(userId)?.at !== at) return map
+          const next = new Map(map)
+          next.delete(userId)
+          return next
+        }),
+      EMOTE_MS
+    )
+  }, [])
+
   const handle = useCallback(
     (entry: MultiplayerEvent) => {
       switch (entry.event) {
@@ -218,8 +251,22 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
           )
           return
         }
+        case 'presence.waved':
+          if (!enabledRef.current) return
+          showEmote(entry.data.fromUserId, '👋')
+          showEmote(entry.data.toUserId, '👋')
+          return
         case 'farmChat.messageUpdated': {
           const { message } = entry.data
+          // Someone just reacted: their emoji floats over them (reactions the cache already has aren't news).
+          const before = queryClient
+            .getQueryData<FarmChatMessagePage>(chatKeys.messages(message.roomId))
+            ?.messages.find((m) => m.id === message.id)
+          if (before && enabledRef.current)
+            for (const reaction of message.reactions) {
+              const had = before.reactions.find((r) => r.emoji === reaction.emoji)?.userIds ?? []
+              for (const userId of reaction.userIds) if (!had.includes(userId)) showEmote(userId, reaction.emoji)
+            }
           queryClient.setQueryData<FarmChatMessagePage>(chatKeys.messages(message.roomId), (page) =>
             page ? { ...page, messages: page.messages.map((m) => (m.id === message.id ? message : m)) } : page
           )
@@ -269,7 +316,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
           return
       }
     },
-    [queryClient, enabledRef, meRef]
+    [queryClient, enabledRef, meRef, showEmote]
   )
 
   // Demo mode: pretend neighbours and chat, loaded only in dev builds.
@@ -371,6 +418,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
         ws?.unsubscribe('presence')
         setPeople([])
         setBubbles(new Map())
+        setEmotes(new Map())
       }
     },
     [announce, save]
@@ -386,6 +434,27 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     [typing]
   )
 
+  const wave = useCallback(
+    (toUserId: string) => {
+      const from = meRef.current?.userId
+      if (!enabledRef.current || !from || toUserId === from) return
+      // Your farm shows it straight away; Core tells everyone else.
+      showEmote(from, '👋')
+      showEmote(toUserId, '👋')
+      if (demo) demo.wave(toUserId)
+      else socket.current?.send?.({ type: 'presence.wave', toUserId })
+    },
+    [demo, enabledRef, meRef, showEmote]
+  )
+
+  const emote = useCallback(
+    (emoji: string) => {
+      const userId = meRef.current?.userId
+      if (userId && enabledRef.current) showEmote(userId, emoji)
+    },
+    [enabledRef, meRef, showEmote]
+  )
+
   const sendTyping = useCallback((roomId: string) => {
     const now = Date.now()
     if (now - (lastTypingSent.current.get(roomId) ?? 0) < FARM_CHAT_TYPING_EVERY_MS) return
@@ -399,6 +468,9 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       me,
       people: enabled ? people.filter((p) => p.userId !== me?.userId) : [],
       bubbles,
+      emotes,
+      wave,
+      emote,
       setFocus,
       focus,
       chat,
@@ -415,6 +487,9 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       me,
       people,
       bubbles,
+      emotes,
+      wave,
+      emote,
       setFocus,
       focus,
       chat,

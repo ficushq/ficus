@@ -291,6 +291,42 @@
   }
 }
 
+/* An emote (a wave, a reaction) pops up over someone and drifts away. */
+.g-person-emote {
+  font-size: 26px;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: g-emote 2.8s ease-out forwards;
+}
+
+@keyframes g-emote {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.5);
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(0) scale(1.2);
+  }
+  24% {
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-person-emote {
+    animation: none;
+  }
+}
+
 /* ---- The person card ---- */
 
 .g-person-card-head {

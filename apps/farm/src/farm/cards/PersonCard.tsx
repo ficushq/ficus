@@ -41,7 +41,7 @@ function describe(
 /** Someone on the farm: what they're at, and a way to message them or go there. */
 export function PersonCard({ userId }: { userId: string }) {
   const env = useFarmCard()
-  const { people, me, focus } = useMultiplayer()
+  const { people, me, focus, wave, enabled } = useMultiplayer()
   const isMe = me?.userId === userId
   const person = people.find((p) => p.userId === userId)
   const name = isMe ? (me?.name ?? 'You') : (person?.name ?? 'Someone')
@@ -66,6 +66,11 @@ export function PersonCard({ userId }: { userId: string }) {
           >
             <ChatBubblesIcon />
             Message privately
+          </button>
+        )}
+        {!isMe && person && enabled && (
+          <button type="button" className="g-button" onClick={() => wave(userId)}>
+            <span aria-hidden="true">👋</span> Wave
           </button>
         )}
         {isMe && (

@@ -41,6 +41,8 @@ interface Client {
   accessCache?: { value: string[] | 'all'; expires: number }
   /** When this connection last said it was typing, per farm chat room (to keep it to one every few seconds). */
   typingAt?: Map<string, number>
+  /** When this connection last waved (waves are rate-limited). */
+  wavedAt?: number
 }
 
 const ACCESS_CACHE_TTL_MS = 60_000
@@ -48,6 +50,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const MAX_PENDING_ACTIVITY_SUBSCRIPTIONS = 64
 /** Typing pings from one connection for one room are passed on at most this often. */
 const FARM_CHAT_TYPING_MIN_GAP_MS = 2000
+const WAVE_MIN_GAP_MS = 1500
 
 /** Topics only people (never agents or tokens) may subscribe to: the farm's multiplayer. */
 const PEOPLE_TOPICS = new Set<string>(['presence', 'farmChat'])
@@ -426,6 +429,9 @@ export class WebSocketManager {
         case 'presence':
           this.announcePresence(client, message.focus)
           break
+        case 'presence.wave':
+          this.wave(client, message.toUserId)
+          break
         case 'farmChat.typing':
           void this.farmChatTyping(client, message.roomId).catch((error) =>
             console.error('[ws] farm chat typing failed:', error)
@@ -625,6 +631,34 @@ export class WebSocketManager {
     const person = this.presence.person(userId)
     if (person)
       void this.deliverPresence({ person }).catch((error) => console.error('[ws] presence delivery failed:', error))
+  }
+
+  /**
+   * Passes on a wave from someone on the farm to someone else on it, to
+   * everyone on the farm but the waver (whose farm shows it straight away).
+   * At most one every WAVE_MIN_GAP_MS per connection.
+   */
+  private wave(client: Client, toUserId: unknown): void {
+    if (client.identity.type !== 'user' || !this.presence.isAnnounced(client.id)) return
+    if (typeof toUserId !== 'string' || !this.presence.person(toUserId)) return
+    const fromUserId = client.identity.userId
+    if (toUserId === fromUserId) return
+    const now = Date.now()
+    if (now - (client.wavedAt ?? 0) < WAVE_MIN_GAP_MS) return
+    client.wavedAt = now
+    const json = JSON.stringify({
+      type: 'event',
+      topic: 'presence',
+      event: 'presence.waved',
+      data: { fromUserId, toUserId },
+    } satisfies ServerMessage)
+    for (const other of this.clients.values())
+      if (
+        other.identity.type === 'user' &&
+        other.identity.userId !== fromUserId &&
+        this.isActiveSubscriber(other, 'presence')
+      )
+        other.ws.send(json)
   }
 
   /** Passes on that someone is typing in a room they can use, at most every couple of seconds per room. */

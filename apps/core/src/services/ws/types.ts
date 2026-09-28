@@ -10,6 +10,8 @@ export type ClientMessage =
   // server-side; null is "around the farm"), or that they're leaving (single-player).
   | { type: 'presence'; focus: unknown }
   | { type: 'presence.leave' }
+  // A wave at someone else on the farm (everyone on it sees it; never stored).
+  | { type: 'presence.wave'; toUserId: unknown }
   // Farm chat: this person is typing in a room (passed on to the room's other people, never stored).
   | { type: 'farmChat.typing'; roomId: unknown }
 

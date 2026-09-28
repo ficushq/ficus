@@ -264,6 +264,8 @@ export type EventMap = {
   'presence.snapshot': { people: PresencePerson[] }
   'presence.updated': { person: PresencePerson }
   'presence.left': { userId: string }
+  /** Someone on the farm waved at someone else (everyone on the farm sees it). */
+  'presence.waved': { fromUserId: string; toUserId: string }
 
   // Farm chat (see farm-chat.ts). Sent by the farm chat routes on the
   // `farmChat` topic: a public room's messages to everyone, a DM's to its two

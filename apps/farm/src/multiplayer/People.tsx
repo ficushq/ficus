@@ -5,7 +5,7 @@ import { useStableRef } from '../hooks/useStableRef'
 import { iso } from '../farm/iso'
 import { along, pathLength, routeTo, type TilePoint } from '../farm/plantingRoute'
 import type { Spot } from './spots'
-import type { ChatBubble } from './MultiplayerProvider'
+import type { ChatBubble, Emote } from './MultiplayerProvider'
 
 /** Walking speed, tiles per second. */
 const SPEED = 2.2
@@ -38,11 +38,13 @@ const facingAlong = (a: TilePoint, b: TilePoint): 'left' | 'right' =>
 const Walker = memo(function Walker({
   person,
   bubble,
+  emote,
   selected,
   onSelect,
 }: {
   person: PlacedPerson
   bubble: ChatBubble | undefined
+  emote: Emote | undefined
   selected: boolean
   onSelect: (userId: string) => void
 }) {
@@ -143,6 +145,14 @@ const Walker = memo(function Walker({
             </g>
           </g>
         )}
+        {emote && (
+          // Beside their speech bubble if they have one, else right over their head.
+          <g transform={`translate(${said ? bubbleWidth / 2 + 14 : 0} ${bt - (said ? 14 : 2)})`} aria-hidden="true">
+            <text key={emote.at} className="g-person-emote" textAnchor="middle">
+              {emote.emoji}
+            </text>
+          </g>
+        )}
         <rect className="g-focus-ring" x={bl} y={bt} width={bw} height={bh} rx={14} />
       </g>
     </g>
@@ -153,11 +163,13 @@ const Walker = memo(function Walker({
 export function People({
   people,
   bubbles,
+  emotes,
   selectedUserId,
   onSelect,
 }: {
   people: PlacedPerson[]
   bubbles: ReadonlyMap<string, ChatBubble>
+  emotes: ReadonlyMap<string, Emote>
   selectedUserId: string | null
   onSelect: (userId: string) => void
 }) {
@@ -170,6 +182,7 @@ export function People({
           key={person.userId}
           person={person}
           bubble={bubbles.get(person.userId)}
+          emote={emotes.get(person.userId)}
           selected={selectedUserId === person.userId}
           onSelect={onSelect}
         />

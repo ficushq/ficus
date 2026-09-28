@@ -119,6 +119,42 @@ describe('farm presence over the WebSocket', () => {
     ])
   })
 
+  test('a wave reaches everyone else on the farm, only between people there, and not too often', async () => {
+    const manager = new WebSocketManager()
+    const aliceWs = socket()
+    const bobWs = socket()
+    const aliceClient = manager.addClient(aliceWs, { type: 'user', userId: alice.id })
+    const bobClient = manager.addClient(bobWs, { type: 'user', userId: bob.id })
+    await manager.subscribe(aliceClient, 'presence')
+    await manager.subscribe(bobClient, 'presence')
+    const wave = (ws: ReturnType<typeof socket>, toUserId: unknown) =>
+      manager.handleMessage(ws, JSON.stringify({ type: 'presence.wave', toUserId }))
+
+    // Nobody's on the farm yet: nothing to wave at, or from.
+    wave(aliceWs, bob.id)
+    manager.handleMessage(aliceWs, JSON.stringify({ type: 'presence', focus: null }))
+    wave(aliceWs, bob.id)
+    expect(events(bobWs, 'presence.waved')).toEqual([])
+
+    manager.handleMessage(bobWs, JSON.stringify({ type: 'presence', focus: null }))
+    wave(aliceWs, bob.id)
+    expect(events(bobWs, 'presence.waved').map((frame) => frame.data)).toEqual([
+      { fromUserId: alice.id, toUserId: bob.id },
+    ])
+    // The waver's own farm shows it already; and a second wave straight after is dropped.
+    expect(events(aliceWs, 'presence.waved')).toEqual([])
+    wave(aliceWs, bob.id)
+    expect(events(bobWs, 'presence.waved')).toHaveLength(1)
+    // Nor at yourself, or at nonsense.
+    wave(bobWs, bob.id)
+    wave(bobWs, { id: alice.id })
+    expect(events(aliceWs, 'presence.waved')).toEqual([])
+    wave(bobWs, alice.id)
+    expect(events(aliceWs, 'presence.waved').map((frame) => frame.data)).toEqual([
+      { fromUserId: bob.id, toUserId: alice.id },
+    ])
+  })
+
   test('people are seen as they chose to look, and a new look shows straight away', async () => {
     const manager = new WebSocketManager()
     const aliceWs = socket()

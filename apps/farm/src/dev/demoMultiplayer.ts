@@ -202,6 +202,13 @@ export function demoMultiplayer(): DemoMultiplayer {
   return {
     me: ME,
     chat,
+    // Whoever you wave at waves back.
+    wave(toUserId) {
+      window.setTimeout(
+        () => emit({ event: 'presence.waved', data: { fromUserId: toUserId, toUserId: ME.userId } }),
+        1400
+      )
+    },
     start(sink) {
       emit = sink
       let rosa = 0

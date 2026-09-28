@@ -197,6 +197,7 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
     event === 'presence.snapshot' ||
     event === 'presence.updated' ||
     event === 'presence.left' ||
+    event === 'presence.waved' ||
     event === 'farmChat.messageCreated' ||
     event === 'farmChat.messageUpdated' ||
     event === 'farmChat.roomsChanged' ||

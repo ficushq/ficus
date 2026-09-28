@@ -118,7 +118,7 @@ export type TopicEventMap = {
   // Collection-only (no instance topic) — a single global "recompute now" signal.
   onboarding: Extract<keyof EventMap, 'onboarding.updated'>
   squadActivity: Extract<keyof EventMap, 'squadActivity.projected' | 'squadActivity.accessRevoked'>
-  presence: Extract<keyof EventMap, 'presence.snapshot' | 'presence.updated' | 'presence.left'>
+  presence: Extract<keyof EventMap, 'presence.snapshot' | 'presence.updated' | 'presence.left' | 'presence.waved'>
   farmChat: Extract<
     keyof EventMap,
     'farmChat.messageCreated' | 'farmChat.messageUpdated' | 'farmChat.roomsChanged' | 'farmChat.typing'

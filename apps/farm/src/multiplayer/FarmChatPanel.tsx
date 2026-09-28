@@ -425,7 +425,7 @@ function MessageItem({
   showMeta: boolean
   onError: (error: string | null) => void
 }) {
-  const { chat, me } = useMultiplayer()
+  const { chat, me, emote } = useMultiplayer()
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.body)
@@ -445,6 +445,8 @@ function MessageItem({
     const on = !message.reactions.some((r) => r.emoji === emoji && me && r.userIds.includes(me.userId))
     try {
       settle(await chat.react(room.id, message.id, emoji, on))
+      // Your reaction floats over your head on the farm for a moment.
+      if (on) emote(emoji)
     } catch (e) {
       onError(errorText(e))
     }

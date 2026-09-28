@@ -287,6 +287,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
             <People
               people={placed}
               bubbles={multiplayer.bubbles}
+              emotes={multiplayer.emotes}
               selectedUserId={selection?.kind === 'person' ? selection.userId : null}
               onSelect={selectPerson}
             />
