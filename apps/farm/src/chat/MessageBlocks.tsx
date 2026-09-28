@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
+import { ChevronIcon } from '../icons'
 import type { MessageToolCall } from '@ficus/shared'
 import { groupBlocks, groupSummary, prettyArgs, resultText, thinkingLabel, toolSummary, type AnyBlock } from './blocks'
 import { Markdown } from './Markdown'
@@ -25,9 +26,7 @@ function Disclosure({
       aria-controls={controls}
       onClick={onToggle}
     >
-      <span className={clsx('g-chat-chevron', expanded && 'g-open')} aria-hidden="true">
-        ▸
-      </span>
+      <ChevronIcon className={clsx('g-chevron', expanded && 'g-open')} />
       {children}
     </button>
   )

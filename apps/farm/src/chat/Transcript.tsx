@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import clsx from 'clsx'
+import { ChevronIcon } from '../icons'
 import type { RenderItem } from '@ficus/client-react'
 import { extractInboxBodies, type DeliveryMode, type Message, type MessageMetadata } from '@ficus/shared'
 import { MessageBlocks } from './MessageBlocks'
@@ -93,9 +94,7 @@ function MonitorRow({ content, metadata }: { content: string; metadata: MessageM
         aria-expanded={expanded}
         onClick={() => setExpanded((v) => !v)}
       >
-        <span className={clsx('g-chat-chevron', expanded && 'g-open')} aria-hidden="true">
-          ▸
-        </span>
+        <ChevronIcon className={clsx('g-chevron', expanded && 'g-open')} />
         <span>
           Monitor “{label}”{lines !== undefined ? ` · ${lines} new line${lines === 1 ? '' : 's'}` : ''}
         </span>

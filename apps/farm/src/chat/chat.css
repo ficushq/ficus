@@ -399,16 +399,24 @@
   outline-offset: 1px;
 }
 
-.g-chat-chevron {
+/* Disclosure arrows (icons/ChevronIcon): an SVG centred in its own box, so opening turns it in place. */
+.g-chevron {
   flex: none;
-  display: inline-block;
-  width: 12px;
-  font-size: 11px;
-  transition: rotate 120ms ease;
+  display: block;
+  width: 16px;
+  height: 16px;
+  transform-origin: 50% 50%;
+  transition: transform 140ms ease;
 }
 
-.g-chat-chevron.g-open {
-  rotate: 90deg;
+.g-chevron.g-open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-chevron {
+    transition: none;
+  }
 }
 
 .g-chat-tool-mark {

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react'
 import clsx from 'clsx'
+import { ChevronIcon } from '../icons'
 import type { DeliveryMode } from '@ficus/shared'
 import { useStableRef } from '../hooks/useStableRef'
 
@@ -222,7 +223,7 @@ export function Composer({
                 {sendLabel}
               </button>
               <label className="g-chat-delivery-mode" title="Choose when this message is delivered">
-                <span aria-hidden="true">▾</span>
+                <ChevronIcon className="g-chevron g-open" />
                 <select
                   aria-label="Message delivery"
                   value={deliveryMode}
