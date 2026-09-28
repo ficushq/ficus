@@ -1072,6 +1072,45 @@ describe('first-admin bootstrap gate (FICUS_PASSWORD provisioned)', () => {
     }
   })
 
+  it('makes the first admin even when an admin assignment for a deleted user was left behind', async () => {
+    // Deleting users directly (not through User.delete) leaves their role_assignments:
+    // subject_id has no foreign key to users. Such a row must not count as an admin.
+    const existingRole = await db.select().from(roles).where(eq(roles.slug, 'admin'))
+    const adminRole = existingRole[0] ?? (await createTestRole({ slug: 'admin', permissions: ['*'] }))
+    const [orphan] = await db
+      .insert(roleAssignments)
+      .values({ subjectType: 'user', subjectId: crypto.randomUUID(), roleId: adminRole.id, scope: 'system' })
+      .returning()
+    const verification = spyOn(webauthn, 'verifyRegResponse').mockImplementation(
+      async () =>
+        ({
+          verified: true,
+          registrationInfo: {
+            credential: { id: crypto.randomUUID(), publicKey: new Uint8Array([1, 2, 3]), counter: 0 },
+          },
+        }) as Awaited<ReturnType<typeof webauthn.verifyRegResponse>>
+    )
+    try {
+      const subject = await createTestUser()
+      const res = await buildApp().request('/api/auth/register/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...bearerHeader(TEST_PASSWORD) },
+        body: JSON.stringify({ email: subject.email, response: {} }),
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).firstAdmin).toBe(true)
+      const granted = await db.select().from(roleAssignments).where(eq(roleAssignments.roleId, adminRole.id))
+      expect(granted.map((row) => row.subjectId)).toContain(subject.id)
+    } finally {
+      verification.mockRestore()
+      await db.delete(roleAssignments).where(eq(roleAssignments.id, orphan!.id))
+      if (!existingRole.length) {
+        await db.delete(roleAssignments).where(eq(roleAssignments.roleId, adminRole.id))
+        await db.delete(roles).where(eq(roles.id, adminRole.id))
+      }
+    }
+  })
+
   it('register/email without the bootstrap session → 401 and NO code in the body', async () => {
     const app = buildApp()
     const res = await app.request('/api/auth/register/email', {
