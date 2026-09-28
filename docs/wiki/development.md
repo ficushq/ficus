@@ -145,6 +145,8 @@ streams as plants, agents as robots) built on the same client packages. The web
 app's build also builds the farm into `apps/web/dist/farm/`, so every
 install, Core artifact and image that ships the web UI ships the farm, and
 Core serves it at `/farm` (`FICUS_FARM_DIST` overrides where Core looks).
+How it works (styles, settings, presence, farm chat, motion) is in
+[`farm.md`](farm.md).
 
 `bun run dev:farm` serves it at `http://127.0.0.1:5174/farm/`, proxying
 `/api` and `/ws` to local Core on `:3000` with your browser session (sign in on
