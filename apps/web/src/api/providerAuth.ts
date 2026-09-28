@@ -179,6 +179,8 @@ export interface ClaudeCodeStatus {
   /** The owner turned it on for agents. */
   enabled: boolean
   installed: boolean
+  /** The `claude` agents run: the newest install found. */
+  path?: string
   loggedIn: boolean
   version?: string
   authMethod?: string

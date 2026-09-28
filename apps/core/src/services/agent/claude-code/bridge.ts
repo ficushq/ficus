@@ -30,7 +30,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { createLogger } from '../../../lib/infra/logger'
 import { getHomeDir } from '../../../lib/utils/home'
-import { claudeChildEnv, findClaudeExecutable } from './availability'
+import { claudeChildEnv, claudeCodeExecutable } from './availability'
+import { describeClaudeCodeFailure } from './failures'
 import {
   CLAUDE_TOOL_PREFIX,
   TOOL_SERVER,
@@ -253,7 +254,7 @@ class Bridge {
         .join('')
         .trim()
       const turn = this.turn
-      turn.fail('error', text || `Claude Code error: ${message.error}`)
+      turn.fail('error', describeClaudeCodeFailure(text || `Claude Code error: ${message.error}`, message.error))
       this.completed(turn)
       return
     }
@@ -270,7 +271,10 @@ class Bridge {
           message.subtype === 'success'
             ? message.result
             : (message.errors?.join('\n') ?? `Claude Code stopped: ${message.subtype}`)
-        turn.fail(aborted ? 'aborted' : 'error', detail || 'Claude Code ended the turn without a response')
+        turn.fail(
+          aborted ? 'aborted' : 'error',
+          describeClaudeCodeFailure(detail || 'Claude Code ended the turn without a response')
+        )
         this.completed(turn)
       }
       this.scheduleIdleClose()
@@ -313,7 +317,7 @@ export interface ClaudeCodeBridgeDeps {
 /** The pi stream function for the `claude-code` provider. */
 export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
   const runQuery = deps.query ?? (sdkQuery as unknown as QueryFn)
-  const executable = deps.executable ?? (() => findClaudeExecutable())
+  const executable = deps.executable ?? (() => claudeCodeExecutable())
   const stateDir = deps.stateDir ?? (() => join(getHomeDir(), 'claude-code'))
   const bridges = new Map<string, Bridge>()
   const resumable = new ResumeStore(stateDir)

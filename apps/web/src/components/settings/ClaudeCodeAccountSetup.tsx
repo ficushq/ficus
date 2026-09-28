@@ -33,7 +33,14 @@ export function ClaudeCodeAccountSetup({
     <div className="space-y-3 text-sm text-secondary">
       {status.loggedIn ? (
         <p>
-          Claude Code {status.version} is signed in
+          Claude Code {status.version}
+          {status.path ? (
+            <>
+              {' '}
+              (<code className="font-mono text-primary">{status.path}</code>)
+            </>
+          ) : null}{' '}
+          is signed in
           {status.subscriptionType ? ` with a Claude ${status.subscriptionType} plan` : ''}. It becomes the first
           Anthropic account, so Claude models use your plan before any API key.
         </p>

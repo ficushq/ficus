@@ -32,9 +32,14 @@ import { getModelRuntime, refreshModelRuntime, tryGetModelRuntime } from '../ser
 import {
   claudeCodeOffered,
   getClaudeCodeStatus,
+  invalidateClaudeCodeStatus,
   type ClaudeCodeStatus,
 } from '../services/agent/claude-code/availability'
-import { setClaudeCodeAccountEnabled } from '../services/agent/claude-code/account'
+import {
+  CLAUDE_CODE_ACCOUNT_ID,
+  claudeCodeAccount,
+  setClaudeCodeAccountEnabled,
+} from '../services/agent/claude-code/account'
 import { SecretDecryptError } from '../services/secrets'
 import {
   addAccount,
@@ -360,6 +365,7 @@ function claudeCodeStatusJson(status: ClaudeCodeStatus) {
     offered: status.offered,
     enabled: status.enabled,
     installed: Boolean(status.executable),
+    ...(status.executable ? { path: status.executable } : {}),
     loggedIn: status.loggedIn,
     ...(status.version ? { version: status.version } : {}),
     ...(status.authMethod ? { authMethod: status.authMethod } : {}),
@@ -371,7 +377,11 @@ function claudeCodeStatusJson(status: ClaudeCodeStatus) {
 app.get('/claude-code/status', requirePermission('provider-auth:read'), async (c) => {
   const refresh = c.req.query('refresh') === '1'
   const status = await getClaudeCodeStatus({ refresh })
-  if (refresh) await refreshModelRuntime()
+  if (refresh) {
+    // A sign-in failure parks the Claude Code account; checking again after signing in clears it.
+    if (status.loggedIn && claudeCodeAccount()) providerHealth.markAccountAvailable('anthropic', CLAUDE_CODE_ACCOUNT_ID)
+    await refreshModelRuntime()
+  }
   return c.json(claudeCodeStatusJson(status))
 })
 
@@ -630,8 +640,12 @@ app.post('/:provider/accounts/:accountId/health/reset', requirePermission('provi
   const provider = c.req.param('provider')
   const accountId = c.req.param('accountId')
   const accounts = listAccounts(readAccountStore(), provider)
-  if (!accounts.some((account) => account.id === accountId)) return c.json({ error: 'Account not found' }, 404)
-  if (isCredentialHealth(provider, accountId)) return c.json(CREDENTIAL_HEALTH_ERROR, 409)
+  const account = accounts.find((candidate) => candidate.id === accountId)
+  if (!account) return c.json({ error: 'Account not found' }, 404)
+  // Claude Code has no credential to re-authorize here: it is fixed on this machine (sign in,
+  // update), so its credential health may be reset directly, after a fresh status check.
+  if (account.kind === 'claude-code') invalidateClaudeCodeStatus()
+  else if (isCredentialHealth(provider, accountId)) return c.json(CREDENTIAL_HEALTH_ERROR, 409)
   providerHealth.markAccountAvailable(provider, accountId)
   return c.json(providerSummary(provider, accounts))
 })

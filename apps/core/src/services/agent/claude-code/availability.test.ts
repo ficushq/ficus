@@ -57,6 +57,31 @@ test('signed out, and not installed, are unavailable with a reason', async () =>
   ).toMatchObject({ offered: true, loggedIn: false, reason: 'Claude Code is not installed' })
 })
 
+test('with several installs, the newest claude is used', async () => {
+  const older = mkdtempSync(join(tmpdir(), 'claude-code-old-'))
+  const newer = mkdtempSync(join(tmpdir(), 'claude-code-new-'))
+  try {
+    for (const dir of [older, newer]) {
+      writeFileSync(join(dir, 'claude'), '#!/bin/sh\nexit 0\n')
+      chmodSync(join(dir, 'claude'), 0o755)
+    }
+    const run: RunClaude = async (executable, args) =>
+      args[0] === '--version'
+        ? { exitCode: 0, stdout: executable.startsWith(older) ? '2.1.221 (Claude Code)' : '2.1.284 (Claude Code)' }
+        : { exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) }
+    // The older install comes first on PATH, as it can in a background worker's environment.
+    const status = await getClaudeCodeStatus({
+      env: { PATH: `${older}:${newer}`, HOME: '/nonexistent' },
+      run,
+      enabled: true,
+    })
+    expect(status).toMatchObject({ executable: join(newer, 'claude'), version: '2.1.284', loggedIn: true })
+  } finally {
+    rmSync(older, { recursive: true, force: true })
+    rmSync(newer, { recursive: true, force: true })
+  }
+})
+
 test("claude never inherits Core's secrets or an Anthropic API key", () => {
   const env = claudeChildEnv({
     HOME: '/Users/me',

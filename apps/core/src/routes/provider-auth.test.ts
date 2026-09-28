@@ -7,6 +7,7 @@ import { getSecretStore, resetSecretStore } from '../services/secrets'
 import { getSettingsStore, resetSettingsStore } from '../services/settings'
 import type { OAuthLoginCallbacks } from '@earendil-works/pi-ai/oauth'
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
+import { CLAUDE_CODE_ACCOUNT_ID, setClaudeCodeAccountEnabled } from '../services/agent/claude-code/account'
 import providerAuthRouter, { accountSummary, setOAuthCallbackTimeoutForTests } from './provider-auth'
 import { identityMiddleware } from '../middleware/identity'
 import {
@@ -763,6 +764,17 @@ describe('provider-auth routes', () => {
       expect(await res.json()).toMatchObject({ code: 'credential_health' })
       // The remediation signal survives — re-authorizing is the only real fix.
       expect(providerHealth.getRecord('anthropic', a1.id)?.kind).toBe('invalid-credential')
+    })
+
+    test('a Claude Code account parked by a sign-in failure can be reset once fixed on this machine', async () => {
+      await setClaudeCodeAccountEnabled(true, 'admin')
+      providerHealth.recordFailure(providerHealth.captureAttempt('anthropic', CLAUDE_CODE_ACCOUNT_ID), {
+        kind: 'expired-oauth',
+      })
+
+      const res = await app.request(`/anthropic/accounts/${CLAUDE_CODE_ACCOUNT_ID}/health/reset`, jsonReq('POST'))
+      expect(res.status).toBe(200)
+      expect(providerHealth.isAccountHealthy('anthropic', CLAUDE_CODE_ACCOUNT_ID)).toBe(true)
     })
 
     test('provider reset clears transient records and reports the credential ones it skipped', async () => {

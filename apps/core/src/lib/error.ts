@@ -1,5 +1,6 @@
 import type { ProviderHealthKind } from '@ficus/shared/provider-health'
 import type { ExhaustionReason } from '../services/provider-health/registry'
+import { CLAUDE_CODE_SIGN_IN_FAILED, CLAUDE_CODE_TOO_OLD } from '../services/agent/claude-code/failures'
 
 export interface CaughtProviderErrorClassification {
   kind: ProviderHealthKind
@@ -118,6 +119,8 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
       'credits-has-credits',
       'has-credits": "false',
       'has-credits":"false',
+      // Anthropic, when a Claude plan's extra usage is spent or off.
+      'out of extra usage',
     ],
     reason: 'plan-credit',
     cooldownMs: PLAN_CREDIT_COOLDOWN_MS,
@@ -175,6 +178,9 @@ export function classifyCaughtProviderError(
   const now = opts.now ?? Date.now()
   const text = providerErrorText(error)
   if (text && isInternalExecutionError(text)) return null
+  // Claude Code failures the user must fix on their machine: park that account and fail over.
+  if (text?.includes(CLAUDE_CODE_SIGN_IN_FAILED)) return { kind: 'expired-oauth' }
+  if (text?.includes(CLAUDE_CODE_TOO_OLD)) return { kind: 'invalid-credential' }
 
   const status = findFiniteNumber(error, ['status', 'statusCode']) ?? parseGenericHttpStatus(text)
   // Generic turn auth failures intentionally remain outside routing health.
