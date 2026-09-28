@@ -19,7 +19,7 @@ import {
   type ThemeDescriptor,
 } from './theme-schema'
 
-const TAU: ThemeDescriptor = { id: 'tau', label: 'Ficus', kind: 'dual' }
+const TAU: ThemeDescriptor = { id: 'tau', label: 'Iris', kind: 'dual' }
 const NORD: ThemeDescriptor = { id: 'nord', label: 'Nord', kind: 'dual' }
 const CONTRAST: ThemeDescriptor = { id: 'high-contrast', label: 'High Contrast', kind: 'unified' }
 
