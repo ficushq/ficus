@@ -4352,6 +4352,42 @@ _epr_pending_set() {
   printf '%s' "${line%%$'\t'*}"
 }
 
+# May a restore remove PATH, listed in a set's ABSENT file? Only a host env
+# file this toolkit renames (the rename records managed.env), spelled plainly
+# (no `.`/`..` segment, no `//`), not also in the set's MANIFEST (a file the set
+# copied cannot have been absent), and never a directory. MANIFEST_PATH... are
+# the set's MANIFEST paths. On refusal the reason is in _EPR_ABSENT_WHY.
+_epr_absent_ok() { # PATH MANIFEST_PATH...
+  local path=$1 m listing c ok=0
+  shift
+  _EPR_ABSENT_WHY=''
+  case "/${path#/}/" in
+    */./* | */../* | *//*)
+      _EPR_ABSENT_WHY='it has a . or .. segment'
+      return 1
+      ;;
+  esac
+  for m in "$@"; do
+    if [[ ${m} == "${path}" ]]; then
+      _EPR_ABSENT_WHY='the set also holds a copy of it'
+      return 1
+    fi
+  done
+  if [[ -d ${path} && ! -L ${path} ]]; then
+    _EPR_ABSENT_WHY='it is a directory'
+    return 1
+  fi
+  listing=$(SRC_DEST=${SRC_DEST:-} CFG_FILE=${CFG_FILE:-} _host_env_candidates 2>/dev/null) || listing=''
+  while IFS= read -r c; do
+    [[ -n ${c} && ${c} == "${path}" ]] && ok=1
+  done <<<"${listing}"
+  [[ ${path} == "${FICUS_MANAGED_ENV_PATH}" ]] && ok=1
+  if ((ok == 0)); then
+    _EPR_ABSENT_WHY='it is not one of the host env files the rename covers'
+    return 1
+  fi
+}
+
 # Put a backup set back, byte for byte, and verify every file's sha256.
 # Returns 0 after a verified restore (removing PENDING when it journals this
 # set, then daemon-reloading), 1 on any failure (log_error; what was not yet
@@ -4400,6 +4436,10 @@ env_rename_backup_restore() { # SETDIR
       [[ -n ${line} ]] || continue
       if [[ ${line} != /?* || ${line} == *$'\t'* ]]; then
         log_error "env restore: ${setdir}/ABSENT has a malformed line — nothing was restored"
+        return 1
+      fi
+      if ! _epr_absent_ok "${line}" ${paths[@]+"${paths[@]}"}; then
+        log_error "env restore: ${setdir}/ABSENT lists ${line}, which a restore may not remove (${_EPR_ABSENT_WHY}) — nothing was restored"
         return 1
       fi
       absents+=("${line}")

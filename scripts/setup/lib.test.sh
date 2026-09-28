@@ -5998,6 +5998,29 @@ cp -p "${SRC_DEST}/.env" "${EPR}/abs.env.orig"
 printf 'CHANGED=1\n' >"${SRC_DEST}/.env"
 expect_eq 'env_rename_backup_restore: a malformed ABSENT line refuses the restore' \
   "$(env_rename_backup_restore "${epr_abs_set}" >/dev/null 2>&1; echo "rc=$?"):$(cat "${SRC_DEST}/.env")" 'rc=1:CHANGED=1'
+# N-A: an ABSENT entry the restore may not remove refuses the whole restore,
+# before anything is touched — a . or .. segment, a path the MANIFEST also
+# holds, a directory, or a file outside the host env files the rename covers.
+mkdir -p "${EPR_H}/etc/dir-entry"
+FICUS_MANAGED_ENV_PATH_SAVED=${FICUS_MANAGED_ENV_PATH}
+for epr_bad in "${EPR_H}/etc/../etc/managed.env" "${EPR_H}/etc/./managed.env" "$(readlink -f -- "${SRC_DEST}/.env")" dir "${EPR_H}/elsewhere.env"; do
+  if [[ ${epr_bad} == dir ]]; then
+    epr_bad="${EPR_H}/etc/dir-entry"
+    FICUS_MANAGED_ENV_PATH=${epr_bad} # in scope, so only "a directory" refuses it
+  fi
+  printf '%s\n' "${epr_bad}" >"${epr_abs_set}/ABSENT"
+  printf 'CHANGED=1\n' >"${SRC_DEST}/.env"
+  expect_match "env_rename_backup_restore: ABSENT entry ${epr_bad##*/host-present-managed} is refused, nothing restored" \
+    "$(env_rename_backup_restore "${epr_abs_set}" 2>&1; echo "rc=$?"):$(cat "${SRC_DEST}/.env")" 'a restore may not remove .*rc=1:CHANGED=1$'
+  FICUS_MANAGED_ENV_PATH=${FICUS_MANAGED_ENV_PATH_SAVED}
+done
+expect_eq 'env_rename_backup_restore: the directory is still there' "$([[ -d ${EPR_H}/etc/dir-entry ]] && echo kept)" 'kept'
+# ...while the managed.env path itself is accepted and removed.
+printf '%s\n' "${FICUS_MANAGED_ENV_PATH}" >"${epr_abs_set}/ABSENT"
+printf 'X=1\n' >"${FICUS_MANAGED_ENV_PATH}"
+expect_eq 'env_rename_backup_restore: an in-scope ABSENT managed.env is removed, the set restored' \
+  "$(env_rename_backup_restore "${epr_abs_set}" >/dev/null 2>&1; echo "rc=$?"):$([[ -e ${FICUS_MANAGED_ENV_PATH} ]] && echo present || echo removed):$(cmp -s "${SRC_DEST}/.env" "${EPR}/abs.env.orig" && echo same)" 'rc=0:removed:same'
+unset FICUS_MANAGED_ENV_PATH_SAVED
 rm -f "${ENV_RENAME_BACKUP_ROOT}/PENDING"
 
 # Reconcile, active release TAU (package.json tau, no envPrefix): restore.
