@@ -164,7 +164,7 @@ source:
   repo: git@example.com:acme/ficus.git
   dest: ${CORE_DEST}
 core:
-  origin: https://acme.ficus.sh
+  origin: https://acme.old.example
   port: 3000
   env: {}
 ingress:
@@ -172,9 +172,9 @@ ingress:
   tls_cert_path: /etc/caddy/tls/origin.crt
   tls_key_path: /etc/caddy/tls/origin.key
 dns:
-  zone: ficus.sh
+  zone: old.example
 EOF
-printf 'APP_URL=https://acme.ficus.sh\nFICUS_WEB_ORIGIN=https://acme.ficus.sh\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${CORE_DEST}/.env"
+printf 'APP_URL=https://acme.old.example\nFICUS_WEB_ORIGIN=https://acme.old.example\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${CORE_DEST}/.env"
 CONFIG_BYTES_BEFORE=$(cat "${CONFIG}")
 ENV_BYTES_BEFORE=$(cat "${CORE_DEST}/.env")
 
@@ -399,7 +399,7 @@ source:
   repo: git@example.com:acme/ficus.git
   dest: ${MUT}/core
 core:
-  origin: https://acme.ficus.sh
+  origin: https://acme.old.example
   port: 3000
   env: {}
 ingress:
@@ -407,17 +407,17 @@ ingress:
   tls_cert_path: /pushed/old/origin.crt
   tls_key_path: /pushed/old/origin.key
 dns:
-  zone: ficus.sh
+  zone: old.example
 EOF
   # PORT (4100) deliberately DIFFERS from the yaml's core.port (3000) — this
   # is exactly the drift the health-check-port fix targets: the Caddyfile's
   # reverse_proxy target, and the port the health check probes, must come
   # from the running .env, not the yaml default.
-  printf '# a comment\nAPP_URL=https://acme.ficus.sh\n\nFICUS_WEB_ORIGIN=https://acme.ficus.sh\nPORT=4100\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${MUT}/core/.env"
+  printf '# a comment\nAPP_URL=https://acme.old.example\n\nFICUS_WEB_ORIGIN=https://acme.old.example\nPORT=4100\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${MUT}/core/.env"
 
   # A pre-existing "old" cert at the canonical (scratch) path, so the
   # cert-backup-before-install fix has something real to back up.
-  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=old.acme.ficus.sh' \
+  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=acme.old.example' \
     -keyout "${CADDY_TLS_DIR}/origin.key" -out "${CADDY_TLS_DIR}/origin.crt" >/dev/null 2>&1
 
   MUT_NEW_CERT="${MUT}/new-origin.crt"
