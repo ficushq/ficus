@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'os'
 import {
   admitStoppedProcess,
+  cancelBashInvocation,
   handleBash,
   commandUsesDocker,
   reconcileBashRecord,
@@ -634,6 +635,92 @@ describe('handleBash', () => {
     expect(spawnMock).not.toHaveBeenCalled()
     expect(complete).toHaveBeenCalledWith('failed')
     expect(admissionFenced).toHaveBeenCalledTimes(1)
+  })
+
+  it('a /bash/cancel overtaking a start still waiting for Docker reports at once and forbids the spawn', async () => {
+    const ready = Promise.withResolvers<void>()
+    const spawnDecision = Promise.withResolvers<'cancelled' | 'spawn'>()
+    const acquire = mock(async () => {
+      throw new Error('ownership must not be requested')
+    })
+    const terminate = mock(async (): Promise<{ remainingPids: [] }> => ({ remainingPids: [] }))
+    const spawnMock = mock(() => {
+      throw new Error('spawn must not run')
+    })
+    const response = handleBash(
+      { command: 'docker ps', invocationId: 'overtaken-docker', cwd: testDir, sourceEnv: false, activateDevbox: false },
+      { acquire, terminate },
+      {
+        waitForDockerReady: () => ready.promise.then(() => true),
+        spawn: spawnMock,
+        onSpawnDecision: spawnDecision.resolve,
+      }
+    )
+    // The start request's connection is still open: only the cancel request knows to stop it.
+    expect(await cancelBashInvocation('overtaken-docker', 'tool-abort', { acquire, terminate })).toEqual({
+      remainingPids: [],
+    })
+    expect(terminate).toHaveBeenCalledWith('overtaken-docker', 'tool-abort')
+    ready.resolve()
+    expect(await spawnDecision.promise).toBe('cancelled')
+    await response.text()
+    expect(acquire).not.toHaveBeenCalled()
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('a /bash/cancel overtaking a start mid-admission waits for the spawn decision before reporting', async () => {
+    const acquisition = Promise.withResolvers<BashInvocationLease>()
+    const events: string[] = []
+    const acquire = mock(() => acquisition.promise)
+    const complete = mock(async (state: string) => {
+      events.push(`complete:${state}`)
+    })
+    const terminate = mock(async (): Promise<{ remainingPids: [] }> => {
+      events.push('terminate')
+      return { remainingPids: [] }
+    })
+    const spawnMock = mock(() => {
+      throw new Error('spawn must not run')
+    })
+    const response = handleBash(
+      {
+        command: 'echo never',
+        invocationId: 'overtaken-admission',
+        cwd: testDir,
+        sourceEnv: false,
+        activateDevbox: false,
+      },
+      { acquire, terminate },
+      { spawn: spawnMock }
+    )
+    expect(acquire).toHaveBeenCalledTimes(1)
+    let reported = false
+    const cancelled = cancelBashInvocation('overtaken-admission', 'transport-loss', { acquire, terminate }).then(
+      (proof) => {
+        reported = true
+        return proof
+      }
+    )
+    await Promise.resolve()
+    // Ownership is still being acquired: no answer yet, since a spawn could still follow.
+    expect(reported).toBe(false)
+    expect(terminate).not.toHaveBeenCalled()
+    acquisition.resolve({ generation: 0, markStarting: async () => {}, markRunning: async () => {}, complete })
+    expect(await cancelled).toEqual({ remainingPids: [] })
+    await response.text()
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(events).toEqual(['complete:failed', 'terminate'])
+  })
+
+  it('a /bash/cancel for an invocation this box never saw goes straight to the registry', async () => {
+    const terminate = mock(async (): Promise<{ remainingPids: [] }> => ({ remainingPids: [] }))
+    const acquire = mock(async () => {
+      throw new Error('unused')
+    })
+    expect(await cancelBashInvocation('never-seen', 'transport-loss', { acquire, terminate })).toEqual({
+      remainingPids: [],
+    })
+    expect(terminate).toHaveBeenCalledWith('never-seen', 'transport-loss')
   })
 
   it('KILL-es a ready TERM-ignoring child and grandchild without touching a neighbor session', async () => {

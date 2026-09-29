@@ -91,8 +91,26 @@ const bashInvocationRegistry = new BashInvocationRegistry({
   reconcile: reconcileBashRecord,
 })
 
-export async function cancelBashInvocation(invocationId: string, reason?: string): Promise<{ remainingPids: [] }> {
-  return bashInvocationRegistry.terminate(invocationId, reason)
+/**
+ * Start requests that have not yet decided whether to spawn, by invocation id. `/bash/cancel`
+ * arrives on its own connection and can overtake its start request while that request is still
+ * waiting for Docker or for registry ownership, before any record exists. The registry alone
+ * would answer "no remaining processes" and the start request could spawn afterwards; a cancel
+ * therefore forbids the pending start and waits for its spawn decision before reporting.
+ */
+const pendingAdmissions = new Map<string, { cancel(): void; decided: Promise<void> }>()
+
+export async function cancelBashInvocation(
+  invocationId: string,
+  reason?: string,
+  registry: BashInvocationRegistryPort = bashInvocationRegistry
+): Promise<{ remainingPids: [] }> {
+  const pending = pendingAdmissions.get(invocationId)
+  if (pending) {
+    pending.cancel()
+    await pending.decided
+  }
+  return registry.terminate(invocationId, reason)
 }
 
 export async function reconcileBashInvocations() {
@@ -338,6 +356,23 @@ export function handleBash(
     admissionFenceSettled = true
     dependencies.onAdmissionFenced?.()
   }
+  // A /bash/cancel for this invocation that overtook this request (see pendingAdmissions).
+  let cancelRequested = false
+  let admitting = false
+  const spawnDecision = Promise.withResolvers<void>()
+  const pendingAdmission = {
+    cancel() {
+      cancelRequested = true
+      // Before ownership is requested the flag alone forbids the spawn; nothing to wait for.
+      if (!admitting) decideSpawn()
+    },
+    decided: spawnDecision.promise,
+  }
+  const decideSpawn = () => {
+    spawnDecision.resolve()
+    if (pendingAdmissions.get(invocationId) === pendingAdmission) pendingAdmissions.delete(invocationId)
+  }
+  pendingAdmissions.set(invocationId, pendingAdmission)
 
   const stream = new ReadableStream({
     start(controller) {
@@ -357,7 +392,11 @@ export function handleBash(
       const done = () => {
         if (closed) return
         closed = true
-        controller.close()
+        try {
+          controller.close()
+        } catch {
+          // Already cancelled by the client (disconnect or /bash/cancel overtaking it)
+        }
       }
 
       // Do not return the admission promise from start(): Web Streams defer the
@@ -384,11 +423,13 @@ export function handleBash(
 
         // Observe transport cancellation before acquiring ownership so a
         // disconnected caller can never spawn.
-        if (streamWasCancelled(controller)) {
+        if (streamWasCancelled(controller) || cancelRequested) {
           dependencies.onSpawnDecision?.('cancelled')
           settleAdmissionFence()
+          done()
           return
         }
+        admitting = true
 
         let proc: ChildProcess
         let lease: BashInvocationLease | undefined
@@ -401,9 +442,10 @@ export function handleBash(
           // acquire() has populated the registry's active map. From here onward
           // that map, rather than the request reservation, blocks idle exit.
           settleAdmissionFence()
-          if (streamWasCancelled(controller)) {
+          if (streamWasCancelled(controller) || cancelRequested) {
             await lease.complete('failed')
             dependencies.onSpawnDecision?.('cancelled')
+            done()
             return
           }
           dependencies.onSpawnDecision?.('spawn')
@@ -542,14 +584,18 @@ export function handleBash(
               done()
             })
         })
-      })().catch((error) => {
-        settleAdmissionFence()
-        send({
-          error: `Failed to start bash invocation: ${error instanceof Error ? error.message : String(error)}`,
-          exitCode: 127,
+      })()
+        .catch((error) => {
+          settleAdmissionFence()
+          send({
+            error: `Failed to start bash invocation: ${error instanceof Error ? error.message : String(error)}`,
+            exitCode: 127,
+          })
+          done()
         })
-        done()
-      })
+        // Admission is the whole of this task: by now the command never spawned, or it
+        // spawned and its ownership is recorded, so a waiting cancel can terminate it.
+        .finally(decideSpawn)
     },
     cancel() {
       // Cancellation may arrive before Docker readiness, registry acquisition,
