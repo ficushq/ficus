@@ -11,7 +11,8 @@
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgb(20 16 10 / 0.35);
+  /* The farm dimmed in the style's own ink. */
+  background: color-mix(in srgb, var(--g-ink) 40%, transparent);
 }
 
 .g-welcome {

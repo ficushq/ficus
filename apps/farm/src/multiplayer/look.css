@@ -148,10 +148,11 @@
 .g-look-custom {
   display: grid;
   place-items: center;
+  /* A colour wheel (picture, not interface colour) says "any colour". */
   background: conic-gradient(#e36c5a, #f2c14e, #7cbf7a, #5f9fd6, #b58ad6, #e36c5a);
-  color: #fff;
+  color: var(--g-card);
   font: 800 15px/1 var(--g-font-body);
-  text-shadow: 0 0 3px rgb(0 0 0 / 0.6);
+  text-shadow: 0 0 3px var(--g-ink);
 }
 
 .g-look-custom input {
