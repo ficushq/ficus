@@ -28,15 +28,20 @@ import {
   sanitizeLabelValue,
   reconcilableSpecHash,
   SANDBOX_MEMORY_LIMIT,
-  SPEC_HASH_ANNOTATION,
   type SquadSandboxConfig,
 } from './pod-spec'
+import { readSandboxLabel, sandboxPodLabelSelector } from '../identity-names'
 import { classifyProvisionFailure } from './provision-failure'
 import { K8sProvisionAttemptError } from './provision-errors'
 
 const log = createLogger('k8s-pod-manager')
 
 const DEFAULT_NAMESPACE = 'tau-sandboxes'
+
+/** The reconcilable-spec hash annotated on a pod under any identity set; undefined when absent. */
+function podSpecHash(pod: k8s.V1Pod): string | undefined {
+  return readSandboxLabel(pod.metadata?.annotations ?? {}, (set) => set.k8sSpecHashAnnotation)
+}
 
 /** Detect K8s API connection failures (e.g. k3d cluster stopped) */
 function isClusterConnectionError(err: unknown): boolean {
@@ -357,7 +362,7 @@ export class K8sPodManager {
             podExists = false
           } else {
             // Adopting an existing pod — its annotation is the real running spec.
-            runningSpecHash = existingPod.metadata?.annotations?.[SPEC_HASH_ANNOTATION]
+            runningSpecHash = podSpecHash(existingPod)
           }
         } catch {
           // Ignore — pod may have been deleted between checks
@@ -379,7 +384,7 @@ export class K8sPodManager {
           const adopted = await this.coreApi.readNamespacedPod({ name: podName, namespace: this.namespace })
           if (adopted.metadata?.deletionTimestamp || ['Failed', 'Succeeded'].includes(adopted.status?.phase ?? ''))
             throw error
-          runningSpecHash = adopted.metadata?.annotations?.[SPEC_HASH_ANNOTATION]
+          runningSpecHash = podSpecHash(adopted)
           log.info(`Adopted concurrently created pod: ${podName}`)
         }
       }
@@ -471,7 +476,7 @@ export class K8sPodManager {
       const pod = await this.coreApi.readNamespacedPod({ name: podName, namespace: this.namespace })
       const phase = pod.status?.phase
       if (phase === 'Failed' || phase === 'Succeeded') return null
-      return pod.metadata?.annotations?.[SPEC_HASH_ANNOTATION] ?? null
+      return podSpecHash(pod) ?? null
     } catch {
       return null
     }
@@ -664,7 +669,7 @@ export class K8sPodManager {
 
     const pods = await this.coreApi.listNamespacedPod({
       namespace: this.namespace,
-      labelSelector: 'app=tau-sandbox',
+      labelSelector: sandboxPodLabelSelector(),
     })
 
     for (const pod of pods.items ?? []) {

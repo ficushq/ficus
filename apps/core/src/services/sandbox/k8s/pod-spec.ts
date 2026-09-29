@@ -20,6 +20,7 @@ import { resolveSandboxAssets } from '../asset-manifest'
 import { containerWorkspaceLayout } from '../workspace-layout'
 import { K8S_STAGED_CLI_SUBPATH, SANDBOX_CLI_PATH } from '../cli-path'
 import { isLocalK8sMode } from '../runtime'
+import { SANDBOX_IDENTITY_WRITE } from '../identity-names'
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
   EXECUTOR_PORT,
@@ -177,8 +178,9 @@ export function resolveEphemeralStorageLimit(overrideGi?: number): string {
 }
 
 // Pod annotation carrying the hash below, so spec drift survives core restarts
-// (the live pod is the source of truth, not in-memory state).
-export const SPEC_HASH_ANNOTATION = 'tau.io/spec-hash'
+// (the live pod is the source of truth, not in-memory state). New pods carry the
+// write set's key; readers accept every read set (readSandboxLabel).
+export const SPEC_HASH_ANNOTATION = SANDBOX_IDENTITY_WRITE.k8sSpecHashAnnotation
 export const SANDBOX_EXECUTOR_PROTOCOL_VERSION = 'write-verified-v1'
 
 /**
@@ -534,7 +536,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
       name: podName,
       namespace,
       labels: {
-        app: 'tau-sandbox',
+        app: SANDBOX_IDENTITY_WRITE.k8sAppLabelValue,
         'tau.io/sandbox-id': sanitizeLabelValue(sandboxId),
         'tau.io/sandbox-type': sandboxType,
         ...(isSquad ? { 'tau.io/squad-id': sanitizeLabelValue(storageKey) } : {}),

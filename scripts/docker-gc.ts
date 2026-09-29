@@ -35,6 +35,13 @@ import { sweepOrphanTestDbs } from '../apps/core/src/test-db-sweep'
 const repoRoot = join(import.meta.dir, '..')
 const composeFile = join(repoRoot, 'docker-compose.test.yml')
 
+// Each dev resource is recognised under its Ficus name and its old one, so a
+// machine that still has the old-named resource keeps getting cleaned.
+const TEST_CONTAINER_PREFIXES = ['ficus-test-', 'tau-test-'] // ficus-p5-bridge
+const REGISTRY_CONTAINERS = ['ficus-registry', 'tau-registry'] // ficus-p5-bridge
+const BUILDX_BUILDERS = ['ficusbuilder', 'taubuilder'] // ficus-p5-bridge
+const K3D_NODES = ['k3d-ficus-dev-server-0', 'k3d-tau-dev-server-0'] // ficus-p5-bridge
+
 function run(cmd: string[], timeoutMs = 120_000): { ok: boolean; out: string } {
   try {
     const res = Bun.spawnSync(cmd, { stdout: 'pipe', stderr: 'pipe', timeout: timeoutMs })
@@ -87,32 +94,37 @@ if (!run(['docker', 'info', '--format', '{{.ServerVersion}}'], 20_000).ok) {
 const reaped = sweepOrphanTestDbs({ composeFile, currentRepoRoot: repoRoot, deps: { log } })
 log(`orphaned test-DB projects reaped: ${reaped.length ? reaped.join(', ') : 'none'}`)
 
-// --- 2. exited tau-test containers (harness recreates on demand) ---
-const exited = run([
-  'docker',
-  'ps',
-  '-a',
-  '--filter',
-  'name=tau-test-',
-  '--filter',
-  'status=exited',
-  '--format',
-  '{{.Names}}',
-])
-const exitedNames = exited.out.split('\n').filter(Boolean)
-if (exitedNames.length) {
-  run(['docker', 'rm', '-v', ...exitedNames])
-  log(`removed exited tau-test containers: ${exitedNames.join(', ')}`)
+// --- 2. exited test-DB containers (harness recreates on demand) ---
+for (const prefix of TEST_CONTAINER_PREFIXES) {
+  const exited = run([
+    'docker',
+    'ps',
+    '-a',
+    '--filter',
+    `name=${prefix}`,
+    '--filter',
+    'status=exited',
+    '--format',
+    '{{.Names}}',
+  ])
+  const exitedNames = exited.out.split('\n').filter(Boolean)
+  if (exitedNames.length) {
+    run(['docker', 'rm', '-v', ...exitedNames])
+    log(`removed exited ${prefix}* containers: ${exitedNames.join(', ')}`)
+  }
 }
 
 // --- 3. registry GC (untagged blobs from re-pushed :latest images) ---
-if (run(['docker', 'inspect', 'tau-registry'], 20_000).ok) {
-  const before = run(['docker', 'system', 'df', '-v']).out.match(/tau_registry-data\s+\d+\s+(\S+)/)?.[1] ?? '?'
+const registryVolumeSize = () =>
+  run(['docker', 'system', 'df', '-v']).out.match(/_registry-data\s+\d+\s+(\S+)/)?.[1] ?? '?'
+const registries = REGISTRY_CONTAINERS.filter((name) => run(['docker', 'inspect', name], 20_000).ok)
+for (const registry of registries) {
+  const before = registryVolumeSize()
   const gc = run(
     [
       'docker',
       'exec',
-      'tau-registry',
+      registry,
       'registry',
       'garbage-collect',
       '/etc/docker/registry/config.yml',
@@ -121,15 +133,13 @@ if (run(['docker', 'inspect', 'tau-registry'], 20_000).ok) {
     300_000
   )
   if (gc.ok) {
-    run(['docker', 'restart', 'tau-registry']) // clear the registry's blob-descriptor cache
-    const after = run(['docker', 'system', 'df', '-v']).out.match(/tau_registry-data\s+\d+\s+(\S+)/)?.[1] ?? '?'
-    log(`registry GC: ${before} -> ${after}`)
+    run(['docker', 'restart', registry]) // clear the registry's blob-descriptor cache
+    log(`registry GC (${registry}): ${before} -> ${registryVolumeSize()}`)
   } else {
-    log(`registry GC failed (skipping): ${gc.out.slice(0, 200)}`)
+    log(`registry GC failed for ${registry} (skipping): ${gc.out.slice(0, 200)}`)
   }
-} else {
-  log('tau-registry not present — skipping registry GC')
 }
+if (!registries.length) log('no local registry present — skipping registry GC')
 
 // --- 4. dangling images + build cache (host docker) ---
 run(['docker', 'image', 'prune', '-f'])
@@ -139,12 +149,13 @@ log('pruned dangling images + build cache (kept 2GB)')
 // --- 4b. buildx builder cache (taubuilder) — grows unbounded across sandbox
 // image builds (hit 6.5 GB before first being pruned on 2026-07-18); cap it
 // like the classic builder cache. Builder may not exist on a fresh machine.
-if (run(['docker', 'buildx', 'inspect', 'taubuilder'], 20_000).ok) {
-  const prune = run(['docker', 'buildx', 'prune', '--builder', 'taubuilder', '-f', '--max-used-space=2GB'], 300_000)
+for (const builder of BUILDX_BUILDERS) {
+  if (!run(['docker', 'buildx', 'inspect', builder], 20_000).ok) continue
+  const prune = run(['docker', 'buildx', 'prune', '--builder', builder, '-f', '--max-used-space=2GB'], 300_000)
   log(
     prune.ok
-      ? 'pruned taubuilder buildx cache (kept 2GB)'
-      : `taubuilder prune failed (skipping): ${prune.out.slice(0, 200)}`
+      ? `pruned ${builder} buildx cache (kept 2GB)`
+      : `${builder} prune failed (skipping): ${prune.out.slice(0, 200)}`
   )
 }
 
@@ -157,9 +168,10 @@ run(['docker', 'network', 'prune', '-f'])
 log('pruned unused networks')
 
 // --- 5. stale sandbox layers inside the k3d node ---
-if (run(['docker', 'inspect', 'k3d-tau-dev-server-0'], 20_000).ok) {
-  const prune = run(['docker', 'exec', 'k3d-tau-dev-server-0', 'crictl', 'rmi', '--prune'], 120_000)
-  log(prune.ok ? 'pruned unused images inside k3d node' : 'k3d node prune skipped (crictl unavailable)')
+for (const node of K3D_NODES) {
+  if (!run(['docker', 'inspect', node], 20_000).ok) continue
+  const prune = run(['docker', 'exec', node, 'crictl', 'rmi', '--prune'], 120_000)
+  log(prune.ok ? `pruned unused images inside k3d node ${node}` : 'k3d node prune skipped (crictl unavailable)')
 }
 
 // --- summary ---

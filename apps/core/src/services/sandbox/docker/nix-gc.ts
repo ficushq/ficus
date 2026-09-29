@@ -4,7 +4,8 @@ import * as path from 'path'
 import { eq } from 'drizzle-orm'
 import { agents, db } from '../../../db'
 import { getHomeDir } from '../../../lib/utils/home'
-import { CONTAINER_PREFIX, reclaimAgentNixStore, resolveReclaimableNixStorePath } from './manager'
+import { sandboxContainerNames } from '../identity-names'
+import { reclaimAgentNixStore, resolveReclaimableNixStorePath } from './manager'
 
 /**
  * Orphan Nix-store GC (#632 deferral).
@@ -91,18 +92,19 @@ async function defaultLookupAgent(agentId: string): Promise<{ status: AgentStatu
 }
 
 function defaultIsContainerRunning(sandboxId: string): boolean {
-  // Mirror reclaimAgentNixStore's container name so scan and reclaim agree on
-  // the target. Report `true` ONLY on an explicit running state; absent or any
-  // other state is `false` here — reclaimAgentNixStore stays the final guard
-  // (it refuses running AND unknown-state containers), so a mis-report can never
-  // let a running store be deleted.
-  const containerName = `${CONTAINER_PREFIX}${sandboxId}`
-  const inspect = Bun.spawnSync(['docker', 'inspect', '-f', '{{.State.Running}}', containerName], {
-    stdout: 'pipe',
-    stderr: 'pipe',
+  // Mirror reclaimAgentNixStore's container names (every identity prefix) so
+  // scan and reclaim agree on the target. Report `true` ONLY on an explicit
+  // running state; absent or any other state is `false` here —
+  // reclaimAgentNixStore stays the final guard (it refuses running AND
+  // unknown-state containers), so a mis-report can never let a running store be
+  // deleted.
+  return sandboxContainerNames(sandboxId).some((containerName) => {
+    const inspect = Bun.spawnSync(['docker', 'inspect', '-f', '{{.State.Running}}', containerName], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    return inspect.exitCode === 0 && inspect.stdout.toString().trim() === 'true'
   })
-  if (inspect.exitCode === 0) return inspect.stdout.toString().trim() === 'true'
-  return false
 }
 
 /**

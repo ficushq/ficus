@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { SANDBOX_IDENTITY_WRITE } from '../identity-names'
 import { DockerSandboxCompatibilityError, DockerSandboxLifecycleError } from './errors'
 import { classifyDockerContainerOwnership, classifyDockerInspectStatus } from './lifecycle-contract'
 import {
@@ -15,7 +16,7 @@ import {
 
 const id = 'a'.repeat(64)
 const sandboxId = 'agent_test'
-const containerName = `tau-sandbox-${sandboxId}`
+const containerName = `${SANDBOX_IDENTITY_WRITE.containerPrefix}${sandboxId}`
 const result = (exitCode: number, stderr = '') => ({ exitCode, stderr: Buffer.from(stderr) })
 
 function lifecycle(options: {
@@ -148,13 +149,13 @@ describe('Docker lifecycle contract', () => {
   })
 
   test('ownership rejects a labeled neighbor and unknown Docker state is not absence', () => {
-    expect(
-      classifyDockerContainerOwnership(
-        { Name: `/${containerName}`, Config: { Labels: { 'tau.managed': 'true', 'tau.sandbox-id': 'neighbor' } } },
-        sandboxId,
-        containerName
-      )
-    ).toBe('unproven')
+    const labels = {
+      [SANDBOX_IDENTITY_WRITE.managedLabel]: 'true',
+      [SANDBOX_IDENTITY_WRITE.sandboxIdLabel]: 'neighbor',
+    }
+    expect(classifyDockerContainerOwnership({ Name: `/${containerName}`, Config: { Labels: labels } }, sandboxId)).toBe(
+      'unproven'
+    )
     expect(classifyDockerInspectStatus(1, 'daemon unavailable')).toBe('unknown')
     expect(classifyDockerInspectStatus(1, 'No such container')).toBe('not_found')
   })

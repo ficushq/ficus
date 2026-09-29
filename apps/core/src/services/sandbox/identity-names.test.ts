@@ -1,0 +1,72 @@
+import { describe, expect, test } from 'bun:test'
+import {
+  readSandboxLabel,
+  SANDBOX_IDENTITY_LEGACY,
+  SANDBOX_IDENTITY_NEW,
+  SANDBOX_IDENTITY_READ,
+  SANDBOX_IDENTITY_WRITE,
+  sandboxContainerNames,
+  sandboxPodLabelSelector,
+  type SandboxIdentitySet,
+} from './identity-names'
+
+const KEYS: (keyof SandboxIdentitySet)[] = [
+  'containerPrefix',
+  'managedLabel',
+  'sandboxIdLabel',
+  'specHashLabel',
+  'lifecycleGenerationLabel',
+  'imageIdLabel',
+  'imageLabelNamespace',
+  'k8sSpecHashAnnotation',
+  'k8sAppLabelValue',
+]
+
+describe('sandbox identity names', () => {
+  test('the new set carries the Ficus names', () => {
+    expect(SANDBOX_IDENTITY_NEW).toEqual({
+      containerPrefix: 'ficus-sandbox-',
+      managedLabel: 'ficus.managed',
+      sandboxIdLabel: 'ficus.sandbox-id',
+      specHashLabel: 'ficus.spec-hash',
+      lifecycleGenerationLabel: 'ficus.lifecycle-generation',
+      imageIdLabel: 'ficus.image-id',
+      imageLabelNamespace: 'sh.ficus.sandbox',
+      k8sSpecHashAnnotation: 'ficus.sh/spec-hash',
+      k8sAppLabelValue: 'ficus-sandbox',
+    })
+  })
+
+  test('the two sets share no name, so a label always says which set wrote it', () => {
+    for (const key of KEYS) expect(SANDBOX_IDENTITY_LEGACY[key]).not.toBe(SANDBOX_IDENTITY_NEW[key])
+  })
+
+  test('this release writes the legacy set and reads both, new first', () => {
+    expect(SANDBOX_IDENTITY_WRITE).toBe(SANDBOX_IDENTITY_LEGACY)
+    expect(SANDBOX_IDENTITY_READ).toEqual([SANDBOX_IDENTITY_NEW, SANDBOX_IDENTITY_LEGACY])
+  })
+
+  test('readSandboxLabel finds a value under either set', () => {
+    expect(readSandboxLabel({ 'ficus.spec-hash': 'a' }, (s) => s.specHashLabel)).toBe('a')
+    expect(readSandboxLabel({ [SANDBOX_IDENTITY_LEGACY.specHashLabel]: 'a' }, (s) => s.specHashLabel)).toBe('a')
+    expect(readSandboxLabel({ 'ficus.sh/spec-hash': 'h' }, (s) => s.k8sSpecHashAnnotation)).toBe('h')
+    expect(readSandboxLabel({ other: 'a' }, (s) => s.specHashLabel)).toBeUndefined()
+    expect(readSandboxLabel({}, (s) => s.managedLabel)).toBeUndefined()
+  })
+
+  test('readSandboxLabel keeps an empty value (present is not absent)', () => {
+    expect(readSandboxLabel({ 'ficus.lifecycle-generation': '' }, (s) => s.lifecycleGenerationLabel)).toBe('')
+  })
+
+  test('container names: the write name first, then every other read name', () => {
+    const names = sandboxContainerNames('agent_x')
+    expect(names[0]).toBe(`${SANDBOX_IDENTITY_WRITE.containerPrefix}agent_x`)
+    expect(names).toHaveLength(2)
+    expect(names).toContain('ficus-sandbox-agent_x')
+    expect(names).toContain(`${SANDBOX_IDENTITY_LEGACY.containerPrefix}agent_x`)
+  })
+
+  test('the pod selector matches the app value of every read set', () => {
+    expect(sandboxPodLabelSelector()).toBe(`app in (ficus-sandbox,${SANDBOX_IDENTITY_LEGACY.k8sAppLabelValue})`)
+  })
+})

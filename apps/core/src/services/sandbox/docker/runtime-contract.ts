@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { SANDBOX_IDENTITY_READ } from '../identity-names'
 import { DockerSandboxCompatibilityError } from './errors'
 
 export interface DockerSpecInputs {
@@ -34,12 +35,28 @@ export function computeDockerSpecDigest(inputs: DockerSpecInputs): string {
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex')
 }
 
-export const DOCKER_RUNTIME_LABELS = {
-  managed: 'io.hiretau.sandbox.managed',
-  runtime: 'io.hiretau.sandbox.runtime-contract',
-  executor: 'io.hiretau.sandbox.executor-protocol',
-  command: 'io.hiretau.sandbox.command-contract',
-} as const
+/** The image's runtime-contract label keys under one label namespace. */
+export function dockerRuntimeLabels(namespace: string) {
+  return {
+    managed: `${namespace}.managed`,
+    runtime: `${namespace}.runtime-contract`,
+    executor: `${namespace}.executor-protocol`,
+    command: `${namespace}.command-contract`,
+  } as const
+}
+
+/** Whether the image declares the full runtime contract under one read namespace (never a mix). */
+function hasDockerRuntimeContract(labels: Record<string, string>): boolean {
+  return SANDBOX_IDENTITY_READ.some((set) => {
+    const keys = dockerRuntimeLabels(set.imageLabelNamespace)
+    return (
+      labels[keys.managed] === 'true' &&
+      labels[keys.runtime] === '1' &&
+      labels[keys.executor] === '1' &&
+      labels[keys.command] === '1'
+    )
+  })
+}
 
 export interface DockerImageContract {
   imageReference: string
@@ -53,14 +70,7 @@ export function parseDockerImageContract(imageReference: string, inspect: unknow
   const row = Array.isArray(inspect) ? inspect[0] : inspect
   const record = row as { Id?: unknown; Config?: { Labels?: Record<string, string> } } | undefined
   const labels = record?.Config?.Labels ?? {}
-  if (
-    typeof record?.Id !== 'string' ||
-    !/^sha256:[a-f0-9]{64}$/.test(record.Id) ||
-    labels[DOCKER_RUNTIME_LABELS.managed] !== 'true' ||
-    labels[DOCKER_RUNTIME_LABELS.runtime] !== '1' ||
-    labels[DOCKER_RUNTIME_LABELS.executor] !== '1' ||
-    labels[DOCKER_RUNTIME_LABELS.command] !== '1'
-  ) {
+  if (typeof record?.Id !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(record.Id) || !hasDockerRuntimeContract(labels)) {
     throw new DockerSandboxCompatibilityError({ operation: 'inspect-image', reason: 'IMAGE_REBUILD_REQUIRED' })
   }
   return {

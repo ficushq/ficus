@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { computeDockerSpecDigest, parseDockerImageContract, validateDockerHealthContract } from './runtime-contract'
+import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_NEW } from '../identity-names'
+import {
+  computeDockerSpecDigest,
+  dockerRuntimeLabels,
+  parseDockerImageContract,
+  validateDockerHealthContract,
+} from './runtime-contract'
 const id = `sha256:${'a'.repeat(64)}`
 const labels = {
   'io.hiretau.sandbox.managed': 'true',
@@ -58,6 +64,39 @@ describe('Docker runtime contract', () => {
       [{ Id: id, Config: { Labels: missingCommand } }],
     ])
       expect(() => parseDockerImageContract('image', inspect)).toThrow('bun run sandbox:build:docker')
+  })
+  test('accepts an image labelled under either namespace, but never a mix of the two', () => {
+    const contractLabels = (namespace: string) => {
+      const keys = dockerRuntimeLabels(namespace)
+      return { [keys.managed]: 'true', [keys.runtime]: '1', [keys.executor]: '1', [keys.command]: '1' }
+    }
+    const fresh = contractLabels(SANDBOX_IDENTITY_NEW.imageLabelNamespace)
+    expect(Object.keys(fresh)).toEqual([
+      'sh.ficus.sandbox.managed',
+      'sh.ficus.sandbox.runtime-contract',
+      'sh.ficus.sandbox.executor-protocol',
+      'sh.ficus.sandbox.command-contract',
+    ])
+    const legacy = contractLabels(SANDBOX_IDENTITY_LEGACY.imageLabelNamespace)
+    for (const imageLabels of [fresh, legacy])
+      expect(parseDockerImageContract('image', [{ Id: id, Config: { Labels: imageLabels } }])).toMatchObject({
+        imageId: id,
+        commandContractVersion: 1,
+      })
+    const newKeys = dockerRuntimeLabels(SANDBOX_IDENTITY_NEW.imageLabelNamespace)
+    const legacyKeys = dockerRuntimeLabels(SANDBOX_IDENTITY_LEGACY.imageLabelNamespace)
+    const mixed = {
+      [newKeys.managed]: 'true',
+      [newKeys.runtime]: '1',
+      [legacyKeys.executor]: '1',
+      [legacyKeys.command]: '1',
+    }
+    expect(() => parseDockerImageContract('image', [{ Id: id, Config: { Labels: mixed } }])).toThrow(
+      expect.objectContaining({ code: 'IMAGE_REBUILD_REQUIRED' })
+    )
+    expect(() =>
+      parseDockerImageContract('image', [{ Id: id, Config: { Labels: { ...fresh, [newKeys.runtime]: '0' } } }])
+    ).toThrow(expect.objectContaining({ code: 'IMAGE_REBUILD_REQUIRED' }))
   })
   test('requires exact non-root executor capabilities and identity', () => {
     const digest = 'b'.repeat(64)
