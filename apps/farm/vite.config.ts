@@ -14,6 +14,9 @@ export default defineConfig(({ mode, command }) => {
   const appBase = (env.APP_BASE_PATH ?? '').replace(/\/+$/, '')
   const base = command === 'serve' && mode === 'development' ? '/farm/' : `${appBase}/farm/`
 
+  // The farm's own icons (favicons, home-screen and manifest icons), from the brand generator.
+  const iconDir = path.resolve(process.cwd(), '../../brand/generated/farm')
+
   const isDev = command === 'serve'
   const backend = isDev ? resolveDevBackend({ ...env, ...process.env }) : null
   if (backend?.bearer) {
@@ -22,7 +25,7 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     base,
-    plugins: [react(), farmManifestPlugin(), ...(backend ? [devWriteGuard(backend)] : [])],
+    plugins: [react(), farmManifestPlugin(iconDir), ...(backend ? [devWriteGuard(backend)] : [])],
     server: {
       host: '127.0.0.1',
       // FICUS_FARM_PORT runs a second dev server (e.g. against another backend) beside the first.
@@ -32,8 +35,7 @@ export default defineConfig(({ mode, command }) => {
       allowedHosts: env.VITE_ALLOWED_HOSTS?.split(',').filter(Boolean) ?? [],
       proxy: backend ? devProxy({ ...env, ...process.env }, backend) : undefined,
     },
-    // The farm's own icons (favicons, home-screen and manifest icons), from the brand generator.
-    publicDir: path.resolve(process.cwd(), '../../brand/generated/farm'),
+    publicDir: iconDir,
     build: { outDir: 'dist', emptyOutDir: true },
   }
 })

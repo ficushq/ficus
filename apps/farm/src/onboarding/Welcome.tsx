@@ -94,7 +94,7 @@ export function Welcome({ narrow, onDone }: { narrow: boolean; onDone: () => voi
         aria-labelledby={titleId}
       >
         <header className="g-welcome-head">
-          <p className="g-eyebrow">Welcome to ficus farm · step {step === 'style' ? 1 : 2} of 2</p>
+          <p className="g-eyebrow">Welcome to Ficus Farm · step {step === 'style' ? 1 : 2} of 2</p>
           <h2 className="g-card-title" id={titleId}>
             {step === 'style' ? 'How should your farm look?' : 'Now make your farmer'}
           </h2>

@@ -8,7 +8,7 @@ export function Farm({ live }: { live: LiveStatus }) {
     return (
       <main className="g-splash">
         <div className="g-card g-splash-card">
-          <h1 className="g-wordmark">ficus farm</h1>
+          <h1 className="g-wordmark">Ficus Farm</h1>
           <p>{error ? "The farm couldn't load your squads." : 'Walking out to the fields…'}</p>
         </div>
       </main>

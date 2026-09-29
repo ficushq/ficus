@@ -388,7 +388,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       <header className="g-hud">
         <div className="g-logo g-panel">
           <img src={ficusMark} alt="" width={32} height={32} />
-          <span>ficus farm</span>
+          <span>Ficus Farm</span>
         </div>
         <div className="g-counters" aria-live="polite">
           <Counter
