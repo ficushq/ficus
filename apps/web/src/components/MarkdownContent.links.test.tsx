@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { LEGACY_ENTITY_REFERENCE_SCHEME } from '@ficus/shared'
 import { MarkdownContent } from './MarkdownContent'
 
 const url = 'https://github.com/example/project/pull/42'
@@ -39,17 +38,14 @@ test('renders explicit work stream and agent references as in-place actions', ()
   }
 })
 
-test('stored references written before the rename still render as in-place actions', () => {
-  for (const kind of ['ws', 'agent']) {
-    const html = renderToStaticMarkup(
-      <MarkdownContent>{`[Open item](${LEGACY_ENTITY_REFERENCE_SCHEME}:${kind}:${entityId})`}</MarkdownContent>
-    )
-    expect(html).toContain('Open item</button>')
-  }
-})
-
 test('does not activate malformed references or references in code and retains URL sanitization', () => {
-  for (const content of ['[Bad](ficus:ws:not-an-id)', '[Bad](javascript:alert)', `[Bad](ficus:ws:${entityId}/extra)`]) {
+  // The pre-rename scheme: Core's migration 0196 rewrote stored links, so nothing reads it (Task 36c).
+  for (const content of [
+    '[Bad](ficus:ws:not-an-id)',
+    '[Bad](javascript:alert)',
+    `[Bad](ficus:ws:${entityId}/extra)`,
+    `[Old](tau:ws:${entityId})`, // ficus-negative-test
+  ]) {
     const html = renderToStaticMarkup(<MarkdownContent>{content}</MarkdownContent>)
     expect(html).not.toContain('<button')
     expect(html).not.toContain('href="javascript:')

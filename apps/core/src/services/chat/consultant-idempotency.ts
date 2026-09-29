@@ -19,7 +19,7 @@ export interface ConsultantAgentIdInput {
  */
 export function consultantAgentId(input: ConsultantAgentIdInput): string {
   const bytes = createHash('sha256')
-    .update(`tau:consultant-chat:v1\0${input.actorUserId}\0${input.squadId}\0${input.clientId}`, 'utf8') // ficus-36c
+    .update(`ficus:consultant-chat:v1\0${input.actorUserId}\0${input.squadId}\0${input.clientId}`, 'utf8')
     .digest()
     .subarray(0, 16)
 

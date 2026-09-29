@@ -756,6 +756,9 @@ async function startup(): Promise<void> {
   ensureSessionDataDir()
 
   await waitForDbAndMigrate()
+  // Before any agent session opens: transcripts and memory files move to the Ficus names once (Task 36c).
+  const { rewriteHomeText } = await import('./services/home-text-rewrite')
+  await rewriteHomeText()
   const reconciled = await reconcileKeylessAmtpRegistrations()
   if (reconciled.length > 0) log.warn('[worker] Closed historical keyless AMTP registrations', reconciled)
 

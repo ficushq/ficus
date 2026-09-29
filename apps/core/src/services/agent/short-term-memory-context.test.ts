@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { SessionManager, type Extension, type ContextEvent } from '@earendil-works/pi-coding-agent'
 import {
-  LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE,
   SHORT_TERM_MEMORY_SNAPSHOT_TYPE,
   ShortTermMemoryContext,
   createShortTermMemoryContextExtension,
@@ -161,23 +160,15 @@ describe('short-term memory snapshot identifiers', () => {
     expect(extension.sourceInfo.source).toBe('ficus')
   })
 
-  test('uses a snapshot stored in the session before the rename instead of taking a new one', async () => {
+  test('reads only the Ficus type: a snapshot under any other type is not this one', async () => {
     const f = fixture()
-    f.session.appendCustomEntry(LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE, { boundaryId: null, content: 'saved before' })
-    f.keep()
+    // The worker's one-shot home rewrite moved pre-rename snapshots to the Ficus type (Task 36c).
+    f.session.appendCustomEntry('tau:short-term-memory-snapshot', { boundaryId: null, content: 'pre-rename note' }) // ficus-negative-test
     await f.context.captureInitial()
-    expect(f.reads()).toBe(0)
-    expect(f.messages().map((m) => m.role)).toEqual(['custom', 'user'])
-    expect(JSON.stringify(f.messages())).toContain('saved before')
-
-    const boundaryId = f.session.appendCompaction('summary', f.keep(), 100)
-    f.session.appendCustomEntry(LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE, { boundaryId, content: 'saved at boundary' })
-    await f.context.captureAfterCompaction()
-    expect(f.reads()).toBe(0)
-    const messages = f.messages()
-    expect(messages.map((m) => m.role)).toEqual(['compactionSummary', 'custom', 'user'])
-    expect(JSON.stringify(messages)).toContain('saved at boundary')
-    // An injected legacy snapshot is replaced, never duplicated, on the next pass.
-    expect(f.context.context(messages)).toEqual(messages)
+    f.keep()
+    expect(f.reads()).toBe(1)
+    const messages = JSON.stringify(f.messages())
+    expect(messages).toContain('remember the non-obvious constraint')
+    expect(messages).not.toContain('pre-rename note')
   })
 })

@@ -679,6 +679,8 @@ describe('internal event token resolution', () => {
     const b = resolveInternalEventToken({ ...env })
     expect(a.source).toBe('derived')
     expect(a.token).toBe(b.token)
+    // Pins the Ficus domain label: both units of one release must derive exactly this value.
+    expect(a.token).toBe('4519ebf7fe6f43b64f1f6199fb8b49852669fe1f339459697b4fdcc5fc6d2828')
   })
 
   test('the derived token does not leak the encryption key, and differs per key', () => {

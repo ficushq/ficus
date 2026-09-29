@@ -202,7 +202,7 @@ describe('applyMigrations', () => {
     })
     const recordIntent = (item: MigrationMeta, name: string) =>
       connection.unsafe(
-        `INSERT INTO "${schema}"."__tau_online_migration_intents" (created_at,hash,table_schema,index_name) VALUES ($1,$2,'public',$3)`, // ficus-36c
+        `INSERT INTO "${schema}"."__ficus_online_migration_intents" (created_at,hash,table_schema,index_name) VALUES ($1,$2,'public',$3)`,
         [item.folderMillis, item.hash, name]
       )
     try {
@@ -243,7 +243,7 @@ describe('applyMigrations', () => {
         await expect(applyMigrations(connection, intended, { migrationsSchema: schema })).rejects.toThrow(
           'does not match the intended migration definition'
         )
-        await connection.unsafe(`DELETE FROM "${schema}"."__tau_online_migration_intents" WHERE created_at = $1`, [
+        await connection.unsafe(`DELETE FROM "${schema}"."__ficus_online_migration_intents" WHERE created_at = $1`, [
           wrongFolder,
         ])
         await connection.unsafe(`DROP INDEX "${name}"`)
@@ -265,7 +265,7 @@ describe('applyMigrations', () => {
       await expect(applyMigrations(connection, wrong, { migrationsSchema: schema })).rejects.toThrow(
         'does not match the intended migration definition'
       )
-      await connection.unsafe(`DELETE FROM "${schema}"."__tau_online_migration_intents" WHERE created_at = 25`) // ficus-36c
+      await connection.unsafe(`DELETE FROM "${schema}"."__ficus_online_migration_intents" WHERE created_at = 25`)
       await connection.unsafe(`DROP TABLE "${wrongTable}" CASCADE`)
 
       await connection.unsafe(`CREATE SCHEMA "${other}"`)
@@ -316,7 +316,7 @@ describe('applyMigrations', () => {
           ?.indisvalid
       ).toBe(false)
       await connection.unsafe(
-        `INSERT INTO "${schema}"."__tau_online_migration_intents" (created_at,hash,table_schema,index_name) VALUES (1,$1,'public',$2)`, // ficus-36c
+        `INSERT INTO "${schema}"."__ficus_online_migration_intents" (created_at,hash,table_schema,index_name) VALUES (1,$1,'public',$2)`,
         [item.hash, index]
       )
       await applyMigrations(connection, item, { migrationsSchema: schema })
@@ -332,4 +332,184 @@ describe('applyMigrations', () => {
       await client.end()
     }
   }, 30_000)
+})
+
+// Migration history: the intents table was named for Tau before the rename. These fixtures build that
+// pre-rename table so the adoption below is exercised against the name it exists to retire.
+const PRE_RENAME_INTENTS = '__tau_online_migration_intents'
+const INTENTS = '__ficus_online_migration_intents'
+
+describe('intents table adoption', () => {
+  const withSchema = async (run: (connection: import('postgres').ReservedSql, schema: string) => Promise<void>) => {
+    const client = createPostgresConnection(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} })
+    const connection = await client.reserve()
+    const schema = `intents_${crypto.randomUUID().replaceAll('-', '')}`
+    try {
+      await connection.unsafe(`CREATE SCHEMA "${schema}"`)
+      await run(connection, schema)
+    } finally {
+      await connection.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`)
+      connection.release()
+      await client.end()
+    }
+  }
+  const createIntents = (connection: import('postgres').ReservedSql, schema: string, table: string) =>
+    connection.unsafe(`CREATE TABLE "${schema}"."${table}" (
+      created_at bigint PRIMARY KEY, hash text NOT NULL, table_schema text NOT NULL, index_name text NOT NULL,
+      started_at timestamptz NOT NULL DEFAULT now())`)
+  const insertIntent = (
+    connection: import('postgres').ReservedSql,
+    schema: string,
+    table: string,
+    createdAt: number,
+    hash: string
+  ) =>
+    connection.unsafe(
+      `INSERT INTO "${schema}"."${table}" (created_at, hash, table_schema, index_name, started_at)
+       VALUES ($1, $2, 'public', $3, '2026-01-02T03:04:05Z')`,
+      [createdAt, hash, `idx_${createdAt}`]
+    )
+  const tables = async (connection: import('postgres').ReservedSql, schema: string) =>
+    (
+      await connection<{ name: string }[]>`SELECT tablename AS name FROM pg_tables WHERE schemaname = ${schema}
+        AND tablename LIKE '%online_migration_intents' ORDER BY tablename`
+    ).map((row) => row.name)
+  const intents = async (connection: import('postgres').ReservedSql, schema: string) =>
+    (
+      await connection.unsafe<{ created_at: string; hash: string; index_name: string; started_at: string }[]>(
+        `SELECT created_at::text, hash, index_name, extract(epoch FROM started_at)::bigint::text AS started_at FROM "${schema}"."${INTENTS}" ORDER BY created_at`
+      )
+    ).map((row) => ({ ...row }))
+  const constraints = async (connection: import('postgres').ReservedSql, schema: string) =>
+    (
+      await connection<{ name: string }[]>`SELECT conname AS name FROM pg_constraint
+        WHERE conrelid = to_regclass(${`"${schema}"."${INTENTS}"`}) ORDER BY conname`
+    ).map((row) => row.name)
+
+  // PostgreSQL 18 also names NOT NULL constraints after the table; every one must follow the rename.
+  const expectFicusConstraints = (names: string[]) => {
+    expect(names).toContain(`${INTENTS}_pkey`)
+    for (const name of names) expect(name.startsWith(`${INTENTS}_`)).toBe(true)
+  }
+
+  test('a fresh database gets only the Ficus intents table', async () => {
+    await withSchema(async (connection, schema) => {
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      expect(await tables(connection, schema)).toEqual([INTENTS])
+      expectFicusConstraints(await constraints(connection, schema))
+    })
+  })
+
+  test('renames a pre-rename table in place, keeping its rows and naming its key', async () => {
+    await withSchema(async (connection, schema) => {
+      await createIntents(connection, schema, PRE_RENAME_INTENTS)
+      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 10, 'crashed-build')
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      expect(await tables(connection, schema)).toEqual([INTENTS])
+      expectFicusConstraints(await constraints(connection, schema))
+      expect(await intents(connection, schema)).toEqual([
+        { created_at: '10', hash: 'crashed-build', index_name: 'idx_10', started_at: '1767323045' },
+      ])
+    })
+  })
+
+  test('merges a table a rollback recreated: copies missing rows, keeps existing ones, drops the old table', async () => {
+    await withSchema(async (connection, schema) => {
+      await createIntents(connection, schema, INTENTS)
+      await createIntents(connection, schema, PRE_RENAME_INTENTS)
+      await insertIntent(connection, schema, INTENTS, 20, 'ficus-intent')
+      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 20, 'conflicting-copy')
+      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 30, 'rollback-intent')
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      expect(await tables(connection, schema)).toEqual([INTENTS])
+      expect((await intents(connection, schema)).map((row) => [row.created_at, row.hash])).toEqual([
+        ['20', 'ficus-intent'],
+        ['30', 'rollback-intent'],
+      ])
+    })
+  })
+
+  test('a re-run is a no-op', async () => {
+    await withSchema(async (connection, schema) => {
+      await createIntents(connection, schema, PRE_RENAME_INTENTS)
+      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 40, 'kept')
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      const before = await intents(connection, schema)
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      expect(await tables(connection, schema)).toEqual([INTENTS])
+      expectFicusConstraints(await constraints(connection, schema))
+      expect(await intents(connection, schema)).toEqual(before)
+    })
+  })
+
+  test('an adopted pre-rename intent still recovers its crashed concurrent index', async () => {
+    await withSchema(async (connection, schema) => {
+      const suffix = crypto.randomUUID().replaceAll('-', '')
+      const table = `adopted_probe_${suffix}`
+      const index = `idx_adopted_${suffix}`
+      const item: MigrationMeta = {
+        sql: [`CREATE INDEX CONCURRENTLY "${index}" ON "${table}" ("value")`],
+        folderMillis: 50,
+        hash: 'adopted-hash',
+        bps: true,
+      }
+      try {
+        await connection.unsafe(`CREATE TABLE "${table}" ("value" text NOT NULL)`)
+        // The crash left the index built and the intent recorded, but no ledger row.
+        await connection.unsafe(item.sql[0]!)
+        await createIntents(connection, schema, PRE_RENAME_INTENTS)
+        await connection.unsafe(
+          `INSERT INTO "${schema}"."${PRE_RENAME_INTENTS}" (created_at, hash, table_schema, index_name)
+           VALUES (50, 'adopted-hash', 'public', $1)`,
+          [index]
+        )
+        await applyMigrations(connection, item, { migrationsSchema: schema })
+        const ledger = await connection.unsafe<{ created_at: string }[]>(
+          `SELECT created_at::text FROM "${schema}"."__drizzle_migrations"`
+        )
+        expect(ledger.map((row) => row.created_at)).toEqual(['50'])
+        expect(await intents(connection, schema)).toEqual([])
+      } finally {
+        await connection.unsafe(`DROP TABLE IF EXISTS "${table}" CASCADE`)
+      }
+    })
+  })
+
+  test('drops shadow tables a crashed run left behind in this session or outside temp schemas', async () => {
+    await withSchema(async (connection, schema) => {
+      const suffix = crypto.randomUUID().replaceAll('-', '')
+      await connection.unsafe(`CREATE TEMP TABLE "__ficus_index_definition_${suffix}" (value text)`)
+      await connection.unsafe(`CREATE TABLE "${schema}"."__ficus_index_definition_stray_${suffix}" (value text)`)
+      await connection.unsafe(`CREATE TABLE "${schema}"."keep_${suffix}" (value text)`)
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      const remaining = await connection<{ name: string }[]>`SELECT relname AS name FROM pg_class
+        WHERE relname LIKE ${`%${suffix}`} AND relkind = 'r' ORDER BY relname`
+      expect(remaining.map((row) => row.name)).toEqual([`keep_${suffix}`])
+    })
+  })
+
+  test('survives a rollback replaying the previous release bootstrap, then adopts again', async () => {
+    await withSchema(async (connection, schema) => {
+      await createIntents(connection, schema, PRE_RENAME_INTENTS)
+      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 60, 'before-upgrade')
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      // The previous release's own bootstrap DDL, verbatim: it must not collide with the adopted table.
+      await connection.unsafe(`
+        CREATE TABLE IF NOT EXISTS "${schema}"."${PRE_RENAME_INTENTS}" (
+          created_at bigint PRIMARY KEY,
+          hash text NOT NULL,
+          table_schema text NOT NULL,
+          index_name text NOT NULL,
+          started_at timestamptz NOT NULL DEFAULT now()
+        )`)
+      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 70, 'during-rollback')
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      expect(await tables(connection, schema)).toEqual([INTENTS])
+      expectFicusConstraints(await constraints(connection, schema))
+      expect((await intents(connection, schema)).map((row) => [row.created_at, row.hash])).toEqual([
+        ['60', 'before-upgrade'],
+        ['70', 'during-rollback'],
+      ])
+    })
+  })
 })

@@ -207,6 +207,27 @@ export class WriteService {
     })
   }
 
+  /**
+   * Rewrite a memory file through `transform` under the same lock as every other write: read, transform,
+   * and write back atomically only when the content changed. Returns whether it did.
+   */
+  async rewrite(squadId: string, path: string, transform: (content: string) => string): Promise<boolean> {
+    validateMemoryPath(path)
+    return withAdvisoryLock(squadId, path, async () => {
+      const filePath = toFilesystemPath(squadId, path)
+      if (!existsSync(filePath)) return false
+      const content = await readFile(filePath, 'utf-8')
+      const next = transform(content)
+      if (next === content) return false
+      const tempPath = `${filePath}.tmp.${Date.now()}`
+      await writeFile(tempPath, next, 'utf-8')
+      await rename(tempPath, filePath)
+      ReindexScheduler.instance().schedule(squadId)
+      SyncService.instance().schedulePush(squadId)
+      return true
+    })
+  }
+
   async writeAs(
     callerSquadId: string,
     targetSquadId: string,
