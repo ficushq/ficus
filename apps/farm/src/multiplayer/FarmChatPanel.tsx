@@ -204,7 +204,7 @@ function RoomList({ currentId, onRoom }: { currentId: string | null; onRoom: (ro
       {picking ? (
         <div className="g-farmchat-picker">
           <input
-            className="g-field"
+            className="g-input"
             placeholder="Find someone"
             aria-label="Find someone to message"
             value={filter}
@@ -266,7 +266,7 @@ function RoomForm({ room, onDone }: { room?: FarmChatRoom; onDone: (room: FarmCh
   return (
     <form className="g-farmchat-form" onSubmit={(e) => void submit(e)}>
       <input
-        className="g-field"
+        className="g-input"
         aria-label="Room name"
         placeholder="Room name"
         maxLength={40}
@@ -275,7 +275,7 @@ function RoomForm({ room, onDone }: { room?: FarmChatRoom; onDone: (room: FarmCh
         onChange={(e) => setName(e.target.value)}
       />
       <input
-        className="g-field"
+        className="g-input"
         aria-label="What it's for (optional)"
         placeholder="What it's for (optional)"
         maxLength={200}
@@ -515,11 +515,11 @@ function Conversation({
         )}
         <textarea
           ref={textarea}
-          className="g-field"
+          className="g-textarea"
           aria-label={`Message ${roomTitle(room)}`}
           placeholder={room.kind === 'dm' ? `Message ${room.name}` : `Message # ${room.name}`}
           maxLength={FARM_CHAT_MESSAGE_MAX}
-          rows={2}
+          rows={1}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value)
@@ -648,7 +648,7 @@ function MessageItem({
       {editing ? (
         <div className="g-farmchat-edit">
           <textarea
-            className="g-field"
+            className="g-textarea"
             aria-label="Edit your message"
             maxLength={FARM_CHAT_MESSAGE_MAX}
             rows={2}

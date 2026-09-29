@@ -239,8 +239,16 @@
 
 .g-farmchat-composer textarea {
   flex: 1;
+  min-width: 0;
+  /* One line to start, growing with what you write (up to a few lines, then it scrolls). */
+  min-height: 48px;
+  max-height: 30vh;
+  field-sizing: content;
   resize: none;
-  font: 400 14px/1.4 var(--g-font-body);
+}
+
+.g-farmchat-composer .g-button {
+  min-height: 48px;
 }
 
 /* ---- People on the map ---- */
@@ -482,8 +490,9 @@
 }
 
 .g-farmchat-edit textarea {
+  max-height: 30vh;
+  field-sizing: content;
   resize: none;
-  font: 400 14px/1.4 var(--g-font-body);
 }
 
 .g-farmchat-edit-actions {
