@@ -59,6 +59,18 @@ tau.example.com {
     reverse_proxy 127.0.0.1:3000
   }
 
+  # The farm UI (built into dist/farm) is its own app: its own HTML fallback, never the web app's.
+  redir /farm /farm/ 301
+  handle /farm/* {
+    root * /path/to/tau/apps/web/dist
+    try_files {path} /farm/index.html
+    file_server
+    @farmHtml path /farm/ /farm/index.html
+    header @farmHtml Cache-Control "no-cache"
+    @farmAssets path /farm/assets/*
+    header @farmAssets Cache-Control "public, max-age=31536000, immutable"
+  }
+
   handle {
     root * /path/to/tau/apps/web/dist
     try_files {path} /index.html
@@ -121,6 +133,20 @@ server {
   location / {
     root /path/to/tau/apps/web/dist;
     try_files $uri $uri/ /index.html;
+  }
+
+  # The farm UI (built into dist/farm) is its own app: its own HTML fallback, never the web app's.
+  location = /farm {
+    return 301 /farm/;
+  }
+  location /farm/ {
+    root /path/to/tau/apps/web/dist;
+    try_files $uri /farm/index.html;
+    add_header Cache-Control "no-cache";
+  }
+  location /farm/assets/ {
+    root /path/to/tau/apps/web/dist;
+    add_header Cache-Control "public, max-age=31536000, immutable";
   }
 
   # PWA cache headers — REQUIRED when serving the dist statically (see the

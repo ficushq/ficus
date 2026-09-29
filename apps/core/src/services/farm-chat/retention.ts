@@ -47,7 +47,8 @@ export function startFarmChatRetention(): void {
   runner = createPeriodicRunner({
     name: 'farm-chat-retention',
     intervalMs: FARM_CHAT_PRUNE_INTERVAL_MS,
-    runImmediately: false,
+    // Also on start: a worker restarted more often than hourly would otherwise never prune.
+    runImmediately: true,
     task: async () => {
       await pruneFarmChat()
     },

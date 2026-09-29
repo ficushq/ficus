@@ -4,8 +4,10 @@
 yard, work streams grow as plants, and agents are robots that tend them. It is
 fully functional (answer questions, review, unblock, chat with agents) and uses
 the same client packages as the web app (`@ficus/client-core`,
-`@ficus/client-react`). Core serves the built farm at `/farm`; see
-[development](development.md#the-farm-ui) for building and running it.
+`@ficus/client-react`). Core serves the built farm at `/farm`, only
+when it serves the web UI (`FICUS_FARM_DIST` pointing at a missing build logs a
+warning); see [development](development.md#the-farm-ui) for building and
+running it, and [reverse-proxy](reverse-proxy.md) for serving it statically.
 
 ## Styles
 
@@ -26,6 +28,22 @@ keeps a copy in the browser under the `ficus-farm:` storage prefix for an
 instant start, and the account's value wins when it loads. A first visit
 (no `welcomed`) shows the welcome: pick a style, then make your farmer.
 
+## Permissions
+
+The farm's multiplayer has its own resource, checked instance-wide (never per
+squad), so anyone can be given `farm:*` whatever their squad and chat roles:
+
+| Permission          | Allows                                                                                  |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| `farm:read`         | Seeing farm chat (rooms, messages, people) and who's on the farm                        |
+| `farm:chat`         | Posting, editing, reacting, opening DMs, typing, appearing on the farm and waving       |
+| `farm:manage-rooms` | Creating, renaming and deleting public rooms, and deleting anyone's message outside DMs |
+
+Operators hold `farm:*` and Viewers `farm:read`; the Demo Reviewer has none.
+Without `farm:chat` the farm is read-only for that person. People's emails only
+reach viewers with `users:read` (as the user directory needs); everyone else sees
+display names, or "Unnamed teammate".
+
 ## Multiplayer: presence
 
 Everyone signed in appears on the farm, standing at what they're working on
@@ -37,12 +55,13 @@ restart empties the farm until pages announce again.
 - Client → Core over `/ws`: `{ type: 'presence', focus }` (focus is an agent,
   work stream or squad, or `null` for "around the farm"), `{ type: 'presence.leave' }`
   (going single-player) and `{ type: 'presence.wave', toUserId }` (at most one
-  every 1.5s per connection, only between people on the farm).
+  every 1.5s per connection, only between people on the farm). Presence
+  announcements are rate-limited per connection (a burst of 5, 5 a second).
 - Core → clients on the `presence` topic: `presence.snapshot`,
   `presence.updated`, `presence.left` and `presence.waved`. Each recipient sees
   someone's focus only if they can see that thing themselves (otherwise "around
-  the farm"). A person's name (display name, else email) and chosen look come
-  with them; saving a new look re-announces them at once.
+  the farm"). A person's name (see Permissions) and chosen look come with them;
+  saving a new look re-announces them at once.
 
 ## Multiplayer: farm chat
 
@@ -53,20 +72,26 @@ People talk to each other (not to agents) in farm chat:
 - **Rooms:** a general room that always exists, public rooms, and two-person
   DMs. Creating, renaming and deleting public rooms needs `farm:manage-rooms`
   (Operators hold it through `farm:*`); the general room can't be removed.
-- **Messages:** senders can edit their own; anyone in the room can react with
-  one emoji; unread counts are per person. `@mentions` are plain text (a
+- **Messages:** senders can edit and delete their own, and room managers can
+  delete anyone's outside DMs; anyone in the room can react with an emoji (up to
+  10 different ones each, 30 per message); unread counts are per person. Older
+  messages page by message (`?before=<messageId>`, compared on time then id). `@mentions` are plain text (a
   person's name or its first word) resolved in the farm.
-- **REST** (`/api/farm-chat`): `GET /people`, `GET /rooms` (with
-  `canManageRooms`), `POST`/`PATCH`/`DELETE /rooms/:id`, `POST /dms`,
-  `GET`/`POST /rooms/:id/messages`, `PATCH /rooms/:id/messages/:messageId`,
+- **REST** (`/api/farm-chat`): `GET /people`, `GET /rooms` (with `canChat`
+  and `canManageRooms`), `POST`/`PATCH`/`DELETE /rooms/:id`, `POST /dms`,
+  `GET`/`POST /rooms/:id/messages`, `PATCH`/`DELETE /rooms/:id/messages/:messageId`,
   `POST /rooms/:id/messages/:messageId/reactions` and `POST /rooms/:id/read`.
 - **Live:** the `farmChat` topic carries `farmChat.messageCreated`,
-  `farmChat.messageUpdated`, `farmChat.roomsChanged` and `farmChat.typing`, each
+  `farmChat.messageUpdated`, `farmChat.messageDeleted`, `farmChat.roomsChanged`
+  and `farmChat.typing`, each
   sent only to the people in the room (everyone, for general and public rooms).
   Clients say they're typing with `{ type: 'farmChat.typing', roomId }`, relayed
-  at most every 2s per room and never back to the typist.
+  at most every 2s per room (and every 250ms across rooms) and never back to the
+  typist.
 - **Retention:** messages are kept for 30 days; the worker's
-  `farm-chat-retention` subsystem prunes older ones hourly, in batches.
+  `farm-chat-retention` subsystem prunes older ones on start and hourly, in
+  batches. The web app's service worker never caches the farm's chat or
+  settings APIs.
 
 Presence and farm chat are sent by the API process itself, per recipient, and
 never travel the event bus (the WebSocket bridge ignores them; see

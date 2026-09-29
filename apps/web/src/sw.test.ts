@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { IMAGE_CACHE_NAME, SW_RUNTIME_CACHE_PREFIXES } from '@ficus/shared/browser-keys'
-import { bypassesServiceWorker } from './swRoutes'
+import { bypassesServiceWorker, isUncachedApi } from './swRoutes'
 import {
   RETIRED_SW_CACHE_PREFIXES,
   runtimeServiceWorkerCaches,
@@ -56,6 +56,16 @@ describe('service-worker routes', () => {
       for (const path of ['/', '/farming', '/docsearch', '/settings', '/api/farm']) {
         expect(bypassesServiceWorker(at(path), base)).toBe(false)
       }
+    }
+  })
+
+  test("never caches the farm's chat or settings APIs", () => {
+    for (const base of ['/', '/ficus/']) {
+      const at = (path: string) => base.replace(/\/$/, '') + path
+      expect(isUncachedApi(at('/api/farm-chat/rooms/1/messages'), base)).toBe(true)
+      expect(isUncachedApi(at('/api/farm-chat/people'), base)).toBe(true)
+      expect(isUncachedApi(at('/api/farm-preferences/me'), base)).toBe(true)
+      expect(isUncachedApi(at('/api/squads'), base)).toBe(false)
     }
   })
 

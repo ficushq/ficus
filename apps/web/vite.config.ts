@@ -498,7 +498,8 @@ export default defineConfig(({ mode, command }) => {
           // headroom instead of dropping the app chunk from the precache.
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           // The link-preview image is for crawlers, not the offline shell.
-          globIgnores: ['**/voice/dtln/dtln.js', '**/social-preview.png'],
+          // The farm is built into dist/farm but is its own app: never precache it.
+          globIgnores: ['**/voice/dtln/dtln.js', '**/social-preview.png', 'farm/**'],
         },
         srcDir: 'src',
         filename: 'sw.ts',

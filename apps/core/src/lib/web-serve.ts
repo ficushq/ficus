@@ -17,7 +17,11 @@ function envFlag(value: string | undefined): 'on' | 'off' | 'auto' {
   return 'auto'
 }
 
-const HASHED_ASSET = /\/assets\/[^/]+\.[0-9a-f]{8,}\./i
+/**
+ * A content-hashed build asset, safe to cache forever: Vite's `index-C2ucfeeU.js`
+ * (a dash, then an 8+ character base64url hash) or an older `name.abc12345.js`.
+ */
+const HASHED_ASSET = /\/assets\/[^/]+(?:-[A-Za-z0-9_-]{8,}|\.[0-9a-f]{8,})\.[a-z0-9]+$/i
 
 /**
  * The placeholder apps/web/index.html uses for absolute, self-referencing
@@ -100,7 +104,7 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
     return c.body(renderIndexHtml(await indexFile.text(), publicOrigin(c)))
   }
 
-  const farm = maybeMountFarmUi(app)
+  const farm = maybeMountFarmUi(app, log)
   if (farm) log.info(`Serving farm UI from ${farm} at /farm`)
 
   // index.html is rendered, not streamed from disk, so the origin placeholder
@@ -134,9 +138,13 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
  *
  * Returns the served directory, or undefined when there is no farm build.
  */
-function maybeMountFarmUi(app: Hono): string | undefined {
+function maybeMountFarmUi(app: Hono, log: Log): string | undefined {
   const dist = resolveFarmDist()
-  if (!dist || !existsSync(join(dist, 'index.html'))) return undefined
+  if (!dist || !existsSync(join(dist, 'index.html'))) {
+    // Set by hand but pointing at no build: say so, rather than serve the web build's own farm copy unannounced.
+    if (process.env.FICUS_FARM_DIST) log.warn(`FICUS_FARM_DIST is set but ${dist} has no index.html; /farm is not served`)
+    return undefined
+  }
 
   const staticHandler = serveStatic({
     root: dist,

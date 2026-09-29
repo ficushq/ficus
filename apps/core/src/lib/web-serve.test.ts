@@ -24,6 +24,7 @@ function buildFixture(): string {
   writeFileSync(join(dir, 'manifest.webmanifest'), '{"name":"Ficus"}')
   mkdirSync(join(dir, 'assets'), { recursive: true })
   writeFileSync(join(dir, 'assets', 'app.abc12345.js'), 'console.log("ok")')
+  writeFileSync(join(dir, 'assets', 'index-C2ucfeeU.js'), 'console.log("vite")')
   return dir
 }
 
@@ -78,6 +79,10 @@ describe('maybeMountWebUi', () => {
     const res = await app.request('/assets/app.abc12345.js')
     expect(res.status).toBe(200)
     expect(res.headers.get('Cache-Control')).toContain('immutable')
+    // Vite's own naming: a dash and a base64url hash.
+    const vite = await app.request('/assets/index-C2ucfeeU.js')
+    expect(vite.status).toBe(200)
+    expect(vite.headers.get('Cache-Control')).toContain('immutable')
   })
 
   it('serves sw.js with no-cache so update checks always revalidate', async () => {
