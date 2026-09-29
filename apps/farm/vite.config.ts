@@ -2,6 +2,7 @@ import path from 'node:path'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { devProxy, devWriteGuard, resolveDevBackend } from './devProxy'
+import { farmManifestPlugin } from './pwa'
 
 /**
  * The farm is served by Core at `<APP_BASE_PATH>/farm/`, beside the web UI
@@ -21,7 +22,7 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     base,
-    plugins: [react(), ...(backend ? [devWriteGuard(backend)] : [])],
+    plugins: [react(), farmManifestPlugin(), ...(backend ? [devWriteGuard(backend)] : [])],
     server: {
       host: '127.0.0.1',
       // FICUS_FARM_PORT runs a second dev server (e.g. against another backend) beside the first.
@@ -31,8 +32,8 @@ export default defineConfig(({ mode, command }) => {
       allowedHosts: env.VITE_ALLOWED_HOSTS?.split(',').filter(Boolean) ?? [],
       proxy: backend ? devProxy({ ...env, ...process.env }, backend) : undefined,
     },
-    // The brand's web icons (favicons, home-screen icon), the same set the web UI ships, from their source.
-    publicDir: path.resolve(process.cwd(), '../../brand/generated/web'),
+    // The farm's own icons (favicons, home-screen and manifest icons), from the brand generator.
+    publicDir: path.resolve(process.cwd(), '../../brand/generated/farm'),
     build: { outDir: 'dist', emptyOutDir: true },
   }
 })

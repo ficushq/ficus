@@ -31,7 +31,8 @@ function SignedInFarm() {
     const signedOut = isHttpResponseError(session.error) && session.error.status === 401
     return signedOut ? (
       <Splash message="Sign in to Ficus to visit your farm.">
-        <a className="g-button g-button-primary" href={webAppUrl('/')}>
+        {/* Signs in on the web app, which then sends you back here (an installed farm app included). */}
+        <a className="g-button g-button-primary" href={webAppUrl('/farm-sign-in')}>
           Sign in
         </a>
       </Splash>

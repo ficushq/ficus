@@ -36,6 +36,9 @@ export const COLORS = {
   moss: '#8a9a5b',
   terracotta: '#b0582f',
   darkSage: '#9fb57f',
+  // The farm's sky and meadow (apps/farm skins), behind the farm app's icons.
+  farmSky: '#8fd3f2',
+  farmMeadow: '#a3bb5d',
 } as const
 
 /** Dark-mode recolor mapping, matching brand/ficus-mark-dark.svg's palette swap. */
@@ -79,6 +82,11 @@ const RADIAL_DIAMETER_FRACTION = {
 } as const
 
 const WEB_STANDARD_SIZES = [72, 96, 128, 144, 152, 192, 384, 512]
+const FARM_STANDARD_SIZES = [192, 512]
+
+// Where the meadow meets the sky on the farm icons, in each source's own
+// 0..64 units: through the pot, so the plant stands in the field.
+const FARM_HORIZON = { mark: 49, favicon16: 50 } as const
 const WEB_MASKABLE_SIZES = [192, 512]
 
 const DESKTOP_CANVAS = 1024
@@ -197,9 +205,11 @@ function buildCompositeSVG(
     bbox: BBox
     background?: string
     tile?: { size: number; cornerRadius: number }
+    /** A two-band backdrop instead of `background`: sky above, ground below `horizon` (in mark units). */
+    scene?: { sky: string; ground: string; horizon: number }
   } & FillSpec
 ): string {
-  const { size, markup, bbox, background, tile, fill, radial } = opts
+  const { size, markup, bbox, background, tile, scene, fill, radial } = opts
   const effectiveSize = tile?.size ?? size
   const scale = radial
     ? (radial.diameterFraction * effectiveSize) / (2 * radial.maxRadius)
@@ -210,7 +220,12 @@ function buildCompositeSVG(
   const ty = size / 2 - contentCenterY * scale
 
   let backgroundShape = ''
-  if (background && tile) {
+  if (scene) {
+    const horizonY = Math.min(size, Math.max(0, ty + scene.horizon * scale))
+    backgroundShape =
+      `<rect x="0" y="0" width="${size}" height="${size}" fill="${scene.sky}"/>` +
+      `<rect x="0" y="${horizonY}" width="${size}" height="${size - horizonY}" fill="${scene.ground}"/>`
+  } else if (background && tile) {
     const tileX = (size - tile.size) / 2
     const tileY = (size - tile.size) / 2
     backgroundShape = `<rect x="${tileX}" y="${tileY}" width="${tile.size}" height="${tile.size}" rx="${tile.cornerRadius}" ry="${tile.cornerRadius}" fill="${background}"/>`
@@ -289,13 +304,70 @@ async function generateWebIconSet(
   }
 }
 
+/**
+ * Renders the farm app's icons: the light mark standing in the farm's meadow
+ * under its sky, so the farm is told apart from Ficus on a home screen.
+ */
+async function generateFarmIconSet(
+  outDir: string,
+  markMarkup: string,
+  faviconMarkup: string,
+  markMetrics: ContentMetrics,
+  favicon16BBox: BBox
+): Promise<void> {
+  const scene = (horizon: number) => ({ sky: COLORS.farmSky, ground: COLORS.farmMeadow, horizon })
+  const mark = { markup: markMarkup, bbox: markMetrics, scene: scene(FARM_HORIZON.mark) }
+
+  await renderPng(
+    buildCompositeSVG({
+      size: 16,
+      markup: faviconMarkup,
+      bbox: favicon16BBox,
+      fill: 1,
+      scene: scene(FARM_HORIZON.favicon16),
+    }),
+    join(outDir, 'farm', 'favicon-16x16.png'),
+    { removeAlpha: true }
+  )
+  await renderPng(
+    buildCompositeSVG({ size: 32, ...mark, fill: FILL.webIcon }),
+    join(outDir, 'farm', 'favicon-32x32.png'),
+    {
+      removeAlpha: true,
+    }
+  )
+  await renderPng(
+    buildCompositeSVG({ size: 180, ...mark, fill: FILL.appleTouch }),
+    join(outDir, 'farm', 'apple-touch-icon.png'),
+    { removeAlpha: true }
+  )
+  for (const size of FARM_STANDARD_SIZES) {
+    await renderPng(
+      buildCompositeSVG({ size, ...mark, fill: FILL.webIcon }),
+      join(outDir, 'farm', `icon-${size}x${size}.png`),
+      { removeAlpha: true }
+    )
+  }
+  for (const size of WEB_MASKABLE_SIZES) {
+    await renderPng(
+      buildCompositeSVG({
+        size,
+        ...mark,
+        radial: { maxRadius: markMetrics.maxRadius, diameterFraction: RADIAL_DIAMETER_FRACTION.webMaskable },
+      }),
+      join(outDir, 'farm', `icon-maskable-${size}x${size}.png`),
+      { removeAlpha: true }
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 export async function generate(outDir: string = OUT_DIR): Promise<void> {
   await Promise.all(
-    ['web/dark', 'desktop', 'mobile', 'docs'].map((sub) => mkdir(join(outDir, sub), { recursive: true }))
+    ['web/dark', 'farm', 'desktop', 'mobile', 'docs'].map((sub) => mkdir(join(outDir, sub), { recursive: true }))
   )
 
   const [markLightSvg, markDarkSvg, favicon16Svg] = await Promise.all([
@@ -349,6 +421,10 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
       { removeAlpha: true }
     )
   }
+
+  // --- farm/ (the farm app, apps/farm) ------------------------------------------
+
+  await generateFarmIconSet(outDir, markLight, favicon16Light, markMetrics, favicon16BBox)
 
   // --- desktop/ -------------------------------------------------------------
 

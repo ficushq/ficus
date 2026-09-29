@@ -58,6 +58,12 @@ export function farmHref(base: string = import.meta.env.BASE_URL || '/'): string
   return `${base.replace(/\/?$/, '/')}farm/`
 }
 
+/** Where the farm sends a signed-out visitor: sign in here, then go back to the farm. */
+export const FARM_SIGN_IN_PATH = '/farm-sign-in'
+
+/** How the page leaves for the farm; tests replace it. */
+export const farmNavigation = { go: (url: string) => window.location.replace(url) }
+
 /** The single list every nav surface reads. */
 export const visibleNavItems = navItems.filter((item) => !item.hidden)
 

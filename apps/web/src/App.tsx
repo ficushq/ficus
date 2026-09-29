@@ -25,6 +25,8 @@ import { SchedulesPage } from './components/SchedulesPage'
 import { VoiceWorkspacePage } from './components/VoiceWorkspacePage'
 import { OnboardingPage } from './components/onboarding/OnboardingPage'
 import { OnboardingBanner } from './components/onboarding/OnboardingBanner'
+import { ReturnToFarm } from './components/ReturnToFarm'
+import { FARM_SIGN_IN_PATH } from './components/navModel'
 import { useAuth } from './providers/AuthProvider'
 import { useRef } from 'react'
 import { useVisualViewportShell } from './hooks/useVisualViewportShell'
@@ -83,6 +85,9 @@ export default function App() {
       />
     )
   }
+
+  // The farm's sign-in link: the gate above has shown login if needed; go back to the farm.
+  if (location.pathname === FARM_SIGN_IN_PATH) return <ReturnToFarm />
 
   if (location.pathname === '/voice') {
     return (
