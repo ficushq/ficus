@@ -305,10 +305,10 @@ describe('tau-browser service', () => {
       expect(status).toBe(200)
     })
 
-    it('rejects the box user under any other header name', async () => {
+    it('rejects the box user under the pre-Ficus x-tau-box-user header (no special treatment)', async () => {
       const service = createService({ ...makeLaunch(), tokensDir })
       const { status } = await req(service, '/open', {
-        userHeader: 'x-old-box-user',
+        userHeader: 'x-tau-box-user',
         body: { runId: 'r1', url: 'http://x' },
       })
       expect(status).toBe(401)
