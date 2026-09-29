@@ -22,9 +22,11 @@ export function registerSearchCommands(program: Command): void {
         if (input.kind) params.set('kind', input.kind)
         if (input.squadId) params.set('squadId', input.squadId)
         const { results } = await apiGet<EntitySearchResponse>(`/api/search?${params}`)
+        // An Assistant conversation's id is not an agent id; show the agent so `ficus agent messages` can follow.
+        const withAgent = results.some((row) => row.kind === 'assistant_conversation')
         outputTable(
           results.map((row) => ({ ...row, id: row.kind === 'work_stream' && row.number ? `#${row.number}` : row.id })),
-          ['kind', 'id', 'label', 'squadName', 'status']
+          ['kind', 'id', 'label', 'squadName', 'status', ...(withAgent ? ['agentId'] : [])]
         )
       } catch (error) {
         outputError(error as Error)

@@ -52,3 +52,9 @@ test('reports backend errors without silently replacing them with empty search r
   expect(outputError).toHaveBeenCalledWith(failure)
   expect(outputTable).not.toHaveBeenCalled()
 })
+test('assistant conversation results add the agent id column', async () => {
+  const rows = [{ id: 'conversation-1', kind: 'assistant_conversation', label: 'Access', agentId: 'agent-1' }]
+  get.mockResolvedValue({ results: rows })
+  await run(['access', '--kind', 'assistant_conversation'])
+  expect(outputTable).toHaveBeenCalledWith(rows, ['kind', 'id', 'label', 'squadName', 'status', 'agentId'])
+})

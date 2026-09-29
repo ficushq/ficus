@@ -45,22 +45,25 @@ export async function searchEntities(identity: Identity, request: unknown) {
   const parts = [
     sql`SELECT 'squad'::text AS kind, ${squads.id} AS id, ${squads.name}::text AS label,
       ${squads.purpose} AS detail, ${squads.id} AS "squadId", ${squads.name}::text AS "squadName",
-      ${squads.status}::text AS status, ${squads.updatedAt}::timestamptz AS "updatedAt", NULL::integer AS number
+      ${squads.status}::text AS status, ${squads.updatedAt}::timestamptz AS "updatedAt", NULL::integer AS number,
+      NULL::uuid AS "agentId"
       FROM ${squads} WHERE ${visible} AND ${squadFilter} AND ${withinScope(sql`${squads.id}`, squadScope)}`,
     sql`SELECT 'work_stream', ${workStreams.id}, ${workStreams.title}::text, ${workStreams.description},
-      ${squads.id}, ${squads.name}::text, ${workStreams.status}::text, ${workStreams.updatedAt}::timestamptz, ${workStreams.number}
+      ${squads.id}, ${squads.name}::text, ${workStreams.status}::text, ${workStreams.updatedAt}::timestamptz, ${workStreams.number},
+      NULL::uuid
       FROM ${workStreams} JOIN ${squads} ON ${squads.id} = ${workStreams.squadId}
       WHERE ${visible} AND ${squadFilter} AND ${withinScope(sql`${squads.id}`, workScope)}`,
     sql`SELECT 'consultant_conversation', ${agents.id},
       COALESCE(NULLIF(trim(${agents.metadata}->>'purpose'), ''), NULLIF(trim(${agents.metadata}->>'name'), ''), 'Consultant'),
       COALESCE(${agents.metadata}->>'name', ''), ${squads.id}, ${squads.name}::text,
-      ${agents.status}::text, ${agents.updatedAt}::timestamptz, NULL::integer
+      ${agents.status}::text, ${agents.updatedAt}::timestamptz, NULL::integer, ${agents.id}
       FROM ${agents} JOIN ${squads} ON ${squads.id} = ${agents.squadId}
       WHERE ${agents.agentTypeId} = 'consultant' AND ${agents.status} NOT IN ('dormant', 'terminated')
       AND (${agents.ownerUserId} IS NULL OR ${agents.ownerUserId} = ${actingUser?.userId ?? null}::uuid)
       AND ${visible} AND ${squadFilter} AND ${withinScope(sql`${squads.id}`, agentScope)}`,
     sql`SELECT 'assistant_conversation', ${assistantConversations.id}, ${assistantConversations.title},
-      ''::text, NULL::uuid, NULL::text, NULL::text, ${assistantConversations.updatedAt}, NULL::integer
+      ''::text, NULL::uuid, NULL::text, NULL::text, ${assistantConversations.updatedAt}, NULL::integer,
+      ${assistantConversations.agentId}
       FROM ${assistantConversations} WHERE ${canReadChats} AND ${!input.squadId} AND (${listedAssistantConversation()})
       AND ${assistantConversations.ownerUserId} = ${actingUser?.userId ?? null}::uuid`,
   ]
@@ -71,7 +74,7 @@ export async function searchEntities(identity: Identity, request: unknown) {
     WITH candidates AS (${sql.join(parts, sql` UNION ALL `)}), searchable AS (
       SELECT *, concat_ws(' ', label, detail, id::text, number::text, '#' || number::text, "squadName", status, replace(kind, '_', ' ')) AS haystack FROM candidates
     ), ranked AS (
-      SELECT kind, id, number, label, left(detail, 500) AS detail, "squadId", "squadName", status, "updatedAt",
+      SELECT kind, id, number, label, left(detail, 500) AS detail, "squadId", "squadName", status, "updatedAt", "agentId",
         (CASE WHEN lower(label) = ${input.q.toLowerCase()} OR id::text = ${input.q.toLowerCase()} OR number::text = ${input.q.replace(/^#/, '')} THEN 100
           WHEN label ILIKE ${`${literalLike(input.q)}%`} THEN 80
           WHEN label ILIKE ${`%${literalLike(input.q)}%`} THEN 60

@@ -266,7 +266,7 @@ the same delegate; moving it means cancel and delegate again. Details:
 `docs/wiki/assistant-tasks.md`.
 
 ```bash
-ficus search "<words from the question>" --kind assistant_conversation   # find a conversation (owner's own only)
+ficus search "<words from the question>" --kind assistant_conversation   # owner's own conversations, with each one's agentId
 ficus agent list -t assistant          # Assistant agents, newest activity first
 ficus agent list -t assistant-worker   # the general workers they delegate to
 ficus agent messages <agentId>         # the whole conversation, incl. delegate updates
@@ -274,9 +274,8 @@ ficus agent worker-log <agentId>       # its tool calls (delegate_task, continue
 ficus chat -a <assistantAgentId> "<message>"   # say something in that conversation
 ```
 
-The CLI doesn't show which agent backs which conversation. Match the
-conversation's title and time against `agent list -t assistant` and confirm
-with `agent messages`. Bare `ficus chat "<msg>"` talks to your own
+A conversation id is not an agent id: take `agentId` from the search result
+for the `agent` commands. Bare `ficus chat "<msg>"` talks to your own
 system-manager chat, **not** a saved Assistant conversation.
 
 **If you are the delegate**, the request names a task ID and a request ID.

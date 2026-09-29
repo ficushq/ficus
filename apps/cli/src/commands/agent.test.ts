@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
 import { apiGet, apiPatch } from '../client'
 import { output, outputError, setOutputOptions } from '../output'
@@ -98,5 +98,48 @@ describe('ficus agent active subcommand', () => {
 
     expect(apiGet).toHaveBeenCalledWith('/api/agents/agent-1/active')
     expect(output).toHaveBeenCalledWith(response)
+  })
+})
+
+describe('ficus agent worker-log', () => {
+  it('names each tool call by the toolName stored on the message block', async () => {
+    const get = apiGet as ReturnType<typeof mock>
+    get.mockReset().mockImplementation(async (path: string) =>
+      path.startsWith('/api/agents/agent-1/messages')
+        ? {
+            messages: [
+              {
+                createdAt: '2026-09-29T04:53:35.000Z',
+                content: '',
+                metadata: {
+                  content: [
+                    {
+                      type: 'tool_use',
+                      toolCall: {
+                        toolName: 'delegate_task',
+                        args: '{"request":"audit"}',
+                        result: '{"delivered":true}',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            pagination: {},
+          }
+        : { metadata: { name: 'Assistant' }, agentTypeId: 'assistant' }
+    )
+    const lines: string[] = []
+    const log = spyOn(console, 'log').mockImplementation((line?: unknown) => void lines.push(String(line ?? '')))
+    try {
+      const program = new Command().exitOverride()
+      registerAgentCommands(program)
+      await program.parseAsync(['agent', 'worker-log', 'agent-1'], { from: 'user' })
+    } finally {
+      log.mockRestore()
+      get.mockReset().mockResolvedValue({})
+    }
+    expect(lines.some((line) => line.endsWith('🔧 delegate_task'))).toBe(true)
+    expect(lines.some((line) => line.includes('undefined'))).toBe(false)
   })
 })
