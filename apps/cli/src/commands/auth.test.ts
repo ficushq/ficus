@@ -71,7 +71,7 @@ describe('auth CLI commands', () => {
       {
         active: 'work',
         backends: {
-          work: { apiUrl: 'https://tau.example.com', password: 'secret' },
+          work: { apiUrl: 'https://ficus.example.com', password: 'secret' },
         },
       },
       join(dir, 'auth.json')
@@ -90,14 +90,14 @@ describe('auth CLI commands', () => {
       'login',
       'work',
       '--api-url',
-      'https://tau.example.com',
+      'https://ficus.example.com',
       '--password',
       'secret',
     ])
 
     const store = loadAuthStore(authPath)
     expect(store.active).toBe('work')
-    expect(store.backends.work).toEqual({ apiUrl: 'https://tau.example.com', password: 'secret' })
+    expect(store.backends.work).toEqual({ apiUrl: 'https://ficus.example.com', password: 'secret' })
     expect((statSync(authPath).mode & 0o777).toString(8)).toBe('600')
   })
 
@@ -228,15 +228,15 @@ describe('auth CLI commands', () => {
     // No auth-store backend at all — exactly a sandbox, where every command
     // works via FICUS_TOKEN. Status must not claim "No active Ficus backend".
     process.env.FICUS_TOKEN = 'agent-token'
-    process.env.FICUS_API_URL = 'https://demo.hiretau.ai'
+    process.env.FICUS_API_URL = 'https://demo.ficus.sh'
     const program = createProgram()
     await program.parseAsync(['node', 'tau', 'auth', 'status'])
     const [data, summary] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [any, string]
     expect(data.source).toBe('env-token')
     expect(data.authenticated).toBe(true)
-    expect(data.apiUrl).toBe('https://demo.hiretau.ai')
+    expect(data.apiUrl).toBe('https://demo.ficus.sh')
     expect(summary).toContain('agent token (FICUS_TOKEN)')
-    expect(summary).toContain('https://demo.hiretau.ai')
+    expect(summary).toContain('https://demo.ficus.sh')
     expect(JSON.stringify(data)).not.toContain('agent-token')
   })
 

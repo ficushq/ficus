@@ -5,8 +5,8 @@ services:
     # repo-root no longer exists (deleted worktrees). TEST_REPO_ROOT is set by
     # test-setup.ts / test-db.ts at `up` time.
     labels:
-      dev.tau.test-db: 'true'
-      dev.tau.test-db.repo-root: '${TEST_REPO_ROOT:-}'
+      dev.ficus.test-db: 'true'
+      dev.ficus.test-db.repo-root: '${TEST_REPO_ROOT:-}'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

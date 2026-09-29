@@ -309,9 +309,9 @@ describe('handleBash', () => {
   })
 
   it('sources .tau/.env when sourceEnv is true', async () => {
-    const tauDir = join(testDir, '.tau')
-    mkdirSync(tauDir, { recursive: true })
-    writeFileSync(join(tauDir, '.env'), 'FICUS_SECRET=from-env-file\n')
+    const ficusDir = join(testDir, '.tau')
+    mkdirSync(ficusDir, { recursive: true })
+    writeFileSync(join(ficusDir, '.env'), 'FICUS_SECRET=from-env-file\n')
 
     const resp = handleBash({ command: 'echo $FICUS_SECRET', cwd: testDir, sourceEnv: true, activateDevbox: false })
     const { stdout } = collectOutput(await consumeSSE(resp))
@@ -319,9 +319,9 @@ describe('handleBash', () => {
   })
 
   it('does not source .tau/.env when sourceEnv is false', async () => {
-    const tauDir = join(testDir, '.tau')
-    mkdirSync(tauDir, { recursive: true })
-    writeFileSync(join(tauDir, '.env'), 'FICUS_SECRET=should-not-appear\n')
+    const ficusDir = join(testDir, '.tau')
+    mkdirSync(ficusDir, { recursive: true })
+    writeFileSync(join(ficusDir, '.env'), 'FICUS_SECRET=should-not-appear\n')
 
     const resp = handleBash({
       command: 'echo "${FICUS_SECRET:-empty}"',

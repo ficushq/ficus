@@ -36,7 +36,7 @@ describe('the ficus CLI entry point', () => {
     const help = helpOf(['bun', outfile, '--help'])
     expect(help.startsWith('Usage: ficus ')).toBe(true)
     expect(help).toContain('Ficus CLI')
-    expect(help).not.toMatch(/\bTau\b/)
+    expect(help).not.toMatch(/\bFicus\b/)
   })
 
   test('the dev launcher is bin/ficus, and it prints `Usage: ficus`', () => {

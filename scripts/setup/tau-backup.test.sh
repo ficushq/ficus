@@ -314,7 +314,7 @@ if command -v yq >/dev/null 2>&1; then
 source:
   repo: git@example.com:acme/tau.git
 core:
-  origin: https://tau.example.com
+  origin: https://ficus.example.com
 backup:
   enabled: true
   s3_endpoint: https://s3.example.com

@@ -215,7 +215,7 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     async authorizationUrl(input) {
       const url = notionClient.buildAuthorizationUrl({
         clientId: 'client-id',
-        redirectUri: 'https://tau.example/oauth/callback',
+        redirectUri: 'https://ficus.example/oauth/callback',
         state: input.localFlowId,
       })
       return { authorizationUrl: url.toString(), expiresAt: new Date(Date.now() + 600_000).toISOString() }
@@ -279,7 +279,7 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     flowReceipts,
     resolvePlugin: () => plugin,
     transport,
-    callbackUrl: () => 'https://tau.example/oauth/callback',
+    callbackUrl: () => 'https://ficus.example/oauth/callback',
     installGrant: ({ state, exchange, userId }) => authorizer.install({ intent: state, exchange, userId }),
   })
   const projectionStates = new DbIntegrationProjectionStateRepository()

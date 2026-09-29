@@ -243,7 +243,7 @@ describe('host env', () => {
   test('buildHostCommandEnv layers tau vars, shim PATH and squad ssh config on the base', () => {
     mkdirSync(join(home, 'ssh', SQUAD), { recursive: true })
     writeFileSync(join(home, 'ssh', SQUAD, 'config'), '')
-    const env = buildHostCommandEnv({ base: { PATH: '/bin', HOME: home }, tauToken: 'tok', squadId: SQUAD })
+    const env = buildHostCommandEnv({ base: { PATH: '/bin', HOME: home }, ficusToken: 'tok', squadId: SQUAD })
     expect(env.PATH).toBe(`${hostBinDir()}:/bin`)
     expect(env.FICUS_TOKEN).toBe('tok')
     expect(env.FICUS_API_URL).toBe(resolveHostApiUrl())
@@ -298,7 +298,7 @@ describe('host env', () => {
     process.env.SANDBOX_CALLBACK_SECRET = 'leak-secret'
     resetHostBaseEnvCache()
     try {
-      const env = buildHostCommandEnv({ tauToken: 'tok' })
+      const env = buildHostCommandEnv({ ficusToken: 'tok' })
       expect(env.DATABASE_URL).toBeUndefined()
       expect(env.ANTHROPIC_API_KEY).toBeUndefined()
       expect(env.SANDBOX_CALLBACK_SECRET).toBeUndefined()
@@ -315,7 +315,7 @@ describe('host env', () => {
   })
 
   test('buildHostCommandEnv gives each agent its own CLI auth store and marks the shell as an agent', () => {
-    const env = buildHostCommandEnv({ base: { PATH: '/bin' }, tauToken: 'tok', agentId: 'agent-1' })
+    const env = buildHostCommandEnv({ base: { PATH: '/bin' }, ficusToken: 'tok', agentId: 'agent-1' })
     expect(env.FICUS_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'agent-1.json'))
     // A missing store reads as empty: the operator's ~/.tau/cli/auth.json is never the fallback.
     expect(existsSync(env.FICUS_AUTH_STORE!)).toBe(false)
@@ -324,7 +324,7 @@ describe('host env', () => {
   })
 
   test('buildHostCommandEnv uses the anonymous store for a tokened shell with no agent id', () => {
-    const env = buildHostCommandEnv({ base: { PATH: '/bin' }, tauToken: 'tok', squadId: SQUAD })
+    const env = buildHostCommandEnv({ base: { PATH: '/bin' }, ficusToken: 'tok', squadId: SQUAD })
     expect(env.FICUS_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'anonymous.json'))
     expect(env.FICUS_AGENT_CONTEXT).toBe('1')
     expect(env.FICUS_AGENT_ID).toBeUndefined()
@@ -341,13 +341,13 @@ describe('host env', () => {
   })
 
   test('buildHostCommandEnv ignores a malformed agent id rather than building a path from it', () => {
-    const env = buildHostCommandEnv({ base: { PATH: '/bin' }, tauToken: 'tok', agentId: '../../etc/passwd' })
+    const env = buildHostCommandEnv({ base: { PATH: '/bin' }, ficusToken: 'tok', agentId: '../../etc/passwd' })
     expect(env.FICUS_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'anonymous.json'))
     expect(env.FICUS_AGENT_ID).toBeUndefined()
   })
 
   test('buildHostCommandEnv passes the identity through the FICUS_IDENTITY_* aliases too', () => {
-    const env = buildHostCommandEnv({ base: { PATH: '/bin' }, tauToken: 'tok', agentId: 'agent-1' })
+    const env = buildHostCommandEnv({ base: { PATH: '/bin' }, ficusToken: 'tok', agentId: 'agent-1' })
     expect(env.FICUS_IDENTITY_API_URL).toBe(resolveHostApiUrl())
     expect(env.FICUS_IDENTITY_TOKEN).toBe('tok')
     expect(env.FICUS_IDENTITY_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'agent-1.json'))
@@ -372,7 +372,7 @@ describe('host env', () => {
   }
 
   test('buildHostPreamble snapshots the identity BEFORE sourcing, then re-asserts it from the snapshots', () => {
-    const pre = buildHostPreamble({ squadId: SQUAD, tauToken: 'tok', agentId: 'agent-1' })
+    const pre = buildHostPreamble({ squadId: SQUAD, ficusToken: 'tok', agentId: 'agent-1' })
     const envPath = join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env')
     const names = snapshotNames(pre)
     const snapshotIndex = pre.indexOf(`${names.url}="$FICUS_IDENTITY_API_URL"`)
@@ -396,8 +396,8 @@ describe('host env', () => {
   test('buildHostPreamble uses fresh snapshot names on every command', () => {
     // A squad env cannot assign a name it cannot predict — which closes the
     // accidental/stale-variable case the fixed names left open.
-    const first = snapshotNames(buildHostPreamble({ squadId: SQUAD, tauToken: 'tok', agentId: 'agent-1' }))
-    const second = snapshotNames(buildHostPreamble({ squadId: SQUAD, tauToken: 'tok', agentId: 'agent-1' }))
+    const first = snapshotNames(buildHostPreamble({ squadId: SQUAD, ficusToken: 'tok', agentId: 'agent-1' }))
+    const second = snapshotNames(buildHostPreamble({ squadId: SQUAD, ficusToken: 'tok', agentId: 'agent-1' }))
     for (const key of ['url', 'bin', 'tok', 'store', 'agent']) {
       expect(first[key]).toBeDefined()
       expect(second[key]).not.toBe(first[key])
@@ -405,7 +405,7 @@ describe('host env', () => {
   })
 
   test('buildHostPreamble re-asserts the shim PATH after sourcing, keeping what the squad env added', () => {
-    const pre = buildHostPreamble({ squadId: SQUAD, tauToken: 'tok', agentId: 'agent-1' })
+    const pre = buildHostPreamble({ squadId: SQUAD, ficusToken: 'tok', agentId: 'agent-1' })
     const envPath = join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env')
     const names = snapshotNames(pre)
     // `$PATH` is kept, so a squad env's own additions survive behind the shim dir.
@@ -424,19 +424,19 @@ describe('host env', () => {
   })
 
   test('buildHostPreamble unsets the agent id when the shell has a token but no agent id', () => {
-    const pre = buildHostPreamble({ squadId: SQUAD, tauToken: 'tok' })
+    const pre = buildHostPreamble({ squadId: SQUAD, ficusToken: 'tok' })
     expect(pre).toContain('unset FICUS_AGENT_ID')
     expect(pre).toContain(`FICUS_TOKEN="$${snapshotNames(pre).tok}"`)
   })
 
   test('buildHostPreamble never puts the token in the command string', () => {
     // argv is world-readable through /proc on Linux; the value travels in the env.
-    const pre = buildHostPreamble({ squadId: SQUAD, tauToken: 'super-secret-token', agentId: 'agent-1' })
+    const pre = buildHostPreamble({ squadId: SQUAD, ficusToken: 'super-secret-token', agentId: 'agent-1' })
     expect(pre).not.toContain('super-secret-token')
   })
 
   test('buildHostPreamble re-asserts the identity for a solo shell with no squad env to source', () => {
-    const pre = buildHostPreamble({ tauToken: 'tok', agentId: 'agent-1' })
+    const pre = buildHostPreamble({ ficusToken: 'tok', agentId: 'agent-1' })
     const names = snapshotNames(pre)
     expect(pre).not.toContain('set -a')
     expect(pre).toContain(`export FICUS_API_URL="$${names.url}"`)

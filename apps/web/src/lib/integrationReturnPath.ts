@@ -24,7 +24,7 @@ export function integrationReturnPath(
     return `${baseUrl.replace(/\/$/, '')}/onboarding?setup=github`
   }
   if (pathname !== '/settings' && pathname !== settingsPath) return returnTo
-  const url = new URL(returnTo, 'https://tau.invalid')
+  const url = new URL(returnTo, 'https://ficus.invalid')
   url.pathname = settingsPath
   url.searchParams.set('section', 'integrations')
   url.searchParams.set('setting', `integration-${provider}`)

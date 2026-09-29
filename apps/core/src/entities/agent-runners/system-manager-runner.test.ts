@@ -46,7 +46,7 @@ class TestSystemManagerRunner extends SystemManagerRunner {
 
   protected override async buildSessionToolkit() {
     return {
-      tauToken: undefined,
+      ficusToken: undefined,
       baseTools: [],
       sandboxStatusTool: {} as any,
       shortTermMemoryTools: [],

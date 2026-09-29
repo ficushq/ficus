@@ -82,7 +82,7 @@ async function render({
   scheduleIdleTimeout = undefined as ((callback: () => void, ms: number) => ReturnType<typeof setTimeout>) | undefined,
   cancelIdleTimeout = undefined as ((handle: ReturnType<typeof setTimeout>) => void) | undefined,
 } = {}) {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   cleanup = () => dom.cleanup()
   localStorage.setItem('ficus-appearance', appearance)
   if (preset) {
@@ -211,7 +211,7 @@ test('Cancel closes without touching the network; the caller unmounting the edit
 })
 
 test('unmounting the editor (not just Cancel) also restores the saved selection', async () => {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   cleanup = () => dom.cleanup()
   localStorage.setItem('ficus-appearance', 'dark')
   localStorage.setItem('ficus-theme-id', existing.document.base)
@@ -608,7 +608,7 @@ test('redo replays a coalesced typed edit', async () => {
 
 test('the theme assistant panel proposes a live-previewing edit, shares undo/redo with manual edits, and cannot save', async () => {
   const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   localStorage.setItem('ficus-appearance', 'dark')
   const sheet = document.createElement('style')
   sheet.textContent = palettes
@@ -724,7 +724,7 @@ test('the theme assistant panel proposes a live-previewing edit, shares undo/red
 
 test('typing bumps the revision every keystroke (stale assistant edits are still rejected) and an assistant proposal mid-typing is its own undo step', async () => {
   const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   localStorage.setItem('ficus-appearance', 'dark')
   const sheet = document.createElement('style')
   sheet.textContent = palettes

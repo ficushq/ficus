@@ -25,7 +25,7 @@ scripts/setup/
   systemd/tau-backup.timer.tmpl
 ```
 
-The setup and provisioning scripts install a complete Tau instance: API, worker, database, sandbox runtime, and initial squad.
+The setup and provisioning scripts install a complete Ficus instance: API, worker, database, sandbox runtime, and initial squad.
 
 ## Quickstart
 

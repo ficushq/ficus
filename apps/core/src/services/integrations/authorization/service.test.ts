@@ -192,7 +192,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? plugin : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => {
         installed.push({ ...input, grant: await input.exchange() })
       },
@@ -256,9 +256,9 @@ describe('IntegrationAuthorizationService', () => {
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport: createLocalTransport({
         resolveClientCredentials: () => undefined,
-        callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+        callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       }),
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async () => {},
       randomBytes: () => Buffer.alloc(32, 7),
     })
@@ -295,7 +295,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => {
         installed.push({ ...input, grant: await input.exchange() })
       },
@@ -380,7 +380,7 @@ describe('IntegrationAuthorizationService', () => {
       intent: 'connect',
       connectionId: null,
       expectedMaterialRevision: null,
-      redirectUri: 'https://tau.example/callback',
+      redirectUri: 'https://ficus.example/callback',
       returnTo: '/settings',
       expiresAt: new Date('2026-08-29T00:10:00.000Z'),
     })
@@ -409,7 +409,7 @@ describe('IntegrationAuthorizationService', () => {
           throw new Error('must not redeem an installed flow')
         },
       },
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async () => {
         throw new Error('must not reinstall an installed flow')
       },
@@ -479,7 +479,7 @@ describe('IntegrationAuthorizationService', () => {
             throw new Error('must not call broker')
           },
         },
-        callbackUrl: () => 'https://tau.example/callback',
+        callbackUrl: () => 'https://ficus.example/callback',
         installGrant: async () => void (calls += 1),
         now: () => new Date('2026-08-30T00:00:00.001Z'),
       })
@@ -520,7 +520,7 @@ describe('IntegrationAuthorizationService', () => {
           throw new Error('must not call broker')
         },
       },
-      callbackUrl: () => 'https://tau.example/callback',
+      callbackUrl: () => 'https://ficus.example/callback',
       installGrant: async () => void (calls += 1),
       now: () => new Date('2026-08-29T00:00:00.000Z'),
     })
@@ -536,7 +536,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async () => {},
       uuid: () => '80000000-0000-4000-8000-000000000099',
       now: () => new Date('2026-08-29T00:00:00.000Z'),
@@ -583,7 +583,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => {
         await input.exchange()
         if (installedFlows.has(input.state.localFlowId!)) return
@@ -637,7 +637,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => void (await input.exchange()),
       uuid: () => '80000000-0000-4000-8000-000000000099',
       now: () => states.now,
@@ -674,7 +674,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => void (await input.exchange()),
       uuid: () => '80000000-0000-4000-8000-000000000099',
       now: () => states.now,
@@ -710,7 +710,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => void (await input.exchange()),
       uuid: () => '80000000-0000-4000-8000-000000000099',
       now: () => states.now,
@@ -753,7 +753,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => {
         await input.exchange()
         throw Object.assign(new Error('grant abandoned'), { code: 'grant_abandoned' })
@@ -797,7 +797,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => {
         await input.exchange()
         installAttempts += 1
@@ -842,7 +842,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async (input) => {
         await input.exchange()
         if (!installedFlows.has(input.state.localFlowId!)) {
@@ -893,7 +893,7 @@ describe('IntegrationAuthorizationService', () => {
       states,
       resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async () => {},
       uuid: () => '80000000-0000-4000-8000-000000000099',
     })
@@ -919,7 +919,7 @@ describe('IntegrationAuthorizationService', () => {
         states,
         resolvePlugin: (key) => (key === 'notion' ? createPlugin() : undefined),
         transport,
-        callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+        callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
         installGrant: async () => {},
         uuid: () => '80000000-0000-4000-8000-000000000099',
         now: () => new Date('2026-08-29T00:00:00.000Z'),
@@ -1072,7 +1072,7 @@ describe('IntegrationAuthorizationService: manual+managed provider (Slack-shaped
       states,
       resolvePlugin: (key) => (key === 'slack' ? plugin : undefined),
       transport,
-      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
       installGrant: async () => {
         throw new Error('must not be reached')
       },
@@ -1119,7 +1119,7 @@ describe('IntegrationAuthorizationService: manual+managed provider (Slack-shaped
         states,
         resolvePlugin: (key) => (key === 'slack' ? plugin : undefined),
         transport,
-        callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+        callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
         installGrant: async () => {
           throw new Error('unused')
         },

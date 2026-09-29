@@ -15,11 +15,11 @@ function tempDir(): string {
 // child process with the env/cwd we want to exercise.
 const pathsModule = join(import.meta.dir, 'paths.ts')
 
-function monorepoRootIn(opts: { cwd: string; tauRoot?: string }): string {
+function monorepoRootIn(opts: { cwd: string; ficusRoot?: string }): string {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
   delete env.FICUS_ROOT
-  if (opts.tauRoot !== undefined) env.FICUS_ROOT = opts.tauRoot
+  if (opts.ficusRoot !== undefined) env.FICUS_ROOT = opts.ficusRoot
 
   const proc = Bun.spawnSync(
     ['bun', '-e', `import { MONOREPO_ROOT } from ${JSON.stringify(pathsModule)}; process.stdout.write(MONOREPO_ROOT)`],
@@ -32,14 +32,14 @@ function monorepoRootIn(opts: { cwd: string; tauRoot?: string }): string {
 describe('MONOREPO_ROOT', () => {
   it('uses FICUS_ROOT verbatim when set (never inferred across a symlink rename)', () => {
     const dir = tempDir()
-    expect(monorepoRootIn({ cwd: dir, tauRoot: '/opt/tau-core/current' })).toBe('/opt/tau-core/current')
+    expect(monorepoRootIn({ cwd: dir, ficusRoot: '/opt/tau-core/current' })).toBe('/opt/tau-core/current')
   })
 
   it('FICUS_ROOT wins even when cwd sits under an apps/core tree', () => {
     const base = tempDir()
     const appCore = join(base, 'apps/core')
     mkdirSync(appCore, { recursive: true })
-    expect(monorepoRootIn({ cwd: appCore, tauRoot: '/explicit/anchor' })).toBe('/explicit/anchor')
+    expect(monorepoRootIn({ cwd: appCore, ficusRoot: '/explicit/anchor' })).toBe('/explicit/anchor')
   })
 
   it('falls back to the cwd split rule when FICUS_ROOT is unset', () => {
@@ -55,16 +55,16 @@ describe('MONOREPO_ROOT', () => {
   it('treats an empty FICUS_ROOT as unset (falls back to the cwd rule)', () => {
     const dir = tempDir()
     // No apps/core in the path → the split rule returns cwd unchanged.
-    expect(monorepoRootIn({ cwd: dir, tauRoot: '' })).toBe(dir)
+    expect(monorepoRootIn({ cwd: dir, ficusRoot: '' })).toBe(dir)
   })
 
   it('expands a leading ~ in FICUS_ROOT (before resolving)', () => {
     const dir = tempDir()
-    expect(monorepoRootIn({ cwd: dir, tauRoot: '~/tau-root-fixture' })).toBe(join(homedir(), 'tau-root-fixture'))
+    expect(monorepoRootIn({ cwd: dir, ficusRoot: '~/tau-root-fixture' })).toBe(join(homedir(), 'tau-root-fixture'))
   })
 
   it('resolves a relative FICUS_ROOT against the subprocess cwd (a stray relative .env value must not silently redirect config paths)', () => {
     const dir = tempDir()
-    expect(monorepoRootIn({ cwd: dir, tauRoot: 'relative-root' })).toBe(resolve(dir, 'relative-root'))
+    expect(monorepoRootIn({ cwd: dir, ficusRoot: 'relative-root' })).toBe(resolve(dir, 'relative-root'))
   })
 })

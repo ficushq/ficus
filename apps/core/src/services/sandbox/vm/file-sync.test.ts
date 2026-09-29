@@ -1267,7 +1267,7 @@ describe('resolveBoxApiUrl', () => {
   test('reverse tunnel is the DEFAULT — a public-looking APP_URL does not bypass it', async () => {
     const seen: Array<{ machine: Machine; localPort: number }> = []
     const url = await resolveBoxApiUrl(makeMachine(), {
-      getAppUrl: () => 'https://tau.example.com',
+      getAppUrl: () => 'https://ficus.example.com',
       getCorePort: () => 3000,
       tunnels: {
         addReverse: async (machine, localPort) => {
@@ -1293,7 +1293,7 @@ describe('resolveBoxApiUrl', () => {
     let attempts = 0
     const error = Object.assign(new Error('unknown'), { code: 'TUNNEL_OUTCOME_UNKNOWN' })
     const url = await resolveBoxApiUrl(makeMachine(), {
-      getAppUrl: () => 'https://tau.example.com',
+      getAppUrl: () => 'https://ficus.example.com',
       getCorePort: () => 3000,
       tunnels: {
         addReverse: async () => {
@@ -1306,7 +1306,7 @@ describe('resolveBoxApiUrl', () => {
       },
       warn: () => {},
     })
-    expect(url).toBe('https://tau.example.com')
+    expect(url).toBe('https://ficus.example.com')
     expect(attempts).toBe(1)
   })
 
@@ -1315,7 +1315,7 @@ describe('resolveBoxApiUrl', () => {
     const sleeps: number[] = []
     const warns: string[] = []
     const url = await resolveBoxApiUrl(makeMachine(), {
-      getAppUrl: () => 'https://tau.example.com',
+      getAppUrl: () => 'https://ficus.example.com',
       getCorePort: () => 3000,
       tunnels: {
         addReverse: async () => {
@@ -1341,7 +1341,7 @@ describe('resolveBoxApiUrl', () => {
     let attempts = 0
     const warns: string[] = []
     const url = await resolveBoxApiUrl(makeMachine(), {
-      getAppUrl: () => 'https://tau.example.com',
+      getAppUrl: () => 'https://ficus.example.com',
       getCorePort: () => 3000,
       tunnels: {
         addReverse: async () => {
@@ -1354,12 +1354,12 @@ describe('resolveBoxApiUrl', () => {
         warns.push(msg)
       },
     })
-    expect(url).toBe('https://tau.example.com')
+    expect(url).toBe('https://ficus.example.com')
     expect(attempts).toBe(2)
     expect(warns).toHaveLength(1)
     expect(warns[0]).toBe('reverse tunnel failed twice; using degraded direct callback fallback')
     expect(warns[0]).not.toContain('tcp forwarding disabled')
-    expect(warns[0]).not.toContain('tau.example.com')
+    expect(warns[0]).not.toContain('ficus.example.com')
   })
 
   test('addReverse failure with NO APP_URL throws a bounded safe error after retry', async () => {
@@ -1396,10 +1396,10 @@ describe('resolveBoxApiUrl', () => {
   })
 
   test('isValidHttpUrl checks http(s) URL validity only (NOT reachability)', () => {
-    expect(isValidHttpUrl('https://tau.example.com')).toBe(true)
+    expect(isValidHttpUrl('https://ficus.example.com')).toBe(true)
     expect(isValidHttpUrl('http://1.2.3.4:3000')).toBe(true)
     expect(isValidHttpUrl('http://localhost:3000')).toBe(true)
-    expect(isValidHttpUrl('ftp://tau.example.com')).toBe(false)
+    expect(isValidHttpUrl('ftp://ficus.example.com')).toBe(false)
     expect(isValidHttpUrl('not a url')).toBe(false)
   })
 })

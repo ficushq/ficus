@@ -158,7 +158,7 @@ test('import/export round trip is bounded, rejects malicious files before readin
 })
 
 test('preview isolation, inheritance, alpha/fractions/sentinels, graph/xterm live updates and reset', async () => {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   let dispose: (() => void) | undefined
   let unsubscribe: (() => void) | undefined
   try {
@@ -222,7 +222,7 @@ test('preview isolation, inheritance, alpha/fractions/sentinels, graph/xterm liv
 })
 
 test('a light/dark pair resolves the correct side per requested appearance', async () => {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   try {
     const style = document.createElement('style')
     style.textContent = palettes
@@ -257,7 +257,7 @@ test('a light/dark pair resolves the correct side per requested appearance', asy
 })
 
 test('application revalidates, rejects injection before any mutation, cleans partially applied properties on throw', async () => {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   try {
     const element = document.createElement('div')
     for (const variants of [
@@ -299,7 +299,7 @@ test('shipped pre-paint custom matrix (v2 pair) and broken-document fallback run
   const script = readFileSync(new URL('../../index.html', import.meta.url), 'utf8').match(
     /<script data-ficus-theme-flash>([\s\S]*?)<\/script>/
   )![1]!
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   try {
     for (const p of palettes) {
       const patch = { ...custom.variants.dark, '--brand-tile': '#123456' }
@@ -352,7 +352,7 @@ test('pre-paint bundle stays independent of unrelated shared runtime exports', a
 })
 
 test('a palette derives most tokens from the real built-in CSS cascade, explicit overrides still win', async () => {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   try {
     const style = document.createElement('style')
     style.textContent = palettes
@@ -394,7 +394,7 @@ test('the pre-paint flash script skips palette derivation (no reliable computed 
   const script = readFileSync(new URL('../../index.html', import.meta.url), 'utf8').match(
     /<script data-ficus-theme-flash>([\s\S]*?)<\/script>/
   )![1]!
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   try {
     const doc: CustomThemeDocument = {
       format: 'ficus-custom-theme',
@@ -599,7 +599,7 @@ test('clearCustomTheme also clears the resolved snapshot', async () => {
 })
 
 test('applyCustomTheme returns the exact compiled vars it applied, for the caller to persist as a snapshot', async () => {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   try {
     const element = document.createElement('div')
     const vars = applyCustomTheme(element, custom, 'dark')

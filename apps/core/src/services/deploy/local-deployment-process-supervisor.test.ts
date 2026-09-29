@@ -76,7 +76,7 @@ class FakeSandboxManager implements ISandboxManager {
 describe('LocalDeploymentProcessSupervisor', () => {
   it('uses root FICUS_APP_BASE_PATH in hosted mode without changing launch inputs', async () => {
     const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
-    process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
+    process.env.FICUS_APPS_DOMAIN = 'ficus.app'
 
     try {
       const manager = new FakeSandboxManager()

@@ -128,7 +128,7 @@ describe('createSquadBashTool', () => {
       // agentId is what pins the shell to this agent's own CLI auth store rather
       // than the operator's ~/.tau/cli/auth.json.
       expect(host).toHaveBeenCalledWith(expectedWorkspaceMount, {
-        tauToken: 'tok',
+        ficusToken: 'tok',
         squadId: 'S4',
         agentId: 'agent-host',
       })

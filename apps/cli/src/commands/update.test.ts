@@ -80,10 +80,10 @@ describe('update apply offline fallback', () => {
       Promise.reject(Object.assign(new Error('Unable to connect'), { code: 'ConnectionRefused' }))
     )
     const offline = mock(async () => ({ before: 'a', after: 'b' }))
-    await runWith(localDeps(offline, { apiUrl: () => 'https://demo.hiretau.ai' }), ['update', 'apply'])
+    await runWith(localDeps(offline, { apiUrl: () => 'https://demo.ficus.sh' }), ['update', 'apply'])
     expect(offline).not.toHaveBeenCalled()
     const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
-    expect(error.message).toContain('https://demo.hiretau.ai is unreachable')
+    expect(error.message).toContain('https://demo.ficus.sh is unreachable')
     expect(error.message).toContain('ficus server update')
   })
   it("never falls back when the loopback port is not the checkout's port", async () => {

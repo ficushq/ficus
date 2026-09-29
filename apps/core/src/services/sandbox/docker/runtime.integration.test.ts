@@ -17,7 +17,7 @@ function startArgs(name: string, extra: string[] = []): string[] {
     '--name',
     name,
     '--label',
-    `tau.test-owner=${owner}`,
+    `ficus.test-owner=${owner}`,
     '-p',
     '127.0.0.1::50051',
     '-e',
@@ -123,7 +123,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
   test('old/missing executor fixture has no token or health endpoint', async () => {
     const name = `tau-old-${owner}`
     const started = runOwnedDocker(
-      ['run', '-d', '--name', name, '--label', `tau.test-owner=${owner}`, '--entrypoint', 'sleep', image, '60'],
+      ['run', '-d', '--name', name, '--label', `ficus.test-owner=${owner}`, '--entrypoint', 'sleep', image, '60'],
       owner
     )
     expect(started.exitCode).toBe(0)
@@ -138,7 +138,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
     try {
       expect(
         runOwnedDocker(
-          ['run', '-d', '--name', name, '--label', `tau.test-owner=${owner}`, '--entrypoint', 'sleep', image, '60'],
+          ['run', '-d', '--name', name, '--label', `ficus.test-owner=${owner}`, '--entrypoint', 'sleep', image, '60'],
           owner
         ).exitCode
       ).toBe(0)
@@ -147,7 +147,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
           [
             'commit',
             '--change',
-            `LABEL tau.test-owner=${owner}`,
+            `LABEL ficus.test-owner=${owner}`,
             '--change',
             'LABEL io.hiretau.sandbox.runtime-contract=0',
             name,
@@ -166,7 +166,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
           [
             'commit',
             '--change',
-            `LABEL tau.test-owner=${owner}`,
+            `LABEL ficus.test-owner=${owner}`,
             '--change',
             'LABEL io.hiretau.sandbox.runtime-contract=1',
             name,
@@ -226,7 +226,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
       firstImageId = runOwnedDocker(['image', 'inspect', '-f', '{{.Id}}', mutableTag], owner).stdout.toString().trim()
 
       expect(
-        runOwnedDocker(['commit', '--change', `LABEL tau.test-owner=${owner}`, firstContainer, mutableTag], owner)
+        runOwnedDocker(['commit', '--change', `LABEL ficus.test-owner=${owner}`, firstContainer, mutableTag], owner)
           .exitCode
       ).toBe(0)
       secondImageId = runOwnedDocker(['image', 'inspect', '-f', '{{.Id}}', mutableTag], owner).stdout.toString().trim()
@@ -282,7 +282,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
             '--name',
             name,
             '--label',
-            `tau.test-owner=${neighborOwner}`,
+            `ficus.test-owner=${neighborOwner}`,
             '--entrypoint',
             'sleep',
             image,

@@ -23,13 +23,13 @@ describe('GitHub App authorization client', () => {
     const { client } = fixture([])
     const url = client.buildAuthorizationUrl({
       clientId: 'Iv1.public',
-      redirectUri: 'https://tau.test/callback',
+      redirectUri: 'https://ficus.test/callback',
       state: 'opaque',
     })
     expect(url.origin + url.pathname).toBe('https://github.com/login/oauth/authorize')
     expect(Object.fromEntries(url.searchParams)).toEqual({
       client_id: 'Iv1.public',
-      redirect_uri: 'https://tau.test/callback',
+      redirect_uri: 'https://ficus.test/callback',
       state: 'opaque',
       prompt: 'select_account',
     })

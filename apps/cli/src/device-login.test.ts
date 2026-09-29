@@ -9,7 +9,7 @@ describe('device login client', () => {
         status: 200,
         body: {
           deviceCode: 'poll-secret',
-          verificationUri: 'https://tau.test/settings#device_request=verify',
+          verificationUri: 'https://ficus.test/settings#device_request=verify',
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           interval: 1,
         },
@@ -27,7 +27,7 @@ describe('device login client', () => {
     }
     const opened: string[] = []
     const result = await loginWithDeviceAuthorization({
-      apiUrl: 'https://tau.test',
+      apiUrl: 'https://ficus.test',
       name: 'Ficus CLI on atlas',
       fetchImpl,
       sleep: async () => {},
@@ -37,11 +37,11 @@ describe('device login client', () => {
       },
     })
     expect(result.token).toBe('ficus_dev_secret')
-    expect(opened).toEqual(['https://tau.test/settings#device_request=verify'])
+    expect(opened).toEqual(['https://ficus.test/settings#device_request=verify'])
     expect(calls.map((call) => call.url)).toEqual([
-      'https://tau.test/api/auth/device/start',
-      'https://tau.test/api/auth/device/token',
-      'https://tau.test/api/auth/device/token',
+      'https://ficus.test/api/auth/device/start',
+      'https://ficus.test/api/auth/device/token',
+      'https://ficus.test/api/auth/device/token',
     ])
     expect(JSON.stringify(calls)).not.toContain('Authorization')
   })
@@ -55,7 +55,7 @@ describe('device login client', () => {
       if (String(url).endsWith('/device/start')) {
         return Response.json({
           deviceCode: 'poll-secret',
-          verificationUri: 'https://tau.test/settings#device_request=verify',
+          verificationUri: 'https://ficus.test/settings#device_request=verify',
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           interval: 5,
         })
@@ -70,7 +70,7 @@ describe('device login client', () => {
       })
     }
     await loginWithDeviceAuthorization({
-      apiUrl: 'https://tau.test',
+      apiUrl: 'https://ficus.test',
       name: 'CLI',
       fetchImpl,
       sleep: async (ms) => {
@@ -89,7 +89,7 @@ describe('device login client', () => {
   it('revokes with the backend bearer and treats 404 as already gone', async () => {
     let request: RequestInit | undefined
     const ok = await revokeDeviceAuthorization({
-      apiUrl: 'https://tau.test',
+      apiUrl: 'https://ficus.test',
       password: 'secret',
       deviceId: 'd1',
       fetchImpl: async (_url, init) => {

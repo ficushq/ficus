@@ -13,7 +13,7 @@ import { classifyResponseHeaders } from '../services/provider-health/header-sign
 import { providerHealth } from '../services/provider-health/registry'
 import { setAgentSelectedModel } from './Agent'
 import { resolveWorkspaceLayout } from '../services/sandbox/workspace-layout'
-import { TauResourceLoader } from '../services/agent'
+import { FicusResourceLoader } from '../services/agent'
 import {
   AccountScopedCredentialStore,
   createAccountScopedCredentialStore,
@@ -154,7 +154,7 @@ export class AgentSession {
       onStoredToolResult
     )
 
-    const resourceLoader = await TauResourceLoader.create(systemPrompt, skillPaths, extensionPaths)
+    const resourceLoader = await FicusResourceLoader.create(systemPrompt, skillPaths, extensionPaths)
     const sessionManager = storage
       ? // If storage is provided, use the session manager for the agent ID and sandbox workspace path. If no sandbox, it will just use the session directory, which is fine—it shouldn't be used for anything.
         openOrCreateSession(storage.agentId, sandbox?.workspacePath)

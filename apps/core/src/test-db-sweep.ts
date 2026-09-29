@@ -9,7 +9,7 @@
  * disk via container/volumes). This module reaps them.
  *
  * Orphan detection, two generations:
- * - New containers carry a `dev.tau.test-db.repo-root` label (set via
+ * - New containers carry a `dev.ficus.test-db.repo-root` label (set via
  *   TEST_REPO_ROOT at `up` time): orphan iff that path no longer exists.
  * - Legacy containers (no label) can't be reversed from the hash: orphan iff
  *   the hash matches none of this repo's live worktree paths (`git worktree
@@ -21,14 +21,14 @@
 import { createHash } from 'crypto'
 import { existsSync } from 'fs'
 
-export const TEST_DB_LABEL = 'dev.tau.test-db'
-export const TEST_DB_REPO_ROOT_LABEL = 'dev.tau.test-db.repo-root'
+export const TEST_DB_LABEL = 'dev.ficus.test-db'
+export const TEST_DB_REPO_ROOT_LABEL = 'dev.ficus.test-db.repo-root'
 const PROJECT_PREFIX = 'tau-test-'
 
 export interface TestDbContainer {
   /** compose project name, e.g. tau-test-2ff43b29 */
   project: string
-  /** value of dev.tau.test-db.repo-root, '' when unlabeled (legacy) */
+  /** value of dev.ficus.test-db.repo-root, '' when unlabeled (legacy) */
   repoRoot: string
 }
 

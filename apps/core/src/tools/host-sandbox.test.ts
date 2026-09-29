@@ -176,7 +176,7 @@ describe('host sandboxed coding tools', () => {
     // agent's own command can read. Names reused across commands would let
     // command 1 learn them and command 2's squad env assign them, restoring the
     // exact override this whole mechanism exists to stop.
-    const bash = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD, tauToken: 'tok' })
+    const bash = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD, ficusToken: 'tok' })
     // The trailing `:` matters: bash exec-optimizes a lone simple command,
     // replacing its own argv with `ps`'s, and the preamble would vanish from
     // the very listing we are reading.

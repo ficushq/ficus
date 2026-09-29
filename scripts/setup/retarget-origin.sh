@@ -2,7 +2,7 @@
 # retarget-origin.sh — ON-TARGET tau retarget primitive.
 #
 # Moves an ALREADY SET UP, RUNNING tau host to a new public origin (e.g. a
-# tenant subdomain moving from hiretau.ai to ficus.sh) without re-running
+# tenant subdomain moving from ficus.sh to ficus.sh) without re-running
 # setup-host.sh. A full re-run cannot work on a hosted tenant: setup-host.sh
 # needs secrets that are deleted from the box after provisioning, re-syncs
 # source.ref (which would roll the box back to whatever the on-VM yaml still

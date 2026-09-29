@@ -21,7 +21,7 @@ test('Core docs serve on hosted and self-hosted origins without falling into the
     app.get('/api/health', (c) => c.json({ ok: true }))
     mountCoreDocs(app, root)
     app.get('*', (c) => c.text('SPA'))
-    for (const origin of ['https://tenant.hiretau.ai', 'http://localhost:3000']) {
+    for (const origin of ['https://tenant.ficus.sh', 'http://localhost:3000']) {
       const redirect = await app.request(`${origin}/docs?mode=cloud`)
       expect(redirect.status).toBe(308)
       expect(redirect.headers.get('location')).toBe('/docs/?mode=cloud')

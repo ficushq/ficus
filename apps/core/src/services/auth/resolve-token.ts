@@ -103,10 +103,10 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
   // env-held bootstrap password recover a cross-subdomain restore, where the
   // admin/role rows survive but every origin-bound WebAuthn credential is dead.
   const secretStore = getSecretStore()
-  const tauPassword = secretStore.get('FICUS_PASSWORD')
-  if (tauPassword) {
+  const ficusPassword = secretStore.get('FICUS_PASSWORD')
+  if (ficusPassword) {
     const tokenDigest = Buffer.from(tokenHash, 'hex')
-    const passwordDigest = Buffer.from(hashToken(tauPassword), 'hex')
+    const passwordDigest = Buffer.from(hashToken(ficusPassword), 'hex')
     if (tokenDigest.length === passwordDigest.length && timingSafeEqual(tokenDigest, passwordDigest)) {
       const passkeyExists = await adminHasPasskey()
       if (!passkeyExists) {

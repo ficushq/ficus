@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Tau Core Docker Image
+# Ficus Core Docker Image
 #
 # Multi-stage build producing a single image that can run as any of 3 services
 # via the CMD override. This keeps images in sync and simplifies CI.
@@ -103,7 +103,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # OCI image metadata
-LABEL org.opencontainers.image.title="Tau" \
+LABEL org.opencontainers.image.title="Ficus" \
       org.opencontainers.image.source="https://github.com/ficushq/tau" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
 

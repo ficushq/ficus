@@ -28,7 +28,7 @@ export default [
       'machine/**',
       // Vendored pristine Pi source overlays (patches/pi-coding-agent-0.87.1-source/**):
       // byte-identical upstream source that the regeneration gate rebuilds the
-      // committed patch from. Reformatting to Tau style would break the byte-match
+      // committed patch from. Reformatting to Ficus style would break the byte-match
       // the no-drift check depends on.
       'patches/pi-coding-agent-0.87.1-source/**',
     ],

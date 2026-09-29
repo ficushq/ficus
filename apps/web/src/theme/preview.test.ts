@@ -5,7 +5,7 @@ import { findWebTheme } from './registry'
 import type { CustomThemeDocument } from '@ficus/shared'
 
 test('paintRoot applies a plain built-in, then layers a valid custom document; an invalid one falls back cleanly', async () => {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   try {
     const root = document.documentElement
     paintRoot(root, findWebTheme('harbor'), 'dark', null)

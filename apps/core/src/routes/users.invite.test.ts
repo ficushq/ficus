@@ -129,11 +129,11 @@ describe('POST /api/users sends the invite', () => {
   it('names the instance in the subject, like the verification email does', async () => {
     process.env.SES_FROM_ADDRESS = 'noreply@test.local'
     const priorAppUrl = process.env.APP_URL
-    process.env.APP_URL = 'https://demo.hiretau.ai'
+    process.env.APP_URL = 'https://demo.ficus.sh'
     try {
       await invite({ email: newEmail() })
       const command = sesSendMock.mock.calls[0]?.[0] as { input: { Message: { Subject: { Data: string } } } }
-      expect(command.input.Message.Subject.Data).toContain('demo.hiretau.ai')
+      expect(command.input.Message.Subject.Data).toContain('demo.ficus.sh')
     } finally {
       if (priorAppUrl === undefined) delete process.env.APP_URL
       else process.env.APP_URL = priorAppUrl

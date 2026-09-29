@@ -67,9 +67,9 @@ export function saveAuthStore(store: AuthStore, path = getAuthStorePath()): void
   const dirExists = existsSync(dir)
 
   if (isDefaultPath) {
-    const tauDir = dirname(dir)
-    mkdirSync(tauDir, { recursive: true, mode: 0o700 })
-    chmodSync(tauDir, 0o700)
+    const ficusDir = dirname(dir)
+    mkdirSync(ficusDir, { recursive: true, mode: 0o700 })
+    chmodSync(ficusDir, 0o700)
   }
 
   mkdirSync(dir, { recursive: true, mode: 0o700 })

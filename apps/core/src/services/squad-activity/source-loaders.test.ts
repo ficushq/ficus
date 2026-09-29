@@ -573,7 +573,7 @@ describe('tracked GitHub issue source pagination', () => {
         payload: {
           ...payload,
           action: 'created',
-          comment: { id: 5502, created_at: '2026-09-10T07:00:00Z', user: { login: 'tauagent' } },
+          comment: { id: 5502, created_at: '2026-09-10T07:00:00Z', user: { login: 'ficusagent' } },
         },
         headers: {},
         verified: true,

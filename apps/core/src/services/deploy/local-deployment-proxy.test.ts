@@ -31,7 +31,7 @@ describe('localDeployment proxy', () => {
   })
 
   function localDeploymentUrl(localDeployment: { urlPathOrHost: string }, path = '', query = ''): string {
-    const url = new URL(`http://tau.test${localDeployment.urlPathOrHost}`)
+    const url = new URL(`http://ficus.test${localDeployment.urlPathOrHost}`)
     url.pathname = `${url.pathname.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
     if (query) {
       for (const [key, value] of new URLSearchParams(query)) url.searchParams.set(key, value)
@@ -41,7 +41,7 @@ describe('localDeployment proxy', () => {
 
   /** The token is not on the DTO; it rides the URL Ficus hands the browser. */
   function browserToken(localDeployment: { urlPathOrHost: string }): string {
-    return new URL(`http://tau.test${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token') ?? ''
+    return new URL(`http://ficus.test${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token') ?? ''
   }
 
   async function createTestSquad(): Promise<Squad> {
@@ -55,7 +55,7 @@ describe('localDeployment proxy', () => {
   it('refuses missing localDeployments', async () => {
     const response = await proxyLocalDeploymentRequest(
       '00000000-0000-0000-0000-000000000000',
-      new Request('http://tau.test/api/app/missing/'),
+      new Request('http://ficus.test/api/app/missing/'),
       ''
     )
 
@@ -71,7 +71,7 @@ describe('localDeployment proxy', () => {
 
     const response = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://tau.test/api/app/${localDeployment.id}/`),
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/`),
       ''
     )
 
@@ -87,12 +87,12 @@ describe('localDeployment proxy', () => {
 
     const missing = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://tau.test/api/app/${localDeployment.id}/`),
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/`),
       ''
     )
     const invalid = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://tau.test/api/app/${localDeployment.id}/?_tau_token=wrong`),
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_tau_token=wrong`),
       ''
     )
 
@@ -226,7 +226,7 @@ describe('localDeployment proxy', () => {
     // No query string: exactly what the browser sends for /assets/index-*.js.
     const res = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://tau.test/api/app/${localDeployment.id}/assets/index-abc.js`, {
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/assets/index-abc.js`, {
         headers: { cookie: `ficus_app_${localDeployment.id}=${browserToken(localDeployment)}` },
       }),
       'assets/index-abc.js'
@@ -244,7 +244,7 @@ describe('localDeployment proxy', () => {
 
     const res = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://tau.test/api/app/${localDeployment.id}/assets/x.js`, {
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/assets/x.js`, {
         headers: { cookie: `ficus_app_${localDeployment.id}=nope` },
       }),
       'assets/x.js'
@@ -289,7 +289,7 @@ describe('localDeployment proxy', () => {
     // short-circuited the token check and proxied (201). Must now be 401.
     const noToken = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://tau.test/api/app/${localDeployment.id}/`, {
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/`, {
         headers: { authorization: 'Bearer tau-session' },
       }),
       ''
@@ -299,7 +299,7 @@ describe('localDeployment proxy', () => {
     // Wrong token, also rejected — never reaches the upstream fetch.
     const wrongToken = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://tau.test/api/app/${localDeployment.id}/?_tau_token=wrong`, {
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_tau_token=wrong`, {
         headers: { authorization: 'Bearer tau-session' },
       }),
       ''

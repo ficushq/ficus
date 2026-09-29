@@ -72,7 +72,7 @@ test -f "$PATCH_ARTIFACT" || { echo "Missing committed patch artifact" >&2; exit
 cp "$PATCH_ARTIFACT" "$ORIGINAL_PATCH"
 
 FICUS_VERSION="$(node -p "require('./apps/core/package.json').dependencies['$PACKAGE']")"
-test "$FICUS_VERSION" = 0.87.1 || { echo "Expected Tau dependency 0.87.1" >&2; exit 1; }
+test "$FICUS_VERSION" = 0.87.1 || { echo "Expected Ficus dependency 0.87.1" >&2; exit 1; }
 
 manifest_outputs() {
   local root="$1"

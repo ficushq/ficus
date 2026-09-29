@@ -207,7 +207,7 @@ test('webhook secret saves through Integrations and the entered value is cleared
   const requests: { url: string; body: string }[] = []
   globalThis.fetch = (async (input, init) => {
     requests.push({ url: String(input), body: String(init?.body ?? '') })
-    return Response.json({ configured: true, webhookUrl: 'https://tau.example/api/webhooks/github' })
+    return Response.json({ configured: true, webhookUrl: 'https://ficus.example/api/webhooks/github' })
   }) as typeof fetch
   const { root, container } = harness.createRoot()
   await harness.act(async () =>

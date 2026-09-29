@@ -87,18 +87,18 @@ describe('verification email names the instance', () => {
   }
 
   it('puts the instance host in the subject and its URL in both bodies', async () => {
-    process.env.APP_URL = 'https://demo.hiretau.ai'
+    process.env.APP_URL = 'https://demo.ficus.sh'
     await sendVerificationEmail('who@example.com')
     const message = lastSentMessage()
-    expect(message.Subject.Data).toBe('Your Ficus verification code for demo.hiretau.ai')
-    expect(message.Body.Text.Data).toContain('https://demo.hiretau.ai')
-    expect(message.Body.Html.Data).toContain('https://demo.hiretau.ai')
+    expect(message.Subject.Data).toBe('Your Ficus verification code for demo.ficus.sh')
+    expect(message.Body.Text.Data).toContain('https://demo.ficus.sh')
+    expect(message.Body.Html.Data).toContain('https://demo.ficus.sh')
   })
 
   it('names the instance URL exactly once in the text body (not spammy)', async () => {
-    process.env.APP_URL = 'https://demo.hiretau.ai'
+    process.env.APP_URL = 'https://demo.ficus.sh'
     await sendVerificationEmail('who@example.com')
-    const occurrences = lastSentMessage().Body.Text.Data.split('https://demo.hiretau.ai').length - 1
+    const occurrences = lastSentMessage().Body.Text.Data.split('https://demo.ficus.sh').length - 1
     expect(occurrences).toBe(1)
   })
 
@@ -120,8 +120,8 @@ describe('verification email names the instance', () => {
   })
 
   it('instanceIdentity strips a trailing slash and reports the bare host', () => {
-    process.env.APP_URL = 'https://demo.hiretau.ai/'
-    expect(instanceIdentity()).toEqual({ url: 'https://demo.hiretau.ai', host: 'demo.hiretau.ai' })
+    process.env.APP_URL = 'https://demo.ficus.sh/'
+    expect(instanceIdentity()).toEqual({ url: 'https://demo.ficus.sh', host: 'demo.ficus.sh' })
     process.env.APP_URL = 'https://home.example.com:8443/tau'
     expect(instanceIdentity()).toEqual({ url: 'https://home.example.com:8443/tau', host: 'home.example.com:8443' })
     delete process.env.APP_URL
@@ -132,7 +132,7 @@ describe('verification email names the instance', () => {
   // viewport, so a manual break mid-sentence wraps AGAIN on a phone. Every
   // non-empty line must therefore be a whole paragraph, blank-line separated.
   it('keeps the text body free of hard wraps inside sentences', () => {
-    for (const instance of [{ url: 'https://demo.hiretau.ai', host: 'demo.hiretau.ai' }, null]) {
+    for (const instance of [{ url: 'https://demo.ficus.sh', host: 'demo.ficus.sh' }, null]) {
       for (const ttlMs of [DEFAULT_VERIFICATION_TTL_MS, 7 * 24 * 60 * 60 * 1000]) {
         const lines = buildVerificationMessage('123456', instance, ttlMs).Body.Text.Data.split('\n')
         for (const line of lines) {
@@ -327,7 +327,7 @@ describe('isEmailAllowed', () => {
 // UI won't let them do.
 
 describe('invite email is link-only', () => {
-  const link = 'https://demo.hiretau.ai/register?token=abc123'
+  const link = 'https://demo.ficus.sh/register?token=abc123'
 
   function bodies() {
     const message = buildInviteMessage(link, null, INVITE_CHALLENGE_TTL_MS)
@@ -378,7 +378,7 @@ describe('invite email is link-only', () => {
 
 describe('passkey-recovery email is link-only too', () => {
   it('advertises no code and no sign-in-page code entry', () => {
-    const message = buildPasskeyRecoveryMessage('https://demo.hiretau.ai/register?token=xyz', null, 3600000)
+    const message = buildPasskeyRecoveryMessage('https://demo.ficus.sh/register?token=xyz', null, 3600000)
     const text = message.Body.Text.Data
     const html = message.Body.Html.Data
     for (const body of [text, html]) {

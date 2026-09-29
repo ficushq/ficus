@@ -141,11 +141,11 @@ describe('maybeMountWebUi', () => {
       })
       expect(await forwarded.text()).toContain('content="https://team.example.com/social-preview.png"')
 
-      process.env.FICUS_WEB_ORIGIN = 'https://tau.example.org/'
+      process.env.FICUS_WEB_ORIGIN = 'https://ficus.example.org/'
       const configured = await app.request('http://127.0.0.1:3000/', {
         headers: { 'x-forwarded-host': 'ignored.example.com' },
       })
-      expect(await configured.text()).toContain('content="https://tau.example.org/social-preview.png"')
+      expect(await configured.text()).toContain('content="https://ficus.example.org/social-preview.png"')
     })
 
     it('renders the placeholder on the SPA fallback too', async () => {

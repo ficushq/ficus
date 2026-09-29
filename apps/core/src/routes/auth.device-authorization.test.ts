@@ -133,7 +133,7 @@ describe('device authorization routes', () => {
   })
 
   it('rejects a plain-HTTP non-loopback web origin', async () => {
-    await withWebOrigin('http://tau.example.com', async () => {
+    await withWebOrigin('http://ficus.example.com', async () => {
       const response = await app.request('/api/auth/device/start', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -147,24 +147,24 @@ describe('device authorization routes', () => {
   // terminated by a reverse proxy in front of core (so the request core sees is plain http).
   // Deriving the origin from the request would answer 400 on every HTTPS deployment.
   it('starts a grant for a CLI behind a TLS-terminating proxy (no Origin, non-loopback Host)', async () => {
-    await withWebOrigin('https://tau.example.com', async () => {
-      const response = await app.request('http://tau.example.com/api/auth/device/start', {
+    await withWebOrigin('https://ficus.example.com', async () => {
+      const response = await app.request('http://ficus.example.com/api/auth/device/start', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          host: 'tau.example.com',
+          host: 'ficus.example.com',
           'x-forwarded-proto': 'https',
         },
         body: JSON.stringify({ name: 'Ficus CLI on atlas' }),
       })
       expect(response.status).toBe(200)
       const grant = (await response.json()) as { verificationUri: string }
-      expect(grant.verificationUri).toStartWith('https://tau.example.com/settings?section=devices#device_request=')
+      expect(grant.verificationUri).toStartWith('https://ficus.example.com/settings?section=devices#device_request=')
     })
   })
 
   it('ignores a caller-supplied Origin instead of reflecting it into the verification URI', async () => {
-    await withWebOrigin('https://tau.example.com', async () => {
+    await withWebOrigin('https://ficus.example.com', async () => {
       const response = await app.request('/api/auth/device/start', {
         method: 'POST',
         headers: { 'content-type': 'application/json', origin: 'https://evil.example.com' },
@@ -172,13 +172,13 @@ describe('device authorization routes', () => {
       })
       expect(response.status).toBe(200)
       const grant = (await response.json()) as { verificationUri: string }
-      expect(grant.verificationUri).toStartWith('https://tau.example.com/')
+      expect(grant.verificationUri).toStartWith('https://ficus.example.com/')
       expect(grant.verificationUri).not.toContain('evil.example.com')
     })
   })
 
   it('does not fail with a server error on an unparseable Origin', async () => {
-    await withWebOrigin('https://tau.example.com', async () => {
+    await withWebOrigin('https://ficus.example.com', async () => {
       const response = await app.request('/api/auth/device/start', {
         method: 'POST',
         headers: { 'content-type': 'application/json', origin: 'null' },
@@ -200,7 +200,7 @@ describe('device authorization routes', () => {
   })
 
   it('starts desktop grants, echoes the platform, and rejects unknown platforms', async () => {
-    await withWebOrigin('https://tau.example.test', async () => {
+    await withWebOrigin('https://ficus.example.test', async () => {
       const start = await app.request('/api/auth/device/start', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

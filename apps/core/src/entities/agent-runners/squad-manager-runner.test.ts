@@ -44,10 +44,10 @@ class TestableSquadManagerRunner extends SquadManagerRunner {
   protected override createCodingTools(
     workspacePath: string,
     sandboxId: string,
-    tauToken?: string,
+    ficusToken?: string,
     squadId?: string
   ): any[] {
-    codingToolCalls.push([workspacePath, sandboxId, tauToken, squadId])
+    codingToolCalls.push([workspacePath, sandboxId, ficusToken, squadId])
     return [{ name: 'bash' }]
   }
 
@@ -55,9 +55,9 @@ class TestableSquadManagerRunner extends SquadManagerRunner {
     warmSandboxId: string,
     workspaceHostPath: string,
     squadId: string,
-    tauToken?: string
+    ficusToken?: string
   ): any {
-    squadBashCalls.push([warmSandboxId, workspaceHostPath, squadId, tauToken])
+    squadBashCalls.push([warmSandboxId, workspaceHostPath, squadId, ficusToken])
     return { name: 'squad_bash', key: 'squad_bash' }
   }
 }

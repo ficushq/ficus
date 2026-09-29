@@ -196,7 +196,10 @@ describe('resendInviteFeedback', () => {
   })
 
   test('stays quiet when the link itself came back — the link panel says it instead', () => {
-    const feedback = resendInviteFeedback({ isError: false, data: { inviteUrl: 'https://tau.test/register?token=x' } })
+    const feedback = resendInviteFeedback({
+      isError: false,
+      data: { inviteUrl: 'https://ficus.test/register?token=x' },
+    })
     expect(feedback.message).toBeNull()
   })
 

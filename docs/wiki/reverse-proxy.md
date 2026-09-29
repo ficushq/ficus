@@ -42,7 +42,7 @@ any config that serves `apps/web/dist` itself.
 ### Single-origin Core
 
 ```caddyfile
-tau.example.com {
+ficus.example.com {
   reverse_proxy 127.0.0.1:3000
 }
 ```
@@ -50,7 +50,7 @@ tau.example.com {
 ### Split web/API ports
 
 ```caddyfile
-tau.example.com {
+ficus.example.com {
   handle /api/* {
     reverse_proxy 127.0.0.1:3000
   }
@@ -112,7 +112,7 @@ builds.
 ```nginx
 server {
   listen 80;
-  server_name tau.example.com;
+  server_name ficus.example.com;
 
   location /api/ {
     proxy_pass http://127.0.0.1:3000;
@@ -183,7 +183,7 @@ services:
       FICUS_SERVE_WEB: '1'
     labels:
       - traefik.enable=true
-      - traefik.http.routers.tau.rule=Host(`tau.example.com`)
+      - traefik.http.routers.tau.rule=Host(`ficus.example.com`)
       - traefik.http.routers.tau.entrypoints=websecure
       - traefik.http.routers.tau.tls.certresolver=letsencrypt
       - traefik.http.services.tau.loadbalancer.server.port=3000

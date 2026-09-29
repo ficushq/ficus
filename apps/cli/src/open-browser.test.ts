@@ -5,7 +5,7 @@ describe('openBrowser', () => {
   it('passes the URL as a separate process argument', async () => {
     let command: string[] = []
     expect(
-      await openBrowser('https://tau.test/a?b=c', {
+      await openBrowser('https://ficus.test/a?b=c', {
         platform: 'linux',
         spawn: async (args) => {
           command = args
@@ -13,6 +13,6 @@ describe('openBrowser', () => {
         },
       })
     ).toBe(true)
-    expect(command).toEqual(['xdg-open', 'https://tau.test/a?b=c'])
+    expect(command).toEqual(['xdg-open', 'https://ficus.test/a?b=c'])
   })
 })

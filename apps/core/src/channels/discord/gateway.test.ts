@@ -35,7 +35,7 @@ describe('DiscordGateway mention routing', () => {
           id: 'thread-1',
           channelId: 'thread-1',
           originalMessageId: 'parent-1',
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
     } as unknown as Agent)
@@ -72,7 +72,7 @@ describe('DiscordGateway mention routing', () => {
           id: 'thread-1',
           channelId: 'thread-1',
           originalMessageId: 'parent-1',
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
     } as unknown as Agent)
@@ -150,7 +150,7 @@ describe('DiscordGateway mention routing', () => {
           id: 'thread-1',
           channelId: 'thread-1',
           originalMessageId: 'parent-1',
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
     } as unknown as Agent)

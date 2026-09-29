@@ -41,11 +41,11 @@ export class SubagentRunner extends AgentRunner {
     warmSandboxId: string,
     workspaceHostPath: string,
     squadId: string,
-    tauToken?: string,
+    ficusToken?: string,
     agentId = this.agent.id,
     executionId = this.execution.id
   ) {
-    return createSquadBashTool(warmSandboxId, workspaceHostPath, squadId, tauToken, agentId, executionId)
+    return createSquadBashTool(warmSandboxId, workspaceHostPath, squadId, ficusToken, agentId, executionId)
   }
 
   protected ensureLightSandbox(args: Parameters<typeof ensureWorkspaceSandbox>[0]): Promise<string> {
@@ -108,7 +108,7 @@ export class SubagentRunner extends AgentRunner {
       )
     }
 
-    const { tauToken, baseTools, sandboxStatusTool, shortTermMemoryTools } = await this.buildSessionToolkit({
+    const { ficusToken, baseTools, sandboxStatusTool, shortTermMemoryTools } = await this.buildSessionToolkit({
       workspacePath,
       sandboxId,
       squadId: this.agent.squadId ?? undefined,
@@ -117,7 +117,14 @@ export class SubagentRunner extends AgentRunner {
     const browserTools = createBrowserTools(this.agent.id, sandboxId)
     const squadBashTool =
       hasSquadBash && squad
-        ? this.createSquadBashTool(squad.sandboxId, workspacePath, squad.id, tauToken, this.agent.id, this.execution.id)
+        ? this.createSquadBashTool(
+            squad.sandboxId,
+            workspacePath,
+            squad.id,
+            ficusToken,
+            this.agent.id,
+            this.execution.id
+          )
         : null
     const environmentTools = [...baseTools, ...webTools, ...browserTools, ...(squadBashTool ? [squadBashTool] : [])]
     // Legacy children without a server-derived snapshot fail closed: lifecycle

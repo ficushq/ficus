@@ -92,7 +92,7 @@ export interface ThreadContext {
   channelId: string
   originalMessageId: string
   /** true if Ficus created this thread; threaded providers still require @mentions for follow-ups. */
-  tauCreated: boolean
+  ficusCreated: boolean
 }
 
 /**
@@ -121,7 +121,7 @@ export interface ResponseContext {
   /** Message ID to edit (e.g., "Thinking..." message) */
   messageToEdit?: string
   /** Whether Ficus initiated this thread */
-  tauInitiated?: boolean
+  ficusInitiated?: boolean
   /** Provider-specific extras */
   extras?: Record<string, unknown>
 }

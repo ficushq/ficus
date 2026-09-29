@@ -90,7 +90,7 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
   })
   const transport = createLocalTransport({
     resolveClientCredentials: () => ({ clientId: 'client-id', clientSecret: 'client-secret' }),
-    callbackUrl: () => 'https://tau.example/callback',
+    callbackUrl: () => 'https://ficus.example/callback',
   })
   const plugin = createNotionPlugin(notionClient)
   if (plugin.authorization.kind !== 'oauth2') throw new Error('oauth unavailable')
@@ -122,7 +122,7 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
       providerKey: 'notion',
       localFlowId: 'local-flow',
       code: 'code',
-      redirectUri: 'https://tau.example/callback',
+      redirectUri: 'https://ficus.example/callback',
     })
     const grant = {
       configuration: parseNotionConfiguration(exchanged.configuration),

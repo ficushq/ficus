@@ -333,7 +333,7 @@ rm -f "${tmp_env}"
 # without re-rendering the whole file (which would need secrets that are
 # deliberately unavailable off-box on a hosted tenant).
 tmp_env=$(mktemp)
-printf '# a comment\nAPP_URL=https://old.hiretau.ai\n\nFICUS_WEB_ORIGIN=https://old.hiretau.ai\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${tmp_env}"
+printf '# a comment\nAPP_URL=https://old.ficus.sh\n\nFICUS_WEB_ORIGIN=https://old.ficus.sh\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${tmp_env}"
 envfile_set "${tmp_env}" APP_URL 'https://acme.ficus.sh'
 envfile_set "${tmp_env}" FICUS_WEB_ORIGIN 'https://acme.ficus.sh'
 expect_eq 'envfile_set: updates the targeted keys' \
@@ -623,15 +623,15 @@ expect_eq 'retry_until times out' "$(retry_until 1 1 'never' false 2>/dev/null &
 # two cases are the PORT of the previous 'render_caddyfile without email' /
 # 'with email adds a global options block' pair (signature was HOST PORT
 # ACME_EMAIL): Let's Encrypt caps a registered domain at 50 certs/week across
-# every *.hiretau.ai subdomain, and issuance happens AFTER payment — so
+# every *.ficus.sh subdomain, and issuance happens AFTER payment — so
 # per-tenant ACME turns a rate limit into paid-but-broken tenants.
 expect_eq 'render_caddyfile serves the supplied origin certificate' \
-  "$(render_caddyfile 'tau.example.com' 3000 '/etc/caddy/tls/origin.crt' '/etc/caddy/tls/origin.key')" \
-  'tau.example.com {
+  "$(render_caddyfile 'ficus.example.com' 3000 '/etc/caddy/tls/origin.crt' '/etc/caddy/tls/origin.key')" \
+  'ficus.example.com {
     tls /etc/caddy/tls/origin.crt /etc/caddy/tls/origin.key
     reverse_proxy 127.0.0.1:3000
 }'
-caddy_rendered=$(render_caddyfile 'tau.example.com' 3000 '/etc/caddy/tls/origin.crt' '/etc/caddy/tls/origin.key')
+caddy_rendered=$(render_caddyfile 'ficus.example.com' 3000 '/etc/caddy/tls/origin.crt' '/etc/caddy/tls/origin.key')
 expect_eq 'render_caddyfile emits no ACME email / global options block' \
   "$([[ ${caddy_rendered} == *email* || ${caddy_rendered} == '{'* ]] && echo present || echo gone)" 'gone'
 
@@ -813,17 +813,17 @@ expect_eq 'dsn_host_port: portless dsn yields nothing (caller skips the probe)' 
 expect_eq 'dsn_host_port: empty dsn yields nothing' "$(dsn_host_port '')" ''
 
 expect_eq 'caddy_host_from_origin extracts host' \
-  "$(caddy_host_from_origin 'https://acme.hiretau.ai')" 'acme.hiretau.ai'
+  "$(caddy_host_from_origin 'https://acme.ficus.sh')" 'acme.ficus.sh'
 # die() calls exit, which would abort this whole test script if invoked
 # directly — run it in a real forked subshell so only that subshell dies, and
 # check its exit status from the outer (unaffected) shell.
 caddy_port_rc=0
-(caddy_host_from_origin 'https://acme.hiretau.ai:3000' >/dev/null 2>&1) || caddy_port_rc=$?
+(caddy_host_from_origin 'https://acme.ficus.sh:3000' >/dev/null 2>&1) || caddy_port_rc=$?
 expect_eq 'caddy_host_from_origin rejects an explicit port' "${caddy_port_rc}" '1'
 
 # --- origin_host --------------------------------------------------------------
 expect_eq 'origin_host strips scheme, no port' \
-  "$(origin_host 'https://acme.hiretau.ai')" 'acme.hiretau.ai'
+  "$(origin_host 'https://acme.ficus.sh')" 'acme.ficus.sh'
 expect_eq 'origin_host strips scheme and port' \
   "$(origin_host 'https://acme.exe.xyz:3000')" 'acme.exe.xyz'
 expect_eq 'origin_host handles http' \
@@ -950,7 +950,7 @@ source:
   repo: git@example.com:acme/tau.git
   dest: /opt/tau-core
 core:
-  origin: https://old.hiretau.ai
+  origin: https://old.ficus.sh
   port: 3000
   env: {}
 ingress:
@@ -1107,8 +1107,8 @@ EOF
   expect_not_secret 'an empty *_KEY_ID placeholder' 'PLATFORM_DO_SSH_KEY_ID' ''
   expect_not_secret 'a plain https endpoint' 'PLATFORM_BACKUP_S3_ENDPOINT' 'https://nyc3.digitaloceanspaces.com'
   expect_not_secret 'a connection URL with no inline password' 'SOME_URL' 'https://user@example.com/path'
-  expect_not_secret 'a bare domain' 'PLATFORM_TENANT_DOMAIN' 'hiretau.ai'
-  expect_not_secret 'an operator email' 'PLATFORM_OPERATOR_EMAIL' 'ops@hiretau.ai'
+  expect_not_secret 'a bare domain' 'PLATFORM_TENANT_DOMAIN' 'ficus.sh'
+  expect_not_secret 'an operator email' 'PLATFORM_OPERATOR_EMAIL' 'ops@ficus.sh'
   expect_not_secret 'a region' 'AWS_SES_REGION' 'us-east-1'
   expect_not_secret 'a *_ENV pointer naming an env var' 'STRIPE_SECRET_KEY_ENV' 'STRIPE_SECRET_KEY'
 
@@ -1435,7 +1435,7 @@ expect_eq 'PROVISION_EXIT_PERMANENT is the platform executor contract (66)' "${P
 
 # --- cloudflare pure helpers (parsers / idempotent-upsert branch / body) -----
 expect_eq 'cf_zone_id_from_list finds the zone id' \
-  "$(cf_zone_id_from_list '{"result":[{"id":"zone123","name":"hiretau.ai"}]}')" 'zone123'
+  "$(cf_zone_id_from_list '{"result":[{"id":"zone123","name":"ficus.sh"}]}')" 'zone123'
 expect_eq 'cf_zone_id_from_list yields nothing when the zone is not found' \
   "$(cf_zone_id_from_list '{"result":[]}')" ''
 
@@ -1450,10 +1450,10 @@ expect_eq 'cf_dns_record_id_from_list yields nothing when no record exists (crea
 # certificate in front of real browsers, which reject it. There is no
 # half-measure: proxied records and origin certs go together.
 expect_eq 'cf_dns_record_body shape (PROXIED A record — origin certs require the orange cloud)' \
-  "$(cf_dns_record_body 'acme.hiretau.ai' '1.2.3.4')" \
+  "$(cf_dns_record_body 'acme.ficus.sh' '1.2.3.4')" \
   '{
   "type": "A",
-  "name": "acme.hiretau.ai",
+  "name": "acme.ficus.sh",
   "content": "1.2.3.4",
   "proxied": true
 }'
@@ -1538,7 +1538,7 @@ provision:
     image: ubuntu-24.04
     ssh_key_name: platform-deploy
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.ficus.sh
 source:
   mode: git-https
 runtime:
@@ -1573,7 +1573,7 @@ provision:
     image: ubuntu-24-04-x64
     ssh_key_id: '12345'
 core:
-  origin: https://acme-do.hiretau.ai
+  origin: https://acme-do.ficus.sh
 source:
   mode: git-https
 runtime:
@@ -1596,7 +1596,7 @@ provision:
       - { size: s-1vcpu-2gb, region: sfo3 }
       - { size: s-2vcpu-2gb, region: nyc3 }
 core:
-  origin: https://acme-fb.hiretau.ai
+  origin: https://acme-fb.ficus.sh
 source:
   mode: git-https
 runtime:
@@ -1683,7 +1683,7 @@ provision:
     image: ubuntu-24.04
     ssh_key_name: platform-deploy
 core:
-  origin: https://acme-byo.hiretau.ai
+  origin: https://acme-byo.ficus.sh
 source:
   mode: git-https
 runtime:
@@ -1719,7 +1719,7 @@ provision:
     image: ubuntu-24.04
     ssh_key_name: platform-deploy
 core:
-  origin: https://acme-exe-cfg.hiretau.ai
+  origin: https://acme-exe-cfg.ficus.sh
 source:
   mode: git-https
 runtime:
@@ -1984,7 +1984,7 @@ provision:
     vpc_uuid: vpc-test-uuid
     project_id: proj-test-id
 core:
-  origin: https://acme-vpc.hiretau.ai
+  origin: https://acme-vpc.ficus.sh
 source:
   mode: git-https
 runtime:
@@ -2931,7 +2931,7 @@ source:
   repo: https://github.com/ficushq/tau.git
   ref: main
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.ficus.sh
 database:
   mode: external
 runtime:
@@ -3014,7 +3014,7 @@ source:
   repo: https://github.com/ficushq/tau.git
   ref: main
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.ficus.sh
 database:
   mode: external
 runtime:
@@ -3076,7 +3076,7 @@ source:
   repo: https://github.com/ficushq/tau.git
   ref: main
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.ficus.sh
 database:
   mode: external
 runtime:
@@ -3102,7 +3102,7 @@ source:
   repo: https://github.com/ficushq/tau.git
   ref: main
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.ficus.sh
 database:
   mode: external
 runtime:
@@ -3203,7 +3203,7 @@ source:
   repo: https://github.com/ficushq/tau.git
   ref: main
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.ficus.sh
 database:
   mode: external
 runtime:
@@ -3243,7 +3243,7 @@ source:
   repo: https://github.com/ficushq/tau.git
   ref: main
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.ficus.sh
 database:
   mode: external
 runtime:
@@ -3278,7 +3278,7 @@ source:
   repo: https://github.com/ficushq/tau.git
   ref: main
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.ficus.sh
 database:
   mode: external
 runtime:
@@ -3319,7 +3319,7 @@ source:
   ref: main
   dest: ${UH_TMP}/no-such-checkout
 core:
-  origin: https://tau.example.com
+  origin: https://ficus.example.com
   port: 3000
 EOF
   # SOME artifact inputs but not all: a delivery bug. Falling back to a source
@@ -5119,7 +5119,7 @@ expect_eq 'check_host_runtime_gh: silent for k8s even with old gh' \
 expect_match 'check_host_runtime_gh: warns for host with old gh' \
   "$(check_host_runtime_gh host 2>&1)" '2\.50\.0 is older than 2\.99\.0'
 # Warn, never abort: setup must survive an old gh, because gh is needed for one
-# agent capability rather than for running Tau.
+# agent capability rather than for running Ficus.
 expect_eq 'check_host_runtime_gh: old gh does not fail the caller' \
   "$(check_host_runtime_gh host >/dev/null 2>&1 && echo ok || echo died)" 'ok'
 

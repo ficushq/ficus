@@ -1,4 +1,4 @@
-# Tau Sandbox Base Image
+# Ficus Sandbox Base Image
 # Provides a Docker-in-Docker environment for agent execution.
 #
 # Supports two runtime modes:

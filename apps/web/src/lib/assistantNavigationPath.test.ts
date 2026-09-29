@@ -5,7 +5,10 @@ test('assistant navigation retains its text conversation while changing the unde
   const source =
     '/settings?section=providers&chat=open&commandStack=' +
     encodeURIComponent(JSON.stringify([['assistant', 'conversation']]))
-  const target = new URL(assistantNavigationPath('/settings?section=workflows#details', source), 'https://tau.invalid')
+  const target = new URL(
+    assistantNavigationPath('/settings?section=workflows#details', source),
+    'https://ficus.invalid'
+  )
   expect(target.searchParams.get('section')).toBe('workflows')
   expect(target.searchParams.get('chat')).toBe('open')
   expect(target.searchParams.get('commandStack')).toBe(JSON.stringify([['assistant', 'conversation']]))

@@ -132,7 +132,7 @@ describe('handleChannelEvent mention routing', () => {
         channelId: 'C123',
         threadId: '1710000000.000100',
         messageToEdit: '1710000000.000200',
-        tauInitiated: true,
+        ficusInitiated: true,
         extras: { teamId: 'T123' },
       },
     })
@@ -151,7 +151,7 @@ describe('handleChannelEvent mention routing', () => {
           id: '1710000000.000100',
           channelId: 'C123',
           originalMessageId: '1710000000.000100',
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
     } as unknown as Agent)
@@ -211,7 +211,7 @@ describe('handleChannelEvent mention routing', () => {
           channelId: 'C123',
           threadId: '1710000000.000100',
           messageToEdit: '1710000002.000300',
-          tauInitiated: false,
+          ficusInitiated: false,
           extras: { teamId: 'T123' },
         },
         userId: 'U123',
@@ -233,7 +233,7 @@ describe('handleChannelEvent mention routing', () => {
           id: '1710000000.000100',
           channelId: 'C123',
           originalMessageId: '1710000000.000100',
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
     } as unknown as Agent)

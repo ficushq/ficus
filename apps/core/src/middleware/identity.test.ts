@@ -58,7 +58,7 @@ describe('identityMiddleware', () => {
       .values({ name: `${PREFIX}-compact-${crypto.randomUUID()}`, purpose: 'Compact app auth test' })
       .returning()
     const localDeployment = await createLocalDeployment(new Squad(row), { name: 'web', port: 5173, mode: 'attached' })
-    const token = new URL(localDeployment.urlPathOrHost, 'http://tau.test').searchParams.get('_tau_token')!
+    const token = new URL(localDeployment.urlPathOrHost, 'http://ficus.test').searchParams.get('_tau_token')!
     const prefix = localDeployment.id.slice(0, 13)
     const app = new Hono()
     app.use('*', identityMiddleware)

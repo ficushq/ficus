@@ -99,13 +99,13 @@ export function createDockerSandboxedBashTool(
   cwd: string,
   workspacePath: string,
   sandboxId: string,
-  tauToken?: string
+  ficusToken?: string
 ): AgentTool<any> {
   const manager = getDockerManager()
   if (!manager.getClientForSandbox(sandboxId)) {
     throw new Error(`No sandbox executor found for ${sandboxId}. Ensure ensureSandbox() was called.`)
   }
-  return createK8sSandboxedBashTool(cwd, sandboxId, manager, tauToken)
+  return createK8sSandboxedBashTool(cwd, sandboxId, manager, ficusToken)
 }
 
 /** Canonical keys for sandboxed tools; use these in agent type YAML tools.allow / tools.deny. */
@@ -118,7 +118,7 @@ export const DOCKER_SANDBOXED_TOOL_KEYS = ['Read', 'Write', 'Edit', 'Bash'] as c
 export function createDockerSandboxedCodingTools(
   workspacePath: string,
   sandboxId: string,
-  tauToken?: string,
+  ficusToken?: string,
   squadId?: string,
   invocationOwnerId?: string,
   agentId?: string
@@ -138,7 +138,7 @@ export function createDockerSandboxedCodingTools(
     consultantSandboxSquadId(sandboxId) ? resolveAgentBashCwd(sandboxId, agentId) : workspaceMount,
     sandboxId,
     manager,
-    tauToken,
+    ficusToken,
     { invocationOwnerId, agentId }
   )
   return [

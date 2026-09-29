@@ -75,20 +75,20 @@ describe('local OAuth transport', () => {
     })
     const transport = createLocalTransport({
       resolveClientCredentials: () => ({ clientId: 'client-id', clientSecret: 'client-secret' }),
-      callbackUrl: () => 'https://tau.example/callback',
+      callbackUrl: () => 'https://ficus.example/callback',
     })
 
     await transport.completeAuthorization({
       providerKey: 'transport-test',
       localFlowId: 'flow',
       code: 'provider-code',
-      redirectUri: 'https://tau.example/callback',
+      redirectUri: 'https://ficus.example/callback',
     })
 
     expect(seen).toEqual([
       {
         code: 'provider-code',
-        redirectUri: 'https://tau.example/callback',
+        redirectUri: 'https://ficus.example/callback',
         clientId: 'client-id',
         clientSecret: 'client-secret',
       },
@@ -99,7 +99,7 @@ describe('local OAuth transport', () => {
     registerAdapter()
     const transport = createLocalTransport({
       resolveClientCredentials: () => undefined,
-      callbackUrl: () => 'https://tau.example/callback',
+      callbackUrl: () => 'https://ficus.example/callback',
     })
 
     await expect(
@@ -107,7 +107,7 @@ describe('local OAuth transport', () => {
         providerKey: 'transport-test',
         localFlowId: 'flow',
         code: 'provider-code',
-        redirectUri: 'https://tau.example/callback',
+        redirectUri: 'https://ficus.example/callback',
       })
     ).rejects.toMatchObject({ code: 'oauth_app_unconfigured' })
   })
@@ -126,7 +126,7 @@ describe('local OAuth transport', () => {
     })
     const transport = createLocalTransport({
       resolveClientCredentials: () => credentials.shift(),
-      callbackUrl: () => 'https://tau.example/callback',
+      callbackUrl: () => 'https://ficus.example/callback',
     })
 
     await transport.refresh({
@@ -151,7 +151,7 @@ describe('local OAuth transport', () => {
     registerAdapter({ refresh: async () => grant })
     const transport = createLocalTransport({
       resolveClientCredentials: () => ({ clientId: 'client-id', clientSecret: 'client-secret' }),
-      callbackUrl: () => 'https://tau.example/callback',
+      callbackUrl: () => 'https://ficus.example/callback',
     })
 
     const refreshed = await transport.refresh({

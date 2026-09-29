@@ -539,7 +539,7 @@ export function createHttpEditOperations(
 export function createHttpBashOperations(
   manager: SandboxToolsManager,
   sandboxId: string,
-  tauToken?: string,
+  ficusToken?: string,
   opts?: { agentId?: string; invocationId?: string }
 ): BashOperations {
   const mapFailure = createOutageMapper(manager, sandboxId, opts?.agentId)
@@ -585,7 +585,7 @@ export function createHttpBashOperations(
             FICUS_API_URL: manager.resolveToolApiUrl
               ? manager.resolveToolApiUrl(sandboxId)
               : resolveSandboxApiUrl(manager.podManager!.namespace),
-            ...(tauToken ? { FICUS_TOKEN: tauToken } : {}),
+            ...(ficusToken ? { FICUS_TOKEN: ficusToken } : {}),
           } as Record<string, string>,
           sourceEnv: true,
           activateDevbox: true,
@@ -765,12 +765,12 @@ export function createK8sSandboxedBashTool(
   cwd: string,
   sandboxId: string,
   manager: SandboxToolsManager,
-  tauToken?: string,
+  ficusToken?: string,
   opts?: { agentId?: string; invocationOwnerId?: string }
 ): AgentTool<any> {
   const makeTool = (invocationId?: string) =>
     createBashTool(cwd, {
-      operations: createHttpBashOperations(manager, sandboxId, tauToken, { ...opts, invocationId }),
+      operations: createHttpBashOperations(manager, sandboxId, ficusToken, { ...opts, invocationId }),
     })
   const tool = makeTool()
   if (opts?.invocationOwnerId) {
@@ -804,7 +804,7 @@ export function createK8sSandboxedCodingTools(
   _workspacePath: string,
   sandboxId: string,
   manager: SandboxToolsManager,
-  tauToken?: string,
+  ficusToken?: string,
   squadId?: string,
   invocationOwnerId?: string,
   agentId?: string
@@ -832,7 +832,7 @@ export function createK8sSandboxedCodingTools(
     createK8sSandboxedEditTool(workspaceMount, sandboxId, manager, squadRoute),
     workspaceMount
   )
-  const rawBash = createK8sSandboxedBashTool(bashCwd, sandboxId, manager, tauToken, { invocationOwnerId, agentId })
+  const rawBash = createK8sSandboxedBashTool(bashCwd, sandboxId, manager, ficusToken, { invocationOwnerId, agentId })
   // vm-only: a squad member's private bash cannot reach the squad box's paths
   // (separate unix user). Answer a denied touch of them with a `squad_bash`
   // hint instead of leaving the model to conclude the tool does not exist.

@@ -1,4 +1,4 @@
-# Tau Core Deployments and Services
+# Ficus Core Deployments and Services
 #
 # Two Deployments from the same image (override image via Kustomize or Pulumi):
 #   1. tau-api    — HTTP API server (port 3000)

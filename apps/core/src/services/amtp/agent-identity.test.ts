@@ -70,15 +70,15 @@ describe('ensureAgentIdentity', () => {
     sandboxIds.push(sandboxId)
 
     // Pre-seed a garbage (non-parseable) key file at the expected location.
-    const tauDir = join(getAgentPrivateStoragePath(sandboxId), '.tau')
-    mkdirSync(tauDir, { recursive: true })
-    writeFileSync(join(tauDir, 'identity.pem'), 'NOT-A-REAL-KEY\n', { mode: 0o600 })
+    const ficusDir = join(getAgentPrivateStoragePath(sandboxId), '.tau')
+    mkdirSync(ficusDir, { recursive: true })
+    writeFileSync(join(ficusDir, 'identity.pem'), 'NOT-A-REAL-KEY\n', { mode: 0o600 })
 
     // ensureAgentIdentity must not throw; it should regenerate a valid key.
     const pub = await ensureAgentIdentity(agent, sandboxId)
     expect(pub).toContain('BEGIN PUBLIC KEY')
 
-    const keyPath = join(tauDir, 'identity.pem')
+    const keyPath = join(ficusDir, 'identity.pem')
     expect(readFileSync(keyPath, 'utf-8')).toContain('BEGIN PRIVATE KEY')
     expect((await Agent.mustFind(agent.id)).identityPublicKey).toBe(pub)
   })

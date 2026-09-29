@@ -74,7 +74,7 @@ const OLD_SERVER_ENV = [
   'FICUS_BOX_HOME=/home/box_x',
   'BUN_PTY_LIB=/opt/tau/server/bun-pty.so',
   'DOCKER_HOST=unix:///run/user/4321/docker.sock',
-  'FICUS_API_URL=https://tau.example.com',
+  'FICUS_API_URL=https://ficus.example.com',
 ].join('\n')
 
 /** Facts a healthy SOURCE box reports for its state dirs (only the requested

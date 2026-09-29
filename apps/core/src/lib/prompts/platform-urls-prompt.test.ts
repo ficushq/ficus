@@ -28,21 +28,21 @@ describe('buildPlatformUrlsPrompt', () => {
     expect(buildPlatformUrlsPrompt()).toBe('')
   })
 
-  test('hiretau.ai tenant URLs are same-origin — the retired api- prefix must NOT come back', () => {
-    // The old `<name>.hiretau.ai` → `api-<name>.hiretau.ai` sniffing told
+  test('ficus.sh tenant URLs are same-origin — the retired api- prefix must NOT come back', () => {
+    // The old `<name>.ficus.sh` → `api-<name>.ficus.sh` sniffing told
     // every hosted tenant's agents an API URL that does not resolve.
-    process.env.APP_URL = 'https://demo.hiretau.ai'
+    process.env.APP_URL = 'https://demo.ficus.sh'
 
     const prompt = buildPlatformUrlsPrompt()
 
-    expect(prompt).toContain('- **Web UI:** https://demo.hiretau.ai')
-    expect(prompt).toContain('- **API:** https://demo.hiretau.ai/api')
-    expect(prompt).toContain('https://demo.hiretau.ai/api/webhooks/github')
+    expect(prompt).toContain('- **Web UI:** https://demo.ficus.sh')
+    expect(prompt).toContain('- **API:** https://demo.ficus.sh/api')
+    expect(prompt).toContain('https://demo.ficus.sh/api/webhooks/github')
     expect(prompt).not.toContain('api-noah')
   })
 
   test('FICUS_PUBLIC_API_URL overrides the same-origin default for split-domain deployments', () => {
-    process.env.APP_URL = 'https://tau.example.com'
+    process.env.APP_URL = 'https://ficus.example.com'
     process.env.FICUS_PUBLIC_API_URL = 'https://api.example.com'
     try {
       const prompt = buildPlatformUrlsPrompt()
@@ -54,13 +54,13 @@ describe('buildPlatformUrlsPrompt', () => {
   })
 
   test('uses the normal host plus /api for non-hiretau app URLs', () => {
-    process.env.APP_URL = 'https://tau.example.com'
+    process.env.APP_URL = 'https://ficus.example.com'
 
     const prompt = buildPlatformUrlsPrompt()
 
-    expect(prompt).toContain('- **Web UI:** https://tau.example.com')
-    expect(prompt).toContain('- **API:** https://tau.example.com/api')
-    expect(prompt).toContain('https://tau.example.com/api/webhooks/github')
+    expect(prompt).toContain('- **Web UI:** https://ficus.example.com')
+    expect(prompt).toContain('- **API:** https://ficus.example.com/api')
+    expect(prompt).toContain('https://ficus.example.com/api/webhooks/github')
     expect(prompt).not.toContain('api-tau.example.com')
   })
 

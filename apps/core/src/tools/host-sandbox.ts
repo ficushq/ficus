@@ -112,7 +112,7 @@ export function clampHostBashTimeout(timeout?: number): number {
 
 export function createHostBashTool(
   cwd: string,
-  opts: { tauToken?: string; squadId?: string; agentId?: string } = {}
+  opts: { ficusToken?: string; squadId?: string; agentId?: string } = {}
 ): AgentTool<any> {
   const local = createLocalBashOperations()
   const tool = createBashTool(cwd, {
@@ -126,7 +126,7 @@ export function createHostBashTool(
     spawnHook: (ctx) => ({
       command: buildHostPreamble(opts) + ctx.command,
       cwd: ctx.cwd,
-      env: buildHostCommandEnv({ tauToken: opts.tauToken, squadId: opts.squadId, agentId: opts.agentId }),
+      env: buildHostCommandEnv({ ficusToken: opts.ficusToken, squadId: opts.squadId, agentId: opts.agentId }),
     }),
     operations: {
       exec: (command, execCwd, options) =>
@@ -143,7 +143,7 @@ export function createHostBashTool(
 export function createHostSandboxedCodingTools(
   _workspacePath: string,
   sandboxId: string,
-  tauToken?: string,
+  ficusToken?: string,
   squadId?: string,
   _invocationOwnerId?: string,
   agentId?: string
@@ -157,7 +157,7 @@ export function createHostSandboxedCodingTools(
   // fallback: `system_manager_<ownerUserId>` boxes carry no agent id at all, and
   // a descendant sharing a box would otherwise inherit the box owner's id.
   const bash = createHostBashTool(bashCwd, {
-    tauToken,
+    ficusToken,
     squadId,
     agentId: agentId ?? agentIdFromSandboxId(sandboxId),
   })

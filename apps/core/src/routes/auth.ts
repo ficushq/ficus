@@ -85,8 +85,8 @@ const ADMIN_BOOTSTRAP_LOCK_KEY = 424242
  * caller may proceed.
  */
 async function requireBootstrapAuthForFirstUser(c: Context): Promise<Response | null> {
-  const tauPassword = getSecretStore().get('FICUS_PASSWORD')
-  if (!tauPassword) return null // bare local install — first-run stays ungated
+  const ficusPassword = getSecretStore().get('FICUS_PASSWORD')
+  if (!ficusPassword) return null // bare local install — first-run stays ungated
 
   if (await holdsBootstrapSession(c)) return null // authenticated as the bootstrap identity
   return c.json({ error: 'Bootstrap authentication required. Sign in with the instance password first.' }, 401)

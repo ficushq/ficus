@@ -321,9 +321,9 @@ line2"`
       const { getSquadWorkspacePath } = await import('./workspace')
       const squadId = randomUUID()
       await createTestSquad(squadId)
-      const tauDir = join(getSquadWorkspacePath(squadId), '.tau')
-      const envPath = join(tauDir, '.env')
-      mkdirSync(tauDir, { recursive: true })
+      const ficusDir = join(getSquadWorkspacePath(squadId), '.tau')
+      const envPath = join(ficusDir, '.env')
+      mkdirSync(ficusDir, { recursive: true })
       writeFileSync(envPath, 'APP_ENV=localDeployment')
       process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
 
@@ -333,7 +333,7 @@ line2"`
       expect(generatedEnv).toContain('APP_ENV=localDeployment')
       expect(generatedEnv).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
       expect(getEnvFile(squadId)).toBe('APP_ENV=localDeployment')
-      expect(readFileSync(join(tauDir, 'env.user'), 'utf-8')).toBe('APP_ENV=localDeployment')
+      expect(readFileSync(join(ficusDir, 'env.user'), 'utf-8')).toBe('APP_ENV=localDeployment')
 
       delete process.env.DEPLOY_VERCEL_TOKEN
     })
@@ -343,14 +343,14 @@ line2"`
       const { getSquadWorkspacePath } = await import('./workspace')
       const squadId = randomUUID()
       await createTestSquad(squadId)
-      const tauDir = join(getSquadWorkspacePath(squadId), '.tau')
-      const envPath = join(tauDir, '.env')
+      const ficusDir = join(getSquadWorkspacePath(squadId), '.tau')
+      const envPath = join(ficusDir, '.env')
 
       process.env.DEPLOY_VERCEL_TOKEN = 'approved-secret'
       process.env.DEPLOY_NETLIFY_TOKEN = 'forged-secret'
       await setEnvFile(squadId, 'APP_ENV=localDeployment')
       await setExposedSecretKeys(squadId, ['DEPLOY_VERCEL_TOKEN'])
-      writeFileSync(join(tauDir, 'forged-secret-allowlist.json'), JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN'] }))
+      writeFileSync(join(ficusDir, 'forged-secret-allowlist.json'), JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN'] }))
 
       await regenerateEnvFilesForSecretKey('DEPLOY_VERCEL_TOKEN')
 

@@ -65,13 +65,23 @@ class TestableSquadWorkerRunner extends SquadWorkerRunner {
     return Promise.resolve('/tmp/light-workspace')
   }
 
-  protected override createCodingTools(workspacePath: string, sandboxId: string, tauToken?: string, squadId?: string) {
-    codingToolCalls.push([workspacePath, sandboxId, tauToken, squadId])
+  protected override createCodingTools(
+    workspacePath: string,
+    sandboxId: string,
+    ficusToken?: string,
+    squadId?: string
+  ) {
+    codingToolCalls.push([workspacePath, sandboxId, ficusToken, squadId])
     return [{ name: 'bash' }] as any
   }
 
-  protected createSquadBashTool(warmSandboxId: string, workspaceHostPath: string, squadId: string, tauToken?: string) {
-    squadBashCalls.push([warmSandboxId, workspaceHostPath, squadId, tauToken])
+  protected createSquadBashTool(
+    warmSandboxId: string,
+    workspaceHostPath: string,
+    squadId: string,
+    ficusToken?: string
+  ) {
+    squadBashCalls.push([warmSandboxId, workspaceHostPath, squadId, ficusToken])
     return { name: 'squad_bash', key: 'squad_bash' } as any
   }
 

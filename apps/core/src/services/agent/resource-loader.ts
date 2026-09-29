@@ -20,7 +20,7 @@ const log = createLogger('resource-loader')
 /**
  * Pi agent session resource loader to customize system prompt and skills.
  */
-export class TauResourceLoader implements ResourceLoader {
+export class FicusResourceLoader implements ResourceLoader {
   private skills: LoadSkillsResult | null = null
   private extensions: LoadExtensionsResult | null = null
   private precompactionController?: PrecompactionController
@@ -42,8 +42,8 @@ export class TauResourceLoader implements ResourceLoader {
     systemPrompt: string,
     skillPaths?: string[],
     extensionPaths?: string[]
-  ): Promise<TauResourceLoader> {
-    const loader = new TauResourceLoader(systemPrompt, skillPaths, extensionPaths)
+  ): Promise<FicusResourceLoader> {
+    const loader = new FicusResourceLoader(systemPrompt, skillPaths, extensionPaths)
     await loader.init()
     return loader
   }

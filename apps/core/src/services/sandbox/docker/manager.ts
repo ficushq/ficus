@@ -1337,7 +1337,7 @@ export class DockerSandboxManager implements ISandboxManager {
   getSpawnHook(
     sandboxId: string,
     workspacePath: string,
-    tauToken?: string
+    ficusToken?: string
   ):
     | ((ctx: { command: string; cwd: string; env: NodeJS.ProcessEnv }) => {
         command: string
@@ -1385,7 +1385,7 @@ export class DockerSandboxManager implements ISandboxManager {
       // container baked a now-stale dynamic port at creation (matches k8s behavior).
       const identityArgs: string[] = []
       pushEnvArgs(identityArgs, {
-        ...(tauToken ? { FICUS_TOKEN: tauToken } : {}),
+        ...(ficusToken ? { FICUS_TOKEN: ficusToken } : {}),
         FICUS_API_URL: resolveDockerApiUrl(),
       })
       const execArgs = [

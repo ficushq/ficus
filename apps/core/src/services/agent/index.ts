@@ -1,4 +1,4 @@
-export { TauResourceLoader } from './resource-loader'
+export { FicusResourceLoader } from './resource-loader'
 export {
   getModelRuntime,
   refreshModelRuntime,

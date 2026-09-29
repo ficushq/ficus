@@ -16,7 +16,7 @@ const GENERATED_INTEGRATION_MARKER = '# Generated protected integration bindings
 /**
  * Get the .tau directory path for a squad workspace.
  */
-function getTauDir(squadId: string): string {
+function getFicusDir(squadId: string): string {
   const workspacePath = getSquadWorkspacePath(squadId)
   return join(workspacePath, '.tau')
 }
@@ -24,31 +24,31 @@ function getTauDir(squadId: string): string {
 /**
  * Ensure the .tau directory exists.
  */
-function ensureTauDir(squadId: string): string {
-  const tauDir = getTauDir(squadId)
-  if (!existsSync(tauDir)) {
-    mkdirSync(tauDir, { recursive: true })
+function ensureFicusDir(squadId: string): string {
+  const ficusDir = getFicusDir(squadId)
+  if (!existsSync(ficusDir)) {
+    mkdirSync(ficusDir, { recursive: true })
   }
 
   // K8s sandboxes can write to the same workspace from container-root. Keep
   // Ficus's private workspace dir group-writable/setgid when Core owns it so
   // local k3d shared-volume files remain writable by the Core process.
   try {
-    chmodSync(tauDir, 0o2775)
+    chmodSync(ficusDir, 0o2775)
   } catch {
     // If an older sandbox already left this root-owned, the caller will still
     // get the original write error with path context; local repair is required.
   }
 
-  return tauDir
+  return ficusDir
 }
 
 function getUserEnvPath(squadId: string): string {
-  return join(getTauDir(squadId), USER_ENV_FILE)
+  return join(getFicusDir(squadId), USER_ENV_FILE)
 }
 
 function getGeneratedEnvPath(squadId: string): string {
-  return join(getTauDir(squadId), GENERATED_ENV_FILE)
+  return join(getFicusDir(squadId), GENERATED_ENV_FILE)
 }
 
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -205,9 +205,9 @@ async function writeGeneratedEnvFile(
   keys: string[],
   getSecretValue: (key: string) => string | undefined = getDeploymentAwareSecretValue
 ): Promise<void> {
-  const tauDir = ensureTauDir(squadId)
-  const envPath = join(tauDir, GENERATED_ENV_FILE)
-  const tempPath = join(tauDir, `.env.tmp-${crypto.randomUUID()}`)
+  const ficusDir = ensureFicusDir(squadId)
+  const envPath = join(ficusDir, GENERATED_ENV_FILE)
+  const tempPath = join(ficusDir, `.env.tmp-${crypto.randomUUID()}`)
   let protectedBindings: readonly (readonly [string, string])[]
   let signingPublicKey: string | undefined
   try {
@@ -259,8 +259,8 @@ export function getEnvFile(squadId: string): string | null {
  * Set the user-authored squad env content and regenerate the sandbox .env file.
  */
 export async function setEnvFile(squadId: string, content: string): Promise<void> {
-  const tauDir = ensureTauDir(squadId)
-  const userEnvPath = join(tauDir, USER_ENV_FILE)
+  const ficusDir = ensureFicusDir(squadId)
+  const userEnvPath = join(ficusDir, USER_ENV_FILE)
   writeFileSync(userEnvPath, content, { mode: 0o600 })
   await writeGeneratedEnvFile(squadId, content, await getEffectiveExposedSecretKeys(squadId))
 }

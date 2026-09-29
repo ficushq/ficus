@@ -292,7 +292,7 @@ describe('OnboardingPage — skip/unskip interactions', () => {
             id: 'invited',
             email: 'teammate@example.com',
             ...(delivery === 'link'
-              ? { inviteUrl: 'https://tau.test/register?token=invitation' }
+              ? { inviteUrl: 'https://ficus.test/register?token=invitation' }
               : delivery === 'failed'
                 ? { inviteEmailFailed: true }
                 : {}),
@@ -394,12 +394,12 @@ describe('OnboardingPage — skip/unskip interactions', () => {
         const { email } = JSON.parse(String(init.body))
         const user = member(email.split('@')[0])
         users.push(user)
-        return Response.json({ ...user, inviteUrl: `https://tau.test/register?token=${user.id}` })
+        return Response.json({ ...user, inviteUrl: `https://ficus.test/register?token=${user.id}` })
       }
       if (url.endsWith('/users')) return Response.json(users)
       if (url.endsWith('/users/existing/invite?delivery=link')) {
         generated.push('existing')
-        return Response.json({ ...users[1], inviteUrl: 'https://tau.test/register?token=existing-new' })
+        return Response.json({ ...users[1], inviteUrl: 'https://ficus.test/register?token=existing-new' })
       }
       if (url.endsWith('/squads') || url.endsWith('/squad-presets')) return Response.json([])
       return Response.json({})
@@ -450,9 +450,9 @@ describe('OnboardingPage — skip/unskip interactions', () => {
         fireEvent.click(container.querySelector('[aria-label="Copy invite link for existing@example.com"]')!)
       )
       expect(copied).toEqual([
-        'https://tau.test/register?token=first',
-        'https://tau.test/register?token=second',
-        'https://tau.test/register?token=existing-new',
+        'https://ficus.test/register?token=first',
+        'https://ficus.test/register?token=second',
+        'https://ficus.test/register?token=existing-new',
       ])
       expect(generated).toEqual(['existing'])
       expect(container.querySelectorAll('[data-team-member]')).toHaveLength(4)

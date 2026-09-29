@@ -491,7 +491,7 @@ describe('tracked GitHub issue Activity', () => {
         eventType: 'issue_comment',
         payload: issuePayload(repository, {
           action: 'edited',
-          comment: { id: 5501, updated_at: updatedAt, user: { login: 'tauagent' } },
+          comment: { id: 5501, updated_at: updatedAt, user: { login: 'ficusagent' } },
         }),
         headers: { 'x-github-delivery': crypto.randomUUID() },
         signature: 'verified',

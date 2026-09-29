@@ -20,7 +20,7 @@ const original = {
 }
 beforeEach(async () => {
   process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-  process.env.APP_URL = 'https://tau.example/team'
+  process.env.APP_URL = 'https://ficus.example/team'
   delete process.env.APP_BASE_PATH
   delete process.env.GITHUB_WEBHOOK_SECRET
   await db.delete(secrets).where(eq(secrets.key, GITHUB_WEBHOOK_SETTINGS_KEY))
@@ -45,7 +45,7 @@ afterEach(async () => {
 test('settings encrypt signing material, return only status and preserve public base paths', async () => {
   const candidate = 'webhook-signing-material'
   const result = await configureGitHubWebhook({ secret: candidate }, store, 'user:test')
-  expect(result).toEqual({ configured: true, webhookUrl: 'https://tau.example/team/api/webhooks/github' })
+  expect(result).toEqual({ configured: true, webhookUrl: 'https://ficus.example/team/api/webhooks/github' })
   expect(getGitHubWebhookSettings(store)).toEqual(result)
   expect(resolveGitHubWebhookSecret(store)).toBe(candidate)
   const [row] = await db.select().from(secrets).where(eq(secrets.key, GITHUB_WEBHOOK_SETTINGS_KEY))

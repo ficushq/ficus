@@ -8,9 +8,9 @@ if (configuredAccessToken && configuredAccessToken.length < 16) {
 const accessToken = configuredAccessToken ?? randomBytes(24).toString('base64url')
 
 if (configuredAccessToken) {
-  console.log('Tau dev access-token gate enabled from FICUS_DEV_ACCESS_TOKEN.')
+  console.log('Ficus dev access-token gate enabled from FICUS_DEV_ACCESS_TOKEN.')
 } else {
-  console.log(`Tau dev access token: ${accessToken}`)
+  console.log(`Ficus dev access token: ${accessToken}`)
   console.log('Enter this token in the browser login prompt. It changes on every restart.')
 }
 

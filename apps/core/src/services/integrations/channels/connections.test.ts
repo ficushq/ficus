@@ -115,7 +115,7 @@ function make(
   const connections = createChannelConnections({
     plugins,
     fetch: fetchImpl,
-    webOrigin: () => 'https://tau.example.test',
+    webOrigin: () => 'https://ficus.example.test',
     randomSecret: () => 'generated-webhook-secret',
     resolveAuthority: () => options.authority ?? 'local',
   })
@@ -186,7 +186,7 @@ test('saving a Telegram bot token creates a validated connection with discovered
   expect(view.connection).toMatchObject({ source: 'connection', authState: 'authenticated', healthState: 'healthy' })
   expect(view.setup).toEqual({ state: 'configured', issues: [] })
   expect(view.webhook).toEqual({
-    url: 'https://tau.example.test/api/webhooks/channels/telegram',
+    url: 'https://ficus.example.test/api/webhooks/channels/telegram',
     secretConfigured: true,
     delivery: 'direct',
   })

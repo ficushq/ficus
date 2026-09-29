@@ -280,7 +280,7 @@ export const IDENTITY_ENV_KEYS = [
 
 /** Identity of the shell being built: which agent it is and which instance/credential it uses. */
 export interface HostIdentityOptions {
-  tauToken?: string
+  ficusToken?: string
   agentId?: string
 }
 
@@ -301,8 +301,8 @@ export function buildHostCommandEnv(
   // the operator's own CLI auth store and resolution — overriding those would
   // only break the human's `tau` without protecting anything.
   const agentId = normalizeAgentId(opts.agentId)
-  if (opts.tauToken) {
-    env.FICUS_TOKEN = opts.tauToken
+  if (opts.ficusToken) {
+    env.FICUS_TOKEN = opts.ficusToken
     env.FICUS_AUTH_STORE = hostCliAuthStorePath(agentId)
     env.FICUS_AGENT_CONTEXT = '1'
     if (agentId) env.FICUS_AGENT_ID = agentId
@@ -360,7 +360,7 @@ export function buildHostCommandEnv(
  *   keeping whatever the squad env added, which stays a supported thing to do.
  * - Values travel in the process env, never in this string: the command string
  *   becomes argv, which is world-readable through /proc on Linux.
- *   `opts.tauToken` only decides WHETHER a `FICUS_TOKEN` assignment is emitted;
+ *   `opts.ficusToken` only decides WHETHER a `FICUS_TOKEN` assignment is emitted;
  *   its value never reaches the output.
  */
 export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string } = {}): string {
@@ -374,7 +374,7 @@ export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string
   const agentVar = local('agent')
 
   const set = new Map<string, string>([['FICUS_API_URL', `$${urlVar}`]])
-  if (opts.tauToken) {
+  if (opts.ficusToken) {
     set.set('FICUS_TOKEN', `$${tokenVar}`)
     set.set('FICUS_AUTH_STORE', `$${storeVar}`)
     set.set('FICUS_AGENT_CONTEXT', '1')
@@ -383,7 +383,7 @@ export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string
 
   const locals = [urlVar, binVar]
   const snapshots = [`${urlVar}="$FICUS_IDENTITY_API_URL"`, `${binVar}=${shellQuote(hostBinDir())}`]
-  if (opts.tauToken) {
+  if (opts.ficusToken) {
     snapshots.push(`${tokenVar}="$FICUS_IDENTITY_TOKEN"`, `${storeVar}="$FICUS_IDENTITY_AUTH_STORE"`)
     locals.push(tokenVar, storeVar)
     if (agentId) {

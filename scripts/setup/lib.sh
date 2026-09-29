@@ -108,7 +108,7 @@ version_at_least() { # INSTALLED MINIMUM
 # irrelevant there; under `host` there is no image and agents run the operator's
 # gh directly.
 #
-# This warns rather than dies on purpose. gh is not required to run Tau — it is
+# This warns rather than dies on purpose. gh is not required to run Ficus — it is
 # required for one agent capability (attaching screenshots to GitHub), and a
 # setup that aborts because an optional capability is unavailable would be
 # disproportionate. The failure it prevents is the silent one: agent prompts

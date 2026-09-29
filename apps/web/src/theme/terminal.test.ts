@@ -9,7 +9,7 @@ import { IRIS_THEME } from './registry'
 // Test the real DOM observer and computed-style bridge, without replacing global
 // modules or opening a real terminal socket. Minimal CSS scopes mirror real tokens.
 test('terminal initializes from applied CSS and repaints the same instance on appearance/custom changes', async () => {
-  const harness = await acquireDomHarness({ url: 'https://tau.test' })
+  const harness = await acquireDomHarness({ url: 'https://ficus.test' })
   let dispose: (() => void) | undefined
   try {
     const { window } = harness
@@ -79,7 +79,7 @@ test('Terminal wires initial and live theme reads independently of session setup
 })
 
 test('read-only logs retain their distinct palette and repaint from log tokens', async () => {
-  const harness = await acquireDomHarness({ url: 'https://tau.test' })
+  const harness = await acquireDomHarness({ url: 'https://ficus.test' })
   let dispose: (() => void) | undefined
   try {
     const { document } = harness.window

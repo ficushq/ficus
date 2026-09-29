@@ -78,19 +78,19 @@ describe('resolveGitHubIdentityFromMetadata', () => {
 
 describe('gitIdentityEnv', () => {
   test("emits git's own author/committer vars, not just tau's GIT_USER_* names", () => {
-    const env = gitIdentityEnv({ gitUserName: 'tauagent', gitUserEmail: 'agent@users.noreply.github.com' })
+    const env = gitIdentityEnv({ gitUserName: 'ficusagent', gitUserEmail: 'agent@users.noreply.github.com' })
     // GIT_USER_* are tau's names and git ignores them; only these four are honored by git.
     expect(env).toMatchObject({
-      GIT_AUTHOR_NAME: 'tauagent',
+      GIT_AUTHOR_NAME: 'ficusagent',
       GIT_AUTHOR_EMAIL: 'agent@users.noreply.github.com',
-      GIT_COMMITTER_NAME: 'tauagent',
+      GIT_COMMITTER_NAME: 'ficusagent',
       GIT_COMMITTER_EMAIL: 'agent@users.noreply.github.com',
     })
   })
 
   test("keeps GIT_USER_* so the image's existing translation step still works", () => {
-    const env = gitIdentityEnv({ gitUserName: 'tauagent', gitUserEmail: 'agent@example.com' })
-    expect(env.GIT_USER_NAME).toBe('tauagent')
+    const env = gitIdentityEnv({ gitUserName: 'ficusagent', gitUserEmail: 'agent@example.com' })
+    expect(env.GIT_USER_NAME).toBe('ficusagent')
     expect(env.GIT_USER_EMAIL).toBe('agent@example.com')
   })
 
@@ -136,7 +136,7 @@ describe('gitIdentityEnv', () => {
       const shadowed = await Bun.$`git var GIT_AUTHOR_IDENT`.cwd(dir).env(hermetic).quiet()
       expect(shadowed.stdout.toString()).toContain('stale@example.invalid')
 
-      const env = gitIdentityEnv({ gitUserName: 'tauagent', gitUserEmail: 'agent@users.noreply.github.com' })
+      const env = gitIdentityEnv({ gitUserName: 'ficusagent', gitUserEmail: 'agent@users.noreply.github.com' })
       const resolved = await Bun.$`git var GIT_AUTHOR_IDENT`
         .cwd(dir)
         .env({ ...hermetic, ...env })

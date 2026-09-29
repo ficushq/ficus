@@ -13,7 +13,7 @@ export function getWorkspace(): string {
 }
 
 /** Path to .tau/.env file for workspace environment variables */
-export function getTauEnvPath(): string {
+export function getFicusEnvPath(): string {
   return `${getWorkspace()}/.tau/.env`
 }
 

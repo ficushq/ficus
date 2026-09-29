@@ -23,7 +23,7 @@ async function defaultSigner(): Promise<{ instanceId: string; privateKeyPem: str
   return { instanceId: identity.instanceId, privateKeyPem: identity.privateKeyPem }
 }
 
-async function tauReceiveCaps(): Promise<ReceiveCaps> {
+async function ficusReceiveCaps(): Promise<ReceiveCaps> {
   const store = getSettingsStore()
   return {
     maxAttachmentBytes: store.getTyped('INBOX_MAX_ATTACHMENT_BYTES') as number,
@@ -37,7 +37,7 @@ export function pullAttachment(
 ): Promise<Uint8Array> {
   return createDefaultAttachmentPull({
     signing: deps.signer ?? defaultSigner,
-    getCaps: tauReceiveCaps,
+    getCaps: ficusReceiveCaps,
     fetch: deps.fetchImpl,
   })(args)
 }

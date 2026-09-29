@@ -208,8 +208,8 @@ describe('GitHub PR row copy (operator report 2026-08-27)', () => {
     expect(summary({ eventType: 'pull_request_review', action: 'submitted', actorLogin: 'noahsaso' })).toBe(
       '[PR #1215 reviewed] by noahsaso'
     )
-    expect(summary({ eventType: 'pull_request_review_comment', action: 'created', actorLogin: 'tauagent' })).toBe(
-      '[PR #1215 review comment] by tauagent'
+    expect(summary({ eventType: 'pull_request_review_comment', action: 'created', actorLogin: 'ficusagent' })).toBe(
+      '[PR #1215 review comment] by ficusagent'
     )
     expect(summary({ action: 'synchronize' })).toBe('[PR #1215 updated]')
     expect(summary({ action: 'merged' })).toBe('[PR #1215 merged]')

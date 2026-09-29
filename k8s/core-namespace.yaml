@@ -1,4 +1,4 @@
-# Namespace for Tau Core components
+# Namespace for Ficus Core components
 # Labels allow NetworkPolicy in tau-sandboxes to select this namespace
 apiVersion: v1
 kind: Namespace
@@ -8,7 +8,7 @@ metadata:
     app: tau
     component: core
 ---
-# ServiceAccount for Tau Core
+# ServiceAccount for Ficus Core
 # Referenced by RBAC in k8s/rbac.yaml for sandbox management permissions
 apiVersion: v1
 kind: ServiceAccount

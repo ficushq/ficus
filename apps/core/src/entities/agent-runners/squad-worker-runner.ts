@@ -44,8 +44,13 @@ export class SquadWorkerRunner extends AgentRunner {
     return ensureWorkspaceSandbox(args)
   }
 
-  protected createSquadBashTool(warmSandboxId: string, workspaceHostPath: string, squadId: string, tauToken?: string) {
-    return createSquadBashTool(warmSandboxId, workspaceHostPath, squadId, tauToken, this.agent.id, this.execution.id)
+  protected createSquadBashTool(
+    warmSandboxId: string,
+    workspaceHostPath: string,
+    squadId: string,
+    ficusToken?: string
+  ) {
+    return createSquadBashTool(warmSandboxId, workspaceHostPath, squadId, ficusToken, this.agent.id, this.execution.id)
   }
 
   // ---------------------------------------------------------------------------
@@ -168,12 +173,12 @@ export class SquadWorkerRunner extends AgentRunner {
 
     const systemPrompt = await this.buildSquadWorkerPrompt()
 
-    const { tauToken, baseTools, sandboxStatusTool, shortTermMemoryTools } = await this.buildSessionToolkit({
+    const { ficusToken, baseTools, sandboxStatusTool, shortTermMemoryTools } = await this.buildSessionToolkit({
       workspacePath: this.workspacePath,
       sandboxId: lightId,
       squadId: this.squad.id,
     })
-    const squadBashTool = this.createSquadBashTool(this.squad.sandboxId, this.workspacePath, this.squad.id, tauToken)
+    const squadBashTool = this.createSquadBashTool(this.squad.sandboxId, this.workspacePath, this.squad.id, ficusToken)
     const webTools = createWebTools()
     const browserTools = createBrowserTools(this.agent.id, lightId)
     const environmentTools = [...baseTools, squadBashTool, ...webTools, ...browserTools]
