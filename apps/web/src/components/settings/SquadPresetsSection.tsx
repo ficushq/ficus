@@ -245,7 +245,7 @@ function AddSquadPresetForm({ onClose, onCreated }: { onClose: () => void; onCre
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
         </button>
-        <button onClick={onClose} className="ficus-button text-sm text-muted hover:text-primary px-3 py-1.5">
+        <button onClick={onClose} className="ficus-button ficus-button-secondary text-sm px-3 py-1.5">
           Cancel
         </button>
         {createMutation.isError && (

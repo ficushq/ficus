@@ -100,6 +100,30 @@ export function SquadHomeTab({
         />
       </section>
       <section className="shrink-0 border-t border-panel-border pt-4">
+        <h2 className="px-3 pl-9 text-sm font-semibold text-secondary">Squad coordinator</h2>
+        <LoadingContent
+          loading={agentsLoading && !managerAgent}
+          fallback={<HomeAgentRowsSkeleton count={1} coordinator />}
+        >
+          <Link
+            to={managerAgent ? `${base}/agents?agent=${encodeURIComponent(managerAgent.id)}` : `${base}/manager`}
+            className="ficus-nav-item mt-2 flex items-center gap-2 px-3 py-3 text-sm text-secondary"
+          >
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+              {managerAgent && <AgentActivityDot status={managerAgent.status} />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">
+                {managerAgent ? `Manager (${getAgentName(managerAgent)})` : 'Manager chat'}
+              </span>
+              <span className="mt-1 block text-xs text-muted">Coordinates the squad’s ongoing work.</span>
+            </span>
+            {managerAgent && <span className="text-xs text-muted">{AGENT_STATUS_LABELS[managerAgent.status]}</span>}
+            <ChevronRightIcon className="h-4 w-4 shrink-0" />
+          </Link>
+        </LoadingContent>
+      </section>
+      <section className="shrink-0 border-t border-panel-border pt-4 pb-4">
         <div className="mb-2 flex items-center justify-between gap-3 px-3">
           <h2 className="pl-6 text-sm font-semibold text-secondary">Recent chats</h2>
           <Link
@@ -130,30 +154,6 @@ export function SquadHomeTab({
               <ChevronRightIcon className="h-3.5 w-3.5 shrink-0" />
             </Link>
           ))}
-        </LoadingContent>
-      </section>
-      <section className="shrink-0 border-t border-panel-border pt-4 pb-4">
-        <h2 className="px-3 pl-9 text-sm font-semibold text-secondary">Squad coordinator</h2>
-        <LoadingContent
-          loading={agentsLoading && !managerAgent}
-          fallback={<HomeAgentRowsSkeleton count={1} coordinator />}
-        >
-          <Link
-            to={managerAgent ? `${base}/agents?agent=${encodeURIComponent(managerAgent.id)}` : `${base}/manager`}
-            className="ficus-nav-item mt-2 flex items-center gap-2 px-3 py-3 text-sm text-secondary"
-          >
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-              {managerAgent && <AgentActivityDot status={managerAgent.status} />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate">
-                {managerAgent ? `Manager (${getAgentName(managerAgent)})` : 'Manager chat'}
-              </span>
-              <span className="mt-1 block text-xs text-muted">Coordinates the squad’s ongoing work.</span>
-            </span>
-            {managerAgent && <span className="text-xs text-muted">{AGENT_STATUS_LABELS[managerAgent.status]}</span>}
-            <ChevronRightIcon className="h-4 w-4 shrink-0" />
-          </Link>
         </LoadingContent>
       </section>
     </div>

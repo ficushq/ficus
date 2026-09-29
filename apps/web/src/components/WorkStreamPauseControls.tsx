@@ -42,7 +42,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
               <>
                 <button
                   type="button"
-                  className="ficus-button rounded-md px-3 py-1.5 text-xs font-medium text-accent"
+                  className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-xs font-medium"
                   disabled={action.isPending}
                   onClick={() => action.mutate('resume')}
                 >
@@ -51,7 +51,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
                 {stream.status === 'active' && (
                   <button
                     type="button"
-                    className="ficus-button rounded-md px-3 py-1.5 text-xs font-medium text-secondary"
+                    className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-xs font-medium"
                     disabled={action.isPending}
                     onClick={() => action.mutate('park')}
                   >
@@ -104,7 +104,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
               </label>
               <button
                 type="submit"
-                className="ficus-button rounded-md px-3 py-1.5 text-xs font-medium text-accent"
+                className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-xs font-medium"
                 disabled={action.isPending}
               >
                 Pause now

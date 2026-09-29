@@ -277,7 +277,7 @@ export function GitHubIntegrationSettings({
             </a>
             <button
               type="button"
-              className="ficus-button px-3 py-2 text-sm"
+              className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
               disabled={cancel.isPending}
               onClick={() => cancel.mutate()}
             >
@@ -500,7 +500,7 @@ export function GitHubIntegrationSettings({
             canWrite && (
               <button
                 type="button"
-                className="ficus-button px-3 py-1.5 text-sm"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm"
                 disabled={authorize.isPending || !!device}
                 onClick={() => authorize.mutate(authorize.variables)}
               >

@@ -335,7 +335,7 @@ export function SharedPromptsTab() {
               {existing?.hasTemplate && existing.yamlFieldOverrides.length > 0 && (
                 <button
                   type="button"
-                  className="ficus-button px-3 py-1.5 text-sm text-status-attention-600 dark:text-status-attention-400 disabled:opacity-50"
+                  className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm text-status-attention-600 dark:text-status-attention-400 disabled:opacity-50"
                   disabled={revertAll.isPending}
                   onClick={() => {
                     if (window.confirm(`Revert "${existing.id}" to its template?`)) revertAll.mutate(existing.id)

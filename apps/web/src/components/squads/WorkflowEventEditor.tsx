@@ -300,7 +300,7 @@ export function WorkflowEventEditor({
             </label>
             <button
               type="button"
-              className="ficus-button px-3 py-2 text-sm text-accent-light"
+              className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
               disabled={!source || (definition.subscriptions?.length ?? 0) >= 32}
               onClick={() => {
                 const output = outputs[Number(source)]

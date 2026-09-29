@@ -189,7 +189,7 @@ export function TemplateDiffDialog({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-th-border">
-          <button onClick={onClose} className="ficus-button text-sm text-muted hover:text-primary px-3 py-1.5">
+          <button onClick={onClose} className="ficus-button ficus-button-secondary text-sm px-3 py-1.5">
             Close
           </button>
           {template !== null && (

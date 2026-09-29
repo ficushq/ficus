@@ -17,6 +17,8 @@ import { SQUAD_RECENT_CHAT_LIMIT } from '../../lib/recentChats'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { useFullscreen } from '../../hooks/useFullscreen'
+import { useSidebarWidth } from '../../hooks/useSidebarWidth'
+import { SQUAD_CHAT_SIDEBAR_WIDTH_STORAGE_KEY } from '@ficus/shared/browser-keys'
 import { useURLStringState, useURLBooleanState } from '../../hooks/useURLState'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useSquadAgentThreadsApi } from './squadAgentThreadsApi'
@@ -113,6 +115,11 @@ function formatRelativeTime(date: Date | string): string {
   return 'Just now'
 }
 
+const CHAT_SIDEBAR_MIN_WIDTH = 200
+const CHAT_SIDEBAR_MAX_WIDTH = 520
+/** Tailwind md:w-64: the chat list's width until the user resizes it. */
+const CHAT_SIDEBAR_DEFAULT_WIDTH = 256
+
 export function SquadAgentThreads({
   agents,
   recentlyTerminatedAgents = [],
@@ -171,6 +178,14 @@ export function SquadAgentThreads({
   const [confirmingTerminateAll, setConfirmingTerminateAll] = useState<string | null>(null)
   const terminateTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const terminateAllTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  // The chat list keeps at least CHAT_SIDEBAR_MIN_WIDTH and leaves the open chat at least half the row.
+  const sidebarBounds = () => ({
+    min: CHAT_SIDEBAR_MIN_WIDTH,
+    max: Math.min(CHAT_SIDEBAR_MAX_WIDTH, (panelRef.current?.clientWidth ?? 2 * CHAT_SIDEBAR_MAX_WIDTH) / 2),
+  })
+  const sidebar = useSidebarWidth(sidebarRef, SQUAD_CHAT_SIDEBAR_WIDTH_STORAGE_KEY, sidebarBounds)
 
   // Cleanup terminate confirmation timeouts on unmount
   useEffect(() => {
@@ -935,20 +950,47 @@ export function SquadAgentThreads({
 
   return (
     <div
-      className={clsx('flex', isPage ? 'flex-col' : 'flex-col md:flex-row gap-3 md:gap-4', 'h-full w-full min-w-0')}
+      ref={panelRef}
+      className={clsx('flex', isPage ? 'flex-col' : 'flex-col md:flex-row gap-3 md:gap-0', 'h-full w-full min-w-0')}
       data-squad-agent-panel
       tabIndex={-1}
       aria-label="Agent conversations"
     >
       {/* Agent list sidebar - panel mode only (page mode uses the header dropdown) */}
       {!isPage && (
-        <div className="squad-chat-sidebar hidden md:flex md:w-64 shrink-0 border border-th-border rounded-xl overflow-hidden flex-col min-h-0">
-          <div className="squad-chat-toolbar relative z-20 shrink-0 flex items-center justify-between gap-2 px-3 pt-3 pb-1">
-            <h3 className="text-sm font-semibold text-primary">Chats</h3>
-            {renderChatActions()}
+        <>
+          <div
+            ref={sidebarRef}
+            style={sidebar.width === undefined ? undefined : { width: sidebar.width, maxWidth: '50%' }}
+            className="squad-chat-sidebar hidden md:flex md:w-64 shrink-0 border border-th-border rounded-lg overflow-hidden flex-col min-h-0"
+          >
+            <div className="squad-chat-toolbar relative z-20 shrink-0 flex items-center justify-between gap-2 px-3 pt-3 pb-1">
+              <h3 className="text-sm font-semibold text-primary">Chats</h3>
+              {renderChatActions()}
+            </div>
+            {renderAgentListBody()}
           </div>
-          {renderAgentListBody()}
-        </div>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize chat list"
+            aria-valuenow={Math.round(sidebar.width ?? CHAT_SIDEBAR_DEFAULT_WIDTH)}
+            aria-valuemin={CHAT_SIDEBAR_MIN_WIDTH}
+            aria-valuemax={CHAT_SIDEBAR_MAX_WIDTH}
+            tabIndex={0}
+            title="Drag to resize · double-click to reset"
+            className="group hidden md:flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center rounded-md focus-visible:outline-none"
+            {...sidebar.handle}
+          >
+            <span
+              aria-hidden
+              className={clsx(
+                'h-10 w-1 rounded-full transition-colors',
+                sidebar.resizing ? 'bg-accent' : 'bg-th-border group-hover:bg-placeholder group-focus-visible:bg-accent'
+              )}
+            />
+          </div>
+        </>
       )}
 
       {/* Conversation area */}

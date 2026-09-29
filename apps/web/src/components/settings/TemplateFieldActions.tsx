@@ -135,7 +135,7 @@ export function TemplateFieldActions({
               )}
               <button
                 onClick={() => setIsDiffOpen(false)}
-                className="ficus-button text-sm text-muted hover:text-primary px-3 py-1.5"
+                className="ficus-button ficus-button-secondary text-sm px-3 py-1.5"
               >
                 Close
               </button>

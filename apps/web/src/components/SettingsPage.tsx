@@ -728,7 +728,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                               setRenamingId(null)
                               setRenameError(null)
                             }}
-                            className="ficus-button px-3 py-1.5 text-xs text-muted hover:text-primary"
+                            className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs"
                           >
                             Cancel
                           </button>

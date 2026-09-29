@@ -211,7 +211,7 @@ export function RolesSection() {
               >
                 {createMutation.isPending ? 'Creating...' : 'Create'}
               </button>
-              <button onClick={resetCreate} className="ficus-button px-4 py-2 text-sm text-muted hover:text-primary">
+              <button onClick={resetCreate} className="ficus-button ficus-button-secondary px-4 py-2 text-sm">
                 Cancel
               </button>
             </div>
@@ -259,7 +259,7 @@ export function RolesSection() {
                       </button>
                       <button
                         onClick={() => setEditingId(null)}
-                        className="ficus-button text-xs text-muted hover:text-primary px-3 py-1.5"
+                        className="ficus-button ficus-button-secondary text-xs px-3 py-1.5"
                       >
                         Cancel
                       </button>

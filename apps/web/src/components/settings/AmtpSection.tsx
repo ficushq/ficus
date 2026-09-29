@@ -152,7 +152,7 @@ export function AmtpSection() {
                   <button
                     type="button"
                     onClick={() => setEditingId(null)}
-                    className="ficus-button px-3 py-1 text-xs text-muted hover:text-primary"
+                    className="ficus-button ficus-button-secondary px-3 py-1 text-xs"
                   >
                     Cancel
                   </button>

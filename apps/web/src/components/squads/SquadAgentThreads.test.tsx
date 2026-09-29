@@ -173,7 +173,9 @@ describe('SquadAgentThreads layout', () => {
   test('fills the available horizontal space in flex parents', () => {
     const html = renderThreads([agent()])
 
-    expect(html).toContain('flex flex-col md:flex-row gap-3 md:gap-4 h-full w-full min-w-0')
+    expect(html).toContain('flex flex-col md:flex-row gap-3 md:gap-0 h-full w-full min-w-0')
+    // On desktop the resize handle is the gap between the chat list and the open chat.
+    expect(html).toContain('role="separator" aria-orientation="vertical" aria-label="Resize chat list"')
   })
 
   test('the loading skeleton fills the available width and announces itself', () => {
@@ -224,7 +226,7 @@ describe('SquadAgentThreads mobile agent picker layout', () => {
     expect(engineerSectionStart).toBeGreaterThan(-1)
     expect(firstEngineer).toBeGreaterThan(engineerSectionStart)
     expect(secondEngineer).toBeGreaterThan(firstEngineer)
-    expect(html).toContain('rounded-xl overflow-hidden flex-col min-h-0')
+    expect(html).toContain('rounded-lg overflow-hidden flex-col min-h-0')
     expect(html).toContain('overflow-y-auto overflow-x-hidden')
   })
 

@@ -229,11 +229,7 @@ export function InviteUserForm({
           {inviteMutation.isPending ? 'Inviting...' : 'Send Invite'}
         </button>
         {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="ficus-button px-4 py-2 text-sm text-muted hover:text-primary"
-          >
+          <button type="button" onClick={onCancel} className="ficus-button ficus-button-secondary px-4 py-2 text-sm">
             Cancel
           </button>
         )}

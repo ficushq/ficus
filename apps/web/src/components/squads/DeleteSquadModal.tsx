@@ -51,10 +51,7 @@ export function DeleteSquadModal({ isOpen, onClose, squadId, squadName }: Props)
       title="Archive Squad"
       footer={
         <div className="flex justify-end gap-2">
-          <button
-            onClick={handleClose}
-            className="ficus-button px-4 py-2 text-sm text-secondary hover:text-primary transition-colors"
-          >
+          <button onClick={handleClose} className="ficus-button ficus-button-secondary px-4 py-2 text-sm">
             Cancel
           </button>
           <button
