@@ -117,6 +117,76 @@ describe('memory tools', () => {
       const result = await exec(getTool('memory_get'), { path: `/memory/${other}/x.md` })
       expect((result.content[0] as { text: string }).text).toContain('does not match')
     })
+
+    it('reads one section by heading trail', async () => {
+      await writeFile(
+        join(memoryPath, 'deploy.md'),
+        '---\ntitle: Deploy\n---\n\n# Deploy\n\n## Staging\n\n### Rollout\n\nInstant.\n\n## Production\n\n### Rollout\n\nTen percent.\n'
+      )
+      const result = await exec(getTool('memory_get'), { path: 'deploy.md', section: 'Production > Rollout' })
+      const text = (result.content[0] as { text: string }).text
+      expect(text).toContain('Deploy › Production › Rollout')
+      expect(text).toContain('Ten percent.')
+      expect(text).not.toContain('Instant.')
+      expect(result.details).toMatchObject({ section: 'Deploy › Production › Rollout' })
+
+      const ambiguous = await exec(getTool('memory_get'), { path: 'deploy.md', section: 'rollout' })
+      expect((ambiguous.content[0] as { text: string }).text).toContain('Instant.')
+      expect((ambiguous.content[0] as { text: string }).text).toContain('2 sections match')
+    })
+
+    it('lists the sections when the requested one is missing', async () => {
+      await writeFile(join(memoryPath, 'deploy.md'), '# Deploy\n\n## Staging\n\nFirst.\n')
+      const result = await exec(getTool('memory_get'), { path: 'deploy.md', section: 'Production' })
+      const text = (result.content[0] as { text: string }).text
+      expect(text).toContain('No section "Production"')
+      expect(text).toContain('- Deploy › Staging')
+      expect(result.details).toMatchObject({ error: 'section_not_found' })
+    })
+  })
+
+  describe('memory_outline', () => {
+    beforeEach(async () => {
+      await indexingService.indexFile({
+        squadId: testSquadId,
+        path: '/memory/decisions/auth.md',
+        content: '# Auth\n\n## Rationale\n\nStateless.\n\n## Key rotation\n\nMonthly.',
+      })
+    })
+
+    it('shows the top level, folders and a document tree in agent paths', async () => {
+      const root = (await exec(getTool('memory_outline'), {})).content[0] as { text: string }
+      expect(root.text).toContain('**Memory map**')
+      expect(root.text).toContain('- memory/ (1 document)')
+
+      const folder = (await exec(getTool('memory_outline'), { path: `/memory/${testSquadId}/decisions` }))
+        .content[0] as { text: string }
+      expect(folder.text).toContain(`**/memory/${testSquadId}/decisions/**`)
+      expect(folder.text).toContain('- auth.md — Auth')
+
+      const document = (await exec(getTool('memory_outline'), { path: 'decisions/auth.md' })).content[0] as {
+        text: string
+      }
+      expect(document.text).toContain(`**/memory/${testSquadId}/decisions/auth.md** — Auth`)
+      expect(document.text).toContain('- Auth (')
+      expect(document.text).toContain('  - Key rotation (')
+      expect(document.text).toContain('memory_get({ path, section')
+    })
+
+    it('finds sections by heading words', async () => {
+      const result = await exec(getTool('memory_outline'), { query: 'key rotation' })
+      const text = (result.content[0] as { text: string }).text
+      expect(text).toContain(`1. /memory/${testSquadId}/decisions/auth.md › Auth › Key rotation`)
+      expect(result.details).toMatchObject({
+        resultCount: 1,
+        matches: [expect.objectContaining({ section: 'Auth › Key rotation' })],
+      })
+    })
+
+    it('says so when nothing matches', async () => {
+      const result = await exec(getTool('memory_outline'), { query: 'kubernetes' })
+      expect((result.content[0] as { text: string }).text).toContain('No titles, paths or headings match')
+    })
   })
 
   describe('memory_write', () => {
@@ -479,6 +549,16 @@ Unique provenance needle text for structured search results.`
       expect(names).toContain('memory_patch')
       expect(names).toContain('memory_append')
       expect(names).toContain('memory_backlinks')
+      expect(names).toContain('memory_outline')
+    })
+
+    it('includes memory_outline in the read-only set', () => {
+      expect(createMemoryTools(testSquadId, { readOnly: true }).map((t) => t.name)).toEqual([
+        'memory_search',
+        'memory_outline',
+        'memory_get',
+        'memory_backlinks',
+      ])
     })
 
     it('each tool has description and parameters', () => {
@@ -490,7 +570,14 @@ Unique provenance needle text for structured search results.`
     })
 
     it('path param descriptions show the runtime-resolved memory root, never a mismatched container literal', () => {
-      const pathTools = ['memory_get', 'memory_write', 'memory_patch', 'memory_append', 'memory_backlinks']
+      const pathTools = [
+        'memory_get',
+        'memory_write',
+        'memory_patch',
+        'memory_append',
+        'memory_backlinks',
+        'memory_outline',
+      ]
       const pathDescription = (list: MemoryToolWithKey[], name: string): string => {
         const tool = list.find((t) => t.name === name)
         if (!tool) throw new Error(`Tool ${name} not found`)

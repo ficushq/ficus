@@ -28,12 +28,19 @@ Your squad has a shared memory vault at \`${memoryMount}\`. Memory persists know
 
 ${mapSection}
 
-### Searching Memory
-Before starting work, search for relevant context:
+### Finding Context
+Before starting work, look for relevant context:
 \`\`\`
 memory_search({ query: "authentication flow" })
 \`\`\`
 Returns ranked results with snippets. Use this to avoid re-solving solved problems.
+
+To see what exists, browse the map of folders, documents and headings, or find sections by their headings, then read just the section you need:
+\`\`\`
+memory_outline({ query: "token rotation" })
+memory_outline({ path: "decisions" })
+memory_get({ path: "decisions/auth.md", section: "Implementation > Key rotation" })
+\`\`\`
 
 ### Writing to Memory
 - **\`memory_write\`**: Create or overwrite a file

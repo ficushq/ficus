@@ -22,6 +22,11 @@ export type {
 export { SearchService } from './SearchService'
 export type { SearchOptions, SearchResult, SearchServiceDeps } from './SearchService'
 
+export { OutlineService } from './OutlineService'
+export type { OutlineBrowse, OutlineMatch, OutlineDocument, DocumentOutline, FolderEntry } from './OutlineService'
+export { findSections, formatTrail, outlineMarkdown, sliceSection } from './outline'
+export type { OutlineSection } from './outline'
+
 export { WriteService } from './WriteService'
 export type { MemoryWriteResult, MemoryReadResult } from './WriteService'
 

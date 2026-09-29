@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { parseFrontmatter, parseWikilinks, chunkMarkdown, computeContentHash } from './parser'
+import { parseFrontmatter, parseWikilinks, chunkMarkdown, computeContentHash, readHeadings } from './parser'
 
 describe('parser', () => {
   describe('parseFrontmatter', () => {
@@ -271,6 +271,35 @@ With some text.`
       const chunks = chunkMarkdown(content)
 
       expect(chunks.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  describe('headings in code fences', () => {
+    const content = [
+      '# Setup',
+      '',
+      '```bash',
+      '# install deps',
+      'bun install',
+      '```',
+      '',
+      '## Run',
+      '',
+      '~~~',
+      '# not a heading either',
+      '~~~',
+    ].join('\n')
+
+    it('chunkMarkdown does not start a section at a # comment inside a fence', () => {
+      const headings = chunkMarkdown(content).map((chunk) => chunk.metadata.heading)
+      expect(headings).toEqual(['Setup', 'Run'])
+    })
+
+    it('readHeadings lists real headings with their levels and lines', () => {
+      expect(readHeadings(content)).toEqual([
+        { heading: 'Setup', level: 1, line: 1 },
+        { heading: 'Run', level: 2, line: 8 },
+      ])
     })
   })
 

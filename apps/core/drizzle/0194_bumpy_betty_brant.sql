@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_memory_chunks_fts" ON "memory_chunks" USING gin ((setweight(to_tsvector('english'::regconfig, coalesce("metadata" ->> 'heading', '')), 'A') || setweight(to_tsvector('english'::regconfig, "content"), 'C')));

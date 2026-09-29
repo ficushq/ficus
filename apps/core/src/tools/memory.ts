@@ -8,13 +8,29 @@
  * - memory_patch: Patch a memory file (exact match replacement)
  * - memory_append: Append content to a memory file
  * - memory_backlinks: Get documents that link to a given document
+ * - memory_outline: Browse or search the map of folders, documents and headings
  */
 
 import { Type } from '@sinclair/typebox'
 import type { MemorySourceType } from '@ficus/shared'
 import { AGENT_THREAD_SEARCH_ENABLED, DEFAULT_MEMORY_SEARCH_SOURCE_TYPES, MEMORY_SOURCE_TYPES } from '@ficus/shared'
 import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-agent'
-import { WriteService, MemoryErrorCodes, MemoryWriteError, SearchService, IndexingService } from '../services/memory'
+import {
+  WriteService,
+  MemoryErrorCodes,
+  MemoryWriteError,
+  SearchService,
+  IndexingService,
+  OutlineService,
+  findSections,
+  formatTrail,
+  outlineMarkdown,
+  parseFrontmatter,
+  sliceSection,
+  type OutlineBrowse,
+  type OutlineMatch,
+  type OutlineSection,
+} from '../services/memory'
 import { Squad } from '../entities/Squad'
 import { resolveSearchDefaults } from '../services/memory/access/defaults'
 import { resolveWorkspaceLayout } from '../services/sandbox/workspace-layout'
@@ -42,6 +58,18 @@ function resolveEnabledSearchSourceTypes(sourceTypes: MemorySearchSourceType[] |
 
 // --- TypeBox Schemas ---
 
+const searchableSourceTypes = () =>
+  Type.Array(
+    Type.Union(
+      MEMORY_SOURCE_TYPES.filter((sourceType) => AGENT_THREAD_SEARCH_ENABLED || sourceType !== 'agent_thread').map(
+        (sourceType) => Type.Literal(sourceType)
+      )
+    ),
+    {
+      description: 'Filter by source types',
+    }
+  )
+
 const SearchSchema = Type.Object({
   query: Type.String({
     description: 'Search query text. Semantic and keyword matching will be used.',
@@ -53,18 +81,7 @@ const SearchSchema = Type.Object({
       maximum: 50,
     })
   ),
-  sourceTypes: Type.Optional(
-    Type.Array(
-      Type.Union(
-        MEMORY_SOURCE_TYPES.filter((sourceType) => AGENT_THREAD_SEARCH_ENABLED || sourceType !== 'agent_thread').map(
-          (sourceType) => Type.Literal(sourceType)
-        )
-      ),
-      {
-        description: 'Filter by source types',
-      }
-    )
-  ),
+  sourceTypes: Type.Optional(searchableSourceTypes()),
   kinds: Type.Optional(
     Type.Array(Type.String(), {
       description: 'Filter by frontmatter kind (e.g., "decision", "pattern")',
@@ -106,6 +123,12 @@ const memoryPathDescription = (memoryRoot: string) =>
 const GetSchema = (memoryRoot: string) =>
   Type.Object({
     path: Type.String({ description: memoryPathDescription(memoryRoot) }),
+    section: Type.Optional(
+      Type.String({
+        description:
+          'Read only this section: a heading ("Rollout") or a heading trail from memory_outline ("Deploy > Rollout"). Includes its subsections.',
+      })
+    ),
     squad: Type.Optional(Type.String({ description: 'Squad id for the path (defaults to your squad).' })),
   })
 
@@ -160,6 +183,34 @@ const AppendSchema = (memoryRoot: string) =>
       })
     ),
     squad: Type.Optional(Type.String({ description: 'Squad id for the path (defaults to your squad).' })),
+  })
+
+const OutlineSchema = (memoryRoot: string) =>
+  Type.Object({
+    path: Type.Optional(
+      Type.String({
+        description: `Folder or document to open: ${memoryRoot}/<rel>, a bare squad-relative path, or another indexed path such as /workspace/docs. Omit for the top level.`,
+      })
+    ),
+    query: Type.Optional(
+      Type.String({
+        description:
+          'Words to find in document titles, paths and section headings. Returns the matching sections instead of a listing.',
+      })
+    ),
+    sourceTypes: Type.Optional(searchableSourceTypes()),
+    sourceSquadIds: Type.Optional(
+      Type.Array(Type.String(), {
+        description: 'Restrict to source squad IDs (own squad plus any granted squads).',
+      })
+    ),
+    limit: Type.Optional(
+      Type.Number({
+        description: 'Maximum entries or matches to return (default: 100 entries, 15 matches)',
+        minimum: 1,
+        maximum: 200,
+      })
+    ),
   })
 
 const BacklinksSchema = (memoryRoot: string) =>
@@ -223,6 +274,38 @@ export function createMemoryTools(callerSquadId: string, options?: CreateMemoryT
     return internalPath
   }
 
+  // Search-style read scope: squad, agent-type and agent defaults layered
+  // under the request, with disabled source types removed.
+  async function resolveReadScope(request: ScopeRequest) {
+    const squad = await Squad.find(callerSquadId)
+    const squadDefaults = (squad?.metadata?.memory as { searchDefaults?: Partial<ScopeRequest> } | undefined)
+      ?.searchDefaults
+    const resolved = resolveSearchDefaults({
+      squad: squadDefaults,
+      agentType: options?.searchDefaults?.agentType,
+      agent: options?.searchDefaults?.agent,
+      request,
+    })
+    const enabled = resolveEnabledSearchSourceTypes(resolved.sourceTypes as MemorySearchSourceType[] | undefined)
+    return { ...resolved, sourceTypes: enabled.sourceTypes, disabledOnly: enabled.disabledOnly }
+  }
+
+  // Outline paths: agent memory paths become `/memory/...`; other absolute
+  // indexed paths (e.g. /workspace/...) pass through; bare paths are memory.
+  function toOutlinePath(rawPath: string | undefined): string | undefined {
+    const path = rawPath?.trim()
+    if (!path || path === '/') return undefined
+    for (const root of acceptedRoots) {
+      if (path === root || path.startsWith(`${root}/`)) return `/memory${path.slice(root.length)}`
+    }
+    return path.startsWith('/') ? path : `/memory/${path.replace(/^\.?\//, '')}`
+  }
+
+  function toAgentOutlinePath(internalPath: string): string {
+    if (internalPath === '/memory' || internalPath === '/memory/') return `${agentMemoryRoot}${internalPath.slice(7)}`
+    return toAgentMemoryPath(internalPath) ?? internalPath
+  }
+
   const search: MemoryToolWithKey = {
     name: 'memory_search',
     key: 'memory_search',
@@ -244,32 +327,20 @@ export function createMemoryTools(callerSquadId: string, options?: CreateMemoryT
       }
     ): Promise<AgentToolResult<unknown>> {
       try {
-        const squad = await Squad.find(callerSquadId)
-        const squadDefaults = (squad?.metadata?.memory as { searchDefaults?: Partial<ScopeRequest> } | undefined)
-          ?.searchDefaults
         const internalPaths = params.paths?.map((p) => {
           for (const root of acceptedRoots) {
             if (p.startsWith(`${root}/`)) return `/memory/${p.slice(root.length + 1)}`
           }
           return p
         })
-        const resolved = resolveSearchDefaults({
-          squad: squadDefaults,
-          agentType: options?.searchDefaults?.agentType,
-          agent: options?.searchDefaults?.agent,
-          request: {
-            sourceTypes: params.sourceTypes,
-            paths: internalPaths,
-            sourceSquadIds: params.sourceSquadIds,
-            sensitivity: params.sensitivity,
-          },
+        const resolved = await resolveReadScope({
+          sourceTypes: params.sourceTypes,
+          paths: internalPaths,
+          sourceSquadIds: params.sourceSquadIds,
+          sensitivity: params.sensitivity,
         })
 
-        const enabledSearch = resolveEnabledSearchSourceTypes(
-          resolved.sourceTypes as MemorySearchSourceType[] | undefined
-        )
-
-        if (enabledSearch.disabledOnly) {
+        if (resolved.disabledOnly) {
           return {
             content: [{ type: 'text' as const, text: 'No matching documents found.' }],
             details: { resultCount: 0 },
@@ -278,7 +349,7 @@ export function createMemoryTools(callerSquadId: string, options?: CreateMemoryT
 
         const results = await SearchService.instance().search(callerSquadId, params.query, {
           limit: params.limit ?? 10,
-          sourceTypes: enabledSearch.sourceTypes,
+          sourceTypes: resolved.sourceTypes,
           kinds: params.kinds,
           tags: params.tags,
           paths: resolved.paths,
@@ -344,7 +415,10 @@ export function createMemoryTools(callerSquadId: string, options?: CreateMemoryT
     description:
       'Read the contents of a memory file. Accepts a path under your squad memory root or a bare squad-relative path.',
     parameters: GetSchema(agentMemoryRoot),
-    async execute(_toolCallId: string, params: { path: string; squad?: string }): Promise<AgentToolResult<unknown>> {
+    async execute(
+      _toolCallId: string,
+      params: { path: string; section?: string; squad?: string }
+    ): Promise<AgentToolResult<unknown>> {
       let internalPath: string
       try {
         internalPath = toInternalMemoryPath(params.path, params.squad)
@@ -369,13 +443,44 @@ export function createMemoryTools(callerSquadId: string, options?: CreateMemoryT
         }
       }
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `**${agentPath}**${result.sourceSquadId !== callerSquadId ? ` _(from squad ${result.sourceSquadId.slice(0, 8)})_` : ''}\n\n${result.content}`,
+      const header = `**${agentPath}**${result.sourceSquadId !== callerSquadId ? ` _(from squad ${result.sourceSquadId.slice(0, 8)})_` : ''}`
+      if (params.section?.trim()) {
+        const body = parseFrontmatter(result.content).content
+        const sections = outlineMarkdown(body)
+        const matches = findSections(sections, params.section)
+        if (matches.length === 0) {
+          const available = sections.slice(0, 40).map((section) => `- ${formatTrail(section.trail)}`)
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  `No section "${params.section}" in ${agentPath}.` +
+                  (available.length > 0 ? `\n\nSections:\n${available.join('\n')}` : ' It has no headings.'),
+              },
+            ],
+            details: { path: agentPath, section: params.section, error: 'section_not_found' },
+          }
+        }
+        const [section] = matches
+        const text = sliceSection(body, section)
+        const note =
+          matches.length > 1
+            ? `\n\n_${matches.length} sections match "${params.section}"; showing the first. Pass a longer trail such as "${formatTrail(matches[1].trail).replace(/ › /g, ' > ')}"._`
+            : ''
+        return {
+          content: [{ type: 'text' as const, text: `${header} › ${formatTrail(section.trail)}\n\n${text}${note}` }],
+          details: {
+            path: agentPath,
+            section: formatTrail(section.trail),
+            length: text.length,
+            sourceSquadId: result.sourceSquadId,
           },
-        ],
+        }
+      }
+
+      return {
+        content: [{ type: 'text' as const, text: `${header}\n\n${result.content}` }],
         details: { path: agentPath, length: result.content.length, sourceSquadId: result.sourceSquadId },
       }
     },
@@ -632,5 +737,149 @@ export function createMemoryTools(callerSquadId: string, options?: CreateMemoryT
     },
   }
 
-  return readOnly ? [search, get, backlinks] : [search, get, write, patch, append, backlinks]
+  const outline: MemoryToolWithKey = {
+    name: 'memory_outline',
+    key: 'memory_outline',
+    label: 'Memory Outline',
+    description:
+      'Browse the map of memory: folders, documents and their section headings. With `query`, find documents and sections whose titles, paths or headings match. Then read a section with memory_get({ path, section }). Use it to see what exists before searching, or when memory_search misses.',
+    parameters: OutlineSchema(agentMemoryRoot),
+    async execute(
+      _toolCallId: string,
+      params: {
+        path?: string
+        query?: string
+        sourceTypes?: MemorySearchSourceType[]
+        sourceSquadIds?: string[]
+        limit?: number
+      }
+    ): Promise<AgentToolResult<unknown>> {
+      try {
+        const resolved = await resolveReadScope({
+          sourceTypes: params.sourceTypes,
+          sourceSquadIds: params.sourceSquadIds,
+        })
+        const scope = {
+          sourceTypes: resolved.sourceTypes,
+          paths: resolved.paths,
+          sourceSquadIds: resolved.sourceSquadIds,
+          sensitivity: resolved.sensitivity,
+        }
+        const service = OutlineService.instance()
+        if (params.query?.trim()) {
+          const matches = resolved.disabledOnly
+            ? []
+            : await service.search(callerSquadId, params.query, scope, { limit: params.limit })
+          return {
+            content: [{ type: 'text' as const, text: formatOutlineMatches(matches) }],
+            details: {
+              resultCount: matches.length,
+              matches: matches.map((match) => ({
+                path: match.document.path ? toAgentOutlinePath(match.document.path) : null,
+                title: match.document.title,
+                sourceType: match.document.sourceType,
+                sourceSquadId: match.document.sourceSquadId,
+                section: match.section ? formatTrail(match.section.trail) : null,
+                score: Number(match.score.toFixed(4)),
+              })),
+            },
+          }
+        }
+
+        const browsed: OutlineBrowse = resolved.disabledOnly
+          ? { kind: 'folder', prefix: '/', entries: [], truncated: false, unpathed: [] }
+          : await service.browse(callerSquadId, toOutlinePath(params.path), scope, { limit: params.limit })
+        return {
+          content: [{ type: 'text' as const, text: formatOutlineBrowse(browsed) }],
+          details:
+            browsed.kind === 'document'
+              ? { kind: 'document', path: params.path, documents: browsed.documents.length }
+              : { kind: 'folder', path: toAgentOutlinePath(browsed.prefix), entries: browsed.entries.length },
+        }
+      } catch (e) {
+        const error = e as Error
+        return {
+          content: [{ type: 'text' as const, text: `Outline error: ${error.message}` }],
+          details: { error: error.message },
+        }
+      }
+    },
+  }
+
+  function squadNote(sourceSquadId: string): string {
+    return sourceSquadId === callerSquadId ? '' : ` _(squad ${sourceSquadId.slice(0, 8)})_`
+  }
+
+  function sectionLines(section: OutlineSection): string {
+    const lines = section.endLine - section.startLine + 1
+    return `${lines} line${lines === 1 ? '' : 's'}`
+  }
+
+  function formatOutlineMatches(matches: OutlineMatch[]): string {
+    if (matches.length === 0) {
+      return 'No titles, paths or headings match. Try other words, memory_outline without a query, or memory_search.'
+    }
+    const lines = matches.map((match, index) => {
+      const { document, section } = match
+      const where = document.path ? toAgentOutlinePath(document.path) : `[${document.sourceType}]`
+      const title = document.title ? ` — ${document.title}` : ''
+      const target = section ? ` › ${formatTrail(section.trail)} (${sectionLines(section)})` : ''
+      return `${index + 1}. ${where}${target}${title}${squadNote(document.sourceSquadId)}`
+    })
+    return (
+      `Found ${matches.length} match(es):\n\n${lines.join('\n')}\n\n` +
+      'Read a memory file section with memory_get({ path, section: "Heading > Subheading" }).'
+    )
+  }
+
+  function formatOutlineBrowse(browsed: OutlineBrowse): string {
+    if (browsed.kind === 'document') {
+      return browsed.documents
+        .map((document) => {
+          const path = document.path ? toAgentOutlinePath(document.path) : `[${document.sourceType}]`
+          const title = document.title ? ` — ${document.title}` : ''
+          const header = `**${path}**${title} (${document.lineCount} lines)${squadNote(document.sourceSquadId)}`
+          if (document.sections.length === 0) return `${header}\n\nNo headings.`
+          const minLevel = Math.min(...document.sections.map((section) => section.level))
+          const tree = document.sections
+            .slice(0, 200)
+            .map((section) => `${'  '.repeat(section.level - minLevel)}- ${section.heading} (${sectionLines(section)})`)
+          const more = document.sections.length > 200 ? `\n… ${document.sections.length - 200} more headings` : ''
+          const hint =
+            document.sourceType === 'memory_file'
+              ? '\n\nRead one with memory_get({ path, section: "Heading > Subheading" }).'
+              : `\n\nSearch inside it with memory_search({ query, paths: ["${path}"] }).`
+          return `${header}\n\n${tree.join('\n')}${more}${hint}`
+        })
+        .join('\n\n')
+    }
+
+    const folder = toAgentOutlinePath(browsed.prefix)
+    if (browsed.entries.length === 0 && browsed.unpathed.length === 0) {
+      return browsed.prefix === '/' ? 'Memory is empty.' : `Nothing indexed under ${folder}.`
+    }
+    const lines = browsed.entries.map((entry) => {
+      const name = entry.kind === 'folder' ? `${entry.name}/` : entry.name
+      const detail =
+        entry.kind === 'folder'
+          ? ` (${entry.documentCount} document${entry.documentCount === 1 ? '' : 's'})`
+          : entry.title
+            ? ` — ${entry.title}`
+            : ''
+      return `- ${name}${detail}${squadNote(entry.sourceSquadId)}`
+    })
+    const sections = [`**${browsed.prefix === '/' ? 'Memory map' : folder}**\n\n${lines.join('\n')}`]
+    if (browsed.truncated) sections.push('More entries not shown: open a subfolder, or pass a query.')
+    if (browsed.unpathed.length > 0) {
+      const groups = browsed.unpathed.map(
+        (group) =>
+          `- ${group.sourceType}: ${group.documentCount} document${group.documentCount === 1 ? '' : 's'}${squadNote(group.sourceSquadId)}`
+      )
+      sections.push(`Also indexed without paths (use memory_search with sourceTypes):\n${groups.join('\n')}`)
+    }
+    sections.push('Open a folder or document with memory_outline({ path }).')
+    return sections.join('\n\n')
+  }
+
+  return readOnly ? [search, outline, get, backlinks] : [search, outline, get, write, patch, append, backlinks]
 }

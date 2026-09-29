@@ -95,7 +95,8 @@ const SUMMARIES: Record<string, (args: Args) => string> = {
     return `${icon} ${truncate(str(a.message), 50)}`
   },
   memory_search: (a) => truncate(str(a.query) || str(a.q), 60),
-  memory_get: (a) => str(a.path),
+  memory_get: (a) => (a.section ? `${str(a.path)} › ${truncate(str(a.section), 40)}` : str(a.path)),
+  memory_outline: (a) => (a.query ? `“${truncate(str(a.query), 50)}”` : str(a.path) || 'memory map'),
   dispatch: (a) => {
     const n = Array.isArray(a.subagents) ? a.subagents.length : 0
     return `${n} subagent${n === 1 ? '' : 's'}`

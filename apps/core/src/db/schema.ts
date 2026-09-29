@@ -2145,6 +2145,12 @@ export const memoryChunks = pgTable(
     // IVFFlat index for vector similarity search
     index('idx_memory_chunks_embedding').using('ivfflat', table.embedding.op('vector_cosine_ops')),
     index('idx_memory_chunks_sensitivity').on(table.squadId, table.sensitivity),
+    // Full-text keyword search. Must stay identical to chunkSearchVector() in
+    // services/memory/fts.ts, or the planner will not use it.
+    index('idx_memory_chunks_fts').using(
+      'gin',
+      sql`(setweight(to_tsvector('english'::regconfig, coalesce(${table.metadata} ->> 'heading', '')), 'A') || setweight(to_tsvector('english'::regconfig, ${table.content}), 'C'))`
+    ),
   ]
 )
 
