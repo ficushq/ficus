@@ -20,6 +20,7 @@ import { createReadTool } from '@earendil-works/pi-coding-agent'
 import type { K8sSandboxManager } from '../services/sandbox/k8s'
 import { resolveSandboxApiUrl } from '../services/sandbox/k8s/pod-spec'
 import {
+  BashOutcomeUnknownError,
   SandboxClient,
   SandboxHttpError,
   type BashResponse,
@@ -1340,7 +1341,9 @@ describe('createHttpBashOperations', () => {
         else proof.reject(new Error('remote process still alive'))
         await observed
       }
-      await expect(result).rejects.toThrow(cleanup === 'clean' ? 'Command aborted' : 'Command cleanup unproven')
+      await expect(result).rejects.toThrow(
+        cleanup === 'clean' ? 'Command aborted' : 'could not confirm all of its processes exited'
+      )
       expect(manager.getClientForSandbox).toHaveBeenCalledTimes(1)
       expect(stream.cancelAndWait).toHaveBeenCalledTimes(1)
     }
@@ -1366,7 +1369,33 @@ describe('createHttpBashOperations', () => {
       proof.resolve()
       await observed
     }
-    await expect(result).rejects.toThrow('outcome is unknown')
+    await expect(result).rejects.toThrow('Ficus stopped it and confirmed none of its processes are still running')
+  })
+
+  test('a lost outcome tells the agent what happened and what to do, never that proof is missing', async () => {
+    for (const cleanup of ['confirmed', 'unconfirmed'] as const) {
+      const stream = createMockStream()
+      if (cleanup === 'unconfirmed')
+        stream.cancelAndWait = mock(async () => {
+          throw new Error('Bash cancellation cleanup did not settle before its deadline')
+        })
+      const result = createHttpBashOperations(createMockManager(stream), 'test-sandbox').exec('command', '/workspace', {
+        onData: () => {},
+      })
+      stream.emitEnd()
+      const error = (await result.catch((caught: unknown) => caught)) as Error
+      expect(error.message).toContain('Lost the connection to this command before it reported an exit code')
+      expect(error.message).toContain('stable-invocation')
+      expect(error.message).not.toMatch(/proof is required|receipt is required/i)
+      expect(error.cause).toBeInstanceOf(BashOutcomeUnknownError)
+      if (cleanup === 'confirmed') {
+        expect(error.message).toContain('confirmed none of its processes are still running')
+        expect(error.message).toContain('re-run it if needed')
+      } else {
+        expect(error.message).toContain('could not confirm it stopped (Bash cancellation cleanup did not settle')
+        expect(error.message).toContain('Check with `ps`')
+      }
+    }
   })
 
   test('handles pre-aborted signal', async () => {
@@ -1550,7 +1579,7 @@ describe('createHttpBashOperations', () => {
     // Partial output is not evidence of successful completion.
     mockStream.emitEnd()
 
-    await expect(execPromise).rejects.toThrow('outcome is unknown')
+    await expect(execPromise).rejects.toThrow('Lost the connection to this command before it reported an exit code')
     expect(mockStream.cancelAndWait).toHaveBeenCalledWith('transport-loss')
   })
 })

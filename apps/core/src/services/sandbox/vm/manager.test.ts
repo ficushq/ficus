@@ -2025,7 +2025,7 @@ describe('VmSandboxManager', () => {
     expect(mgr.getClient('agent_a1')).toBe(first as never)
     // close() aborts EVERY in-flight request on the client, and an aborted /bash
     // stream ends with no terminal exitCode — which reaches the agent as
-    // "Bash invocation outcome is unknown; cleanup proof is required". Closing a
+    // "Bash invocation outcome is unknown". Closing a
     // still-current client here killed live agent commands at a ~60s drumbeat.
     expect(first.closed).toBe(0)
   })
