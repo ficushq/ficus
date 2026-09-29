@@ -140,7 +140,7 @@ export class BashOutcomeUnknownError extends Error {
     readonly failureClass: SandboxTransportKind | 'protocol_truncated',
     cause?: unknown
   ) {
-    super('Bash invocation outcome is unknown; cleanup proof is required', { cause })
+    super('Bash invocation outcome is unknown: the stream ended before an exit code', { cause })
     this.name = 'BashOutcomeUnknownError'
   }
 }

@@ -534,6 +534,25 @@ export function createHttpEditOperations(
 }
 
 /**
+ * What an agent is told when a command's stream ends without an exit code. The agent acts on this
+ * text, so it states what happened and what to do next: inspect the current state and re-run. It
+ * must never read as a missing receipt or proof someone could supply. None exists: Core has
+ * already asked the box to stop the command, and the only answer is whether that was confirmed.
+ */
+export function lostCommandOutcomeError(outcome: BashOutcomeUnknownError, cleanupError?: Error): Error {
+  const lost = `Lost the connection to this command before it reported an exit code (invocation ${outcome.invocationId}).`
+  const message = cleanupError
+    ? `${lost} Ficus tried to stop it but could not confirm it stopped (${cleanupError.message}), so it may still ` +
+      'be running on the box. Check with `ps` and the files or services it touches before re-running it or ' +
+      'anything that would conflict with it. There is no further record or receipt to request; decide from ' +
+      'the current state of the box.'
+    : `${lost} Ficus stopped it and confirmed none of its processes are still running. Any output shown may be ` +
+      'partial and its changes may be partly applied: check the state it affects, then re-run it if needed. ' +
+      'There is nothing else to verify or request.'
+  return new Error(message, { cause: outcome })
+}
+
+/**
  * Creates bash operations that execute via HTTP streaming to the K8s pod.
  */
 export function createHttpBashOperations(
@@ -640,7 +659,9 @@ export function createHttpBashOperations(
               cleanupError = error as Error
             }
             const mapped = await mapFailure(err).catch(() => err)
-            reject(cleanupError ? attachSecondaryFailure(mapped, cleanupError) : mapped)
+            // A healthy box leaves the transport error unmapped: explain the lost outcome instead.
+            if (mapped instanceof BashOutcomeUnknownError) reject(lostCommandOutcomeError(mapped, cleanupError))
+            else reject(cleanupError ? attachSecondaryFailure(mapped, cleanupError) : mapped)
           })()
         }
         stream.on('error', handleStreamError)
@@ -663,7 +684,14 @@ export function createHttpBashOperations(
             settled = true
             void stream.cancelAndWait('tool-abort').then(
               () => reject(new Error('Command aborted')),
-              (error) => reject(new Error(`Command cleanup unproven: ${error.message}`))
+              (error) =>
+                reject(
+                  new Error(
+                    `Command was stopped, but Ficus could not confirm all of its processes exited (${error.message}). ` +
+                      'Check with `ps` on the box before re-running it.',
+                    { cause: error }
+                  )
+                )
             )
           }
 

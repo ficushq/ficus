@@ -791,7 +791,7 @@ export class VmSandboxManager implements ISandboxManager {
       // Reuse the live client when nothing addressable changed. close() aborts EVERY
       // in-flight request on a client, and an aborted /bash stream ends without a
       // terminal exitCode — which the bash reader reports as BashOutcomeUnknownError
-      // ("Bash invocation outcome is unknown; cleanup proof is required"). The
+      // ("Bash invocation outcome is unknown"). The
       // keep-warm sweep re-ensures already-healthy boxes about once a minute, so
       // swapping the client unconditionally here silently killed any agent command
       // that happened to be running at that moment: long execs, builds, and monitors
