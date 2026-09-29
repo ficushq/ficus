@@ -27,10 +27,10 @@ export interface CoreArtifactManifest {
   platform: CoreArtifactPlatform
   builder: string
   /**
-   * The env-name prefix this release reads (`FICUS_*`). The host toolkit keys
-   * the one-time `TAU_*` -> `FICUS_*` env rename on it, falling back to the
-   * root package name for trees without it (git checkouts, pre-rename
-   * artifacts). Optional so readers of older manifests stay valid.
+   * The env-name prefix this release reads (`FICUS_*`). The host toolkit
+   * installs only releases that carry it (lib.sh's core_release_is_ficus; a
+   * git checkout is judged by its root package name instead). Optional so
+   * readers of older manifests stay valid.
    */
   envPrefix?: 'FICUS'
   /** relpath (POSIX `/` separators, relative to the artifact root) -> `sha256:<hex>` of the file's bytes. */

@@ -41,7 +41,7 @@ describe('setup helper CI gate', () => {
     // The root step must ALSO positively prove the root-install sections
     // executed (see the marker test below) — a green summary alone cannot
     // tell "executed" from "self-skipped again under sudo".
-    expect(step).toContain('TAU root-install sections: ENABLED')
+    expect(step).toContain('FICUS root-install sections: ENABLED')
     expect(step).not.toContain('continue-on-error')
     expect(step).not.toContain('if:')
   })
@@ -57,7 +57,7 @@ describe('setup helper CI gate', () => {
     // has no sudo fallback (hard EUID check), so its mutation-phase section
     // self-skips unless the WHOLE process is root — a green summary alone
     // cannot tell "executed" from "self-skipped again".
-    expect(step).toContain('TAU retarget-origin mutation-phase section: ENABLED')
+    expect(step).toContain('FICUS retarget-origin mutation-phase section: ENABLED')
     expect(step).not.toContain('continue-on-error')
     expect(step).not.toContain('if:')
   })
@@ -71,38 +71,9 @@ describe('setup helper CI gate', () => {
     expect(step).toContain('passed, 0 failed') // summary-line gate
     // retarget-backup.sh has no sudo fallback either, so a green summary alone
     // cannot tell "executed" from "self-skipped again".
-    expect(step).toContain('TAU retarget-backup mutation-phase section: ENABLED')
+    expect(step).toContain('FICUS retarget-backup mutation-phase section: ENABLED')
     expect(step).not.toContain('continue-on-error')
     expect(step).not.toContain('if:')
-  })
-})
-
-describe('env-prefix upgrade suite CI gate', () => {
-  test('runs the env-prefix upgrade suite AS ROOT, gated on its summary line and its ENABLED marker', () => {
-    const start = workflow.indexOf('- name: Run env-prefix upgrade suite (root)')
-    expect(start).toBeGreaterThan(-1)
-    const nextStep = workflow.indexOf('\n      - name:', start + 1)
-    const step = workflow.slice(start, nextStep === -1 ? undefined : nextStep)
-    expect(step).toContain('sudo env "PATH=$PATH" bash scripts/setup/env-prefix-upgrade.test.sh')
-    expect(step).toContain('passed, 0 failed') // summary-line gate
-    // The suite self-skips without root and the Ubuntu toolchain; a green
-    // summary alone cannot tell "executed" from "skipped".
-    expect(step).toContain('FICUS env-prefix upgrade section: ENABLED')
-    expect(step).not.toContain('continue-on-error')
-    expect(step).not.toContain('if:')
-  })
-
-  test('the suite emits the marker exactly once, only after every skip path has exited', () => {
-    const suite = readFileSync(join(import.meta.dir, '../scripts/setup/env-prefix-upgrade.test.sh'), 'utf8')
-    const marker = "echo 'FICUS env-prefix upgrade section: ENABLED'"
-    expect(suite.split(marker).length - 1).toBe(1)
-    const markerAt = suite.indexOf(marker)
-    const skipExit = suite.indexOf('if [[ -n ${skip_reason} ]]; then')
-    expect(skipExit).toBeGreaterThan(-1)
-    expect(markerAt).toBeGreaterThan(skipExit)
-    expect(suite.indexOf("[[ ${EUID} -eq 0 ]] || skip_reason='not running as root'")).toBeLessThan(markerAt)
-    // The run ends on the summary line CI gates on.
-    expect(suite.trimEnd().endsWith('\nsummary')).toBe(true)
   })
 })
 
@@ -113,7 +84,7 @@ describe('lib.test.sh root-install marker', () => {
   // ONLY when the capability probe passed, or the gate proves nothing. If
   // either side drifts, this test fails before CI ever lies.
   test('emits the exact token the root gate greps, inside the probe-success branch only', () => {
-    const marker = "echo 'TAU root-install sections: ENABLED'"
+    const marker = "echo 'FICUS root-install sections: ENABLED'"
     expect(libTest).toContain(marker)
     expect(libTest.split(marker).length - 1).toBe(1) // exactly once
     // Structurally inside the probe's success branch: after the success
@@ -141,7 +112,7 @@ describe('retarget-origin.test.sh mutation-phase marker', () => {
   // PATH shim — the shim always reports caddy as present, so gating on the
   // shimmed check would never actually skip when it should).
   test('emits the exact token the root gate greps, only inside the real-root + real-caddy-user branch', () => {
-    const marker = "echo 'TAU retarget-origin mutation-phase section: ENABLED'"
+    const marker = "echo 'FICUS retarget-origin mutation-phase section: ENABLED'"
     expect(retargetTest).toContain(marker)
     expect(retargetTest.split(marker).length - 1).toBe(1) // exactly once
     const gate = retargetTest.indexOf('if [[ ${EUID} -eq 0 ]] && command -p id -u caddy')
@@ -163,11 +134,11 @@ describe('retarget-backup.test.sh mutation-phase marker', () => {
   // Same contract as retarget-origin's marker: emitted exactly once, only
   // inside the real-root branch, and before the final summary line.
   test('emits the exact token the root gate greps, only inside the real-root branch', () => {
-    const marker = "echo 'TAU retarget-backup mutation-phase section: ENABLED'"
+    const marker = "echo 'FICUS retarget-backup mutation-phase section: ENABLED'"
     expect(backupTest).toContain(marker)
     expect(backupTest.split(marker).length - 1).toBe(1) // exactly once
     const gate = backupTest.indexOf(
-      "if [[ ${EUID} -eq 0 ]]; then\n  echo 'TAU retarget-backup mutation-phase section: ENABLED'"
+      "if [[ ${EUID} -eq 0 ]]; then\n  echo 'FICUS retarget-backup mutation-phase section: ENABLED'"
     )
     expect(gate).toBeGreaterThan(-1)
     const markerAt = backupTest.indexOf(marker)

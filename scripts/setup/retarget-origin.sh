@@ -208,10 +208,9 @@ SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
 ENV_FILE="${SRC_DEST}/.env"
 
 [[ -f ${ENV_FILE} ]] || die "Core .env not found at '${ENV_FILE}' — is this host set up by this toolkit, and does core.source.dest in ${CONFIG} match the real install path?"
-# This script reads and writes FICUS_* names only. A host whose settings were
-# never renamed (still on a pre-Ficus Core) is refused before anything is read
-# or written — the tenant upgrade renames it first.
-require_host_env_prefix FICUS "${ENV_FILE}"
+# This script reads and writes FICUS_* names only. A host whose settings
+# predate the Ficus naming is refused before anything is read or written.
+require_host_env_ready
 
 # The health check (step 6) has to probe the port core ACTUALLY listens on.
 # That is PORT in the running .env, not core.port in the yaml — the two can

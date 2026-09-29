@@ -42,11 +42,10 @@ beforeEach(() => {
   // stub curl: record argv, then hand the installer body to the `| sh` pipe
   // FICUS_INSTALL_AUTH is logged too: setup.sh must install the CLI without the
   // installer's auth prompt (it runs unattended under `curl | bash`). The
-  // TAU_INSTALL_AUTH twin is logged as well (K1): during the rename window the
-  // published installer may predate setup.sh, so setup.sh hands it both names.
+  // OLD_INSTALL_AUTH slot proves setup.sh sets no other spelling.
   writeFileSync(
     join(tmp, 'bin', 'curl'),
-    `#!/bin/sh\necho "curl $* FICUS_INSTALL_AUTH=$FICUS_INSTALL_AUTH TAU_INSTALL_AUTH=$TAU_INSTALL_AUTH" >> "${log}"\ncat "${installer}"\n`
+    `#!/bin/sh\necho "curl $* FICUS_INSTALL_AUTH=$FICUS_INSTALL_AUTH OLD_INSTALL_AUTH=$OLD_INSTALL_AUTH" >> "${log}"\ncat "${installer}"\n`
   )
   writeFileSync(join(tmp, 'bin', 'git'), `#!/bin/sh\nexit 0\n`)
   chmodSync(join(tmp, 'bin', 'curl'), 0o755)
@@ -68,8 +67,7 @@ describe('scripts/setup.sh', () => {
     const r = run(['--runtime', 'host', '--yes'])
     expect(r.exitCode).toBe(0)
     const lines = readFileSync(log, 'utf8').trim().split('\n')
-    // K1: both *_INSTALL_AUTH names reach the installer.
-    expect(lines[0]).toBe('curl -fsSL https://ficus.sh/cli/install.sh FICUS_INSTALL_AUTH=0 TAU_INSTALL_AUTH=0')
+    expect(lines[0]).toBe('curl -fsSL https://ficus.sh/cli/install.sh FICUS_INSTALL_AUTH=0 OLD_INSTALL_AUTH=')
     expect(lines[1]).toBe('ficus server install --runtime host --yes')
   })
   it('honours FICUS_INSTALL_URL', () => {
@@ -77,22 +75,21 @@ describe('scripts/setup.sh', () => {
     expect(r.exitCode).toBe(0)
     expect(readFileSync(log, 'utf8')).toContain('curl -fsSL https://example/i.sh')
   })
-  // D5: only the two *_INSTALL_AUTH names keep a TAU_ spelling (K1). Every
-  // other setup input is read under its FICUS_ name only.
-  it('ignores TAU_INSTALL_URL given alone', () => {
-    const r = run([], { TAU_INSTALL_URL: 'https://example/legacy.sh' }) // legacy-env (D5: ignored)
+  // Every setup input is read under its FICUS_ name only.
+  it('ignores OLD_INSTALL_URL given alone', () => {
+    const r = run([], { OLD_INSTALL_URL: 'https://example/legacy.sh' })
     expect(r.exitCode).toBe(0)
     const log0 = readFileSync(log, 'utf8')
     expect(log0).toContain('curl -fsSL https://ficus.sh/cli/install.sh')
     expect(log0).not.toContain('legacy.sh')
   })
-  it('ignores TAU_INSTALL_API_URL given alone', () => {
-    const r = run([], { TAU_INSTALL_API_URL: 'https://example/legacy-api' }) // legacy-env (D5: ignored)
+  it('ignores OLD_INSTALL_API_URL given alone', () => {
+    const r = run([], { OLD_INSTALL_API_URL: 'https://example/legacy-api' })
     expect(r.exitCode).toBe(0)
     expect(readFileSync(log, 'utf8')).not.toContain('legacy-api')
   })
-  it('ignores TAU_INSTALL_DIR given alone: the CLI is looked for in the default directory', () => {
-    const r = run([], { TAU_INSTALL_DIR: join(tmp, 'elsewhere') }) // legacy-env (D5: ignored)
+  it('ignores OLD_INSTALL_DIR given alone: the CLI is looked for in the default directory', () => {
+    const r = run([], { OLD_INSTALL_DIR: join(tmp, 'elsewhere') })
     expect(r.exitCode).toBe(0)
     expect(readFileSync(log, 'utf8').trim().split('\n')[1]).toBe('ficus server install')
   })
@@ -104,11 +101,11 @@ describe('scripts/setup.sh', () => {
     expect(r.exitCode).toBe(0)
     expect(readFileSync(log, 'utf8').trim()).toBe('ficus server install --dry-run')
   })
-  it('ignores TAU_SETUP_SKIP_CLI_INSTALL given alone: the CLI is (re)installed', () => {
+  it('ignores OLD_SETUP_SKIP_CLI_INSTALL given alone: the CLI is (re)installed', () => {
     mkdirSync(join(tmp, '.tau', 'bin'), { recursive: true })
     writeFileSync(join(tmp, '.tau', 'bin', 'ficus'), `#!/bin/sh\necho "ficus $*" >> "${log}"\n`)
     chmodSync(join(tmp, '.tau', 'bin', 'ficus'), 0o755)
-    const r = run(['--dry-run'], { TAU_SETUP_SKIP_CLI_INSTALL: '1' }) // legacy-env (D5: ignored)
+    const r = run(['--dry-run'], { OLD_SETUP_SKIP_CLI_INSTALL: '1' })
     expect(r.exitCode).toBe(0)
     expect(readFileSync(log, 'utf8')).toContain('curl -fsSL https://ficus.sh/cli/install.sh')
   })

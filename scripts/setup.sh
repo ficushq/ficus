@@ -19,9 +19,7 @@ if [ -x "$FICUS_BIN" ] && [ "${FICUS_SETUP_SKIP_CLI_INSTALL:-0}" = "1" ]; then
   printf '==> Using existing ficus CLI at %s\n' "$FICUS_BIN" >&2
 else
   printf '==> Installing the ficus CLI\n' >&2
-  # Rename window (K1): the published installer can lag this script, and the
-  # pre-rename one reads only TAU_INSTALL_AUTH, so it gets both names.
-  FICUS_INSTALL_AUTH=0 TAU_INSTALL_AUTH=0 sh -c "curl -fsSL \"$INSTALLER_URL\" | sh" || err "CLI install failed"
+  FICUS_INSTALL_AUTH=0 sh -c "curl -fsSL \"$INSTALLER_URL\" | sh" || err "CLI install failed"
   [ -x "$FICUS_BIN" ] || err "CLI installer did not produce $FICUS_BIN"
 fi
 

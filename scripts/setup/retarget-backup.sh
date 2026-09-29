@@ -224,11 +224,10 @@ fi
 cfg_load "${CONFIG}"
 
 # This script reads and writes FICUS_* names only (backup.env, tau-backup.sh).
-# A host whose settings were never renamed (still on a pre-Ficus Core) is
-# refused before any live file is read or written — the tenant upgrade
-# renames it first.
+# A host whose settings predate the Ficus naming is refused before any live
+# file is read or written.
 SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
-require_host_env_prefix FICUS "${SRC_DEST}/.env"
+require_host_env_ready
 
 # Captured first, never inside [[ … ]]: a die() in a command substitution only
 # ends that subshell, so `[[ $(cfg_bool …) != true ]]` would read an invalid

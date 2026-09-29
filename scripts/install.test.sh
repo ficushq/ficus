@@ -17,9 +17,9 @@ HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 INSTALLER="${HERE}/install.sh"
 FIXTURE_VERSION='9.9.9-fixture'
 FIXTURE_COMMIT='f1c05f1c05f1c05f1c05f1c05f1c05f1c05f1c05'
-# The pre-rename binary name. Only ever asserted ABSENT or UNTOUCHED: the
-# installer must never create, refresh or delete a file by this name.
-OLD_BIN='tau'
+# Another binary in the install dir. Only ever asserted ABSENT or UNTOUCHED:
+# the installer must never create, refresh or delete a file by this name.
+OLD_BIN='old-cli'
 
 # ------------------------------------------------------------------ fixture
 build_fixture() { # DIR
@@ -123,7 +123,7 @@ chmod 755 "${STUB}/curl"
 
 OUT='' RC=0
 # run_install CASE_DIR [VAR=VALUE ...] — a clean environment (env -i), so no
-# FICUS_/TAU_ variable from the caller's shell can leak into a case. HOME is
+# FICUS_ (or other) variable from the caller's shell can leak into a case. HOME is
 # CASE_DIR/home; FIXTURE_LOG and CURL_LOG live in CASE_DIR.
 run_install() {
   local case_dir=$1
@@ -154,63 +154,52 @@ expect_contains 'fresh install: closing hint names the ficus memory skill' "${OU
 expect_contains 'fresh install: closing hint runs ficus' "${OUT}" 'Run: ficus --help'
 expect_not_contains 'fresh install: no "Tau" copy in the output' "${OUT}" 'Tau'
 
-# 2. K1: the pre-rename setup.sh hands the installer only TAU_INSTALL_AUTH=0.
-#    (The pre-rename `tau install --no-auth` sets nothing at all: commander
-#    folds --no-auth into `auth: false`, which that code never read.)
+# 2. FICUS_INSTALL_AUTH=1 takes the auth branch with the FICUS_ auth inputs.
 C="${T}/c2"
 run_install "${C}" "FICUS_INSTALL_DIR=${C}/bin" "FICUS_SHARE_DIR=${C}/share" \
-  "FICUS_DOWNLOAD_BASE_URL=${BASE}" TAU_INSTALL_AUTH=0 # legacy-env (K1)
-expect_eq 'K1 TAU_INSTALL_AUTH=0 alone: exit 0' "${RC}" 0
-expect_eq 'K1 TAU_INSTALL_AUTH=0 alone: ficus installed' "$([[ -x ${C}/bin/ficus ]] && echo yes || echo no)" yes
-expect_contains 'K1 TAU_INSTALL_AUTH=0 alone: auth step skipped' "${OUT}" 'Skipping Ficus auth setup'
-expect_eq 'K1 TAU_INSTALL_AUTH=0 alone: ficus never ran auth' "$(log_of "${C}")" ''
-
-# 3. K1: the pre-rename `tau install --auth` sets only TAU_INSTALL_AUTH=1.
-C="${T}/c3"
-run_install "${C}" "FICUS_INSTALL_DIR=${C}/bin" "FICUS_SHARE_DIR=${C}/share" \
-  "FICUS_DOWNLOAD_BASE_URL=${BASE}" TAU_INSTALL_AUTH=1 \
-  FICUS_AUTH_LABEL=lab FICUS_API_URL=http://core.test FICUS_PASSWORD=pw # legacy-env (K1)
-expect_eq 'K1 TAU_INSTALL_AUTH=1 alone: exit 0' "${RC}" 0
-expect_eq 'K1 TAU_INSTALL_AUTH=1 alone: takes the auth branch (login, then verify)' "$(log_of "${C}")" \
+  "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=1 \
+  FICUS_AUTH_LABEL=lab FICUS_API_URL=http://core.test FICUS_PASSWORD=pw
+expect_eq 'FICUS_INSTALL_AUTH=1: exit 0' "${RC}" 0
+expect_eq 'FICUS_INSTALL_AUTH=1: takes the auth branch (login, then verify)' "$(log_of "${C}")" \
   "$(printf 'ficus auth login lab --api-url http://core.test password=pw\nficus squad list password=pw')"
 
-# 4. FICUS_INSTALL_AUTH wins over the K1 fallback.
+# 3/4. An *_INSTALL_AUTH under another prefix is not read: FICUS_INSTALL_AUTH decides.
 C="${T}/c4"
 run_install "${C}" "FICUS_INSTALL_DIR=${C}/bin" "FICUS_SHARE_DIR=${C}/share" \
-  "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0 TAU_INSTALL_AUTH=1 # legacy-env (K1)
-expect_eq 'FICUS_INSTALL_AUTH=0 beats TAU_INSTALL_AUTH=1: exit 0' "${RC}" 0
-expect_eq 'FICUS_INSTALL_AUTH=0 beats TAU_INSTALL_AUTH=1: no auth' "$(log_of "${C}")" ''
+  "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0 OLD_INSTALL_AUTH=1
+expect_eq 'FICUS_INSTALL_AUTH=0 beside OLD_INSTALL_AUTH=1: exit 0' "${RC}" 0
+expect_eq 'FICUS_INSTALL_AUTH=0 beside OLD_INSTALL_AUTH=1: no auth' "$(log_of "${C}")" ''
 
-# 5. D5: the other TAU_INSTALL_* spellings are not read any more. The binary
-#    lands in the default directory under HOME, never in TAU_INSTALL_DIR.
+# 5. Inputs under another prefix are not read. The binary
+#    lands in the default directory under HOME, never in OLD_INSTALL_DIR.
 C="${T}/c5"
-run_install "${C}" "TAU_INSTALL_DIR=${C}/x" "TAU_SHARE_DIR=${C}/xs" \
-  "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0 # legacy-env (D5: ignored)
-expect_eq 'TAU_INSTALL_DIR alone: exit 0' "${RC}" 0
-expect_eq 'TAU_INSTALL_DIR alone: installed into the default dir' \
+run_install "${C}" "OLD_INSTALL_DIR=${C}/x" "OLD_SHARE_DIR=${C}/xs" \
+  "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0
+expect_eq 'OLD_INSTALL_DIR alone: exit 0' "${RC}" 0
+expect_eq 'OLD_INSTALL_DIR alone: installed into the default dir' \
   "$([[ -x ${C}/home/.tau/bin/ficus ]] && echo yes || echo no)" yes
-expect_eq 'TAU_INSTALL_DIR alone: nothing written there' "$([[ -e ${C}/x ]] && echo present || echo absent)" absent
-expect_eq 'TAU_SHARE_DIR alone: skills in the default share dir' \
+expect_eq 'OLD_INSTALL_DIR alone: nothing written there' "$([[ -e ${C}/x ]] && echo present || echo absent)" absent
+expect_eq 'OLD_SHARE_DIR alone: skills in the default share dir' \
   "$([[ -f ${C}/home/.tau/share/skills/ficus-memory/SKILL.md ]] && echo yes || echo no)" yes
-expect_eq 'TAU_SHARE_DIR alone: nothing written there' "$([[ -e ${C}/xs ]] && echo present || echo absent)" absent
+expect_eq 'OLD_SHARE_DIR alone: nothing written there' "$([[ -e ${C}/xs ]] && echo present || echo absent)" absent
 
-# 6. D5: TAU_DOWNLOAD_BASE_URL alone is ignored — the installer goes to the
+# 6. OLD_DOWNLOAD_BASE_URL alone is ignored — the installer goes to the
 #    default https://ficus.sh/cli (refused by the curl stub, so it fails).
 C="${T}/c6"
-run_install "${C}" "FICUS_INSTALL_DIR=${C}/bin" "TAU_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0 # legacy-env (D5)
-expect_eq 'TAU_DOWNLOAD_BASE_URL alone: the download is attempted from ficus.sh' \
+run_install "${C}" "FICUS_INSTALL_DIR=${C}/bin" "OLD_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0
+expect_eq 'OLD_DOWNLOAD_BASE_URL alone: the download is attempted from ficus.sh' \
   "$(head -n 1 "${C}/curl.log")" "https://ficus.sh/cli/$(sed -n 's/.*Asset: *//p' <<<"${OUT}" | head -n 1)"
-expect_not_contains 'TAU_DOWNLOAD_BASE_URL alone: never used' "$(cat "${C}/curl.log")" "${BASE}"
-expect_eq 'TAU_DOWNLOAD_BASE_URL alone: nothing installed' "$([[ -e ${C}/bin/ficus ]] && echo present || echo absent)" absent
+expect_not_contains 'OLD_DOWNLOAD_BASE_URL alone: never used' "$(cat "${C}/curl.log")" "${BASE}"
+expect_eq 'OLD_DOWNLOAD_BASE_URL alone: nothing installed' "$([[ -e ${C}/bin/ficus ]] && echo present || echo absent)" absent
 
-# 7. D5: TAU_AUTH_LABEL / TAU_API_URL / TAU_PASSWORD are not read either.
+# 7. OLD_AUTH_LABEL / OLD_API_URL / OLD_PASSWORD are not read either.
 C="${T}/c7"
 run_install "${C}" "FICUS_INSTALL_DIR=${C}/bin" "FICUS_SHARE_DIR=${C}/share" \
   "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=1 \
-  TAU_AUTH_LABEL=lab TAU_API_URL=http://core.test TAU_PASSWORD=pw # legacy-env (D5: ignored)
-expect_eq 'TAU_AUTH_LABEL etc. alone: non-interactive auth fails' "$([[ ${RC} -ne 0 ]] && echo failed || echo ok)" failed
-expect_contains 'TAU_AUTH_LABEL etc. alone: asks for the FICUS_ name' "${OUT}" 'FICUS_AUTH_LABEL is required'
-expect_eq 'TAU_AUTH_LABEL etc. alone: ficus never ran auth' "$(log_of "${C}")" ''
+  OLD_AUTH_LABEL=lab OLD_API_URL=http://core.test OLD_PASSWORD=pw
+expect_eq 'OLD_AUTH_LABEL etc. alone: non-interactive auth fails' "$([[ ${RC} -ne 0 ]] && echo failed || echo ok)" failed
+expect_contains 'OLD_AUTH_LABEL etc. alone: asks for the FICUS_ name' "${OUT}" 'FICUS_AUTH_LABEL is required'
+expect_eq 'OLD_AUTH_LABEL etc. alone: ficus never ran auth' "$(log_of "${C}")" ''
 
 # 8. A pre-existing file under the old name is left byte-identical (and so is
 #    its mode); the new binary is installed beside it.

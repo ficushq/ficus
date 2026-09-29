@@ -247,8 +247,8 @@ backup:
   schedule: '03:15'
 EOF
 
-# The host's core .env, renamed to FICUS_* (the Ficus rename): retarget-backup.sh
-# reads and writes FICUS_ names only and refuses a host still on TAU_ ones.
+# The host's core .env, on FICUS_* names: retarget-backup.sh reads and writes
+# FICUS_ names only and refuses a host whose settings predate them.
 CORE_ENV="${SCRATCH}/core/.env"
 printf 'FICUS_ENCRYPTION_KEY=k\nFICUS_SANDBOX_RUNTIME=host\n' >"${CORE_ENV}"
 
@@ -310,23 +310,23 @@ run() { # ...ARGS — sets RC and OUT (stdout+stderr)
 reset_fixture
 
 # =============================================================================
-# a host that was never renamed (Ficus): refused before anything is written
+# a host whose settings predate the Ficus naming: refused before anything is written
 # =============================================================================
 # All three live files get an old mtime first, so any write — even one that
 # rewrote the same bytes — would show.
-printf 'TAU_ENCRYPTION_KEY=k\nTAU_SANDBOX_RUNTIME=host\n' >"${CORE_ENV}" # legacy-env
+printf 'OLD_ENCRYPTION_KEY=k\nFICUS_SANDBOX_RUNTIME=host\n' >"${CORE_ENV}"
 touch -d '2001-01-01 00:00:00' "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}"
 mtimes() { stat -c %Y "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}" 2>/dev/null || stat -f %m "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}"; }
 before_mtimes=$(mtimes)
 for mode in real --dry-run; do
   if [[ ${mode} == real ]]; then run "${ARGS[@]}"; else run "${ARGS[@]}" --dry-run; fi
-  expect_eq "TAU host (${mode}): exits 1" "${RC}" 1
-  expect_contains "TAU host (${mode}): says why" "${OUT}" 'this host still uses TAU_* settings — upgrade it to the Ficus Core release first'
-  expect_eq "TAU host (${mode}): no file was written (mtimes unchanged)" "$(mtimes)" "${before_mtimes}"
-  expect_not_contains "TAU host (${mode}): prints no RESULT marker" "${OUT}" 'FICUS_RETARGET_BACKUP_RESULT='
-  expect_eq "TAU host (${mode}): the S3 check never ran" "$(grep -c '^curl ' "${SHIM_LOG}" || true)" 0
+  expect_eq "pre-Ficus host (${mode}): exits 1" "${RC}" 1
+  expect_contains "pre-Ficus host (${mode}): says why" "${OUT}" "this host's settings predate the Ficus naming (found OLD_ENCRYPTION_KEY); upgrade it through the ficus-rename-bridge Core release first"
+  expect_eq "pre-Ficus host (${mode}): no file was written (mtimes unchanged)" "$(mtimes)" "${before_mtimes}"
+  expect_not_contains "pre-Ficus host (${mode}): prints no RESULT marker" "${OUT}" 'FICUS_RETARGET_BACKUP_RESULT='
+  expect_eq "pre-Ficus host (${mode}): the S3 check never ran" "$(grep -c '^curl ' "${SHIM_LOG}" || true)" 0
 done
-assert_untouched 'TAU host'
+assert_untouched 'pre-Ficus host'
 printf 'FICUS_ENCRYPTION_KEY=k\nFICUS_SANDBOX_RUNTIME=host\n' >"${CORE_ENV}"
 reset_fixture
 
@@ -567,7 +567,7 @@ fi
 # Mutation phase — needs real root
 # =============================================================================
 if [[ ${EUID} -eq 0 ]]; then
-  echo 'TAU retarget-backup mutation-phase section: ENABLED'
+  echo 'FICUS retarget-backup mutation-phase section: ENABLED'
 
   # Non-default ownership, to prove it is carried over rather than reset.
   set_modes() {

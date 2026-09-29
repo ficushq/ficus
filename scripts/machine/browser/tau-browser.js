@@ -13,7 +13,7 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 
-const SOCK = process.env.FICUS_BROWSER_SOCK || process.env.TAU_BROWSER_SOCK || '/run/tau-browser/sock'
+const SOCK = process.env.FICUS_BROWSER_SOCK || '/run/tau-browser/sock'
 // A SIBLING of /opt/tau/browser, not a child — install_browser recursively
 // chown/chmods /opt/tau/browser to root:root + a+rX (every box user must
 // read the browser binaries), which would world-expose token digests if they
@@ -180,7 +180,7 @@ export function createService(deps = {}) {
     })
   const now = deps.now || Date.now
   const tokensDir =
-    deps.tokensDir || process.env.FICUS_BROWSER_TOKENS_DIR || process.env.TAU_BROWSER_TOKENS_DIR || DEFAULT_TOKENS_DIR
+    deps.tokensDir || process.env.FICUS_BROWSER_TOKENS_DIR || DEFAULT_TOKENS_DIR
   // Docker-dev-only escape hatch (R-B17): the docker sandbox's box server runs as
   // a plain OS user (root) whose name never matches BOX_USER_RE, so the prod
   // box_<hex> gate would 401 every in-container browser call. When — and ONLY
@@ -189,10 +189,10 @@ export function createService(deps = {}) {
   // constrained by isSafeTokenUser so the token filename can't traverse. With the
   // env unset the auth path is byte-identical to box_<hex>-only.
   const devAllowUser =
-    deps.devAllowUser || process.env.FICUS_BROWSER_DEV_ALLOW_USER || process.env.TAU_BROWSER_DEV_ALLOW_USER || ''
+    deps.devAllowUser || process.env.FICUS_BROWSER_DEV_ALLOW_USER || ''
   const memoryHighMb =
     deps.memoryHighMb ||
-    Number(process.env.FICUS_BROWSER_MEMORY_HIGH_MB || process.env.TAU_BROWSER_MEMORY_HIGH_MB) ||
+    Number(process.env.FICUS_BROWSER_MEMORY_HIGH_MB) ||
     DEFAULT_MEMORY_HIGH_MB
   // The SSRF host guard is injectable so an embedder whose browser has no more
   // network reach than the caller already has can turn it off (the host sandbox
@@ -477,7 +477,7 @@ export function createService(deps = {}) {
     // K3: box servers from older Cores send only the pre-Ficus name; newer
     // ones send both. Either name carries the same claim, and the bearer
     // below must still match that user's digest.
-    const boxUser = req.headers.get('x-ficus-box-user') || req.headers.get('x-tau-box-user') || '' // K3
+    const boxUser = req.headers.get('x-ficus-box-user') || ''
     const authHeader = req.headers.get('authorization') || ''
     const match = /^Bearer (.+)$/.exec(authHeader)
     // Prod gate: box_<hex> only. R-B17 dev escape hatch: additionally accept a

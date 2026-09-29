@@ -167,12 +167,10 @@ fi
 # ---------------------------------------------------------------- bearer
 
 FICUS_API_BASE=${API_URL}
-# Either spelling (one release; the env file may predate the Ficus rename).
-# Read in this shell, not in `$(...)`: a FICUS_/TAU_ password conflict in the
-# file must stop the run, not read as "absent".
-FICUS_BEARER=${FICUS_PASSWORD:-${TAU_PASSWORD:-}}
+# Read in this shell, not in `$(...)`, so the value never reaches argv.
+FICUS_BEARER=${FICUS_PASSWORD:-}
 if [[ -z ${FICUS_BEARER} ]]; then
-  envfile_read_prefixed FICUS_BEARER "${ENV_FILE}" PASSWORD ||
+  envfile_read FICUS_BEARER "${ENV_FILE}" FICUS_PASSWORD ||
     die "no bearer: set \$FICUS_PASSWORD or provide --env-file with FICUS_PASSWORD (looked in ${ENV_FILE})"
 fi
 [[ -n ${FICUS_BEARER} ]] || die "FICUS_PASSWORD is empty — cannot authenticate seeding requests"

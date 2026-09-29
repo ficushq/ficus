@@ -176,21 +176,13 @@ BUN_BIN=/usr/local/bin/bun
 # resolution — see cfg_env_pairs in lib.sh) happens once here so a bad
 # core.env fails fast, before any host mutation, in BOTH dry-run and real
 # execution.
-#
-# Re-run after the Ficus env rename (below, right before phase_env): the rename
-# rewrites this yaml's .core.env TAU_* keys to FICUS_*, and CORE_ENV_PAIRS read
-# at config load still carries the old names — rendering those into the fresh
-# .env would undo the rename there (P6 B1).
 load_core_env_pairs() {
   local core_env_key
   CORE_ENV_PAIRS=$(cfg_env_pairs '.core.env' real)
   while IFS='=' read -r core_env_key _; do
     [[ -z ${core_env_key} ]] && continue
     case "${core_env_key}" in
-      # Both spellings of every built-in (Ficus rename): the TAU_ one would reach
-      # the core through its one-release fallback and override the built-in.
-      APP_URL | DATABASE_URL | FICUS_WEB_ORIGIN | FICUS_ENCRYPTION_KEY | FICUS_PASSWORD | FICUS_INTERNAL_EVENT_TOKEN | \
-        TAU_WEB_ORIGIN | TAU_ENCRYPTION_KEY | TAU_PASSWORD | TAU_INTERNAL_EVENT_TOKEN) # legacy-env
+      APP_URL | DATABASE_URL | FICUS_WEB_ORIGIN | FICUS_ENCRYPTION_KEY | FICUS_PASSWORD | FICUS_INTERNAL_EVENT_TOKEN)
         die "config: core.env may not set '${core_env_key}' — it is a built-in derived from core.origin/database/secrets, not a passthrough knob" ;;
       # FICUS_ROOT is owned by the systemd units (Environment=FICUS_ROOT=<run root>)
       # and decides which tree core reads its config, migrations and web dist
@@ -199,7 +191,7 @@ load_core_env_pairs() {
       # services silently run one release's code against another tree's files,
       # with no error anywhere. Refuse it at render time, where it is a one-line
       # config fix instead of a mystery.
-      FICUS_ROOT | TAU_ROOT)
+      FICUS_ROOT)
         die "config: core.env may not set '${core_env_key}' — it is unit-managed (Environment=FICUS_ROOT in tau-api/tau-worker, pointing at the active release) and a value in .env would override the unit and detach the running code from its own tree" ;;
     esac
   done <<<"${CORE_ENV_PAIRS}"
@@ -292,14 +284,11 @@ fi
 # URL and passphrase are credentials. RESTORE_PASSPHRASE is deliberately NOT
 # captured into a global here: phase_restore reads it straight from the
 # environment into a 0600 passfile, minimizing its exposure window.
-# Each *_SETUP_* input also answers to its TAU_ spelling until phase 5
-# (N-I7): a control plane that has not re-vendored this toolkit yet still
-# sends those.
-RESTORE_URL=${FICUS_SETUP_RESTORE_URL:-${TAU_SETUP_RESTORE_URL:-}}
-RESTORE_STRIP_CREDENTIALS=${FICUS_SETUP_RESTORE_STRIP_CREDENTIALS:-${TAU_SETUP_RESTORE_STRIP_CREDENTIALS:-0}}
+RESTORE_URL=${FICUS_SETUP_RESTORE_URL:-}
+RESTORE_STRIP_CREDENTIALS=${FICUS_SETUP_RESTORE_STRIP_CREDENTIALS:-0}
 
 DB_MODE=$(cfg_get '.database.mode' 'container')
-DB_DSN_CFG=${FICUS_SETUP_DATABASE_DSN:-${TAU_SETUP_DATABASE_DSN:-$(cfg_get '.database.dsn')}}
+DB_DSN_CFG=${FICUS_SETUP_DATABASE_DSN:-$(cfg_get '.database.dsn')}
 # CA certificate for an external postgres, on THIS host — provision.sh pushes
 # it into <remote dir>/keys/ and rewrites this key to match, exactly like the
 # origin cert. phase_database installs it at lib.sh's FICUS_DB_CA_PATH.
@@ -391,11 +380,7 @@ if [[ ${AI_SECTION_PRESENT} -eq 1 ]]; then
 fi
 
 SEC_ENC_ENV=$(cfg_get '.secrets.encryption_key_env')
-# The control plane's pre-rename bootstrap-password variable name is read in
-# its renamed spelling: the rename below rewrites this config's
-# secrets.password_env to it (yaml_rename_env_prefix), and the current control
-# plane sends only that one. Any other name is used as written.
-SEC_PW_ENV=$(epr_map_password_env "$(cfg_get '.secrets.password_env')" TAU FICUS)
+SEC_PW_ENV=$(cfg_get '.secrets.password_env')
 
 ENV_FILE="${SRC_DEST}/.env"
 
@@ -408,32 +393,22 @@ BACKUP_S3_ACCESS_KEY_VALUE='' BACKUP_S3_SECRET_KEY_VALUE='' BACKUP_PASSPHRASE_VA
 
 valid_env_name() { [[ $1 =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; }
 
-# The value of the env var NAME; when NAME is a FICUS_ name that is unset or
-# empty, its TAU_ spelling's (one release: an operator's shell may still
-# export the pre-rename names the config defaults used to point at).
-env_value_or_legacy() { # NAME
-  local name=$1 legacy
-  if [[ -n ${!name:-} ]]; then
-    printf '%s' "${!name}"
-  elif [[ ${name} == FICUS_?* ]]; then
-    legacy=TAU_${name#FICUS_}
-    printf '%s' "${!legacy:-}"
-  fi
-}
-
 resolve_secrets() {
   # FICUS_ENCRYPTION_KEY — encrypts the DB secret store; MUST be stable across
   # re-runs or the store becomes unreadable, so <dest>/.env wins over generate.
-  # PERMANENT: the .env is read under EITHER spelling (envfile_read_prefixed —
-  # a host that predates the Ficus rename has only the TAU_ one), and a new
-  # key is generated only when NEITHER name holds one. Conflicting values
-  # under the two names stop the run here, naming the keys only (Ruling 24).
-  # These reads run in this shell, never in `$(...)`, so that stop is real.
+  # A key is never generated beside one under another prefix: that host's
+  # settings predate the Ficus naming, and a fresh key would orphan every
+  # stored secret. These reads run in this shell, never in `$(...)`, so the
+  # values never reach argv.
+  local foreign='' foreign_rc=0
   if [[ -n ${SEC_ENC_ENV} ]] && valid_env_name "${SEC_ENC_ENV}" && [[ -n ${!SEC_ENC_ENV:-} ]]; then
     FICUS_ENC_VALUE=${!SEC_ENC_ENV}
     ENC_SOURCE="\$${SEC_ENC_ENV}"
-  elif envfile_read_prefixed FICUS_ENC_VALUE "${ENV_FILE}" ENCRYPTION_KEY && [[ -n ${FICUS_ENC_VALUE} ]]; then
+  elif envfile_read FICUS_ENC_VALUE "${ENV_FILE}" FICUS_ENCRYPTION_KEY && [[ -n ${FICUS_ENC_VALUE} ]]; then
     ENC_SOURCE="existing ${ENV_FILE}"
+  elif foreign=$(envfile_foreign_key_names "${ENV_FILE}") || foreign_rc=$?; [[ ${foreign_rc} -ne 0 || -n ${foreign} ]]; then
+    [[ ${foreign_rc} -eq 0 ]] || die "cannot read ${ENV_FILE} as $(id -un) (uid ${EUID}) to check it for an encryption key — re-run this as root"
+    die "refusing to generate FICUS_ENCRYPTION_KEY: ${ENV_FILE} holds $(_names_joined "${foreign}"), so this host's settings predate the Ficus naming; upgrade it through the ficus-rename-bridge Core release first"
   elif [[ ${DRY_RUN} -eq 1 ]]; then
     FICUS_ENC_VALUE='<generated-at-run-time>'
     ENC_SOURCE='generated (openssl rand -hex 32)'
@@ -446,7 +421,7 @@ resolve_secrets() {
   if [[ -n ${SEC_PW_ENV} ]] && valid_env_name "${SEC_PW_ENV}" && [[ -n ${!SEC_PW_ENV:-} ]]; then
     FICUS_PW_VALUE=${!SEC_PW_ENV}
     PW_SOURCE="\$${SEC_PW_ENV}"
-  elif envfile_read_prefixed FICUS_PW_VALUE "${ENV_FILE}" PASSWORD && [[ -n ${FICUS_PW_VALUE} ]]; then
+  elif envfile_read FICUS_PW_VALUE "${ENV_FILE}" FICUS_PASSWORD && [[ -n ${FICUS_PW_VALUE} ]]; then
     PW_SOURCE="existing ${ENV_FILE}"
   elif [[ ${DRY_RUN} -eq 1 ]]; then
     FICUS_PW_VALUE='<generated-at-run-time>'
@@ -465,7 +440,7 @@ resolve_secrets() {
   # make every cross-process post fail closed.
   # Unlike FICUS_ENCRYPTION_KEY, rotating it is harmless — both units restart
   # together — but preserving it keeps re-runs from churning the file.
-  if envfile_read_prefixed FICUS_EVENT_TOKEN_VALUE "${ENV_FILE}" INTERNAL_EVENT_TOKEN && [[ -n ${FICUS_EVENT_TOKEN_VALUE} ]]; then
+  if envfile_read FICUS_EVENT_TOKEN_VALUE "${ENV_FILE}" FICUS_INTERNAL_EVENT_TOKEN && [[ -n ${FICUS_EVENT_TOKEN_VALUE} ]]; then
     EVENT_TOKEN_SOURCE="existing ${ENV_FILE}"
   elif [[ ${DRY_RUN} -eq 1 ]]; then
     FICUS_EVENT_TOKEN_VALUE='<generated-at-run-time>'
@@ -503,9 +478,9 @@ resolve_secrets() {
     valid_env_name "${BACKUP_S3_ACCESS_KEY_ENV}" || die "config: backup.s3_access_key_env ('${BACKUP_S3_ACCESS_KEY_ENV}') is not a valid env var name"
     valid_env_name "${BACKUP_S3_SECRET_KEY_ENV}" || die "config: backup.s3_secret_key_env ('${BACKUP_S3_SECRET_KEY_ENV}') is not a valid env var name"
     valid_env_name "${BACKUP_PASSPHRASE_ENV}" || die "config: backup.passphrase_env ('${BACKUP_PASSPHRASE_ENV}') is not a valid env var name"
-    BACKUP_S3_ACCESS_KEY_VALUE=$(env_value_or_legacy "${BACKUP_S3_ACCESS_KEY_ENV}")
-    BACKUP_S3_SECRET_KEY_VALUE=$(env_value_or_legacy "${BACKUP_S3_SECRET_KEY_ENV}")
-    BACKUP_PASSPHRASE_VALUE=$(env_value_or_legacy "${BACKUP_PASSPHRASE_ENV}")
+    BACKUP_S3_ACCESS_KEY_VALUE=${!BACKUP_S3_ACCESS_KEY_ENV:-}
+    BACKUP_S3_SECRET_KEY_VALUE=${!BACKUP_S3_SECRET_KEY_ENV:-}
+    BACKUP_PASSPHRASE_VALUE=${!BACKUP_PASSPHRASE_ENV:-}
     if [[ ${DRY_RUN} -eq 1 ]]; then
       [[ -n ${BACKUP_S3_ACCESS_KEY_VALUE} ]] || BACKUP_S3_ACCESS_KEY_VALUE='<supplied-at-run-time>'
       [[ -n ${BACKUP_S3_SECRET_KEY_VALUE} ]] || BACKUP_S3_SECRET_KEY_VALUE='<supplied-at-run-time>'
@@ -538,31 +513,27 @@ resolve_secrets() {
   fi
 }
 
-# ====================================================== env prefix (Ficus)
+# ====================================================== host migrations
 #
-# A real run first makes a journaled env rename that an interrupted upgrade
-# left behind match the release that is serving (restore or finish), then
-# installs the traps that settle THIS run's rename (just before phase_env) if
-# the run fails or is signalled — restored while the previous release is
-# active, finished forward once the Ficus one is (Ruling 29). A dry run
-# changes nothing, so neither.
+# A real run first makes a journaled host migration that an interrupted run
+# left behind match the release that is serving (finish or restore), then
+# installs the traps that settle THIS run's migration if the run fails or is
+# signalled. A dry run changes nothing, so neither.
 if [[ ${DRY_RUN} -eq 0 ]]; then
-  # One toolkit run at a time may rename, restore or reconcile this host (the
-  # lock, like those steps, is root-only: Ruling 30).
-  env_prefix_lock
+  # One toolkit run at a time may migrate, restore or reconcile this host
+  # (the lock, like those steps, is root-only).
+  host_migrate_lock
   reconcile_rc=0
-  env_prefix_reconcile || reconcile_rc=$?
+  host_migrate_reconcile || reconcile_rc=$?
   [[ ${reconcile_rc} -eq 0 ]] ||
-    die "a journaled env rename could not be reconciled (${reconcile_rc}) — run this from the complete toolkit (systemd/*.service.tmpl, tau-backup.sh.tmpl)"
-  env_prefix_install_traps
+    die "a journaled host migration could not be reconciled (${reconcile_rc}) — run this from the complete toolkit (systemd/*.service.tmpl)"
+  host_migrate_install_traps
 fi
 
-# N-I2 / Ruling 24, as a preflight: TAU_X and FICUS_X holding different values
-# for a protected suffix (ENCRYPTION_KEY, PASSWORD) in any env-bearing file —
-# or in the staged managed.env phase_artifacts installs — stop the run HERE,
-# naming the keys only, before a single phase downloads, stages, migrates or
-# writes anything (the rename itself re-checks right before it writes).
-require_no_env_prefix_conflicts ${ARTIFACTS_DIR:+"${ARTIFACTS_DIR}/managed.env"}
+# A host whose settings predate the Ficus naming (a re-run of this script on
+# it) is refused HERE, before a single phase downloads, stages, migrates or
+# writes anything — and before resolve_secrets could generate a key.
+require_host_env_ready
 
 resolve_secrets
 
@@ -604,8 +575,7 @@ build_env_content() { # redact|real
     [[ ${DB_MODE} == external ]] && dsn='<external dsn, redacted>'
     # *_ENV-indirected core.env values are secrets — redact them too. Literal
     # entries are re-resolved identically either way (cfg_env_pairs redact
-    # only changes *_ENV rendering), so this is just CORE_ENV_PAIRS redacted —
-    # read, like the real render, from the config as the rename leaves it.
+    # only changes *_ENV rendering), so this is just CORE_ENV_PAIRS redacted.
     core_env=$(preview_core_env_redacted) || die "dry run: could not preview the core.env passthrough of ${CFG_FILE}"
   else
     enc=${FICUS_ENC_VALUE} pw=${FICUS_PW_VALUE} key=${AI_KEY_VALUE} tok=${FICUS_EVENT_TOKEN_VALUE}
@@ -713,30 +683,9 @@ install_update_sudoers() {
 
 # ============================================================== dry run
 
-# The core.env passthrough exactly as a real run renders it, redacted. On a
-# host that predates the Ficus rename the real run renames the config's
-# .core.env keys first (migrate_env_prefix_host) and renders from that, so the
-# preview reads a renamed COPY of the config: the same renamer, run inside a
-# private 0700 temp DIR (the renamer's own staging file lands there too). The
-# copy can hold a literal database.dsn, so a subshell owns that dir and
-# removes it on every exit — success, failure, or INT/TERM/HUP mid-preview. The
-# config itself is never written.
+# The core.env passthrough exactly as a real run renders it, redacted.
 preview_core_env_redacted() {
-  if ! (_epr_needs_rename "${CFG_FILE}" yaml) 2>/dev/null; then
-    cfg_env_pairs '.core.env' redact
-    return
-  fi
-  (
-    umask 077
-    preview_dir=$(mktemp -d "${TMPDIR:-/tmp}/ficus-preview.XXXXXX") || exit 1
-    trap 'rm -rf -- "${preview_dir}"' EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-    trap 'exit 129' HUP
-    cat -- "${CFG_FILE}" >"${preview_dir}/config.yaml" || exit 1
-    (yaml_rename_env_prefix "${preview_dir}/config.yaml" TAU FICUS) >/dev/null 2>&1 || exit 1
-    CFG_FILE=${preview_dir}/config.yaml cfg_env_pairs '.core.env' redact
-  )
+  cfg_env_pairs '.core.env' redact
 }
 
 if [[ ${DRY_RUN} -eq 1 ]]; then
@@ -800,20 +749,6 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
       plan "cross-subdomain restore: DELETE FROM user_credentials (WebAuthn passkeys are origin-bound; users are kept)"
     plan "temp dir + downloaded archive are removed regardless of outcome; any failure dies (a half-restored instance fails the provision)"
   fi
-  # The Ficus env rename (migrate_env_prefix_host) — files named, never their
-  # contents; everything previewed below is what the run writes after it.
-  dry_rename=$(env_prefix_rename_preview) || dry_rename=''
-  if [[ -n ${dry_rename} ]]; then
-    printf '\nPhase 3.9 — env settings renamed to FICUS_* (journaled backup set under %s)\n' "$(env_rename_backup_root)"
-    while IFS=$'\t' read -r dry_f dry_state; do
-      [[ -n ${dry_f} ]] || continue
-      if [[ ${dry_state} == unreadable ]]; then
-        plan "${dry_f} (not readable by $(id -un) — checked, and renamed if needed, by the real run as root)"
-      else
-        plan "${dry_f}"
-      fi
-    done <<<"${dry_rename}"
-  fi
   printf '\nPhase 4 — %s (umask 077; secrets redacted below)\n' "${ENV_FILE}"
   plan "FICUS_ENCRYPTION_KEY from: ${ENC_SOURCE}"
   plan "FICUS_PASSWORD (bootstrap bearer) from: ${PW_SOURCE}"
@@ -830,20 +765,6 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     printf '\nPhase 5.5 — platform-managed artifacts (from %s)\n' "${ARTIFACTS_DIR}"
     if [[ -f ${ARTIFACTS_DIR}/managed.env ]]; then
       plan "install managed.env → ${FICUS_MANAGED_ENV_PATH} (0600 root; env credential VALUES never printed)"
-      # Installed in the release's prefix (managed_env_prepare), in a
-      # subshell so nothing it reads stays in this shell; names only. Its log
-      # lines are dropped (they would name the pre-rename keys), but a
-      # failure is reported: the real run would stop on it at phase 5.5.
-      if [[ ! -r ${ARTIFACTS_DIR}/managed.env ]]; then
-        plan "  the staged copy is not readable by $(id -un) — the real run (as root) checks whether it predates the rename"
-      elif ! dry_managed=$(
-        managed_env_prepare "${ARTIFACTS_DIR}" FICUS 2>/dev/null || exit 1
-        printf '%s %s' "${_MANAGED_ENV_RENAMED}" "${_EPR_RENAMED_LINES:-0}"
-      ); then
-        die "dry run: ${ARTIFACTS_DIR}/managed.env could not be prepared for install (the real run would stop on it at phase 5.5) — check that it is a readable text file"
-      elif [[ ${dry_managed%% *} -eq 1 ]]; then
-        plan "  the staged copy predates the rename: installed with ${dry_managed#* } setting(s) under their FICUS_* names (the staged file is left as it is)"
-      fi
     fi
     if [[ -f ${ARTIFACTS_DIR}/manifest ]]; then
       plan "install files → ${FICUS_ARTIFACTS_DIR}/ per manifest (modes + names below; file CONTENTS never printed):"
@@ -908,7 +829,7 @@ phase_preflight() {
     # shellcheck source=/dev/null
     source /etc/os-release
     if [[ ${ID:-} != ubuntu || ${VERSION_ID:-} != 24.04 ]]; then
-      if [[ ${FICUS_SETUP_SKIP_OS_CHECK:-${TAU_SETUP_SKIP_OS_CHECK:-0}} == 1 ]]; then
+      if [[ ${FICUS_SETUP_SKIP_OS_CHECK:-0} == 1 ]]; then
         log_warn "untested OS ${ID:-?} ${VERSION_ID:-?} (expected Ubuntu 24.04) — continuing per FICUS_SETUP_SKIP_OS_CHECK=1"
       else
         die "expected Ubuntu 24.04, found ${ID:-?} ${VERSION_ID:-?} (set FICUS_SETUP_SKIP_OS_CHECK=1 to try anyway)"
@@ -1080,7 +1001,7 @@ phase_source() {
     fi
 
     # The artifact public key is NOT a secret, but openssl needs it as a
-    # file. 0600, and the toolkit EXIT trap (env_prefix_install_traps, set
+    # file. 0600, and the toolkit EXIT trap (host_migrate_install_traps, set
     # before any phase runs) removes it, so no exit path — including a die
     # deep inside the verify — leaves it behind.
     ARTIFACT_PUBKEY_FILE=$(mktemp)
@@ -1224,7 +1145,7 @@ phase_database() {
 # are always cleaned up.
 phase_restore() {
   phase_step restore "phase 3.5/8: restore from backup"
-  local passphrase=${FICUS_SETUP_RESTORE_PASSPHRASE:-${TAU_SETUP_RESTORE_PASSPHRASE:-}}
+  local passphrase=${FICUS_SETUP_RESTORE_PASSPHRASE:-}
   [[ -n ${passphrase} ]] ||
     die "restore: FICUS_SETUP_RESTORE_URL is set but FICUS_SETUP_RESTORE_PASSPHRASE is empty — cannot decrypt the archive"
 
@@ -1298,14 +1219,10 @@ phase_restore() {
   # (c) carry FICUS_ENCRYPTION_KEY forward from the archived .env, overriding the
   # value resolve_secrets computed. phase_env (next) renders the .env from
   # these globals, so the restored DB's encrypted secret store stays readable.
-  # PERMANENT: backup archives outlive the rename; never remove the TAU_
-  # fallback. envfile_read_prefixed reads FICUS_ENCRYPTION_KEY, else the
-  # archive's pre-rename spelling, and stops the run (key names only) when an
-  # archive carries both with different values.
+  # (lib.sh's archived_encryption_key refuses an archive taken before the
+  # Ficus naming, naming its key; the README shows the one-line hand-rename.)
   local archived_key=''
-  envfile_read_prefixed archived_key "${workdir}/.env" ENCRYPTION_KEY || archived_key=''
-  [[ -n ${archived_key} ]] ||
-    die "restore: archived .env carried no FICUS_ENCRYPTION_KEY (nor its pre-rename spelling) — the restored DB's secrets would be permanently undecryptable"
+  archived_encryption_key archived_key "${workdir}/.env"
   FICUS_ENC_VALUE=${archived_key}
   ENC_SOURCE='restored backup envelope'
   log_info "carried FICUS_ENCRYPTION_KEY forward from the restored backup"
@@ -1347,11 +1264,7 @@ phase_env() {
 # empty — the self-hosted / no-artifacts case, byte-identical to before.
 phase_artifacts() {
   phase_step artifacts "phase 5.5/8: platform-managed artifacts"
-  # In the prefix of the release being installed (P6 B2): the staged copy may
-  # have been rendered in TAU_* names before this host was renamed, and
-  # installing it verbatim would put them back over the renamed managed.env.
-  # A staged copy already in that prefix installs byte for byte.
-  install_managed_env "${ARTIFACTS_DIR}" "${TARGET_ENV_PREFIX}"
+  install_managed_env "${ARTIFACTS_DIR}"
   install_artifacts "${ARTIFACTS_DIR}"
   # Reconcile parity with the sync path (apply-artifacts.sh): a re-run on an
   # existing droplet (provision retries reuse the VM) must also DROP files for
@@ -1385,15 +1298,13 @@ phase_services() {
     # Activation migrates, flips <dest>/current, restarts, health-checks, and
     # auto-rolls-back on a failed health check — on a fresh box there is no
     # rollback target, which artifact_activate already handles.
-    # On a re-run that renamed this host's settings (migrate_env_prefix_host
-    # above), a rollback swaps back to a release that reads the pre-rename
-    # names: the hook restores the backup set (and daemon-reloads) BEFORE the
-    # rollback restart, exactly as in upgrade-host.sh — otherwise the old
-    # release would come back up on the renamed files, without its key or its
-    # managed credentials, and still answer /health. A no-op when nothing was
-    # renamed this run.
+    # On a re-run that migrated this host's files (host_migrate above), a
+    # rollback swaps back to a release the migration was not for: the hook
+    # restores the backup set (and daemon-reloads) BEFORE the rollback
+    # restart, exactly as in upgrade-host.sh. A no-op when nothing was
+    # migrated this run.
     # shellcheck disable=SC2034 # read by lib.sh's artifact_activate
-    ARTIFACT_ROLLBACK_HOOK=env_prefix_restore_pending
+    ARTIFACT_ROLLBACK_HOOK=host_migrate_restore_pending
     artifact_activate "${SRC_DEST}" "${ARTIFACT_RELEASE_DIR}" "${CORE_PORT}"
     artifact_retention "${SRC_DEST}"
   else
@@ -1531,19 +1442,16 @@ EOF
 }
 
 # This toolkit writes FICUS_* settings only, so it installs only releases that
-# read them (N-I8). The target tree is the staged release in artifact mode
+# read them. The target tree is the staged release in artifact mode
 # (phase_source sets ARTIFACT_RELEASE_DIR; the artifact root has no
 # package.json), the checkout in git mode.
 require_ficus_target_release() {
-  local p
-  p=$(core_release_env_prefix "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}") ||
-    die "could not tell which env prefix ${ARTIFACT_RELEASE_DIR:-${SRC_DEST}} reads"
-  [[ ${p} == FICUS ]] ||
-    die "this toolkit installs Ficus releases only; use the toolkit from the release you are installing"
-  TARGET_ENV_PREFIX=${p}
-  # A non-root (sudo) re-run on a host whose settings predate the rename
-  # cannot rename them: refuse before any phase changes the host (Ruling 30).
-  require_env_rename_privilege FICUS
+  local tree=${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}
+  core_release_is_ficus "${tree}" ||
+    die "refusing ${tree}: it is a pre-Ficus Core release — this toolkit installs Ficus releases only; use the toolkit from the release you are installing"
+  # A non-root (sudo) re-run cannot do a host migration this release needs:
+  # refuse before any phase changes the host.
+  host_migrate_require_privilege "${tree}"
 }
 
 phase_preflight
@@ -1552,13 +1460,9 @@ require_ficus_target_release
 phase_build
 phase_database
 [[ -n ${RESTORE_URL} ]] && phase_restore
-# An existing host that predates the Ficus rename (a re-run of this script on
-# it) has its TAU_* settings renamed, with a journaled backup set, right
-# before phase_env renders the .env from the resolved (either-spelling) values.
-migrate_env_prefix_host "${TARGET_ENV_PREFIX}" "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"
-# The rename rewrote this config's .core.env keys: read the passthrough pairs
-# again, so phase_env renders the renamed names (P6 B1).
-load_core_env_pairs
+# The host migrations the release needs (a re-run of this script on an
+# existing host), with a journaled backup set, right before phase_env.
+host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"
 phase_env
 phase_migrate
 [[ -n ${ARTIFACTS_DIR} ]] && phase_artifacts
@@ -1567,4 +1471,4 @@ phase_services
 [[ ${BACKUP_ENABLE} == true ]] && phase_backup
 phase_seed
 phase_report
-env_prefix_commit
+host_migrate_commit

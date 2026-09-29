@@ -240,8 +240,8 @@ jobs:
           # even with a green summary. Positive on purpose: gating on the
           # absence of a skip warning would silently break when the warning
           # is ever reworded; the marker is a contract.
-          grep -Fq 'TAU root-install sections: ENABLED' <<<"${out}" || {
-            echo '::error::lib.test.sh (root) skipped the root-install sections (no "TAU root-install sections: ENABLED" marker) — this step exists to execute them.'
+          grep -Fq 'FICUS root-install sections: ENABLED' <<<"${out}" || {
+            echo '::error::lib.test.sh (root) skipped the root-install sections (no "FICUS root-install sections: ENABLED" marker) — this step exists to execute them.'
             exit 1
           }
           if (( status != 0 )); then exit $(( status )); fi
@@ -268,8 +268,8 @@ jobs:
           # POSITIVE execution gate, same reasoning as lib.test.sh's marker
           # above: a green summary alone cannot distinguish "the mutation
           # phase ran" from "it self-skipped again for some new reason".
-          grep -Fq 'TAU retarget-origin mutation-phase section: ENABLED' <<<"${out}" || {
-            echo '::error::retarget-origin.test.sh (root) skipped the mutation-phase section (no "TAU retarget-origin mutation-phase section: ENABLED" marker) — this step exists to execute it.'
+          grep -Fq 'FICUS retarget-origin mutation-phase section: ENABLED' <<<"${out}" || {
+            echo '::error::retarget-origin.test.sh (root) skipped the mutation-phase section (no "FICUS retarget-origin mutation-phase section: ENABLED" marker) — this step exists to execute it.'
             exit 1
           }
           if (( status != 0 )); then exit $(( status )); fi
@@ -290,31 +290,8 @@ jobs:
             echo '::error::retarget-backup.test.sh (root) ended without a clean "N passed, 0 failed" summary.'
             exit 1
           }
-          grep -Fq 'TAU retarget-backup mutation-phase section: ENABLED' <<<"${out}" || {
-            echo '::error::retarget-backup.test.sh (root) skipped the mutation-phase section (no "TAU retarget-backup mutation-phase section: ENABLED" marker) — this step exists to execute it.'
-            exit 1
-          }
-          if (( status != 0 )); then exit $(( status )); fi
-
-      # The Ficus env rename (TAU_* -> FICUS_*) end to end: upgrade-host.sh,
-      # apply-artifacts.sh and setup-host.sh run as root against a fake host
-      # (every path through the toolkit's seams; systemctl, journalctl,
-      # swapon, sleep and the health probe are PATH shims) — the rename, the
-      # rollback restore, SIGTERM/SIGHUP/SIGKILL, the reconcile and the
-      # refusals. It needs real root and a systemd Ubuntu host, so the same
-      # summary-line + positive-marker gating as the suites above.
-      - name: Run env-prefix upgrade suite (root)
-        run: |
-          set -o pipefail
-          status=0
-          out=$(sudo env "PATH=$PATH" bash scripts/setup/env-prefix-upgrade.test.sh 2>&1) || status=$?
-          printf '%s\n' "${out}"
-          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
-            echo '::error::env-prefix-upgrade.test.sh (root) ended without a clean "N passed, 0 failed" summary.'
-            exit 1
-          }
-          grep -Fq 'FICUS env-prefix upgrade section: ENABLED' <<<"${out}" || {
-            echo '::error::env-prefix-upgrade.test.sh (root) skipped itself (no "FICUS env-prefix upgrade section: ENABLED" marker) — this step exists to execute it.'
+          grep -Fq 'FICUS retarget-backup mutation-phase section: ENABLED' <<<"${out}" || {
+            echo '::error::retarget-backup.test.sh (root) skipped the mutation-phase section (no "FICUS retarget-backup mutation-phase section: ENABLED" marker) — this step exists to execute it.'
             exit 1
           }
           if (( status != 0 )); then exit $(( status )); fi

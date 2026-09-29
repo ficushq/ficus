@@ -111,19 +111,11 @@ invoking operator must either be root or have non-interactive sudo, the
 configured `core.run_user` account must already exist, and Bun source discovery
 must succeed from the invoking operator's `PATH` or `HOME/.bun/bin`; setup then
 copies that executable into the managed system path before switching identity.
-The Ficus env rename (below) is root-only: a non-root run takes no rename
+Host migrations (below) are root-only: a non-root run takes no migration
 lock (it warns instead) and goes on exactly as before as long as the host
-needs no rename, restore or reconcile — a `TAU_*` host staying on a
-pre-rename release, or a host already on `FICUS_*`. When the run would have to
-rename `TAU_*` → `FICUS_*`, finish a journaled rename, or restore a set
-(`--restore-env-backup`), it stops before changing anything and says so:
-re-run it as root. It also fails closed: onto a Ficus release, a non-root run
-that cannot read one of the host's env files (`.env`, `managed.env`,
-`backup.env`, the config, the core units and drop-ins, `tau-backup.sh`) — or
-cannot even tell whether one exists — refuses, naming the file (never its
-contents), because it cannot check it for `TAU_*` names. A host whose
-`backup.env` is root-only 0600 therefore upgrades onto a Ficus release as
-root.
+needs no host migration, restore or reconcile. When it would have to run one,
+finish a journaled one, or restore a set (`--restore-host-backup`), it stops
+before changing anything and says so: re-run it as root.
 
 Do NOT hand-roll this sequence. `tau-api` runs `bun run dist/index.js`, so a
 fetch without the core build leaves the OLD server running while `git log` on
@@ -137,130 +129,69 @@ The control plane drives this same script over SSH for its `upgrade` job
 afterwards that `apps/core/dist/index.js` was rebuilt and that the running
 `tau-api` process started after it.
 
-### The Ficus env rename (TAU*\* → FICUS*\*)
+### Hosts and archives from before the Ficus naming
 
-The Core release that ships the Ficus rename reads `FICUS_*` settings (with a
-one-release in-process fallback for `TAU_*`). The upgrade onto it — and only
-that upgrade — **hard-renames** the host's existing settings in place:
+This toolkit and the Core releases it installs read `FICUS_*` settings only.
+A host whose `<dest>/.env` still holds its encryption key under another
+prefix (`<OLD>_ENCRYPTION_KEY`) predates that naming: `upgrade-host.sh`,
+`setup-host.sh`, `apply-artifacts.sh --config` and the retarget primitives
+refuse it in preflight, write nothing, and name the key. Upgrade such a host
+through the `ficus-rename-bridge` Core release first; it renames the host's
+settings with a journaled backup. `setup-host.sh` never generates a new
+`FICUS_ENCRYPTION_KEY` beside an old one. A target release that predates the
+naming (an artifact without `"envPrefix": "FICUS"`, or a checkout whose
+`package.json` is not named `ficus`) is refused too.
 
-| File                                         | What is renamed                                                                                                                        |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `<dest>/.env`, `managed.env`, `backup.env`   | every `KEY=` / `export KEY=` line whose key starts with `TAU_` (values, comments and order kept; `*_MANAGED_SECRET_KEYS` items mapped) |
-| the host config (`--config`)                 | `core.env.TAU_*` keys (comments kept)                                                                                                  |
-| the core API/worker units and their drop-ins | `Environment=TAU_…` assignments                                                                                                        |
-| the installed `tau-backup.sh`                | re-rendered from `tau-backup.sh.tmpl` (which reads `FICUS_BACKUP_*`)                                                                   |
+A backup archive taken before the Ficus naming carries its key under the old
+prefix, and a restore from it stops with that key's name. Rename the
+archive's `.env` keys by hand (in the unpacked archive), then retry:
 
-Only names change: every value (install paths included), file location and
-unit name stays as it is. The direction comes from the release being
-activated — `artifact.json`'s `"envPrefix": "FICUS"`, or for a git checkout
-its root `package.json` name (`ficus` / `tau`) — never from the toolkit, so an
-upgrade onto a pre-rename release renames nothing, and one onto a pre-rename
-release on an already renamed host is refused (see `--restore-env-backup`).
+```bash
+sed -i 's/^\(export \)\{0,1\}<OLD>_/\1FICUS_/' .env
+```
 
-**Safety.**
+### Host migrations
 
-- **Conflicts stop the run.** When `TAU_X` and `FICUS_X` both exist with
-  different values and `X` contains `ENCRYPTION_KEY` or `PASSWORD`, nothing is
-  written: the message names both keys (never a value) — keep the right one,
-  delete the other, re-run. Identical values collapse silently; for any other
-  key the `FICUS_` value wins and the dropped `TAU_` key is logged. The check
-  runs in each entry point's preflight — `upgrade-host.sh` and `setup-host.sh`
-  right after the reconcile, before anything is downloaded, staged or
-  migrated; `apply-artifacts.sh --config` on the staged `managed.env` before
-  anything is installed — so a conflicting host gets no backup set and no
-  journal. The rename checks again right before it writes. The check does not
-  depend on the target release: a host with a conflict can neither upgrade
-  nor downgrade until it is fixed (`--restore-env-backup` is not gated).
-- **Backup sets.** Before the first byte is renamed, every env-bearing file is
-  copied byte for byte (`cp -p`, verified with `cmp`, sha256 recorded in a
-  `MANIFEST`) into `/var/backups/ficus-env-rename/<UTC time>-<random>/`
-  (override: `ENV_RENAME_BACKUP_ROOT`). **These sets hold plaintext secrets**
-  — the encryption key, the database DSN, passwords. The directory is root
-  0700, and the newest five sets are kept until pruned.
-- **Files the run creates.** When the host has no `managed.env` yet, the set
-  records it as absent (an `ABSENT` list next to the `MANIFEST`), and a
-  restore removes the one the run installed in the new names.
-- **The journal.** `/var/backups/ficus-env-rename/PENDING` names the set, the
-  target prefix and the release; it is flushed to disk before the first rename
-  and removed only when the release that reads the new names is serving (or
-  after a verified restore).
+When a release needs this host's config files changed (`<dest>/.env`,
+`managed.env`, `backup.env`, the config, the core units and their drop-ins,
+the installed backup script), `lib.sh`'s journaled host-migration framework
+does it: right before the `current` symlink moves (artifact mode) or before
+the restart (git mode). This release registers no migration.
+
+- **Backup sets.** Before the first change, every host config file is copied
+  byte for byte (`cp -p`, verified with `cmp`, sha256 recorded in a
+  `MANIFEST`) into `/var/backups/ficus-host-migrate/<UTC time>-<random>/`
+  (override: `HOST_MIGRATE_BACKUP_ROOT`). **These sets hold plaintext
+  secrets.** The directory is root 0700, and the newest five sets are kept.
+  A file the migration may create is recorded in an `ABSENT` list, and a
+  restore removes it again.
+- **The journal.** `/var/backups/ficus-host-migrate/PENDING` names the set,
+  the migrations and the release; it is flushed to disk before the first
+  change and removed once that release is serving (or after a verified
+  restore).
 - **The files follow the active release.** When a run fails or is signalled
-  (`SIGTERM` / `SIGHUP` / `SIGINT`, exit 143 / 129 / 130) after renaming, the
-  env files are made to match the release that is serving at that moment:
-  before the `current` symlink moved (or after the automatic rollback moved
-  it back) the set is restored byte for byte; after it moved to the Ficus
-  release the rename is kept and committed. A dropped control connection
-  cannot interrupt this (the toolkit ignores `SIGPIPE`, and a failed log
-  write never stops it). The rename itself runs immediately before the
-  `current` symlink moves (artifact mode) or before the restart (git mode).
-- **Reconcile.** A run that could not settle — `SIGKILL`, OOM, reboot —
-  leaves the journal. The next `upgrade-host.sh`, `setup-host.sh` or
-  `apply-artifacts.sh --config` makes the files match the release that is
-  serving: it restores the set when that release reads `TAU_*`, and finishes
-  the rename when it reads `FICUS_*`. The files are renamed one by one and
-  each rename is idempotent, so a half-renamed host is always finished, never
-  skipped. Toolkit runs that can rename, restore or reconcile (upgrade,
-  setup, `apply-artifacts.sh --config`, `--restore-env-backup`) take an
-  exclusive `flock` on `/var/backups/ficus-env-rename/.lock` first, when run
-  as root (the lock, like the rename, is root-only; a non-root run skips it
-  with a warning and refuses if a rename, restore or reconcile is needed).
-  The wait for the lock is capped at 900 s (`ENV_RENAME_LOCK_WAIT`).
-- **A failed git-mode build.** In git mode the checkout moves to the Ficus
-  commit before the build, and the rename runs only after the build, just
-  before the restart. If the build fails in between, the host is left with
-  `TAU_*` files, a Ficus checkout and no journal. That is safe: the old
-  `dist/` keeps serving on `TAU_*`, a Ficus build would still read them
-  through its one-release fallback, and the next successful upgrade renames.
-- **Units after a conversion.** When the same upgrade converts a git checkout
-  to the artifact layout, the units are left out of the set; a restore
-  re-renders them for the current layout with `TAU_ROOT` instead of copying
-  back units that point at a checkout that no longer exists.
+  (`SIGTERM` / `SIGHUP` / `SIGINT`) after migrating, the files are made to
+  match the release that is serving at that moment: restored byte for byte
+  while the old release serves (or after the automatic rollback), finished
+  and committed once the new one does.
+- **Reconcile.** A run that could not settle (`SIGKILL`, OOM, reboot) leaves
+  the journal; the next `upgrade-host.sh`, `setup-host.sh` or
+  `apply-artifacts.sh --config` settles it the same way. Those runs take an
+  exclusive `flock` on `/var/backups/ficus-host-migrate/.lock` first, when
+  run as root (wait capped at 900 s, `HOST_MIGRATE_LOCK_WAIT`).
 
-**`--restore-env-backup <set>`** is the manual way back:
+**`--restore-host-backup <set>`** is the manual way back:
 
 ```bash
 sudo bash scripts/setup/upgrade-host.sh --config /root/tau-setup/tau-setup.yaml \
-  --restore-env-backup /var/backups/ficus-env-rename/<set>
+  --restore-host-backup /var/backups/ficus-host-migrate/<set>
 ```
 
 It verifies every file against the set's `MANIFEST`, puts it back, clears the
-journal if it names that set, and exits. Run it before downgrading to a
-pre-rename Core or running an older toolkit on a renamed host. Caveats:
-
-- it also reverts **any secret changed since that set was taken** (a rotated
-  password or key is rolled back with everything else);
-- it **removes `managed.env`** when the set recorded it as absent (the host
-  had none when it was renamed) — including one the control plane synced
-  since. Under a pre-rename release that `FICUS_` file is unreadable anyway,
-  and the next sync installs a fresh one;
-- backup archives taken **after** the rename carry a `FICUS_` `.env`. Restoring
-  one needs this toolkit or newer: an older `setup-host.sh` looks only for
-  `TAU_ENCRYPTION_KEY` in the archive and dies. (This toolkit reads either
-  spelling, permanently, and never generates a new key while either exists.)
-- a restore does not move the release: if a Ficus release is serving, it now
-  runs on `TAU_*` only through its one-release fallback, and syncs
-  (`apply-artifacts.sh --config`) refuse with an env-prefix mismatch until
-  you downgrade to a pre-rename release.
-  It is root-only, like the rename.
-
-`apply-artifacts.sh --config <yaml> <stage>` (what the control plane's sync
-runs) refuses to install anything — exit 3, `FICUS_ENV_PREFIX_MISMATCH=1` on
-stdout — while a rename is journaled or the host's `.env` and its active
-release disagree; the fix is the tenant upgrade, which reconciles. When they
-agree, the staged `managed.env` is installed in that prefix: a copy rendered
-in the other one (a staging dir pushed before the host was renamed) is renamed
-on install with the same rules, and a copy already in the host's prefix is
-installed byte for byte. `setup-host.sh` does the same with `artifacts.dir`,
-and re-reads `core.env` from the renamed config before it renders the `.env`,
-so a re-run on a pre-rename host leaves no `TAU_` name behind. Its `--dry-run`
-previews exactly that: it lists the files the rename would change, and shows
-the planned `.env` and `managed.env` under their renamed names (read from a
-renamed temporary copy of the config), while writing nothing. The retarget
-primitives (`retarget-origin.sh`, `retarget-backup.sh`) read and write
-`FICUS_*` only and refuse a host that has not been renamed yet. Until phase 5
-the `*_SETUP_*` inputs (`FICUS_SETUP_DATABASE_DSN`, `…_RESTORE_*`, `…_RRSYNC`,
-`…_HTTP_CMD`) and the `*_SYSTEMD_UNIT_DIR` / `*_MANAGED_ENV_PATH` /
-`*_ARTIFACTS_DIR` seams also answer to their `TAU_` spelling.
+journal if it names that set, and exits. It also accepts the sets the
+previous release left under `/var/backups/ficus-env-rename/` (read only;
+nothing writes there any more). It reverts **any secret changed since that set
+was taken**, and it is root-only.
 
 ### What you end up with (the contract)
 

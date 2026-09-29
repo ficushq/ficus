@@ -236,19 +236,19 @@ run_err() { # ...ARGS
   "${RETARGET}" "$@" 2>&1 >/dev/null || true
 }
 
-# --- a host that was never renamed (Ficus): refused before anything changes --
-# retarget-origin.sh reads and writes FICUS_* names only; on a host still on
-# TAU_* ones it must stop before touching the yaml, the .env or Caddy.
-printf 'APP_URL=https://acme.hiretau.ai\nTAU_WEB_ORIGIN=https://acme.hiretau.ai\nTAU_ENCRYPTION_KEY=deadbeef\n' >"${CORE_DEST}/.env" # legacy-env
-TAU_ENV_BYTES=$(cat "${CORE_DEST}/.env")
-for tau_mode in --dry-run real; do
-  tau_args=(--config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}")
-  [[ ${tau_mode} == --dry-run ]] && tau_args+=(--dry-run)
-  expect_eq "TAU host (${tau_mode}): exits non-zero" "$(run_rc "${tau_args[@]}")" '1'
-  expect_match "TAU host (${tau_mode}): says why" "$(run_err "${tau_args[@]}")" 'this host still uses TAU_\* settings'
-  expect_eq "TAU host (${tau_mode}): the config is untouched" "$(cat "${CONFIG}")" "${CONFIG_BYTES_BEFORE}"
-  expect_eq "TAU host (${tau_mode}): the .env is untouched" "$(cat "${CORE_DEST}/.env")" "${TAU_ENV_BYTES}"
-  expect_eq "TAU host (${tau_mode}): no Caddyfile was written" "$([[ -e ${CADDYFILE_PATH} ]] && echo exists || echo absent)" 'absent'
+# --- a host whose settings predate the Ficus naming: refused before anything changes --
+# retarget-origin.sh reads and writes FICUS_* names only; on such a host it
+# must stop before touching the yaml, the .env or Caddy.
+printf 'APP_URL=https://acme.example.com\nOLD_WEB_ORIGIN=https://acme.example.com\nOLD_ENCRYPTION_KEY=deadbeef\n' >"${CORE_DEST}/.env"
+OLD_ENV_BYTES=$(cat "${CORE_DEST}/.env")
+for old_mode in --dry-run real; do
+  old_args=(--config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}")
+  [[ ${old_mode} == --dry-run ]] && old_args+=(--dry-run)
+  expect_eq "pre-Ficus host (${old_mode}): exits non-zero" "$(run_rc "${old_args[@]}")" '1'
+  expect_match "pre-Ficus host (${old_mode}): says why" "$(run_err "${old_args[@]}")" 'predate the Ficus naming \(found OLD_ENCRYPTION_KEY\)'
+  expect_eq "pre-Ficus host (${old_mode}): the config is untouched" "$(cat "${CONFIG}")" "${CONFIG_BYTES_BEFORE}"
+  expect_eq "pre-Ficus host (${old_mode}): the .env is untouched" "$(cat "${CORE_DEST}/.env")" "${OLD_ENV_BYTES}"
+  expect_eq "pre-Ficus host (${old_mode}): no Caddyfile was written" "$([[ -e ${CADDYFILE_PATH} ]] && echo exists || echo absent)" 'absent'
 done
 printf '%s\n' "${ENV_BYTES_BEFORE}" >"${CORE_DEST}/.env"
 
@@ -383,7 +383,7 @@ cleanup_caddy_user() {
 trap 'cleanup_caddy_user; cleanup' EXIT
 
 if [[ ${EUID} -eq 0 ]] && command -p id -u caddy >/dev/null 2>&1; then
-  echo 'TAU retarget-origin mutation-phase section: ENABLED'
+  echo 'FICUS retarget-origin mutation-phase section: ENABLED'
 
   MUT="${SCRATCH}/mutation"
   mkdir -p "${MUT}/core"
