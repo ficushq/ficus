@@ -74,18 +74,6 @@ export const RESERVED_SQUAD_ENV_KEYS: Readonly<Record<string, string>> = {
   FICUS_IDENTITY_TOKEN: IDENTITY_REASON,
   FICUS_IDENTITY_AUTH_STORE: IDENTITY_REASON,
   FICUS_IDENTITY_AGENT_ID: IDENTITY_REASON,
-  // One release (Ficus rename): the legacy spellings stay reserved. Older `tau`
-  // CLIs read them directly, and the new CLI bridges an unset FICUS_ name from them.
-  TAU_TOKEN: IDENTITY_REASON,
-  TAU_API_URL: IDENTITY_REASON,
-  TAU_PASSWORD: IDENTITY_REASON,
-  TAU_AUTH_STORE: IDENTITY_REASON,
-  TAU_AGENT_CONTEXT: IDENTITY_REASON,
-  TAU_AGENT_ID: IDENTITY_REASON,
-  TAU_IDENTITY_API_URL: IDENTITY_REASON,
-  TAU_IDENTITY_TOKEN: IDENTITY_REASON,
-  TAU_IDENTITY_AUTH_STORE: IDENTITY_REASON,
-  TAU_IDENTITY_AGENT_ID: IDENTITY_REASON,
 }
 
 // PATH is deliberately NOT reserved: `PATH=$PATH:/opt/toolchain` is a legitimate
@@ -392,8 +380,7 @@ export function githubCommandBindings(squadId: string, signingPublicKey?: string
       ].join(' ')
     : undefined
   const git = signing
-    ? // One release (Ficus rename): accept and emit both spellings, for an older `tau` signer.
-      `git() { if [ -n "\${FICUS_TOKEN:-\${TAU_TOKEN:-}}" ]; then FICUS_GIT_SIGNING_SQUAD=${squad} TAU_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
+    ? `git() { if [ -n "\${FICUS_TOKEN:-}" ]; then FICUS_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
     : `git() { command git ${credential} "$@"; }`
   return (
     [

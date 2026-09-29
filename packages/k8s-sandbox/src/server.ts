@@ -18,7 +18,6 @@
  * Agent intelligence stays in Ficus Core — this service only executes tools.
  */
 
-import './boot/legacy-env'
 import { chmod, mkdir, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isAuthorized, loadExecutorAuthToken } from './services/auth'

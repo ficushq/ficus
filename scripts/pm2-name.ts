@@ -9,7 +9,6 @@
  * `bun <file>` does auto-load the cwd's .env into its own process.env, so this
  * one-line process sees FICUS_PM2_API_NAME / FICUS_PM2_WORKER_NAME.
  */
-import '../apps/cli/src/boot/legacy-env'
 const arg = process.argv[2]
 if (arg !== 'api' && arg !== 'worker') {
   process.stderr.write(`usage: bun scripts/pm2-name.ts <api|worker>\n`)

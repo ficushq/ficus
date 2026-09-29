@@ -17,7 +17,6 @@
  * changed or are stale, then runs this file. Its imports need this release's
  * workspace packages, which a checkout just moved to a new release may not have yet.
  */
-import '../boot/legacy-env'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'

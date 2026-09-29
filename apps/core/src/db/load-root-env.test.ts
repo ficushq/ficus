@@ -66,37 +66,20 @@ describeSubprocess('loadRootEnvForStandaloneScript', () => {
   })
 })
 
-describe('loadRootEnvForStandaloneScript legacy TAU_ keys (one release)', () => {
-  test("bridges the file's TAU_X to FICUS_X in its own record before merging", () => {
-    const suffix = `ROOT_ENV_BRIDGE_${process.pid}`
+describe('loadRootEnvForStandaloneScript never maps other prefixes to FICUS_', () => {
+  test("loads the file's OLD_X as it is and sets no FICUS_X", () => {
+    const suffix = `ROOT_ENV_OLD_${process.pid}`
     cleanups.push(() => {
       delete process.env[`FICUS_${suffix}`]
-      delete process.env[`TAU_${suffix}`]
+      delete process.env[`OLD_${suffix}`]
     })
-    const root = tempRoot(`TAU_${suffix}=from-file\n`)
+    const root = tempRoot(`OLD_${suffix}=from-file\n`)
 
     const loaded = loadRootEnvForStandaloneScript(root)
 
-    expect(process.env[`FICUS_${suffix}`]).toBe('from-file')
-    expect(process.env[`TAU_${suffix}`]).toBeUndefined()
-    expect(loaded).toEqual([`FICUS_${suffix}`])
-  })
-
-  test("never lets the file's legacy encryption key replace an explicit FICUS_ one", () => {
-    const key = `FICUS_ROOT_ENV_ENCRYPTION_KEY_${process.pid}`
-    const legacy = `TAU_ROOT_ENV_ENCRYPTION_KEY_${process.pid}`
-    process.env[key] = 'explicit'
-    cleanups.push(() => {
-      delete process.env[key]
-      delete process.env[legacy]
-    })
-    const root = tempRoot(`${legacy}=from-file\n`)
-
-    const loaded = loadRootEnvForStandaloneScript(root)
-
-    expect(process.env[key]).toBe('explicit')
-    expect(process.env[legacy]).toBeUndefined()
-    expect(loaded).toEqual([])
+    expect(process.env[`FICUS_${suffix}`]).toBeUndefined()
+    expect(process.env[`OLD_${suffix}`]).toBe('from-file')
+    expect(loaded).toEqual([`OLD_${suffix}`])
   })
 })
 

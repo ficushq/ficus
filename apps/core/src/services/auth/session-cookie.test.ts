@@ -36,8 +36,8 @@ describe('session cookie', () => {
     expect(SESSION_COOKIE_NAME).toBe('ficus_session')
   })
 
-  test('extractSessionToken ignores the pre-rename tau_session cookie', async () => {
-    const res = await app().request('http://localhost/read', { headers: { Cookie: 'tau_session=old' } })
+  test('extractSessionToken ignores an old_session cookie', async () => {
+    const res = await app().request('http://localhost/read', { headers: { Cookie: 'old_session=old' } })
     expect((await res.json()).token).toBeNull()
   })
 

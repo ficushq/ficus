@@ -1,4 +1,3 @@
-import './boot/legacy-env'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { mountCoreDocs } from './lib/docs-serve'
 import {

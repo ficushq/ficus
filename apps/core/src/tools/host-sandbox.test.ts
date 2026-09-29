@@ -171,29 +171,6 @@ describe('host sandboxed coding tools', () => {
     expect(out).toContain('ctx=unset')
   })
 
-  test('legacy TAU_ identity names follow the injected identity and never leak a stale one (one release)', async () => {
-    writeFileSync(
-      join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'),
-      'TAU_TOKEN=stale-operator-token\nTAU_API_URL=https://cloud.example.com\nTAU_PASSWORD=admin-password\n'
-    )
-    const agent = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD, tauToken: 'tok' })
-    const agentOut = await run(agent, {
-      command: 'echo tok=${TAU_TOKEN:-unset}; echo url=${TAU_API_URL:-unset}; echo pw=${TAU_PASSWORD:-unset}',
-    })
-    // An older `tau` CLI reads these: they must name the injected identity.
-    expect(agentOut).toContain('tok=tok')
-    expect(agentOut).toContain('url=http://127.0.0.1:')
-    // The new CLI would bridge TAU_PASSWORD into FICUS_PASSWORD, so it must be gone.
-    expect(agentOut).toContain('pw=unset')
-
-    const tokenless = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD })
-    const tokenlessOut = await run(tokenless, {
-      command: 'echo tok=${TAU_TOKEN:-unset}; echo pw=${TAU_PASSWORD:-unset}',
-    })
-    expect(tokenlessOut).toContain('tok=unset')
-    expect(tokenlessOut).toContain('pw=unset')
-  })
-
   test('each command gets fresh snapshot names, so an earlier command cannot publish them', async () => {
     // The preamble is prepended to the command string, i.e. argv — which the
     // agent's own command can read. Names reused across commands would let

@@ -1369,18 +1369,17 @@ describe('docker-sandbox-manager', () => {
       expect(result.command).toContain(`-e FICUS_API_URL=${resolveDockerApiUrl()}`)
     })
 
-    it('gives the interactive terminal the live Core URL in both spellings (one release)', () => {
+    it('gives the interactive terminal the live Core URL under the FICUS_ name only', () => {
       expect(terminalApiUrlArgs('http://host.docker.internal:3000')).toBe(
-        '-e FICUS_API_URL=http://host.docker.internal:3000 -e TAU_API_URL=http://host.docker.internal:3000'
+        '-e FICUS_API_URL=http://host.docker.internal:3000'
       )
     })
 
-    it('also injects the legacy TAU_ identity names for older CLIs in the container (one release)', () => {
+    it('injects the FICUS_ identity names only', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath, 'ficus_agent_x')
       const result = hook!({ command: 'ficus whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain('-e FICUS_TOKEN=ficus_agent_x')
-      expect(result.command).toContain('-e TAU_TOKEN=ficus_agent_x')
-      expect(result.command).toContain(`-e TAU_API_URL=${resolveDockerApiUrl()}`)
+      expect(result.command).not.toMatch(/-e [A-Z]+_TOKEN=ficus_agent_x.*-e [A-Z]+_TOKEN=/)
     })
   })
 

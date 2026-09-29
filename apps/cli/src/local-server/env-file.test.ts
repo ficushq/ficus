@@ -26,18 +26,13 @@ describe('parseEnvFile', () => {
   })
 })
 
-describe('parseEnvFile legacy TAU_ lines (one release)', () => {
-  it('reads a TAU_X line as FICUS_X, and a FICUS_X line in the same file wins (except for encryption keys)', () => {
-    expect(parseEnvFile('TAU_INSTANCE=smoke\nTAU_PASSWORD=old\nFICUS_PASSWORD=new\nPORT=3100\n')).toEqual({
-      FICUS_INSTANCE: 'smoke',
+describe('parseEnvFile reads names as written', () => {
+  it('never maps another prefix to FICUS_', () => {
+    expect(parseEnvFile('OLD_INSTANCE=smoke\nOLD_PASSWORD=old\nFICUS_PASSWORD=new\nPORT=3100\n')).toEqual({
+      OLD_INSTANCE: 'smoke',
+      OLD_PASSWORD: 'old',
       FICUS_PASSWORD: 'new',
       PORT: '3100',
-    })
-  })
-
-  it('keeps the TAU_ value of a conflicting encryption key, as the boot bridge does', () => {
-    expect(parseEnvFile('TAU_ENCRYPTION_KEY=store-key\nFICUS_ENCRYPTION_KEY=other-key\n')).toEqual({
-      FICUS_ENCRYPTION_KEY: 'store-key',
     })
   })
 })

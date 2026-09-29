@@ -2,11 +2,10 @@ import { Command } from 'commander'
 import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join, resolve } from 'path'
-import { expandTilde } from '@ficus/shared/node'
+import { assertEnvFileNaming, expandTilde } from '@ficus/shared/node'
 import { applyUpdate, type UpdateDeps } from './update'
 import { bootstrap, defaultInstallDir, DEFAULT_REPO } from '../local-server/bootstrap'
 import { parseEnvFile } from '../local-server/env-file'
-import { migrateCheckoutEnv } from '../local-server/env-prefix'
 import { runOfflineUpdate } from '../local-server/offline-update'
 import { resolveSetupOptions, type Prompter, type RawSetupFlags, SetupOptionsError } from '../local-server/options'
 import { defaultSysboxHostDeps, runSysboxBootstrap, type SysboxHostDeps } from '../local-server/sysbox'
@@ -96,21 +95,9 @@ function narrateWarnings(root: string): { warnings?: string[] } {
   return { warnings }
 }
 
-/**
- * Ficus rename: hard-rename the install's TAU_ settings to FICUS_ (with backups) before its
- * processes start. A checkout that predates the rename is left alone, and a TAU_/FICUS_ secret
- * conflict fails the command with the key names and nothing changed.
- */
-async function renameInstallEnv(root: string): Promise<string[]> {
-  // Under --json the warnings ride in the document (see withWarnings) instead of on stdout.
-  const { warnings } = await migrateCheckoutEnv(root, { log: (line) => (isJsonMode() ? undefined : narrate(line)) })
-  return warnings
-}
-
-/** `narrateWarnings`' result with the env-rename warnings added, still omitted when there are none. */
-function withWarnings(envWarnings: string[], rest: { warnings?: string[] }): { warnings?: string[] } {
-  const warnings = [...envWarnings, ...(rest.warnings ?? [])]
-  return warnings.length > 0 ? { warnings } : {}
+/** Refuses (EnvNamingError) an install whose .env predates the Ficus naming, before anything starts. */
+function assertInstallEnvNaming(root: string): void {
+  assertEnvFileNaming(join(root, '.env'))
 }
 
 export function registerServerCommands(program: Command, deps: ServerDeps = defaultServerDeps()) {
@@ -401,7 +388,7 @@ Examples:
   withRoot(server.command('start').description('Start tau-api and tau-worker under the recorded supervisor')).action(
     guarded(async (opts) => {
       const { dir, names, context, registered } = managed(opts as { root?: string; instance?: string })
-      const envWarnings = await renameInstallEnv(dir)
+      assertInstallEnvNaming(dir)
       const url = rootEnv(dir).DATABASE_URL
       // A DSN the installer wrote (loopback, container credentials) is this
       // instance's own container, on the port it names. Anything else — a
@@ -420,7 +407,7 @@ Examples:
         await waitForPostgres(deps.runner, names.container, { sleep: deps.sleep })
       }
       await startSupervisor(context)
-      const warnings = withWarnings(envWarnings, narrateWarnings(dir))
+      const warnings = narrateWarnings(dir)
       output(
         { ok: true, root: dir, instance: names.label, supervisor: registered.record.supervisor, ...warnings },
         `Started instance "${names.label}" from ${dir}`
@@ -440,9 +427,9 @@ Examples:
   withRoot(server.command('restart').description('Restart tau-api and tau-worker')).action(
     guarded(async (opts) => {
       const { dir, names, context, registered } = managed(opts as { root?: string; instance?: string })
-      const envWarnings = await renameInstallEnv(dir)
+      assertInstallEnvNaming(dir)
       await restartSupervisor(context)
-      const warnings = withWarnings(envWarnings, narrateWarnings(dir))
+      const warnings = narrateWarnings(dir)
       output(
         { ok: true, root: dir, instance: names.label, supervisor: registered.record.supervisor, ...warnings },
         `Restarted instance "${names.label}" (${dir})`

@@ -40,7 +40,7 @@ describe('bootstrap', () => {
         const r = await rec.runner(command, options)
         if (command[0] === 'git' && command[1] === 'clone') {
           mkdirSync(join(root, '.git'), { recursive: true })
-          writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+          writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
           writeFileSync(join(root, '.bun-version'), '1.3.8\n')
         }
         return r
@@ -63,7 +63,7 @@ describe('bootstrap', () => {
   it('reuses an existing checkout without cloning', async () => {
     const root = join(tmp, 'tau')
     mkdirSync(join(root, '.git'), { recursive: true })
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(root, '.bun-version'), '1.3.8\n')
     const { d, calls } = deps()
     await bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)
@@ -85,7 +85,7 @@ describe('bootstrap', () => {
   it('propagates the checkout setup exit code', async () => {
     const root = join(tmp, 'tau')
     mkdirSync(join(root, '.git'), { recursive: true })
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(root, '.bun-version'), '1.3.8\n')
     const rec = recordingRunner({ 'bun --version': { stdout: '1.3.8' }, 'bun run setup': { code: 2 } })
     const d: BootstrapDeps = {
@@ -107,7 +107,7 @@ describe('bootstrap', () => {
   function checkout(version = '1.4.2') {
     const root = join(tmp, 'tau')
     mkdirSync(join(root, '.git'), { recursive: true })
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(root, '.bun-version'), version)
     return root
   }

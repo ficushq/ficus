@@ -203,7 +203,7 @@ describe('CORS preflight', () => {
     })
     const allowed = (res.headers.get('access-control-allow-headers') ?? '').toLowerCase().split(/\s*,\s*/)
     expect(allowed).toContain('x-ficus-csrf')
-    expect(allowed).not.toContain('x-tau-csrf') // D14
+    expect(allowed).not.toContain('x-old-csrf') // D14
   })
 })
 

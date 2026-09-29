@@ -11,7 +11,6 @@ import * as k8s from '@kubernetes/client-node'
 import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ENV_PREFIX, LEGACY_ENV_PREFIX } from '@ficus/shared/legacy-env'
 import { createLogger } from '../../../lib/infra/logger'
 import { getSecretStore } from '../../secrets/store'
 import { gitIdentityEnv, resolveGitHubIdentity } from '../github-identity'
@@ -331,26 +330,6 @@ async function buildSandboxEnv(input: {
   return env
 }
 
-/**
- * One release (Ficus rename): every literal `FICUS_X` container env var is also
- * set as `TAU_X`, because a sandbox image built before the rename (its
- * entrypoint and runtime-env scripts), user scripts and older `tau` CLIs in the
- * pod still read the legacy names. The executor bridges them back at boot.
- * Env is not part of {@link reconcilableSpecHash}, so this never recreates a pod.
- */
-export function withLegacyPodEnvAliases(env: k8s.V1EnvVar[]): k8s.V1EnvVar[] {
-  const names = new Set(env.map((e) => e.name))
-  const aliases: k8s.V1EnvVar[] = []
-  for (const entry of env) {
-    if (!entry.name.startsWith(ENV_PREFIX) || entry.value === undefined) continue
-    const alias = `${LEGACY_ENV_PREFIX}${entry.name.slice(ENV_PREFIX.length)}`
-    if (names.has(alias)) continue
-    names.add(alias)
-    aliases.push({ name: alias, value: entry.value })
-  }
-  return [...env, ...aliases]
-}
-
 export interface BuildPodSpecInput {
   sandboxId: string
   podName: string
@@ -662,7 +641,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
             failureThreshold: 6,
           },
           volumeMounts,
-          env: withLegacyPodEnvAliases(containerEnv),
+          env: containerEnv,
         },
       ],
 

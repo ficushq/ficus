@@ -164,10 +164,7 @@ start_browser_service() {
   # Seed under the user browser-proxy actually sends (FICUS_BROWSER_DEV_ALLOW_USER),
   # NOT the command user — the two differ (root vs tau) and the header wins.
   ( umask 077; printf '%s' "$digest" >"$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token" )
-  # One release (Ficus rename): the service may still read the TAU_BROWSER_* names.
-  TAU_BROWSER_SOCK="$FICUS_BROWSER_SOCK" TAU_BROWSER_MEMORY_HIGH_MB="$FICUS_BROWSER_MEMORY_HIGH_MB" \
-    TAU_BROWSER_DEV_ALLOW_USER="$FICUS_BROWSER_DEV_ALLOW_USER" TAU_BROWSER_TOKENS_DIR="$tokens_dir" \
-    bun "$service" >/var/log/tau-browser.log 2>&1 &
+  FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service" >/var/log/tau-browser.log 2>&1 &
   echo "[tau-sandbox] tau-browser service started (pid $!, sock $FICUS_BROWSER_SOCK, dev-user $FICUS_BROWSER_DEV_ALLOW_USER)" >&2
 }
 start_browser_service || echo '[tau-sandbox] tau-browser service failed to start (non-fatal, dev parity)' >&2

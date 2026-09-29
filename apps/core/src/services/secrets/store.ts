@@ -7,6 +7,7 @@ import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { notify, listen } from '../../lib/infra/local-events'
 import { isManagedSecretKey, readManagedSecretValue } from './managed'
+import { isForeignEncryptionKeyName, RENAME_BRIDGE_TAG } from '@ficus/shared/env-naming'
 
 const log = createLogger('secret-store')
 
@@ -203,6 +204,30 @@ export interface SecretStoreOptions {
   testEnvironmentMigrationFixtures?: readonly GeneratedSecretEnvironmentFixture[]
 }
 
+let foreignEncryptionKeyReported = false
+
+/**
+ * With no FICUS_ENCRYPTION_KEY, an encryption key under another one-segment prefix means this
+ * install's settings predate the Ficus naming. Say so once per process, by name only. Never exits:
+ * the store keeps its read-only mode, like any other missing key.
+ */
+export function reportForeignEncryptionKey(env: Record<string, string | undefined> = process.env): string[] {
+  if (env.FICUS_ENCRYPTION_KEY) return []
+  const names = Object.keys(env).filter((name) => isForeignEncryptionKeyName(name) && env[name])
+  if (names.length === 0 || foreignEncryptionKeyReported) return names
+  foreignEncryptionKeyReported = true
+  log.error(
+    `FICUS_ENCRYPTION_KEY is not set, but ${names.join(', ')} is: this install's settings predate the Ficus naming. ` +
+      `Update it through the ${RENAME_BRIDGE_TAG} release; stored secrets stay unreadable until then`
+  )
+  return names
+}
+
+/** Test-only: let the next reportForeignEncryptionKey call log again. */
+export function resetForeignEncryptionKeyReportForTests(): void {
+  foreignEncryptionKeyReported = false
+}
+
 /** A stored secret that this instance's FICUS_ENCRYPTION_KEY cannot decrypt. */
 export class SecretDecryptError extends Error {
   constructor(
@@ -259,6 +284,7 @@ export class SecretStore {
     try {
       this.encryptionKey = getEncryptionKey()
     } catch {
+      reportForeignEncryptionKey()
       log.warn('FICUS_ENCRYPTION_KEY not set — secret store running in read-only env-fallback mode')
       return
     }

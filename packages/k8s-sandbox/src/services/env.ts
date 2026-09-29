@@ -22,8 +22,6 @@
  *   - TMPDIR / LD_LIBRARY_PATH / PLAYWRIGHT_* (re-set by runtime-env.sh)
  */
 
-import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
-
 const EXACT_ALLOW = new Set<string>([
   // Build-parallelism knobs: box-provision.sh derives defaults from FICUS_BOX_CPUS
   // (applyParallelismDefaults); an operator may pin them explicitly in host.env.
@@ -67,9 +65,7 @@ const EXACT_ALLOW = new Set<string>([
   'NODE_EXTRA_CA_CERTS',
 ])
 
-// TAU_ stays allowed for one release next to FICUS_ (Ficus rename): old Core
-// versions and per-command overrides may still send the legacy spelling.
-const PREFIX_ALLOW = ['FICUS_', 'TAU_', 'LC_', 'NIX_', 'DEVBOX_', 'XDG_']
+const PREFIX_ALLOW = ['FICUS_', 'LC_', 'NIX_', 'DEVBOX_', 'XDG_']
 
 const DEFAULTS: Record<string, string> = {
   HOME: '/root',
@@ -123,11 +119,7 @@ export function buildSandboxChildEnv(
   }
 
   applyParallelismDefaults(out)
-  // One release (Ficus rename): the executor's own env was bridged to FICUS_*
-  // at boot, but user scripts, skills and older `tau` CLIs inside the sandbox
-  // still read TAU_API_URL, TAU_TOKEN and friends. Dual-emit a TAU_ alias for
-  // every FICUS_ key the child gets.
-  return withLegacyEnvAliases(out)
+  return out
 }
 
 /**

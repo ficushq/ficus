@@ -31,16 +31,6 @@ describe('token storage', () => {
     clearStoredToken()
     expect(getStoredToken()).toBeFalsy()
   })
-
-  test('clearing also purges a stale pre-rename credential', async () => {
-    installLocalStorage()
-    const { clearStoredToken } = await import('./client')
-    localStorage.setItem('tau_password', 'stale-credential')
-
-    clearStoredToken()
-
-    expect(localStorage.getItem('tau_password')).toBeNull()
-  })
 })
 
 test('apiUrl resolves against the current Window instead of a DOM captured at module load', async () => {

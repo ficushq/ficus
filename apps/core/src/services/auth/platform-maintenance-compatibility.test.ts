@@ -31,7 +31,7 @@ describe('platform maintenance header names', () => {
     'x-ficus-instance-id': complete.instanceId,
     'x-ficus-correlation-id': complete.correlationId,
   }
-  const preFicusSpelling = (name: string) => name.replace(/^x-ficus-/, 'x-tau-') // D16
+  const preFicusSpelling = (name: string) => name.replace(/^x-ficus-/, 'x-old-') // D16
 
   test('the four x-ficus-* headers parse to a complete context', () => {
     expect(parsed(wire)).toEqual({ valid: true, allAbsent: false, context: complete })

@@ -50,10 +50,6 @@ export const SSH_FAMILY_TOOLS: readonly SshFamilyTool[] = ['ssh', 'scp', 'rsync'
 // the functional test suite pins the fixtures to these exact markers.
 export const MANAGED_BLOCK_BEGIN = '# >>> ficus remote hosts >>>'
 export const MANAGED_BLOCK_END = '# <<< ficus remote hosts <<<'
-// A squad config not yet re-materialized (the host runtime re-materializes every granted squad at
-// worker boot) may still carry the pre-rename markers; read them too until Wave 3.
-export const LEGACY_MANAGED_BLOCK_BEGIN = '# >>> tau remote hosts >>>'
-export const LEGACY_MANAGED_BLOCK_END = '# <<< tau remote hosts <<<'
 
 const TOOL_COMMENTS: Record<SshFamilyTool, string> = {
   ssh: `# Ficus host-runtime ssh shim. When the destination is an alias managed by
@@ -132,8 +128,8 @@ function aliasScanLines(): string[] {
     'while IFS= read -r line || [ -n "$line" ]; do',
     '  line=${line#"${line%%[!\t ]*}"}',
     '  case $line in',
-    `    '${MANAGED_BLOCK_BEGIN}'|'${LEGACY_MANAGED_BLOCK_BEGIN}') in=1 ;;`,
-    `    '${MANAGED_BLOCK_END}'|'${LEGACY_MANAGED_BLOCK_END}') in=0 ;;`,
+    `    '${MANAGED_BLOCK_BEGIN}') in=1 ;;`,
+    `    '${MANAGED_BLOCK_END}') in=0 ;;`,
     '    Host\\ *)',
     '      if [ "$in" = 1 ]; then',
     '        name=${line#Host }',

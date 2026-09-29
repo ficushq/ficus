@@ -38,8 +38,6 @@ const BOOTSTRAP_REMOTE_PATH = '/tmp/tau-bootstrap.sh'
  */
 const BOOTSTRAP_RUN_TIMEOUT_MS = 15 * 60_000
 const CAPS_PREFIX = 'FICUS_CAPS_JSON:'
-/** One release (Ficus rename): a pre-rename bootstrap.sh prints the legacy spelling. */
-const LEGACY_CAPS_PREFIX = 'TAU_CAPS_JSON:'
 /**
  * Cap on the `lastError` bytes persisted to the row. `machines.lastError` is
  * returned on every list/detail fetch, and the message is built from raw
@@ -158,8 +156,7 @@ export function parseCoreEgressCidrs(raw: string | undefined): string[] {
 
 /**
  * Extract the machine capabilities from bootstrap stdout. The script prints
- * exactly one `FICUS_CAPS_JSON: {...}` marker (legacy `TAU_CAPS_JSON:` accepted for one
- * release) as its final line, but this scans
+ * exactly one `FICUS_CAPS_JSON: {...}` marker as its final line, but this scans
  * from the end and tolerates arbitrary preceding chatter (and a malformed
  * earlier marker), returning the LAST valid one. Throws if none is present.
  */
@@ -167,9 +164,8 @@ export function parseCapabilities(stdout: string): MachineCapabilities {
   const lines = stdout.split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim()
-    const prefix = [CAPS_PREFIX, LEGACY_CAPS_PREFIX].find((p) => line.startsWith(p))
-    if (!prefix) continue
-    const jsonPart = line.slice(prefix.length).trim()
+    if (!line.startsWith(CAPS_PREFIX)) continue
+    const jsonPart = line.slice(CAPS_PREFIX.length).trim()
     let parsed: unknown
     try {
       parsed = JSON.parse(jsonPart)

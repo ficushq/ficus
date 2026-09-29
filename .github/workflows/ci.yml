@@ -852,7 +852,7 @@ jobs:
           src/services/sandbox/k8s/constants.test.ts
           src/services/sandbox/k8s/kubeconfig.test.ts
           src/services/secrets/store-hermetic.test.ts
-          src/boot/legacy-env.test.ts
+          src/services/secrets/foreign-encryption-key.test.ts
           src/system-token-control.test.ts
           src/scripts/update-offline-bootstrap.test.ts
         working-directory: apps/core

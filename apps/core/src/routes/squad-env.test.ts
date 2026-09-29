@@ -251,9 +251,7 @@ describe('squad-env routes', () => {
       // PATH is deliberately NOT reserved: adding to it is legitimate, and the host
       // preamble re-prepends the shim dir after the squad env is sourced.
       expect(RESERVED_SQUAD_ENV_KEYS.PATH).toBeUndefined()
-      // One release (Ficus rename): the legacy identity spellings stay reserved too.
-      expect(RESERVED_SQUAD_ENV_KEYS.TAU_TOKEN).toBeDefined()
-      expect(RESERVED_SQUAD_ENV_KEYS.TAU_PASSWORD).toBeDefined()
+      expect(Object.keys(RESERVED_SQUAD_ENV_KEYS).every((key) => key.startsWith('FICUS_'))).toBe(true)
 
       // Nothing was persisted by the rejected writes.
       const getRes = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })

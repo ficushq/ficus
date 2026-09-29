@@ -308,35 +308,6 @@ describe('B14 secrets and settings RBAC', () => {
     }
   })
 
-  test('retained TAU_ managed rows are hidden and fail closed like their FICUS_ keys (one release)', async () => {
-    // Rows a pre-rename Core stored and the secret-row copy (Task 9) keeps until the bridge is removed.
-    await getSecretStore().set('TAU_PUSH_RELAY_TOKEN', 'legacy-relay-canary')
-    await getSecretStore().set('TAU_PLATFORM_INSTANCE_TOKEN', 'legacy-instance-canary')
-    process.env.FICUS_MANAGED = '1'
-    process.env.FICUS_MANAGED_SECRET_KEYS = 'FICUS_PLATFORM_INSTANCE_TOKEN'
-    try {
-      const list = await app.request('/secrets', req())
-      expect(list.status).toBe(200)
-      const raw = await list.text()
-      expect(raw).not.toContain('TAU_PUSH_RELAY_TOKEN')
-      expect(raw).not.toContain('TAU_PLATFORM_INSTANCE_TOKEN')
-      expect(raw).not.toContain('legacy-')
-      for (const key of ['TAU_PUSH_RELAY_TOKEN', 'TAU_PLATFORM_INSTANCE_TOKEN']) {
-        for (const method of ['GET', 'PUT', 'DELETE']) {
-          const response = await app.request(
-            `/secrets/${key}`,
-            req(method, method === 'PUT' ? { value: 'x' } : undefined)
-          )
-          expect(response.status).toBe(403)
-          expect(await response.text()).not.toContain('legacy-')
-        }
-      }
-    } finally {
-      delete process.env.FICUS_MANAGED
-      delete process.env.FICUS_MANAGED_SECRET_KEYS
-    }
-  })
-
   test('platform-managed keys are invisible: excluded from list, surfaced as names, and fail closed on read/write/delete', async () => {
     process.env.FICUS_MANAGED = '1'
     process.env.FICUS_MANAGED_SECRET_KEYS = 'APNS_KEY_ID'

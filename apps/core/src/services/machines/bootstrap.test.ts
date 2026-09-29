@@ -89,10 +89,8 @@ describe('parseCapabilities', () => {
     })
   })
 
-  it('also parses the legacy TAU_CAPS_JSON marker that bootstrap.sh still prints (one release)', () => {
-    const caps = parseCapabilities(`some noise\n${CAPS_LINE.replace(/^FICUS_/, 'TAU_')}\n`)
-    expect(caps.arch).toBe('aarch64')
-    expect(caps.cpus).toBe(8)
+  it('reads the FICUS_ marker only', () => {
+    expect(() => parseCapabilities(`some noise\n${CAPS_LINE.replace(/^FICUS_/, 'OLD_')}\n`)).toThrow()
   })
 
   it('ignores garbage before the line and apt/install chatter', () => {

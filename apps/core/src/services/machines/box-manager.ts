@@ -542,12 +542,10 @@ export function roleWantsDocker(role: EnsureBoxOpts['role']): boolean {
  * Parse the box user's uid from box-provision.sh's stdout. The script prints
  * exactly one `FICUS_BOX_UID=<uid>` line (the useradd-assigned, non-deterministic
  * login uid) so box-manager can bake the rootless docker socket path. Returns
- * null when no valid marker is present. The legacy `TAU_BOX_UID=` spelling is
- * accepted for one release (Ficus rename): a machine may still run an older
- * box-provision.sh.
+ * null when no valid marker is present.
  */
 export function parseBoxUid(stdout: string): number | null {
-  const match = stdout.match(/^(?:FICUS|TAU)_BOX_UID=(\d+)$/m)
+  const match = stdout.match(/^FICUS_BOX_UID=(\d+)$/m)
   if (!match) return null
   const uid = Number(match[1])
   return Number.isInteger(uid) ? uid : null
@@ -723,13 +721,11 @@ async function recheckBoxHealth(endpoint: string, deps: BoxManagerDeps): Promise
 }
 
 /**
- * One `<P>_<name>_BEGIN … <P>_<name>_END` block of a machine snapshot. `<P>` is
- * `FICUS` or, for one release (Ficus rename), the legacy `TAU`; both ends must
- * use the same spelling.
+ * One `FICUS_<name>_BEGIN … FICUS_<name>_END` block of a machine snapshot.
  */
 function section(stdout: string, name: string): string | undefined {
-  const match = stdout.match(new RegExp(`(FICUS|TAU)_${name}_BEGIN\\n([\\s\\S]*?)\\n\\1_${name}_END`))
-  return match?.[2]?.trim() || undefined
+  const match = stdout.match(new RegExp(`FICUS_${name}_BEGIN\\n([\\s\\S]*?)\\nFICUS_${name}_END`))
+  return match?.[1]?.trim() || undefined
 }
 
 /** The liveness marker and evidence sections of {@link buildMachineSnapshotCommand}'s output. */
@@ -738,7 +734,7 @@ export function parseMachineSnapshotOutput(stdout: string): {
   containerStates: string | undefined
   logTail: string | undefined
 } {
-  const liveness = stdout.match(/^(?:FICUS|TAU)_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
+  const liveness = stdout.match(/^FICUS_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
     | 'running'
     | 'idle'
     | 'exited'

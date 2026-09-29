@@ -140,16 +140,8 @@ export function ensureSquadSshDir(squadId: string): string {
  */
 export const REMOTE_HOST_KEY_PREFIX = 'ficus_remote_'
 
-/**
- * The prefix materialized remote-host key files had before the Ficus rename.
- * It stays reserved, and materialize deletes every file under it, so a
- * private key for a grant revoked after the upgrade is never left on disk or
- * listed as an uploaded squad key (K2; removed by the Wave 3 sweep).
- */
-export const LEGACY_REMOTE_HOST_KEY_PREFIX = 'tau_remote_'
-
-/** Every prefix whose files materialize owns: the current one and the pre-rename one. */
-export const RESERVED_REMOTE_HOST_KEY_PREFIXES = [REMOTE_HOST_KEY_PREFIX, LEGACY_REMOTE_HOST_KEY_PREFIX] as const
+/** Every prefix whose files materialize owns. */
+export const RESERVED_REMOTE_HOST_KEY_PREFIXES = [REMOTE_HOST_KEY_PREFIX] as const
 
 /** The reserved remote-host key prefix a name starts with, if any. */
 function reservedRemoteHostKeyPrefix(name: string): string | undefined {

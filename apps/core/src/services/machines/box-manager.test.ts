@@ -277,27 +277,23 @@ function happyDeps(events: string[], machine: Machine, box: MachineBox) {
 // boxUnixUser
 // ---------------------------------------------------------------------------
 
-describe('legacy TAU_ output markers (one release)', () => {
-  it('parses the box uid from either marker spelling', () => {
+describe('output markers', () => {
+  it('parses the box uid from the FICUS_ marker only', () => {
     expect(parseBoxUid('noise\nFICUS_BOX_UID=1001\n')).toBe(1001)
-    expect(parseBoxUid('noise\nTAU_BOX_UID=1001\n')).toBe(1001)
+    expect(parseBoxUid('noise\nOLD_BOX_UID=1001\n')).toBeNull()
     expect(parseBoxUid('BOX_UID=1001\n')).toBeNull()
   })
 
-  it('parses machine snapshot liveness and sections from either marker spelling', () => {
-    for (const prefix of ['FICUS', 'TAU']) {
-      expect(
-        parseMachineSnapshotOutput(
-          `${prefix}_BOX_LIVENESS=idle\n${prefix}_CONTAINER_STATES_BEGIN\nworker Up\n${prefix}_CONTAINER_STATES_END\n` +
-            `${prefix}_BOX_LOGS_BEGIN\nloaded\n${prefix}_BOX_LOGS_END\n`
-        )
-      ).toEqual({ liveness: 'idle', containerStates: 'worker Up', logTail: 'loaded' })
-    }
-    expect(parseMachineSnapshotOutput('FICUS_STATE_BEGIN\nx\nTAU_STATE_END\n')).toEqual({
-      liveness: undefined,
-      containerStates: undefined,
-      logTail: undefined,
-    })
+  it('parses machine snapshot liveness and sections from the FICUS_ markers only', () => {
+    expect(
+      parseMachineSnapshotOutput(
+        'FICUS_BOX_LIVENESS=idle\nFICUS_CONTAINER_STATES_BEGIN\nworker Up\nFICUS_CONTAINER_STATES_END\n' +
+          'FICUS_BOX_LOGS_BEGIN\nloaded\nFICUS_BOX_LOGS_END\n'
+      )
+    ).toEqual({ liveness: 'idle', containerStates: 'worker Up', logTail: 'loaded' })
+    expect(parseMachineSnapshotOutput('OLD_BOX_LIVENESS=idle\nOLD_BOX_LOGS_BEGIN\nloaded\nOLD_BOX_LOGS_END\n')).toEqual(
+      { liveness: undefined, containerStates: undefined, logTail: undefined }
+    )
   })
 })
 

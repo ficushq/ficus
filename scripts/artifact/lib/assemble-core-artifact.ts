@@ -106,7 +106,7 @@ export const GENERATED_ROOT_MARKER = '{"name":"ficus","private":true,"workspaces
 const LAYOUT: { path: string; kind: 'file' | 'dir' | 'generated'; contents?: string }[] = [
   // GENERATED, never copied from the checkout. `apps/core/src/lib/web-dist.ts`
   // finds the web UI by walking up from the running bundle until it hits a
-  // package.json named "ficus" or "tau" (`CORE_ROOT_PACKAGE_NAMES`, or one
+  // package.json named "ficus" (`CORE_ROOT_PACKAGE_NAMES`, or one
   // carrying a `workspaces` array) and then looking for <root>/apps/web/dist.
   // An artifact with no package.json anywhere fails that walk, `maybeMountWebUi` mounts nothing, and the box
   // comes up with a healthy API and a 404 for every page. The marker is

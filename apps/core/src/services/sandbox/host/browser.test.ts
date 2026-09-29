@@ -395,9 +395,7 @@ describe('host browser backend', () => {
     expect(page.closed).toBe(true)
   })
 
-  // K3: the in-process engine is the machine script, which accepts either
-  // name; the host sender still sets both, like every other box-user sender.
-  test('sends the box user under both box-user header names with the same value', async () => {
+  test('sends the box user under the x-ficus-box-user header', async () => {
     const seen: Request[] = []
     const engine = makeEngine(async () => new FakeBrowser(), {
       wrapEngine: (real: BrowserService): BrowserService => ({
@@ -414,7 +412,7 @@ describe('host browser backend', () => {
     const boxUser = `box_${createHash('sha256').update('agent_abc').digest('hex').slice(0, 12)}`
     expect(seen).toHaveLength(1)
     expect(seen[0]!.headers.get('x-ficus-box-user')).toBe(boxUser)
-    expect(seen[0]!.headers.get('x-tau-box-user')).toBe(boxUser) // K3
+    expect([...seen[0]!.headers.keys()].filter((name) => name.endsWith('-box-user'))).toEqual(['x-ficus-box-user'])
   })
 
   test('writes a 0600 sha256 digest token for the sandbox synthetic box user', async () => {

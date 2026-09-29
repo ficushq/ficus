@@ -61,13 +61,8 @@ export function setStoredToken(token: string): void {
   localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
 }
 
-// retired-credential cleanup: remove in Wave 3. Browsers that have not opened the app
-// since the cookie migration can still hold the pre-rename credential; purge it too.
-const RETIRED_AUTH_TOKEN_STORAGE_KEY = 'tau_password'
-
 export function clearStoredToken(): void {
   localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
-  localStorage.removeItem(RETIRED_AUTH_TOKEN_STORAGE_KEY)
 }
 
 // Auth now travels in an HttpOnly session cookie (sent via credentials: 'include');

@@ -497,8 +497,8 @@ describe('SandboxClient.upload (raw-body transport)', () => {
   })
 })
 
-describe('SandboxClient legacy env overrides (one release)', () => {
-  it('sends a TAU_ alias for every FICUS_ per-command override, for executors started before the rename', async () => {
+describe('SandboxClient per-command env overrides', () => {
+  it('sends the FICUS_ overrides as given, with no alias', async () => {
     const previousFetch = globalThis.fetch
     let body: { env?: Record<string, string> } | undefined
     const called = new Promise<void>((resolve) => {
@@ -520,8 +520,6 @@ describe('SandboxClient legacy env overrides (one release)', () => {
       expect(body?.env).toEqual({
         FICUS_API_URL: 'http://core:3000',
         FICUS_TOKEN: 't',
-        TAU_API_URL: 'http://core:3000',
-        TAU_TOKEN: 't',
       })
     } finally {
       globalThis.fetch = previousFetch

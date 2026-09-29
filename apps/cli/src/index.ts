@@ -1,4 +1,3 @@
-import './boot/legacy-env'
 import { configureGlobalOptionScope } from './global-options'
 import { Command } from 'commander'
 import { buildInfo } from './build-info'

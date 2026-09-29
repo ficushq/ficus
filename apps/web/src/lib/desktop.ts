@@ -55,19 +55,15 @@ export interface DesktopBridge {
 }
 declare global {
   interface Window {
-    /** Set by Ficus Desktop D2+ (Task 29; v2.3, D31). Preferred over `tauDesktopApp` when both are present. */
+    /** Set by Ficus Desktop D2+. Preferred over the D1 bridge when both are present. */
     ficusDesktopApp?: DesktopBridge
-    /**
-     * Set by Ficus Desktop D1 and older Tau Desktop builds. D1 is the only
-     * Desktop build in the field between R4 and R7, so this read stays until
-     * GATE C; it is K5 and is dropped in the Wave 3 sweep (Task 36).
-     */
-    tauDesktopApp?: DesktopBridge
+    /** Set by Ficus Desktop D1, the only Desktop build installed until D2 ships. */
+    tauDesktopApp?: DesktopBridge // K5: until Ficus Desktop (D2) ships
   }
 }
 export function desktopBridge(): DesktopBridge | undefined {
   if (typeof window === 'undefined') return undefined
-  const bridge = window.ficusDesktopApp ?? window.tauDesktopApp
+  const bridge = window.ficusDesktopApp ?? window.tauDesktopApp // K5: until Ficus Desktop (D2) ships
   return bridge?.version === 1 ? bridge : undefined
 }
 

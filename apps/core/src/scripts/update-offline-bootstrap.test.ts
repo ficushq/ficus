@@ -46,7 +46,7 @@ describe('the bootstrap loads nothing the previous release may not have installe
     expect(importSpecifiers(source)).toEqual([])
     expect(source).not.toMatch(/\bimport\s*\(|\brequire\s*\(/)
   })
-  it('reads no environment, so the legacy-env bridge in update-offline.ts still runs first', () => {
+  it('reads no environment', () => {
     expect(readFileSync(BOOTSTRAP, 'utf8')).not.toContain('process.env')
   })
   it('is what the root update:offline script runs', () => {
@@ -66,20 +66,19 @@ describe('bootstrapOfflineUpdate', () => {
     write(join(root, 'apps/core/package.json'), JSON.stringify({ name: 'core' }))
     mkdirSync(join(root, 'packages/no-package'), { recursive: true })
     // Dependencies installed by the previous release: its scope only.
-    write(join(root, 'node_modules/@tau/shared/package.json'), JSON.stringify({ name: '@tau/shared' }))
+    write(join(root, 'node_modules/@old/shared/package.json'), JSON.stringify({ name: '@old/shared' }))
     mkdirSync(join(root, 'node_modules/core'), { recursive: true })
   })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
   /** A fake process runner: `bun install` links the workspace packages, the update checks it can load them. */
   function fakeRun(diff: string, opts: { installCode?: number; installLinks?: boolean } = {}) {
-    const calls: Array<{ command: string[]; ficusShared: boolean; tauScope: boolean }> = []
+    const calls: Array<{ command: string[]; ficusShared: boolean }> = []
     const run: BootstrapProcess = async (command, { cwd }) => {
       expect(cwd).toBe(root)
       calls.push({
         command,
         ficusShared: existsSync(join(root, 'node_modules/@ficus/shared')),
-        tauScope: existsSync(join(root, 'node_modules/@tau')),
       })
       if (command[0] === 'git') return { code: 0, stdout: diff }
       if (command[1] === 'install') {
@@ -107,14 +106,14 @@ describe('bootstrapOfflineUpdate', () => {
       [...UPDATE, '--from', FROM, BOOTSTRAP_INSTALLED_FLAG, BOOTSTRAP_STALE_FLAG],
     ])
     // The install ran while only the old scope was there; the update (the first
-    // workspace import) ran after it, with the new scope and without the old one.
-    expect(calls[1]).toMatchObject({ ficusShared: false, tauScope: true })
-    expect(calls[2]).toMatchObject({ ficusShared: true, tauScope: false })
+    // workspace import) ran after it, with the new scope.
+    expect(calls[1]).toMatchObject({ ficusShared: false })
+    expect(calls[2]).toMatchObject({ ficusShared: true })
   })
 
   it('installs when the diff changes the dependencies, without calling the tree stale', async () => {
     mkdirSync(join(root, 'node_modules/@ficus/shared'), { recursive: true })
-    rmSync(join(root, 'node_modules/@tau'), { recursive: true })
+    rmSync(join(root, 'node_modules/@old'), { recursive: true })
     const { run, calls } = fakeRun('bun.lock\napps/core/src/x.ts\n')
     expect(
       await bootstrapOfflineUpdate({ root, args: ['--from', FROM], run, updateCommand: UPDATE, log: () => {} })
@@ -136,8 +135,6 @@ describe('bootstrapOfflineUpdate', () => {
       `git diff --name-only ${FROM}..HEAD`,
       `bun update-offline.ts -- --from ${FROM}`,
     ])
-    // A leftover old scope is pruned even without an install.
-    expect(existsSync(join(root, 'node_modules/@tau'))).toBe(false)
   })
 
   it('installs when the diff cannot be read, and lets the update report that', async () => {
@@ -174,7 +171,7 @@ describe('bootstrapOfflineUpdate', () => {
     expect(code).toBe(1)
     expect(calls.map((c) => c.command[1])).toEqual(['diff', 'install'])
     expect(errors).toEqual(['offline update failed: bun install --frozen-lockfile exited with 1'])
-    expect(existsSync(join(root, 'node_modules/@tau'))).toBe(true)
+    expect(existsSync(join(root, 'node_modules/@old'))).toBe(true)
   })
 
   it('stops when the install succeeds but the workspace packages are still missing', async () => {
@@ -226,20 +223,20 @@ describe('bun run update:offline across a package-scope rename (real processes)'
   }
 
   it('installs the new scope before the new release imports it', () => {
-    // The previous release: `@tau/shared`, installed.
+    // The previous release: `@old/shared`, installed.
     write(join(root, '.gitignore'), 'node_modules\n')
     write(
       join(root, 'package.json'),
-      JSON.stringify({ name: 'tau', workspaces: ['packages/*'], scripts: { 'update:offline': 'true' } })
+      JSON.stringify({ name: 'old', workspaces: ['packages/*'], scripts: { 'update:offline': 'true' } })
     )
-    write(join(root, 'packages/shared/package.json'), JSON.stringify({ name: '@tau/shared', main: 'index.ts' }))
+    write(join(root, 'packages/shared/package.json'), JSON.stringify({ name: '@old/shared', main: 'index.ts' }))
     write(join(root, 'packages/shared/index.ts'), `export const scope = 'shared'\n`)
     git('init', '-q')
     git('add', '-A')
-    git('commit', '-qm', 'tau')
+    git('commit', '-qm', 'old')
     const from = git('rev-parse', 'HEAD')
-    mkdirSync(join(root, 'node_modules/@tau'), { recursive: true })
-    symlinkSync('../../packages/shared', join(root, 'node_modules/@tau/shared'))
+    mkdirSync(join(root, 'node_modules/@old'), { recursive: true })
+    symlinkSync('../../packages/shared', join(root, 'node_modules/@old/shared'))
 
     // The new release renames the scope; its update script imports the new name.
     write(
@@ -289,11 +286,9 @@ describe('bun run update:offline across a package-scope rename (real processes)'
     expect(result.exitCode, result.stderr.toString()).toBe(0)
     expect(readFileSync(log, 'utf8').trim()).toBe('install --frozen-lockfile')
     expect(out).toContain('Installing dependencies before loading this release (not installed: @ficus/shared)')
-    expect(out).toContain('Removing stale node_modules/@tau')
     expect(out).toContain(
       `REAL UPDATE shared ["--from","${from}","${BOOTSTRAP_INSTALLED_FLAG}","${BOOTSTRAP_STALE_FLAG}"]`
     )
     expect(out.indexOf('Installing dependencies')).toBeLessThan(out.indexOf('REAL UPDATE'))
-    expect(existsSync(join(root, 'node_modules/@tau'))).toBe(false)
   })
 })

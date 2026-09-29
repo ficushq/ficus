@@ -563,7 +563,7 @@ describe('syncBoxFiles content-hash skip', () => {
     expect(sshProgress).toEqual(['started', 'finished'])
   })
 
-  test('prunes pre-rename tau_remote_ key files from the prior manifest once ficus_remote_ replaces them', async () => {
+  test('prunes key files the prior manifest listed and the new one does not', async () => {
     const client = new FakeClient()
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     const stamp = recordingStamp()
@@ -572,7 +572,7 @@ describe('syncBoxFiles content-hash skip', () => {
       'squad_11111111-1111-4111-8111-111111111111',
       squadOpts,
       fullDeps({
-        box: syncBox({ 'squad-ssh': { hash: 'old', files: ['config', 'tau_remote_prod'] } }),
+        box: syncBox({ 'squad-ssh': { hash: 'old', files: ['config', 'old_key_prod'] } }),
         stampBoxSyncedHash: stamp.fn,
         listSkillFiles: async () => [],
         readSquadEnv: () => null,
@@ -587,11 +587,11 @@ describe('syncBoxFiles content-hash skip', () => {
       .bashes()
       .map((b) => b.command)
       .find((command) => command.startsWith('rm -f --') && command.includes('/.ssh/'))
-    expect(prune).toBe(`rm -f -- '${home}/.ssh/tau_remote_prod'`)
+    expect(prune).toBe(`rm -f -- '${home}/.ssh/old_key_prod'`)
     expect(stamp.stamped['squad-ssh']).toMatchObject({ files: ['config', 'ficus_remote_prod'] })
   })
 
-  test('legacy SSH tree cleanup removes both ficus_remote_ and pre-rename tau_remote_ key files (K2)', async () => {
+  test('legacy SSH tree cleanup removes ficus_remote_ key files', async () => {
     const client = new FakeClient()
     await syncBoxFiles(
       client as any,
@@ -612,7 +612,7 @@ describe('syncBoxFiles content-hash skip', () => {
         .map((b) => b.command)
         .find((command) => command.includes('-delete') && command.includes('/.ssh')) ?? ''
     expect(cleanup).toContain("-name 'ficus_remote_*'")
-    expect(cleanup).toContain("-name 'tau_remote_*'")
+    expect(cleanup).not.toContain(' -o ')
   })
 
   test('removes prior squad-scoped secrets when an agent loses squad scope', async () => {
@@ -1123,7 +1123,7 @@ describe('pushSquadSshToBox', () => {
     expect(client.bashes()[cleanup].command).toContain(`${home}/.ssh/config`)
   })
 
-  test('on-demand legacy SSH cleanup removes both ficus_remote_ and pre-rename tau_remote_ key files (K2)', async () => {
+  test('on-demand legacy SSH cleanup removes ficus_remote_ key files', async () => {
     const client = new FakeClient()
     await pushSquadSshToBox('11111111-1111-4111-8111-111111111111', 'agent_a1', {
       getMachineBox: async () => makeBox({ syncedHashes: { 'squad-ssh': 'legacy-hash' } }),
@@ -1134,7 +1134,7 @@ describe('pushSquadSshToBox', () => {
     })
     const cleanup = client.bashes().find((b) => b.command.includes('-delete'))?.command ?? ''
     expect(cleanup).toContain("-name 'ficus_remote_*'")
-    expect(cleanup).toContain("-name 'tau_remote_*'")
+    expect(cleanup).not.toContain(' -o ')
   })
 
   test('on-demand legacy final-host revoke cleans generated SSH names and stamps empty', async () => {

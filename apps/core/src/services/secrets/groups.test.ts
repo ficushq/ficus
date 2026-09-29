@@ -8,7 +8,6 @@ import {
   secretAccessible,
   secretPermissionCandidates,
 } from './groups'
-import { COPIED_LEGACY_SECRET_ROW_KEYS } from '../../db/legacy-secret-rows'
 
 afterEach(() => resetSecretGroups())
 
@@ -30,8 +29,6 @@ describe('getSecretGroups (default config)', () => {
   test('categorizes every current known key intentionally and non-overlapping', () => {
     const expected = new Map<string, string[]>([
       ['FICUS_PASSWORD', ['system']],
-      // The retained TAU_ secret rows stay authorized until the bridge is removed (Task 36).
-      ['TAU_PASSWORD', ['system']],
       ['VAPID_SUBJECT', ['notification']],
       ['OPENAI_API_KEY', ['provider']],
       ['GITHUB_TOKEN', ['integration']],
@@ -103,26 +100,22 @@ describe('secretAccessible / candidates', () => {
     expect(secretAccessible(held, 'SOME_RANDOM_KEY', 'read')).toBe(false)
   })
 
-  test('each FICUS_ row the rename migration copies is authorized exactly like its retained TAU_ source', () => {
-    for (const legacy of COPIED_LEGACY_SECRET_ROW_KEYS) {
-      const current = `FICUS_${legacy.slice('TAU_'.length)}`
-      expect(getSecretGroups(current), current).toEqual(['system'])
-      expect(getSecretGroups(legacy), legacy).toEqual(['system'])
+  test('the FICUS_ core secrets are system-only, and another prefix is not', () => {
+    for (const key of ['FICUS_PASSWORD', 'FICUS_PUSH_RELAY_TOKEN', 'FICUS_PLATFORM_INSTANCE_TOKEN']) {
+      expect(getSecretGroups(key), key).toEqual(['system'])
       for (const action of ['read', 'write'] as const) {
-        expect(secretPermissionCandidates(current, action)).toEqual(secretPermissionCandidates(legacy, action))
-        for (const key of [current, legacy]) {
-          expect(secretAccessible([`secrets:${action}:system`], key, action), key).toBe(true)
-          expect(
-            secretAccessible(
-              [`secrets:${action}:integration`, `secrets:${action}:provider`, `secrets:${action}:notification`],
-              key,
-              action
-            ),
-            key
-          ).toBe(false)
-        }
+        expect(secretAccessible([`secrets:${action}:system`], key, action), key).toBe(true)
+        expect(
+          secretAccessible(
+            [`secrets:${action}:integration`, `secrets:${action}:provider`, `secrets:${action}:notification`],
+            key,
+            action
+          ),
+          key
+        ).toBe(false)
       }
     }
+    expect(getSecretGroups('OLD_PASSWORD')).not.toContain('system')
   })
 
   test('read grant does not imply write', () => {

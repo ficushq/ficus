@@ -75,13 +75,13 @@ describe('device tokens', () => {
     expect(await resolveToken(token)).toBeNull()
   })
 
-  it('device tokens with the tau_dev_ prefix are rejected (no dual-accept)', async () => {
-    expect(await resolveDeviceToken('tau_dev_' + 'x'.repeat(43))).toBeNull()
+  it('device tokens with the old_dev_ prefix are rejected (no dual-accept)', async () => {
+    expect(await resolveDeviceToken('old_dev_' + 'x'.repeat(43))).toBeNull()
   })
 
-  it('a live pre-rename tau_dev_ row no longer authenticates anywhere', async () => {
+  it('a live old_dev_ row no longer authenticates anywhere', async () => {
     const userId = await makeUser('dt-legacy@test.local')
-    const legacy = 'tau_dev_' + 'y'.repeat(43)
+    const legacy = 'old_dev_' + 'y'.repeat(43)
     await db.insert(deviceTokens).values({ userId, tokenHash: tokenHash(legacy), name: 'Old CLI', platform: 'cli' })
 
     expect(await resolveDeviceToken(legacy)).toBeNull()

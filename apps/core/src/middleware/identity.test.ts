@@ -153,11 +153,11 @@ describe('identityMiddleware', () => {
     })
   })
 
-  test('a valid session is accepted as ficus_session and rejected as tau_session (no legacy cookie)', async () => {
+  test('a valid session is accepted as ficus_session and rejected as old_session', async () => {
     const user = await createTestUser({ prefix: PREFIX })
     const app = createTestApp()
 
-    const legacy = await app.request('/whoami', { headers: { Cookie: `tau_session=${user.token}` } })
+    const legacy = await app.request('/whoami', { headers: { Cookie: `old_session=${user.token}` } })
     expect(legacy.status).toBe(401)
 
     const current = await app.request('/whoami', { headers: { Cookie: `ficus_session=${user.token}` } })
@@ -165,13 +165,13 @@ describe('identityMiddleware', () => {
     expect(await current.json()).toEqual({ type: 'user', userId: user.id })
   })
 
-  test('the ficus_session cookie decides the identity, never a stale tau_session beside it', async () => {
+  test('the ficus_session cookie decides the identity, never an old_session beside it', async () => {
     const alice = await createTestUser({ prefix: PREFIX })
     const bob = await createTestUser({ prefix: PREFIX })
     const app = createTestApp()
 
     const res = await app.request('/whoami', {
-      headers: { Cookie: `tau_session=${alice.token}; ficus_session=${bob.token}` },
+      headers: { Cookie: `old_session=${alice.token}; ficus_session=${bob.token}` },
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ type: 'user', userId: bob.id })
@@ -191,7 +191,7 @@ describe('identityMiddleware', () => {
     const assetPath = `/api/app/${localDeployment.id}/assets/index.js`
 
     const legacy = await app.request(assetPath, {
-      headers: { Cookie: `tau_app_${localDeployment.id}=${encodeURIComponent(token)}` },
+      headers: { Cookie: `old_app_${localDeployment.id}=${encodeURIComponent(token)}` },
     })
     expect(legacy.status).toBe(401)
 

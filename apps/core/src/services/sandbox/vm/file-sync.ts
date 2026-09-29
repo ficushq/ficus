@@ -531,8 +531,7 @@ function validatedManagedPath(root: string, relPath: string): string {
 
 /**
  * Clears a box's squad ssh dir that was stamped before per-file manifests: every
- * materialized remote-host key file, under the current or the pre-rename prefix
- * (K2), plus the managed `config`. Uploaded keys and `known_hosts` are untouched.
+ * materialized remote-host key file, plus the managed `config`. Uploaded keys and `known_hosts` are untouched.
  */
 function legacySquadSshCleanupCommand(root: string): string {
   const names = RESERVED_REMOTE_HOST_KEY_PREFIXES.map((prefix) => `-name ${shellQuote(`${prefix}*`)}`).join(' -o ')

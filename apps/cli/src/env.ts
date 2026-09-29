@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { bridgeLegacyEnv } from '@ficus/shared/legacy-env'
 
 const dotenvInjected = new Map<string, string>()
 
@@ -33,11 +32,6 @@ export function loadEnv(options: { cwd?: string; env?: NodeJS.ProcessEnv } = {})
     }
     if (!(key in parsed)) parsed[key] = value
   }
-
-  // One release (Ficus rename): bridge the file's legacy TAU_* keys to FICUS_* in this separate
-  // record. The boot module already bridged process.env once; running the bridge on process.env
-  // again would let the file's protected value replace an explicit one.
-  bridgeLegacyEnv(parsed)
 
   for (const [key, value] of Object.entries(parsed)) {
     if (value === undefined) continue

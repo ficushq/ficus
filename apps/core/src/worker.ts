@@ -1,4 +1,3 @@
-import './boot/legacy-env'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { forwardAssistantUpdates, reconcileAssistantSummaries } from './services/assistant-conversation-updates'
 import { Hono } from 'hono'

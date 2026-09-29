@@ -260,24 +260,6 @@ line2"`
       }
     })
 
-    it('NEVER renders a retained TAU_ spelling of a managed or private key (one release)', async () => {
-      process.env.FICUS_MANAGED_SECRET_KEYS = 'FICUS_PLATFORM_INSTANCE_TOKEN,FICUS_PLATFORM_USAGE_TOKEN'
-      try {
-        const { renderEnvForSecrets } = await getModule()
-        const legacyKeys = ['TAU_PUSH_RELAY_TOKEN', 'TAU_PLATFORM_INSTANCE_TOKEN', 'TAU_PLATFORM_USAGE_TOKEN']
-        const lookedUp: string[] = []
-        const rendered = renderEnvForSecrets('', [...legacyKeys, 'DEPLOY_VERCEL_TOKEN'], (key: string) => {
-          lookedUp.push(key)
-          return `${key}-value`
-        })
-        expect(lookedUp).toEqual(['DEPLOY_VERCEL_TOKEN'])
-        for (const key of legacyKeys) expect(rendered).not.toContain(key)
-        expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='DEPLOY_VERCEL_TOKEN-value'")
-      } finally {
-        delete process.env.FICUS_MANAGED_SECRET_KEYS
-      }
-    })
-
     it('renders globally exposed secrets into existing squad env files immediately', async () => {
       const { setEnvFile, setGloballyExposedSecretKeys } = await getModule()
       const { getSquadWorkspacePath } = await import('./workspace')

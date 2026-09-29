@@ -3,15 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import {
-  LEGACY_MANAGED_BLOCK_BEGIN,
-  LEGACY_MANAGED_BLOCK_END,
-  MANAGED_BLOCK_BEGIN,
-  MANAGED_BLOCK_END,
-  SSH_FAMILY_TOOLS,
-  ensureSshFamilyShims,
-  renderSshShimScript,
-} from './ssh-shims'
+import { SSH_FAMILY_TOOLS, ensureSshFamilyShims, renderSshShimScript } from './ssh-shims'
 
 // The rendered scripts must be valid POSIX /bin/sh — CI's shell is dash, the
 // strictest of the targets — so syntax-check every render. A wrong \${...}
@@ -170,18 +162,6 @@ describe('ssh-family shims (functional matrix)', () => {
 
   test('7. ssh with no FICUS_SQUAD_SSH_DIR (solo agent): untouched', () => {
     expect(run('ssh staging true', { solo: true }).lines).toEqual(['staging', 'true'])
-  })
-
-  test('8b. a config still carrying the pre-rename managed block resolves its aliases', () => {
-    writeFileSync(
-      CFG(),
-      FIXTURE_CONFIG.replace(MANAGED_BLOCK_BEGIN, LEGACY_MANAGED_BLOCK_BEGIN).replace(
-        MANAGED_BLOCK_END,
-        LEGACY_MANAGED_BLOCK_END
-      )
-    )
-    expect(readFileSync(CFG(), 'utf8')).not.toContain(MANAGED_BLOCK_BEGIN)
-    expect(run('ssh staging true').lines).toEqual([...KH_ARGS(), 'staging', 'true'])
   })
 
   test('8. ssh with an empty managed block: untouched', () => {

@@ -15,7 +15,6 @@ import { spawn as ptySpawn, type IPty } from 'bun-pty'
 import { randomBytes } from 'node:crypto'
 import * as fs from 'fs'
 import * as path from 'path'
-import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
 import { MONOREPO_ROOT } from '../../../lib/paths'
 import { createLogger } from '../../../lib/infra/logger'
 import { getHomeDir } from '../../../lib/utils/home'
@@ -56,17 +55,12 @@ export type { SandboxOptions, SandboxRuntime } from '../types'
 
 const log = createLogger('sandbox')
 
-/**
- * Append `-e KEY=value` pairs for a container env. One release (Ficus rename):
- * every FICUS_X also goes in as TAU_X, because the sandbox image's startup
- * script, user scripts and older `tau` CLIs in an existing container still read
- * the legacy names.
- */
+/** Append `-e KEY=value` pairs for a container env (undefined values are skipped). */
 function pushEnvArgs(args: string[], env: Record<string, string | undefined>): void {
-  for (const [key, value] of Object.entries(withLegacyEnvAliases(env))) args.push('-e', `${key}=${value}`)
+  for (const [key, value] of Object.entries(env)) if (value !== undefined) args.push('-e', `${key}=${value}`)
 }
 
-/** The interactive terminal's `docker exec` env flags: the live Core URL, in both spellings. */
+/** The interactive terminal's `docker exec` env flags: the live Core URL. */
 export function terminalApiUrlArgs(apiUrl: string): string {
   const args: string[] = []
   pushEnvArgs(args, { FICUS_API_URL: apiUrl })
