@@ -31,12 +31,12 @@ test('loading-shape storage keys are the ficus names', () => {
 describe('loadingShapeStorage', () => {
   test('stores only a bounded count and timestamp in a scoped key', () => {
     const storage = memoryStorage()
-    writeLoadingShapeCount(storage, 'https://tau.test|user:one', 'squads', 99, 8, 1_000)
+    writeLoadingShapeCount(storage, 'https://ficus.test|user:one', 'squads', 99, 8, 1_000)
 
-    expect(storage.values.get(loadingShapeStorageKey('https://tau.test|user:one', 'squads'))).toBe(
+    expect(storage.values.get(loadingShapeStorageKey('https://ficus.test|user:one', 'squads'))).toBe(
       '{"count":8,"updatedAt":1000}'
     )
-    expect(readLoadingShapeCount(storage, 'https://tau.test|user:one', 'squads', 4, 8, 2_000)).toBe(8)
+    expect(readLoadingShapeCount(storage, 'https://ficus.test|user:one', 'squads', 4, 8, 2_000)).toBe(8)
   })
 
   test('falls back for missing, corrupt, expired, or future records', () => {
@@ -58,10 +58,10 @@ describe('loadingShapeStorage', () => {
 
   test('can synchronously reuse the newest backend shape before identity resolves', () => {
     const storage = memoryStorage()
-    writeLoadingShapeCount(storage, 'https://tau.test|cloud|user:old', 'squads:list', 3, 8, 1_000)
-    writeLoadingShapeCount(storage, 'https://tau.test|cloud|user:current', 'squads:list', 6, 8, 2_000)
+    writeLoadingShapeCount(storage, 'https://ficus.test|cloud|user:old', 'squads:list', 3, 8, 1_000)
+    writeLoadingShapeCount(storage, 'https://ficus.test|cloud|user:current', 'squads:list', 6, 8, 2_000)
     writeLoadingShapeCount(storage, 'https://other.test|cloud|user:current', 'squads:list', 8, 8, 3_000)
 
-    expect(readRecentLoadingShapeCount(storage, 'https://tau.test|cloud', 'squads:list', 4, 8, 4_000)).toBe(6)
+    expect(readRecentLoadingShapeCount(storage, 'https://ficus.test|cloud', 'squads:list', 4, 8, 4_000)).toBe(6)
   })
 })

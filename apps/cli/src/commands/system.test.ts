@@ -106,14 +106,14 @@ describe('buildSystemLogsWsUrl', () => {
   })
 
   it('builds wss URL from https API URL', () => {
-    expect(buildSystemLogsWsUrl({ apiUrl: 'https://tau.example', component: 'all', tail: 100, follow: true })).toBe(
-      'wss://tau.example/ws/system/logs?component=all&tailLines=100'
+    expect(buildSystemLogsWsUrl({ apiUrl: 'https://ficus.example', component: 'all', tail: 100, follow: true })).toBe(
+      'wss://ficus.example/ws/system/logs?component=all&tailLines=100'
     )
   })
 
   it('keeps the bearer out of the URL and sends it as a header', () => {
     const request = buildSystemLogsWsRequest({
-      apiUrl: 'https://tau.example',
+      apiUrl: 'https://ficus.example',
       token: 'secret',
       component: 'all',
       tail: 100,

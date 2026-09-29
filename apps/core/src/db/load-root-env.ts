@@ -1,11 +1,6 @@
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { bridgeLegacyEnv, formatLegacyEnvBridge } from '@ficus/shared/legacy-env'
 import dotenv from 'dotenv'
-import { createLogger } from '../lib/infra/logger'
-
-// stderr only, like the boot module: the migrate child's stdout carries the toolkit's markers.
-const log = createLogger('legacy-env', undefined, { stderr: true })
 
 /**
  * Load the repo-root `.env` into `process.env` for STANDALONE entrypoints
@@ -30,11 +25,6 @@ const log = createLogger('legacy-env', undefined, { stderr: true })
  *    environment directly and often have no root `.env` at all.
  *  - Returns which keys the file supplied (post-precedence), so a caller or
  *    test can distinguish "loaded from file" from "already present".
- *  - One release (Ficus rename): the file's legacy `TAU_*` keys are bridged to
- *    `FICUS_*` in a SEPARATE record before the merge, never by re-running the
- *    bridge on `process.env` (the boot module already did that once, and a
- *    second run would let the file's protected value replace an explicit one).
- *    The merge still never overrides a key that is already set.
  */
 function loadRootEnvInto(rootDir: string, environment: Record<string, string | undefined>): string[] {
   const envPath = join(rootDir, '.env')
@@ -42,9 +32,6 @@ function loadRootEnvInto(rootDir: string, environment: Record<string, string | u
   const fileEnvironment: Record<string, string | undefined> = {}
   const result = dotenv.config({ path: envPath, quiet: true, processEnv: fileEnvironment })
   if (result.error || !result.parsed) return []
-  const lines = formatLegacyEnvBridge(bridgeLegacyEnv(fileEnvironment))
-  if (lines.warn) log.warn(`${envPath}: ${lines.warn}`)
-  if (lines.error) log.error(`${envPath}: ${lines.error}`)
   const supplied: string[] = []
   for (const [key, value] of Object.entries(fileEnvironment)) {
     if (value === undefined || environment[key] !== undefined) continue

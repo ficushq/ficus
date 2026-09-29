@@ -66,7 +66,7 @@ describe('derivePorts', () => {
 
 describe('readInstanceLabel', () => {
   it('reads FICUS_INSTANCE from the checkout .env and defaults to tau', () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-instance-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-instance-'))
     try {
       expect(readInstanceLabel(root)).toBe('tau')
       writeFileSync(join(root, '.env'), 'PORT=3100\nFICUS_INSTANCE=smoke\n')

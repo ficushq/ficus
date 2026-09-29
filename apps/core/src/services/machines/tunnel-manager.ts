@@ -325,7 +325,7 @@ export class MachineTunnelManager {
   /** Per-machine scratch logfile for the master's stderr (`ssh -E`). */
   private masterLogPathFor(machineId: string): string {
     const short = createHash('sha256').update(machineId).digest('hex').slice(0, 12)
-    return join(tmpdir(), `tau-machine-master-${short}.log`)
+    return join(tmpdir(), `ficus-machine-master-${short}.log`)
   }
 
   /** Read the last ~15 lines of the master logfile (empty string if absent). */

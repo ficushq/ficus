@@ -21,7 +21,7 @@ import { keyFetchImpl, pullImpl } from './seams'
 
 const log = createLogger('amtp-outbox')
 
-export function buildTauEnginePorts(): AmtpEnginePorts {
+export function buildFicusEnginePorts(): AmtpEnginePorts {
   return {
     identity: identityPort,
     peers: peerStore,
@@ -36,13 +36,13 @@ export function buildTauEnginePorts(): AmtpEnginePorts {
 }
 
 /**
- * Builds a fresh tau-wired AmtpEngine. Exposed (rather than only exporting the
+ * Builds a fresh Ficus-wired AmtpEngine. Exposed (rather than only exporting the
  * singleton below) so the future outbox-delivery.ts compat wrapper (§7.4) can
  * build a per-call engine with an injected signer, matching today's
  * `DrainOutboxDeps` seam.
  */
-export function createTauAmtpEngine(opts: AmtpEngineOptions = {}): AmtpEngine {
-  return createAmtpEngine(buildTauEnginePorts(), {
+export function createFicusAmtpEngine(opts: AmtpEngineOptions = {}): AmtpEngine {
+  return createAmtpEngine(buildFicusEnginePorts(), {
     logger: (level, message) => (level === 'warn' ? log.warn(message) : log.info(message)),
     overrides: {
       fetchPeerAgentKey: (args) => keyFetchImpl(args),
@@ -53,4 +53,4 @@ export function createTauAmtpEngine(opts: AmtpEngineOptions = {}): AmtpEngine {
 }
 
 /** Process-wide engine singleton (§2: construction is cheap + side-effect-free). */
-export const amtpEngine: AmtpEngine = createTauAmtpEngine()
+export const amtpEngine: AmtpEngine = createFicusAmtpEngine()

@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { IMAGE_CACHE_NAME, SW_RUNTIME_CACHE_PREFIXES } from '@ficus/shared/browser-keys'
 import { bypassesServiceWorker, isUncachedApi } from './swRoutes'
-import {
-  RETIRED_SW_CACHE_PREFIXES,
-  runtimeServiceWorkerCaches,
-  serviceWorkerCacheNames,
-  staleServiceWorkerCaches,
-} from './swCaches'
+import { runtimeServiceWorkerCaches, serviceWorkerCacheNames, staleServiceWorkerCaches } from './swCaches'
 
 describe('service-worker runtime caches', () => {
   test('cache names are the ficus prefixes plus the build version', () => {
@@ -31,18 +26,10 @@ describe('service-worker runtime caches', () => {
     expect(staleServiceWorkerCaches(keys, 'v2')).toEqual(['ficus-cache-old', 'ficus-api-cache-old'])
   })
 
-  test('activation deletes the runtime caches written before the rename, so none is stranded', () => {
-    expect(RETIRED_SW_CACHE_PREFIXES).toHaveLength(3)
-    for (const prefix of RETIRED_SW_CACHE_PREFIXES) expect(prefix.startsWith('ficus')).toBe(false)
-    const retired = RETIRED_SW_CACHE_PREFIXES.map((prefix) => `${prefix}old-build`)
-    expect(staleServiceWorkerCaches([...retired, serviceWorkerCacheNames('v2').static], 'v2')).toEqual(retired)
-  })
-
-  test('clearing runtime caches covers current, older and retired caches but not foreign ones', () => {
+  test('clearing runtime caches covers current and older caches but not foreign ones', () => {
     const current = serviceWorkerCacheNames('v2')
-    const retired = RETIRED_SW_CACHE_PREFIXES.map((prefix) => `${prefix}old-build`)
-    const keys = [current.static, current.api, 'ficus-cache-old', ...retired, 'workbox-precache-v2-x', 'farm-cache-v1']
-    expect(runtimeServiceWorkerCaches(keys)).toEqual([current.static, current.api, 'ficus-cache-old', ...retired])
+    const keys = [current.static, current.api, 'ficus-cache-old', 'workbox-precache-v2-x', 'farm-cache-v1']
+    expect(runtimeServiceWorkerCaches(keys)).toEqual([current.static, current.api, 'ficus-cache-old'])
   })
 })
 

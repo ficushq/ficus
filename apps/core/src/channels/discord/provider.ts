@@ -6,7 +6,7 @@
 
 import * as ed from '@noble/ed25519'
 import { sha512 } from '@noble/hashes/sha2.js'
-import { isTauSlashCommand, FICUS_DISCORD_OPTION_NAMES } from '../../lib/channels'
+import { isFicusSlashCommand, FICUS_DISCORD_OPTION_NAMES } from '../../lib/channels'
 import type { ChannelProvider, ChannelEvent, ThreadMessage, PostMessageResult } from '../provider'
 import { createLogger } from '../../lib/infra/logger'
 import { getChannelIntegrationValue } from '../../services/integrations/channels/settings'
@@ -195,7 +195,7 @@ export const discordProvider: ChannelProvider = {
       const subcommand = options.find((o) => o.type === CommandOptionType.SUB_COMMAND)
       const user = interaction.member?.user || interaction.user
       const rawCommand = subcommand?.name || interaction.data.name || 'ask'
-      const command = isTauSlashCommand(rawCommand) ? rawCommand : 'ask'
+      const command = isFicusSlashCommand(rawCommand) ? rawCommand : 'ask'
 
       return {
         type: 'slash_command',
@@ -403,7 +403,7 @@ export const discordProvider: ChannelProvider = {
         id: context.channelId, // channelId IS the thread ID for mentions
         channelId: context.channelId,
         originalMessageId: context.messageToEdit,
-        tauCreated: context.tauInitiated ?? false,
+        ficusCreated: context.ficusInitiated ?? false,
       })
 
       return context.channelId
@@ -438,7 +438,7 @@ export const discordProvider: ChannelProvider = {
       id: thread.id,
       channelId: message.channel_id,
       originalMessageId: message.id,
-      tauCreated: true,
+      ficusCreated: true,
     })
 
     return thread.id

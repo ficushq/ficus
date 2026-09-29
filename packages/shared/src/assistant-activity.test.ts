@@ -42,7 +42,7 @@ test('agents may not report the historical unknown status', () => {
 
 test('conversation URL uses the existing saved Assistant route', () => {
   const id = '507a9ac0-164e-4f49-9441-e57522bdc52b'
-  const url = new URL(assistantConversationPath(id), 'https://tau.invalid')
+  const url = new URL(assistantConversationPath(id), 'https://ficus.invalid')
   expect(url.pathname).toBe('/')
   expect(url.searchParams.get('chat')).toBe('open')
   expect(url.searchParams.get('assistantConversation')).toBe(id)

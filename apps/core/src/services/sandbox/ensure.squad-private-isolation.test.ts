@@ -44,7 +44,7 @@ describe('warm squad box never mounts /private', () => {
    *  captured ensureSandbox options. Uses the REAL asset-manifest host paths
    *  (HOME_DIR-based, cleaned up in afterEach). */
   async function runDockerSquadEnsure(squadId: string): Promise<any> {
-    const wsDir = mkdtempSync(join(tmpdir(), 'tau-ws-'))
+    const wsDir = mkdtempSync(join(tmpdir(), 'ficus-ws-'))
     cleanupPaths.push(wsDir)
     const home = getHomeDir()
     cleanupPaths.push(join(home, 'skills', 'sandboxes', `squad-${squadId}`))

@@ -15,7 +15,7 @@ const exec = async (args: string[]) => {
   return out
 }
 beforeEach(async () => {
-  root = await realpath(await mkdtemp(join(tmpdir(), 'tau-attachment-')))
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ficus-attachment-')))
 })
 afterEach(async () => {
   await rm(root, { recursive: true, force: true })

@@ -2,7 +2,7 @@
 # tau-backup.sh — Rendered by scripts/setup/setup-host.sh (phase_backup); do
 # not edit the installed copy by hand — re-run setup-host.sh instead.
 #
-# Nightly encrypted backup: pg_dump the tau database, tar it together with
+# Nightly encrypted backup: pg_dump the Ficus database, tar it together with
 # HOME_DIR (the agent workspace/memory tree) and <dest>/.env (which carries
 # FICUS_ENCRYPTION_KEY — the design requires the key travel INSIDE the backup
 # envelope, never in the platform's tenant registry), encrypt the tarball
@@ -75,7 +75,7 @@ _s3_curl_user_config() { # ACCESS SECRET
 
 WORKDIR=${FICUS_BACKUP_WORKDIR:-}
 if [[ -z ${WORKDIR} ]]; then
-  WORKDIR=$(mktemp -d -t tau-backup.XXXXXX)
+  WORKDIR=$(mktemp -d -t ficus-backup.XXXXXX)
 fi
 mkdir -p "${WORKDIR}"
 chmod 700 "${WORKDIR}"

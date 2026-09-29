@@ -62,7 +62,7 @@ async function makeFakes(overrides: { server?: Partial<ServerBundle>; cli?: Part
 
 describe('buildMachineBundles', () => {
   it('writes exactly the five expected files with the built/copied bytes', async () => {
-    const outDir = await mkdtemp(join(tmpdir(), 'tau-build-machine-bundles-test-'))
+    const outDir = await mkdtemp(join(tmpdir(), 'ficus-build-machine-bundles-test-'))
     try {
       const { buildServer, buildCli, calls } = await makeFakes()
 
@@ -98,7 +98,7 @@ describe('buildMachineBundles', () => {
   })
 
   it('clears a stale pre-existing file from outDir before writing (does not leak into the signed manifest)', async () => {
-    const outDir = await mkdtemp(join(tmpdir(), 'tau-build-machine-bundles-test-'))
+    const outDir = await mkdtemp(join(tmpdir(), 'ficus-build-machine-bundles-test-'))
     try {
       // Simulate a prior partial/stray run: outDir already exists and
       // contains an unrelated file before buildMachineBundles ever runs.
@@ -120,7 +120,7 @@ describe('buildMachineBundles', () => {
   })
 
   it('throws naming the file when a build fn returns a zero-byte field', async () => {
-    const outDir = await mkdtemp(join(tmpdir(), 'tau-build-machine-bundles-test-'))
+    const outDir = await mkdtemp(join(tmpdir(), 'ficus-build-machine-bundles-test-'))
     try {
       const { buildServer, buildCli } = await makeFakes({ server: { lib: new Uint8Array(0) } })
 

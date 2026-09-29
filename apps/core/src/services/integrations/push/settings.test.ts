@@ -43,7 +43,7 @@ beforeEach(async () => {
     priorEnv.set(key, process.env[key])
     delete process.env[key]
   }
-  tempDir = mkdtempSync(join(tmpdir(), 'tau-push-settings-'))
+  tempDir = mkdtempSync(join(tmpdir(), 'ficus-push-settings-'))
   process.env.VAPID_KEYS_PATH = join(tempDir, 'vapid.json')
   process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   priorSecrets = await db.select().from(secrets).where(inArray(secrets.key, credentialKeys))

@@ -4,7 +4,7 @@ import { join } from 'path'
 import { createLogger } from '../../lib/infra/logger'
 import { getSecretStore } from '../secrets'
 import { isHostRuntime } from '../sandbox/runtime'
-import { ensureSquadSshDir, getSquadSshPath, LEGACY_REMOTE_HOST_KEY_PREFIX, REMOTE_HOST_KEY_PREFIX } from '../squad/ssh'
+import { ensureSquadSshDir, getSquadSshPath, REMOTE_HOST_KEY_PREFIX } from '../squad/ssh'
 import { listHostsGrantedToSquad, type RemoteHost } from './queries'
 
 /**
@@ -26,14 +26,6 @@ const log = createLogger('remote-hosts-materialize')
 
 export const MANAGED_BLOCK_BEGIN = '# >>> ficus remote hosts >>>'
 export const MANAGED_BLOCK_END = '# <<< ficus remote hosts <<<'
-/**
- * The markers a pre-rename Core wrote. Never written; stripped like the current ones, so the next
- * materialization replaces an old block instead of leaving two managed blocks. Wave 3 drops them.
- */
-export const LEGACY_MANAGED_BLOCK_BEGIN = '# >>> tau remote hosts >>>'
-export const LEGACY_MANAGED_BLOCK_END = '# <<< tau remote hosts <<<'
-const BLOCK_BEGIN_MARKERS: readonly string[] = [MANAGED_BLOCK_BEGIN, LEGACY_MANAGED_BLOCK_BEGIN]
-const BLOCK_END_MARKERS: readonly string[] = [MANAGED_BLOCK_END, LEGACY_MANAGED_BLOCK_END]
 
 // `KEY_FILE_PREFIX` is exported from `squad/ssh.ts` (as `REMOTE_HOST_KEY_PREFIX`)
 // rather than defined here, so `validateKeyName` there can reserve the same
@@ -180,13 +172,13 @@ export function stripManagedBlock(config: string): string {
 
   for (const line of lines) {
     const trimmed = line.trim()
-    if (BLOCK_BEGIN_MARKERS.includes(trimmed)) {
+    if (trimmed === MANAGED_BLOCK_BEGIN) {
       inBlock = true
       droppedAny = true
       dropping = true
       continue
     }
-    if (BLOCK_END_MARKERS.includes(trimmed)) {
+    if (trimmed === MANAGED_BLOCK_END) {
       inBlock = false
       droppedAny = true
       dropping = true
@@ -330,9 +322,7 @@ export async function materializeSquadRemoteHosts(squadId: string): Promise<void
 }
 
 /**
- * Remove key files for hosts no longer granted (or no longer valid), and every
- * key file under the pre-rename prefix (K2): the current grants were re-written
- * under KEY_FILE_PREFIX. Entries that are not files or symlinks (a directory
+ * Remove key files for hosts no longer granted (or no longer valid). Entries that are not files or symlinks (a directory
  * someone created under a reserved name) are skipped, never recursed into. A
  * failed removal does not stop the sweep; the failures are reported together
  * after every other stale key is gone.
@@ -340,9 +330,7 @@ export async function materializeSquadRemoteHosts(squadId: string): Promise<void
 function sweepStaleKeyFiles(squadId: string, sshPath: string, materializedNames: Set<string>): void {
   const failures: string[] = []
   for (const file of fs.readdirSync(sshPath)) {
-    const stale = file.startsWith(LEGACY_REMOTE_HOST_KEY_PREFIX)
-      ? true
-      : file.startsWith(KEY_FILE_PREFIX) && !materializedNames.has(file.slice(KEY_FILE_PREFIX.length))
+    const stale = file.startsWith(KEY_FILE_PREFIX) && !materializedNames.has(file.slice(KEY_FILE_PREFIX.length))
     if (!stale) continue
     const path = join(sshPath, file)
     try {

@@ -123,7 +123,13 @@ test('assistant-driven navigation keeps the text conversation visible on the des
 test('assistant links keep parent and recipient drafts through Back, Escape, refresh, and live voice', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  const agent = { id: 'manager', squadId: 'tau', agentTypeId: 'manager', status: 'idle', metadata: { name: 'Morgan' } }
+  const agent = {
+    id: 'manager',
+    squadId: 'ficus',
+    agentTypeId: 'manager',
+    status: 'idle',
+    metadata: { name: 'Morgan' },
+  }
   for (const [key, value] of [
     [queries.voice.status().queryKey, { enabled: true }],
     [queries.squads.list().queryKey, []],
@@ -146,7 +152,7 @@ test('assistant links keep parent and recipient drafts through Back, Escape, ref
           data-auto-expand={String(useContext(ChatFullscreenContext))}
           defaultValue="Unsent assistant question"
         />
-        <button onClick={() => props.onOpenConversation?.({ agentId: 'manager', squadId: 'tau', label: 'Morgan' })}>
+        <button onClick={() => props.onOpenConversation?.({ agentId: 'manager', squadId: 'ficus', label: 'Morgan' })}>
           Open manager
         </button>
       </div>

@@ -16,7 +16,7 @@ describe('monitorWorkRoot', () => {
   beforeEach(() => {
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     prevHome = process.env.HOME_DIR
-    home = mkdtempSync(join(tmpdir(), 'tau-monitor-root-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-monitor-root-'))
     process.env.HOME_DIR = home
     clearHostWorkspaceOverrides()
   })

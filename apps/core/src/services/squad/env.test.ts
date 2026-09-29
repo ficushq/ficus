@@ -260,24 +260,6 @@ line2"`
       }
     })
 
-    it('NEVER renders a retained TAU_ spelling of a managed or private key (one release)', async () => {
-      process.env.FICUS_MANAGED_SECRET_KEYS = 'FICUS_PLATFORM_INSTANCE_TOKEN,FICUS_PLATFORM_USAGE_TOKEN'
-      try {
-        const { renderEnvForSecrets } = await getModule()
-        const legacyKeys = ['TAU_PUSH_RELAY_TOKEN', 'TAU_PLATFORM_INSTANCE_TOKEN', 'TAU_PLATFORM_USAGE_TOKEN']
-        const lookedUp: string[] = []
-        const rendered = renderEnvForSecrets('', [...legacyKeys, 'DEPLOY_VERCEL_TOKEN'], (key: string) => {
-          lookedUp.push(key)
-          return `${key}-value`
-        })
-        expect(lookedUp).toEqual(['DEPLOY_VERCEL_TOKEN'])
-        for (const key of legacyKeys) expect(rendered).not.toContain(key)
-        expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='DEPLOY_VERCEL_TOKEN-value'")
-      } finally {
-        delete process.env.FICUS_MANAGED_SECRET_KEYS
-      }
-    })
-
     it('renders globally exposed secrets into existing squad env files immediately', async () => {
       const { setEnvFile, setGloballyExposedSecretKeys } = await getModule()
       const { getSquadWorkspacePath } = await import('./workspace')
@@ -339,9 +321,9 @@ line2"`
       const { getSquadWorkspacePath } = await import('./workspace')
       const squadId = randomUUID()
       await createTestSquad(squadId)
-      const tauDir = join(getSquadWorkspacePath(squadId), '.tau')
-      const envPath = join(tauDir, '.env')
-      mkdirSync(tauDir, { recursive: true })
+      const ficusDir = join(getSquadWorkspacePath(squadId), '.tau')
+      const envPath = join(ficusDir, '.env')
+      mkdirSync(ficusDir, { recursive: true })
       writeFileSync(envPath, 'APP_ENV=localDeployment')
       process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
 
@@ -351,7 +333,7 @@ line2"`
       expect(generatedEnv).toContain('APP_ENV=localDeployment')
       expect(generatedEnv).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
       expect(getEnvFile(squadId)).toBe('APP_ENV=localDeployment')
-      expect(readFileSync(join(tauDir, 'env.user'), 'utf-8')).toBe('APP_ENV=localDeployment')
+      expect(readFileSync(join(ficusDir, 'env.user'), 'utf-8')).toBe('APP_ENV=localDeployment')
 
       delete process.env.DEPLOY_VERCEL_TOKEN
     })
@@ -361,14 +343,14 @@ line2"`
       const { getSquadWorkspacePath } = await import('./workspace')
       const squadId = randomUUID()
       await createTestSquad(squadId)
-      const tauDir = join(getSquadWorkspacePath(squadId), '.tau')
-      const envPath = join(tauDir, '.env')
+      const ficusDir = join(getSquadWorkspacePath(squadId), '.tau')
+      const envPath = join(ficusDir, '.env')
 
       process.env.DEPLOY_VERCEL_TOKEN = 'approved-secret'
       process.env.DEPLOY_NETLIFY_TOKEN = 'forged-secret'
       await setEnvFile(squadId, 'APP_ENV=localDeployment')
       await setExposedSecretKeys(squadId, ['DEPLOY_VERCEL_TOKEN'])
-      writeFileSync(join(tauDir, 'forged-secret-allowlist.json'), JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN'] }))
+      writeFileSync(join(ficusDir, 'forged-secret-allowlist.json'), JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN'] }))
 
       await regenerateEnvFilesForSecretKey('DEPLOY_VERCEL_TOKEN')
 

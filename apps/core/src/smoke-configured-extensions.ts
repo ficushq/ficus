@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import './boot/legacy-env'
 import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { loadExtensions } from '@earendil-works/pi-coding-agent'

@@ -27,7 +27,7 @@ describe('local deployment logs on the host runtime', () => {
   let supervisor: LocalDeploymentProcessSupervisor
 
   beforeEach(async () => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-logs-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-logs-'))
     prevHome = process.env.HOME_DIR
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home

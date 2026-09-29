@@ -2,7 +2,7 @@
 #
 # k3d Local Dev Management
 #
-# Manages the local k3d cluster for Tau sandbox development.
+# Manages the local k3d cluster for Ficus sandbox development.
 #
 # Usage:
 #   k3d-dev.sh setup          Create cluster, namespace, PVC, build & push image

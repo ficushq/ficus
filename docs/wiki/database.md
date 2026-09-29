@@ -154,7 +154,7 @@ bun run test:db:down && bun test
 ```
 
 Test-DB containers stay running between runs for reuse speed. They carry a
-`dev.tau.test-db.repo-root` label with their checkout path, and the preload
+`dev.ficus.test-db.repo-root` label with their checkout path, and the preload
 sweeps projects whose worktree has been deleted (throttled to once an hour,
 `apps/core/src/test-db-sweep.ts`) — deleting a worktree no longer leaks a
 forever-running postgres. Broader dev disk GC (registry blobs, dangling

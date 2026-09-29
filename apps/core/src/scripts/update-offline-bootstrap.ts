@@ -5,22 +5,19 @@
  *
  * It exists because that checkout's `node_modules` still holds the PREVIOUS
  * release's dependencies. `update-offline.ts` imports this release's workspace
- * packages, and across a scope change (the Tau → Ficus rename left only `@tau/*`
- * installed) loading it crashed with "Cannot find module '@ficus/shared/…'",
- * leaving the checkout moved, unbuilt, and the old processes running.
+ * packages, and across a dependency or package-scope change loading it crashed
+ * with "Cannot find module …", leaving the checkout moved, unbuilt, and the old
+ * processes running.
  *
  * So this file imports only Bun/Node built-ins and the import-free
  * `dependency-install.ts`, and:
  *   1. runs the updater's install command when the diff changed the dependencies
  *      (the same rule the update plan uses) or a workspace package of this checkout
  *      is not installed;
- *   2. removes the stale old-scope directories (`node_modules/@tau`) that
- *      `bun install` leaves behind;
- *   3. then runs `update-offline.ts` in a fresh process with the original args,
- *      telling it the install is done so the plan does not run it twice. That
- *      module still imports `boot/legacy-env` first, before any env is read.
+ *   2. then runs `update-offline.ts` in a fresh process with the original args,
+ *      telling it the install is done so the plan does not run it twice.
  */
-import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   BOOTSTRAP_INSTALLED_FLAG,
@@ -28,9 +25,6 @@ import {
   DEPENDENCY_INSTALL_COMMAND,
   touchesDependencies,
 } from '../services/updates/dependency-install'
-
-/** Package scopes an earlier release used for its workspace packages. */
-export const LEGACY_WORKSPACE_SCOPES = ['@tau'] as const
 
 const SHA = /^[0-9a-f]{40}$/
 export const USAGE = 'usage: bun run update:offline -- --from <40-hex sha before the pull>'
@@ -94,18 +88,11 @@ export function workspacePackageNames(root: string): string[] {
 
 /**
  * Workspace packages of this checkout that are not linked into `node_modules`: the
- * sign that it holds another release's dependencies (after the Tau → Ficus rename,
- * `@tau/*` installed and `@ficus/*` missing). [] when every one is there.
+ * sign that it holds another release's dependencies (for example after a package
+ * scope change). [] when every one is there.
  */
 export function missingWorkspacePackages(root: string, names: string[] = workspacePackageNames(root)): string[] {
   return names.filter((name) => !existsSync(join(root, 'node_modules', name)))
-}
-
-/** Installed directories of a legacy scope that no current workspace package uses. */
-export function legacyScopeDirs(root: string, names: string[] = workspacePackageNames(root)): string[] {
-  const scopes = LEGACY_WORKSPACE_SCOPES.filter((scope) => !names.some((name) => name.startsWith(`${scope}/`)))
-  const bases = [root, ...workspaceDirs(root)]
-  return bases.flatMap((base) => scopes.map((scope) => join(base, 'node_modules', scope))).filter((d) => existsSync(d))
 }
 
 function parseFrom(args: string[]): string | undefined {
@@ -147,13 +134,6 @@ export async function bootstrapOfflineUpdate(options: BootstrapOptions): Promise
       error(`offline update failed: ${DEPENDENCY_INSTALL_COMMAND.join(' ')} exited with ${installed.code}`)
       return 1
     }
-  }
-  // `bun install` never removes a scope the lockfile no longer names, and the leftover
-  // copies can mask a missed rename. Nothing running needs them: builds bundle their
-  // workspace packages.
-  for (const dir of legacyScopeDirs(root)) {
-    log(`Removing stale ${dir.slice(root.length + 1)}`)
-    rmSync(dir, { recursive: true, force: true })
   }
   if (install) {
     const still = missingWorkspacePackages(root)

@@ -62,7 +62,7 @@ test('recovery restores completed spoken turns without replaying tools, unfinish
   const sendEvent = mock()
   restoreVoiceConversation({ sendEvent }, [
     { role: 'user', text: 'What is Ficus doing?', final: true },
-    { role: 'tool', text: 'get_status', final: true, toolArgs: '{"id":"tau"}' },
+    { role: 'tool', text: 'get_status', final: true, toolArgs: '{"id":"ficus"}' },
     { role: 'assistant', text: 'The squad is idle.', final: true },
     { role: 'assistant', text: 'unfinished', final: false },
     { role: 'assistant', text: 'interrupted', final: true, interrupted: true },

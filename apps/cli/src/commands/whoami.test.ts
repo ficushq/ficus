@@ -43,7 +43,7 @@ async function runWhoami(responses: Record<string, unknown | (() => never)>) {
 
   const program = new Command()
   registerWhoamiCommands(program, dependencies)
-  await program.parseAsync(['node', 'tau', 'whoami'])
+  await program.parseAsync(['node', 'ficus', 'whoami'])
   return { calls, result: printed[0]!.data, message: printed[0]!.message }
 }
 
@@ -90,7 +90,7 @@ describe('ficus whoami', () => {
   })
 
   it('reports the stored backend and the account it belongs to outside an agent shell', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-whoami-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-whoami-'))
     tempDirs.push(dir)
     const authStore = join(dir, 'auth.json')
     await writeFile(

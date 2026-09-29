@@ -84,7 +84,7 @@ describe('work-stream tracked-resource routes', () => {
       eventKey: randomUUID(),
       resourceKey: `${repository}#${number}`,
       occurredAt: new Date().toISOString(),
-      data: { repository, issue: { number }, assignee: 'tau-bot' },
+      data: { repository, issue: { number }, assignee: 'ficus-bot' },
       subject: `Issue ${repository}#${number}`,
       body: 'Please take a look.',
     }

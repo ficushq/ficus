@@ -15,18 +15,18 @@ afterEach(() => {
 })
 
 test('v5 filter preserves glob ancestors and deletions without traversing unrelated or excluded trees', () => {
-  const ignored = createWatchPathFilter(TEST_DIR, ['tau/{docs,notes}/**/*.md', 'config/*.json'], ['**/private/**'])
+  const ignored = createWatchPathFilter(TEST_DIR, ['ficus/{docs,notes}/**/*.md', 'config/*.json'], ['**/private/**'])
   const dir = { isDirectory: () => true }
   const file = { isDirectory: () => false }
-  for (const path of ['', 'tau', 'tau/docs', 'tau/notes/deep/nested', 'config']) {
+  for (const path of ['', 'ficus', 'ficus/docs', 'ficus/notes/deep/nested', 'config']) {
     expect(ignored(join(TEST_DIR, path), dir)).toBe(false)
   }
-  for (const path of ['tau/src', 'unrelated', 'node_modules', 'tau/docs/node_modules', 'tau/docs/private']) {
+  for (const path of ['ficus/src', 'unrelated', 'node_modules', 'ficus/docs/node_modules', 'ficus/docs/private']) {
     expect(ignored(join(TEST_DIR, path), dir)).toBe(true)
   }
-  expect(ignored(join(TEST_DIR, 'tau/docs/deleted.md'))).toBe(false)
-  expect(ignored(join(TEST_DIR, 'tau/docs/live.md'), file)).toBe(false)
-  expect(ignored(join(TEST_DIR, 'tau/docs/live.ts'), file)).toBe(true)
+  expect(ignored(join(TEST_DIR, 'ficus/docs/deleted.md'))).toBe(false)
+  expect(ignored(join(TEST_DIR, 'ficus/docs/live.md'), file)).toBe(false)
+  expect(ignored(join(TEST_DIR, 'ficus/docs/live.ts'), file)).toBe(true)
   expect(ignored(join(TEST_DIR, 'config/nested'), dir)).toBe(true)
   expect(ignored(join(TEST_DIR, '../outside'), dir)).toBe(true)
 })
@@ -35,12 +35,12 @@ describe('normalizeWatchConfig', () => {
   test('accepts and normalizes valid squad workspace watch config', () => {
     expect(
       normalizeWatchConfig({
-        include: ['/workspace/tau/docs/**/*.md', ' tau/docs/**/*.md '],
+        include: ['/workspace/ficus/docs/**/*.md', ' ficus/docs/**/*.md '],
         exclude: undefined,
         squadId: ' squad-1 ',
       })
     ).toEqual({
-      include: ['tau/docs/**/*.md', 'tau/docs/**/*.md'],
+      include: ['ficus/docs/**/*.md', 'ficus/docs/**/*.md'],
       exclude: [],
       squadId: 'squad-1',
     })
@@ -50,7 +50,7 @@ describe('normalizeWatchConfig', () => {
     expect(() => normalizeWatchConfig({ include: [], exclude: [], squadId: 'squad-1' })).toThrow(
       'Invalid watch config: include must contain at least one glob string'
     )
-    expect(() => normalizeWatchConfig({ include: 'tau/docs/**/*.md', exclude: [], squadId: 'squad-1' })).toThrow(
+    expect(() => normalizeWatchConfig({ include: 'ficus/docs/**/*.md', exclude: [], squadId: 'squad-1' })).toThrow(
       'Invalid watch config: include must be an array of glob strings'
     )
   })
@@ -58,13 +58,13 @@ describe('normalizeWatchConfig', () => {
 
 describe('WorkspaceWatcher', () => {
   test('starts successfully with current squad workspace glob contract', async () => {
-    mkdirSync(join(TEST_DIR, 'tau', 'docs'), { recursive: true })
-    writeFileSync(join(TEST_DIR, 'tau', 'docs', 'sandbox-watcher.md'), '# Watcher')
+    mkdirSync(join(TEST_DIR, 'ficus', 'docs'), { recursive: true })
+    writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'sandbox-watcher.md'), '# Watcher')
 
     const watcher = new WorkspaceWatcher(TEST_DIR)
     try {
       const result = await watcher.start({
-        include: ['tau/docs/**/*.md'],
+        include: ['ficus/docs/**/*.md'],
         exclude: [],
         squadId: 'squad-1',
         coreCallbackUrl: 'http://127.0.0.1:1/workspace-files',
@@ -74,7 +74,7 @@ describe('WorkspaceWatcher', () => {
       expect(watcher.getStatus()).toEqual({
         active: true,
         config: {
-          include: ['tau/docs/**/*.md'],
+          include: ['ficus/docs/**/*.md'],
           exclude: [],
           squadId: 'squad-1',
           coreCallbackUrl: 'http://127.0.0.1:1/workspace-files',
@@ -86,12 +86,12 @@ describe('WorkspaceWatcher', () => {
   })
 
   test('start() is idempotent for an unchanged config (no rescan)', async () => {
-    mkdirSync(join(TEST_DIR, 'tau', 'docs'), { recursive: true })
-    writeFileSync(join(TEST_DIR, 'tau', 'docs', 'one.md'), '# One')
+    mkdirSync(join(TEST_DIR, 'ficus', 'docs'), { recursive: true })
+    writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'one.md'), '# One')
 
     const watcher = new WorkspaceWatcher(TEST_DIR)
     const cfg = {
-      include: ['tau/docs/**/*.md'],
+      include: ['ficus/docs/**/*.md'],
       exclude: [],
       squadId: 'squad-1',
       coreCallbackUrl: 'http://127.0.0.1:1/workspace-files',
@@ -101,7 +101,7 @@ describe('WorkspaceWatcher', () => {
       expect(first.fileCount).toBe(1)
 
       // A fresh scan WOULD pick this up...
-      writeFileSync(join(TEST_DIR, 'tau', 'docs', 'two.md'), '# Two')
+      writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'two.md'), '# Two')
 
       // ...but an unchanged config must return the cached result without rescanning.
       const again = await watcher.start(cfg)
@@ -112,17 +112,17 @@ describe('WorkspaceWatcher', () => {
   })
 
   test('start() rescans when the config changes', async () => {
-    mkdirSync(join(TEST_DIR, 'tau', 'docs'), { recursive: true })
-    writeFileSync(join(TEST_DIR, 'tau', 'docs', 'one.md'), '# One')
-    writeFileSync(join(TEST_DIR, 'tau', 'note.txt'), 'note')
+    mkdirSync(join(TEST_DIR, 'ficus', 'docs'), { recursive: true })
+    writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'one.md'), '# One')
+    writeFileSync(join(TEST_DIR, 'ficus', 'note.txt'), 'note')
 
     const watcher = new WorkspaceWatcher(TEST_DIR)
     const base = { exclude: [], squadId: 'squad-1', coreCallbackUrl: 'http://127.0.0.1:1/workspace-files' }
     try {
-      const first = await watcher.start({ ...base, include: ['tau/docs/**/*.md'] })
+      const first = await watcher.start({ ...base, include: ['ficus/docs/**/*.md'] })
       expect(first.fileCount).toBe(1)
 
-      const changed = await watcher.start({ ...base, include: ['tau/**/*'] })
+      const changed = await watcher.start({ ...base, include: ['ficus/**/*'] })
       expect(changed.fileCount).toBe(2)
     } finally {
       await watcher.stop()
@@ -162,27 +162,27 @@ describe('WorkspaceWatcher', () => {
   })
 
   test('does not recurse into symlink cycles while scanning representative workspace globs', async () => {
-    mkdirSync(join(TEST_DIR, 'tau', 'docs'), { recursive: true })
-    writeFileSync(join(TEST_DIR, 'tau', 'docs', 'readme.md'), '# Hello')
-    symlinkSync(TEST_DIR, join(TEST_DIR, 'tau', 'docs', 'workspace-loop'), 'dir')
+    mkdirSync(join(TEST_DIR, 'ficus', 'docs'), { recursive: true })
+    writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'readme.md'), '# Hello')
+    symlinkSync(TEST_DIR, join(TEST_DIR, 'ficus', 'docs', 'workspace-loop'), 'dir')
 
     const { files } = await WorkspaceWatcher.scanFiles(TEST_DIR, {
-      include: ['tau/docs/**/*.md'],
+      include: ['ficus/docs/**/*.md'],
       exclude: [],
     })
 
-    expect(files).toEqual([{ path: 'tau/docs/readme.md', content: '# Hello' }])
+    expect(files).toEqual([{ path: 'ficus/docs/readme.md', content: '# Hello' }])
   })
 
   test('starts successfully with representative workspace config containing symlink cycles', async () => {
-    mkdirSync(join(TEST_DIR, 'tau', 'docs'), { recursive: true })
-    writeFileSync(join(TEST_DIR, 'tau', 'docs', 'readme.md'), '# Hello')
-    symlinkSync(TEST_DIR, join(TEST_DIR, 'tau', 'docs', 'workspace-loop'), 'dir')
+    mkdirSync(join(TEST_DIR, 'ficus', 'docs'), { recursive: true })
+    writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'readme.md'), '# Hello')
+    symlinkSync(TEST_DIR, join(TEST_DIR, 'ficus', 'docs', 'workspace-loop'), 'dir')
 
     const watcher = new WorkspaceWatcher(TEST_DIR)
     try {
       const result = await watcher.start({
-        include: ['tau/docs/**/*.md'],
+        include: ['ficus/docs/**/*.md'],
         exclude: [],
         squadId: 'squad-1',
         coreCallbackUrl: 'http://127.0.0.1:1/workspace-files',
@@ -239,7 +239,7 @@ describe('injectable sink', () => {
   // Real native delivery includes the existing 3s debounce; allow its 10s
   // observation budget plus setup/cleanup, as in the change/delete cases.
   test('v5 discovers new matching subtrees while leaving unrelated and excluded trees unwatched', async () => {
-    for (const path of ['tau/docs', 'tau/src/deep', 'tau/docs/node_modules/pkg', 'tau/docs/private']) {
+    for (const path of ['ficus/docs', 'ficus/src/deep', 'ficus/docs/node_modules/pkg', 'ficus/docs/private']) {
       mkdirSync(join(TEST_DIR, path), { recursive: true })
       writeFileSync(join(TEST_DIR, path, 'ignored.ts'), 'fixture')
     }
@@ -250,17 +250,17 @@ describe('injectable sink', () => {
       },
     })
     try {
-      await watcher.start({ include: ['tau/{docs,notes}/**/*.md'], exclude: ['**/private/**'], squadId: 'squad-1' })
+      await watcher.start({ include: ['ficus/{docs,notes}/**/*.md'], exclude: ['**/private/**'], squadId: 'squad-1' })
       const native = watcher as unknown as { fsWatcher: { getWatched(): Record<string, string[]> } }
       const watched = Object.keys(native.fsWatcher.getWatched()).map((path) => relative(realpathSync(TEST_DIR), path))
-      expect(watched).toContain('tau/docs')
+      expect(watched).toContain('ficus/docs')
       expect(watched.some((path) => /(^|\/)(src|node_modules|private)(\/|$)/.test(path))).toBe(false)
-      mkdirSync(join(TEST_DIR, 'tau/notes/new'), { recursive: true })
-      writeFileSync(join(TEST_DIR, 'tau/notes/new/created.md'), '# created after ready')
+      mkdirSync(join(TEST_DIR, 'ficus/notes/new'), { recursive: true })
+      writeFileSync(join(TEST_DIR, 'ficus/notes/new/created.md'), '# created after ready')
       const deadline = performance.now() + 10_000
       while (!payloads.some((p) => !p.reconcile) && performance.now() < deadline) await Bun.sleep(25)
       expect(payloads.filter((p) => !p.reconcile)).toMatchObject([
-        { files: [{ path: 'tau/notes/new/created.md', content: '# created after ready' }] },
+        { files: [{ path: 'ficus/notes/new/created.md', content: '# created after ready' }] },
       ])
     } finally {
       await watcher.stop()
@@ -268,8 +268,8 @@ describe('injectable sink', () => {
   }, 15_000)
 
   test('sink receives the initial reconcile payload instead of HTTP', async () => {
-    mkdirSync(join(TEST_DIR, 'tau', 'docs'), { recursive: true })
-    writeFileSync(join(TEST_DIR, 'tau', 'docs', 'a.md'), '# A')
+    mkdirSync(join(TEST_DIR, 'ficus', 'docs'), { recursive: true })
+    writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'a.md'), '# A')
 
     const payloads: any[] = []
     const watcher = new WorkspaceWatcher(TEST_DIR, {
@@ -278,12 +278,12 @@ describe('injectable sink', () => {
       },
     })
     try {
-      const result = await watcher.start({ include: ['tau/docs/**/*.md'], exclude: [], squadId: 'squad-1' })
+      const result = await watcher.start({ include: ['ficus/docs/**/*.md'], exclude: [], squadId: 'squad-1' })
       expect(result.fileCount).toBe(1)
       expect(payloads).toEqual([
         {
           squadId: 'squad-1',
-          files: [{ path: 'tau/docs/a.md', content: '# A', event: 'change' }],
+          files: [{ path: 'ficus/docs/a.md', content: '# A', event: 'change' }],
           reconcile: true,
         },
       ])
@@ -314,8 +314,8 @@ describe('injectable sink', () => {
 
   for (const persistent of [true, false])
     test(`sink receives debounced change and delete events (persistent: ${persistent})`, async () => {
-      mkdirSync(join(TEST_DIR, 'tau', 'docs'), { recursive: true })
-      writeFileSync(join(TEST_DIR, 'tau', 'docs', 'live.md'), '# v1')
+      mkdirSync(join(TEST_DIR, 'ficus', 'docs'), { recursive: true })
+      writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'live.md'), '# v1')
 
       const payloads: any[] = []
       const watcher = new WorkspaceWatcher(TEST_DIR, {
@@ -325,23 +325,23 @@ describe('injectable sink', () => {
         },
       })
       try {
-        await watcher.start({ include: ['tau/docs/**/*.md'], exclude: [], squadId: 'squad-1' })
-        writeFileSync(join(TEST_DIR, 'tau', 'docs', 'live.md'), '# v2')
+        await watcher.start({ include: ['ficus/docs/**/*.md'], exclude: [], squadId: 'squad-1' })
+        writeFileSync(join(TEST_DIR, 'ficus', 'docs', 'live.md'), '# v2')
         const deadline = Date.now() + 10_000 // 3s debounce budget
         while (payloads.length < 2 && Date.now() < deadline) await Bun.sleep(250)
         expect(payloads[1]).toMatchObject({
           squadId: 'squad-1',
           reconcile: false,
-          files: [{ path: 'tau/docs/live.md', content: '# v2', event: 'change' }],
+          files: [{ path: 'ficus/docs/live.md', content: '# v2', event: 'change' }],
         })
 
         payloads.length = 0
-        unlinkSync(join(TEST_DIR, 'tau', 'docs', 'live.md'))
+        unlinkSync(join(TEST_DIR, 'ficus', 'docs', 'live.md'))
         const deadline2 = Date.now() + 10_000
         while (payloads.length < 1 && Date.now() < deadline2) await Bun.sleep(250)
         expect(payloads[0]).toMatchObject({
           squadId: 'squad-1',
-          files: [{ path: 'tau/docs/live.md', event: 'delete' }],
+          files: [{ path: 'ficus/docs/live.md', event: 'delete' }],
         })
       } finally {
         await watcher.stop()

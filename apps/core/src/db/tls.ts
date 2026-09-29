@@ -7,7 +7,7 @@ import { readFileSync } from 'fs'
  * `sslmode=require` gets you encryption and nothing else: postgres.js maps the
  * bare strings 'require'/'allow'/'prefer' onto `rejectUnauthorized: false`, so
  * any host that can intercept the TCP connection can present its own
- * certificate and read (or rewrite) the session. On tau's hosted platform the
+ * certificate and read (or rewrite) the session. On Ficus's hosted platform the
  * database sits in a VPC that TENANT VMs also sit on, and tenant VMs are
  * treated as compromisable by design — customers run agents on them. So
  * `require` leaves one tenant able to harvest another tenant's database

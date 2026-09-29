@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { decrypt, encrypt } from '@ficus/shared/crypto'
@@ -6,7 +6,6 @@ import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type postgres from 'postgres'
 import { MONOREPO_ROOT } from '../lib/paths'
 import { createPostgresConnection, getConnectionString } from './connection'
-import { COPIED_LEGACY_SECRET_ROW_KEYS } from './legacy-secret-rows'
 import { applyMigrations } from './migrator'
 
 const marker = 'INSERT INTO "secrets"'
@@ -72,12 +71,6 @@ async function selectRows(connection: postgres.ReservedSql): Promise<Map<string,
   return new Map(rows.map((row) => [row.key, { ...row }]))
 }
 
-let restoreWarn: (() => void) | undefined
-afterEach(() => {
-  restoreWarn?.()
-  restoreWarn = undefined
-})
-
 describe('FICUS_ secret-row copy migration (real runner, isolated database)', () => {
   test('copies exactly the four TAU_ rows as ciphertext, keeps them, and is idempotent', async () => {
     await withMigratedPredecessors(async (connection) => {
@@ -114,7 +107,7 @@ describe('FICUS_ secret-row copy migration (real runner, isolated database)', ()
     })
   })
 
-  test('never overwrites an existing FICUS_ row and names a differing pair without its value', async () => {
+  test('never overwrites an existing FICUS_ row', async () => {
     await withMigratedPredecessors(async (connection) => {
       await insertSecret(connection, 'TAU_PASSWORD', 'rolled-back-core-password', 'env')
       await insertSecret(connection, 'FICUS_PASSWORD', 'current-core-password', 'admin')
@@ -128,31 +121,21 @@ describe('FICUS_ secret-row copy migration (real runner, isolated database)', ()
       }
       const before = await selectRows(connection)
 
-      const warn = spyOn(console, 'warn').mockImplementation(() => {})
-      restoreWarn = () => warn.mockRestore()
       await applyMigrations(connection, [...predecessors, target!])
-      const warned = warn.mock.calls.map((args) => args.map(String).join(' ')).join('\n')
-      restoreWarn()
-      restoreWarn = undefined
 
       expect(await selectRows(connection)).toEqual(before)
-      expect(warned).toContain('FICUS_PASSWORD')
-      expect(warned).toContain('TAU_PASSWORD')
-      expect(warned).not.toContain('PUSH_RELAY_TOKEN')
-      for (const row of before.values()) {
-        expect(warned).not.toContain(row.encrypted_value)
-        expect(warned).not.toContain(row.iv)
-      }
-      for (const plaintext of ['rolled-back-core-password', 'current-core-password', 'same-relay-token']) {
-        expect(warned).not.toContain(plaintext)
-      }
     })
   })
 
-  test('the migration copies exactly the keys the conflict report checks', () => {
+  test('the migration copies exactly the four known keys', () => {
     expect(target).toBeDefined()
     const sql = target!.sql.join('\n')
     const listed = [...sql.matchAll(/'(TAU_[A-Z_]+)'/g)].map((match) => match[1]).sort()
-    expect(listed).toEqual([...COPIED_LEGACY_SECRET_ROW_KEYS].sort())
+    expect(listed).toEqual([
+      'TAU_PASSWORD',
+      'TAU_PLATFORM_INSTANCE_TOKEN',
+      'TAU_PLATFORM_USAGE_TOKEN',
+      'TAU_PUSH_RELAY_TOKEN',
+    ])
   })
 })

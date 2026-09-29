@@ -106,7 +106,7 @@ async function installDefinitions(context: SupervisorContext): Promise<void> {
   prepareLogs(context)
   // systemd-analyze derives the unit type from the filename, so staged files
   // keep the final `<unit>.service` name; a `.tmp` suffix is rejected outright.
-  const staging = join(defs[0].path, '..', `.tau-staging-${process.pid}`)
+  const staging = join(defs[0].path, '..', `.ficus-staging-${process.pid}`)
   const temps: string[] = []
   try {
     mkdirSync(staging, { recursive: true, mode: 0o700 })

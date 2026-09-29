@@ -18,7 +18,7 @@ const verifyTokenRegistration = mock(
   })
 )
 const createInviteLink = mock(async (_userId: string) => ({
-  inviteUrl: 'https://tau.example/register?token=link-token',
+  inviteUrl: 'https://ficus.example/register?token=link-token',
 }))
 const startRegistration = mock(async () => ({}) as never)
 const authApi = { getTokenRegistrationOptions, verifyTokenRegistration }

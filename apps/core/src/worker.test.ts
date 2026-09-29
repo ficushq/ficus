@@ -146,7 +146,7 @@ describe('worker machine-provider registration', () => {
 
 // Boot-time fleet artifact reconcile: ensureBox's healthy fast-path returns
 // BEFORE ensureMachineArtifacts, so after a deploy an existing machine whose
-// boxes are all healthy would get a rebuilt artifact (e.g. the tau CLI) only on
+// boxes are all healthy would get a rebuilt artifact (e.g. the ficus CLI) only on
 // the next FULL ensure (new box / re-provision / migrate). The worker therefore
 // pushes changed artifacts to every ready machine at boot — best-effort per
 // machine (an unreachable machine must never take down the worker or starve the

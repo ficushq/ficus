@@ -1,5 +1,4 @@
 import { resolveGitHubWebhookSecret } from '../../integrations/github/webhook-settings'
-import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
 import { connectedGitHubLogins } from '../../integrations/github/resolve-connection'
 import { githubWebhookEnvironment } from '../../integrations/github/webhook-environment'
 /**
@@ -100,11 +99,10 @@ async function executeRuleCommands(
     log.info(`Running: \`${command.run}\` from ${cwd}`)
     const opts: { cwd: string; timeout?: number; env?: Record<string, string> } = { cwd }
     if (command.timeout) opts.timeout = command.timeout
-    // One release (Ficus rename): webhook scripts may still read the TAU_* names.
-    opts.env = withLegacyEnvAliases({
+    opts.env = {
       ...(resolvedEnv as Record<string, string>),
       FICUS_INTEGRATION_HANDLED_SQUADS_JSON: JSON.stringify(handledSquadIds),
-    })
+    }
 
     const result = await execAsync(command.run, opts)
     if (result.stdout) {

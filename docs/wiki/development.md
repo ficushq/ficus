@@ -131,7 +131,7 @@ for it before serving the app or proxying any API or WebSocket traffic, then
 stores it in an HttpOnly session cookie. Set `FICUS_DEV_ACCESS_TOKEN` to a value of
 at least 16 characters when a stable shared token is needed. The Vite server
 serves plain HTTP, so only expose it through an encrypted transport. Do not use
-`VITE_TAU_API_URL` for this workflow; a direct browser connection cannot safely
+`VITE_FICUS_API_URL` for this workflow; a direct browser connection cannot safely
 reuse the production instance's cookie/passkey session.
 
 To serve the UI from the core itself instead, run `bun run build:web` and start

@@ -881,7 +881,7 @@ describe('content-safety matcher eligibility', () => {
   })
 
   test('never matches a value short enough to collide with ordinary prose', () => {
-    expect(isMatchableSecret('GITHUB_TOKEN', 'tau')).toBe(false)
+    expect(isMatchableSecret('GITHUB_TOKEN', 'ficus')).toBe(false)
     expect(isMatchableSecret('GITHUB_TOKEN', 'short')).toBe(false)
     expect(isMatchableSecret('GITHUB_TOKEN', '0123456789ab')).toBe(true)
   })

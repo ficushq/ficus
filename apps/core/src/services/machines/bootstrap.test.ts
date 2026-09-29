@@ -89,10 +89,8 @@ describe('parseCapabilities', () => {
     })
   })
 
-  it('also parses the legacy TAU_CAPS_JSON marker that bootstrap.sh still prints (one release)', () => {
-    const caps = parseCapabilities(`some noise\n${CAPS_LINE.replace(/^FICUS_/, 'TAU_')}\n`)
-    expect(caps.arch).toBe('aarch64')
-    expect(caps.cpus).toBe(8)
+  it('reads the FICUS_ marker only', () => {
+    expect(() => parseCapabilities(`some noise\n${CAPS_LINE.replace(/^FICUS_/, 'OLD_')}\n`)).toThrow()
   })
 
   it('ignores garbage before the line and apt/install chatter', () => {
@@ -335,11 +333,11 @@ describe('bootstrapMachine', () => {
     // Order: push bootstrap.sh, run bootstrap.sh, push box-provision.sh.
     expect(calls.length).toBe(3)
     expect(calls[0].command).toContain('install ')
-    expect(calls[0].command).toContain('/tmp/tau-bootstrap.sh')
+    expect(calls[0].command).toContain('/tmp/ficus-bootstrap.sh')
     expect(calls[0].stdin).toBe(bootstrapSh)
 
     expect(calls[1].command).toContain('bash ')
-    expect(calls[1].command).toContain('/tmp/tau-bootstrap.sh')
+    expect(calls[1].command).toContain('/tmp/ficus-bootstrap.sh')
     expect(calls[1].command).toContain('--version')
     expect(calls[1].command).toContain(expectedVersion)
 
@@ -723,7 +721,7 @@ describe('bootstrap.sh --core-cidr validation + egress ruleset rendering', () =>
     Bun.which('nft') !== null && Bun.which('sudo') !== null && Bun.spawnSync(['sudo', '-n', 'true']).exitCode === 0
   it.skipIf(!canValidateNft)('the rendered ruleset passes nft validation (syntax valid)', async () => {
     const { stdout } = await runBootstrap(['--print-egress-ruleset', '--core-cidr', '10.9.9.0/24'])
-    const rulesetPath = join(tmpdir(), `tau-egress-ruleset-${randomUUID()}.nft`)
+    const rulesetPath = join(tmpdir(), `ficus-egress-ruleset-${randomUUID()}.nft`)
     writeFileSync(rulesetPath, stdout)
     try {
       const proc = Bun.spawn(['sudo', '-n', 'nft', '-c', '-f', rulesetPath], { stdout: 'pipe', stderr: 'pipe' })
@@ -1148,13 +1146,11 @@ describe('browser tools Phase 2 — machine plumbing (group membership, socket e
     expect(body.match(/Environment=FICUS_BROWSER_SOCK=\/run\/tau-browser\/sock/g)).toHaveLength(2)
   })
 
-  it('write_browser_memory_dropin (bootstrap.sh) writes MemoryHigh and both *_BROWSER_MEMORY_HIGH_MB spellings from the same computed cap', () => {
+  it('write_browser_memory_dropin (bootstrap.sh) writes MemoryHigh and FICUS_BROWSER_MEMORY_HIGH_MB from the same computed cap', () => {
     const body = funcBodyIn(bootstrapSh, 'write_browser_memory_dropin')
     expect(body).toMatch(/MemoryHigh=%sM/)
     expect(body).toMatch(/Environment=FICUS_BROWSER_MEMORY_HIGH_MB=%s/)
-    // One release (Ficus rename): a prebaked image's baked tau-browser.js may
-    // still read only the TAU_ name, and this drop-in is rewritten per boot.
-    expect(body).toMatch(/Environment=TAU_BROWSER_MEMORY_HIGH_MB=%s/)
+    expect(body).not.toMatch(/Environment=(?!FICUS_)[A-Z]+_BROWSER_MEMORY_HIGH_MB=/)
     // Both format placeholders are fed from the same computed mem_high_mb
     // variable (the printf call passes it at least twice).
     const printfCall = body.match(/printf '[^']*'\s*((?:"\$\{mem_high_mb\}"\s*)+)/)
@@ -1192,8 +1188,8 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
    * provisioning a box user and overrun the test timeout instead.
    */
   function refusingSudoPath(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-refusing-sudo-'))
-    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\necho "tau-test: sudo refused: $*" >&2\nexit 77\n', { mode: 0o755 })
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-refusing-sudo-'))
+    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\necho "ficus-test: sudo refused: $*" >&2\nexit 77\n', { mode: 0o755 })
     return `${dir}:${process.env.PATH ?? ''}`
   }
 
@@ -1420,7 +1416,7 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
     // needs). Root has no sudo call to refuse.
     if (process.platform === 'linux' && process.getuid?.() !== 0) {
       expect(exitCode).toBe(77)
-      expect(stderr).toContain('tau-test: sudo refused')
+      expect(stderr).toContain('ficus-test: sudo refused')
     }
   }, 30_000)
 })
@@ -1544,7 +1540,7 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
   const BOX_USER = 'box_0123456789ab'
 
   function makeFixture(): { root: string; home: string; shim: string; chownLog: string } {
-    const root = join(tmpdir(), `tau-restore-stream-${randomUUID()}`)
+    const root = join(tmpdir(), `ficus-restore-stream-${randomUUID()}`)
     const home = join(root, 'home')
     const shim = join(root, 'shim')
     const chownLog = join(root, 'chown.log')
@@ -2172,7 +2168,7 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
 
 describe('shared machine Nix cache', () => {
   it('cleans successful and failed installs without changing their exit status', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-nix-install-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-nix-install-'))
     try {
       const maintenance = join(dir, 'maintenance.sh')
       const marker = join(dir, 'cleaned')

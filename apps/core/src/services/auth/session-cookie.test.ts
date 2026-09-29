@@ -36,8 +36,8 @@ describe('session cookie', () => {
     expect(SESSION_COOKIE_NAME).toBe('ficus_session')
   })
 
-  test('extractSessionToken ignores the pre-rename tau_session cookie', async () => {
-    const res = await app().request('http://localhost/read', { headers: { Cookie: 'tau_session=old' } })
+  test('extractSessionToken ignores an old_session cookie', async () => {
+    const res = await app().request('http://localhost/read', { headers: { Cookie: 'old_session=old' } })
     expect((await res.json()).token).toBeNull()
   })
 
@@ -66,9 +66,9 @@ describe('session cookie', () => {
     expect(sc.toLowerCase()).not.toContain('secure')
   })
 
-  test('cross-subdomain, same site (noah / api-noah .hiretau.ai) → SameSite=Lax; Secure', async () => {
-    process.env.FICUS_WEB_ORIGIN = 'https://demo.hiretau.ai'
-    const sc = await setCookieHeader('https://api-demo.hiretau.ai/set')
+  test('cross-subdomain, same site (noah / api-noah .ficus.sh) → SameSite=Lax; Secure', async () => {
+    process.env.FICUS_WEB_ORIGIN = 'https://demo.ficus.sh'
+    const sc = await setCookieHeader('https://api-demo.ficus.sh/set')
     expect(sc).toContain('SameSite=Lax')
     expect(sc.toLowerCase()).toContain('secure')
     // Separate registrable app domains are the boundary; host-only scope is defence in depth.
@@ -85,7 +85,7 @@ describe('session cookie', () => {
 
   test.each([
     ['same-origin', 'http://localhost:5173', 'http://localhost/clear'],
-    ['same-site cross-subdomain', 'https://demo.hiretau.ai', 'https://api-demo.hiretau.ai/clear'],
+    ['same-site cross-subdomain', 'https://demo.ficus.sh', 'https://api-demo.ficus.sh/clear'],
     ['cross-site', 'https://app.example.com', 'https://api.different.io/clear'],
   ])('clear re-issues a host-only cookie with Max-Age=0 for %s requests', async (_case, webOrigin, url) => {
     process.env.FICUS_WEB_ORIGIN = webOrigin

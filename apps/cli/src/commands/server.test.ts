@@ -14,6 +14,7 @@ import {
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { isJsonMode, output, outputError, setOutputOptions } from '../output'
+import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { recordingRunner } from '../local-server/runner'
 import { readRegistry, upsertInstance } from '../local-server/state'
 import { registerServerCommands, type ServerDeps } from './server'
@@ -22,9 +23,9 @@ let root: string
 let statePath: string
 let savedExitCode: number | string | undefined
 beforeEach(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), 'tau-server-')))
+  root = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-server-')))
   mkdirSync(join(root, '.git'))
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
   writeFileSync(
     join(root, '.env'),
     'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nFICUS_SANDBOX_RUNTIME=host\n'
@@ -87,7 +88,7 @@ function cloningRunner(installRoot: string) {
     const r = await rec.runner(command, options)
     if (command[0] === 'git' && command[1] === 'clone') {
       mkdirSync(join(installRoot, '.git'), { recursive: true })
-      writeFileSync(join(installRoot, 'package.json'), JSON.stringify({ name: 'tau' }))
+      writeFileSync(join(installRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
       writeFileSync(join(installRoot, '.bun-version'), '1.3.8\n')
     }
     return r
@@ -172,88 +173,27 @@ describe('ficus server', () => {
       'bunx pm2 restart tau-api --update-env',
     ])
   })
-  describe('on a Ficus checkout whose .env predates the rename', () => {
-    const legacy =
-      'TAU_SANDBOX_RUNTIME=host\nTAU_PASSWORD=real-password\nDATABASE_URL=postgres://u:p@db.example:5432/x\n'
-    const renamed =
-      'FICUS_SANDBOX_RUNTIME=host\nFICUS_PASSWORD=real-password\nDATABASE_URL=postgres://u:p@db.example:5432/x\n'
+  describe('on a checkout whose .env predates the Ficus naming', () => {
+    const old = `${PRE_FICUS_ENCRYPTION_KEY}=old-key-value\nFICUS_SANDBOX_RUNTIME=host\n`
     beforeEach(() => {
       writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
-      writeFileSync(join(root, '.env'), legacy)
+      writeFileSync(join(root, '.env'), old)
     })
-    /** A runner that remembers what .env said when the first supervisor command ran. */
-    function watching() {
-      const rec = recordingRunner({ 'bunx pm2 jlist': { stdout: '[]' } })
-      const seen: { env?: string } = {}
-      const runner: typeof rec.runner = async (command, options) => {
-        if (command[0] === 'bunx' && seen.env === undefined) seen.env = readFileSync(join(root, '.env'), 'utf8')
-        return rec.runner(command, options)
-      }
-      return { runner, seen, calls: rec.calls }
-    }
-    const backups = () => readdirSync(root).filter((name) => name.includes('.pre-ficus-'))
 
     for (const verb of ['start', 'restart']) {
-      it(`${verb} renames TAU_ settings to FICUS_ before any process starts`, async () => {
-        const { runner, seen } = watching()
-        const { run } = make({}, { runner })
-        await run(['server', verb])
-        expect(outputError).not.toHaveBeenCalled()
-        expect(seen.env).toBe(renamed)
-        expect(backups()).toHaveLength(1)
-        expect(readFileSync(join(root, backups()[0]), 'utf8')).toBe(legacy)
-      })
-      it(`${verb} stops on conflicting passwords without touching a file or starting anything`, async () => {
-        const conflicting = 'TAU_PASSWORD=first-secret\nFICUS_PASSWORD=second-secret\n'
-        writeFileSync(join(root, '.env'), conflicting)
-        const { runner, calls } = watching()
-        const { run } = make({}, { runner })
+      it(`${verb} refuses with EnvNamingError, leaves .env byte-identical and starts nothing`, async () => {
+        const before = readdirSync(root).sort()
+        const { run, calls } = make()
         await run(['server', verb])
         expect(calls).toEqual([])
         const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
-        expect(error.message).toContain('TAU_PASSWORD')
-        expect(error.message).toContain('remove the wrong value, then re-run')
-        expect(error.message).not.toContain('first-secret')
-        expect(error.message).not.toContain('second-secret')
-        expect(readFileSync(join(root, '.env'), 'utf8')).toBe(conflicting)
-        expect(backups()).toEqual([])
+        expect(error).toBeInstanceOf(EnvNamingError)
+        expect(error.message).toContain(PRE_FICUS_ENCRYPTION_KEY)
+        expect(error.message).not.toContain('old-key-value')
+        expect(readFileSync(join(root, '.env'), 'utf8')).toBe(old)
+        expect(readdirSync(root).sort()).toEqual(before)
       })
     }
-    // M4. start/restart only reach a registered checkout (package.json "tau" or "ficus"), so the
-    // warning a --json run must carry here is the rename's own: a PM2 name line it left alone.
-    it('reports what the rename left alone in the --json document instead of on stdout', async () => {
-      writeFileSync(
-        join(root, 'ecosystem.config.js'),
-        "module.exports = { apps: [{ env: {\n  TAU_PM2_API_NAME:\n    'x',\n} }] }\n"
-      )
-      const warning =
-        "TAU_PM2_API_NAME in ecosystem.config.js was not renamed to FICUS_PM2_API_NAME: it is not a single `TAU_PM2_API_NAME: '<name>',` line; rename it by hand"
-      for (const verb of ['start', 'restart']) {
-        const { runner } = watching()
-        const { run } = make({}, { runner })
-        const printed: string[] = []
-        const realLog = console.log
-        console.log = (line?: unknown) => void printed.push(String(line))
-        ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
-        try {
-          await run(['server', verb])
-        } finally {
-          console.log = realLog
-          ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
-        }
-        const [data] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>]
-        expect(data.warnings).toEqual([warning])
-        expect(printed.some((line) => line.includes('not renamed'))).toBe(false)
-      }
-    })
-    it('start leaves a checkout that predates the rename alone: its code reads TAU_', async () => {
-      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
-      const { runner } = watching()
-      const { run } = make({}, { runner })
-      await run(['server', 'start'])
-      expect(readFileSync(join(root, '.env'), 'utf8')).toBe(legacy)
-      expect(backups()).toEqual([])
-    })
   })
   it('start and restart warn when the built web bundle was made for a different base path', async () => {
     writeFileSync(
@@ -423,9 +363,9 @@ describe('ficus server', () => {
     expect(message).toContain('~/.tau-smoke')
   })
   it('uninstall leaves the registry alone for a checkout nobody registered', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-other-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-other-')))
     mkdirSync(join(other, '.git'))
-    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     const { run, calls } = make()
     await run(['server', 'uninstall', '--root', other, '--yes'])
     expect(joined(calls)).toEqual([])
@@ -440,7 +380,7 @@ describe('ficus server', () => {
   // registry entry nothing can resolve; `--instance` must still be able to
   // retire it, cleaning the supervisor up as far as it can.
   it('uninstall --instance retires a registration whose checkout no longer exists', async () => {
-    const gone = join(tmpdir(), `tau-gone-${process.pid}`)
+    const gone = join(tmpdir(), `ficus-gone-${process.pid}`)
     upsertInstance(
       'smoke',
       { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
@@ -464,7 +404,7 @@ describe('ficus server', () => {
     expect(message).toContain('~/.tau-smoke')
   })
   it('uninstall --instance of a vanished checkout still removes the registration when the supervisor cleanup fails', async () => {
-    const gone = join(tmpdir(), `tau-gone-${process.pid}-b`)
+    const gone = join(tmpdir(), `ficus-gone-${process.pid}-b`)
     upsertInstance(
       'smoke',
       { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
@@ -539,9 +479,9 @@ describe('ficus server', () => {
     expect(calls.map((c) => c.command.join(' '))).toEqual(['docker ps -a --format {{.Names}}'])
   })
   it('honours --root over the state file', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-other-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-other-')))
     mkdirSync(join(other, '.git'))
-    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     const { run, calls } = make()
     await run(['server', 'stop', '--root', other])
     expect(calls).toEqual([])
@@ -563,9 +503,9 @@ describe('ficus server', () => {
     expect(process.exitCode).toBe(2)
   })
   it('use switches which instance a bare server command acts on', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-other-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-other-')))
     mkdirSync(join(other, '.git'))
-    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     // The pm2/container names come from the checkout's own FICUS_INSTANCE, so a
     // labelled instance has to look like one on disk too.
     writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=lab\n')
@@ -613,7 +553,7 @@ describe('ficus server', () => {
   })
 
   it('install clones a fresh root, installs deps and hands off to bun run setup', async () => {
-    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-install-')))
+    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-install-')))
     const installRoot = join(installTmp, 'tau')
     const { runner, calls } = cloningRunner(installRoot)
     const { deps } = make()
@@ -650,7 +590,7 @@ describe('ficus server', () => {
     // instance. If --instance stopped reaching setup, every labelled resource
     // would silently fall back to the default names and collide with the
     // existing install — so the documented line is pinned here.
-    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-install-')))
+    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-install-')))
     const installRoot = join(installTmp, 'lab')
     const { runner, calls } = cloningRunner(installRoot)
     const { deps } = make()
@@ -673,7 +613,7 @@ describe('ficus server', () => {
     rmSync(installTmp, { recursive: true, force: true })
   })
   it('install parses the production form (no `--` separator) and still forwards the trailing flags to setup', async () => {
-    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-install-')))
+    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-install-')))
     const installRoot = join(installTmp, 'tau')
     const { runner, calls } = cloningRunner(installRoot)
     const { deps } = make()
@@ -709,11 +649,6 @@ describe('ficus server', () => {
       'git check-ref-format --branch v1',
       'git ls-remote --refs --exit-code origin refs/heads/v1 refs/tags/v1',
       'git fetch --no-tags origin refs/tags/v1:refs/tags/v1',
-      // The install already reads FICUS_: resolve what checkout lands on, the way checkout does,
-      // to make sure it does not predate the rename (nothing resolves in this fixture).
-      'git rev-parse --verify --quiet refs/heads/v1^{commit}',
-      'git rev-parse --verify --quiet v1^{commit}',
-      'git rev-parse --verify --quiet refs/remotes/origin/v1^{commit}',
       'git checkout --recurse-submodules v1',
       'git rev-parse HEAD',
       'bun run update:offline -- --from ' + sha,
@@ -738,9 +673,9 @@ describe('ficus server', () => {
     expect(seen[0]).toMatchObject({ instance: 'smoke', port: 3100, apiUrl: 'http://localhost:3100' })
   })
   it('setup targets the checkout you are in, never the state file root', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-cwd-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-cwd-')))
     mkdirSync(join(other, '.git'))
-    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     const nested = join(other, 'apps', 'core')
     mkdirSync(nested, { recursive: true })
     const seen: unknown[] = []
@@ -772,7 +707,7 @@ describe('ficus server', () => {
   })
   it('setup honours --instance from argv', async () => {
     // Regression: a group-level --instance on `server` swallowed the flag here,
-    // so `bun run setup -- --instance smoke` silently configured the tau instance.
+    // so `bun run setup -- --instance smoke` silently configured the default instance.
     const seen: unknown[] = []
     const { run, deps } = make()
     deps.runSetup = async (opts) => {
@@ -787,9 +722,9 @@ describe('ficus server', () => {
 describe('ficus server list', () => {
   /** A second registered instance, in its own checkout. */
   function secondInstance() {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-smoke-')))
     mkdirSync(join(other, '.git'))
-    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     upsertInstance(
       'smoke',
@@ -914,9 +849,9 @@ describe('ficus server list', () => {
 describe('ficus server <cmd> --instance', () => {
   /** A second registered instance in its own checkout, labelled smoke. */
   function smokeCheckout(): string {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-smoke-')))
     mkdirSync(join(other, '.git'))
-    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     upsertInstance(
       'smoke',
@@ -958,9 +893,9 @@ describe('ficus server <cmd> --instance', () => {
     expect(calls).toEqual([])
   })
   it('uninstall drops the entry and hands the default to a remaining instance', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-smoke-')))
     mkdirSync(join(other, '.git'))
-    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     upsertInstance(
       'smoke',
       { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
@@ -994,7 +929,7 @@ describe('registry-backed supervisor dispatch', () => {
   })
 
   it('does not dispatch lifecycle work for a broken registered root', async () => {
-    const broken = join(root, '..', `tau-broken-${Date.now()}`)
+    const broken = join(root, '..', `ficus-broken-${Date.now()}`)
     symlinkSync(join(root, '..', 'missing-checkout'), broken)
     upsertInstance(
       'tau',
@@ -1013,7 +948,7 @@ describe('registry-backed supervisor dispatch', () => {
   })
 
   it('uses the canonical registry root when lifecycle is selected through a symlink alias', async () => {
-    const alias = join(root, '..', `tau-server-alias-${Date.now()}`)
+    const alias = join(root, '..', `ficus-server-alias-${Date.now()}`)
     symlinkSync(root, alias)
     try {
       const { run, calls } = make()

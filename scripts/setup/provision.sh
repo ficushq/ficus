@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# provision.sh — ORCHESTRATOR: new tenant → running tau, from a control
+# provision.sh — ORCHESTRATOR: new tenant → running Ficus, from a control
 # machine. (Formerly provision-exe.sh — renamed when a second VM provider
 # joined exe.dev; provision-exe.sh is now a compat shim to this file.)
 #
@@ -29,7 +29,7 @@ Usage: provision.sh --config tau-setup.yaml [options]
 
 Provisions a VM (exe.dev, Hetzner Cloud, or DigitalOcean — see
 provision.provider) and runs setup-host.sh on it over SSH. The result is a
-running tau whose only remaining step is creating the first admin passkey in
+running Ficus whose only remaining step is creating the first admin passkey in
 a browser.
 
 Options:
@@ -281,15 +281,6 @@ FORWARD_ENVS+=('FICUS_SETUP_RESTORE_URL' 'FICUS_SETUP_RESTORE_PASSPHRASE' 'FICUS
 while IFS= read -r core_env_forward_name; do
   [[ -n ${core_env_forward_name} ]] && FORWARD_ENVS+=("${core_env_forward_name}")
 done <<<"${CORE_ENV_FORWARD_NAMES}"
-# One release (Ficus rename): forward each FICUS_SETUP_* input's pre-rename
-# TAU_ spelling as well — the push loop skips names that are unset here, and
-# setup-host.sh reads either spelling of those (and only those) inputs.
-for forward_name in "${FORWARD_ENVS[@]}"; do
-  if [[ ${forward_name} == FICUS_SETUP_?* ]]; then
-    FORWARD_ENVS+=("TAU_${forward_name#FICUS_}")
-  fi
-done
-unset forward_name
 
 REMOTE_CMD="set -a; [ -f ${REMOTE_DIR}/secrets.env ] && . ${REMOTE_DIR}/secrets.env; set +a; bash ${REMOTE_DIR}/setup-host.sh --config ${REMOTE_DIR}/tau-setup.yaml"
 

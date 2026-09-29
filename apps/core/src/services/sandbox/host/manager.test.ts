@@ -13,7 +13,7 @@ describe('HostSandboxManager', () => {
   let prevHome: string | undefined
   let manager: HostSandboxManager
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-mgr-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-mgr-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = home
     clearHostWorkspaceOverrides()
@@ -36,7 +36,7 @@ describe('HostSandboxManager', () => {
     expect((await manager.getSandboxStatus('agent_a1')).status).toBe('running')
   })
 
-  test('ensureSandbox installs the tau + ssh-family shims on the PATH dir', async () => {
+  test('ensureSandbox installs the ficus + ssh-family shims on the PATH dir', async () => {
     // host/bin is prepended to every agent PATH by buildHostCommandEnv; the
     // ssh/scp/rsync shims there are what make granted remote-host aliases
     // work for plain SSH-family commands (issue #1331).

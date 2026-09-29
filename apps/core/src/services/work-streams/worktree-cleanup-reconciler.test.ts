@@ -26,7 +26,7 @@ const exec = async (args: string[]) => {
   return out
 }
 beforeEach(async () => {
-  root = await realpath(await mkdtemp(join(tmpdir(), 'tau-cleanup-reconcile-')))
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ficus-cleanup-reconcile-')))
   const repo = join(root, 'repo')
   await mkdir(repo)
   await exec(['git', 'init', '-b', 'main', repo])

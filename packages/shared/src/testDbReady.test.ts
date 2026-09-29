@@ -9,7 +9,7 @@ import { canExecuteQuery, getComposeBoundPort, isComposePostgresReady } from './
 setDefaultTimeout(120_000)
 
 // This suite spins up two REAL, independent docker-compose projects on two
-// real ports to reproduce the exact tau #795 follow-up race: a cached port
+// real ports to reproduce the exact Core #795 follow-up race: a cached port
 // that used to belong to "our" project but has since been reassigned (by the
 // OS's ephemeral-port allocator) to a completely different, but perfectly
 // healthy, project's container. `isComposePostgresReady` must reject that
@@ -64,7 +64,7 @@ function waitUntilQueryable(port: number, timeoutMs = 60_000): void {
   throw new Error(`postgres on port ${port} never became queryable within ${timeoutMs}ms`)
 }
 
-describe('cross-project port ownership (tau #795 follow-up)', () => {
+describe('cross-project port ownership (Core #795 follow-up)', () => {
   const suffix = `${Date.now()}-${process.pid}`
   const projectA = `tau-test-ownercheck-a-${suffix}`
   const projectB = `tau-test-ownercheck-b-${suffix}`

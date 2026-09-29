@@ -226,7 +226,7 @@ describe('CI typecheck gate', () => {
     const diagnostics = workflow.jobs?.['core-typecheck-diagnostics']
     const measure = diagnostics?.steps?.find((step) => step.name === 'Measure Core typecheck revisions')
     const upload = diagnostics?.steps?.find((step) => step.name === 'Upload Core typecheck diagnostics')
-    const fixture = mkdtempSync(join(tmpdir(), 'tau-diagnostic-history-'))
+    const fixture = mkdtempSync(join(tmpdir(), 'ficus-diagnostic-history-'))
     const git = (...args: string[]) => {
       const result = Bun.spawnSync(['git', ...args], { cwd: fixture, stdout: 'pipe', stderr: 'pipe' })
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())

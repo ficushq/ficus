@@ -17,7 +17,7 @@ function render(state: DevBackendState) {
 describe('DevBackendBarContent', () => {
   const backends = [
     { label: '@local', apiUrl: 'http://localhost:3000', isProduction: false },
-    { label: 'cloud', apiUrl: 'https://example.hiretau.ai', isProduction: true },
+    { label: 'cloud', apiUrl: 'https://example.ficus.sh', isProduction: true },
   ]
 
   test('keeps local development compact without a production-writes control', () => {
@@ -36,12 +36,12 @@ describe('DevBackendBarContent', () => {
   test('labels a production backend read-only by default', () => {
     const html = render({
       selectedLabel: 'cloud',
-      apiUrl: 'https://example.hiretau.ai',
+      apiUrl: 'https://example.ficus.sh',
       isProduction: true,
       productionWritesEnabled: false,
       backends,
     })
-    expect(html).toContain('Production · example.hiretau.ai')
+    expect(html).toContain('Production · example.ficus.sh')
     expect(html).toContain('Enable production writes')
     expect(html).toContain('Resets on switch or restart')
     expect(html).toContain('Read only')
@@ -51,7 +51,7 @@ describe('DevBackendBarContent', () => {
   test('makes the enabled production-writes state unmistakable', () => {
     const html = render({
       selectedLabel: 'cloud',
-      apiUrl: 'https://example.hiretau.ai',
+      apiUrl: 'https://example.ficus.sh',
       isProduction: true,
       productionWritesEnabled: true,
       backends,

@@ -173,7 +173,7 @@ export async function buildServerBundle(deps: BuildServerBundleDeps = {}): Promi
 
   const spawn = deps.spawn ?? Bun.spawn
   const entry = join(repoRoot, SERVER_ENTRY)
-  const outdir = await mkdtemp(join(tmpdir(), 'tau-server-bundle-'))
+  const outdir = await mkdtemp(join(tmpdir(), 'ficus-server-bundle-'))
   try {
     const proc = spawn(['bun', 'build', entry, '--outdir', outdir, '--target', 'bun'], {
       stdout: 'pipe',

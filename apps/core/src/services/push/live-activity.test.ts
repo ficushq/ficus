@@ -74,7 +74,7 @@ function harness(options: {
       streamLoads += 1
       return options.streams()
     },
-    origin: () => 'https://demo.hiretau.ai',
+    origin: () => 'https://demo.ficus.sh',
     // Stubbed so delivery is exercised without real APNs settings — otherwise every assertion
     // below would pass vacuously because pushFor() would bail at the config check.
     hasApnsConfig: () => true,
@@ -158,7 +158,7 @@ describe('live activity fan-out delivery', () => {
     })
     await fanout.flushUser('user-1')
     expect(sent.map((s) => `${s.event}:${s.token}`)).toEqual(['update:tok-update', 'start:tok-start'])
-    expect(sent[1]!.attributes).toEqual({ origin: 'https://demo.hiretau.ai' })
+    expect(sent[1]!.attributes).toEqual({ origin: 'https://demo.ficus.sh' })
     expect(deleted).toEqual(['tok-update'])
     fanout.stop()
   })

@@ -2,7 +2,7 @@
 # hand; re-run setup-host.sh (or edit this template) instead. Triggered by
 # tau-backup.timer; not enabled directly (no [Install] target needed).
 [Unit]
-Description=Tau nightly encrypted backup (pg dump + HOME_DIR -> S3)
+Description=Ficus nightly encrypted backup (pg dump + HOME_DIR -> S3)
 After=network-online.target@DB_AFTER@
 Wants=network-online.target
 

@@ -17,7 +17,7 @@ const item = (id: number, action = 'assigned') => ({
   event: action,
   created_at: occurredAt,
   issue: { id: 42, number: 7, title: 'Fix latency', updated_at: '2026-09-07T12:00:00Z', state: 'open' },
-  assignee: { login: 'tau-bot' },
+  assignee: { login: 'ficus-bot' },
   actor: { login: 'noah' },
 })
 function response(items: unknown[], next = false, etag = 'head') {
@@ -49,7 +49,7 @@ test('new assignments and removals produce the same typed flow outputs as webhoo
   expect(result.events).toHaveLength(2)
   const outputs = result.events.flatMap((event) => githubOutputAdapter.normalize(event))
   expect(outputs.map((output) => output.output)).toEqual(['issue.assigned', 'issue.unassigned'])
-  expect(outputs[0]!.data).toMatchObject({ repository: 'acme/widgets', assignee: 'tau-bot', issue: { number: 7 } })
+  expect(outputs[0]!.data).toMatchObject({ repository: 'acme/widgets', assignee: 'ficus-bot', issue: { number: 7 } })
   expect(outputs[0]!.occurredAt).toBe('2026-09-07T10:00:00.000Z')
   const webhook = githubOutputAdapter.normalize({
     type: 'issues',

@@ -11,7 +11,7 @@ interface HarnessRun {
 
 const PROBE_REGISTRATION = `
 program
-  .command('__tau-lifecycle-probe')
+  .command('__ficus-lifecycle-probe')
   .action(async () => {
     await Bun.sleep(25)
     const markerPath = process.env.AMTP_NODE_CANDIDATE_MARKER_PATH

@@ -16,7 +16,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.9',
     sshPort: 2222,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: SECRET_KEY,
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -66,7 +66,7 @@ describe('ssh runner', () => {
 
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
-    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-ssh-test-'))
+    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-ssh-test-'))
     priorKey = process.env.FICUS_ENCRYPTION_KEY
     process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
@@ -94,7 +94,7 @@ describe('ssh runner', () => {
     const { args } = calls[0]
     expect(args[0]).toBe('ssh')
     // Last two args: target then command.
-    expect(args[args.length - 2]).toBe('tau@10.0.0.9')
+    expect(args[args.length - 2]).toBe('ficus@10.0.0.9')
     expect(args[args.length - 1]).toBe('echo hi')
 
     const joined = args.join(' ')
@@ -215,8 +215,8 @@ describe('ssh runner', () => {
       // Two independent ssh invocations, each carrying the standard option set
       // and its OWN machine's target (never one machine's key against the other).
       expect(commands).toHaveLength(2)
-      expect(argvs[0][argvs[0].length - 2]).toBe('tau@10.0.0.1')
-      expect(argvs[1][argvs[1].length - 2]).toBe('tau@10.0.0.2')
+      expect(argvs[0][argvs[0].length - 2]).toBe('ficus@10.0.0.1')
+      expect(argvs[1][argvs[1].length - 2]).toBe('ficus@10.0.0.2')
       expect(argvs[0].join(' ')).toContain('-o BatchMode=yes')
       expect(argvs[1].join(' ')).toContain('-o IdentitiesOnly=yes')
     })
@@ -272,7 +272,7 @@ describe('ssh runner', () => {
       // end rather than accumulated.
       const { spawn } = localSpawn()
       const streamer = createSshStreamer({ spawn })
-      const handshakeDir = mkdtempSync(join(tmpdir(), 'tau-stream-handshake-'))
+      const handshakeDir = mkdtempSync(join(tmpdir(), 'ficus-stream-handshake-'))
       const sentinel = join(handshakeDir, 'consuming')
       const HANDSHAKE_BYTES = 1024 * 1024
       const TAIL_BYTES = 64 * 1024 * 1024
@@ -313,7 +313,7 @@ describe('ssh runner', () => {
         expect(result.dest.exitCode).toBe(0)
         expect(existsSync(sentinel)).toBe(true)
       } finally {
-        // Without this every run leaves a tau-stream-handshake-* dir in tmp.
+        // Without this every run leaves a ficus-stream-handshake-* dir in tmp.
         rmSync(handshakeDir, { recursive: true, force: true })
       }
     }, 60_000)

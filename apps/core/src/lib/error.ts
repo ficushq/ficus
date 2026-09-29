@@ -138,7 +138,7 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
 ]
 
 /**
- * Errors tau raises about ITSELF, which must never be read as provider signals.
+ * Errors Ficus raises about ITSELF, which must never be read as provider signals.
  *
  * The classifiers below match bare substrings, so any text containing
  * `capacity`, `429` or `quota` is attributed to the model provider no matter who
@@ -152,7 +152,7 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
  * `rate_limit` question, `provider-health-auto-restart` restarts it, admission
  * refuses again, and the loop repeats while the real cause stays invisible.
  *
- * This is a closed set: every string here is one tau itself throws, so matching
+ * This is a closed set: every string here is one Ficus itself throws, so matching
  * them is exact rather than a guess about a provider's wording.
  */
 const INTERNAL_EXECUTION_ERROR_MARKERS = [
@@ -165,7 +165,7 @@ const INTERNAL_EXECUTION_ERROR_MARKERS = [
   'sandbox provisioning result expired',
 ]
 
-/** True when the error is tau's own, not a provider's. */
+/** True when the error is Ficus's own, not a provider's. */
 export function isInternalExecutionError(error: string): boolean {
   const lower = error.toLowerCase()
   return INTERNAL_EXECUTION_ERROR_MARKERS.some((marker) => lower.includes(marker))
@@ -447,7 +447,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * immediately instead of burning all five retries.
  */
 export function classifyProviderError(error: string): ProviderErrorClassification | null {
-  // A tau-internal failure is never provider exhaustion, whatever words it shares.
+  // A Ficus-internal failure is never provider exhaustion, whatever words it shares.
   if (isInternalExecutionError(error)) return null
   const lower = error.toLowerCase()
   const codex = classifyCodexUsageLimit(error, lower)
@@ -614,7 +614,7 @@ function parseUnixRelativeResetTimestamp(error: string): number | undefined {
  * Priority order: rate limit > overloaded > authentication
  */
 export function getErrorSystemMessage(error: string): string | null {
-  // Never tell an operator their plan is exhausted because tau refused its own
+  // Never tell an operator their plan is exhausted because Ficus refused its own
   // capacity reservation.
   if (isInternalExecutionError(error)) return null
   const lower = error.toLowerCase()

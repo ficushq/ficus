@@ -7,7 +7,7 @@ import { resolveDatabaseTls } from './tls'
 const log = createLogger('db')
 
 /**
- * Default pool size. postgres.js's own default is 10 per pool, and a tau
+ * Default pool size. postgres.js's own default is 10 per pool, and a Ficus
  * instance opens a query pool in each of two processes (api + worker) — so the
  * ceiling multiplies. (It used to multiply harder: pg LISTEN/NOTIFY held a
  * listener plus a notifier connection per process until cross-process events
@@ -159,7 +159,7 @@ const PROBE_TIMEOUT_MS = 5_000
  *
  * Trade-off accepted: with a caller-supplied socket postgres.js skips its own
  * multi-host round-robin (`host=a,b`), so this connects to the first host. No
- * tau DSN uses multiple hosts.
+ * Ficus DSN uses multiple hosts.
  */
 /**
  * Idle time before the OS sends its first TCP keepalive probe. Node/Bun's

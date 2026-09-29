@@ -176,7 +176,7 @@ test('observations record merge, close and reopen for designated pull requests o
     await insertEvent(
       prFact(other, 22, {
         output: 'issue.assigned',
-        data: { repository: other, issue: { number: 22 }, assignee: 'tau-bot' },
+        data: { repository: other, issue: { number: 22 }, assignee: 'ficus-bot' },
       })
     ),
     await insertEvent(

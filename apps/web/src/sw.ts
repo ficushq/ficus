@@ -38,7 +38,7 @@ self.addEventListener('activate', (event) => {
 })
 
 // Base path is the SW's registration scope
-// e.g. "/tau/" when registered at /tau/
+// e.g. "/ficus/" when registered at /ficus/
 // or "/" when registered at root
 const BASE_PATH = new URL(self.registration.scope).pathname
 const p = (path: string) => BASE_PATH.replace(/\/$/, '') + path

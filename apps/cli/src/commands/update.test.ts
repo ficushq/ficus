@@ -80,10 +80,10 @@ describe('update apply offline fallback', () => {
       Promise.reject(Object.assign(new Error('Unable to connect'), { code: 'ConnectionRefused' }))
     )
     const offline = mock(async () => ({ before: 'a', after: 'b' }))
-    await runWith(localDeps(offline, { apiUrl: () => 'https://demo.hiretau.ai' }), ['update', 'apply'])
+    await runWith(localDeps(offline, { apiUrl: () => 'https://demo.ficus.sh' }), ['update', 'apply'])
     expect(offline).not.toHaveBeenCalled()
     const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
-    expect(error.message).toContain('https://demo.hiretau.ai is unreachable')
+    expect(error.message).toContain('https://demo.ficus.sh is unreachable')
     expect(error.message).toContain('ficus server update')
   })
   it("never falls back when the loopback port is not the checkout's port", async () => {
@@ -126,7 +126,7 @@ describe('update apply offline fallback', () => {
     expect(error.message).toBe('--ref only applies to the offline path — pass --offline')
   })
   it('status --offline reads the persisted run file', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-upd-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-upd-'))
     mkdirSync(join(dir, '.tau'))
     writeFileSync(
       join(dir, '.tau', 'local-update-status.json'),
@@ -147,7 +147,7 @@ describe('update apply offline fallback', () => {
 
 describe('defaultUpdateDeps localPort', () => {
   it("takes the port from the registry entry that owns the root, else that checkout's .env PORT", () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-upd-port-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-upd-port-'))
     const root = join(tmp, 'smoke')
     const other = join(tmp, 'other')
     for (const d of [root, other]) mkdirSync(d, { recursive: true })
@@ -158,7 +158,7 @@ describe('defaultUpdateDeps localPort', () => {
     // The DEFAULT instance is a different checkout: looking the root up by
     // label would answer for the wrong one.
     upsertInstance(
-      'tau',
+      'ficus',
       { root: join(tmp, 'default'), port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
       {},
       statePath

@@ -14,8 +14,8 @@ function collectLogger() {
 
 describe('redactDbCredentials', () => {
   it('redacts the password in a postgres:// DSN', () => {
-    expect(redactDbCredentials('cannot connect: postgres://tau:s3cret@db.example.com:5432/tau')).toBe(
-      'cannot connect: postgres://tau:[REDACTED]@db.example.com:5432/tau'
+    expect(redactDbCredentials('cannot connect: postgres://ficus:s3cret@db.example.com:5432/tau')).toBe(
+      'cannot connect: postgres://ficus:[REDACTED]@db.example.com:5432/tau'
     )
   })
 
@@ -27,8 +27,8 @@ describe('redactDbCredentials', () => {
 
   it('leaves messages without credentials untouched', () => {
     const messages = [
-      'PostgresError: password authentication failed for user "tau"',
-      'no pg_hba.conf entry for host "1.2.3.4", user "tau", database "tau", no encryption',
+      'PostgresError: password authentication failed for user "ficus"',
+      'no pg_hba.conf entry for host "1.2.3.4", user "ficus", database "ficus", no encryption',
       'Error: unable to verify the first certificate',
       'postgres://localhost:5432/tau has no userinfo',
     ]
@@ -51,13 +51,13 @@ describe('waitForDb', () => {
     await waitForDb(
       async () => {
         attempts += 1
-        if (attempts <= 3) throw new Error('password authentication failed for user "tau"')
+        if (attempts <= 3) throw new Error('password authentication failed for user "ficus"')
       },
       { logger, baseDelay: 0 }
     )
     expect(attempts).toBe(4)
     expect(lines.map((l) => l.message)).toEqual([
-      'Waiting for database... (attempt 1/15) — Error: password authentication failed for user "tau"',
+      'Waiting for database... (attempt 1/15) — Error: password authentication failed for user "ficus"',
       'Waiting for database... (attempt 2/15)',
       'Waiting for database... (attempt 3/15)',
     ])
@@ -124,7 +124,7 @@ describe('waitForDb', () => {
 
   it('never logs or throws DSN credentials embedded in error messages', async () => {
     const { lines, logger } = collectLogger()
-    const leaky = new Error('connection failed for DATABASE_URL=postgres://tau:hunter2@db:5432/tau')
+    const leaky = new Error('connection failed for DATABASE_URL=postgres://ficus:hunter2@db:5432/tau')
     const rejection = await waitForDb(
       async () => {
         throw leaky
@@ -137,10 +137,10 @@ describe('waitForDb', () => {
       (err: unknown) => err as Error
     )
     expect(rejection.message).not.toContain('hunter2')
-    expect(rejection.message).toContain('postgres://tau:[REDACTED]@db:5432/tau')
+    expect(rejection.message).toContain('postgres://ficus:[REDACTED]@db:5432/tau')
     for (const line of lines) {
       expect(line.message).not.toContain('hunter2')
     }
-    expect(lines[0]?.message).toContain('postgres://tau:[REDACTED]@db:5432/tau')
+    expect(lines[0]?.message).toContain('postgres://ficus:[REDACTED]@db:5432/tau')
   })
 })

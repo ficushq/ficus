@@ -1,5 +1,5 @@
 /**
- * Onboarding status API — a fresh tau instance's derived setup checklist.
+ * Onboarding status API — a fresh Ficus instance's derived setup checklist.
  *
  * See docs/history/superpowers/specs/2026-08-05-onboarding-checklist-design.md §2.
  * Gated on the same admin permission surface as the Settings tabs (nothing

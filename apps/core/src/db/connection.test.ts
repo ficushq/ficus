@@ -33,7 +33,7 @@ const CA_PEM = '-----BEGIN CERTIFICATE-----\nfake-do-ca-body\n-----END CERTIFICA
 
 /** Write a throwaway CA file and hand back its path. Cleaned up by the caller. */
 function withCaFile(fn: (caPath: string) => void | Promise<void>): void | Promise<void> {
-  const dir = mkdtempSync(join(tmpdir(), 'tau-ca-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-ca-'))
   const caPath = join(dir, 'ca.crt')
   writeFileSync(caPath, CA_PEM)
   const done = () => rmSync(dir, { recursive: true, force: true })
@@ -179,9 +179,9 @@ describe('TLS handling', () => {
   // instead: on a shared VPC where tenant VMs are treated as compromisable,
   // "connected anyway" is the worst possible outcome.
   test('a configured CA that is missing THROWS — it never degrades to rejectUnauthorized: false', () => {
-    process.env.DATABASE_CA_PATH = '/nonexistent/tau-db-ca.crt'
+    process.env.DATABASE_CA_PATH = '/nonexistent/ficus-db-ca.crt'
     expect(() => createPostgresConnection('postgres://u:p@db.example.com:25060/x?sslmode=verify-full')).toThrow(
-      /\/nonexistent\/tau-db-ca\.crt/
+      /\/nonexistent\/ficus-db-ca\.crt/
     )
     expect(() => resolveDatabaseTls('postgres://u:p@db.example.com:25060/x')).toThrow(/DATABASE_CA_PATH/)
   })

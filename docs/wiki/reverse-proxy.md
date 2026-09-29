@@ -28,8 +28,8 @@ Core serves:
 For Docker single-image deployments, build with the web assets included and enable serving at runtime:
 
 ```bash
-docker build --build-arg FICUS_INCLUDE_WEB=1 -t tau-core:single-origin .
-docker run -e FICUS_SERVE_WEB=1 -p 3000:3000 tau-core:single-origin
+docker build --build-arg FICUS_INCLUDE_WEB=1 -t ficus-core:single-origin .
+docker run -e FICUS_SERVE_WEB=1 -p 3000:3000 ficus-core:single-origin
 ```
 
 ## Caddy
@@ -42,7 +42,7 @@ any config that serves `apps/web/dist` itself.
 ### Single-origin Core
 
 ```caddyfile
-tau.example.com {
+ficus.example.com {
   reverse_proxy 127.0.0.1:3000
 }
 ```
@@ -50,7 +50,7 @@ tau.example.com {
 ### Split web/API ports
 
 ```caddyfile
-tau.example.com {
+ficus.example.com {
   handle /api/* {
     reverse_proxy 127.0.0.1:3000
   }
@@ -72,7 +72,7 @@ tau.example.com {
   }
 
   handle {
-    root * /path/to/tau/apps/web/dist
+    root * /path/to/ficus/apps/web/dist
     try_files {path} /index.html
     file_server
 
@@ -112,7 +112,7 @@ builds.
 ```nginx
 server {
   listen 80;
-  server_name tau.example.com;
+  server_name ficus.example.com;
 
   location /api/ {
     proxy_pass http://127.0.0.1:3000;
@@ -131,7 +131,7 @@ server {
   }
 
   location / {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     try_files $uri $uri/ /index.html;
   }
 
@@ -153,15 +153,15 @@ server {
   # Caddy example above for why). sw.js/index.html/manifest must revalidate;
   # hashed assets are immutable.
   location = /sw.js {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     add_header Cache-Control "no-cache";
   }
   location = /manifest.webmanifest {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     add_header Cache-Control "no-cache";
   }
   location /assets/ {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     add_header Cache-Control "public, max-age=31536000, immutable";
   }
 }
@@ -177,16 +177,16 @@ For the built-in single-origin mode, route the whole host to Core:
 
 ```yaml
 services:
-  tau-core:
-    image: tau-core:single-origin
+  ficus-core:
+    image: ficus-core:single-origin
     environment:
       FICUS_SERVE_WEB: '1'
     labels:
       - traefik.enable=true
-      - traefik.http.routers.tau.rule=Host(`tau.example.com`)
-      - traefik.http.routers.tau.entrypoints=websecure
-      - traefik.http.routers.tau.tls.certresolver=letsencrypt
-      - traefik.http.services.tau.loadbalancer.server.port=3000
+      - traefik.http.routers.ficus.rule=Host(`ficus.example.com`)
+      - traefik.http.routers.ficus.entrypoints=websecure
+      - traefik.http.routers.ficus.tls.certresolver=letsencrypt
+      - traefik.http.services.ficus.loadbalancer.server.port=3000
 ```
 
 For split-port deployments, create separate routers: `/api/*`, `/ws`, and `/ws/*` to Core on `3000`, and `/` to the web service or static file server.
@@ -201,7 +201,7 @@ single-origin mode (`FICUS_SERVE_WEB=1`), point it at Core:
 tailscale serve --bg --set-path=/tau http://localhost:3000
 ```
 
-Ficus is then reachable at `https://<your-machine>.<tailnet>/tau`. Because that
+Ficus is then reachable at `https://<your-machine>.<tailnet>/ficus`. Because that
 URL carries a path, set the base path and the WebAuthn origin explicitly, or
 passkeys break:
 

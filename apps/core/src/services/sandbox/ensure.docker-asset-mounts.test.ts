@@ -68,7 +68,7 @@ describe('docker per-asset volume golden master', () => {
     const skillsParent = join(home, 'skills', 'sandboxes', 'agent-gm-solo')
     cleanupPaths.push(skillsParent)
 
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-gm-solo-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-gm-solo-'))
     cleanupPaths.push(tmp)
     const { captured, manager } = captureManager()
 
@@ -99,7 +99,7 @@ describe('docker per-asset volume golden master', () => {
     cleanupPaths.push(skillsParent)
     cleanupPaths.push(join(home, 'ssh', squadId))
 
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-gm-member-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-gm-member-'))
     cleanupPaths.push(tmp)
     const { captured, manager } = captureManager()
 
@@ -137,7 +137,7 @@ describe('docker per-asset volume golden master', () => {
     cleanupPaths.push(join(home, 'ssh', squadId))
     cleanupPaths.push(join(home, 'memory', squadId))
 
-    const wsDir = mkdtempSync(join(tmpdir(), 'tau-gm-box-'))
+    const wsDir = mkdtempSync(join(tmpdir(), 'ficus-gm-box-'))
     cleanupPaths.push(wsDir)
     const { captured, manager } = captureManager()
 

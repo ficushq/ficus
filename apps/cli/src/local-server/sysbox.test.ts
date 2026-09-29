@@ -135,7 +135,7 @@ function bootstrapDeps(responses: Record<string, { code?: number; stdout?: strin
   }
 }
 
-const CONTAINERS = { 'docker ps': { stdout: 'ci-postgres\nci-tau\n' } }
+const CONTAINERS = { 'docker ps': { stdout: 'ci-postgres\nci-ficus\n' } }
 
 describe('runSysboxBootstrap', () => {
   it('refuses without a TTY unless --yes, attempting nothing', async () => {
@@ -159,7 +159,7 @@ describe('runSysboxBootstrap', () => {
     expect(text).toMatch(/wget/)
     expect(text).toMatch(/dpkg/)
     expect(text).toMatch(/removes ALL containers/)
-    expect(text).toMatch(/ci-postgres, ci-tau/)
+    expect(text).toMatch(/ci-postgres, ci-ficus/)
     expect(rec.calls.map((c) => c.command.join(' '))).toEqual(['docker ps -a --format {{.Names}}'])
   })
   it('runs the full sequence and succeeds when sysbox-runc registers', async () => {
@@ -170,7 +170,7 @@ describe('runSysboxBootstrap', () => {
     await runSysboxBootstrap({ yes: true, dryRun: false }, deps)
     expect(rec.calls.map((c) => c.command.join(' '))).toEqual([
       'docker ps -a --format {{.Names}}',
-      'docker rm -f ci-postgres ci-tau',
+      'docker rm -f ci-postgres ci-ficus',
       `wget -O /tmp/sysbox-ce_${SYSBOX_VERSION}-0.linux_amd64.deb ${SYSBOX_DEB_URL}`,
       `bash -c echo '${SYSBOX_DEB_SHA256}  /tmp/sysbox-ce_${SYSBOX_VERSION}-0.linux_amd64.deb' | sha256sum -c -`,
       'sudo apt-get install -y jq',

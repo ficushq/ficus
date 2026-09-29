@@ -12,7 +12,6 @@
 import { EventEmitter } from 'events'
 import { randomUUID } from 'node:crypto'
 import type { SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@ficus/shared'
-import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
 
 export type SandboxTransportKind = 'connection_refused' | 'connection_reset' | 'timeout' | 'network' | 'socket_closed'
 
@@ -146,16 +145,6 @@ export class BashOutcomeUnknownError extends Error {
   }
 }
 
-/**
- * One release (Ficus rename): per-command env overrides also carry the TAU_
- * spelling of every FICUS_ name. An executor started before the upgrade (an
- * existing pod or box) neither bridges nor aliases, and its user scripts and
- * `tau` CLI still read TAU_API_URL / TAU_TOKEN.
- */
-function withLegacyEnvOverrides<T extends { env?: Record<string, string> }>(request: T): T {
-  return request.env ? { ...request, env: withLegacyEnvAliases(request.env) } : request
-}
-
 // ---------------------------------------------------------------------------
 // Request/Response types
 // ---------------------------------------------------------------------------
@@ -284,7 +273,7 @@ export interface ShellSpawn {
   cwd?: string
   useDevboxRc?: boolean
   /** Per-session env overrides (applied last, over the pod's baked env). Used to
-   *  inject the live Core URL so the terminal's `tau` CLI survives a port change. */
+   *  inject the live Core URL so the terminal's `ficus` CLI survives a port change. */
   env?: Record<string, string>
 }
 
@@ -516,7 +505,7 @@ export class SandboxClient {
         const resp = await this.requestFetch(`${this.baseUrl}/bash`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', ...this.authHeaders },
-          body: JSON.stringify({ ...withLegacyEnvOverrides(request), invocationId }),
+          body: JSON.stringify({ ...request, invocationId }),
           signal: ac.signal,
         })
 
@@ -739,9 +728,8 @@ export class SandboxClient {
       emitter.emit('error', new Error('WebSocket error'))
     }
 
-    emitter.write = (rawMessage: ShellMessage): boolean => {
+    emitter.write = (message: ShellMessage): boolean => {
       if (closing) return false
-      const message = rawMessage.spawn ? { ...rawMessage, spawn: withLegacyEnvOverrides(rawMessage.spawn) } : rawMessage
       if (isOpen) {
         ws.send(JSON.stringify(message))
       } else {

@@ -4,7 +4,7 @@ import type { ExeApi } from './exe-api'
 
 /**
  * exe.dev machine provider. Unlike the BYO-SSH adapter, exe machines ARE
- * provisioned and destroyed by tau: `provision` spins up a KVM VM via
+ * provisioned and destroyed by Ficus: `provision` spins up a KVM VM via
  * {@link ExeApi} and hands back its SSH endpoint, after which slices 1-4
  * (bootstrap, boxes, tunnels, lifecycle) run over that endpoint unchanged.
  *

@@ -85,7 +85,7 @@ What is actually enforced for an agent shell:
   BEFORE the source line, sources the file, then exports the identity from the
   snapshots. The values travel in the process env (under `FICUS_IDENTITY_*`
   names), never in the command string, which is world-readable argv.
-- **The snapshot names are generated per command** (`__tau_<random>_url`, …),
+- **The snapshot names are generated per command** (`__ficus_<random>_url`, …),
   so a squad env cannot name them in advance — neither the real names, nor the
   `FICUS_IDENTITY_*` aliases, nor the snapshots themselves can be reached by a
   variable someone left in a squad env.

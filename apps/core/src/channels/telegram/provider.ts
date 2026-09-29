@@ -314,7 +314,7 @@ export const telegramProvider: ChannelProvider = {
           id: context.threadId,
           channelId: context.channelId,
           originalMessageId: context.messageToEdit,
-          tauCreated: true, // Always true for Telegram - we own this chat
+          ficusCreated: true, // Always true for Telegram - we own this chat
         })
       }
 
@@ -334,7 +334,7 @@ export const telegramProvider: ChannelProvider = {
         id: context.threadId,
         channelId: context.channelId,
         originalMessageId: result.messageId,
-        tauCreated: true,
+        ficusCreated: true,
       })
     }
 
@@ -356,7 +356,7 @@ export const telegramProvider: ChannelProvider = {
       context: {
         messageToEdit: result.messageId,
         threadId: event.channelId, // Use chat ID as thread
-        tauInitiated: false, // Reuse existing consultant for this chat
+        ficusInitiated: false, // Reuse existing consultant for this chat
       },
       emptyResponse: true, // Return empty body since we used Bot API
     }

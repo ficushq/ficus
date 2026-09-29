@@ -584,7 +584,7 @@ describe('local-events transport', () => {
       await worker.listen('agent_control', (p) => received.push(p))
 
       const res = await post(`http://127.0.0.1:${server.port}${INTERNAL_EVENTS_PATH}`, {
-        'x-tau-internal-token': TOKEN, // D15
+        'x-tau-internal-token': TOKEN, // D15: a client-sent pre-Ficus header is never trusted // ficus-negative-test
       })
       expect(res.status).toBe(401)
       expect(received).toEqual([])

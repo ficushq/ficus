@@ -68,7 +68,7 @@ function harness(
     reproject: async (id) => {
       calls.push(`reproject:${id}`)
     },
-    keyTitle: () => 'Ficus commit signing (tau.test)',
+    keyTitle: () => 'Ficus commit signing (ficus.test)',
     now: () => new Date('2026-09-25T12:00:00Z'),
   }
   return { signing: new GitHubCommitSigning(deps), secrets, calls }
@@ -81,7 +81,7 @@ describe('GitHubCommitSigning', () => {
   it('turning on registers a key on GitHub, keeps the private half and re-renders squad env', async () => {
     const { signing, secrets, calls } = harness()
     const status = await signing.enable('c1', 'user:noah')
-    expect(calls).toEqual(['create:Ficus commit signing (tau.test)', 'reproject:c1', 'exists:100'])
+    expect(calls).toEqual(['create:Ficus commit signing (ficus.test)', 'reproject:c1', 'exists:100'])
     const stored = record(secrets)
     expect(stored).toMatchObject({ state: 'on', githubKeyId: 100, enabledBy: 'user:noah' })
     expect(stored?.state === 'on' && stored.publicKey.startsWith('ssh-ed25519 ')).toBe(true)
@@ -118,7 +118,7 @@ describe('GitHubCommitSigning', () => {
   it('removes the GitHub key again when the private half cannot be stored', async () => {
     const { signing, calls } = harness({ setFails: true })
     await expect(signing.enable('c1', 'u')).rejects.toThrow('secret store down')
-    expect(calls).toEqual(['create:Ficus commit signing (tau.test)', 'remove:100'])
+    expect(calls).toEqual(['create:Ficus commit signing (ficus.test)', 'remove:100'])
   })
 
   it('turning off deletes the GitHub key, drops the private key and is remembered', async () => {
@@ -185,7 +185,7 @@ describe('GitHubCommitSigning', () => {
       const payload = commitAs('agent@example.com')
       const signature = await signing.sign({ squadId: 's1', agentId: 'a1', payload })
 
-      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tau-sign-')))
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-sign-')))
       try {
         const stored = record(secrets)
         if (stored?.state !== 'on') throw new Error('expected an on record')

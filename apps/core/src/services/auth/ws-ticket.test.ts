@@ -47,9 +47,9 @@ describe('ws-ticket', () => {
     expect(await consumeWsTicket(ticket)).toBeNull()
   })
 
-  it('rejects a live pre-rename tau_wst_ ticket row (no dual-accept)', async () => {
+  it('rejects a live old_wst_ ticket row (no dual-accept)', async () => {
     const user = await createTestUser({ prefix: PREFIX })
-    const legacy = `tau_wst_${'a'.repeat(64)}`
+    const legacy = `old_wst_${'a'.repeat(64)}`
     await db.insert(wsTickets).values({
       tokenHash: createHash('sha256').update(legacy).digest('hex'),
       userId: user.id,

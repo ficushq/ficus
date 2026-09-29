@@ -15,7 +15,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 
 describe('webhooks/action-config', () => {
   it('retires old bundled rules and review batches while preserving custom commands', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-retired-webhooks-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-retired-webhooks-'))
     const path = join(dir, 'actions.yaml')
     try {
       await Bun.write(
@@ -28,7 +28,7 @@ describe('webhooks/action-config', () => {
         - run: echo custom-merge
   issue_comment:
     - commands:
-        - run: bash /srv/tau/config/webhooks/scripts/issue-comment.sh
+        - run: bash /srv/ficus/config/webhooks/scripts/issue-comment.sh
         - run: /srv/custom/issue-comment.sh
   batches:
     pr_review:
@@ -143,12 +143,12 @@ linear:
       const tmpPath = join(__dirname, '../../../../../.tmp-test-config6.yaml')
       await Bun.write(
         tmpPath,
-        `github:\n  push:\n    - branches: ["refs/heads/main"]\n      repos: ["tauagent/tau-management"]\n      commands:\n        - run: "echo hi"\n`
+        `github:\n  push:\n    - branches: ["refs/heads/main"]\n      repos: ["ficusagent/ficus-management"]\n      commands:\n        - run: "echo hi"\n`
       )
 
       try {
         const config = await loadWebhookActionConfig(tmpPath)
-        expect(config.github.push[0].repos).toEqual(['tauagent/tau-management'])
+        expect(config.github.push[0].repos).toEqual(['ficusagent/ficus-management'])
       } finally {
         const { unlink } = await import('fs/promises')
         await unlink(tmpPath).catch(() => {})
@@ -207,11 +207,11 @@ linear:
 
   describe('matchesRepo', () => {
     it('matches exact repo name', () => {
-      expect(matchesRepo('tauagent/tau-management', ['tauagent/tau-management'])).toBe(true)
+      expect(matchesRepo('ficusagent/ficus-management', ['ficusagent/ficus-management'])).toBe(true)
     })
 
     it('does not match different repo', () => {
-      expect(matchesRepo('other/repo', ['tauagent/tau-management'])).toBe(false)
+      expect(matchesRepo('other/repo', ['ficusagent/ficus-management'])).toBe(false)
     })
 
     it('matches wildcard *', () => {
@@ -219,19 +219,19 @@ linear:
     })
 
     it('matches glob pattern org/*', () => {
-      expect(matchesRepo('tauagent/any-repo', ['tauagent/*'])).toBe(true)
+      expect(matchesRepo('ficusagent/any-repo', ['ficusagent/*'])).toBe(true)
     })
 
     it('matches glob pattern with prefix', () => {
-      expect(matchesRepo('tauagent/tau-management', ['tauagent/tau-*'])).toBe(true)
+      expect(matchesRepo('ficusagent/ficus-management', ['ficusagent/ficus-*'])).toBe(true)
     })
 
     it('does not match unrelated glob', () => {
-      expect(matchesRepo('other/repo', ['tauagent/*'])).toBe(false)
+      expect(matchesRepo('other/repo', ['ficusagent/*'])).toBe(false)
     })
 
     it('matches if any pattern in array matches', () => {
-      expect(matchesRepo('tauagent/tau-management', ['other/repo', 'tauagent/tau-management'])).toBe(true)
+      expect(matchesRepo('ficusagent/ficus-management', ['other/repo', 'ficusagent/ficus-management'])).toBe(true)
     })
 
     it('returns true for empty patterns (matches all)', () => {
@@ -302,8 +302,8 @@ linear:
           push: [
             {
               branches: ['refs/heads/main'],
-              repos: ['tauagent/tau-management'],
-              commands: [{ run: 'deploy-tau.sh' }],
+              repos: ['ficusagent/ficus-management'],
+              commands: [{ run: 'deploy-ficus.sh' }],
             },
             {
               branches: ['refs/heads/main'],
@@ -314,9 +314,9 @@ linear:
       }
 
       // With matching repo, first rule matches
-      const rule1 = getMatchingRule(configWithRepos, 'github', 'push', 'refs/heads/main', 'tauagent/tau-management')
+      const rule1 = getMatchingRule(configWithRepos, 'github', 'push', 'refs/heads/main', 'ficusagent/ficus-management')
       expect(rule1).not.toBeNull()
-      expect(rule1!.commands[0].run).toBe('deploy-tau.sh')
+      expect(rule1!.commands[0].run).toBe('deploy-ficus.sh')
 
       // With different repo, first rule skipped, second rule matches
       const rule2 = getMatchingRule(configWithRepos, 'github', 'push', 'refs/heads/main', 'other/repo')
@@ -348,7 +348,7 @@ linear:
           push: [
             {
               branches: ['refs/heads/main'],
-              repos: ['tauagent/tau-management'],
+              repos: ['ficusagent/ficus-management'],
               commands: [{ run: 'deploy.sh' }],
             },
           ],
@@ -367,7 +367,7 @@ linear:
           push: [
             {
               branches: ['refs/heads/main'],
-              repos: ['tauagent/tau-management'],
+              repos: ['ficusagent/ficus-management'],
               commands: [{ run: 'deploy.sh' }],
             },
           ],
@@ -485,7 +485,7 @@ linear:
 
 describe('webhooks/action-config — cwd resolution', () => {
   async function loadYaml(body: string): Promise<WebhookActionConfig> {
-    const tmpPath = join(tmpdir(), `tau-action-cwd-${Math.random().toString(36).slice(2)}.yaml`)
+    const tmpPath = join(tmpdir(), `ficus-action-cwd-${Math.random().toString(36).slice(2)}.yaml`)
     await Bun.write(tmpPath, body)
     try {
       return await loadWebhookActionConfig(tmpPath)

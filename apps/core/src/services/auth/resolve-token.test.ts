@@ -161,9 +161,9 @@ describe('resolveToken — ficus_ prefixes only (no dual-accept)', () => {
     expect(await resolveToken(token)).toMatchObject({ type: 'agent', agentId: agent.id })
   })
 
-  test('a live pre-rename tau_sess_ session row does not authenticate', async () => {
+  test('a live old_sess_ session row does not authenticate', async () => {
     const user = await createTestUser({ prefix: PREFIX })
-    const legacy = `tau_sess_${randomUUID()}`
+    const legacy = `old_sess_${randomUUID()}`
     await db.insert(sessions).values({ userId: user.id, tokenHash: sha256(legacy), expiresAt: inADay() })
 
     expect(await resolveToken(user.token)).toEqual({ type: 'user', userId: user.id })
@@ -171,9 +171,9 @@ describe('resolveToken — ficus_ prefixes only (no dual-accept)', () => {
     expect(await resolveTokenContext(legacy)).toBeNull()
   })
 
-  test('a live pre-rename tau_agent_ token row does not authenticate', async () => {
+  test('a live old_agent_ token row does not authenticate', async () => {
     const { agent, squad } = await createAgentFixture('legacy')
-    const legacy = `tau_agent_${randomUUID()}`
+    const legacy = `old_agent_${randomUUID()}`
     await db.insert(agentTokens).values({ agentId: agent.id, squadId: squad.id, tokenHash: sha256(legacy) })
 
     expect(await resolveToken(legacy)).toBeNull()

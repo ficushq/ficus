@@ -133,7 +133,7 @@ async function resolveDirectAgent(
           id: instance.provider === 'slack' ? (event.threadId ?? event.messageId) : event.channelId,
           channelId: event.channelId,
           originalMessageId: event.messageId,
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
       metadata: { name: generateAgentName(), resourceGeneration: crypto.randomUUID() },

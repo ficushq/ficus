@@ -8,22 +8,17 @@
 #     bash apply-artifacts.sh [--config <tau-setup.yaml>] <staging-dir>
 #
 # With --config (the file the host was set up with; the sync executor passes
-# the one the upgrade job and probe already use), it first makes sure the
-# host's env-file prefix matches the release it is running (the Ficus rename,
-# TAU_* -> FICUS_*): it reconciles a journaled rename an interrupted upgrade
-# left behind, and when the two still disagree it installs NOTHING, prints
-# FICUS_ENV_PREFIX_MISMATCH=1 and exits 3 — the control plane then does not
-# restart anything and runs the tenant upgrade instead. When they agree, the
-# staged managed.env is installed in that prefix: a copy that names the other
-# one is renamed on install (lib.sh managed_env_prepare), and a copy already
-# in it installs byte for byte. Without --config it behaves exactly as before.
+# the one the upgrade job already uses), it first reconciles a host migration
+# an interrupted upgrade left journaled, and refuses — installing NOTHING — a
+# host whose settings predate the Ficus naming (lib.sh's
+# require_host_env_ready). The staged managed.env is installed byte for byte.
 #
 # The staging dir is the FULL current artifact set (not a delta) and this
 # script RECONCILES the host against it: managed.env is installed whole,
 # every manifest-listed file is installed, and anything under
 # /etc/tau/artifacts/ the manifest no longer lists is PRUNED (lib.sh's
 # prune_artifacts — that is how an artifact DELETED from the platform registry
-# leaves the fleet). It also ensures the tau units actually load managed.env
+# leaves the fleet). It also ensures the core units actually load managed.env
 # (ensure_managed_env_dropins — hosts provisioned before the unit templates
 # carried the EnvironmentFile line need a drop-in, or every sync is a silent
 # no-op for the running processes). Same lib.sh functions a fresh provision
@@ -59,33 +54,8 @@ done
 [[ -n ${STAGE_DIR} ]] || die "usage: apply-artifacts.sh [--config <tau-setup.yaml>] <staging-dir>"
 [[ -d ${STAGE_DIR} ]] || die "apply-artifacts.sh: staging directory not found: ${STAGE_DIR}"
 
-# Exit status and marker for "this host's env files and its active release
-# disagree on the env prefix": nothing was installed, nothing should restart.
-EXIT_ENV_PREFIX_MISMATCH=3
-env_prefix_mismatch() { # REASON
-  log_error "not applying artifacts: $1 — run the tenant upgrade (it reconciles the env rename)"
-  echo "FICUS_ENV_PREFIX_MISMATCH=1"
-  exit "${EXIT_ENV_PREFIX_MISMATCH}"
-}
-
-# The prefix the installed managed.env is written in (see below); empty =
-# unknown, installed exactly as staged (the behaviour without --config).
-APPLY_PREFIX=''
-
 if [[ -n ${CONFIG} ]]; then
   [[ -f ${CONFIG} ]] || die "config file '${CONFIG}' not found"
-  # N-I2 / Ruling 24, before the lock, the reconcile or any write: the staged
-  # managed.env is installed in this host's prefix (renamed when it names the
-  # other one), and conflicting protected values in it stop the run here,
-  # naming the keys only. The reconcile below re-checks the host's own files
-  # before it finishes a journaled rename.
-  if [[ -f ${STAGE_DIR}/managed.env ]]; then
-    staged_conflicts=$(envfile_prefix_conflicts "${STAGE_DIR}/managed.env" TAU FICUS) ||
-      die "could not check ${STAGE_DIR}/managed.env for conflicting settings"
-    # shellcheck disable=SC2086 # one suffix per line, split on purpose
-    [[ -z ${staged_conflicts} ]] ||
-      die "refusing to install ${STAGE_DIR}/managed.env: $(_epr_conflict_message "${STAGE_DIR}/managed.env" TAU FICUS ${staged_conflicts})"
-  fi
   ensure_yq
   cfg_load "${CONFIG}"
   SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
@@ -98,45 +68,25 @@ if [[ -n ${CONFIG} ]]; then
   DB_MODE=$(cfg_get '.database.mode' 'container')
   # shellcheck disable=SC2034
   BUN_BIN=/usr/local/bin/bun
-  # One toolkit run at a time may rename, restore or reconcile this host.
-  env_prefix_lock
+  # One toolkit run at a time may migrate, restore or reconcile this host.
+  host_migrate_lock
   reconcile_rc=0
-  env_prefix_reconcile || reconcile_rc=$?
-  if [[ ${reconcile_rc} -eq 3 ]]; then
-    env_prefix_mismatch "an interrupted env rename is journaled and cannot be finished by this toolkit copy"
-  elif [[ ${reconcile_rc} -ne 0 ]]; then
-    die "reconciling the journaled env rename failed (${reconcile_rc})"
-  fi
-  if [[ -e $(env_rename_backup_root)/PENDING ]]; then
-    env_prefix_mismatch "an env rename is still journaled in $(env_rename_backup_root)/PENDING"
-  fi
-  HOST_PREFIX=$(host_env_prefix "${SRC_DEST}/.env")
-  # An unknown side (NONE) cannot disagree — the control plane's
-  # hostEnvAgrees makes the same call — so an active release whose prefix
-  # cannot be read is NONE here, not a failed sync.
-  if ! ACTIVE_TREE=$(active_release_tree) || ! RELEASE_PREFIX=$(core_release_env_prefix "${ACTIVE_TREE}" 2>/dev/null); then
-    log_warn "could not tell which env prefix the active release under ${SRC_DEST} reads — treating it as unknown"
-    RELEASE_PREFIX=NONE
-  fi
-  if [[ ${HOST_PREFIX} != NONE && ${RELEASE_PREFIX} != NONE && ${HOST_PREFIX} != "${RELEASE_PREFIX}" ]]; then
-    env_prefix_mismatch "${SRC_DEST}/.env uses ${HOST_PREFIX}_* but the active release reads ${RELEASE_PREFIX}_*"
-  fi
-  # The two agree (or one side is unknown): managed.env goes in in that
-  # prefix — the active release's when it can be told, else the .env's.
-  # A staged copy already in it installs byte for byte (lib.sh
-  # managed_env_prepare).
-  APPLY_PREFIX=${RELEASE_PREFIX}
-  [[ ${APPLY_PREFIX} != NONE ]] || APPLY_PREFIX=${HOST_PREFIX}
+  host_migrate_reconcile || reconcile_rc=$?
+  [[ ${reconcile_rc} -eq 0 ]] ||
+    die "not applying artifacts: a journaled host migration could not be reconciled (${reconcile_rc}) — run the tenant upgrade"
+  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
+    die "not applying artifacts: a host migration is still journaled in $(host_migrate_backup_root)/PENDING — run the tenant upgrade"
+  require_host_env_ready
 fi
 
 # Detect BEFORE installing (the install overwrites the file being compared).
-ENV_CHANGED=$(managed_env_would_change "${STAGE_DIR}" "${APPLY_PREFIX}")
+ENV_CHANGED=$(managed_env_would_change "${STAGE_DIR}")
 
-install_managed_env "${STAGE_DIR}" "${APPLY_PREFIX}"
+install_managed_env "${STAGE_DIR}"
 install_artifacts "${STAGE_DIR}"
 prune_artifacts "${STAGE_DIR}"
 ensure_managed_env_dropins
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 log_info "artifacts applied from ${STAGE_DIR}"
 
 # Machine-readable markers for the sync executor (stdout; logs go to stderr).

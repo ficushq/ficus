@@ -182,7 +182,7 @@ describe('runPreflight', () => {
     expect(r.warnings).toEqual([])
   })
   it('discovers Playwright-managed Chromium in cache directory', async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'tau-preflight-test-'))
+    const tmpDir = mkdtempSync(join(tmpdir(), 'ficus-preflight-test-'))
     try {
       const home = tmpDir
       const cachePath = join(home, '.cache/ms-playwright/chromium-1234/chrome-linux64')
@@ -206,7 +206,7 @@ describe('runPreflight', () => {
     }
   })
   it('(a) both env vars set, path valid → the path is reported, not the channel', async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'tau-preflight-test-'))
+    const tmpDir = mkdtempSync(join(tmpdir(), 'ficus-preflight-test-'))
     try {
       const chromePath = join(tmpDir, 'chrome')
       // Create a mock executable file
@@ -229,7 +229,7 @@ describe('runPreflight', () => {
     }
   })
   it('(b) FICUS_BROWSER_EXECUTABLE_PATH pointing at a directory → not reported', async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'tau-preflight-test-'))
+    const tmpDir = mkdtempSync(join(tmpdir(), 'ficus-preflight-test-'))
     try {
       const dirPath = join(tmpDir, 'fake-app')
       const fs = await import('fs/promises')

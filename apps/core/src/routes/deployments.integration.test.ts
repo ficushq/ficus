@@ -156,7 +156,7 @@ describe('deployments localDeployment integration', () => {
     })
     expect(createRes.status).toBe(201)
     const localDeployment = await createRes.json()
-    const token = new URL(localDeployment.urlPathOrHost, 'http://tau.test').searchParams.get('_tau_token')!
+    const token = new URL(localDeployment.urlPathOrHost, 'http://ficus.test').searchParams.get('_tau_token')!
     const hyphenatedPrefix = localDeployment.id.slice(0, 13)
 
     const wrongToken = await app.request(`/api/app/${hyphenatedPrefix}/?_tau_token=wrong`)

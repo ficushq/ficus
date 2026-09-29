@@ -7,33 +7,35 @@ describe('fetchInProtocolPhase', () => {
   test('reports URL, status, and server diagnostics for a rejected response', async () => {
     await expect(
       fetchInProtocolPhase(
-        'http://tau/handles',
+        'http://ficus/handles',
         {
-          phase: 'tau-peer-handles-proxy',
+          phase: 'ficus-peer-handles-proxy',
           timeoutMs: 10,
           requireOk: true,
-          diagnostics: () => 'node pid=42; tau port=1234',
+          diagnostics: () => 'node pid=42; ficus port=1234',
         },
         async () => new Response('unavailable', { status: 503 })
       )
-    ).rejects.toThrow('tau-peer-handles-proxy: http://tau/handles returned status=503; node pid=42; tau port=1234')
+    ).rejects.toThrow(
+      'ficus-peer-handles-proxy: http://ficus/handles returned status=503; node pid=42; ficus port=1234'
+    )
   })
 
   test('aborts a request that accepts a connection but never responds', async () => {
     await expect(
       fetchInProtocolPhase(
-        'http://tau/handles',
+        'http://ficus/handles',
         {
-          phase: 'tau-peer-handles-proxy',
+          phase: 'ficus-peer-handles-proxy',
           timeoutMs: 10,
-          diagnostics: () => 'node pid=42; tau port=1234',
+          diagnostics: () => 'node pid=42; ficus port=1234',
         },
         async (_url, init) =>
           new Promise<Response>((_resolve, reject) => {
             init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
           })
       )
-    ).rejects.toThrow('node pid=42; tau port=1234')
+    ).rejects.toThrow('node pid=42; ficus port=1234')
   })
 })
 

@@ -209,7 +209,7 @@ export BACKUP_SCRIPT_PATH="${SCRATCH}/bin/tau-backup.sh"
 export BACKUP_ENV_TARGET="${SCRATCH}/etc/backup.env"
 mkdir -p "${SCRATCH}/bin" "${SCRATCH}/etc" "${SCRATCH}/core"
 
-OLD_ENDPOINT='https://nyc3.digitaloceanspaces.com' OLD_REGION='nyc3' OLD_BUCKET='tau-backups'
+OLD_ENDPOINT='https://nyc3.digitaloceanspaces.com' OLD_REGION='nyc3' OLD_BUCKET='old-backups'
 NEW_ENDPOINT='https://sfo3.digitaloceanspaces.com' NEW_REGION='sfo3' NEW_BUCKET='ficus-backups'
 PREFIX='tenants/acct-1/acme'
 OLD_AK='DO00OLDACCESSKEY0000' OLD_SK='old-secret-value-XYZ/abc'
@@ -247,8 +247,8 @@ backup:
   schedule: '03:15'
 EOF
 
-# The host's core .env, renamed to FICUS_* (the Ficus rename): retarget-backup.sh
-# reads and writes FICUS_ names only and refuses a host still on TAU_ ones.
+# The host's core .env, on FICUS_* names: retarget-backup.sh reads and writes
+# FICUS_ names only and refuses a host whose settings predate them.
 CORE_ENV="${SCRATCH}/core/.env"
 printf 'FICUS_ENCRYPTION_KEY=k\nFICUS_SANDBOX_RUNTIME=host\n' >"${CORE_ENV}"
 
@@ -309,25 +309,54 @@ run() { # ...ARGS — sets RC and OUT (stdout+stderr)
 
 reset_fixture
 
+# The pre-Ficus encryption key the naming guard looks for (from lib.sh).
+PFK="$(bash -c 'source "$0"; printf %s "${PRE_FICUS_ENV_PREFIX}"' "${LIB}")_ENCRYPTION_KEY"
+
 # =============================================================================
-# a host that was never renamed (Ficus): refused before anything is written
+# a host whose settings predate the Ficus naming: refused before anything is written
 # =============================================================================
 # All three live files get an old mtime first, so any write — even one that
 # rewrote the same bytes — would show.
-printf 'TAU_ENCRYPTION_KEY=k\nTAU_SANDBOX_RUNTIME=host\n' >"${CORE_ENV}" # legacy-env
+printf '%s=k\nFICUS_SANDBOX_RUNTIME=host\n' "${PFK}" >"${CORE_ENV}"
 touch -d '2001-01-01 00:00:00' "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}"
 mtimes() { stat -c %Y "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}" 2>/dev/null || stat -f %m "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}"; }
 before_mtimes=$(mtimes)
 for mode in real --dry-run; do
   if [[ ${mode} == real ]]; then run "${ARGS[@]}"; else run "${ARGS[@]}" --dry-run; fi
-  expect_eq "TAU host (${mode}): exits 1" "${RC}" 1
-  expect_contains "TAU host (${mode}): says why" "${OUT}" 'this host still uses TAU_* settings — upgrade it to the Ficus Core release first'
-  expect_eq "TAU host (${mode}): no file was written (mtimes unchanged)" "$(mtimes)" "${before_mtimes}"
-  expect_not_contains "TAU host (${mode}): prints no RESULT marker" "${OUT}" 'FICUS_RETARGET_BACKUP_RESULT='
-  expect_eq "TAU host (${mode}): the S3 check never ran" "$(grep -c '^curl ' "${SHIM_LOG}" || true)" 0
+  expect_eq "pre-Ficus host (${mode}): exits 1" "${RC}" 1
+  expect_contains "pre-Ficus host (${mode}): says why" "${OUT}" "this host's settings predate the Ficus naming (found ${PFK}); upgrade it through the ficus-rename-bridge Core release first"
+  expect_eq "pre-Ficus host (${mode}): no file was written (mtimes unchanged)" "$(mtimes)" "${before_mtimes}"
+  expect_not_contains "pre-Ficus host (${mode}): prints no RESULT marker" "${OUT}" 'FICUS_RETARGET_BACKUP_RESULT='
+  expect_eq "pre-Ficus host (${mode}): the S3 check never ran" "$(grep -c '^curl ' "${SHIM_LOG}" || true)" 0
 done
-assert_untouched 'TAU host'
+assert_untouched 'pre-Ficus host'
 printf 'FICUS_ENCRYPTION_KEY=k\nFICUS_SANDBOX_RUNTIME=host\n' >"${CORE_ENV}"
+reset_fixture
+
+# =============================================================================
+# a journaled host migration: refused before anything is written
+# =============================================================================
+# Its reconcile or rollback would restore the files a retarget rewrites, so a
+# retarget in between would be silently undone.
+export HOST_MIGRATE_BACKUP_ROOT="${SCRATCH}/host-migrate"
+mkdir -p "${HOST_MIGRATE_BACKUP_ROOT}"
+printf '%s\t%s\t%s\n' "${HOST_MIGRATE_BACKUP_ROOT}/set" testmark /srv/release >"${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+touch -d '2001-01-01 00:00:00' "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}"
+before_mtimes=$(mtimes)
+for mode in real --dry-run; do
+  if [[ ${mode} == real ]]; then run "${ARGS[@]}"; else run "${ARGS[@]}" --dry-run; fi
+  expect_eq "journaled migration (${mode}): exits 1" "${RC}" 1
+  expect_contains "journaled migration (${mode}): says why" "${OUT}" \
+    "a host migration is still journaled in ${HOST_MIGRATE_BACKUP_ROOT}/PENDING — run the tenant upgrade (it reconciles) before retargeting"
+  expect_eq "journaled migration (${mode}): no file was written (mtimes unchanged)" "$(mtimes)" "${before_mtimes}"
+  expect_not_contains "journaled migration (${mode}): prints no RESULT marker" "${OUT}" 'FICUS_RETARGET_BACKUP_RESULT='
+  expect_eq "journaled migration (${mode}): the S3 check never ran" "$(grep -c '^curl ' "${SHIM_LOG}" || true)" 0
+done
+assert_untouched 'journaled migration'
+rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+run "${ARGS[@]}" --dry-run
+expect_eq 'journaled migration: once reconciled (no PENDING), a dry run proceeds' "${RC}" 0
+unset HOST_MIGRATE_BACKUP_ROOT
 reset_fixture
 
 # =============================================================================
@@ -567,7 +596,7 @@ fi
 # Mutation phase — needs real root
 # =============================================================================
 if [[ ${EUID} -eq 0 ]]; then
-  echo 'TAU retarget-backup mutation-phase section: ENABLED'
+  echo 'FICUS retarget-backup mutation-phase section: ENABLED'
 
   # Non-default ownership, to prove it is carried over rather than reset.
   set_modes() {

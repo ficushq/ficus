@@ -21,7 +21,7 @@ export interface UpdateDeps {
     root: string
     ref?: string
     log(line: string): void
-  }): Promise<{ before: string; after: string; warnings?: string[] }>
+  }): Promise<{ before: string; after: string }>
   log(line: string): void
 }
 

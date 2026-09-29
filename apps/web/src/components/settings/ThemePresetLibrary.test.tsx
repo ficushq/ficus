@@ -58,7 +58,7 @@ async function render(
   mine: ThemePreset[],
   opts: { shared?: ThemePreset[]; permissions?: string[]; userId?: string; themeId?: string } = {}
 ) {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   cleanup = () => dom.cleanup()
   if (opts.themeId) localStorage.setItem('ficus-theme-id', opts.themeId)
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -240,7 +240,7 @@ test('Escape closes the row overflow menu and returns focus to its trigger', asy
 
 test('a palette-only preset (no explicit overrides) still resolves a real swatch color, not an empty circle', async () => {
   const { palettes, resolveToken } = await import('../../theme/test/builtins')
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   cleanup = () => dom.cleanup()
   const style = document.createElement('style')
   style.textContent = palettes
@@ -416,7 +416,7 @@ test('Shared themes: Remove does nothing when the confirmation is declined', asy
 })
 
 test('detached-shared: a foreign preset that 404s is shown as no longer available, with a "keep a copy" action', async () => {
-  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   cleanup = () => dom.cleanup()
   // Simulate ThemeSyncStore.refreshLinkedPreset's 404 outcome directly via
   // localStorage: presetId cleared, presetOwnerId + document retained.

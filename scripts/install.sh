@@ -238,10 +238,7 @@ if [ -d "$SHARE_DIR/skills" ]; then
 fi
 
 configure_auth() {
-  # Rename window (K1): the pre-rename CLI (`tau install --auth`) and setup.sh
-  # hand the installer only TAU_INSTALL_AUTH, so it is still read after
-  # FICUS_INSTALL_AUTH. Every other input is read under its FICUS_ name only.
-  AUTH_MODE="${FICUS_INSTALL_AUTH:-${TAU_INSTALL_AUTH:-prompt}}"
+  AUTH_MODE="${FICUS_INSTALL_AUTH:-prompt}"
   if [ "$AUTH_MODE" = "0" ] || [ "$AUTH_MODE" = "false" ]; then
     warn "Skipping Ficus auth setup because FICUS_INSTALL_AUTH=$AUTH_MODE."
     return 0

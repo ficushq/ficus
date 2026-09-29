@@ -120,7 +120,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
         ? 'machines'
         : /apns|vapid/.test(target)
           ? 'integrations'
-          : target.includes('tau_password')
+          : target.includes('ficus_password')
             ? 'account'
             : 'git'
       : legacySection

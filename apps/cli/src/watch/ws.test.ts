@@ -3,7 +3,9 @@ import { ATTENTION_TOPICS, attentionSocketUrl, isHintFrame } from './ws'
 
 describe('attentionSocketUrl', () => {
   it('swaps the scheme and appends the token', () => {
-    expect(attentionSocketUrl('https://tau.example.com', 'abc/def')).toBe('wss://tau.example.com/ws?token=abc%2Fdef')
+    expect(attentionSocketUrl('https://ficus.example.com', 'abc/def')).toBe(
+      'wss://ficus.example.com/ws?token=abc%2Fdef'
+    )
     expect(attentionSocketUrl('http://localhost:3000/', 'x')).toBe('ws://localhost:3000/ws?token=x')
   })
 })

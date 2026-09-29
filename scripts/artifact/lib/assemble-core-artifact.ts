@@ -106,7 +106,7 @@ export const GENERATED_ROOT_MARKER = '{"name":"ficus","private":true,"workspaces
 const LAYOUT: { path: string; kind: 'file' | 'dir' | 'generated'; contents?: string }[] = [
   // GENERATED, never copied from the checkout. `apps/core/src/lib/web-dist.ts`
   // finds the web UI by walking up from the running bundle until it hits a
-  // package.json named "ficus" or "tau" (`CORE_ROOT_PACKAGE_NAMES`, or one
+  // package.json named "ficus" (`CORE_ROOT_PACKAGE_NAMES`, or one
   // carrying a `workspaces` array) and then looking for <root>/apps/web/dist.
   // An artifact with no package.json anywhere fails that walk, `maybeMountWebUi` mounts nothing, and the box
   // comes up with a healthy API and a 404 for every page. The marker is
@@ -326,11 +326,11 @@ async function stagePrunedNodeModules(
     dependencies[pkg] = version
   }
 
-  const scratch = await mkdtemp(join(tmpdir(), 'tau-core-artifact-prune-'))
+  const scratch = await mkdtemp(join(tmpdir(), 'ficus-core-artifact-prune-'))
   try {
     await writeFile(
       join(scratch, 'package.json'),
-      `${JSON.stringify({ name: 'tau-core-artifact-externals', version: '0.0.0', private: true, dependencies }, null, 2)}\n`
+      `${JSON.stringify({ name: 'ficus-core-artifact-externals', version: '0.0.0', private: true, dependencies }, null, 2)}\n`
     )
     log(
       `pruned node_modules: installing ${Object.entries(dependencies)
@@ -365,7 +365,7 @@ async function runSmoke(opts: {
   run: Run
   log: (message: string) => void
 }): Promise<SmokeResult> {
-  const extractDir = await mkdtemp(join(tmpdir(), 'tau-core-artifact-smoke-'))
+  const extractDir = await mkdtemp(join(tmpdir(), 'ficus-core-artifact-smoke-'))
   try {
     const untar = await opts.run(['tar', '-xzf', opts.tarballPath, '-C', extractDir], {})
     if (untar.exitCode !== 0) throw new Error(`smoke: extracting the tarball failed: ${untar.stderr}`)
@@ -373,14 +373,10 @@ async function runSmoke(opts: {
 
     const migrate = await opts.run(['bun', join(treeRoot, 'apps/core/dist/migrate.js')], {
       cwd: join(treeRoot, 'apps/core'),
-      // Both spellings (Ficus rename): the in-process bridge would promote an
-      // inherited TAU_ name to FICUS_ and let the migration run.
       env: {
         DATABASE_URL: undefined,
         FICUS_MIGRATE_LIVE: undefined,
         FICUS_ROOT: undefined,
-        TAU_MIGRATE_LIVE: undefined, // legacy-env
-        TAU_ROOT: undefined, // legacy-env
       },
     })
     const output = `${migrate.stdout}\n${migrate.stderr}`
@@ -478,7 +474,7 @@ export async function assembleCoreArtifact(opts: AssembleCoreArtifactOptions): P
     if (commitDate.length === 0) throw new Error(`git returned an empty commit date for ${commit}`)
   }
 
-  const staging = await mkdtemp(join(tmpdir(), 'tau-core-artifact-stage-'))
+  const staging = await mkdtemp(join(tmpdir(), 'ficus-core-artifact-stage-'))
   try {
     // A FRESH staging dir every run: the manifest walker signs whatever it
     // finds, so a reused directory would fold a previous run's leftovers into

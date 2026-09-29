@@ -175,13 +175,13 @@ describe('work-stream verbs end-to-end integration probes', () => {
 
     const resolveRes = await postJson(`/api/workstreams/${created.id}/waits/${wait.id}/resolve`, {
       resolution: 'cleared',
-      note: 'key is tau-staging-123, rotate after use',
+      note: 'key is ficus-staging-123, rotate after use',
     })
     expect(resolveRes.status).toBe(200)
     const resolved = await resolveRes.json()
     expect(resolved.status).toBe('active')
     expect(resolved.wait.resolution).toBe('cleared')
-    expect(resolved.wait.resolutionNote).toBe('key is tau-staging-123, rotate after use')
+    expect(resolved.wait.resolutionNote).toBe('key is ficus-staging-123, rotate after use')
 
     // Back to normal: no open waits in the stream detail.
     const detail = await (await apiFetch(`/api/workstreams/${created.id}`)).json()
@@ -190,7 +190,7 @@ describe('work-stream verbs end-to-end integration probes', () => {
     // The note reached the assignee's inbox.
     const notices = await assigneeInbox(created.id, 'unblocked')
     expect(notices).toHaveLength(1)
-    expect(notices[0]).toContain('key is tau-staging-123, rotate after use')
+    expect(notices[0]).toContain('key is ficus-staging-123, rotate after use')
   })
 
   it('probe 3: reopen under a full cap queues; freeing the cap promotes it', async () => {

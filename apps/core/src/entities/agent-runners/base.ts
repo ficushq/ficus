@@ -502,17 +502,17 @@ export abstract class AgentRunner {
   protected createCodingTools(
     workspacePath: string,
     sandboxId: string,
-    tauToken?: string,
+    ficusToken?: string,
     squadId?: string,
     invocationOwnerId?: string,
     agentId?: string
   ) {
-    return createCodingTools(workspacePath, sandboxId, tauToken, squadId, invocationOwnerId, agentId)
+    return createCodingTools(workspacePath, sandboxId, ficusToken, squadId, invocationOwnerId, agentId)
   }
 
   /**
    * The tool bundle every sandboxed runner wires identically: a scoped agent
-   * token (so `tau` CLI calls authenticate AS this agent under RBAC), the
+   * token (so `ficus` CLI calls authenticate AS this agent under RBAC), the
    * sandboxed coding tools, live sandbox_status, and short-term memory tools.
    *
    * `sandboxStatusTool` is `null` on the host runtime: there is no sandbox to
@@ -530,7 +530,7 @@ export abstract class AgentRunner {
         consultantScratchPath(root, opts.sandboxId, this.agent.id),
       ])
     }
-    const tauToken = await this.agent.getOrCreateToken()
+    const ficusToken = await this.agent.getOrCreateToken()
     // The agent id is passed explicitly, not derived from the sandbox id: a
     // system-manager's box is `system_manager_<ownerUserId>` and a descendant can
     // share a box, so only the runner knows whose shell this is (host runtime
@@ -538,7 +538,7 @@ export abstract class AgentRunner {
     const baseTools = this.createCodingTools(
       opts.workspacePath,
       opts.sandboxId,
-      tauToken,
+      ficusToken,
       opts.squadId,
       this.execution.id,
       this.agent.id
@@ -551,7 +551,7 @@ export abstract class AgentRunner {
           squadId: opts.squadId,
         })
     const shortTermMemoryTools = createShortTermMemoryTools(createAgentShortTermMemoryStorage(this.agent.id))
-    return { tauToken, baseTools, sandboxStatusTool, shortTermMemoryTools }
+    return { ficusToken, baseTools, sandboxStatusTool, shortTermMemoryTools }
   }
 
   /**

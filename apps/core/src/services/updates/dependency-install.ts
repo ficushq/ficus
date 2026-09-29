@@ -4,7 +4,7 @@
  *
  * This module must import NOTHING. `scripts/update-offline-bootstrap.ts` loads it
  * before any dependency install, while `node_modules` may still hold the previous
- * release's packages (across the Tau → Ficus rename, only `@tau/*`), so any import
+ * release's packages (after a package-scope change, only the old scope), so any import
  * here could fail to resolve. `update-offline-bootstrap.test.ts` enforces this.
  */
 

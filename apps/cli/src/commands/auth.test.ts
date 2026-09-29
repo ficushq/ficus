@@ -27,7 +27,7 @@ describe('auth CLI commands', () => {
   const originalApiUrl = process.env.FICUS_API_URL
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'tau-auth-test-'))
+    dir = mkdtempSync(join(tmpdir(), 'ficus-auth-test-'))
     authPath = join(dir, '.tau', 'cli', 'auth.json')
     process.env.FICUS_AUTH_STORE = authPath
     delete process.env.FICUS_PASSWORD
@@ -71,7 +71,7 @@ describe('auth CLI commands', () => {
       {
         active: 'work',
         backends: {
-          work: { apiUrl: 'https://tau.example.com', password: 'secret' },
+          work: { apiUrl: 'https://ficus.example.com', password: 'secret' },
         },
       },
       join(dir, 'auth.json')
@@ -85,19 +85,19 @@ describe('auth CLI commands', () => {
     const program = createProgram()
     await program.parseAsync([
       'node',
-      'tau',
+      'ficus',
       'auth',
       'login',
       'work',
       '--api-url',
-      'https://tau.example.com',
+      'https://ficus.example.com',
       '--password',
       'secret',
     ])
 
     const store = loadAuthStore(authPath)
     expect(store.active).toBe('work')
-    expect(store.backends.work).toEqual({ apiUrl: 'https://tau.example.com', password: 'secret' })
+    expect(store.backends.work).toEqual({ apiUrl: 'https://ficus.example.com', password: 'secret' })
     expect((statSync(authPath).mode & 0o777).toString(8)).toBe('600')
   })
 
@@ -114,7 +114,7 @@ describe('auth CLI commands', () => {
     )
 
     const program = createProgram()
-    await program.parseAsync(['node', 'tau', 'auth', 'switch', 'local'])
+    await program.parseAsync(['node', 'ficus', 'auth', 'switch', 'local'])
 
     expect(loadAuthStore(authPath).active).toBe('local')
   })
@@ -132,7 +132,7 @@ describe('auth CLI commands', () => {
     )
 
     const program = createProgram()
-    await program.parseAsync(['node', 'tau', 'auth', 'logout'])
+    await program.parseAsync(['node', 'ficus', 'auth', 'logout'])
 
     const store = loadAuthStore(authPath)
     expect(store.backends.work).toBeUndefined()
@@ -183,7 +183,7 @@ describe('auth CLI commands', () => {
     }) as typeof process.exit
     try {
       await createProgram()
-        .parseAsync(['node', 'tau', 'auth', 'login', 'work', '--api-url', 'http://localhost:1'])
+        .parseAsync(['node', 'ficus', 'auth', 'login', 'work', '--api-url', 'http://localhost:1'])
         .catch(() => {})
     } finally {
       process.exit = originalExit
@@ -214,7 +214,7 @@ describe('auth CLI commands', () => {
     }) as typeof process.exit
     try {
       await createProgram()
-        .parseAsync(['node', 'tau', 'auth', 'logout'])
+        .parseAsync(['node', 'ficus', 'auth', 'logout'])
         .catch(() => {})
     } finally {
       process.exit = originalExit
@@ -228,22 +228,22 @@ describe('auth CLI commands', () => {
     // No auth-store backend at all — exactly a sandbox, where every command
     // works via FICUS_TOKEN. Status must not claim "No active Ficus backend".
     process.env.FICUS_TOKEN = 'agent-token'
-    process.env.FICUS_API_URL = 'https://demo.hiretau.ai'
+    process.env.FICUS_API_URL = 'https://demo.ficus.sh'
     const program = createProgram()
-    await program.parseAsync(['node', 'tau', 'auth', 'status'])
+    await program.parseAsync(['node', 'ficus', 'auth', 'status'])
     const [data, summary] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [any, string]
     expect(data.source).toBe('env-token')
     expect(data.authenticated).toBe(true)
-    expect(data.apiUrl).toBe('https://demo.hiretau.ai')
+    expect(data.apiUrl).toBe('https://demo.ficus.sh')
     expect(summary).toContain('agent token (FICUS_TOKEN)')
-    expect(summary).toContain('https://demo.hiretau.ai')
+    expect(summary).toContain('https://demo.ficus.sh')
     expect(JSON.stringify(data)).not.toContain('agent-token')
   })
 
   it('status prefers the stored active backend over nothing and reports "none" when unauthenticated', async () => {
     saveAuthStore({ active: 'work', backends: { work: { apiUrl: 'https://work.example.com', password: 'pw' } } })
     let program = createProgram()
-    await program.parseAsync(['node', 'tau', 'auth', 'status'])
+    await program.parseAsync(['node', 'ficus', 'auth', 'status'])
     let [data, summary] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [any, string]
     expect(data.source).toBe('auth-store')
     expect(data.label).toBe('work')
@@ -252,7 +252,7 @@ describe('auth CLI commands', () => {
 
     saveAuthStore({ active: null, backends: {} })
     program = createProgram()
-    await program.parseAsync(['node', 'tau', 'auth', 'status'])
+    await program.parseAsync(['node', 'ficus', 'auth', 'status'])
     ;[data, summary] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [any, string]
     expect(data.source).toBe('none')
     expect(data.authenticated).toBe(false)
@@ -280,7 +280,7 @@ describe('auth CLI commands', () => {
     })
 
     const program = createProgram()
-    await program.parseAsync(['node', 'tau', 'auth', 'introspect', '--squad', 'squad-1'])
+    await program.parseAsync(['node', 'ficus', 'auth', 'introspect', '--squad', 'squad-1'])
 
     expect(apiGet).toHaveBeenCalledWith('/api/auth/introspect?squadId=squad-1')
     expect(output).toHaveBeenCalledWith(

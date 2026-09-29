@@ -56,7 +56,7 @@ describe('machine keys', () => {
       name: `${prefix}-a`,
       provider: 'ssh',
       sshHost: '10.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: secretKeyId,
       sshPublicKey: 'ssh-ed25519 AAAA test',
     })
@@ -76,7 +76,7 @@ describe('machine keys', () => {
       name: `${prefix}-b`,
       provider: 'ssh',
       sshHost: '10.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'machine-ssh:does-not-exist',
       sshPublicKey: 'ssh-ed25519 AAAA test',
     })

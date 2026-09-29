@@ -96,7 +96,7 @@ import { systemdUserSupervisor } from './systemd-user'
 
 describe('systemd definition replacement', () => {
   it('keeps both installed definitions and loaded jobs untouched when pair validation fails', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-systemd-pair-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-systemd-pair-'))
     const home = join(root, 'home')
     mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
     writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty.so'), '')
@@ -131,7 +131,7 @@ describe('systemd definition replacement', () => {
 
 describe('systemd staging filenames', () => {
   it('verifies temp units under unit-suffixed names systemd-analyze accepts', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-systemd-stage-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-systemd-stage-'))
     const home = join(root, 'home')
     mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
     writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty.so'), '')

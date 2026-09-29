@@ -83,7 +83,7 @@ test('preloading a cached agent prefix populates the canonical destination cache
   const { queries } = await import('../queryOptions')
   const client = new QueryClient()
   try {
-    const agent = { id, squadId: 'tau' }
+    const agent = { id, squadId: 'ficus' }
     const prefix = id.slice(0, 8)
     client.setQueryData(queries.agents.detail(prefix).queryKey, agent)
     await preloadEntityReference(client, { kind: 'agent', id: prefix })
@@ -151,7 +151,7 @@ test('agent prefixes navigate to squad Chats with the full ID and preserve Back 
   const dom = await acquireDomHarness({})
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   const prefix = id.slice(0, 8)
-  client.setQueryData(queries.agents.detail(prefix).queryKey, { id, squadId: 'tau' })
+  client.setQueryData(queries.agents.detail(prefix).queryKey, { id, squadId: 'ficus' })
   let closed = false
   const router = createMemoryRouter(
     [
@@ -180,7 +180,7 @@ test('agent prefixes navigate to squad Chats with the full ID and preserve Back 
       )
     )
     expect(closed).toBe(true)
-    expect(router.state.location.pathname).toBe('/squads/tau/agents')
+    expect(router.state.location.pathname).toBe('/squads/ficus/agents')
     expect(router.state.location.search).toBe(`?agent=${id}`)
     expect(router.state.historyAction).toBe('PUSH')
     // Unmount the resolver before going back, as closing the reference does in the app.

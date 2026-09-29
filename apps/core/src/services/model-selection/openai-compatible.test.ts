@@ -43,7 +43,7 @@ describe('openai-compatible providers', () => {
   test('recognizes a successful trivial tool call', async () => {
     const fetcher: ProviderFetch = async (_url, init) =>
       init?.method === 'POST'
-        ? Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'tau_probe' } }] } }] })
+        ? Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'ficus_probe' } }] } }] })
         : Response.json({ data: [{ id: 'tools-model' }] })
     const result = await probeOpenAICompatible({ baseUrl: 'http://localhost:1234/v1', model: 'tools-model', fetcher })
     expect(result.capabilities.tools).toBe(true)

@@ -14,6 +14,7 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { recordingRunner } from './runner'
 import { handoffLines, runSetup, type SetupDeps } from './setup'
 import { readRegistry, upsertInstance } from './state'
@@ -28,7 +29,7 @@ const refused = () => Object.assign(new Error('connect ECONNREFUSED'), { code: '
 
 let root: string
 beforeEach(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), 'tau-setup-')))
+  root = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-setup-')))
   mkdirSync(join(root, '.git'))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
   writeFileSync(join(root, '.bun-version'), '1.3.8\n')
@@ -139,8 +140,6 @@ describe('runSetup', () => {
     expect(migrate.options.env).toEqual({
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/tau',
       FICUS_MIGRATE_LIVE: '1',
-      // One release (Ficus rename): a checkout that predates the rename reads the legacy name.
-      TAU_MIGRATE_LIVE: '1',
     })
     expect(migrate.options.cwd).toBe(root)
     const env = readFileSync(join(root, '.env'), 'utf8')
@@ -155,34 +154,22 @@ describe('runSetup', () => {
     expect(result.handoff.join('\n')).toContain('http://localhost:3000/#setup=bootstrap-token')
     expect(lines.some((l) => l.includes('Preflight'))).toBe(true)
   })
-  it('renames a pre-rename .env before writing it, so a re-run keeps the real password and key', async () => {
-    const legacy = `TAU_ENCRYPTION_KEY=${'cd'.repeat(32)}\nTAU_PASSWORD=real-password\nTAU_SANDBOX_RUNTIME=host\n`
-    writeFileSync(join(root, '.env'), legacy)
-    const { d } = deps()
-    const result = await runSetup(opts(), d)
-    const env = readFileSync(join(root, '.env'), 'utf8')
-    expect(env).not.toMatch(/^TAU_/m)
-    expect(env.match(/^FICUS_PASSWORD=.*$/gm)).toEqual(['FICUS_PASSWORD=real-password'])
-    expect(env.match(/^FICUS_ENCRYPTION_KEY=.*$/gm)).toEqual([`FICUS_ENCRYPTION_KEY=${'cd'.repeat(32)}`])
-    expect(result.handoff.join('\n')).toContain('#setup=real-password')
-    const backups = readdirSync(root).filter((name) => name.startsWith('.env.pre-ficus-'))
-    expect(backups.map((name) => readFileSync(join(root, name), 'utf8'))).toEqual([legacy])
-  })
-  it('stops on a conflicting encryption key before any command runs or any file changes', async () => {
-    const conflicting = 'TAU_ENCRYPTION_KEY=key-one\nFICUS_ENCRYPTION_KEY=key-two\n'
-    writeFileSync(join(root, '.env'), conflicting)
+  it('refuses an install whose .env predates the Ficus naming before any command runs or any file changes', async () => {
+    const old = `${PRE_FICUS_ENCRYPTION_KEY}=old-key-value\nOLD_PASSWORD=real-password\n`
+    writeFileSync(join(root, '.env'), old)
+    const before = readdirSync(root).sort()
     const { d, calls } = deps()
     const error = (await runSetup(opts(), d).catch((e: unknown) => e)) as Error
-    expect(error.message).toContain('TAU_ENCRYPTION_KEY')
-    expect(error.message).toContain('remove the wrong value, then re-run')
-    expect(error.message).not.toContain('key-one')
-    expect(error.message).not.toContain('key-two')
-    expect(readFileSync(join(root, '.env'), 'utf8')).toBe(conflicting)
-    expect(readdirSync(root).some((name) => name.includes('.pre-ficus-'))).toBe(false)
+    expect(error).toBeInstanceOf(EnvNamingError)
+    expect(error.message).toContain(PRE_FICUS_ENCRYPTION_KEY)
+    expect(error.message).toContain('nothing was written')
+    expect(error.message).not.toContain('old-key-value')
+    expect(readFileSync(join(root, '.env'), 'utf8')).toBe(old)
+    expect(readdirSync(root).sort()).toEqual(before)
     expect(calls).toEqual([])
   })
   it('fails closed on a checkout whose package name is not "ficus", or cannot be read', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_PASSWORD=real-password\n')
+    writeFileSync(join(root, '.env'), 'FICUS_PASSWORD=real-password\n')
     for (const [contents, described] of [
       [JSON.stringify({ name: 'my-fork' }), 'is named "my-fork"'],
       ['{not json', 'could not be read'],
@@ -190,21 +177,11 @@ describe('runSetup', () => {
       writeFileSync(join(root, 'package.json'), contents)
       const { d, calls } = deps()
       await expect(runSetup(opts(), d)).rejects.toThrow(
-        `${root} is not a Ficus checkout: its package.json ${described}, not "ficus". Setup renames TAU_ settings and writes FICUS_ ones only in a Ficus checkout`
+        `${root} is not a Ficus checkout: its package.json ${described}, not "ficus"`
       )
       expect(calls).toEqual([])
-      expect(readFileSync(join(root, '.env'), 'utf8')).toBe('TAU_PASSWORD=real-password\n')
+      expect(readFileSync(join(root, '.env'), 'utf8')).toBe('FICUS_PASSWORD=real-password\n')
     }
-  })
-  it('refuses a checkout that predates the Ficus rename before preflight or any mutation', async () => {
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
-    writeFileSync(join(root, '.env'), 'TAU_PASSWORD=real-password\n')
-    const { d, calls } = deps()
-    await expect(runSetup(opts(), d)).rejects.toThrow(
-      `${root} predates the Ficus rename (its package.json is named "tau"): update it first (git pull), or run its own \`bun run setup\``
-    )
-    expect(calls).toEqual([])
-    expect(readFileSync(join(root, '.env'), 'utf8')).toBe('TAU_PASSWORD=real-password\n')
   })
   it('keeps an existing encryption key on re-run', async () => {
     writeFileSync(join(root, '.env'), 'FICUS_ENCRYPTION_KEY=keep-me\n')
@@ -732,7 +709,7 @@ describe('canonical checkout identity', () => {
   it('mutation-red: a symlink alias cannot re-register a registered checkout under another supervisor', async () => {
     const { d, calls } = deps()
     upsertInstance('tau', { root, port: 3000, supervisor: 'pm2', createdAt: 'c', updatedAt: 'u' }, {}, d.statePath)
-    const alias = join(root, '..', 'tau-alias')
+    const alias = join(root, '..', 'ficus-alias')
     symlinkSync(realpathSync(root), alias)
     try {
       await expect(runSetup(opts({ root: alias, supervisor: 'systemd-user' }), d)).rejects.toThrow(
@@ -760,7 +737,7 @@ describe('canonical checkout identity', () => {
       {},
       d.statePath
     )
-    const alias = join(root, '..', 'tau-rerun-alias')
+    const alias = join(root, '..', 'ficus-rerun-alias')
     symlinkSync(root, alias)
     try {
       await runSetup(opts({ root: alias }), d)
@@ -776,7 +753,7 @@ describe('canonical checkout identity', () => {
 
   it('canonicalizes a migrated v2 alias and preserves its legacy creation time', async () => {
     const { d } = deps()
-    const alias = join(root, '..', 'tau-v2-alias')
+    const alias = join(root, '..', 'ficus-v2-alias')
     symlinkSync(root, alias)
     writeFileSync(
       d.statePath,

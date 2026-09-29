@@ -23,7 +23,7 @@ beforeAll(() => {
         return Response.json({ version: 'fixture', commit: 'not-this-build', buildDate: '2026-09-26' })
       if (path === '/install.sh')
         return new Response(
-          `#!/bin/sh\nprintf 'FICUS_INSTALL_AUTH=%s TAU_INSTALL_AUTH=%s\\n' "\${FICUS_INSTALL_AUTH-unset}" "\${TAU_INSTALL_AUTH-unset}" >"\${INSTALL_ENV_LOG}"\n`
+          `#!/bin/sh\nprintf 'FICUS_INSTALL_AUTH=%s\\n' "\${FICUS_INSTALL_AUTH-unset}" >"\${INSTALL_ENV_LOG}"\n`
         )
       return new Response('not found', { status: 404 })
     },
@@ -34,9 +34,8 @@ afterAll(() => server.stop(true))
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'ficus-install-test-'))
   envLog = join(dir, 'env.log')
-  for (const key of ['FICUS_INSTALL_AUTH', 'TAU_INSTALL_AUTH', 'INSTALL_ENV_LOG']) saved[key] = process.env[key]
+  for (const key of ['FICUS_INSTALL_AUTH', 'INSTALL_ENV_LOG']) saved[key] = process.env[key]
   delete process.env.FICUS_INSTALL_AUTH
-  delete process.env.TAU_INSTALL_AUTH
   process.env.INSTALL_ENV_LOG = envLog
   ;(output as ReturnType<typeof mock>).mockClear()
   ;(outputError as ReturnType<typeof mock>).mockClear()
@@ -64,15 +63,15 @@ async function run(...flags: string[]) {
 
 describe('ficus install', () => {
   it('--no-auth hands the installer FICUS_INSTALL_AUTH=0, and only that name', async () => {
-    expect(await run('--no-auth')).toBe('FICUS_INSTALL_AUTH=0 TAU_INSTALL_AUTH=unset')
+    expect(await run('--no-auth')).toBe('FICUS_INSTALL_AUTH=0')
   })
 
   it('--auth hands the installer FICUS_INSTALL_AUTH=1', async () => {
-    expect(await run('--auth')).toBe('FICUS_INSTALL_AUTH=1 TAU_INSTALL_AUTH=unset')
+    expect(await run('--auth')).toBe('FICUS_INSTALL_AUTH=1')
   })
 
   it('without either flag leaves the installer to decide', async () => {
-    expect(await run()).toBe('FICUS_INSTALL_AUTH=unset TAU_INSTALL_AUTH=unset')
+    expect(await run()).toBe('FICUS_INSTALL_AUTH=unset')
   })
 
   it('reports in Ficus terms', async () => {

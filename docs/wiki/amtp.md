@@ -1,6 +1,6 @@
 # AMTP (Federation)
 
-Core keeps the canonical host copy under `<TAU home>/private/agent_<id>/.tau/identity.pem`
+Core keeps the canonical host copy under `<HOME_DIR>/private/agent_<id>/.tau/identity.pem`
 and delivers it mode `0600` to `/private/identity.pem` in Docker/Kubernetes
 sandboxes and `~/.private/identity.pem` on VM boxes. Shared system-manager and
 subagent sandboxes do not have an independent AMTP key. Automatic rotation is

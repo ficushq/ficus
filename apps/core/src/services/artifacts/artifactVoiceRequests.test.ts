@@ -44,7 +44,7 @@ describe('artifact voice request service', () => {
   }
 
   beforeEach(async () => {
-    workspacePath = await mkdtemp(join(tmpdir(), 'tau-artifact-voice-'))
+    workspacePath = await mkdtemp(join(tmpdir(), 'ficus-artifact-voice-'))
     sentMessages = []
     agents = []
     localListAgentsCalls = 0

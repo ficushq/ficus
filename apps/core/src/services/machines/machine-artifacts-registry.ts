@@ -16,7 +16,7 @@ import { serverArtifact } from './server-bundle'
  * next to `ensureArtifact` would create an import cycle. Here the graph stays
  * one-directional: definitions → machine-artifacts; registry → definitions.
  *
- * Registered: box-provision.sh, then the sandbox-server bundle, then the tau
+ * Registered: box-provision.sh, then the sandbox-server bundle, then the Ficus
  * CLI. box-provision.sh is FIRST deliberately — it is the script every per-box
  * operation shells out to, it is a few KB against the server bundle's several
  * MB, and each artifact is required (a failure aborts the rest of the pass), so

@@ -83,9 +83,9 @@ The sandbox restricts file operations to a set of allowed prefixes:
 ```
 /workspace    — agent working directory (read-write)
 /memory       — agent memory files (read-only mount)
-/home/tau     — tau CLI home
+/home/tau     — ficus CLI home
 /nix          — nix package store
-/opt/tau      — tau defaults and tools
+/opt/tau      — Ficus defaults and tools
 /tmp          — temporary files
 ```
 

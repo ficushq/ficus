@@ -8,7 +8,7 @@ import { recordingRunner } from './runner'
 
 let tmp: string
 beforeEach(() => {
-  tmp = mkdtempSync(join(tmpdir(), 'tau-boot-'))
+  tmp = mkdtempSync(join(tmpdir(), 'ficus-boot-'))
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
@@ -32,7 +32,7 @@ describe('bootstrap', () => {
     expect(defaultInstallDir('/home/x')).toBe('/home/x/.tau/tau')
   })
   it('clones, installs and execs the checkout setup with pass-through args', async () => {
-    const root = join(tmp, 'tau')
+    const root = join(tmp, 'ficus')
     // simulate `git clone` creating a checkout, on top of a plain recording runner
     const rec = recordingRunner({ 'bun --version': { stdout: '1.3.8\n' } })
     const d: BootstrapDeps = {
@@ -40,7 +40,7 @@ describe('bootstrap', () => {
         const r = await rec.runner(command, options)
         if (command[0] === 'git' && command[1] === 'clone') {
           mkdirSync(join(root, '.git'), { recursive: true })
-          writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+          writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
           writeFileSync(join(root, '.bun-version'), '1.3.8\n')
         }
         return r
@@ -50,9 +50,9 @@ describe('bootstrap', () => {
       home: tmp,
       log: () => {},
     }
-    await bootstrap({ root, repo: 'https://example/tau.git', ref: 'main', setupArgs: ['--runtime', 'host'] }, d)
+    await bootstrap({ root, repo: 'https://example/ficus.git', ref: 'main', setupArgs: ['--runtime', 'host'] }, d)
     expect(joined(rec.calls)).toEqual([
-      `git clone --recurse-submodules --branch main https://example/tau.git ${root}`,
+      `git clone --recurse-submodules --branch main https://example/ficus.git ${root}`,
       'bun --version',
       'bun install --frozen-lockfile',
       `bun run setup -- --root ${root} --runtime host`,
@@ -61,31 +61,31 @@ describe('bootstrap', () => {
     expect(rec.calls[3].options.inherit).toBe(true)
   })
   it('reuses an existing checkout without cloning', async () => {
-    const root = join(tmp, 'tau')
+    const root = join(tmp, 'ficus')
     mkdirSync(join(root, '.git'), { recursive: true })
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(root, '.bun-version'), '1.3.8\n')
     const { d, calls } = deps()
     await bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)
     expect(joined(calls)).toEqual(['bun --version', 'bun install --frozen-lockfile', `bun run setup -- --root ${root}`])
   })
   it('refuses a non-empty directory that is not a checkout', async () => {
-    const root = join(tmp, 'tau')
+    const root = join(tmp, 'ficus')
     mkdirSync(root)
     writeFileSync(join(root, 'file'), 'x')
     const { d } = deps()
     await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(/not a Ficus checkout/)
   })
   it('refuses a root that is a regular file (not just a non-empty non-checkout dir)', async () => {
-    const root = join(tmp, 'tau')
+    const root = join(tmp, 'ficus')
     writeFileSync(root, 'not a directory')
     const { d } = deps()
     await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(/not a Ficus checkout/)
   })
   it('propagates the checkout setup exit code', async () => {
-    const root = join(tmp, 'tau')
+    const root = join(tmp, 'ficus')
     mkdirSync(join(root, '.git'), { recursive: true })
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(root, '.bun-version'), '1.3.8\n')
     const rec = recordingRunner({ 'bun --version': { stdout: '1.3.8' }, 'bun run setup': { code: 2 } })
     const d: BootstrapDeps = {
@@ -105,9 +105,9 @@ describe('bootstrap', () => {
     expect((error as SetupOptionsError).exitCode).toBe(2)
   })
   function checkout(version = '1.4.2') {
-    const root = join(tmp, 'tau')
+    const root = join(tmp, 'ficus')
     mkdirSync(join(root, '.git'), { recursive: true })
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(root, '.bun-version'), version)
     return root
   }
@@ -132,7 +132,7 @@ describe('bootstrap', () => {
         'pipefail',
         '-c',
         'curl -fsSL https://bun.sh/install | bash -s -- "$1"',
-        'tau-bun-bootstrap',
+        'ficus-bun-bootstrap',
         'bun-v1.4.2',
       ])
       expect(joined(rec.calls).slice(-3)).toEqual([
@@ -146,7 +146,7 @@ describe('bootstrap', () => {
   }
 
   it('uses the cloned ref pin and honors BUN_INSTALL for installation and setup', async () => {
-    const root = join(tmp, 'tau')
+    const root = join(tmp, 'ficus')
     const installDir = join(tmp, 'custom bun')
     const installedBun = join(installDir, 'bin', 'bun')
     const rec = recordingRunner({ [`${installedBun} --version`]: { stdout: '1.4.2' } })
@@ -273,6 +273,8 @@ describe('bootstrap', () => {
   })
   it('requires git', async () => {
     const { d } = deps({ which: (cmd) => (cmd === 'git' ? null : `/usr/bin/${cmd}`) })
-    await expect(bootstrap({ root: join(tmp, 'tau'), repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(/git/)
+    await expect(bootstrap({ root: join(tmp, 'ficus'), repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(
+      /git/
+    )
   })
 })

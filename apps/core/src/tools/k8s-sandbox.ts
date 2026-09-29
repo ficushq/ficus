@@ -539,7 +539,7 @@ export function createHttpEditOperations(
 export function createHttpBashOperations(
   manager: SandboxToolsManager,
   sandboxId: string,
-  tauToken?: string,
+  ficusToken?: string,
   opts?: { agentId?: string; invocationId?: string }
 ): BashOperations {
   const mapFailure = createOutageMapper(manager, sandboxId, opts?.agentId)
@@ -575,7 +575,7 @@ export function createHttpBashOperations(
           // because their cached `devbox shellenv` re-exports PATH). It would also leak
           // the Core's host env into the sandbox. The pod owns PATH/HOME/etc via its own
           // process.env; we inject ONLY the deliberate per-command vars: the *live* Core
-          // URL (so the `tau` CLI reaches the current Core even if the pod baked a stale
+          // URL (so the `ficus` CLI reaches the current Core even if the pod baked a stale
           // dynamic port at creation) and the per-agent token. Agent `bash` and
           // `squad_bash` share this op, so both behave identically.
           env: {
@@ -585,7 +585,7 @@ export function createHttpBashOperations(
             FICUS_API_URL: manager.resolveToolApiUrl
               ? manager.resolveToolApiUrl(sandboxId)
               : resolveSandboxApiUrl(manager.podManager!.namespace),
-            ...(tauToken ? { FICUS_TOKEN: tauToken } : {}),
+            ...(ficusToken ? { FICUS_TOKEN: ficusToken } : {}),
           } as Record<string, string>,
           sourceEnv: true,
           activateDevbox: true,
@@ -765,12 +765,12 @@ export function createK8sSandboxedBashTool(
   cwd: string,
   sandboxId: string,
   manager: SandboxToolsManager,
-  tauToken?: string,
+  ficusToken?: string,
   opts?: { agentId?: string; invocationOwnerId?: string }
 ): AgentTool<any> {
   const makeTool = (invocationId?: string) =>
     createBashTool(cwd, {
-      operations: createHttpBashOperations(manager, sandboxId, tauToken, { ...opts, invocationId }),
+      operations: createHttpBashOperations(manager, sandboxId, ficusToken, { ...opts, invocationId }),
     })
   const tool = makeTool()
   if (opts?.invocationOwnerId) {
@@ -804,7 +804,7 @@ export function createK8sSandboxedCodingTools(
   _workspacePath: string,
   sandboxId: string,
   manager: SandboxToolsManager,
-  tauToken?: string,
+  ficusToken?: string,
   squadId?: string,
   invocationOwnerId?: string,
   agentId?: string
@@ -832,7 +832,7 @@ export function createK8sSandboxedCodingTools(
     createK8sSandboxedEditTool(workspaceMount, sandboxId, manager, squadRoute),
     workspaceMount
   )
-  const rawBash = createK8sSandboxedBashTool(bashCwd, sandboxId, manager, tauToken, { invocationOwnerId, agentId })
+  const rawBash = createK8sSandboxedBashTool(bashCwd, sandboxId, manager, ficusToken, { invocationOwnerId, agentId })
   // vm-only: a squad member's private bash cannot reach the squad box's paths
   // (separate unix user). Answer a denied touch of them with a `squad_bash`
   // hint instead of leaving the model to conclude the tool does not exist.

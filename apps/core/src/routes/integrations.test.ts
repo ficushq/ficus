@@ -52,13 +52,13 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       authority: 'local',
       configured: true,
       clientId: 'client-id',
-      callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
       requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
     })
   )
   const channelGet = mock((_provider: string) => ({ fields: [] }))
   const channelConfigure = mock(async (_provider: string, _input: unknown, _actor: string) => ({ fields: [] }))
-  const webhookGet = mock(() => ({ configured: true, webhookUrl: 'https://tau.example/api/webhooks/github' }))
+  const webhookGet = mock(() => ({ configured: true, webhookUrl: 'https://ficus.example/api/webhooks/github' }))
   const webhookConfigure = mock(async (_input: unknown, _actor: string) => webhookGet())
   const oauthAppConfigure = mock(async () => oauthAppGet('notion'))
   const authorizationStart = mock(async () => ({ authorizationUrl: 'https://provider.example/authorize' }))
@@ -500,7 +500,10 @@ describe('integration routes', () => {
         })
       const response = await request()
       expect(response.status).toBe(200)
-      expect(await response.json()).toEqual({ configured: true, webhookUrl: 'https://tau.example/api/webhooks/github' })
+      expect(await response.json()).toEqual({
+        configured: true,
+        webhookUrl: 'https://ficus.example/api/webhooks/github',
+      })
       expect(calls.webhookConfigure).toHaveBeenCalledWith({ secret: 'candidate-secret' }, `user:${user.id}`)
       calls.webhookConfigure.mockImplementation(async () => {
         throw new Error('candidate-secret')
@@ -576,7 +579,7 @@ describe('integration routes', () => {
         authority: 'platform_broker',
         configured: true,
         clientId: null,
-        callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+        callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
         requiredCapabilities: [],
       })
       const configureCalls = calls.oauthAppConfigure.mock.calls.length
@@ -595,7 +598,7 @@ describe('integration routes', () => {
           authority: 'platform_broker',
           configured: true,
           clientId: null,
-          callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+          callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
           requiredCapabilities: [],
         }
       })

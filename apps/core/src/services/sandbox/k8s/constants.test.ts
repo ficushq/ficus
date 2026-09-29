@@ -13,7 +13,7 @@ import { join } from 'path'
  * from the checkout, a real .env would silently outrank the env passed here.
  */
 function isLocalDevInFreshProcess(env: Record<string, string>): unknown {
-  const dir = mkdtempSync(join(tmpdir(), 'tau-k8s-const-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-k8s-const-'))
   try {
     const result = Bun.spawnSync(
       [

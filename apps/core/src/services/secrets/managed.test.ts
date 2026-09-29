@@ -1,5 +1,4 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { bridgeLegacyEnv } from '@ficus/shared/legacy-env'
 import {
   getManagedSecretKeys,
   getPublicManagedSecretKeys,
@@ -151,35 +150,21 @@ describe('platform-managed secret keys', () => {
     expect([...getPublicManagedSecretKeys()]).not.toContain('FICUS_PUSH_RELAY_TOKEN')
   })
 
-  test('retained TAU_ rows stay managed and private on a bridged env (one release)', () => {
-    // What a pre-rename managed.env delivers, after the boot bridge.
-    const delivered: Record<string, string | undefined> = {
-      TAU_MANAGED_SECRET_KEYS: 'TAU_PLATFORM_INSTANCE_TOKEN,TAU_PLATFORM_USAGE_TOKEN,SES_ACCESS_KEY_ID',
-    }
-    bridgeLegacyEnv(delivered)
-    setManagedKeys(delivered.FICUS_MANAGED_SECRET_KEYS)
-    const priorToken = process.env.FICUS_PLATFORM_INSTANCE_TOKEN
-    process.env.FICUS_PLATFORM_INSTANCE_TOKEN = 'instance-canary'
+  test('a managed FICUS_ key covers no other prefix, and reads only its own name', () => {
+    setManagedKeys('FICUS_PLATFORM_INSTANCE_TOKEN,SES_ACCESS_KEY_ID')
+    const prior = { current: process.env.FICUS_PLATFORM_INSTANCE_TOKEN, old: process.env.OLD_PLATFORM_INSTANCE_TOKEN }
+    process.env.OLD_PLATFORM_INSTANCE_TOKEN = 'old-canary'
+    delete process.env.FICUS_PLATFORM_INSTANCE_TOKEN
     try {
-      expect(isManagedSecretKey('TAU_PUSH_RELAY_TOKEN')).toBe(true)
-      expect(isManagedSecretKey('TAU_PLATFORM_INSTANCE_TOKEN')).toBe(true)
-      expect(isManagedSecretKey('TAU_PLATFORM_USAGE_TOKEN')).toBe(true)
-      expect(isManagedSecretKey('TAU_SES_ACCESS_KEY_ID')).toBe(false)
-      const publicKeys = [...getPublicManagedSecretKeys()]
-      expect(publicKeys.filter((key) => key.startsWith('TAU_'))).toEqual([])
-      expect(publicKeys).toContain('SES_ACCESS_KEY_ID')
-      // A retained legacy key resolves to the value the bridge moved.
-      expect(readManagedSecretValue('TAU_PLATFORM_INSTANCE_TOKEN')).toBe('instance-canary')
+      expect(isManagedSecretKey('OLD_PLATFORM_INSTANCE_TOKEN')).toBe(false)
+      expect(isManagedSecretKey('OLD_PUSH_RELAY_TOKEN')).toBe(false)
+      expect(readManagedSecretValue('FICUS_PLATFORM_INSTANCE_TOKEN')).toBeUndefined()
     } finally {
-      if (priorToken === undefined) delete process.env.FICUS_PLATFORM_INSTANCE_TOKEN
-      else process.env.FICUS_PLATFORM_INSTANCE_TOKEN = priorToken
+      if (prior.current === undefined) delete process.env.FICUS_PLATFORM_INSTANCE_TOKEN
+      else process.env.FICUS_PLATFORM_INSTANCE_TOKEN = prior.current
+      if (prior.old === undefined) delete process.env.OLD_PLATFORM_INSTANCE_TOKEN
+      else process.env.OLD_PLATFORM_INSTANCE_TOKEN = prior.old
     }
-  })
-
-  test('the legacy relay credential is private even on a self-hosted instance (one release)', () => {
-    setManagedKeys(undefined)
-    expect(isManagedSecretKey('TAU_PUSH_RELAY_TOKEN')).toBe(true)
-    expect(isManagedSecretKey('TAU_PLATFORM_INSTANCE_TOKEN')).toBe(false)
   })
 
   test('self-hosted (no FICUS_MANAGED_SECRET_KEYS): nothing is managed, superseded keys included', () => {

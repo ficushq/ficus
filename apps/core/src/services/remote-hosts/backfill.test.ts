@@ -22,7 +22,7 @@ function hostValues(name: string): typeof remoteHosts.$inferInsert {
   return {
     name: `${prefix}-${name}`,
     sshHost: '10.0.0.1',
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: `${prefix}-secret-${name}`,
     sshPublicKey: 'ssh-ed25519 AAAA test',
   }

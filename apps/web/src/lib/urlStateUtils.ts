@@ -1,5 +1,5 @@
 export function setQueryParamInPath(path: string, param: string, value: string | null | undefined): string {
-  const url = new URL(path, 'http://tau.local')
+  const url = new URL(path, 'http://ficus.local')
   if (value === null || value === undefined) {
     url.searchParams.delete(param)
   } else {

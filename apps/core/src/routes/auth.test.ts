@@ -53,13 +53,13 @@ function bearerHeader(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` }
 }
 
-async function clearStoredTauPassword() {
+async function clearStoredFicusPassword() {
   await db.delete(secrets).where(eq(secrets.key, 'FICUS_PASSWORD'))
   resetSecretStore()
 }
 
 async function resetAuthTestState() {
-  await clearStoredTauPassword()
+  await clearStoredFicusPassword()
   await db.delete(emailVerifications)
   await db.delete(userCredentials)
   await db.delete(sessions)

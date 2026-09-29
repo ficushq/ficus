@@ -3,14 +3,13 @@ import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFile
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { localProcessNames } from '@ficus/shared'
+import { EnvNamingError, RENAME_BRIDGE_TAG, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { CommandRunner } from './command-runner'
 import {
   LocalUpdateManager,
   UpdateLockedError,
   DirtyWorktreeError,
   UnsupportedDeploymentError,
-  defaultLocalInstallEnv,
   sandboxRuntimeRestartBlocker,
 } from './local-updater'
 import { acquireUpdateRunLock } from './run-lock'
@@ -37,7 +36,7 @@ function manager(opts: TestOptions = {}) {
   const responses = opts.gitResponses ?? {}
   const ghResponses: Record<string, string> = {
     'auth token': 'test-token',
-    'repo view --json owner,name --jq .owner.login + "/" + .name': 'tau/tau',
+    'repo view --json owner,name --jq .owner.login + "/" + .name': 'acme/ficus',
     ...(opts.ghResponses ?? {}),
   }
   return {
@@ -113,20 +112,20 @@ describe('LocalUpdateManager', () => {
   it('checks availability with gh and local sha comparison without git fetch', async () => {
     const { updater, calls, ghCalls } = manager({
       gitResponses: { 'rev-parse HEAD': 'a' },
-      ghResponses: { 'api repos/tau/tau/commits/main --jq .sha': 'a' },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      ghResponses: { 'api repos/acme/ficus/commits/main --jq .sha': 'a' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
     const result = await updater.check()
     expect(result.available).toBe(false)
     expect(calls).toEqual([['rev-parse', 'HEAD']])
-    expect(ghCalls).toEqual([['api', 'repos/tau/tau/commits/main', '--jq', '.sha']])
+    expect(ghCalls).toEqual([['api', 'repos/acme/ficus/commits/main', '--jq', '.sha']])
   })
 
   it('reports an available update when gh remote sha differs from local sha', async () => {
     const { updater } = manager({
       gitResponses: { 'rev-parse HEAD': 'local' },
-      ghResponses: { 'api repos/tau/tau/commits/main --jq .sha': 'remote' },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      ghResponses: { 'api repos/acme/ficus/commits/main --jq .sha': 'remote' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
     const result = await updater.check()
     expect(result.available).toBe(true)
@@ -141,7 +140,7 @@ describe('LocalUpdateManager', () => {
       gh: async () => {
         throw new Error('gh api failed: authentication required')
       },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
     await expect(updater.check()).rejects.toThrow(
       'Unable to check GitHub for updates with the gh CLI. Connect GitHub in Integrations and select githubConnectionId in update settings when multiple accounts are connected.'
@@ -149,7 +148,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('persists latest run status for a restarted API process', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       let release!: () => void
@@ -176,7 +175,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks an interrupted reload:core run succeeded after API restart', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -199,7 +198,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks an old persisted reload:core run with pending commands succeeded after API restart', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -222,7 +221,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks an unobserved systemd API restart run failed after API restart', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -246,7 +245,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks a persisted pre-restart systemd success succeeded after the API was restarted', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -276,7 +275,7 @@ describe('LocalUpdateManager', () => {
   it('marks a persisted systemd restart whose child was killed by SIGTERM succeeded after the API restarted', async () => {
     // Older cores recorded the SIGTERM as a failed command and died before the run status
     // was persisted; the reconciler must still recognise that shape as a completed restart.
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -306,7 +305,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('does not mark a run succeeded when it was interrupted mid-build before the restart command ran', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -331,7 +330,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks a genuinely self-restarted run succeeded when persisted mid-dispatch', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -362,7 +361,7 @@ describe('LocalUpdateManager', () => {
     const updater = new LocalUpdateManager({
       repoRoot: '/repo',
       flavor: () => LOCAL_FLAVOR,
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
       git: async (args: string[], options?: { env?: Record<string, string> }) => {
         gitCalls.push({ args, env: options?.env })
         return (
@@ -392,7 +391,7 @@ describe('LocalUpdateManager', () => {
     expect(gitCalls.map((call) => call.args)).toContainEqual([
       'fetch',
       '--no-tags',
-      'https://github.com/tau/tau.git',
+      'https://github.com/acme/ficus.git',
       'main',
     ])
     expect(gitCalls.map((call) => call.args)).toContainEqual(['merge', '--ff-only', 'FETCH_HEAD'])
@@ -414,7 +413,7 @@ describe('LocalUpdateManager', () => {
         return ''
       },
       ghResponses: { 'auth token': 'secret-token' },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
 
     try {
@@ -423,7 +422,7 @@ describe('LocalUpdateManager', () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       expect(message).toContain(
-        'Unable to fetch GitHub update from tau/tau main: git fetch failed: repository not found'
+        'Unable to fetch GitHub update from acme/ficus main: git fetch failed: repository not found'
       )
       expect(message).not.toContain('Run gh auth login')
     }
@@ -435,7 +434,7 @@ describe('LocalUpdateManager', () => {
       gh: async () => {
         throw new Error('not logged in')
       },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
 
     await expect(updater.apply({ manual: true })).rejects.toThrow(
@@ -449,7 +448,7 @@ describe('LocalUpdateManager', () => {
     const updater = new LocalUpdateManager({
       repoRoot: '/repo',
       flavor: () => LOCAL_FLAVOR,
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
       git: async (args: string[]) => {
         if (args.join(' ') === 'status --porcelain') return ''
         if (args.join(' ') === 'rev-parse HEAD') return 'a'
@@ -470,7 +469,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('persists a failed systemd API restart as a terminal failed run', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-systemd-restart-failure-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-systemd-restart-failure-'))
     try {
       const { updater } = manager({
         flavor: () => SYSTEMD_FLAVOR,
@@ -556,10 +555,10 @@ describe('LocalUpdateManager', () => {
         },
       }
       const updater = new LocalUpdateManager({
-        repoRoot: '/tmp/tau-targeted-test',
+        repoRoot: '/tmp/ficus-targeted-test',
         git,
         commandRunner,
-        statusPath: `/tmp/tau-targeted-test-${randomUUID()}.json`,
+        statusPath: `/tmp/ficus-targeted-test-${randomUUID()}.json`,
         flavor: () => LOCAL_FLAVOR,
       })
       return { updater, ran, git }
@@ -620,7 +619,7 @@ describe('cross-process update run lock (real advisory lock)', () => {
   it('apply throws UpdateLockedError while another process holds the lock, succeeds after release', async () => {
     const held = await acquireUpdateRunLock(TEST_LOCK_KEY)
     expect(held).not.toBeNull()
-    const dir = mkdtempSync(join(tmpdir(), 'tau-updater-lock-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-updater-lock-'))
     try {
       const { updater } = manager({
         runLock: testRunLock,
@@ -639,7 +638,7 @@ describe('cross-process update run lock (real advisory lock)', () => {
   })
 
   it('applyInBackground records a terminal failure when lock acquisition rejects', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-updater-lock-error-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-updater-lock-error-'))
     try {
       const { updater } = manager({
         runLock: async () => {
@@ -671,7 +670,7 @@ describe('cross-process update run lock (real advisory lock)', () => {
   it('applyInBackground fails the run with a clear message when another process holds the lock', async () => {
     const held = await acquireUpdateRunLock(TEST_LOCK_KEY)
     expect(held).not.toBeNull()
-    const dir = mkdtempSync(join(tmpdir(), 'tau-updater-lock-bg-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-updater-lock-bg-'))
     try {
       const { updater } = manager({
         runLock: testRunLock,
@@ -699,7 +698,7 @@ describe('sandboxRuntimeRestartBlocker', () => {
   const LIST = 'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
   let dir: string
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'tau-update-runtime-'))
+    dir = mkdtempSync(join(tmpdir(), 'ficus-update-runtime-'))
   })
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true })
@@ -710,9 +709,9 @@ describe('sandboxRuntimeRestartBlocker', () => {
     expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), {})).toBeNull()
   })
 
-  it('reads a pre-rename TAU_SANDBOX_RUNTIME line for one release', () => {
-    writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nTAU_SANDBOX_RUNTIME=vm\n')
-    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), {})).toBeNull()
+  it('reads only the FICUS_ name: another prefix counts as unset', () => {
+    writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nOLD_SANDBOX_RUNTIME=vm\n')
+    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), {})).toContain('(is unset)')
   })
 
   it('blocks a legacy spelling, quoting the value and naming the file', () => {
@@ -755,7 +754,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   // merge: leaving the checkout moved forward onto code the services cannot
   // start is strictly worse than not updating at all.
   it('aborts before the merge when the env file names a retired runtime', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-preflight-'))
     try {
       writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nFICUS_SANDBOX_RUNTIME=auto\n')
       let ran = false
@@ -787,7 +786,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   })
 
   it('runs the update when the env file names a supported runtime', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-ok-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-preflight-ok-'))
     try {
       writeFileSync(join(dir, '.env'), 'FICUS_SANDBOX_RUNTIME=docker-socket\n')
       let ran = false
@@ -817,7 +816,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   // it asks the precise question instead of the flavor-level one runApply must
   // use before it merges.
   it('does not block a targeted rebuild whose plan restarts nothing', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-norestart-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-preflight-norestart-'))
     try {
       // Same broken .env as the aborting case above — the ONLY difference is
       // that a web-only rebuild restarts nothing.
@@ -846,7 +845,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
 
   // ...and the mirror image: a targeted rebuild that DOES restart is blocked.
   it('blocks a targeted rebuild whose plan restarts the services', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-targeted-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-preflight-targeted-'))
     try {
       writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nFICUS_SANDBOX_RUNTIME=auto\n')
       let ran = false
@@ -874,107 +873,27 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   })
 })
 
-// Ficus rename (Task 10): the updater hard-renames a local install's TAU_
-// settings to FICUS_ before its restart commands run, and puts the files back
-// byte-for-byte when the update fails, so the old processes restart on exactly
-// the configuration they had.
-describe('LocalUpdateManager local-install env rename', () => {
+// An install whose .env predates the Ficus naming is refused before the merge,
+// and its files are never written.
+describe('LocalUpdateManager env naming guard', () => {
   const CORE_CHANGE = {
     'status --porcelain': '',
     'rev-parse HEAD': 'a',
     'rev-parse origin/main': 'b',
     'diff --name-only a b': 'apps/core/src/index.ts',
   }
-  const LEGACY_ENV = 'TAU_ENCRYPTION_KEY=' + 'ab'.repeat(32) + '\nTAU_SANDBOX_RUNTIME=host\nTAU_PASSWORD=real\n'
-  const RENAMED_ENV = 'FICUS_ENCRYPTION_KEY=' + 'ab'.repeat(32) + '\nFICUS_SANDBOX_RUNTIME=host\nFICUS_PASSWORD=real\n'
-  // The default instance's pm2 name: phase-5 identity, unchanged by the rename.
-  const API = localProcessNames('tau').api
-  const LEGACY_ECOSYSTEM = `module.exports = { apps: [{ name: '${API}', env: {\n  TAU_PM2_API_NAME: '${API}',\n} }] }\n`
+  const OLD_ENV = `${PRE_FICUS_ENCRYPTION_KEY}=` + 'ab'.repeat(32) + '\nFICUS_SANDBOX_RUNTIME=host\n'
+  const CURRENT_ENV = 'FICUS_ENCRYPTION_KEY=' + 'ab'.repeat(32) + '\nFICUS_SANDBOX_RUNTIME=host\n'
   let dir: string
   beforeEach(() => {
     dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-update-env-')))
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'ficus' }))
-    writeFileSync(join(dir, '.env'), LEGACY_ENV)
-    writeFileSync(join(dir, 'ecosystem.config.js'), LEGACY_ECOSYSTEM)
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
-  const backups = () => readdirSync(dir).filter((name) => name.includes('.pre-ficus-'))
 
-  it('renames .env and ecosystem.config.js before the build and restart commands run', async () => {
-    const seen: string[] = []
-    const { updater } = manager({
-      repoRoot: dir,
-      statusPath: join(dir, 'status.json'),
-      commandRunner: {
-        runAll: async () => {
-          seen.push(readFileSync(join(dir, '.env'), 'utf8'))
-        },
-      },
-      gitResponses: CORE_CHANGE,
-    })
-    const run = await updater.apply({ manual: true })
-    expect(run.status).toBe('succeeded')
-    expect(seen).toEqual([RENAMED_ENV])
-    expect(readFileSync(join(dir, 'ecosystem.config.js'), 'utf8')).toContain(`FICUS_PM2_API_NAME: '${API}',`)
-    expect(backups()).toHaveLength(2)
-  })
-
-  it('a failed update calls restoreLocalInstallEnv and leaves .env byte-identical to before', async () => {
+  it('refuses before the merge, naming the key and not the value, and leaves .env byte-identical', async () => {
+    writeFileSync(join(dir, '.env'), OLD_ENV)
     const before = readFileSync(join(dir, '.env'))
-    const ecosystemBefore = readFileSync(join(dir, 'ecosystem.config.js'))
-    const restored: string[][] = []
-    const { updater } = manager({
-      repoRoot: dir,
-      statusPath: join(dir, 'status.json'),
-      commandRunner: {
-        runAll: async () => {
-          // The build ran against the renamed files, then failed.
-          expect(readFileSync(join(dir, '.env'), 'utf8')).toBe(RENAMED_ENV)
-          throw new Error('bun run build:core exited with 1')
-        },
-      },
-      localInstallEnv: {
-        ...defaultLocalInstallEnv,
-        restore: async (paths: string[]) => {
-          restored.push(paths)
-          await defaultLocalInstallEnv.restore(paths)
-        },
-      },
-      gitResponses: CORE_CHANGE,
-    })
-    await expect(updater.apply({ manual: true })).rejects.toThrow('build:core')
-    expect(restored).toEqual([
-      [
-        join(dir, backups().find((b) => b.startsWith('.env.'))!),
-        join(dir, backups().find((b) => b.startsWith('ecosystem.'))!),
-      ],
-    ])
-    expect(readFileSync(join(dir, '.env')).equals(before)).toBe(true)
-    expect(readFileSync(join(dir, 'ecosystem.config.js')).equals(ecosystemBefore)).toBe(true)
-    expect(updater.status().latest?.status).toBe('failed')
-  })
-
-  it('a failed targeted rebuild restores the files too', async () => {
-    const before = readFileSync(join(dir, '.env'))
-    const { updater } = manager({
-      repoRoot: dir,
-      statusPath: join(dir, 'status.json'),
-      commandRunner: {
-        runAll: async () => {
-          throw new Error('bun run build:core exited with 1')
-        },
-      },
-      gitResponses: CORE_CHANGE,
-    })
-    updater.applyInBackground({ manual: true, tasks: ['core'] })
-    await waitUntilInactive(updater)
-    expect(updater.status().latest?.status).toBe('failed')
-    expect(readFileSync(join(dir, '.env')).equals(before)).toBe(true)
-  })
-
-  it('refuses conflicting protected values before the merge, naming the key and not the values', async () => {
-    const conflicting = 'TAU_PASSWORD=first-secret\nFICUS_PASSWORD=second-secret\n'
-    writeFileSync(join(dir, '.env'), conflicting)
     let ran = false
     const { updater, calls } = manager({
       repoRoot: dir,
@@ -987,67 +906,41 @@ describe('LocalUpdateManager local-install env rename', () => {
       gitResponses: CORE_CHANGE,
     })
     const error = (await updater.apply({ manual: true }).catch((e: unknown) => e)) as Error
-    expect(error.message).toContain('TAU_PASSWORD')
-    expect(error.message).toContain('remove the wrong value, then re-run')
-    expect(error.message).not.toContain('first-secret')
-    expect(error.message).not.toContain('second-secret')
+    expect(error).toBeInstanceOf(EnvNamingError)
+    expect(error.message).toContain(PRE_FICUS_ENCRYPTION_KEY)
+    expect(error.message).toContain(RENAME_BRIDGE_TAG)
+    expect(error.message).not.toContain('ab'.repeat(32))
     expect(ran).toBe(false)
     expect(calls.some((cmd) => cmd.includes('merge'))).toBe(false)
-    expect(readFileSync(join(dir, '.env'), 'utf8')).toBe(conflicting)
-    expect(backups()).toEqual([])
+    expect(readFileSync(join(dir, '.env')).equals(before)).toBe(true)
+    expect(readdirSync(dir).sort()).toEqual(['.env', 'package.json', 'status.json'])
     expect(updater.status().latest?.status).toBe('failed')
   })
 
-  it('leaves a systemd host alone: the setup toolkit owns that rename', async () => {
-    const { updater } = manager({
-      repoRoot: dir,
-      statusPath: join(dir, 'status.json'),
-      flavor: () => SYSTEMD_FLAVOR,
-      gitResponses: CORE_CHANGE,
-    })
-    expect((await updater.apply({ manual: true })).status).toBe('succeeded')
-    expect(readFileSync(join(dir, '.env'), 'utf8')).toBe(LEGACY_ENV)
-    expect(backups()).toEqual([])
-  })
-
-  it('keeps both errors when restoring after a failed update fails too', async () => {
+  it('refuses a targeted rebuild too, before any command runs', async () => {
+    writeFileSync(join(dir, '.env'), OLD_ENV)
+    let ran = false
     const { updater } = manager({
       repoRoot: dir,
       statusPath: join(dir, 'status.json'),
       commandRunner: {
         runAll: async () => {
-          throw new Error('bun run build:core exited with 1')
-        },
-      },
-      localInstallEnv: {
-        ...defaultLocalInstallEnv,
-        restore: async () => {
-          throw new Error('EACCES: permission denied')
+          ran = true
         },
       },
       gitResponses: CORE_CHANGE,
     })
-    const error = (await updater.apply({ manual: true }).catch((e: unknown) => e)) as AggregateError
-    expect(error).toBeInstanceOf(AggregateError)
-    expect((error.errors[0] as Error).message).toBe('bun run build:core exited with 1')
-    expect((error.errors[1] as Error).message).toBe('EACCES: permission denied')
-    expect(updater.status().latest?.error).toContain('bun run build:core exited with 1')
-    expect(updater.status().latest?.error).toContain('EACCES: permission denied')
+    updater.applyInBackground({ manual: true, tasks: ['core'] })
+    await waitUntilInactive(updater)
+    expect(updater.status().latest?.status).toBe('failed')
+    expect(updater.status().latest?.error).toContain(PRE_FICUS_ENCRYPTION_KEY)
+    expect(ran).toBe(false)
   })
 
-  it('fails closed on a checkout whose package name it cannot read', async () => {
-    rmSync(join(dir, 'package.json'))
+  it('runs an install whose .env uses the FICUS_ names and never rewrites it', async () => {
+    writeFileSync(join(dir, '.env'), CURRENT_ENV)
     const { updater } = manager({ repoRoot: dir, statusPath: join(dir, 'status.json'), gitResponses: CORE_CHANGE })
     expect((await updater.apply({ manual: true })).status).toBe('succeeded')
-    expect(readFileSync(join(dir, '.env'), 'utf8')).toBe(LEGACY_ENV)
-    expect(backups()).toEqual([])
-  })
-
-  it('leaves a checkout that still predates the rename alone after the merge', async () => {
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'tau' }))
-    const { updater } = manager({ repoRoot: dir, statusPath: join(dir, 'status.json'), gitResponses: CORE_CHANGE })
-    expect((await updater.apply({ manual: true })).status).toBe('succeeded')
-    expect(readFileSync(join(dir, '.env'), 'utf8')).toBe(LEGACY_ENV)
-    expect(backups()).toEqual([])
+    expect(readFileSync(join(dir, '.env'), 'utf8')).toBe(CURRENT_ENV)
   })
 })

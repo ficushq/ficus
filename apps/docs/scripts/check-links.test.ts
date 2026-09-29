@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { checkLinks } from './check-links'
 
 async function fixture(run: (root: string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), 'tau-docs-links-'))
+  const root = await mkdtemp(join(tmpdir(), 'ficus-docs-links-'))
   try {
     await mkdir(join(root, 'guide'))
     await writeFile(join(root, 'guide/index.html'), '<h1 id="first-task">First task</h1>')

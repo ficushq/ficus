@@ -54,7 +54,7 @@ import '@earendil-works/pi-coding-agent'
 
 // Stash the pristine global fetch. This preload runs before any test file, so
 // `globalThis.fetch` here is guaranteed to be the real one. Tests that must not
-// be affected by a fetch mock leaked from an earlier file (e.g. the tau↔node
+// be affected by a fetch mock leaked from an earlier file (e.g. the Ficus↔node
 // conformance matrix, which does real cross-process HTTP) can restore from this.
 // bun runs the whole suite in one process, and file order differs by platform,
 // so a leak that hides locally can surface only in CI.
@@ -336,13 +336,13 @@ function dropCheckConstraints(url: string): void {
   runDdlOrExit(
     url,
     [
-      `DO $tau$ DECLARE r RECORD; BEGIN ` +
+      `DO $ficus$ DECLARE r RECORD; BEGIN ` +
         `FOR r IN (SELECT c.conname, c.conrelid::regclass AS relation FROM pg_constraint c ` +
         `JOIN pg_class t ON t.oid = c.conrelid AND t.relnamespace = 'public'::regnamespace ` +
         `WHERE c.contype = 'c' AND c.connamespace = 'public'::regnamespace ` +
         `AND t.relname IN (${owned})) LOOP ` +
         `EXECUTE 'ALTER TABLE ' || r.relation || ' DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname); ` +
-        `END LOOP; END $tau$`,
+        `END LOOP; END $ficus$`,
     ],
     'drop stale CHECK constraints before the schema push'
   )
@@ -365,10 +365,10 @@ function applyCheckConstraints(url: string): void {
     [...expectedCheckConstraints()].map(([name, { table, expression }]) => {
       const relation = `public.${quoteIdentifier(table)}`
       return (
-        `DO $tau$ BEGIN IF to_regclass(${sqlLiteral(relation)}) IS NOT NULL AND NOT EXISTS ` +
+        `DO $ficus$ BEGIN IF to_regclass(${sqlLiteral(relation)}) IS NOT NULL AND NOT EXISTS ` +
         `(SELECT 1 FROM pg_constraint WHERE conname = ${sqlLiteral(name)} ` +
         `AND conrelid = ${sqlLiteral(relation)}::regclass) ` +
-        `THEN ALTER TABLE ${relation} ADD CONSTRAINT ${quoteIdentifier(name)} CHECK (${expression}); END IF; END $tau$`
+        `THEN ALTER TABLE ${relation} ADD CONSTRAINT ${quoteIdentifier(name)} CHECK (${expression}); END IF; END $ficus$`
       )
     }),
     'reapply the CHECK constraints schema.ts declares'
@@ -568,7 +568,7 @@ if (useExternalDb) {
   //
   // The whole probe -> maybe tear down -> maybe recreate sequence runs under
   // a cross-process lock (see @ficus/shared/testDbLock's doc comment for the
-  // full story — tau issue #795). Without it, apps/core's and the hosted control plane's
+  // full story — Core issue #795). Without it, apps/core's and the hosted control plane's
   // `bun test` processes (launched ~simultaneously by the root `bun run
   // test`) can both probe the same container, both decide it's dead, and
   // both act — one process's `docker compose down --volumes` then yanks the

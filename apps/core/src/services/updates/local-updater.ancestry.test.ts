@@ -80,14 +80,14 @@ function manager(): { updater: LocalUpdateManager } {
   const updater = new LocalUpdateManager({
     repoRoot: checkout,
     flavor: () => FLAVOR,
-    settings: { githubOwner: 'tau', githubRepo: 'tau' },
+    settings: { githubOwner: 'ficus', githubRepo: 'ficus' },
     git: async (args: string[]) => {
       // The one redirect: production fetches https://github.com/<slug>.git.
       const rewritten = args.map((a) => (a.startsWith('https://github.com/') ? remote : a))
       return git(checkout, rewritten)
     },
     gh: async (args: string[]) =>
-      ({ 'auth token': 'test-token', 'repo view --json owner,name --jq .owner.login + "/" + .name': 'tau/tau' })[
+      ({ 'auth token': 'test-token', 'repo view --json owner,name --jq .owner.login + "/" + .name': 'ficus/tau' })[
         args.join(' ')
       ] ?? '',
     // The planned commands are asserted through run.changedFiles/status; this

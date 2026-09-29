@@ -2,7 +2,7 @@
  * Destination page filters win; unrelated source-page filters never carry over.
  */
 export function assistantNavigationPath(path: string, currentPath: string): string {
-  const base = 'https://tau.invalid'
+  const base = 'https://ficus.invalid'
   const current = new URL(currentPath, base)
   const target = new URL(path, base)
   if (target.origin !== base || !['open', 'expanded'].includes(current.searchParams.get('chat') ?? '')) return path

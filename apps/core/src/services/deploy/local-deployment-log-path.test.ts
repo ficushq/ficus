@@ -69,7 +69,7 @@ describe('normalizeAttachedLogPathInput', () => {
 
 describe('command builders', () => {
   test('missing nested paths resolve their physical ancestor and cannot escape through a symlink', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'tau-log-containment-'))
+    const root = await mkdtemp(join(tmpdir(), 'ficus-log-containment-'))
     try {
       const workspace = join(root, 'workspace')
       const outside = join(root, 'outside')

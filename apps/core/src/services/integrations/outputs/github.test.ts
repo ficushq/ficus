@@ -147,7 +147,7 @@ test('CI notifications tolerate missing optional workflow details without empty 
     payload: {
       action: 'completed',
       repository,
-      sender: { login: 'tauagent' },
+      sender: { login: 'ficusagent' },
       workflow_run: { id: 51, conclusion: 'success', updated_at: date, pull_requests: [{ number: 3 }] },
     },
   })

@@ -136,7 +136,7 @@ function staticRender(
       <QueryClientProvider client={client}>
         <PermissionsProvider usePermissions={permissionHook(permissions)}>
           <WebSocketContext.Provider value={{ isConnected: true, subscribe: () => () => undefined }}>
-            <SquadActivityTab squadId={squadId} squadSlug="tau" agents={options.agents ?? [agent]} />
+            <SquadActivityTab squadId={squadId} squadSlug="ficus" agents={options.agents ?? [agent]} />
           </WebSocketContext.Provider>
         </PermissionsProvider>
       </QueryClientProvider>
@@ -217,9 +217,9 @@ describe('SquadActivityTab rendering', () => {
     const html = staticRender(emittedKinds, true)
     expect(html).toContain('>All<')
     expect(html).toContain('Ship it')
-    expect(html).toContain('/squads/tau/work?ws=00000000-0000-4000-8000-000000000010')
-    expect(html).toContain('/squads/tau?agent=00000000-0000-4000-8000-000000000002&amp;view=inbox')
-    expect(html).toContain('/squads/tau?agent=00000000-0000-4000-8000-000000000002')
+    expect(html).toContain('/squads/ficus/work?ws=00000000-0000-4000-8000-000000000010')
+    expect(html).toContain('/squads/ficus?agent=00000000-0000-4000-8000-000000000002&amp;view=inbox')
+    expect(html).toContain('/squads/ficus?agent=00000000-0000-4000-8000-000000000002')
     expect(html).toContain('href="https://example.test/pull/42"')
     // Issue rows leave the app like PR rows, and carry an in-app work-stream chip.
     expect(html).toContain('href="https://example.test/issues/12"')
@@ -277,7 +277,7 @@ describe('SquadActivityTab issue rows', () => {
             <QueryClientProvider client={client}>
               <PermissionsProvider usePermissions={permissionHook(new Set())}>
                 <WebSocketContext.Provider value={{ isConnected: true, subscribe: () => () => undefined }}>
-                  <SquadActivityTab squadId={squadId} squadSlug="tau" agents={[agent]} />
+                  <SquadActivityTab squadId={squadId} squadSlug="ficus" agents={[agent]} />
                 </WebSocketContext.Provider>
               </PermissionsProvider>
             </QueryClientProvider>
@@ -295,7 +295,7 @@ describe('SquadActivityTab issue rows', () => {
       expect(chip).toBeDefined()
       await dom.act(async () => chip.click())
       expect(dom.window.document.querySelector('[data-location]')!.getAttribute('data-location')).toBe(
-        '/squads/tau/work?ws=12'
+        '/squads/ficus/work?ws=12'
       )
     } finally {
       globalThis.fetch = originalFetch
@@ -336,7 +336,7 @@ describe('SquadActivityTab linkless issue rows', () => {
             <QueryClientProvider client={client}>
               <PermissionsProvider usePermissions={permissionHook(new Set())}>
                 <WebSocketContext.Provider value={{ isConnected: true, subscribe: () => () => undefined }}>
-                  <SquadActivityTab squadId={squadId} squadSlug="tau" agents={[agent]} />
+                  <SquadActivityTab squadId={squadId} squadSlug="ficus" agents={[agent]} />
                 </WebSocketContext.Provider>
               </PermissionsProvider>
             </QueryClientProvider>
@@ -416,7 +416,7 @@ describe('SquadActivityTab filters', () => {
             <QueryClientProvider client={new QueryClient()}>
               <PermissionsProvider usePermissions={permissionHook(new Set(['agents:read']))}>
                 <WebSocketContext.Provider value={{ isConnected: true, subscribe: () => () => undefined }}>
-                  <SquadActivityTab squadId={squadId} squadSlug="tau" agents={[agent]} />
+                  <SquadActivityTab squadId={squadId} squadSlug="ficus" agents={[agent]} />
                 </WebSocketContext.Provider>
               </PermissionsProvider>
             </QueryClientProvider>
@@ -493,7 +493,7 @@ describe('SquadActivityTab direct live activity', () => {
             <QueryClientProvider client={client}>
               <PermissionsProvider usePermissions={permissionHook(new Set(['agents:read']))}>
                 <WebSocketContext.Provider value={ws}>
-                  <SquadActivityTab squadId={squadId} squadSlug="tau" agents={[agent]} />
+                  <SquadActivityTab squadId={squadId} squadSlug="ficus" agents={[agent]} />
                 </WebSocketContext.Provider>
               </PermissionsProvider>
             </QueryClientProvider>
@@ -606,7 +606,7 @@ describe('SquadActivityTab direct live activity', () => {
       setConnected = update
       return (
         <WebSocketContext.Provider value={{ isConnected: connected, subscribe: () => () => undefined }}>
-          <SquadActivityTab squadId={squadId} squadSlug="tau" agents={[agent]} />
+          <SquadActivityTab squadId={squadId} squadSlug="ficus" agents={[agent]} />
         </WebSocketContext.Provider>
       )
     }
@@ -668,7 +668,7 @@ describe('SquadActivityTab in-place modals', () => {
                 <WebSocketContext.Provider value={ws}>
                   <SquadActivityTab
                     squadId={squadId}
-                    squadSlug="tau"
+                    squadSlug="ficus"
                     agents={[agent]}
                     dependencies={{
                       AgentConversationComponent: (() => <p>conversation-stub</p>) as never,
@@ -808,14 +808,14 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
       const view = dom.createRoot()
       await dom.act(() =>
         view.root.render(
-          <MemoryRouter initialEntries={['/squads/tau/activity']}>
+          <MemoryRouter initialEntries={['/squads/ficus/activity']}>
             <QueryClientProvider client={client}>
               <PermissionsProvider usePermissions={permissionHook(allowed)}>
                 <WebSocketContext.Provider value={{ isConnected: true, subscribe: () => () => {} }}>
                   <LocationProbe />
                   <SquadActivityTab
                     squadId={squadId}
-                    squadSlug="tau"
+                    squadSlug="ficus"
                     agents={[agent]}
                     dependencies={{
                       AgentViewModalComponent: (({
@@ -850,7 +850,7 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
       await dom.act(async () => {
         await waitFor(() => expect(view.container.textContent).toContain('Close referenced agent'))
       })
-      expect(view.container.querySelector('[data-location]')?.textContent).toBe('/squads/tau/activity')
+      expect(view.container.querySelector('[data-location]')?.textContent).toBe('/squads/ficus/activity')
       expect(opened).toContain(`${target.id}:${target.squadId}`)
       expect(opened.every((value) => value.startsWith(target.id))).toBe(true)
       expect(messages.getAttribute('aria-pressed')).toBe('true')
@@ -861,7 +861,7 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
           .find((button) => button.textContent === 'Close referenced agent')!
           .click()
       )
-      expect(view.container.querySelector('[data-location]')?.textContent).toBe('/squads/tau/activity')
+      expect(view.container.querySelector('[data-location]')?.textContent).toBe('/squads/ficus/activity')
       expect(messages.getAttribute('aria-pressed')).toBe('true')
       expect(scroller.scrollTop).toBe(400)
     } finally {

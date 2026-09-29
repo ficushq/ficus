@@ -164,7 +164,7 @@ test('command actions call the exact encoded squad API paths and bodies', async 
     const program = new Command()
     registerSlotCommands(program, dependencies)
     const squadArgs = expected.path.startsWith('/api/slots/') ? [] : ['--squad', 'squad/one']
-    await program.parseAsync(['node', 'tau', 'slot', ...args, ...squadArgs])
+    await program.parseAsync(['node', 'ficus', 'slot', ...args, ...squadArgs])
     expect(calls.at(-1)).toEqual(expected)
   }
 })
@@ -186,7 +186,7 @@ test('command actions use FICUS_SQUAD_ID when explicit squad is absent', async (
   try {
     const program = new Command()
     registerSlotCommands(program, dependencies)
-    await program.parseAsync(['node', 'tau', 'slot', 'list'])
+    await program.parseAsync(['node', 'ficus', 'slot', 'list'])
     expect(path).toBe('/api/squads/environment-squad/slots')
   } finally {
     if (prior === undefined) delete process.env.FICUS_SQUAD_ID
@@ -210,7 +210,7 @@ test('unavailable is a successful authoritative command outcome', async () => {
   registerSlotCommands(program, dependencies)
 
   await expect(
-    program.parseAsync(['node', 'tau', 'slot', 'claim', 'tests', '--squad', 'squad-id'])
+    program.parseAsync(['node', 'ficus', 'slot', 'claim', 'tests', '--squad', 'squad-id'])
   ).resolves.toBeDefined()
   expect(rendered).toBe(unavailable)
 })
@@ -246,7 +246,7 @@ test('history passes the complete server page to output unchanged', async () => 
   const program = new Command()
   registerSlotCommands(program, dependencies)
 
-  await program.parseAsync(['node', 'tau', 'slot', 'history', 'tests', '--squad', 'squad'])
+  await program.parseAsync(['node', 'ficus', 'slot', 'history', 'tests', '--squad', 'squad'])
 
   expect(received).toBe(response)
   expect(human).toContain('claim claim-id')
@@ -267,7 +267,7 @@ test('passes the complete server object to output unchanged', async () => {
   } as unknown as SlotCommandDependencies
   const program = new Command()
   registerSlotCommands(program, dependencies)
-  await program.parseAsync(['node', 'tau', 'slot', 'list', '--squad', 'squad'])
+  await program.parseAsync(['node', 'ficus', 'slot', 'list', '--squad', 'squad'])
   expect(rendered).toBe(response)
 })
 
@@ -287,7 +287,7 @@ test('a command without squad context fails before making an API call', async ()
   try {
     const program = new Command()
     registerSlotCommands(program, dependencies)
-    await program.parseAsync(['node', 'tau', 'slot', 'list'])
+    await program.parseAsync(['node', 'ficus', 'slot', 'list'])
     expect(apiGet).not.toHaveBeenCalled()
   } finally {
     error.mockRestore()
@@ -568,9 +568,9 @@ test('administration commands render the authoritative server outcome and messag
 
   const program = new Command()
   registerSlotCommands(program, dependencies)
-  await program.parseAsync(['node', 'tau', 'slot', 'register', 'tests', '--squad', 'squad-id'])
-  await program.parseAsync(['node', 'tau', 'slot', 'update', 'tests', '--capacity', '3', '--squad', 'squad-id'])
-  await program.parseAsync(['node', 'tau', 'slot', 'unregister', 'tests', '--squad', 'squad-id'])
+  await program.parseAsync(['node', 'ficus', 'slot', 'register', 'tests', '--squad', 'squad-id'])
+  await program.parseAsync(['node', 'ficus', 'slot', 'update', 'tests', '--capacity', '3', '--squad', 'squad-id'])
+  await program.parseAsync(['node', 'ficus', 'slot', 'unregister', 'tests', '--squad', 'squad-id'])
 
   expect(outputs.map((entry) => entry.message)).toEqual([
     responses.register.message,
@@ -601,7 +601,7 @@ test('administration commands reject responses without a stable outcome field', 
     ['update', 'tests', '--capacity', '3'],
     ['unregister', 'tests'],
   ]) {
-    await program.parseAsync(['node', 'tau', 'slot', ...args, '--squad', 'squad-id'])
+    await program.parseAsync(['node', 'ficus', 'slot', ...args, '--squad', 'squad-id'])
   }
   expect(outputs).toEqual([])
 })

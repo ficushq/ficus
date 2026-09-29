@@ -43,7 +43,7 @@ describe('host sandboxed coding tools', () => {
   let prevHome: string | undefined
   let prevRuntime: string | undefined
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-tools-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-tools-'))
     prevHome = process.env.HOME_DIR
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home
@@ -116,16 +116,16 @@ describe('host sandboxed coding tools', () => {
         'FICUS_IDENTITY_AGENT_ID=someone-else',
         // …and so were the preamble's own snapshot names, until they gained a
         // per-command random suffix. These are the fixed names it used to use.
-        '__tau_api_url=https://cloud.example.com',
-        '__tau_url=https://cloud.example.com',
-        '__tau_token=operator-token',
-        '__tau_tok=operator-token',
-        '__tau_auth_store=/home/operator/.tau/cli/auth.json',
-        '__tau_store=/home/operator/.tau/cli/auth.json',
-        '__tau_agent_id=someone-else',
-        '__tau_agent=someone-else',
-        `__tau_bin_dir=${impostorDir}`,
-        `__tau_bin=${impostorDir}`,
+        '__ficus_api_url=https://cloud.example.com',
+        '__ficus_url=https://cloud.example.com',
+        '__ficus_token=operator-token',
+        '__ficus_tok=operator-token',
+        '__ficus_auth_store=/home/operator/.tau/cli/auth.json',
+        '__ficus_store=/home/operator/.tau/cli/auth.json',
+        '__ficus_agent_id=someone-else',
+        '__ficus_agent=someone-else',
+        `__ficus_bin_dir=${impostorDir}`,
+        `__ficus_bin=${impostorDir}`,
         // A hostile PATH prepend…
         `PATH=${impostorDir}:$PATH`,
         // …and a perfectly legitimate one, which must survive.
@@ -171,46 +171,23 @@ describe('host sandboxed coding tools', () => {
     expect(out).toContain('ctx=unset')
   })
 
-  test('legacy TAU_ identity names follow the injected identity and never leak a stale one (one release)', async () => {
-    writeFileSync(
-      join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'),
-      'TAU_TOKEN=stale-operator-token\nTAU_API_URL=https://cloud.example.com\nTAU_PASSWORD=admin-password\n'
-    )
-    const agent = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD, tauToken: 'tok' })
-    const agentOut = await run(agent, {
-      command: 'echo tok=${TAU_TOKEN:-unset}; echo url=${TAU_API_URL:-unset}; echo pw=${TAU_PASSWORD:-unset}',
-    })
-    // An older `tau` CLI reads these: they must name the injected identity.
-    expect(agentOut).toContain('tok=tok')
-    expect(agentOut).toContain('url=http://127.0.0.1:')
-    // The new CLI would bridge TAU_PASSWORD into FICUS_PASSWORD, so it must be gone.
-    expect(agentOut).toContain('pw=unset')
-
-    const tokenless = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD })
-    const tokenlessOut = await run(tokenless, {
-      command: 'echo tok=${TAU_TOKEN:-unset}; echo pw=${TAU_PASSWORD:-unset}',
-    })
-    expect(tokenlessOut).toContain('tok=unset')
-    expect(tokenlessOut).toContain('pw=unset')
-  })
-
   test('each command gets fresh snapshot names, so an earlier command cannot publish them', async () => {
     // The preamble is prepended to the command string, i.e. argv — which the
     // agent's own command can read. Names reused across commands would let
     // command 1 learn them and command 2's squad env assign them, restoring the
     // exact override this whole mechanism exists to stop.
-    const bash = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD, tauToken: 'tok' })
+    const bash = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD, ficusToken: 'tok' })
     // The trailing `:` matters: bash exec-optimizes a lone simple command,
     // replacing its own argv with `ps`'s, and the preamble would vanish from
     // the very listing we are reading.
     const readOwnArgv = 'ps -ww -o args= -p $$; :'
     const first = await run(bash, { command: readOwnArgv })
     const second = await run(bash, { command: readOwnArgv })
-    const nameOf = (argv: string) => argv.match(/__tau_[0-9a-f]{6}_url/)?.[0]
+    const nameOf = (argv: string) => argv.match(/__ficus_[0-9a-f]{6}_url/)?.[0]
     // Guard the probe itself: a `ps` that printed nothing would make the
     // inequality below pass vacuously with two undefineds.
-    expect(nameOf(first)).toMatch(/^__tau_[0-9a-f]{6}_url$/)
-    expect(nameOf(second)).toMatch(/^__tau_[0-9a-f]{6}_url$/)
+    expect(nameOf(first)).toMatch(/^__ficus_[0-9a-f]{6}_url$/)
+    expect(nameOf(second)).toMatch(/^__ficus_[0-9a-f]{6}_url$/)
     expect(nameOf(second)).not.toBe(nameOf(first))
   })
 
@@ -321,7 +298,7 @@ describe('host sandboxed coding tools', () => {
     ).rejects.toThrow(/not a regular file/)
   })
 
-  test('local verified edit leaves no tau-edit.tmp behind when the commit fails after staging', async () => {
+  test('local verified edit leaves no ficus-edit.tmp behind when the commit fails after staging', async () => {
     const dir = join(home, 'private', 'agent_a1')
     const file = join(dir, 'stage-fail.txt')
     writeFileSync(file, 'abc')
@@ -337,7 +314,7 @@ describe('host sandboxed coding tools', () => {
       })
     ).rejects.toThrow('simulated rename failure')
     expect(readFileSync(file, 'utf8')).toBe('abc')
-    const leftover = readdirSync(dir).filter((name) => name.includes('tau-edit.tmp'))
+    const leftover = readdirSync(dir).filter((name) => name.includes('ficus-edit.tmp'))
     expect(leftover).toEqual([])
   })
 

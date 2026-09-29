@@ -33,7 +33,7 @@ export function durableAssistantPageLinks(item: Extract<RenderItem, { kind: 'per
 
 /** A readable name for an app route, from the same definitions that render navigation. */
 export function describeAppPath(path: string): AppPathDescription {
-  const url = new URL(path, 'http://tau.invalid')
+  const url = new URL(path, 'http://ficus.invalid')
   const parts = url.pathname.split('/').filter(Boolean)
   const params = url.searchParams
   if (parts[0] === 'settings') {

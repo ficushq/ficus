@@ -5,7 +5,7 @@ import { localDeployments } from '../../db/schema'
 /**
  * Port assignment for local app deployments.
  *
- * WHY TAU ASSIGNS THE PORT
+ * WHY FICUS ASSIGNS THE PORT
  *
  * The feature was built against docker and k8s, where every sandbox has its own
  * network namespace: two squads can both bind 3000 and neither notices. The VM

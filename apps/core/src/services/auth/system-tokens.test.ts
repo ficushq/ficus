@@ -20,7 +20,7 @@ import { getSecretStore, resetSecretStore } from '../secrets'
 
 const WEBHOOK_SECRET_KEY = '__SYSTEM_WEBHOOK_TOKEN'
 
-/** Insert a system-token row for an arbitrary raw value, as a pre-rename Core would have stored it. */
+/** Insert a system-token row for an arbitrary raw value, under another prefix. */
 async function seedSystemTokenRow(input: { raw: string; name: string; kind: 'manual' | 'webhook'; scopes?: string[] }) {
   const [row] = await db
     .insert(systemTokens)
@@ -163,8 +163,8 @@ describe('system tokens', () => {
     expect(second).toBe(token)
   })
 
-  it('rejects a pre-rename tau_sys_ token even though its row is live (no dual-accept)', async () => {
-    const legacy = 'tau_sys_' + 'a'.repeat(43)
+  it('rejects an old_sys_ token even though its row is live (no dual-accept)', async () => {
+    const legacy = 'old_sys_' + 'a'.repeat(43)
     await seedSystemTokenRow({ raw: legacy, name: 'platform-orchestrator', kind: 'manual' })
     expect(await resolveSystemToken(legacy)).toBeNull()
     expect(await resolveToken(legacy)).toBeNull()
@@ -180,7 +180,7 @@ describe('system tokens', () => {
   })
 
   it('webhook token with a legacy prefix is re-minted and the old row revoked', async () => {
-    const legacy = 'tau_sys_' + 'a'.repeat(43)
+    const legacy = 'old_sys_' + 'a'.repeat(43)
     const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
     await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
 
@@ -201,7 +201,7 @@ describe('system tokens', () => {
   })
 
   it('re-mints a stored webhook token that lacks the current prefix even when its row was already revoked', async () => {
-    const legacy = 'tau_sys_' + 'c'.repeat(43)
+    const legacy = 'old_sys_' + 'c'.repeat(43)
     const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
     await revokeSystemToken(stale.id)
     await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
@@ -213,7 +213,7 @@ describe('system tokens', () => {
   })
 
   it('concurrent self-heals of a legacy webhook token mint exactly one replacement', async () => {
-    const legacy = 'tau_sys_' + 'e'.repeat(43)
+    const legacy = 'old_sys_' + 'e'.repeat(43)
     const stale = await seedSystemTokenRow({ raw: legacy, name: 'Webhook automation', kind: 'webhook' })
     await getSecretStore().set(WEBHOOK_SECRET_KEY, legacy, 'system')
 

@@ -86,7 +86,7 @@ function fakeProviders() {
       const ok = /\/bot111:good\//.test(url)
       if (url.endsWith('/getMe'))
         return ok
-          ? Response.json({ ok: true, result: { id: 111, username: 'tau_test_bot' } })
+          ? Response.json({ ok: true, result: { id: 111, username: 'ficus_test_bot' } })
           : new Response('{"ok":false}', { status: 401 })
       return Response.json({ ok: true, result: true })
     }
@@ -115,7 +115,7 @@ function make(
   const connections = createChannelConnections({
     plugins,
     fetch: fetchImpl,
-    webOrigin: () => 'https://tau.example.test',
+    webOrigin: () => 'https://ficus.example.test',
     randomSecret: () => 'generated-webhook-secret',
     resolveAuthority: () => options.authority ?? 'local',
   })
@@ -182,11 +182,11 @@ test('saving a Telegram bot token creates a validated connection with discovered
   const connections = make()
   const view = await connections.configure('telegram', { botToken: '111:good' }, 'test')
   expect(view.fields).toEqual([expect.objectContaining({ key: 'botToken', configured: true, managed: false })])
-  expect(view.identity).toEqual({ botId: '111', username: 'tau_test_bot' })
+  expect(view.identity).toEqual({ botId: '111', username: 'ficus_test_bot' })
   expect(view.connection).toMatchObject({ source: 'connection', authState: 'authenticated', healthState: 'healthy' })
   expect(view.setup).toEqual({ state: 'configured', issues: [] })
   expect(view.webhook).toEqual({
-    url: 'https://tau.example.test/api/webhooks/channels/telegram',
+    url: 'https://ficus.example.test/api/webhooks/channels/telegram',
     secretConfigured: true,
     delivery: 'direct',
   })
@@ -196,12 +196,12 @@ test('saving a Telegram bot token creates a validated connection with discovered
   const state = connections.get('telegram')
   expect(state).toMatchObject({
     source: 'connection',
-    configuration: { version: 1, botId: '111', username: 'tau_test_bot' },
+    configuration: { version: 1, botId: '111', username: 'ficus_test_bot' },
     credential: { botToken: '111:good', webhookSecret: 'generated-webhook-secret' },
   })
   // Stored encrypted through the secret store, never in the connection row.
   const [row] = await db.select().from(integrationConnections).where(eq(integrationConnections.providerKey, 'telegram'))
-  expect(row!.configuration).toEqual({ version: 1, botId: '111', username: 'tau_test_bot' })
+  expect(row!.configuration).toEqual({ version: 1, botId: '111', username: 'ficus_test_bot' })
   expect(JSON.stringify(row)).not.toContain('111:good')
   expect(JSON.stringify(await db.select().from(secrets))).not.toContain('111:good')
 })
@@ -254,7 +254,7 @@ test('a default squad creates the routing entry from the discovered identity, on
   const rows = await db.select().from(channelInstances).where(eq(channelInstances.provider, 'telegram'))
   expect(rows).toHaveLength(1)
   expect(rows[0]).toMatchObject({
-    name: 'Telegram · @tau_test_bot',
+    name: 'Telegram · @ficus_test_bot',
     providerConfig: { botId: '111' },
     defaultSquadId: squadId,
   })
@@ -291,7 +291,7 @@ test('legacy secret keys migrate into a connection once and keep serving as the 
   const state = connections.get('telegram')
   expect(state).toMatchObject({
     source: 'connection',
-    configuration: { version: 1, botId: '111', username: 'tau_test_bot' },
+    configuration: { version: 1, botId: '111', username: 'ficus_test_bot' },
     credential: { botToken: '111:good', webhookSecret: 'legacy-secret' },
   })
   // The legacy keys are untouched for this release.

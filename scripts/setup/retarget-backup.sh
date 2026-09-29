@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# retarget-backup.sh — ON-TARGET tau backup-target retarget primitive.
+# retarget-backup.sh — ON-TARGET Ficus backup-target retarget primitive.
 #
-# Points an ALREADY SET UP tau host's nightly encrypted backup at a new
-# S3-compatible bucket (e.g. tau-backups -> ficus-backups) with a new scoped
+# Points an ALREADY SET UP Ficus host's nightly encrypted backup at a new
+# S3-compatible bucket (e.g. old-backups -> ficus-backups) with a new scoped
 # key, without re-running setup-host.sh. setup-host.sh's phase_backup bakes
 # the endpoint/region/bucket into /usr/local/bin/tau-backup.sh and the S3 key
 # into /etc/tau/backup.env at provision time, and nothing re-reads them
@@ -224,11 +224,13 @@ fi
 cfg_load "${CONFIG}"
 
 # This script reads and writes FICUS_* names only (backup.env, tau-backup.sh).
-# A host whose settings were never renamed (still on a pre-Ficus Core) is
-# refused before any live file is read or written — the tenant upgrade
-# renames it first.
+# A host whose settings predate the Ficus naming is refused before any live
+# file is read or written.
 SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
-require_host_env_prefix FICUS "${SRC_DEST}/.env"
+require_host_env_ready
+# A journaled host migration would restore the files this rewrites; refuse until
+# the tenant upgrade has reconciled it.
+require_no_host_migrate_pending
 
 # Captured first, never inside [[ … ]]: a die() in a command substitution only
 # ends that subshell, so `[[ $(cfg_bool …) != true ]]` would read an invalid

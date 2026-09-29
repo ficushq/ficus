@@ -23,7 +23,7 @@ describe('prewarmSandbox', () => {
   })
 
   it('repeated warmup churn creates only the owning squad leaf', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'tau-prewarm-lifecycle-'))
+    const home = mkdtempSync(join(tmpdir(), 'ficus-prewarm-lifecycle-'))
     process.env.HOME_DIR = home
     const squadId = crypto.randomUUID()
     const sandboxIds: string[] = []

@@ -32,7 +32,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.5',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -74,7 +74,7 @@ const OLD_SERVER_ENV = [
   'FICUS_BOX_HOME=/home/box_x',
   'BUN_PTY_LIB=/opt/tau/server/bun-pty.so',
   'DOCKER_HOST=unix:///run/user/4321/docker.sock',
-  'FICUS_API_URL=https://tau.example.com',
+  'FICUS_API_URL=https://ficus.example.com',
 ].join('\n')
 
 /** Facts a healthy SOURCE box reports for its state dirs (only the requested
@@ -1223,7 +1223,7 @@ describe('migrateBox', () => {
     const result = await migrateBox(SANDBOX_ID, TARGET_MACHINE_ID, {
       ...h.deps,
       ensureMachineArtifacts: async () => {
-        throw new Error('tau cli push failed')
+        throw new Error('ficus cli push failed')
       },
     })
 

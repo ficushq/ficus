@@ -39,7 +39,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.5',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: SECRET_KEY,
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -237,7 +237,7 @@ describe('MachineTunnelManager', () => {
 
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
-    testHome = mkdtempSync(join(tmpdir(), 'tau-tunnel-home-'))
+    testHome = mkdtempSync(join(tmpdir(), 'ficus-tunnel-home-'))
     process.env.HOME_DIR = testHome
     priorKey = process.env.FICUS_ENCRYPTION_KEY
     process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
@@ -258,7 +258,7 @@ describe('MachineTunnelManager', () => {
   })
 
   beforeEach(() => {
-    controlDir = mkdtempSync(join(tmpdir(), 'tau-tunnel-ctl-'))
+    controlDir = mkdtempSync(join(tmpdir(), 'ficus-tunnel-ctl-'))
     controlDirs.push(controlDir)
   })
 
@@ -1380,7 +1380,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('MachineTunnelManager (integra
 
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
-    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-tunnel-int-'))
+    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-tunnel-int-'))
     priorKey = process.env.FICUS_ENCRYPTION_KEY
     process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()

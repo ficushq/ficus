@@ -189,7 +189,7 @@ type Navigation = { key: string; route: string; action: string }
 
 async function renderChatRoute(entry: string, width: number) {
   const dom = await acquireDomHarness({
-    url: `https://tau.test${entry}`,
+    url: `https://ficus.test${entry}`,
     windowOptions: { innerWidth: width },
     configureWindow: configureViewport(width),
   })

@@ -39,7 +39,7 @@ interface InstanceIdentity {
 }
 
 /**
- * Which tau instance this process IS, for naming in outbound mail. A person can
+ * Which Ficus instance this process IS, for naming in outbound mail. A person can
  * own several instances (hosted tenants all mail from the same platform), and a
  * bare "Ficus — Verify your email" gives them no way to tell which one asked.
  *
@@ -124,7 +124,7 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * The verification email itself — subject + text/HTML bodies, naming WHICH tau
+ * The verification email itself — subject + text/HTML bodies, naming WHICH Ficus
  * instance is asking so a person with several of them can tell them apart. With
  * no instance identity available this renders the original instance-less
  * wording verbatim.

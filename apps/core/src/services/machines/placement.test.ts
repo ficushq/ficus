@@ -31,7 +31,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.5',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -775,7 +775,7 @@ describe('defaultProvisionMachine — exe account-key model', () => {
     expect(insertValues?.sshUser).toBe('exedev')
     expect(insertValues?.provider).toBe('exe')
     expect(insertValues?.providerRef).toBe('vm-ok')
-    // Marked tau-created: this is the empty-machine reaper's eligibility signal —
+    // Marked ficus-created: this is the empty-machine reaper's eligibility signal —
     // user-registered exe VMs (POST /api/machines) never set it.
     expect(insertValues?.autoProvisioned).toBe(true)
   })

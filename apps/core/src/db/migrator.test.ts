@@ -202,7 +202,7 @@ describe('applyMigrations', () => {
     })
     const recordIntent = (item: MigrationMeta, name: string) =>
       connection.unsafe(
-        `INSERT INTO "${schema}"."__tau_online_migration_intents" (created_at,hash,table_schema,index_name) VALUES ($1,$2,'public',$3)`,
+        `INSERT INTO "${schema}"."__tau_online_migration_intents" (created_at,hash,table_schema,index_name) VALUES ($1,$2,'public',$3)`, // ficus-36c
         [item.folderMillis, item.hash, name]
       )
     try {
@@ -265,7 +265,7 @@ describe('applyMigrations', () => {
       await expect(applyMigrations(connection, wrong, { migrationsSchema: schema })).rejects.toThrow(
         'does not match the intended migration definition'
       )
-      await connection.unsafe(`DELETE FROM "${schema}"."__tau_online_migration_intents" WHERE created_at = 25`)
+      await connection.unsafe(`DELETE FROM "${schema}"."__tau_online_migration_intents" WHERE created_at = 25`) // ficus-36c
       await connection.unsafe(`DROP TABLE "${wrongTable}" CASCADE`)
 
       await connection.unsafe(`CREATE SCHEMA "${other}"`)
@@ -316,7 +316,7 @@ describe('applyMigrations', () => {
           ?.indisvalid
       ).toBe(false)
       await connection.unsafe(
-        `INSERT INTO "${schema}"."__tau_online_migration_intents" (created_at,hash,table_schema,index_name) VALUES (1,$1,'public',$2)`,
+        `INSERT INTO "${schema}"."__tau_online_migration_intents" (created_at,hash,table_schema,index_name) VALUES (1,$1,'public',$2)`, // ficus-36c
         [item.hash, index]
       )
       await applyMigrations(connection, item, { migrationsSchema: schema })

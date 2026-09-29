@@ -327,7 +327,7 @@ export class DiscordGateway {
               routingChannelId,
               channelId: threadId,
               messageToEdit: thinkingMsg.messageId,
-              tauInitiated: false, // User created this thread, not Ficus
+              ficusInitiated: false, // User created this thread, not Ficus
             },
           })
         }
@@ -355,7 +355,7 @@ export class DiscordGateway {
           routingChannelId,
           channelId: thread.id,
           messageToEdit: thinkingMsg.messageId,
-          tauInitiated: true,
+          ficusInitiated: true,
         },
       })
     }

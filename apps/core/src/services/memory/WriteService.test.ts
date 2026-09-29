@@ -376,7 +376,7 @@ describe('WriteService cross-squad writes', () => {
 
   it('patchAs and appendAs respect the same grant', async () => {
     await writeService.writeAs(callerSquadId, targetSquadId, allowedPath, 'hello world\n')
-    const patchResult = await writeService.patchAs(callerSquadId, targetSquadId, allowedPath, 'world', 'tau')
+    const patchResult = await writeService.patchAs(callerSquadId, targetSquadId, allowedPath, 'world', 'ficus')
     expect(patchResult.success).toBe(true)
 
     const appendResult = await writeService.appendAs(callerSquadId, targetSquadId, allowedPath, '\nmore\n')

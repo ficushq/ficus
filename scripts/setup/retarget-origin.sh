@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# retarget-origin.sh — ON-TARGET tau retarget primitive.
+# retarget-origin.sh — ON-TARGET Ficus retarget primitive.
 #
-# Moves an ALREADY SET UP, RUNNING tau host to a new public origin (e.g. a
-# tenant subdomain moving from hiretau.ai to ficus.sh) without re-running
+# Moves an ALREADY SET UP, RUNNING Ficus host to a new public origin (e.g. a
+# tenant subdomain moving from an old domain to ficus.sh) without re-running
 # setup-host.sh. A full re-run cannot work on a hosted tenant: setup-host.sh
 # needs secrets that are deleted from the box after provisioning, re-syncs
 # source.ref (which would roll the box back to whatever the on-VM yaml still
@@ -73,7 +73,7 @@ Usage: retarget-origin.sh --config tau-setup.yaml --origin https://<sub>.<domain
                            --tls-cert PATH --tls-key PATH \
                            [--dns-zone DOMAIN] [--ingest-url https://URL] [--dry-run]
 
-Moves an already-running tau host to a new public origin. See the header
+Moves an already-running Ficus host to a new public origin. See the header
 comment in this file for the full behavior.
 
 Options:
@@ -208,10 +208,12 @@ SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
 ENV_FILE="${SRC_DEST}/.env"
 
 [[ -f ${ENV_FILE} ]] || die "Core .env not found at '${ENV_FILE}' — is this host set up by this toolkit, and does core.source.dest in ${CONFIG} match the real install path?"
-# This script reads and writes FICUS_* names only. A host whose settings were
-# never renamed (still on a pre-Ficus Core) is refused before anything is read
-# or written — the tenant upgrade renames it first.
-require_host_env_prefix FICUS "${ENV_FILE}"
+# This script reads and writes FICUS_* names only. A host whose settings
+# predate the Ficus naming is refused before anything is read or written.
+require_host_env_ready
+# A journaled host migration would restore the files this rewrites; refuse until
+# the tenant upgrade has reconciled it.
+require_no_host_migrate_pending
 
 # The health check (step 6) has to probe the port core ACTUALLY listens on.
 # That is PORT in the running .env, not core.port in the yaml — the two can

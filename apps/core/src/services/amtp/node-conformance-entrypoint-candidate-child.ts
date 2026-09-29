@@ -51,7 +51,7 @@ if (beforeDigest !== expectedDigest) {
   throw new Error(`candidate-entrypoint:pre-execution-digest-mismatch:${beforeDigest}`)
 }
 
-process.argv = [process.execPath, entrypoint, '__tau-lifecycle-probe']
+process.argv = [process.execPath, entrypoint, '__ficus-lifecycle-probe']
 await import(`${pathToFileURL(entrypoint).href}?candidateSha256=${beforeDigest}`)
 appendFileSync(markerPath, `${IMPORT_MARKER}\n`)
 const markers = await waitForActionMarker(markerPath, 1_000)

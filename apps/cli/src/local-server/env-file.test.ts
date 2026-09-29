@@ -26,18 +26,13 @@ describe('parseEnvFile', () => {
   })
 })
 
-describe('parseEnvFile legacy TAU_ lines (one release)', () => {
-  it('reads a TAU_X line as FICUS_X, and a FICUS_X line in the same file wins (except for encryption keys)', () => {
-    expect(parseEnvFile('TAU_INSTANCE=smoke\nTAU_PASSWORD=old\nFICUS_PASSWORD=new\nPORT=3100\n')).toEqual({
-      FICUS_INSTANCE: 'smoke',
+describe('parseEnvFile reads names as written', () => {
+  it('never maps another prefix to FICUS_', () => {
+    expect(parseEnvFile('OLD_INSTANCE=smoke\nOLD_PASSWORD=old\nFICUS_PASSWORD=new\nPORT=3100\n')).toEqual({
+      OLD_INSTANCE: 'smoke',
+      OLD_PASSWORD: 'old',
       FICUS_PASSWORD: 'new',
       PORT: '3100',
-    })
-  })
-
-  it('keeps the TAU_ value of a conflicting encryption key, as the boot bridge does', () => {
-    expect(parseEnvFile('TAU_ENCRYPTION_KEY=store-key\nFICUS_ENCRYPTION_KEY=other-key\n')).toEqual({
-      FICUS_ENCRYPTION_KEY: 'store-key',
     })
   })
 })
@@ -66,13 +61,13 @@ describe('mergeEnvFile', () => {
       { key: 'FICUS_SYSTEM_LOG_PROVIDER', value: 'pm2', explicit: false },
     ])
     expect(
-      out.endsWith('\n# --- added by tau setup ---\nFICUS_SANDBOX_RUNTIME=host\nFICUS_SYSTEM_LOG_PROVIDER=pm2\n')
+      out.endsWith('\n# --- added by ficus setup ---\nFICUS_SANDBOX_RUNTIME=host\nFICUS_SYSTEM_LOG_PROVIDER=pm2\n')
     ).toBe(true)
   })
   it('reuses an existing trailer instead of adding a second one', () => {
     const once = mergeEnvFile(base, [{ key: 'X', value: '1', explicit: true }])
     const twice = mergeEnvFile(once, [{ key: 'Y', value: '2', explicit: true }])
-    expect(twice.split('# --- added by tau setup ---').length).toBe(2)
+    expect(twice.split('# --- added by ficus setup ---').length).toBe(2)
     expect(twice.endsWith('X=1\nY=2\n')).toBe(true)
   })
   it('quotes values containing whitespace or #', () => {

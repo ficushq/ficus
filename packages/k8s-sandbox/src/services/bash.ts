@@ -10,7 +10,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { getWorkspace, getTauEnvPath, rebaseLogicalRoot } from '../paths'
+import { getWorkspace, getFicusEnvPath, rebaseLogicalRoot } from '../paths'
 import { getDevboxShellEnv, refreshDevboxShellEnvIfDirty } from './devbox-env'
 import vmDevboxRouting from './devbox-routing.sh' with { type: 'text' }
 import { buildSandboxChildEnv } from './env'
@@ -134,7 +134,7 @@ export function buildPreamble(opts: { sourceEnv: boolean; activateDevbox: boolea
   let preamble = WORKLOAD_DEPRIORITIZE
 
   if (opts.sourceEnv) {
-    const envPath = getTauEnvPath()
+    const envPath = getFicusEnvPath()
     preamble += `[ -f "${envPath}" ] && set -a && . "${envPath}" && set +a\n`
   }
 

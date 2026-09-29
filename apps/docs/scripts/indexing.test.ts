@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 
-// docs.hiretau.ai went public with Core on 2026-09-16. The hosted build must
+// docs.ficus.sh went public with Core on 2026-09-16. The hosted build must
 // invite crawlers; only the copy embedded in an instance (behind sign-in)
 // keeps the noindex tag.
 const config = readFileSync(new URL('../astro.config.mjs', import.meta.url), 'utf8')

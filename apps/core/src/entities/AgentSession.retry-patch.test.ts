@@ -10,13 +10,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
  * at ...") NON-retryable. Without it a turn that hits an exhausted provider
  * matches the leading "429" against the SDK's retryable regex and burns all
  * five retries (~1+2+4+8+16 ≈ 31s of backoff, hammering the exhausted provider)
- * before the settled error reaches tau's failover; with it the error is
+ * before the settled error reaches Ficus's failover; with it the error is
  * non-retryable so failover fires on attempt 1.
  *
  * Two INDEPENDENT retry classifiers must recognize the wording, so the patch
  * touches both:
  *   - the agent-loop retry (`utils/retry.js` `isRetryableAssistantError`) — the
- *     path tau's runtime failover actually rides for z.ai / anthropic / generic
+ *     path Ficus's runtime failover actually rides for z.ai / anthropic / generic
  *     providers (`zai:glm-5.3` is the failover candidate in every agent-type
  *     chain, so this is a recurring production event, not an edge case).
  *   - the OpenAI Codex responses streaming retry

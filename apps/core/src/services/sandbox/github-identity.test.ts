@@ -77,20 +77,20 @@ describe('resolveGitHubIdentityFromMetadata', () => {
 })
 
 describe('gitIdentityEnv', () => {
-  test("emits git's own author/committer vars, not just tau's GIT_USER_* names", () => {
-    const env = gitIdentityEnv({ gitUserName: 'tauagent', gitUserEmail: 'agent@users.noreply.github.com' })
-    // GIT_USER_* are tau's names and git ignores them; only these four are honored by git.
+  test("emits git's own author/committer vars, not just ficus's GIT_USER_* names", () => {
+    const env = gitIdentityEnv({ gitUserName: 'ficusagent', gitUserEmail: 'agent@users.noreply.github.com' })
+    // GIT_USER_* are Ficus's names and git ignores them; only these four are honored by git.
     expect(env).toMatchObject({
-      GIT_AUTHOR_NAME: 'tauagent',
+      GIT_AUTHOR_NAME: 'ficusagent',
       GIT_AUTHOR_EMAIL: 'agent@users.noreply.github.com',
-      GIT_COMMITTER_NAME: 'tauagent',
+      GIT_COMMITTER_NAME: 'ficusagent',
       GIT_COMMITTER_EMAIL: 'agent@users.noreply.github.com',
     })
   })
 
   test("keeps GIT_USER_* so the image's existing translation step still works", () => {
-    const env = gitIdentityEnv({ gitUserName: 'tauagent', gitUserEmail: 'agent@example.com' })
-    expect(env.GIT_USER_NAME).toBe('tauagent')
+    const env = gitIdentityEnv({ gitUserName: 'ficusagent', gitUserEmail: 'agent@example.com' })
+    expect(env.GIT_USER_NAME).toBe('ficusagent')
     expect(env.GIT_USER_EMAIL).toBe('agent@example.com')
   })
 
@@ -113,7 +113,7 @@ describe('gitIdentityEnv', () => {
     // A stale `[user]` in a cloned repo silently reattributed every commit made in it,
     // while the sandbox's *global* identity was correct. Agents clone repos themselves,
     // so there is no per-repo hook to clean one up; only git's own env vars win.
-    const dir = `${process.env.TMPDIR ?? '/tmp'}/tau-git-identity-${Bun.hash(String(Math.random()))}`
+    const dir = `${process.env.TMPDIR ?? '/tmp'}/ficus-git-identity-${Bun.hash(String(Math.random()))}`
     await Bun.$`mkdir -p ${dir}`.quiet()
     try {
       await Bun.$`git init -q .`.cwd(dir).quiet()
@@ -121,7 +121,7 @@ describe('gitIdentityEnv', () => {
       await Bun.$`git config --local user.email stale@example.invalid`.cwd(dir).quiet()
 
       // Clear any ambient git identity: a git hook, `git rebase -x`, some CI
-      // runners, or a Docker-runtime tau sandbox can already export these, and
+      // runners, or a Docker-runtime Ficus sandbox can already export these, and
       // they outrank the local [user] this probe is trying to demonstrate.
       const hermetic = {
         ...process.env,
@@ -136,7 +136,7 @@ describe('gitIdentityEnv', () => {
       const shadowed = await Bun.$`git var GIT_AUTHOR_IDENT`.cwd(dir).env(hermetic).quiet()
       expect(shadowed.stdout.toString()).toContain('stale@example.invalid')
 
-      const env = gitIdentityEnv({ gitUserName: 'tauagent', gitUserEmail: 'agent@users.noreply.github.com' })
+      const env = gitIdentityEnv({ gitUserName: 'ficusagent', gitUserEmail: 'agent@users.noreply.github.com' })
       const resolved = await Bun.$`git var GIT_AUTHOR_IDENT`
         .cwd(dir)
         .env({ ...hermetic, ...env })

@@ -89,9 +89,9 @@ test('helpers classify channel providers, their legacy keys and their switch set
 })
 
 test('the Slack manifest is generated with this instance URLs and no placeholders', () => {
-  const manifest = slackAppManifest('https://tau.example.test')
-  expect(manifest).toContain('url: https://tau.example.test/api/webhooks/channels/slack')
-  expect(manifest).toContain('request_url: https://tau.example.test/api/webhooks/channels/slack')
+  const manifest = slackAppManifest('https://ficus.example.test')
+  expect(manifest).toContain('url: https://ficus.example.test/api/webhooks/channels/slack')
+  expect(manifest).toContain('request_url: https://ficus.example.test/api/webhooks/channels/slack')
   expect(manifest).not.toContain('YOUR_DOMAIN')
   expect(manifest).toContain('command: /ficus')
 })

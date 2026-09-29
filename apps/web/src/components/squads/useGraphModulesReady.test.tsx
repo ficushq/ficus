@@ -6,7 +6,7 @@ import { useGraphModulesReady } from './useGraphModulesReady'
 
 for (const resolveBeforeToggle of [true, false]) {
   test(`3D labels become ready when modules resolve ${resolveBeforeToggle ? 'before' : 'after'} the 3D toggle`, async () => {
-    const harness = await acquireDomHarness({ url: 'https://tau.test' })
+    const harness = await acquireDomHarness({ url: 'https://ficus.test' })
     const container = document.createElement('div')
     document.body.append(container)
     const root = createRoot(container)
@@ -64,7 +64,7 @@ for (const resolveBeforeToggle of [true, false]) {
 }
 
 test('disabled graph does not receive late readiness updates', async () => {
-  const harness = await acquireDomHarness({ url: 'https://tau.test' })
+  const harness = await acquireDomHarness({ url: 'https://ficus.test' })
   const root = createRoot(document.createElement('div'))
   const modules = Promise.withResolvers<void>()
   const renders: boolean[] = []

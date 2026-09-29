@@ -75,7 +75,7 @@ describe('channel message tools', () => {
     )
     const agent = await createTestAgent({
       channelInstance: { id: 'instance-1', provider: providerName },
-      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', tauCreated: true },
+      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', ficusCreated: true },
     })
     try {
       const result = await createChannelSendTool(agent.id).execute(
@@ -101,7 +101,7 @@ describe('channel message tools', () => {
     registerTestProvider({ postMessage })
     const agent = await createTestAgent({
       channelInstance: { id: 'instance-1', provider: providerName },
-      thread: { id: 'discord-thread-1', channelId: 'discord-parent-1', originalMessageId: 'm0', tauCreated: true },
+      thread: { id: 'discord-thread-1', channelId: 'discord-parent-1', originalMessageId: 'm0', ficusCreated: true },
     })
 
     try {
@@ -125,7 +125,7 @@ describe('channel message tools', () => {
     registerTestProvider({ postMessage })
     const agent = await createTestAgent({
       channelInstance: { id: 'instance-1', provider: providerName },
-      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', tauCreated: true },
+      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', ficusCreated: true },
     })
 
     try {
@@ -159,7 +159,7 @@ describe('channel message tools', () => {
     registerTestProvider({ editMessage })
     const agent = await createTestAgent({
       channelInstance: { id: 'instance-1', provider: providerName },
-      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', tauCreated: true },
+      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', ficusCreated: true },
       channelMessages: [
         {
           provider: providerName,
@@ -193,7 +193,7 @@ describe('channel message tools', () => {
     registerTestProvider({ editMessage })
     const agent = await createTestAgent({
       channelInstance: { id: 'instance-1', provider: providerName },
-      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', tauCreated: true },
+      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', ficusCreated: true },
       channelMessages: [],
     })
 
@@ -219,7 +219,7 @@ describe('channel message tools', () => {
     registerTestProvider({ sendResponse })
     const agent = await createTestAgent({
       channelInstance: { id: 'instance-1', provider: providerName },
-      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', tauCreated: true },
+      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', ficusCreated: true },
     })
     const message = await InboxMessage.send({
       recipientId: agent.id,

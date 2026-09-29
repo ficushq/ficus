@@ -11,7 +11,7 @@ afterEach(() => {
 })
 
 function tempRoot(envContent?: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'tau-root-env-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-root-env-'))
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
   if (envContent !== undefined) writeFileSync(join(dir, '.env'), envContent)
   return dir
@@ -66,37 +66,20 @@ describeSubprocess('loadRootEnvForStandaloneScript', () => {
   })
 })
 
-describe('loadRootEnvForStandaloneScript legacy TAU_ keys (one release)', () => {
-  test("bridges the file's TAU_X to FICUS_X in its own record before merging", () => {
-    const suffix = `ROOT_ENV_BRIDGE_${process.pid}`
+describe('loadRootEnvForStandaloneScript never maps other prefixes to FICUS_', () => {
+  test("loads the file's OLD_X as it is and sets no FICUS_X", () => {
+    const suffix = `ROOT_ENV_OLD_${process.pid}`
     cleanups.push(() => {
       delete process.env[`FICUS_${suffix}`]
-      delete process.env[`TAU_${suffix}`]
+      delete process.env[`OLD_${suffix}`]
     })
-    const root = tempRoot(`TAU_${suffix}=from-file\n`)
+    const root = tempRoot(`OLD_${suffix}=from-file\n`)
 
     const loaded = loadRootEnvForStandaloneScript(root)
 
-    expect(process.env[`FICUS_${suffix}`]).toBe('from-file')
-    expect(process.env[`TAU_${suffix}`]).toBeUndefined()
-    expect(loaded).toEqual([`FICUS_${suffix}`])
-  })
-
-  test("never lets the file's legacy encryption key replace an explicit FICUS_ one", () => {
-    const key = `FICUS_ROOT_ENV_ENCRYPTION_KEY_${process.pid}`
-    const legacy = `TAU_ROOT_ENV_ENCRYPTION_KEY_${process.pid}`
-    process.env[key] = 'explicit'
-    cleanups.push(() => {
-      delete process.env[key]
-      delete process.env[legacy]
-    })
-    const root = tempRoot(`${legacy}=from-file\n`)
-
-    const loaded = loadRootEnvForStandaloneScript(root)
-
-    expect(process.env[key]).toBe('explicit')
-    expect(process.env[legacy]).toBeUndefined()
-    expect(loaded).toEqual([])
+    expect(process.env[`FICUS_${suffix}`]).toBeUndefined()
+    expect(process.env[`OLD_${suffix}`]).toBe('from-file')
+    expect(loaded).toEqual([`OLD_${suffix}`])
   })
 })
 
@@ -147,7 +130,7 @@ describe.skipIf(!canUseRealRoot || process.env.FICUS_TEST_SKIP_SUBPROCESS === '1
     test('a root .env alone is refused before a database connection is attempted', async () => {
       writeFileSync(
         rootEnvPath,
-        'DATABASE_URL=postgres://tau:migration-credential-sentinel-7c4e@127.0.0.1:1/tau_nowhere\n'
+        'DATABASE_URL=postgres://ficus:migration-credential-sentinel-7c4e@127.0.0.1:1/ficus_nowhere\n'
       )
       cleanups.push(() => unlinkSync(rootEnvPath))
 
@@ -155,7 +138,7 @@ describe.skipIf(!canUseRealRoot || process.env.FICUS_TEST_SKIP_SUBPROCESS === '1
 
       expect(exitCode).not.toBe(0)
       expect(stderr).toContain('explicit DATABASE_URL override')
-      expect(stderr).toContain('Refused target: 127.0.0.1:1/tau_nowhere')
+      expect(stderr).toContain('Refused target: 127.0.0.1:1/ficus_nowhere')
       expect(stderr).not.toContain('migration-credential-sentinel-7c4e')
       expect(stderr).not.toContain('ECONNREFUSED')
     }, 30_000)

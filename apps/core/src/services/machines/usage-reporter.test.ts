@@ -33,7 +33,7 @@ function machineValues(name: string, overrides: Partial<typeof import('../../db'
     name: `${prefix}-${name}`,
     provider: 'exe',
     sshHost: '10.0.0.1',
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key-1',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     scope: 'shared',

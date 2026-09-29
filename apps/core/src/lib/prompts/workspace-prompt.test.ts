@@ -210,7 +210,7 @@ describe('buildWorkspacePrompt — host runtime', () => {
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     prevHome = process.env.HOME_DIR
     process.env.FICUS_SANDBOX_RUNTIME = 'host'
-    process.env.HOME_DIR = '/tau-home'
+    process.env.HOME_DIR = '/ficus-home'
   })
   afterEach(() => {
     if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
@@ -221,8 +221,8 @@ describe('buildWorkspacePrompt — host runtime', () => {
 
   it('shows host storage paths and says bash reaches both areas', () => {
     const p = buildWorkspacePrompt({ squadId: 'S1', squadName: 'Acme', sandboxId: 'agent_a1', hasSquadBash: true })
-    expect(p).toContain('/tau-home/private/agent_a1')
-    expect(p).toContain('/tau-home/workspaces/squads/S1')
+    expect(p).toContain('/ficus-home/private/agent_a1')
+    expect(p).toContain('/ficus-home/workspaces/squads/S1')
     expect(p).toContain('can read and write both')
     expect(p).not.toContain('/workspace/S1')
   })

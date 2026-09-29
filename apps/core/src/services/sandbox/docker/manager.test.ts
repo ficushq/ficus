@@ -83,7 +83,7 @@ describe('resolveReclaimableNixStorePath', () => {
   let homeDir: string
 
   beforeEach(() => {
-    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-nix-home-'))
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-nix-home-'))
     process.env.HOME_DIR = homeDir
   })
 
@@ -109,7 +109,7 @@ describe('ensureNixStore (shared base + clone)', () => {
   let dockerCalls: string[][]
 
   beforeEach(() => {
-    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-nix-seed-'))
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-nix-seed-'))
     process.env.HOME_DIR = homeDir
     dockerCalls = []
   })
@@ -244,7 +244,7 @@ describe('reclaimAgentNixStore', () => {
   let sandboxId: string
 
   beforeEach(() => {
-    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-nix-home-'))
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-nix-home-'))
     nixRoot = path.join(homeDir, 'nix')
     sandboxId = `agent_${crypto.randomUUID()}`
     process.env.HOME_DIR = homeDir
@@ -1339,7 +1339,7 @@ describe('docker-sandbox-manager', () => {
     let tmpWorkspacePath: string
 
     beforeEach(() => {
-      tmpWorkspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-hook-test-'))
+      tmpWorkspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-hook-test-'))
       ;(manager as any).sandboxes.set(spawnHookSandboxId, {
         containerId: 'fake-container',
         workspacePath: tmpWorkspacePath,
@@ -1363,24 +1363,23 @@ describe('docker-sandbox-manager', () => {
       expect(result.command).not.toContain('-w /workspace')
     })
 
-    it('injects the live Core URL so the `tau` CLI survives a Core port change', () => {
+    it('injects the live Core URL so the `ficus` CLI survives a Core port change', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath)
       const result = hook!({ command: 'ficus whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain(`-e FICUS_API_URL=${resolveDockerApiUrl()}`)
     })
 
-    it('gives the interactive terminal the live Core URL in both spellings (one release)', () => {
+    it('gives the interactive terminal the live Core URL under the FICUS_ name only', () => {
       expect(terminalApiUrlArgs('http://host.docker.internal:3000')).toBe(
-        '-e FICUS_API_URL=http://host.docker.internal:3000 -e TAU_API_URL=http://host.docker.internal:3000'
+        '-e FICUS_API_URL=http://host.docker.internal:3000'
       )
     })
 
-    it('also injects the legacy TAU_ identity names for older CLIs in the container (one release)', () => {
+    it('injects the FICUS_ identity names only', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath, 'ficus_agent_x')
       const result = hook!({ command: 'ficus whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain('-e FICUS_TOKEN=ficus_agent_x')
-      expect(result.command).toContain('-e TAU_TOKEN=ficus_agent_x')
-      expect(result.command).toContain(`-e TAU_API_URL=${resolveDockerApiUrl()}`)
+      expect(result.command).not.toMatch(/-e [A-Z]+_TOKEN=ficus_agent_x.*-e [A-Z]+_TOKEN=/)
     })
   })
 
@@ -1388,7 +1387,7 @@ describe('docker-sandbox-manager', () => {
     let squadWorkspacePath: string
 
     beforeEach(() => {
-      squadWorkspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-squad-test-'))
+      squadWorkspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-squad-test-'))
     })
 
     afterEach(() => {

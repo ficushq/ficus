@@ -23,13 +23,13 @@ describe('NotionClient', () => {
     const client = new NotionClient({ fetch: mock(async () => json({})) })
     const url = client.buildAuthorizationUrl({
       clientId: 'client id',
-      redirectUri: 'https://tau.example/oauth/callback',
+      redirectUri: 'https://ficus.example/oauth/callback',
       state: 'state-value',
     })
     expect(url.origin + url.pathname).toBe('https://api.notion.com/v1/oauth/authorize')
     expect(Object.fromEntries(url.searchParams)).toEqual({
       client_id: 'client id',
-      redirect_uri: 'https://tau.example/oauth/callback',
+      redirect_uri: 'https://ficus.example/oauth/callback',
       response_type: 'code',
       owner: 'user',
       state: 'state-value',
@@ -49,7 +49,7 @@ describe('NotionClient', () => {
       code: 'provider-code',
       clientId: 'client-id',
       clientSecret: 'client-secret',
-      redirectUri: 'https://tau.example/oauth/callback',
+      redirectUri: 'https://ficus.example/oauth/callback',
     })
     expect(grant).toEqual({
       accessToken: 'access-token',
@@ -68,7 +68,7 @@ describe('NotionClient', () => {
     expect(JSON.parse(String(requests[0].init?.body))).toEqual({
       grant_type: 'authorization_code',
       code: 'provider-code',
-      redirect_uri: 'https://tau.example/oauth/callback',
+      redirect_uri: 'https://ficus.example/oauth/callback',
     })
   })
 
@@ -111,7 +111,7 @@ describe('NotionClient', () => {
         code: 'provider-code',
         clientId: 'id',
         clientSecret: 'secret',
-        redirectUri: 'https://tau.example/oauth/callback',
+        redirectUri: 'https://ficus.example/oauth/callback',
       })
       await expect(operation).rejects.toEqual(new NotionClientError('invalid_grant', 400))
       await expect(operation).rejects.not.toThrow('TOKEN-SENTINEL')
@@ -165,7 +165,12 @@ describe('NotionClient', () => {
 
     const invalid = new NotionClient({ fetch: mock(async () => json({ ...tokenPayload, unexpected: true })) })
     await expect(
-      invalid.exchangeCode({ code: 'code', clientId: 'id', clientSecret: 'secret', redirectUri: 'https://tau.example' })
+      invalid.exchangeCode({
+        code: 'code',
+        clientId: 'id',
+        clientSecret: 'secret',
+        redirectUri: 'https://ficus.example',
+      })
     ).rejects.toEqual(new NotionClientError('invalid_response'))
   })
 })

@@ -161,10 +161,10 @@ mkdir -p "${CORE_DEST}"
 CONFIG="${SCRATCH}/tau-setup.yaml"
 cat >"${CONFIG}" <<EOF
 source:
-  repo: git@example.com:acme/tau.git
+  repo: git@example.com:acme/ficus.git
   dest: ${CORE_DEST}
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.old.example
   port: 3000
   env: {}
 ingress:
@@ -172,9 +172,9 @@ ingress:
   tls_cert_path: /etc/caddy/tls/origin.crt
   tls_key_path: /etc/caddy/tls/origin.key
 dns:
-  zone: hiretau.ai
+  zone: old.example
 EOF
-printf 'APP_URL=https://acme.hiretau.ai\nFICUS_WEB_ORIGIN=https://acme.hiretau.ai\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${CORE_DEST}/.env"
+printf 'APP_URL=https://acme.old.example\nFICUS_WEB_ORIGIN=https://acme.old.example\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${CORE_DEST}/.env"
 CONFIG_BYTES_BEFORE=$(cat "${CONFIG}")
 ENV_BYTES_BEFORE=$(cat "${CORE_DEST}/.env")
 
@@ -236,21 +236,44 @@ run_err() { # ...ARGS
   "${RETARGET}" "$@" 2>&1 >/dev/null || true
 }
 
-# --- a host that was never renamed (Ficus): refused before anything changes --
-# retarget-origin.sh reads and writes FICUS_* names only; on a host still on
-# TAU_* ones it must stop before touching the yaml, the .env or Caddy.
-printf 'APP_URL=https://acme.hiretau.ai\nTAU_WEB_ORIGIN=https://acme.hiretau.ai\nTAU_ENCRYPTION_KEY=deadbeef\n' >"${CORE_DEST}/.env" # legacy-env
-TAU_ENV_BYTES=$(cat "${CORE_DEST}/.env")
-for tau_mode in --dry-run real; do
-  tau_args=(--config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}")
-  [[ ${tau_mode} == --dry-run ]] && tau_args+=(--dry-run)
-  expect_eq "TAU host (${tau_mode}): exits non-zero" "$(run_rc "${tau_args[@]}")" '1'
-  expect_match "TAU host (${tau_mode}): says why" "$(run_err "${tau_args[@]}")" 'this host still uses TAU_\* settings'
-  expect_eq "TAU host (${tau_mode}): the config is untouched" "$(cat "${CONFIG}")" "${CONFIG_BYTES_BEFORE}"
-  expect_eq "TAU host (${tau_mode}): the .env is untouched" "$(cat "${CORE_DEST}/.env")" "${TAU_ENV_BYTES}"
-  expect_eq "TAU host (${tau_mode}): no Caddyfile was written" "$([[ -e ${CADDYFILE_PATH} ]] && echo exists || echo absent)" 'absent'
+# --- a host whose settings predate the Ficus naming: refused before anything changes --
+# retarget-origin.sh reads and writes FICUS_* names only; on such a host it
+# must stop before touching the yaml, the .env or Caddy.
+# The pre-Ficus encryption key the naming guard looks for (from lib.sh).
+PFK="$(bash -c 'source "$0"; printf %s "${PRE_FICUS_ENV_PREFIX}"' "${SCRIPT_DIR}/lib.sh")_ENCRYPTION_KEY"
+printf 'APP_URL=https://acme.example.com\nOLD_WEB_ORIGIN=https://acme.example.com\n%s=deadbeef\n' "${PFK}" >"${CORE_DEST}/.env"
+OLD_ENV_BYTES=$(cat "${CORE_DEST}/.env")
+for old_mode in --dry-run real; do
+  old_args=(--config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}")
+  [[ ${old_mode} == --dry-run ]] && old_args+=(--dry-run)
+  expect_eq "pre-Ficus host (${old_mode}): exits non-zero" "$(run_rc "${old_args[@]}")" '1'
+  expect_match "pre-Ficus host (${old_mode}): says why" "$(run_err "${old_args[@]}")" "predate the Ficus naming \\(found ${PFK}\\)"
+  expect_eq "pre-Ficus host (${old_mode}): the config is untouched" "$(cat "${CONFIG}")" "${CONFIG_BYTES_BEFORE}"
+  expect_eq "pre-Ficus host (${old_mode}): the .env is untouched" "$(cat "${CORE_DEST}/.env")" "${OLD_ENV_BYTES}"
+  expect_eq "pre-Ficus host (${old_mode}): no Caddyfile was written" "$([[ -e ${CADDYFILE_PATH} ]] && echo exists || echo absent)" 'absent'
 done
 printf '%s\n' "${ENV_BYTES_BEFORE}" >"${CORE_DEST}/.env"
+
+# --- a journaled host migration: refused before anything changes -------------
+# Its reconcile or rollback would restore the yaml and .env this rewrites, so
+# a retarget in between would be silently undone.
+export HOST_MIGRATE_BACKUP_ROOT="${SCRATCH}/host-migrate"
+mkdir -p "${HOST_MIGRATE_BACKUP_ROOT}"
+printf '%s\t%s\t%s\n' "${HOST_MIGRATE_BACKUP_ROOT}/set" testmark /srv/release >"${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+for pending_mode in --dry-run real; do
+  pending_args=(--config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}")
+  [[ ${pending_mode} == --dry-run ]] && pending_args+=(--dry-run)
+  expect_eq "journaled migration (${pending_mode}): exits non-zero" "$(run_rc "${pending_args[@]}")" '1'
+  expect_match "journaled migration (${pending_mode}): says why" "$(run_err "${pending_args[@]}")" \
+    'a host migration is still journaled in .*/PENDING — run the tenant upgrade \(it reconciles\) before retargeting'
+  expect_eq "journaled migration (${pending_mode}): the config is untouched" "$(cat "${CONFIG}")" "${CONFIG_BYTES_BEFORE}"
+  expect_eq "journaled migration (${pending_mode}): the .env is untouched" "$(cat "${CORE_DEST}/.env")" "${ENV_BYTES_BEFORE}"
+  expect_eq "journaled migration (${pending_mode}): no Caddyfile was written" "$([[ -e ${CADDYFILE_PATH} ]] && echo exists || echo absent)" 'absent'
+done
+rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+expect_eq 'journaled migration: once reconciled (no PENDING), a dry run proceeds' \
+  "$(run_rc --config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}" --dry-run)" '0'
+unset HOST_MIGRATE_BACKUP_ROOT
 
 expect_eq 'http origin: exits non-zero' \
   "$(run_rc --config "${CONFIG}" --origin http://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}" --dry-run)" '1'
@@ -383,7 +406,7 @@ cleanup_caddy_user() {
 trap 'cleanup_caddy_user; cleanup' EXIT
 
 if [[ ${EUID} -eq 0 ]] && command -p id -u caddy >/dev/null 2>&1; then
-  echo 'TAU retarget-origin mutation-phase section: ENABLED'
+  echo 'FICUS retarget-origin mutation-phase section: ENABLED'
 
   MUT="${SCRATCH}/mutation"
   mkdir -p "${MUT}/core"
@@ -394,10 +417,10 @@ if [[ ${EUID} -eq 0 ]] && command -p id -u caddy >/dev/null 2>&1; then
   MUT_CONFIG="${MUT}/tau-setup.yaml"
   cat >"${MUT_CONFIG}" <<EOF
 source:
-  repo: git@example.com:acme/tau.git
+  repo: git@example.com:acme/ficus.git
   dest: ${MUT}/core
 core:
-  origin: https://acme.hiretau.ai
+  origin: https://acme.old.example
   port: 3000
   env: {}
 ingress:
@@ -405,17 +428,17 @@ ingress:
   tls_cert_path: /pushed/old/origin.crt
   tls_key_path: /pushed/old/origin.key
 dns:
-  zone: hiretau.ai
+  zone: old.example
 EOF
   # PORT (4100) deliberately DIFFERS from the yaml's core.port (3000) — this
   # is exactly the drift the health-check-port fix targets: the Caddyfile's
   # reverse_proxy target, and the port the health check probes, must come
   # from the running .env, not the yaml default.
-  printf '# a comment\nAPP_URL=https://acme.hiretau.ai\n\nFICUS_WEB_ORIGIN=https://acme.hiretau.ai\nPORT=4100\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${MUT}/core/.env"
+  printf '# a comment\nAPP_URL=https://acme.old.example\n\nFICUS_WEB_ORIGIN=https://acme.old.example\nPORT=4100\nFICUS_ENCRYPTION_KEY=deadbeef\n' >"${MUT}/core/.env"
 
   # A pre-existing "old" cert at the canonical (scratch) path, so the
   # cert-backup-before-install fix has something real to back up.
-  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=old.acme.hiretau.ai' \
+  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=acme.old.example' \
     -keyout "${CADDY_TLS_DIR}/origin.key" -out "${CADDY_TLS_DIR}/origin.crt" >/dev/null 2>&1
 
   MUT_NEW_CERT="${MUT}/new-origin.crt"
@@ -440,7 +463,7 @@ EOF
     expect_eq "${label}: yaml dns.zone rewritten" "$(yq -r '.dns.zone' "${MUT_CONFIG}")" 'ficus.sh'
     expect_eq "${label}: yaml core.env.FICUS_PLATFORM_INGEST_URL rewritten" \
       "$(yq -r '.core.env.FICUS_PLATFORM_INGEST_URL' "${MUT_CONFIG}")" 'https://ficus.sh'
-    expect_eq "${label}: yaml source.repo untouched" "$(yq -r '.source.repo' "${MUT_CONFIG}")" 'git@example.com:acme/tau.git'
+    expect_eq "${label}: yaml source.repo untouched" "$(yq -r '.source.repo' "${MUT_CONFIG}")" 'git@example.com:acme/ficus.git'
     expect_eq "${label}: yaml source.dest untouched" "$(yq -r '.source.dest' "${MUT_CONFIG}")" "${MUT}/core"
 
     expect_match "${label}: .env APP_URL rewritten" "$(cat "${MUT}/core/.env")" 'APP_URL=https://acme\.ficus\.sh'

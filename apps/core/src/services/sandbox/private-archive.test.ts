@@ -10,7 +10,7 @@ let originalHomeDir: string | undefined
 // getHomeDir() reads process.env.HOME_DIR on every call (no module-level cache),
 // so we can override it here regardless of module load order.
 beforeEach(() => {
-  dir = join(tmpdir(), `tau-archive-test-${Date.now()}-${Math.floor(performance.now())}`)
+  dir = join(tmpdir(), `ficus-archive-test-${Date.now()}-${Math.floor(performance.now())}`)
   mkdirSync(dir, { recursive: true })
   originalHomeDir = process.env.HOME_DIR
   process.env.HOME_DIR = dir

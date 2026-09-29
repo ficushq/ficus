@@ -4,7 +4,7 @@ import { integrationEnabledPredicate } from '../integrations/provider-state'
 import { resolveOAuthAuthority } from '../integrations/authorization/authority'
 import { parseGitHubConfiguration } from '@ficus/shared/oauth-providers/github/config'
 /**
- * Onboarding status: a fresh tau instance's setup checklist.
+ * Onboarding status: a fresh Ficus instance's setup checklist.
  *
  * Every item's state is DERIVED from a live signal on every read — item
  * completion is never stored. Only the admin's explicit "skip this optional

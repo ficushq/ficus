@@ -458,7 +458,7 @@ export function AddChannelForm({
       <div>
         <h4 className="text-sm font-medium text-primary mb-1">New Channel</h4>
         <p className="text-xs text-muted">
-          A channel connects a Discord, Slack, or Telegram bot to tau. Messages that arrive through it are handled by
+          A channel connects a Discord, Slack, or Telegram bot to Ficus. Messages that arrive through it are handled by
           agents in your default squad — unless you add a squad override below to route a specific provider channel to a
           different squad instead.
         </p>

@@ -1,4 +1,4 @@
-# Tau Sandbox Base Image
+# Ficus Sandbox Base Image
 # Provides a Docker-in-Docker environment for agent execution.
 #
 # Supports two runtime modes:
@@ -15,7 +15,7 @@ LABEL io.hiretau.sandbox.managed="true" \
       io.hiretau.sandbox.executor-protocol="1" \
       io.hiretau.sandbox.command-contract="1"
 
-# Install glibc compatibility (needed for compiled Bun binaries like the tau CLI).
+# Install glibc compatibility (needed for compiled Bun binaries like the ficus CLI).
 # sgerrand/alpine-pkg-glibc only provides x86_64 packages — skip on arm64 (e.g. Apple Silicon).
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
@@ -189,7 +189,7 @@ RUN git config --global --add safe.directory /workspace && \
 COPY apps/core/docker-sandbox/ssh_config.d/99-github-ssh-over-443.conf /etc/ssh/ssh_config.d/99-github-ssh-over-443.conf
 
 # Copy startup script
-COPY apps/core/docker-sandbox/shutdown.sh /usr/local/lib/tau-shutdown.sh
+COPY apps/core/docker-sandbox/shutdown.sh /usr/local/lib/ficus-shutdown.sh
 COPY apps/core/docker-sandbox/startup.sh /usr/local/bin/startup.sh
 RUN chmod +x /usr/local/bin/startup.sh
 

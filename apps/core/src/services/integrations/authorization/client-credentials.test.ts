@@ -72,15 +72,15 @@ describe('OAuth application credentials', () => {
     )
 
     expect(resolveOAuthClientCredentials('notion', store)).toBeUndefined()
-    expect(getOAuthAppSettings('notion', store, 'https://tau.example/callback')).toEqual({
+    expect(getOAuthAppSettings('notion', store, 'https://ficus.example/callback')).toEqual({
       authority: 'platform_broker',
       configured: true,
       clientId: null,
-      callbackUrl: 'https://tau.example/callback',
+      callbackUrl: 'https://ficus.example/callback',
       requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
     })
     expect(store.reads).toBe(0)
-    expect(JSON.stringify(getOAuthAppSettings('notion', store, 'https://tau.example/callback'))).not.toContain(
+    expect(JSON.stringify(getOAuthAppSettings('notion', store, 'https://ficus.example/callback'))).not.toContain(
       'should-be-unreachable'
     )
   })
@@ -114,7 +114,7 @@ describe('OAuth application credentials', () => {
         { clientId: 'tenant-id', clientSecret: 'tenant-secret', capabilitiesAcknowledged: false },
         store,
         'user:operator',
-        'https://tau.example/callback'
+        'https://ficus.example/callback'
       )
     ).rejects.toThrow('OAuth application credentials are platform-managed')
     expect(store.reads).toBe(0)
@@ -131,14 +131,14 @@ describe('OAuth application credentials', () => {
       },
       store,
       'user:operator',
-      'https://tau.example/callback'
+      'https://ficus.example/callback'
     )
 
     expect(safe).toEqual({
       authority: 'local',
       configured: true,
       clientId: 'self-hosted-id',
-      callbackUrl: 'https://tau.example/callback',
+      callbackUrl: 'https://ficus.example/callback',
       requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
     })
     expect(JSON.stringify(safe)).not.toContain('self-hosted-secret')
@@ -155,7 +155,7 @@ describe('OAuth application credentials', () => {
       { clientId: `  ${clientId}  `, clientSecret: 'secret', capabilitiesAcknowledged: true },
       store,
       'user:operator',
-      'https://tau.example/callback'
+      'https://ficus.example/callback'
     )
     expect(configured.clientId).toBe(clientId)
 
@@ -166,14 +166,14 @@ describe('OAuth application credentials', () => {
         { clientId: ` ${'x'.repeat(513)} `, clientSecret: 'secret', capabilitiesAcknowledged: true },
         overLimit,
         'user:operator',
-        'https://tau.example/callback'
+        'https://ficus.example/callback'
       )
     ).rejects.toThrow('Invalid OAuth application settings')
     expect(overLimit.writes).toBe(0)
   })
 
   test('strictly validates provider and self-hosted input without echoing secrets', async () => {
-    expect(() => getOAuthAppSettings('unsupported', store, 'https://tau.example/callback')).toThrow(
+    expect(() => getOAuthAppSettings('unsupported', store, 'https://ficus.example/callback')).toThrow(
       'Unsupported OAuth application provider'
     )
     for (const input of [
@@ -183,7 +183,7 @@ describe('OAuth application credentials', () => {
       { clientId: 'id', clientSecret: 'secret', capabilitiesAcknowledged: true, extra: true },
     ]) {
       try {
-        await configureOAuthApp('notion', input, store, 'user:operator', 'https://tau.example/callback')
+        await configureOAuthApp('notion', input, store, 'user:operator', 'https://ficus.example/callback')
         throw new Error('expected invalid input')
       } catch (error) {
         expect(String(error)).not.toContain('secret')

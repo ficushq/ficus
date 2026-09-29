@@ -7,9 +7,9 @@ describe('requestHasDevAccess', () => {
     expect(requestHasDevAccess({ [DEV_ACCESS_HEADER]: 'secret-token' }, 'secret-token')).toBe(true)
   })
 
-  test('the dev access cookie is ficus_dev_access and the pre-rename name is not read', () => {
+  test('the dev access cookie is ficus_dev_access and another name is not read', () => {
     expect(DEV_ACCESS_COOKIE).toBe('ficus_dev_access')
-    expect(requestHasDevAccess({ cookie: 'tau_dev_access=secret-token' }, 'secret-token')).toBe(false)
+    expect(requestHasDevAccess({ cookie: 'old_dev_access=secret-token' }, 'secret-token')).toBe(false)
   })
 
   test('the dev access header is x-ficus-dev-access-token', () => {

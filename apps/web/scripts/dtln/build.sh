@@ -14,7 +14,7 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd "$here/../../../.." && pwd)
 public_dir="$repo_root/apps/web/public/voice/dtln"
-out_dir=$(mktemp -d "${TMPDIR:-/tmp}/tau-dtln-build.XXXXXX")
+out_dir=$(mktemp -d "${TMPDIR:-/tmp}/ficus-dtln-build.XXXXXX")
 trap 'rm -rf "$out_dir"' EXIT
 
 mode=install

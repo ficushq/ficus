@@ -5,7 +5,7 @@
 // KEPT rather than deleted — but it now contains no logic of its own: all
 // normative behavior (per-item cap check, URL/signing, verify) lives in
 // `createDefaultAttachmentPull` (amtp-engine src/attachment-pull.ts).
-// `getCaps` reads tau's settings store PER CALL (unlike the engine's internal
+// `getCaps` reads Ficus's settings store PER CALL (unlike the engine's internal
 // once-per-receive snapshot), preserving today's per-pull settings read here.
 import { createDefaultAttachmentPull } from 'amtp-engine'
 import type { ReceiveCaps } from 'amtp-engine'
@@ -23,7 +23,7 @@ async function defaultSigner(): Promise<{ instanceId: string; privateKeyPem: str
   return { instanceId: identity.instanceId, privateKeyPem: identity.privateKeyPem }
 }
 
-async function tauReceiveCaps(): Promise<ReceiveCaps> {
+async function ficusReceiveCaps(): Promise<ReceiveCaps> {
   const store = getSettingsStore()
   return {
     maxAttachmentBytes: store.getTyped('INBOX_MAX_ATTACHMENT_BYTES') as number,
@@ -37,7 +37,7 @@ export function pullAttachment(
 ): Promise<Uint8Array> {
   return createDefaultAttachmentPull({
     signing: deps.signer ?? defaultSigner,
-    getCaps: tauReceiveCaps,
+    getCaps: ficusReceiveCaps,
     fetch: deps.fetchImpl,
   })(args)
 }

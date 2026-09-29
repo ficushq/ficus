@@ -4,7 +4,7 @@
  * No transport: read/write use pi's local filesystem defaults, edit uses the
  * shared verified-edit planner over local fs, bash uses pi's local shell
  * backend with a spawn hook that swaps in the host runtime env (login-shell
- * snapshot + TAU vars) and prepends the squad `.tau/.env` preamble. Paths are
+ * snapshot + FICUS vars) and prepends the squad `.tau/.env` preamble. Paths are
  * absolute (enforceAbsolutePaths) exactly as on every other runtime.
  */
 
@@ -89,7 +89,7 @@ export function createLocalVerifiedEditOperations(deps: LocalVerifiedEditFsDeps 
       // original permissions — the explicit chmod after write is load-bearing, not
       // redundant.
       const mode = st.mode & 0o7777
-      const tmp = join(dirname(realPath), `.${basename(realPath)}.${process.pid}.${randomUUID()}.tau-edit.tmp`)
+      const tmp = join(dirname(realPath), `.${basename(realPath)}.${process.pid}.${randomUUID()}.ficus-edit.tmp`)
       try {
         await fsWriteFile(tmp, result, { flag: 'wx', mode })
         await fsChmod(tmp, mode)
@@ -112,7 +112,7 @@ export function clampHostBashTimeout(timeout?: number): number {
 
 export function createHostBashTool(
   cwd: string,
-  opts: { tauToken?: string; squadId?: string; agentId?: string } = {}
+  opts: { ficusToken?: string; squadId?: string; agentId?: string } = {}
 ): AgentTool<any> {
   const local = createLocalBashOperations()
   const tool = createBashTool(cwd, {
@@ -126,7 +126,7 @@ export function createHostBashTool(
     spawnHook: (ctx) => ({
       command: buildHostPreamble(opts) + ctx.command,
       cwd: ctx.cwd,
-      env: buildHostCommandEnv({ tauToken: opts.tauToken, squadId: opts.squadId, agentId: opts.agentId }),
+      env: buildHostCommandEnv({ ficusToken: opts.ficusToken, squadId: opts.squadId, agentId: opts.agentId }),
     }),
     operations: {
       exec: (command, execCwd, options) =>
@@ -143,7 +143,7 @@ export function createHostBashTool(
 export function createHostSandboxedCodingTools(
   _workspacePath: string,
   sandboxId: string,
-  tauToken?: string,
+  ficusToken?: string,
   squadId?: string,
   _invocationOwnerId?: string,
   agentId?: string
@@ -157,7 +157,7 @@ export function createHostSandboxedCodingTools(
   // fallback: `system_manager_<ownerUserId>` boxes carry no agent id at all, and
   // a descendant sharing a box would otherwise inherit the box owner's id.
   const bash = createHostBashTool(bashCwd, {
-    tauToken,
+    ficusToken,
     squadId,
     agentId: agentId ?? agentIdFromSandboxId(sandboxId),
   })

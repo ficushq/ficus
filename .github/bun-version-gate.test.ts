@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 // `.bun-version` is the runtime advertised to developer tooling, Bun version
-// managers, and tau's own sandbox images ("install whatever .bun-version
+// managers, and Ficus's own sandbox images ("install whatever .bun-version
 // says"). CI, however, ignores `.bun-version` entirely — every workflow pins
 // `oven-sh/setup-bun` explicitly. If the two drift, `.bun-version` names a
 // runtime CI never validates. That is exactly how Bun 1.3.11 — which segfaults

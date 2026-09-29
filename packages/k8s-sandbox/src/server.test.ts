@@ -520,9 +520,10 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
 
       expect(received.length).toBe(1)
       expect(received[0].pathname).toBe('/open')
-      // K3: both names with the same value, for browser services on older machine images.
       expect(received[0].headers['x-ficus-box-user']).toBe(userInfo().username)
-      expect(received[0].headers['x-tau-box-user']).toBe(userInfo().username) // K3
+      expect(Object.keys(received[0].headers).filter((name) => name.endsWith('-box-user'))).toEqual([
+        'x-ficus-box-user',
+      ])
       expect(received[0].headers['authorization']).toBe(`Bearer ${token}`)
       expect(received[0].body).toEqual(requestBody)
     } finally {

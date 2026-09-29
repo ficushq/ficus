@@ -8,14 +8,14 @@ const BASE_URL = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '')
 // Optional BUILD-TIME override for split-domain deployments (API on a
 // different origin than the page). Unset everywhere we deploy today.
 // Development always stays same-origin and lets Vite's authenticated backend
-// proxy choose the target. This prevents an ambient VITE_TAU_API_URL from
+// proxy choose the target. This prevents an ambient VITE_FICUS_API_URL from
 // bypassing the read-only production guard in local development.
 const EXPLICIT_API_ORIGIN = import.meta.env?.DEV
   ? undefined
-  : (import.meta.env?.VITE_TAU_API_URL as string | undefined)?.replace(/\/$/, '')
+  : (import.meta.env?.VITE_FICUS_API_URL as string | undefined)?.replace(/\/$/, '')
 
 /**
- * Get the API base URL: `VITE_TAU_API_URL` if the bundle was built with one,
+ * Get the API base URL: `VITE_FICUS_API_URL` if the bundle was built with one,
  * otherwise the PAGE's own origin (plus APP_BASE_PATH via
  * import.meta.env.BASE_URL).
  *
@@ -61,13 +61,8 @@ export function setStoredToken(token: string): void {
   localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
 }
 
-// retired-credential cleanup: remove in Wave 3. Browsers that have not opened the app
-// since the cookie migration can still hold the pre-rename credential; purge it too.
-const RETIRED_AUTH_TOKEN_STORAGE_KEY = 'tau_password'
-
 export function clearStoredToken(): void {
   localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
-  localStorage.removeItem(RETIRED_AUTH_TOKEN_STORAGE_KEY)
 }
 
 // Auth now travels in an HttpOnly session cookie (sent via credentials: 'include');

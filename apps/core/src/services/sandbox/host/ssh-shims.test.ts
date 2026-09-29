@@ -3,21 +3,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import {
-  LEGACY_MANAGED_BLOCK_BEGIN,
-  LEGACY_MANAGED_BLOCK_END,
-  MANAGED_BLOCK_BEGIN,
-  MANAGED_BLOCK_END,
-  SSH_FAMILY_TOOLS,
-  ensureSshFamilyShims,
-  renderSshShimScript,
-} from './ssh-shims'
+import { SSH_FAMILY_TOOLS, ensureSshFamilyShims, renderSshShimScript } from './ssh-shims'
 
 // The rendered scripts must be valid POSIX /bin/sh — CI's shell is dash, the
 // strictest of the targets — so syntax-check every render. A wrong \${...}
 // escape inside ssh-shims.ts is otherwise a silent runtime bug.
 function checkShellSyntax(script: string): void {
-  const file = join(tmpdir(), `tau-shim-syntax-${Math.random().toString(36).slice(2)}`)
+  const file = join(tmpdir(), `ficus-shim-syntax-${Math.random().toString(36).slice(2)}`)
   writeFileSync(file, script)
   try {
     const result = Bun.spawnSync(['/bin/sh', '-n', file])
@@ -125,7 +117,7 @@ describe('ssh-family shims (functional matrix)', () => {
   }
 
   beforeEach(() => {
-    t = mkdtempSync(join(tmpdir(), 'tau-ssh-shims-fn-'))
+    t = mkdtempSync(join(tmpdir(), 'ficus-ssh-shims-fn-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = t
     ensureSshFamilyShims()
@@ -170,18 +162,6 @@ describe('ssh-family shims (functional matrix)', () => {
 
   test('7. ssh with no FICUS_SQUAD_SSH_DIR (solo agent): untouched', () => {
     expect(run('ssh staging true', { solo: true }).lines).toEqual(['staging', 'true'])
-  })
-
-  test('8b. a config still carrying the pre-rename managed block resolves its aliases', () => {
-    writeFileSync(
-      CFG(),
-      FIXTURE_CONFIG.replace(MANAGED_BLOCK_BEGIN, LEGACY_MANAGED_BLOCK_BEGIN).replace(
-        MANAGED_BLOCK_END,
-        LEGACY_MANAGED_BLOCK_END
-      )
-    )
-    expect(readFileSync(CFG(), 'utf8')).not.toContain(MANAGED_BLOCK_BEGIN)
-    expect(run('ssh staging true').lines).toEqual([...KH_ARGS(), 'staging', 'true'])
   })
 
   test('8. ssh with an empty managed block: untouched', () => {
@@ -256,7 +236,7 @@ describe('ssh-family shims (functional matrix)', () => {
 
   test('aliases outside the managed block (user stanza) are never resolved by the shim', () => {
     // 'github-work' sits in the USER section of the same config — only the
-    // marker-delimited block is tau's. A user alias needs an explicit -F.
+    // marker-delimited block is Ficus's. A user alias needs an explicit -F.
     expect(run('ssh github-work true').lines).toEqual(['github-work', 'true'])
   })
 })
@@ -265,7 +245,7 @@ describe('ensureSshFamilyShims', () => {
   let home: string
   let prevHome: string | undefined
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-ssh-shims-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-ssh-shims-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = home
   })

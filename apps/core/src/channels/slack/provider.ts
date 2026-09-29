@@ -711,7 +711,7 @@ export const slackProvider: ChannelProvider = {
         id: context.threadId,
         channelId: context.channelId,
         originalMessageId: context.messageToEdit,
-        tauCreated: context.tauInitiated ?? false,
+        ficusCreated: context.ficusInitiated ?? false,
       })
 
       return context.threadId
@@ -747,7 +747,7 @@ export const slackProvider: ChannelProvider = {
         id: parentMessageTs,
         channelId: context.channelId,
         originalMessageId: parentMessageTs,
-        tauCreated: true,
+        ficusCreated: true,
       })
 
       return parentMessageTs

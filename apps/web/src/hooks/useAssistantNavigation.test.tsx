@@ -21,7 +21,7 @@ test('navigation restores nesting and search on refresh and unwraps legacy conve
     )
   try {
     await dom.act(async () =>
-      render('/squads/tau?tab=work&chat=open&assistantConversation=old&agentConversation=stale', 'initial')
+      render('/squads/ficus?tab=work&chat=open&assistantConversation=old&agentConversation=stale', 'initial')
     )
     expect(nav.entries.at(-1)?.id).toBe('old')
     await dom.act(async () => nav.back())
@@ -29,10 +29,10 @@ test('navigation restores nesting and search on refresh and unwraps legacy conve
     expect(new URLSearchParams(search).has('agentConversation')).toBe(false)
     expect(new URLSearchParams(search).has('assistantConversation')).toBe(false)
     await dom.act(async () => nav.setQuery('OAuth'))
-    await dom.act(async () => nav.push({ kind: 'squad', id: 'tau', label: 'Ficus' }))
-    await dom.act(async () => nav.push({ kind: 'work', id: 'w1', squadId: 'tau', label: 'OAuth setup' }))
+    await dom.act(async () => nav.push({ kind: 'squad', id: 'ficus', label: 'Ficus' }))
+    await dom.act(async () => nav.push({ kind: 'work', id: 'w1', squadId: 'ficus', label: 'OAuth setup' }))
     await dom.act(async () =>
-      nav.push({ kind: 'chat', id: 'a1', agentId: 'a1', squadId: 'tau', label: 'Research OAuth' })
+      nav.push({ kind: 'chat', id: 'a1', agentId: 'a1', squadId: 'ficus', label: 'Research OAuth' })
     )
     expect(nav.entries.map((entry) => entry.kind)).toEqual(['squad', 'work', 'chat'])
     const refreshUrl = '/squads/tau' + search
@@ -75,7 +75,7 @@ test('new chat prompts remain in memory and created agent identities survive ref
       nav.push({
         kind: 'chat',
         id: 'draft',
-        squadId: 'tau',
+        squadId: 'ficus',
         label: 'Explore the request',
         initialText: 'Private initial prompt',
       })
@@ -86,7 +86,7 @@ test('new chat prompts remain in memory and created agent identities survive ref
     expect(readAssistantNavigation(new URLSearchParams(search)).at(-1)).toMatchObject({
       id: 'draft',
       agentId: 'created-agent',
-      squadId: 'tau',
+      squadId: 'ficus',
     })
     expect(nav.entries.at(-1)).toMatchObject({ initialText: 'Private initial prompt' })
   } finally {
@@ -97,11 +97,11 @@ test('new chat prompts remain in memory and created agent identities survive ref
 test('malformed navigation is bounded and never restores submitted prompts', () => {
   expect(readAssistantNavigation(new URLSearchParams({ commandStack: 'not json' }))).toEqual([])
   expect(
-    readAssistantNavigation(new URLSearchParams({ commandStack: JSON.stringify(Array(31).fill(['squad', 'tau'])) }))
+    readAssistantNavigation(new URLSearchParams({ commandStack: JSON.stringify(Array(31).fill(['squad', 'ficus'])) }))
   ).toEqual([])
   const encoded = assistantNavigationParams(
     new URLSearchParams(),
-    [{ kind: 'chat', id: 'draft', squadId: 'tau', label: 'Private label', initialText: 'Private prompt' }],
+    [{ kind: 'chat', id: 'draft', squadId: 'ficus', label: 'Private label', initialText: 'Private prompt' }],
     ''
   )
   expect(encoded.toString()).not.toContain('Private')
@@ -112,8 +112,8 @@ test('origin conversation read-only mode survives URL restoration', () => {
   const params = assistantNavigationParams(
     new URLSearchParams(),
     [
-      { kind: 'work', id: 'work', squadId: 'tau', label: 'Work' },
-      { kind: 'chat', id: 'origin', agentId: 'origin', squadId: 'tau', label: 'Explore approaches', readOnly: true },
+      { kind: 'work', id: 'work', squadId: 'ficus', label: 'Work' },
+      { kind: 'chat', id: 'origin', agentId: 'origin', squadId: 'ficus', label: 'Explore approaches', readOnly: true },
     ],
     'OAuth'
   )

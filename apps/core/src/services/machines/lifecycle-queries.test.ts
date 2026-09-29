@@ -9,7 +9,7 @@ function machineValues(name: string) {
     name: `${prefix}-${name}`,
     provider: 'ssh',
     sshHost: '10.0.0.1',
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key-1',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     // bindMachineBox rejects non-ready machines (reaper serialization).

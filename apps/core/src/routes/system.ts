@@ -194,7 +194,7 @@ async function signalWorkerRestart(): Promise<void> {
 }
 
 /**
- * Restart BOTH tau processes. Useful after updating secrets that are read once
+ * Restart BOTH Ficus processes. Useful after updating secrets that are read once
  * at startup (e.g., Discord gateway token).
  *
  * tau-api and tau-worker are separate units with no coupling, so this handler

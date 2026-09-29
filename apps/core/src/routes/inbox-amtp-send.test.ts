@@ -335,7 +335,7 @@ describe('POST /api/inbox — outbound federation send', () => {
       body: JSON.stringify({
         recipientType: 'agent',
         recipientId: 'amtp://inst', // malformed: no /handle component
-        content: 'test malformed tau address',
+        content: 'test malformed ficus address',
       }),
     })
 

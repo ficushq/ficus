@@ -10,7 +10,7 @@ import { isChannelAllowed } from '../services/channel-policy'
  */
 
 import { canUseChannel, channelLinkReply, CHANNEL_ACCESS_DENIED } from '../services/channel-access'
-import { isTauSyncCommand } from '../lib/channels'
+import { isFicusSyncCommand } from '../lib/channels'
 import type { ChannelProvider, ChannelEvent, ResponseContext, ThreadMessage } from './provider'
 import { Agent } from '../entities/Agent'
 import { InboxMessage } from '../entities/InboxMessage'
@@ -106,7 +106,7 @@ export async function handleChannelEvent(
   }
 
   // Handle sync commands (status, help, notify, unnotify)
-  if (event.type === 'slash_command' && isTauSyncCommand(event.command || '')) {
+  if (event.type === 'slash_command' && isFicusSyncCommand(event.command || '')) {
     // Status resolves a squad too; help and explicit notification subscriptions
     // do not depend on the default route and remain available.
     if (event.command === 'status' && isChatRouteMissing(provider, event, channelInstance)) {
@@ -301,7 +301,7 @@ async function handleMentionInChannel(
       channelId: event.channelId,
       threadId: event.messageId, // User's message is the thread parent
       messageToEdit: thinkingMsg.messageId,
-      tauInitiated: true, // Ficus is creating this thread
+      ficusInitiated: true, // Ficus is creating this thread
       extras: event.raw,
     },
   })
@@ -333,7 +333,7 @@ async function handleMentionInJoinedThread(
     channelId: event.channelId,
     threadId: event.threadId,
     messageToEdit: thinkingMsg.messageId,
-    tauInitiated: false,
+    ficusInitiated: false,
     extras: event.raw,
   }
 
@@ -483,7 +483,7 @@ async function handleNewChatMessage(
       channelId: event.channelId,
       threadId: event.channelId, // Use chat ID as thread
       messageToEdit: thinkingMsg.messageId,
-      tauInitiated: true, // Mark as Ficus-initiated so future messages route here
+      ficusInitiated: true, // Mark as Ficus-initiated so future messages route here
     },
   })
 

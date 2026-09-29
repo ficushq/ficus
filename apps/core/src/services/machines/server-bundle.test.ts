@@ -49,7 +49,7 @@ describe('resolveRepoRoot', () => {
     // start); only mutating process.env.HOME in-process after start is not
     // picked up. So the test passes the home explicitly instead of rewriting
     // $HOME.
-    const homeRoot = await mkdtemp(join(tmpdir(), 'tau-repo-root-home-'))
+    const homeRoot = await mkdtemp(join(tmpdir(), 'ficus-repo-root-home-'))
     const fixture = join(homeRoot, '.tau-repo-root-fixture')
     try {
       await mkdir(join(fixture, 'packages/k8s-sandbox/src'), { recursive: true })
@@ -78,7 +78,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.9',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -168,7 +168,7 @@ describe('buildServerBundle prebuilt fallback', () => {
   }) as unknown as typeof Bun.spawn
 
   it('reads server.js + librust_pty.so from the prebuilt dir and hashes them (no build)', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-prebuilt-server-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-server-'))
     try {
       const server = new TextEncoder().encode('// prebuilt server.js fixture\n')
       const lib = new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4])
@@ -187,7 +187,7 @@ describe('buildServerBundle prebuilt fallback', () => {
   })
 
   it('throws when a prebuilt server.js is present but its native lib is missing', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-prebuilt-server-nolib-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-server-nolib-'))
     try {
       await writeFile(join(dir, 'server.js'), new Uint8Array([1, 2, 3]))
       await expect(buildServerBundle({ prebuiltDir: dir, spawn: throwingSpawn })).rejects.toThrow(
@@ -218,7 +218,7 @@ describe('buildServerBundle prebuilt fallback', () => {
   })
 
   it('falls through to the source build when no prebuilt bundle exists', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-prebuilt-server-empty-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-server-empty-'))
     const calls: string[][] = []
     // Record the build spawn and reject its exit so the fallthrough is provable
     // without depending on the real k8s-sandbox source / bun-pty lib being
@@ -347,13 +347,13 @@ describe('ensureServerBundle', () => {
     expect(calls).toHaveLength(2)
     // The staging name carries a per-attempt token (machine-artifacts.ts's
     // stagingPathFor) so concurrent pushes cannot share it, hence shape rather
-    // than an exact string: install into a unique '<dest>.tau-new.<token>',
+    // than an exact string: install into a unique '<dest>.ficus-new.<token>',
     // then rename THAT path onto the destination.
     const stagedThenRenamed = (command: string, dest: string): boolean => {
       const staging = command.match(/install -D -m 0755 \/dev\/stdin '([^']+)' &&/)?.[1]
       return (
         !!staging &&
-        staging.startsWith(`${dest}.tau-new.`) &&
+        staging.startsWith(`${dest}.ficus-new.`) &&
         command.includes(`mv -f '${staging}' '${dest}'`) &&
         !command.includes(`/dev/stdin '${dest}'`)
       )

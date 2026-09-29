@@ -70,7 +70,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.5',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -277,27 +277,23 @@ function happyDeps(events: string[], machine: Machine, box: MachineBox) {
 // boxUnixUser
 // ---------------------------------------------------------------------------
 
-describe('legacy TAU_ output markers (one release)', () => {
-  it('parses the box uid from either marker spelling', () => {
+describe('output markers', () => {
+  it('parses the box uid from the FICUS_ marker only', () => {
     expect(parseBoxUid('noise\nFICUS_BOX_UID=1001\n')).toBe(1001)
-    expect(parseBoxUid('noise\nTAU_BOX_UID=1001\n')).toBe(1001)
+    expect(parseBoxUid('noise\nOLD_BOX_UID=1001\n')).toBeNull()
     expect(parseBoxUid('BOX_UID=1001\n')).toBeNull()
   })
 
-  it('parses machine snapshot liveness and sections from either marker spelling', () => {
-    for (const prefix of ['FICUS', 'TAU']) {
-      expect(
-        parseMachineSnapshotOutput(
-          `${prefix}_BOX_LIVENESS=idle\n${prefix}_CONTAINER_STATES_BEGIN\nworker Up\n${prefix}_CONTAINER_STATES_END\n` +
-            `${prefix}_BOX_LOGS_BEGIN\nloaded\n${prefix}_BOX_LOGS_END\n`
-        )
-      ).toEqual({ liveness: 'idle', containerStates: 'worker Up', logTail: 'loaded' })
-    }
-    expect(parseMachineSnapshotOutput('FICUS_STATE_BEGIN\nx\nTAU_STATE_END\n')).toEqual({
-      liveness: undefined,
-      containerStates: undefined,
-      logTail: undefined,
-    })
+  it('parses machine snapshot liveness and sections from the FICUS_ markers only', () => {
+    expect(
+      parseMachineSnapshotOutput(
+        'FICUS_BOX_LIVENESS=idle\nFICUS_CONTAINER_STATES_BEGIN\nworker Up\nFICUS_CONTAINER_STATES_END\n' +
+          'FICUS_BOX_LOGS_BEGIN\nloaded\nFICUS_BOX_LOGS_END\n'
+      )
+    ).toEqual({ liveness: 'idle', containerStates: 'worker Up', logTail: 'loaded' })
+    expect(parseMachineSnapshotOutput('OLD_BOX_LIVENESS=idle\nOLD_BOX_LOGS_BEGIN\nloaded\nOLD_BOX_LOGS_END\n')).toEqual(
+      { liveness: undefined, containerStates: undefined, logTail: undefined }
+    )
   })
 })
 
@@ -330,7 +326,7 @@ describe('ensureBox', () => {
       }
     )
 
-    // The artifact ensure (box-provision.sh + server bundle + tau cli, per the
+    // The artifact ensure (box-provision.sh + server bundle + Ficus cli, per the
     // registry) must land on the machine before the box row is bound /
     // provisioning begins.
     expect(events.indexOf('artifacts')).toBeGreaterThanOrEqual(0)
@@ -359,11 +355,11 @@ describe('ensureBox', () => {
         {
           ...deps,
           ensureMachineArtifacts: async () => {
-            throw new Error('tau cli build failed (exit 1)')
+            throw new Error('ficus cli build failed (exit 1)')
           },
         }
       )
-    ).rejects.toThrow('tau cli build failed')
+    ).rejects.toThrow('ficus cli build failed')
 
     // A required artifact failed — the ensure must abort before any mutation:
     // no bind, no provision, and the box is never stamped ready.
@@ -2524,7 +2520,7 @@ describe('removeBox', () => {
 
 describe('restorePrivateArchive', () => {
   it('finds the newest owner-attributed archive for fresh replacement', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-latest-private-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-latest-private-'))
     try {
       mkdirSync(join(root, 'agent_owner-100'))
       mkdirSync(join(root, 'agent_owner-300'))
@@ -2570,15 +2566,15 @@ describe('restorePrivateArchive', () => {
     expect(calls).toHaveLength(3)
     // (b) the bytes land at a machine-side scratch path, root-installed 0600 so
     // no co-located box user can read the private tree in transit.
-    expect(calls[0].command).toBe(`sudo install -m 0600 /dev/stdin '/tmp/tau-restore-sb-1.tar.gz'`)
+    expect(calls[0].command).toBe(`sudo install -m 0600 /dev/stdin '/tmp/ficus-restore-sb-1.tar.gz'`)
     expect(calls[0].stdin).toBe(archiveBytes)
     // (c) box-provision extracts the scratch tar into the box home.
     expect(calls[1].command).toBe(
       `sudo bash /opt/tau/bin/box-provision.sh --unix-user '${boxUnixUser('sb-1')}' ` +
-        `--restore '/tmp/tau-restore-sb-1.tar.gz'`
+        `--restore '/tmp/ficus-restore-sb-1.tar.gz'`
     )
     // (d) the scratch tar (a full copy of the private tree) never lingers.
-    expect(calls[2].command).toBe(`sudo rm -f '/tmp/tau-restore-sb-1.tar.gz'`)
+    expect(calls[2].command).toBe(`sudo rm -f '/tmp/ficus-restore-sb-1.tar.gz'`)
   })
 
   it('throws when the --restore command exits non-zero (but still removes the scratch tar)', async () => {
@@ -2597,7 +2593,7 @@ describe('restorePrivateArchive', () => {
 
     // Best-effort scratch cleanup runs on the failure path too.
     expect(calls.map((c) => c.command).filter((c) => c.startsWith('sudo rm -f'))).toEqual([
-      `sudo rm -f '/tmp/tau-restore-sb-1.tar.gz'`,
+      `sudo rm -f '/tmp/ficus-restore-sb-1.tar.gz'`,
     ])
   })
 
@@ -2613,7 +2609,7 @@ describe('restorePrivateArchive', () => {
       machine,
       'sb-1',
       '/home/box_x',
-      '/tmp/archive-root/definitely-absent-tau-test/private.tar.gz',
+      '/tmp/archive-root/definitely-absent-ficus-test/private.tar.gz',
       {}
     )
 
@@ -2867,7 +2863,7 @@ describe('buildStreamRestoreCommand', () => {
   })
 
   it('shell-quotes a hostile unix user as one byte-identical argv element without side effects', async () => {
-    const marker = `/tmp/tau-restore-render-${randomUUID()}`
+    const marker = `/tmp/ficus-restore-render-${randomUUID()}`
     const unixUser = `-bad 'quote' space $(touch ${marker}) ` + '`touch ' + marker + '` ; back\\slash\nnewline'
     const cmd = buildStreamRestoreCommand(unixUser, ['workspace', '.private'], 'gzip')
     const launcher = 'sudo bash /opt/tau/bin/box-provision.sh '
@@ -4357,7 +4353,7 @@ describe('queryReadySharedMachines (DB)', () => {
       name: `${prefix}-${name}`,
       provider: 'ssh',
       sshHost: '10.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'secret-key-1',
       sshPublicKey: 'ssh-ed25519 AAAA test',
       ...overrides,

@@ -24,7 +24,7 @@ describe('notification event builders', () => {
   })
 
   test('builds an agent question notification from persisted state', async () => {
-    process.env.APP_URL = 'https://tau.example'
+    process.env.APP_URL = 'https://ficus.example'
     track(
       spyOn(questionsModule, 'getAgentQuestion').mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000001',
@@ -66,12 +66,12 @@ describe('notification event builders', () => {
       squadName: 'Ficus',
       title: '❓ Forge has a question',
       body: 'Which release should I target?',
-      url: 'https://tau.example/squads/s1?agent=a1',
+      url: 'https://ficus.example/squads/s1?agent=a1',
     })
   })
 
   test('builds personal agent question routing and rejects missing questions', async () => {
-    process.env.APP_URL = 'https://tau.example'
+    process.env.APP_URL = 'https://ficus.example'
     const persisted = {
       id: '00000000-0000-4000-8000-000000000002',
       agentId: 'a-personal',
@@ -105,7 +105,7 @@ describe('notification event builders', () => {
       agentId: 'a-personal',
       title: '❓ manager has a question',
       body: 'Open Ficus to respond',
-      url: 'https://tau.example/chat/a-personal',
+      url: 'https://ficus.example/chat/a-personal',
     })
     expect(await buildNotificationEvent('agent-question.created', {})).toBeNull()
     expect(await buildNotificationEvent('agent-question.created', { questionId: 'missing' })).toBeNull()
@@ -217,7 +217,7 @@ describe('notification event builders', () => {
   })
 
   test('links saved Assistant updates to the conversation without exposing content or the sender', async () => {
-    process.env.APP_URL = 'https://tau.example/app'
+    process.env.APP_URL = 'https://ficus.example/app'
     const conversationId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
     track(
       spyOn(InboxMessage, 'find').mockResolvedValue({
@@ -239,7 +239,7 @@ describe('notification event builders', () => {
       messageId: 'm-assistant',
       title: 'Assistant update',
       body: 'A task has an update. Open Assistant to view it.',
-      url: `https://tau.example/app/?chat=open&assistantConversation=${conversationId}`,
+      url: `https://ficus.example/app/?chat=open&assistantConversation=${conversationId}`,
       timestamp: expect.any(Date),
     })
     expect(JSON.stringify(event)).not.toContain('sk-not-really')
@@ -444,7 +444,7 @@ describe('notification event builders', () => {
 describe('getAppOrigin', () => {
   test('normalizes APP_URL to lowercase origin without a trailing slash, keeping a base path', () => {
     expect(getAppOrigin('https://Ficus.Example.com/')).toBe('https://ficus.example.com')
-    expect(getAppOrigin('https://tau.example.com')).toBe('https://tau.example.com')
+    expect(getAppOrigin('https://ficus.example.com')).toBe('https://ficus.example.com')
     expect(getAppOrigin('http://localhost:3000/tau/')).toBe('http://localhost:3000/tau')
   })
 

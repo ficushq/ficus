@@ -26,7 +26,7 @@ function harness(initial: { telegram?: State; discord?: State } = {}) {
   const lifecycle = new ChannelLifecycle({
     connections: {
       get: ((provider: 'telegram' | 'discord' | 'slack') => states[provider as 'telegram' | 'discord']) as never,
-      webhookUrl: (provider) => `https://tau.example.test/api/webhooks/channels/${provider}`,
+      webhookUrl: (provider) => `https://ficus.example.test/api/webhooks/channels/${provider}`,
     },
     fetch: fetchImpl,
     now: () => now,
@@ -80,7 +80,7 @@ describe('ChannelLifecycle', () => {
         url: 'https://api.telegram.org/bot111:tok/setWebhook',
         method: 'POST',
         body: {
-          url: 'https://tau.example.test/api/webhooks/channels/telegram',
+          url: 'https://ficus.example.test/api/webhooks/channels/telegram',
           secret_token: 'secret-1',
           drop_pending_updates: false,
         },

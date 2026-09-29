@@ -96,7 +96,7 @@ export function getComposeBoundPort(opts: ComposeBoundPortOptions): number | nul
  * this check meaningful before an application-specific database is created.
  *
  * THREE checks, all required — dropping any one reopens a real cross-worktree
- * data-loss hole (see the `getComposeBoundPort` doc comment and tau #795's
+ * data-loss hole (see the `getComposeBoundPort` doc comment and Core #795's
  * follow-up review):
  *  1. `docker compose exec ... pg_isready` proves THIS worktree's named
  *     container is healthy over its own internal socket.

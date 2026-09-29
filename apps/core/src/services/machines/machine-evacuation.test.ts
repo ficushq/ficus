@@ -17,7 +17,7 @@ async function machine(name: string) {
     provider: 'ssh',
     sshHost: '127.0.0.1',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'key',
     sshPublicKey: 'key',
     status: 'ready',

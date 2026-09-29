@@ -24,9 +24,9 @@ import { MachineTunnelManager } from './tunnel-manager'
  * flow against a real cloud VM the operator already controls (a fresh Ubuntu
  * 24.04 droplet/instance — anything with root-or-sudoer SSH):
  *
- *   POST /api/machines (BYO: tau MINTS a per-machine ed25519 keypair) →
+ *   POST /api/machines (BYO: Ficus MINTS a per-machine ed25519 keypair) →
  *   operator installs the returned public key by hand (simulated here over the
- *   operator's own key) → SSH in using tau's MINTED key (the BYO crux —
+ *   operator's own key) → SSH in using Ficus's MINTED key (the BYO crux —
  *   integration-vm.test.ts always used the operator's key directly, so the
  *   minted-key round-trip had never run against a real VM) →
  *   POST /:id/bootstrap (the FULL install path: apt + docker-ce + bun + nix +
@@ -45,7 +45,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  * ----------------------------------------------------------------------------
  * Separate gate from integration-vm.test.ts's FICUS_TEST_SSH_HOST (a disposable
  * CONTAINER, no systemd) and integration-exe.test.ts's FICUS_TEST_EXE_SSH_KEY (a
- * tau-provisioned exe VM): this needs a real systemd VM the operator supplies.
+ * ficus-provisioned exe VM): this needs a real systemd VM the operator supplies.
  * To run (host = a FRESH Ubuntu 24.04 VM you can root-SSH; the test installs
  * real packages on it and creates/removes box users — treat it as disposable):
  *
@@ -104,8 +104,8 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
 
   /**
    * Run a command on the VM as the OPERATOR (their own key) — the one thing a
-   * BYO operator does out-of-band: installing tau's minted public key. Every
-   * other SSH in this test goes through tau's runner with tau's MINTED key.
+   * BYO operator does out-of-band: installing Ficus's minted public key. Every
+   * other SSH in this test goes through Ficus's runner with Ficus's MINTED key.
    */
   function operatorSsh(command: string, stdin?: string): { exitCode: number; stderr: string } {
     const keyPath = expandTilde(process.env.FICUS_TEST_BYO_SSH_KEY!)
@@ -134,7 +134,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
 
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
-    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-byo-int-home-'))
+    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-byo-int-home-'))
     priorKey = process.env.FICUS_ENCRYPTION_KEY
     process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
@@ -147,7 +147,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
     router = app
 
     runner = createSshRunner({ defaultTimeoutMs: SLOW_MS })
-    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'tau-byoint-ctl-')) })
+    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'ficus-byoint-ctl-')) })
   })
 
   afterAll(async () => {
@@ -205,7 +205,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
       expect(machine.sshKeyId).toBe(`machine-ssh:${machine.id}`)
       expect(getSecretStore().get(machine.sshKeyId)).toBeTruthy()
 
-      // ── 2. OPERATOR STEP (the by-hand part of BYO): install tau's minted
+      // ── 2. OPERATOR STEP (the by-hand part of BYO): install Ficus's minted
       //       public key into the VM's authorized_keys, using the operator's
       //       own key. This is the only operator-key SSH in the test. ─────────
       const install = operatorSsh(
@@ -214,7 +214,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
       )
       expect(install.exitCode).toBe(0)
 
-      // ── 3. SSH in with tau's MINTED key (materialized from the machine row's
+      // ── 3. SSH in with Ficus's MINTED key (materialized from the machine row's
       //       sshKeyId) — the BYO crux no other test covers on a real VM. ─────
       const echo = await runner.run(machine, 'echo minted-key-ok')
       expect(echo.exitCode).toBe(0)

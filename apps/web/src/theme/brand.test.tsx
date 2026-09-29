@@ -28,11 +28,11 @@ test('brand colors are active, complete in every builtin, and custom-overridable
   }
 })
 
-test('the logo is the Ficus mark, not the old tau glyph', () => {
+test('the logo is the Ficus mark, not the old ficus glyph', () => {
   // Outside a ThemeProvider, FicusLogo falls back to its light-mode colors —
   // this asserts the mark's leaf fill from brand/ficus-mark.svg verbatim.
   const markup = renderToStaticMarkup(<FicusLogo />)
-  expect(markup).not.toContain(String.fromCharCode(0x3c4)) // the old tau glyph
+  expect(markup).not.toContain(String.fromCharCode(0x3c4)) // the old glyph
   expect(markup).toMatch(/<svg[^>]*>/)
   expect(markup).toContain('fill="#3f6b4f"')
 })

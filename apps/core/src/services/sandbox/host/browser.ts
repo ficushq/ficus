@@ -191,7 +191,7 @@ export function resolveHostChromium(
   const usable = (path: string) => exists(path) && isFile(path) && isExecutable(path)
 
   const resolved = ((): HostChromium | null => {
-    // `~` reaches us as a literal character — nothing that produces tau's
+    // `~` reaches us as a literal character — nothing that produces Ficus's
     // environment (bun's dotenv loader, systemd's EnvironmentFile=) expands
     // it — so expand BEFORE the absolute check, or `~/chrome` is rejected as
     // "not an absolute path" and the operator's setting silently does nothing.
@@ -262,7 +262,7 @@ export interface HostLaunchOptions extends HostChromium {
  * The only environment variables the browser process inherits. Playwright
  * hands Chrome the launching process's whole environment by default; here
  * that is the CORE's, which carries the database URL, provider API keys and
- * tau's own signing secrets into a process that renders untrusted pages. Only
+ * Ficus's own signing secrets into a process that renders untrusted pages. Only
  * what Chrome actually needs to start and find a display passes through.
  */
 const BROWSER_ENV_PASSTHROUGH = [
@@ -552,7 +552,7 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          // K3: every box-user name, like the machine hosts' box servers.
+          // The box user under x-ficus-box-user, like the machine hosts' box servers.
           ...boxUserHeaders(boxUser),
           authorization: `Bearer ${bearer}`,
         },

@@ -1139,17 +1139,17 @@ describe('WorkStream entity', () => {
         title: `${testPrefix} Typed fields create`,
         completionMode: 'review-approval',
         branch: 'feat-review',
-        worktree: '/tmp/tau/feat-review',
+        worktree: '/tmp/ficus/feat-review',
         baseBranch: 'main',
       })
 
       expect(ws.completionMode).toBe('review-approval')
       expect(ws.branch).toBe('feat-review')
-      expect(ws.worktree).toBe('/tmp/tau/feat-review')
+      expect(ws.worktree).toBe('/tmp/ficus/feat-review')
       expect(ws.baseBranch).toBe('main')
       expect(ws.metadata).toEqual({
         completion: { mode: 'review-approval' },
-        git: { branch: 'feat-review', worktree: '/tmp/tau/feat-review', baseBranch: 'main' },
+        git: { branch: 'feat-review', worktree: '/tmp/ficus/feat-review', baseBranch: 'main' },
       })
     })
 

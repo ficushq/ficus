@@ -68,7 +68,7 @@ export function sshConnectionArgs(machine: Machine, identityPath: string): strin
     'ConnectTimeout=10',
     '-o',
     'IdentitiesOnly=yes',
-    // Never consult an ssh-agent: tau always presents its own materialized key
+    // Never consult an ssh-agent: Ficus always presents its own materialized key
     // via -i, and a reachable-but-unhelpful agent (e.g. 1Password on a dev host)
     // otherwise negotiates on every connection — measured 60s of agent stalling
     // per ControlMaster establishment against a live exe.dev VM (2026-07-13),

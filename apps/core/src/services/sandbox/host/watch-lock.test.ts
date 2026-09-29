@@ -9,7 +9,7 @@ import { acquireSquadWatchLock } from './watch-lock'
 describe('acquireSquadWatchLock', () => {
   test('second holder is rejected until the first releases; squads are independent', async () => {
     const prev = process.env.HOME_DIR
-    const home = mkdtempSync(join(tmpdir(), 'tau-watch-lock-'))
+    const home = mkdtempSync(join(tmpdir(), 'ficus-watch-lock-'))
     process.env.HOME_DIR = home
     const locks: SquadWatchLock[] = []
     const acquire = async (id: string) => {
@@ -34,7 +34,7 @@ describe('acquireSquadWatchLock', () => {
 
   test('release makes the lock re-acquirable immediately', async () => {
     const prev = process.env.HOME_DIR
-    const home = mkdtempSync(join(tmpdir(), 'tau-watch-lock-rel-'))
+    const home = mkdtempSync(join(tmpdir(), 'ficus-watch-lock-rel-'))
     process.env.HOME_DIR = home
     const locks: SquadWatchLock[] = []
     const acquire = async (id: string) => {

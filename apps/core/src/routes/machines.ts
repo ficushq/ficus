@@ -255,7 +255,7 @@ export function createMachinesRouter(
     const body = c.req.valid('json')
     const provider = body.provider ?? 'ssh'
 
-    // exe VMs are tau-provisioned, so the tenant's exe.dev account SSH key must be set.
+    // exe VMs are Ficus-provisioned, so the tenant's exe.dev account SSH key must be set.
     if (provider === 'exe' && !(await getSshKey())) {
       return c.json({ error: 'configure exe.dev credentials to provision exe machines' }, 400)
     }
@@ -308,7 +308,7 @@ export function createMachinesRouter(
           ...(body.egressPolicy !== undefined ? { egressPolicy: body.egressPolicy } : {}),
         })
       } else {
-        // BYO-SSH: mint a per-machine keypair; tau's public key is the operator's
+        // BYO-SSH: mint a per-machine keypair; Ficus's public key is the operator's
         // to install by hand. Rolled back below if the insert fails.
         const { publicKey, secretKeyId } = await generateMachineKeypair(machineId)
         mintedSecretKeyId = secretKeyId

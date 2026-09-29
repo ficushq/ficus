@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Dev docker garbage collection — reclaims the disk that accumulates from
- * day-to-day tau development and has twice filled the host disk far enough
+ * day-to-day Ficus development and has twice filled the host disk far enough
  * to make the OrbStack VM self-stop (killing every sandbox).
  *
  * What it cleans, and why each thing grows:

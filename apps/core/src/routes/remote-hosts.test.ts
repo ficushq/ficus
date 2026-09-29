@@ -73,7 +73,7 @@ describe('remote-hosts routes', () => {
       req('POST', {
         name: `${prefix}-${Math.random().toString(36).slice(2, 8)}`,
         sshHost: '10.0.0.1',
-        sshUser: 'tau',
+        sshUser: 'ficus',
         ...overrides,
       })
     )
@@ -143,14 +143,14 @@ describe('remote-hosts routes', () => {
 
   it('rejects duplicate names with 409', async () => {
     const router = authedRouter()
-    const payload = { name: `${prefix}-dup`, sshHost: '10.0.0.2', sshUser: 'tau' }
+    const payload = { name: `${prefix}-dup`, sshHost: '10.0.0.2', sshUser: 'ficus' }
     expect((await router.request('/', req('POST', payload))).status).toBe(201)
     expect((await router.request('/', req('POST', payload))).status).toBe(409)
   })
 
   it('rejects a name outside the charset with 400', async () => {
     const router = authedRouter()
-    const res = await router.request('/', req('POST', { name: 'Not_Valid!', sshHost: '10.0.0.3', sshUser: 'tau' }))
+    const res = await router.request('/', req('POST', { name: 'Not_Valid!', sshHost: '10.0.0.3', sshUser: 'ficus' }))
     expect(res.status).toBe(400)
   })
 
@@ -158,7 +158,7 @@ describe('remote-hosts routes', () => {
     const router = authedRouter()
     const res1 = await router.request(
       '/',
-      req('POST', { name: `${prefix}-ws-host`, sshHost: '10.0.0.1 extra', sshUser: 'tau' })
+      req('POST', { name: `${prefix}-ws-host`, sshHost: '10.0.0.1 extra', sshUser: 'ficus' })
     )
     expect(res1.status).toBe(400)
 
@@ -180,7 +180,7 @@ describe('remote-hosts routes', () => {
       req('POST', {
         name: `${prefix}-unknown-squad`,
         sshHost: '10.0.0.1',
-        sshUser: 'tau',
+        sshUser: 'ficus',
         squadIds: ['00000000-0000-0000-0000-000000000000'],
       })
     )
@@ -207,7 +207,7 @@ describe('remote-hosts routes', () => {
 
     const res = await router.request(
       '/',
-      req('POST', { name: `${prefix}-rollback`, sshHost: '10.0.0.1', sshUser: 'tau' })
+      req('POST', { name: `${prefix}-rollback`, sshHost: '10.0.0.1', sshUser: 'ficus' })
     )
     expect(res.status).toBe(500)
 
@@ -605,7 +605,7 @@ describe('remote-hosts routes', () => {
         const router = authedRouter()
         const res = await router.request(
           `/squad/${squad.id}`,
-          req('POST', { name: `${prefix}-squad-add`, sshHost: '10.0.0.9', sshUser: 'tau' }, tok.token)
+          req('POST', { name: `${prefix}-squad-add`, sshHost: '10.0.0.9', sshUser: 'ficus' }, tok.token)
         )
         expect(res.status).toBe(201)
         const body = await res.json()
@@ -638,7 +638,7 @@ describe('remote-hosts routes', () => {
         })
         const res = await router.request(
           `/squad/${squad.id}`,
-          req('POST', { name: `${prefix}-squad-add-rollback`, sshHost: '10.0.0.9', sshUser: 'tau' }, tok.token)
+          req('POST', { name: `${prefix}-squad-add-rollback`, sshHost: '10.0.0.9', sshUser: 'ficus' }, tok.token)
         )
         expect(res.status).toBe(500)
 
@@ -674,7 +674,7 @@ describe('remote-hosts routes', () => {
         const router = authedRouter()
         const res = await router.request(
           `/squad/${squad.id}`,
-          req('POST', { name: `${prefix}-read-only`, sshHost: '10.0.0.9', sshUser: 'tau' }, tok.token)
+          req('POST', { name: `${prefix}-read-only`, sshHost: '10.0.0.9', sshUser: 'ficus' }, tok.token)
         )
         expect(res.status).toBe(403)
       } finally {
@@ -741,7 +741,7 @@ describe('remote-hosts routes', () => {
 
         const addRes = await router.request(
           `/squad/${squadB.id}`,
-          req('POST', { name: `${prefix}-idor`, sshHost: '10.0.0.9', sshUser: 'tau' }, tok.token)
+          req('POST', { name: `${prefix}-idor`, sshHost: '10.0.0.9', sshUser: 'ficus' }, tok.token)
         )
         expect(addRes.status).toBe(403)
 

@@ -51,7 +51,7 @@ describe('findOrphanProjects', () => {
 
   test('non tau-test projects are ignored', () => {
     const orphans = findOrphanProjects({
-      containers: [{ project: 'tau-management_postgres', repoRoot: '' }],
+      containers: [{ project: 'ficus-management_postgres', repoRoot: '' }],
       liveWorktreePaths: [ROOT],
       currentProject: projectNameForPath(ROOT),
       pathExists: () => false,

@@ -87,7 +87,7 @@ describe('detectDeploymentFlavor', () => {
     // The merged systemd units set WorkingDirectory=<dest>/apps/core while the
     // git checkout root is <dest>. A cwd-only check at apps/core would see no
     // .git and gate the updater off; detection must walk up to the real root.
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-flavor-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-flavor-'))
     const repo = join(tmp, 'repo')
     const nested = join(repo, 'apps', 'core')
     mkdirSync(join(repo, '.git'), { recursive: true })
@@ -106,7 +106,7 @@ describe('detectDeploymentFlavor artifact mode', () => {
   const SHA = 'c'.repeat(40)
 
   beforeEach(() => {
-    tmp = mkdtempSync(join(tmpdir(), 'tau-flavor-artifact-'))
+    tmp = mkdtempSync(join(tmpdir(), 'ficus-flavor-artifact-'))
   })
 
   afterEach(() => {

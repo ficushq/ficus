@@ -390,10 +390,7 @@ describe('buildSandboxPodSpec', () => {
     const env = Object.fromEntries((c.env ?? []).map((e: any) => [e.name, e.value]))
     expect(env.FICUS_SANDBOX_ROLE).toBe('agent')
     expect(env.FICUS_DEVBOX_DIR).toBe('/private')
-    // One release (Ficus rename): every FICUS_ var is also emitted as TAU_ for old images and CLIs.
-    expect(env.TAU_SANDBOX_ROLE).toBe('agent')
-    expect(env.TAU_DEVBOX_DIR).toBe('/private')
-    expect(env.TAU_SANDBOX_ID).toBe(env.FICUS_SANDBOX_ID)
+    expect(Object.keys(env).filter((name) => name.endsWith('_SANDBOX_ROLE'))).toEqual(['FICUS_SANDBOX_ROLE'])
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/nix-cache')).toBe(false)
     // memory + ssh mounts remain for squad members
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/var/lib/tau/ssh-source')).toBe(true)

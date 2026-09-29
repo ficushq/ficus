@@ -16,7 +16,7 @@ const GENERATED_INTEGRATION_MARKER = '# Generated protected integration bindings
 /**
  * Get the .tau directory path for a squad workspace.
  */
-function getTauDir(squadId: string): string {
+function getFicusDir(squadId: string): string {
   const workspacePath = getSquadWorkspacePath(squadId)
   return join(workspacePath, '.tau')
 }
@@ -24,31 +24,31 @@ function getTauDir(squadId: string): string {
 /**
  * Ensure the .tau directory exists.
  */
-function ensureTauDir(squadId: string): string {
-  const tauDir = getTauDir(squadId)
-  if (!existsSync(tauDir)) {
-    mkdirSync(tauDir, { recursive: true })
+function ensureFicusDir(squadId: string): string {
+  const ficusDir = getFicusDir(squadId)
+  if (!existsSync(ficusDir)) {
+    mkdirSync(ficusDir, { recursive: true })
   }
 
   // K8s sandboxes can write to the same workspace from container-root. Keep
   // Ficus's private workspace dir group-writable/setgid when Core owns it so
   // local k3d shared-volume files remain writable by the Core process.
   try {
-    chmodSync(tauDir, 0o2775)
+    chmodSync(ficusDir, 0o2775)
   } catch {
     // If an older sandbox already left this root-owned, the caller will still
     // get the original write error with path context; local repair is required.
   }
 
-  return tauDir
+  return ficusDir
 }
 
 function getUserEnvPath(squadId: string): string {
-  return join(getTauDir(squadId), USER_ENV_FILE)
+  return join(getFicusDir(squadId), USER_ENV_FILE)
 }
 
 function getGeneratedEnvPath(squadId: string): string {
-  return join(getTauDir(squadId), GENERATED_ENV_FILE)
+  return join(getFicusDir(squadId), GENERATED_ENV_FILE)
 }
 
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -61,7 +61,7 @@ const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
  * these are literal env names, not a namespace.
  */
 const IDENTITY_REASON =
-  "the agent's identity is injected by tau; setting it here would make agents act as a different identity"
+  "the agent's identity is injected by Ficus; setting it here would make agents act as a different identity"
 
 export const RESERVED_SQUAD_ENV_KEYS: Readonly<Record<string, string>> = {
   FICUS_TOKEN: IDENTITY_REASON,
@@ -74,23 +74,11 @@ export const RESERVED_SQUAD_ENV_KEYS: Readonly<Record<string, string>> = {
   FICUS_IDENTITY_TOKEN: IDENTITY_REASON,
   FICUS_IDENTITY_AUTH_STORE: IDENTITY_REASON,
   FICUS_IDENTITY_AGENT_ID: IDENTITY_REASON,
-  // One release (Ficus rename): the legacy spellings stay reserved. Older `tau`
-  // CLIs read them directly, and the new CLI bridges an unset FICUS_ name from them.
-  TAU_TOKEN: IDENTITY_REASON,
-  TAU_API_URL: IDENTITY_REASON,
-  TAU_PASSWORD: IDENTITY_REASON,
-  TAU_AUTH_STORE: IDENTITY_REASON,
-  TAU_AGENT_CONTEXT: IDENTITY_REASON,
-  TAU_AGENT_ID: IDENTITY_REASON,
-  TAU_IDENTITY_API_URL: IDENTITY_REASON,
-  TAU_IDENTITY_TOKEN: IDENTITY_REASON,
-  TAU_IDENTITY_AUTH_STORE: IDENTITY_REASON,
-  TAU_IDENTITY_AGENT_ID: IDENTITY_REASON,
 }
 
 // PATH is deliberately NOT reserved: `PATH=$PATH:/opt/toolchain` is a legitimate
-// squad env, and the host preamble re-prepends the `tau` shim dir after the file
-// is sourced, so squad additions are honoured but cannot displace `tau`.
+// squad env, and the host preamble re-prepends the `ficus` shim dir after the file
+// is sourced, so squad additions are honoured but cannot displace `ficus`.
 
 const ENV_ASSIGNMENT_PATTERN = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
 
@@ -217,9 +205,9 @@ async function writeGeneratedEnvFile(
   keys: string[],
   getSecretValue: (key: string) => string | undefined = getDeploymentAwareSecretValue
 ): Promise<void> {
-  const tauDir = ensureTauDir(squadId)
-  const envPath = join(tauDir, GENERATED_ENV_FILE)
-  const tempPath = join(tauDir, `.env.tmp-${crypto.randomUUID()}`)
+  const ficusDir = ensureFicusDir(squadId)
+  const envPath = join(ficusDir, GENERATED_ENV_FILE)
+  const tempPath = join(ficusDir, `.env.tmp-${crypto.randomUUID()}`)
   let protectedBindings: readonly (readonly [string, string])[]
   let signingPublicKey: string | undefined
   try {
@@ -271,8 +259,8 @@ export function getEnvFile(squadId: string): string | null {
  * Set the user-authored squad env content and regenerate the sandbox .env file.
  */
 export async function setEnvFile(squadId: string, content: string): Promise<void> {
-  const tauDir = ensureTauDir(squadId)
-  const userEnvPath = join(tauDir, USER_ENV_FILE)
+  const ficusDir = ensureFicusDir(squadId)
+  const userEnvPath = join(ficusDir, USER_ENV_FILE)
   writeFileSync(userEnvPath, content, { mode: 0o600 })
   await writeGeneratedEnvFile(squadId, content, await getEffectiveExposedSecretKeys(squadId))
 }
@@ -392,8 +380,7 @@ export function githubCommandBindings(squadId: string, signingPublicKey?: string
       ].join(' ')
     : undefined
   const git = signing
-    ? // One release (Ficus rename): accept and emit both spellings, for an older `tau` signer.
-      `git() { if [ -n "\${FICUS_TOKEN:-\${TAU_TOKEN:-}}" ]; then FICUS_GIT_SIGNING_SQUAD=${squad} TAU_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
+    ? `git() { if [ -n "\${FICUS_TOKEN:-}" ]; then FICUS_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
     : `git() { command git ${credential} "$@"; }`
   return (
     [

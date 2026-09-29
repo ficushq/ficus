@@ -8,7 +8,7 @@ import { reconcileWorkspaceStubs } from './workspace-gc'
 const roots: string[] = []
 
 async function makeRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'tau-workspace-gc-'))
+  const root = await mkdtemp(join(tmpdir(), 'ficus-workspace-gc-'))
   roots.push(root)
   return root
 }
@@ -584,7 +584,7 @@ describe('reconcileWorkspaceStubs', () => {
   it.each(['forward', 'reverse'] as const)(
     'isolates concurrent and rerun rmdir boundaries from %s cleanup offenders',
     async (ordering) => {
-      const invocationRoot = await mkdtemp(join(tmpdir(), `tau-workspace-gc-boundary-${crypto.randomUUID()}-`))
+      const invocationRoot = await mkdtemp(join(tmpdir(), `ficus-workspace-gc-boundary-${crypto.randomUUID()}-`))
       const root = join(invocationRoot, 'workspaces', 'squads')
       const excludedNeighbor = join(invocationRoot, 'excluded-neighbor')
       const outsideSentinel = join(excludedNeighbor, 'keep.txt')

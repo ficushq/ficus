@@ -11,20 +11,20 @@ import { attachPeerAddress, getClientAddress } from './client-address'
  */
 describe('http log client identity', () => {
   test('reports the peer address for a non-loopback caller', () => {
-    const request = new Request('http://tau.test/api/agents')
+    const request = new Request('http://ficus.test/api/agents')
     attachPeerAddress(request, '10.1.2.3')
     expect(getClientAddress(request)).toBe('10.1.2.3')
   })
 
   test('a loopback peer with no forwarded header still resolves to loopback, not unknown', () => {
     // This is the sandbox/VM case — it must be reported, not swallowed.
-    const request = new Request('http://tau.test/api/agents')
+    const request = new Request('http://ficus.test/api/agents')
     attachPeerAddress(request, '127.0.0.1')
     expect(getClientAddress(request)).toBe('127.0.0.1')
   })
 
   test('a loopback peer honours x-forwarded-for, so a proxied caller is not hidden', () => {
-    const request = new Request('http://tau.test/api/agents', {
+    const request = new Request('http://ficus.test/api/agents', {
       headers: { 'x-forwarded-for': '203.0.113.9' },
     })
     attachPeerAddress(request, '127.0.0.1')
@@ -32,7 +32,7 @@ describe('http log client identity', () => {
   })
 
   test('a NON-loopback peer must NOT honour x-forwarded-for — a remote caller cannot forge it', () => {
-    const request = new Request('http://tau.test/api/agents', {
+    const request = new Request('http://ficus.test/api/agents', {
       headers: { 'x-forwarded-for': '203.0.113.9' },
     })
     attachPeerAddress(request, '10.1.2.3')
@@ -40,6 +40,6 @@ describe('http log client identity', () => {
   })
 
   test('an unknown peer degrades to a named value rather than throwing', () => {
-    expect(getClientAddress(new Request('http://tau.test/api/agents'))).toBe('unknown')
+    expect(getClientAddress(new Request('http://ficus.test/api/agents'))).toBe('unknown')
   })
 })

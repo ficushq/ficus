@@ -32,7 +32,7 @@ async function ready<T>(promise: Promise<T>): Promise<T> {
 
 for (const disposition of ['resume', 'maintenance', 'successor'] as const) {
   test(`joining a warmup rebuild renews the runner lease and respects ${disposition}`, async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-admission-wait-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-admission-wait-'))
     const [agent] = await db.insert(agents).values({ agentTypeId: 'worker' }).returning()
     const [execution] = await db.insert(executions).values({ agentId: agent.id, status: 'running' }).returning()
     const store = new AdmissionReservationStore('worker:test', crypto.randomUUID())

@@ -99,28 +99,13 @@ describe('format marker', () => {
     })
   })
 
-  // Files exported before the Ficus rename. Remove with the old marker in the Wave 3 sweep.
-  test('an import with the pre-rename marker is accepted and rewritten to ficus-custom-theme', () => {
+  test('a document under another format marker is refused', () => {
     for (const doc of [v1doc, v2doc]) {
-      const result = validate({ ...doc, format: 'tau-custom-theme' })
-      expect(result.ok && result.document.format).toBe('ficus-custom-theme')
+      expect(validate({ ...doc, format: 'old-custom-theme' })).toEqual({
+        ok: false,
+        error: 'Expected format ficus-custom-theme.',
+      })
     }
-  })
-
-  test('a pre-rename file keeps its look: the purple base resolves to iris and Forest to ficus', () => {
-    const renamed = [...builtins, { id: 'ficus', label: 'Ficus', kind: 'dual' as const }]
-    const load = (base: string, format: string) =>
-      validateCustomTheme(JSON.stringify({ ...v2doc, base, format }), renamed)
-    const purple = load('tau', 'tau-custom-theme')
-    expect(purple.ok && purple.document.base).toBe('iris')
-    expect(purple.ok && purple.document.format).toBe('ficus-custom-theme')
-    const forest = load('forest', 'tau-custom-theme')
-    expect(forest.ok && forest.document.base).toBe('ficus')
-    const iris = load('iris', 'tau-custom-theme')
-    expect(iris.ok && iris.document.base).toBe('iris')
-    // A current-format document names current ids only.
-    expect(load('tau', 'ficus-custom-theme').ok).toBe(false)
-    expect(load('forest', 'ficus-custom-theme').ok).toBe(false)
   })
 })
 

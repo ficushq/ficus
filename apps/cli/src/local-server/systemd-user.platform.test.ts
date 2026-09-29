@@ -10,7 +10,7 @@ if (process.platform !== 'linux')
   console.info('Skipping systemd-analyze verification: systemd is Linux-only; portable unit rendering tests still run.')
 test.skipIf(process.platform !== 'linux')('systemd-analyze accepts both rendered user units', async () => {
   expect(process.platform).toBe('linux')
-  const root = mkdtempSync(join(tmpdir(), 'tau-systemd-verify-'))
+  const root = mkdtempSync(join(tmpdir(), 'ficus-systemd-verify-'))
   try {
     const context = makeSupervisorContext({
       supervisor: 'systemd-user',
@@ -23,7 +23,7 @@ test.skipIf(process.platform !== 'linux')('systemd-analyze accepts both rendered
       platform: 'linux',
     })
     const units = (['worker', 'api'] as const).map((component) => {
-      const path = join(root, `tau-verify-${component}.service`)
+      const path = join(root, `ficus-verify-${component}.service`)
       writeFileSync(path, systemdUnit(context, component))
       return path
     })

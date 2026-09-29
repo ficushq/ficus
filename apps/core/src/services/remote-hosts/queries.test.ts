@@ -20,7 +20,7 @@ function hostValues(name: string) {
   return {
     name: `${prefix}-${name}`,
     sshHost: '10.0.0.1',
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key-1',
     sshPublicKey: 'ssh-ed25519 AAAA test',
   }

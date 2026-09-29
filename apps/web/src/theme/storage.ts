@@ -84,16 +84,15 @@ export function readThemeSelection(storage: ThemeStorage | null): StoredThemeSel
 /**
  * The appearance before anyone chooses one. Ficus Desktop's own setup and startup
  * screens follow the OS appearance, so inside it the app does too instead of
- * flashing to light (its preload defines `window.ficusDesktopApp` — or, on a D1
- * build, `window.tauDesktopApp` (K5, dropped in the Wave 3 sweep, Task 36) —
- * before page scripts run, so the pre-paint script sees it). Browsers keep the
- * light default.
+ * flashing to light (its preload defines the Desktop bridge before page scripts
+ * run, so the pre-paint script sees it). Browsers keep the light default.
  */
 function hostDefaultAppearance(): AppearanceSetting | undefined {
   try {
     if (typeof window === 'undefined') return undefined
-    const w = window as unknown as { ficusDesktopApp?: { version?: unknown }; tauDesktopApp?: { version?: unknown } }
-    const bridge = w.ficusDesktopApp ?? w.tauDesktopApp
+    type Bridge = { version?: unknown }
+    const w = window as unknown as { ficusDesktopApp?: Bridge; tauDesktopApp?: Bridge } // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
+    const bridge = w.ficusDesktopApp ?? w.tauDesktopApp // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
     return bridge?.version === 1 ? 'system' : undefined
   } catch {
     return undefined

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# tau box provisioning
+# Ficus box provisioning
 # ====================
 # Creates (or removes) ONE per-sandbox "box": a dedicated unix user that runs
-# the tau sandbox server as a systemd service — either a per-box SYSTEM unit or
+# the Ficus sandbox server as a systemd service — either a per-box SYSTEM unit or
 # a lingering systemd --user service, see --unit-mode.
 #
 # A box is THREE units, not one (spec D2, "socket activation + idle self-exit"):
@@ -965,7 +965,7 @@ remove_box() {
 # Never fatal: this is housekeeping in front of a removal, and a failure to
 # prune must not block the removal itself.
 prune_box_archives() {
-  local keep_days="${FICUS_ARCHIVE_RETENTION_DAYS:-${TAU_ARCHIVE_RETENTION_DAYS:-14}}"
+  local keep_days="${FICUS_ARCHIVE_RETENTION_DAYS:-14}"
   [ -d "${FICUS_ARCHIVE_DIR}" ] || return 0
 
   # Supersede: keep only the newest tarball per box.

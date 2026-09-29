@@ -87,7 +87,7 @@ describe('extractAgentAttachmentReferences', () => {
   // root. Which root is legitimate is decided by comparing the extracted path
   // with the attachment row's stored private_path, never by this regex.
   test.each([
-    '/Users/noah/.host-test-tau/private/agent_42315cff-239b-4940-a13f-4aa8da05c9cd',
+    '/Users/noah/.host-test-ficus/private/agent_42315cff-239b-4940-a13f-4aa8da05c9cd',
     '/home/b3f2a1/.private',
     '/private',
   ])('extracts references under the runtime root %s', (privateMount) => {

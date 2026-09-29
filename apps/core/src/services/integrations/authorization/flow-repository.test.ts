@@ -40,7 +40,7 @@ async function createClaimedFlow(localFlowId: string = crypto.randomUUID()): Pro
     intent: 'connect',
     connectionId: null,
     expectedMaterialRevision: null,
-    redirectUri: 'https://tau.example/settings/integrations/oauth/callback',
+    redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
     returnTo: '/settings',
     expiresAt: new Date(Date.now() + 60_000),
   })

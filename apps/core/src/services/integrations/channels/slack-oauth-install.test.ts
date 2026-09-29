@@ -49,7 +49,7 @@ function connectIntent(): OAuthStateRecord {
     intent: 'connect',
     connectionId: null,
     expectedMaterialRevision: null,
-    redirectUri: 'https://tau.example/callback',
+    redirectUri: 'https://ficus.example/callback',
     returnTo: '/settings/integrations',
     expiresAt: new Date(),
     createdAt: new Date(),

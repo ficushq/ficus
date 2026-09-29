@@ -24,7 +24,7 @@ test('concrete colors preserve fractional channels, inline alpha, intrinsic alph
 })
 
 test('memoized reader re-reads on appearance, theme, inline override and reset; unsubscribes', async () => {
-  const harness = await acquireDomHarness({ url: 'https://tau.test' })
+  const harness = await acquireDomHarness({ url: 'https://ficus.test' })
   let dispose: (() => void) | undefined
   try {
     const { window } = harness
@@ -73,7 +73,7 @@ test('memoized reader re-reads on appearance, theme, inline override and reset; 
 })
 
 test('mounted consumers refresh graph and status colors without remounting or prop changes', async () => {
-  const harness = await acquireDomHarness({ url: 'https://tau.test' })
+  const harness = await acquireDomHarness({ url: 'https://ficus.test' })
   const host = document.createElement('div')
   document.body.append(host)
   const renderer = createRoot(host)

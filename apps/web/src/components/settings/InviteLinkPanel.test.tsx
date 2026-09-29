@@ -3,7 +3,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import type { IssuedInviteLink } from './InviteLinkPanel'
 
-const LINK = 'https://tau.example/register?token=invite%2Btoken'
+const LINK = 'https://ficus.example/register?token=invite%2Btoken'
 
 describe('InviteLinkPanel', () => {
   let dom: Awaited<ReturnType<typeof acquireDomHarness>>

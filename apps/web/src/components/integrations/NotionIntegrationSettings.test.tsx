@@ -31,7 +31,7 @@ test('starts Notion OAuth with the server-accepted safe return and renders lifec
     authority: 'local',
     configured: true,
     clientId: 'client-id',
-    callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+    callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
     requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
   })
   const { NotionIntegrationSettings } = await import('./NotionIntegrationSettings')
@@ -44,7 +44,7 @@ test('starts Notion OAuth with the server-accepted safe return and renders lifec
   )
   expect(container.textContent).toContain('Read content')
   const callbackUrl = container.querySelector('[data-testid="notion-callback-url"]')!
-  expect(callbackUrl.textContent).toContain('https://tau.example/settings/integrations/oauth/callback')
+  expect(callbackUrl.textContent).toContain('https://ficus.example/settings/integrations/oauth/callback')
   expect(callbackUrl.className).toContain('break-all')
   expect(callbackUrl.className).toContain('[overflow-wrap:anywhere]')
   expect(callbackUrl.parentElement?.className).not.toContain('break-all')
@@ -146,7 +146,7 @@ test('self-hosted mode still shows the OAuth application fields', async () => {
     authority: 'local',
     configured: false,
     clientId: null,
-    callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+    callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
     requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
   })
   const { NotionIntegrationSettings } = await import('./NotionIntegrationSettings')
@@ -174,7 +174,7 @@ test('requires explicit second-click confirmation before removing an assigned wo
         authority: 'platform_broker',
         configured: true,
         clientId: 'client-id',
-        callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+        callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
         requiredCapabilities: [],
       })
     return new Response(null, { status: 204 })
@@ -203,7 +203,7 @@ test('requires explicit second-click confirmation before removing an assigned wo
     authority: 'platform_broker',
     configured: true,
     clientId: 'client-id',
-    callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+    callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
     requiredCapabilities: [],
   })
   const { NotionIntegrationSettings } = await import('./NotionIntegrationSettings')
@@ -231,7 +231,7 @@ test('requires explicit capability acknowledgement and clears the client-secret 
       authority: 'local',
       configured: true,
       clientId: 'client-id',
-      callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+      callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
       requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
     })
   }) as typeof fetch
@@ -241,7 +241,7 @@ test('requires explicit capability acknowledgement and clears the client-secret 
     authority: 'local',
     configured: false,
     clientId: null,
-    callbackUrl: 'https://tau.example/settings/integrations/oauth/callback',
+    callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
     requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
   })
   const { NotionIntegrationSettings } = await import('./NotionIntegrationSettings')

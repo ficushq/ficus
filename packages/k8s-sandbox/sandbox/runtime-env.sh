@@ -18,20 +18,20 @@ mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" 2>/dev/null || true
 # so skip the validator and let Chromium's own launch determine runtime success.
 export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS="${PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS:-1}"
 
-_tau_join_by_colon() {
+_ficus_join_by_colon() {
   LC_ALL=C sort -u | paste -sd: -
 }
 
-_tau_nix_cxx_lib_dirs() {
+_ficus_nix_cxx_lib_dirs() {
   # Nix Python native wheels (for example greenlet) need Nix-provided C/C++
   # runtimes. Discover by files instead of hard-coding /nix/store hashes or CPU arch.
   find /nix/store -type f \( \
     -name 'libstdc++.so.6*' -o \
     -name 'libgcc_s.so.1*' \
-  \) -printf '%h\n' 2>/dev/null | _tau_join_by_colon
+  \) -printf '%h\n' 2>/dev/null | _ficus_join_by_colon
 }
 
-_tau_nix_glibc_dirs() {
+_ficus_nix_glibc_dirs() {
   # Discover glibc/ELF loader directories for diagnostics and future tooling, but
   # do not add them to LD_LIBRARY_PATH. Prepending multiple glibc versions can
   # break Nix-provided command-line tools that require a newer glibc than the
@@ -40,16 +40,16 @@ _tau_nix_glibc_dirs() {
     -name 'ld-linux-x86-64.so.2' -o \
     -name 'ld-linux-aarch64.so.1' -o \
     -name 'libc.so.6' \
-  \) -printf '%h\n' 2>/dev/null | _tau_join_by_colon
+  \) -printf '%h\n' 2>/dev/null | _ficus_join_by_colon
 }
 
 if [ -z "${FICUS_NIX_GLIBC_LIBRARY_PATH:-}" ]; then
-  FICUS_NIX_GLIBC_LIBRARY_PATH="$(_tau_nix_glibc_dirs || true)"
+  FICUS_NIX_GLIBC_LIBRARY_PATH="$(_ficus_nix_glibc_dirs || true)"
   export FICUS_NIX_GLIBC_LIBRARY_PATH
 fi
 
 if [ -z "${FICUS_NIX_LD_LIBRARY_PATH:-}" ]; then
-  FICUS_NIX_LD_LIBRARY_PATH="$(_tau_nix_cxx_lib_dirs || true)"
+  FICUS_NIX_LD_LIBRARY_PATH="$(_ficus_nix_cxx_lib_dirs || true)"
   export FICUS_NIX_LD_LIBRARY_PATH
 fi
 

@@ -24,7 +24,7 @@ function basePathFromRequestUrl(requestUrl: string): string {
  * Build the web/API base URL encoded in mobile pairing QRs.
  *
  * The browser Origin header is only scheme/host/port, so deployments hosted under
- * an app base path (for example /tau) need that path added explicitly. Prefer the
+ * an app base path (for example /ficus) need that path added explicitly. Prefer the
  * configured APP_BASE_PATH, and fall back to the request URL path before /api when
  * a reverse proxy forwards the base path through to the core server.
  */

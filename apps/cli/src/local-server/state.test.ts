@@ -29,13 +29,13 @@ import {
 
 let tmp: string
 beforeEach(() => {
-  tmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-state-')))
+  tmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-state-')))
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 function makeCheckout(dir: string) {
   mkdirSync(join(dir, '.git'), { recursive: true })
-  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'tau' }))
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'ficus' }))
 }
 
 const record = (root: string, port = 3000, supervisor: 'pm2' | 'launchd' | 'systemd-user' = 'pm2') => ({
@@ -289,19 +289,19 @@ describe('resolveRoot', () => {
   it('throws NoRootError when nothing resolves', () => {
     expect(() => resolveRoot({ env: {}, statePath: join(tmp, 'none.json'), cwd: tmp })).toThrow(NoRootError)
   })
-  it('isCheckout needs .git and package.json name tau', () => {
+  it('isCheckout needs .git and package.json name ficus', () => {
     expect(isCheckout(tmp)).toBe(false)
     makeCheckout(tmp)
     expect(isCheckout(tmp)).toBe(true)
     writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'other' }))
     expect(isCheckout(tmp)).toBe(false)
   })
-  it('isCheckout accepts a checkout whose package.json is named ficus, and still accepts tau', () => {
+  it('isCheckout accepts a checkout whose package.json is named ficus only', () => {
     mkdirSync(join(tmp, '.git'), { recursive: true })
     writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'ficus' }))
     expect(isCheckout(tmp)).toBe(true)
-    writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'tau' }))
-    expect(isCheckout(tmp)).toBe(true)
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'old' }))
+    expect(isCheckout(tmp)).toBe(false)
   })
 })
 

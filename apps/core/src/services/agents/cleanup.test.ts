@@ -842,7 +842,7 @@ describe('agent-cleanup', () => {
 
     it('uses independent dormant and terminated-private retention cutoffs', async () => {
       const previousHome = process.env.HOME_DIR
-      const home = join(tmpdir(), `tau-final-cleanup-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+      const home = join(tmpdir(), `ficus-final-cleanup-${Date.now()}-${Math.random().toString(36).slice(2)}`)
       process.env.HOME_DIR = home
       try {
         const now = new Date('2026-09-02T00:00:00.000Z')

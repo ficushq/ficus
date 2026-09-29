@@ -12,17 +12,25 @@ describe('local deployment proxy error marker', () => {
     const response = localDeploymentProxyJsonError('Deployment not running', 404)
     expect(response.status).toBe(404)
     expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
-    expect(response.headers.get('x-tau-app-proxy')).toBeNull() // K4: emitted under one name only
     expect(await response.json()).toEqual({ error: 'Deployment not running' })
   })
 
-  // K4: the control plane treats either spelling as Core's marker until every
-  // tenant has upgraded, so an app must not be able to forge either one.
-  it('strips both marker spellings from app responses', () => {
-    expect(LOCAL_DEPLOYMENT_PROXY_ERROR_MARKER_HEADERS).toEqual(['x-tau-app-proxy', 'x-ficus-app-proxy']) // K4
+  it('strips the Ficus marker spelling only', () => {
+    expect(LOCAL_DEPLOYMENT_PROXY_ERROR_MARKER_HEADERS).toEqual(['x-ficus-app-proxy'])
   })
 
-  const appSuppliedMarkers = ['x-tau-app-proxy', 'x-ficus-app-proxy'] // K4
+  // The control plane no longer strips client-sent x-tau-* headers, and reads // ficus-negative-test
+  // only x-ficus-app-proxy: a pre-Ficus marker gets no special treatment here,
+  // so an app response carrying one passes through as the app's own header.
+  it('gives an app-supplied pre-Ficus app-proxy header no special treatment', async () => {
+    const upstream = new Response('app body', { status: 502, headers: { 'x-tau-app-proxy': 'error' } }) // ficus-negative-test
+    const response = stripLocalDeploymentProxyErrorMarker(upstream)
+    expect(response.headers.get('x-tau-app-proxy')).toBe('error') // ficus-negative-test
+    expect(response.headers.get(LOCAL_DEPLOYMENT_PROXY_ERROR_HEADER)).toBeNull()
+    expect(localDeploymentProxyJsonError('x', 404).headers.get('x-tau-app-proxy')).toBeNull() // ficus-negative-test
+  })
+
+  const appSuppliedMarkers = ['x-ficus-app-proxy']
   it.each(appSuppliedMarkers)('strips an app-supplied %s: error and keeps the app response', async (marker) => {
     const upstream = new Response('app-owned error', {
       status: 500,

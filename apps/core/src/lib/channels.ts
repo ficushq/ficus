@@ -11,18 +11,18 @@ export const FICUS_SLASH_COMMANDS = ['status', 'help', 'ask', 'squad', 'link', '
  */
 export const FICUS_DISCORD_OPTION_NAMES = ['message', 'squad', 'code'] as const
 
-export type TauSlashCommand = (typeof FICUS_SLASH_COMMANDS)[number]
+export type FicusSlashCommand = (typeof FICUS_SLASH_COMMANDS)[number]
 
 /** Commands that return immediately without consultant/agent. */
 export const FICUS_SYNC_COMMANDS = ['status', 'help', 'notify', 'unnotify'] as const
 
-export type TauSyncCommand = (typeof FICUS_SYNC_COMMANDS)[number]
+export type FicusSyncCommand = (typeof FICUS_SYNC_COMMANDS)[number]
 
-export function isTauSlashCommand(cmd: string): cmd is TauSlashCommand {
+export function isFicusSlashCommand(cmd: string): cmd is FicusSlashCommand {
   return (FICUS_SLASH_COMMANDS as readonly string[]).includes(cmd)
 }
 
-export function isTauSyncCommand(cmd: string): cmd is TauSyncCommand {
+export function isFicusSyncCommand(cmd: string): cmd is FicusSyncCommand {
   return (FICUS_SYNC_COMMANDS as readonly string[]).includes(cmd)
 }
 

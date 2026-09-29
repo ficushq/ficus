@@ -1,5 +1,5 @@
 [Unit]
-Description=tau shared browser service (per-box contexts, token auth, caps)
+Description=Ficus shared browser service (per-box contexts, token auth, caps)
 After=network-online.target
 Wants=network-online.target
 

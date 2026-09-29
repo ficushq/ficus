@@ -35,7 +35,7 @@ describe('DiscordGateway mention routing', () => {
           id: 'thread-1',
           channelId: 'thread-1',
           originalMessageId: 'parent-1',
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
     } as unknown as Agent)
@@ -72,7 +72,7 @@ describe('DiscordGateway mention routing', () => {
           id: 'thread-1',
           channelId: 'thread-1',
           originalMessageId: 'parent-1',
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
     } as unknown as Agent)
@@ -150,7 +150,7 @@ describe('DiscordGateway mention routing', () => {
           id: 'thread-1',
           channelId: 'thread-1',
           originalMessageId: 'parent-1',
-          tauCreated: true,
+          ficusCreated: true,
         },
       },
     } as unknown as Agent)
@@ -304,7 +304,7 @@ describe('Discord bot DMs', () => {
       id: 'm',
       channel_id: 'dm',
       author: { id: 'person', username: 'Person' },
-      content: 'tau squad my-team',
+      content: 'ficus squad my-team',
       mentions: [],
     }
     try {
@@ -313,7 +313,7 @@ describe('Discord bot DMs', () => {
         discordProvider,
         expect.objectContaining({
           isDirectMessage: true,
-          text: 'tau squad my-team',
+          text: 'ficus squad my-team',
           channelId: 'dm',
           user: { id: 'person', name: 'Person' },
         }),

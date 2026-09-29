@@ -118,17 +118,17 @@ describe('createSquadBashTool', () => {
     const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     const prevHome = process.env.HOME_DIR
     process.env.FICUS_SANDBOX_RUNTIME = 'host'
-    process.env.HOME_DIR = '/tmp/tau-squad-bash-host-test'
+    process.env.HOME_DIR = '/tmp/ficus-squad-bash-host-test'
     const host = spyOn(hostTools, 'createHostBashTool').mockImplementation(fakeBashTool)
     spies.push(host)
     try {
       const tool = createSquadBashTool('squad_S4', '/unused/host/path', 'S4', 'tok', 'agent-host')
-      const expectedWorkspaceMount = join('/tmp/tau-squad-bash-host-test', 'workspaces', 'squads', 'S4')
+      const expectedWorkspaceMount = join('/tmp/ficus-squad-bash-host-test', 'workspaces', 'squads', 'S4')
 
       // agentId is what pins the shell to this agent's own CLI auth store rather
       // than the operator's ~/.tau/cli/auth.json.
       expect(host).toHaveBeenCalledWith(expectedWorkspaceMount, {
-        tauToken: 'tok',
+        ficusToken: 'tok',
         squadId: 'S4',
         agentId: 'agent-host',
       })

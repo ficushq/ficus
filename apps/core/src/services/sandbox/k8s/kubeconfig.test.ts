@@ -19,7 +19,7 @@ import { join } from 'path'
  * "not downgraded" reads as null here.
  */
 function tlsRejectAfterLoadKubeConfig(env: Record<string, string>): unknown {
-  const dir = mkdtempSync(join(tmpdir(), 'tau-k8s-kubeconfig-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-k8s-kubeconfig-'))
   try {
     const result = Bun.spawnSync(
       [

@@ -72,7 +72,7 @@ const log = createLogger('box-manager')
  *      `stopped`) → restart the unit → tunnel forward → poll /healthz → mark
  *      the box row `ready`. Any skip-condition mismatch (or a failed
  *      restart/health) falls through to step 6.
- *   6. ensureMachineArtifacts (box-provision.sh + server bundle + tau cli,
+ *   6. ensureMachineArtifacts (box-provision.sh + server bundle + Ficus cli,
  *      all required) → bindMachineBox → stamp `ensuring` → box-provision.sh
  *      → push server.env (0600 + chown to the box user) → restart the unit →
  *      tunnel forward → poll /healthz → mark the box row `ready` (stamping
@@ -285,7 +285,7 @@ export interface BoxManagerDeps {
   tunnels?: BoxTunnels
   fetch?: FetchLike
   /** Deliver the full registered artifact set (box-provision.sh, server
-   *  bundle, tau cli) to the machine; every artifact is required — any
+   *  bundle, Ficus cli) to the machine; every artifact is required — any
    *  failure propagates and fails the ensure. Defaults to
    *  machine-artifacts-registry's ensureMachineArtifacts. */
   ensureMachineArtifacts?: (machine: Machine) => Promise<void>
@@ -542,12 +542,10 @@ export function roleWantsDocker(role: EnsureBoxOpts['role']): boolean {
  * Parse the box user's uid from box-provision.sh's stdout. The script prints
  * exactly one `FICUS_BOX_UID=<uid>` line (the useradd-assigned, non-deterministic
  * login uid) so box-manager can bake the rootless docker socket path. Returns
- * null when no valid marker is present. The legacy `TAU_BOX_UID=` spelling is
- * accepted for one release (Ficus rename): a machine may still run an older
- * box-provision.sh.
+ * null when no valid marker is present.
  */
 export function parseBoxUid(stdout: string): number | null {
-  const match = stdout.match(/^(?:FICUS|TAU)_BOX_UID=(\d+)$/m)
+  const match = stdout.match(/^FICUS_BOX_UID=(\d+)$/m)
   if (!match) return null
   const uid = Number(match[1])
   return Number.isInteger(uid) ? uid : null
@@ -692,7 +690,7 @@ function resolveEstablishedIdleGraceMs(): number {
  * re-provision. A fresh box proves itself through pollBoxHealth's minutes-long budget; an
  * established box only needs to show it is still alive — but a SINGLE 2s
  * /healthz probe is too brittle for that. Under a CPU-heavy in-box build (a
- * background `tau` build on a small 2-vCPU machine will peg both cores) the
+ * background `ficus` build on a small 2-vCPU machine will peg both cores) the
  * sandbox-server can miss one probe while very much alive; the fetch then fails
  * with "socket connection closed unexpectedly". Re-provisioning on that single
  * miss throws the box away — and kills any long-running exec/monitor running in
@@ -723,13 +721,11 @@ async function recheckBoxHealth(endpoint: string, deps: BoxManagerDeps): Promise
 }
 
 /**
- * One `<P>_<name>_BEGIN … <P>_<name>_END` block of a machine snapshot. `<P>` is
- * `FICUS` or, for one release (Ficus rename), the legacy `TAU`; both ends must
- * use the same spelling.
+ * One `FICUS_<name>_BEGIN … FICUS_<name>_END` block of a machine snapshot.
  */
 function section(stdout: string, name: string): string | undefined {
-  const match = stdout.match(new RegExp(`(FICUS|TAU)_${name}_BEGIN\\n([\\s\\S]*?)\\n\\1_${name}_END`))
-  return match?.[2]?.trim() || undefined
+  const match = stdout.match(new RegExp(`FICUS_${name}_BEGIN\\n([\\s\\S]*?)\\nFICUS_${name}_END`))
+  return match?.[1]?.trim() || undefined
 }
 
 /** The liveness marker and evidence sections of {@link buildMachineSnapshotCommand}'s output. */
@@ -738,7 +734,7 @@ export function parseMachineSnapshotOutput(stdout: string): {
   containerStates: string | undefined
   logTail: string | undefined
 } {
-  const liveness = stdout.match(/^(?:FICUS|TAU)_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
+  const liveness = stdout.match(/^FICUS_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
     | 'running'
     | 'idle'
     | 'exited'
@@ -796,15 +792,15 @@ export function buildMachineSnapshotCommand(box: { sandboxId: string; unixUser: 
   const legacyIsActive = ctl.legacyIsActiveCommand?.()
   return [
     `uid=$(id -u ${shellQuote(unixUser)} 2>/dev/null || true)`,
-    `tau_live() { case "$1" in active|activating|reloading|listening|running) return 0 ;; *) return 1 ;; esac; }`,
+    `box_live() { case "$1" in active|activating|reloading|listening|running) return 0 ;; *) return 1 ;; esac; }`,
     `sock=$(${ctl.socketIsActiveCommand()} 2>/dev/null || true)`,
     `state=$(${ctl.isActiveCommand()} 2>/dev/null || true)`,
     legacyIsActive ? `legacy=$(${legacyIsActive} 2>/dev/null || true)` : 'legacy=',
-    'if tau_live "$sock"; then ' +
-      'if tau_live "$state"; then echo FICUS_BOX_LIVENESS=running; ' +
+    'if box_live "$sock"; then ' +
+      'if box_live "$state"; then echo FICUS_BOX_LIVENESS=running; ' +
       'elif [ "$state" = failed ]; then echo FICUS_BOX_LIVENESS=exited; ' +
       'else echo FICUS_BOX_LIVENESS=idle; fi; ' +
-      'elif tau_live "$state" || tau_live "$legacy"; then echo FICUS_BOX_LIVENESS=running; ' +
+      'elif box_live "$state" || box_live "$legacy"; then echo FICUS_BOX_LIVENESS=running; ' +
       'else echo FICUS_BOX_LIVENESS=exited; fi',
     'echo FICUS_CONTAINER_STATES_BEGIN',
     // Rootless docker is user-manager-only by construction, so this probe keeps
@@ -1784,7 +1780,7 @@ export async function restorePrivateArchive(
   if (!bytes || bytes.byteLength === 0) return
 
   const unixUser = boxUnixUser(sandboxId)
-  const scratchPath = `/tmp/tau-restore-${sandboxId}.tar.gz`
+  const scratchPath = `/tmp/ficus-restore-${sandboxId}.tar.gz`
   // Reuse ssh.ts's push-file builder (quoted path, validated mode); `install`
   // runs under sudo so the 0600 scratch tar lands root-owned.
   const pushCmd = `sudo ${buildPushFileCommand(scratchPath, '0600')}`
@@ -2374,7 +2370,7 @@ export async function streamBoxStateArchive(
  * + uid≥1000 guards. Used by {@link teardownBoxOnMachine} (row-driven teardown)
  * and by the machine-health remnant sweep (which has only the unix user of a
  * DB-invisible leftover box). The invocation shape is the single source of
- * truth for how tau removes a box user.
+ * truth for how Ficus removes a box user.
  *
  * `timeoutMs` exists because that pre-`userdel` archive is a `tar czf` over the
  * WHOLE home: on the runner's 30s default a stale multi-GB squad `~/workspace`

@@ -224,7 +224,7 @@ tests make no external calls.
    exposes one), and the pre-run `ls --json` inventory. Set a hard cap of **one
    concurrent VM, 20 total creates, and 90 minutes**. Stop immediately on quota,
    auth, cleanup, or unexpected billing errors.
-2. Use names `tau-cal-<UTC-date>-<random-run-id>-<01..20>` so every disposable
+2. Use names `ficus-cal-<UTC-date>-<random-run-id>-<01..20>` so every disposable
    resource is attributable. Refuse to start if any name already exists.
 3. Collect 20 sequential `new --image` samples through the instrumented runner:
    five cold samples after at least ten idle minutes (or after an operator-

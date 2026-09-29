@@ -68,7 +68,7 @@ function reconnectIntent(): OAuthStateRecord {
     intent: 'reconnect',
     connectionId: '90000000-0000-4000-8000-000000000001',
     expectedMaterialRevision: '90000000-0000-4000-8000-000000000002',
-    redirectUri: 'https://tau.example/callback',
+    redirectUri: 'https://ficus.example/callback',
     returnTo: '/settings/integrations',
     expiresAt: new Date(),
     createdAt: new Date(),

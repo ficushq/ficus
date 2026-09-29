@@ -2,7 +2,6 @@ import { chmodSync, existsSync, readFileSync, writeFileSync, copyFileSync } from
 import { homedir } from 'os'
 import { join } from 'path'
 import { mergeEnvFile, parseEnvFile, renderEnvDiff, type EnvUpdate } from './env-file'
-import { checkoutEnvRenamePlan, migrateCheckoutEnv, renamedEnvPreview } from './env-prefix'
 import { DEFAULT_INSTANCE, derivePorts, generateEcosystem, instanceNames, normalizeLabel } from './instance'
 import {
   ensureDatabase,
@@ -193,25 +192,15 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
     id: 'env',
     title: 'Write .env',
     plan: () => {
-      // The merge runs on the renamed text (below), so plan against it: planned against the
-      // TAU_ text, every managed secret would read as newly generated.
-      const rename = checkoutEnvRenamePlan(root)
-      const before = renamedEnvPreview(root, currentEnvText())
+      const before = currentEnvText()
       const placeholder: Secrets = { hex32: () => '<generated>', token: () => '<generated>' }
-      return [
-        ...(rename ? [rename] : []),
-        ...renderEnvDiff(
-          before,
-          mergeEnvFile(before, computeEnvUpdates(opts, placeholder, { existingEnv: before })),
-          SECRET_KEYS
-        ),
-      ]
+      return renderEnvDiff(
+        before,
+        mergeEnvFile(before, computeEnvUpdates(opts, placeholder, { existingEnv: before })),
+        SECRET_KEYS
+      )
     },
     run: async () => {
-      // Ficus rename, BEFORE the merge: merged first, a regenerated FICUS_PASSWORD would be
-      // appended beside the install's real TAU_PASSWORD and win over it. A protected conflict
-      // stops here with nothing written. Also renames ecosystem.config.js's env keys.
-      await migrateCheckoutEnv(root, { log: deps.log })
       const before = readFileSync(envPath, 'utf8')
       const after = mergeEnvFile(before, computeEnvUpdates(opts, deps.secrets, { existingEnv: before, log: deps.log }))
       writeFileSync(envPath, after)
@@ -272,8 +261,6 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
       run(deps, root, ['bun', 'run', 'db:migrate'], {
         DATABASE_URL: opts.databaseUrl,
         FICUS_MIGRATE_LIVE: '1',
-        // One release (Ficus rename): a checkout that predates the rename reads TAU_MIGRATE_LIVE.
-        TAU_MIGRATE_LIVE: '1',
       }),
   })
 

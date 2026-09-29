@@ -11,7 +11,7 @@ test('only Unix listeners disable the listener-wide idle timeout', () => {
 
 for (const unix of [false, true]) {
   test(`${unix ? 'Unix' : 'TCP'} bash stream survives the idle window without replaying`, async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-stream-idle-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-stream-idle-'))
     const socket = join(dir, 'server.sock')
     const timers = new Set<ReturnType<typeof setTimeout>>()
     let requests = 0

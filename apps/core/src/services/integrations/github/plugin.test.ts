@@ -3,7 +3,7 @@ import type { GitHubConnectionConfiguration } from '@ficus/shared/oauth-provider
 import { createGitHubPlugin } from './plugin'
 import type { OAuthCredentialBundleV1 } from '../authorization/credential-bundle'
 
-const stored: GitHubConnectionConfiguration = { version: 1, userId: 42, login: 'tauagent' }
+const stored: GitHubConnectionConfiguration = { version: 1, userId: 42, login: 'ficusagent' }
 const credential = { accessToken: 'token' } as OAuthCredentialBundleV1
 
 function validateAs(actual: GitHubConnectionConfiguration) {
@@ -17,12 +17,12 @@ describe('GitHub plugin validation', () => {
   })
 
   test('a renamed account refreshes its login under the same account id', async () => {
-    const renamed = { version: 1 as const, userId: 42, login: 'ficusagent' }
+    const renamed = { version: 1 as const, userId: 42, login: 'ficusagent-renamed' }
     expect(await validateAs(renamed)).toEqual({ ok: true, grantedScopes: [], configuration: renamed })
   })
 
   test('a different account id still fails as an identity mismatch', async () => {
-    expect(await validateAs({ version: 1, userId: 7, login: 'tauagent' })).toEqual({
+    expect(await validateAs({ version: 1, userId: 7, login: 'ficusagent' })).toEqual({
       ok: false,
       code: 'account_identity_mismatch',
     })

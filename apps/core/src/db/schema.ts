@@ -2796,8 +2796,8 @@ export const machines = pgTable('machines', {
   //                 drains once its boxes stop. `squadId` set.
   //  - 'commons'  : LEGACY (pre-packer tenant commons VM); same drain path.
   purpose: text('purpose').notNull().default('shared'),
-  // True ONLY for VMs tau created on its own (placement's defaultProvisionMachine
-  // — the packer + dedicated auto-provision paths). What tau provisioned
+  // True ONLY for VMs Ficus created on its own (placement's defaultProvisionMachine
+  // — the packer + dedicated auto-provision paths). What Ficus provisioned
   // unattended it may also reclaim unattended: the empty-machine reaper
   // terminates ONLY auto-provisioned machines. User-registered machines — BYO
   // SSH *and* operator-provisioned exe VMs via POST /api/machines, which are
@@ -2974,10 +2974,10 @@ export const boxCondemnationEvidence = pgTable(
 )
 
 // Remote hosts: team-owned SSH targets (staging servers, build machines, a
-// Mac with Xcode, ...) that squads reach out to. Unlike `machines`, tau never
+// Mac with Xcode, ...) that squads reach out to. Unlike `machines`, Ficus never
 // bootstraps a remote host, never creates users on it, and never installs
 // anything on it — agents adapt to whatever the host runs. Each host gets a
-// tau-minted ed25519 keypair (same mechanism as BYO machines): the private
+// Ficus-minted ed25519 keypair (same mechanism as BYO machines): the private
 // key lives in the secret store, the public key is shown to a human who
 // installs it in the target's authorized_keys.
 export const remoteHosts = pgTable('remote_hosts', {

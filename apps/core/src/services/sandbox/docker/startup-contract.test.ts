@@ -24,7 +24,7 @@ describe('Docker startup contract', () => {
     expect(startup).toContain('EXECUTOR_COMMAND_SOURCE="$IDENTITY_SOURCE"')
     expect(startup).not.toContain('usermod -o')
     expect(startup).toContain('test -w /home/tau')
-    expect(startup).toContain('.tau-runtime-write-$$')
+    expect(startup).toContain('.ficus-runtime-write-$$')
     expect(startup).toContain('awk -F: \'$1 == "tau" { print $6 }\'')
   })
   test('supervises both executor and proxy children', () => {
@@ -41,7 +41,7 @@ describe('Docker startup contract', () => {
     expect(startup).toMatch(/FICUS_CHILD_OOM_ADJ=-500 supervise_child executor .* nice -n -10 bun run/)
     expect(startup).toContain('oom_score_adj')
     expect(startup).toContain('IFS= read -r FAILED_CHILD <"$CHILD_EXIT_FIFO"')
-    expect(startup).toContain('. /usr/local/lib/tau-shutdown.sh')
+    expect(startup).toContain('. /usr/local/lib/ficus-shutdown.sh')
     expect(shutdown).toContain('kill -KILL "$pid"')
     expect(shutdown).toContain('if [ "$state" = Z ]')
   })
@@ -76,7 +76,7 @@ describe('Docker startup contract', () => {
     // inherit it; derived from the OS user this script runs as.
     expect(startup).toMatch(/export FICUS_BROWSER_DEV_ALLOW_USER=.*id -un/)
     // The token file is keyed by the dev-allow user, matching the proxy header —
-    // NOT the hardcoded command user (tau).
+    // NOT the hardcoded command user.
     expect(startup).toContain('${FICUS_BROWSER_DEV_ALLOW_USER}.token')
     expect(startup).not.toContain('${EXECUTOR_COMMAND_USER}.token')
     // The export precedes the box server launch so the main server inherits it.

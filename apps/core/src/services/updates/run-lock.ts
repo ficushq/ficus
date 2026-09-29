@@ -2,7 +2,7 @@ import { createPostgresConnection, getConnectionString } from '../../db/connecti
 
 /**
  * Advisory-lock key for the cross-process update-run mutex. Stable constant,
- * unique among tau's pg advisory locks (42 = db migrations, 424242 =
+ * unique among Ficus's pg advisory locks (42 = db migrations, 424242 =
  * first-user admin bootstrap, 421001 = CLI-bundle build, hashtext keys
  * elsewhere).
  *

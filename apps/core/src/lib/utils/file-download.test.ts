@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 function makeTempDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-file-download-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-file-download-'))
   tempDirs.push(dir)
   return dir
 }

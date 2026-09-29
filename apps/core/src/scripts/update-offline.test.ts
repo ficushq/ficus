@@ -44,7 +44,7 @@ describe('planOfflineUpdate', () => {
 describe('runOfflineUpdate', () => {
   let root: string
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'tau-offline-'))
+    root = mkdtempSync(join(tmpdir(), 'ficus-offline-'))
     mkdirSync(join(root, '.git'))
   })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
@@ -312,7 +312,7 @@ describe('runOfflineUpdate after an update whose Core build failed', () => {
     }
   }
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'tau-offline-bundle-'))
+    root = mkdtempSync(join(tmpdir(), 'ficus-offline-bundle-'))
     mkdirSync(join(root, '.git'))
     mkdirSync(join(root, 'apps/core/drizzle/meta'), { recursive: true })
     mkdirSync(join(root, 'apps/core/dist'), { recursive: true })

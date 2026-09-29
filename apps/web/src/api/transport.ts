@@ -24,7 +24,7 @@ function toFetchInit(options?: RequestOptions): RequestInit {
 
 /**
  * Web transport: rides the HttpOnly session cookie (credentials) + CSRF header on mutations,
- * resolving paths against the hiretau.ai-aware API base (see ./client).
+ * resolving paths against the ficus.sh-aware API base (see ./client).
  */
 export const webTransport: Transport = {
   async request<T>(path: string, options?: RequestOptions): Promise<T> {

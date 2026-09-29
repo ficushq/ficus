@@ -21,8 +21,8 @@ describe('getAuthStorePath', () => {
     // Set in a .env or a systemd unit, `~` reaches us verbatim and the store
     // would be written to a directory literally named `~`, silently losing
     // every backend the user had logged into.
-    process.env.FICUS_AUTH_STORE = '~/creds/tau.json'
-    expect(getAuthStorePath()).toBe(join(homedir(), 'creds/tau.json'))
+    process.env.FICUS_AUTH_STORE = '~/creds/ficus.json'
+    expect(getAuthStorePath()).toBe(join(homedir(), 'creds/ficus.json'))
   })
 
   it('leaves an absolute FICUS_AUTH_STORE untouched', () => {

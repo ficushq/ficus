@@ -1,4 +1,3 @@
-import './boot/legacy-env'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { mountCoreDocs } from './lib/docs-serve'
 import {
@@ -205,7 +204,7 @@ app.onError((error, c) => {
 // log field would have allowed.
 //
 // `getClientAddress` already applies the trusted-proxy rules, so this reports the
-// real client rather than the proxy. The user-agent distinguishes the tau CLI from
+// real client rather than the proxy. The user-agent distinguishes the ficus CLI from
 // the web app from the mobile app, which is the distinction that actually matters
 // and which no amount of connection forensics can recover. It is truncated because
 // it is attacker-controlled free text, and only emitted for `<--` request lines so

@@ -39,8 +39,8 @@ describe('localDeployment service', () => {
   it('emits a hosted URL with only the compact deployment prefix', async () => {
     const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     const previousAppUrl = process.env.APP_URL
-    process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
-    process.env.APP_URL = 'https://team--blue.hiretau.ai:8443/control'
+    process.env.FICUS_APPS_DOMAIN = 'ficus.app'
+    process.env.APP_URL = 'https://team--blue.ficus.sh:8443/control'
 
     try {
       const squad = await createTestSquad('hosted-url')
@@ -48,7 +48,7 @@ describe('localDeployment service', () => {
       const compactId = localDeployment.id.replaceAll('-', '').slice(0, 12)
       const url = new URL(localDeployment.urlPathOrHost)
 
-      expect(url.origin).toBe(`https://team--blue--${compactId}.hiretau.app`)
+      expect(url.origin).toBe(`https://team--blue--${compactId}.ficus.app`)
       expect(url.pathname).toBe('/')
       expect(url.searchParams.get('_tau_token')).toBeTruthy()
       expect(url.hostname).not.toContain(localDeployment.id.replaceAll('-', ''))
@@ -67,7 +67,7 @@ describe('localDeployment service', () => {
     try {
       const squad = await createTestSquad('path-fallback')
       const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
-      const token = new URL(`http://tau${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token')
+      const token = new URL(`http://ficus${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token')
 
       expect(localDeployment.urlPathOrHost).toBe(
         `/api/app/${localDeployment.id}/?_tau_token=${encodeURIComponent(token!)}`
@@ -87,9 +87,9 @@ describe('localDeployment service', () => {
     try {
       const squad = await createTestSquad('invalid-hosted-read')
       const created = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
-      const token = new URL(`http://tau${created.urlPathOrHost}`).searchParams.get('_tau_token')!
-      process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
-      process.env.APP_URL = `https://${'a'.repeat(50)}.hiretau.ai`
+      const token = new URL(`http://ficus${created.urlPathOrHost}`).searchParams.get('_tau_token')!
+      process.env.FICUS_APPS_DOMAIN = 'ficus.app'
+      process.env.APP_URL = `https://${'a'.repeat(50)}.ficus.sh`
 
       const found = await getLocalDeployment(created.id)
       const listed = await listLocalDeployments(squad.id)
@@ -110,13 +110,13 @@ describe('localDeployment service', () => {
     const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     const previousAppUrl = process.env.APP_URL
     const invalidConfigs = [
-      { appsDomain: ' ', appUrl: 'https://team.hiretau.ai', message: 'FICUS_APPS_DOMAIN' },
-      { appsDomain: 'https://hiretau.app', appUrl: 'https://team.hiretau.ai', message: 'FICUS_APPS_DOMAIN' },
-      { appsDomain: 'hiretau.app', appUrl: 'not a URL', message: 'APP_URL' },
-      { appsDomain: 'hiretau.app', appUrl: 'https://localhost', message: 'tenant label' },
-      { appsDomain: 'hiretau.app', appUrl: 'https://a.hiretau.ai', message: 'at least 3 characters' },
-      { appsDomain: 'hiretau.app', appUrl: 'https://ab.hiretau.ai', message: 'at least 3 characters' },
-      { appsDomain: 'hiretau.app', appUrl: `https://${'a'.repeat(50)}.hiretau.ai`, message: '49 characters' },
+      { appsDomain: ' ', appUrl: 'https://team.ficus.sh', message: 'FICUS_APPS_DOMAIN' },
+      { appsDomain: 'https://ficus.app', appUrl: 'https://team.ficus.sh', message: 'FICUS_APPS_DOMAIN' },
+      { appsDomain: 'ficus.app', appUrl: 'not a URL', message: 'APP_URL' },
+      { appsDomain: 'ficus.app', appUrl: 'https://localhost', message: 'tenant label' },
+      { appsDomain: 'ficus.app', appUrl: 'https://a.ficus.sh', message: 'at least 3 characters' },
+      { appsDomain: 'ficus.app', appUrl: 'https://ab.ficus.sh', message: 'at least 3 characters' },
+      { appsDomain: 'ficus.app', appUrl: `https://${'a'.repeat(50)}.ficus.sh`, message: '49 characters' },
     ]
 
     try {

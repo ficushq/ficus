@@ -17,7 +17,7 @@ describe('artifact index service', () => {
   let warnSpy: ReturnType<typeof spyOn>
 
   beforeEach(async () => {
-    rootPath = await mkdtemp(join(tmpdir(), 'tau-artifact-index-'))
+    rootPath = await mkdtemp(join(tmpdir(), 'ficus-artifact-index-'))
     warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
   })
 

@@ -30,7 +30,7 @@ function stream(overrides: Partial<WorkStream> = {}): WorkStream {
 
 const wait = (type: string) => [{ id: 'w-1', type, message: 'secret' }] as WorkStream['openWaits']
 
-// This table is the contract with `bucket(for:)` in targets/widget/TauWorkWidget.swift. If Swift's
+// This table is the contract with `bucket(for:)` in targets/widget/FicusWorkWidget.swift. If Swift's
 // rules change, these cases must change with them or the Live Activity and the widget will
 // disagree about the same stream.
 describe('workBucket mirrors the widget’s Swift case table', () => {

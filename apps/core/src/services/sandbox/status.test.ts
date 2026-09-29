@@ -42,7 +42,7 @@ describe('resolveToolchainStatus', () => {
   /** What the provisioner realizes: the squad's `bun` plus a GitHub integration's contribution. */
   const effective: ManagedToolchainConfig = {
     packages: ['bun', 'gh'],
-    initHooks: ['export GH_TOKEN=$(tau gh token)'],
+    initHooks: ['export GH_TOKEN=$(ficus gh token)'],
     readiness: [{ id: 'gh', command: 'gh --version', expectedSubstring: 'gh version' }],
     integrationFingerprint: 'f'.repeat(64),
   }

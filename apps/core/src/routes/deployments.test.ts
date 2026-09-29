@@ -420,8 +420,8 @@ describe('deployments routes', () => {
   it('POST /api/squads/:id/local-deployments returns the hosted URL', async () => {
     const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     const previousAppUrl = process.env.APP_URL
-    process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
-    process.env.APP_URL = 'https://team--blue.hiretau.ai'
+    process.env.FICUS_APPS_DOMAIN = 'ficus.app'
+    process.env.APP_URL = 'https://team--blue.ficus.sh'
 
     try {
       const squad = await createTestSquad()
@@ -435,7 +435,7 @@ describe('deployments routes', () => {
       const localDeployment = await res.json()
       const compactId = localDeployment.id.replaceAll('-', '').slice(0, 12)
       expect(localDeployment.urlPathOrHost).toMatch(
-        new RegExp(`^https://team--blue--${compactId}\\.hiretau\\.app/\\?_tau_token=.+$`)
+        new RegExp(`^https://team--blue--${compactId}\\.ficus\\.app/\\?_tau_token=.+$`)
       )
     } finally {
       if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN

@@ -427,7 +427,7 @@ describe('getErrorSystemMessage', () => {
 })
 
 describe('internal errors are never attributed to the provider', () => {
-  // A live incident: tau refused its own capacity reservation, the agent was
+  // A live incident: Ficus refused its own capacity reservation, the agent was
   // told "[System] Rate limit or plan credit exhaustion. Execution stopped.",
   // and the codex account it named had 68% of its weekly limit remaining. The
   // substring `capacity` was the entire cause.

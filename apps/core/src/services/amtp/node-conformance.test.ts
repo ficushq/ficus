@@ -1,8 +1,8 @@
-// tau <-> amtp-node conformance matrix (spec docs/superpowers/specs/
+// Ficus <-> amtp-node conformance matrix (spec docs/superpowers/specs/
 // 2026-07-08-amtp-node-design.md §10). Spawns a REAL `amtp` node subprocess
 // (the installed amtp-node npm package) against a temp AMTP_HOME and drives it
 // as a black box through its `--json` CLI output, alongside a real
-// in-process tau Hono app served over `Bun.serve`. Both hosts talk over real
+// in-process Ficus Hono app served over `Bun.serve`. Both hosts talk over real
 // HTTP — this file never touches `__setPullImpl`/`__setKeyFetchImpl`; TOFU
 // key fetches and attachment pulls go over the wire exactly as they would in
 // production, in both directions.
@@ -133,7 +133,7 @@ const OUTBOX_POLL_INTERVAL_MS = 750
 const prefix = `node-conf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 // ---------------------------------------------------------------------------
-// tau side: the same Hono app the frozen route tests build (§10.2), served
+// Ficus side: the same Hono app the frozen route tests build (§10.2), served
 // for real over Bun.serve so the node's HTTP client hits it exactly like any
 // other peer.
 // ---------------------------------------------------------------------------
@@ -142,10 +142,10 @@ app.use('/api/*', identityMiddleware)
 app.use('/api/*', authzSentinel)
 app.route('/api/amtp', amtpRouter)
 
-let tauServer: ReturnType<typeof Bun.serve> | null = null
-let tauPort: number
-let tauInstanceId: string
-let tauPublicKeyPem: string
+let ficusServer: ReturnType<typeof Bun.serve> | null = null
+let ficusPort: number
+let ficusInstanceId: string
+let ficusPublicKeyPem: string
 
 // ---------------------------------------------------------------------------
 // Node side: a real subprocess against a temp AMTP_HOME (§10.2).
@@ -161,7 +161,7 @@ let nodeInstanceId: string
 let nodePublicKeyPem: string
 
 let filesDir: string | null = null // scratch dir for attachment source files passed to `amtp attach upload`
-let homeDir: string | null = null // tau's HOME_DIR for InboxAttachment file storage
+let homeDir: string | null = null // Ficus's HOME_DIR for InboxAttachment file storage
 const origHomeDir = process.env.HOME_DIR
 
 let sharedAgentTypeId: string
@@ -482,23 +482,23 @@ async function waitForNodeReady(child: FileCapturedChild, port: number, timeoutM
   })
 }
 
-async function waitForTauReady(): Promise<void> {
+async function waitForFicusReady(): Promise<void> {
   await waitForProtocolReady({
-    phase: 'tau-http-ready',
+    phase: 'ficus-http-ready',
     timeoutMs: STARTUP_TIMEOUT_MS,
     probes: [
       {
-        url: `http://127.0.0.1:${tauPort}/api/amtp/identity`,
+        url: `http://127.0.0.1:${ficusPort}/api/amtp/identity`,
         validate: async (response) => {
           const payload: unknown = await response.json()
           const record = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
           const actual = record.instanceId
-          const publicKeyMatches = record.publicKeyPem === tauPublicKeyPem
+          const publicKeyMatches = record.publicKeyPem === ficusPublicKeyPem
           return {
-            valid: actual === tauInstanceId && publicKeyMatches,
+            valid: actual === ficusInstanceId && publicKeyMatches,
             detail:
               `status=${response.status} contentType=${response.headers.get('content-type') ?? 'none'} ` +
-              `keys=${Object.keys(record).sort().join(',') || 'none'} expectedIdentity=${tauInstanceId} ` +
+              `keys=${Object.keys(record).sort().join(',') || 'none'} expectedIdentity=${ficusInstanceId} ` +
               `actualIdentity=${typeof actual === 'string' ? actual : typeof actual} publicKeyMatches=${publicKeyMatches}`,
           }
         },
@@ -551,7 +551,7 @@ async function startNodeServe(): Promise<void> {
 // in CI runs 30947168870/30952651592, where a #10 timeout took two #11 tests
 // down with it). Detect a dead node before each test and restart it: the
 // AMTP_HOME (identity, registrations, sqlite state) survives, so only the
-// port changes — repoint tau's peer row at it.
+// port changes — repoint Ficus's peer row at it.
 beforeEach(async () => {
   if (!nodeHome || !nodeProc || !nodeCapture) return // beforeAll not (successfully) run yet
   if (nodeProc.exitCode !== null || nodeProc.signalCode !== null) {
@@ -563,14 +563,14 @@ beforeEach(async () => {
       .where(eq(peers.instanceId, nodeInstanceId))
   }
   await waitForNodeReady(nodeCapture!, nodePort, STARTUP_TIMEOUT_MS)
-  await waitForTauReady()
+  await waitForFicusReady()
 })
 
 // ---------------------------------------------------------------------------
-// tau-side fixture helpers.
+// ficus-side fixture helpers.
 // ---------------------------------------------------------------------------
 
-async function createTauAgent(
+async function createFicusAgent(
   handle: string,
   opts: { open: boolean; identityPublicKeyPem?: string; identityPrivateKeyPem?: string }
 ): Promise<Agent> {
@@ -590,16 +590,18 @@ async function createTauAgent(
   return created
 }
 
-/** Enqueue + drain a tau-originated send, returning the resulting outbox row's terminal status. */
-async function sendFromTau(args: Parameters<typeof enqueueFederatedSend>[0]): Promise<{ id: string; status: string }> {
+/** Enqueue + drain a ficus-originated send, returning the resulting outbox row's terminal status. */
+async function sendFromFicus(
+  args: Parameters<typeof enqueueFederatedSend>[0]
+): Promise<{ id: string; status: string }> {
   const entry = await enqueueFederatedSend(args)
   await drainOutboxOnce()
   const [row] = await db.select({ status: outbox.status }).from(outbox).where(eq(outbox.id, entry.id))
   return { id: entry.id, status: row.status }
 }
 
-/** Seed a real InboxAttachment (tau's outbound-attachment storage — §4.7/adapters.ts) for use in a send's `attachments` array. */
-async function seedTauOutboundAttachment(bytes: Uint8Array, filename: string): Promise<InboxAttachment> {
+/** Seed a real InboxAttachment (Ficus's outbound-attachment storage — §4.7/adapters.ts) for use in a send's `attachments` array. */
+async function seedFicusOutboundAttachment(bytes: Uint8Array, filename: string): Promise<InboxAttachment> {
   const [msgRow] = await db
     .insert(inbox)
     .values({ recipientType: 'system', recipientId: crypto.randomUUID(), senderType: 'system', content: 'seed' })
@@ -613,7 +615,7 @@ async function seedTauOutboundAttachment(bytes: Uint8Array, filename: string): P
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-  // This matrix does real cross-process HTTP; tau's outbound delivery and its
+  // This matrix does real cross-process HTTP; Ficus's outbound delivery and its
   // TOFU key-fetch both go through the engine's late-bound `globalThis.fetch`.
   // An earlier test file in the single-process run may have left a fetch mock
   // installed (file order is platform-dependent — this only bites in CI), which
@@ -639,11 +641,11 @@ beforeAll(async () => {
   await settingsStore.set('INBOX_MAX_ATTACHMENT_BYTES', '10485760')
   await settingsStore.set('INBOX_MAX_TOTAL_STORAGE_BYTES', '10737418240')
 
-  // --- tau: real Bun.serve over the production route wiring ---
-  tauServer = Bun.serve({ port: 0, fetch: app.fetch })
-  tauPort = tauServer.port!
-  ;({ instanceId: tauInstanceId, publicKeyPem: tauPublicKeyPem } = await InstanceIdentity.getPublic())
-  await waitForTauReady()
+  // --- ficus: real Bun.serve over the production route wiring ---
+  ficusServer = Bun.serve({ port: 0, fetch: app.fetch })
+  ficusPort = ficusServer.port!
+  ;({ instanceId: ficusInstanceId, publicKeyPem: ficusPublicKeyPem } = await InstanceIdentity.getPublic())
+  await waitForFicusReady()
 
   sharedAgentTypeId = `${prefix}-type`
   await AgentType.create({
@@ -674,13 +676,13 @@ beforeAll(async () => {
     'peer',
     'add',
     '--alias',
-    'tau',
+    'ficus',
     '--base-url',
-    `http://127.0.0.1:${tauPort}/api`,
+    `http://127.0.0.1:${ficusPort}/api`,
     '--public-key',
-    tauPublicKeyPem,
+    ficusPublicKeyPem,
     '--instance-id',
-    tauInstanceId,
+    ficusInstanceId,
   ])
 })
 
@@ -688,12 +690,12 @@ afterAll(async () => {
   const phases: Array<{ phase: string; operation: () => void | Promise<unknown> }> = []
   if (nodeProc) phases.push({ phase: 'node-process', operation: () => terminateProcess(nodeProc!, 2000) })
   if (nodeCapture) phases.push({ phase: 'node-captures', operation: () => cleanupFileCapturedChild(nodeCapture!) })
-  phases.push({ phase: 'tau-server', operation: () => tauServer?.stop(true) })
+  phases.push({ phase: 'ficus-server', operation: () => ficusServer?.stop(true) })
   if (nodeHome) phases.push({ phase: 'node-home', operation: () => rm(nodeHome!, { recursive: true, force: true }) })
   if (filesDir) {
     phases.push({ phase: 'attachment-files', operation: () => rm(filesDir!, { recursive: true, force: true }) })
   }
-  if (homeDir) phases.push({ phase: 'tau-home', operation: () => rm(homeDir!, { recursive: true, force: true }) })
+  if (homeDir) phases.push({ phase: 'ficus-home', operation: () => rm(homeDir!, { recursive: true, force: true }) })
   if (nodeArtifactDir) {
     phases.push({ phase: 'node-artifact', operation: () => rm(nodeArtifactDir!, { recursive: true, force: true }) })
   }
@@ -743,14 +745,14 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe('#1 unsigned send to an open mailbox', () => {
-  test('node -> tau', async () => {
+  test('node -> ficus', async () => {
     const nodeHandle = `${prefix}-s1-node-anna`
     await registerNodeHandle(nodeHandle, { open: true })
-    const tauAgent = await createTauAgent(`${prefix}-s1-tau-ben`, { open: true })
+    const ficusAgent = await createFicusAgent(`${prefix}-s1-ficus-ben`, { open: true })
 
     const res = await cli<NodeSendResult>([
       'send',
-      formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!),
+      formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!),
       'hello unsigned',
       '--from',
       nodeHandle,
@@ -760,7 +762,7 @@ describe('#1 unsigned send to an open mailbox', () => {
     ])
     expect(res.status).toBe('delivered')
 
-    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, tauAgent.id))
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, ficusAgent.id))
     expect(rows).toHaveLength(1)
     expect(rows[0].subject).toBe('hi')
     expect(rows[0].content).toBe('hello unsigned')
@@ -769,13 +771,13 @@ describe('#1 unsigned send to an open mailbox', () => {
     expect(remote.envelopeId).toBe(res.envelopeId)
   })
 
-  test('tau -> node', async () => {
-    const nodeHandle = `${prefix}-s1-tau-cleo`
+  test('ficus -> node', async () => {
+    const nodeHandle = `${prefix}-s1-ficus-cleo`
     await registerNodeHandle(nodeHandle, { open: true })
-    const tauAgent = await createTauAgent(`${prefix}-s1-tau-dax`, { open: true })
+    const ficusAgent = await createFicusAgent(`${prefix}-s1-ficus-dax`, { open: true })
 
-    const { status } = await sendFromTau({
-      fromHandle: tauAgent.amtpHandle!,
+    const { status } = await sendFromFicus({
+      fromHandle: ficusAgent.amtpHandle!,
       toAddress: formatAmtpAddress(nodeInstanceId, nodeHandle),
       subject: 'hi',
       content: 'hello unsigned',
@@ -789,7 +791,7 @@ describe('#1 unsigned send to an open mailbox', () => {
       'read',
       msgs[0].id,
     ])
-    expect(full.from).toBe(formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!))
+    expect(full.from).toBe(formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!))
     expect(full.subject).toBe('hi')
     expect(full.content).toBe('hello unsigned')
     expect(full.envelopeId).toBeTruthy()
@@ -800,11 +802,11 @@ describe('#1 unsigned send to an open mailbox', () => {
 // §10.3 #2/#3 — signed send, TOFU first contact + pin mismatch
 // ---------------------------------------------------------------------------
 
-async function exerciseNodeToTauWrongPin(casePrefix: string): Promise<void> {
+async function exerciseNodeToFicusWrongPin(casePrefix: string): Promise<void> {
   const nodeHandle = `${casePrefix}-node-wrong-pin`
   const registered = await registerNodeHandle(nodeHandle, { open: true })
-  const tauAgent = await createTauAgent(`${casePrefix}-tau-recipient`, { open: true })
-  const toAddress = formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!)
+  const ficusAgent = await createFicusAgent(`${casePrefix}-ficus-recipient`, { open: true })
+  const toAddress = formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!)
 
   const wrongKey = generateInstanceKeyPair().publicKeyPem
   expect(wrongKey).not.toBe(registered.agentPublicKeyPem)
@@ -819,26 +821,26 @@ async function exerciseNodeToTauWrongPin(casePrefix: string): Promise<void> {
   expect(failed.lastError).toContain('403')
 
   expect(await AmtpKnownKey.getPin(nodeInstanceId, nodeHandle)).toBe(wrongKey)
-  const rows = await db.select().from(inbox).where(eq(inbox.recipientId, tauAgent.id))
+  const rows = await db.select().from(inbox).where(eq(inbox.recipientId, ficusAgent.id))
   expect(rows).toHaveLength(0)
 
   const bounces = await cli<Array<{ kind: string }>>(['inbox', 'list', '--handle', nodeHandle])
   expect(bounces.filter((message) => message.kind === 'bounce')).toHaveLength(1)
 }
 
-async function exerciseTauToNodeWrongPin(casePrefix: string): Promise<void> {
+async function exerciseFicusToNodeWrongPin(casePrefix: string): Promise<void> {
   const nodeHandle = `${casePrefix}-reverse-pin-node`
   await registerNodeHandle(nodeHandle, { open: true })
   const kp1 = generateInstanceKeyPair()
-  const tauAgent = await createTauAgent(`${casePrefix}-reverse-pin-tau`, {
+  const ficusAgent = await createFicusAgent(`${casePrefix}-reverse-pin-ficus`, {
     open: true,
     identityPublicKeyPem: kp1.publicKeyPem,
     identityPrivateKeyPem: kp1.privateKeyPem,
   })
   const toAddress = formatAmtpAddress(nodeInstanceId, nodeHandle)
-  const from = formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!)
+  const from = formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!)
 
-  // #2: first signed contact pins tau's agent key on the node.
+  // #2: first signed contact pins Ficus's agent key on the node.
   const id1 = crypto.randomUUID()
   const agentSig1 = signEnvelope(
     kp1.privateKeyPem,
@@ -852,8 +854,8 @@ async function exerciseTauToNodeWrongPin(casePrefix: string): Promise<void> {
       attachments: [],
     })
   )
-  const send1 = await sendFromTau({
-    fromHandle: tauAgent.amtpHandle!,
+  const send1 = await sendFromFicus({
+    fromHandle: ficusAgent.amtpHandle!,
     toAddress,
     content: 'hi',
     id: id1,
@@ -867,7 +869,7 @@ async function exerciseTauToNodeWrongPin(casePrefix: string): Promise<void> {
   const read1 = await cli<{ agentSigVerified: boolean }>(['inbox', 'read', msgs[0].id])
   expect(read1.agentSigVerified).toBe(true)
 
-  // #3: re-sign with a DIFFERENT (unpinned) tau agent key.
+  // #3: re-sign with a DIFFERENT (unpinned) Ficus agent key.
   const kp2 = generateInstanceKeyPair()
   const id2 = crypto.randomUUID()
   const agentSig2 = signEnvelope(
@@ -882,8 +884,8 @@ async function exerciseTauToNodeWrongPin(casePrefix: string): Promise<void> {
       attachments: [],
     })
   )
-  const send2 = await sendFromTau({
-    fromHandle: tauAgent.amtpHandle!,
+  const send2 = await sendFromFicus({
+    fromHandle: ficusAgent.amtpHandle!,
     toAddress,
     content: 'hi again',
     id: id2,
@@ -892,18 +894,18 @@ async function exerciseTauToNodeWrongPin(casePrefix: string): Promise<void> {
   })
   expect(send2.status).toBe('failed')
 
-  const bounceRows = await db.select().from(inbox).where(eq(inbox.recipientId, tauAgent.id))
+  const bounceRows = await db.select().from(inbox).where(eq(inbox.recipientId, ficusAgent.id))
   const bounce = bounceRows.find((r) => (r.metadata as Record<string, unknown>).federationBounce)
   expect(bounce).toBeTruthy()
   expect(((bounce!.metadata as Record<string, unknown>).federationBounce as { reason: string }).reason).toContain('403')
 }
 
 describe('#2/#3 signed send: TOFU first contact, then a mismatched re-sign is rejected', () => {
-  test('node -> tau', async () => {
+  test('node -> ficus', async () => {
     const nodeHandle = `${prefix}-s23-node-carol`
     await registerNodeHandle(nodeHandle, { open: true })
-    const tauAgent = await createTauAgent(`${prefix}-s23-tau-bob`, { open: true })
-    const toAddress = formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!)
+    const ficusAgent = await createFicusAgent(`${prefix}-s23-ficus-bob`, { open: true })
+    const toAddress = formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!)
 
     // #2: first signed contact pins the node handle's agent key.
     const first = await cli<NodeSendResult>(['send', toAddress, 'hello signed', '--from', nodeHandle])
@@ -914,7 +916,7 @@ describe('#2/#3 signed send: TOFU first contact, then a mismatched re-sign is re
     const pinned = await AmtpKnownKey.getPin(nodeInstanceId, nodeHandle)
     expect(pinned).toBe(reg.agentPublicKeyPem)
 
-    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, tauAgent.id))
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, ficusAgent.id))
     expect(rows).toHaveLength(1)
     expect(((rows[0].metadata as Record<string, unknown>).remote as Record<string, unknown>).agentSigVerified).toBe(
       true
@@ -930,12 +932,12 @@ describe('#2/#3 signed send: TOFU first contact, then a mismatched re-sign is re
     expect(bounces.some((m) => m.kind === 'bounce')).toBe(true)
   })
 
-  test('tau -> node', async () => {
-    await exerciseTauToNodeWrongPin(`${prefix}-s23`)
+  test('ficus -> node', async () => {
+    await exerciseFicusToNodeWrongPin(`${prefix}-s23`)
   })
 
-  test('node -> tau: a pre-seeded wrong pin (white-box) rejects the very first signed send', async () => {
-    await exerciseNodeToTauWrongPin(`${prefix}-s3`)
+  test('node -> ficus: a pre-seeded wrong pin (white-box) rejects the very first signed send', async () => {
+    await exerciseNodeToFicusWrongPin(`${prefix}-s3`)
   })
 })
 
@@ -944,14 +946,14 @@ describe('#2/#3 signed send: TOFU first contact, then a mismatched re-sign is re
 // ---------------------------------------------------------------------------
 
 describe('#4 closed mailbox, no rule', () => {
-  test('node -> tau', async () => {
+  test('node -> ficus', async () => {
     const nodeHandle = `${prefix}-s4-node-frank`
     await registerNodeHandle(nodeHandle, { open: true })
-    const tauAgent = await createTauAgent(`${prefix}-s4-tau-grace`, { open: false })
+    const ficusAgent = await createFicusAgent(`${prefix}-s4-ficus-grace`, { open: false })
 
     const res = await cli<NodeSendResult>([
       'send',
-      formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!),
+      formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!),
       'closed mailbox',
       '--from',
       nodeHandle,
@@ -967,19 +969,19 @@ describe('#4 closed mailbox, no rule', () => {
     expect(full.bounce.reason).toContain('403')
   })
 
-  test('tau -> node', async () => {
-    const nodeHandle = `${prefix}-s4-tau-henry`
+  test('ficus -> node', async () => {
+    const nodeHandle = `${prefix}-s4-ficus-henry`
     await registerNodeHandle(nodeHandle, { open: false })
-    const tauAgent = await createTauAgent(`${prefix}-s4-tau-iris`, { open: true })
+    const ficusAgent = await createFicusAgent(`${prefix}-s4-ficus-iris`, { open: true })
 
-    const { status } = await sendFromTau({
-      fromHandle: tauAgent.amtpHandle!,
+    const { status } = await sendFromFicus({
+      fromHandle: ficusAgent.amtpHandle!,
       toAddress: formatAmtpAddress(nodeInstanceId, nodeHandle),
       content: 'closed',
     })
     expect(status).toBe('failed')
 
-    const bounceRows = await db.select().from(inbox).where(eq(inbox.recipientId, tauAgent.id))
+    const bounceRows = await db.select().from(inbox).where(eq(inbox.recipientId, ficusAgent.id))
     const bounce = bounceRows.find((r) => (r.metadata as Record<string, unknown>).federationBounce)
     expect(bounce).toBeTruthy()
     expect(((bounce!.metadata as Record<string, unknown>).federationBounce as { reason: string }).reason).toContain(
@@ -993,19 +995,19 @@ describe('#4 closed mailbox, no rule', () => {
 // ---------------------------------------------------------------------------
 
 describe('#5 closed mailbox, handle-scoped allow rule', () => {
-  test('node -> tau', async () => {
+  test('node -> ficus', async () => {
     const senderX = `${prefix}-s5-node-x`
     const senderY = `${prefix}-s5-node-y`
     await registerNodeHandle(senderX, { open: true })
     await registerNodeHandle(senderY, { open: true })
-    const tauAgent = await createTauAgent(`${prefix}-s5-tau-closed`, { open: false })
-    const toAddress = formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!)
+    const ficusAgent = await createFicusAgent(`${prefix}-s5-ficus-closed`, { open: false })
+    const toAddress = formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!)
 
     const before = await cli<NodeSendResult>(['send', toAddress, 'msg1', '--from', senderX, '--no-sign'])
     expect(before.status).toBe('failed')
 
     await AmtpAllowRule.create({
-      targetAgentId: tauAgent.id,
+      targetAgentId: ficusAgent.id,
       peerInstanceId: nodeInstanceId,
       principalKind: 'handle',
       principalValue: senderX,
@@ -1018,22 +1020,22 @@ describe('#5 closed mailbox, handle-scoped allow rule', () => {
     expect(stillBlocked.status).toBe('failed')
   })
 
-  test('tau -> node', async () => {
-    const nodeHandle = `${prefix}-s5-tau-closed`
+  test('ficus -> node', async () => {
+    const nodeHandle = `${prefix}-s5-ficus-closed`
     await registerNodeHandle(nodeHandle, { open: false })
-    const senderXHandle = `${prefix}-s5-tau-x`
-    const senderYHandle = `${prefix}-s5-tau-y`
+    const senderXHandle = `${prefix}-s5-ficus-x`
+    const senderYHandle = `${prefix}-s5-ficus-y`
     const toAddress = formatAmtpAddress(nodeInstanceId, nodeHandle)
 
-    const before = await sendFromTau({ fromHandle: senderXHandle, toAddress, content: 'msg1' })
+    const before = await sendFromFicus({ fromHandle: senderXHandle, toAddress, content: 'msg1' })
     expect(before.status).toBe('failed')
 
-    await cli(['allow', 'add', nodeHandle, '--peer', 'tau', '--sender', senderXHandle])
+    await cli(['allow', 'add', nodeHandle, '--peer', 'ficus', '--sender', senderXHandle])
 
-    const allowed = await sendFromTau({ fromHandle: senderXHandle, toAddress, content: 'msg2' })
+    const allowed = await sendFromFicus({ fromHandle: senderXHandle, toAddress, content: 'msg2' })
     expect(allowed.status).toBe('delivered')
 
-    const stillBlocked = await sendFromTau({ fromHandle: senderYHandle, toAddress, content: 'msg3' })
+    const stillBlocked = await sendFromFicus({ fromHandle: senderYHandle, toAddress, content: 'msg3' })
     expect(stillBlocked.status).toBe('failed')
   })
 })
@@ -1042,16 +1044,16 @@ describe('#5 closed mailbox, handle-scoped allow rule', () => {
 // §10.3 #6 — unknown recipient handle
 // ---------------------------------------------------------------------------
 
-async function exerciseNodeToTauUnknownRecipient(casePrefix: string): Promise<void> {
+async function exerciseNodeToFicusUnknownRecipient(casePrefix: string): Promise<void> {
   const nodeHandle = `${casePrefix}-node-sender`
-  const missingTauHandle = `${casePrefix}-tau-nonexistent`
+  const missingFicusHandle = `${casePrefix}-ficus-nonexistent`
   await registerNodeHandle(nodeHandle, { open: true })
-  expect(await Agent.findByFederationHandle(missingTauHandle)).toBeNull()
+  expect(await Agent.findByFederationHandle(missingFicusHandle)).toBeNull()
 
   const sendStartedAt = Date.now()
   const res = await cli<NodeSendResult>([
     'send',
-    formatAmtpAddress(tauInstanceId, missingTauHandle),
+    formatAmtpAddress(ficusInstanceId, missingFicusHandle),
     'msg',
     '--from',
     nodeHandle,
@@ -1067,21 +1069,21 @@ async function exerciseNodeToTauUnknownRecipient(casePrefix: string): Promise<vo
 }
 
 describe('#6 unknown recipient handle', () => {
-  test('node -> tau', async () => {
-    await exerciseNodeToTauUnknownRecipient(`${prefix}-s6`)
+  test('node -> ficus', async () => {
+    await exerciseNodeToFicusUnknownRecipient(`${prefix}-s6`)
   })
 
-  test('tau -> node', async () => {
-    const tauAgent = await createTauAgent(`${prefix}-s6-tau-kim`, { open: true })
+  test('ficus -> node', async () => {
+    const ficusAgent = await createFicusAgent(`${prefix}-s6-ficus-kim`, { open: true })
 
-    const { status } = await sendFromTau({
-      fromHandle: tauAgent.amtpHandle!,
+    const { status } = await sendFromFicus({
+      fromHandle: ficusAgent.amtpHandle!,
       toAddress: formatAmtpAddress(nodeInstanceId, `${prefix}-s6-node-nonexistent`),
       content: 'msg',
     })
     expect(status).toBe('failed')
 
-    const bounceRows = await db.select().from(inbox).where(eq(inbox.recipientId, tauAgent.id))
+    const bounceRows = await db.select().from(inbox).where(eq(inbox.recipientId, ficusAgent.id))
     const bounce = bounceRows.find((r) => (r.metadata as Record<string, unknown>).federationBounce)
     expect(bounce).toBeTruthy()
     expect(((bounce!.metadata as Record<string, unknown>).federationBounce as { reason: string }).reason).toContain(
@@ -1094,12 +1096,12 @@ describe('#6 unknown recipient handle', () => {
 // §10.3 #7 — attachment send
 // ---------------------------------------------------------------------------
 
-async function exerciseNodeToTauAttachment(casePrefix: string): Promise<void> {
+async function exerciseNodeToFicusAttachment(casePrefix: string): Promise<void> {
   await waitForNodeReady(nodeCapture!, nodePort, STARTUP_TIMEOUT_MS)
-  await waitForTauReady()
+  await waitForFicusReady()
   const nodeHandle = `${casePrefix}-node`
   const registered = await registerNodeHandle(nodeHandle, { open: true })
-  const tauAgent = await createTauAgent(`${casePrefix}-tau`, { open: true })
+  const ficusAgent = await createFicusAgent(`${casePrefix}-ficus`, { open: true })
 
   const [peer] = await db.select().from(peers).where(eq(peers.instanceId, nodeInstanceId))
   expect(peer).toMatchObject({
@@ -1140,7 +1142,7 @@ async function exerciseNodeToTauAttachment(casePrefix: string): Promise<void> {
   try {
     const res = await cli<NodeSendResult>([
       'send',
-      formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!),
+      formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!),
       'see attached',
       '--from',
       nodeHandle,
@@ -1163,7 +1165,7 @@ async function exerciseNodeToTauAttachment(casePrefix: string): Promise<void> {
     expect(envelope.agentSig).toBeTruthy()
     await waitForNodeOutboxDelivery(res.outboxId, `${casePrefix}:attachment-delivery`)
 
-    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, tauAgent.id))
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, ficusAgent.id))
     expect(rows).toHaveLength(1)
     expect(((rows[0].metadata as Record<string, unknown>).remote as Record<string, unknown>).agentSigVerified).toBe(
       true
@@ -1189,17 +1191,17 @@ async function exerciseNodeToTauAttachment(casePrefix: string): Promise<void> {
 }
 
 describe('#7 attachment send', () => {
-  test('node -> tau', async () => {
-    await exerciseNodeToTauAttachment(`${prefix}-s7`)
+  test('node -> ficus', async () => {
+    await exerciseNodeToFicusAttachment(`${prefix}-s7`)
   })
 
-  test('tau -> node', async () => {
+  test('ficus -> node', async () => {
     const nodeHandle = `${prefix}-s7-tau-noah`
     await registerNodeHandle(nodeHandle, { open: true })
-    const tauAgent = await createTauAgent(`${prefix}-s7-tau-olivia`, { open: true })
+    const ficusAgent = await createFicusAgent(`${prefix}-s7-ficus-olivia`, { open: true })
 
-    const contentBytes = new TextEncoder().encode(`attachment payload from tau ${Math.random()}`)
-    const att = await seedTauOutboundAttachment(contentBytes, 's7-tau-to-node.txt')
+    const contentBytes = new TextEncoder().encode(`attachment payload from ficus ${Math.random()}`)
+    const att = await seedFicusOutboundAttachment(contentBytes, 's7-ficus-to-node.txt')
     const ref: AmtpAttachmentRef = {
       id: att.id,
       filename: att.filename,
@@ -1208,8 +1210,8 @@ describe('#7 attachment send', () => {
       sha256: att.sha256,
     }
 
-    const { status } = await sendFromTau({
-      fromHandle: tauAgent.amtpHandle!,
+    const { status } = await sendFromFicus({
+      fromHandle: ficusAgent.amtpHandle!,
       toAddress: formatAmtpAddress(nodeInstanceId, nodeHandle),
       content: 'see attached',
       attachments: [ref],
@@ -1241,23 +1243,23 @@ describe('#7 attachment send', () => {
 // ---------------------------------------------------------------------------
 
 describe('#8 attachment default-deny', () => {
-  test('node as GET-receiver: a signed GET (as tau, real credentials) for an attachment never addressed to tau -> 404', async () => {
+  test('node as GET-receiver: a signed GET (as ficus, real credentials) for an attachment never addressed to ficus -> 404', async () => {
     const nodeHandle = `${prefix}-s8-node-owner`
     await registerNodeHandle(nodeHandle, { open: true })
     const filePath = join(filesDir!, 's8-node-owned.txt')
-    await writeFile(filePath, 'never addressed to tau', 'utf8')
+    await writeFile(filePath, 'never addressed to ficus', 'utf8')
     const uploaded = await cli<{ attachmentId: string }>(['attach', 'upload', filePath])
 
-    const tauIdentity = await InstanceIdentity.getOrCreate()
+    const ficusIdentity = await InstanceIdentity.getOrCreate()
     const ts = Date.now()
     const path = `/amtp/attachments/${uploaded.attachmentId}`
     const canonical = canonicalPeerGetString('GET', path, ts)
-    const signature = signEnvelope(tauIdentity.privateKeyPem, new TextEncoder().encode(canonical))
+    const signature = signEnvelope(ficusIdentity.privateKeyPem, new TextEncoder().encode(canonical))
 
     const res = await fetch(`http://127.0.0.1:${nodePort}${path}`, {
       method: 'GET',
       headers: {
-        'x-amtp-instance': tauInstanceId,
+        'x-amtp-instance': ficusInstanceId,
         'x-amtp-signature': signature,
         'x-amtp-timestamp': String(ts),
       },
@@ -1265,7 +1267,7 @@ describe('#8 attachment default-deny', () => {
     expect(res.status).toBe(404)
   })
 
-  test('tau as GET-receiver: a signed GET (as an unrelated peer) for an attachment never addressed to it -> 404', async () => {
+  test('ficus as GET-receiver: a signed GET (as an unrelated peer) for an attachment never addressed to it -> 404', async () => {
     const synthKeys = generateInstanceKeyPair()
     const synthInstanceId = instanceIdFromPublicKeyPem(synthKeys.publicKeyPem)
     const synthPeer = await Peer.create({
@@ -1277,14 +1279,14 @@ describe('#8 attachment default-deny', () => {
 
     try {
       const bytes = new TextEncoder().encode('never addressed to the synthetic peer')
-      const att = await seedTauOutboundAttachment(bytes, 's8-tau-owned.txt')
+      const att = await seedFicusOutboundAttachment(bytes, 's8-ficus-owned.txt')
 
       const ts = Date.now()
       const path = `/api/amtp/attachments/${att.id}`
       const canonical = canonicalPeerGetString('GET', path, ts)
       const signature = signEnvelope(synthKeys.privateKeyPem, new TextEncoder().encode(canonical))
 
-      const res = await fetch(`http://127.0.0.1:${tauPort}${path}`, {
+      const res = await fetch(`http://127.0.0.1:${ficusPort}${path}`, {
         method: 'GET',
         headers: {
           'x-amtp-instance': synthInstanceId,
@@ -1300,7 +1302,7 @@ describe('#8 attachment default-deny', () => {
 })
 
 // ---------------------------------------------------------------------------
-// §10.3 #9 — replay (node as receiver; tau's side is its frozen suite,
+// §10.3 #9 — replay (node as receiver; Ficus's side is its frozen suite,
 // amtp.receive-signed.test.ts)
 // ---------------------------------------------------------------------------
 
@@ -1309,16 +1311,16 @@ describe('#9 replay', () => {
     const nodeHandle = `${prefix}-s9-node-replay`
     await registerNodeHandle(nodeHandle, { open: true })
 
-    const tauIdentity = await InstanceIdentity.getOrCreate()
+    const ficusIdentity = await InstanceIdentity.getOrCreate()
     const id = crypto.randomUUID()
-    const from = formatAmtpAddress(tauInstanceId, `${prefix}-s9-tau-sender`)
+    const from = formatAmtpAddress(ficusInstanceId, `${prefix}-s9-ficus-sender`)
     const to = formatAmtpAddress(nodeInstanceId, nodeHandle)
     const envelope: AmtpEnvelope = { v: 1, id, ts: Date.now(), from, to, content: 'replay me' }
     const body = JSON.stringify(envelope)
-    const signature = signEnvelope(tauIdentity.privateKeyPem, new TextEncoder().encode(body))
+    const signature = signEnvelope(ficusIdentity.privateKeyPem, new TextEncoder().encode(body))
     const headers = {
       'content-type': 'application/json',
-      'x-amtp-instance': tauInstanceId,
+      'x-amtp-instance': ficusInstanceId,
       'x-amtp-signature': signature,
     }
 
@@ -1343,8 +1345,8 @@ describe('#10 duplicate-enqueue idempotency', () => {
   test('"amtp send --envelope-id" twice with the same id -> one outbox entry, one delivery', async () => {
     const nodeHandle = `${prefix}-s10-node-sender`
     await registerNodeHandle(nodeHandle, { open: true })
-    const tauAgent = await createTauAgent(`${prefix}-s10-tau-recv`, { open: true })
-    const toAddress = formatAmtpAddress(tauInstanceId, tauAgent.amtpHandle!)
+    const ficusAgent = await createFicusAgent(`${prefix}-s10-ficus-recv`, { open: true })
+    const toAddress = formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!)
     const envelopeId = crypto.randomUUID()
 
     const first = await cli<NodeSendResult>([
@@ -1376,14 +1378,14 @@ describe('#10 duplicate-enqueue idempotency', () => {
     const allOutbox = await cli<Array<{ id: string }>>(['outbox', 'list'])
     expect(allOutbox.filter((e) => e.id === first.outboxId)).toHaveLength(1)
 
-    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, tauAgent.id))
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, ficusAgent.id))
     expect(rows).toHaveLength(1)
   })
 })
 
 // ---------------------------------------------------------------------------
 // #11 — agent cards (docs/history/superpowers/specs/2026-07-09-amtp-agent-card-design.md
-// §4.6/§11): publish/fetch/verify a signed card across the tau<->node boundary,
+// §4.6/§11): publish/fetch/verify a signed card across the Ficus<->node boundary,
 // TOFU-pinning it exactly like a first signed send, plus the unsigned discovery
 // hints that ride the existing /handles listing. New row, numbered #11 (not
 // #8) because #8 above is already the frozen "attachment default-deny" case
@@ -1393,7 +1395,7 @@ describe('#10 duplicate-enqueue idempotency', () => {
 async function exerciseBidirectionalHints(casePrefix: string): Promise<void> {
   if (!nodeCapture) throw new Error('AMTP node capture is unavailable')
   await waitForNodeReady(nodeCapture, nodePort, STARTUP_TIMEOUT_MS)
-  await waitForTauReady()
+  await waitForFicusReady()
 
   const [peer] = await db.select().from(peers).where(eq(peers.instanceId, nodeInstanceId))
   expect(peer).toMatchObject({ status: 'active', baseUrl: `http://127.0.0.1:${nodePort}` })
@@ -1412,35 +1414,35 @@ async function exerciseBidirectionalHints(casePrefix: string): Promise<void> {
   expect(nodeCard.card).toMatchObject({ name: 'Discoverable Node', description: 'Node hint test' })
 
   const kp = generateInstanceKeyPair()
-  const tauHandle = `${casePrefix}-tau-discover`
-  const tauAgent = await createTauAgent(tauHandle, {
+  const ficusHandle = `${casePrefix}-ficus-discover`
+  const ficusAgent = await createFicusAgent(ficusHandle, {
     open: true,
     identityPublicKeyPem: kp.publicKeyPem,
     identityPrivateKeyPem: kp.privateKeyPem,
   })
   const sansSig = {
     v: 1 as const,
-    instanceId: tauInstanceId,
-    handle: tauHandle,
+    instanceId: ficusInstanceId,
+    handle: ficusHandle,
     card: { name: 'Discoverable Ficus', description: 'Ficus hint test' },
   }
   const signed: AmtpSignedAgentCard = { ...sansSig, cardSig: signAgentCard(kp.privateKeyPem, sansSig) }
-  await tauAgent.update({ cardJson: signed })
-  const storedTauAgent = await Agent.findByFederationHandle(tauHandle)
-  expect(storedTauAgent?.cardJson).toMatchObject({ card: sansSig.card })
+  await ficusAgent.update({ cardJson: signed })
+  const storedFicusAgent = await Agent.findByFederationHandle(ficusHandle)
+  expect(storedFicusAgent?.cardJson).toMatchObject({ card: sansSig.card })
 
   const rbacPrefix = `${casePrefix}-hints-rbac`
   const reader = await createTestUser({ prefix: rbacPrefix })
   const readRole = await createTestRole({ prefix: rbacPrefix, permissions: ['amtp:read'] })
   await assignRole({ userId: reader.id, roleId: readRole.id, scope: 'system' })
   try {
-    const res = await fetchInProtocolPhase(`http://127.0.0.1:${tauPort}/api/amtp/peers/${nodeInstanceId}/handles`, {
-      phase: 'tau-peer-handles-proxy',
+    const res = await fetchInProtocolPhase(`http://127.0.0.1:${ficusPort}/api/amtp/peers/${nodeInstanceId}/handles`, {
+      phase: 'ficus-peer-handles-proxy',
       timeoutMs: 5_000,
       init: { headers: authHeaders(reader.token) },
       requireOk: true,
       diagnostics: async () =>
-        `${nodeCapture ? await capturedNodeDiagnostics(nodeCapture) : 'node unavailable'}; tau port=${tauPort}`,
+        `${nodeCapture ? await capturedNodeDiagnostics(nodeCapture) : 'node unavailable'}; ficus port=${ficusPort}`,
     })
     const body = (await res.json()) as {
       handles: Array<{ handle: string; name?: string; description?: string }>
@@ -1457,10 +1459,10 @@ async function exerciseBidirectionalHints(casePrefix: string): Promise<void> {
     .where(like(users.email, `${rbacPrefix}%`))
   expect(leakedUsers).toHaveLength(0)
 
-  const remoteHandles = await cli<Array<{ handle: string; name?: string; description?: string }>>(['handles', 'tau'])
-  const tauHint = remoteHandles.find((candidate) => candidate.handle === tauHandle)
-  expect(tauHint?.name).toBe('Discoverable Ficus')
-  expect(tauHint?.description).toBe('Ficus hint test')
+  const remoteHandles = await cli<Array<{ handle: string; name?: string; description?: string }>>(['handles', 'ficus'])
+  const ficusHint = remoteHandles.find((candidate) => candidate.handle === ficusHandle)
+  expect(ficusHint?.name).toBe('Discoverable Ficus')
+  expect(ficusHint?.description).toBe('Ficus hint test')
 }
 
 async function exerciseCardlessFetch(
@@ -1468,7 +1470,7 @@ async function exerciseCardlessFetch(
   options?: { scopeCustodyToCasePrefix?: boolean }
 ): Promise<void> {
   await waitForNodeReady(nodeCapture!, nodePort, STARTUP_TIMEOUT_MS)
-  await waitForTauReady()
+  await waitForFicusReady()
   const nodeHandle = `${casePrefix}-cardless`
   await registerNodeHandle(nodeHandle, { open: true })
   const whoami = await auditedWhoami(
@@ -1488,7 +1490,7 @@ async function exerciseCardlessFetch(
 }
 
 describe('#11 agent cards', () => {
-  test('node -> tau: node publishes a card via `amtp card set`; tau engine.fetchPeerAgentCard verifies + TOFU-pins it', async () => {
+  test('node -> ficus: node publishes a card via `amtp card set`; ficus engine.fetchPeerAgentCard verifies + TOFU-pins it', async () => {
     const nodeHandle = `${prefix}-s11-node-card`
     await registerNodeHandle(nodeHandle, { open: true })
     const signed = await cli<AmtpSignedAgentCard>([
@@ -1514,10 +1516,10 @@ describe('#11 agent cards', () => {
     expect(pinned).toBe(reg.agentPublicKeyPem)
   })
 
-  test('tau -> node: a tau agent publishes a signed card (white-box); node `amtp card fetch` verifies + TOFU-pins it', async () => {
+  test('ficus -> node: a ficus agent publishes a signed card (white-box); node `amtp card fetch` verifies + TOFU-pins it', async () => {
     const kp = generateInstanceKeyPair()
-    const tauHandle = `${prefix}-s11-tau-card`
-    const tauAgent = await createTauAgent(tauHandle, {
+    const ficusHandle = `${prefix}-s11-ficus-card`
+    const ficusAgent = await createFicusAgent(ficusHandle, {
       open: true,
       identityPublicKeyPem: kp.publicKeyPem,
       identityPrivateKeyPem: kp.privateKeyPem,
@@ -1525,26 +1527,26 @@ describe('#11 agent cards', () => {
 
     const sansSig = {
       v: 1 as const,
-      instanceId: tauInstanceId,
-      handle: tauHandle,
-      card: { name: 'Ficus Agent', description: 'A tau-hosted agent' },
+      instanceId: ficusInstanceId,
+      handle: ficusHandle,
+      card: { name: 'Ficus Agent', description: 'A ficus-hosted agent' },
     }
     const signed: AmtpSignedAgentCard = { ...sansSig, cardSig: signAgentCard(kp.privateKeyPem, sansSig) }
-    await tauAgent.update({ cardJson: signed })
+    await ficusAgent.update({ cardJson: signed })
 
     const result = await cli<{ ok: boolean; card: { name?: string; description?: string } }>([
       'card',
       'fetch',
-      tauHandle,
+      ficusHandle,
       '--peer',
-      tauInstanceId,
+      ficusInstanceId,
     ])
     expect(result.ok).toBe(true)
     expect(result.card.name).toBe('Ficus Agent')
-    expect(result.card.description).toBe('A tau-hosted agent')
+    expect(result.card.description).toBe('A ficus-hosted agent')
   })
 
-  test('unsigned/absent: tau engine.fetchPeerAgentCard for a cardless node handle -> ok:false', async () => {
+  test('unsigned/absent: ficus engine.fetchPeerAgentCard for a cardless node handle -> ok:false', async () => {
     const nodeHandle = `${prefix}-s11-node-nocard`
     await registerNodeHandle(nodeHandle, { open: true })
 
@@ -1552,10 +1554,10 @@ describe('#11 agent cards', () => {
     expect(result.ok).toBe(false)
   })
 
-  test('unsigned/absent: node `amtp card fetch` for a cardless tau handle -> non-zero exit, clean error', async () => {
-    const tauAgent = await createTauAgent(`${prefix}-s11-tau-nocard`, { open: true })
+  test('unsigned/absent: node `amtp card fetch` for a cardless ficus handle -> non-zero exit, clean error', async () => {
+    const ficusAgent = await createFicusAgent(`${prefix}-s11-ficus-nocard`, { open: true })
 
-    const { exitCode, stderr } = await runCli(['card', 'fetch', tauAgent.amtpHandle!, '--peer', tauInstanceId])
+    const { exitCode, stderr } = await runCli(['card', 'fetch', ficusAgent.amtpHandle!, '--peer', ficusInstanceId])
     expect(exitCode).not.toBe(0)
     const parsed = JSON.parse(stderr) as { error: string }
     expect(parsed.error).toContain('failed to fetch')
@@ -1573,7 +1575,7 @@ describe('#11 agent cards', () => {
     expect(result.ok).toBe(false)
   })
 
-  test("hints ride discovery: tau's peer-handles proxy shows the node handle's card hints; node `amtp handles` shows tau's", async () => {
+  test("hints ride discovery: ficus's peer-handles proxy shows the node handle's card hints; node `amtp handles` shows ficus's", async () => {
     await exerciseBidirectionalHints(`${prefix}-s11`)
   })
 })
@@ -1589,7 +1591,7 @@ async function runScopedScenario(casePrefix: string, exercise: () => Promise<voi
     await scope.dispose()
     expect(scope.snapshot()).toEqual({ resources: 0, operations: 0, aborted: true })
     await waitForNodeReady(nodeCapture!, nodePort, STARTUP_TIMEOUT_MS)
-    await waitForTauReady()
+    await waitForFicusReady()
   }
 }
 
@@ -1599,15 +1601,19 @@ describe('federation lifecycle stress', () => {
   test('forward order', async () => {
     for (let iteration = 0; iteration < 3; iteration++) {
       const casePrefix = `${prefix}-stress-forward-${iteration}`
-      await runScopedScenario(`${casePrefix}-exerciseNodeToTauUnknownRecipient`, () =>
-        exerciseNodeToTauUnknownRecipient(casePrefix)
+      await runScopedScenario(`${casePrefix}-exerciseNodeToFicusUnknownRecipient`, () =>
+        exerciseNodeToFicusUnknownRecipient(casePrefix)
       )
-      await runScopedScenario(`${casePrefix}-exerciseNodeToTauWrongPin`, () => exerciseNodeToTauWrongPin(casePrefix))
-      await runScopedScenario(`${casePrefix}-exerciseTauToNodeWrongPin`, () => exerciseTauToNodeWrongPin(casePrefix))
+      await runScopedScenario(`${casePrefix}-exerciseNodeToFicusWrongPin`, () =>
+        exerciseNodeToFicusWrongPin(casePrefix)
+      )
+      await runScopedScenario(`${casePrefix}-exerciseFicusToNodeWrongPin`, () =>
+        exerciseFicusToNodeWrongPin(casePrefix)
+      )
       await runScopedScenario(`${casePrefix}-exerciseBidirectionalHints`, () => exerciseBidirectionalHints(casePrefix))
       await runScopedScenario(`${casePrefix}-exerciseCardlessFetch`, () => exerciseCardlessFetch(casePrefix))
-      await runScopedScenario(`${casePrefix}-exerciseNodeToTauAttachment`, () =>
-        exerciseNodeToTauAttachment(casePrefix)
+      await runScopedScenario(`${casePrefix}-exerciseNodeToFicusAttachment`, () =>
+        exerciseNodeToFicusAttachment(casePrefix)
       )
     }
   })
@@ -1615,15 +1621,19 @@ describe('federation lifecycle stress', () => {
   test('reverse order', async () => {
     for (let iteration = 0; iteration < 3; iteration++) {
       const casePrefix = `${prefix}-stress-reverse-${iteration}`
-      await runScopedScenario(`${casePrefix}-exerciseNodeToTauAttachment`, () =>
-        exerciseNodeToTauAttachment(casePrefix)
+      await runScopedScenario(`${casePrefix}-exerciseNodeToFicusAttachment`, () =>
+        exerciseNodeToFicusAttachment(casePrefix)
       )
       await runScopedScenario(`${casePrefix}-exerciseCardlessFetch`, () => exerciseCardlessFetch(casePrefix))
       await runScopedScenario(`${casePrefix}-exerciseBidirectionalHints`, () => exerciseBidirectionalHints(casePrefix))
-      await runScopedScenario(`${casePrefix}-exerciseTauToNodeWrongPin`, () => exerciseTauToNodeWrongPin(casePrefix))
-      await runScopedScenario(`${casePrefix}-exerciseNodeToTauWrongPin`, () => exerciseNodeToTauWrongPin(casePrefix))
-      await runScopedScenario(`${casePrefix}-exerciseNodeToTauUnknownRecipient`, () =>
-        exerciseNodeToTauUnknownRecipient(casePrefix)
+      await runScopedScenario(`${casePrefix}-exerciseFicusToNodeWrongPin`, () =>
+        exerciseFicusToNodeWrongPin(casePrefix)
+      )
+      await runScopedScenario(`${casePrefix}-exerciseNodeToFicusWrongPin`, () =>
+        exerciseNodeToFicusWrongPin(casePrefix)
+      )
+      await runScopedScenario(`${casePrefix}-exerciseNodeToFicusUnknownRecipient`, () =>
+        exerciseNodeToFicusUnknownRecipient(casePrefix)
       )
     }
   })
@@ -1635,12 +1645,12 @@ describe('federation lifecycle stress', () => {
     await runScopedScenario(`${prefix}-stress-concurrent`, () =>
       runBoundedScenarioTasks(
         [
-          () => exerciseNodeToTauUnknownRecipient(`${prefix}-stress-concurrent-unknown`),
-          () => exerciseNodeToTauWrongPin(`${prefix}-stress-concurrent-wrong-pin`),
+          () => exerciseNodeToFicusUnknownRecipient(`${prefix}-stress-concurrent-unknown`),
+          () => exerciseNodeToFicusWrongPin(`${prefix}-stress-concurrent-wrong-pin`),
           () => exerciseBidirectionalHints(`${prefix}-stress-concurrent-hints`),
-          () => exerciseTauToNodeWrongPin(`${prefix}-stress-concurrent-reverse-pin`),
+          () => exerciseFicusToNodeWrongPin(`${prefix}-stress-concurrent-reverse-pin`),
           () => exerciseCardlessFetch(`${prefix}-stress-concurrent-cardless`, { scopeCustodyToCasePrefix: true }),
-          () => exerciseNodeToTauAttachment(`${prefix}-stress-concurrent-attachment`),
+          () => exerciseNodeToFicusAttachment(`${prefix}-stress-concurrent-attachment`),
         ],
         2
       )
@@ -1651,7 +1661,7 @@ describe('federation lifecycle stress', () => {
     const casePrefix = `${prefix}-stress-seed-11-offender`
     const seed11Prefix = ['attachment', 'cardless']
     expect(seed11Prefix).toEqual(['attachment', 'cardless'])
-    await runScopedScenario(`${casePrefix}-attachment`, () => exerciseNodeToTauAttachment(casePrefix))
+    await runScopedScenario(`${casePrefix}-attachment`, () => exerciseNodeToFicusAttachment(casePrefix))
     await runScopedScenario(`${casePrefix}-cardless`, () => exerciseCardlessFetch(casePrefix))
   })
 
@@ -1660,12 +1670,12 @@ describe('federation lifecycle stress', () => {
     for (const seed of [11, 29, 47, 83]) {
       const casePrefix = `${prefix}-stress-seed-${seed}`
       const scenarios = [
-        { name: 'unknown', exercise: () => exerciseNodeToTauUnknownRecipient(casePrefix) },
-        { name: 'node-wrong-pin', exercise: () => exerciseNodeToTauWrongPin(casePrefix) },
-        { name: 'tau-wrong-pin', exercise: () => exerciseTauToNodeWrongPin(casePrefix) },
+        { name: 'unknown', exercise: () => exerciseNodeToFicusUnknownRecipient(casePrefix) },
+        { name: 'node-wrong-pin', exercise: () => exerciseNodeToFicusWrongPin(casePrefix) },
+        { name: 'ficus-wrong-pin', exercise: () => exerciseFicusToNodeWrongPin(casePrefix) },
         { name: 'hints', exercise: () => exerciseBidirectionalHints(casePrefix) },
         { name: 'cardless', exercise: () => exerciseCardlessFetch(casePrefix) },
-        { name: 'attachment', exercise: () => exerciseNodeToTauAttachment(casePrefix) },
+        { name: 'attachment', exercise: () => exerciseNodeToFicusAttachment(casePrefix) },
       ]
       if ((seed & 2) !== 0) scenarios.reverse()
       observedOrders.add(scenarios.map(({ name }) => name).join('->'))

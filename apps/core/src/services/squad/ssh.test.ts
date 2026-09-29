@@ -258,14 +258,14 @@ describe('squad-ssh', () => {
       expect(existsSync(join(getSquadSshPath(squadId), 'ficus_remote_mykey'))).toBe(false)
     })
 
-    it('reserves both the ficus_remote_ prefix and the pre-rename tau_remote_ prefix (K2)', async () => {
+    it('reserves the ficus_remote_ prefix only', async () => {
       const { addSshKey, getSquadSshPath } = await getModule()
       const squadId = 'test-squad-123'
 
       await expect(addSshKey(squadId, 'ficus_remote_x', VALID_TEST_KEY)).rejects.toThrow('reserved "ficus_remote_"')
-      await expect(addSshKey(squadId, 'tau_remote_x', VALID_TEST_KEY)).rejects.toThrow('reserved "tau_remote_"')
       expect(existsSync(join(getSquadSshPath(squadId), 'ficus_remote_x'))).toBe(false)
-      expect(existsSync(join(getSquadSshPath(squadId), 'tau_remote_x'))).toBe(false)
+      await addSshKey(squadId, 'old_remote_x', VALID_TEST_KEY)
+      expect(existsSync(join(getSquadSshPath(squadId), 'old_remote_x'))).toBe(true)
     })
 
     it('rejects invalid key format', async () => {

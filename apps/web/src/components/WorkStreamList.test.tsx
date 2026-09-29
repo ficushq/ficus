@@ -610,11 +610,11 @@ describe('WorkStreamList', () => {
     const secondSquad = { ...squad, id: 'squad-2', name: 'Beta' }
     const queryClient = createTestQueryClient()
     const active = [
-      workStream({ id: 'active-tau', title: 'Active Ficus' }),
+      workStream({ id: 'active-ficus', title: 'Active Ficus' }),
       workStream({ id: 'active-beta', title: 'Active Beta', squadId: secondSquad.id }),
     ]
     const done = [
-      workStream({ id: 'done-tau', title: 'Done Ficus', status: 'done' }),
+      workStream({ id: 'done-ficus', title: 'Done Ficus', status: 'done' }),
       workStream({ id: 'done-beta', title: 'Done Beta', status: 'done', squadId: secondSquad.id }),
     ]
 

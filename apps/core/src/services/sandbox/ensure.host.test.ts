@@ -23,7 +23,7 @@ describe('ensure — host runtime', () => {
   const createdAgentIds: string[] = []
 
   beforeEach(async () => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-ensure-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-ensure-'))
     prevHome = process.env.HOME_DIR
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home

@@ -140,7 +140,7 @@ export function getSandboxManager(): ISandboxManager {
 export function createCodingTools(
   workspacePath: string,
   sandboxId: string,
-  tauToken?: string,
+  ficusToken?: string,
   squadId?: string,
   invocationOwnerId?: string,
   agentId?: string
@@ -155,7 +155,7 @@ export function createCodingTools(
       workspacePath,
       sandboxId,
       manager,
-      tauToken,
+      ficusToken,
       squadId,
       invocationOwnerId,
       agentId
@@ -169,17 +169,17 @@ export function createCodingTools(
       workspacePath,
       sandboxId,
       manager,
-      tauToken,
+      ficusToken,
       squadId,
       invocationOwnerId,
       agentId
     )
   }
   if (isHostRuntimeValue(runtime)) {
-    return createHostSandboxedCodingTools(workspacePath, sandboxId, tauToken, squadId, invocationOwnerId, agentId)
+    return createHostSandboxedCodingTools(workspacePath, sandboxId, ficusToken, squadId, invocationOwnerId, agentId)
   }
   if (isDockerRuntimeValue(runtime)) {
-    return createDockerSandboxedCodingTools(workspacePath, sandboxId, tauToken, squadId, invocationOwnerId, agentId)
+    return createDockerSandboxedCodingTools(workspacePath, sandboxId, ficusToken, squadId, invocationOwnerId, agentId)
   }
   // Unreachable: requireSandboxRuntime above returns one of exactly five values,
   // and all five are named. Present so adding a sixth is a compile/runtime

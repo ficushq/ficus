@@ -24,14 +24,14 @@ describe('SlackClient', () => {
     const client = new SlackClient({ fetch: mock(async () => json({})) })
     const url = client.buildAuthorizationUrl({
       clientId: 'client id',
-      redirectUri: 'https://tau.example/oauth/callback',
+      redirectUri: 'https://ficus.example/oauth/callback',
       state: 'state-value',
     })
     expect(url.origin + url.pathname).toBe('https://slack.com/oauth/v2/authorize')
     expect(Object.fromEntries(url.searchParams)).toEqual({
       client_id: 'client id',
       scope: SLACK_BOT_SCOPES.join(','),
-      redirect_uri: 'https://tau.example/oauth/callback',
+      redirect_uri: 'https://ficus.example/oauth/callback',
       state: 'state-value',
     })
     expect(url.toString()).not.toContain('client_secret')
@@ -50,7 +50,7 @@ describe('SlackClient', () => {
       code: 'provider-code',
       clientId: 'client-id',
       clientSecret: 'client-secret',
-      redirectUri: 'https://tau.example/oauth/callback',
+      redirectUri: 'https://ficus.example/oauth/callback',
     })
     expect(grant).toEqual({
       accessToken: 'xoxb-token-value',
@@ -66,7 +66,7 @@ describe('SlackClient', () => {
     expect(new Headers(requests[0].init?.headers).get('authorization')).toBe(`Basic ${btoa('client-id:client-secret')}`)
     expect(new Headers(requests[0].init?.headers).get('content-type')).toBe('application/x-www-form-urlencoded')
     expect(String(requests[0].init?.body)).toBe(
-      new URLSearchParams({ code: 'provider-code', redirect_uri: 'https://tau.example/oauth/callback' }).toString()
+      new URLSearchParams({ code: 'provider-code', redirect_uri: 'https://ficus.example/oauth/callback' }).toString()
     )
   })
 
@@ -170,7 +170,7 @@ describe('SlackClient', () => {
           bot: {
             id: 'B3333333333',
             deleted: false,
-            name: 'tau',
+            name: 'ficus',
             updated: 1700000000,
             app_id: 'A1234567890',
             user_id: 'U2222222222',
@@ -190,7 +190,7 @@ describe('SlackClient', () => {
       code: 'code',
       clientId: 'id',
       clientSecret: 'secret',
-      redirectUri: 'https://tau.example',
+      redirectUri: 'https://ficus.example',
     })
     await expect(operation).rejects.toEqual(new SlackClientError('unsupported_enterprise_install'))
     const error = await operation.catch((caught) => caught)
@@ -205,7 +205,7 @@ describe('SlackClient', () => {
         code: 'code',
         clientId: 'id',
         clientSecret: 'secret',
-        redirectUri: 'https://tau.example',
+        redirectUri: 'https://ficus.example',
       })
       await expect(operation).rejects.toEqual(new SlackClientError('invalid_grant'))
     }
@@ -277,13 +277,18 @@ describe('SlackClient', () => {
         code: 'code',
         clientId: 'id',
         clientSecret: 'secret',
-        redirectUri: 'https://tau.example',
+        redirectUri: 'https://ficus.example',
       })
     ).rejects.toMatchObject({ code: 'response_too_large' })
 
     const invalid = new SlackClient({ fetch: mock(async () => json({ ...tokenPayload, token_type: 'user' })) })
     await expect(
-      invalid.exchangeCode({ code: 'code', clientId: 'id', clientSecret: 'secret', redirectUri: 'https://tau.example' })
+      invalid.exchangeCode({
+        code: 'code',
+        clientId: 'id',
+        clientSecret: 'secret',
+        redirectUri: 'https://ficus.example',
+      })
     ).rejects.toEqual(new SlackClientError('invalid_response'))
   })
 
@@ -311,7 +316,7 @@ describe('SlackClient', () => {
       code: 'code',
       clientId: 'id',
       clientSecret: 'secret',
-      redirectUri: 'https://tau.example',
+      redirectUri: 'https://ficus.example',
     })
   })
 })

@@ -1,7 +1,7 @@
 /**
  * Pure helpers for the Channels settings form.
  *
- * A "channel" connects a Discord/Slack/Telegram bot to tau. These helpers
+ * A "channel" connects a Discord/Slack/Telegram bot to Ficus. These helpers
  * translate between the honest, provider-first UI shown to operators and the
  * raw shapes the backend already stores (providerConfig, channelSquadMap) —
  * the API contract is not touched.

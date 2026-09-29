@@ -55,7 +55,7 @@ describe('DbOAuthStateRepository', () => {
       intent: 'connect',
       connectionId: null,
       expectedMaterialRevision: null,
-      redirectUri: 'https://tau.example/settings/integrations/oauth/callback',
+      redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
       returnTo: '/settings/integrations',
       expiresAt: new Date(Date.now() + 60_000),
     })
@@ -83,7 +83,7 @@ describe('DbOAuthStateRepository', () => {
       intent: 'reconnect',
       connectionId,
       expectedMaterialRevision: materialRevision,
-      redirectUri: 'https://tau.example/settings/integrations/oauth/callback',
+      redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
       returnTo: '/settings/integrations',
       expiresAt: new Date(Date.now() + 60_000),
     })
@@ -109,7 +109,7 @@ describe('DbOAuthStateRepository', () => {
       intent: 'connect',
       connectionId: null,
       expectedMaterialRevision: null,
-      redirectUri: 'https://tau.example/settings/integrations/oauth/callback',
+      redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
       returnTo: '/settings/integrations',
       expiresAt: new Date(Date.now() - 1_000),
     })
@@ -131,7 +131,7 @@ describe('DbOAuthStateRepository', () => {
       intent: 'connect',
       connectionId: null,
       expectedMaterialRevision: null,
-      redirectUri: 'https://tau.example/settings/integrations/oauth/callback',
+      redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
       returnTo: '/settings/integrations',
       expiresAt: new Date(Date.now() + 60_000),
     })
@@ -183,7 +183,7 @@ describe('DbOAuthStateRepository', () => {
       intent: 'connect',
       connectionId: null,
       expectedMaterialRevision: null,
-      redirectUri: 'https://tau.example/settings/integrations/oauth/callback',
+      redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
       returnTo: '/settings/integrations',
       expiresAt: new Date(Date.now() - 1_000),
     })
@@ -217,7 +217,7 @@ describe('DbOAuthStateRepository', () => {
       intent: 'connect',
       connectionId: null,
       expectedMaterialRevision: null,
-      redirectUri: 'https://tau.example/settings/integrations/oauth/callback',
+      redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
       returnTo: '/settings',
       expiresAt: new Date(Date.now() + 60_000),
     })
@@ -255,7 +255,7 @@ describe('DbOAuthStateRepository', () => {
       intent: 'connect',
       connectionId: null,
       expectedMaterialRevision: null,
-      redirectUri: 'https://tau.example/settings/integrations/oauth/callback',
+      redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
       returnTo: '/settings/integrations',
       expiresAt: new Date(Date.now() + 60_000),
     })

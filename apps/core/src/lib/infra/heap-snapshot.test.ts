@@ -21,7 +21,7 @@ describe('captureHeapSnapshot', () => {
     })
 
     expect(mkdir).toHaveBeenCalledWith('/safe/heaps', { recursive: true, mode: 0o700 })
-    expect(result).toBe('/safe/heaps/tau-api-2026-08-14T01-02-03-000Z-42.heapsnapshot')
+    expect(result).toBe('/safe/heaps/ficus-api-2026-08-14T01-02-03-000Z-42.heapsnapshot')
     expect(writeSnapshot).toHaveBeenCalledWith(result)
     expect(chmod).toHaveBeenCalledWith('/safe/heaps', 0o700)
     expect(chmod).toHaveBeenCalledWith(result, 0o600)
@@ -48,7 +48,7 @@ describe('captureHeapSnapshot', () => {
     })
 
     expect(mkdir).toHaveBeenCalledWith(expanded, { recursive: true, mode: 0o700 })
-    expect(result).toBe(`${expanded}/tau-worker-2026-08-14T01-02-03-000Z-7.heapsnapshot`)
+    expect(result).toBe(`${expanded}/ficus-worker-2026-08-14T01-02-03-000Z-7.heapsnapshot`)
     expect(chmod).toHaveBeenCalledWith(expanded, 0o700)
   })
 

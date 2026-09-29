@@ -186,7 +186,7 @@ describe('MessageBody', () => {
     } as unknown as FarmCardEnv
     const view = await renderWith(
       <FarmCardContext.Provider value={env}>
-        <Markdown>{'See [#2](tau:ws:2) and [the docs](https://example.com).'}</Markdown>
+        <Markdown>{'See [#2](ficus:ws:2) and [the docs](https://example.com).'}</Markdown>
       </FarmCardContext.Provider>,
       await fakeMultiplayer()
     )

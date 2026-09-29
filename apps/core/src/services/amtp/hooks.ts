@@ -1,6 +1,6 @@
 // Ficus's DeliveryHooks implementation for amtp-engine (docs/superpowers/specs/
 // 2026-07-08-amtp-engine-design.md §7.2/§7.3). All normative receive/outbox
-// ordering lives in the engine; this module owns only the tau-specific
+// ordering lives in the engine; this module owns only the Ficus-specific
 // presentation (senderType 'remote', deliveryMode, metadata.remote shape,
 // agent wake, and the federation-bounce message) — the field ledger in §7.3.
 import { eq } from 'drizzle-orm'
@@ -17,7 +17,7 @@ export const deliveryHooks: DeliveryHooks = {
   /**
    * §8 step 10 — persist the accepted message for the recipient, replacing
    * routes/amtp.ts:468-575's delivery halves. `attachments` is already pulled
-   * + verified by the engine; this hook only builds tau's message shape,
+   * + verified by the engine; this hook only builds Ficus's message shape,
    * persists it (+ any attachment blobs), wakes the agent best-effort, and
    * rolls back its own partial state on any failure before rethrowing.
    */

@@ -12,7 +12,7 @@ import { join } from 'path'
 
 const ASSET_URL_RE = /(?:src|href)="([^"]*?\/)assets\/[^"]+"/
 
-/** The base a built index.html was produced for (`/`, `/tau/`), or null without built assets. */
+/** The base a built index.html was produced for (`/`, `/ficus/`), or null without built assets. */
 export function builtWebBase(indexHtml: string): string | null {
   const match = ASSET_URL_RE.exec(indexHtml)
   return match ? match[1] : null

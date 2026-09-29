@@ -1,5 +1,4 @@
 import { routeLinearEvent } from './ingress'
-import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
 import { resolveLinearWebhookSecret } from './webhook-settings'
 /**
  * Linear Webhook Processor
@@ -58,8 +57,7 @@ async function executeRuleCommands(
     log.info(`Running: \`${command.run}\` from ${cwd}`)
     const opts: { cwd: string; timeout?: number; env?: Record<string, string> } = { cwd }
     if (command.timeout) opts.timeout = command.timeout
-    // One release (Ficus rename): webhook scripts may still read the TAU_* names.
-    if (resolvedEnv) opts.env = withLegacyEnvAliases(resolvedEnv)
+    if (resolvedEnv) opts.env = resolvedEnv
 
     const result = await execAsync(command.run, opts)
     if (result.stdout) {

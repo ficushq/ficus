@@ -9,7 +9,7 @@ import { join } from 'node:path'
 // Bun 1.4.2 get_stdio marks these extra pipes UnownedFd after exposing them.
 // Isolate the reproducer: a broken runtime must not corrupt this test runner.
 test('collected extra-pipe subprocesses leave newly opened files intact', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'tau-extra-pipe-regression-'))
+  const dir = await mkdtemp(join(tmpdir(), 'ficus-extra-pipe-regression-'))
   let child: ReturnType<typeof Bun.spawn> | undefined
   try {
     const script = join(dir, 'probe.mjs')

@@ -1359,7 +1359,7 @@ export class VmSandboxManager implements ISandboxManager {
     this.touch(state)
 
     const stream = state.client.shell()
-    // Inject the live Core URL so the terminal's `tau` CLI reaches the current
+    // Inject the live Core URL so the terminal's `ficus` CLI reaches the current
     // Core even if the box baked a now-stale URL at creation (mirrors k8s).
     stream.write({
       spawn: {
@@ -1907,7 +1907,7 @@ export class VmSandboxManager implements ISandboxManager {
    * The live Core URL injected as `FICUS_API_URL` for bash tool commands. Unlike
    * k8s (which derives a cluster-DNS URL from the pod namespace), a box already
    * baked its correct callback URL at ensure time, so we re-inject exactly that,
-   * keeping the box's `tau` CLI pointed at the right Core even if it baked a
+   * keeping the box's `ficus` CLI pointed at the right Core even if it baked a
    * now-stale reverse-tunnel port.
    *
    * Deliberately NO `getAppUrl()` fallback: `state.apiUrl` is always truthy for

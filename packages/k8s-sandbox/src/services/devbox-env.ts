@@ -157,10 +157,10 @@ export function getDevboxShellEnv(): string {
   // Keep managed tools first, and retain the comfort PATH as a fallback.
   return [
     cachedShellEnv,
-    '_tau_comfort_path="${PATH:-}"',
+    '_ficus_comfort_path="${PATH:-}"',
     cachedManagedToolchainEnv,
-    'export PATH="${PATH}${_tau_comfort_path:+:$_tau_comfort_path}"',
-    'unset _tau_comfort_path',
+    'export PATH="${PATH}${_ficus_comfort_path:+:$_ficus_comfort_path}"',
+    'unset _ficus_comfort_path',
   ].join('\n')
 }
 

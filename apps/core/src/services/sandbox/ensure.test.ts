@@ -152,7 +152,7 @@ describe('squad-memory', () => {
 
 describe('ensureWorkspaceSandbox admission effect boundaries', () => {
   it('authorizes physical ensure before invoking the manager adapter', async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-effect-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-effect-'))
     const order: string[] = []
     const manager = {
       ensureSandbox: async () => order.push('adapter'),
@@ -193,7 +193,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
       },
       hasSandbox: (_id: string) => false,
     }
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-docker-solo-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-docker-solo-'))
 
     try {
       await ensureWorkspaceSandbox(
@@ -223,7 +223,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
 
   it('(squad member) calls ensureSquadWorkspace, passes squadId, mounts NO memory, sets privateVolumePath', async () => {
     const squadId = randomUUID()
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-docker-squad-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-docker-squad-'))
     const fakeCliSrc = join(tmp, 'ficus.js')
     const fakeHome = join(tmp, 'home')
     writeFileSync(fakeCliSrc, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
@@ -273,7 +273,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
 
   it('(k8s, squad member) forwards squadId and privateStorageKey to manager options', async () => {
     const squadId = randomUUID()
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-k8s-squad-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-k8s-squad-'))
     const fakeCliSrc = join(tmp, 'ficus.js')
     writeFileSync(fakeCliSrc, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
 
@@ -344,7 +344,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
       sandboxId = 'agent_heal_1',
       setupProgress?: (event: SandboxSetupProgressEvent) => void
     ) {
-      const tmp = mkdtempSync(join(tmpdir(), 'tau-k8s-heal-'))
+      const tmp = mkdtempSync(join(tmpdir(), 'ficus-k8s-heal-'))
       const fakeCliSrc = join(tmp, 'ficus.js')
       writeFileSync(fakeCliSrc, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
 
@@ -480,7 +480,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
 
   it('(solo agent) routes to the vm manager ensureSandbox with agent opts + machineId, skipping k8s CLI staging', async () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'vm'
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-solo-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-vm-solo-'))
     let captured: any = null
     const manager = {
       ensureSandbox: async (_id: string, opts: any) => {
@@ -514,7 +514,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
   it('(squad member) passes squadId + shared squad workspace to the vm manager', async () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squadId = randomUUID()
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-squad-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-vm-squad-'))
     let captured: any = null
     const manager = {
       ensureSandbox: async (_id: string, opts: any) => {
@@ -545,7 +545,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
 
   it('(system-manager) reaches ensureSandbox without drift-recreate (non-agent_ prefix)', async () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'vm'
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-sysmgr-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-vm-sysmgr-'))
     let ensureCalls = 0
     let recreateCalls = 0
     let captured: any = null
@@ -633,7 +633,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     const agent = await makeAgent('manager')
     const sandboxId = `agent_${agent.id}`
     privateDirsToClean.push(sandboxId)
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-generation-canonical-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-generation-canonical-'))
     const captured: ManagerSandboxOptions[] = []
     const deps = fakeDeps(tmp)
     deps.getSandboxManager = () =>
@@ -662,7 +662,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     const agent = await makeAgent('manager')
     const sandboxId = `agent_${agent.id}`
     privateDirsToClean.push(sandboxId)
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-host-generation-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-host-generation-'))
     let capturedGeneration: string | undefined
     const deps: EnsureWorkspaceDeps = { ...fakeDeps(tmp), isHostRuntime: () => true }
     deps.getSandboxManager = () =>
@@ -693,7 +693,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     const agent = await makeAgent('manager')
     const sandboxId = `agent_${agent.id}`
     privateDirsToClean.push(sandboxId)
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-identity-solo-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-identity-solo-'))
 
     try {
       await ensureWorkspaceSandbox({ sandboxId, workspaceId: sandboxId }, fakeDeps(tmp))
@@ -731,7 +731,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     const agent = await makeAgent('manager')
     const sandboxId = `agent_${agent.id}`
     privateDirsToClean.push(sandboxId)
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-identity-race-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-identity-race-'))
 
     const ensureIdentitySpy = spyOn(identityModule, 'ensureAgentIdentity')
 
@@ -768,7 +768,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     const agent = await makeAgent('manager')
     const sandboxId = `agent_${agent.id}`
     privateDirsToClean.push(sandboxId)
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-identity-degraded-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-identity-degraded-'))
 
     try {
       await identityModule.ensureAgentIdentity(agent, sandboxId)
@@ -791,7 +791,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     // agent-warmup.ts's existing check defensively.
     const sandboxId = `agent_${agent.id}`
     privateDirsToClean.push(sandboxId)
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-identity-sysmgr-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-identity-sysmgr-'))
 
     try {
       await ensureWorkspaceSandbox({ sandboxId, workspaceId: sandboxId }, fakeDeps(tmp))
@@ -1072,7 +1072,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
       metadata: { sandbox: { toolchain: { packages: ['python3@latest'], setupScript: 'echo ready' } } },
     })
     const gateSandboxUuid = randomUUID()
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-toolchain-gate-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-toolchain-gate-'))
     const calls: string[] = []
     try {
       await ensureWorkspaceSandbox(
@@ -1096,7 +1096,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
       metadata: { sandbox: { toolchain: { packages: ['python3@latest'] } } },
     })
     const gateSandboxUuid = randomUUID()
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-toolchain-gate-fail-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-toolchain-gate-fail-'))
     const calls: string[] = []
     const manager = toolchainManager(calls, async () => {
       throw new ToolchainAdapterError('install_failed', 1)
@@ -1122,7 +1122,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({ name: `toolchain none ${randomUUID()}`, purpose: 'test' })
     const gateSandboxUuid = randomUUID()
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-toolchain-none-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-toolchain-none-'))
     const calls: string[] = []
     try {
       await ensureWorkspaceSandbox(
@@ -1166,7 +1166,7 @@ describe('(k8s) drift recreate is serialized across concurrent callers', () => {
       }),
       hasSandbox: () => true,
     }
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-k8s-heal-race-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-k8s-heal-race-'))
     const fakeCliSrc = join(tmp, 'ficus.js')
     writeFileSync(fakeCliSrc, '#!/usr/bin/env bun\nconsole.log("ok")\n', { mode: 0o755 })
     const deps = {

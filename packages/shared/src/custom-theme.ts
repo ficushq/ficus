@@ -36,18 +36,6 @@ export type CustomThemeVariants = CustomThemeVariantsDual | CustomThemeVariantsU
 /** The format marker every exported or stored custom-theme document carries. */
 export const CUSTOM_THEME_FORMAT = 'ficus-custom-theme'
 
-/** Markers an import accepts. Files exported before the Ficus rename carry the old marker; validation rewrites it
- * to CUSTOM_THEME_FORMAT. Remove the old marker in the Wave 3 sweep. */
-const ACCEPTED_CUSTOM_THEME_FORMATS: readonly string[] = [CUSTOM_THEME_FORMAT, 'tau-custom-theme']
-
-/** Built-in bases renamed with the Ficus rename, applied only to a document carrying the pre-rename marker (the same
- * mapping Core migration 0192 applied to stored documents): the purple base keeps its look as Iris, and Forest is
- * now Ficus. Remove with the old marker in the Wave 3 sweep. */
-const PRE_RENAME_BASES: ReadonlyMap<unknown, string> = new Map([
-  ['tau', 'iris'],
-  ['forest', 'ficus'],
-])
-
 /** v2: a preset covers both light and dark (or a single constant variant for
  * unified bases) so it follows the Light/Dark/System toggle. v1 documents
  * (one concrete `appearance` + `overrides`) still load; validateCustomTheme
@@ -123,14 +111,12 @@ export function validateCustomTheme(raw: string, builtins: readonly ThemeDescrip
   }
   if (!input || typeof input !== 'object' || Array.isArray(input)) return fail('Theme document must be an object.')
   const doc = input as Record<string, unknown>
-  if (!ACCEPTED_CUSTOM_THEME_FORMATS.includes(doc.format as string))
-    return fail(`Expected format ${CUSTOM_THEME_FORMAT}.`)
+  if (doc.format !== CUSTOM_THEME_FORMAT) return fail(`Expected format ${CUSTOM_THEME_FORMAT}.`)
   if (doc.version !== 1 && doc.version !== 2)
     return fail('Unsupported theme version. This app supports version 1 or 2.')
   if (typeof doc.name !== 'string' || !doc.name.trim() || [...doc.name].length > 40)
     return fail('Theme name must be 1–40 characters.')
-  const baseId = doc.format === CUSTOM_THEME_FORMAT ? doc.base : (PRE_RENAME_BASES.get(doc.base) ?? doc.base)
-  const base = builtins.find((theme) => theme.id === baseId)
+  const base = builtins.find((theme) => theme.id === doc.base)
   if (!base) return fail('Choose a known built-in base theme.')
 
   let palette: ThemePalette | undefined

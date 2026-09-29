@@ -25,9 +25,9 @@ describe('local deployment browser auth', () => {
     expect(localDeploymentCookieName(ID)).toBe(`ficus_app_${ID}`)
   })
 
-  it('never reads the pre-rename tau_app_<id> cookie', () => {
+  it('never reads an old_app_<id> cookie', () => {
     const request = new Request(`https://t.example/api/app/${ID}/assets/index-abc.js`, {
-      headers: { cookie: `tau_app_${ID}=abc` },
+      headers: { cookie: `old_app_${ID}=abc` },
     })
     expect(presentedLocalDeploymentToken(request, ID).token).toBeNull()
   })

@@ -16,25 +16,25 @@ describe('buildSandboxChildEnv', () => {
       HOME: '/root',
       USER: 'root',
       LANG: 'C.UTF-8',
-      APP_URL: 'https://tau.example',
+      APP_URL: 'https://ficus.example',
       GITHUB_TOKEN: 'ghs_xxx',
       GH_TOKEN: 'ghs_xxx',
       GIT_USER_NAME: 'Ficus Bot',
-      GIT_USER_EMAIL: 'bot@tau',
+      GIT_USER_EMAIL: 'bot@ficus',
       SSL_CERT_FILE: '/etc/ssl/cert.pem',
     })
     expect(env.HOME).toBe('/root')
     expect(env.USER).toBe('root')
     expect(env.LANG).toBe('C.UTF-8')
-    expect(env.APP_URL).toBe('https://tau.example')
+    expect(env.APP_URL).toBe('https://ficus.example')
     expect(env.GITHUB_TOKEN).toBe('ghs_xxx')
     expect(env.GH_TOKEN).toBe('ghs_xxx')
     expect(env.GIT_USER_NAME).toBe('Ficus Bot')
-    expect(env.GIT_USER_EMAIL).toBe('bot@tau')
+    expect(env.GIT_USER_EMAIL).toBe('bot@ficus')
     expect(env.SSL_CERT_FILE).toBe('/etc/ssl/cert.pem')
   })
 
-  it('forwards prefix-matched keys (FICUS_, TAU_, NIX_, DEVBOX_, XDG_, LC_)', () => {
+  it('forwards prefix-matched keys (FICUS_, NIX_, DEVBOX_, XDG_, LC_)', () => {
     const env = buildSandboxChildEnv({
       FICUS_SANDBOX_ID: 'sb1',
       FICUS_API_URL: 'http://tau-api:3000',
@@ -53,21 +53,15 @@ describe('buildSandboxChildEnv', () => {
     expect(env.LC_CTYPE).toBe('C.UTF-8')
   })
 
-  it('keeps both FICUS_ and TAU_ spellings for one release', () => {
-    const env = buildSandboxChildEnv({ FICUS_BOX_HOME: '/h', TAU_BOX_HOME: '/h' })
-    expect(env.FICUS_BOX_HOME).toBe('/h')
-    expect(env.TAU_BOX_HOME).toBe('/h')
-  })
-
-  it('emits a TAU_ alias for every FICUS_ key, overrides included (dual-emit, one release)', () => {
+  it('passes FICUS_ keys through and drops another prefix', () => {
     const env = buildSandboxChildEnv(
-      { FICUS_API_URL: 'http://tau-api:3000', FICUS_SANDBOX_ID: 'sb1' },
-      { FICUS_TOKEN: 'agent-token', FICUS_API_URL: 'http://override:3000' }
+      { FICUS_BOX_HOME: '/h', OLD_BOX_HOME: '/h', FICUS_SANDBOX_ID: 'sb1' },
+      { FICUS_TOKEN: 'agent-token' }
     )
-    expect(env.TAU_TOKEN).toBe('agent-token')
-    expect(env.FICUS_API_URL).toBe('http://override:3000')
-    expect(env.TAU_API_URL).toBe('http://override:3000')
-    expect(env.TAU_SANDBOX_ID).toBe('sb1')
+    expect(env.FICUS_BOX_HOME).toBe('/h')
+    expect(env.OLD_BOX_HOME).toBeUndefined()
+    expect(env.FICUS_TOKEN).toBe('agent-token')
+    expect(Object.keys(env).filter((key) => key.endsWith('_TOKEN'))).toEqual(['FICUS_TOKEN'])
   })
 
   it('excludes KUBERNETES_* and other non-allowlisted keys', () => {
@@ -153,9 +147,9 @@ describe("git's own identity variables reach the agent's git", () => {
   // runs, and the identity fix silently becomes a no-op on k8s and VM while
   // still appearing to work on Docker (which inherits container env directly).
   const identity = {
-    GIT_AUTHOR_NAME: 'tauagent',
+    GIT_AUTHOR_NAME: 'ficusagent',
     GIT_AUTHOR_EMAIL: 'agent@users.noreply.github.com',
-    GIT_COMMITTER_NAME: 'tauagent',
+    GIT_COMMITTER_NAME: 'ficusagent',
     GIT_COMMITTER_EMAIL: 'agent@users.noreply.github.com',
   }
 
@@ -170,9 +164,9 @@ describe("git's own identity variables reach the agent's git", () => {
   })
 
   it('still forwards the legacy GIT_USER_* pair the image translates', () => {
-    const env = buildSandboxChildEnv({ GIT_USER_NAME: 'tauagent', GIT_USER_EMAIL: 'agent@tau' })
-    expect(env.GIT_USER_NAME).toBe('tauagent')
-    expect(env.GIT_USER_EMAIL).toBe('agent@tau')
+    const env = buildSandboxChildEnv({ GIT_USER_NAME: 'ficusagent', GIT_USER_EMAIL: 'agent@ficus' })
+    expect(env.GIT_USER_NAME).toBe('ficusagent')
+    expect(env.GIT_USER_EMAIL).toBe('agent@ficus')
   })
 })
 

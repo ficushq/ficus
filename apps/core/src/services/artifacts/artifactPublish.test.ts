@@ -19,7 +19,7 @@ describe('artifact publish service', () => {
   let agentWorkspacePath: string
 
   beforeEach(async () => {
-    agentWorkspacePath = await mkdtemp(join(tmpdir(), 'tau-artifact-publish-'))
+    agentWorkspacePath = await mkdtemp(join(tmpdir(), 'ficus-artifact-publish-'))
   })
 
   afterEach(async () => {

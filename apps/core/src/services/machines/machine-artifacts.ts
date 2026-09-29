@@ -8,7 +8,7 @@ import type { SshRunner } from './ssh'
  * Generic machine-artifact delivery.
  *
  * An "artifact" is a named, content-versioned set of files core builds locally
- * and pushes to every machine over SSH (the sandbox-server bundle, the tau
+ * and pushes to every machine over SSH (the sandbox-server bundle, the Ficus
  * CLI, ...). {@link ensureArtifact} generalizes the server-bundle pipeline:
  * build → skip when the machine's recorded version for that artifact already
  * matches → stream each file via `sudo install` into a staging path and rename
@@ -68,12 +68,12 @@ export interface EnsureArtifactDeps {
  *  artifact to one host are routine. Sharing one fixed staging name made them
  *  collide: each `install` overwrote the shared path, the first `mv` consumed
  *  it, and every loser failed with
- *      mv: cannot stat '<path>.tau-new': No such file or directory
+ *      mv: cannot stat '<path>.ficus-new': No such file or directory
  *  which surfaced to the operator as a failed agent execution (observed live).
  *  A unique name per attempt makes concurrent pushes independent; each still
  *  lands atomically, and last-writer-wins on the destination is harmless
  *  because every pusher is writing byte-identical content for the same version. */
-const ARTIFACT_STAGING_SUFFIX = '.tau-new'
+const ARTIFACT_STAGING_SUFFIX = '.ficus-new'
 
 function stagingPathFor(remotePath: string): string {
   return `${remotePath}${ARTIFACT_STAGING_SUFFIX}.${randomUUID().slice(0, 8)}`
@@ -118,7 +118,7 @@ function buildSudoInstallCommand(file: ArtifactFile): string {
  * pushed, so a failed push leaves the recorded version unchanged (next ensure
  * retries every file; each file lands atomically, and a re-push of an
  * already-current file is harmless). A push that dies between the install and
- * the rename leaves a `.tau-new` file beside the destination, which the next
+ * the rename leaves a `.ficus-new` file beside the destination, which the next
  * successful push overwrites; the destination itself is never half-written.
  *
  * The stamp goes through {@link stampArtifactVersionDefault}'s in-DB jsonb

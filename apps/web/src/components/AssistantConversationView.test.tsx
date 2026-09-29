@@ -351,7 +351,7 @@ test('assistant summaries show nested conversations as full rows and task update
   const { queries, assistantQueries } = await import('../queryOptions')
   f.queryClient.setQueryData(queries.agents.detail('delegate').queryKey, {
     id: 'delegate',
-    squadId: 'tau',
+    squadId: 'ficus',
     agentTypeId: 'engineer',
     status: 'active',
     metadata: { name: 'Riley', purpose: 'Fix inline PR rows' },

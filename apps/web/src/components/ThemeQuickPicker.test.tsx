@@ -69,7 +69,7 @@ async function renderPicker({
   activePreset?: ThemePreset
 } = {}) {
   const dom = await acquireDomHarness({
-    url: 'https://tau.test',
+    url: 'https://ficus.test',
     configureWindow: (window) => {
       window.matchMedia = (() => ({
         matches: dark,

@@ -47,7 +47,7 @@ function buildSquadBashDescription(workspaceMount: string): string {
  *                              `~/workspace` on vm). The Docker branch is structurally
  *                              unchanged — its cwd comes from the warm box's own
  *                              `sandbox.workspaceMount` (set in A2).
- * @param tauToken              Per-agent scoped token for `tau` CLI auth inside the box.
+ * @param ficusToken              Per-agent scoped token for `ficus` CLI auth inside the box.
  * @param agentId               The calling agent's id — used to register a recovery watch
  *                              (and wake this agent) when the warm box turns out to be down.
  *
@@ -58,7 +58,7 @@ export function createSquadBashTool(
   warmSandboxId: string,
   squadWorkspaceHostPath: string,
   squadId: string,
-  tauToken?: string,
+  ficusToken?: string,
   agentId?: string,
   invocationOwnerId?: string,
   dependencies = {
@@ -77,10 +77,10 @@ export function createSquadBashTool(
   // client, so both use the client-based bash tool. Docker execs against the
   // host workspace path.
   if (isHostRuntime()) {
-    tool = dependencies.createHostBashTool(workspaceMount, { tauToken, squadId, agentId })
+    tool = dependencies.createHostBashTool(workspaceMount, { ficusToken, squadId, agentId })
   } else if (dependencies.isRemoteSandboxRuntime()) {
     const manager = dependencies.getSandboxManager() as unknown as SandboxToolsManager
-    tool = dependencies.createK8sSandboxedBashTool(workspaceMount, warmSandboxId, manager, tauToken, {
+    tool = dependencies.createK8sSandboxedBashTool(workspaceMount, warmSandboxId, manager, ficusToken, {
       agentId,
       invocationOwnerId,
     })
@@ -89,7 +89,7 @@ export function createSquadBashTool(
       squadWorkspaceHostPath,
       squadWorkspaceHostPath,
       warmSandboxId,
-      tauToken
+      ficusToken
     )
   }
 

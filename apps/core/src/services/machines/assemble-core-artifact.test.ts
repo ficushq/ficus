@@ -120,7 +120,10 @@ async function makeCheckout(): Promise<string> {
   // Decoys: none of these may appear inside the artifact.
   // The repo's own root package.json in particular: the artifact carries a
   // GENERATED marker instead, never this one.
-  await write(join(root, 'package.json'), '{"name":"tau","workspaces":["apps/*"],"devDependencies":{"eslint":"^9"}}\n')
+  await write(
+    join(root, 'package.json'),
+    '{"name":"ficus","workspaces":["apps/*"],"devDependencies":{"eslint":"^9"}}\n'
+  )
   await write(join(root, 'src/index.ts'), 'export const x = 1\n')
   await write(join(root, 'apps/core/src/index.ts'), 'export const y = 1\n')
   await write(join(root, '.git/HEAD'), 'ref: refs/heads/main\n')
@@ -350,7 +353,7 @@ describe('assembleCoreArtifact', () => {
     expect(marker.trim()).toBe('{"name":"ficus","private":true,"workspaces":[]}')
 
     // apps/core/src/lib/web-dist.ts walks UP from the running bundle's
-    // directory looking for a package.json named "ficus" or "tau" (or carrying
+    // directory looking for a package.json named "ficus" (or carrying
     // a workspaces array) and then expects <root>/apps/web/dist. Without the
     // marker the search falls off the top of the tree and the API mounts no
     // web UI at all. This mirrors that walk.
@@ -473,13 +476,9 @@ describe('build-core-artifact.sh', () => {
     // localhost, so a build that somehow reaches the DB fails fast instead of
     // hanging on an unroutable host.
     expect(script).toContain('postgres://build:build@localhost:5432/build')
-    // Both spellings for one release (Ficus rename): the in-process bridge
-    // would promote an inherited TAU_ name to FICUS_ inside the build.
-    for (const prefix of ['FICUS', 'TAU']) {
-      expect(script).toContain(`unset ${prefix}_TEST_MODE`)
-      expect(script).toContain(`unset ${prefix}_ROOT`)
-      expect(script).toContain(`unset ${prefix}_REPO_ROOT`)
-    }
+    expect(script).toContain('unset FICUS_TEST_MODE')
+    expect(script).toContain('unset FICUS_ROOT')
+    expect(script).toContain('unset FICUS_REPO_ROOT')
   })
 
   it('installs reproducibly and prebuilds the machine bundles as a subprocess', async () => {

@@ -17,7 +17,7 @@ describe('resolveWebDist', () => {
   beforeEach(() => {
     // Resolve symlinks (e.g. macOS /var -> /private/var) so expected paths match
     // the realpath-resolved cwd that resolveWebDist derives from process.cwd().
-    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-web-dist-')))
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-web-dist-')))
     rootless = join(tmp, 'rootless')
     mkdirSync(rootless, { recursive: true })
   })
@@ -39,8 +39,8 @@ describe('resolveWebDist', () => {
   it('expands a leading ~ in FICUS_WEB_DIST', () => {
     // resolve() alone turns `~/web` into `<cwd>/~/web` — a directory literally
     // named `~`. Expansion has to happen before resolution.
-    process.env.FICUS_WEB_DIST = '~/tau-web-dist-fixture'
-    expect(resolveWebDist(rootless)).toBe(join(homedir(), 'tau-web-dist-fixture'))
+    process.env.FICUS_WEB_DIST = '~/ficus-web-dist-fixture'
+    expect(resolveWebDist(rootless)).toBe(join(homedir(), 'ficus-web-dist-fixture'))
   })
 
   it('prefers the repo root discovered by walking up from the module directory', () => {
@@ -48,7 +48,7 @@ describe('resolveWebDist', () => {
     const repoRoot = join(tmp, 'repo')
     const dist = join(repoRoot, 'apps', 'web', 'dist')
     mkdirSync(dist, { recursive: true })
-    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
     // cwd deliberately elsewhere: only the walk-up can produce this answer.
     process.chdir(tmp)
     expect(resolveWebDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
@@ -70,7 +70,7 @@ describe('resolveWebDist', () => {
     const repoRoot = join(tmp, 'repo')
     const dist = join(repoRoot, 'apps', 'web', 'dist')
     mkdirSync(dist, { recursive: true })
-    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
     process.chdir(repoRoot)
     expect(resolveWebDist(rootless)).toBe(dist)
   })

@@ -6,7 +6,7 @@ import {
   ShortTermMemoryContext,
   createShortTermMemoryContextExtension,
 } from './short-term-memory-context'
-import { TauResourceLoader } from './resource-loader'
+import { FicusResourceLoader } from './resource-loader'
 
 function fixture() {
   const session = SessionManager.inMemory()
@@ -135,7 +135,7 @@ describe('short-term memory recovery context', () => {
 
   test('resource loader presents context without changing its system prompt', async () => {
     const f = fixture()
-    const loader = await TauResourceLoader.create('stable system prompt')
+    const loader = await FicusResourceLoader.create('stable system prompt')
     loader.setShortTermMemoryContext(f.context)
     const extension = loader.getExtensions().extensions.find((e) => e.path === 'ficus:short-term-memory-context')!
     const keepId = f.keep()

@@ -499,7 +499,7 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     }
     const validated = validateCustomTheme(JSON.stringify(doc), BUILT_IN_THEMES)
     if (!validated.ok) throw new Error(validated.error)
-    const dom = await acquireDomHarness({ url: 'https://tau.test' })
+    const dom = await acquireDomHarness({ url: 'https://ficus.test' })
     try {
       const style = document.createElement('style')
       style.textContent = palettes
