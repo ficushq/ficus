@@ -150,7 +150,7 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
           {iconLabels[iconType]}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-primary truncate group-hover:text-status-progress-600 dark:group-hover:text-status-progress-400 transition-colors">
+          <p className="text-xs font-medium text-primary truncate group-hover:text-accent-hover transition-colors">
             {fileName}
           </p>
           <p className="text-[10px] text-placeholder truncate">{filePath}</p>

@@ -144,7 +144,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     onClick={() => open.mutate()}
                     disabled={isBusy}
-                    className="ficus-button rounded bg-status-progress-600/15 px-2 py-0.5 text-xs font-medium text-status-progress-600 hover:bg-status-progress-600/25 disabled:opacity-50 dark:text-status-progress-400"
+                    className="ficus-button rounded bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent-light hover:bg-accent/25 disabled:opacity-50"
                   >
                     Open
                   </button>

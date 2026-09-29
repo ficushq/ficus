@@ -239,11 +239,11 @@ function AssistantMessageRow({
             <button
               type="button"
               onClick={() => tts.stop()}
-              className="ficus-button flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors text-status-progress-600 dark:text-status-progress-400 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50"
+              className="ficus-button flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors text-accent-light bg-accent/10 hover:bg-accent/20"
               title={tts.isSynthesizing ? 'Loading...' : 'Stop'}
             >
               {tts.isSynthesizing ? (
-                <span className="inline-block w-3.5 h-3.5 border-2 border-status-progress-300 border-t-status-progress-600 rounded-full animate-spin" />
+                <span className="inline-block w-3.5 h-3.5 border-2 border-accent-light/30 border-t-accent-light rounded-full animate-spin" />
               ) : (
                 <StopIcon className="w-3.5 h-3.5" />
               )}
@@ -1390,7 +1390,7 @@ export function ChatView({
         'ficus-button',
         'p-1.5 rounded-md transition-colors shrink-0',
         showRawText
-          ? 'text-status-progress-600 dark:text-status-progress-400 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50'
+          ? 'text-accent-light bg-accent/10 hover:bg-accent/20'
           : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
       )}
       aria-label={showRawText ? 'Show rendered markdown' : 'Show raw text'}
@@ -1631,8 +1631,7 @@ export function ChatView({
           ref={inputContainerRef}
           className={clsx(
             'px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative',
-            isDragging &&
-              'ring-2 ring-status-progress-400 ring-inset bg-status-progress-50 dark:bg-status-progress-900/30'
+            isDragging && 'ring-2 ring-accent-light ring-inset bg-accent/10'
           )}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -1686,8 +1685,8 @@ export function ChatView({
 
             {/* Drop overlay */}
             {isDragging && (
-              <div className="absolute inset-0 bg-status-progress-100/80 dark:bg-status-progress-900/80 flex items-center justify-center z-10 pointer-events-none rounded-b-lg">
-                <div className="text-status-progress-600 dark:text-status-progress-300 font-medium flex items-center gap-2">
+              <div className="absolute inset-0 bg-selection/90 flex items-center justify-center z-10 pointer-events-none rounded-b-lg">
+                <div className="text-accent-light font-medium flex items-center gap-2">
                   <FileIcon className="h-6 w-6" />
                   Drop files here
                 </div>
@@ -1837,7 +1836,7 @@ export function ChatView({
                       <button
                         type="button"
                         onClick={() => retryImageUpload(img.id)}
-                        className="ficus-button mt-1 block w-16 text-xs text-status-progress-600 dark:text-status-progress-400 hover:underline"
+                        className="ficus-button mt-1 block w-16 text-xs text-accent-light hover:text-accent-hover hover:underline"
                         aria-label="Retry image upload"
                       >
                         Re-upload
@@ -1940,7 +1939,7 @@ export function ChatView({
                 disabled={disabled || isUploading || isSubmitting}
                 rows={1}
                 onFocus={(event) => resizeTextarea(event.currentTarget)}
-                className="ficus-field w-full min-h-[46px] md:min-h-[38px] shrink-0 rounded-md border-input-border bg-input-bg text-primary focus:border-status-progress-500 focus:ring-status-progress-500 px-3 py-2.5 md:py-2 border disabled:bg-surface-secondary resize-none max-h-40 overflow-y-auto text-base md:text-sm"
+                className="ficus-field w-full min-h-[46px] md:min-h-[38px] shrink-0 rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2.5 md:py-2 border disabled:bg-surface-secondary resize-none max-h-40 overflow-y-auto text-base md:text-sm"
               />
               {/* File mention autocomplete dropdown */}
               {mentionState.isOpen && squadId && (
@@ -2080,15 +2079,15 @@ export function ChatView({
                           'ficus-button',
                           'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
                           tts.isPlaying || tts.isSynthesizing
-                            ? 'bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-600 dark:text-status-progress-400'
+                            ? 'bg-accent/15 text-accent-light'
                             : tts.enabled
-                              ? 'text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30'
+                              ? 'text-accent-light hover:bg-accent/10'
                               : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
                         )}
                         title={tts.enabled ? 'Disable auto-speak' : 'Enable auto-speak'}
                       >
                         {tts.isSynthesizing ? (
-                          <span className="inline-block w-5 h-5 border-2 border-status-progress-300 border-t-status-progress-600 rounded-full animate-spin" />
+                          <span className="inline-block w-5 h-5 border-2 border-accent-light/30 border-t-accent-light rounded-full animate-spin" />
                         ) : tts.enabled ? (
                           <SpeakerOnIcon className={clsx('w-5 h-5', tts.isPlaying && 'animate-pulse')} />
                         ) : (
@@ -2393,7 +2392,7 @@ function NavigateButtons({ navigations }: { navigations: { path: string; id: str
         <Link
           key={nav.id}
           to={nav.path}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-status-progress-50 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-300 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 transition-colors"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-accent/10 text-accent-light hover:bg-accent/20 transition-colors"
         >
           {nav.path}
           <span aria-hidden="true">&rarr;</span>

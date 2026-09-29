@@ -250,7 +250,7 @@ function ImageAttachments({ imageIds, variant = 'standard' }: { imageIds: string
             <img
               src={srcs[id]}
               alt="Inbox attachment"
-              className="h-20 w-20 rounded border border-status-progress-300/40 object-cover transition-colors hover:border-status-progress-300 dark:border-status-progress-400/30"
+              className="h-20 w-20 rounded border border-accent/30 object-cover transition-colors hover:border-accent-light"
               loading="lazy"
             />
           </a>
@@ -266,7 +266,7 @@ function ImageAttachments({ imageIds, variant = 'standard' }: { imageIds: string
           <img
             src={srcs[id]}
             alt="Attached image"
-            className="max-h-40 max-w-full rounded border border-status-progress-400/30 hover:border-status-progress-300 transition-colors"
+            className="max-h-40 max-w-full rounded border border-accent/30 hover:border-accent-light transition-colors"
             loading="lazy"
           />
         </a>
@@ -435,7 +435,7 @@ function InboxDeliveryMessageCard({
         </span>
       </div>
 
-      <div className="w-full rounded-lg border border-status-progress-300/40 bg-status-progress-50/70 p-3 text-left text-sm text-status-progress-950 dark:border-status-progress-400/20 dark:bg-status-progress-950/30 dark:text-status-progress-100">
+      <div className="w-full rounded-lg border border-accent/30 bg-accent/10 p-3 text-left text-sm text-primary">
         {imageIds.length > 0 && <ImageAttachments imageIds={imageIds} variant="inbox" />}
 
         {showRaw ? (
@@ -455,7 +455,7 @@ function InboxDeliveryMessageCard({
                   <button
                     type="button"
                     onClick={() => setWsOpen({ workStreamId: summary.workStreamId!, squadId: summary.squadId! })}
-                    className="ficus-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-status-progress-700 hover:text-status-progress-900 dark:text-status-progress-300 dark:hover:text-status-progress-200"
+                    className="ficus-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-light hover:text-accent-hover"
                   >
                     <WorkStreamIcon className="h-3.5 w-3.5 shrink-0" />
                     View work stream
@@ -501,7 +501,7 @@ function InboxCardBody({ body, className }: { body: string; className?: string }
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="ficus-button mt-1 text-xs font-medium text-status-progress-700 underline decoration-status-progress-700/30 underline-offset-2 hover:text-status-progress-900 hover:decoration-status-progress-700/70 dark:text-status-progress-300 dark:hover:text-status-progress-200"
+          className="ficus-button mt-1 text-xs font-medium text-accent-light underline decoration-accent-light/30 underline-offset-2 hover:text-accent-hover hover:decoration-accent-hover/70"
         >
           {expanded ? 'Show less' : 'Show more'}
         </button>

@@ -25,8 +25,8 @@ export function SchemaFieldInput({
 
   const label = name.charAt(0).toUpperCase() + name.slice(1)
   const inputClasses = clsx(
-    'block w-full rounded-md border-input-border bg-input-bg text-primary focus:border-status-progress-500 focus:ring-status-progress-500 px-3 py-2.5 md:py-2 border text-base md:text-sm transition-shadow',
-    highlighted && 'ring-2 ring-status-progress-200 dark:ring-status-progress-700'
+    'block w-full rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2.5 md:py-2 border text-base md:text-sm transition-shadow',
+    highlighted && 'ring-2 ring-accent/50'
   )
 
   if (schema.type === 'boolean') {
@@ -39,7 +39,7 @@ export function SchemaFieldInput({
             onChange={(e) => onChange(e.target.checked)}
             className={clsx(
               'rounded border-input-border text-accent-light focus:ring-accent w-4 h-4 transition-shadow',
-              highlighted && 'ring-2 ring-status-progress-200 dark:ring-status-progress-700'
+              highlighted && 'ring-2 ring-accent/50'
             )}
           />
           {label}

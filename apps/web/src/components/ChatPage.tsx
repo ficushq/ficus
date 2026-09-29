@@ -421,7 +421,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                 className={clsx(
                   'ficus-button',
                   'w-full text-left px-3 py-3 md:py-2.5 border-b border-th-border hover:bg-surface-hover group',
-                  agentId === agent.id && 'bg-status-progress-50 dark:bg-status-progress-900/20'
+                  agentId === agent.id && 'bg-selection'
                 )}
                 title={`${stableName} · ${agent.agentTypeId} · ${agent.id}`}
               >

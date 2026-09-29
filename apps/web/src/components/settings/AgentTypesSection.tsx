@@ -431,9 +431,7 @@ function AgentTypeRow({
               </span>
             )}
             {!agentType.hasTemplate && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-400">
-                Custom
-              </span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent-light">Custom</span>
             )}
           </div>
           <p className="text-xs text-muted mt-1">{agentType.id}</p>
