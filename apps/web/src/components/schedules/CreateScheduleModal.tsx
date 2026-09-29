@@ -7,7 +7,7 @@ import { schedulesApi } from '../../api/schedules'
 import { queryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'
 import { Modal } from '../Modal'
-import { ClipboardIcon } from '../icons'
+import { ClipboardIcon, WarningIcon } from '../icons'
 import type { ScheduleScopeType, ScheduleAction, CreateScheduleInput, WebhookEnableResult } from '@ficus/shared'
 
 type ScheduleActionType = ScheduleAction['type']
@@ -173,8 +173,8 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           </div>
 
           <div className="bg-status-review-50 dark:bg-status-review-900/20 border border-status-review-200 dark:border-status-review-800 rounded p-3 space-y-2">
-            <p className="text-sm text-status-review-700 dark:text-status-review-300 font-medium">
-              ⚠️ Save this token - it will not be shown again!
+            <p className="flex items-center gap-1.5 text-sm text-status-review-700 dark:text-status-review-300 font-medium">
+              <WarningIcon className="h-4 w-4 shrink-0" /> Save this token - it will not be shown again!
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 text-xs font-mono bg-chrome-toggle-thumb dark:bg-status-neutral-900 px-2 py-1.5 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">

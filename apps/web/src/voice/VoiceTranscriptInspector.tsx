@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useState, type ReactNode } from 'react'
 import { MarkdownContent } from '../components/MarkdownContent'
-import { SpinnerIcon, StopIcon } from '../components/icons'
+import { ChevronRightIcon, SpinnerIcon, StopIcon } from '../components/icons'
 import {
   genericToolRenderers,
   type ToolRenderers,
@@ -206,9 +206,9 @@ function ToolTranscriptEntry({
             <span className="truncate text-muted">{entry.text}</span>
           ) : null}
           {hasDetails && (
-            <span className={clsx('ml-auto shrink-0 text-[10px] transition-transform', expanded && 'rotate-90')}>
-              &#9654;
-            </span>
+            <ChevronRightIcon
+              className={clsx('ml-auto h-3 w-3 shrink-0 transition-transform', expanded && 'rotate-90')}
+            />
           )}
         </button>
         {failed && (

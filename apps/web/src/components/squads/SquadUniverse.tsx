@@ -303,9 +303,9 @@ export function SquadUniverse({ squads, relationships }: Props) {
 
       {/* Controls hint */}
       <div className="absolute top-4 right-4 z-10 bg-surface/95 border border-th-border rounded-lg p-2 text-xs text-muted">
-        <p>🖱️ Drag to rotate</p>
-        <p>🔍 Scroll to zoom</p>
-        <p>👆 Click node to open</p>
+        <p>Drag to rotate</p>
+        <p>Scroll to zoom</p>
+        <p>Click a node to open</p>
       </div>
 
       {/* 3D Graph */}

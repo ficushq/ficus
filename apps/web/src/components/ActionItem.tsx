@@ -29,7 +29,7 @@ import { webStatus } from '../lib/statusPresentation'
 
 // Icons for each action type
 const actionIcons: Record<string, string> = {
-  'agent-error': '⚠',
+  'agent-error': '!',
   'squad-question': '?',
   'agent-question': '?',
   'assistant-needs-input': '?',

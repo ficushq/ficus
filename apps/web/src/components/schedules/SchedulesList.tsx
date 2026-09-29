@@ -15,7 +15,17 @@ import { Modal } from '../Modal'
 import { Badge, type BadgeColor } from '../Badge'
 import { schedulesApi } from '../../api/schedules'
 import { usePermissions } from '../../hooks/usePermissions'
-import { PencilIcon, PlayIcon, ClipboardIcon, RefreshIcon, LinkIcon } from '../icons'
+import {
+  AgentIcon,
+  ClipboardIcon,
+  ClockIcon,
+  LinkIcon,
+  MailIcon,
+  PencilIcon,
+  PlayIcon,
+  RefreshIcon,
+  WarningIcon,
+} from '../icons'
 import { SUBAGENT_WATCHDOG_KIND } from '../../lib/subagentWatchdog'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
@@ -539,7 +549,13 @@ function ScheduleCard({
         <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'neutral'}>
           <span className="hidden sm:inline">{ACTION_LABELS[schedule.action.type] || schedule.action.type}</span>
           <span className="sm:hidden">
-            {schedule.action.type === 'inbox_message' ? '✉️' : schedule.action.type === 'spawn_agent' ? '🤖' : '📋'}
+            {schedule.action.type === 'inbox_message' ? (
+              <MailIcon className="h-3.5 w-3.5" />
+            ) : schedule.action.type === 'spawn_agent' ? (
+              <AgentIcon className="h-3.5 w-3.5" />
+            ) : (
+              <ClipboardIcon className="h-3.5 w-3.5" />
+            )}
           </span>
         </Badge>
 
@@ -582,7 +598,7 @@ function ScheduleCard({
       {/* Schedule + stats row - simplified on mobile */}
       <div className="mt-1.5 sm:mt-2 flex items-center gap-x-2 sm:gap-x-3 text-xs text-muted">
         <span className="inline-flex items-center gap-1">
-          <span className="text-placeholder">⏱</span>
+          <ClockIcon className="h-3.5 w-3.5 text-placeholder" />
           {formatSchedule(schedule.schedule, schedule.action)}
         </span>
         {schedule.nextTriggerAt && schedule.enabled && (
@@ -1141,8 +1157,8 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
           {/* Token display (only shown once after enable/regenerate) */}
           {showToken && (
             <div className="bg-status-review-50 dark:bg-status-review-900/20 border border-status-review-200 dark:border-status-review-800 rounded p-2 space-y-1">
-              <p className="text-xs text-status-review-700 dark:text-status-review-300 font-medium">
-                ⚠️ Save this token - it will not be shown again!
+              <p className="flex items-center gap-1.5 text-xs text-status-review-700 dark:text-status-review-300 font-medium">
+                <WarningIcon className="h-3.5 w-3.5 shrink-0" /> Save this token - it will not be shown again!
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-xs font-mono bg-chrome-toggle-thumb dark:bg-status-neutral-900 px-2 py-1 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">

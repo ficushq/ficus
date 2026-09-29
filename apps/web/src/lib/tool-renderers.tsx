@@ -6,6 +6,7 @@ import { type FC, type ReactNode, useRef, useEffect, useState, useCallback } fro
 import { Link, useLocation } from 'react-router-dom'
 import { AnsiText } from '../components/AnsiText'
 import { parseMemoryProvenance, stripProvenanceBlock } from './memory-provenance'
+import { ClockIcon, QuestionIcon, StopIcon } from '../components/icons'
 
 // --- Types ---
 
@@ -505,7 +506,7 @@ const requestNextBeatRenderer: ToolRenderer = {
   ArgsView: ({ args }) => (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-status-danger-500 dark:text-status-danger-400 text-[11px]">⏱</span>
+        <ClockIcon className="h-3.5 w-3.5 text-status-danger-500 dark:text-status-danger-400" />
         <InlineCode>{args.delay ?? '?'}</InlineCode>
       </div>
       {args.reason && <div className="text-[11px] text-muted">{args.reason}</div>}
@@ -536,8 +537,8 @@ const requestNextBeatRenderer: ToolRenderer = {
 
 const notifyContactRenderer: ToolRenderer = {
   summary: (args) => {
-    const icon = args.urgency === 'action_needed' ? '🔴' : args.urgency === 'warning' ? '🟡' : '🔵'
-    return `${icon} ${truncate(args.message ?? '', 50)}`
+    const prefix = args.urgency === 'action_needed' ? 'action needed: ' : args.urgency === 'warning' ? 'warning: ' : ''
+    return `${prefix}${truncate(args.message ?? '', 50)}`
   },
   ArgsView: ({ args }) => {
     const urgencyColors: Record<string, string> = {
@@ -556,7 +557,9 @@ const notifyContactRenderer: ToolRenderer = {
         </div>
         <div className="text-[11px] text-primary">{args.message}</div>
         {args.question && (
-          <div className={clsx('text-[11px] italic', humanWaitStatus.textClass)}>❓ {args.question}</div>
+          <div className={clsx('flex items-start gap-1 text-[11px] italic', humanWaitStatus.textClass)}>
+            <QuestionIcon className="mt-px h-3.5 w-3.5 shrink-0" /> {args.question}
+          </div>
         )}
       </div>
     )
@@ -674,7 +677,7 @@ const PILL_META: Record<SubagentPillStatus, { label: string; icon: string }> = {
   idle: { label: 'idle', icon: '○' },
   done: { label: 'done', icon: '✓' },
   failed: { label: 'failed', icon: '✗' },
-  stopped: { label: 'stopped', icon: '⏹' },
+  stopped: { label: 'stopped', icon: '■' },
 }
 
 function SubagentStatusPill({ status }: { status: SubagentPillStatus }) {
@@ -816,7 +819,11 @@ const stopSubagentRenderer: ToolRenderer = {
     const statusValue = details?.status ?? details?.resultStatus
     const status = typeof statusValue === 'string' ? statusValue : ''
     if (status === 'stopped') {
-      return <div className={clsx('text-[11px]', webStatus('neutral').textClass)}>⏹ Stopped</div>
+      return (
+        <div className={clsx('flex items-center gap-1 text-[11px]', webStatus('neutral').textClass)}>
+          <StopIcon className="h-3 w-3" /> Stopped
+        </div>
+      )
     }
     if (status === 'already-terminated') return <div className="text-muted text-[11px]">Already terminated</div>
     return <div className="text-secondary text-[11px]">{status}</div>

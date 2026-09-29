@@ -10,23 +10,25 @@ import { TypingIndicator } from './TypingIndicator'
 import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
 import { getImageAttachState } from '../lib/imageAttach'
 import {
+  AutoScrollIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ClockIcon,
   CloseIcon,
   CodeIcon,
   ExpandIcon,
   FileIcon,
-  AutoScrollIcon,
   ImageIcon,
+  LightningIcon,
   MarkdownIcon,
   MicIcon,
   MinimizeIcon,
   PlusIcon,
+  SendIcon,
   SpeakerOffIcon,
   SpeakerOnIcon,
   StopIcon,
-  SendIcon,
   TrashIcon,
 } from './icons'
 import { useFullscreen } from '../hooks/useFullscreen'
@@ -299,7 +301,15 @@ function PendingMessageRow({
       >
         {deliveryMode && !auto && queued && (
           <div className="flex items-center gap-1.5 mb-1 text-on-accent/80 text-xs">
-            {deliveryMode === 'steer' ? '⚡ Interrupt' : '📋 Follow up'}
+            {deliveryMode === 'steer' ? (
+              <>
+                <LightningIcon className="h-3.5 w-3.5" /> Interrupt
+              </>
+            ) : (
+              <>
+                <ClockIcon className="h-3.5 w-3.5" /> Follow up
+              </>
+            )}
           </div>
         )}
         <HumanMessageContent content={content} metadata={effectiveMetadata} showRaw={false} agentId={agentId} />
