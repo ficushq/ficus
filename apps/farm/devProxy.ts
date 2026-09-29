@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin, ProxyOptions } from 'vite'
+import { getAuthStorePath } from '../cli/src/auth-store'
 
 type Env = Record<string, string | undefined>
 
@@ -49,10 +50,9 @@ export function resolveDevBackend(env: Env): DevBackend {
   }
 }
 
-/** Same resolution as the CLI (apps/cli/src/auth-store.ts): FICUS_AUTH_STORE, else ~/.tau/cli/auth.json. */
+/** FICUS_DEV_AUTH_STORE_PATH, else wherever the CLI keeps its sign-ins (its own resolver, so the two never disagree). */
 export function cliAuthStorePath(env: Env): string {
-  const explicit = env.FICUS_DEV_AUTH_STORE_PATH || env.FICUS_AUTH_STORE
-  const path = explicit || join(homedir(), '.tau', 'cli', 'auth.json')
+  const path = env.FICUS_DEV_AUTH_STORE_PATH || getAuthStorePath()
   return path.startsWith('~/') ? join(homedir(), path.slice(2)) : path
 }
 

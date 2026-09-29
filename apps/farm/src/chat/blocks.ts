@@ -104,7 +104,7 @@ const SUMMARIES: Record<string, (args: Args) => string> = {
   stop_subagent: (a) => str(a.subagentId),
   delegate_task: (a) => `Background task: ${truncate(str(a.label) || 'background task', 60)}`,
   assistant_inbox: () => 'Task update',
-  search_tau: (a) => `Searched Tau for “${truncate(str(a.query) || str(a.q), 40)}”`,
+  search_ficus: (a) => `Searched Ficus for “${truncate(str(a.query) || str(a.q), 40)}”`,
 }
 
 function parseArgs(args: string): Args | null {

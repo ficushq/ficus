@@ -1,4 +1,10 @@
-import { entityReferenceHref, parseEntityReference, type FarmPerson } from '@ficus/shared'
+import {
+  ENTITY_REFERENCE_SCHEME,
+  entityReferenceHref,
+  LEGACY_ENTITY_REFERENCE_SCHEME,
+  parseEntityReference,
+  type FarmPerson,
+} from '@ficus/shared'
 import { findMentions } from './mentions'
 
 /*
@@ -18,7 +24,11 @@ export type MessageToken =
   | { kind: 'ref'; text: string; ref: FarmRef; href?: string }
   | { kind: 'link'; text: string; href: string }
 
-const REFERENCE = /\b(?:ficus|tau):(?:ws|agent):[0-9a-f-]{1,36}\b/gi
+// The schemes the shared entity references accept (the current one, and the one stored before the rename).
+const REFERENCE = new RegExp(
+  `\\b(?:${ENTITY_REFERENCE_SCHEME}|${LEGACY_ENTITY_REFERENCE_SCHEME}):(?:ws|agent):[0-9a-f-]{1,36}\\b`,
+  'gi'
+)
 // Trailing punctuation isn't part of a pasted link.
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]'"]/gi
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

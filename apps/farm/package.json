@@ -5,10 +5,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "build:into-web": "vite build --outDir ../web/dist/farm --emptyOutDir",
-    "preview": "vite preview",
+    "dev": "vite --configLoader runner",
+    "build": "vite build --configLoader runner",
+    "build:into-web": "vite build --configLoader runner --outDir ../web/dist/farm --emptyOutDir",
+    "preview": "vite preview --configLoader runner",
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.node.json",
     "test": "bun test"
   },
