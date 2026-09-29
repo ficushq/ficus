@@ -313,6 +313,8 @@ export default {
         'input-border': themeColor('--color-input-border', '--opacity-input-border'),
         'code-bg': themeColor('--color-code-bg'),
         'code-text': themeColor('--color-code-text'),
+        // Link text on hover (always more contrast than accent-light); accent-hover is a button fill.
+        'link-hover': themeColor('--color-link-hover'),
         accent: {
           DEFAULT: themeColor('--color-primary'),
           hover: themeColor('--color-primary-hover'),

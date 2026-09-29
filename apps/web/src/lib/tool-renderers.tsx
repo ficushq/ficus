@@ -485,7 +485,7 @@ const navigateRenderer: ToolRenderer = {
       <div className="flex items-center gap-2">
         <Link
           to={path}
-          className="inline-flex items-center gap-1 text-accent-light hover:text-accent-hover hover:underline text-[12px] font-medium"
+          className="inline-flex items-center gap-1 text-accent-light hover:text-link-hover hover:underline text-[12px] font-medium"
         >
           {isPrompt ? 'Go to ' : ''}
           <code className="bg-accent/10 text-accent-light px-1.5 py-0.5 rounded text-[11px]">{path}</code>

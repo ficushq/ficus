@@ -45,6 +45,7 @@ const surfaces = ['page', 'surface', 'surface-secondary', 'pill', 'surface-hover
 )
 for (const bg of surfaces) {
   for (const slot of ['primary', 'secondary', 'muted', 'placeholder']) add(`--color-text-${slot}`, bg)
+  add('--color-link-hover', bg)
   add('--color-focus', bg, 3)
   add('--scrollbar-thumb', bg, 3)
 }

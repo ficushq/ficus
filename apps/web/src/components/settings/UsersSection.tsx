@@ -270,7 +270,7 @@ export function UserRow({
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             onClick={onToggleExpand}
-            className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+            className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
           >
             {isExpanded ? 'Hide Roles' : 'Manage Roles'}
           </button>
@@ -284,7 +284,7 @@ export function UserRow({
               <button
                 onClick={() => resendMutation.mutate()}
                 disabled={resendMutation.isPending}
-                className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+                className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
               >
                 {resendMutation.isPending ? 'Resending...' : 'Resend Invite'}
               </button>

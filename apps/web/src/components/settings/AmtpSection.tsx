@@ -176,7 +176,7 @@ export function AmtpSection() {
                           status: p.status === 'disabled' ? 'disabled' : 'active',
                         })
                       }}
-                      className="ficus-button text-sm font-medium text-accent-light hover:text-accent-hover"
+                      className="ficus-button text-sm font-medium text-accent-light hover:text-link-hover"
                     >
                       Edit
                     </button>

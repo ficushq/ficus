@@ -421,7 +421,7 @@ export function WorkStreamDetailModal({
             {squad ? (
               <Link
                 to={`/squads/${slugFor(squad.id)}`}
-                className="block mt-0.5 text-accent-light hover:text-accent-hover hover:underline"
+                className="block mt-0.5 text-accent-light hover:text-link-hover hover:underline"
                 onClick={onClose}
               >
                 {squad.name}
@@ -436,7 +436,7 @@ export function WorkStreamDetailModal({
               <div className="mt-0.5">
                 <Link
                   to={`/squads/${slugFor(workStream.squadId)}?agent=${assignee.id}`}
-                  className="text-accent-light hover:text-accent-hover hover:underline"
+                  className="text-accent-light hover:text-link-hover hover:underline"
                   onClick={onClose}
                 >
                   {getAgentPrimaryLabel(assignee)}
@@ -447,7 +447,7 @@ export function WorkStreamDetailModal({
               <div className="mt-0.5">
                 <Link
                   to={`/squads/${slugFor(workStream.squadId)}?agent=${squad.managerAgentId}`}
-                  className="text-accent-light hover:text-accent-hover hover:underline"
+                  className="text-accent-light hover:text-link-hover hover:underline"
                   onClick={onClose}
                 >
                   Squad Manager
@@ -463,7 +463,7 @@ export function WorkStreamDetailModal({
               <div className="mt-0.5">
                 <Link
                   to={`/squads/${slugFor(owner.squadId ?? workStream.squadId)}?agent=${owner.id}`}
-                  className="text-accent-light hover:text-accent-hover hover:underline"
+                  className="text-accent-light hover:text-link-hover hover:underline"
                   onClick={onClose}
                 >
                   {getAgentPrimaryLabel(owner)}
@@ -643,7 +643,7 @@ export function WorkStreamDetailModal({
                               {agent ? (
                                 <Link
                                   to={`/squads/${slugFor(workStream.squadId)}?agent=${agentId}`}
-                                  className="text-accent-light hover:text-accent-hover hover:underline"
+                                  className="text-accent-light hover:text-link-hover hover:underline"
                                   onClick={onClose}
                                 >
                                   {getAgentPrimaryLabel(agent)}
@@ -762,7 +762,7 @@ export function WorkStreamDetailModal({
                     {matchingAgent ? (
                       <Link
                         to={`/squads/${slugFor(workStream.squadId)}?agent=${matchingAgent.id}`}
-                        className="text-accent-light hover:text-accent-hover hover:underline"
+                        className="text-accent-light hover:text-link-hover hover:underline"
                         onClick={onClose}
                       >
                         {getAgentPrimaryLabel(matchingAgent)}

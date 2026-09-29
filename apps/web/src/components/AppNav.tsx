@@ -103,7 +103,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
         <div className="ficus-app-header-bar max-w-7xl mx-auto py-2.5 md:py-3 px-4 md:px-6 flex items-center gap-4">
           {/* Left: Logo */}
           <h1 className="ficus-app-header-logo text-xl md:text-2xl font-bold text-primary">
-            <Link to="/" className="flex items-center gap-2 hover:text-accent-hover transition-colors">
+            <Link to="/" className="flex items-center gap-2 hover:text-link-hover transition-colors">
               <FicusLogo decorative />
               Ficus
               {instance && (

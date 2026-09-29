@@ -50,7 +50,7 @@ export function PublicKeyBlock({ value, label }: { value: string; label?: string
         </code>
         <button
           onClick={copy}
-          className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium shrink-0 py-1.5"
+          className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium shrink-0 py-1.5"
         >
           {copied ? 'Copied' : 'Copy'}
         </button>

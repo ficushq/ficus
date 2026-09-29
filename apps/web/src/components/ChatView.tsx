@@ -1846,7 +1846,7 @@ export function ChatView({
                       <button
                         type="button"
                         onClick={() => retryImageUpload(img.id)}
-                        className="ficus-button mt-1 block w-16 text-xs text-accent-light hover:text-accent-hover hover:underline"
+                        className="ficus-button mt-1 block w-16 text-xs text-accent-light hover:text-link-hover hover:underline"
                         aria-label="Retry image upload"
                       >
                         Re-upload

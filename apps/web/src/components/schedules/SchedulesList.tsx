@@ -1127,7 +1127,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
               <button
                 onClick={() => enableMutation.mutate()}
                 disabled={enableMutation.isPending || !canUpdateSchedules}
-                className="ficus-button text-xs text-accent-light hover:text-accent-hover disabled:opacity-50"
+                className="ficus-button text-xs text-accent-light hover:text-link-hover disabled:opacity-50"
                 title={canUpdateSchedules ? 'Enable webhook' : 'You do not have permission to edit schedules'}
               >
                 {enableMutation.isPending ? 'Enabling...' : 'Enable'}

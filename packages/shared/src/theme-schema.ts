@@ -85,7 +85,7 @@ export interface TokenFamilyDefinition {
 }
 
 /**
- * The 29 chrome tokens defined per scope in `apps/web/src/index.css`
+ * The 30 chrome tokens defined per scope in `apps/web/src/index.css`
  * (`:root` light and `.dark`). Names are the CSS custom property names.
  */
 const CHROME_TOKENS: readonly string[] = [
@@ -118,6 +118,9 @@ const CHROME_TOKENS: readonly string[] = [
   '--color-primary-hover',
   '--color-primary-active',
   '--color-primary-light',
+  // Link text on hover: more contrast than the link colour (`--color-primary-light`) in both
+  // appearances. `--color-primary-hover` is a button background and darkens in dark themes.
+  '--color-link-hover',
   // Shared interaction surfaces
   '--color-selection-bg',
   '--color-selection-border',
