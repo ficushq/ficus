@@ -797,7 +797,10 @@ export function BlueprintRack({ count }: { count: number }) {
           strokeOpacity={0.7}
         />
       ))}
-      <Title below={[b, e]} text="Apps" count={count} />
+      {/* Over the cabinet rather than under it: under it is its yard's back corner, where a plot's badge floats. */}
+      <Lettering y={Math.min(...[a, b].flatMap((i) => [c, e].map((j) => iso(i, j)[1]))) - 58 - 10}>
+        Apps · {count}
+      </Lettering>
     </g>
   )
 }
