@@ -48,7 +48,7 @@ describe('resolveWebDist', () => {
     const repoRoot = join(tmp, 'repo')
     const dist = join(repoRoot, 'apps', 'web', 'dist')
     mkdirSync(dist, { recursive: true })
-    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
     // cwd deliberately elsewhere: only the walk-up can produce this answer.
     process.chdir(tmp)
     expect(resolveWebDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
@@ -70,7 +70,7 @@ describe('resolveWebDist', () => {
     const repoRoot = join(tmp, 'repo')
     const dist = join(repoRoot, 'apps', 'web', 'dist')
     mkdirSync(dist, { recursive: true })
-    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'tau' }))
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
     process.chdir(repoRoot)
     expect(resolveWebDist(rootless)).toBe(dist)
   })

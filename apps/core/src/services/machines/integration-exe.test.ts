@@ -44,7 +44,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  * needs a real exe.dev account. The credential is the account's SSH PRIVATE key
  * (Settings → SSH keys on exe.dev), supplied as a FILE PATH. To run:
  *
- *   FICUS_TEST_EXE_SSH_KEY=~/.ssh/tau-exe-test \
+ *   FICUS_TEST_EXE_SSH_KEY=~/.ssh/ficus-exe-test \
  *   FICUS_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
  *   bun test src/services/machines/integration-exe.test.ts
  *

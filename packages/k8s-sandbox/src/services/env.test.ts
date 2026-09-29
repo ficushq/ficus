@@ -20,7 +20,7 @@ describe('buildSandboxChildEnv', () => {
       GITHUB_TOKEN: 'ghs_xxx',
       GH_TOKEN: 'ghs_xxx',
       GIT_USER_NAME: 'Ficus Bot',
-      GIT_USER_EMAIL: 'bot@tau',
+      GIT_USER_EMAIL: 'bot@ficus',
       SSL_CERT_FILE: '/etc/ssl/cert.pem',
     })
     expect(env.HOME).toBe('/root')
@@ -30,7 +30,7 @@ describe('buildSandboxChildEnv', () => {
     expect(env.GITHUB_TOKEN).toBe('ghs_xxx')
     expect(env.GH_TOKEN).toBe('ghs_xxx')
     expect(env.GIT_USER_NAME).toBe('Ficus Bot')
-    expect(env.GIT_USER_EMAIL).toBe('bot@tau')
+    expect(env.GIT_USER_EMAIL).toBe('bot@ficus')
     expect(env.SSL_CERT_FILE).toBe('/etc/ssl/cert.pem')
   })
 
@@ -164,9 +164,9 @@ describe("git's own identity variables reach the agent's git", () => {
   })
 
   it('still forwards the legacy GIT_USER_* pair the image translates', () => {
-    const env = buildSandboxChildEnv({ GIT_USER_NAME: 'ficusagent', GIT_USER_EMAIL: 'agent@tau' })
+    const env = buildSandboxChildEnv({ GIT_USER_NAME: 'ficusagent', GIT_USER_EMAIL: 'agent@ficus' })
     expect(env.GIT_USER_NAME).toBe('ficusagent')
-    expect(env.GIT_USER_EMAIL).toBe('agent@tau')
+    expect(env.GIT_USER_EMAIL).toBe('agent@ficus')
   })
 })
 

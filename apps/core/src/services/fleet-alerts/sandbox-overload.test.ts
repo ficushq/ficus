@@ -175,7 +175,7 @@ describe('busy sandbox listing', () => {
       name: `overload-${machineId}`,
       provider: 'ssh',
       sshHost: '127.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'test',
       sshPublicKey: 'test',
     })
@@ -194,7 +194,7 @@ describe('busy sandbox listing', () => {
     let port = 46_000
     const box = async (sandboxId: string, status = 'ready') => {
       owned.boxes.push(sandboxId)
-      await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'tau', port: port++, status })
+      await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'ficus', port: port++, status })
     }
 
     const busySquad = await squad()

@@ -405,7 +405,7 @@ describe('webhooks/processors/github', () => {
             {
               branches: ['refs/heads/main'],
               repos: ['ficusagent/ficus-management'],
-              commands: [{ run: 'echo deploy-tau' }],
+              commands: [{ run: 'echo deploy-ficus' }],
             },
           ],
         },
@@ -442,7 +442,7 @@ describe('webhooks/processors/github', () => {
             {
               branches: ['refs/heads/main'],
               repos: ['ficusagent/ficus-management'],
-              commands: [{ run: 'echo deploy-tau' }],
+              commands: [{ run: 'echo deploy-ficus' }],
             },
           ],
         },
@@ -470,7 +470,7 @@ describe('webhooks/processors/github', () => {
       )
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('[github-webhook]'),
-        expect.stringContaining('Running: `echo deploy-tau`')
+        expect.stringContaining('Running: `echo deploy-ficus`')
       )
       consoleSpy.mockRestore()
     })

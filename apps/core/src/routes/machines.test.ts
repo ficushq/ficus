@@ -148,7 +148,7 @@ describe('machines routes', () => {
       req('POST', {
         name: `${prefix}-${Math.random().toString(36).slice(2, 8)}`,
         sshHost: '10.0.0.1',
-        sshUser: 'tau',
+        sshUser: 'ficus',
         ...overrides,
       })
     )
@@ -199,7 +199,7 @@ describe('machines routes', () => {
 
   it('rejects duplicate names with 409', async () => {
     const router = authedRouter()
-    const payload = { name: `${prefix}-dup`, sshHost: '10.0.0.2', sshUser: 'tau' }
+    const payload = { name: `${prefix}-dup`, sshHost: '10.0.0.2', sshUser: 'ficus' }
     expect((await router.request('/', req('POST', payload))).status).toBe(201)
     expect((await router.request('/', req('POST', payload))).status).toBe(409)
   })
@@ -401,7 +401,7 @@ describe('machines routes', () => {
 
     await db
       .insert(machineBoxes)
-      .values({ sandboxId: `${prefix}-box`, machineId: created.id, unixUser: 'tau', port: 50100 })
+      .values({ sandboxId: `${prefix}-box`, machineId: created.id, unixUser: 'ficus', port: 50100 })
 
     expect((await router.request(`/${created.id}`, req('DELETE'))).status).toBe(409)
 
@@ -1103,7 +1103,7 @@ describe('machines routes', () => {
         name: `${prefix}-force-identity`,
         provider: 'ssh',
         sshHost: '10.0.0.1',
-        sshUser: 'tau',
+        sshUser: 'ficus',
         sshKeyId: 'test',
         sshPublicKey: 'ssh-ed25519 AAAA',
         status: 'ready',
@@ -1329,13 +1329,13 @@ describe('machines routes', () => {
         {
           sandboxId: `squad_${prefix}_s`,
           machineId: created.id,
-          unixUser: 'tau',
+          unixUser: 'ficus',
           port: 50100,
           authToken: 'SECRET-BOX-TOKEN',
           syncedHashes: { 'identity.pem': 'SECRET-CONTENT-HASH' },
         },
-        { sandboxId: `agent_${prefix}_a`, machineId: created.id, unixUser: 'tau', port: 50101 },
-        { sandboxId: `agent_${prefix}_b`, machineId: created.id, unixUser: 'tau', port: 50102 },
+        { sandboxId: `agent_${prefix}_a`, machineId: created.id, unixUser: 'ficus', port: 50101 },
+        { sandboxId: `agent_${prefix}_b`, machineId: created.id, unixUser: 'ficus', port: 50102 },
       ])
 
       // Expected numbers come from the SAME packer weight table the API shares —
@@ -1403,7 +1403,7 @@ describe('machines routes', () => {
 
     const res = await router.request(
       '/',
-      req('POST', { name: `${prefix}-compensate`, sshHost: '10.0.0.7', sshUser: 'tau' })
+      req('POST', { name: `${prefix}-compensate`, sshHost: '10.0.0.7', sshUser: 'ficus' })
     )
     expect(res.status).toBe(500)
 

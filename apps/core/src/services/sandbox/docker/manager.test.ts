@@ -1363,7 +1363,7 @@ describe('docker-sandbox-manager', () => {
       expect(result.command).not.toContain('-w /workspace')
     })
 
-    it('injects the live Core URL so the `tau` CLI survives a Core port change', () => {
+    it('injects the live Core URL so the `ficus` CLI survives a Core port change', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath)
       const result = hook!({ command: 'ficus whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain(`-e FICUS_API_URL=${resolveDockerApiUrl()}`)

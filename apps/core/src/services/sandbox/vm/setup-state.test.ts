@@ -148,11 +148,11 @@ describe('VM setup invocation generation fencing', () => {
       name: `test-${machineId}`,
       provider: 'ssh',
       sshHost: '127.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'test',
       sshPublicKey: 'test',
     })
-    await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'tau', port: 45000 })
+    await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'ficus', port: 45000 })
     await db.insert(vmBoxSetupStates).values({
       sandboxId,
       desiredFingerprint: 'generation-two',
@@ -176,11 +176,11 @@ describe('VM setup invocation generation fencing', () => {
       name: `test-${machineId}`,
       provider: 'ssh',
       sshHost: '127.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'test',
       sshPublicKey: 'test',
     })
-    await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'tau', port: 45000 })
+    await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'ficus', port: 45000 })
     const prior = {
       sandboxId,
       desiredFingerprint: 'same',
@@ -215,11 +215,11 @@ describe('VM setup invocation generation fencing', () => {
       name: `test-${machineId}`,
       provider: 'ssh',
       sshHost: '127.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'test',
       sshPublicKey: 'test',
     })
-    await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'tau', port: 45000 })
+    await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'ficus', port: 45000 })
     await ensureVmSetupFingerprint(sandboxId, 'unchanged')
     const events: string[] = []
     const unsubscribe = eventEmitter.on('sandbox.status', ({ sandboxId: changed }) => events.push(changed))

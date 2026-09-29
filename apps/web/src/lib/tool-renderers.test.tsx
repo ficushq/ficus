@@ -304,13 +304,13 @@ describe('site assistant task renderers', () => {
   })
 
   it('delegate_task with a squad names the squad from the receipt', () => {
-    const args = JSON.stringify({ label: 'Pause deploy stream', request: 'Pause it', squadId: 'tau' })
+    const args = JSON.stringify({ label: 'Pause deploy stream', request: 'Pause it', squadId: 'ficus' })
     const result = JSON.stringify({
       id: 'm',
       agentId: 'a',
       delivered: true,
       kind: 'squad',
-      squadId: 'tau',
+      squadId: 'ficus',
       conversation: { agentId: 'a', label: 'Pause deploy stream', kind: 'squad' },
     })
     expect(

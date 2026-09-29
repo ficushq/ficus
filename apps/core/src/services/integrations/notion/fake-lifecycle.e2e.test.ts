@@ -29,7 +29,7 @@ test('connect assign reconcile invoke rotate without reinstall and unassign', as
   restoreAdapter = registerOAuthProviderAdapterForTest(createFakeAdapter(script))
   const transport = createLocalTransport({
     resolveClientCredentials: () => ({ clientId: 'id', clientSecret: 'secret' }),
-    callbackUrl: () => 'https://tau/callback',
+    callbackUrl: () => 'https://ficus/callback',
   })
   const plugin = createNotionPlugin({ currentBot: async () => ({ botId: 'bot-1' }) })
   // The fake provider exchange is the only provider interaction; no fetch/network implementation exists.
@@ -37,7 +37,7 @@ test('connect assign reconcile invoke rotate without reinstall and unassign', as
     providerKey: 'notion',
     localFlowId: 'flow',
     code: 'code',
-    redirectUri: 'https://tau/callback',
+    redirectUri: 'https://ficus/callback',
   })
   const grant = {
     configuration: plugin.connection.parseConfiguration(exchanged.configuration),

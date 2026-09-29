@@ -54,7 +54,7 @@ RENDERED="${SCRATCH}/tau-backup.sh"
 DECRYPT_DIR="${SCRATCH}/decrypted"
 
 mkdir -p "${DEST}" "${HOME_DIR}/workspace/agent-1" "${DECRYPT_DIR}"
-printf 'FICUS_ENCRYPTION_KEY=test-encryption-key-envelope\nDATABASE_URL=postgres://postgres:pw@127.0.0.1:5432/tau\n' >"${DEST}/.env"
+printf 'FICUS_ENCRYPTION_KEY=test-encryption-key-envelope\nDATABASE_URL=postgres://postgres:pw@127.0.0.1:5432/ficus\n' >"${DEST}/.env"
 printf 'agent memory contents\n' >"${HOME_DIR}/workspace/agent-1/notes.md"
 printf 'shared context\n' >"${HOME_DIR}/context.md"
 
@@ -312,7 +312,7 @@ if command -v yq >/dev/null 2>&1; then
   PREFIX_CFG="${SCRATCH}/empty-prefix.yaml"
   cat >"${PREFIX_CFG}" <<'EOF'
 source:
-  repo: git@example.com:acme/tau.git
+  repo: git@example.com:acme/ficus.git
 core:
   origin: https://ficus.example.com
 backup:

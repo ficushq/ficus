@@ -38,9 +38,9 @@ describe('getVisibleAgentContext', () => {
 })
 
 test('a persisted agent selection on another squad tab is not an open conversation', () => {
-  expect(getVisibleAgentContexts('/squads/tau/work?agent=agent-1', docWithDrawerAgent(null))).toEqual([])
-  expect(getVisibleAgentContexts('/squads/tau/home?agent=agent-1', docWithDrawerAgent(null))).toEqual([])
-  expect(getVisibleAgentContexts('/squads/tau/agents?agent=agent-1', docWithDrawerAgent(null))).toEqual([
+  expect(getVisibleAgentContexts('/squads/ficus/work?agent=agent-1', docWithDrawerAgent(null))).toEqual([])
+  expect(getVisibleAgentContexts('/squads/ficus/home?agent=agent-1', docWithDrawerAgent(null))).toEqual([])
+  expect(getVisibleAgentContexts('/squads/ficus/agents?agent=agent-1', docWithDrawerAgent(null))).toEqual([
     { id: 'agent-1', source: 'url' },
   ])
 })

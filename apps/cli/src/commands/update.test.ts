@@ -158,7 +158,7 @@ describe('defaultUpdateDeps localPort', () => {
     // The DEFAULT instance is a different checkout: looking the root up by
     // label would answer for the wrong one.
     upsertInstance(
-      'tau',
+      'ficus',
       { root: join(tmp, 'default'), port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
       {},
       statePath

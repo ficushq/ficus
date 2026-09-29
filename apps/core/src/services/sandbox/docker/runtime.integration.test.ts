@@ -80,7 +80,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
       runOwnedDocker(['exec', name, 'stat', '-c', '%a:%U:%G', '/run/tau-docker/docker.sock'], owner)
         .stdout.toString()
         .trim()
-    ).toBe('600:tau:tau')
+    ).toBe('600:ficus:ficus')
     expect(
       runOwnedDocker(
         ['exec', name, 'su-exec', 'nobody', 'docker', '-H', 'unix:///run/tau-docker/docker.sock', 'info'],

@@ -43,24 +43,24 @@ describe('IntegrationSettings GitHub identity metadata', () => {
 describe('IntegrationSettings GitHub routing metadata', () => {
   test('reads GitHub repo routing entries from squad metadata', () => {
     const entries = githubRoutingFromMetadata({
-      github: [{ repo: 'tau/app' }, { repo: 'tau/api', labels: ['backend', 'api'] }],
+      github: [{ repo: 'ficus/app' }, { repo: 'ficus/api', labels: ['backend', 'api'] }],
     })
 
     expect(entries).toEqual([
-      { repo: 'tau/app', labelsText: '' },
-      { repo: 'tau/api', labelsText: 'backend, api' },
+      { repo: 'ficus/app', labelsText: '' },
+      { repo: 'ficus/api', labelsText: 'backend, api' },
     ])
   })
 
   test('writes GitHub repo routing entries without clobbering other metadata', () => {
     const metadata = githubRoutingToMetadata({ sandbox: { alwaysOn: true } }, [
-      { repo: 'tau/app', labelsText: '' },
-      { repo: 'tau/api', labelsText: 'backend, api' },
+      { repo: 'ficus/app', labelsText: '' },
+      { repo: 'ficus/api', labelsText: 'backend, api' },
     ])
 
     expect(metadata).toEqual({
       sandbox: { alwaysOn: true },
-      github: [{ repo: 'tau/app' }, { repo: 'tau/api', labels: ['backend', 'api'] }],
+      github: [{ repo: 'ficus/app' }, { repo: 'ficus/api', labels: ['backend', 'api'] }],
     })
   })
 })
@@ -74,8 +74,10 @@ describe('IntegrationSettings Linear routing metadata', () => {
   })
 
   test('writes Linear team routing entries without clobbering other metadata', () => {
-    expect(linearRoutingToMetadata({ github: [{ repo: 'tau/app' }] }, [{ teamId: 'team-a' }, { teamId: '' }])).toEqual({
-      github: [{ repo: 'tau/app' }],
+    expect(
+      linearRoutingToMetadata({ github: [{ repo: 'ficus/app' }] }, [{ teamId: 'team-a' }, { teamId: '' }])
+    ).toEqual({
+      github: [{ repo: 'ficus/app' }],
       linear: [{ teamId: 'team-a' }],
     })
   })

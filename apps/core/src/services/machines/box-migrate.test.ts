@@ -32,7 +32,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.5',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -1223,7 +1223,7 @@ describe('migrateBox', () => {
     const result = await migrateBox(SANDBOX_ID, TARGET_MACHINE_ID, {
       ...h.deps,
       ensureMachineArtifacts: async () => {
-        throw new Error('tau cli push failed')
+        throw new Error('ficus cli push failed')
       },
     })
 

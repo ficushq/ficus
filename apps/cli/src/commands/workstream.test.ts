@@ -528,7 +528,7 @@ describe('workstream CLI commands', () => {
         '--branch',
         'feature/workstream',
         '--worktree',
-        '/tmp/tau-feature',
+        '/tmp/ficus-feature',
         '--base-branch',
         'main',
         '--workflow',
@@ -543,7 +543,7 @@ describe('workstream CLI commands', () => {
           repository: 'repo',
           gitRemote: 'origin',
           branch: 'feature/workstream',
-          worktree: '/tmp/tau-feature',
+          worktree: '/tmp/ficus-feature',
           baseBranch: 'main',
         })
       )
@@ -1038,7 +1038,7 @@ describe('workstream CLI commands', () => {
         '--branch',
         'feature/workstream',
         '--worktree',
-        '/tmp/tau-feature',
+        '/tmp/ficus-feature',
         '--base-branch',
         'main',
         '--completion-mode',
@@ -1053,7 +1053,7 @@ describe('workstream CLI commands', () => {
           gitRemote: 'upstream',
           completionMode: 'direct-merge',
           branch: 'feature/workstream',
-          worktree: '/tmp/tau-feature',
+          worktree: '/tmp/ficus-feature',
           baseBranch: 'main',
         })
       )

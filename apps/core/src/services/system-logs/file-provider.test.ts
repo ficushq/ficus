@@ -25,7 +25,7 @@ test('omits follow flags for a finite file tail', () => {
 })
 
 test('reports actionable sanitized file subprocess failure', async () => {
-  const path = `/tmp/tau-system-log-${crypto.randomUUID()}.log`
+  const path = `/tmp/ficus-system-log-${crypto.randomUUID()}.log`
   await Bun.write(path, 'line\n')
   const errors: Error[] = []
   const provider = new FileLogProvider(

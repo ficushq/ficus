@@ -2042,7 +2042,7 @@ describe('squads routes', () => {
         name: `${machinePrefix}-${Math.random().toString(36).slice(2, 8)}`,
         provider: 'ssh',
         sshHost: '10.0.0.9',
-        sshUser: 'tau',
+        sshUser: 'ficus',
         sshKeyId: `secret-${Math.random().toString(36).slice(2, 8)}`,
         sshPublicKey: 'ssh-ed25519 AAAA test',
         status,

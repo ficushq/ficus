@@ -15,7 +15,7 @@ describe('expandTilde', () => {
   })
 
   test('~/rest joins onto the home directory', () => {
-    expect(expandTilde('~/.host-test-tau', HOME)).toBe(join(HOME, '.host-test-tau'))
+    expect(expandTilde('~/.host-test-ficus', HOME)).toBe(join(HOME, '.host-test-ficus'))
     expect(expandTilde('~/a/b/c', HOME)).toBe(join(HOME, 'a/b/c'))
   })
 

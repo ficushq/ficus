@@ -70,7 +70,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.5',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',
@@ -355,11 +355,11 @@ describe('ensureBox', () => {
         {
           ...deps,
           ensureMachineArtifacts: async () => {
-            throw new Error('tau cli build failed (exit 1)')
+            throw new Error('ficus cli build failed (exit 1)')
           },
         }
       )
-    ).rejects.toThrow('tau cli build failed')
+    ).rejects.toThrow('ficus cli build failed')
 
     // A required artifact failed — the ensure must abort before any mutation:
     // no bind, no provision, and the box is never stamped ready.
@@ -2566,15 +2566,15 @@ describe('restorePrivateArchive', () => {
     expect(calls).toHaveLength(3)
     // (b) the bytes land at a machine-side scratch path, root-installed 0600 so
     // no co-located box user can read the private tree in transit.
-    expect(calls[0].command).toBe(`sudo install -m 0600 /dev/stdin '/tmp/tau-restore-sb-1.tar.gz'`)
+    expect(calls[0].command).toBe(`sudo install -m 0600 /dev/stdin '/tmp/ficus-restore-sb-1.tar.gz'`)
     expect(calls[0].stdin).toBe(archiveBytes)
     // (c) box-provision extracts the scratch tar into the box home.
     expect(calls[1].command).toBe(
       `sudo bash /opt/tau/bin/box-provision.sh --unix-user '${boxUnixUser('sb-1')}' ` +
-        `--restore '/tmp/tau-restore-sb-1.tar.gz'`
+        `--restore '/tmp/ficus-restore-sb-1.tar.gz'`
     )
     // (d) the scratch tar (a full copy of the private tree) never lingers.
-    expect(calls[2].command).toBe(`sudo rm -f '/tmp/tau-restore-sb-1.tar.gz'`)
+    expect(calls[2].command).toBe(`sudo rm -f '/tmp/ficus-restore-sb-1.tar.gz'`)
   })
 
   it('throws when the --restore command exits non-zero (but still removes the scratch tar)', async () => {
@@ -2593,7 +2593,7 @@ describe('restorePrivateArchive', () => {
 
     // Best-effort scratch cleanup runs on the failure path too.
     expect(calls.map((c) => c.command).filter((c) => c.startsWith('sudo rm -f'))).toEqual([
-      `sudo rm -f '/tmp/tau-restore-sb-1.tar.gz'`,
+      `sudo rm -f '/tmp/ficus-restore-sb-1.tar.gz'`,
     ])
   })
 
@@ -2863,7 +2863,7 @@ describe('buildStreamRestoreCommand', () => {
   })
 
   it('shell-quotes a hostile unix user as one byte-identical argv element without side effects', async () => {
-    const marker = `/tmp/tau-restore-render-${randomUUID()}`
+    const marker = `/tmp/ficus-restore-render-${randomUUID()}`
     const unixUser = `-bad 'quote' space $(touch ${marker}) ` + '`touch ' + marker + '` ; back\\slash\nnewline'
     const cmd = buildStreamRestoreCommand(unixUser, ['workspace', '.private'], 'gzip')
     const launcher = 'sudo bash /opt/tau/bin/box-provision.sh '
@@ -4353,7 +4353,7 @@ describe('queryReadySharedMachines (DB)', () => {
       name: `${prefix}-${name}`,
       provider: 'ssh',
       sshHost: '10.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'secret-key-1',
       sshPublicKey: 'ssh-ed25519 AAAA test',
       ...overrides,

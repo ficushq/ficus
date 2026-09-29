@@ -39,7 +39,7 @@ class MockEventEmitter {
   }
 }
 
-const TEST_DIR = '/tmp/tau-notification-integration'
+const TEST_DIR = '/tmp/ficus-notification-integration'
 
 describe('Notification Service Integration', () => {
   let service: NotificationService

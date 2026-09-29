@@ -179,9 +179,9 @@ describe('TLS handling', () => {
   // instead: on a shared VPC where tenant VMs are treated as compromisable,
   // "connected anyway" is the worst possible outcome.
   test('a configured CA that is missing THROWS — it never degrades to rejectUnauthorized: false', () => {
-    process.env.DATABASE_CA_PATH = '/nonexistent/tau-db-ca.crt'
+    process.env.DATABASE_CA_PATH = '/nonexistent/ficus-db-ca.crt'
     expect(() => createPostgresConnection('postgres://u:p@db.example.com:25060/x?sslmode=verify-full')).toThrow(
-      /\/nonexistent\/tau-db-ca\.crt/
+      /\/nonexistent\/ficus-db-ca\.crt/
     )
     expect(() => resolveDatabaseTls('postgres://u:p@db.example.com:25060/x')).toThrow(/DATABASE_CA_PATH/)
   })

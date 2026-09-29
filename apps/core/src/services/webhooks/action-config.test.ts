@@ -28,7 +28,7 @@ describe('webhooks/action-config', () => {
         - run: echo custom-merge
   issue_comment:
     - commands:
-        - run: bash /srv/tau/config/webhooks/scripts/issue-comment.sh
+        - run: bash /srv/ficus/config/webhooks/scripts/issue-comment.sh
         - run: /srv/custom/issue-comment.sh
   batches:
     pr_review:
@@ -303,7 +303,7 @@ linear:
             {
               branches: ['refs/heads/main'],
               repos: ['ficusagent/ficus-management'],
-              commands: [{ run: 'deploy-tau.sh' }],
+              commands: [{ run: 'deploy-ficus.sh' }],
             },
             {
               branches: ['refs/heads/main'],
@@ -316,7 +316,7 @@ linear:
       // With matching repo, first rule matches
       const rule1 = getMatchingRule(configWithRepos, 'github', 'push', 'refs/heads/main', 'ficusagent/ficus-management')
       expect(rule1).not.toBeNull()
-      expect(rule1!.commands[0].run).toBe('deploy-tau.sh')
+      expect(rule1!.commands[0].run).toBe('deploy-ficus.sh')
 
       // With different repo, first rule skipped, second rule matches
       const rule2 = getMatchingRule(configWithRepos, 'github', 'push', 'refs/heads/main', 'other/repo')

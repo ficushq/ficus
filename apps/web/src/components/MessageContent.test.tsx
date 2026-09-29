@@ -22,7 +22,7 @@ ${body}
 
 **Mark one or more messages as read after processing:**
 \`\`\`
-tau inbox read m1
+ficus inbox read m1
 \`\`\``
 
   test('renders an inbox delivery as subject + markdown body + View work stream, without the old Full prompt dropdown', () => {

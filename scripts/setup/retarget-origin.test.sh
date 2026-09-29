@@ -161,7 +161,7 @@ mkdir -p "${CORE_DEST}"
 CONFIG="${SCRATCH}/tau-setup.yaml"
 cat >"${CONFIG}" <<EOF
 source:
-  repo: git@example.com:acme/tau.git
+  repo: git@example.com:acme/ficus.git
   dest: ${CORE_DEST}
 core:
   origin: https://acme.ficus.sh
@@ -394,7 +394,7 @@ if [[ ${EUID} -eq 0 ]] && command -p id -u caddy >/dev/null 2>&1; then
   MUT_CONFIG="${MUT}/tau-setup.yaml"
   cat >"${MUT_CONFIG}" <<EOF
 source:
-  repo: git@example.com:acme/tau.git
+  repo: git@example.com:acme/ficus.git
   dest: ${MUT}/core
 core:
   origin: https://acme.ficus.sh
@@ -440,7 +440,7 @@ EOF
     expect_eq "${label}: yaml dns.zone rewritten" "$(yq -r '.dns.zone' "${MUT_CONFIG}")" 'ficus.sh'
     expect_eq "${label}: yaml core.env.FICUS_PLATFORM_INGEST_URL rewritten" \
       "$(yq -r '.core.env.FICUS_PLATFORM_INGEST_URL' "${MUT_CONFIG}")" 'https://ficus.sh'
-    expect_eq "${label}: yaml source.repo untouched" "$(yq -r '.source.repo' "${MUT_CONFIG}")" 'git@example.com:acme/tau.git'
+    expect_eq "${label}: yaml source.repo untouched" "$(yq -r '.source.repo' "${MUT_CONFIG}")" 'git@example.com:acme/ficus.git'
     expect_eq "${label}: yaml source.dest untouched" "$(yq -r '.source.dest' "${MUT_CONFIG}")" "${MUT}/core"
 
     expect_match "${label}: .env APP_URL rewritten" "$(cat "${MUT}/core/.env")" 'APP_URL=https://acme\.ficus\.sh'

@@ -64,7 +64,7 @@ function waitUntilQueryable(port: number, timeoutMs = 60_000): void {
   throw new Error(`postgres on port ${port} never became queryable within ${timeoutMs}ms`)
 }
 
-describe('cross-project port ownership (tau #795 follow-up)', () => {
+describe('cross-project port ownership (Core #795 follow-up)', () => {
   const suffix = `${Date.now()}-${process.pid}`
   const projectA = `tau-test-ownercheck-a-${suffix}`
   const projectB = `tau-test-ownercheck-b-${suffix}`

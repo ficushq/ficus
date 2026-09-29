@@ -11,7 +11,7 @@ function fakeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.1',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'machine-ssh:machine-1',
     sshPublicKey: 'ssh-ed25519 AAAA test',
     status: 'ready',

@@ -40,7 +40,7 @@ function hostValues(name: string): typeof remoteHosts.$inferInsert {
   return {
     name: `${prefix}-${name}`,
     sshHost: '10.0.0.1',
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: `${prefix}-secret-${name}`,
     sshPublicKey: 'ssh-ed25519 AAAA test',
   }
@@ -123,9 +123,9 @@ describe('renderManagedBlock', () => {
       { id: '1', name: 'staging', sshHost: 'staging.example.com', sshPort: 2222, sshUser: 'deploy' } as RemoteHost,
     ]
 
-    const block = renderManagedBlock(hosts, { absoluteSshDir: '/tau/ssh/squad-1' })
-    expect(block).toContain('  IdentityFile /tau/ssh/squad-1/ficus_remote_staging')
-    expect(block).toContain('  UserKnownHostsFile /tau/ssh/squad-1/known_hosts')
+    const block = renderManagedBlock(hosts, { absoluteSshDir: '/ficus/ssh/squad-1' })
+    expect(block).toContain('  IdentityFile /ficus/ssh/squad-1/ficus_remote_staging')
+    expect(block).toContain('  UserKnownHostsFile /ficus/ssh/squad-1/known_hosts')
     expect(block).not.toContain('~/.ssh/')
     // Everything else is unchanged.
     expect(block).toContain('  IdentitiesOnly yes')

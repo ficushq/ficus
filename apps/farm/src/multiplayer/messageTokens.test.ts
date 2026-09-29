@@ -8,13 +8,13 @@ const PEOPLE = [{ id: 'rosa', name: 'Rosa Díaz' }]
 
 describe('chat message tokens', () => {
   test('split text, mentions, farm references and links', () => {
-    const body = `@Rosa look at ficus:ws:${WS} and tau:agent:${AGENT}, docs at https://example.com/guide.`
+    const body = `@Rosa look at ficus:ws:${WS} and ficus:agent:${AGENT}, docs at https://example.com/guide.`
     expect(tokenize(body, PEOPLE)).toEqual([
       { kind: 'mention', text: '@Rosa', userId: 'rosa' },
       { kind: 'text', text: ' look at ' },
       { kind: 'ref', text: `ficus:ws:${WS}`, ref: { kind: 'ws', id: WS } },
       { kind: 'text', text: ' and ' },
-      { kind: 'ref', text: `tau:agent:${AGENT}`, ref: { kind: 'agent', id: AGENT } },
+      { kind: 'ref', text: `ficus:agent:${AGENT}`, ref: { kind: 'agent', id: AGENT } },
       { kind: 'text', text: ', docs at ' },
       { kind: 'link', text: 'https://example.com/guide', href: 'https://example.com/guide' },
       { kind: 'text', text: '.' },

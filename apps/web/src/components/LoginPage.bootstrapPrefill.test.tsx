@@ -106,7 +106,7 @@ describe('LoginPage — bootstrap password prefill via URL fragment', () => {
     authStatus = { authEnabled: true, mode: 'password', hasUsers: false, hasAdminUser: false }
     requireCsrf = true
     win.document.cookie = 'ficus_session=another-instance-session; Path=/'
-    await renderAt('http://localhost/tau-gh-smoke/')
+    await renderAt('http://localhost/ficus-gh-smoke/')
     const input = container.querySelector<HTMLInputElement>('input[type="password"]')!
     await dom.act(async () => fireEvent.input(input, { target: { value: 'correct-smoke-password' } }))
     await dom.act(async () => {

@@ -18,11 +18,11 @@ describe('getHomeDir', () => {
   })
 
   it('expands a leading ~ in HOME_DIR', () => {
-    // The reported bug: `HOME_DIR=~/.host-test-tau` in a .env reached this
+    // The reported bug: `HOME_DIR=~/.host-test-ficus` in a .env reached this
     // function verbatim, and the core created a directory literally named `~`
     // under its own working directory.
-    process.env.HOME_DIR = '~/.host-test-tau'
-    expect(getHomeDir()).toBe(join(homedir(), '.host-test-tau'))
+    process.env.HOME_DIR = '~/.host-test-ficus'
+    expect(getHomeDir()).toBe(join(homedir(), '.host-test-ficus'))
   })
 
   it('expands a bare ~ in HOME_DIR', () => {

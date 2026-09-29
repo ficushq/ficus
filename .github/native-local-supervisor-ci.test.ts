@@ -23,7 +23,7 @@ describe('native local-setup CI authority', () => {
   test('collects native supervisor diagnostics rather than querying pm2', () => {
     const run = step('Show logs on failure')?.run ?? ''
 
-    expect(run).toContain('server logs --instance tau')
+    expect(run).toContain('server logs --instance ficus')
     expect(run).toContain('systemctl --user status')
     expect(run).toContain('~/.tau/logs/tau-api.log')
     expect(run).not.toContain('bunx pm2 logs')

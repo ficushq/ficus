@@ -7,7 +7,7 @@ command -v runuser >/dev/null
 source_bun=$(command -v bun)
 [[ -x ${source_bun} ]] || { echo 'bun is required' >&2; exit 1; }
 
-scratch=$(mktemp -d /tmp/tau-bun-node-cross-user.XXXXXX)
+scratch=$(mktemp -d /tmp/ficus-bun-node-cross-user.XXXXXX)
 chmod 0755 "${scratch}"
 root_home=${scratch}/root-home
 runner_home=${scratch}/runner-home

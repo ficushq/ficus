@@ -130,7 +130,7 @@ describe.skipIf(!canUseRealRoot || process.env.FICUS_TEST_SKIP_SUBPROCESS === '1
     test('a root .env alone is refused before a database connection is attempted', async () => {
       writeFileSync(
         rootEnvPath,
-        'DATABASE_URL=postgres://tau:migration-credential-sentinel-7c4e@127.0.0.1:1/tau_nowhere\n'
+        'DATABASE_URL=postgres://ficus:migration-credential-sentinel-7c4e@127.0.0.1:1/ficus_nowhere\n'
       )
       cleanups.push(() => unlinkSync(rootEnvPath))
 
@@ -138,7 +138,7 @@ describe.skipIf(!canUseRealRoot || process.env.FICUS_TEST_SKIP_SUBPROCESS === '1
 
       expect(exitCode).not.toBe(0)
       expect(stderr).toContain('explicit DATABASE_URL override')
-      expect(stderr).toContain('Refused target: 127.0.0.1:1/tau_nowhere')
+      expect(stderr).toContain('Refused target: 127.0.0.1:1/ficus_nowhere')
       expect(stderr).not.toContain('migration-credential-sentinel-7c4e')
       expect(stderr).not.toContain('ECONNREFUSED')
     }, 30_000)

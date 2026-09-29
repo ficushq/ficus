@@ -67,7 +67,7 @@ describe('localDeployment service', () => {
     try {
       const squad = await createTestSquad('path-fallback')
       const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
-      const token = new URL(`http://tau${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token')
+      const token = new URL(`http://ficus${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token')
 
       expect(localDeployment.urlPathOrHost).toBe(
         `/api/app/${localDeployment.id}/?_tau_token=${encodeURIComponent(token!)}`
@@ -87,7 +87,7 @@ describe('localDeployment service', () => {
     try {
       const squad = await createTestSquad('invalid-hosted-read')
       const created = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
-      const token = new URL(`http://tau${created.urlPathOrHost}`).searchParams.get('_tau_token')!
+      const token = new URL(`http://ficus${created.urlPathOrHost}`).searchParams.get('_tau_token')!
       process.env.FICUS_APPS_DOMAIN = 'ficus.app'
       process.env.APP_URL = `https://${'a'.repeat(50)}.ficus.sh`
 

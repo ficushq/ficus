@@ -43,7 +43,7 @@ async function runWhoami(responses: Record<string, unknown | (() => never)>) {
 
   const program = new Command()
   registerWhoamiCommands(program, dependencies)
-  await program.parseAsync(['node', 'tau', 'whoami'])
+  await program.parseAsync(['node', 'ficus', 'whoami'])
   return { calls, result: printed[0]!.data, message: printed[0]!.message }
 }
 

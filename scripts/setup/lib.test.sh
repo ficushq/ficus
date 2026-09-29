@@ -947,7 +947,7 @@ EOF
   cfg_set_tmp=$(mktemp)
   cat >"${cfg_set_tmp}" <<'EOF'
 source:
-  repo: git@example.com:acme/tau.git
+  repo: git@example.com:acme/ficus.git
   dest: /opt/tau-core
 core:
   origin: https://old.ficus.sh
@@ -968,7 +968,7 @@ EOF
   expect_eq 'cfg_set: created a NEW key under an existing empty map (core.env.FICUS_PLATFORM_INGEST_URL)' \
     "$(cfg_get '.core.env.FICUS_PLATFORM_INGEST_URL')" 'https://ficus.sh'
   expect_eq 'cfg_set: touched NOTHING else — source.repo untouched' \
-    "$(cfg_get '.source.repo')" 'git@example.com:acme/tau.git'
+    "$(cfg_get '.source.repo')" 'git@example.com:acme/ficus.git'
   expect_eq 'cfg_set: touched NOTHING else — source.dest untouched' \
     "$(cfg_get '.source.dest')" '/opt/tau-core'
   expect_eq 'cfg_set: touched NOTHING else — core.port untouched' "$(cfg_get '.core.port')" '3000'
@@ -2188,7 +2188,7 @@ core:
   origin: https://acme.example:3000
 source:
   mode: git-https
-  repo: https://github.com/example/tau.git
+  repo: https://github.com/example/ficus.git
 database:
   mode: external
   ca_path: ${PROV_TMP}/db-ca.crt
@@ -2212,7 +2212,7 @@ core:
   origin: https://acme.example:3000
 source:
   mode: artifact
-  repo: https://github.com/example/tau.git
+  repo: https://github.com/example/ficus.git
 runtime:
   sandbox: docker-socket
 ai:
@@ -2253,7 +2253,7 @@ core:
   origin: https://acme.example:3000
 source:
   mode: git-https
-  repo: https://github.com/example/tau.git
+  repo: https://github.com/example/ficus.git
 ai:
   provider: openai-codex
   model: gpt-5
@@ -2269,7 +2269,7 @@ core:
   origin: https://acme.example:3000
 source:
   mode: git-https
-  repo: https://github.com/example/tau.git
+  repo: https://github.com/example/ficus.git
 runtime:
   sandbox: docker
 ai:
@@ -2287,7 +2287,7 @@ core:
   origin: https://acme.example:3000
 source:
   mode: git-https
-  repo: https://github.com/example/tau.git
+  repo: https://github.com/example/ficus.git
 runtime:
   sandbox: '  vm  '
 ai:
@@ -2493,7 +2493,7 @@ mkdir -p "${RESTORE_TMP}/out-nodump" && chmod 700 "${RESTORE_TMP}/out-nodump"
 rn_rc=0
 rn_err=$( (restore_unpack_archive "${RESTORE_TMP}/nodump.tar.gz.enc" "${RESTORE_PASSFILE}" "${RESTORE_TMP}/out-nodump") 2>&1 >/dev/null ) || rn_rc=$?
 expect_eq 'restore_unpack_archive: missing db.dump dies (envelope-shape guard)' "${rn_rc}" '1'
-expect_match 'restore_unpack_archive: missing-db.dump message says not a tau envelope' "${rn_err}" 'db.dump'
+expect_match 'restore_unpack_archive: missing-db.dump message says not a ficus envelope' "${rn_err}" 'db.dump'
 
 rm -rf "${RESTORE_TMP}"
 
@@ -2512,7 +2512,7 @@ IR_TMP=$(mktemp -d)
 IR_DEST="${IR_TMP}/rendered.out"
 IR_TMPL="${IR_TMP}/unit.tmpl"
 printf 'User=@RUN_USER@\nExecStart=@BUN_BIN@ run\n' >"${IR_TMPL}"
-ir_render_good() { sed -e 's|@RUN_USER@|tau|g' -e 's|@BUN_BIN@|/usr/local/bin/bun|g' "${IR_TMPL}"; }
+ir_render_good() { sed -e 's|@RUN_USER@|ficus|g' -e 's|@BUN_BIN@|/usr/local/bin/bun|g' "${IR_TMPL}"; }
 ir_render_unsubstituted() { sed -e 's|@NOT_IN_TEMPLATE@|x|g' "${IR_TMPL}"; } # sed "succeeds", markers survive
 ir_render_empty() { :; }
 ir_render_fail() { return 3; }
@@ -2520,7 +2520,7 @@ ir_render_fail() { return 3; }
 # Good render: lands with the requested mode and the rendered content.
 (install_rendered --check-placeholders 0640 "$(id -un)" "$(id -gn)" "${IR_DEST}" ir_render_good) 2>/dev/null
 expect_eq 'install_rendered: good render installs the rendered content' \
-  "$(cat "${IR_DEST}")" $'User=tau\nExecStart=/usr/local/bin/bun run'
+  "$(cat "${IR_DEST}")" $'User=ficus\nExecStart=/usr/local/bin/bun run'
 expect_eq 'install_rendered: good render installs with the requested mode' \
   "$(file_mode "${IR_DEST}")" '640'
 rm -f "${IR_DEST}"
@@ -2593,7 +2593,7 @@ expect_eq 'core_run_root: CORE_LAYOUT=artifact forces the artifact layout before
 
 # render_core_unit reads caller globals, exactly as setup-host.sh/upgrade-host.sh
 # supply them.
-SRC_DEST="${CU_TMP}" RUN_USER=tau BUN_BIN=/usr/local/bin/bun DB_MODE=container
+SRC_DEST="${CU_TMP}" RUN_USER=ficus BUN_BIN=/usr/local/bin/bun DB_MODE=container
 cu_api=$(render_core_unit "${SCRIPT_DIR}/systemd/tau-api.service.tmpl")
 expect_eq 'render_core_unit: git layout runs from <dest>/apps/core' \
   "$(printf '%s\n' "${cu_api}" | grep -Fxc "WorkingDirectory=${CU_TMP}/apps/core")" '1'
@@ -2661,8 +2661,8 @@ as_root() {
   fi
 }
 AR_TMP=$(mktemp -d)
-FICUS_MANAGED_ENV_PATH="${AR_TMP}/etc-tau/managed.env"
-FICUS_ARTIFACTS_DIR="${AR_TMP}/etc-tau/artifacts"
+FICUS_MANAGED_ENV_PATH="${AR_TMP}/etc-ficus/managed.env"
+FICUS_ARTIFACTS_DIR="${AR_TMP}/etc-ficus/artifacts"
 
 # Staging dir with a managed.env and one file artifact.
 AR_STAGE="${AR_TMP}/stage"
@@ -2775,7 +2775,7 @@ mkdir -p "${FICUS_ARTIFACTS_DIR}"
 printf 'KEEP' >"${FICUS_ARTIFACTS_DIR}/apns.pem"
 printf 'STALE' >"${FICUS_ARTIFACTS_DIR}/deleted-artifact.pem"
 # A sibling OUTSIDE the artifacts dir (the database CA analogue) must survive.
-printf 'CA' >"${AR_TMP}/etc-tau/database-ca.crt"
+printf 'CA' >"${AR_TMP}/etc-ficus/database-ca.crt"
 AR_STAGE6="${AR_TMP}/stage6"
 mkdir -p "${AR_STAGE6}"
 printf '0600 apns.pem\n' >"${AR_STAGE6}/manifest"
@@ -2785,7 +2785,7 @@ expect_eq 'prune_artifacts: manifest-listed file kept' \
 expect_eq 'prune_artifacts: unlisted file removed' \
   "$([[ -e ${FICUS_ARTIFACTS_DIR}/deleted-artifact.pem ]] && echo present || echo absent)" 'absent'
 expect_eq 'prune_artifacts: sibling outside the artifacts dir untouched' \
-  "$(cat "${AR_TMP}/etc-tau/database-ca.crt")" 'CA'
+  "$(cat "${AR_TMP}/etc-ficus/database-ca.crt")" 'CA'
 
 # Empty manifest = "no file artifact should exist": prunes the last one.
 : >"${AR_STAGE6}/manifest"
@@ -4282,7 +4282,7 @@ rm -rf "${ART_SHIM}"
 # than die. With a token the askpass path is unchanged.
 GES_ANON=$(
   (
-    SRC_MODE=git-https SRC_REPO=https://github.com/example-org/tau.git
+    SRC_MODE=git-https SRC_REPO=https://github.com/example-org/ficus.git
     unset GH_TOKEN
     is_tty() { return 1; }
     git_env_setup 2>/dev/null
@@ -4290,10 +4290,10 @@ GES_ANON=$(
   )
 )
 expect_eq 'git_env_setup: git-https with no token → anonymous https URL, no askpass helper' \
-  "${GES_ANON}" 'https://github.com/example-org/tau.git|https://github.com/example-org/tau.git|unset'
+  "${GES_ANON}" 'https://github.com/example-org/ficus.git|https://github.com/example-org/ficus.git|unset'
 GES_SSH_STYLE=$(
   (
-    SRC_MODE=git-https SRC_REPO=git@github.com:example-org/tau.git
+    SRC_MODE=git-https SRC_REPO=git@github.com:example-org/ficus.git
     unset GH_TOKEN
     is_tty() { return 1; }
     git_env_setup 2>/dev/null
@@ -4301,16 +4301,16 @@ GES_SSH_STYLE=$(
   )
 )
 expect_eq 'git_env_setup: anonymous clone still normalizes an ssh-style URL' \
-  "${GES_SSH_STYLE}" 'https://github.com/example-org/tau.git'
+  "${GES_SSH_STYLE}" 'https://github.com/example-org/ficus.git'
 GES_TOKEN=$(
   (
-    SRC_MODE=git-https SRC_REPO=https://github.com/example-org/tau.git GH_TOKEN=ghp_test
+    SRC_MODE=git-https SRC_REPO=https://github.com/example-org/ficus.git GH_TOKEN=ghp_test
     git_env_setup 2>/dev/null
     printf '%s|%s' "${GIT_AUTH_URL}" "$([[ -x ${GIT_ASKPASS:-/nonexistent} ]] && echo askpass || echo none)"
   )
 )
 expect_eq 'git_env_setup: git-https with a token keeps the x-access-token askpass path' \
-  "${GES_TOKEN}" 'https://x-access-token@github.com/example-org/tau.git|askpass'
+  "${GES_TOKEN}" 'https://x-access-token@github.com/example-org/ficus.git|askpass'
 
 # --- ensure_system_bun_node -------------------------------------------------
 # Managed hosts expose Bun through stable system paths so Node shebangs never
@@ -5234,7 +5234,7 @@ EOF
     fi
   }
   expect_contains_line 'setup-host --dry-run (backup on): plans the script render at the same path' "${rbs_dry}" \
-    '  render /usr/local/bin/tau-backup.sh from tau-backup.sh.tmpl (dest=/opt/tau-core, db.mode=external, s3=https://nyc3.digitaloceanspaces.com/tau-backups)'
+    '  render /usr/local/bin/tau-backup.sh from tau-backup.sh.tmpl (dest=/opt/tau-core, db.mode=external, s3=https://nyc3.digitaloceanspaces.com/ficus-backups)'
   expect_contains_line 'setup-host --dry-run (backup on): plans backup.env at the same path' "${rbs_dry}" \
     '  write /etc/tau/backup.env (0600 root-owned; secrets redacted below):'
   unset -f expect_contains_line

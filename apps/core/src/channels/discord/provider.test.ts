@@ -118,7 +118,7 @@ describe('Discord bot DM classification', () => {
           user: { id: 'person', username: 'Person' },
           data: {
             // A registration made before the rename: interactions route by subcommand, not by this name.
-            name: 'tau',
+            name: 'ficus',
             options: [{ name: 'squad', type: 1, options: [{ name: 'squad', type: 3, value: 'my-squad' }] }],
           },
         },

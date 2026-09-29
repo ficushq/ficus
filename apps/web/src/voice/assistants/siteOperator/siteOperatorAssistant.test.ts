@@ -275,7 +275,7 @@ test('page conversations expose only scoped editor tools and delegation, without
   // The schema omits squadId, so a squad the model emits anyway must be dropped, not honoured.
   await controller.executeTool({
     name: 'delegate',
-    toolArgs: { label: 'Review flow design', request: 'Design an independent review flow', squadId: 'tau' },
+    toolArgs: { label: 'Review flow design', request: 'Design an independent review flow', squadId: 'ficus' },
     env,
     runtime: {} as any,
   })

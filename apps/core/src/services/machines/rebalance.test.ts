@@ -15,7 +15,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
     providerRef: null,
     sshHost: '10.0.0.5',
     sshPort: 22,
-    sshUser: 'tau',
+    sshUser: 'ficus',
     sshKeyId: 'secret-key',
     sshPublicKey: '',
     status: 'ready',

@@ -120,7 +120,10 @@ async function makeCheckout(): Promise<string> {
   // Decoys: none of these may appear inside the artifact.
   // The repo's own root package.json in particular: the artifact carries a
   // GENERATED marker instead, never this one.
-  await write(join(root, 'package.json'), '{"name":"tau","workspaces":["apps/*"],"devDependencies":{"eslint":"^9"}}\n')
+  await write(
+    join(root, 'package.json'),
+    '{"name":"ficus","workspaces":["apps/*"],"devDependencies":{"eslint":"^9"}}\n'
+  )
   await write(join(root, 'src/index.ts'), 'export const x = 1\n')
   await write(join(root, 'apps/core/src/index.ts'), 'export const y = 1\n')
   await write(join(root, '.git/HEAD'), 'ref: refs/heads/main\n')

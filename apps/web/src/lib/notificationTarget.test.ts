@@ -17,15 +17,15 @@ test('an Assistant update opens the saved conversation, never the inbox or a sen
 })
 
 test('a deployment base path is preserved from the server-built URL', () => {
-  const url = `https://home.example/tau/?chat=open&assistantConversation=${conversationId}`
-  expect(resolveNotificationTarget({ ...assistantPayload, url }, 'https://home.example', '/tau/')).toBe(
-    `/tau/?chat=open&assistantConversation=${conversationId}`
+  const url = `https://home.example/ficus/?chat=open&assistantConversation=${conversationId}`
+  expect(resolveNotificationTarget({ ...assistantPayload, url }, 'https://home.example', '/ficus/')).toBe(
+    `/ficus/?chat=open&assistantConversation=${conversationId}`
   )
 })
 
 test('external or malformed destinations fall back to the app root on the base path', () => {
-  expect(resolveNotificationTarget({ url: 'https://evil.example/steal' }, 'https://ficus.example', '/tau/')).toBe(
-    '/tau/'
+  expect(resolveNotificationTarget({ url: 'https://evil.example/steal' }, 'https://ficus.example', '/ficus/')).toBe(
+    '/ficus/'
   )
   expect(resolveNotificationTarget({ url: 'javascript:alert(1)' }, 'https://ficus.example', '/')).toBe('/')
   expect(resolveNotificationTarget({}, 'https://ficus.example', '/')).toBe('/')

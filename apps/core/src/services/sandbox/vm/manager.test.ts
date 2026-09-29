@@ -221,7 +221,7 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
     log.push(`sync:${sandboxId}`)
     syncCalls.push(sandboxId)
     // Mirror production's first artifact so the fake client records a write.
-    await client.write({ path: `/home/${boxUnixUser(sandboxId)}/bin/tau`, mode: '0755' })
+    await client.write({ path: `/home/${boxUnixUser(sandboxId)}/bin/ficus`, mode: '0755' })
   }
   // Default seed is a recording no-op so existing tests don't pay for the real
   // seeder (which would call client.read/bash the fake client doesn't script).
@@ -818,7 +818,7 @@ describe('VmSandboxManager', () => {
       ({
         sandboxId,
         machineId: 'm1',
-        unixUser: 'tau',
+        unixUser: 'ficus',
         port: 50100,
         status: 'ready',
         authToken: token,
@@ -1382,7 +1382,7 @@ describe('VmSandboxManager', () => {
     expect(syncIdx).toBeGreaterThan(ensureIdx)
     // Sync used the tracked client (the fake sync writes the CLI through it).
     const client = [...h.clients.values()][0]
-    expect(client.writeCalls.map((w) => w.path)).toContain(`/home/${boxUnixUser('squad_s1')}/bin/tau`)
+    expect(client.writeCalls.map((w) => w.path)).toContain(`/home/${boxUnixUser('squad_s1')}/bin/ficus`)
   })
 
   test('bridges selected asset mutation progress through the manager hub', async () => {

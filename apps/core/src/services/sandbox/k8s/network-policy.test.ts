@@ -52,7 +52,7 @@ describe('K8s sandbox GitHub SSH egress', () => {
     expect(dockerSandboxDockerfile).toContain('99-github-ssh-over-443.conf')
   })
 
-  test('sandbox image does not bundle tau cli', () => {
+  test('sandbox image does not bundle ficus cli', () => {
     const dockerfile = readFileSync(join(repoRoot, 'packages/k8s-sandbox/Dockerfile'), 'utf8')
 
     expect(dockerfile).not.toContain('/opt/tau-cli')

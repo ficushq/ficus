@@ -170,7 +170,7 @@ describe('SlackClient', () => {
           bot: {
             id: 'B3333333333',
             deleted: false,
-            name: 'tau',
+            name: 'ficus',
             updated: 1700000000,
             app_id: 'A1234567890',
             user_id: 'U2222222222',

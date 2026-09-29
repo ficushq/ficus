@@ -190,7 +190,7 @@ describe('production VM recovery wiring', () => {
       providerRef: null,
       sshHost: '127.0.0.1',
       sshPort: 22,
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'unused',
       sshPublicKey: 'test',
       status: 'ready',
@@ -205,14 +205,14 @@ describe('production VM recovery wiring', () => {
       name: machine.name,
       provider: 'ssh',
       sshHost: '127.0.0.1',
-      sshUser: 'tau',
+      sshUser: 'ficus',
       sshKeyId: 'unused',
       sshPublicKey: 'test',
       status: 'ready',
     })
     await db
       .insert(machineBoxes)
-      .values({ sandboxId, machineId, unixUser: 'tau', port: 50100, status: 'ready', authToken: 'box-token' })
+      .values({ sandboxId, machineId, unixUser: 'ficus', port: 50100, status: 'ready', authToken: 'box-token' })
 
     let bashCalls = 0
     const oldClient = new SandboxClient('127.0.0.1:45000', 'box-token', {
@@ -261,7 +261,7 @@ describe('production VM recovery wiring', () => {
           box: {
             sandboxId,
             machineId,
-            unixUser: 'tau',
+            unixUser: 'ficus',
             port: 50100,
             status: 'ready',
             authToken: 'box-token',

@@ -123,10 +123,10 @@ describe('maybeMountWebUi', () => {
       delete process.env.FICUS_WEB_ORIGIN
       const { app } = setupApp()
       for (const path of ['/', '/index.html']) {
-        const res = await app.request(`http://tau.local:8080${path}`)
+        const res = await app.request(`http://ficus.local:8080${path}`)
         expect(res.status).toBe(200)
         const body = await res.text()
-        expect(body).toContain('content="http://tau.local:8080/social-preview.png"')
+        expect(body).toContain('content="http://ficus.local:8080/social-preview.png"')
         expect(body).not.toContain('__FICUS_ORIGIN__')
         expect(res.headers.get('Cache-Control')).toContain('no-cache')
       }
@@ -152,10 +152,10 @@ describe('maybeMountWebUi', () => {
       process.env.FICUS_SERVE_WEB = '1'
       delete process.env.FICUS_WEB_ORIGIN
       const { app } = setupApp()
-      const res = await app.request('http://tau.local/squads/123', {
+      const res = await app.request('http://ficus.local/squads/123', {
         headers: { Accept: 'text/html,application/xhtml+xml' },
       })
-      expect(await res.text()).toContain('content="http://tau.local/social-preview.png"')
+      expect(await res.text()).toContain('content="http://ficus.local/social-preview.png"')
     })
   })
 

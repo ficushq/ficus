@@ -6,8 +6,8 @@ describe('resolveOAuthCallbackUrl', () => {
     expect(resolveOAuthCallbackUrl('https://ficus.example', undefined)).toBe(
       'https://ficus.example/settings/integrations/oauth/callback'
     )
-    expect(resolveOAuthCallbackUrl('https://ficus.example/tau/', undefined)).toBe(
-      'https://ficus.example/tau/settings/integrations/oauth/callback'
+    expect(resolveOAuthCallbackUrl('https://ficus.example/ficus/', undefined)).toBe(
+      'https://ficus.example/ficus/settings/integrations/oauth/callback'
     )
   })
 
@@ -41,7 +41,7 @@ describe('resolveOAuthCallbackUrl', () => {
     expect(() => resolveOAuthCallbackUrl(appUrl, undefined)).toThrow('Invalid public application URL')
   })
 
-  test.each(['//evil.example', '/tau?query=1', '/tau#fragment', '/tau\\escape', '/tau/%0a'])(
+  test.each(['//evil.example', '/ficus?query=1', '/ficus#fragment', '/ficus\\escape', '/ficus/%0a'])(
     'rejects unsafe APP_BASE_PATH %#',
     (basePath) => {
       expect(() => resolveOAuthCallbackUrl('https://ficus.example', basePath)).toThrow('Invalid application base path')

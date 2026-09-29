@@ -10,11 +10,11 @@ const labels = {
 describe('Docker runtime contract', () => {
   test('same-tag immutable image and executor protocol drift change the canonical spec', () => {
     const base = {
-      imageReference: 'tau:latest',
+      imageReference: 'ficus:latest',
       imageId: `sha256:${'a'.repeat(64)}`,
       runtimeContractVersion: 1 as const,
       executorProtocolVersion: 1 as const,
-      commandIdentityFingerprint: 'tau:1000:1000:image',
+      commandIdentityFingerprint: 'ficus:1000:1000:image',
       runtime: 'docker-socket',
       workspacePath: '/workspace',
       privateVolumePath: null,
