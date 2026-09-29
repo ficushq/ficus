@@ -8,6 +8,7 @@ import { integrationQueries, queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
+import { CLOSE_ASSISTANT_STATE } from '../hooks/useKeepAssistantAcrossPages'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { formatAssistantUpdateTime, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
 import { AgentActivityDot } from './AgentActivityDot'
@@ -194,7 +195,7 @@ export function AssistantCommandCenter({
     if (result.destination) push(result.destination)
     else if (result.path) {
       onNavigate()
-      navigate(result.path)
+      navigate(result.path, { state: CLOSE_ASSISTANT_STATE })
     }
   }
   const start = (targetId: string, text?: string) =>

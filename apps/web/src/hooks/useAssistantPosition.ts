@@ -30,8 +30,9 @@ function savedCorner(): AssistantCorner | undefined {
   }
 }
 
-type Viewport = { left: number; top: number; width: number; height: number }
-const gutter = 8
+export type Viewport = { left: number; top: number; width: number; height: number }
+export const ASSISTANT_GUTTER = 8
+const gutter = ASSISTANT_GUTTER
 export function dockAssistant(corner: AssistantCorner, viewport: Viewport, width: number, height: number) {
   const left = viewport.left + gutter
   const top = viewport.top + gutter
@@ -66,7 +67,7 @@ export function snapAssistant(
   )
 }
 
-function currentViewport(): Viewport {
+export function currentViewport(): Viewport {
   const viewport = window.visualViewport
   return {
     left: viewport?.offsetLeft ?? 0,

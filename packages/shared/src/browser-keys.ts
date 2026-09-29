@@ -38,6 +38,7 @@ export const WORK_STREAM_VIEW_STORAGE_PREFIX = 'ficus.wsView.'
 export const LOADING_SHAPE_STORAGE_PREFIX = 'ficus.loadingShape.v1'
 export const DEV_BACKEND_SHAPE_SCOPE_STORAGE_KEY = 'ficus.devBackend.shapeScope'
 export const ASSISTANT_POSITION_STORAGE_KEY = 'ficus-assistant-position'
+export const ASSISTANT_SIZE_STORAGE_KEY = 'ficus-assistant-size'
 export const VOICE_INPUT_MODE_STORAGE_KEY = 'ficus_voice_workspace_input_mode'
 export const PUSH_SUBSCRIPTION_ID_STORAGE_KEY = 'ficus_push_subscription_id'
 /** Unsent workflow drafts: `${prefix}${JSON.stringify([apiUrl, identityType, owner, draftId])}`. */
