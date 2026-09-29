@@ -15,7 +15,7 @@ afterEach(() => {
 
 describe('loadEnv', () => {
   it('loads only the runtime CWD dotenv rather than compiled source ancestry', () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-env-'))
     dirs.push(root)
     const runtime = join(root, 'runtime')
     const compiled = join(root, 'compiled', 'source')
@@ -43,7 +43,7 @@ describe('loadEnv', () => {
   })
 
   it('does not replace explicit values', () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-env-'))
     dirs.push(root)
     writeFileSync(join(root, '.env'), 'FICUS_PASSWORD=dotenv\n')
     const env: NodeJS.ProcessEnv = { FICUS_PASSWORD: 'explicit' }
@@ -54,7 +54,7 @@ describe('loadEnv', () => {
   })
 
   it('distinguishes process values injected by dotenv from runtime overrides', () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-env-'))
     dirs.push(root)
     writeFileSync(join(root, '.env'), 'FICUS_PASSWORD=dotenv\n')
     delete process.env.FICUS_PASSWORD
@@ -73,7 +73,7 @@ describe('loadEnv', () => {
   // injects nothing — but the value is still the dotenv file's, not something the user chose.
   // Classifying it as "explicit" is what let a stale repo .env outrank the auth store.
   it('treats a value Bun already auto-loaded from the cwd dotenv as implicit', () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-env-'))
     dirs.push(root)
     // A value unique to this file: bookkeeping left behind by an earlier test must not be
     // what makes this pass.
@@ -87,7 +87,7 @@ describe('loadEnv', () => {
   })
 
   it('keeps a runtime value that differs from the dotenv file explicit', () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-env-'))
     dirs.push(root)
     writeFileSync(join(root, '.env'), 'FICUS_PASSWORD=file-secret\n')
     process.env.FICUS_PASSWORD = 'exported-by-the-user'
@@ -104,7 +104,7 @@ describe('loadEnv', () => {
       return
     }
 
-    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-env-'))
     dirs.push(root)
     const envPath = join(root, '.env')
     writeFileSync(envPath, 'FICUS_PASSWORD=unreadable\n')

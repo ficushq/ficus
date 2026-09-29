@@ -351,7 +351,7 @@ describe('host browser backend', () => {
   let exitSpy: ReturnType<typeof spyOn>
 
   beforeEach(() => {
-    tokensDir = mkdtempSync(join(tmpdir(), 'tau-host-browser-'))
+    tokensDir = mkdtempSync(join(tmpdir(), 'ficus-host-browser-'))
     engines = []
     // Any process.exit from the engine would take the whole test runner with
     // it — spying is both the assertion and the safety net.
@@ -602,7 +602,7 @@ describe('host browser backend', () => {
       // accepts injectable rm/kill only, so the listing comes from a temp
       // tree below instead. (This test asserts the DECISIONS: which pids get
       // probed and which dirs get removed.)
-      const tmpParent = mkdtempSync(join(tmpdir(), 'tau-sweep-unit-'))
+      const tmpParent = mkdtempSync(join(tmpdir(), 'ficus-sweep-unit-'))
       for (const entry of entries) mkdirSync(join(tmpParent, entry), { recursive: true })
       try {
         sweepStaleBrowserTokenDirs(tmpParent, 333, { kill, rm: (p) => removed.push(p) })
@@ -614,7 +614,7 @@ describe('host browser backend', () => {
     })
 
     test('ensureService sweeps dead siblings and keeps the live one when the tokens dir defaulted', async () => {
-      const home = mkdtempSync(join(tmpdir(), 'tau-host-browser-sweep-'))
+      const home = mkdtempSync(join(tmpdir(), 'ficus-host-browser-sweep-'))
       const prevHome = process.env.HOME_DIR
       process.env.HOME_DIR = home
       const tokensParent = join(home, 'host', 'browser-tokens')
@@ -684,7 +684,7 @@ describe('HostSandboxManager.getBrowserBackend', () => {
   let manager: HostSandboxManager
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-browser-mgr-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-browser-mgr-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = home
     manager = new HostSandboxManager({ baseEnv: () => ({ PATH: '/usr/bin:/bin', HOME: home }) })
@@ -779,7 +779,7 @@ describe('real local browser', () => {
             headers: { 'content-type': 'text/html' },
           }),
       })
-      const dir = mkdtempSync(join(tmpdir(), 'tau-host-browser-real-'))
+      const dir = mkdtempSync(join(tmpdir(), 'ficus-host-browser-real-'))
       const engine = createHostBrowserBackend({ tokensDir: dir, installExitHooks: false })
       try {
         const opened = await engine.forSandbox('agent_real').browserOpen('run-1', `http://127.0.0.1:${server.port}/`)

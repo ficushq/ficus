@@ -51,10 +51,10 @@ describe('channel plugins', () => {
   test('configurations carry only discovered identity and accept an empty start', () => {
     const { telegram, slack, discord } = createChannelPlugins({ fetch: fakeFetch({}).fetchImpl })
     expect(telegram.connection.parseConfiguration({ version: 1 })).toEqual({ version: 1 })
-    expect(telegram.connection.parseConfiguration({ version: 1, botId: '123', username: 'tau_bot' })).toEqual({
+    expect(telegram.connection.parseConfiguration({ version: 1, botId: '123', username: 'ficus_bot' })).toEqual({
       version: 1,
       botId: '123',
-      username: 'tau_bot',
+      username: 'ficus_bot',
     })
     expect(
       slack.connection.parseConfiguration({ version: 1, teamId: 'T1', botUserId: 'U1', teamName: 'Acme' })
@@ -72,7 +72,7 @@ describe('channel plugins', () => {
 
   test('Telegram validates with getMe and discovers the bot identity', async () => {
     const { fetchImpl, calls } = fakeFetch({
-      '/bot123:abc/getMe': Response.json({ ok: true, result: { id: 123, username: 'tau_bot' } }),
+      '/bot123:abc/getMe': Response.json({ ok: true, result: { id: 123, username: 'ficus_bot' } }),
       '/bot123:bad/getMe': new Response(JSON.stringify({ ok: false, description: 'Unauthorized' }), { status: 401 }),
     })
     const { telegram } = createChannelPlugins({ fetch: fetchImpl })
@@ -89,7 +89,7 @@ describe('channel plugins', () => {
     ).toEqual({ ok: false, code: 'invalid_auth' })
     expect(await telegram.channel.identity({ botToken: '123:abc', webhookSecret: 's' })).toEqual({
       botId: '123',
-      username: 'tau_bot',
+      username: 'ficus_bot',
     })
     // The token travels in the path, never logged or echoed by these calls.
     expect(calls.every((call) => !header(call.init, 'authorization'))).toBe(true)

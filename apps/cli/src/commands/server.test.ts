@@ -23,7 +23,7 @@ let root: string
 let statePath: string
 let savedExitCode: number | string | undefined
 beforeEach(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), 'tau-server-')))
+  root = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-server-')))
   mkdirSync(join(root, '.git'))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
   writeFileSync(
@@ -363,7 +363,7 @@ describe('ficus server', () => {
     expect(message).toContain('~/.tau-smoke')
   })
   it('uninstall leaves the registry alone for a checkout nobody registered', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-other-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-other-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     const { run, calls } = make()
@@ -380,7 +380,7 @@ describe('ficus server', () => {
   // registry entry nothing can resolve; `--instance` must still be able to
   // retire it, cleaning the supervisor up as far as it can.
   it('uninstall --instance retires a registration whose checkout no longer exists', async () => {
-    const gone = join(tmpdir(), `tau-gone-${process.pid}`)
+    const gone = join(tmpdir(), `ficus-gone-${process.pid}`)
     upsertInstance(
       'smoke',
       { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
@@ -404,7 +404,7 @@ describe('ficus server', () => {
     expect(message).toContain('~/.tau-smoke')
   })
   it('uninstall --instance of a vanished checkout still removes the registration when the supervisor cleanup fails', async () => {
-    const gone = join(tmpdir(), `tau-gone-${process.pid}-b`)
+    const gone = join(tmpdir(), `ficus-gone-${process.pid}-b`)
     upsertInstance(
       'smoke',
       { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
@@ -479,7 +479,7 @@ describe('ficus server', () => {
     expect(calls.map((c) => c.command.join(' '))).toEqual(['docker ps -a --format {{.Names}}'])
   })
   it('honours --root over the state file', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-other-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-other-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     const { run, calls } = make()
@@ -503,7 +503,7 @@ describe('ficus server', () => {
     expect(process.exitCode).toBe(2)
   })
   it('use switches which instance a bare server command acts on', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-other-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-other-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     // The pm2/container names come from the checkout's own FICUS_INSTANCE, so a
@@ -553,7 +553,7 @@ describe('ficus server', () => {
   })
 
   it('install clones a fresh root, installs deps and hands off to bun run setup', async () => {
-    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-install-')))
+    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-install-')))
     const installRoot = join(installTmp, 'tau')
     const { runner, calls } = cloningRunner(installRoot)
     const { deps } = make()
@@ -590,7 +590,7 @@ describe('ficus server', () => {
     // instance. If --instance stopped reaching setup, every labelled resource
     // would silently fall back to the default names and collide with the
     // existing install — so the documented line is pinned here.
-    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-install-')))
+    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-install-')))
     const installRoot = join(installTmp, 'lab')
     const { runner, calls } = cloningRunner(installRoot)
     const { deps } = make()
@@ -613,7 +613,7 @@ describe('ficus server', () => {
     rmSync(installTmp, { recursive: true, force: true })
   })
   it('install parses the production form (no `--` separator) and still forwards the trailing flags to setup', async () => {
-    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-install-')))
+    const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-install-')))
     const installRoot = join(installTmp, 'tau')
     const { runner, calls } = cloningRunner(installRoot)
     const { deps } = make()
@@ -673,7 +673,7 @@ describe('ficus server', () => {
     expect(seen[0]).toMatchObject({ instance: 'smoke', port: 3100, apiUrl: 'http://localhost:3100' })
   })
   it('setup targets the checkout you are in, never the state file root', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-cwd-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-cwd-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     const nested = join(other, 'apps', 'core')
@@ -722,7 +722,7 @@ describe('ficus server', () => {
 describe('ficus server list', () => {
   /** A second registered instance, in its own checkout. */
   function secondInstance() {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-smoke-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
@@ -849,7 +849,7 @@ describe('ficus server list', () => {
 describe('ficus server <cmd> --instance', () => {
   /** A second registered instance in its own checkout, labelled smoke. */
   function smokeCheckout(): string {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-smoke-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
@@ -893,7 +893,7 @@ describe('ficus server <cmd> --instance', () => {
     expect(calls).toEqual([])
   })
   it('uninstall drops the entry and hands the default to a remaining instance', async () => {
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-smoke-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     upsertInstance(
@@ -929,7 +929,7 @@ describe('registry-backed supervisor dispatch', () => {
   })
 
   it('does not dispatch lifecycle work for a broken registered root', async () => {
-    const broken = join(root, '..', `tau-broken-${Date.now()}`)
+    const broken = join(root, '..', `ficus-broken-${Date.now()}`)
     symlinkSync(join(root, '..', 'missing-checkout'), broken)
     upsertInstance(
       'tau',
@@ -948,7 +948,7 @@ describe('registry-backed supervisor dispatch', () => {
   })
 
   it('uses the canonical registry root when lifecycle is selected through a symlink alias', async () => {
-    const alias = join(root, '..', `tau-server-alias-${Date.now()}`)
+    const alias = join(root, '..', `ficus-server-alias-${Date.now()}`)
     symlinkSync(root, alias)
     try {
       const { run, calls } = make()

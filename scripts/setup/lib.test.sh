@@ -4332,7 +4332,7 @@ if [[ ${FICUS_TEST_ROOT_INSTALL} -eq 1 ]]; then
     (
       FICUS_SYSTEM_BIN_DIR="${SBN_SYS}"
       as_root() { "$@"; }
-      getent() { [[ $1 == passwd && $2 == tau-runner ]] && printf 'tau-runner:x:1:1::%s:/bin/false\n' "${SBN_TMP}/runner-home"; }
+      getent() { [[ $1 == passwd && $2 == ficus-runner ]] && printf 'ficus-runner:x:1:1::%s:/bin/false\n' "${SBN_TMP}/runner-home"; }
       runuser() {
         [[ $1 == -u && $3 == -- ]] || return 91
         shift 3
@@ -4343,8 +4343,8 @@ if [[ ${FICUS_TEST_ROOT_INSTALL} -eq 1 ]]; then
         printf missing-helper
         exit 0
       fi
-      ensure_system_bun_node tau-runner "${SBN_SOURCE}"
-      ensure_system_bun_node tau-runner "${SBN_SOURCE}"
+      ensure_system_bun_node ficus-runner "${SBN_SOURCE}"
+      ensure_system_bun_node ficus-runner "${SBN_SOURCE}"
       printf '%s|%s|%s' "$(file_mode "${SBN_SYS}/bun")" \
         "$(readlink "${SBN_SYS}/node")" "$(tr '\n' ';' <"${SBN_TMP}/runuser.calls")"
     ) 2>/dev/null
@@ -4365,9 +4365,9 @@ if [[ ${FICUS_TEST_ROOT_INSTALL} -eq 1 ]]; then
     (
       FICUS_SYSTEM_BIN_DIR="${SBN_SYS}"
       as_root() { "$@"; }
-      getent() { printf 'tau-runner:x:1:1::%s:/bin/false\n' "${SBN_TMP}/runner-home"; }
+      getent() { printf 'ficus-runner:x:1:1::%s:/bin/false\n' "${SBN_TMP}/runner-home"; }
       runuser() { shift 3; "$@"; }
-      ensure_system_bun_node tau-runner "${SBN_SOURCE}"
+      ensure_system_bun_node ficus-runner "${SBN_SOURCE}"
       file_mode "${SBN_SYS}/bun"
     ) 2>/dev/null
   )
@@ -4380,7 +4380,7 @@ if [[ ${FICUS_TEST_ROOT_INSTALL} -eq 1 ]]; then
       FICUS_SYSTEM_BIN_DIR="${SBN_TMP}/bad-system"
       as_root() { "$@"; }
       runuser() { return 0; }
-      ensure_system_bun_node tau-runner "${SBN_BAD}"
+      ensure_system_bun_node ficus-runner "${SBN_BAD}"
     ) >/dev/null 2>&1 && echo accepted || echo rejected
   )
   expect_eq 'ensure_system_bun_node rejects a non-executable source before creating targets' "${sbn_bad}" 'rejected'
@@ -5169,7 +5169,7 @@ for rbs_mode in container external; do
     source "${SCRIPT_DIR}/lib.sh"
     SRC_DEST=/opt/tau-core BACKUP_HOME_DIR=/home/tau/.tau DB_MODE=${rbs_mode} DB_CONTAINER=tau-postgres
     BACKUP_S3_ENDPOINT=https://nyc3.digitaloceanspaces.com BACKUP_S3_REGION=nyc3
-    BACKUP_S3_BUCKET=tau-backups BACKUP_S3_PREFIX=tenants/acct-1/acme
+    BACKUP_S3_BUCKET=ficus-backups BACKUP_S3_PREFIX=tenants/acct-1/acme
     BACKUP_ENV_TARGET_LEGACY='/etc/tau/backup.env' # setup-host.sh's old literal
     eval "$(sed -n '/^render_backup_script() {$/,/^}$/p' "${SCRIPT_DIR}/setup-host.sh")"
     declare -F render_backup_script >/dev/null && : >"${RBS_TMP}/${rbs_mode}.found"
@@ -5181,7 +5181,7 @@ for rbs_mode in container external; do
   expect_eq "setup-host.sh renders tau-backup.sh byte-identically after the extraction (${rbs_mode})" \
     "$(cmp -s "${RBS_TMP}/${rbs_mode}.legacy" "${RBS_TMP}/${rbs_mode}.new" && echo same || echo differs)" 'same'
   expect_eq "the extracted render is non-trivial (${rbs_mode}: no @TOKEN@ left, bucket substituted)" \
-    "$(grep -c '@[A-Z_]*@' "${RBS_TMP}/${rbs_mode}.new" || true) $(grep -c "^S3_BUCKET='tau-backups'\$" "${RBS_TMP}/${rbs_mode}.new")" '0 1'
+    "$(grep -c '@[A-Z_]*@' "${RBS_TMP}/${rbs_mode}.new" || true) $(grep -c "^S3_BUCKET='ficus-backups'\$" "${RBS_TMP}/${rbs_mode}.new")" '0 1'
 done
 expect_eq 'backup paths default to what setup-host.sh always used' \
   "$(
@@ -5219,7 +5219,7 @@ backup:
   enabled: true
   s3_endpoint: https://nyc3.digitaloceanspaces.com
   s3_region: nyc3
-  s3_bucket: tau-backups
+  s3_bucket: ficus-backups
   s3_prefix: tenants/acct-1/acme
 EOF
   rbs_dry=$(FICUS_SETUP_DATABASE_DSN='postgres://u:p@h:5432/tau' FICUS_BACKUP_S3_ACCESS_KEY='AKIADRYRUN123' \

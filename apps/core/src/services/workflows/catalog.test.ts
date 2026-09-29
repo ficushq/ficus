@@ -121,7 +121,7 @@ describe('workflow catalog', () => {
     }
   })
   test('YAML reload preserves whole-definition overrides and reverts against the current template', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-workflow-config-'))
+    const directory = await mkdtemp(join(tmpdir(), 'ficus-workflow-config-'))
     class FixtureSync extends WorkflowSync {
       override readonly directory = directory
     }

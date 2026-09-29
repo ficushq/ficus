@@ -58,7 +58,7 @@ describe('SkillSync', () => {
   })
 
   test('syncs SKILL.md files without overwriting overridden fields', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-skill-sync-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-skill-sync-'))
     await mkdir(join(dir, 'custom-skill'))
     await writeFile(join(dir, 'custom-skill', 'SKILL.md'), '# Custom Skill\n\nOriginal description\n')
     const sync = new SkillSync()
@@ -80,7 +80,7 @@ describe('SkillSync', () => {
   })
 
   test('persists requiredPermission from frontmatter to the DB', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-skill-sync-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-skill-sync-'))
     await mkdir(join(dir, 'gated-skill'))
     await writeFile(
       join(dir, 'gated-skill', 'SKILL.md'),
@@ -96,7 +96,7 @@ describe('SkillSync', () => {
   })
 
   test('syncs referenced markdown support files from skill directories', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-skill-sync-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-skill-sync-'))
     await mkdir(join(dir, 'custom-skill', 'nested'), { recursive: true })
     await writeFile(join(dir, 'custom-skill', 'SKILL.md'), '# Custom Skill\n\nRead ./helper.md\n')
     await writeFile(join(dir, 'custom-skill', 'helper.md'), '# Helper\n')

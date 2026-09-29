@@ -218,7 +218,7 @@ describe('squads routes', () => {
 
     it('normalizes a host workspace before persisting it', async () => {
       process.env.FICUS_SANDBOX_RUNTIME = 'host'
-      const root = mkdtempSync(join(tmpdir(), 'tau-create-squad-normalize-'))
+      const root = mkdtempSync(join(tmpdir(), 'ficus-create-squad-normalize-'))
       const rawWorkspace = `${root}//nested/./workspace/`
       try {
         const response = await app.request('/api/squads', {
@@ -259,7 +259,7 @@ describe('squads routes', () => {
 
     it('removes newly-created directories and the override cache entry when squad creation fails', async () => {
       process.env.FICUS_SANDBOX_RUNTIME = 'host'
-      const root = mkdtempSync(join(tmpdir(), 'tau-create-squad-rollback-'))
+      const root = mkdtempSync(join(tmpdir(), 'ficus-create-squad-rollback-'))
       const workspace = join(root, 'nested', 'workspace')
       const name = `${testPrefix} failed cwd`
       const createAgent = spyOn(Agent, 'create').mockRejectedValueOnce(new Error('manager creation failed'))
@@ -282,7 +282,7 @@ describe('squads routes', () => {
 
     it('creates and persists a usable host workspace override', async () => {
       process.env.FICUS_SANDBOX_RUNTIME = 'host'
-      const root = mkdtempSync(join(tmpdir(), 'tau-create-squad-workspace-'))
+      const root = mkdtempSync(join(tmpdir(), 'ficus-create-squad-workspace-'))
       const workspace = join(root, 'nested', 'workspace')
       try {
         const response = await app.request('/api/squads', {
@@ -312,7 +312,7 @@ describe('squads routes', () => {
 
     it('rejects a host workspace path that is an existing file', async () => {
       process.env.FICUS_SANDBOX_RUNTIME = 'host'
-      const root = mkdtempSync(join(tmpdir(), 'tau-create-squad-file-'))
+      const root = mkdtempSync(join(tmpdir(), 'ficus-create-squad-file-'))
       const workspace = join(root, 'file')
       writeFileSync(workspace, 'not a directory')
       try {
@@ -2220,7 +2220,7 @@ describe('squads routes', () => {
 
     it('accepts an absolute path, persists it, returns it, and primes the override cache', async () => {
       clearHostWorkspaceOverrides()
-      const root = mkdtempSync(join(tmpdir(), 'tau-patch-squad-workspace-'))
+      const root = mkdtempSync(join(tmpdir(), 'ficus-patch-squad-workspace-'))
       const rawWorkspace = `${root}//nested/./workspace/`
       const workspace = resolve(rawWorkspace)
       try {
@@ -2240,7 +2240,7 @@ describe('squads routes', () => {
     })
 
     it('rejects an uncreatable path and leaves the saved override unchanged', async () => {
-      const root = mkdtempSync(join(tmpdir(), 'tau-patch-squad-file-'))
+      const root = mkdtempSync(join(tmpdir(), 'ficus-patch-squad-file-'))
       const file = join(root, 'file')
       writeFileSync(file, 'not a directory')
       try {

@@ -709,7 +709,7 @@ describe('canonical checkout identity', () => {
   it('mutation-red: a symlink alias cannot re-register a registered checkout under another supervisor', async () => {
     const { d, calls } = deps()
     upsertInstance('tau', { root, port: 3000, supervisor: 'pm2', createdAt: 'c', updatedAt: 'u' }, {}, d.statePath)
-    const alias = join(root, '..', 'tau-alias')
+    const alias = join(root, '..', 'ficus-alias')
     symlinkSync(realpathSync(root), alias)
     try {
       await expect(runSetup(opts({ root: alias, supervisor: 'systemd-user' }), d)).rejects.toThrow(
@@ -737,7 +737,7 @@ describe('canonical checkout identity', () => {
       {},
       d.statePath
     )
-    const alias = join(root, '..', 'tau-rerun-alias')
+    const alias = join(root, '..', 'ficus-rerun-alias')
     symlinkSync(root, alias)
     try {
       await runSetup(opts({ root: alias }), d)
@@ -753,7 +753,7 @@ describe('canonical checkout identity', () => {
 
   it('canonicalizes a migrated v2 alias and preserves its legacy creation time', async () => {
     const { d } = deps()
-    const alias = join(root, '..', 'tau-v2-alias')
+    const alias = join(root, '..', 'ficus-v2-alias')
     symlinkSync(root, alias)
     writeFileSync(
       d.statePath,

@@ -33,7 +33,7 @@ const CA_PEM = '-----BEGIN CERTIFICATE-----\nfake-do-ca-body\n-----END CERTIFICA
 
 /** Write a throwaway CA file and hand back its path. Cleaned up by the caller. */
 function withCaFile(fn: (caPath: string) => void | Promise<void>): void | Promise<void> {
-  const dir = mkdtempSync(join(tmpdir(), 'tau-ca-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-ca-'))
   const caPath = join(dir, 'ca.crt')
   writeFileSync(caPath, CA_PEM)
   const done = () => rmSync(dir, { recursive: true, force: true })

@@ -18,7 +18,7 @@ const binary = join(dirname(Bun.resolveSync('ntn/package.json', import.meta.dir)
 
 /** Always-run, zero-external-call smoke over the locked real CLI and generated protected env. */
 test('pinned Notion CLI uses rotated generated credentials and loses access on unassignment', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'tau-notion-cli-'))
+  const root = mkdtempSync(join(tmpdir(), 'ficus-notion-cli-'))
   const envFile = join(root, '.env')
   const acceptedTokens: string[] = []
   let tokenExchange = 0

@@ -90,7 +90,7 @@ describe('ficus whoami', () => {
   })
 
   it('reports the stored backend and the account it belongs to outside an agent shell', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-whoami-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-whoami-'))
     tempDirs.push(dir)
     const authStore = join(dir, 'auth.json')
     await writeFile(

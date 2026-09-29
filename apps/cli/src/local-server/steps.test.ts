@@ -209,7 +209,7 @@ describe('computeEnvUpdates (instances)', () => {
 
 describe('the config-files step', () => {
   function fixture(): { root: string; deps: StepDeps; logs: string[] } {
-    const root = mkdtempSync(join(tmpdir(), 'tau-steps-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-steps-'))
     writeFileSync(join(root, '.env.example'), 'FICUS_SANDBOX_RUNTIME=\n')
     copyFileSync(join(REPO_ROOT, 'ecosystem.config.example.js'), join(root, 'ecosystem.config.example.js'))
     const logs: string[] = []
@@ -287,7 +287,7 @@ describe('the config-files step', () => {
 
 describe('the env step', () => {
   function fixture(): { root: string; deps: StepDeps; logs: string[] } {
-    const root = mkdtempSync(join(tmpdir(), 'tau-steps-env-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-steps-env-'))
     writeFileSync(join(root, '.env.example'), 'FICUS_SANDBOX_RUNTIME=\n')
     copyFileSync(join(REPO_ROOT, 'ecosystem.config.example.js'), join(root, 'ecosystem.config.example.js'))
     const logs: string[] = []
@@ -423,7 +423,7 @@ describe('native supervisor config', () => {
   })
 
   it('does not create or replace an ecosystem for native supervisors', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-native-config-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-native-config-'))
     const deps: StepDeps = {
       runner: recordingRunner().runner,
       secrets,

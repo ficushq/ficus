@@ -13,7 +13,7 @@ describe('HostSandboxManager', () => {
   let prevHome: string | undefined
   let manager: HostSandboxManager
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-mgr-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-mgr-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = home
     clearHostWorkspaceOverrides()

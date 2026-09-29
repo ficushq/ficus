@@ -160,7 +160,7 @@ describe('host runtime factory dispatch', () => {
     let prevHome: string | undefined
     let prevRuntime: string | undefined
     beforeEach(() => {
-      home = mkdtempSync(join(tmpdir(), 'tau-factory-host-'))
+      home = mkdtempSync(join(tmpdir(), 'ficus-factory-host-'))
       prevHome = process.env.HOME_DIR
       prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
       process.env.HOME_DIR = home

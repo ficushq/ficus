@@ -28,7 +28,7 @@ describe('redactEvidence', () => {
     ['credential query', 'https://example.test/?access_token=super-secret-value&ok=yes'],
     ['PEM private key', 'before\n-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----\nafter'],
     ['JWT', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature-value'],
-    ['Ficus token', 'tau_abcdefghijklmno'],
+    ['Ficus token', 'ficus_abcdefghijklmno'],
     ['Ficus system token', 'ficus_sys_abcdefghijklmno'],
     ['Ficus device token', 'ficus_dev_abcdefghijklmno'],
     ['GitHub token', 'github_pat_abcdefghijklmno_123456789'],

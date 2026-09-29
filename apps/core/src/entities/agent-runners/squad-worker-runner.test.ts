@@ -171,7 +171,7 @@ describe('SquadWorkerRunner artifact tool registration', () => {
   let artifactWorkspacePath: string
 
   beforeEach(async () => {
-    artifactWorkspacePath = await mkdtemp(join(tmpdir(), 'tau-artifact-runner-tools-'))
+    artifactWorkspacePath = await mkdtemp(join(tmpdir(), 'ficus-artifact-runner-tools-'))
     testArtifactWorkspacePath = artifactWorkspacePath
     workspaceSandboxCalls = []
     squadSandboxCalls = []

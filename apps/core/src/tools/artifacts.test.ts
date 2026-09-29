@@ -27,7 +27,7 @@ describe('artifact builder tools', () => {
   const TEST_REQUESTING_USER_ID = '00000000-0000-4000-8000-0000000009f1'
 
   beforeEach(async () => {
-    agentWorkspacePath = await mkdtemp(join(tmpdir(), 'tau-artifact-tools-'))
+    agentWorkspacePath = await mkdtemp(join(tmpdir(), 'ficus-artifact-tools-'))
     eventUnsubscribers = []
     recipientSpy = spyOn(agentHumanRecipient, 'resolveAgentRequestingUserId').mockResolvedValue(TEST_REQUESTING_USER_ID)
   })

@@ -9,7 +9,7 @@ import { SSH_FAMILY_TOOLS, ensureSshFamilyShims, renderSshShimScript } from './s
 // strictest of the targets — so syntax-check every render. A wrong \${...}
 // escape inside ssh-shims.ts is otherwise a silent runtime bug.
 function checkShellSyntax(script: string): void {
-  const file = join(tmpdir(), `tau-shim-syntax-${Math.random().toString(36).slice(2)}`)
+  const file = join(tmpdir(), `ficus-shim-syntax-${Math.random().toString(36).slice(2)}`)
   writeFileSync(file, script)
   try {
     const result = Bun.spawnSync(['/bin/sh', '-n', file])
@@ -117,7 +117,7 @@ describe('ssh-family shims (functional matrix)', () => {
   }
 
   beforeEach(() => {
-    t = mkdtempSync(join(tmpdir(), 'tau-ssh-shims-fn-'))
+    t = mkdtempSync(join(tmpdir(), 'ficus-ssh-shims-fn-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = t
     ensureSshFamilyShims()
@@ -245,7 +245,7 @@ describe('ensureSshFamilyShims', () => {
   let home: string
   let prevHome: string | undefined
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-ssh-shims-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-ssh-shims-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = home
   })

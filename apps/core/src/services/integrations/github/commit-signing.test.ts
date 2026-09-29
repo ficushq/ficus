@@ -185,7 +185,7 @@ describe('GitHubCommitSigning', () => {
       const payload = commitAs('agent@example.com')
       const signature = await signing.sign({ squadId: 's1', agentId: 'a1', payload })
 
-      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tau-sign-')))
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-sign-')))
       try {
         const stored = record(secrets)
         if (stored?.state !== 'on') throw new Error('expected an on record')

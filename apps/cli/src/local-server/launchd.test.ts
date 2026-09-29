@@ -54,7 +54,7 @@ import { launchdSupervisor } from './launchd'
 
 describe('launchd lifecycle', () => {
   it('validates both definitions before bootstrapping worker first and API last', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-launchd-unit-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-launchd-unit-'))
     const home = join(root, 'home')
     const calls: string[] = []
     mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
@@ -82,7 +82,7 @@ describe('launchd lifecycle', () => {
   })
 
   it('does not replace either prior definition or touch jobs when the second validation fails', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-launchd-pair-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-launchd-pair-'))
     const home = join(root, 'home')
     mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
     writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib'), '')
@@ -124,7 +124,7 @@ describe('launchd lifecycle', () => {
 
   it('does not inspect or mutate loaded jobs when prerequisites or destination ownership fail', async () => {
     for (const failure of ['missing-library', 'foreign-plist'] as const) {
-      const root = mkdtempSync(join(tmpdir(), `tau-launchd-${failure}-`))
+      const root = mkdtempSync(join(tmpdir(), `ficus-launchd-${failure}-`))
       const home = join(root, 'home')
       const calls: string[] = []
       if (failure !== 'missing-library') {
@@ -203,7 +203,7 @@ describe('launchd loaded-job provenance', () => {
   it.each(['start', 'stop', 'restart', 'uninstall'] as const)(
     'mutation-red: %s does not mutate a stale-root job even when bun and log match',
     async (operation) => {
-      const root = mkdtempSync(join(tmpdir(), 'tau-launchd-stale-root-'))
+      const root = mkdtempSync(join(tmpdir(), 'ficus-launchd-stale-root-'))
       const home = join(root, 'home')
       mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
       writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib'), '')
@@ -264,7 +264,7 @@ describe('launchd loaded-job provenance', () => {
   })
 
   it('mutation-red: refuses to uninstall a foreign loaded job and keeps the definitions', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-launchd-foreign-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-launchd-foreign-'))
     const home = join(root, 'home')
     mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
     writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib'), '')

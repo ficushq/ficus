@@ -466,7 +466,7 @@ describe('machines routes', () => {
     // 90-byte sun_path guard even on macOS's long /var/folders tmpdir — the
     // owner socket name (`owner-<pid>-<12hex>.sock`) is longer than the master
     // name this comment originally accounted for, so use /tmp on darwin.
-    const controlDir = mkdtempSync(join(process.platform === 'darwin' ? '/tmp' : tmpdir(), 'tau-mrt-'))
+    const controlDir = mkdtempSync(join(process.platform === 'darwin' ? '/tmp' : tmpdir(), 'ficus-mrt-'))
     const tunnels = new MachineTunnelManager({ spawn: fakeSpawn, controlDir })
 
     const router = authedRouter({ getProvider: () => fakeProvider(), tunnels })

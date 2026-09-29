@@ -36,7 +36,7 @@ describe('monitor launcher on the host runtime', () => {
   let manager: HostSandboxManager
 
   beforeEach(async () => {
-    home = mkdtempSync(join(tmpdir(), 'tau-monitor-host-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-monitor-host-'))
     prevHome = process.env.HOME_DIR
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home

@@ -33,7 +33,7 @@ describe('host env', () => {
   let home: string
   let prevHome: string | undefined
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-env-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-env-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = home
     resetHostBaseEnvCache()

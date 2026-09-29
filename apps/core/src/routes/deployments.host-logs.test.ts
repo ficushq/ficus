@@ -77,7 +77,7 @@ describe('local deployment logs over HTTP on the host runtime', () => {
 
   beforeEach(() => {
     testPrefix = `deploy-host-logs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    home = mkdtempSync(join(tmpdir(), 'tau-route-host-logs-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-route-host-logs-'))
     prevHome = process.env.HOME_DIR
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home

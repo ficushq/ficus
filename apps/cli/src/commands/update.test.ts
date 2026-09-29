@@ -126,7 +126,7 @@ describe('update apply offline fallback', () => {
     expect(error.message).toBe('--ref only applies to the offline path — pass --offline')
   })
   it('status --offline reads the persisted run file', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-upd-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-upd-'))
     mkdirSync(join(dir, '.tau'))
     writeFileSync(
       join(dir, '.tau', 'local-update-status.json'),
@@ -147,7 +147,7 @@ describe('update apply offline fallback', () => {
 
 describe('defaultUpdateDeps localPort', () => {
   it("takes the port from the registry entry that owns the root, else that checkout's .env PORT", () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'tau-upd-port-'))
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-upd-port-'))
     const root = join(tmp, 'smoke')
     const other = join(tmp, 'other')
     for (const d of [root, other]) mkdirSync(d, { recursive: true })

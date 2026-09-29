@@ -410,7 +410,7 @@ test('a second issue assignment keeps the trigger receipt and cannot duplicate l
   const trigger = {
     id: 'assigned-issue',
     source: { integration: 'github', output: 'issue.assigned', version: 1 },
-    match: { repository: { value: `${prefix}/repo` }, assignee: { value: 'tau-bot' } },
+    match: { repository: { value: `${prefix}/repo` }, assignee: { value: 'ficus-bot' } },
     create: {
       workflow: { kind: 'inline', definition: createBlankWorkflow() },
       titlePrefix: '',
@@ -427,7 +427,7 @@ test('a second issue assignment keeps the trigger receipt and cannot duplicate l
     payload: {
       repository: { full_name: `${prefix}/repo` },
       action: 'assigned',
-      assignee: { login: 'tau-bot' },
+      assignee: { login: 'ficus-bot' },
       issue: { id: 123, number: 12, title: 'Investigate', updated_at: new Date().toISOString() },
     },
   }
@@ -692,7 +692,7 @@ async function withNativeRouting(run: (connectionId: string, managerId: string) 
       providerKey: provider,
       adapterVersion: 1,
       displayName: prefix,
-      configuration: { login: 'tau-bot' },
+      configuration: { login: 'ficus-bot' },
       credentialRef: `fixture:${prefix}`,
       enabled: true,
       authState: 'authenticated',
@@ -734,7 +734,7 @@ test('native issue notices deduplicate without shell commands and require live s
   await withNativeRouting(async (connectionId, managerId) => {
     const assigned = fact(31, {
       output: 'issue.assigned',
-      data: { repository: `${prefix}/repo`, issue: { number: 31 }, assignee: 'tau-bot', labels: ['bug'] },
+      data: { repository: `${prefix}/repo`, issue: { number: 31 }, assignee: 'ficus-bot', labels: ['bug'] },
     })
     const authority = { kind: 'connection' as const, connectionId, squadId }
     const ids = await Promise.all([
@@ -759,7 +759,7 @@ test('native review requests create one bound flow and keep code-host delivery i
   await withNativeRouting(async (connectionId, managerId) => {
     const review = fact(32, {
       output: 'pull_request.review_requested',
-      data: { repository: `${prefix}/repo`, pullRequest: { number: 32 }, requestedReviewer: 'tau-bot' },
+      data: { repository: `${prefix}/repo`, pullRequest: { number: 32 }, requestedReviewer: 'ficus-bot' },
     })
     const authority = { kind: 'connection' as const, connectionId, squadId }
     eventIds.push(
@@ -861,7 +861,7 @@ test('native review requests reuse provider-neutral PR bindings instead of creat
     const existingId = await create(34, { codeHost: true })
     const review = fact(34, {
       output: 'pull_request.review_requested',
-      data: { repository: `${prefix}/repo`, pullRequest: { number: 34 }, requestedReviewer: 'tau-bot' },
+      data: { repository: `${prefix}/repo`, pullRequest: { number: 34 }, requestedReviewer: 'ficus-bot' },
     })
     eventIds.push(await publishIntegrationOutput('github', review, { kind: 'connection', connectionId, squadId }))
     const runs = await db
@@ -893,7 +893,7 @@ test('a new consultant rule opens one fresh chat per event and reuses it on conc
     await setRule('notify-consultant')
     const assigned = fact(35, {
       output: 'issue.assigned',
-      data: { repository: `${prefix}/repo`, issue: { number: 35 }, assignee: 'tau-bot' },
+      data: { repository: `${prefix}/repo`, issue: { number: 35 }, assignee: 'ficus-bot' },
     })
     const authority = { kind: 'connection' as const, connectionId, squadId }
     const ids = await Promise.all([
@@ -1116,7 +1116,7 @@ test('a failed preparation notice is recovered from the trigger receipt without 
   await withNativeRouting(async (connectionId, managerId) => {
     const review = fact(52, {
       output: 'pull_request.review_requested',
-      data: { repository: `${prefix}/repo`, pullRequest: { number: 52 }, requestedReviewer: 'tau-bot' },
+      data: { repository: `${prefix}/repo`, pullRequest: { number: 52 }, requestedReviewer: 'ficus-bot' },
     })
     const { setWorkStreamNotificationBeforePersistHookForTests: setHook } =
       await import('../../squad/work-stream-notifications')
@@ -1403,7 +1403,7 @@ function issueComment(number: number) {
       repository: `${prefix}/repo`,
       issue: { number },
       labels: ['bug'],
-      assignees: ['tau-bot'],
+      assignees: ['ficus-bot'],
       actor: 'external-user',
     },
   })
@@ -1453,7 +1453,7 @@ test('an issue-created stream that tracks its issue automatically receives later
     const event = fact(95, {
       output: 'issue.assigned',
       resourceKey: `${repository}#95`,
-      data: { repository, issue: { number: 95 }, assignee: 'tau-bot', labels: ['bug'] },
+      data: { repository, issue: { number: 95 }, assignee: 'ficus-bot', labels: ['bug'] },
     })
     const definition = createBlankWorkflow()
     definition.participants.worker!.agentTypeId = prefix
@@ -1555,7 +1555,7 @@ test('an unrelated stream in the same repository never absorbs a rule-created is
     const event = fact(93, {
       output: 'issue.assigned',
       resourceKey: `${repository}#93`,
-      data: { repository, issue: { number: 93 }, assignee: 'tau-bot', labels: ['bug'] },
+      data: { repository, issue: { number: 93 }, assignee: 'ficus-bot', labels: ['bug'] },
     })
     const eventId = await publishIntegrationOutput('github', event, { kind: 'connection', connectionId, squadId })
     eventIds.push(eventId)
@@ -1668,7 +1668,7 @@ test('Code hosting ignores own PR/issue comments and reviews but retains facts a
       eventIds.push((await publishIntegrationOutput('github', comment, authority))!)
     }
     const merged = fact(101, { output: 'pull_request.merged' })
-    merged.data.actor = 'tau-bot'
+    merged.data.actor = 'ficus-bot'
     eventIds.push((await publishIntegrationOutput('github', merged, authority))!)
     expect(await deliveries(id)).toHaveLength(3)
     const worker = (await getFlow(id))!.attemptAgents['1']!
@@ -1701,7 +1701,7 @@ test('own comments do not create work or fallback notifications with any-account
         })
         .where(eq(squads.id, squadId))
       const comment = issueComment(103)
-      comment.data.actor = 'tau-bot'
+      comment.data.actor = 'ficus-bot'
       const eventId = (await publishIntegrationOutput('github', comment, authority))!
       eventIds.push(eventId)
       expect(
@@ -1740,7 +1740,7 @@ test('pre-existing self-comment deliveries are fenced at worker and parked-owner
       // Model a durable echo queued before this policy existed, without changing its authority.
       await db
         .update(integrationOutputEvents)
-        .set({ fact: { ...comment, data: { ...comment.data, actor: 'tau-bot' } } })
+        .set({ fact: { ...comment, data: { ...comment.data, actor: 'ficus-bot' } } })
         .where(eq(integrationOutputEvents.id, eventId))
       expect(await isCurrentFlowMessage(message)).toBe(false)
       await expect(
@@ -1762,7 +1762,7 @@ for (const provider of ['github', 'linear'])
         id: 'typed-first',
         source: { integration: provider, output: 'issue.assigned', version: 1, connectionId },
         filters: { audience: 'any', squadRouting: true },
-        predicates: [{ field: 'assignee', op: 'eq', value: provider === 'github' ? 'TAU-BOT' : 'tau-bot' }],
+        predicates: [{ field: 'assignee', op: 'eq', value: provider === 'github' ? 'TAU-BOT' : 'ficus-bot' }],
         action: { type: 'ignore' },
       })
       const fallback = squadEventRuleSchema.parse({
@@ -1773,16 +1773,16 @@ for (const provider of ['github', 'linear'])
       let delivered = 0
       for (const [index, config] of (
         [
-          { rules: [candidate, fallback], assignee: 'tau-bot', allowed: true, action: 'ignore' },
-          { rules: [fallback, candidate], assignee: 'tau-bot', allowed: true, action: 'notify-manager' },
+          { rules: [candidate, fallback], assignee: 'ficus-bot', allowed: true, action: 'ignore' },
+          { rules: [fallback, candidate], assignee: 'ficus-bot', allowed: true, action: 'notify-manager' },
           {
             rules: [{ ...candidate, enabled: false }, fallback],
-            assignee: 'tau-bot',
+            assignee: 'ficus-bot',
             allowed: true,
             action: 'notify-manager',
           },
           { rules: [candidate, fallback], assignee: 'other', allowed: true, action: null },
-          { rules: [candidate, fallback], assignee: 'tau-bot', allowed: false, action: null },
+          { rules: [candidate, fallback], assignee: 'ficus-bot', allowed: false, action: null },
         ] as const
       ).entries()) {
         const at = new Date(Date.UTC(2026, 8, 10, 12, index)).toISOString()
@@ -1820,7 +1820,7 @@ for (const provider of ['github', 'linear'])
         await db.update(squads).set({ metadata }).where(eq(squads.id, squadId))
         const beforeAgents = await db.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))
         const beforeEvents = await db.select({ id: integrationOutputEvents.id }).from(integrationOutputEvents)
-        const preview = previewSquadEventRules(metadata, provider, input!, 'tau-bot', connectionId)
+        const preview = previewSquadEventRules(metadata, provider, input!, 'ficus-bot', connectionId)
         expect(preview.action).toBe(config.action)
         expect(preview.selectedRuleId).toBe(
           config.action === null ? null : config.action === 'ignore' ? candidate.id : fallback.id
@@ -2086,7 +2086,7 @@ test('event-created streams preserve their default or explicit opt-out through r
   const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
-  const workspace = await mkdtemp(join(tmpdir(), 'tau-event-cleanup-'))
+  const workspace = await mkdtemp(join(tmpdir(), 'ficus-event-cleanup-'))
   const repo = join(workspace, 'repo')
   const exec = async (args: string[]) => {
     const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
@@ -2127,7 +2127,7 @@ test('event-created streams preserve their default or explicit opt-out through r
           const number = optOut ? 1721 : 1720
           const review = fact(number, {
             output: 'pull_request.review_requested',
-            data: { repository: `${prefix}/repo`, pullRequest: { number }, requestedReviewer: 'tau-bot' },
+            data: { repository: `${prefix}/repo`, pullRequest: { number }, requestedReviewer: 'ficus-bot' },
           })
           eventIds.push(
             (await publishIntegrationOutput('github', review, { kind: 'connection', connectionId, squadId }))!
@@ -2177,7 +2177,7 @@ function issueFact(repository: string, number: number, output = 'issue.updated')
       issue: { number, title: 't' },
       action: 'closed',
       labels: ['bug'],
-      assignees: ['tau-bot'],
+      assignees: ['ficus-bot'],
       actor: 'external-user',
     },
   })
@@ -2477,7 +2477,7 @@ test('an event-created stream and an explicitly tracked stream resolve the same 
       fact(number, {
         output: 'issue.assigned',
         resourceKey: `${repository}#${number}`,
-        data: { repository, issue: { number }, assignee: 'tau-bot', labels: ['bug'] },
+        data: { repository, issue: { number }, assignee: 'ficus-bot', labels: ['bug'] },
       }),
       authority
     ))!

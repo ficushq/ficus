@@ -178,7 +178,7 @@ describe('agent file routes', () => {
 
   test('rejects streamed over-limit multipart bytes even without a trustworthy content length', async () => {
     await getSettingsStore().set('INBOX_MAX_ATTACHMENT_BYTES', '4')
-    const boundary = 'tau-boundary'
+    const boundary = 'ficus-boundary'
     const body = new TextEncoder().encode(
       `--${boundary}\r\nContent-Disposition: form-data; name="attachmentId"\r\n\r\n${crypto.randomUUID()}\r\n` +
         `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="large.txt"\r\n\r\n0123456789\r\n--${boundary}--\r\n`

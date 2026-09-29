@@ -7,7 +7,7 @@ import { join, resolve } from 'path'
 // canonicalizes to /private/var/…; realpath the fixture up front so the cwd
 // split rule's output matches.
 function tempDir(): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), 'tau-root-')))
+  return realpathSync(mkdtempSync(join(tmpdir(), 'ficus-root-')))
 }
 
 // MONOREPO_ROOT is resolved ONCE, at module-load, from the environment and
@@ -60,7 +60,7 @@ describe('MONOREPO_ROOT', () => {
 
   it('expands a leading ~ in FICUS_ROOT (before resolving)', () => {
     const dir = tempDir()
-    expect(monorepoRootIn({ cwd: dir, ficusRoot: '~/tau-root-fixture' })).toBe(join(homedir(), 'tau-root-fixture'))
+    expect(monorepoRootIn({ cwd: dir, ficusRoot: '~/tau-root-fixture' })).toBe(join(homedir(), 'ficus-root-fixture'))
   })
 
   it('resolves a relative FICUS_ROOT against the subprocess cwd (a stray relative .env value must not silently redirect config paths)', () => {

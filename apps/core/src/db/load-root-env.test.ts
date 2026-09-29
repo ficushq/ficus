@@ -11,7 +11,7 @@ afterEach(() => {
 })
 
 function tempRoot(envContent?: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'tau-root-env-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-root-env-'))
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
   if (envContent !== undefined) writeFileSync(join(dir, '.env'), envContent)
   return dir

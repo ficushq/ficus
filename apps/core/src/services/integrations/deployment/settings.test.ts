@@ -23,7 +23,7 @@ test('deployment cards preserve existing tokens and exposure choices while enfor
   const env = Object.fromEntries(['HOME_DIR', 'FICUS_ENCRYPTION_KEY', ...keys].map((key) => [key, process.env[key]]))
   const priorSecrets = await db.select().from(secrets).where(inArray(secrets.key, keys))
   const priorSettings = await db.select().from(settings).where(inArray(settings.key, settingKeys))
-  const home = await mkdtemp(join(tmpdir(), 'tau-deployment-integrations-'))
+  const home = await mkdtemp(join(tmpdir(), 'ficus-deployment-integrations-'))
   const squadId = crypto.randomUUID()
   try {
     process.env.HOME_DIR = home

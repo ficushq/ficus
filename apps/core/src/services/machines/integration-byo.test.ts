@@ -45,7 +45,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  * ----------------------------------------------------------------------------
  * Separate gate from integration-vm.test.ts's FICUS_TEST_SSH_HOST (a disposable
  * CONTAINER, no systemd) and integration-exe.test.ts's FICUS_TEST_EXE_SSH_KEY (a
- * tau-provisioned exe VM): this needs a real systemd VM the operator supplies.
+ * ficus-provisioned exe VM): this needs a real systemd VM the operator supplies.
  * To run (host = a FRESH Ubuntu 24.04 VM you can root-SSH; the test installs
  * real packages on it and creates/removes box users — treat it as disposable):
  *
@@ -134,7 +134,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
 
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
-    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-byo-int-home-'))
+    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-byo-int-home-'))
     priorKey = process.env.FICUS_ENCRYPTION_KEY
     process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
@@ -147,7 +147,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
     router = app
 
     runner = createSshRunner({ defaultTimeoutMs: SLOW_MS })
-    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'tau-byoint-ctl-')) })
+    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'ficus-byoint-ctl-')) })
   })
 
   afterAll(async () => {

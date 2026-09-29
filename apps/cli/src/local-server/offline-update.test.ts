@@ -78,7 +78,7 @@ describe('runOfflineUpdate', () => {
     expect(rec.calls.every((c) => c.options.cwd === '/r')).toBe(true)
   })
   it('restarts the apps of the instance the checkout belongs to, not the default ones', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-offline-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-offline-'))
     try {
       writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\n')
       const rec = recordingRunner(base)
@@ -230,7 +230,7 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 }
 
 async function createGitFixture(tags: string[] = []) {
-  const root = mkdtempSync(join(tmpdir(), 'tau-offline-git-'))
+  const root = mkdtempSync(join(tmpdir(), 'ficus-offline-git-'))
   const remote = join(root, 'remote.git')
   const source = join(root, 'source')
   const checkout = join(root, 'checkout')

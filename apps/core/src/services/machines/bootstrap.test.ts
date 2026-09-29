@@ -1188,7 +1188,7 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
    * provisioning a box user and overrun the test timeout instead.
    */
   function refusingSudoPath(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-refusing-sudo-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-refusing-sudo-'))
     writeFileSync(join(dir, 'sudo'), '#!/bin/sh\necho "tau-test: sudo refused: $*" >&2\nexit 77\n', { mode: 0o755 })
     return `${dir}:${process.env.PATH ?? ''}`
   }
@@ -1540,7 +1540,7 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
   const BOX_USER = 'box_0123456789ab'
 
   function makeFixture(): { root: string; home: string; shim: string; chownLog: string } {
-    const root = join(tmpdir(), `tau-restore-stream-${randomUUID()}`)
+    const root = join(tmpdir(), `ficus-restore-stream-${randomUUID()}`)
     const home = join(root, 'home')
     const shim = join(root, 'shim')
     const chownLog = join(root, 'chown.log')
@@ -2168,7 +2168,7 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
 
 describe('shared machine Nix cache', () => {
   it('cleans successful and failed installs without changing their exit status', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-nix-install-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-nix-install-'))
     try {
       const maintenance = join(dir, 'maintenance.sh')
       const marker = join(dir, 'cleaned')

@@ -66,7 +66,7 @@ export async function runTests(options: {
   const files = discoverTests(cwd, roots)
   if (reverse) files.reverse()
   const batches = isolated ? files.map((file) => [file]) : [files]
-  const scratch = mkdtempSync(join(tmpdir(), 'tau-tests-'))
+  const scratch = mkdtempSync(join(tmpdir(), 'ficus-tests-'))
   const children = new Set<ReturnType<typeof Bun.spawn>>()
   let next = 0
   let failed = false

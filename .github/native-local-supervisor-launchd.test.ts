@@ -19,7 +19,7 @@ async function eventually<T>(read: () => Promise<T>, ready: (value: T) => boolea
 
 test('real launchd adapter lifecycle in the current GUI session', async () => {
   expect(process.platform).toBe('darwin')
-  const root = mkdtempSync(join(process.env.RUNNER_TEMP ?? '/tmp', 'tau-launchd-'))
+  const root = mkdtempSync(join(process.env.RUNNER_TEMP ?? '/tmp', 'ficus-launchd-'))
   const label = `ci-${process.pid}`
   const home = homedir()
   const context = makeSupervisorContext({

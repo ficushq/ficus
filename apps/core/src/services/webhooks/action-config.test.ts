@@ -15,7 +15,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 
 describe('webhooks/action-config', () => {
   it('retires old bundled rules and review batches while preserving custom commands', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-retired-webhooks-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-retired-webhooks-'))
     const path = join(dir, 'actions.yaml')
     try {
       await Bun.write(
@@ -485,7 +485,7 @@ linear:
 
 describe('webhooks/action-config — cwd resolution', () => {
   async function loadYaml(body: string): Promise<WebhookActionConfig> {
-    const tmpPath = join(tmpdir(), `tau-action-cwd-${Math.random().toString(36).slice(2)}.yaml`)
+    const tmpPath = join(tmpdir(), `ficus-action-cwd-${Math.random().toString(36).slice(2)}.yaml`)
     await Bun.write(tmpPath, body)
     try {
       return await loadWebhookActionConfig(tmpPath)

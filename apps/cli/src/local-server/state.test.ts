@@ -29,7 +29,7 @@ import {
 
 let tmp: string
 beforeEach(() => {
-  tmp = realpathSync(mkdtempSync(join(tmpdir(), 'tau-state-')))
+  tmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-state-')))
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 

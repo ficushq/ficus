@@ -129,7 +129,7 @@ describe('MonitorSupervisor', () => {
       sandboxId: 'sandbox-1',
       label: 'watch',
       command: 'echo hi',
-      processId: 'tau-monitor-test',
+      processId: 'ficus-monitor-test',
       timeoutMs: 60_000,
       maxBatchLines: 10,
       maxBatchBytes: 4096,
@@ -166,10 +166,10 @@ describe('MonitorSupervisor', () => {
   })
 
   it('marks monitor failed when per-agent active cap is exceeded', async () => {
-    await createMonitor({ status: 'running', processId: 'tau-monitor-1' })
-    await createMonitor({ status: 'running', processId: 'tau-monitor-2' })
-    await createMonitor({ status: 'running', processId: 'tau-monitor-3' })
-    const monitor = await createMonitor({ status: 'starting', processId: 'tau-monitor-4' })
+    await createMonitor({ status: 'running', processId: 'ficus-monitor-1' })
+    await createMonitor({ status: 'running', processId: 'ficus-monitor-2' })
+    await createMonitor({ status: 'running', processId: 'ficus-monitor-3' })
+    const monitor = await createMonitor({ status: 'starting', processId: 'ficus-monitor-4' })
     const supervisor = makeSupervisor(sandbox, async () => {})
 
     await expect(supervisor.start(monitor)).rejects.toThrow('Agent already has 3 active monitors')
@@ -434,7 +434,7 @@ describe('MonitorSupervisor', () => {
   it('re-attaches a monitor whose tmux session is still alive on recovery', async () => {
     const monitor = await createMonitor({ status: 'running' })
     const supervisor = makeSupervisor(sandbox, async () => {})
-    sandbox.statuses.set(`bash -lc tmux has-session -t 'tau-monitor-test'`, 0)
+    sandbox.statuses.set(`bash -lc tmux has-session -t 'ficus-monitor-test'`, 0)
     await supervisor.recoverOnStartup()
     await monitor.reload()
     expect(monitor.status).toBe('running')
@@ -470,8 +470,8 @@ describe('MonitorSupervisor', () => {
   })
 
   it('stopAllForAgent finalizes all active monitors for that agent only', async () => {
-    const activeMonitor = await createMonitor({ status: 'running', processId: 'tau-monitor-active' })
-    const secondMonitor = await createMonitor({ status: 'starting', processId: 'tau-monitor-second' })
+    const activeMonitor = await createMonitor({ status: 'running', processId: 'ficus-monitor-active' })
+    const secondMonitor = await createMonitor({ status: 'starting', processId: 'ficus-monitor-second' })
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
 
     await supervisor.stopAllForAgent(agentId)

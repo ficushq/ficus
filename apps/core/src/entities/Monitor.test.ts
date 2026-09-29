@@ -34,7 +34,7 @@ describe('Monitor entity', () => {
       sandboxId: 'sandbox-1',
       label: 'build watch',
       command: 'bun test --watch',
-      processId: 'tau-monitor-abc',
+      processId: 'ficus-monitor-abc',
       timeoutMs: 30_000,
       maxBatchLines: 20,
       maxBatchBytes: 4096,

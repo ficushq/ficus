@@ -9,14 +9,14 @@ describe('fetchInProtocolPhase', () => {
       fetchInProtocolPhase(
         'http://tau/handles',
         {
-          phase: 'tau-peer-handles-proxy',
+          phase: 'ficus-peer-handles-proxy',
           timeoutMs: 10,
           requireOk: true,
           diagnostics: () => 'node pid=42; tau port=1234',
         },
         async () => new Response('unavailable', { status: 503 })
       )
-    ).rejects.toThrow('tau-peer-handles-proxy: http://tau/handles returned status=503; node pid=42; tau port=1234')
+    ).rejects.toThrow('ficus-peer-handles-proxy: http://tau/handles returned status=503; node pid=42; tau port=1234')
   })
 
   test('aborts a request that accepts a connection but never responds', async () => {
@@ -24,7 +24,7 @@ describe('fetchInProtocolPhase', () => {
       fetchInProtocolPhase(
         'http://tau/handles',
         {
-          phase: 'tau-peer-handles-proxy',
+          phase: 'ficus-peer-handles-proxy',
           timeoutMs: 10,
           diagnostics: () => 'node pid=42; tau port=1234',
         },

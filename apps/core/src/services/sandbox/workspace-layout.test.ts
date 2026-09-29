@@ -170,7 +170,7 @@ describe('hostWorkspaceLayout', () => {
   let prevHome: string | undefined
   let prevRuntime: string | undefined
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-layout-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-layout-'))
     prevHome = process.env.HOME_DIR
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home

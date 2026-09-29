@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { githubCommandBindings } from './env'
 
-const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGkq tau-commit-signing-octo'
+const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGkq ficus-commit-signing-octo'
 const dirs: string[] = []
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
@@ -12,7 +12,7 @@ afterEach(() => {
 
 /** Source the bindings in bash, then run `git` against a fake that prints its argv and signing env. */
 function runGit(bindings: string, env: Record<string, string>): string[] {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tau-git-bindings-')))
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-git-bindings-')))
   dirs.push(dir)
   writeFileSync(
     join(dir, 'git'),

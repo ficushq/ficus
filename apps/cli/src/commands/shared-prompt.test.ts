@@ -16,7 +16,7 @@ const includes = [
 const tempDirs: string[] = []
 
 async function makeTempFile(content: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'tau-shared-prompt-test-'))
+  const dir = await mkdtemp(join(tmpdir(), 'ficus-shared-prompt-test-'))
   tempDirs.push(dir)
   const file = join(dir, 'content.md')
   await writeFile(file, content, 'utf-8')

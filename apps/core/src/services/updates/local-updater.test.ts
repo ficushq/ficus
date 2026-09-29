@@ -148,7 +148,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('persists latest run status for a restarted API process', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       let release!: () => void
@@ -175,7 +175,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks an interrupted reload:core run succeeded after API restart', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -198,7 +198,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks an old persisted reload:core run with pending commands succeeded after API restart', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -221,7 +221,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks an unobserved systemd API restart run failed after API restart', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -245,7 +245,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks a persisted pre-restart systemd success succeeded after the API was restarted', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -275,7 +275,7 @@ describe('LocalUpdateManager', () => {
   it('marks a persisted systemd restart whose child was killed by SIGTERM succeeded after the API restarted', async () => {
     // Older cores recorded the SIGTERM as a failed command and died before the run status
     // was persisted; the reconciler must still recognise that shape as a completed restart.
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -305,7 +305,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('does not mark a run succeeded when it was interrupted mid-build before the restart command ran', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -330,7 +330,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('marks a genuinely self-restarted run succeeded when persisted mid-dispatch', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {
       const statusPath = join(dir, 'status.json')
       const first = manager({ repoRoot: dir, statusPath })
@@ -469,7 +469,7 @@ describe('LocalUpdateManager', () => {
   })
 
   it('persists a failed systemd API restart as a terminal failed run', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-systemd-restart-failure-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-systemd-restart-failure-'))
     try {
       const { updater } = manager({
         flavor: () => SYSTEMD_FLAVOR,
@@ -619,7 +619,7 @@ describe('cross-process update run lock (real advisory lock)', () => {
   it('apply throws UpdateLockedError while another process holds the lock, succeeds after release', async () => {
     const held = await acquireUpdateRunLock(TEST_LOCK_KEY)
     expect(held).not.toBeNull()
-    const dir = mkdtempSync(join(tmpdir(), 'tau-updater-lock-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-updater-lock-'))
     try {
       const { updater } = manager({
         runLock: testRunLock,
@@ -638,7 +638,7 @@ describe('cross-process update run lock (real advisory lock)', () => {
   })
 
   it('applyInBackground records a terminal failure when lock acquisition rejects', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-updater-lock-error-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-updater-lock-error-'))
     try {
       const { updater } = manager({
         runLock: async () => {
@@ -670,7 +670,7 @@ describe('cross-process update run lock (real advisory lock)', () => {
   it('applyInBackground fails the run with a clear message when another process holds the lock', async () => {
     const held = await acquireUpdateRunLock(TEST_LOCK_KEY)
     expect(held).not.toBeNull()
-    const dir = mkdtempSync(join(tmpdir(), 'tau-updater-lock-bg-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-updater-lock-bg-'))
     try {
       const { updater } = manager({
         runLock: testRunLock,
@@ -698,7 +698,7 @@ describe('sandboxRuntimeRestartBlocker', () => {
   const LIST = 'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
   let dir: string
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'tau-update-runtime-'))
+    dir = mkdtempSync(join(tmpdir(), 'ficus-update-runtime-'))
   })
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true })
@@ -754,7 +754,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   // merge: leaving the checkout moved forward onto code the services cannot
   // start is strictly worse than not updating at all.
   it('aborts before the merge when the env file names a retired runtime', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-preflight-'))
     try {
       writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nFICUS_SANDBOX_RUNTIME=auto\n')
       let ran = false
@@ -786,7 +786,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   })
 
   it('runs the update when the env file names a supported runtime', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-ok-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-preflight-ok-'))
     try {
       writeFileSync(join(dir, '.env'), 'FICUS_SANDBOX_RUNTIME=docker-socket\n')
       let ran = false
@@ -816,7 +816,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   // it asks the precise question instead of the flavor-level one runApply must
   // use before it merges.
   it('does not block a targeted rebuild whose plan restarts nothing', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-norestart-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-preflight-norestart-'))
     try {
       // Same broken .env as the aborting case above — the ONLY difference is
       // that a web-only rebuild restarts nothing.
@@ -845,7 +845,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
 
   // ...and the mirror image: a targeted rebuild that DOES restart is blocked.
   it('blocks a targeted rebuild whose plan restarts the services', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-targeted-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-preflight-targeted-'))
     try {
       writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nFICUS_SANDBOX_RUNTIME=auto\n')
       let ran = false

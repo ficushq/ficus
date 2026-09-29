@@ -9,7 +9,7 @@ import { loadEnv } from '../env'
 const tempDirs: string[] = []
 
 async function makeAuthStore() {
-  const dir = await mkdtemp(join(tmpdir(), 'tau-backend-test-'))
+  const dir = await mkdtemp(join(tmpdir(), 'ficus-backend-test-'))
   tempDirs.push(dir)
   const authStore = join(dir, 'auth.json')
   await writeFile(
@@ -51,7 +51,7 @@ describe('selected backend config', () => {
   })
 
   it('keeps a selected backend paired ahead of implicit dotenv', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-backend-dotenv-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-backend-dotenv-'))
     tempDirs.push(dir)
     await writeFile(join(dir, '.env'), 'FICUS_API_URL=https://stale.example.com\nFICUS_PASSWORD=stale-token\n')
     loadEnv({ cwd: dir })
@@ -78,7 +78,7 @@ describe('selected backend config', () => {
   // so by the time loadEnv() executes the keys are already set. A stale repo .env must not
   // outrank the active stored backend — that made `ficus squad list` fail with an expired token.
   it('keeps the active backend ahead of a dotenv value Bun auto-loaded into the process', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-backend-dotenv-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-backend-dotenv-'))
     tempDirs.push(dir)
     // Values unique to this file, so leftover bookkeeping from an earlier test cannot be what
     // makes this pass.

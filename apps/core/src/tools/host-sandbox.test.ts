@@ -43,7 +43,7 @@ describe('host sandboxed coding tools', () => {
   let prevHome: string | undefined
   let prevRuntime: string | undefined
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-tools-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-tools-'))
     prevHome = process.env.HOME_DIR
     prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home
@@ -298,7 +298,7 @@ describe('host sandboxed coding tools', () => {
     ).rejects.toThrow(/not a regular file/)
   })
 
-  test('local verified edit leaves no tau-edit.tmp behind when the commit fails after staging', async () => {
+  test('local verified edit leaves no ficus-edit.tmp behind when the commit fails after staging', async () => {
     const dir = join(home, 'private', 'agent_a1')
     const file = join(dir, 'stage-fail.txt')
     writeFileSync(file, 'abc')
@@ -314,7 +314,7 @@ describe('host sandboxed coding tools', () => {
       })
     ).rejects.toThrow('simulated rename failure')
     expect(readFileSync(file, 'utf8')).toBe('abc')
-    const leftover = readdirSync(dir).filter((name) => name.includes('tau-edit.tmp'))
+    const leftover = readdirSync(dir).filter((name) => name.includes('ficus-edit.tmp'))
     expect(leftover).toEqual([])
   })
 

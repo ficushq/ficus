@@ -9,7 +9,7 @@ const tempDirs: string[] = []
 
 /** An auth store holding a HUMAN login — what an agent shell must never reach for. */
 async function makeOperatorAuthStore() {
-  const dir = await mkdtemp(join(tmpdir(), 'tau-agent-context-'))
+  const dir = await mkdtemp(join(tmpdir(), 'ficus-agent-context-'))
   tempDirs.push(dir)
   const authStore = join(dir, 'auth.json')
   await writeFile(
@@ -73,7 +73,7 @@ describe('agent context', () => {
     // loadEnv's bookkeeping is module-level and outlives this file, so the values
     // are unique to this test: a value another test also uses would be recorded as
     // dotenv-implicit there too and change ITS resolution (cross-file leakage).
-    const dir = await mkdtemp(join(tmpdir(), 'tau-agent-dotenv-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-agent-dotenv-'))
     tempDirs.push(dir)
     await writeFile(
       join(dir, '.env'),
@@ -141,7 +141,7 @@ describe('agent context', () => {
 
 describe('webhook context', () => {
   it('keeps the injected token and instance together even when dotenv matches an operator backend', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-webhook-dotenv-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-webhook-dotenv-'))
     tempDirs.push(dir)
     await writeFile(
       join(dir, '.env'),

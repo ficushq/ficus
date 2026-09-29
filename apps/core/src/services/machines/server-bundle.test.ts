@@ -49,7 +49,7 @@ describe('resolveRepoRoot', () => {
     // start); only mutating process.env.HOME in-process after start is not
     // picked up. So the test passes the home explicitly instead of rewriting
     // $HOME.
-    const homeRoot = await mkdtemp(join(tmpdir(), 'tau-repo-root-home-'))
+    const homeRoot = await mkdtemp(join(tmpdir(), 'ficus-repo-root-home-'))
     const fixture = join(homeRoot, '.tau-repo-root-fixture')
     try {
       await mkdir(join(fixture, 'packages/k8s-sandbox/src'), { recursive: true })
@@ -168,7 +168,7 @@ describe('buildServerBundle prebuilt fallback', () => {
   }) as unknown as typeof Bun.spawn
 
   it('reads server.js + librust_pty.so from the prebuilt dir and hashes them (no build)', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-prebuilt-server-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-server-'))
     try {
       const server = new TextEncoder().encode('// prebuilt server.js fixture\n')
       const lib = new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4])
@@ -187,7 +187,7 @@ describe('buildServerBundle prebuilt fallback', () => {
   })
 
   it('throws when a prebuilt server.js is present but its native lib is missing', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-prebuilt-server-nolib-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-server-nolib-'))
     try {
       await writeFile(join(dir, 'server.js'), new Uint8Array([1, 2, 3]))
       await expect(buildServerBundle({ prebuiltDir: dir, spawn: throwingSpawn })).rejects.toThrow(
@@ -218,7 +218,7 @@ describe('buildServerBundle prebuilt fallback', () => {
   })
 
   it('falls through to the source build when no prebuilt bundle exists', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'tau-prebuilt-server-empty-'))
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-server-empty-'))
     const calls: string[][] = []
     // Record the build spawn and reject its exit so the fallthrough is provable
     // without depending on the real k8s-sandbox source / bun-pty lib being

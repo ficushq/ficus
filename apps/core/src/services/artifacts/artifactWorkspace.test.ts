@@ -31,7 +31,7 @@ describe('artifact workspace service', () => {
   const consoleSpies: Array<{ mockRestore: () => void }> = []
 
   beforeEach(async () => {
-    agentWorkspacePath = await mkdtemp(join(tmpdir(), 'tau-artifact-workspace-'))
+    agentWorkspacePath = await mkdtemp(join(tmpdir(), 'ficus-artifact-workspace-'))
   })
 
   afterEach(async () => {
@@ -782,7 +782,7 @@ describe('artifact workspace service', () => {
       title: 'Symlink Path Test',
       brief: 'Create symlink path test artifact',
     })
-    const outsidePath = await mkdtemp(join(tmpdir(), 'tau-artifact-outside-'))
+    const outsidePath = await mkdtemp(join(tmpdir(), 'ficus-artifact-outside-'))
 
     try {
       await symlink(outsidePath, join(artifactPath, 'nested'))
@@ -836,7 +836,7 @@ describe('artifact workspace service', () => {
   })
 
   it('rejects paths when artifacts root itself is a symlink outside the workspace', async () => {
-    const outsideArtifactsPath = await mkdtemp(join(tmpdir(), 'tau-artifacts-root-outside-'))
+    const outsideArtifactsPath = await mkdtemp(join(tmpdir(), 'ficus-artifacts-root-outside-'))
     await rm(join(agentWorkspacePath, 'artifacts'), { recursive: true, force: true })
     await symlink(outsideArtifactsPath, join(agentWorkspacePath, 'artifacts'))
 
@@ -863,7 +863,7 @@ describe('artifact workspace service', () => {
   })
 
   it('refuses to list manifests when artifacts root is a symlink outside the workspace', async () => {
-    const outsideArtifactsPath = await mkdtemp(join(tmpdir(), 'tau-list-artifacts-root-outside-'))
+    const outsideArtifactsPath = await mkdtemp(join(tmpdir(), 'ficus-list-artifacts-root-outside-'))
     await rm(join(agentWorkspacePath, 'artifacts'), { recursive: true, force: true })
     await symlink(outsideArtifactsPath, join(agentWorkspacePath, 'artifacts'))
 
@@ -880,7 +880,7 @@ describe('artifact workspace service', () => {
       title: 'Manifest Read Symlink Test',
       brief: 'Create manifest read symlink test artifact',
     })
-    const outsidePath = await mkdtemp(join(tmpdir(), 'tau-manifest-read-outside-'))
+    const outsidePath = await mkdtemp(join(tmpdir(), 'ficus-manifest-read-outside-'))
     const outsideManifestPath = join(outsidePath, 'manifest.json')
     await writeFile(
       outsideManifestPath,
@@ -902,7 +902,7 @@ describe('artifact workspace service', () => {
   })
 
   it('refuses to delete through a symlinked artifacts root', async () => {
-    const outsideArtifactsPath = await mkdtemp(join(tmpdir(), 'tau-delete-artifacts-root-outside-'))
+    const outsideArtifactsPath = await mkdtemp(join(tmpdir(), 'ficus-delete-artifacts-root-outside-'))
     const outsideArtifactPath = join(outsideArtifactsPath, 'delete-root-symlink-test')
     await mkdir(outsideArtifactPath)
     await writeFile(join(outsideArtifactPath, 'keep.txt'), 'do not delete')
@@ -925,7 +925,7 @@ describe('artifact workspace service', () => {
       title: 'Delete Symlink Test',
       brief: 'Create delete symlink test artifact',
     })
-    const outsidePath = await mkdtemp(join(tmpdir(), 'tau-delete-artifact-outside-'))
+    const outsidePath = await mkdtemp(join(tmpdir(), 'ficus-delete-artifact-outside-'))
     await writeFile(join(outsidePath, 'keep.txt'), 'do not delete')
 
     try {
@@ -947,7 +947,7 @@ describe('artifact workspace service', () => {
       title: 'Manifest Symlink Test',
       brief: 'Create manifest symlink test artifact',
     })
-    const outsidePath = await mkdtemp(join(tmpdir(), 'tau-manifest-write-outside-'))
+    const outsidePath = await mkdtemp(join(tmpdir(), 'ficus-manifest-write-outside-'))
 
     try {
       await rm(created.artifactPath, { recursive: true, force: true })
@@ -980,7 +980,7 @@ describe('artifact workspace service', () => {
       title: 'Root Symlink Test',
       brief: 'Create root symlink path test artifact',
     })
-    const outsidePath = await mkdtemp(join(tmpdir(), 'tau-artifact-root-outside-'))
+    const outsidePath = await mkdtemp(join(tmpdir(), 'ficus-artifact-root-outside-'))
 
     try {
       await rm(artifactPath, { recursive: true, force: true })
@@ -1105,7 +1105,7 @@ describe('artifact workspace service', () => {
       brief: 'Create artifact for concurrent appends',
     })
 
-    const symlinkWorkspacePath = join(tmpdir(), `tau-workspace-link-${Date.now()}-${Math.random()}`)
+    const symlinkWorkspacePath = join(tmpdir(), `ficus-workspace-link-${Date.now()}-${Math.random()}`)
     await symlink(agentWorkspacePath, symlinkWorkspacePath)
 
     try {

@@ -2520,7 +2520,7 @@ describe('removeBox', () => {
 
 describe('restorePrivateArchive', () => {
   it('finds the newest owner-attributed archive for fresh replacement', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-latest-private-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-latest-private-'))
     try {
       mkdirSync(join(root, 'agent_owner-100'))
       mkdirSync(join(root, 'agent_owner-300'))

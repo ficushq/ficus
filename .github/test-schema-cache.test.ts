@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createTestSchemaCache } from '../apps/core/src/test-utils/schema-cache'
 
 test('schema reuse requires both identical inputs and a successful identical live DDL fingerprint', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'tau-schema-cache-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-schema-cache-'))
   try {
     const file = join(dir, 'cache.json')
     let ddl: string | null = 'table + foreign key + partial index'

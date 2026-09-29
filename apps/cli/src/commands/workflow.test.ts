@@ -12,7 +12,7 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 async function file(value: unknown) {
-  const dir = await mkdtemp(join(tmpdir(), 'tau-workflow-cli-'))
+  const dir = await mkdtemp(join(tmpdir(), 'ficus-workflow-cli-'))
   dirs.push(dir)
   const path = join(dir, 'style.json')
   await Bun.write(path, JSON.stringify(value))

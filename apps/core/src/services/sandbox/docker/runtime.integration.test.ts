@@ -66,7 +66,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
   afterEach(() => removeOwnedDockerContainers(owner))
 
   test('fresh image negotiates exact identity, auth, proxy, and Bun contract', async () => {
-    const name = `tau-runtime-${owner}`
+    const name = `ficus-runtime-${owner}`
     const upstreamBefore = runOwnedDocker(['exec', name, 'true'], owner) // command shape sanity before fixture exists
     expect(upstreamBefore.exitCode).not.toBe(0)
     const ready = await startReady(name)
@@ -96,7 +96,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
   }, 120_000)
 
   test('identity collision fails closed before executor/token creation', async () => {
-    const name = `tau-collision-${owner}`
+    const name = `ficus-collision-${owner}`
     expect(runOwnedDocker(startArgs(name, ['-e', 'FICUS_HOST_GID=20']), owner).exitCode).toBe(0)
     await expectExited(name)
     expect(
@@ -108,7 +108,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
   test.each([['socat'], ['executor']])(
     '%s death terminates the supervised container',
     async (child) => {
-      const name = `tau-death-${child}-${owner}`
+      const name = `ficus-death-${child}-${owner}`
       await startReady(name)
       const pidFile = child === 'socat' ? '/run/tau/proxy.pid' : '/run/tau/executor.pid'
       const pid = runOwnedDocker(['exec', name, 'cat', pidFile], owner).stdout.toString().trim()
@@ -121,7 +121,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
   )
 
   test('old/missing executor fixture has no token or health endpoint', async () => {
-    const name = `tau-old-${owner}`
+    const name = `ficus-old-${owner}`
     const started = runOwnedDocker(
       ['run', '-d', '--name', name, '--label', `ficus.test-owner=${owner}`, '--entrypoint', 'sleep', image, '60'],
       owner
@@ -132,8 +132,8 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
   })
 
   test('real wrong-label image fails and same-tag immutable rebuild changes the spec', () => {
-    const name = `tau-image-drift-${owner}`
-    const tag = `tau-runtime-drift:${owner}`
+    const name = `ficus-image-drift-${owner}`
+    const tag = `ficus-runtime-drift:${owner}`
     let wrongId = ''
     try {
       expect(
@@ -201,9 +201,9 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
   }, 120_000)
 
   test('manager recreates same-tag immutable drift, restart-adopts, and fails closed on lifecycle faults', async () => {
-    const mutableTag = `tau-manager-drift:${owner}`
+    const mutableTag = `ficus-manager-drift:${owner}`
     const sandboxId = `agent_${randomUUID()}`
-    const workspace = mkdtempSync(path.join(tmpdir(), 'tau-manager-runtime-'))
+    const workspace = mkdtempSync(path.join(tmpdir(), 'ficus-manager-runtime-'))
     chmodSync(workspace, 0o777)
     const containerName = `tau-sandbox-${sandboxId}`
     let firstImageId = ''
@@ -272,7 +272,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
 
   test('exact owner cleanup leaves a real neighbor alive', () => {
     const neighborOwner = `${owner}-neighbor`
-    const name = `tau-neighbor-${owner}`
+    const name = `ficus-neighbor-${owner}`
     try {
       expect(
         runOwnedDocker(

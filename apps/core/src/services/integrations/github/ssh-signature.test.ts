@@ -9,7 +9,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 function tempDir(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tau-sshsig-')))
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-sshsig-')))
   dirs.push(dir)
   return dir
 }

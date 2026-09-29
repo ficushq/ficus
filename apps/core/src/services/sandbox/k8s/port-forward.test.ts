@@ -232,7 +232,7 @@ describe('PortForwardManager', () => {
     })
 
     for (let index = 0; index < 5; index++) {
-      await expect(manager.ensureExecutorForward(`failed_${index}`, `tau-failed-${index}`)).rejects.toThrow()
+      await expect(manager.ensureExecutorForward(`failed_${index}`, `ficus-failed-${index}`)).rejects.toThrow()
     }
 
     expect(manager.getDiagnostics().admissionOwners).toBe(0)

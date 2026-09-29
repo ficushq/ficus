@@ -264,9 +264,9 @@ describe('localDeployment proxy', () => {
       // then assert the Ficus auth credentials are not forwarded upstream.
       new Request(localDeploymentUrl(localDeployment), {
         headers: {
-          authorization: 'Bearer tau-token',
-          'x-auth-token': 'tau-token',
-          cookie: 'tau_password=secret; other=value',
+          authorization: 'Bearer ficus-token',
+          'x-auth-token': 'ficus-token',
+          cookie: 'ficus_password=secret; other=value',
           'x-keep': 'yes',
         },
       }),
@@ -290,7 +290,7 @@ describe('localDeployment proxy', () => {
     const noToken = await proxyLocalDeploymentRequest(
       localDeployment.id,
       new Request(`http://ficus.test/api/app/${localDeployment.id}/`, {
-        headers: { authorization: 'Bearer tau-session' },
+        headers: { authorization: 'Bearer ficus-session' },
       }),
       ''
     )
@@ -300,7 +300,7 @@ describe('localDeployment proxy', () => {
     const wrongToken = await proxyLocalDeploymentRequest(
       localDeployment.id,
       new Request(`http://ficus.test/api/app/${localDeployment.id}/?_tau_token=wrong`, {
-        headers: { authorization: 'Bearer tau-session' },
+        headers: { authorization: 'Bearer ficus-session' },
       }),
       ''
     )

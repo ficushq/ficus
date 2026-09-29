@@ -56,7 +56,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  *   # --cap-add NET_ADMIN: lets the egress block (and the docker-path egress proof)
  *   # load the nftables ruleset. Harmless for the main flow; kept on the shared
  *   # recipe so one container can serve every gated block below.
- *   docker run -d --rm --platform linux/amd64 --cap-add NET_ADMIN --name tau-vm-int -p 2222:22 ubuntu:24.04 bash -c "
+ *   docker run -d --rm --platform linux/amd64 --cap-add NET_ADMIN --name ficus-vm-int -p 2222:22 ubuntu:24.04 bash -c "
  *     apt-get update && apt-get install -y openssh-server sudo unzip &&
  *     mkdir -p /run/sshd /root/.ssh &&
  *     printf 'PermitRootLogin prohibit-password\nAllowTcpForwarding yes\n' >> /etc/ssh/sshd_config &&
@@ -70,7 +70,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  *   FICUS_TEST_SSH_KEY_PATH=$HOME/.ssh/id_ed25519 \
  *   FICUS_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
  *   bun test src/services/machines/integration-vm.test.ts
- *   # afterwards: docker rm -f tau-vm-int
+ *   # afterwards: docker rm -f ficus-vm-int
  *
  * The container itself is operator-disposable (the recipe creates it with
  * `--rm`; `docker rm -f` tears it down). The test cleans up EVERYTHING it
@@ -165,7 +165,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
 
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
-    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-vm-int-home-'))
+    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-vm-int-home-'))
     priorKey = process.env.FICUS_ENCRYPTION_KEY
     process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
@@ -199,7 +199,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
     runner = createSshRunner({ defaultTimeoutMs: SLOW_MS })
     // Keep the control-socket path well under the 90-byte guard regardless of the
     // (long, /var/folders-style) HOME_DIR.
-    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'tau-vmint-ctl-')) })
+    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'ficus-vmint-ctl-')) })
 
     coreListener = Bun.serve({
       port: 0,
@@ -563,7 +563,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
  *
  * Recipe delta (add to the `docker run` in the main header):
  *   docker run -d --rm --platform linux/amd64 --cap-add NET_ADMIN \
- *     --name tau-vm-int -p 2222:22 ubuntu:24.04 bash -c "... same as above ..."
+ *     --name ficus-vm-int -p 2222:22 ubuntu:24.04 bash -c "... same as above ..."
  * then set FICUS_TEST_EGRESS=1 alongside the FICUS_TEST_SSH_* vars.
  *
  * What this proves behaviorally: after loading the EXACT production ruleset
@@ -597,7 +597,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRE
 
     beforeAll(async () => {
       priorHome = process.env.HOME_DIR
-      process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-vm-egr-home-'))
+      process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-vm-egr-home-'))
       priorKey = process.env.FICUS_ENCRYPTION_KEY
       process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
       resetSecretStore()
@@ -763,7 +763,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_SYST
 
     beforeAll(async () => {
       priorHome = process.env.HOME_DIR
-      process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-vm-dock-home-'))
+      process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-vm-dock-home-'))
       priorKey = process.env.FICUS_ENCRYPTION_KEY
       process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
       resetSecretStore()
@@ -877,7 +877,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRE
 
     beforeAll(async () => {
       priorHome = process.env.HOME_DIR
-      process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-vm-egrdock-home-'))
+      process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-vm-egrdock-home-'))
       priorKey = process.env.FICUS_ENCRYPTION_KEY
       process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
       resetSecretStore()

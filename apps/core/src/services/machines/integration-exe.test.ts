@@ -117,7 +117,7 @@ describe.skipIf(!process.env.FICUS_TEST_EXE_SSH_KEY)('exe.dev provider (integrat
 
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
-    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-exe-int-home-'))
+    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-exe-int-home-'))
     priorKey = process.env.FICUS_ENCRYPTION_KEY
     process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
@@ -138,7 +138,7 @@ describe.skipIf(!process.env.FICUS_TEST_EXE_SSH_KEY)('exe.dev provider (integrat
     router = app
 
     runner = createSshRunner({ defaultTimeoutMs: SLOW_MS })
-    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'tau-exeint-ctl-')) })
+    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'ficus-exeint-ctl-')) })
   })
 
   afterAll(async () => {

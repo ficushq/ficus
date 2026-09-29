@@ -41,7 +41,7 @@ describe('squad-workspace', () => {
 
     it('resolves the base and leaf paths without creating them', () => {
       const previousHome = process.env.HOME_DIR
-      const parent = mkdtempSync(join(tmpdir(), 'tau-workspace-path-test-'))
+      const parent = mkdtempSync(join(tmpdir(), 'ficus-workspace-path-test-'))
       const home = join(parent, 'home')
       process.env.HOME_DIR = home
 
@@ -73,7 +73,7 @@ describe('squad-workspace', () => {
       // anyway and the throw merely hides it. Point HOME_DIR at a pristine
       // empty tree so "nothing was created" is directly observable.
       const previousHome = process.env.HOME_DIR
-      const parent = mkdtempSync(join(tmpdir(), 'tau-workspace-guard-test-'))
+      const parent = mkdtempSync(join(tmpdir(), 'ficus-workspace-guard-test-'))
       process.env.HOME_DIR = join(parent, 'home')
 
       // The exact shapes that were leaking: short test-style ids, slugs,
@@ -294,7 +294,7 @@ describe('searchWorkspaceFiles honours the host workspace override', () => {
     writeFileSync(join(storagePath, 'storage-only.txt'), 'storage')
 
     // Override path: an unrelated temp dir with a file only it has.
-    overrideDir = mkdtempSync(join(tmpdir(), 'tau-workspace-override-test-'))
+    overrideDir = mkdtempSync(join(tmpdir(), 'ficus-workspace-override-test-'))
     writeFileSync(join(overrideDir, 'override-only.txt'), 'override')
 
     setHostWorkspaceOverride(SQUAD, overrideDir)

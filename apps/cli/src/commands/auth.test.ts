@@ -27,7 +27,7 @@ describe('auth CLI commands', () => {
   const originalApiUrl = process.env.FICUS_API_URL
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'tau-auth-test-'))
+    dir = mkdtempSync(join(tmpdir(), 'ficus-auth-test-'))
     authPath = join(dir, '.tau', 'cli', 'auth.json')
     process.env.FICUS_AUTH_STORE = authPath
     delete process.env.FICUS_PASSWORD

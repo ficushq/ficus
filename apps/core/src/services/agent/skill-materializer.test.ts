@@ -33,7 +33,7 @@ describe('materializeSkills', () => {
   })
 
   test('uses deterministic persistent paths and avoids rewriting unchanged files', async () => {
-    const baseDir = await mkdtemp(join(tmpdir(), 'tau-skills-test-'))
+    const baseDir = await mkdtemp(join(tmpdir(), 'ficus-skills-test-'))
     await Skill.upsert({ id: 'custom-skill', name: 'Custom Skill', content: '# Custom Skill\n' })
 
     const first = await materializeSkills(['custom-skill'], baseDir)
@@ -57,7 +57,7 @@ describe('materializeSkills', () => {
   })
 
   test('authoritatively prunes stale skill directories including an empty expected set', async () => {
-    const baseDir = await mkdtemp(join(tmpdir(), 'tau-skills-test-'))
+    const baseDir = await mkdtemp(join(tmpdir(), 'ficus-skills-test-'))
     await Skill.upsert({ id: 'first-skill', name: 'First', content: '# First\n' })
     await Skill.upsert({ id: 'second-skill', name: 'Second', content: '# Second\n' })
     await materializeSkills(['first-skill', 'second-skill'], baseDir, true)
@@ -69,7 +69,7 @@ describe('materializeSkills', () => {
   })
 
   test('removes stale support files from persistent directories', async () => {
-    const baseDir = await mkdtemp(join(tmpdir(), 'tau-skills-test-'))
+    const baseDir = await mkdtemp(join(tmpdir(), 'ficus-skills-test-'))
     await Skill.upsert({
       id: 'custom-skill',
       name: 'Custom Skill',

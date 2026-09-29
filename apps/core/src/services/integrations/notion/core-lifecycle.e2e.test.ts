@@ -33,7 +33,7 @@ import { expectCleanExit, expectFailedExit, runCapturedProcess } from '../../../
 const binary = join(dirname(Bun.resolveSync('ntn/package.json', import.meta.dir)), 'bin', 'ntn')
 
 test('GitHub bindings work in POSIX sh and remain inherited by child Bash shells', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'tau-integration-shell-'))
+  const root = mkdtempSync(join(tmpdir(), 'ficus-integration-shell-'))
   const squadId = crypto.randomUUID()
   const bindings = githubCommandBindings(squadId)
   try {
@@ -67,7 +67,7 @@ test('GitHub bindings work in POSIX sh and remain inherited by child Bash shells
 })
 
 test('Git credential operations reach the squad integration with their operation argument', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'tau-git-credential-'))
+  const root = mkdtempSync(join(tmpdir(), 'ficus-git-credential-'))
   try {
     writeFileSync(
       join(root, 'ficus'),
@@ -119,7 +119,7 @@ test('Git credential operations reach the squad integration with their operation
 test('Core connect assign reconcile real CLI rotate without reinstall and unassign', async () => {
   const priorEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
   process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
-  const root = mkdtempSync(join(tmpdir(), 'tau-notion-core-e2e-'))
+  const root = mkdtempSync(join(tmpdir(), 'ficus-notion-core-e2e-'))
   const envFile = join(root, '.env')
   const egressLog = join(root, 'egress.log')
   const egressGuard = join(root, 'egress-guard.cjs')

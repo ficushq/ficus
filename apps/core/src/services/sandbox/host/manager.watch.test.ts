@@ -15,7 +15,7 @@ describe('HostSandboxManager workspace watch', () => {
   let manager: HostSandboxManager
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'tau-host-watch-'))
+    home = mkdtempSync(join(tmpdir(), 'ficus-host-watch-'))
     prevHome = process.env.HOME_DIR
     process.env.HOME_DIR = home
     clearHostWorkspaceOverrides()

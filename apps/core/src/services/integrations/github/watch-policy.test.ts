@@ -115,7 +115,7 @@ test('issue triggers establish exact repository watches before a stream exists a
     id: 'assigned',
     create: { workflow: { kind: 'preset', id: 'solo' }, metadata: {} },
     source: { integration: 'github', output: 'issue.assigned', version: 1, connectionId },
-    match: { repository: { value: repo }, assignee: { value: 'tau-bot' } },
+    match: { repository: { value: repo }, assignee: { value: 'ficus-bot' } },
   })
   const policy = new GitHubPrWatchPolicy({
     resolveConnection: async (squadId, connectionId) => (connectionId ? undefined : { id: `account-${squadId}` }),
@@ -162,7 +162,7 @@ test('an assignee trigger discovers exact repositories already connected in squa
               id: 'assigned',
               create: { workflow: { kind: 'preset', id: 'solo' }, metadata: {} },
               source: { integration: 'github', output: 'issue.assigned', version: 1 },
-              match: { assignee: { value: 'tau-bot' } },
+              match: { assignee: { value: 'ficus-bot' } },
             },
           ],
         },

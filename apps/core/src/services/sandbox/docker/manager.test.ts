@@ -83,7 +83,7 @@ describe('resolveReclaimableNixStorePath', () => {
   let homeDir: string
 
   beforeEach(() => {
-    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-nix-home-'))
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-nix-home-'))
     process.env.HOME_DIR = homeDir
   })
 
@@ -109,7 +109,7 @@ describe('ensureNixStore (shared base + clone)', () => {
   let dockerCalls: string[][]
 
   beforeEach(() => {
-    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-nix-seed-'))
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-nix-seed-'))
     process.env.HOME_DIR = homeDir
     dockerCalls = []
   })
@@ -244,7 +244,7 @@ describe('reclaimAgentNixStore', () => {
   let sandboxId: string
 
   beforeEach(() => {
-    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-nix-home-'))
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-nix-home-'))
     nixRoot = path.join(homeDir, 'nix')
     sandboxId = `agent_${crypto.randomUUID()}`
     process.env.HOME_DIR = homeDir
@@ -1339,7 +1339,7 @@ describe('docker-sandbox-manager', () => {
     let tmpWorkspacePath: string
 
     beforeEach(() => {
-      tmpWorkspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-hook-test-'))
+      tmpWorkspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-hook-test-'))
       ;(manager as any).sandboxes.set(spawnHookSandboxId, {
         containerId: 'fake-container',
         workspacePath: tmpWorkspacePath,
@@ -1387,7 +1387,7 @@ describe('docker-sandbox-manager', () => {
     let squadWorkspacePath: string
 
     beforeEach(() => {
-      squadWorkspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-squad-test-'))
+      squadWorkspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-squad-test-'))
     })
 
     afterEach(() => {

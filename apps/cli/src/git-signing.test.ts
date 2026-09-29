@@ -112,7 +112,7 @@ describe('git signing through the real ficus entrypoint', () => {
   }
 
   it('commits signed via Core and verifies through the ssh-keygen passthrough', async () => {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tau-git-sign-e2e-')))
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-git-sign-e2e-')))
     dirs.push(dir)
     const repo = join(dir, 'repo')
     const bin = join(dir, 'bin')

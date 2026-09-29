@@ -57,7 +57,7 @@ function issueFact(number: number, changes: Partial<IntegrationOutputFact> = {})
     eventKey: randomUUID(),
     resourceKey: `${repo}#${number}`,
     occurredAt: new Date().toISOString(),
-    data: { repository: repo, issue: { number }, assignee: 'tau-bot' },
+    data: { repository: repo, issue: { number }, assignee: 'ficus-bot' },
     subject: `Issue ${repo}#${number}`,
     body: 'Please take a look.',
     ...changes,
@@ -186,7 +186,7 @@ test('an event resolves to a tracked issue only for the squad whose live connect
     squadId,
   })
   await expect(resolveEventTrackedResource(foreign.id, squadId)).rejects.toMatchObject({ status: 403 })
-  const untrackable = await insertEvent(issueFact(2104, { data: { repository: repo, assignee: 'tau-bot' } }), {
+  const untrackable = await insertEvent(issueFact(2104, { data: { repository: repo, assignee: 'ficus-bot' } }), {
     kind: 'connection',
     connectionId,
     squadId,

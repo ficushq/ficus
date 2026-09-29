@@ -179,7 +179,7 @@ describe('webhooks/processors/github', () => {
 
     beforeEach(async () => {
       setGithubActionConfig(testConfig)
-      githubFixtures.push(await createTestGitHubConnection({ login: 'tau-bot' }))
+      githubFixtures.push(await createTestGitHubConnection({ login: 'ficus-bot' }))
     })
 
     afterEach(async () => {
@@ -217,14 +217,14 @@ describe('webhooks/processors/github', () => {
         rawBody: '{}',
         payload: {
           action: 'review_requested',
-          requested_reviewer: { login: 'tau-bot' },
+          requested_reviewer: { login: 'ficus-bot' },
           pull_request: { number: 42, title: 'Add feature', html_url: 'https://github.com/owner/repo/pull/42' },
           repository: { full_name: 'owner/repo' },
         },
       })
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('[github-webhook]'),
-        'Processing pull_request review_requested: #42 "Add feature" requested reviewer=tau-bot team= in owner/repo'
+        'Processing pull_request review_requested: #42 "Add feature" requested reviewer=ficus-bot team= in owner/repo'
       )
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('[github-webhook]'),
@@ -246,7 +246,7 @@ describe('webhooks/processors/github', () => {
         rawBody: '{}',
         payload: {
           action: 'review_requested',
-          requested_team: { slug: 'tau-reviewers', name: 'Ficus Reviewers' },
+          requested_team: { slug: 'ficus-reviewers', name: 'Ficus Reviewers' },
           pull_request: { number: 43, title: 'Team PR', html_url: 'https://github.com/owner/repo/pull/43' },
           repository: { full_name: 'owner/repo' },
         },
@@ -268,7 +268,7 @@ describe('webhooks/processors/github', () => {
         rawBody: '{}',
         payload: {
           action: 'review_requested',
-          requested_reviewer: { login: 'tau-bot' },
+          requested_reviewer: { login: 'ficus-bot' },
           pull_request: { number: 45, title: 'User PR' },
           repository: { full_name: 'owner/repo' },
         },
@@ -296,7 +296,7 @@ describe('webhooks/processors/github', () => {
       })
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('[github-webhook]'),
-        'pull_request review_requested event ignored (requested_reviewer=someone-else, configured=tau-bot)'
+        'pull_request review_requested event ignored (requested_reviewer=someone-else, configured=ficus-bot)'
       )
       consoleSpy.mockRestore()
     })

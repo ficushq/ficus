@@ -22,7 +22,7 @@ test('completion fails closed for early success, missing files, failed tests, si
 })
 
 async function fixture(files: Record<string, string>) {
-  const cwd = mkdtempSync(join(tmpdir(), 'tau-runner-test-'))
+  const cwd = mkdtempSync(join(tmpdir(), 'ficus-runner-test-'))
   scratch.push(cwd)
   await Bun.write(join(cwd, 'bunfig.toml'), '[test]\ntimeout = 5000\n')
   for (const [name, source] of Object.entries(files)) await Bun.write(join(cwd, name), source)

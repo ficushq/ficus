@@ -66,7 +66,7 @@ describe('ssh runner', () => {
 
   beforeAll(async () => {
     priorHome = process.env.HOME_DIR
-    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'tau-ssh-test-'))
+    process.env.HOME_DIR = mkdtempSync(join(tmpdir(), 'ficus-ssh-test-'))
     priorKey = process.env.FICUS_ENCRYPTION_KEY
     process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64)
     resetSecretStore()
@@ -272,7 +272,7 @@ describe('ssh runner', () => {
       // end rather than accumulated.
       const { spawn } = localSpawn()
       const streamer = createSshStreamer({ spawn })
-      const handshakeDir = mkdtempSync(join(tmpdir(), 'tau-stream-handshake-'))
+      const handshakeDir = mkdtempSync(join(tmpdir(), 'ficus-stream-handshake-'))
       const sentinel = join(handshakeDir, 'consuming')
       const HANDSHAKE_BYTES = 1024 * 1024
       const TAIL_BYTES = 64 * 1024 * 1024
@@ -313,7 +313,7 @@ describe('ssh runner', () => {
         expect(result.dest.exitCode).toBe(0)
         expect(existsSync(sentinel)).toBe(true)
       } finally {
-        // Without this every run leaves a tau-stream-handshake-* dir in tmp.
+        // Without this every run leaves a ficus-stream-handshake-* dir in tmp.
         rmSync(handshakeDir, { recursive: true, force: true })
       }
     }, 60_000)

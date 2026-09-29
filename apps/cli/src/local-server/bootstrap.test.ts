@@ -8,7 +8,7 @@ import { recordingRunner } from './runner'
 
 let tmp: string
 beforeEach(() => {
-  tmp = mkdtempSync(join(tmpdir(), 'tau-boot-'))
+  tmp = mkdtempSync(join(tmpdir(), 'ficus-boot-'))
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 

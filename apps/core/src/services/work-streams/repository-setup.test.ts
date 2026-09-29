@@ -21,7 +21,7 @@ const exec: RepositoryExec = async (args) => {
   return out
 }
 beforeEach(async () => {
-  root = await realpath(await mkdtemp(join(tmpdir(), 'tau-repository-')))
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ficus-repository-')))
   repo = join(root, 'repo')
   await mkdir(repo)
   await exec(['git', 'init', '-b', 'main', repo])

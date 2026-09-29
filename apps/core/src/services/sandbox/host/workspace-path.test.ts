@@ -18,7 +18,7 @@ describe('host workspace path preparation', () => {
   })
 
   function makeRoot(): string {
-    const root = mkdtempSync(join(tmpdir(), 'tau-host-workspace-path-'))
+    const root = mkdtempSync(join(tmpdir(), 'ficus-host-workspace-path-'))
     roots.push(root)
     return root
   }
