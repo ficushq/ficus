@@ -228,6 +228,9 @@ cfg_load "${CONFIG}"
 # file is read or written.
 SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
 require_host_env_ready
+# A journaled host migration would restore the files this rewrites; refuse until
+# the tenant upgrade has reconciled it.
+require_no_host_migrate_pending
 
 # Captured first, never inside [[ … ]]: a die() in a command substitution only
 # ends that subshell, so `[[ $(cfg_bool …) != true ]]` would read an invalid

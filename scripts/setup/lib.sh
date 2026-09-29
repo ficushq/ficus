@@ -3385,6 +3385,16 @@ require_host_env_ready() {
     die "this host's settings predate the Ficus naming (found $(_names_joined "${names}")); upgrade it through the ficus-rename-bridge Core release first"
 }
 
+# Refuse while a host migration is journaled (host_migrate_*, below): its
+# reconcile or rollback restores this host's config files to their journaled
+# bytes, which would silently undo whatever the caller is about to write
+# (the retarget primitives: .env, backup.env, the config, the backup script).
+# Read-only.
+require_no_host_migrate_pending() {
+  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
+    die "a host migration is still journaled in $(host_migrate_backup_root)/PENDING — run the tenant upgrade (it reconciles) before retargeting"
+}
+
 # NAMES (one per line) as `A, B`.
 _names_joined() { # NAMES
   local out='' n

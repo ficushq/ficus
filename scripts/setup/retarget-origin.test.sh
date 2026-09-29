@@ -254,6 +254,27 @@ for old_mode in --dry-run real; do
 done
 printf '%s\n' "${ENV_BYTES_BEFORE}" >"${CORE_DEST}/.env"
 
+# --- a journaled host migration: refused before anything changes -------------
+# Its reconcile or rollback would restore the yaml and .env this rewrites, so
+# a retarget in between would be silently undone.
+export HOST_MIGRATE_BACKUP_ROOT="${SCRATCH}/host-migrate"
+mkdir -p "${HOST_MIGRATE_BACKUP_ROOT}"
+printf '%s\t%s\t%s\n' "${HOST_MIGRATE_BACKUP_ROOT}/set" testmark /srv/release >"${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+for pending_mode in --dry-run real; do
+  pending_args=(--config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}")
+  [[ ${pending_mode} == --dry-run ]] && pending_args+=(--dry-run)
+  expect_eq "journaled migration (${pending_mode}): exits non-zero" "$(run_rc "${pending_args[@]}")" '1'
+  expect_match "journaled migration (${pending_mode}): says why" "$(run_err "${pending_args[@]}")" \
+    'a host migration is still journaled in .*/PENDING — run the tenant upgrade \(it reconciles\) before retargeting'
+  expect_eq "journaled migration (${pending_mode}): the config is untouched" "$(cat "${CONFIG}")" "${CONFIG_BYTES_BEFORE}"
+  expect_eq "journaled migration (${pending_mode}): the .env is untouched" "$(cat "${CORE_DEST}/.env")" "${ENV_BYTES_BEFORE}"
+  expect_eq "journaled migration (${pending_mode}): no Caddyfile was written" "$([[ -e ${CADDYFILE_PATH} ]] && echo exists || echo absent)" 'absent'
+done
+rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+expect_eq 'journaled migration: once reconciled (no PENDING), a dry run proceeds' \
+  "$(run_rc --config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}" --dry-run)" '0'
+unset HOST_MIGRATE_BACKUP_ROOT
+
 expect_eq 'http origin: exits non-zero' \
   "$(run_rc --config "${CONFIG}" --origin http://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}" --dry-run)" '1'
 expect_match 'http origin: names the requirement' \

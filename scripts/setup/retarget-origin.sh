@@ -211,6 +211,9 @@ ENV_FILE="${SRC_DEST}/.env"
 # This script reads and writes FICUS_* names only. A host whose settings
 # predate the Ficus naming is refused before anything is read or written.
 require_host_env_ready
+# A journaled host migration would restore the files this rewrites; refuse until
+# the tenant upgrade has reconciled it.
+require_no_host_migrate_pending
 
 # The health check (step 6) has to probe the port core ACTUALLY listens on.
 # That is PORT in the running .env, not core.port in the yaml — the two can

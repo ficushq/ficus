@@ -5584,6 +5584,16 @@ rm -f "${SRC_DEST}/.env"
 expect_eq 'require_host_env_ready: a host with no .env passes' "$( (require_host_env_ready) 2>&1; echo "rc=$?")" 'rc=0'
 SRC_DEST=${HM_SAVED_SRC_DEST}
 
+# require_no_host_migrate_pending: refuses while a PENDING journal exists.
+mkdir -p "${HM}/pending-root"
+expect_eq 'require_no_host_migrate_pending: no journal passes' \
+  "$( (HOST_MIGRATE_BACKUP_ROOT="${HM}/pending-root" require_no_host_migrate_pending) 2>&1; echo "rc=$?")" 'rc=0'
+printf 'set\tname\trelease\n' >"${HM}/pending-root/PENDING"
+hm_err=$( (HOST_MIGRATE_BACKUP_ROOT="${HM}/pending-root" require_no_host_migrate_pending) 2>&1) && hm_rc=0 || hm_rc=$?
+expect_eq 'require_no_host_migrate_pending: a journaled migration dies' "${hm_rc}" '1'
+expect_match 'require_no_host_migrate_pending: ...naming the journal and the way out' "${hm_err}" \
+  "a host migration is still journaled in ${HM}/pending-root/PENDING — run the tenant upgrade \\(it reconciles\\) before retargeting"
+
 # archived_encryption_key: a restore carries the archive's FICUS_ key forward,
 # and refuses an archive from before the naming — naming the key, never a value.
 printf 'FICUS_ENCRYPTION_KEY=archived-42\nDATABASE_URL=postgres://x@localhost/db\n' >"${HM}/archive.env"
