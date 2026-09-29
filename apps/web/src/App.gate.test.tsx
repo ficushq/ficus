@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { acquireDomHarness } from './test/domHarness'
 import type { AuthStatus, AuthValidation } from './api/auth'
+import { farmNavigation } from './components/navModel'
 
 /**
  * Top-level gate: which of {nothing, login/setup, app shell} App renders for a given
@@ -178,6 +179,36 @@ describe('App auth gate', () => {
     expect(container.textContent).toContain('passkey')
     expect(container.textContent).not.toContain('Sign in with Passkey')
     expect(container.querySelector('[data-testid="app-shell"]')).toBeNull()
+  })
+
+  describe('the farm sign-in link', () => {
+    const originalGo = farmNavigation.go
+    let went: string[] = []
+    beforeEach(() => {
+      went = []
+      farmNavigation.go = (url) => void went.push(url)
+    })
+    afterEach(() => {
+      farmNavigation.go = originalGo
+    })
+
+    test('signed out, it shows the login page and stays put', async () => {
+      status = { ...baseStatus, mode: 'passkey', hasUsers: true, hasAdminUser: true }
+      validSession = false
+      await render('/farm-sign-in')
+
+      expect(container.textContent).toContain('Sign in with Passkey')
+      expect(went).toEqual([])
+    })
+
+    test('signed in, it goes back to the farm', async () => {
+      status = { ...baseStatus, mode: 'passkey', hasUsers: true, hasAdminUser: true }
+      validSession = true
+      await render('/farm-sign-in')
+
+      expect(went).toEqual(['/farm/'])
+      expect(container.querySelector('[data-testid="app-shell"]')).toBeNull()
+    })
   })
 
   test('an already-signed-in visitor opening an invite still gets the ceremony', async () => {

@@ -55,11 +55,14 @@ test('bootstrap strips self-hosted code and provider error material synchronousl
 
 test('production bootstrap captures OAuth material before service-worker registration and app rendering', () => {
   const source = readFileSync(new URL('../main.tsx', import.meta.url), 'utf8')
+  // Top-level, before boot() (which the farm resume check may skip) registers the worker and renders.
   const prepare = source.indexOf('\nprepareOAuthCallbackHistory()')
-  const serviceWorker = source.indexOf("\nif ('serviceWorker' in navigator)")
-  const render = source.indexOf('\ncreateRoot(')
+  const serviceWorker = source.search(/\n\s*if \('serviceWorker' in navigator\)/)
+  const render = source.search(/\n\s*createRoot\(/)
 
   expect(prepare).toBeGreaterThan(-1)
+  expect(serviceWorker).toBeGreaterThan(-1)
+  expect(render).toBeGreaterThan(-1)
   expect(prepare).toBeLessThan(serviceWorker)
   expect(prepare).toBeLessThan(render)
   expect(source).toContain("import { DevBackendBar } from './components/DevBackendBar'")

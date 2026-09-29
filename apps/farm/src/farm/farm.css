@@ -333,6 +333,10 @@
     display: none;
   }
 
+  .g-logo {
+    padding-right: 8px;
+  }
+
   .g-logo span {
     display: none;
   }
