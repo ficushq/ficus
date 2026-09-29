@@ -421,10 +421,11 @@ function InboxDeliveryMessageCard({
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted">
         <MailIcon className="h-3.5 w-3.5 shrink-0" />
-        <span>{title}</span>
+        {/* A long title wraps; the delivery pill stays one line at its natural size. */}
+        <span className="min-w-0">{title}</span>
         <span
           className={clsx(
-            'rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+            'shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium',
             isInterrupt
               ? 'bg-status-external-wait-100 text-status-external-wait-700 dark:bg-status-external-wait-950/60 dark:text-status-external-wait-300'
               : 'bg-status-progress-100 text-status-progress-700 dark:bg-status-progress-900/60 dark:text-status-progress-300'
