@@ -209,7 +209,7 @@ export BACKUP_SCRIPT_PATH="${SCRATCH}/bin/tau-backup.sh"
 export BACKUP_ENV_TARGET="${SCRATCH}/etc/backup.env"
 mkdir -p "${SCRATCH}/bin" "${SCRATCH}/etc" "${SCRATCH}/core"
 
-OLD_ENDPOINT='https://nyc3.digitaloceanspaces.com' OLD_REGION='nyc3' OLD_BUCKET='ficus-backups'
+OLD_ENDPOINT='https://nyc3.digitaloceanspaces.com' OLD_REGION='nyc3' OLD_BUCKET='old-backups'
 NEW_ENDPOINT='https://sfo3.digitaloceanspaces.com' NEW_REGION='sfo3' NEW_BUCKET='ficus-backups'
 PREFIX='tenants/acct-1/acme'
 OLD_AK='DO00OLDACCESSKEY0000' OLD_SK='old-secret-value-XYZ/abc'
