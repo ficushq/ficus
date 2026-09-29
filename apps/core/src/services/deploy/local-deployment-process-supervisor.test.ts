@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import type { IPty } from 'bun-pty'
 import type { ISandboxManager, SandboxOptions, SandboxRuntime, SpawnHook } from '../sandbox'
 import {
@@ -6,7 +9,11 @@ import {
   buildStreamAttachedLogCommand,
   LocalDeploymentLogPathOutsideWorkspaceError,
 } from './local-deployment-log-path'
-import { LocalDeploymentProcessSupervisor } from './local-deployment-process-supervisor'
+import {
+  LAUNCH_PATH_FILE,
+  LAUNCHER_SCRIPT,
+  LocalDeploymentProcessSupervisor,
+} from './local-deployment-process-supervisor'
 
 class FakeSandboxManager implements ISandboxManager {
   execCalls: Array<{ sandboxId: string; args: string[] }> = []
@@ -197,6 +204,25 @@ describe('LocalDeploymentProcessSupervisor', () => {
     expect(command).toContain("tmux new-session -d -s 'tau-local-deployment-abcdef12'")
   })
 
+  it('records the caller PATH beside run.sh before starting the tmux session', async () => {
+    const manager = new FakeSandboxManager()
+    const supervisor = new LocalDeploymentProcessSupervisor(manager)
+
+    await supervisor.startManagedLocalDeployment({
+      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      sandboxId: 'squad_1',
+      command: 'node server.cjs',
+      port: 5173,
+    })
+
+    const command = manager.execCalls[0].args[2]
+    const record = command.indexOf(
+      `printf '%s\\n' "$PATH" > /workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc/${LAUNCH_PATH_FILE}`
+    )
+    expect(record).toBeGreaterThan(-1)
+    expect(record).toBeLessThan(command.indexOf('tmux new-session'))
+  })
+
   it('starts managed localDeployments in tmux session tau-local-deployment-<short-id>', async () => {
     const manager = new FakeSandboxManager()
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
@@ -345,5 +371,63 @@ describe('LocalDeploymentProcessSupervisor', () => {
       expect(manager.streamExecCalls[0].args[2]).toContain('"$w"/*)')
       handle.cancel()
     })
+  })
+})
+
+describe('local deployment launcher', () => {
+  // tmux hands a session the tmux SERVER's environment, which may lack the box
+  // toolchain entirely. Run the real launcher with only system dirs on PATH; the
+  // tool has a name no host login profile can put on PATH.
+  function runLauncher(command: string, launchPath: string | null) {
+    const root = mkdtempSync(join(tmpdir(), 'ficus-launcher-'))
+    try {
+      const dir = join(root, 'deployment')
+      const toolchain = join(root, 'toolchain-bin')
+      mkdirSync(dir, { recursive: true })
+      mkdirSync(toolchain)
+      writeFileSync(join(toolchain, 'ficus-test-node'), '#!/bin/sh\necho "toolchain node $*"\n')
+      chmodSync(join(toolchain, 'ficus-test-node'), 0o755)
+      if (launchPath !== null) writeFileSync(join(dir, LAUNCH_PATH_FILE), launchPath.replace('<toolchain>', toolchain))
+      const script = join(dir, 'run.sh')
+      writeFileSync(script, LAUNCHER_SCRIPT)
+
+      const result = Bun.spawnSync(['/bin/bash', script], {
+        env: {
+          PATH: '/usr/bin:/bin',
+          HOME: root,
+          FICUS_LOCAL_DEPLOYMENT_ID: 'abcdef12',
+          FICUS_LOCAL_DEPLOYMENT_PORT: '5173',
+          FICUS_LOCAL_DEPLOYMENT_CWD: root,
+          FICUS_LOCAL_DEPLOYMENT_DIR: dir,
+          FICUS_LOCAL_DEPLOYMENT_COMMAND: command,
+        },
+      })
+      return {
+        exitCode: result.exitCode,
+        log: readFileSync(join(dir, 'logs', 'current.log'), 'utf8'),
+        recordedExit: readFileSync(join(dir, 'exitCode'), 'utf8').trim(),
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  it('runs a bare command from the PATH the start command recorded', () => {
+    const run = runLauncher('ficus-test-node server.cjs', '<toolchain>:/usr/bin:/bin\n')
+    expect(run.log).toContain('toolchain node server.cjs')
+    expect(run.exitCode).toBe(0)
+    expect(run.recordedExit).toBe('0')
+  })
+
+  it('keeps the recorded PATH out of the app environment', () => {
+    const run = runLauncher('echo "leak=${FICUS_LOCAL_DEPLOYMENT_PATH-unset}"', '<toolchain>\n')
+    expect(run.log).toContain('leak=unset')
+  })
+
+  it('still runs the command when no PATH was recorded', () => {
+    const run = runLauncher('echo started; ficus-test-node server.cjs', null)
+    expect(run.log).toContain('started')
+    expect(run.log).toContain('ficus-test-node: command not found')
+    expect(run.recordedExit).toBe('127')
   })
 })
