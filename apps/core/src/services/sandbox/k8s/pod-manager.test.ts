@@ -2,6 +2,7 @@ import { describe, test, expect, mock, spyOn } from 'bun:test'
 import * as k8s from '@kubernetes/client-node'
 import { K8sPodManager, podDeathSignal, type PodState } from './pod-manager'
 import { reconcilableSpecHash } from './pod-spec'
+import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_NEW, sandboxPodLabelSelector } from '../identity-names'
 import * as secretStoreModule from '../../secrets/store'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { resourceDiagnostics } from '../../../lib/infra/resource-diagnostics'
@@ -226,6 +227,76 @@ describe('K8sPodManager', () => {
     })
   })
 
+  describe('spec hash under either identity set', () => {
+    const desired = reconcilableSpecHash({ ephemeralStorageLimitGi: 25 })
+
+    for (const [label, key] of [
+      ['new', SANDBOX_IDENTITY_NEW.k8sSpecHashAnnotation],
+      ['legacy', SANDBOX_IDENTITY_LEGACY.k8sSpecHashAnnotation],
+    ] as const) {
+      test(`an adopted pod carrying only the ${label} annotation is compared by that hash, not treated as drifted`, async () => {
+        const readNamespacedPod = mock(async () => ({
+          metadata: { name: 'sb-squad-abc', annotations: { [key]: desired } },
+          status: { phase: 'Running' },
+        }))
+        const createNamespacedPod = mock(async () => ({}))
+        const fakeThis = {
+          namespace: 'sandbox-ns',
+          pods: new Map<string, PodState>(),
+          bashrcHashes: new Map(),
+          coreApi: { readNamespacedPod, createNamespacedPod },
+          getPodName: () => 'sb-squad-abc',
+          waitForPodReady: mock(async () => {}),
+          updatePodState(sandboxId: string, status: PodState['status']) {
+            const state = this.pods.get(sandboxId)
+            if (state) state.status = status
+          },
+          getPodEndpoint: () => 'endpoint:50051',
+          touchPod: () => {},
+        }
+
+        await K8sPodManager.prototype['ensurePod'].call(fakeThis as any, 'squad_abc', {
+          ephemeralStorageLimitGi: 25,
+        } as any)
+
+        expect(createNamespacedPod).not.toHaveBeenCalled()
+        expect(fakeThis.pods.get('squad_abc')?.specHash).toBe(desired)
+        const mgr = fakeThis as unknown as K8sPodManager
+        expect(K8sPodManager.prototype.isSpecDrifted.call(mgr, 'squad_abc', { ephemeralStorageLimitGi: 25 })).toBe(
+          false
+        )
+        expect(K8sPodManager.prototype.isSpecDrifted.call(mgr, 'squad_abc', { ephemeralStorageLimitGi: 50 })).toBe(true)
+      })
+
+      test(`getRunningPodSpecHash reads the ${label} annotation`, async () => {
+        const fakeThis = {
+          namespace: 'sandbox-ns',
+          pods: new Map(),
+          getPodName: () => 'sb-squad-abc',
+          coreApi: {
+            readNamespacedPod: async () => ({
+              metadata: { annotations: { [key]: 'h1' } },
+              status: { phase: 'Running' },
+            }),
+          },
+        }
+        await expect(K8sPodManager.prototype.getRunningPodSpecHash.call(fakeThis as any, 'squad_abc')).resolves.toBe(
+          'h1'
+        )
+      })
+    }
+
+    test('getRunningPodSpecHash is null when neither annotation is present', async () => {
+      const fakeThis = {
+        namespace: 'sandbox-ns',
+        pods: new Map(),
+        getPodName: () => 'sb-squad-abc',
+        coreApi: { readNamespacedPod: async () => ({ metadata: { annotations: {} }, status: { phase: 'Running' } }) },
+      }
+      await expect(K8sPodManager.prototype.getRunningPodSpecHash.call(fakeThis as any, 'squad_abc')).resolves.toBeNull()
+    })
+  })
+
   describe('sandbox.status emission', () => {
     test('updatePodState emits sandbox.status when the status actually changes', () => {
       const emitSpy = spyOn(eventEmitter, 'emit').mockImplementation(() => {})
@@ -286,6 +357,10 @@ describe('K8sPodManager', () => {
             metadata: { name: 'tau-sb-running', labels: { app: 'tau-sandbox' } },
             status: { phase: 'Running' },
           },
+          {
+            metadata: { name: 'ficus-sb-failed', labels: { app: SANDBOX_IDENTITY_NEW.k8sAppLabelValue } },
+            status: { phase: 'Failed' },
+          },
         ],
       }))
       const manager = {
@@ -301,9 +376,13 @@ describe('K8sPodManager', () => {
 
       const result = await K8sPodManager.prototype.cleanupTerminalPods.call(manager)
 
-      expect(result).toEqual({ deleted: 2 })
-      expect(listNamespacedPod).toHaveBeenCalledWith({ namespace: 'tau-sandboxes', labelSelector: 'app=tau-sandbox' })
-      expect(deleteNamespacedPod).toHaveBeenCalledTimes(2)
+      expect(result).toEqual({ deleted: 3 })
+      expect(listNamespacedPod).toHaveBeenCalledWith({
+        namespace: manager.namespace,
+        labelSelector: sandboxPodLabelSelector(),
+      })
+      expect(deleteNamespacedPod).toHaveBeenCalledTimes(3)
+      expect(deleteNamespacedPod).toHaveBeenCalledWith({ name: 'ficus-sb-failed', namespace: manager.namespace })
       expect(deleteNamespacedPod).toHaveBeenCalledWith({ name: 'tau-sb-succeeded', namespace: 'tau-sandboxes' })
       expect(deleteNamespacedPod).toHaveBeenCalledWith({ name: 'tau-sb-evicted', namespace: 'tau-sandboxes' })
       expect(manager.pods.has('squad_succeeded')).toBe(false)

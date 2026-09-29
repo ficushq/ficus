@@ -32,9 +32,15 @@ import {
 import { gitIdentityEnv, resolveGitHubIdentity } from '../github-identity'
 import { terminationIntentRegistry } from '../death/intent-registry'
 import { beginSandboxSetupWork, trackSandboxSetupWork, type SandboxSetupWorkReason } from '../setup-progress'
+import {
+  readSandboxLabel,
+  SANDBOX_IDENTITY_WRITE,
+  sandboxContainerNames,
+  type SandboxIdentitySet,
+} from '../identity-names'
 import { parseDockerImageContract, type DockerImageContract } from './runtime-contract'
 import { DockerSandboxLifecycleError } from './errors'
-import { classifyDockerContainerOwnership, classifyDockerInspectStatus, SPEC_HASH_LABEL } from './lifecycle-contract'
+import { classifyDockerContainerOwnership, classifyDockerInspectStatus } from './lifecycle-contract'
 import {
   activeDriftError,
   cleanupFailedInitialization,
@@ -74,7 +80,56 @@ const DOCKER_SANDBOX_MEMORY_LIMIT = '2g'
 // arg, so it folds into computeDockerSpecHash → existing containers without it
 // drift-recreate.
 export const DOCKER_SANDBOX_SHM_SIZE = '512m'
-export const CONTAINER_PREFIX = 'tau-sandbox-'
+/** The prefix new containers are named with; lookups also try every read prefix ({@link sandboxContainerNames}). */
+export const CONTAINER_PREFIX = SANDBOX_IDENTITY_WRITE.containerPrefix
+
+/**
+ * The `--label` args a new sandbox container is created with: the write identity
+ * set only (the spec hash, managed flag, sandbox id, image id and, when given,
+ * the lifecycle generation).
+ */
+export function sandboxContainerLabelArgs(input: {
+  sandboxId: string
+  specHash: string
+  imageId: string
+  lifecycleGeneration?: string | null
+}): string[] {
+  const set = SANDBOX_IDENTITY_WRITE
+  return [
+    // Stamp the create-time spec hash so ensure can detect mount drift on a
+    // later run (see computeDockerSpecHash) — stamp and check are one function.
+    '--label',
+    `${set.specHashLabel}=${input.specHash}`,
+    '--label',
+    `${set.managedLabel}=true`,
+    '--label',
+    `${set.sandboxIdLabel}=${input.sandboxId}`,
+    '--label',
+    `${set.imageIdLabel}=${input.imageId}`,
+    ...(input.lifecycleGeneration ? ['--label', `${set.lifecycleGenerationLabel}=${input.lifecycleGeneration}`] : []),
+  ]
+}
+
+/**
+ * Ids of the containers that exist for a sandbox under any identity prefix, the
+ * write name first. Normally at most one: a release creates under the write name
+ * only after this finds (and adopts or removes) the others.
+ */
+function findSandboxContainers(sandboxId: string, lookup: (name: string) => string | null): string[] {
+  const ids: string[] = []
+  for (const name of sandboxContainerNames(sandboxId)) {
+    const id = lookup(name)
+    if (id && !ids.includes(id)) ids.push(id)
+  }
+  if (ids.length > 1)
+    log.warn(`Sandbox ${sandboxId} has containers under more than one identity prefix: ${ids.join(', ')}`)
+  return ids
+}
+
+/** The existing container for a sandbox under any identity prefix, the write name first; null when none. */
+function findSandboxContainer(sandboxId: string, lookup: (name: string) => string | null): string | null {
+  return findSandboxContainers(sandboxId, lookup)[0] ?? null
+}
 
 export function buildManagedToolchainDirPrefix(workRoot: string): string {
   const quote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`
@@ -179,18 +234,20 @@ export function reclaimAgentNixStore(sandboxId: string, deps: { spawnSync?: Dock
   if (!stat.isDirectory()) throw new Error(`Refusing to reclaim non-directory Nix store: ${nixPath}`)
 
   const spawnSync = deps.spawnSync ?? ((args) => Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' }))
-  const containerName = `${CONTAINER_PREFIX}${sandboxId}`
-  const inspect = spawnSync(['docker', 'inspect', '-f', '{{.State.Running}}', containerName])
-  const inspectStderr = inspect.stderr.toString()
-  if (inspect.exitCode === 0) {
-    if (inspect.stdout.toString().trim() === 'true') {
-      throw new Error(`Refusing to reclaim Nix store while container is running: ${containerName}`)
+  // The store backs the container under whichever identity prefix it carries.
+  for (const containerName of sandboxContainerNames(sandboxId)) {
+    const inspect = spawnSync(['docker', 'inspect', '-f', '{{.State.Running}}', containerName])
+    const inspectStderr = inspect.stderr.toString()
+    if (inspect.exitCode === 0) {
+      if (inspect.stdout.toString().trim() === 'true') {
+        throw new Error(`Refusing to reclaim Nix store while container is running: ${containerName}`)
+      }
+      if (inspect.stdout.toString().trim() !== 'false') {
+        throw new Error(`Refusing to reclaim Nix store because container state is unknown: ${containerName}`)
+      }
+    } else if (!/no such (object|container)/i.test(inspectStderr)) {
+      throw new Error(`Refusing to reclaim Nix store because container state is unknown: ${inspectStderr}`)
     }
-    if (inspect.stdout.toString().trim() !== 'false') {
-      throw new Error(`Refusing to reclaim Nix store because container state is unknown: ${containerName}`)
-    }
-  } else if (!/no such (object|container)/i.test(inspectStderr)) {
-    throw new Error(`Refusing to reclaim Nix store because container state is unknown: ${inspectStderr}`)
   }
 
   const helper = spawnSync([
@@ -650,11 +707,14 @@ export class DockerSandboxManager implements ISandboxManager {
       if (!tracked.client) await this.connectExecutor(tracked.containerId, sandboxId)
       return true
     }
-    const containerId = this.getExistingContainer(this.containerName(sandboxId))
+    const [containerId, ...duplicateContainers] = findSandboxContainers(sandboxId, (candidate) =>
+      this.getExistingContainer(candidate)
+    )
     if (!containerId) return false
     // No-create reconciliation adopts only already-reachable boxes. A stopped
     // container stays cold until its normal ensure lifecycle starts it.
     if (!this.isContainerRunning(containerId)) return false
+    if (duplicateContainers.length) this.removeDuplicateContainers(sandboxId, duplicateContainers, opts.workspacePath)
     const squadId = opts.squadId ?? getSquadIdFromSandbox(sandboxId) ?? undefined
     const layout = containerWorkspaceLayout({ squadId })
     const workRoot = containerWorkRoot({ squadId })
@@ -743,8 +803,12 @@ export class DockerSandboxManager implements ISandboxManager {
 
       const name = this.containerName(sandboxId)
 
-      // Check if container already exists (e.g. from a previous server run)
-      const existingContainer = this.getExistingContainer(name)
+      // Check if container already exists (e.g. from a previous server run),
+      // under any identity prefix: a container this release did not name is
+      // still adopted or removed here, never left beside a new one.
+      const [existingContainer, ...duplicateContainers] = findSandboxContainers(sandboxId, (candidate) =>
+        this.getExistingContainer(candidate)
+      )
       if (existingContainer) {
         // Adopt it only when its stamped spec matches; a missing label (pre-upgrade
         // container) or a mismatch means the mounts are stale — remove + recreate.
@@ -755,6 +819,9 @@ export class DockerSandboxManager implements ISandboxManager {
           if (!existingMatches) {
             log.info(`Container for ${sandboxId} spec drifted but session active; deferring recreate and adopting`)
           }
+          // Adopt the write-name container; a duplicate under another prefix is removed, never left running.
+          if (duplicateContainers.length)
+            this.removeDuplicateContainers(sandboxId, duplicateContainers, opts.workspacePath)
           // Start it if stopped
           if (!this.isContainerRunning(existingContainer)) {
             beginOnce('runtime_start')
@@ -800,7 +867,9 @@ export class DockerSandboxManager implements ISandboxManager {
         // Another process is initializing - wait for it to complete
         await this.waitForSandboxReady(sandboxId)
         // Now check again for the container
-        const containerAfterWait = this.getExistingContainer(name)
+        const [containerAfterWait, ...duplicatesAfterWait] = findSandboxContainers(sandboxId, (candidate) =>
+          this.getExistingContainer(candidate)
+        )
         // Adopt the peer's container only when its spec matches ours; a stale or
         // missing label falls through to remove + recreate below. Idle/session
         // gate: a drifted box with an active session is adopted as-is (defer).
@@ -809,6 +878,8 @@ export class DockerSandboxManager implements ISandboxManager {
           if (!afterWaitMatches) {
             log.info(`Container for ${sandboxId} (post-wait) spec drifted but session active; deferring recreate`)
           }
+          if (duplicatesAfterWait.length)
+            this.removeDuplicateContainers(sandboxId, duplicatesAfterWait, opts.workspacePath)
           if (!this.isContainerRunning(containerAfterWait)) {
             Bun.spawnSync(['docker', 'start', containerAfterWait], { stdout: 'ignore', stderr: 'ignore' })
           }
@@ -1133,17 +1204,12 @@ export class DockerSandboxManager implements ISandboxManager {
       name,
       '-p',
       '127.0.0.1::50051',
-      // Stamp the create-time spec hash so ensure can detect mount drift on a
-      // later run (see computeDockerSpecHash) — stamp and check are one function.
-      '--label',
-      `${SPEC_HASH_LABEL}=${specHash}`,
-      '--label',
-      'tau.managed=true',
-      '--label',
-      `tau.sandbox-id=${name.replace(CONTAINER_PREFIX, '')}`,
-      '--label',
-      `tau.image-id=${imageContract.imageId}`,
-      ...(opts.lifecycleGeneration ? ['--label', `tau.lifecycle-generation=${opts.lifecycleGeneration}`] : []),
+      ...sandboxContainerLabelArgs({
+        sandboxId: name.replace(CONTAINER_PREFIX, ''),
+        specHash,
+        imageId: imageContract.imageId,
+        lifecycleGeneration: opts.lifecycleGeneration,
+      }),
       '--runtime=sysbox-runc',
       // Resource limits
       `--memory=${DOCKER_SANDBOX_MEMORY_LIMIT}`,
@@ -1219,17 +1285,12 @@ export class DockerSandboxManager implements ISandboxManager {
       name,
       '-p',
       '127.0.0.1::50051',
-      // Stamp the create-time spec hash so ensure can detect mount drift on a
-      // later run (see computeDockerSpecHash) — stamp and check are one function.
-      '--label',
-      `${SPEC_HASH_LABEL}=${specHash}`,
-      '--label',
-      'tau.managed=true',
-      '--label',
-      `tau.sandbox-id=${name.replace(CONTAINER_PREFIX, '')}`,
-      '--label',
-      `tau.image-id=${imageContract.imageId}`,
-      ...(opts.lifecycleGeneration ? ['--label', `tau.lifecycle-generation=${opts.lifecycleGeneration}`] : []),
+      ...sandboxContainerLabelArgs({
+        sandboxId: name.replace(CONTAINER_PREFIX, ''),
+        specHash,
+        imageId: imageContract.imageId,
+        lifecycleGeneration: opts.lifecycleGeneration,
+      }),
       // Mount Docker socket for DinD
       '-v',
       `${dockerSocket}:/var/run/docker.sock`,
@@ -1506,8 +1567,7 @@ export class DockerSandboxManager implements ISandboxManager {
       workspacePath = workspacePath || sandbox.workspacePath
     } else {
       // Check for existing container by name (e.g., after server restart)
-      const name = this.containerName(sandboxId)
-      containerId = this.getExistingContainer(name)
+      containerId = findSandboxContainer(sandboxId, (candidate) => this.getExistingContainer(candidate))
     }
 
     if (!containerId) {
@@ -1594,13 +1654,16 @@ export class DockerSandboxManager implements ISandboxManager {
    */
   async stopSandbox(sandboxId: string, options: { lifecycleGeneration?: string | null } = {}) {
     const sandbox = this.sandboxes.get(sandboxId)
-    const requestedRef = sandbox?.containerId ?? this.containerName(sandboxId)
+    const requestedRef =
+      sandbox?.containerId ??
+      findSandboxContainer(sandboxId, (candidate) => this.getExistingContainer(candidate)) ??
+      this.containerName(sandboxId)
     const immutableId = this.proveContainerOwnership(requestedRef, sandboxId, sandbox)
     if (!immutableId) {
       this.releaseSandboxState(sandboxId, sandbox)
       return { kind: 'not-found' } as const
     }
-    const actualLifecycleGeneration = this.getContainerLabel(immutableId, 'tau.lifecycle-generation') ?? null
+    const actualLifecycleGeneration = this.getContainerLabel(immutableId, (set) => set.lifecycleGenerationLabel) ?? null
     if (options.lifecycleGeneration !== undefined && actualLifecycleGeneration !== options.lifecycleGeneration) {
       log.warn(
         `Refusing stale sandbox stop for ${sandboxId}: expected generation ${options.lifecycleGeneration ?? 'legacy'}, actual ${actualLifecycleGeneration ?? 'legacy'}`
@@ -1627,12 +1690,29 @@ export class DockerSandboxManager implements ISandboxManager {
   async removeSandbox(sandboxId: string, expectedWorkspacePath?: string): Promise<void> {
     terminationIntentRegistry.record(sandboxId, 'manual')
     const sandbox = this.sandboxes.get(sandboxId)
-    const requestedRef = sandbox?.containerId ?? this.containerName(sandboxId)
-    const immutableId = this.proveContainerOwnership(requestedRef, sandboxId, sandbox, expectedWorkspacePath)
-    if (!immutableId) {
-      this.releaseSandboxState(sandboxId, sandbox)
-      return
+    // The tracked container plus every container found under any identity
+    // prefix, so removal never leaves one behind under the other name.
+    const found = findSandboxContainers(sandboxId, (candidate) => this.getExistingContainer(candidate))
+    const requestedRefs = [...new Set([...(sandbox ? [sandbox.containerId] : []), ...found])]
+    if (requestedRefs.length === 0) requestedRefs.push(this.containerName(sandboxId))
+    // Prove EVERY candidate before touching any: one unproven container throws
+    // here with nothing removed and the tracked state untouched.
+    const proven = new Map<string, string>()
+    for (const requestedRef of requestedRefs) {
+      const immutableId = this.proveContainerOwnership(requestedRef, sandboxId, sandbox, expectedWorkspacePath)
+      if (immutableId) proven.set(requestedRef, immutableId)
     }
+    // The tracked container goes last, so a failed removal of another one
+    // leaves the tracked state pointing at a container that still exists.
+    const trackedId = sandbox ? proven.get(sandbox.containerId) : undefined
+    const targets = [...new Set(proven.values())].filter((id) => id !== trackedId)
+    if (trackedId) targets.push(trackedId)
+    for (const immutableId of targets) this.removeProvenContainer(sandboxId, immutableId)
+    this.releaseSandboxState(sandboxId, sandbox)
+  }
+
+  /** Remove one container whose ownership is already proven, by its immutable id. */
+  private removeProvenContainer(sandboxId: string, immutableId: string): void {
     runDestructiveLifecycle({
       operation: 'remove',
       sandboxId,
@@ -1640,8 +1720,30 @@ export class DockerSandboxManager implements ISandboxManager {
       containerName: this.containerName(sandboxId),
       execute: () => this.runLifecycleDocker(['rm', '-f', immutableLifecycleTarget(immutableId)]),
       inspect: () => this.inspectContainerRunning(immutableId),
-      release: () => this.releaseSandboxState(sandboxId, sandbox),
+      release: () => {},
     })
+  }
+
+  /**
+   * Remove the duplicates of an adopted container found under another identity
+   * prefix, so a sandbox never keeps a second box running beside the one Core
+   * uses. Only proven containers are removed; an unproven one is left untouched
+   * and logged.
+   */
+  private removeDuplicateContainers(sandboxId: string, duplicateRefs: string[], expectedWorkspacePath?: string): void {
+    for (const ref of duplicateRefs) {
+      let immutableId: string | undefined
+      try {
+        immutableId = this.proveContainerOwnership(ref, sandboxId, undefined, expectedWorkspacePath)
+      } catch (error) {
+        if (!(error instanceof DockerSandboxLifecycleError) || error.code !== 'LEGACY_OWNERSHIP_UNPROVEN') throw error
+        log.warn(`Leaving unproven container ${ref} beside sandbox ${sandboxId}: its ownership is not proven`)
+        continue
+      }
+      if (!immutableId) continue
+      log.warn(`Removing duplicate container ${ref} of sandbox ${sandboxId} (another identity prefix)`)
+      this.removeProvenContainer(sandboxId, immutableId)
+    }
   }
 
   private releaseSandboxState(sandboxId: string, sandbox?: SandboxState): void {
@@ -1767,7 +1869,9 @@ export class DockerSandboxManager implements ISandboxManager {
       onError?.(new Error('Previous-container logs are not supported on the docker runtime'))
       return { cancel: () => {} }
     }
-    const name = this.containerName(sandboxId)
+    const name =
+      findSandboxContainer(sandboxId, (candidate) => this.getExistingContainer(candidate)) ??
+      this.containerName(sandboxId)
     const proc = Bun.spawn(['docker', ...buildDockerLogsArgs(name, opts)], {
       stdout: 'pipe',
       stderr: 'pipe',
@@ -1835,12 +1939,19 @@ export class DockerSandboxManager implements ISandboxManager {
   }
 
   async getSandboxStatus(sandboxId: string): Promise<{ status: 'running' | 'not_found' | 'unknown' }> {
-    const proc = Bun.spawn(['docker', 'inspect', `${CONTAINER_PREFIX}${sandboxId}`], {
-      stdout: 'ignore',
-      stderr: 'pipe',
-    })
-    const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
-    return { status: classifyDockerInspectStatus(exitCode, stderr) }
+    // Present under any identity prefix counts; absent only when every name is authoritatively missing.
+    let status: 'not_found' | 'unknown' = 'not_found'
+    for (const name of sandboxContainerNames(sandboxId)) {
+      const proc = Bun.spawn(['docker', 'inspect', name], {
+        stdout: 'ignore',
+        stderr: 'pipe',
+      })
+      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+      const result = classifyDockerInspectStatus(exitCode, stderr)
+      if (result === 'running') return { status: 'running' }
+      if (result === 'unknown') status = 'unknown'
+    }
+    return { status }
   }
 
   /**
@@ -2024,15 +2135,16 @@ export class DockerSandboxManager implements ISandboxManager {
     const ownership = classifyDockerContainerOwnership(
       inspected,
       sandboxId,
-      this.containerName(sandboxId),
       state?.workspacePath ?? expectedWorkspacePath
     )
     if (ownership === 'unproven')
+      // Name the container that failed the proof, which may carry another identity prefix.
       throw new DockerSandboxLifecycleError({
         operation: 'prove-ownership',
         sandboxId,
-        containerId: state?.containerId,
-        containerName: this.containerName(sandboxId),
+        containerId: typeof inspected?.Id === 'string' ? inspected.Id : state?.containerId,
+        containerName:
+          typeof inspected?.Name === 'string' ? inspected.Name.replace(/^\//, '') : this.containerName(sandboxId),
         reason: 'LEGACY_OWNERSHIP_UNPROVEN',
       })
     const immutableId = inspected?.Id
@@ -2139,26 +2251,39 @@ export class DockerSandboxManager implements ISandboxManager {
     }
   }
 
-  /**
-   * Read the {@link SPEC_HASH_LABEL} stamped on a container (by id or name), or
-   * null when the container is gone or was created before spec-hashing existed
-   * (no label). A null result is treated as drift so pre-upgrade containers are
-   * recreated with the current mount set.
-   */
-  private getContainerLabel(containerRef: string, label: string): string | null {
-    const result = Bun.spawnSync(['docker', 'inspect', '-f', `{{index .Config.Labels "${label}"}}`, containerRef], {
+  /** A container's labels (by id or name), or null when it is gone or unreadable. */
+  private getContainerLabels(containerRef: string): Record<string, string> | null {
+    const result = Bun.spawnSync(['docker', 'inspect', '-f', '{{json .Config.Labels}}', containerRef], {
       stdout: 'pipe',
       stderr: 'ignore',
     })
     if (result.exitCode !== 0) return null
-    const value = result.stdout.toString().trim()
-    // Go's text/template renders a missing map key as "<no value>".
-    if (!value || value === '<no value>') return null
-    return value
+    try {
+      const labels: unknown = JSON.parse(result.stdout.toString())
+      return labels && typeof labels === 'object' && !Array.isArray(labels) ? (labels as Record<string, string>) : {}
+    } catch {
+      return null
+    }
   }
 
+  /**
+   * A label value under any identity set (see {@link readSandboxLabel}), or null
+   * when the container is gone or the label is missing or empty.
+   */
+  private getContainerLabel(containerRef: string, pick: (set: SandboxIdentitySet) => string): string | null {
+    const labels = this.getContainerLabels(containerRef)
+    if (!labels) return null
+    return readSandboxLabel(labels, pick) || null
+  }
+
+  /**
+   * The create-time spec hash stamped on a container, or null when the container
+   * is gone or was created before spec-hashing existed (no label). A null result
+   * is treated as drift so pre-upgrade containers are recreated with the current
+   * mount set.
+   */
   private getContainerSpecHash(containerRef: string): string | null {
-    return this.getContainerLabel(containerRef, SPEC_HASH_LABEL)
+    return this.getContainerLabel(containerRef, (set) => set.specHashLabel)
   }
 
   private getExistingContainer(name: string): string | null {

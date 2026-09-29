@@ -14,6 +14,7 @@ import {
   type SquadSandboxConfig,
 } from './pod-spec'
 import { getSandboxSkillsDir } from '../../agent/skill-materializer'
+import { SANDBOX_IDENTITY_READ, SANDBOX_IDENTITY_WRITE } from '../identity-names'
 import * as workspaceLayoutModule from '../workspace-layout'
 
 /** Build a spec with the env seam stubbed out (no secret store / git identity). */
@@ -213,6 +214,21 @@ describe('reconcilableSpecHash', () => {
 })
 
 describe('buildSandboxPodSpec', () => {
+  test('writes the write-set app label and spec-hash annotation only', async () => {
+    const config = { sandboxType: 'squad' as const, ephemeralStorageLimitGi: 25 }
+    const podSpec = await buildSpec({
+      sandboxId: 'squad_11111111-1111-4111-8111-111111111111',
+      podName: 'sb-squad-11111111-1111-4111-8111-111111111111',
+      config,
+    })
+    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+    expect(podSpec.metadata?.labels?.app).toBe(SANDBOX_IDENTITY_WRITE.k8sAppLabelValue)
+    expect(podSpec.metadata?.annotations?.[SANDBOX_IDENTITY_WRITE.k8sSpecHashAnnotation]).toBe(
+      reconcilableSpecHash(config)
+    )
+    expect(podSpec.metadata?.annotations?.[other.k8sSpecHashAnnotation]).toBeUndefined()
+  })
+
   test('mounts staged CLI from core-data at the ficus executable path', async () => {
     const podSpec = await buildSpec({
       sandboxId: 'squad_11111111-1111-4111-8111-111111111111',
