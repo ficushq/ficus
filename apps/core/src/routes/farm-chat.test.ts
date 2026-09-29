@@ -4,8 +4,17 @@ import { eq, inArray } from 'drizzle-orm'
 import { farmChatRouter } from './farm-chat'
 import { identityMiddleware } from '../middleware/identity'
 import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
-import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
-import { db, farmChatMessages, farmChatRooms } from '../db'
+import {
+  assignRole,
+  authHeaders,
+  cleanupTestRbac,
+  createTestRole,
+  createTestSession,
+  createTestUser,
+  type TestUser,
+} from '../test-utils'
+import { User } from '../entities/User'
+import { db, farmChatMessages, farmChatRooms, roles, squads, users } from '../db'
 import { pruneFarmChat } from '../services/farm-chat'
 import { UNNAMED_PERSON } from '@ficus/shared'
 
@@ -82,6 +91,38 @@ describe('farm chat', () => {
     expect(JSON.stringify(people)).not.toContain(carol.email)
     const forAdmin = (await json(await call(admin, 'GET', '/people'))) as Array<{ id: string; name: string }>
     expect(forAdmin.find((p) => p.id === carol.id)?.name).toBe(carol.email)
+  })
+
+  test('a new person gets the Farmer role, so the farm works even if their only other role is squad-scoped', async () => {
+    // The Farmer role as config sync creates it (inserted here if this database hasn't synced it).
+    let [farmer] = await db.select().from(roles).where(eq(roles.slug, 'farmer'))
+    const addedFarmer = !farmer
+    if (!farmer)
+      [farmer] = await db
+        .insert(roles)
+        .values({ name: 'Farmer', slug: 'farmer', permissions: ['farm:read', 'farm:chat'], appliesTo: 'user' })
+        .returning()
+    const created = await User.create({ email: `${prefix}-new@test.local`, displayName: 'Newcomer' })
+    const squadRole = await createTestRole({ prefix, permissions: ['squads:read'] })
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `${prefix} squad`, purpose: 'test' })
+      .returning()
+    await assignRole({ userId: created.id, roleId: squadRole.id, scope: 'squad', squadId: squad!.id })
+    const session = { token: await createTestSession(created.id) } as TestUser
+    const room = (await json(await call(session, 'GET', '/rooms'))).rooms.find(
+      (r: { kind: string }) => r.kind === 'general'
+    )
+    expect(
+      (await call(session, 'POST', `/rooms/${room.id}/messages`, { body: 'hello from a squad-only account' })).status
+    ).toBe(201)
+    // A shared account (the demo reviewer) is created without it.
+    const shared = await User.create({ email: `${prefix}-shared@test.local`, withoutDefaultRoles: true })
+    const sharedSession = { token: await createTestSession(shared.id) } as TestUser
+    expect((await call(sharedSession, 'GET', '/rooms')).status).toBe(403)
+    await db.delete(users).where(inArray(users.id, [created.id, shared.id]))
+    await db.delete(squads).where(eq(squads.id, squad!.id))
+    if (addedFarmer) await db.delete(roles).where(eq(roles.id, farmer!.id))
   })
 
   test('needs farm permissions: without them nothing; farm:read reads but never posts, DMs or reacts', async () => {

@@ -6,6 +6,8 @@ import { db } from '../../db'
 import { roles, type RoleAppliesTo } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'
 import { CONFIG_DIR } from '../../lib/paths'
+import { activeUserIds, DEFAULT_USER_ROLE_SLUGS, grantDefaultRoles } from '../rbac/default-roles'
+import { invalidatePermissionCache } from '../rbac/permissions'
 
 const log = createLogger('config-sync:roles')
 
@@ -118,6 +120,12 @@ export class RoleSync {
         })
         synced++
         log.info(`Created role: ${roleDef.slug}`)
+        // A role everyone gets by default: everyone already here gets it now, once (an admin can remove it later).
+        if ((DEFAULT_USER_ROLE_SLUGS as readonly string[]).includes(roleDef.slug)) {
+          await grantDefaultRoles(await activeUserIds(), [roleDef.slug])
+          invalidatePermissionCache()
+          log.info(`Granted ${roleDef.slug} to everyone`)
+        }
       }
     }
 

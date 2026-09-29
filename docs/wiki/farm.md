@@ -39,7 +39,13 @@ squad), so anyone can be given `farm:*` whatever their squad and chat roles:
 | `farm:chat`         | Posting, editing, reacting, opening DMs, typing, appearing on the farm and waving       |
 | `farm:manage-rooms` | Creating, renaming and deleting public rooms, and deleting anyone's message outside DMs |
 
-Operators hold `farm:*` and Viewers `farm:read`; the Demo Reviewer has none.
+The built-in **Farmer** role (`farm:read`, `farm:chat`) is given to every new
+person when their account is created, and to everyone already on an instance
+when the role first arrives, as an ordinary instance-wide assignment an admin
+can remove or edit (`services/rbac/default-roles.ts`). So someone whose other
+roles are all scoped to squads can still use the farm. Operators also hold
+`farm:*` and Viewers `farm:read`; the shared demo-reviewer account is created
+without the Farmer role.
 Without `farm:chat` the farm is read-only for that person. People's emails only
 reach viewers with `users:read` (as the user directory needs); everyone else sees
 display names, or "Unnamed teammate".

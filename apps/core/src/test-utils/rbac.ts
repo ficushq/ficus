@@ -76,6 +76,17 @@ export async function createTestUser(opts?: {
   }
 }
 
+/** A signed-in session for an existing user (one made some other way than createTestUser). */
+export async function createTestSession(userId: string): Promise<string> {
+  const token = `${SESSION_TOKEN_PREFIX}${randomUUID()}`
+  await db.insert(sessions).values({
+    userId,
+    tokenHash: hashToken(token),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  })
+  return token
+}
+
 export async function createTestRole(opts: {
   name?: string
   slug?: string

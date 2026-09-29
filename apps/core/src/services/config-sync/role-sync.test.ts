@@ -2,8 +2,9 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { db, roles } from '../../db'
-import { eq } from 'drizzle-orm'
+import { db, roleAssignments, roles, users } from '../../db'
+import { and, eq } from 'drizzle-orm'
+import { createTestUser } from '../../test-utils'
 import { RoleSync } from './role-sync'
 
 describe('RoleSync', () => {
@@ -116,6 +117,29 @@ describe('RoleSync', () => {
         expect(row.permissions).not.toContain('recommendations:update')
       }
     }
+  })
+
+  test('farmer role is the farm, and everyone already here gets it when it first arrives (once)', async () => {
+    const someone = await createTestUser({ prefix: `role-sync-${crypto.randomUUID()}` })
+    await sync.sync()
+    const [farmer] = await db.select().from(roles).where(eq(roles.slug, 'farmer'))
+    expect(farmer?.permissions).toEqual(['farm:read', 'farm:chat'])
+    const held = await db
+      .select()
+      .from(roleAssignments)
+      .where(and(eq(roleAssignments.subjectId, someone.id), eq(roleAssignments.roleId, farmer!.id)))
+    expect(held).toHaveLength(1)
+    expect(held[0]!.scope).toBe('system')
+    // Removed by an admin, it stays removed: later syncs only update the role.
+    await db.delete(roleAssignments).where(eq(roleAssignments.id, held[0]!.id))
+    await sync.sync()
+    expect(
+      await db
+        .select()
+        .from(roleAssignments)
+        .where(and(eq(roleAssignments.subjectId, someone.id), eq(roleAssignments.roleId, farmer!.id)))
+    ).toHaveLength(0)
+    await db.delete(users).where(eq(users.id, someone.id))
   })
 
   test('admin role has wildcard permission', async () => {

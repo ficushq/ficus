@@ -247,7 +247,8 @@ export async function seedDemoInstance(): Promise<DemoSeedSummary> {
 
   let user = await User.findByEmail(DEMO_REVIEWER_EMAIL)
   if (!user) {
-    user = await User.create({ email: DEMO_REVIEWER_EMAIL, displayName: 'App Review' })
+    // A shared account: it doesn't get the farm (it may only look at what the demo reviewer role allows).
+    user = await User.create({ email: DEMO_REVIEWER_EMAIL, displayName: 'App Review', withoutDefaultRoles: true })
     created.push(`user ${DEMO_REVIEWER_EMAIL}`)
   } else if (user.disabledAt) {
     // A previous revocation disabled the account; seeding is the explicit re-enable.

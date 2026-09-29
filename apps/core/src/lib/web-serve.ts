@@ -142,7 +142,8 @@ function maybeMountFarmUi(app: Hono, log: Log): string | undefined {
   const dist = resolveFarmDist()
   if (!dist || !existsSync(join(dist, 'index.html'))) {
     // Set by hand but pointing at no build: say so, rather than serve the web build's own farm copy unannounced.
-    if (process.env.FICUS_FARM_DIST) log.warn(`FICUS_FARM_DIST is set but ${dist} has no index.html; /farm is not served`)
+    if (process.env.FICUS_FARM_DIST)
+      log.warn(`FICUS_FARM_DIST is set but ${dist} has no index.html; /farm is not served`)
     return undefined
   }
 
