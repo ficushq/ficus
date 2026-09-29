@@ -103,12 +103,13 @@ export function rewriteSessionLine(line: string): string {
  * session to resume by mtime). Returns whether it changed.
  */
 export async function rewriteSessionFile(file: string): Promise<boolean> {
+  // Stat before reading: on a relatime mount the read itself can refresh the atime.
+  const original = await stat(file)
   const content = await readFile(file, 'utf8')
   if (!CANDIDATE.test(content)) return false
   const lines = content.split('\n')
   const next = lines.map(rewriteSessionLine)
   if (next.every((line, index) => line === lines[index])) return false
-  const original = await stat(file)
   const temp = `${file}${TEMP_SUFFIX}`
   await writeFile(temp, next.join('\n'), { mode: original.mode })
   // Seconds as a float keep sub-millisecond precision, which a Date would truncate.
