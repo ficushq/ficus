@@ -88,6 +88,21 @@ describe('setup helper CI gate', () => {
     expect(step).not.toContain('continue-on-error')
     expect(step).not.toContain('if:')
   })
+
+  test('runs the host-migration e2e suite AS ROOT after the host layout suite, gated on its summary line and marker', () => {
+    const start = workflow.indexOf('- name: Run host-migration e2e suite (root)')
+    expect(start).toBeGreaterThan(-1)
+    expect(start).toBeGreaterThan(workflow.indexOf('- name: Run host layout suite (root)'))
+    const nextStep = workflow.indexOf('\n      - name:', start + 1)
+    const step = workflow.slice(start, nextStep === -1 ? undefined : nextStep)
+    expect(step).toContain('sudo env "PATH=$PATH" bash scripts/setup/host-migrate-e2e.test.sh')
+    expect(step).toContain("grep -Eq '^[0-9]+ passed, 0 failed$'") // summary-line gate
+    // The suite self-skips without real root and the toolchain, so a green
+    // summary alone cannot tell "executed" from "self-skipped again".
+    expect(step).toContain('FICUS host-migration e2e section: ENABLED')
+    expect(step).not.toContain('continue-on-error')
+    expect(step).not.toContain('if:')
+  })
 })
 
 describe('lib.test.sh root-install marker', () => {
@@ -159,5 +174,28 @@ describe('retarget-backup.test.sh mutation-phase marker', () => {
     // LAST summary: the "yq missing" skip path prints the same-shaped line first.
     const summaryAt = backupTest.lastIndexOf('passed, %d failed')
     expect(summaryAt).toBeGreaterThan(markerAt)
+  })
+})
+
+describe('host-migrate-e2e.test.sh marker', () => {
+  const e2eTest = readFileSync(join(import.meta.dir, '../scripts/setup/host-migrate-e2e.test.sh'), 'utf8')
+
+  // Same contract as the other root markers: emitted exactly once, only after
+  // every self-skip check passed (the skip branch exits before it), and
+  // before the final summary line.
+  test('emits the exact token the root gate greps, only after the self-skip checks', () => {
+    const marker = "echo 'FICUS host-migration e2e section: ENABLED'"
+    expect(e2eTest).toContain(marker)
+    expect(e2eTest.split(marker).length - 1).toBe(1) // exactly once
+    const skipExit = e2eTest.indexOf('if [[ -n ${skip_reason} ]]; then')
+    expect(skipExit).toBeGreaterThan(-1)
+    const skipBranch = e2eTest.slice(skipExit, e2eTest.indexOf('\nfi\n', skipExit))
+    expect(skipBranch).toContain('exit 0')
+    const markerAt = e2eTest.indexOf(marker)
+    expect(markerAt).toBeGreaterThan(skipExit + skipBranch.length)
+    // Every check that sets skip_reason comes before the marker.
+    expect(e2eTest.lastIndexOf('skip_reason=', markerAt)).toBeLessThan(skipExit)
+    // The final `summary` call (the last "N passed, M failed" line) follows it.
+    expect(e2eTest.lastIndexOf('\nsummary\n')).toBeGreaterThan(markerAt)
   })
 })
