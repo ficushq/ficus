@@ -19,6 +19,22 @@ describe('isUserStartedConsultant', () => {
     expect(isUserStartedConsultant(consultant({ scope: { type: 'consultant', id: 'sq' } }))).toBe(true)
   })
 
+  it('drops older, unstamped consultants a channel thread or the Assistant made', () => {
+    const slackThread = consultant({
+      scope: { type: 'consultant' },
+      thread: { id: '1790287735.049049', channelId: 'C0C3L3QDSJK' },
+      channelInstance: { id: 'slack-t0c454vr9rs', provider: 'slack' },
+    })
+    expect(isUserStartedConsultant(slackThread)).toBe(false)
+    const assistantTask = makeAgent({
+      agentTypeId: 'consultant',
+      squadId: 'sq',
+      context: { scope: { type: 'consultant', id: 'sq' } },
+      metadata: { name: 'Assistant task', purpose: 'Fix inline PR regression' },
+    })
+    expect(isUserStartedConsultant(assistantTask)).toBe(false)
+  })
+
   it('ignores other agent types', () => {
     expect(isUserStartedConsultant(makeAgent({ agentTypeId: 'coder' }))).toBe(false)
   })

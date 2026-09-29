@@ -10,6 +10,7 @@ export type PlantState =
   | 'growing' // young plant, sways
   | 'question' // young plant + "?" badge
   | 'review' // ripe, glowing produce + basket badge
+  | 'delivering' // ripe, handed to the code host (PR open): an hourglass hovers over it
   | 'blocked' // choked by weeds + "!" badge
   | 'paused' // under a glass cloche
   | 'waiting' // small plant: waiting on another work stream

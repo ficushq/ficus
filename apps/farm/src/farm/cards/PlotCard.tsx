@@ -55,6 +55,8 @@ export function PlotCard({ streamId }: { streamId: string }) {
       <p className="g-state-tag" data-state={plot.state}>
         {plantStateLabel(plot.state)}
       </p>
+      {/* Where delivery stands (e.g. "Awaiting merge of #6"), right under the state it explains. */}
+      {note && <p className="g-card-text g-delivery-note">{note}</p>}
       <section className="g-plot-lead" aria-label="Who's on it">
         <h3 className="g-plot-lead-label">
           {leadAgent && statusTone(leadAgent.status, env.halted.has(leadAgent.id)) === 'working'
@@ -75,7 +77,6 @@ export function PlotCard({ streamId }: { streamId: string }) {
           <p className="g-card-text">Nobody yet.</p>
         )}
       </section>
-      {note && <p className="g-card-text g-delivery-note">{note}</p>}
       {pullRequests.length > 0 && (
         <p className="g-pr-links">
           {pullRequests.map((pr) =>

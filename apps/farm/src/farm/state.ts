@@ -6,6 +6,7 @@ import {
   type PendingAction,
   type QuestionActionData,
   type WorkStream,
+  type WorkStreamPresentationState,
 } from '@ficus/shared'
 import type { BadgeKind, PlantState, RobotFace } from './types'
 
@@ -27,7 +28,8 @@ import type { BadgeKind, PlantState, RobotFace } from './types'
  * | queued                                  | queued    |
  * | waiting_on_dependency                   | waiting   |
  * | paused                                  | paused    |
- * | in_progress, active, delivery_external  | growing   |
+ * | in_progress, active                     | growing   |
+ * | delivery_external                       | delivering |
  * | waiting_on_answer                       | question  |
  * | in_review, delivery_approval/review/merge | review  |
  * | blocked, human can act                  | blocked   |
@@ -46,40 +48,40 @@ import type { BadgeKind, PlantState, RobotFace } from './types'
  * set by the server) is drawn as `waiting`, not a seed stake: it is waiting on
  * another work stream, not on a slot.
  */
+type PlantRule = PlantState | null | ((stream: WorkStream) => PlantState)
+
+/**
+ * Every shared presentation state, so a state added to @ficus/shared fails to
+ * compile here until the farm draws it, rather than quietly growing.
+ */
+const PLANT_FOR_STATE: Record<WorkStreamPresentationState, PlantRule> = {
+  done: null,
+  canceled: null,
+  queued: (stream) => (stream.waitingOnDependencies ? 'waiting' : 'queued'),
+  waiting_on_dependency: 'waiting',
+  paused: 'paused',
+  in_progress: 'growing',
+  active: 'growing',
+  // Handed to the code host: the pull request is open and nobody here has to act
+  // (CI, automatic merge, or a merge Ficus hears about from the provider).
+  delivery_external: 'delivering',
+  waiting_on_answer: 'question',
+  in_review: 'review',
+  delivery_approval: 'review',
+  delivery_review: 'review',
+  delivery_merge: 'review',
+  blocked: (stream) => (workStreamNeedsHumanAttention(stream) ? 'blocked' : 'waiting'),
+  idle: 'idle',
+  execution_failed: 'failed',
+  delivery_failure: 'failed',
+  delivery_setup: 'failed',
+}
+
 export function plantStateFor(stream: WorkStream): PlantState | null {
-  const state = selectWorkStreamPresentationState(stream)
-  switch (state) {
-    case 'done':
-    case 'canceled':
-      return null
-    case 'queued':
-      return stream.waitingOnDependencies ? 'waiting' : 'queued'
-    case 'waiting_on_dependency':
-      return 'waiting'
-    case 'paused':
-      return 'paused'
-    case 'in_progress':
-    case 'active':
-    case 'delivery_external':
-      return 'growing'
-    case 'waiting_on_answer':
-      return 'question'
-    case 'in_review':
-    case 'delivery_approval':
-    case 'delivery_review':
-    case 'delivery_merge':
-      return 'review'
-    case 'blocked':
-      return workStreamNeedsHumanAttention(stream) ? 'blocked' : 'waiting'
-    case 'idle':
-      return 'idle'
-    case 'execution_failed':
-    case 'delivery_failure':
-    case 'delivery_setup':
-      return 'failed'
-    default:
-      return 'growing'
-  }
+  const rule = PLANT_FOR_STATE[selectWorkStreamPresentationState(stream)]
+  // A state from a newer server than this farm: draw it as growing.
+  if (rule === undefined) return 'growing'
+  return typeof rule === 'function' ? rule(stream) : rule
 }
 
 /**

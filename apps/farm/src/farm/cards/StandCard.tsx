@@ -23,9 +23,10 @@ export function StandCard({ squadId }: { squadId: string }) {
       </button>
       {ids.length > 0 && (
         <>
+          {/* Every chat the stand counts, questions for you first, then most recently active. */}
           <h3 className="g-card-subtitle">Recent</h3>
           <Crew
-            agentIds={ids.slice(0, 12)}
+            agentIds={ids}
             known={env.agentsById}
             squad={yard.squad}
             halted={env.halted}
