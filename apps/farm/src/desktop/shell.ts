@@ -4,8 +4,8 @@ import { useEffect } from 'react'
  * The slice of Ficus Desktop's page bridge the farm uses: whether the window
  * draws its traffic lights over the page (an inset title bar) and whether
  * it's fullscreen. Mirrors apps/web/src/lib/desktop.ts, including its kept
- * rename bridge (K5 in the rename plan): `ficusDesktopApp`, falling back to
- * the D1 app's older name; remove the fallback with the web's in the sweep.
+ * D1 bridge (K5, Ruling 56): `ficusDesktopApp`, falling back to the D1 app's
+ * older name until Ficus Desktop (D2) ships; remove it with the web's.
  */
 export interface DesktopShell {
   insetTitleBar: boolean
@@ -18,8 +18,8 @@ type Bridge = { version?: number; shell?: unknown }
 export function desktopShell(
   w: unknown = typeof window === 'undefined' ? undefined : window
 ): DesktopShell | undefined {
-  const host = w as { ficusDesktopApp?: Bridge; tauDesktopApp?: Bridge } | undefined
-  const bridge = host?.ficusDesktopApp ?? host?.tauDesktopApp
+  const host = w as { ficusDesktopApp?: Bridge; tauDesktopApp?: Bridge } | undefined // K5: until Ficus Desktop (D2) ships
+  const bridge = host?.ficusDesktopApp ?? host?.tauDesktopApp // K5: until Ficus Desktop (D2) ships
   if (bridge?.version !== 1) return undefined
   const shell = bridge.shell as Partial<DesktopShell> | undefined
   return shell && typeof shell.fullscreen === 'function' && typeof shell.onFullscreenChange === 'function'
