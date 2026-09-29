@@ -1,11 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { IMAGE_CACHE_NAME, SW_RUNTIME_CACHE_PREFIXES } from '@ficus/shared/browser-keys'
 import { bypassesServiceWorker, isUncachedApi } from './swRoutes'
-import {
-  runtimeServiceWorkerCaches,
-  serviceWorkerCacheNames,
-  staleServiceWorkerCaches,
-} from './swCaches'
+import { runtimeServiceWorkerCaches, serviceWorkerCacheNames, staleServiceWorkerCaches } from './swCaches'
 
 describe('service-worker runtime caches', () => {
   test('cache names are the ficus prefixes plus the build version', () => {
