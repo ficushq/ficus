@@ -10,10 +10,11 @@
  * supervisor depends on: log lines stream, and `exitCode` lands.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { HostSandboxManager } from '../sandbox/host/manager'
+import { recordLaunchPathCommand } from '../sandbox/launch-path'
 import { clearHostWorkspaceOverrides } from '../sandbox/host/workspace-overrides'
 import { LAUNCHER_SCRIPT, monitorDir, monitorWorkRoot, shellQuote } from './launcher'
 
@@ -55,8 +56,17 @@ describe('monitor launcher on the host runtime', () => {
     rmSync(home, { recursive: true, force: true })
   })
 
-  /** Byte-for-byte the launch command MonitorSupervisor.launch() builds, minus tmux. */
-  function launchCommand(monitorId: string, command: string): { command: string; dir: string } {
+  /**
+   * Byte-for-byte the launch command MonitorSupervisor.launch() builds, minus
+   * tmux. `toolDir` goes on the caller's PATH only, and the launcher then runs
+   * with a bare environment — what a tmux server started without it hands a
+   * new session.
+   */
+  function launchCommand(
+    monitorId: string,
+    command: string,
+    opts: { toolDir?: string } = {}
+  ): { command: string; dir: string } {
     const workRoot = monitorWorkRoot({ squadId: SQUAD, sandboxId: SANDBOX })
     const dir = monitorDir(workRoot, monitorId)
     const script = `${dir}/run.sh`
@@ -67,16 +77,19 @@ describe('monitor launcher on the host runtime', () => {
       `FICUS_MONITOR_COMMAND=${shellQuote(command)}`,
       `bash ${shellQuote(script)}`,
     ].join(' ')
+    const launcherEnv = opts.toolDir ? `env -i PATH=/usr/bin:/bin HOME=${shellQuote(home)} ` : ''
     return {
       dir,
       command: [
         'set -e',
+        ...(opts.toolDir ? [`export PATH=${shellQuote(opts.toolDir)}:"$PATH"`] : []),
         `mkdir -p ${shellQuote(`${dir}/logs`)}`,
         `cat > ${shellQuote(script)} <<'EOF'\n${LAUNCHER_SCRIPT}EOF`,
         `chmod +x ${shellQuote(script)}`,
+        recordLaunchPathCommand(dir),
         // The supervisor backgrounds this under tmux; `&` keeps the test free
         // of a tmux dependency while running the identical launcher.
-        `${envPrefix} </dev/null >/dev/null 2>&1 &`,
+        `${launcherEnv}${envPrefix} </dev/null >/dev/null 2>&1 &`,
       ].join('\n'),
     }
   }
@@ -136,5 +149,21 @@ describe('monitor launcher on the host runtime', () => {
     // EMPTY by the redirection — and, under `set -e`, killing the run.
     const startedAt = (await Bun.file(`${dir}/startedAt`).text()).trim()
     expect(startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+  }, 20000)
+
+  test('the monitored command finds tools on the PATH the start command ran with', async () => {
+    const toolDir = join(home, 'toolchain-bin')
+    mkdirSync(toolDir)
+    // A name no host login profile can put on PATH.
+    writeFileSync(join(toolDir, 'ficus-test-watch'), '#!/bin/sh\necho "toolchain watch $*"\n')
+    chmodSync(join(toolDir, 'ficus-test-watch'), 0o755)
+    const monitorId = 'bbbbbbbb-cccc-4ddd-8eee-fffffffffff2'
+    const { command, dir } = launchCommand(monitorId, 'ficus-test-watch logs', { toolDir })
+
+    await manager.exec(SANDBOX, ['bash', '-lc', command])
+    await waitFor(() => Bun.file(`${dir}/exitCode`).size > 0)
+
+    expect(await Bun.file(`${dir}/logs/current.log`).text()).toContain('toolchain watch logs')
+    expect((await Bun.file(`${dir}/exitCode`).text()).trim()).toBe('0')
   }, 20000)
 })

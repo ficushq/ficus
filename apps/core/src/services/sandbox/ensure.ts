@@ -695,8 +695,13 @@ export async function ensureSquadSandbox(
     configureWorkspaceWatch(squadId)
   )
   if (options.restartManagedLocalDeployments !== false && !wasTracked) {
+    // Best effort: the box is ready either way, and an app that fails to come
+    // back is the health poller's to retry — it must not fail the agent
+    // execution that happened to ensure the box.
     await runSandboxEffect(options.admissionScope, 'local-deployment-restart', sandboxId, () =>
-      localDeploymentHealth.restartManagedLocalDeploymentsForSandbox(sandboxId)
+      localDeploymentHealth.restartManagedLocalDeploymentsForSandbox(sandboxId).catch((err) => {
+        log.warn(`Managed localDeployment restart failed for ${sandboxId}; the health poller will retry:`, err)
+      })
     )
   }
 

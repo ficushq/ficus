@@ -240,6 +240,20 @@ describe('ensure — host runtime', () => {
     expect(clientStarts).toEqual([{ include: ['docs/**/*.md'], exclude: [], squadId: squad.id }])
   })
 
+  it('ensure resolves when restarting the squad apps fails', async () => {
+    const fake = fakeWatchManager({
+      getClient: () => ({ startWatch: async () => {}, getWatchStatus: async () => ({ active: false, config: null }) }),
+    })
+    spies.push(spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue(fake))
+    const restart = spyOn(localDeploymentHealth, 'restartManagedLocalDeploymentsForSandbox').mockRejectedValue(
+      new Error('duplicate session: tau-local-deployment-abcdef12')
+    )
+    spies.push(restart)
+
+    await expect(ensureSquadSandbox(squad)).resolves.toBeString()
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
   it('ensure stops the host watch when memoryConfig is disabled', async () => {
     await squad.update({ metadata: { memory: { enabled: false } } })
     const stops: string[] = []
