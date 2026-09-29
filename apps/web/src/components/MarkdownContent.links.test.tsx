@@ -39,7 +39,7 @@ test('renders explicit work stream and agent references as in-place actions', ()
 })
 
 test('does not activate malformed references or references in code and retains URL sanitization', () => {
-  // tau: is the pre-rename scheme; Core's migration 0196 rewrote stored links, so nothing reads it (Task 36c).
+  // The pre-rename scheme: Core's migration 0196 rewrote stored links, so nothing reads it (Task 36c).
   for (const content of [
     '[Bad](ficus:ws:not-an-id)',
     '[Bad](javascript:alert)',

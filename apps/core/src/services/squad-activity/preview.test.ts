@@ -93,7 +93,7 @@ test('clips before, at and after link labels and bounds oversized inputs', () =>
 test('validates Ficus references using the shared client grammar', () => {
   for (const href of ['ficus:ws:241', 'ficus:ws:deadbeef', 'ficus:agent:deadbeef-1234-1234-1234-123456789abc'])
     expect(activityPreview(`[label](${href})`).preview).toEqual([{ text: 'label', href }])
-  // tau: is the pre-rename scheme; migration 0196 rewrote stored links, so nothing reads it (Task 36c).
+  // The pre-rename scheme: migration 0196 rewrote stored links, so nothing reads it (Task 36c).
   for (const href of ['ficus:ws:abc-def', 'ficus:agent:xyz', 'ficus:other:241', 'tau:ws:241']) // ficus-negative-test
     expect(activityPreview(`[label](${href})`).preview).toEqual([{ text: 'label' }])
 })

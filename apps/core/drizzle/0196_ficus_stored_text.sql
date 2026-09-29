@@ -1,6 +1,7 @@
--- Ficus rename, Task 36c: stored user and agent text keeps no pre-rename names. Pre-rename entity references
--- (work streams and agents, exact reader grammar, outside code and URLs) become `ficus:ws:` / `ficus:agent:`,
--- and the memory_search provenance marker in stored tool results becomes `<!--ficus:memory-provenance`.
+-- Ficus rename, Task 36c: stored user and agent prose keeps no pre-rename names. Pre-rename entity references
+-- (work streams and agents, exact reader grammar, outside code and URLs) in rendered prose become `ficus:ws:` /
+-- `ficus:agent:`, and the provenance marker in stored memory_search results becomes `<!--ficus:memory-provenance`.
+-- Verbatim tool I/O (arguments, file contents, command output) is never rewritten.
 -- The rewrite is TypeScript (src/db/stored-text-backfill.ts, which lists the tables and columns): the
 -- migrator runs it just before the statement below, inside this migration's transaction. It pages by key,
 -- writes only changed values, touches no timestamp, and finds nothing on a second run.

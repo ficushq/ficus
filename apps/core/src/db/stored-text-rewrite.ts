@@ -5,7 +5,10 @@
  * files move to the same forms. Nothing here reads the old forms at runtime; this is migration code.
  *
  * The grammar is frozen here on purpose: a later change to the live reference grammar must not
- * change what this historical migration rewrote.
+ * change what this historical migration rewrote. Callers apply it to rendered prose only, never to
+ * verbatim tool I/O. Known limits, all inside prose: four-space indented code, HTML `<code>`/`<pre>`,
+ * and a fence opened on a list-marker line are not treated as code; a reference right after `_`
+ * (`_ref_` emphasis) or after an escaped `\n` inside a JSON-encoded string is not rewritten.
  */
 
 // Migration history: the pre-rename spellings this rewrite exists to retire.
@@ -119,22 +122,15 @@ export function rewriteMemoryProvenance(text: string): string {
   return text.replace(new RegExp(`${OLD_PROVENANCE}(?=\\s)`, 'g'), NEW_PROVENANCE)
 }
 
-/** Both text rewrites: what every stored string gets. */
-export function rewriteStoredText(text: string): string {
-  return rewriteEntityReferences(rewriteMemoryProvenance(text))
-}
-
 export type JsonPath = string[]
 
 /**
  * Every string value (never a key) in a JSON document whose rewrite differs, with its path, so a
  * caller can patch exactly those values (jsonb_set) and leave the rest of the document untouched.
- * `skip` prunes a subtree, such as a signed thinking block.
  */
 export function jsonStringChanges(
   value: unknown,
   rewrite: (text: string) => string,
-  skip: (object: Record<string, unknown>) => boolean = () => false,
   path: JsonPath = []
 ): Array<{ path: JsonPath; value: string }> {
   if (typeof value === 'string') {
@@ -142,23 +138,10 @@ export function jsonStringChanges(
     return next === value ? [] : [{ path, value: next }]
   }
   if (Array.isArray(value)) {
-    return value.flatMap((item, index) => jsonStringChanges(item, rewrite, skip, [...path, String(index)]))
+    return value.flatMap((item, index) => jsonStringChanges(item, rewrite, [...path, String(index)]))
   }
   if (value && typeof value === 'object') {
-    const object = value as Record<string, unknown>
-    if (skip(object)) return []
-    return Object.entries(object).flatMap(([key, item]) => jsonStringChanges(item, rewrite, skip, [...path, key]))
+    return Object.entries(value).flatMap(([key, item]) => jsonStringChanges(item, rewrite, [...path, key]))
   }
   return []
-}
-
-/** Applies `jsonStringChanges` to a parsed document in place. */
-export function applyJsonStringChanges(document: unknown, changes: Array<{ path: JsonPath; value: string }>): unknown {
-  for (const { path, value } of changes) {
-    if (path.length === 0) return value
-    let parent = document as Record<string, unknown>
-    for (const key of path.slice(0, -1)) parent = parent[key] as Record<string, unknown>
-    parent[path.at(-1)!] = value
-  }
-  return document
 }

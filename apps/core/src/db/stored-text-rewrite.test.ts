@@ -1,11 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  applyJsonStringChanges,
-  jsonStringChanges,
-  rewriteEntityReferences,
-  rewriteMemoryProvenance,
-  rewriteStoredText,
-} from './stored-text-rewrite'
+import { jsonStringChanges, rewriteEntityReferences, rewriteMemoryProvenance } from './stored-text-rewrite'
 
 // Migration history: these fixtures are the pre-rename spellings the Task 36c rewrite retires.
 const UUID = 'deadbeef-1234-4abc-8def-0123456789ab'
@@ -79,33 +73,17 @@ describe('rewriteMemoryProvenance', () => {
       expect(rewriteMemoryProvenance(other)).toBe(other)
     }
   })
-
-  test('is part of the stored-text rewrite', () => {
-    expect(rewriteStoredText('<!--tau:memory-provenance [] --> [x](tau:ws:1)')).toBe(
-      '<!--ficus:memory-provenance [] --> [x](ficus:ws:1)'
-    )
-  })
 })
 
 describe('jsonStringChanges', () => {
-  test('finds changed string values by path, never keys, and prunes skipped subtrees', () => {
+  test('finds changed string values by path, never keys', () => {
     const document = {
       'tau:ws:1': 'key stays',
-      content: [
-        { type: 'text', id: 'a', content: 'See [x](tau:ws:1)' },
-        { type: 'thinking', content: 'tau:ws:2' },
-        { type: 'tool_use', toolCall: { result: 'ok\n<!--tau:memory-provenance [] -->' } },
-      ],
+      spans: [{ text: 'See ' }, { text: '#1', href: 'tau:ws:1' }],
       count: 3,
     }
-    const changes = jsonStringChanges(document, rewriteStoredText, (object) => object.type === 'thinking')
-    expect(changes).toEqual([
-      { path: ['content', '0', 'content'], value: 'See [x](ficus:ws:1)' },
-      { path: ['content', '2', 'toolCall', 'result'], value: 'ok\n<!--ficus:memory-provenance [] -->' },
+    expect(jsonStringChanges(document, rewriteEntityReferences)).toEqual([
+      { path: ['spans', '1', 'href'], value: 'ficus:ws:1' },
     ])
-    const patched = applyJsonStringChanges(structuredClone(document), changes) as typeof document
-    expect(patched['tau:ws:1']).toBe('key stays')
-    expect(patched.content[1]).toEqual({ type: 'thinking', content: 'tau:ws:2' })
-    expect(jsonStringChanges(patched, rewriteStoredText, (object) => object.type === 'thinking')).toEqual([])
   })
 })

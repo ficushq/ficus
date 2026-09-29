@@ -14,6 +14,23 @@ const target = migrations.find((migration) => migration.sql.join('\n').includes(
 const predecessors = target ? migrations.filter((migration) => migration.folderMillis < target.folderMillis) : []
 
 const UUID = 'deadbeef-1234-4abc-8def-0123456789ab'
+/** Assistant tool entries: verbatim tool I/O stays as it is; memory_search's own marker moves. */
+const toolEntryFixture = {
+  role: 'tool',
+  text: '',
+  final: true,
+  toolName: 'squad_bash',
+  toolArgs: '{"command":"grep tau:ws:42 notes.md"}',
+  toolResult: 'notes.md:1: [#42](tau:ws:42)',
+}
+const searchEntryFixture = {
+  role: 'tool',
+  text: '',
+  final: true,
+  toolName: 'memory_search',
+  toolArgs: '{"query":"tau:ws:42"}',
+  toolResult: 'Found 0 result(s):\n<!--tau:memory-provenance [] -->',
+}
 const STAMP = '2026-01-02 03:04:05'
 
 function urlFor(name: string): string {
@@ -75,6 +92,30 @@ async function seed(connection: postgres.ReservedSql) {
               isError: false,
             },
           },
+          // Verbatim tool I/O: a file read and an edit's arguments that happen to hold the old scheme.
+          {
+            type: 'tool_use',
+            id: 'b3',
+            toolCall: {
+              toolCallId: 't2',
+              toolName: 'read',
+              args: '{"path":"src/a.ts"}',
+              result: "expect(parseEntityReference('tau:ws:42'))",
+              isError: false,
+            },
+          },
+          {
+            type: 'tool_use',
+            id: 'b4',
+            toolCall: {
+              toolCallId: 't3',
+              toolName: 'edit',
+              args: '{"oldText":"const ref = \\"tau:agent:deadbeef\\"","newText":"x"}',
+              result: 'Edited [x](tau:ws:1) <!--tau:memory-provenance [] -->',
+              isError: false,
+            },
+          },
+          { type: 'thinking', id: 'b5', content: 'Maybe tau:ws:42' },
         ],
       }).replace('"BIG"', '12345678901234567890'),
       STAMP,
@@ -114,6 +155,40 @@ async function seed(connection: postgres.ReservedSql) {
     `INSERT INTO assistant_entries (conversation_id, client_id, position, entry) VALUES ($1, 'c1', 0, $2::text::jsonb)`,
     [conversation.id, JSON.stringify({ role: 'assistant', text: 'Started [#7](tau:ws:7)' })]
   )
+  for (const [position, entry] of [toolEntryFixture, searchEntryFixture].entries()) {
+    await connection.unsafe(
+      `INSERT INTO assistant_entries (conversation_id, client_id, position, entry) VALUES ($1, $2, $3, $4::text::jsonb)`,
+      [conversation.id, `t${position}`, position + 1, JSON.stringify(entry)]
+    )
+  }
+  await connection.unsafe(
+    `INSERT INTO work_stream_waits (work_stream_id, type, message, resolution, resolution_note, closed_at)
+     VALUES ($1, 'review', $2, 'sent_back', $3, now())`,
+    [stream.id, 'Review [#41](tau:ws:41)', 'Redo it like [#40](tau:ws:40)']
+  )
+  await connection.unsafe(`UPDATE work_streams SET metadata = $2::text::jsonb WHERE id = $1`, [
+    stream.id,
+    JSON.stringify({ nextSteps: 'Then [#43](tau:ws:43)', other: 'tau:ws:44' }),
+  ])
+  await connection.unsafe(
+    `INSERT INTO work_stream_flow_runs
+      (work_stream_id, create_request_id, create_request_hash, source, state, created_by)
+     VALUES ($1, gen_random_uuid(), repeat('c', 64), '{}'::jsonb, $2::text::jsonb, 'fixture')`,
+    [
+      stream.id,
+      JSON.stringify({
+        schemaVersion: 1,
+        attempts: [
+          { id: 1, stepId: 'build', status: 'completed', evidence: 'Shipped in [#41](tau:ws:41)' },
+          { id: 2, stepId: 'review', status: 'running', feedback: 'tau:ws:45 stays' },
+        ],
+      }),
+    ]
+  )
+  await connection.unsafe(`INSERT INTO work_stream_continuations (work_stream_id, delivery_prompt) VALUES ($1, $2)`, [
+    stream.id,
+    'Continue [#41](tau:ws:41)',
+  ])
   await connection.unsafe(
     `INSERT INTO squad_activity
       (squad_id, lane, row_id, source_family, source_group_id, at, kind, summary, preview, ref, quiet_eligible,
@@ -160,6 +235,13 @@ describe('stored-text migration 0196 (real runner, isolated database)', () => {
       expect(metadata.content[1].toolCall.result).toBe(
         'Found 1 result(s):\n```\nsnippet tau:ws:3\n```\n<!--ficus:memory-provenance [{"documentId":"d1"}] -->'
       )
+      // Verbatim tool I/O and thinking are untouched; only memory_search's own marker moves.
+      expect(metadata.content[2].toolCall.result).toBe("expect(parseEntityReference('tau:ws:42'))")
+      expect(metadata.content[3].toolCall).toMatchObject({
+        args: '{"oldText":"const ref = \\"tau:agent:deadbeef\\"","newText":"x"}',
+        result: 'Edited [x](tau:ws:1) <!--tau:memory-provenance [] -->',
+      })
+      expect(metadata.content[4].content).toBe('Maybe tau:ws:42')
       // Values the rewrite does not change keep their exact stored JSON (jsonb_set per changed string).
       expect(message!.metadata).toContain('"big": 12345678901234567890')
 
@@ -189,10 +271,28 @@ describe('stored-text migration 0196 (real runner, isolated database)', () => {
       expect(
         (await connection`SELECT body, edited_at = ${STAMP}::timestamptz AS kept FROM farm_chat_messages`)[0]
       ).toEqual({ body: 'Anyone looked at ficus:ws:2? @You', kept: true })
-      expect((await connection`SELECT entry FROM assistant_entries`)[0]!.entry).toEqual({
-        role: 'assistant',
-        text: 'Started [#7](ficus:ws:7)',
+      expect((await connection`SELECT entry FROM assistant_entries ORDER BY position`).map((row) => row.entry)).toEqual(
+        [
+          { role: 'assistant', text: 'Started [#7](ficus:ws:7)' },
+          toolEntryFixture,
+          { ...searchEntryFixture, toolResult: 'Found 0 result(s):\n<!--ficus:memory-provenance [] -->' },
+        ]
+      )
+      expect((await connection`SELECT message, resolution_note FROM work_stream_waits`)[0]).toEqual({
+        message: 'Review [#41](ficus:ws:41)',
+        resolution_note: 'Redo it like [#40](ficus:ws:40)',
       })
+      expect((await connection`SELECT metadata FROM work_streams`)[0]!.metadata).toEqual({
+        nextSteps: 'Then [#43](ficus:ws:43)',
+        other: 'tau:ws:44',
+      })
+      expect((await connection`SELECT state FROM work_stream_flow_runs`)[0]!.state.attempts).toEqual([
+        { id: 1, stepId: 'build', status: 'completed', evidence: 'Shipped in [#41](ficus:ws:41)' },
+        { id: 2, stepId: 'review', status: 'running', feedback: 'tau:ws:45 stays' },
+      ])
+      expect((await connection`SELECT delivery_prompt FROM work_stream_continuations`)[0]!.delivery_prompt).toBe(
+        'Continue [#41](ficus:ws:41)'
+      )
       expect(
         (await connection`SELECT preview, summary, updated_at = ${STAMP}::timestamptz AS kept FROM squad_activity`)[0]
       ).toEqual({
@@ -217,8 +317,33 @@ describe('stored-text migration 0196 (real runner, isolated database)', () => {
           index % 3 === 0 ? `code only: \`tau:ws:${index}\`` : `[#${index}](tau:ws:${index})`,
         ])
       }
+      // A composite key (squad_id, lane, row_id) pages by row comparison too.
+      const [squad] = await connection<
+        { id: string }[]
+      >`INSERT INTO squads (name, purpose) VALUES ('S', 'P') RETURNING id`
+      for (let index = 1; index <= 5; index += 1) {
+        await connection.unsafe(
+          `INSERT INTO squad_activity
+            (squad_id, lane, row_id, source_family, source_group_id, at, kind, summary, preview, ref, quiet_eligible,
+             access_scope, payload_hash)
+           VALUES ($1, $2, gen_random_uuid(), 'message', 'g', now(), $4, 's', $3::text::jsonb,
+             '{"type":"agent"}'::jsonb, true, 'agents', repeat('a', 64))`,
+          [
+            squad!.id,
+            index % 2 ? 10 : 60,
+            JSON.stringify([{ text: '#1', href: `tau:ws:${index}` }]),
+            index % 2 ? 'message' : 'execution',
+          ]
+        )
+      }
       const first = await backfillStoredText(connection, { batchSize: 2 })
       expect(first.find((result) => result.table === 'messages')!.rows).toBe(5)
+      expect(first.find((result) => result.table === 'squad_activity')!.rows).toBe(5)
+      expect(
+        (await connection<{ href: string }[]>`SELECT preview->0->>'href' AS href FROM squad_activity`).every((row) =>
+          row.href.startsWith('ficus:ws:')
+        )
+      ).toBe(true)
       const contents = (await connection<{ content: string }[]>`SELECT content FROM messages ORDER BY content`).map(
         (row) => row.content
       )
