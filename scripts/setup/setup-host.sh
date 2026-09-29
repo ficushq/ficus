@@ -1190,6 +1190,14 @@ phase_restore() {
   # The encrypted download is no longer needed; shrink the exposure window.
   rm -f "${archive}"
 
+  # Read the archived FICUS_ENCRYPTION_KEY before anything is written: an
+  # archive taken before the Ficus naming (its key under the old prefix) is
+  # refused here, naming the key, with the database and the workspace tree
+  # untouched. (lib.sh's archived_encryption_key; the README shows the
+  # hand-rename.)
+  local archived_key=''
+  archived_encryption_key archived_key "${workdir}/.env"
+
   # (a) pg_restore the dump. --clean --if-exists makes a retried provision
   # idempotent (a prior run's objects are dropped-then-recreated); --no-owner
   # ignores the source's role ownership (the target cluster's login role
@@ -1216,13 +1224,10 @@ phase_restore() {
     log_warn "restore: archive carried no workspace directory — skipping HOME_DIR restore"
   fi
 
-  # (c) carry FICUS_ENCRYPTION_KEY forward from the archived .env, overriding the
-  # value resolve_secrets computed. phase_env (next) renders the .env from
-  # these globals, so the restored DB's encrypted secret store stays readable.
-  # (lib.sh's archived_encryption_key refuses an archive taken before the
-  # Ficus naming, naming its key; the README shows the one-line hand-rename.)
-  local archived_key=''
-  archived_encryption_key archived_key "${workdir}/.env"
+  # (c) carry FICUS_ENCRYPTION_KEY forward from the archived .env (read and
+  # checked above), overriding the value resolve_secrets computed. phase_env
+  # (next) renders the .env from these globals, so the restored DB's
+  # encrypted secret store stays readable.
   FICUS_ENC_VALUE=${archived_key}
   ENC_SOURCE='restored backup envelope'
   log_info "carried FICUS_ENCRYPTION_KEY forward from the restored backup"

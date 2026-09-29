@@ -10,4 +10,4 @@ for arg in "$@"; do
   esac
 done
 
-exec tau admin workspace-gc "${args[@]}"
+exec ficus admin workspace-gc "${args[@]}"

@@ -2497,6 +2497,56 @@ rn_err=$( (restore_unpack_archive "${RESTORE_TMP}/nodump.tar.gz.enc" "${RESTORE_
 expect_eq 'restore_unpack_archive: missing db.dump dies (envelope-shape guard)' "${rn_rc}" '1'
 expect_match 'restore_unpack_archive: missing-db.dump message says not a ficus envelope' "${rn_err}" 'db.dump'
 
+# setup-host.sh's real phase_restore, with the network, pg_restore and the
+# workspace target stubbed: it checks the archived encryption key right after
+# unpacking, so an archive from before the Ficus naming is refused with the
+# database and the workspace tree untouched; a FICUS archive restores and
+# carries its key forward.
+pr_archive() { # NAME ENV_LINE
+  mkdir -p "${RESTORE_TMP}/$1-src/.tau"
+  printf 'PGDUMPDATA' >"${RESTORE_TMP}/$1-src/db.dump"
+  printf '%s\n' "$2" >"${RESTORE_TMP}/$1-src/.env"
+  printf 'x\n' >"${RESTORE_TMP}/$1-src/.tau/a.txt"
+  tar -czf "${RESTORE_TMP}/$1.tar.gz" -C "${RESTORE_TMP}/$1-src" db.dump .tau .env
+  openssl enc -aes-256-cbc -pbkdf2 -salt -pass "file:${RESTORE_PASSFILE}" \
+    -in "${RESTORE_TMP}/$1.tar.gz" -out "${RESTORE_TMP}/$1.tar.gz.enc"
+}
+pr_run() { # NAME — prints the output, then `rc=N enc=<FICUS_ENC_VALUE>`
+  local rc=0
+  rm -rf "${RESTORE_TMP}/pr-home" "${RESTORE_TMP}/pr.log"
+  (
+    eval "$(sed -n '/^phase_restore() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")"
+    phase_step() { :; }
+    db_dsn() { printf 'postgres://u:p@db.invalid/db'; }
+    curl() { # -fsSL -o FILE URL: "download" the fixture
+      local out=''
+      while [[ $# -gt 0 ]]; do [[ $1 == -o ]] && { out=$2; shift; }; shift; done
+      cp "${RESTORE_TMP}/${PR_NAME}.tar.gz.enc" "${out}"
+    }
+    pg_restore() { echo pg_restore >>"${RESTORE_TMP}/pr.log"; }
+    FICUS_SETUP_RESTORE_PASSPHRASE=${RESTORE_PASS} DB_PASSWORD=pw DB_MODE=external
+    BACKUP_HOME_DIR="${RESTORE_TMP}/pr-home" RESTORE_URL='https://s3.invalid/a' RESTORE_STRIP_CREDENTIALS=0
+    RUN_USER=$(id -un) FICUS_ENC_VALUE=''
+    PR_NAME=$1 phase_restore
+    echo "enc=${FICUS_ENC_VALUE}"
+  ) 2>&1 || rc=$?
+  echo "rc=${rc}"
+}
+pr_archive pre-ficus "${PFK}=archived-old-key"
+pr_out=$(pr_run pre-ficus)
+expect_match 'phase_restore: a pre-Ficus archive is refused' "${pr_out}" 'rc=1$'
+expect_match 'phase_restore: ...naming the key' "${pr_out}" "this archive predates the Ficus naming \\(its \\.env holds ${PFK}\\)"
+expect_not_match 'phase_restore: ...never the value' "${pr_out}" 'archived-old-key'
+expect_eq 'phase_restore: ...before pg_restore ran or the workspace was written' \
+  "$([[ -e ${RESTORE_TMP}/pr.log ]] && echo pg_restore || echo none):$([[ -e ${RESTORE_TMP}/pr-home ]] && echo home || echo none)" 'none:none'
+pr_archive ficus 'FICUS_ENCRYPTION_KEY=archived-ficus-key'
+pr_out=$(pr_run ficus)
+expect_match 'phase_restore: a FICUS archive restores' "${pr_out}" 'rc=0$'
+expect_match 'phase_restore: ...carries its key forward' "${pr_out}" 'enc=archived-ficus-key'
+expect_eq 'phase_restore: ...after pg_restore and the workspace copy' \
+  "$(cat "${RESTORE_TMP}/pr.log" 2>/dev/null):$(cat "${RESTORE_TMP}/pr-home/a.txt" 2>/dev/null)" 'pg_restore:x'
+unset -f pr_archive pr_run
+
 rm -rf "${RESTORE_TMP}"
 
 # --- install_rendered --------------------------------------------------------
