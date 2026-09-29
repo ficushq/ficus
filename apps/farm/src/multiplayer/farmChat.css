@@ -263,6 +263,20 @@
 
 /* ---- People on the map ---- */
 
+/* Stepping through the farmhouse door (People.tsx): faded while in the doorway. */
+.g-person {
+  transition: opacity 0.3s ease;
+}
+
+.g-person-in-door {
+  opacity: 0;
+}
+
+/* Walking home after leaving the farm: just passing, not someone to click. */
+.g-person-leaving {
+  pointer-events: none;
+}
+
 .g-person-tag rect {
   fill: var(--g-card);
   stroke: var(--g-outline);
@@ -431,7 +445,9 @@
 }
 
 .g-farmchat-edited {
-  color: var(--g-text-soft);
+  /* The bubble's own text colour, quieter: readable on others' bubbles and on your own (accent) ones. */
+  color: inherit;
+  opacity: 0.72;
   font-size: 12px;
 }
 

@@ -27,6 +27,19 @@ export interface FencePiece {
   node: ReactNode
 }
 
+/**
+ * The farmhouse's front door, where people come onto the farm and leave it:
+ * in tiles from the house's centre (`i` along its front wall, `j` out to the
+ * wall itself), with its porch floor `floor` pixels up, dropping to the ground
+ * over the steps between `steps[0]` and `steps[1]` (also tiles out along j).
+ */
+export interface FarmhouseDoor {
+  i: number
+  j: number
+  floor: number
+  steps: readonly [number, number]
+}
+
 /** A style's id: exactly the styles an account can save (@ficus/shared FARM_STYLES). */
 export type SkinId = FarmStyle
 
@@ -68,6 +81,8 @@ export interface FarmSkin {
   /** A squad's server rack while it has apps to open; `count` is how many. */
   Rack: ComponentType<{ count: number }>
   Farmhouse: ComponentType
+  /** Its front door and porch steps, for people walking in and out. */
+  farmhouseDoor: FarmhouseDoor
   SeedShed: ComponentType
   Mailbox: ComponentType<{ count: number }>
   Crates: ComponentType<{ count: number }>

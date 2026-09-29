@@ -33,11 +33,11 @@ instant start, and the account's value wins when it loads. A first visit
 The farm's multiplayer has its own resource, checked instance-wide (never per
 squad), so anyone can be given `farm:*` whatever their squad and chat roles:
 
-| Permission          | Allows                                                                                  |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| `farm:read`         | Seeing farm chat (rooms, messages, people) and who's on the farm                        |
-| `farm:chat`         | Posting, editing, reacting, opening DMs, typing, appearing on the farm and waving       |
-| `farm:manage-rooms` | Creating, renaming and deleting public rooms, and deleting anyone's message outside DMs |
+| Permission          | Allows                                                                            |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `farm:read`         | Seeing farm chat (rooms, messages, people) and who's on the farm                  |
+| `farm:chat`         | Posting, editing, reacting, opening DMs, typing, appearing on the farm and waving |
+| `farm:manage-rooms` | Creating, renaming and deleting public rooms                                      |
 
 The built-in **Farmer** role (`farm:read`, `farm:chat`) is an ordinary
 instance-wide assignment an admin can remove or edit
@@ -69,7 +69,8 @@ process (`apps/core/src/services/ws/presence.ts`); nothing is stored, so a
 restart empties the farm until pages announce again.
 
 - Client → Core over `/ws`: `{ type: 'presence', focus }` (focus is an agent,
-  work stream or squad, or `null` for "around the farm"), `{ type: 'presence.leave' }`
+  work stream or squad, optionally `at: 'stand'` for its consulting stand and
+  consultant chats, or `null` for "around the farm"), `{ type: 'presence.leave' }`
   (going single-player) and `{ type: 'presence.wave', toUserId }` (at most one
   every 1.5s per connection, only between people on the farm). Presence
   announcements are rate-limited per connection (a burst of 5, 5 a second).
@@ -78,6 +79,14 @@ restart empties the farm until pages announce again.
   someone's focus only if they can see that thing themselves (otherwise "around
   the farm"). A person's name (see Permissions) and chosen look come with them;
   saving a new look re-announces them at once.
+- People come and go through the farmhouse: someone who arrives while you're
+  there (and you, when you open the farm) walks out of its front door, down the
+  porch steps, to their spot; someone who leaves (`presence.left`) walks back in.
+  Whoever was already there at the snapshot just stands where they are, and a
+  dropped connection or going single-player sends nobody home. Each style
+  declares its door and porch (`farmhouseDoor`, `multiplayer/doorway.ts`).
+- What people say in the general room or a public room shows in a speech bubble
+  over their head for a few seconds, yours included; DMs never do.
 
 ## Multiplayer: farm chat
 
@@ -88,8 +97,7 @@ People talk to each other (not to agents) in farm chat:
 - **Rooms:** a general room that always exists, public rooms, and two-person
   DMs. Creating, renaming and deleting public rooms needs `farm:manage-rooms`
   (Operators hold it through `farm:*`); the general room can't be removed.
-- **Messages:** senders can edit and delete their own, and room managers can
-  delete anyone's outside DMs; anyone in the room can react with an emoji (up to
+- **Messages:** only their sender can edit or delete them; anyone in the room can react with an emoji (up to
   10 different ones each, 30 per message); unread counts are per person. Older
   messages page by message (`?before=<messageId>`, compared on time then id). `@mentions` are plain text (a
   person's name or its first word) resolved in the farm.

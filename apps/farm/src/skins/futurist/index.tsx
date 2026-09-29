@@ -45,6 +45,8 @@ export const futuristSkin: FarmSkin = {
   Rack: LineRack,
   Stand: LineStand,
   Farmhouse: LineFarmhouse,
+  // A node with no door: the middle of its front edge (d 1.6), on the ground.
+  farmhouseDoor: { i: 0, j: 0.8, floor: 0, steps: [0.8, 0.8] },
   SeedShed: LineSeedShed,
   Mailbox: LineMailbox,
   Crates: LineCrates,

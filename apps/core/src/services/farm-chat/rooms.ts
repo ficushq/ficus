@@ -295,20 +295,10 @@ export async function editMessage(
   return message!
 }
 
-/**
- * Deletes a message for everyone: its sender may, and so may people who manage
- * rooms (moderation), except in DMs, which only their two people see.
- */
-export async function deleteMessage(
-  room: RoomRow,
-  messageId: string,
-  userId: string,
-  canModerate: boolean
-): Promise<void> {
-  const row = await messageIn(room.id, messageId)
-  const moderating = canModerate && room.kind !== 'dm'
-  if (row.senderUserId !== userId && !moderating)
-    throw new FarmChatError('Only the sender (or someone who manages rooms) can delete a message', 403)
+/** Deletes a message for everyone; only its sender may. */
+export async function deleteMessage(roomId: string, messageId: string, userId: string): Promise<void> {
+  const row = await messageIn(roomId, messageId)
+  if (row.senderUserId !== userId) throw new FarmChatError('Only the sender can delete a message', 403)
   await db.delete(farmChatMessages).where(eq(farmChatMessages.id, messageId))
 }
 

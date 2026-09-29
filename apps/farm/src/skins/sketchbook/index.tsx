@@ -45,6 +45,7 @@ export const sketchbookSkin: FarmSkin = {
   Rack: inPencil(BlueprintRack),
   Stand: inPencil(BlueprintStand),
   Farmhouse: inPencil(BlueprintFarmhouse),
+  farmhouseDoor: blueprintSkin.farmhouseDoor,
   SeedShed: inPencil(BlueprintSeedShed),
   Mailbox: inPencil(BlueprintMailbox),
   Crates: inPencil(BlueprintCrates),

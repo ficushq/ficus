@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { SettingsIcon, PencilIcon, InboxIcon, MoreIcon } from './icons'
+import { SettingsIcon, PencilIcon, InboxIcon, MoreIcon, SproutIcon } from './icons'
 import { FicusLogo } from './FicusLogo'
 import { pendingActionsPresentation, usePendingActions } from '../hooks/usePendingActions'
 import { desktopInstance } from '../lib/desktop'
@@ -18,6 +18,7 @@ import { ThemeQuickPicker } from './ThemeQuickPicker'
 import { useTheme } from '../providers/ThemeProvider'
 import { selfServiceQueryEnabled, useOptionalAuth } from '../providers/AuthProvider'
 import {
+  farmHref,
   isNavItemAllowed,
   moreMenuItems,
   navFooterHints,
@@ -183,6 +184,15 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               <span className="hidden lg:inline text-xs">Assistant</span>
               <AssistantActivityBadge count={assistantActivity.unreadConversations} />
             </button>
+
+            <a
+              href={farmHref()}
+              title="Farm"
+              aria-label="Open the farm"
+              className="ficus-button flex items-center justify-center p-2 rounded-md text-muted hover:text-primary hover:bg-surface-hover"
+            >
+              <SproutIcon className="w-5 h-5" />
+            </a>
 
             <NavLink
               to="/settings"

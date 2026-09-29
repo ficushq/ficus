@@ -55,8 +55,16 @@ export const PORCH = { i: -4.15, j: 0.35 } as const
 export const MAILBOX = { i: -6, j: 0.2 } as const
 /** Top-left tile of the first yard. */
 export const GRID_ORIGIN = { i: 1, j: -4 } as const
+/** How far out in front of the yard a sign stands, and how far along from the gate's middle (tiles; left is -). */
+const SIGN_OUT = 1.9
+const SIGN_ASIDE = -1
+/** How far off a yard's near (bottom) corner its farmer stands, along both i and j (tiles). */
+const FARMER_OUT = 0.45
 /** Tiles of lane between neighbouring yards. */
 export const LANE = 4
+/** Between rows of yards, one more: a yard's front is its entrance (its sign, farmer and visitors), across from the
+ *  charging hut and rack behind the next row's yards. */
+export const ROW_LANE = LANE + 1
 /**
  * Soil squares sit on a 1.5-tile pitch inside a yard, so there's a walking path
  * between them for the robots tending them.
@@ -103,7 +111,7 @@ export function occupiedTiles(layout: Omit<FarmLayout, 'decor' | 'bounds'>): Set
   for (const yard of layout.yards) {
     fill(Math.floor(yard.i0) - 1, Math.ceil(yard.i0 + yard.w), Math.floor(yard.j0) - 1, Math.ceil(yard.j0 + yard.h))
     const gate = Math.floor(yard.i0 + yard.w / 2)
-    fill(gate - 2, gate + 1, yard.j0 + yard.h, yard.j0 + yard.h + 1)
+    fill(gate - 2, gate + 1, yard.j0 + yard.h, yard.j0 + yard.h + 2)
     around(yard.sign.i, yard.sign.j, 0)
     around(yard.dock.i, yard.dock.j, 1)
     around(yard.stand.i, yard.stand.j, 0)
@@ -248,7 +256,7 @@ export function layoutFarm(input: FarmInput): FarmLayout {
   const rowStarts: number[] = []
   for (let r = 0, j = GRID_ORIGIN.j; r < rowHeights.length; r++) {
     rowStarts.push(j)
-    j += rowHeights[r]! + LANE
+    j += rowHeights[r]! + ROW_LANE
   }
 
   const drawn = new Set<string>()
@@ -262,10 +270,13 @@ export function layoutFarm(input: FarmInput): FarmLayout {
       (squad.managerAgentId ? agentsById.get(squad.managerAgentId) : undefined) ??
       members.find((agent) => agent.agentTypeId === 'manager')
     const managerId = manager?.id
-    const sign = { i: i0 + w / 2, j: j0 + h + 0.35 }
+    // The sign stands out in front, just left of the gate path, and the manager (the farmer) just off the yard's
+    // near corner: where neither covers the plants and robots in the front row, nor the next row's huts and racks
+    // (see layout.test.ts).
+    const sign = { i: i0 + w / 2 + SIGN_ASIDE, j: j0 + h + SIGN_OUT }
     let farmer: RobotPlacement | null = null
     if (manager && !isAsleep(manager)) {
-      farmer = place(manager, 'manager', sign.i + 1.2, j0 + h + 0.55)
+      farmer = place(manager, 'manager', i0 + w + FARMER_OUT, j0 + h + FARMER_OUT)
       drawn.add(manager.id)
     }
 
@@ -356,8 +367,9 @@ export function layoutFarm(input: FarmInput): FarmLayout {
 
   // --- Crates and compost along the bottom edge ---
   const bottomJ = yards.reduce((max, yard) => Math.max(max, yard.j0 + yard.h), HOMESTEAD.maxJ + 1)
-  const crates = { i: GRID_ORIGIN.i + 1.5, j: bottomJ + 2.5, count: input.doneCount }
-  const compost = { i: GRID_ORIGIN.i + 4.5, j: bottomJ + 2.5, count: input.canceledCount }
+  // Past the bottom row's entrances (their signs and farmers stand about two tiles out).
+  const crates = { i: GRID_ORIGIN.i + 1.5, j: bottomJ + 3.5, count: input.doneCount }
+  const compost = { i: GRID_ORIGIN.i + 4.5, j: bottomJ + 3.5, count: input.canceledCount }
 
   const placed = {
     yards,

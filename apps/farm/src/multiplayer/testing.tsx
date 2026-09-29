@@ -20,6 +20,8 @@ export async function fakeMultiplayer(overrides: Partial<Multiplayer> = {}): Pro
     setEnabled: mock(() => {}),
     me: demo.me,
     people: [],
+    arrivals: new Set(),
+    departures: [],
     bubbles: new Map(),
     emotes: new Map(),
     wave: mock(() => {}),

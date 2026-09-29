@@ -50,6 +50,14 @@ export const navItems: NavItem[] = [
   { to: '/settings', label: 'Settings', key: 's', icon: <SettingsIcon /> },
 ]
 
+/**
+ * The farm: its own app beside this one (apps/farm), served by Core at
+ * `<APP_BASE_PATH>/farm/`, so a plain page link rather than a route here.
+ */
+export function farmHref(base: string = import.meta.env.BASE_URL || '/'): string {
+  return `${base.replace(/\/?$/, '/')}farm/`
+}
+
 /** The single list every nav surface reads. */
 export const visibleNavItems = navItems.filter((item) => !item.hidden)
 

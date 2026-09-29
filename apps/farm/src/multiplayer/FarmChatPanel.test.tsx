@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import type { Agent } from '@ficus/shared'
+import { act } from 'react'
 import { byText, click, keyDown, typeInto, waitFor } from '../chat/testing'
 import { sampleFarm } from '../dev/sampleFarm'
 import { FarmCardContext, type FarmCardEnv } from '../farm/cards/context'
@@ -40,6 +41,41 @@ describe('FarmChatPanel', () => {
     await send(composer, 'Morning, farm')
     await waitFor(() => expect(byText(container, '.g-farmchat-mine .g-farmchat-text', /Morning, farm/)).toBeDefined())
     expect(composer.value).toBe('')
+  })
+
+  it('closes the reaction palette on anything outside it, or Escape', async () => {
+    const { container, composer } = await openGeneral()
+    await send(composer, 'React to me')
+    await waitFor(() => expect(container.querySelector('.g-farmchat-mine')).not.toBeNull())
+    const mine = container.querySelector('.g-farmchat-mine')!
+    const palette = () => mine.querySelector('[aria-label="Pick a reaction"]')
+    const View = container.ownerDocument.defaultView as unknown as typeof globalThis
+
+    await click(mine.querySelector('button[aria-label="React"]'))
+    expect(palette()).not.toBeNull()
+    // Pressing inside it keeps it open; pressing anywhere else closes it.
+    await act(async () => {
+      palette()!.dispatchEvent(new View.Event('pointerdown', { bubbles: true }))
+    })
+    expect(palette()).not.toBeNull()
+    await act(async () => {
+      composer.dispatchEvent(new View.Event('pointerdown', { bubbles: true }))
+    })
+    expect(palette()).toBeNull()
+
+    await click(mine.querySelector('button[aria-label="React"]'))
+    await keyDown(palette()!.querySelector('button')!, { key: 'Escape' })
+    expect(palette()).toBeNull()
+  })
+
+  it('offers to delete only your own messages, even to someone who manages rooms', async () => {
+    const { container, composer, multiplayer } = await openGeneral()
+    expect(multiplayer.rooms?.canManageRooms).toBe(true)
+    const theirs = byText(container, 'li', /Welcome to the farm, everyone\./)
+    expect(theirs.querySelector('button[aria-label="Delete"]')).toBeNull()
+    await send(composer, 'Mine to delete')
+    await waitFor(() => expect(container.querySelector('.g-farmchat-mine')).not.toBeNull())
+    expect(container.querySelector('.g-farmchat-mine button[aria-label="Delete"]')).not.toBeNull()
   })
 
   it('reacts to a message (floating the emoji over you) and edits your own', async () => {

@@ -290,9 +290,10 @@ describe('tenders', () => {
 })
 
 describe('farmer, sign, dock and bench', () => {
-  it('places the sign at the gate and the manager beside it', () => {
+  it('places the sign out in front of the gate and the manager off the near corner', () => {
     const [yard] = layoutFarm(farm({ squads: [squad], agents: [boss] })).yards
-    expect(yard!.sign).toEqual({ i: yard!.i0 + yard!.w / 2, j: yard!.j0 + yard!.h + 0.35 })
+    expect(yard!.sign.i).toBe(yard!.i0 + yard!.w / 2 - 1)
+    expect(yard!.sign.j).toBeGreaterThan(yard!.j0 + yard!.h + 1)
     expect(yard!.farmer?.agent.id).toBe('boss')
     expect(yard!.farmer?.role).toBe('manager')
     expect(yard!.farmer!.i).toBeGreaterThan(yard!.sign.i)
@@ -301,7 +302,7 @@ describe('farmer, sign, dock and bench', () => {
     expect(yard!.stand.i).toBeLessThan(yard!.i0)
   })
 
-  it('keeps every charging hut clear of the consulting stands and farmers of neighbouring yards', () => {
+  it('keeps every charging hut and consulting stand clear of the stands, signs and farmers of neighbouring yards', () => {
     // Yards of mixed sizes on a 3×3 grid, so huts meet stands and farmers across every kind of lane.
     const counts = [2, 14, 5, 30, 1, 9, 20, 3, 7]
     const squads = counts.map((_, s) => makeSquad({ id: `sq-${s}`, name: `Squad ${s}`, managerAgentId: `boss-${s}` }))
@@ -309,12 +310,14 @@ describe('farmer, sign, dock and bench', () => {
       Array.from({ length: n }, (_, k) => makeStream({ id: `ws-${s}-${k}`, squadId: `sq-${s}` }))
     )
     const agents = counts.map((_, s) => makeAgent({ id: `boss-${s}`, squadId: `sq-${s}`, agentTypeId: 'manager' }))
-    const { yards } = layoutFarm(farm({ squads, streams, agents }))
+    const layout = layoutFarm(farm({ squads, streams, agents }))
+    const { yards } = layout
     // Screen boxes [left, top, width, height] around the anchor: the largest style's (Nostalgic) sprites.
     type Box = readonly [number, number, number, number]
     const HUT: Box = [-64, -96, 128, 118]
     const STAND: Box = [-58, -100, 116, 118]
     const ROBOT: Box = [-22, -74, 44, 80]
+    const SIGN: Box = [-90, -72, 180, 78]
     const place = (i: number, j: number, [l, t, w, h]: Box) => {
       const [x, y] = iso(i, j)
       return { x0: x + l, y0: y + t, x1: x + l + w, y1: y + t + h }
@@ -323,10 +326,26 @@ describe('farmer, sign, dock and bench', () => {
       a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
     for (const yard of yards) {
       const hut = place(yard.dock.i, yard.dock.j, HUT)
+      const stand = place(yard.stand.i, yard.stand.j, STAND)
+      // Nothing at its entrance lands on the harvest crates or the compost heap along the bottom.
+      const HEAP: Box = [-40, -40, 80, 50]
+      for (const heap of [layout.crates, layout.compost]) {
+        const spot = place(heap.i, heap.j, HEAP)
+        expect(overlaps(spot, place(yard.sign.i, yard.sign.j, SIGN))).toBe(false)
+        if (yard.farmer) expect(overlaps(spot, place(yard.farmer.i, yard.farmer.j, ROBOT))).toBe(false)
+      }
+      // Its own sign, out front, stays clear of its stand by the front-left corner.
+      expect(overlaps(stand, place(yard.sign.i, yard.sign.j, SIGN))).toBe(false)
       for (const other of yards) {
         expect(overlaps(hut, place(other.stand.i, other.stand.j, STAND))).toBe(false)
-        if (other !== yard && other.farmer)
+        if (other === yard) continue
+        const sign = place(other.sign.i, other.sign.j, SIGN)
+        expect(overlaps(hut, sign)).toBe(false)
+        expect(overlaps(stand, sign)).toBe(false)
+        if (other.farmer) {
           expect(overlaps(hut, place(other.farmer.i, other.farmer.j, ROBOT))).toBe(false)
+          expect(overlaps(stand, place(other.farmer.i, other.farmer.j, ROBOT))).toBe(false)
+        }
       }
     }
   })
@@ -372,6 +391,38 @@ describe('farmer, sign, dock and bench', () => {
         expect(overlaps(rack, place(other.stand.i, other.stand.j, STAND))).toBe(false)
         expect(overlaps(rack, place(other.sign.i, other.sign.j, SIGN))).toBe(false)
         if (other.farmer) expect(overlaps(rack, place(other.farmer.i, other.farmer.j, ROBOT))).toBe(false)
+      }
+    }
+  })
+
+  it("keeps a yard's sign and farmer from covering its own plants and the robots tending them", () => {
+    // Yards of every width, each plant tended, so the front row is as full as it gets.
+    for (const n of [1, 2, 3, 4, 6, 9, 14, 30]) {
+      const sq = makeSquad({ id: `sq-${n}`, managerAgentId: `boss-${n}` })
+      const workers = Array.from({ length: n }, (_, k) =>
+        makeAgent({ id: `w-${n}-${k}`, squadId: sq.id, agentTypeId: 'worker', status: 'active' })
+      )
+      const streams = workers.map((w, k) =>
+        makeStream({ id: `ws-${n}-${k}`, squadId: sq.id, assigneeAgentId: w.id, agentIds: [w.id] })
+      )
+      const agents = [makeAgent({ id: `boss-${n}`, squadId: sq.id, agentTypeId: 'manager' }), ...workers]
+      const [yard] = layoutFarm(farm({ squads: [sq], streams, agents })).yards
+      type Box = readonly [number, number, number, number]
+      // The widest sign board (180px), where it hangs on its post; a plant; a robot.
+      const BOARD: Box = [-90, -54, 180, 26]
+      const PLANT: Box = [-34, -78, 68, 92]
+      const ROBOT: Box = [-22, -74, 44, 80]
+      const place = (i: number, j: number, [l, t, w, h]: Box) => {
+        const [x, y] = iso(i, j)
+        return { x0: x + l, y0: y + t, x1: x + l + w, y1: y + t + h }
+      }
+      const overlaps = (a: ReturnType<typeof place>, b: ReturnType<typeof place>) =>
+        a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+      const covers = [place(yard!.sign.i, yard!.sign.j, BOARD), place(yard!.farmer!.i, yard!.farmer!.j, ROBOT)]
+      for (const plot of yard!.plots) {
+        const behind = [place(plot.i + 0.5, plot.j + 0.5, PLANT)]
+        if (plot.tender) behind.push(place(plot.tender.i, plot.tender.j, ROBOT))
+        for (const cover of covers) for (const thing of behind) expect(overlaps(cover, thing)).toBe(false)
       }
     }
   })

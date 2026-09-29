@@ -3,7 +3,14 @@ import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import { isNavItemAllowed, navFooterHints, navItems, resolveNavShortcut, shouldShowVoiceButton } from './navModel'
+import {
+  farmHref,
+  isNavItemAllowed,
+  navFooterHints,
+  navItems,
+  resolveNavShortcut,
+  shouldShowVoiceButton,
+} from './navModel'
 import { assistantQueryKeys, queryKeys } from '../queryKeys'
 import { getTabNavigationTarget, getTabPath, recordTabPath, resetTabHistory } from '../hooks/useTabHistory'
 import { ThemeProvider } from '../providers/ThemeProvider'
@@ -190,6 +197,20 @@ describe('MobileBottomNav rendering', () => {
     } finally {
       unreadAssistantConversations = 0
     }
+  })
+})
+
+describe('the farm link', () => {
+  test('opens the farm beside the web app, under the instance base path', () => {
+    expect(farmHref('/')).toBe('/farm/')
+    expect(farmHref('/ficus/')).toBe('/ficus/farm/')
+    expect(farmHref('/ficus')).toBe('/ficus/farm/')
+  })
+
+  test('is in the header, as a page link (the farm is its own app, not a route here)', () => {
+    const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
+    expect(html).toContain(`href="${farmHref()}"`)
+    expect(html).toContain('aria-label="Open the farm"')
   })
 })
 

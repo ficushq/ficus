@@ -15,7 +15,7 @@ import type { FarmLayout, YardLayout } from '../farm/types'
 /** What you're focused on, for others to see: your frontmost chat, else your open card. */
 export function focusFor(selection: Selection | null, frontChat: ChatTarget | undefined): PresenceFocus | null {
   if (frontChat?.kind === 'agent') return { kind: 'agent', agentId: frontChat.agentId }
-  if (frontChat?.kind === 'consultant') return { kind: 'squad', squadId: frontChat.squadId }
+  if (frontChat?.kind === 'consultant') return { kind: 'squad', squadId: frontChat.squadId, at: 'stand' }
   // An Assistant conversation is private: you're simply around the farm.
   if (frontChat?.kind === 'assistant') return null
   switch (selection?.kind) {
@@ -23,9 +23,10 @@ export function focusFor(selection: Selection | null, frontChat: ChatTarget | un
       return { kind: 'workstream', workstreamId: selection.streamId }
     case 'robot':
       return { kind: 'agent', agentId: selection.agentId }
+    case 'stand':
+      return { kind: 'squad', squadId: selection.squadId, at: 'stand' }
     case 'yard':
     case 'hut':
-    case 'stand':
     case 'rack':
       return { kind: 'squad', squadId: selection.squadId }
     default:
@@ -48,6 +49,11 @@ function bySign(yard: YardLayout): Spot {
   return { at: [yard.sign.i - 0.9, yard.sign.j + 0.45], facing: 'right', yard: null }
 }
 
+/** At a yard's consulting stand, in front of the counter, looking at it. */
+function atStand(yard: YardLayout): Spot {
+  return { at: [yard.stand.i + 0.55, yard.stand.j + 1.05], facing: 'left', yard: null }
+}
+
 /** Around the farmhouse: where people with nothing (visible) on stand. */
 function aroundTheFarm(layout: FarmLayout): Spot {
   return { at: [layout.porch.i - 0.2, layout.porch.j + 1.7], facing: 'right', yard: null }
@@ -58,6 +64,9 @@ export function spotFor(layout: FarmLayout, focus: PresenceFocus | null, agents:
   if (!focus) return aroundTheFarm(layout)
   switch (focus.kind) {
     case 'agent': {
+      // A consultant (behind its squad's counter, or one of the chats its stand lists): at the stand.
+      const standing = layout.yards.find((y) => y.stand.ids?.includes(focus.agentId))
+      if (standing) return atStand(standing)
       const robot = findRobot(layout, focus.agentId)
       if (robot) {
         const yard = layout.yards.find((y) => y.plots.some((p) => p.tender?.agent.id === focus.agentId)) ?? null
@@ -77,7 +86,8 @@ export function spotFor(layout: FarmLayout, focus: PresenceFocus | null, agents:
     }
     case 'squad': {
       const yard = yardOf(layout, focus.squadId)
-      return yard ? bySign(yard) : aroundTheFarm(layout)
+      if (!yard) return aroundTheFarm(layout)
+      return focus.at === 'stand' ? atStand(yard) : bySign(yard)
     }
   }
 }

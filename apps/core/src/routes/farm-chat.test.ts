@@ -277,7 +277,7 @@ describe('farm chat', () => {
     ).toBe(404)
   })
 
-  test('senders delete their own messages; room managers any outside DMs; nobody else', async () => {
+  test("only a message's sender can delete it, even someone who manages rooms can't", async () => {
     const room = await general(alice)
     const post = async (user: TestUser, body: string) =>
       (await json(await call(user, 'POST', `/rooms/${room.id}/messages`, { body }))) as { id: string }
@@ -285,8 +285,9 @@ describe('farm chat', () => {
     expect((await call(bob, 'DELETE', `/rooms/${room.id}/messages/${mine.id}`)).status).toBe(403)
     expect((await call(alice, 'DELETE', `/rooms/${room.id}/messages/${mine.id}`)).status).toBe(204)
     expect((await call(alice, 'DELETE', `/rooms/${room.id}/messages/${mine.id}`)).status).toBe(404)
-    const bobs = await post(bob, 'something to moderate')
-    expect((await call(manager, 'DELETE', `/rooms/${room.id}/messages/${bobs.id}`)).status).toBe(204)
+    const bobs = await post(bob, 'not the manager’s to take down')
+    expect((await call(manager, 'DELETE', `/rooms/${room.id}/messages/${bobs.id}`)).status).toBe(403)
+    expect((await call(bob, 'DELETE', `/rooms/${room.id}/messages/${bobs.id}`)).status).toBe(204)
     const page = await json(await call(alice, 'GET', `/rooms/${room.id}/messages`))
     expect(page.messages.some((m: { id: string }) => m.id === mine.id || m.id === bobs.id)).toBe(false)
 

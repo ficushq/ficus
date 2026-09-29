@@ -13,7 +13,8 @@ import type { FarmLook } from './farm-look'
 export type PresenceFocus =
   | { kind: 'agent'; agentId: string }
   | { kind: 'workstream'; workstreamId: string }
-  | { kind: 'squad'; squadId: string }
+  /** A squad: by its sign, or `at` its consulting stand (its consultant chats). */
+  | { kind: 'squad'; squadId: string; at?: 'stand' }
 
 export interface PresencePerson {
   userId: string
@@ -46,7 +47,12 @@ export function parsePresenceFocus(input: unknown): { ok: true; focus: PresenceF
     }
     case 'squad': {
       const squadId = id('squadId')
-      return squadId ? { ok: true, focus: { kind: 'squad', squadId } } : { ok: false }
+      if (!squadId) return { ok: false }
+      // Anything else in `at` is dropped, not refused: an older or newer client still shows up at the squad.
+      return {
+        ok: true,
+        focus: value.at === 'stand' ? { kind: 'squad', squadId, at: 'stand' } : { kind: 'squad', squadId },
+      }
     }
     default:
       return { ok: false }

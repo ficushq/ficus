@@ -60,6 +60,8 @@ export const cozySkin: FarmSkin = {
   Hut: ({ count, peek }) => <CozyHut count={count} peek={peek ? robotLookFor(peek.agent, peek.role) : undefined} />,
   Stand: ({ count, host }) => <CozyStand count={count} host={host ? robotLookFor(host.agent, host.role) : undefined} />,
   Farmhouse: CozyFarmhouse,
+  // Its front door (i -0.12..0.3 on the wall at j 0.9), level with the ground: stepping stones, no porch.
+  farmhouseDoor: { i: 0.09, j: 0.9, floor: 0, steps: [0.9, 0.9] },
   SeedShed: CozySeedShed,
   Mailbox: CozyMailbox,
   Crates: CozyCrates,

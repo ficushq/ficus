@@ -39,6 +39,8 @@ const STORAGE_KEY = 'ficus-farm:multiplayer'
 const LOOK_KEY = 'ficus-farm:look'
 const NOTIFY_KEY = 'ficus-farm:chat-notify'
 const BUBBLE_MS = 6000
+/** How long someone who left is still drawn walking home (longer than any walk: see People.tsx). */
+const DEPARTURE_MS = 8000
 /** How long an emote (a wave, a reaction) floats over someone. */
 const EMOTE_MS = 2800
 const MAX_BACKOFF_MS = 30_000
@@ -60,6 +62,10 @@ export interface Multiplayer {
   me: { userId: string; name: string } | null
   /** Everyone else on the farm (none in single-player). */
   people: PresencePerson[]
+  /** Who came onto the farm while you were here (not who was already on it): they walk out of the farmhouse. */
+  arrivals: ReadonlySet<string>
+  /** Who just left the farm, for a few seconds: they walk back into the farmhouse. */
+  departures: readonly PresencePerson[]
   /** What people just said in a public room, by user id, for a moment. */
   bubbles: ReadonlyMap<string, ChatBubble>
   /** Emotes floating over people right now, by user id (you included). */
@@ -182,6 +188,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
   const [enabled, setEnabledState] = useState(readEnabled)
   const [chosenLook, setChosenLook] = useState(readLook)
   const [people, setPeople] = useState<PresencePerson[]>([])
+  const [arrivals, setArrivals] = useState<ReadonlySet<string>>(new Set())
+  const [departures, setDepartures] = useState<readonly PresencePerson[]>([])
+  // Who's on the farm right now (as last heard), to tell someone arriving from someone moving.
+  const present = useRef(new Map<string, PresencePerson>())
   const [bubbles, setBubbles] = useState<ReadonlyMap<string, ChatBubble>>(new Map())
   const [emotes, setEmotes] = useState<ReadonlyMap<string, Emote>>(new Map())
   const [notify, setNotifyState] = useState(readNotify)
@@ -284,17 +294,39 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     (entry: MultiplayerEvent) => {
       switch (entry.event) {
         case 'presence.snapshot':
-          if (enabledRef.current) setPeople(entry.data.people)
+          if (!enabledRef.current) return
+          // Already here when you came: nobody walks in or out for them.
+          present.current = new Map(entry.data.people.map((person) => [person.userId, person]))
+          setArrivals(new Set())
+          setDepartures([])
+          setPeople(entry.data.people)
           return
         case 'presence.updated': {
           if (!enabledRef.current) return
           const { person } = entry.data
+          if (!present.current.has(person.userId)) {
+            setArrivals((set) => new Set(set).add(person.userId))
+            setDepartures((list) => list.filter((p) => p.userId !== person.userId))
+          }
+          present.current.set(person.userId, person)
           setPeople((list) => [...list.filter((p) => p.userId !== person.userId), person])
           return
         }
-        case 'presence.left':
-          setPeople((list) => list.filter((p) => p.userId !== entry.data.userId))
+        case 'presence.left': {
+          const { userId } = entry.data
+          const was = present.current.get(userId)
+          present.current.delete(userId)
+          setPeople((list) => list.filter((p) => p.userId !== userId))
+          if (!was || !enabledRef.current) return
+          setArrivals((set) => {
+            const next = new Set(set)
+            next.delete(userId)
+            return next
+          })
+          setDepartures((list) => [...list.filter((p) => p.userId !== userId), was])
+          window.setTimeout(() => setDepartures((list) => list.filter((p) => p !== was)), DEPARTURE_MS)
           return
+        }
         case 'farmChat.typing': {
           const { roomId, userId } = entry.data
           const until = Date.now() + FARM_CHAT_TYPING_SHOWS_MS
@@ -357,7 +389,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
               : page
           )
           void queryClient.invalidateQueries({ queryKey: chatKeys.rooms() })
-          // Said in the general room or a public room: a speech bubble over them for a moment.
+          // Said in the general room or a public room: a speech bubble over them (you included) for a moment.
           const room = queryClient
             .getQueryData<FarmChatRooms>(chatKeys.rooms())
             ?.rooms.find((r) => r.id === message.roomId)
@@ -369,7 +401,8 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
             if (!room || room.kind === 'dm' || mentionsUser(message.body, people, me.userId))
               alertAbout(message, room, people)
           }
-          if (enabledRef.current && sender && sender !== meRef.current?.userId && room && room.kind !== 'dm') {
+          // Yours too, over your own head.
+          if (enabledRef.current && sender && room && room.kind !== 'dm') {
             const at = Date.now()
             setBubbles((map) => new Map(map).set(sender, { text: bubbleText(message.body), at }))
             window.setTimeout(
@@ -450,7 +483,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
           },
           onClose: () => {
             socket.current = null
+            // Dropped, not left: nobody walks home; the next snapshot says who's still here.
+            present.current.clear()
             setPeople([])
+            setDepartures([])
             if (!disposed) {
               const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** attempt) * (0.8 + Math.random() * 0.4)
               attempt += 1
@@ -493,7 +529,9 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       } else {
         ws?.send?.({ type: 'presence.leave' })
         ws?.unsubscribe('presence')
+        present.current.clear()
         setPeople([])
+        setDepartures([])
         setBubbles(new Map())
         setEmotes(new Map())
       }
@@ -562,6 +600,8 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       setEnabled,
       me,
       people: enabled ? people.filter((p) => p.userId !== me?.userId) : [],
+      arrivals,
+      departures: enabled ? departures.filter((p) => p.userId !== me?.userId) : [],
       bubbles,
       emotes,
       wave,
@@ -586,6 +626,8 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       setEnabled,
       me,
       people,
+      arrivals,
+      departures,
       bubbles,
       emotes,
       wave,
