@@ -1,7 +1,7 @@
 import { iso } from '../../../farm/iso'
 import type { RobotLook } from '../types'
 import { Robot } from './Robot'
-import { FONT_DISPLAY, INK, Shadow } from './shared'
+import { CountBadge, INK, Shadow } from './shared'
 
 const W = 0.5
 const D = 0.32
@@ -148,32 +148,12 @@ export function ConsultingStand({ count, host }: { count: number; host?: RobotLo
         )
       })}
 
-      {/* speech-bubble sign on top */}
-      <g transform={`translate(${signX} ${signY})`}>
-        <path
-          d="M-14 -12 h28 a5 5 0 0 1 5 5 v8 a5 5 0 0 1 -5 5 h-18 l-6 6 v-6 h-4 a5 5 0 0 1 -5 -5 v-8 a5 5 0 0 1 5 -5z"
-          fill="#fffaf1"
-          className="g-ol"
-        />
-        {count > 0 ? (
-          <text
-            y={3.5}
-            textAnchor="middle"
-            fontFamily={FONT_DISPLAY}
-            fontWeight={900}
-            fontSize={count > 9 ? 10 : 12}
-            fill="#b0582f"
-          >
-            {count}
-          </text>
-        ) : (
-          <g fill="#b0582f">
-            <circle cx={-6} cy={-1} r={1.8} />
-            <circle cx={0} cy={-1} r={1.8} />
-            <circle cx={6} cy={-1} r={1.8} />
-          </g>
-        )}
-      </g>
+      {/* how many questions are waiting, on top */}
+      {count > 0 && (
+        <g transform={`translate(${signX} ${signY})`}>
+          <CountBadge count={count} />
+        </g>
+      )}
     </g>
   )
 }

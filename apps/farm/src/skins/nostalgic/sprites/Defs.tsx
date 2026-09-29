@@ -46,7 +46,6 @@ const RADIAL: ReadonlyArray<readonly [id: string, cx: number, cy: number, r: num
   ['g-tree', 0.35, 0.3, 0.8, '#8cc46a 0, #4f8a58 .6, #2f5a3e 1'],
   ['g-tree2', 0.35, 0.3, 0.8, '#b7cf6e 0, #7f9a45 .6, #566b2f 1'],
   ['g-badge', 0.4, 0.3, 0.8, '#ffffff 0, #f1e2c4 1'],
-  ['g-badge-mail', 0.4, 0.3, 0.8, '#ef8d55 0, #b0582f 1'],
 ]
 
 function Stops({ spec }: { spec: string }) {

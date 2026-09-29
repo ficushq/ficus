@@ -1,5 +1,5 @@
 import { iso } from '../../../farm/iso'
-import { FONT_DISPLAY, INK, Shadow } from './shared'
+import { CountBadge, Shadow } from './shared'
 
 const W = 0.24
 const D = 0.2
@@ -60,17 +60,7 @@ export function ServerRack({ count }: { count: number }) {
       ))}
       {count > 0 && (
         <g transform={`translate(20 ${-HEIGHT - 20})`}>
-          <circle r={11} fill="#fffaf1" className="g-ol" />
-          <text
-            y={5}
-            textAnchor="middle"
-            fontFamily={FONT_DISPLAY}
-            fontWeight={900}
-            fontSize={count > 9 ? 11 : 14}
-            fill={INK}
-          >
-            {count > 99 ? '99+' : count}
-          </text>
+          <CountBadge count={count} />
         </g>
       )}
     </g>

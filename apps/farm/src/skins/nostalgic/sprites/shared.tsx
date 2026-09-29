@@ -99,3 +99,48 @@ export function Spark({ x, y, s = 1, late = false }: { x: number; y: number; s?:
 export function At({ x, y, children }: { x: number; y: number; children: ReactNode }) {
   return <g transform={`translate(${x} ${y})`}>{children}</g>
 }
+
+/** A count as a badge shows it: up to 99, then "99+". */
+export function countText(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+
+/**
+ * The counter on anything that counts (mail, apps, questions waiting, robots
+ * resting, helpers): one look everywhere, the same cream bubble and brown ink
+ * as a plant's badge, widening into a pill for more digits. Centred on the
+ * origin; `small` for the helper drone's.
+ */
+export function CountBadge({ count, small = false }: { count: number; small?: boolean }) {
+  const text = countText(count)
+  const h = small ? 12 : 24
+  const w = Math.max(h, (small ? 6 : 12) + text.length * (small ? 4.8 : 8.5))
+  const size = small ? 8 : 14
+  return (
+    <g>
+      <rect
+        x={-w / 2}
+        y={-h / 2}
+        width={w}
+        height={h}
+        rx={h / 2}
+        fill="url(#g-badge)"
+        className={small ? 'g-ol2' : 'g-ol'}
+      />
+      {!small && <ellipse cx={-w / 2 + 8} cy={-h / 2 + 5.5} rx={4.5} ry={2} fill="#fff" opacity={0.8} />}
+      <text
+        y={size * 0.36}
+        textAnchor="middle"
+        fontFamily={FONT_DISPLAY}
+        fontWeight={900}
+        fontSize={size}
+        fill="#b0582f"
+        stroke={INK}
+        strokeWidth={small ? 0.5 : 1}
+        paintOrder="stroke"
+      >
+        {text}
+      </text>
+    </g>
+  )
+}
