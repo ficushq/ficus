@@ -1,6 +1,6 @@
 ---
 name: ficus
-description: Operate a Ficus instance as a manager/operator — CLI auth, the work-stream lifecycle, squad-manager coordination, answering agent questions, and the operating doctrine that avoids known failure modes. Use whenever supervising Ficus squads, unblocking/reviewing work streams, or directing work on a Ficus deployment via the `ficus` CLI.
+description: Operate a Ficus instance as a manager/operator — CLI auth, the work-stream lifecycle, squad-manager coordination, answering agent questions, the personal Assistant and its delegated tasks, and the operating doctrine that avoids known failure modes. Use whenever supervising Ficus squads, unblocking/reviewing work streams, or directing work on a Ficus deployment via the `ficus` CLI.
 ---
 
 # Operating Ficus (the `ficus` CLI)
@@ -237,6 +237,63 @@ Answer questions promptly and decisively — a precise answer with the
 constraint spelled out beats a fast vague one; the agent resumes with your
 text as its instruction. If an agent seems stuck in `waiting-input`, check
 `ficus aq list` before nudging it through the manager.
+
+## The Assistant — a user's personal agent
+
+The **Assistant** is the chat panel a user opens from anywhere in the web
+app, and the same conversation is used for voice. Each saved conversation is
+backed by one owner-private agent of type `assistant`. It is just an agent,
+so every `ficus agent` command works on it. It runs on the fast model tier
+with in-process tools (read work, the Needs-you list, activity, search,
+navigate) and has **no sandbox and no CLI**. Its authority is its owner's
+current permissions.
+
+Anything its quick tools can't see, it **delegates** as a tracked task:
+
+- **General worker** (type `assistant-worker`): the Assistant's _main
+  delegate_. It has the owner's permissions, a sandbox, and the full `ficus`
+  CLI. Instance-wide work belongs here: users, roles and access, secrets,
+  settings, integrations, and anything spanning squads, even when a squad is
+  named.
+- **Squad consultant**: only for work that needs one squad's expertise,
+  code, or workspace. Consultants are squad-scoped and can't read accounts or
+  roles.
+
+A task is a tracking record, not a work stream. The delegate reports
+`working | waiting | needs-input | completed | failed | cancelled`, and each
+report wakes the Assistant to summarize it. `continue_task` keeps a task on
+the same delegate; moving it means cancel and delegate again. Details:
+`docs/wiki/assistant-tasks.md`.
+
+```bash
+ficus search "<words from the question>" --kind assistant_conversation   # owner's own conversations, with each one's agentId
+ficus agent list -t assistant          # Assistant agents, newest activity first
+ficus agent list -t assistant-worker   # the general workers they delegate to
+ficus agent messages <agentId>         # the whole conversation, incl. delegate updates
+ficus agent worker-log <agentId>       # its tool calls (delegate_task, continue_task, …)
+ficus chat -a <assistantAgentId> "<message>"   # say something in that conversation
+```
+
+A conversation id is not an agent id: take `agentId` from the search result
+for the `agent` commands. Bare `ficus chat "<msg>"` talks to your own
+system-manager chat, **not** a saved Assistant conversation.
+
+**If you are the delegate**, the request names a task ID and a request ID.
+Report on exactly that request, and never on a newer one to cover old work:
+
+```bash
+ficus assistant-task status <taskId> --request-id <requestId> --status completed -m "<result>"
+ficus assistant-task get <taskId>
+```
+
+**Reviewing an Assistant conversation** (when you maintain Ficus) is usually
+instruction work. For
+each wrong turn (asked instead of acting, delegated to a squad instead of the
+general worker, claimed something it didn't do), find the prompt or tool
+description that caused it: `config/agent-types/assistant.yaml`,
+`config/agent-types/assistant-worker.yaml`, and the tool descriptions in
+`apps/core/src/tools/assistant.ts`. Fix that first. Missing capabilities are
+a separate item.
 
 ## Operating doctrine (learned the hard way)
 

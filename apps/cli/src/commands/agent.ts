@@ -264,7 +264,7 @@ export function registerAgentCommands(program: Command) {
                     ? `ERROR: ${truncate(tool.result, 200)}`
                     : truncate(tool.result, 300)
                   : '(no result)'
-                console.log(`[${time}] 🔧 ${tool.name}`)
+                console.log(`[${time}] 🔧 ${tool.toolName ?? tool.name}`)
                 console.log(`  args: ${truncate(tool.args, 200)}`)
                 console.log(`  result: ${result}`)
                 console.log()

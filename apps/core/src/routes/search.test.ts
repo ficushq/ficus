@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { inArray } from 'drizzle-orm'
-import { db, squads, workStreams, agents, assistantConversations, assistantEntries } from '../db'
+import { db, squads, workStreams, agents, assistantConversations, assistantEntries, messages } from '../db'
 import { identityMiddleware } from '../middleware/identity'
 import { authzSentinel } from '../middleware/authz-sentinel'
 import {
@@ -57,6 +57,7 @@ async function fixture() {
       squadId: string | null
       label: string
       score: number
+      agentId: string | null
     }>
   }
   return { user, other, a, b, reader, search }
@@ -102,6 +103,31 @@ test('search filters every entity by permission and owner before the shared limi
   expect((await search(prefix, { kind: 'work_stream' })).map((row) => row.id)).toEqual([work.id])
   expect((await search(prefix, { squadId: a.id })).every((row) => row.squadId === a.id)).toBe(true)
   expect(await search(prefix, {}, other.token)).toEqual([])
+})
+
+test('conversation results name the agent behind them so a caller can read the conversation', async () => {
+  const { a, user, search } = await fixture()
+  const helper = await consultant(a.id, `${prefix} consultant`)
+  const [work] = await db
+    .insert(workStreams)
+    .values({ squadId: a.id, title: `${prefix} work` })
+    .returning()
+  const [assistant] = await db
+    .insert(agents)
+    .values({ agentTypeId: 'assistant', ownerUserId: user.id, metadata: { name: 'Assistant' } })
+    .returning()
+  agentIds.push(assistant.id)
+  const [conversation] = await db
+    .insert(assistantConversations)
+    .values({ ownerUserId: user.id, title: `${prefix} assistant`, agentId: assistant.id })
+    .returning()
+  // Listed because its agent has chat history, not because of legacy entries.
+  await db.insert(messages).values({ agentId: assistant.id, role: 'human', content: 'can they see the apps?' })
+  const byId = new Map((await search(prefix)).map((row) => [row.id, row]))
+  expect(byId.get(conversation.id)?.agentId).toBe(assistant.id)
+  expect(byId.get(helper.id)?.agentId).toBe(helper.id)
+  expect(byId.get(work.id)?.agentId).toBeNull()
+  expect(byId.get(a.id)?.agentId).toBeNull()
 })
 
 test('squad default overrides cannot leak work through visibility alone; user assistants inherit current scopes', async () => {

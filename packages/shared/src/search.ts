@@ -23,6 +23,8 @@ export interface EntitySearchResult {
   squadName: string | null
   status: string | null
   updatedAt: string
+  /** The agent behind a conversation result: the Assistant agent, or the consultant itself. Null otherwise. */
+  agentId: string | null
   score: number
 }
 export interface EntitySearchResponse {
