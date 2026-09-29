@@ -4,6 +4,7 @@ import { ToolInlineActions } from './ToolInlineActions'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { MarkdownContent } from './MarkdownContent'
+import { CollapsibleMarkdown } from './CollapsibleMarkdown'
 import { extractInboxBodies } from '@ficus/shared'
 import { parseMessageContent } from '../lib/message-parser'
 import {
@@ -480,9 +481,6 @@ function InboxDeliveryMessageCard({
   )
 }
 
-/** Characters of an inbox body shown before the Show more toggle appears. */
-const INBOX_BODY_COLLAPSED_LIMIT = 280
-
 /**
  * The delivered message body as markdown, truncated with a Show more / Show less
  * toggle — the same affordance the rest of the app uses for long text, and what
@@ -490,23 +488,10 @@ const INBOX_BODY_COLLAPSED_LIMIT = 280
  * noise to a human; the body is the message).
  */
 function InboxCardBody({ body, className }: { body: string; className?: string }) {
-  const shouldCollapse = body.length > INBOX_BODY_COLLAPSED_LIMIT
-  const [expanded, setExpanded] = useState(false)
-  const visible = shouldCollapse && !expanded ? `${body.slice(0, INBOX_BODY_COLLAPSED_LIMIT).trimEnd()}…` : body
   return (
-    <div className={className}>
-      <MarkdownContent className="prose-sm text-secondary">{visible}</MarkdownContent>
-      {shouldCollapse && (
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-          className="ficus-button mt-1 text-xs font-medium text-accent-light underline decoration-accent-light/30 underline-offset-2 hover:text-link-hover hover:decoration-link-hover/70"
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
-    </div>
+    <CollapsibleMarkdown className={className} markdownClassName="prose-sm text-secondary">
+      {body}
+    </CollapsibleMarkdown>
   )
 }
 

@@ -7,7 +7,8 @@ import { MessageBlocks } from './MessageBlocks'
 import { Markdown } from './Markdown'
 
 const LONG_HUMAN_MESSAGE_LIMIT = 1600
-const INBOX_BODY_LIMIT = 280
+/** A few lines: inbox bodies and Assistant task updates collapse past this. */
+export const INBOX_BODY_LIMIT = 280
 
 type Summary = NonNullable<MessageMetadata['inboxMessageSummaries']>[number]
 
@@ -17,7 +18,7 @@ function senderName(summary: Summary): string {
   return summary.senderType.replace(/_/g, ' ')
 }
 
-function Collapsible({ text, limit, className }: { text: string; limit: number; className?: string }) {
+export function Collapsible({ text, limit, className }: { text: string; limit: number; className?: string }) {
   const [expanded, setExpanded] = useState(false)
   const long = text.length > limit
   const visible = long && !expanded ? `${text.slice(0, limit).trimEnd()}…` : text

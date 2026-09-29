@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { RenderItem } from '@ficus/client-react'
 import { ASSISTANT_TASK_STATUS_LABELS } from '@ficus/shared'
 import type { AssistantApi } from './assistantApi'
-import { Markdown } from './Markdown'
+import { Collapsible, INBOX_BODY_LIMIT } from './Transcript'
 
 /** The task updates an Assistant reply covers: the ids on every message grouped into it. */
 export function assistantUpdateIds(item: Extract<RenderItem, { kind: 'persisted' }>): string[] {
@@ -26,7 +26,7 @@ function time(iso: string): string {
 
 /**
  * The task updates a reply covers, inline under it (as the web shows them): the task, its status,
- * who sent it and when, then what it said. Viewing the chat reads them (AssistantChat).
+ * who sent it and when, then what it said (a few lines, behind Show more when long). Viewing the chat reads them (AssistantChat).
  */
 export function AssistantTaskUpdates({
   api,
@@ -72,7 +72,7 @@ export function AssistantTaskUpdates({
                 </span>
               </p>
               {update.subject && <p className="g-chat-update-subject">{update.subject}</p>}
-              <Markdown>{update.content}</Markdown>
+              <Collapsible text={update.content} limit={INBOX_BODY_LIMIT} />
             </li>
           ))}
         </ul>
