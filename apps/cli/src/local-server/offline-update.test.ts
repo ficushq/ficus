@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { EnvNamingError } from '@ficus/shared/env-naming'
+import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { isTransportError, runOfflineUpdate, type OfflineUpdateArgs } from './offline-update'
 import { defaultRunner, recordingRunner, type Runner } from './runner'
 import { makeSupervisorContext, type SupervisorContext } from './supervisor'
@@ -197,14 +197,14 @@ describe('runOfflineUpdate', () => {
     afterEach(() => rmSync(root, { recursive: true, force: true }))
 
     it('is refused with EnvNamingError before pulling, building or restarting anything', async () => {
-      const old = 'OLD_ENCRYPTION_KEY=old-key-value\nFICUS_SANDBOX_RUNTIME=host\n'
+      const old = `${PRE_FICUS_ENCRYPTION_KEY}=old-key-value\nFICUS_SANDBOX_RUNTIME=host\n`
       writeFileSync(join(root, '.env'), old)
       const rec = recordingRunner(base)
       const error = (await runTestOfflineUpdate({ root, runner: rec.runner, log: () => {} }).catch(
         (e: unknown) => e
       )) as Error
       expect(error).toBeInstanceOf(EnvNamingError)
-      expect(error.message).toContain('OLD_ENCRYPTION_KEY')
+      expect(error.message).toContain(PRE_FICUS_ENCRYPTION_KEY)
       expect(error.message).not.toContain('old-key-value')
       expect(rec.calls).toEqual([])
       expect(readFileSync(join(root, '.env'), 'utf8')).toBe(old)

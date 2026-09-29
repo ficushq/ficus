@@ -239,13 +239,15 @@ run_err() { # ...ARGS
 # --- a host whose settings predate the Ficus naming: refused before anything changes --
 # retarget-origin.sh reads and writes FICUS_* names only; on such a host it
 # must stop before touching the yaml, the .env or Caddy.
-printf 'APP_URL=https://acme.example.com\nOLD_WEB_ORIGIN=https://acme.example.com\nOLD_ENCRYPTION_KEY=deadbeef\n' >"${CORE_DEST}/.env"
+# The pre-Ficus encryption key the naming guard looks for (from lib.sh).
+PFK="$(bash -c 'source "$0"; printf %s "${PRE_FICUS_ENV_PREFIX}"' "${SCRIPT_DIR}/lib.sh")_ENCRYPTION_KEY"
+printf 'APP_URL=https://acme.example.com\nOLD_WEB_ORIGIN=https://acme.example.com\n%s=deadbeef\n' "${PFK}" >"${CORE_DEST}/.env"
 OLD_ENV_BYTES=$(cat "${CORE_DEST}/.env")
 for old_mode in --dry-run real; do
   old_args=(--config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}")
   [[ ${old_mode} == --dry-run ]] && old_args+=(--dry-run)
   expect_eq "pre-Ficus host (${old_mode}): exits non-zero" "$(run_rc "${old_args[@]}")" '1'
-  expect_match "pre-Ficus host (${old_mode}): says why" "$(run_err "${old_args[@]}")" 'predate the Ficus naming \(found OLD_ENCRYPTION_KEY\)'
+  expect_match "pre-Ficus host (${old_mode}): says why" "$(run_err "${old_args[@]}")" "predate the Ficus naming \\(found ${PFK}\\)"
   expect_eq "pre-Ficus host (${old_mode}): the config is untouched" "$(cat "${CONFIG}")" "${CONFIG_BYTES_BEFORE}"
   expect_eq "pre-Ficus host (${old_mode}): the .env is untouched" "$(cat "${CORE_DEST}/.env")" "${OLD_ENV_BYTES}"
   expect_eq "pre-Ficus host (${old_mode}): no Caddyfile was written" "$([[ -e ${CADDYFILE_PATH} ]] && echo exists || echo absent)" 'absent'

@@ -14,7 +14,7 @@ import {
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { isJsonMode, output, outputError, setOutputOptions } from '../output'
-import { EnvNamingError } from '@ficus/shared/env-naming'
+import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { recordingRunner } from '../local-server/runner'
 import { readRegistry, upsertInstance } from '../local-server/state'
 import { registerServerCommands, type ServerDeps } from './server'
@@ -174,7 +174,7 @@ describe('ficus server', () => {
     ])
   })
   describe('on a checkout whose .env predates the Ficus naming', () => {
-    const old = 'OLD_ENCRYPTION_KEY=old-key-value\nFICUS_SANDBOX_RUNTIME=host\n'
+    const old = `${PRE_FICUS_ENCRYPTION_KEY}=old-key-value\nFICUS_SANDBOX_RUNTIME=host\n`
     beforeEach(() => {
       writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
       writeFileSync(join(root, '.env'), old)
@@ -188,7 +188,7 @@ describe('ficus server', () => {
         expect(calls).toEqual([])
         const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
         expect(error).toBeInstanceOf(EnvNamingError)
-        expect(error.message).toContain('OLD_ENCRYPTION_KEY')
+        expect(error.message).toContain(PRE_FICUS_ENCRYPTION_KEY)
         expect(error.message).not.toContain('old-key-value')
         expect(readFileSync(join(root, '.env'), 'utf8')).toBe(old)
         expect(readdirSync(root).sort()).toEqual(before)

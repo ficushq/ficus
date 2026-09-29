@@ -7,6 +7,8 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
+# The pre-Ficus encryption key the naming guards look for (from lib.sh).
+PFK="${PRE_FICUS_ENV_PREFIX}_ENCRYPTION_KEY"
 
 PASS=0 FAIL=0
 
@@ -2982,16 +2984,16 @@ EOF
   # A host whose .env predates the Ficus naming (its key under another
   # prefix only): even a dry run refuses, naming the key and never a value,
   # and never plans a generated key beside it.
-  printf 'OLD_ENCRYPTION_KEY=old-key\nOLD_PASSWORD=old-pw\n' >"${SH_TMP}/dest/.env"
+  printf '%s=old-key\nOLD_PASSWORD=old-pw\n' "${PFK}" >"${SH_TMP}/dest/.env"
   sh_old_rc=0
   sh_old_out=$(FICUS_SETUP_DATABASE_DSN='postgres://u:p@h:5432/db' \
     bash "${SCRIPT_DIR}/setup-host.sh" --config "${SH_TMP}/restore.yaml" --dry-run 2>&1) || sh_old_rc=$?
   expect_eq 'setup-host --dry-run: a pre-Ficus .env stops the run' "${sh_old_rc}" '1'
   expect_match 'setup-host --dry-run: ...naming the key and the bridge release' "${sh_old_out}" \
-    "predate the Ficus naming \\(found OLD_ENCRYPTION_KEY\\); upgrade it through the ficus-rename-bridge Core release first"
+    "predate the Ficus naming \\(found ${PFK}\\); upgrade it through the ficus-rename-bridge Core release first"
   expect_eq 'setup-host --dry-run: ...never a value, and never "generated"' \
     "$(grep -c -e 'old-key' -e 'old-pw' -e 'generated' <<<"${sh_old_out}" || true)" '0'
-  expect_eq 'setup-host --dry-run: ...and the .env is untouched' "$(cat "${SH_TMP}/dest/.env")" $'OLD_ENCRYPTION_KEY=old-key\nOLD_PASSWORD=old-pw'
+  expect_eq 'setup-host --dry-run: ...and the .env is untouched' "$(cat "${SH_TMP}/dest/.env")" "${PFK}"$'=old-key\nOLD_PASSWORD=old-pw'
 
   rm -rf "${SH_TMP}"
 else
@@ -5519,20 +5521,21 @@ expect_eq 'backup_file: a missing file is a silent no-op' "$(backup_file "${BF_T
 rm -rf "${BF_TMP}"
 # --- settings naming guards ---------------------------------------------------
 # envfile_foreign_key_names and the guards built on it: a host or an
-# archive whose encryption key sits under another one-segment prefix predates
-# the Ficus naming. Fixtures use the neutral prefix OLD_.
+# archive whose encryption key sits under the pre-Ficus prefix (PFK, from
+# lib.sh) predates the Ficus naming; an app's own <P>_ENCRYPTION_KEY does not.
 HM=$(mktemp -d)
 chgrp "$(id -g)" "${HM}" 2>/dev/null || true
 hm_mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
-printf 'export OLD_ENCRYPTION_KEY=a\nFICUS_ENCRYPTION_KEY=b\nSES_KEY=c\n' >"${HM}/names.env"
-expect_eq 'envfile_foreign_key_names: one-segment prefixes other than FICUS, names only' \
-  "$(envfile_foreign_key_names "${HM}/names.env")" 'OLD_ENCRYPTION_KEY'
-printf 'FICUS_ENCRYPTION_KEY=x\nMY_APP_ENCRYPTION_KEY=x\n# OLD_ENCRYPTION_KEY=x\nOLD_ENCRYPTION_KEY = x\nENCRYPTION_KEY=x\nold_ENCRYPTION_KEY=x\n' >"${HM}/none.env"
-expect_eq 'envfile_foreign_key_names: FICUS_, multi-segment, comments, spaced and lower-case lines are not listed' \
+printf 'export %s=a\nFICUS_ENCRYPTION_KEY=b\nSES_KEY=c\n' "${PFK}" >"${HM}/names.env"
+expect_eq 'envfile_foreign_key_names: the pre-Ficus key, names only' \
+  "$(envfile_foreign_key_names "${HM}/names.env")" "${PFK}"
+printf 'FICUS_ENCRYPTION_KEY=x\nAPP_ENCRYPTION_KEY=x\nX_ENCRYPTION_KEY=x\nMY_APP_ENCRYPTION_KEY=x\n# %s=x\n%s = x\nENCRYPTION_KEY=x\n%s=x\n' \
+  "${PFK}" "${PFK}" "$(tr '[:upper:]' '[:lower:]' <<<"${PRE_FICUS_ENV_PREFIX}")_ENCRYPTION_KEY" >"${HM}/none.env"
+expect_eq "envfile_foreign_key_names: FICUS_, an app's own keys, comments, spaced and lower-case lines are not listed" \
   "$(envfile_foreign_key_names "${HM}/none.env")" ''
-printf '  OLD2_ENCRYPTION_KEY=a\r\nexport   OLD2_ENCRYPTION_KEY=b\r\nX_ENCRYPTION_KEY=\r\n' >"${HM}/crlf.env"
-expect_eq 'envfile_foreign_key_names: indentation, export, CRLF and digits; each name once' \
-  "$(envfile_foreign_key_names "${HM}/crlf.env" | tr '\n' ' ')" 'OLD2_ENCRYPTION_KEY X_ENCRYPTION_KEY '
+printf '  %s=a\r\nexport   %s=b\r\nAPP_ENCRYPTION_KEY=\r\n' "${PFK}" "${PFK}" >"${HM}/crlf.env"
+expect_eq 'envfile_foreign_key_names: indentation, export and CRLF; the name once' \
+  "$(envfile_foreign_key_names "${HM}/crlf.env" | tr '\n' ' ')" "${PFK} "
 expect_eq 'envfile_foreign_key_names: an absent file lists nothing' \
   "$(envfile_foreign_key_names "${HM}/absent.env"; echo "rc=$?")" 'rc=0'
 expect_not_match 'envfile_foreign_key_names: never prints a value' "$(envfile_foreign_key_names "${HM}/names.env")" '=|a$'
@@ -5550,13 +5553,14 @@ EOF
     expect_eq "foreignEncryptionKeyNames parity: $1" \
       "$(envfile_foreign_key_names "${HM}/parity.env")" "$(bun "${HM}/names.ts" "${HM}/parity.env")"
   }
-  hm_parity 'the brief fixture' $'export OLD_ENCRYPTION_KEY=a\nFICUS_ENCRYPTION_KEY=b\nSES_KEY=c\n'
+  hm_parity 'the brief fixture' "export ${PFK}"$'=a\nFICUS_ENCRYPTION_KEY=b\nSES_KEY=c\n'
   hm_parity 'FICUS only' $'FICUS_ENCRYPTION_KEY=b\n'
   hm_parity 'multi-segment prefix' $'MY_APP_ENCRYPTION_KEY=x\n'
-  hm_parity 'comment and spaced assignment' $'# OLD_ENCRYPTION_KEY=x\nOLD_ENCRYPTION_KEY = x\n'
-  hm_parity 'indentation, export and CRLF' $'  OLD2_ENCRYPTION_KEY=a\r\nexport   OLD2_ENCRYPTION_KEY=b\r\n'
-  hm_parity 'two prefixes, no final newline' $'A_ENCRYPTION_KEY=1\nB9_ENCRYPTION_KEY=2'
-  hm_parity 'a suffix after the key name' $'OLD_ENCRYPTION_KEY_2=x\nOLD_ENCRYPTION_KEYS=x\n'
+  hm_parity "an app's own keys" $'APP_ENCRYPTION_KEY=x\nB9_ENCRYPTION_KEY=2'
+  hm_parity 'comment and spaced assignment' "# ${PFK}=x"$'\n'"${PFK} = x"$'\n'
+  hm_parity 'indentation, export and CRLF' "  ${PFK}=a"$'\r\n'"export   ${PFK}=b"$'\r\n'
+  hm_parity 'the pre-Ficus key beside an app key, no final newline' $'A_ENCRYPTION_KEY=1\n'"${PFK}=2"
+  hm_parity 'a suffix after the key name' "${PFK}_2=x"$'\n'"${PFK}S=x"$'\n'
   hm_parity 'empty file' ''
   unset -f hm_parity
 else
@@ -5568,14 +5572,14 @@ fi
 HM_SAVED_SRC_DEST=${SRC_DEST:-}
 SRC_DEST="${HM}/guard-dest"
 mkdir -p "${SRC_DEST}"
-printf 'OLD_ENCRYPTION_KEY=old-secret\nOLD_PASSWORD=pw\n' >"${SRC_DEST}/.env"
+printf '%s=old-secret\nOLD_PASSWORD=pw\n' "${PFK}" >"${SRC_DEST}/.env"
 hm_err=$( (require_host_env_ready) 2>&1) && hm_rc=0 || hm_rc=$?
 expect_eq 'require_host_env_ready: a pre-Ficus host dies' "${hm_rc}" '1'
 expect_match 'require_host_env_ready: ...with the exact message' "${hm_err}" \
-  "this host's settings predate the Ficus naming \(found OLD_ENCRYPTION_KEY\); upgrade it through the ficus-rename-bridge Core release first"
+  "this host's settings predate the Ficus naming \(found ${PFK}\); upgrade it through the ficus-rename-bridge Core release first"
 expect_not_match 'require_host_env_ready: ...never the value' "${hm_err}" 'old-secret'
-printf 'FICUS_ENCRYPTION_KEY=k\n' >"${SRC_DEST}/.env"
-expect_eq 'require_host_env_ready: a FICUS_ host passes' "$( (require_host_env_ready) 2>&1; echo "rc=$?")" 'rc=0'
+printf 'FICUS_ENCRYPTION_KEY=k\nAPP_ENCRYPTION_KEY=app\n' >"${SRC_DEST}/.env"
+expect_eq "require_host_env_ready: a FICUS_ host passes, an app's own encryption key included" "$( (require_host_env_ready) 2>&1; echo "rc=$?")" 'rc=0'
 rm -f "${SRC_DEST}/.env"
 expect_eq 'require_host_env_ready: a host with no .env passes' "$( (require_host_env_ready) 2>&1; echo "rc=$?")" 'rc=0'
 SRC_DEST=${HM_SAVED_SRC_DEST}
@@ -5586,11 +5590,11 @@ printf 'FICUS_ENCRYPTION_KEY=archived-42\nDATABASE_URL=postgres://x@localhost/db
 hm_key=''
 archived_encryption_key hm_key "${HM}/archive.env"
 expect_eq 'archived_encryption_key: reads the archived FICUS_ key' "${hm_key}" 'archived-42'
-printf 'OLD_ENCRYPTION_KEY=archived-old-42\nDATABASE_URL=postgres://x@localhost/db\n' >"${HM}/archive-old.env"
+printf '%s=archived-old-42\nDATABASE_URL=postgres://x@localhost/db\n' "${PFK}" >"${HM}/archive-old.env"
 hm_err=$( (archived_encryption_key hm_key "${HM}/archive-old.env") 2>&1) && hm_rc=0 || hm_rc=$?
 expect_eq 'archived_encryption_key: a pre-Ficus archive dies' "${hm_rc}" '1'
 expect_match 'archived_encryption_key: ...naming the key and the hand-rename' "${hm_err}" \
-  'this archive predates the Ficus naming \(its \.env holds OLD_ENCRYPTION_KEY\); rename its \.env keys to the FICUS_ prefix, then retry'
+  "this archive predates the Ficus naming \\(its \\.env holds ${PFK}\\); rename its \\.env keys to the FICUS_ prefix, then retry"
 expect_not_match 'archived_encryption_key: ...never the value' "${hm_err}" 'archived-old-42'
 printf 'DATABASE_URL=postgres://x@localhost/db\n' >"${HM}/archive-none.env"
 expect_match 'archived_encryption_key: an archive with no key at all dies too' \
@@ -5893,7 +5897,7 @@ rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
 # preflight; its --restore-host-backup path is root-only).
 if yq_is_mikefarah; then
   hm_host entry
-  printf 'OLD_ENCRYPTION_KEY=old-secret\nFICUS_SANDBOX_RUNTIME=host\n' >"${SRC_DEST}/.env"
+  printf '%s=old-secret\nFICUS_SANDBOX_RUNTIME=host\n' "${PFK}" >"${SRC_DEST}/.env"
   mkdir -p "${SRC_DEST}/.git"
   cat >"${HM}/entry.yaml" <<EOF
 source:
@@ -5908,7 +5912,7 @@ EOF
   hm_rc=0
   hm_out=$(HOST_MIGRATE_BACKUP_ROOT="${HM_H}/entry-bk" bash "${SCRIPT_DIR}/upgrade-host.sh" --config "${HM}/entry.yaml" 2>&1) || hm_rc=$?
   expect_eq 'upgrade-host.sh: a pre-Ficus host is refused in preflight' "${hm_rc}" '1'
-  expect_match 'upgrade-host.sh: ...naming the key' "${hm_out}" 'predate the Ficus naming \(found OLD_ENCRYPTION_KEY\)'
+  expect_match 'upgrade-host.sh: ...naming the key' "${hm_out}" "predate the Ficus naming \\(found ${PFK}\\)"
   expect_not_match 'upgrade-host.sh: ...never the value' "${hm_out}" 'old-secret'
   expect_eq 'upgrade-host.sh: ...and writes nothing' \
     "$([[ $(cat "${SRC_DEST}/.env") == "${hm_before}" ]] && echo same):$([[ -e ${HM_H}/entry-bk/PENDING ]] && echo journaled || echo none)" 'same:none'

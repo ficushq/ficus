@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { describe, expect, test } from 'bun:test'
-import { RENAME_BRIDGE_TAG } from '@ficus/shared/env-naming'
+import { RENAME_BRIDGE_TAG, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 
 const REPO_ROOT = resolve(import.meta.dir, '../../../../..')
 
@@ -29,18 +29,18 @@ function bootStore(extraEnv: Record<string, string>) {
 
 describe('secret store boot with an encryption key from before the Ficus naming', () => {
   test('starts, logs the error once by name only, and never exits', () => {
-    const { code, output } = bootStore({ OLD_ENCRYPTION_KEY: 'old-key-value-never-logged' })
+    const { code, output } = bootStore({ [PRE_FICUS_ENCRYPTION_KEY]: 'old-key-value-never-logged' })
     expect(code).toBe(0)
     expect(output).toContain('STILL RUNNING')
     const errors = output.split('\n').filter((line) => line.includes('predate the Ficus naming'))
     expect(errors).toHaveLength(1)
-    expect(errors[0]).toContain('OLD_ENCRYPTION_KEY')
+    expect(errors[0]).toContain(PRE_FICUS_ENCRYPTION_KEY)
     expect(errors[0]).toContain(RENAME_BRIDGE_TAG)
     expect(output).not.toContain('old-key-value-never-logged')
   })
 
-  test('says nothing about the naming when no other encryption key is present', () => {
-    const { code, output } = bootStore({})
+  test("says nothing about the naming when only an app's own encryption key is present", () => {
+    const { code, output } = bootStore({ APP_ENCRYPTION_KEY: 'app-key-value' })
     expect(code).toBe(0)
     expect(output).toContain('STILL RUNNING')
     expect(output).not.toContain('predate the Ficus naming')

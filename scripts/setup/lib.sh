@@ -3343,15 +3343,19 @@ artifact_retention() { # DEST
 # ------------------------------------------------ settings naming (Ficus)
 #
 # Every setting this Core reads is FICUS_*. A host whose <dest>/.env still
-# carries an encryption key under another one-segment prefix predates that
-# naming: running this release on it, or generating a fresh FICUS_ key beside
-# the old one, would orphan every stored secret. The entry points refuse such
-# a host instead, before they write anything, and name the Core release that
-# renames it. Nothing here ever prints a value: names only.
+# carries the encryption key under the pre-Ficus prefix predates that naming:
+# running this release on it, or generating a fresh FICUS_ key beside the old
+# one, would orphan every stored secret. The entry points refuse such a host
+# instead, before they write anything, and name the Core release that renames
+# it. Any other <P>_ENCRYPTION_KEY (an app's own setting) passes. Nothing here
+# ever prints a value: names only.
+
+# The settings prefix Core used before the Ficus naming; the guards look for nothing else.
+PRE_FICUS_ENV_PREFIX=TAU # ficus-p5-bridge: detects hosts and archives from before the rename
 
 # The names of FILE's `<P>_ENCRYPTION_KEY=` lines (optionally after
-# indentation and `export `) whose prefix <P> is one segment ([A-Z][A-Z0-9]*)
-# other than FICUS, one per line, each once, in file order — never a value.
+# indentation and `export `) whose prefix <P> is PRE_FICUS_ENV_PREFIX, one
+# per line, each once, in file order — never a value.
 # The shell twin of foreignEncryptionKeyNames (packages/shared/src/env-naming.ts;
 # lib.test.sh pins the two to the same fixtures). An absent file prints
 # nothing; an unreadable one returns 2.
@@ -3362,7 +3366,7 @@ envfile_foreign_key_names() { # FILE
   [[ -r ${file} ]] || return 2
   while IFS= read -r line || [[ -n ${line} ]]; do
     [[ ${line} =~ ${re} ]] || continue
-    [[ ${BASH_REMATCH[2]} != FICUS ]] || continue
+    [[ ${BASH_REMATCH[2]} == "${PRE_FICUS_ENV_PREFIX}" ]] || continue
     name="${BASH_REMATCH[2]}_ENCRYPTION_KEY"
     [[ ${seen} == *$'\n'"${name}"$'\n'* ]] && continue
     seen+="${name}"$'\n'

@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFile
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { EnvNamingError, RENAME_BRIDGE_TAG } from '@ficus/shared/env-naming'
+import { EnvNamingError, RENAME_BRIDGE_TAG, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { CommandRunner } from './command-runner'
 import {
   LocalUpdateManager,
@@ -882,7 +882,7 @@ describe('LocalUpdateManager env naming guard', () => {
     'rev-parse origin/main': 'b',
     'diff --name-only a b': 'apps/core/src/index.ts',
   }
-  const OLD_ENV = 'OLD_ENCRYPTION_KEY=' + 'ab'.repeat(32) + '\nFICUS_SANDBOX_RUNTIME=host\n'
+  const OLD_ENV = `${PRE_FICUS_ENCRYPTION_KEY}=` + 'ab'.repeat(32) + '\nFICUS_SANDBOX_RUNTIME=host\n'
   const CURRENT_ENV = 'FICUS_ENCRYPTION_KEY=' + 'ab'.repeat(32) + '\nFICUS_SANDBOX_RUNTIME=host\n'
   let dir: string
   beforeEach(() => {
@@ -907,7 +907,7 @@ describe('LocalUpdateManager env naming guard', () => {
     })
     const error = (await updater.apply({ manual: true }).catch((e: unknown) => e)) as Error
     expect(error).toBeInstanceOf(EnvNamingError)
-    expect(error.message).toContain('OLD_ENCRYPTION_KEY')
+    expect(error.message).toContain(PRE_FICUS_ENCRYPTION_KEY)
     expect(error.message).toContain(RENAME_BRIDGE_TAG)
     expect(error.message).not.toContain('ab'.repeat(32))
     expect(ran).toBe(false)
@@ -933,7 +933,7 @@ describe('LocalUpdateManager env naming guard', () => {
     updater.applyInBackground({ manual: true, tasks: ['core'] })
     await waitUntilInactive(updater)
     expect(updater.status().latest?.status).toBe('failed')
-    expect(updater.status().latest?.error).toContain('OLD_ENCRYPTION_KEY')
+    expect(updater.status().latest?.error).toContain(PRE_FICUS_ENCRYPTION_KEY)
     expect(ran).toBe(false)
   })
 

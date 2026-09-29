@@ -207,8 +207,8 @@ export interface SecretStoreOptions {
 let foreignEncryptionKeyReported = false
 
 /**
- * With no FICUS_ENCRYPTION_KEY, an encryption key under another one-segment prefix means this
- * install's settings predate the Ficus naming. Say so once per process, by name only. Never exits:
+ * With no FICUS_ENCRYPTION_KEY, the pre-Ficus encryption key means this install's settings predate
+ * the Ficus naming. Say so once per process, by name only. Never exits:
  * the store keeps its read-only mode, like any other missing key.
  */
 export function reportForeignEncryptionKey(env: Record<string, string | undefined> = process.env): string[] {
@@ -218,7 +218,8 @@ export function reportForeignEncryptionKey(env: Record<string, string | undefine
   foreignEncryptionKeyReported = true
   log.error(
     `FICUS_ENCRYPTION_KEY is not set, but ${names.join(', ')} is: this install's settings predate the Ficus naming. ` +
-      `Update it through the ${RENAME_BRIDGE_TAG} release; stored secrets stay unreadable until then`
+      `Rename its settings with the ${RENAME_BRIDGE_TAG} release (a checkout: \`git checkout ${RENAME_BRIDGE_TAG} && ` +
+      `bun install && bun run setup\`; a host: see scripts/setup/README.md); stored secrets stay unreadable until then`
   )
   return names
 }

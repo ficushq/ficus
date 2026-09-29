@@ -132,13 +132,15 @@ afterwards that `apps/core/dist/index.js` was rebuilt and that the running
 ### Hosts and archives from before the Ficus naming
 
 This toolkit and the Core releases it installs read `FICUS_*` settings only.
-A host whose `<dest>/.env` still holds its encryption key under another
-prefix (`<OLD>_ENCRYPTION_KEY`) predates that naming: `upgrade-host.sh`,
+A host whose `<dest>/.env` still holds its encryption key under the pre-Ficus
+prefix (`<OLD>_ENCRYPTION_KEY`, where `<OLD>` is `lib.sh`'s
+`PRE_FICUS_ENV_PREFIX`) predates that naming: `upgrade-host.sh`,
 `setup-host.sh`, `apply-artifacts.sh --config` and the retarget primitives
 refuse it in preflight, write nothing, and name the key. Upgrade such a host
 through the `ficus-rename-bridge` Core release first; it renames the host's
 settings with a journaled backup. `setup-host.sh` never generates a new
-`FICUS_ENCRYPTION_KEY` beside an old one. A target release that predates the
+`FICUS_ENCRYPTION_KEY` beside an old one. Any other `<P>_ENCRYPTION_KEY` (an
+app's own setting) is not checked. A target release that predates the
 naming (an artifact without `"envPrefix": "FICUS"`, or a checkout whose
 `package.json` is not named `ficus`) is refused too.
 

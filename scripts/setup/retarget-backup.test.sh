@@ -314,14 +314,16 @@ reset_fixture
 # =============================================================================
 # All three live files get an old mtime first, so any write — even one that
 # rewrote the same bytes — would show.
-printf 'OLD_ENCRYPTION_KEY=k\nFICUS_SANDBOX_RUNTIME=host\n' >"${CORE_ENV}"
+# The pre-Ficus encryption key the naming guard looks for (from lib.sh).
+PFK="$(bash -c 'source "$0"; printf %s "${PRE_FICUS_ENV_PREFIX}"' "${LIB}")_ENCRYPTION_KEY"
+printf '%s=k\nFICUS_SANDBOX_RUNTIME=host\n' "${PFK}" >"${CORE_ENV}"
 touch -d '2001-01-01 00:00:00' "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}"
 mtimes() { stat -c %Y "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}" 2>/dev/null || stat -f %m "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}" "${CONFIG}"; }
 before_mtimes=$(mtimes)
 for mode in real --dry-run; do
   if [[ ${mode} == real ]]; then run "${ARGS[@]}"; else run "${ARGS[@]}" --dry-run; fi
   expect_eq "pre-Ficus host (${mode}): exits 1" "${RC}" 1
-  expect_contains "pre-Ficus host (${mode}): says why" "${OUT}" "this host's settings predate the Ficus naming (found OLD_ENCRYPTION_KEY); upgrade it through the ficus-rename-bridge Core release first"
+  expect_contains "pre-Ficus host (${mode}): says why" "${OUT}" "this host's settings predate the Ficus naming (found ${PFK}); upgrade it through the ficus-rename-bridge Core release first"
   expect_eq "pre-Ficus host (${mode}): no file was written (mtimes unchanged)" "$(mtimes)" "${before_mtimes}"
   expect_not_contains "pre-Ficus host (${mode}): prints no RESULT marker" "${OUT}" 'FICUS_RETARGET_BACKUP_RESULT='
   expect_eq "pre-Ficus host (${mode}): the S3 check never ran" "$(grep -c '^curl ' "${SHIM_LOG}" || true)" 0

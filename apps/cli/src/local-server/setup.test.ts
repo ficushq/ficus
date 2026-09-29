@@ -14,7 +14,7 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { EnvNamingError } from '@ficus/shared/env-naming'
+import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { recordingRunner } from './runner'
 import { handoffLines, runSetup, type SetupDeps } from './setup'
 import { readRegistry, upsertInstance } from './state'
@@ -155,13 +155,13 @@ describe('runSetup', () => {
     expect(lines.some((l) => l.includes('Preflight'))).toBe(true)
   })
   it('refuses an install whose .env predates the Ficus naming before any command runs or any file changes', async () => {
-    const old = 'OLD_ENCRYPTION_KEY=old-key-value\nOLD_PASSWORD=real-password\n'
+    const old = `${PRE_FICUS_ENCRYPTION_KEY}=old-key-value\nOLD_PASSWORD=real-password\n`
     writeFileSync(join(root, '.env'), old)
     const before = readdirSync(root).sort()
     const { d, calls } = deps()
     const error = (await runSetup(opts(), d).catch((e: unknown) => e)) as Error
     expect(error).toBeInstanceOf(EnvNamingError)
-    expect(error.message).toContain('OLD_ENCRYPTION_KEY')
+    expect(error.message).toContain(PRE_FICUS_ENCRYPTION_KEY)
     expect(error.message).toContain('nothing was written')
     expect(error.message).not.toContain('old-key-value')
     expect(readFileSync(join(root, '.env'), 'utf8')).toBe(old)

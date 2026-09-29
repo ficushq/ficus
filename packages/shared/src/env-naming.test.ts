@@ -1,52 +1,68 @@
 import { describe, expect, test } from 'bun:test'
-import { EnvNamingError, foreignEncryptionKeyNames, isForeignEncryptionKeyName, RENAME_BRIDGE_TAG } from './env-naming'
+import {
+  EnvNamingError,
+  foreignEncryptionKeyNames,
+  isForeignEncryptionKeyName,
+  PRE_FICUS_ENCRYPTION_KEY,
+  PRE_FICUS_ENV_PREFIX,
+  RENAME_BRIDGE_TAG,
+  renameBridgeRemedy,
+} from './env-naming'
+
+const OLD = PRE_FICUS_ENCRYPTION_KEY
 
 describe('foreignEncryptionKeyNames', () => {
-  test('lists one-segment prefixes other than FICUS, names only', () => {
-    expect(foreignEncryptionKeyNames('export OLD_ENCRYPTION_KEY=a\nFICUS_ENCRYPTION_KEY=b\nSES_KEY=c\n')).toEqual([
-      'OLD_ENCRYPTION_KEY',
-    ])
+  test('lists the pre-Ficus encryption key, names only', () => {
+    expect(foreignEncryptionKeyNames(`export ${OLD}=a\nFICUS_ENCRYPTION_KEY=b\nSES_KEY=c\n`)).toEqual([OLD])
   })
 
-  test('ignores FICUS_, multi-segment prefixes, comments and spaced assignments', () => {
+  test("ignores FICUS_, an app's own encryption keys, comments and spaced assignments", () => {
     const content = [
       'FICUS_ENCRYPTION_KEY=x',
+      'APP_ENCRYPTION_KEY=x',
+      'X_ENCRYPTION_KEY=x',
       'MY_APP_ENCRYPTION_KEY=x',
-      '# OLD_ENCRYPTION_KEY=x',
-      'OLD_ENCRYPTION_KEY = x',
+      `# ${OLD}=x`,
+      `${OLD} = x`,
       'ENCRYPTION_KEY=x',
-      'old_ENCRYPTION_KEY=x',
+      `${PRE_FICUS_ENV_PREFIX.toLowerCase()}_ENCRYPTION_KEY=x`,
     ].join('\n')
     expect(foreignEncryptionKeyNames(content)).toEqual([])
   })
 
-  test('accepts indentation, export, CRLF and digits; lists each name once', () => {
-    const content = '  OLD2_ENCRYPTION_KEY=a\r\nexport   OLD2_ENCRYPTION_KEY=b\r\nX_ENCRYPTION_KEY=\r\n'
-    expect(foreignEncryptionKeyNames(content)).toEqual(['OLD2_ENCRYPTION_KEY', 'X_ENCRYPTION_KEY'])
+  test('accepts indentation, export and CRLF; lists the name once', () => {
+    const content = `  ${OLD}=a\r\nexport   ${OLD}=b\r\nAPP_ENCRYPTION_KEY=\r\n`
+    expect(foreignEncryptionKeyNames(content)).toEqual([OLD])
   })
 
   test('never returns a value', () => {
-    expect(foreignEncryptionKeyNames('OLD_ENCRYPTION_KEY=secret-value').join()).not.toContain('secret-value')
+    expect(foreignEncryptionKeyNames(`${OLD}=secret-value`).join()).not.toContain('secret-value')
   })
 })
 
 describe('isForeignEncryptionKeyName', () => {
-  test('matches the process-env names the same way', () => {
-    expect(isForeignEncryptionKeyName('OLD_ENCRYPTION_KEY')).toBe(true)
+  test('matches only the pre-Ficus encryption key', () => {
+    expect(isForeignEncryptionKeyName(OLD)).toBe(true)
     expect(isForeignEncryptionKeyName('FICUS_ENCRYPTION_KEY')).toBe(false)
-    expect(isForeignEncryptionKeyName('MY_APP_ENCRYPTION_KEY')).toBe(false)
-    expect(isForeignEncryptionKeyName('OLD_ENCRYPTION_KEY_2')).toBe(false)
+    expect(isForeignEncryptionKeyName('APP_ENCRYPTION_KEY')).toBe(false)
+    expect(isForeignEncryptionKeyName(`${OLD}_2`)).toBe(false)
   })
 })
 
 describe('EnvNamingError', () => {
-  test('names the file, the keys and the bridge release, and says nothing was written', () => {
-    const error = new EnvNamingError('/srv/core/.env', ['OLD_ENCRYPTION_KEY'])
+  test('names the file and keys, gives a route that bypasses this release, and says nothing was written', () => {
+    const error = new EnvNamingError('/srv/core/.env', [OLD])
     expect(error.name).toBe('EnvNamingError')
-    expect(error.names).toEqual(['OLD_ENCRYPTION_KEY'])
+    expect(error.names).toEqual([OLD])
     expect(error.message).toBe(
-      `/srv/core/.env: settings predate the Ficus naming (found OLD_ENCRYPTION_KEY); update this install ` +
-        `through the ${RENAME_BRIDGE_TAG} release first — nothing was written`
+      `/srv/core/.env: settings predate the Ficus naming (found ${OLD}); ` +
+        `${renameBridgeRemedy('/srv/core')} — nothing was written`
+    )
+    // The route runs the bridge release's own setup in the checkout, never this release's CLI.
+    expect(renameBridgeRemedy('/srv/core')).toBe(
+      'rename it with the ficus-rename-bridge release: in /srv/core, run ' +
+        '`git fetch --tags origin && git checkout ficus-rename-bridge && bun install && bun run setup`, ' +
+        'then update as usual'
     )
     expect(RENAME_BRIDGE_TAG).toBe('ficus-rename-bridge')
   })
