@@ -552,7 +552,7 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          // K3: every box-user name, like the machine hosts' box servers.
+          // The box user under x-ficus-box-user, like the machine hosts' box servers.
           ...boxUserHeaders(boxUser),
           authorization: `Bearer ${bearer}`,
         },

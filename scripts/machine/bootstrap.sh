@@ -854,9 +854,8 @@ export function createService(deps = {}) {
   // DECOY_DIGEST placeholder above) so an invalid/missing file takes the same
   // code path and shape as a genuine mismatch — never leaking which it was.
   function checkAuth(req) {
-    // K3: box servers from older Cores send only the pre-Ficus name; newer
-    // ones send both. Either name carries the same claim, and the bearer
-    // below must still match that user's digest.
+    // The box user arrives under x-ficus-box-user only; the bearer below must
+    // still match that user's digest.
     const boxUser = req.headers.get('x-ficus-box-user') || ''
     const authHeader = req.headers.get('authorization') || ''
     const match = /^Bearer (.+)$/.exec(authHeader)
