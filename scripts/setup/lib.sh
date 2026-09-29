@@ -4221,20 +4221,24 @@ host_migrate_backup_restore() { # SETDIR
   log_info "host restore: ${#idxs[@]} file(s) restored byte for byte from ${setdir}"
 }
 
-# Keep the newest five backup sets; never remove the one PENDING journals.
+# Keep the newest five backup sets; never remove the one PENDING journals, nor
+# the latest committed host_layout set (the manual reverse's way back).
 host_migrate_backup_prune() {
-  local root pending d name
+  local root pending d name keep=''
   local -a sets=()
   root=$(host_migrate_backup_root)
   [[ -d ${root} ]] || return 0
   pending=$(_hm_pending_set) || return 1
+  if declare -F host_layout_latest_committed_set >/dev/null; then
+    keep=$(host_layout_latest_committed_set) || keep=''
+  fi
   for d in "${root}"/*; do
     name=${d##*/}
     [[ -d ${d} && ${name} =~ ^[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]{6}$ ]] && sets+=("${d}")
   done
   ((${#sets[@]} > 5)) || return 0
   for d in "${sets[@]:0:${#sets[@]}-5}"; do
-    [[ ${d} == "${pending}" ]] && continue
+    [[ ${d} == "${pending}" || ${d} == "${keep}" ]] && continue
     rm -rf -- "${d}" || return 1
     log_info "pruned host backup set ${d}"
   done
@@ -4810,6 +4814,11 @@ _hl_do() { # WHAT CMD [ARGS...]
   return 1
 }
 
+# Run CMD in a subshell, so a die inside it is a failure, not this process's exit.
+_hl_contained() { # CMD [ARGS...]
+  ("$@")
+}
+
 # Print VALUE with its FROM prefix (a whole path component) replaced by TO.
 _hl_reprefix() { # VALUE FROM TO
   if [[ -n $2 && ($1 == "$2" || $1 == "$2"/*) ]]; then
@@ -5029,7 +5038,7 @@ host_migration_host_layout_reverse() { # SETDIR
 # ---- the plan and its preconditions (each dies with nothing changed)
 
 _hl_plan() { # RELEASE_DIR
-  local release=$1 env_file home_dir run_home f src dst avail size mp
+  local release=$1 env_file home_dir run_home f src dst avail size mp db_taken
   _HLJ_RELEASE=${release}
   [[ -n ${SRC_DEST:-} ]] || die "host_layout: SRC_DEST is not set — nothing was changed"
   if [[ -d ${_HLO_DEST} && ! -L ${_HLO_DEST} && $(readlink -f -- "${SRC_DEST}" 2>/dev/null) == "$(readlink -f -- "${_HLO_DEST}")" ]]; then
@@ -5059,12 +5068,18 @@ _hl_plan() { # RELEASE_DIR
     fi
   fi
   home_dir=$(envfile_get "${env_file}" HOME_DIR) || home_dir=''
-  if [[ -z ${home_dir} ]]; then
+  # shellcheck disable=SC2088 # a literal leading tilde is what is matched
+  if [[ -z ${home_dir} || ${home_dir} == '~' || ${home_dir} == '~/'* ]]; then
     run_home=$(managed_user_home "${_HLJ_RUN_USER}") ||
-      die "host_layout: could not resolve ${_HLJ_RUN_USER}'s home directory (the default HOME_DIR) — nothing was changed"
-    home_dir="${run_home}/${HL_LEGACY_HOME_NAME}"
+      die "host_layout: could not resolve ${_HLJ_RUN_USER}'s home directory (for HOME_DIR) — nothing was changed"
+    case ${home_dir} in
+      '') home_dir="${run_home}/${HL_LEGACY_HOME_NAME}" ;;
+      '~') home_dir=${run_home} ;;
+      *) home_dir="${run_home}/${home_dir#'~/'}" ;; # Core expands ~ for the service user
+    esac
   fi
-  [[ ${home_dir} == /?* ]] || die "host_layout: HOME_DIR '${home_dir}' is not an absolute path — nothing was changed"
+  [[ ${home_dir} == /?* ]] ||
+    die "host_layout: HOME_DIR '${home_dir}' in ${env_file} is neither absolute nor ~/… — set an absolute path; nothing was changed"
   home_dir=${home_dir%/}
   _HLJ_HOME_FROM='' _HLJ_HOME_TO='' _HLJ_HOME_UNCHANGED=''
   if [[ ${home_dir##*/} == "${HL_LEGACY_HOME_NAME}" ]]; then
@@ -5118,6 +5133,13 @@ _hl_plan() { # RELEASE_DIR
       die "host_layout: a container ${HL_NEW_DB_CONTAINER} already exists — nothing was changed"
     ! as_root docker volume inspect "${HL_NEW_DB_VOLUME}" >/dev/null 2>&1 ||
       die "host_layout: a volume ${HL_NEW_DB_VOLUME} already exists (a copy from an earlier run? inspect and remove it) — nothing was changed"
+    # The rename in S9 must never find its target taken: pointing the DSN at
+    # some other database named ${HL_NEW_DB_NAME} would hide this host's data.
+    db_taken=$(as_root docker exec "${HL_LEGACY_DB_CONTAINER}" psql -U postgres -tAc \
+      "SELECT 1 FROM pg_database WHERE datname='${HL_NEW_DB_NAME}'" 2>/dev/null) ||
+      die "host_layout: could not ask ${HL_LEGACY_DB_CONTAINER} which databases it holds — nothing was changed"
+    [[ ${db_taken//[[:space:]]/} != 1 ]] ||
+      die "host_layout: ${HL_LEGACY_DB_CONTAINER} already holds a database named ${HL_NEW_DB_NAME} — inspect it (this host's data is in ${HL_LEGACY_DB_NAME}); nothing was changed"
     mp=$(as_root docker volume inspect -f '{{.Mountpoint}}' "${HL_LEGACY_DB_VOLUME}" 2>/dev/null) && [[ -d ${mp} ]] ||
       die "host_layout: could not find the volume ${HL_LEGACY_DB_VOLUME} — nothing was changed"
     size=$(as_root du -sb -- "${mp}" | cut -f1) && avail=$(df -B1 --output=avail -- "$(dirname -- "${mp}")" | tail -n 1 | tr -d ' ') &&
@@ -5130,12 +5152,20 @@ _hl_plan() { # RELEASE_DIR
 # ---- the steps
 
 _hl_s1() { # HLDIR
-  local hl=$1 k v waited=0 limit=1200 interval=5
+  local hl=$1 k v waited=0 limit=1200 interval=5 timer_state
   _hl_step "${hl}" 1 "stop the world: ${_HLO_BACKUP}.timer, then — once no backup runs — ${_HLO_API} and ${_HLO_WORKER}" || return 1
   _HLJ_TIMER_WAS_ENABLED=0
-  if [[ -e ${_HL_UNITS}/${_HLO_BACKUP}.timer ]] &&
-    [[ $(as_root systemctl is-enabled "${_HLO_BACKUP}.timer" 2>/dev/null) == enabled ]]; then
-    _HLJ_TIMER_WAS_ENABLED=1
+  if [[ -e ${_HL_UNITS}/${_HLO_BACKUP}.timer ]]; then
+    timer_state=$(as_root systemctl is-enabled "${_HLO_BACKUP}.timer" 2>/dev/null) || true
+    case ${timer_state} in
+      enabled | enabled-runtime | linked | linked-runtime | indirect | alias) _HLJ_TIMER_WAS_ENABLED=1 ;;
+      disabled | static | masked | masked-runtime) ;;
+      *)
+        # Unknown (or systemctl failed): the timer's wants link decides.
+        if compgen -G "${_HL_UNITS}/*.wants/${_HLO_BACKUP}.timer" >/dev/null; then _HLJ_TIMER_WAS_ENABLED=1; fi
+        log_warn "host_layout: ${_HLO_BACKUP}.timer reports '${timer_state:-nothing}' from is-enabled — taking it as $([[ ${_HLJ_TIMER_WAS_ENABLED} == 1 ]] && printf enabled || printf disabled)"
+        ;;
+    esac
   fi
   for k in ${_HL_PLAN_KEYS}; do
     v="_HLJ_${k}"
@@ -5313,10 +5343,8 @@ _hl_s9() { # HLDIR
   _hl_do "copying ${HL_LEGACY_DB_VOLUME} into ${HL_NEW_DB_VOLUME}" as_root docker run --rm \
     -v "${HL_LEGACY_DB_VOLUME}:/from:ro" -v "${HL_NEW_DB_VOLUME}:/to" "${image}" sh -c 'cp -a /from/. /to/' || return 1
   _hl_db_container_run "${HL_NEW_DB_CONTAINER}" "${HL_NEW_DB_VOLUME}" "${HL_NEW_DB_NAME}" "${image}" "${pw}" || return 1
-  if ! as_root docker exec "${HL_NEW_DB_CONTAINER}" psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${HL_NEW_DB_NAME}'" | grep -q 1; then
-    _hl_do "renaming the database" as_root docker exec "${HL_NEW_DB_CONTAINER}" psql -U postgres -v ON_ERROR_STOP=1 \
-      -c "ALTER DATABASE \"${HL_LEGACY_DB_NAME}\" RENAME TO \"${HL_NEW_DB_NAME}\"" || return 1
-  fi
+  _hl_do "renaming the database" as_root docker exec "${HL_NEW_DB_CONTAINER}" psql -U postgres -v ON_ERROR_STOP=1 \
+    -c "ALTER DATABASE \"${HL_LEGACY_DB_NAME}\" RENAME TO \"${HL_NEW_DB_NAME}\"" || return 1
   re="^(postgres(ql)?://[^/?#]*)/${HL_LEGACY_DB_NAME}([?#].*)?$"
   if [[ ${dsn} =~ ${re} ]]; then
     envfile_set "${env_file}" DATABASE_URL "${BASH_REMATCH[1]}/${HL_NEW_DB_NAME}${BASH_REMATCH[3]}"
@@ -5387,7 +5415,8 @@ _hl_s10() { # HLDIR
     n="_HLN_${kind}"
     f="${_HL_UNITS}/${!n}.service.d/managed-env.conf"
     [[ -f ${f} ]] || continue
-    install_rendered 0644 root root "${f}" printf '%s\n' "[Service]"$'\n'"EnvironmentFile=-${HL_NEW_ETC}/managed.env"
+    _hl_do "rewriting ${f}" _hl_contained install_rendered 0644 root root "${f}" \
+      printf '%s\n' "[Service]"$'\n'"EnvironmentFile=-${HL_NEW_ETC}/managed.env" || return 1
   done
   for f in "${_HL_UNITS}/${_HLO_API}.service" "${_HL_UNITS}/${_HLO_WORKER}.service"; do
     if [[ -f ${f} && ! -L ${f} ]]; then _hl_do "removing ${f}" rm -f -- "${f}" || return 1; fi
@@ -5446,14 +5475,13 @@ _hl_s11() { # HLDIR
       log_error "host_layout: rendering ${_HLN_SCRIPT} from ${_HLO_SCRIPT}'s values failed"
       return 1
     }
-    _hl_mid || return 1
     if ! ln -sfn -- "${_HLN_SCRIPT##*/}" "${_HLO_SCRIPT}.hl-next" || ! mv -Tf -- "${_HLO_SCRIPT}.hl-next" "${_HLO_SCRIPT}"; then
       rm -f -- "${_HLO_SCRIPT}.hl-next"
       log_error "host_layout: replacing ${_HLO_SCRIPT} with a link to ${_HLN_SCRIPT##*/} failed"
       return 1
     fi
   fi
-  _hl_mid || return 1
+  _hl_mid || return 1 # S11's one seam point: the script done, the units not yet
   if [[ -f ${legacy_timer} && ! -L ${legacy_timer} ]]; then
     oncal=$(sed -n 's/^OnCalendar=//p' "${legacy_timer}" | head -n 1)
     [[ -n ${oncal} ]] || {
@@ -5923,16 +5951,38 @@ host_layout_rollback_hook() {
   host_migrate_restore_pending
 }
 
+# The newest backup set under the backup root whose host_layout run reached its
+# commit point and was not reversed since (by DONE's time, then by name) — the
+# one set a manual reverse may use, and that pruning keeps. Returns 1 when none.
+host_layout_latest_committed_set() {
+  local d best='' names
+  for d in "$(host_migrate_backup_root)"/*/; do
+    d=${d%/}
+    [[ -f ${d}/hl/DONE && ! -e ${d}/hl/REVERSED ]] || continue
+    names=$(_hm_set_reverse_names "${d}") || continue
+    [[ ,${names}, == *,host_layout,* ]] || continue
+    if [[ -z ${best} || ${d}/hl/DONE -nt ${best}/hl/DONE ]] ||
+      { [[ ! ${d}/hl/DONE -ot ${best}/hl/DONE ]] && [[ ${d##*/} > ${best##*/} ]]; }; then
+      best=${d}
+    fi
+  done
+  [[ -n ${best} ]] || return 1
+  printf '%s\n' "${best}"
+}
+
 # Reverse a COMMITTED host_layout run from SETDIR by hand (upgrade-host.sh
 # --reverse-host-layout): the way back to layout 1 once the release serving
 # is from before the migration again. Refuses unless no journal is pending,
-# SETDIR is a host_layout set that reached its commit point, this host is on
-# layout 2, the active release declares layout 1, and — when HOME moved — the
+# SETDIR is the latest host_layout set that reached its commit point and was
+# not reversed since (host_layout_latest_committed_set: an older or reversed
+# set's files are stale, and restoring them would overwrite live secrets),
+# this host is on layout 2, the active release declares layout 1, and — when
+# HOME moved — the
 # journaled release still has rebase-home.js. Then both units stop and the
 # reverse runs through the framework (_hm_reverse: a direct call to the
 # reverse could not restore the set, and would leave the host half reversed).
 host_layout_reverse_committed() { # SETDIR
-  local set=${1%/} hl names dest active rc=0
+  local set=${1%/} hl names dest active latest rc=0
   _hl_paths
   _hm_is_root || die "host_layout: reversing the host layout is root-only"
   [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
@@ -5941,6 +5991,11 @@ host_layout_reverse_committed() { # SETDIR
     die "host_layout: ${set} is not a set taken for the host_layout migration"
   hl="${set}/hl"
   [[ -f ${hl}/DONE ]] || die "host_layout: ${set}'s migration never reached its commit point — there is nothing committed to reverse"
+  [[ ! -e ${hl}/REVERSED ]] ||
+    die "host_layout: ${set} was already reversed ($(cat "${hl}/REVERSED" 2>/dev/null)) — its files are stale; nothing was changed"
+  latest=$(host_layout_latest_committed_set) || latest=''
+  [[ -n ${latest} && $(readlink -f -- "${latest}") == "$(readlink -f -- "${set}")" ]] ||
+    die "host_layout: ${set} is not the latest committed host_layout set (${latest:-none is}) — only that one may be reversed; nothing was changed"
   [[ $(host_layout_detect) == 2 ]] || die "host_layout: this host is not on the Ficus layout — nothing to reverse"
   _hl_load "${hl}"
   dest=${_HLJ_DEST_TO}

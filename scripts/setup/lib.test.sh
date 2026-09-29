@@ -3926,6 +3926,7 @@ PYREPACK
     for l in current previous; do
       [[ -L ${to}/${l} ]] && _artifact_symlink_swap "${to}/$(readlink "${to}/${l}" | sed "s:^${from}/::")" "${to}/${l}"
     done
+    # shellcheck disable=SC2034 # read by artifact_activate
     ARTIFACT_RELOCATED_FROM=${from} ARTIFACT_RELOCATED_TO=${to}
   }
   ART_RELOC_OLD=$(art_relocation_box)

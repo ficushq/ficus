@@ -329,6 +329,10 @@ case ${cmd} in
     ;;
   is-enabled)
     u=$(norm "$1")
+    if [[ -n ${STUB_TIMER_STATE:-} && ${u} == *-backup.timer ]]; then
+      echo "${STUB_TIMER_STATE}"
+      exit 0
+    fi
     for l in "${U}"/*.wants/"${u}"; do if [[ -L ${l} ]]; then echo enabled; exit 0; fi; done
     echo disabled
     exit 1
@@ -378,7 +382,10 @@ case $1 in
       printf 'docker-run-env POSTGRES_PASSWORD=%s\n' "${POSTGRES_PASSWORD:-}" >>"${FICUS_HOST_ROOT}/calls.log"
     fi
     ;;
-  exec) exit 0 ;;
+  exec)
+    if [[ -n ${STUB_DB_FICUS_EXISTS:-} && " $* " == *"datname='ficus'"* ]]; then echo 1; fi
+    exit 0
+    ;;
 esac
 STUBEOF
   cat >"${STUB}/bun" <<'STUBEOF'
@@ -752,6 +759,83 @@ YAMLEOF
   host_migrate "$REL" 2>/dev/null
   expect_eq 'no source.dest before → the Ficus dest written explicitly (without FICUS_HOST_ROOT)' \
     "$(yq -r .source.dest "$R/root/ficus-setup/ficus-setup.yaml")" '/opt/ficus-core'
+  host_migrate_commit
+
+  # --- Ruling 81 I1: only the latest committed, not-yet-reversed set may be reversed ------
+  # migrate (A) → reverse A → rotate a secret → migrate again (B) → reversing A is refused:
+  # its files predate the rotation.
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  SET_A=$(hl_last_set)
+  (host_layout_reverse_committed "$SET_A") 2>/dev/null || fail 'the reverse of A died'
+  host_layout_adopt 2>/dev/null
+  envfile_set "$R$HL_LEGACY_DEST/.env" FICUS_ENCRYPTION_KEY rotated
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  SET_B=$(hl_last_set)
+  expect_eq 'I1: (fixture) two sets; B is the latest committed one' \
+    "$([[ $SET_A != "$SET_B" ]] && echo two):$(host_layout_latest_committed_set)" "two:$SET_B"
+  before=$(snapshot)
+  (host_layout_reverse_committed "$SET_A") >/dev/null 2>"$SCRATCH/hl-i1.log" && fail 'I1: a reversed, older set was reversed again'
+  expect_match 'I1: refused, naming it reversed' "$(cat "$SCRATCH/hl-i1.log")" 'already reversed'
+  expect_eq 'I1: nothing changed; the rotated secret stays' \
+    "$(snapshot):$(grep '^FICUS_ENCRYPTION_KEY=' "$R/opt/ficus-core/.env")" "$before:FICUS_ENCRYPTION_KEY=rotated"
+  # An older set that was never marked reversed: refused because B is newer.
+  rm -f "$SET_A/hl/REVERSED"
+  (host_layout_reverse_committed "$SET_A") >/dev/null 2>"$SCRATCH/hl-i1.log" && fail 'I1: an older set was reversed over a newer one'
+  expect_match 'I1: an older set is refused while a newer committed one exists' "$(cat "$SCRATCH/hl-i1.log")" 'not the latest committed'
+  expect_eq 'I1: ...changing nothing' "$(snapshot)" "$before"
+  # A reversed set with no newer one (B pruned): still refused.
+  printf 'x\n' >"$SET_A/hl/REVERSED"
+  rm -rf "$SET_B"
+  (host_layout_reverse_committed "$SET_A") >/dev/null 2>"$SCRATCH/hl-i1.log" && fail 'I1: a reversed set was reversed again'
+  expect_match 'I1: a reversed set is refused even when it is the newest' "$(cat "$SCRATCH/hl-i1.log")" 'already reversed'
+  expect_eq 'I1: ...changing nothing' "$(snapshot)" "$before"
+
+  # --- prune keeps the committed set the manual reverse needs ------------------------------
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  SET_A=$(hl_last_set)
+  for i in 1 2 3 4 5 6; do
+    mkdir -p "$(host_migrate_backup_root)/29990101T00000${i}Z-abcdef"
+    printf '1\t%064d\t/x\n' 0 >"$(host_migrate_backup_root)/29990101T00000${i}Z-abcdef/MANIFEST"
+  done
+  host_migrate_backup_prune 2>/dev/null
+  expect_eq 'prune keeps the latest committed host_layout set (and the newest five)' \
+    "$(test -d "$SET_A" && echo kept):$(ls -1d "$(host_migrate_backup_root)"/*/ | wc -l | tr -d ' ')" 'kept:6'
+
+  # --- Ruling 81 I2: a container that already holds a database with the new name ---------
+  hl_reset
+  make_legacy_host --db-mode container
+  before=$(snapshot)
+  (STUB_DB_FICUS_EXISTS=1 host_migrate "$REL") 2>"$SCRATCH/hl-i2.log" && fail 'I2: migrated onto an existing database of the new name'
+  expect_match 'I2: refused before anything changed' "$(cat "$SCRATCH/hl-i2.log")" "already holds a database named ficus"
+  expect_eq 'I2: no container touched, no rename' \
+    "$(grep -c 'docker stop\|docker rm\|ALTER DATABASE' "$R/calls.log" || true):$(wc -c <"$(hl_pending_set)/hl/STEPS" | tr -d ' ')" '0:0'
+  (host_migrate_reconcile) 2>/dev/null || fail 'reconcile died (I2)'
+  expect_eq 'I2: settles untouched' "$(snapshot):$(pending_state)" "$before:n"
+
+  # --- the backup timer: every enabled-like state counts ----------------------------------
+  hl_reset
+  make_legacy_host
+  rm -f "$UNITS/timers.target.wants/$LEG_BACKUP.timer"
+  STUB_TIMER_STATE=enabled-runtime host_migrate "$REL" 2>/dev/null
+  expect_eq 'a runtime-enabled legacy timer comes out enabled as the ficus timer' \
+    "$(cat "$(hl_pending_set)/hl/TIMER_WAS_ENABLED"):$(readlink "$UNITS/timers.target.wants/ficus-backup.timer")" "1:$UNITS/ficus-backup.timer"
+  host_migrate_commit
+
+  # --- HOME_DIR=~/… is read as Core reads it: under the run user's home -------------------
+  hl_reset
+  make_legacy_host
+  # shellcheck disable=SC2088 # a literal ~/ is the point
+  envfile_set "$R$HL_LEGACY_DEST/.env" HOME_DIR "~/${HL_LEGACY_HOME_NAME}"
+  host_migrate "$REL" 2>/dev/null
+  expect_eq 'a ~/ HOME_DIR moves and is written back absolute' \
+    "$(stat -c %F "$R/root/.ficus"):$(grep '^HOME_DIR=' "$R/opt/ficus-core/.env")" "directory:HOME_DIR=$R/root/.ficus"
   host_migrate_commit
 
   # --- a custom HOME_DIR is neither moved nor rebased ---------------------------------
