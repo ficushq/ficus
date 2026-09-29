@@ -170,7 +170,7 @@ export function MachineRow({
                 <button
                   onClick={() => bootstrapMutation.mutate()}
                   disabled={isMutating}
-                  className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+                  className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
                 >
                   {bootstrapMutation.isPending ? 'Bootstrapping…' : 'Bootstrap'}
                 </button>
@@ -179,7 +179,7 @@ export function MachineRow({
             <button
               onClick={() => checkMutation.mutate()}
               disabled={isMutating}
-              className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+              className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
             >
               {checkMutation.isPending ? 'Checking…' : 'Check'}
             </button>

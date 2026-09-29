@@ -52,8 +52,8 @@ export function VoiceWorkspacePage({
 } = {}) {
   if (!supportsRealtimeVoice(environment)) {
     return (
-      <main className="min-h-[100dvh] bg-chrome-paper text-status-neutral-950 flex items-center justify-center p-8">
-        <p className="max-w-md text-center text-sm text-status-neutral-500">
+      <main className="min-h-[100dvh] bg-page text-primary flex items-center justify-center p-8">
+        <p className="max-w-md text-center text-sm text-muted">
           Voice workspace requires microphone support in a secure browser context. Open Ficus over HTTPS or localhost in
           a browser that supports WebRTC.
         </p>
@@ -152,7 +152,7 @@ function VoiceWorkspaceSession({
   })
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-chrome-paper text-status-neutral-950">
+    <main className="relative min-h-[100dvh] overflow-hidden bg-page text-primary">
       <ArtifactStage artifact={activeArtifact} context={artifactContextQuery.data} />
       <div className="pointer-events-none absolute inset-0 voice-page-glow" />
       <VoiceInputModeControl inputMode={inputMode} onInputModeChange={onInputModeChange} />
@@ -178,7 +178,7 @@ function VoiceWorkspaceSession({
         onStartUserSpeech={startManualSpeech}
         onSubmitUserSpeech={submitUserSpeech}
       />
-      {/* <div className="fixed bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-full bg-chrome-paper/75 px-3 py-1 text-center text-xs text-status-neutral-500 shadow-sm backdrop-blur-md">
+      {/* <div className="fixed bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-full bg-surface/75 px-3 py-1 text-center text-xs text-muted shadow-sm backdrop-blur-md">
         {inputMode === 'manual'
           ? 'Hold the orb or space bar to speak. Release to submit.'
           : 'Listening...'}
@@ -198,7 +198,7 @@ function VoiceInputModeControl({
     <div
       role="group"
       aria-label="Voice input mode"
-      className="fixed left-1/2 top-4 z-20 flex -translate-x-1/2 rounded-full border border-status-neutral-200/70 bg-chrome-paper/80 p-1 text-xs shadow-lg backdrop-blur-md"
+      className="fixed left-1/2 top-4 z-20 flex -translate-x-1/2 rounded-full border border-th-border bg-surface/80 p-1 text-xs shadow-lg backdrop-blur-md"
     >
       {(['automatic', 'manual'] as const).map((mode) => (
         <button
@@ -212,9 +212,7 @@ function VoiceInputModeControl({
           className={clsx(
             'ficus-button',
             'rounded-full px-3 py-1.5 font-medium',
-            inputMode === mode
-              ? 'bg-status-neutral-950 text-on-strong'
-              : 'text-status-neutral-600 hover:bg-chrome-paper'
+            inputMode === mode ? 'bg-accent text-on-accent' : 'text-secondary hover:bg-surface-hover'
           )}
         >
           {mode === 'automatic' ? 'Automatic' : 'Hold to speak'}
@@ -357,42 +355,40 @@ export function VoiceDebugInspector({
   return (
     <div className="fixed inset-x-3 top-3 z-30 flex max-w-[calc(100vw-1.5rem)] flex-wrap items-start justify-end gap-2 sm:inset-x-auto sm:right-4 sm:top-4 sm:max-w-none sm:flex-nowrap sm:gap-3">
       {open && (
-        <aside className="max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-status-neutral-200/70 bg-chrome-paper/92 text-status-neutral-950 shadow-2xl backdrop-blur-xl sm:w-[min(26rem,calc(100vw-2rem))]">
-          <div className="flex items-center justify-between border-b border-status-neutral-200/70 px-3 py-2">
+        <aside className="max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-th-border bg-surface/92 text-primary shadow-2xl backdrop-blur-xl sm:w-[min(26rem,calc(100vw-2rem))]">
+          <div className="flex items-center justify-between border-b border-th-border px-3 py-2">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-status-neutral-500">
-                Voice debug
-              </div>
-              <div className="mt-0.5 text-sm font-medium text-status-neutral-900">Transcript & tool calls</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Voice debug</div>
+              <div className="mt-0.5 text-sm font-medium text-primary">Transcript & tool calls</div>
             </div>
             <button
               type="button"
               onClick={onToggle}
-              className="ficus-button rounded-md px-2 py-1 text-xs text-status-neutral-500 hover:bg-status-neutral-100 hover:text-status-neutral-900"
+              className="ficus-button rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-primary"
             >
               Close
             </button>
           </div>
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-1 border-b border-status-neutral-200/70 px-3 py-2 text-xs">
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1 border-b border-th-border px-3 py-2 text-xs">
             <div>
-              <dt className="text-status-neutral-500">Status</dt>
-              <dd className="font-medium text-status-neutral-900">{status}</dd>
+              <dt className="text-muted">Status</dt>
+              <dd className="font-medium text-primary">{status}</dd>
             </div>
             <div>
-              <dt className="text-status-neutral-500">Connection</dt>
-              <dd className="font-medium text-status-neutral-900">{isConnected ? 'connected' : 'disconnected'}</dd>
+              <dt className="text-muted">Connection</dt>
+              <dd className="font-medium text-primary">{isConnected ? 'connected' : 'disconnected'}</dd>
             </div>
             <div>
-              <dt className="text-status-neutral-500">Mic</dt>
-              <dd className="font-medium text-status-neutral-900">{isMicMuted ? 'paused' : 'enabled'}</dd>
+              <dt className="text-muted">Mic</dt>
+              <dd className="font-medium text-primary">{isMicMuted ? 'paused' : 'enabled'}</dd>
             </div>
             <div>
-              <dt className="text-status-neutral-500">Turns</dt>
-              <dd className="font-medium text-status-neutral-900">{history.length}</dd>
+              <dt className="text-muted">Turns</dt>
+              <dd className="font-medium text-primary">{history.length}</dd>
             </div>
             {error && (
               <div className="col-span-2">
-                <dt className="text-status-neutral-500">Error</dt>
+                <dt className="text-muted">Error</dt>
                 <dd className="font-medium text-status-danger-600">{error}</dd>
               </div>
             )}
@@ -406,7 +402,7 @@ export function VoiceDebugInspector({
         type="button"
         onClick={onToggle}
         aria-pressed={open}
-        className="ficus-button rounded-full border border-status-neutral-200/70 bg-chrome-paper/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-status-neutral-600 shadow-lg backdrop-blur-md hover:bg-chrome-paper hover:text-status-neutral-950"
+        className="ficus-button rounded-full border border-th-border bg-surface/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-secondary shadow-lg backdrop-blur-md hover:bg-surface-hover hover:text-primary"
       >
         Debug
       </button>
@@ -441,7 +437,7 @@ function ArtifactStage({ artifact, context }: { artifact: ArtifactIndexItem | nu
   if (!hasRenderableContent) return null
 
   return (
-    <section className="relative z-0 h-[100dvh] w-full overflow-auto bg-chrome-paper text-status-neutral-950">
+    <section className="relative z-0 h-[100dvh] w-full overflow-auto bg-page text-primary">
       <ArtifactRenderer
         entry={entry}
         content={context?.content}

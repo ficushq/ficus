@@ -82,11 +82,11 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
             </div>
             <div className="space-y-2">
               <SkeletonLine className="w-20" />
-              <SkeletonBlock className="h-14 w-full bg-status-neutral-900" />
+              <SkeletonBlock className="h-14 w-full bg-code-bg" />
             </div>
             <div className="space-y-2">
               <SkeletonLine className="w-24" />
-              <SkeletonBlock className="h-40 w-full bg-status-neutral-900" />
+              <SkeletonBlock className="h-40 w-full bg-code-bg" />
             </div>
           </LoadingSurface>
         )}
@@ -122,7 +122,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
 
         <div>
           <h3 className="mb-2 text-sm font-medium text-primary">Command</h3>
-          <pre className="overflow-auto rounded-md bg-status-neutral-950 p-3 text-xs text-status-neutral-100 border border-th-border">
+          <pre className="overflow-auto rounded-md bg-code-bg p-3 text-xs text-code-text border border-th-border">
             {detail.command}
           </pre>
         </div>
@@ -151,7 +151,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
               )}
             </div>
           </div>
-          <pre className="max-h-80 overflow-auto rounded-md bg-status-neutral-950 p-3 text-xs text-status-neutral-100 border border-th-border">
+          <pre className="max-h-80 overflow-auto rounded-md bg-code-bg p-3 text-xs text-code-text border border-th-border">
             <AnsiText>{logs?.lines.join('\n') ?? ''}</AnsiText>
           </pre>
         </div>

@@ -651,7 +651,7 @@ export function ProviderRow({
           {canWrite && hasAnyAccounts && addMode === 'closed' && (
             <button
               onClick={() => setAddMode(hasChoice ? 'choose' : 'api-key')}
-              className="ficus-button text-sm text-accent-light hover:text-accent-hover"
+              className="ficus-button text-sm text-accent-light hover:text-link-hover"
             >
               Connect another account
             </button>
@@ -1349,7 +1349,7 @@ export function SelectStep({
           <button
             onClick={() => onSelect(browserOption.id)}
             disabled={isPending}
-            className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+            className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
           >
             Use browser login instead
           </button>
@@ -1415,7 +1415,7 @@ export function CodeStep({
           href={need.authUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-accent-light hover:text-accent-hover underline"
+          className="text-xs text-accent-light hover:text-link-hover underline"
         >
           Open login page manually →
         </a>
@@ -1509,7 +1509,7 @@ export function DeviceCodeStep({
         <button
           onClick={copyCode}
           disabled={!need}
-          className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium shrink-0 disabled:opacity-50"
+          className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium shrink-0 disabled:opacity-50"
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
@@ -1525,7 +1525,7 @@ export function DeviceCodeStep({
             href={need.verificationUri}
             target="_blank"
             rel="noopener noreferrer"
-            className="break-all text-accent-light hover:text-accent-hover underline"
+            className="break-all text-accent-light hover:text-link-hover underline"
           >
             {need.verificationUri}
           </a>
@@ -1573,10 +1573,7 @@ export function ErrorStep({
     <div className="space-y-2">
       <p className="text-sm text-status-danger-600 dark:text-status-danger-400">Login failed: {message}</p>
       <div className="flex gap-2">
-        <button
-          onClick={onRetry}
-          className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
-        >
+        <button onClick={onRetry} className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium">
           Try Again
         </button>
         <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">

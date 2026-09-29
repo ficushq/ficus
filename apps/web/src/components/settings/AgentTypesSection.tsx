@@ -491,14 +491,14 @@ function AgentTypeRow({
               {agentType.hasTemplate && agentType.yamlFieldOverrides.length > 0 && (
                 <button
                   onClick={onShowDiff}
-                  className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                  className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
                 >
                   Compare to Template
                 </button>
               )}
               <button
                 onClick={handleExport}
-                className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
               >
                 {copyMsg || 'Export YAML'}
               </button>
@@ -666,7 +666,7 @@ function ResolvedPromptPreview({ agentTypeId }: { agentTypeId: string }) {
             type="button"
             onClick={handleCopy}
             disabled={!resolved}
-            className="ficus-button shrink-0 text-xs text-accent-light hover:text-accent-hover disabled:opacity-50"
+            className="ficus-button shrink-0 text-xs text-accent-light hover:text-link-hover disabled:opacity-50"
           >
             {copyMsg || 'Copy'}
           </button>
@@ -799,7 +799,7 @@ function ModelSpecListEditor({
         <button
           type="button"
           onClick={addSpec}
-          className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium flex items-center gap-1"
+          className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium flex items-center gap-1"
         >
           <PlusIcon className="w-3.5 h-3.5" />
           Add model

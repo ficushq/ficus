@@ -131,7 +131,7 @@ export function MemorySettings({ squadId }: Props) {
           className={clsx(
             'ficus-button',
             'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out  focus:ring-2 focus:ring-accent focus:ring-offset-2',
-            memoryConfig.enabled ? 'bg-accent' : 'bg-status-neutral-200 dark:bg-status-neutral-700'
+            memoryConfig.enabled ? 'bg-accent' : 'bg-th-border'
           )}
         >
           <span

@@ -102,11 +102,11 @@ describe('channel-form tokens (opacity modifier support)', () => {
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line.startsWith('--color-'))
-      expect(declarations.length).toBe(29)
+      expect(declarations.length).toBe(30)
       for (const declaration of declarations) {
         expect(CHANNEL_DECL.test(declaration)).toBeTrue()
       }
-      expect(new Set(declarations).size).toBe(29)
+      expect(new Set(declarations).size).toBe(30)
       void name
     }
   })

@@ -195,7 +195,7 @@ function ToolTranscriptEntry({
               <span className="shrink-0 text-muted">&#10003;</span>
             )
           ) : (
-            <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-status-neutral-300 border-t-status-neutral-600 dark:border-status-neutral-600 dark:border-t-status-neutral-300" />
+            <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-th-border border-t-secondary" />
           )}
           {!(toolRenderers[toolName] && (entry.toolArgs || entry.text)) && (
             <span className="min-w-0 truncate font-medium text-secondary">{toolName}</span>

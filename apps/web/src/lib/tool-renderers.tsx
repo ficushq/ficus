@@ -246,7 +246,7 @@ function BashCodeBlock({
 const bashRenderer: ToolRenderer = {
   summary: (args) => truncate(args.command ?? '', 60),
   ArgsView: ({ args }) => (
-    <div className="bg-status-neutral-800 dark:bg-status-neutral-900 text-status-neutral-300 rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+    <div className="bg-code-bg text-code-text rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
       <span className="text-muted select-none">$ </span>
       {args.command ?? ''}
     </div>
@@ -485,7 +485,7 @@ const navigateRenderer: ToolRenderer = {
       <div className="flex items-center gap-2">
         <Link
           to={path}
-          className="inline-flex items-center gap-1 text-accent-light hover:text-accent-hover hover:underline text-[12px] font-medium"
+          className="inline-flex items-center gap-1 text-accent-light hover:text-link-hover hover:underline text-[12px] font-medium"
         >
           {isPrompt ? 'Go to ' : ''}
           <code className="bg-accent/10 text-accent-light px-1.5 py-0.5 rounded text-[11px]">{path}</code>

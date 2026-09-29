@@ -455,7 +455,7 @@ function InboxDeliveryMessageCard({
                   <button
                     type="button"
                     onClick={() => setWsOpen({ workStreamId: summary.workStreamId!, squadId: summary.squadId! })}
-                    className="ficus-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-light hover:text-accent-hover"
+                    className="ficus-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-light hover:text-link-hover"
                   >
                     <WorkStreamIcon className="h-3.5 w-3.5 shrink-0" />
                     View work stream
@@ -501,7 +501,7 @@ function InboxCardBody({ body, className }: { body: string; className?: string }
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="ficus-button mt-1 text-xs font-medium text-accent-light underline decoration-accent-light/30 underline-offset-2 hover:text-accent-hover hover:decoration-accent-hover/70"
+          className="ficus-button mt-1 text-xs font-medium text-accent-light underline decoration-accent-light/30 underline-offset-2 hover:text-link-hover hover:decoration-link-hover/70"
         >
           {expanded ? 'Show less' : 'Show more'}
         </button>

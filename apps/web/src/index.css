@@ -270,6 +270,7 @@
     --color-primary-hover: 109 40 217;
     --color-primary-active: 76 29 149;
     --color-primary-light: 109 40 217;
+    --color-link-hover: 91 33 182;
 
     /* Shared interaction surfaces. Keep them separate from semantic status colors. */
     --color-selection-bg: 238 232 248;
@@ -784,6 +785,7 @@
     --color-primary-hover: 109 40 217;
     --color-primary-active: 76 29 149;
     --color-primary-light: 196 181 253;
+    --color-link-hover: 221 214 254;
 
     --color-selection-bg: 33 26 53;
     --color-selection-border: 68 50 95;

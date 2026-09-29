@@ -77,7 +77,7 @@ export function TemplateFieldActions({
         <button
           type="button"
           onClick={() => setIsDiffOpen(true)}
-          className="ficus-button text-[11px] text-accent-light hover:text-accent-hover"
+          className="ficus-button text-[11px] text-accent-light hover:text-link-hover"
         >
           Diff
         </button>

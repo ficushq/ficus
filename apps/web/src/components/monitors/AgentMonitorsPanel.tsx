@@ -27,7 +27,7 @@ export function AgentMonitorsPanel({ agent }: { agent: Agent }) {
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">Monitors</h2>
-          <p className="text-sm text-status-neutral-500">
+          <p className="text-sm text-muted">
             Agent-owned background monitor sessions. Creation is intentionally agent-only; cancel is an admin safety
             override.
           </p>

@@ -402,7 +402,7 @@ function SecretRow({
               <>
                 <button
                   onClick={handleReveal}
-                  className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                  className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
                 >
                   Reveal
                 </button>
@@ -411,7 +411,7 @@ function SecretRow({
             )}
             <button
               onClick={handleEdit}
-              className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+              className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
             >
               {isSet ? 'Edit' : inheritedValue ? 'Override' : 'Set'}
             </button>

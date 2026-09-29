@@ -33,7 +33,7 @@ export function WorkStreamQuestionWait({
   if (!agentId || !wait.referenceId) return null
 
   const threadLink = agentThreadHref ? (
-    <Link to={agentThreadHref} className="text-xs text-accent-light hover:text-accent-hover hover:underline">
+    <Link to={agentThreadHref} className="text-xs text-accent-light hover:text-link-hover hover:underline">
       Open agent thread
     </Link>
   ) : null

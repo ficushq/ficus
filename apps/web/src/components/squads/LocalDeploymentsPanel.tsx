@@ -474,10 +474,10 @@ function LocalDeploymentLogsModal({
         onScroll={handleScroll}
         onWheel={markUserScrolling}
         onTouchMove={markUserScrolling}
-        className="min-h-[50vh] max-h-[70vh] overflow-auto bg-status-neutral-950 text-status-neutral-100 p-3 font-mono text-xs whitespace-pre-wrap"
+        className="min-h-[50vh] max-h-[70vh] overflow-auto bg-code-bg text-code-text p-3 font-mono text-xs whitespace-pre-wrap"
       >
         {error ? <div className="text-status-danger-300">{error}</div> : null}
-        {lines.length === 0 && !error ? <div className="text-status-neutral-400">Waiting for logs…</div> : null}
+        {lines.length === 0 && !error ? <div className="text-code-text/60">Waiting for logs…</div> : null}
         {lines.map((line, index) => (
           <div key={`${index}-${line}`}>{line}</div>
         ))}

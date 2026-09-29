@@ -179,6 +179,7 @@ const PRIMARY_FAMILY = [
   '--color-primary-hover',
   '--color-primary-active',
   '--color-primary-light',
+  '--color-link-hover',
   '--color-selection-bg',
   '--color-selection-border',
   '--color-focus',

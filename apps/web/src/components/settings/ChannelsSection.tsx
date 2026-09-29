@@ -380,7 +380,7 @@ export function SquadOverridesEditor({
       <button
         type="button"
         onClick={addRow}
-        className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+        className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
       >
         + Add override
       </button>
@@ -674,14 +674,14 @@ export function ChannelRow({
             {channel.hasTemplate && channel.yamlFieldOverrides.length > 0 && (
               <button
                 onClick={onShowDiff}
-                className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
               >
                 Compare to Template
               </button>
             )}
             <button
               onClick={handleExport}
-              className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+              className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
             >
               {copyMsg || 'Export YAML'}
             </button>

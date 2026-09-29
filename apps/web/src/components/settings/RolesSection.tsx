@@ -319,7 +319,7 @@ export function RolesSection() {
                               }
                               className={clsx(
                                 'ficus-button',
-                                'text-xs font-medium text-accent-light hover:text-accent-hover',
+                                'text-xs font-medium text-accent-light hover:text-link-hover',
                                 !canDuplicate && 'cursor-not-allowed opacity-50'
                               )}
                             >
@@ -343,7 +343,7 @@ export function RolesSection() {
                               setEditName(role.name)
                               setEditPermissions(role.permissions || [])
                             }}
-                            className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+                            className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
                           >
                             Edit
                           </button>

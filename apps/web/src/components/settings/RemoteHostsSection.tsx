@@ -191,7 +191,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
             <button
               onClick={() => checkMutation.mutate()}
               disabled={isMutating}
-              className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+              className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
             >
               {checkMutation.isPending ? 'Checking…' : 'Check'}
             </button>
@@ -275,7 +275,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
                 <button
                   onClick={() => pickedSquadId && grantMutation.mutate(pickedSquadId)}
                   disabled={!pickedSquadId || grantMutation.isPending}
-                  className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium disabled:opacity-50"
+                  className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
                 >
                   {grantMutation.isPending ? 'Granting…' : 'Grant'}
                 </button>

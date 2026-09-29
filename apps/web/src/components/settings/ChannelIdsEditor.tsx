@@ -54,7 +54,7 @@ export function ChannelIdsEditor({
       <button
         type="button"
         onClick={() => onChange([...value, ''])}
-        className="ficus-button text-xs text-accent-light hover:text-accent-hover font-medium"
+        className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
       >
         + Add {kind.toLowerCase()} channel
       </button>
