@@ -105,6 +105,66 @@ describe('secret-row sweep migration (real runner, isolated database)', () => {
     })
   })
 
+  test('renames exposures of swept rows, drops duplicates, and orphans nothing', async () => {
+    await withMigratedPredecessors(async (connection) => {
+      const [first] = await connection.unsafe<{ id: string }[]>(
+        "INSERT INTO squads (name, purpose) VALUES ('one', 'p') RETURNING id"
+      )
+      const [second] = await connection.unsafe<{ id: string }[]>(
+        "INSERT INTO squads (name, purpose) VALUES ('two', 'p') RETURNING id"
+      )
+      await insertRow(connection, 'TAU_X', 'custom-x')
+      await insertRow(connection, 'TAU_PASSWORD', 'pw')
+      await insertRow(connection, 'FICUS_PASSWORD', 'pw')
+      await insertRow(connection, 'TAU_DIFFER', 'differ-old')
+      await insertRow(connection, 'FICUS_DIFFER', 'differ-new')
+      const exposeSquad = (squadId: string, key: string) =>
+        connection.unsafe('INSERT INTO squad_secret_exposures (squad_id, secret_key) VALUES ($1, $2)', [squadId, key])
+      const exposeGlobal = (key: string) =>
+        connection.unsafe('INSERT INTO global_secret_exposures (secret_key) VALUES ($1)', [key])
+      // Squad one exposes the custom key under the old name only; squad two already exposes both names.
+      await exposeSquad(first.id, 'TAU_X')
+      await exposeSquad(second.id, 'TAU_X')
+      await exposeSquad(second.id, 'FICUS_X')
+      await exposeSquad(first.id, 'TAU_PASSWORD')
+      await exposeSquad(first.id, 'TAU_DIFFER')
+      await exposeSquad(first.id, 'TAU_NEVER_SET')
+      await exposeSquad(first.id, 'TAUX_KEEP')
+      await exposeGlobal('TAU_X')
+      await exposeGlobal('TAU_PASSWORD')
+      await exposeGlobal('FICUS_PASSWORD')
+      await exposeGlobal('TAU_DIFFER')
+
+      await applyMigrations(connection, [...predecessors, target!])
+      for (const statement of target!.sql) await connection.unsafe(statement)
+
+      const squadRows = await connection.unsafe<{ squad_id: string; secret_key: string }[]>(
+        'SELECT squad_id, secret_key FROM squad_secret_exposures ORDER BY secret_key'
+      )
+      const exposed = (squadId: string) =>
+        squadRows
+          .filter((row) => row.squad_id === squadId)
+          .map((row) => row.secret_key)
+          .sort()
+      expect(exposed(first.id)).toEqual(['FICUS_NEVER_SET', 'FICUS_PASSWORD', 'FICUS_X', 'TAUX_KEEP', 'TAU_DIFFER'])
+      expect(exposed(second.id)).toEqual(['FICUS_X'])
+      const globalRows = await connection.unsafe<{ secret_key: string }[]>(
+        'SELECT secret_key FROM global_secret_exposures ORDER BY secret_key'
+      )
+      expect(globalRows.map((row) => row.secret_key).sort()).toEqual(['FICUS_PASSWORD', 'FICUS_X', 'TAU_DIFFER'])
+
+      // No exposure names a key the sweep removed.
+      const orphans = await connection.unsafe<{ secret_key: string }[]>(
+        `SELECT secret_key FROM squad_secret_exposures e WHERE e.secret_key LIKE 'TAU\\_%' ESCAPE '\\'
+           AND NOT EXISTS (SELECT 1 FROM secrets s WHERE s.key = e.secret_key)
+         UNION ALL
+         SELECT secret_key FROM global_secret_exposures e WHERE e.secret_key LIKE 'TAU\\_%' ESCAPE '\\'
+           AND NOT EXISTS (SELECT 1 FROM secrets s WHERE s.key = e.secret_key)`
+      )
+      expect(orphans.map((row) => row.secret_key)).toEqual([])
+    })
+  })
+
   test('keeps a copied row whose twin is missing, and renames it like a custom row', async () => {
     await withMigratedPredecessors(async (connection) => {
       await insertRow(connection, 'TAU_PUSH_RELAY_TOKEN', 'relay')
