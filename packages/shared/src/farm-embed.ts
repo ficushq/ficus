@@ -20,6 +20,13 @@ import { SYNC_THEME_DESCRIPTORS } from './theme-preferences'
  */
 export const FARM_EMBED_VERSION = 1
 
+/**
+ * A CSS length the app sets on the page's root element (e.g. `83px`) when its
+ * dock floats over the bottom of the web view; the farm keeps its bottom
+ * controls clear of it as well as the device's safe area.
+ */
+export const FARM_EMBED_INSET_BOTTOM_VAR = '--g-embed-inset-bottom'
+
 export const FARM_HAPTICS = ['harvest', 'wave', 'message', 'answer'] as const
 export type FarmHaptic = (typeof FARM_HAPTICS)[number]
 

@@ -7,7 +7,7 @@
   z-index: 40;
   top: max(16px, env(safe-area-inset-top));
   right: 16px;
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: max(16px, var(--g-safe-bottom));
   display: flex;
   flex-direction: column;
   width: min(440px, calc(100vw - 32px));
@@ -836,7 +836,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 12px max(12px, env(safe-area-inset-bottom));
+  padding: 10px 12px max(12px, var(--g-safe-bottom));
   border-top: var(--g-border) solid var(--g-outline);
   background: var(--g-chat-composer-fill);
 }

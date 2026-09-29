@@ -6,6 +6,15 @@
   box-sizing: border-box;
 }
 
+:root {
+  /*
+   * The bottom edge to keep clear: the device's safe area, or more when an
+   * embedding app's dock floats over the page (Ficus Mobile sets
+   * --g-embed-inset-bottom; see embed/embed.ts).
+   */
+  --g-safe-bottom: max(env(safe-area-inset-bottom), var(--g-embed-inset-bottom, 0px));
+}
+
 html,
 body,
 #root {

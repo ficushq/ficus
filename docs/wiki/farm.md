@@ -43,6 +43,7 @@ Ficus Mobile shows the farm in a web view in its Farm tab. The farm notices (`wi
 
 - **Native feel:** the page is marked `data-embed="native"`, so there's no bounce, long-press callout, tap flash or text selection outside fields. Page zoom is off, since the farm pinches its own camera.
 - **Sign-in:** there is no web sign-in. The app injects a web handoff code (`window.__FICUS_EMBED__`) or sends one when the farm asks (`auth-required`), and the farm trades it for a session (see [Core auth](core-auth.md#web-handoff-ficus-mobiles-farm-tab)).
+- **Dock:** the app sets `--g-embed-inset-bottom` (`FARM_EMBED_INSET_BOTTOM_VAR`) to the height its dock covers, and the farm keeps its bottom controls above it (`--g-safe-bottom`).
 - **Theme:** the Futurist style follows the theme the app sends, live, including a custom theme's palette primary as its accent. The other styles keep their own palettes.
 - **Haptics:** the farm asks the app for a light tap on a harvest, a wave involving you, someone else's chat message for you or in the room you have open, and an answer you submit.
 
