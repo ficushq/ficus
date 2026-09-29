@@ -20,6 +20,15 @@ sky), which is also the farm's Vite public dir. Launched from the home screen it
 runs full screen under a translucent status bar; the HUD keeps to the safe area.
 It has no service worker; the web app's worker never answers `/farm` pages.
 
+Each installed app (Ficus and Farm) remembers which of the two you were last
+in, and a fresh launch reopens there (`@ficus/shared/app-surface`). The window's
+installed app is kept in `sessionStorage` (`ficus-launched-as`), which a launch
+starts empty and which follows the window between the web app and the farm; the
+last app is kept per installed app in `localStorage` (`ficus-last-app:<app>`),
+since on Android and desktop both apps share one. Only launches at the app's
+start page switch (not deep links, reloads or browser tabs), and the web app
+stays put offline, as the farm has no offline copy.
+
 Signed out, the farm's "Sign in" goes to the web app's `/farm-sign-in`, which
 shows the login page and, once signed in, returns to the farm. That matters on
 iOS, where each home-screen app keeps its own cookies and a new farm app starts

@@ -14,6 +14,7 @@
     "./farm-chat": "./src/farm-chat.ts",
     "./farm-presence": "./src/farm-presence.ts",
     "./farm-look": "./src/farm-look.ts",
+    "./app-surface": "./src/app-surface.ts",
     "./theme-preset": "./src/theme-preset.ts",
     "./theme-derivation": "./src/theme-derivation.ts",
     "./theme-triples": "./src/theme-triples.ts",
