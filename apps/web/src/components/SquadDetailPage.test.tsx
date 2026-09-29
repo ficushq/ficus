@@ -179,14 +179,14 @@ describe('SquadDetailPage', () => {
     expect(renderSquadDetail()).toContain('Archive')
   })
 
-  test('shows four primary destinations and keeps secondary tools in More', () => {
+  test('shows the primary destinations, Workspace and Apps included, and keeps secondary tools in More', () => {
     const html = renderSquadDetail()
     const tabsHtml = html.match(/<nav[^>]*aria-label="Squad sections"[^>]*>(?<tabs>.*?)<\/nav>/)?.groups?.tabs
     const tabLabels = Array.from(tabsHtml?.matchAll(/<button[^>]*>(?<label>[^<]+)<\/button>/g) ?? []).map(
       (match) => match.groups!.label
     )
 
-    expect(tabLabels).toEqual(['Home', 'Chats', 'Work', 'Activity'])
+    expect(tabLabels).toEqual(['Home', 'Chats', 'Work', 'Activity', 'Workspace', 'Apps'])
     expect(html).toContain('More squad tools')
   })
 

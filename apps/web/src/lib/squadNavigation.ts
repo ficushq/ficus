@@ -52,4 +52,4 @@ export function resolveSquadSettingsSection(section: string | null, target?: str
   )
 }
 
-export const PRIMARY_SQUAD_TABS = new Set(['home', 'agents', 'work', 'activity'])
+export const PRIMARY_SQUAD_TABS = new Set(['home', 'agents', 'work', 'activity', 'workspace', 'apps'])
