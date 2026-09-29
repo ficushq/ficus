@@ -475,17 +475,41 @@ describe('intents table adoption', () => {
     })
   })
 
-  test('drops shadow tables a crashed run left under either name', async () => {
+  test('drops shadow tables a crashed run left behind in this session or outside temp schemas', async () => {
     await withSchema(async (connection, schema) => {
       const suffix = crypto.randomUUID().replaceAll('-', '')
-      const leftovers = [`__tau_index_definition_${suffix}`, `__ficus_index_definition_${suffix}`]
-      for (const name of leftovers) await connection.unsafe(`CREATE TEMP TABLE "${name}" (value text)`)
-      await connection.unsafe(`CREATE TABLE "${schema}"."__tau_index_definition_stray_${suffix}" (value text)`)
+      await connection.unsafe(`CREATE TEMP TABLE "__ficus_index_definition_${suffix}" (value text)`)
+      await connection.unsafe(`CREATE TABLE "${schema}"."__ficus_index_definition_stray_${suffix}" (value text)`)
       await connection.unsafe(`CREATE TABLE "${schema}"."keep_${suffix}" (value text)`)
       await applyMigrations(connection, [], { migrationsSchema: schema })
       const remaining = await connection<{ name: string }[]>`SELECT relname AS name FROM pg_class
         WHERE relname LIKE ${`%${suffix}`} AND relkind = 'r' ORDER BY relname`
       expect(remaining.map((row) => row.name)).toEqual([`keep_${suffix}`])
+    })
+  })
+
+  test('survives a rollback replaying the previous release bootstrap, then adopts again', async () => {
+    await withSchema(async (connection, schema) => {
+      await createIntents(connection, schema, PRE_RENAME_INTENTS)
+      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 60, 'before-upgrade')
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      // The previous release's own bootstrap DDL, verbatim: it must not collide with the adopted table.
+      await connection.unsafe(`
+        CREATE TABLE IF NOT EXISTS "${schema}"."${PRE_RENAME_INTENTS}" (
+          created_at bigint PRIMARY KEY,
+          hash text NOT NULL,
+          table_schema text NOT NULL,
+          index_name text NOT NULL,
+          started_at timestamptz NOT NULL DEFAULT now()
+        )`)
+      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 70, 'during-rollback')
+      await applyMigrations(connection, [], { migrationsSchema: schema })
+      expect(await tables(connection, schema)).toEqual([INTENTS])
+      expectFicusConstraints(await constraints(connection, schema))
+      expect((await intents(connection, schema)).map((row) => [row.created_at, row.hash])).toEqual([
+        ['60', 'before-upgrade'],
+        ['70', 'during-rollback'],
+      ])
     })
   })
 })

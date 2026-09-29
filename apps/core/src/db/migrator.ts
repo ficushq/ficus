@@ -175,15 +175,14 @@ async function inTransaction<T>(connection: postgres.ReservedSql, callback: () =
 /** Crash-recovery intents for concurrent index migrations; owned by this migrator. */
 const INTENTS_TABLE = '__ficus_online_migration_intents'
 /** The intents table's name before the Ficus rename, adopted (or merged) on the first run. */
-const PRE_RENAME_INTENTS_TABLE = '__tau_online_migration_intents'
+const PRE_RENAME_INTENTS_TABLE = '__tau_online_migration_intents' // ficus-p5-bridge: adopts pre-rename intents
 /** Temp shadow tables that capture a concurrent index's intended definition. */
 const SHADOW_PREFIX = '__ficus_index_definition_'
-const PRE_RENAME_SHADOW_PREFIX = '__tau_index_definition_'
 
 const quoteLiteral = (value: string): string => `'${value.replaceAll("'", "''")}'`
 
 /**
- * Adopt the pre-rename intents table in one atomic statement, before anything reads intents.
+ * ficus-p5-bridge: adopt the pre-rename intents table in one atomic statement, before anything reads intents.
  * Only the old table: rename it and the constraints named after it. Both (a rollback recreated the old one):
  * copy the old rows the new table lacks, then drop the old table. Neither, or only the new one: no-op.
  */
@@ -218,9 +217,9 @@ async function adoptPreRenameIntents(connection: postgres.ReservedSql, schema: s
 }
 
 /**
- * Drop shadow tables a crashed run left behind, under either name. They are TEMP tables, so a
- * dead session's are already gone; this clears this session's own, and any stray non-temp copy.
- * Other live sessions' temp schemas are never touched.
+ * Drop shadow tables a crashed run left behind. They are TEMP tables, so a dead session's are already
+ * gone; this clears this session's own (a pooled session that survived an error), and any stray
+ * non-temp copy. Other live sessions' temp schemas are never touched.
  */
 async function dropLeftoverShadowTables(connection: postgres.ReservedSql): Promise<void> {
   const leftovers = await connection.unsafe<{ schema: string; name: string }[]>(
@@ -228,10 +227,10 @@ async function dropLeftoverShadowTables(connection: postgres.ReservedSql): Promi
     FROM pg_catalog.pg_class class
     JOIN pg_catalog.pg_namespace namespace ON namespace.oid = class.relnamespace
     WHERE class.relkind IN ('r', 'p')
-      AND (starts_with(class.relname, $1) OR starts_with(class.relname, $2))
+      AND starts_with(class.relname, $1)
       AND (namespace.oid = pg_my_temp_schema()
         OR (namespace.nspname NOT LIKE 'pg\\_temp\\_%' AND namespace.nspname NOT LIKE 'pg\\_toast\\_temp\\_%'))`,
-    [SHADOW_PREFIX, PRE_RENAME_SHADOW_PREFIX]
+    [SHADOW_PREFIX]
   )
   for (const { schema, name } of leftovers) {
     await connection.unsafe(`DROP TABLE IF EXISTS ${quoteIdentifier(schema)}.${quoteIdentifier(name)} CASCADE`)
