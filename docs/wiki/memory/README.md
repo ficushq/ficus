@@ -6,7 +6,8 @@ retrieve knowledge across sessions. The memory vault is Obsidian-compatible
 
 ## Key features
 
-- **Hybrid Search**: Combines vector similarity (pgvector) and keyword matching (ILIKE) with MMR reranking for diversity
+- **Hybrid Search**: Combines vector similarity (pgvector) and Postgres full-text keyword search with MMR reranking for diversity
+- **Outline**: A browsable, searchable map of folders, documents and headings; agents read just the section they need
 - **Obsidian-Compatible**: Standard markdown with YAML frontmatter and `[[wikilinks]]` for cross-document linking
 - **Read-Only Sandbox Mount**: Memory is mounted at `/memory:ro` in sandboxes — agents must use dedicated write APIs
 - **Concurrency-Safe Writes**: Advisory locks ensure atomic writes via `memory_write`, `memory_patch`, `memory_append`
@@ -30,7 +31,8 @@ retrieve knowledge across sessions. The memory vault is Obsidian-compatible
 ## Agent tools
 
 - `memory_search` - Hybrid search with configurable weights
-- `memory_get` - Read file content
+- `memory_outline` - Browse folders and document headings, or find sections by title, path or heading words
+- `memory_get` - Read file content, or one section of it (`section: "Deploy > Rollout"`)
 - `memory_write` - Overwrite file (creates if needed)
 - `memory_patch` - Exact single-match text replacement
 - `memory_append` - Append content to file
@@ -50,9 +52,10 @@ ficus memory sync push --squad <id>
 ## Requirements
 
 The memory system requires **pgvector** for semantic search (auto-installed via
-migration). Keyword search uses ILIKE — no additional extensions needed.
-Semantic search additionally needs `OPENAI_API_KEY` for embeddings; without it
-memory search falls back to keyword matching
+migration). Keyword search and the outline use built-in Postgres full-text
+search — no additional extensions needed. Semantic search additionally needs
+`OPENAI_API_KEY` for embeddings; without it memory search falls back to keyword
+matching
 ([configuration.md](../configuration.md)).
 
 ## In this directory

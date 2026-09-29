@@ -138,6 +138,33 @@ export function parseWikilinks(content: string): WikiLink[] {
  */
 const HEADING_REGEX = /^(#{1,6})\s+(.+)$/
 
+/** A code fence line; `# comment` lines inside a fence are not headings. */
+const FENCE_REGEX = /^\s{0,3}(```|~~~)/
+
+export interface MarkdownHeading {
+  heading: string
+  level: number
+  /** 1-based line number within the content. */
+  line: number
+}
+
+/**
+ * The headings of a markdown body, in order, skipping fenced code.
+ */
+export function readHeadings(content: string): MarkdownHeading[] {
+  const headings: MarkdownHeading[] = []
+  let inFence = false
+  content.split('\n').forEach((line, index) => {
+    if (FENCE_REGEX.test(line)) {
+      inFence = !inFence
+      return
+    }
+    const match = inFence ? null : line.match(HEADING_REGEX)
+    if (match) headings.push({ heading: match[2].trim(), level: match[1].length, line: index + 1 })
+  })
+  return headings
+}
+
 /**
  * Chunk markdown content for embedding.
  *
@@ -184,8 +211,11 @@ export function chunkMarkdown(content: string, options: ChunkOptions = {}): Cont
     chunkStartLine = lineNumber
   }
 
+  let inFence = false
+
   for (const line of lines) {
-    const headingMatch = line.match(HEADING_REGEX)
+    if (FENCE_REGEX.test(line)) inFence = !inFence
+    const headingMatch = inFence ? null : line.match(HEADING_REGEX)
 
     if (headingMatch) {
       // Flush current chunk before starting new section

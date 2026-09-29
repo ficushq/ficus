@@ -90,11 +90,23 @@ Capability matrix:
 
 The `SearchService` supports three modes:
 
-- **hybrid** (default) — Combines vector similarity and keyword matching with weighted scoring, then applies MMR for diversity
+- **hybrid** (default) — Combines vector similarity and keyword matching with weighted scoring, then applies MMR for diversity. Without embeddings it is keyword search.
 - **vector** — Pure semantic search via pgvector cosine distance
-- **keyword** — Multi-term ILIKE matching
+- **keyword** — Postgres full-text search (below)
 
 Filters: `sourceTypes`, `kinds` (frontmatter), `tags` (frontmatter), `paths` (glob patterns).
+
+Keyword search needs no extension or API key. It matches query words (stop words dropped) against each chunk's section heading (weighted high) and content, using the `english` configuration, so word forms match ("deploying" finds "deployment"); words of three or more characters also match as prefixes. Chunks are scored in SQL before the limit is applied, from the share of query words matched, `ts_rank`, a title or path match, and a verbatim match of the whole query. A second query finds chunks that contain the query verbatim, for identifiers the text parser splits. The GIN index `idx_memory_chunks_fts` serves the full-text query; `fts.ts` must build the identical expression.
+
+### Outline
+
+`OutlineService` is a map of indexed memory that agents browse with `memory_outline`, built from what indexing already stores:
+
+- **Folders** — the immediate children of a path prefix, from document paths. At the top level, documents without a path (threads, Slack) are counted by source type.
+- **Document trees** — a document's headings as nested sections with line counts. Each section's first chunk begins with its heading line; the tree is rebuilt from those chunks. `#` lines in code fences are not headings.
+- **Outline search** — full-text matching of query words against document titles, path words and section headings, not content. It returns the matching sections with their heading trail.
+
+`memory_get` takes a `section` (a heading or a trail such as `Deploy > Rollout`) to read one section of a memory file. The outline applies the same read scopes, grants and audit (`outline`) as search.
 
 ### Sync
 
@@ -140,7 +152,7 @@ Unique constraint: `(squadId, sourceType, sourceId)`
 | metadata    | jsonb        | Heading, agent info, etc.             |
 | createdAt   | timestamp    | Created                               |
 
-IVFFlat index on `embedding` for fast cosine similarity search.
+IVFFlat index on `embedding` for fast cosine similarity search; GIN index `idx_memory_chunks_fts` on the weighted heading and content text for keyword search.
 
 ### `memoryLinks`
 
@@ -185,6 +197,9 @@ interface SquadMemoryConfig {
 | `apps/core/src/services/memory/indexer/ExternalSourceReindexRunner.ts`  | Periodic external-source reindex runner (30 min default)  |
 | `apps/core/src/services/memory/parser.ts`                               | Frontmatter, wikilinks, chunking                          |
 | `apps/core/src/services/memory/SearchService.ts`                        | Hybrid vector/keyword search with MMR                     |
+| `apps/core/src/services/memory/fts.ts`                                  | Full-text query terms and SQL                             |
+| `apps/core/src/services/memory/OutlineService.ts`                       | Folder listing, document heading trees, outline search    |
+| `apps/core/src/services/memory/outline.ts`                              | Section trees and section lookup                          |
 | `apps/core/src/services/memory/MaintenanceService.ts`                   | Broken links, stale docs, normalization                   |
 | `apps/core/src/services/memory/sources/`                                | Source implementations                                    |
 | `apps/core/src/services/memory/sync/`                                   | Git and S3 sync adapters                                  |

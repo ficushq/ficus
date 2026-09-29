@@ -4,7 +4,7 @@ import { memoryAccessAudit } from '../../../db/schema'
 export interface RecordAccessInput {
   callerSquadId: string
   callerAgentId?: string | null
-  action: 'search' | 'read' | 'write' | `live_search:${string}`
+  action: 'search' | 'read' | 'write' | 'outline' | `live_search:${string}`
   sourceSquadIds: string[]
   resourcePath?: string | null
   resultCount?: number | null

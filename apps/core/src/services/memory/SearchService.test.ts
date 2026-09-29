@@ -808,3 +808,110 @@ describe('SearchService source-specific grant filters', () => {
     SEARCH_INTEGRATION_TIMEOUT_MS
   )
 })
+
+describe('SearchService keyword ranking', () => {
+  const squadId = crypto.randomUUID()
+  const oldDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000)
+
+  beforeAll(async () => {
+    await db.insert(squads).values({ id: squadId, name: 'Keyword Ranking', purpose: 'Test', status: 'active' })
+    await indexingService.indexFile({
+      squadId,
+      path: '/memory/playbooks/pool.md',
+      content:
+        '# Connection pool exhaustion\n\nWhen the Postgres connection pool is exhausted, raise the pool size and close idle connections.',
+    })
+    await db
+      .update(memoryDocuments)
+      .set({ updatedAt: oldDate })
+      .where(sql`${memoryDocuments.squadId} = ${squadId} AND ${memoryDocuments.path} = '/memory/playbooks/pool.md'`)
+    // Newer documents that each mention one query word.
+    for (let i = 0; i < 12; i++) {
+      await indexingService.indexFile({
+        squadId,
+        path: `/memory/notes/note-${i}.md`,
+        content: `# Note ${i}\n\nThe office wifi connection dropped again on day ${i}.`,
+      })
+    }
+    await indexingService.indexFile({
+      squadId,
+      path: '/memory/runbooks/release.md',
+      content: '# Release\n\nThe deployment checklist lives here.\n\n## Rollback\n\nRevert the tag and redeploy.',
+    })
+    await indexingService.indexFile({
+      squadId,
+      path: '/memory/notes/history.md',
+      content: '# History\n\nA long story about the project, its people and its tools, where once a rollback happened.',
+    })
+    await indexingService.indexFile({
+      squadId,
+      path: '/memory/incidents/socket.md',
+      content: '# Socket incident\n\nClients failed with WSX-4471b while reconnecting.',
+    })
+  })
+
+  afterAll(async () => {
+    await db.delete(memoryChunks).where(eq(memoryChunks.squadId, squadId))
+    await db.delete(memoryDocuments).where(eq(memoryDocuments.squadId, squadId))
+    await db.delete(squads).where(eq(squads.id, squadId))
+  })
+
+  it(
+    'ranks an older document matching every word above newer partial matches before applying the limit',
+    async () => {
+      const results = await searchService.search(squadId, 'connection pool exhaustion', { mode: 'keyword', limit: 3 })
+      expect(results[0]?.path).toBe('/memory/playbooks/pool.md')
+    },
+    SEARCH_INTEGRATION_TIMEOUT_MS
+  )
+
+  it(
+    'matches other forms of a word',
+    async () => {
+      const results = await searchService.search(squadId, 'deploying', { mode: 'keyword' })
+      expect(results.map((r) => r.path)).toContain('/memory/runbooks/release.md')
+    },
+    SEARCH_INTEGRATION_TIMEOUT_MS
+  )
+
+  it(
+    'matches a word prefix',
+    async () => {
+      const results = await searchService.search(squadId, 'exhaust', { mode: 'keyword' })
+      expect(results[0]?.path).toBe('/memory/playbooks/pool.md')
+    },
+    SEARCH_INTEGRATION_TIMEOUT_MS
+  )
+
+  it(
+    'ranks a section heading match above a passing mention',
+    async () => {
+      const results = await searchService.search(squadId, 'rollback', { mode: 'keyword' })
+      const paths = results.map((r) => r.path)
+      expect(paths.indexOf('/memory/runbooks/release.md')).toBeGreaterThanOrEqual(0)
+      expect(paths.indexOf('/memory/runbooks/release.md')).toBeLessThan(paths.indexOf('/memory/notes/history.md'))
+    },
+    SEARCH_INTEGRATION_TIMEOUT_MS
+  )
+
+  it(
+    'finds exact identifiers, including a fragment of one',
+    async () => {
+      const whole = await searchService.search(squadId, 'WSX-4471b', { mode: 'keyword' })
+      expect(whole[0]?.path).toBe('/memory/incidents/socket.md')
+      const fragment = await searchService.search(squadId, '4471', { mode: 'keyword' })
+      expect(fragment.map((r) => r.path)).toContain('/memory/incidents/socket.md')
+    },
+    SEARCH_INTEGRATION_TIMEOUT_MS
+  )
+
+  it(
+    'does not expose the internal keyword score',
+    async () => {
+      const [result] = await searchService.search(squadId, 'rollback', { mode: 'keyword' })
+      expect(result).toBeDefined()
+      expect('keywordScore' in result).toBe(false)
+    },
+    SEARCH_INTEGRATION_TIMEOUT_MS
+  )
+})

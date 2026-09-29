@@ -2,8 +2,8 @@
  * Memory Search Service
  *
  * Provides hybrid search over memory documents using:
- * - Vector similarity (pgvector)
- * - Keyword matching (BM25 via ParadeDB if available, fallback to ILIKE)
+ * - Vector similarity (pgvector), when embeddings are configured
+ * - Keyword matching (Postgres full-text ranking plus exact substrings)
  *
  * Results are ranked using configurable weights and MMR for diversity.
  */
@@ -13,10 +13,11 @@ import { createLogger } from '../../lib/infra/logger'
 
 const log = createLogger('vector-search')
 import { memoryDocuments, memoryChunks } from '../../db/schema'
-import { eq, and, ilike, or, desc, isNotNull, sql } from 'drizzle-orm'
+import { eq, and, ilike, desc, isNotNull, sql, type AnyColumn } from 'drizzle-orm'
 import { recordMemoryAccess } from './access/audit'
 import { expandReadScope, type AllowedScope } from './access/scope-expander'
 import { isAllowedBy, parseSensitivity, type SensitivityTier } from './access/sensitivity'
+import { anyTermQuery, chunkSearchVector, documentSearchVector, escapeLike, queryTerms, termCoverage } from './fts'
 import { EmbeddingService } from './indexer/EmbeddingService'
 import { IndexingService } from './indexer/IndexingService'
 import type { LiveMemorySourceAdapter, LiveSearchResult } from './sources/live-adapter'
@@ -65,6 +66,39 @@ export interface SearchResult {
   frontmatter?: Record<string, unknown>
   provenance?: Record<string, unknown>
   event?: { ts: string; actor?: string }
+}
+
+type KeywordResult = SearchResult & { keywordScore: number }
+
+interface KeywordRow {
+  documentId: string
+  chunkIndex: number
+  content: string
+  docPath: string | null
+  docTitle: string | null
+  docSourceType: string
+  docSquadId: string
+  docSensitivity: string
+  docFrontmatter: unknown
+  docUpdatedAt: Date
+  keywordScore: number
+}
+
+/**
+ * Keyword score for a chunk that contains the query verbatim but that
+ * full-text search missed (e.g. part of a longer identifier).
+ */
+const SUBSTRING_MATCH_SCORE = 0.5
+
+/** The word to centre a snippet on: the whole query if present, else the first query word found. */
+function snippetTerm(content: string, phrase: string, terms: string[]): string {
+  const lower = content.toLowerCase()
+  if (lower.includes(phrase.toLowerCase())) return phrase
+  return terms.find((term) => lower.includes(term)) ?? terms[0] ?? phrase
+}
+
+function withoutKeywordScore(results: KeywordResult[]): SearchResult[] {
+  return results.map(({ keywordScore: _keywordScore, ...result }) => result)
 }
 
 function asFrontmatter(value: unknown): Record<string, unknown> | undefined {
@@ -186,10 +220,20 @@ function allowedSensitivityList(ceiling: SensitivityTier): SensitivityTier[] {
   return tiers.filter((tier) => isAllowedBy(tier, ceiling))
 }
 
-function scopeCondition(scopes: AllowedScope[]): ReturnType<typeof sql> {
+/**
+ * SQL restricting rows to the caller's allowed read scopes. Queries over
+ * chunks use the chunk columns; document-only queries pass the document ones.
+ */
+export function scopeCondition(
+  scopes: AllowedScope[],
+  columns: { squadId: AnyColumn; sensitivity: AnyColumn } = {
+    squadId: memoryChunks.squadId,
+    sensitivity: memoryChunks.sensitivity,
+  }
+): ReturnType<typeof sql> {
   if (scopes.length === 0) return sql`false`
   const perScope = scopes.map((scope) => {
-    const conditions: ReturnType<typeof sql>[] = [sql`${memoryChunks.squadId} = ${scope.squadId}`]
+    const conditions: ReturnType<typeof sql>[] = [sql`${columns.squadId} = ${scope.squadId}`]
     if (scope.filters.sourceTypes?.length) {
       conditions.push(
         sql`${memoryDocuments.sourceType} = ANY(array[${sql.join(
@@ -205,7 +249,7 @@ function scopeCondition(scopes: AllowedScope[]): ReturnType<typeof sql> {
     if (scope.filters.sensitivityCeiling) {
       const allowed = allowedSensitivityList(scope.filters.sensitivityCeiling)
       conditions.push(
-        sql`${memoryChunks.sensitivity} = ANY(array[${sql.join(
+        sql`${columns.sensitivity} = ANY(array[${sql.join(
           allowed.map((tier) => sql`${tier}`),
           sql`, `
         )}])`
@@ -297,7 +341,7 @@ export class SearchService {
           const vectorResults = await this.vectorSearch(squadId, indexedScopes, query, limit * 2, options)
           // Fall back to keyword if no vector results (no embeddings yet)
           if (vectorResults.length === 0) {
-            return this.keywordSearch(indexedScopes, query, limit * 2, options)
+            return withoutKeywordScore(await this.keywordSearch(indexedScopes, query, limit * 2, options))
           }
           return vectorResults
         }
@@ -305,7 +349,7 @@ export class SearchService {
           return this.hybridSearch(squadId, indexedScopes, query, limit * 2, weights, options)
         case 'keyword':
         default:
-          return this.keywordSearch(indexedScopes, query, limit * 2, options)
+          return withoutKeywordScore(await this.keywordSearch(indexedScopes, query, limit * 2, options))
       }
     })()
     const liveResultsPromise = this.searchLiveAdapters(squadId, query, liveScopesByType, limit)
@@ -479,77 +523,41 @@ export class SearchService {
   // ==========================================================================
 
   /**
-   * Search using keyword matching (ILIKE).
+   * Keyword search: Postgres full-text ranking over chunk headings and
+   * content, plus exact substring matches for identifiers and error strings
+   * the text parser would split. Ranked in SQL before the limit, so an older
+   * strong match is not cut in favour of a newer weak one.
    */
   private async keywordSearch(
     scopes: AllowedScope[],
     query: string,
     limit: number,
     filters: SearchOptions = {}
-  ): Promise<SearchResult[]> {
-    // Split query into terms for multi-word matching
-    const terms = query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((t) => t.length > 2)
+  ): Promise<KeywordResult[]> {
+    const terms = queryTerms(query)
+    const phrase = query.trim()
+    const [ranked, exact] = await Promise.all([
+      terms.length > 0 ? this.fullTextRows(scopes, terms, phrase, limit, filters) : Promise.resolve([]),
+      phrase.length >= 3 ? this.substringRows(scopes, phrase, limit, filters) : Promise.resolve([]),
+    ])
 
-    if (terms.length === 0) {
-      // Fallback to single pattern if no valid terms
-      return this.simpleSearch(scopes, query, limit, filters)
+    // A chunk both queries found keeps its full-text score, which already
+    // credits the verbatim match.
+    const rows = new Map<string, KeywordRow>()
+    for (const row of [...ranked, ...exact]) {
+      const key = `${row.documentId}-${row.chunkIndex}`
+      if (!rows.has(key)) rows.set(key, row)
     }
 
-    // Build OR conditions for each term
-    const termConditions = terms.map((term) => ilike(memoryChunks.content, `%${term}%`))
-
-    // Build filter conditions
-    const filterConditions = buildFilterConditions(filters)
-
-    const rows = await db
-      .select({
-        documentId: memoryChunks.documentId,
-        chunkIndex: memoryChunks.chunkIndex,
-        content: memoryChunks.content,
-        docPath: memoryDocuments.path,
-        docTitle: memoryDocuments.title,
-        docSourceType: memoryDocuments.sourceType,
-        docSquadId: memoryDocuments.squadId,
-        docSensitivity: memoryDocuments.sensitivity,
-        docFrontmatter: memoryDocuments.frontmatter,
-        docUpdatedAt: memoryDocuments.updatedAt,
-      })
-      .from(memoryChunks)
-      .innerJoin(memoryDocuments, eq(memoryChunks.documentId, memoryDocuments.id))
-      .where(and(scopeCondition(scopes), or(...termConditions), ...filterConditions))
-      .orderBy(desc(memoryDocuments.updatedAt))
-      .limit(limit)
-
-    // Score results based on term frequency and other signals
-    return rows
+    return [...rows.values()]
       .map((row) => {
-        const contentLower = row.content.toLowerCase()
-        let matchCount = 0
-        for (const term of terms) {
-          if (contentLower.includes(term)) matchCount++
-        }
-        const keywordScore = matchCount / terms.length
-
-        // Calculate recency score (0-1 based on how recent)
-        const recencyScore = this.calculateRecencyScore(row.docUpdatedAt)
-
-        // Get importance from frontmatter
-        const importance =
-          typeof row.docFrontmatter === 'object' && row.docFrontmatter !== null
-            ? ((row.docFrontmatter as Record<string, unknown>).importance as number | undefined)
-            : undefined
-
-        // Calculate hybrid score (keyword-only for now)
+        const importance = asFrontmatter(row.docFrontmatter)?.importance
         const score = this.calculateHybridScore({
-          keywordScore,
-          recencyScore,
-          importance: importance ?? 0.5,
+          keywordScore: row.keywordScore,
+          recencyScore: this.calculateRecencyScore(row.docUpdatedAt),
+          importance: typeof importance === 'number' ? importance : 0.5,
           weights: DEFAULT_WEIGHTS,
         })
-
         return {
           documentId: row.documentId,
           sourceSquadId: row.docSquadId,
@@ -558,7 +566,8 @@ export class SearchService {
           sourceType: row.docSourceType,
           sensitivity: parseSensitivity(row.docSensitivity),
           score,
-          snippet: this.extractSnippet(row.content, terms[0], 200),
+          keywordScore: row.keywordScore,
+          snippet: this.extractSnippet(row.content, snippetTerm(row.content, phrase, terms), 200),
           chunkIndex: row.chunkIndex,
           content: row.content,
           frontmatter: asFrontmatter(row.docFrontmatter),
@@ -567,48 +576,68 @@ export class SearchService {
       .sort((a, b) => b.score - a.score)
   }
 
-  /**
-   * Simple search with a single pattern.
-   */
-  private async simpleSearch(
-    scopes: AllowedScope[],
-    query: string,
-    limit: number,
-    filters: SearchOptions = {}
-  ): Promise<SearchResult[]> {
-    // Build filter conditions
-    const filterConditions = buildFilterConditions(filters)
+  private keywordColumns() {
+    return {
+      documentId: memoryChunks.documentId,
+      chunkIndex: memoryChunks.chunkIndex,
+      content: memoryChunks.content,
+      docPath: memoryDocuments.path,
+      docTitle: memoryDocuments.title,
+      docSourceType: memoryDocuments.sourceType,
+      docSquadId: memoryDocuments.squadId,
+      docSensitivity: memoryDocuments.sensitivity,
+      docFrontmatter: memoryDocuments.frontmatter,
+      docUpdatedAt: memoryDocuments.updatedAt,
+    }
+  }
 
-    const rows = await db
-      .select({
-        documentId: memoryChunks.documentId,
-        chunkIndex: memoryChunks.chunkIndex,
-        content: memoryChunks.content,
-        docPath: memoryDocuments.path,
-        docTitle: memoryDocuments.title,
-        docSourceType: memoryDocuments.sourceType,
-        docSquadId: memoryDocuments.squadId,
-        docSensitivity: memoryDocuments.sensitivity,
-        docFrontmatter: memoryDocuments.frontmatter,
-      })
+  private async fullTextRows(
+    scopes: AllowedScope[],
+    terms: string[],
+    phrase: string,
+    limit: number,
+    filters: SearchOptions
+  ): Promise<KeywordRow[]> {
+    const vector = chunkSearchVector()
+    const anyTerm = anyTermQuery(terms)
+    // coverage: share of query words present; density: ts_rank squashed to
+    // 0–1; title: the document title or path mentions a query word; phrase:
+    // the whole query appears verbatim.
+    const keywordScore = sql<number>`least(1.0,
+      0.55 * ${termCoverage(vector, terms)}
+      + 0.3 * (ts_rank(${vector}, ${anyTerm}, 1) / (ts_rank(${vector}, ${anyTerm}, 1) + 0.1))
+      + 0.1 * (${documentSearchVector()} @@ ${anyTerm})::int
+      + 0.15 * (${memoryChunks.content} ILIKE ${`%${escapeLike(phrase)}%`})::int
+    )::float8`
+    return db
+      .select({ ...this.keywordColumns(), keywordScore })
       .from(memoryChunks)
       .innerJoin(memoryDocuments, eq(memoryChunks.documentId, memoryDocuments.id))
-      .where(and(scopeCondition(scopes), ilike(memoryChunks.content, `%${query}%`), ...filterConditions))
+      .where(and(scopeCondition(scopes), sql`${vector} @@ ${anyTerm}`, ...buildFilterConditions(filters)))
+      .orderBy(desc(keywordScore), desc(memoryDocuments.updatedAt))
       .limit(limit)
+  }
 
-    return rows.map((row) => ({
-      documentId: row.documentId,
-      sourceSquadId: row.docSquadId,
-      path: row.docPath,
-      title: row.docTitle,
-      sourceType: row.docSourceType,
-      sensitivity: parseSensitivity(row.docSensitivity),
-      score: 1.0, // All matches equal for simple search
-      snippet: this.extractSnippet(row.content, query, 200),
-      chunkIndex: row.chunkIndex,
-      content: row.content,
-      frontmatter: asFrontmatter(row.docFrontmatter),
-    }))
+  private async substringRows(
+    scopes: AllowedScope[],
+    phrase: string,
+    limit: number,
+    filters: SearchOptions
+  ): Promise<KeywordRow[]> {
+    const rows = await db
+      .select(this.keywordColumns())
+      .from(memoryChunks)
+      .innerJoin(memoryDocuments, eq(memoryChunks.documentId, memoryDocuments.id))
+      .where(
+        and(
+          scopeCondition(scopes),
+          ilike(memoryChunks.content, `%${escapeLike(phrase)}%`),
+          ...buildFilterConditions(filters)
+        )
+      )
+      .orderBy(desc(memoryDocuments.updatedAt))
+      .limit(limit)
+    return rows.map((row) => ({ ...row, keywordScore: SUBSTRING_MATCH_SCORE }))
   }
 
   // ==========================================================================
@@ -725,12 +754,12 @@ export class SearchService {
       const key = `${result.documentId}-${result.chunkIndex}`
       const existing = resultMap.get(key)
       if (existing) {
-        existing.keywordScore = result.score
+        existing.keywordScore = result.keywordScore
       } else {
         resultMap.set(key, {
           ...result,
           vectorScore: 0,
-          keywordScore: result.score,
+          keywordScore: result.keywordScore,
         })
       }
     }

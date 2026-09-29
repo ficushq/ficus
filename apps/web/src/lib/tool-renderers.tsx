@@ -622,13 +622,21 @@ const memorySearchRenderer: ToolRenderer = {
 }
 
 const memoryGetRenderer: ToolRenderer = {
-  summary: (args) => args.path ?? '',
-  ArgsView: ({ args }) => <InlineCode>{args.path ?? ''}</InlineCode>,
+  summary: (args) => (args.section ? `${args.path ?? ''} › ${args.section}` : (args.path ?? '')),
+  ArgsView: ({ args }) => (
+    <InlineCode>{args.section ? `${args.path ?? ''} › ${args.section}` : (args.path ?? '')}</InlineCode>
+  ),
   ResultView: ({ result, isError, autoScroll }) => (
     <CodeBlock isError={isError} autoScroll={autoScroll}>
       {extractResultText(result)}
     </CodeBlock>
   ),
+}
+
+const memoryOutlineRenderer: ToolRenderer = {
+  summary: (args) => (args.query ? `“${truncate(args.query, 50)}”` : args.path || 'Memory map'),
+  ArgsView: ({ args }) => <InlineCode>{args.query ? `query: ${args.query}` : args.path || 'Memory map'}</InlineCode>,
+  ResultView: ({ result, isError }) => <CodeBlock isError={isError}>{extractResultText(result)}</CodeBlock>,
 }
 
 // --- Subagent shared pieces (reused by check_subagents) ---
@@ -852,6 +860,7 @@ export const agentToolRenderers: ToolRenderers = {
   notify_contact: notifyContactRenderer,
   memory_search: memorySearchRenderer,
   memory_get: memoryGetRenderer,
+  memory_outline: memoryOutlineRenderer,
   dispatch: dispatchRenderer,
   check_subagents: checkSubagentsRenderer,
   stop_subagent: stopSubagentRenderer,
