@@ -242,6 +242,34 @@ describe('POST /api/users assigns roles', () => {
     }
   })
 
+  it('choosing Farmer, which every new person already gets, gives it once', async () => {
+    delete process.env.SES_FROM_ADDRESS
+    let [farmer] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, 'farmer'))
+    const ownFarmer = !farmer
+    if (!farmer)
+      [farmer] = await db
+        .insert(roles)
+        .values({ name: 'Farmer', slug: 'farmer', permissions: ['farm:read', 'farm:chat'], isSystem: true })
+        .returning({ id: roles.id })
+    try {
+      const { res, body } = await invite({
+        email: newEmail(),
+        assignments: [
+          { roleId: 'viewer', scope: 'system' },
+          { roleId: 'farmer', scope: 'system' },
+        ],
+      })
+      expect(res.status).toBe(201)
+      const held = await db
+        .select({ roleId: roleAssignments.roleId })
+        .from(roleAssignments)
+        .where(eq(roleAssignments.subjectId, body.id))
+      expect(held.map((a) => a.roleId).sort()).toEqual([viewerRoleId, farmer!.id].sort())
+    } finally {
+      if (ownFarmer) await db.delete(roles).where(eq(roles.id, farmer!.id))
+    }
+  })
+
   it('rejects a squad assignment without a real squad, and a bad scope, creating nobody', async () => {
     delete process.env.SES_FROM_ADDRESS
     for (const assignments of [

@@ -191,6 +191,18 @@ describe('invite form role picker', () => {
     expect(values).not.toContain('r-manager')
   })
 
+  test('says every new person also gets Farmer, when the instance has it', async () => {
+    await openInviteForm()
+    expect(container.textContent).not.toContain('along with Farmer')
+    await dom.act(async () => root.unmount())
+    ;({ root, container } = dom.createRoot())
+    await openInviteForm([
+      ...ROLES,
+      { id: 'r-farmer', name: 'Farmer', slug: 'farmer', permissions: ['farm:read', 'farm:chat'], appliesTo: 'user' },
+    ])
+    expect(container.textContent).toContain('along with Farmer (the farm), which every new person gets')
+  })
+
   test('falls back to the first available role when operator is absent', async () => {
     await openInviteForm(ROLES.filter((r) => r.slug !== 'operator'))
     expect(given()).toEqual(['Admin · System'])

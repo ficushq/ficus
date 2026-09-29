@@ -272,15 +272,19 @@ usersRouter.post('/', requirePermission('users:create'), async (c) => {
   const user = await db.transaction(async (tx) => {
     const created = await User.create({ email, displayName }, tx)
     if (resolved.assignments.length > 0) {
-      await tx.insert(roleAssignments).values(
-        resolved.assignments.map((assignment) => ({
-          subjectType: 'user' as const,
-          subjectId: created.id,
-          roleId: assignment.role.id,
-          scope: assignment.scope,
-          squadId: assignment.squadId,
-        }))
-      )
+      await tx
+        .insert(roleAssignments)
+        .values(
+          resolved.assignments.map((assignment) => ({
+            subjectType: 'user' as const,
+            subjectId: created.id,
+            roleId: assignment.role.id,
+            scope: assignment.scope,
+            squadId: assignment.squadId,
+          }))
+        )
+        // Choosing a role every new person already gets (Farmer, system-wide) is harmless.
+        .onConflictDoNothing()
     }
     return created
   })

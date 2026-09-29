@@ -22,6 +22,8 @@ export function InviteUserForm({
   const { data: seatData } = useQuery(queries.users.seatPricing())
   const seatPricing = seatData?.pricing ?? null
   const assignableRoles = roles.filter(isUserAssignableRole)
+  // Every new person also gets the Farmer role (the farm), whatever is chosen here.
+  const getsFarmer = roles.some((role) => role.slug === 'farmer')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteDisplayName, setInviteDisplayName] = useState('')
   // The roles the invite gives, in their scopes. Until the admin changes it: the default role
@@ -209,7 +211,9 @@ export function InviteUserForm({
         <p className="text-xs text-muted">
           {pickerPending
             ? 'Add the role you picked (or clear it) before inviting.'
-            : 'Granted as soon as the invite is created.'}
+            : getsFarmer
+              ? 'Granted as soon as the invite is created, along with Farmer (the farm), which every new person gets.'
+              : 'Granted as soon as the invite is created.'}
         </p>
       </fieldset>
       {/* Stated where the cost is actually incurred, not only in the
