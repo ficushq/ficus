@@ -16,7 +16,68 @@ const history = (id: string) => ({
   hasMore: false,
 })
 
+const activity = (unreadUpdates: number, latestUpdateSequence: number) => ({
+  conversation: { id: 'c', title: 'Assistant', updatedAt: '', latestUpdateSequence, unreadUpdates },
+  tasks: [],
+  updates: [],
+  pendingInputs: [],
+  hasMore: false,
+  beforeSequence: null,
+})
+
 describe('AssistantChat', () => {
+  it("shows a reply's task updates inline under it, and having the chat open reads them", async () => {
+    const fake = makeFakeClient({
+      agents: { 'asst-agent': makeAgent({ id: 'asst-agent', agentTypeId: 'assistant', squadId: null }) },
+      messages: {
+        'asst-agent': [
+          makeMessage({
+            id: 'reply-1',
+            agentId: 'asst-agent',
+            role: 'assistant',
+            content: 'Riley found the row components.',
+            metadata: { assistantUpdateIds: ['u1'] },
+          }),
+        ],
+      },
+      routes: {
+        'GET /assistant/c1': history('c1'),
+        'POST /assistant/c1/agent': { agentId: 'asst-agent' },
+        'GET /assistant/c1/activity': activity(1, 3),
+        'POST /assistant/c1/updates/read': [
+          {
+            messageId: 'u1',
+            taskId: 't1',
+            taskLabel: 'Fix inline PR rows',
+            requestId: 'r1',
+            sequence: 3,
+            reportedStatus: 'working',
+            content: 'Found the row components.',
+            subject: null,
+            senderName: 'Riley',
+            processedAt: null,
+            seenAt: null,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        'POST /assistant/c1/updates/seen-through': { success: true },
+      },
+    })
+    const view = await render(<AssistantChat conversationId="c1" onClose={() => {}} />, { client: fake.client })
+    mounted.push(view.unmount)
+    await waitFor(() => expect(view.container.querySelector('[aria-label="Task updates"] li')).not.toBeNull())
+    const card = view.container.querySelector('[aria-label="Task updates"] li')!
+    expect(card.textContent).toContain('Fix inline PR rows')
+    expect(card.textContent).toContain('Working')
+    expect(card.textContent).toContain('Riley')
+    expect(card.textContent).toContain('Found the row components.')
+    await waitFor(() =>
+      expect(fake.requests.find((r) => r.path === '/assistant/c1/updates/seen-through')?.options?.body).toEqual({
+        sequence: 3,
+      })
+    )
+  })
+
   it('creates a conversation when there is none, ensures its agent, and chats with it', async () => {
     const fake = makeFakeClient({
       agents: { 'asst-agent': makeAgent({ id: 'asst-agent', agentTypeId: 'assistant', squadId: null }) },
@@ -36,6 +97,7 @@ describe('AssistantChat', () => {
         'POST /assistant': { id: 'new-id', kind: 'assistant', title: '', createdAt: '', updatedAt: '' },
         'GET /assistant/new-id': history('new-id'),
         'POST /assistant/new-id/agent': { agentId: 'asst-agent' },
+        'GET /assistant/new-id/activity': activity(0, 0),
       },
     })
     const view = await render(<AssistantChat onClose={() => {}} newId={() => 'new-id'} />, { client: fake.client })
@@ -47,6 +109,8 @@ describe('AssistantChat', () => {
       'POST /assistant',
       'GET /assistant/new-id',
       'POST /assistant/new-id/agent',
+      // Nothing new to read in a brand-new conversation.
+      'GET /assistant/new-id/activity',
     ])
     expect(fake.requests[1].options?.body).toEqual({ id: 'new-id', title: undefined, kind: 'assistant' })
     // The assistant's inbox deliveries stay hidden, like the web.

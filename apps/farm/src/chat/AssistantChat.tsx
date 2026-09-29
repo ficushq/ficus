@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useConversationClient } from '@ficus/client-react'
 import type { AssistantEntry } from '@ficus/shared'
 import { createAssistantApi, type AssistantApi } from './assistantApi'
 import { AgentConversation } from './ChatPanel'
+import { AssistantTaskUpdates } from './AssistantTaskUpdates'
 import { ChatShell } from './ChatShell'
 import { Markdown } from './Markdown'
 
@@ -47,7 +48,8 @@ async function pickConversation(
  * create the conversation if it's new, read its history, then ensure its agent
  * and chat with that agent through the normal conversation engine (a user
  * message is a plain agent send; `assistantApi.message` is only for replies to
- * task updates, which the farm doesn't surface yet).
+ * task updates). The task updates a reply covers show inline under it, and
+ * having the chat open reads them.
  */
 export function AssistantChat({ conversationId, fresh, leading, onClose, api: apiProp, newId }: AssistantChatProps) {
   const client = useConversationClient()
@@ -83,6 +85,23 @@ export function AssistantChat({ conversationId, fresh, leading, onClose, api: ap
       active = false
     }
   }, [api, conversationId, fresh, newId, attempt, queryClient])
+
+  // Open here is viewing it: its task updates (inline under the replies that cover them) are read, which
+  // clears the Assistant's badge. Refreshed with the farm's other Assistant queries as updates arrive.
+  const activity = useQuery({
+    queryKey: ['farm', 'assistant', 'conversation', opened?.id ?? ''],
+    queryFn: () => api.conversationActivity(opened!.id),
+    enabled: !!opened,
+  })
+  const unread = activity.data?.conversation.unreadUpdates ?? 0
+  const latestSequence = activity.data?.conversation.latestUpdateSequence ?? 0
+  useEffect(() => {
+    if (!opened || !unread || !latestSequence) return
+    void api
+      .seenThrough(opened.id, latestSequence)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['farm', 'assistant'] }))
+      .catch(() => {})
+  }, [api, opened, unread, latestSequence, queryClient])
 
   const loadEarlier = async () => {
     if (!opened || loadingEarlier) return
@@ -125,6 +144,7 @@ export function AssistantChat({ conversationId, fresh, leading, onClose, api: ap
             key={opened.agentId}
             agentId={opened.agentId}
             hideInboxMessages
+            renderReplyFooter={(item) => <AssistantTaskUpdates api={api} conversationId={opened.id} item={item} />}
             placeholder="Ask anything…"
             draftKey={`assistant:${opened.id}`}
             beforeConversation={

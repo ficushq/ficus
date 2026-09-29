@@ -184,6 +184,58 @@
   box-shadow: var(--g-lift-md);
 }
 
+/* The task updates an Assistant reply covers, inline under it (AssistantTaskUpdates.tsx). */
+.g-chat-updates {
+  margin-top: 8px;
+}
+
+.g-chat-updates ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.g-chat-update {
+  min-width: 0;
+  padding: 8px 10px;
+  border: var(--g-border-thin) solid var(--g-chat-line);
+  border-radius: var(--g-radius-tile);
+  background: var(--g-chat-paper);
+  overflow-wrap: anywhere;
+}
+
+.g-chat-update-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 0 0 4px;
+  font: 400 12px/1.4 var(--g-font-body);
+  color: var(--g-ink-soft);
+}
+
+.g-chat-update-meta b {
+  color: var(--g-ink);
+}
+
+.g-chat-update-from {
+  margin-left: auto;
+}
+
+.g-chat-update-new {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--g-accent);
+}
+
+.g-chat-update-subject {
+  margin: 0 0 2px;
+  font-weight: 700;
+}
+
 .g-chat-blocks {
   display: flex;
   flex-direction: column;

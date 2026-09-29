@@ -22,7 +22,6 @@ import { AssistantVoiceReceipts, createAssistantVoiceChannel } from '../voice/as
 import { VoiceCompanionButton } from '../voice/VoiceCompanionWidget'
 import { AgentChat, type AgentChatController } from './AgentChat'
 import { AssistantAgentQuestions, AssistantTaskQuestions } from './AssistantQuestions'
-import { AssistantUpdateList } from './AssistantUpdateList'
 import { MarkdownContent } from './MarkdownContent'
 
 export interface AssistantViewControls {
@@ -234,13 +233,19 @@ function DurableConversation(props: AssistantConversationViewProps) {
     await queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
     controller.current?.refresh()
   }, [queryClient])
-  const [olderUpdates, setOlderUpdates] = useState<NonNullable<typeof activity.data>['updates']>([])
-  const [olderCursor, setOlderCursor] = useState<number | null>()
   const data = activity.data
-  const updates = [
-    ...olderUpdates.filter((old) => !data?.updates.some((row) => row.messageId === old.messageId)),
-    ...(data?.updates ?? []),
-  ]
+  const updates = data?.updates ?? []
+  // Viewing the conversation reads its updates: they're shown inline under the replies that cover them.
+  const viewing = props.visible && !props.compact
+  const unread = data?.conversation.unreadUpdates ?? 0
+  const latestSequence = data?.conversation.latestUpdateSequence ?? 0
+  useEffect(() => {
+    if (!viewing || !unread || !latestSequence) return
+    void api
+      .seenThrough(props.id, latestSequence)
+      .then(refresh)
+      .catch(() => {})
+  }, [viewing, unread, latestSequence, props.id, refresh])
   const questions = data && (
     <div
       className="min-w-0 space-y-2 px-3 py-2 [overflow-wrap:anywhere]"
@@ -374,12 +379,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
                   {durableAssistantPageLinks(item).map((path) => (
                     <AssistantPageLinkRow key={path} path={path} onOpen={navigate} />
                   ))}
-                  <AssistantSummarySources
-                    ownerId={ownerId}
-                    conversationId={props.id}
-                    item={item}
-                    visible={props.visible && !props.compact}
-                  />
+                  <AssistantSummarySources ownerId={ownerId} conversationId={props.id} item={item} />
                 </>
               ) : null
             }
@@ -401,33 +401,6 @@ function DurableConversation(props: AssistantConversationViewProps) {
               </p>
             </div>
           )
-        )}
-        {data && (updates.length > 0 || data.tasks.length > 0) && (
-          <AssistantUpdateList
-            updates={updates}
-            tasks={data.tasks}
-            visible={props.visible}
-            latestSequence={data.conversation.latestUpdateSequence}
-            hasMore={olderCursor === undefined ? data.hasMore : olderCursor !== null}
-            onLoadMore={async () => {
-              const cursor = olderCursor === undefined ? data.beforeSequence : olderCursor
-              if (cursor == null) return
-              const page = await api.conversationActivity(props.id, cursor)
-              setOlderUpdates((current) => [
-                ...page.updates.filter((row) => !current.some((old) => old.messageId === row.messageId)),
-                ...current,
-              ])
-              setOlderCursor(page.hasMore ? page.beforeSequence : null)
-            }}
-            onSeen={async (ids) => {
-              await api.seen(props.id, ids)
-              await refresh()
-            }}
-            onSeenThrough={async (sequence) => {
-              await api.seenThrough(props.id, sequence)
-              await refresh()
-            }}
-          />
         )}
       </div>
     </div>

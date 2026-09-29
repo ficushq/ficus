@@ -32,6 +32,7 @@ async function fixture(realtime = false) {
       beforeSequence: null,
     })),
     append: mock(async () => ({})),
+    seenThrough: mock(async () => ({ success: true })),
     inbox: mock(async () => ({})),
     acknowledge: mock(async () => ({})),
     release: mock(async () => ({})),
@@ -418,14 +419,36 @@ test('assistant summaries show nested conversations as full rows and task update
   expect(page.textContent).toContain('Appearance')
   expect(page.textContent).toContain('Settings')
 
-  const toggle = [...footer.querySelectorAll('button')].find((button) => button.textContent?.includes('Task updates'))!
-  expect(toggle.getAttribute('aria-expanded')).toBe('false')
-  await f.dom.act(async () => fireEvent.click(toggle))
-  expect(toggle.getAttribute('aria-expanded')).toBe('true')
-  const card = footer.querySelector('li')!
+  // The task updates it covers show inline under it, no toggle, and nothing to mark: viewing reads them.
+  const updates = footer.querySelector('[aria-label="Task updates"]')!
+  expect(updates.querySelector('[aria-expanded]')).toBeNull()
+  const card = updates.querySelector('li')!
   expect(card.textContent).toContain('Fix inline PR rows')
   expect(card.textContent).toContain('Riley')
   expect(card.textContent).toContain('Found the row components.')
-  expect([...card.querySelectorAll('button')].map((button) => button.textContent)).toContain('Mark read')
+  expect(card.querySelector('button')).toBeNull()
+  await f.cleanup()
+})
+
+test('viewing a conversation reads its task updates; a hidden or compact one does not', async () => {
+  const f = await fixture()
+  f.api.conversationActivity.mockImplementation(
+    async () =>
+      ({
+        conversation: { latestUpdateSequence: 5, unreadUpdates: 2 },
+        tasks: [],
+        updates: [],
+        pendingInputs: [],
+        hasMore: false,
+        beforeSequence: null,
+      }) as any
+  )
+  f.props.visible = false
+  await f.dom.act(async () => f.render())
+  await waitFor(() => expect(f.api.conversationActivity).toHaveBeenCalled())
+  expect(f.api.seenThrough).not.toHaveBeenCalled()
+  f.props.visible = true
+  await f.dom.act(async () => f.render())
+  await waitFor(() => expect(f.api.seenThrough).toHaveBeenCalledWith('conversation', 5))
   await f.cleanup()
 })

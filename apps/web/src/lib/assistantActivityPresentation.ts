@@ -1,4 +1,4 @@
-import type { AssistantConversationActivity, AssistantTaskStatus } from '@ficus/shared'
+import type { AssistantConversationActivity } from '@ficus/shared'
 
 /** Short task-state summary for a conversation row; empty when nothing is in progress. */
 export function summarizeAssistantTasks(
@@ -15,15 +15,7 @@ export function summarizeAssistantTasks(
   return parts.join(' · ')
 }
 
-export const ASSISTANT_TASK_STATUS_LABELS: Record<AssistantTaskStatus, string> = {
-  working: 'Working',
-  waiting: 'Waiting',
-  'needs-input': 'Needs your input',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-  unknown: 'Earlier task',
-}
+export { ASSISTANT_TASK_STATUS_LABELS } from '@ficus/shared'
 
 /** Compact timestamp: time of day today, otherwise a short date. */
 export function formatAssistantUpdateTime(iso: string, now = new Date()): string {
@@ -34,14 +26,4 @@ export function formatAssistantUpdateTime(iso: string, now = new Date()): string
   return sameDay
     ? date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
     : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-/** Unread state is acknowledged only for content the human can actually see right now. */
-export function shouldAcknowledgeAssistantUpdate(input: {
-  surfaceVisible: boolean
-  documentVisible: boolean
-  intersects: boolean
-  alreadySeen: boolean
-}): boolean {
-  return input.surfaceVisible && input.documentVisible && input.intersects && !input.alreadySeen
 }

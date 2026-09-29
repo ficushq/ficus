@@ -27,6 +27,17 @@ export const reportableAssistantTaskStatusSchema = z.enum([
 ])
 export type ReportableAssistantTaskStatus = z.infer<typeof reportableAssistantTaskStatusSchema>
 
+/** How each task status reads to a person (web and farm alike). */
+export const ASSISTANT_TASK_STATUS_LABELS: Record<AssistantTaskStatus, string> = {
+  working: 'Working',
+  waiting: 'Waiting',
+  'needs-input': 'Needs your input',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  unknown: 'Earlier task',
+}
+
 export function isTerminalAssistantTaskStatus(status: AssistantTaskStatus): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
