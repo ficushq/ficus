@@ -34,7 +34,7 @@ describe('buildSandboxChildEnv', () => {
     expect(env.SSL_CERT_FILE).toBe('/etc/ssl/cert.pem')
   })
 
-  it('forwards prefix-matched keys (FICUS_, TAU_, NIX_, DEVBOX_, XDG_, LC_)', () => {
+  it('forwards prefix-matched keys (FICUS_, NIX_, DEVBOX_, XDG_, LC_)', () => {
     const env = buildSandboxChildEnv({
       FICUS_SANDBOX_ID: 'sb1',
       FICUS_API_URL: 'http://tau-api:3000',

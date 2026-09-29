@@ -28,8 +28,8 @@ Core serves:
 For Docker single-image deployments, build with the web assets included and enable serving at runtime:
 
 ```bash
-docker build --build-arg FICUS_INCLUDE_WEB=1 -t tau-core:single-origin .
-docker run -e FICUS_SERVE_WEB=1 -p 3000:3000 tau-core:single-origin
+docker build --build-arg FICUS_INCLUDE_WEB=1 -t ficus-core:single-origin .
+docker run -e FICUS_SERVE_WEB=1 -p 3000:3000 ficus-core:single-origin
 ```
 
 ## Caddy
@@ -177,8 +177,8 @@ For the built-in single-origin mode, route the whole host to Core:
 
 ```yaml
 services:
-  tau-core:
-    image: tau-core:single-origin
+  ficus-core:
+    image: ficus-core:single-origin
     environment:
       FICUS_SERVE_WEB: '1'
     labels:

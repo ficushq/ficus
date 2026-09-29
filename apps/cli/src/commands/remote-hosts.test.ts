@@ -11,7 +11,7 @@ const HOST = {
   sshHost: 'build.example.com',
   sshPort: 22,
   sshUser: 'ci',
-  sshPublicKey: 'ssh-ed25519 AAAA... tau-remote-host',
+  sshPublicKey: 'ssh-ed25519 AAAA... ficus-remote-host',
   createdAt: '2026-07-14T00:00:00.000Z',
   updatedAt: '2026-07-14T00:00:00.000Z',
 }
@@ -20,7 +20,7 @@ describe('renderInstallInstructions', () => {
   it('renders the public key line, install instructions, and check hint', () => {
     const text = renderInstallInstructions(HOST)
     const lines = text.split('\n')
-    expect(lines[0]).toBe('ssh-ed25519 AAAA... tau-remote-host')
+    expect(lines[0]).toBe('ssh-ed25519 AAAA... ficus-remote-host')
     expect(lines[1]).toBe(
       'Ask the owner of build.example.com to append the line above to ~/.ssh/authorized_keys for user ci.'
     )
@@ -236,12 +236,12 @@ describe('ficus remote-hosts commands', () => {
     ;(apiDelete as ReturnType<typeof mock>).mockResolvedValue({
       revoked: true,
       rotated: true,
-      sshPublicKey: 'ssh-ed25519 NEWKEY tau-remote-host',
+      sshPublicKey: 'ssh-ed25519 NEWKEY ficus-remote-host',
       message: 'Append this public key to ~/.ssh/authorized_keys on build.example.com for user ci.',
     })
     await run(['remote-hosts', 'revoke', 'build-box'])
     const humanText = (output as ReturnType<typeof mock>).mock.calls.at(-1)?.[1] as string
-    expect(humanText).toContain('ssh-ed25519 NEWKEY tau-remote-host')
+    expect(humanText).toContain('ssh-ed25519 NEWKEY ficus-remote-host')
     expect(humanText).toContain('authorized_keys')
   })
 

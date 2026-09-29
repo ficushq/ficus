@@ -659,14 +659,16 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRE
         // can assert it lands ahead of the drop). No apt/bun bootstrap — just the
         // rules. The SSH control connection is inbound + established, so loading an
         // output-hook drop for RFC1918 never severs our own session.
-        const push = await runner.run(machine, 'install -m 0755 /dev/stdin /tmp/tau-egress.sh', { stdin: bootstrapSh })
+        const push = await runner.run(machine, 'install -m 0755 /dev/stdin /tmp/ficus-egress.sh', {
+          stdin: bootstrapSh,
+        })
         expect(push.exitCode).toBe(0)
 
         const apply = await runner.run(
           machine,
           'command -v nft >/dev/null 2>&1 || (apt-get update -y && apt-get install -y --no-install-recommends nftables) >/dev/null 2>&1; ' +
             'nft delete table inet tau_egress 2>/dev/null; ' +
-            'bash /tmp/tau-egress.sh --print-egress-ruleset --core-cidr 10.99.0.0/16 | nft -f -'
+            'bash /tmp/ficus-egress.sh --print-egress-ruleset --core-cidr 10.99.0.0/16 | nft -f -'
         )
         expect(apply.exitCode).toBe(0)
 
@@ -924,13 +926,15 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRE
 
         // 1. Load the egress ruleset on the HOST (a --core-cidr keeps our own SSH /
         //    reverse path clear; established+loopback already do too).
-        const push = await runner.run(machine, 'install -m 0755 /dev/stdin /tmp/tau-egress.sh', { stdin: bootstrapSh })
+        const push = await runner.run(machine, 'install -m 0755 /dev/stdin /tmp/ficus-egress.sh', {
+          stdin: bootstrapSh,
+        })
         expect(push.exitCode).toBe(0)
         const apply = await runner.run(
           machine,
           'command -v nft >/dev/null 2>&1 || (apt-get update -y && apt-get install -y --no-install-recommends nftables) >/dev/null 2>&1; ' +
             'nft delete table inet tau_egress 2>/dev/null; ' +
-            'bash /tmp/tau-egress.sh --print-egress-ruleset --core-cidr 10.99.0.0/16 | nft -f -'
+            'bash /tmp/ficus-egress.sh --print-egress-ruleset --core-cidr 10.99.0.0/16 | nft -f -'
         )
         expect(apply.exitCode).toBe(0)
 

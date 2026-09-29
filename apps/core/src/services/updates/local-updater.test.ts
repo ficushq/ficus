@@ -36,7 +36,7 @@ function manager(opts: TestOptions = {}) {
   const responses = opts.gitResponses ?? {}
   const ghResponses: Record<string, string> = {
     'auth token': 'test-token',
-    'repo view --json owner,name --jq .owner.login + "/" + .name': 'tau/tau',
+    'repo view --json owner,name --jq .owner.login + "/" + .name': 'acme/ficus',
     ...(opts.ghResponses ?? {}),
   }
   return {
@@ -112,20 +112,20 @@ describe('LocalUpdateManager', () => {
   it('checks availability with gh and local sha comparison without git fetch', async () => {
     const { updater, calls, ghCalls } = manager({
       gitResponses: { 'rev-parse HEAD': 'a' },
-      ghResponses: { 'api repos/tau/tau/commits/main --jq .sha': 'a' },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      ghResponses: { 'api repos/acme/ficus/commits/main --jq .sha': 'a' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
     const result = await updater.check()
     expect(result.available).toBe(false)
     expect(calls).toEqual([['rev-parse', 'HEAD']])
-    expect(ghCalls).toEqual([['api', 'repos/tau/tau/commits/main', '--jq', '.sha']])
+    expect(ghCalls).toEqual([['api', 'repos/acme/ficus/commits/main', '--jq', '.sha']])
   })
 
   it('reports an available update when gh remote sha differs from local sha', async () => {
     const { updater } = manager({
       gitResponses: { 'rev-parse HEAD': 'local' },
-      ghResponses: { 'api repos/tau/tau/commits/main --jq .sha': 'remote' },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      ghResponses: { 'api repos/acme/ficus/commits/main --jq .sha': 'remote' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
     const result = await updater.check()
     expect(result.available).toBe(true)
@@ -140,7 +140,7 @@ describe('LocalUpdateManager', () => {
       gh: async () => {
         throw new Error('gh api failed: authentication required')
       },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
     await expect(updater.check()).rejects.toThrow(
       'Unable to check GitHub for updates with the gh CLI. Connect GitHub in Integrations and select githubConnectionId in update settings when multiple accounts are connected.'
@@ -361,7 +361,7 @@ describe('LocalUpdateManager', () => {
     const updater = new LocalUpdateManager({
       repoRoot: '/repo',
       flavor: () => LOCAL_FLAVOR,
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
       git: async (args: string[], options?: { env?: Record<string, string> }) => {
         gitCalls.push({ args, env: options?.env })
         return (
@@ -391,7 +391,7 @@ describe('LocalUpdateManager', () => {
     expect(gitCalls.map((call) => call.args)).toContainEqual([
       'fetch',
       '--no-tags',
-      'https://github.com/tau/tau.git',
+      'https://github.com/acme/ficus.git',
       'main',
     ])
     expect(gitCalls.map((call) => call.args)).toContainEqual(['merge', '--ff-only', 'FETCH_HEAD'])
@@ -413,7 +413,7 @@ describe('LocalUpdateManager', () => {
         return ''
       },
       ghResponses: { 'auth token': 'secret-token' },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
 
     try {
@@ -422,7 +422,7 @@ describe('LocalUpdateManager', () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       expect(message).toContain(
-        'Unable to fetch GitHub update from tau/tau main: git fetch failed: repository not found'
+        'Unable to fetch GitHub update from acme/ficus main: git fetch failed: repository not found'
       )
       expect(message).not.toContain('Run gh auth login')
     }
@@ -434,7 +434,7 @@ describe('LocalUpdateManager', () => {
       gh: async () => {
         throw new Error('not logged in')
       },
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
     })
 
     await expect(updater.apply({ manual: true })).rejects.toThrow(
@@ -448,7 +448,7 @@ describe('LocalUpdateManager', () => {
     const updater = new LocalUpdateManager({
       repoRoot: '/repo',
       flavor: () => LOCAL_FLAVOR,
-      settings: { githubOwner: 'tau', githubRepo: 'tau' },
+      settings: { githubOwner: 'acme', githubRepo: 'ficus' },
       git: async (args: string[]) => {
         if (args.join(' ') === 'status --porcelain') return ''
         if (args.join(' ') === 'rev-parse HEAD') return 'a'
@@ -555,10 +555,10 @@ describe('LocalUpdateManager', () => {
         },
       }
       const updater = new LocalUpdateManager({
-        repoRoot: '/tmp/tau-targeted-test',
+        repoRoot: '/tmp/ficus-targeted-test',
         git,
         commandRunner,
-        statusPath: `/tmp/tau-targeted-test-${randomUUID()}.json`,
+        statusPath: `/tmp/ficus-targeted-test-${randomUUID()}.json`,
         flavor: () => LOCAL_FLAVOR,
       })
       return { updater, ran, git }

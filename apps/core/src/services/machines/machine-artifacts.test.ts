@@ -254,7 +254,7 @@ async function withRegistry(entries: MachineArtifact[], fn: () => Promise<void>)
 }
 
 describe('ensureMachineArtifacts', () => {
-  it('registers box-provision.sh, the server artifact, then the tau CLI (registry order = ensure order)', () => {
+  it('registers box-provision.sh, the server artifact, then the ficus CLI (registry order = ensure order)', () => {
     // box-provision.sh comes FIRST: it is what every per-box operation shells
     // out to, so it must land even if the (much larger) server-bundle push
     // fails on this pass.

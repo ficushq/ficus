@@ -25,7 +25,7 @@ describe('webDistWarning', () => {
     writeFileSync(join(root, 'apps', 'web', 'dist', 'index.html'), html(base))
   }
   it('is silent when the bundle matches APP_BASE_PATH, with or without slashes', () => {
-    root = mkdtempSync(join(tmpdir(), 'tau-web-dist-'))
+    root = mkdtempSync(join(tmpdir(), 'ficus-web-dist-'))
     try {
       write('/tau/')
       expect(webDistWarning(root, { APP_BASE_PATH: '/tau' })).toBeNull()
@@ -40,7 +40,7 @@ describe('webDistWarning', () => {
     }
   })
   it('names both bases and the rebuild command when they disagree', () => {
-    root = mkdtempSync(join(tmpdir(), 'tau-web-dist-'))
+    root = mkdtempSync(join(tmpdir(), 'ficus-web-dist-'))
     try {
       write('/')
       const warning = webDistWarning(root, { APP_BASE_PATH: '/tau' })
@@ -55,7 +55,7 @@ describe('webDistWarning', () => {
     }
   })
   it('is silent when no bundle has been built or the page has no assets', () => {
-    root = mkdtempSync(join(tmpdir(), 'tau-web-dist-'))
+    root = mkdtempSync(join(tmpdir(), 'ficus-web-dist-'))
     try {
       expect(webDistWarning(root, { APP_BASE_PATH: '/tau' })).toBeNull()
       mkdirSync(join(root, 'apps', 'web', 'dist'), { recursive: true })

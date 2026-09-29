@@ -29,7 +29,7 @@ const refused = () => Object.assign(new Error('connect ECONNREFUSED'), { code: '
 
 let root: string
 beforeEach(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), 'tau-setup-')))
+  root = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-setup-')))
   mkdirSync(join(root, '.git'))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
   writeFileSync(join(root, '.bun-version'), '1.3.8\n')

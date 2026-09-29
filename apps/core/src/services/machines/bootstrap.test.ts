@@ -721,7 +721,7 @@ describe('bootstrap.sh --core-cidr validation + egress ruleset rendering', () =>
     Bun.which('nft') !== null && Bun.which('sudo') !== null && Bun.spawnSync(['sudo', '-n', 'true']).exitCode === 0
   it.skipIf(!canValidateNft)('the rendered ruleset passes nft validation (syntax valid)', async () => {
     const { stdout } = await runBootstrap(['--print-egress-ruleset', '--core-cidr', '10.9.9.0/24'])
-    const rulesetPath = join(tmpdir(), `tau-egress-ruleset-${randomUUID()}.nft`)
+    const rulesetPath = join(tmpdir(), `ficus-egress-ruleset-${randomUUID()}.nft`)
     writeFileSync(rulesetPath, stdout)
     try {
       const proc = Bun.spawn(['sudo', '-n', 'nft', '-c', '-f', rulesetPath], { stdout: 'pipe', stderr: 'pipe' })
@@ -1189,7 +1189,7 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
    */
   function refusingSudoPath(): string {
     const dir = mkdtempSync(join(tmpdir(), 'ficus-refusing-sudo-'))
-    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\necho "tau-test: sudo refused: $*" >&2\nexit 77\n', { mode: 0o755 })
+    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\necho "ficus-test: sudo refused: $*" >&2\nexit 77\n', { mode: 0o755 })
     return `${dir}:${process.env.PATH ?? ''}`
   }
 
@@ -1416,7 +1416,7 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
     // needs). Root has no sudo call to refuse.
     if (process.platform === 'linux' && process.getuid?.() !== 0) {
       expect(exitCode).toBe(77)
-      expect(stderr).toContain('tau-test: sudo refused')
+      expect(stderr).toContain('ficus-test: sudo refused')
     }
   }, 30_000)
 })

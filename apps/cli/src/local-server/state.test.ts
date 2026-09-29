@@ -289,7 +289,7 @@ describe('resolveRoot', () => {
   it('throws NoRootError when nothing resolves', () => {
     expect(() => resolveRoot({ env: {}, statePath: join(tmp, 'none.json'), cwd: tmp })).toThrow(NoRootError)
   })
-  it('isCheckout needs .git and package.json name tau', () => {
+  it('isCheckout needs .git and package.json name ficus', () => {
     expect(isCheckout(tmp)).toBe(false)
     makeCheckout(tmp)
     expect(isCheckout(tmp)).toBe(true)

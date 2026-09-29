@@ -15,7 +15,7 @@ function fakeLog() {
 }
 
 function buildFixture(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'tau-web-fixture-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-web-fixture-'))
   writeFileSync(
     join(dir, 'index.html'),
     '<!doctype html><html><head><meta property="og:image" content="__FICUS_ORIGIN__/social-preview.png" /></head><body>app</body></html>'

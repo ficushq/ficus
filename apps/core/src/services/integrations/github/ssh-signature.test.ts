@@ -28,7 +28,7 @@ function run(command: string[], options: { cwd?: string; stdin?: Buffer; env?: R
 describe('SSHSIG signing', () => {
   it('produces signatures ssh-keygen verifies for the git namespace', () => {
     const dir = tempDir()
-    const key = generateSshSigningKey('tau-test')
+    const key = generateSshSigningKey('ficus-test')
     const data = Buffer.from('tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\ncommitter A <a@x> 1 +0000\n\nmsg\n')
     writeFileSync(join(dir, 'allowed'), `a@x ${key.publicKey}\n`)
     writeFileSync(join(dir, 'data.sig'), signSshSig(key.privateKey, data, 'git'))
@@ -67,7 +67,7 @@ describe('SSHSIG signing', () => {
 
   it('reports the same fingerprint as ssh-keygen -l', () => {
     const dir = tempDir()
-    const key = generateSshSigningKey('tau-test')
+    const key = generateSshSigningKey('ficus-test')
     writeFileSync(join(dir, 'key.pub'), `${key.publicKey}\n`)
     const listed = run(['ssh-keygen', '-l', '-f', join(dir, 'key.pub')])
     expect(listed.code).toBe(0)
@@ -76,7 +76,7 @@ describe('SSHSIG signing', () => {
 
   it('signs the exact buffer git hands its signing program, and git verifies the commit', () => {
     const repo = tempDir()
-    const key = generateSshSigningKey('tau-test')
+    const key = generateSshSigningKey('ficus-test')
     const env = {
       GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_NOSYSTEM: '1',

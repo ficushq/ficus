@@ -28,8 +28,8 @@ describe('service cgroup parsing', () => {
 
   it('accounts for a non-root cgroup2 mount root', () => {
     const mount = '29 23 0:26 /system.slice /sys/fs/cgroup rw - cgroup2 cgroup rw\n'
-    expect(resolveCgroupProcsPath(mount, '/system.slice/tau.service')).toBe('/sys/fs/cgroup/tau.service/cgroup.procs')
-    expect(() => resolveCgroupProcsPath(mount, '/user.slice/tau.service')).toThrow('cgroup2 mount')
+    expect(resolveCgroupProcsPath(mount, '/system.slice/app.service')).toBe('/sys/fs/cgroup/app.service/cgroup.procs')
+    expect(() => resolveCgroupProcsPath(mount, '/user.slice/app.service')).toThrow('cgroup2 mount')
   })
 })
 

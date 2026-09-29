@@ -240,7 +240,7 @@ describe('host env', () => {
     }
   })
 
-  test('buildHostCommandEnv layers tau vars, shim PATH and squad ssh config on the base', () => {
+  test('buildHostCommandEnv layers ficus vars, shim PATH and squad ssh config on the base', () => {
     mkdirSync(join(home, 'ssh', SQUAD), { recursive: true })
     writeFileSync(join(home, 'ssh', SQUAD, 'config'), '')
     const env = buildHostCommandEnv({ base: { PATH: '/bin', HOME: home }, ficusToken: 'tok', squadId: SQUAD })

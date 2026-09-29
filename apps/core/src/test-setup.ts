@@ -336,13 +336,13 @@ function dropCheckConstraints(url: string): void {
   runDdlOrExit(
     url,
     [
-      `DO $tau$ DECLARE r RECORD; BEGIN ` +
+      `DO $ficus$ DECLARE r RECORD; BEGIN ` +
         `FOR r IN (SELECT c.conname, c.conrelid::regclass AS relation FROM pg_constraint c ` +
         `JOIN pg_class t ON t.oid = c.conrelid AND t.relnamespace = 'public'::regnamespace ` +
         `WHERE c.contype = 'c' AND c.connamespace = 'public'::regnamespace ` +
         `AND t.relname IN (${owned})) LOOP ` +
         `EXECUTE 'ALTER TABLE ' || r.relation || ' DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname); ` +
-        `END LOOP; END $tau$`,
+        `END LOOP; END $ficus$`,
     ],
     'drop stale CHECK constraints before the schema push'
   )
@@ -365,10 +365,10 @@ function applyCheckConstraints(url: string): void {
     [...expectedCheckConstraints()].map(([name, { table, expression }]) => {
       const relation = `public.${quoteIdentifier(table)}`
       return (
-        `DO $tau$ BEGIN IF to_regclass(${sqlLiteral(relation)}) IS NOT NULL AND NOT EXISTS ` +
+        `DO $ficus$ BEGIN IF to_regclass(${sqlLiteral(relation)}) IS NOT NULL AND NOT EXISTS ` +
         `(SELECT 1 FROM pg_constraint WHERE conname = ${sqlLiteral(name)} ` +
         `AND conrelid = ${sqlLiteral(relation)}::regclass) ` +
-        `THEN ALTER TABLE ${relation} ADD CONSTRAINT ${quoteIdentifier(name)} CHECK (${expression}); END IF; END $tau$`
+        `THEN ALTER TABLE ${relation} ADD CONSTRAINT ${quoteIdentifier(name)} CHECK (${expression}); END IF; END $ficus$`
       )
     }),
     'reapply the CHECK constraints schema.ts declares'

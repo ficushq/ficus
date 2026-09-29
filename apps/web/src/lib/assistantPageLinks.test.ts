@@ -43,22 +43,22 @@ test('app paths are named from the navigation definitions', () => {
     context: 'Settings',
   })
   expect(describeAppPath('/settings')).toEqual({ kind: 'settings', title: 'Settings' })
-  expect(describeAppPath('/squads/tau/work?ws=42')).toEqual({
+  expect(describeAppPath('/squads/ficus/work?ws=42')).toEqual({
     kind: 'work-stream',
     title: 'Work stream #42',
-    squadId: 'tau',
+    squadId: 'ficus',
   })
-  expect(describeAppPath('/squads/tau/agents?agent=a1')).toEqual({
+  expect(describeAppPath('/squads/ficus/agents?agent=a1')).toEqual({
     kind: 'conversation',
     title: 'Agent conversation',
-    squadId: 'tau',
+    squadId: 'ficus',
   })
-  expect(describeAppPath('/squads/tau/settings?section=workflows')).toEqual({
+  expect(describeAppPath('/squads/ficus/settings?section=workflows')).toEqual({
     kind: 'settings',
     title: 'Workflows settings',
-    squadId: 'tau',
+    squadId: 'ficus',
   })
-  expect(describeAppPath('/squads/tau/memory')).toEqual({ kind: 'squad', title: 'Memory', squadId: 'tau' })
-  expect(describeAppPath('/squads/tau')).toEqual({ kind: 'squad', title: 'Home', squadId: 'tau' })
+  expect(describeAppPath('/squads/ficus/memory')).toEqual({ kind: 'squad', title: 'Memory', squadId: 'ficus' })
+  expect(describeAppPath('/squads/ficus')).toEqual({ kind: 'squad', title: 'Home', squadId: 'ficus' })
   expect(describeAppPath('/somewhere-new')).toEqual({ kind: 'page', title: '/somewhere-new' })
 })

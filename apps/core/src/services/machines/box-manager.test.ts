@@ -2609,7 +2609,7 @@ describe('restorePrivateArchive', () => {
       machine,
       'sb-1',
       '/home/box_x',
-      '/tmp/archive-root/definitely-absent-tau-test/private.tar.gz',
+      '/tmp/archive-root/definitely-absent-ficus-test/private.tar.gz',
       {}
     )
 
