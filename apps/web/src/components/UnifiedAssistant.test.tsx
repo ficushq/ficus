@@ -56,10 +56,9 @@ test('the assistant nav button toggles the panel like its keyboard shortcut whil
     await dom.act(async () => button.click())
     expect(panel.hidden).toBe(false)
     expect(button.getAttribute('aria-expanded')).toBe('true')
-    // The default upper-center dock grows from its bottom-right corner.
-    expect(panel.querySelector('button[aria-label="Resize assistant"]')?.getAttribute('data-resize-corner')).toBe(
-      'bottom-right'
-    )
+    // Like a farm chat window: a corner resize handle and a layout menu in the header.
+    expect(panel.querySelector('button[aria-label="Resize assistant"]')).not.toBeNull()
+    expect(panel.querySelector('button[aria-label="Arrange assistant"]')?.getAttribute('aria-haspopup')).toBe('menu')
     await dom.act(async () => window.dispatchEvent(new Event('open-ficus-assistant')))
     expect(panel.hidden).toBe(false)
     await dom.act(async () => button.click())
