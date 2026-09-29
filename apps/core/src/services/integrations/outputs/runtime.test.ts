@@ -1646,7 +1646,7 @@ test('Code hosting ignores own PR/issue comments and reviews but retains facts a
       'pull_request.review_comment',
     ]) {
       const comment = output === 'issue.comment' ? issueComment(102) : fact(101, { output })
-      comment.data.actor = 'TAU-BOT'
+      comment.data.actor = 'FICUS-BOT'
       const eventId = (await publishIntegrationOutput('github', comment, authority))!
       eventIds.push(eventId)
       const [recorded] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
@@ -1762,7 +1762,7 @@ for (const provider of ['github', 'linear'])
         id: 'typed-first',
         source: { integration: provider, output: 'issue.assigned', version: 1, connectionId },
         filters: { audience: 'any', squadRouting: true },
-        predicates: [{ field: 'assignee', op: 'eq', value: provider === 'github' ? 'TAU-BOT' : 'ficus-bot' }],
+        predicates: [{ field: 'assignee', op: 'eq', value: provider === 'github' ? 'FICUS-BOT' : 'ficus-bot' }],
         action: { type: 'ignore' },
       })
       const fallback = squadEventRuleSchema.parse({

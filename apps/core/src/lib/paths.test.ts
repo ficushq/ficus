@@ -60,7 +60,7 @@ describe('MONOREPO_ROOT', () => {
 
   it('expands a leading ~ in FICUS_ROOT (before resolving)', () => {
     const dir = tempDir()
-    expect(monorepoRootIn({ cwd: dir, ficusRoot: '~/tau-root-fixture' })).toBe(join(homedir(), 'ficus-root-fixture'))
+    expect(monorepoRootIn({ cwd: dir, ficusRoot: '~/ficus-root-fixture' })).toBe(join(homedir(), 'ficus-root-fixture'))
   })
 
   it('resolves a relative FICUS_ROOT against the subprocess cwd (a stray relative .env value must not silently redirect config paths)', () => {
