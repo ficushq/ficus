@@ -73,25 +73,106 @@ describe('invite form role picker', () => {
     return container.querySelector('#invite-user-role') as HTMLSelectElement
   }
 
-  test('the invite form has a role picker preselected to operator', async () => {
-    const select = await openInviteForm()
-    expect(select).not.toBeNull()
-    expect(select.value).toBe('operator')
+  const given = () =>
+    [...container.querySelectorAll('[aria-label="Roles to give"] li > span')].map((el) => el.textContent)
+
+  async function choose(select: HTMLSelectElement | null, value: string) {
+    await dom.act(async () => {
+      select!.value = value
+      select!.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    })
+  }
+
+  test('the invite form gives Operator system-wide until you change it', async () => {
+    await openInviteForm()
+    expect(given()).toEqual(['Operator · System'])
   })
 
-  test('viewer is freely selectable', async () => {
+  test('viewer and admin are offered to add', async () => {
     const select = await openInviteForm()
     const values = [...select.querySelectorAll('option')].map((o) => o.getAttribute('value'))
-    expect(values).toContain('viewer')
-    expect(values).toContain('admin')
+    expect(values).toContain('r-viewer')
+    expect(values).toContain('r-admin')
   })
 
   test('agent roles never appear in the picker', async () => {
     const select = await openInviteForm()
     const values = [...select.querySelectorAll('option')].map((o) => o.getAttribute('value'))
-    expect(values).not.toContain('default-worker')
-    expect(values).not.toContain('default-manager')
+    expect(values).not.toContain('r-worker')
+    expect(values).not.toContain('r-manager')
     expect(select.textContent).not.toContain('Squad Worker')
+  })
+
+  test('adds a role scoped to one squad or every squad, and removes the default', async () => {
+    const select = await openInviteForm()
+    queryClient!.setQueryData(queryKeys.squads.list(), [{ id: 'squad-1', name: 'Attune' }])
+    await choose(select, 'r-viewer')
+    await choose(container.querySelector('#invite-user-scope'), 'squad')
+    await choose(container.querySelector('#invite-user-squad'), 'squad-1')
+    const add = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Add')!
+    await dom.act(async () => {
+      add.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+    })
+    await choose(container.querySelector('#invite-user-role'), 'r-viewer')
+    await choose(container.querySelector('#invite-user-scope'), 'squad_default')
+    await dom.act(async () => {
+      ;[...container.querySelectorAll('button')]
+        .find((b) => b.textContent === 'Add')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+    })
+    const remove = container.querySelector('button[aria-label="Remove Operator (System)"]')!
+    await dom.act(async () => {
+      remove.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+    })
+    expect(given()).toEqual(['Viewer · Attune', 'Viewer · Every squad'])
+
+    let body: unknown
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body))
+      return new Response(JSON.stringify({ id: 'u2', email: 'new@example.com' }), {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+    try {
+      const email = container.querySelector('input[type="email"]') as HTMLInputElement
+      await dom.act(async () => {
+        const setValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!
+        setValue.call(email, 'new@example.com')
+        email.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      })
+      await dom.act(async () => {
+        email.form!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
+      })
+      await dom.act(async () => {})
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+    expect(body).toMatchObject({
+      email: 'new@example.com',
+      assignments: [
+        { roleId: 'r-viewer', scope: 'squad', squadId: 'squad-1' },
+        { roleId: 'r-viewer', scope: 'squad_default' },
+      ],
+    })
+  })
+
+  test('a role picked but not added holds off the invite until added or cleared', async () => {
+    const select = await openInviteForm()
+    const submit = () => [...container.querySelectorAll('button[type="submit"]')].at(-1) as HTMLButtonElement
+    const email = container.querySelector('input[type="email"]') as HTMLInputElement
+    await dom.act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!
+      setValue.call(email, 'new@example.com')
+      email.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    })
+    expect(submit().disabled).toBe(false)
+    await choose(select, 'r-viewer')
+    expect(submit().disabled).toBe(true)
+    expect(container.textContent).toContain('Add the role you picked (or clear it) before inviting.')
+    await choose(container.querySelector('#invite-user-role'), '')
+    expect(submit().disabled).toBe(false)
   })
 
   test('the per-user role editor is fed the same filtered list', async () => {
@@ -102,7 +183,7 @@ describe('invite form role picker', () => {
     await dom.act(async () => {
       manage!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
     })
-    const rowSelect = container.querySelector('#assign-role-u1') as HTMLSelectElement
+    const rowSelect = container.querySelector('#assign-u1-role') as HTMLSelectElement
     expect(rowSelect).not.toBeNull()
     const values = [...rowSelect.querySelectorAll('option')].map((o) => o.getAttribute('value'))
     expect(values).toContain('r-viewer')
@@ -110,10 +191,20 @@ describe('invite form role picker', () => {
     expect(values).not.toContain('r-manager')
   })
 
+  test('says every new person also gets Farmer, when the instance has it', async () => {
+    await openInviteForm()
+    expect(container.textContent).not.toContain('along with Farmer')
+    await dom.act(async () => root.unmount())
+    ;({ root, container } = dom.createRoot())
+    await openInviteForm([
+      ...ROLES,
+      { id: 'r-farmer', name: 'Farmer', slug: 'farmer', permissions: ['farm:read', 'farm:chat'], appliesTo: 'user' },
+    ])
+    expect(container.textContent).toContain('along with Farmer (the farm), which every new person gets')
+  })
+
   test('falls back to the first available role when operator is absent', async () => {
-    const select = await openInviteForm(ROLES.filter((r) => r.slug !== 'operator'))
-    // A <select> whose value matches no option would silently render the first
-    // one while state still said "operator" — the payload must match the control.
-    expect(select.value).toBe('admin')
+    await openInviteForm(ROLES.filter((r) => r.slug !== 'operator'))
+    expect(given()).toEqual(['Admin · System'])
   })
 })

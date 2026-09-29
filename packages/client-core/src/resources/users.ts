@@ -32,8 +32,17 @@ export function usersResource(t: Transport) {
     listUsers: (): Promise<AuthUser[]> => t.request('/users'),
     getUser: (id: string): Promise<AuthUser> => t.request(`/users/${id}`),
     /** @param roleIds role ids or slugs; omitted means the server default (`operator`). */
-    inviteUser: (email: string, displayName?: string, roleIds?: string[]): Promise<InvitedUser> =>
-      t.request('/users', { method: 'POST', body: { email, displayName, roleIds } }),
+    /**
+     * Invites someone. `roleIds` give roles system-wide; `assignments` give roles in any scope (system,
+     * every squad, or one squad), as the per-user role editor does.
+     */
+    inviteUser: (
+      email: string,
+      displayName?: string,
+      roleIds?: string[],
+      assignments?: Array<{ roleId: string; scope: 'system' | 'squad_default' | 'squad'; squadId?: string }>
+    ): Promise<InvitedUser> =>
+      t.request('/users', { method: 'POST', body: { email, displayName, roleIds, assignments } }),
     updateUser: (id: string, data: { email?: string; displayName?: string }): Promise<AuthUser> =>
       t.request(`/users/${id}`, { method: 'PATCH', body: data }),
     deleteUser: (userId: string): Promise<void> => t.request(`/users/${userId}`, { method: 'DELETE' }),

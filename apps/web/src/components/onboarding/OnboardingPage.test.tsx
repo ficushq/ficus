@@ -326,11 +326,21 @@ describe('OnboardingPage — skip/unskip interactions', () => {
         fireEvent.change(container.querySelector('#invite-user-display-name')!, { target: { value: 'Teammate' } })
         fireEvent.change(container.querySelector('#invite-user-role')!, { target: { value: 'viewer' } })
       })
+      await dom.act(async () => fireEvent.click(findButtonByText(container, 'Add')))
+      await dom.act(async () =>
+        fireEvent.click(container.querySelector('button[aria-label="Remove Operator (System)"]')!)
+      )
       await dom.act(async () => fireEvent.submit(container.querySelector('#setup-step-invite_users form')!))
       await dom.act(async () =>
         waitFor(() => expect(container.querySelector('#setup-step-invite_users [role="status"]')).not.toBeNull())
       )
-      expect(payloads).toEqual([{ email: 'teammate@example.com', displayName: 'Teammate', roleIds: ['viewer'] }])
+      expect(payloads).toEqual([
+        {
+          email: 'teammate@example.com',
+          displayName: 'Teammate',
+          assignments: [{ roleId: 'viewer', scope: 'system' }],
+        },
+      ])
       expect(container.querySelector('a[href*="section=users"]')).toBeNull()
       if (delivery === 'link') {
         expect(container.textContent).toContain('Copy link')

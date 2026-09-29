@@ -19,6 +19,7 @@ import { seatUsageLine } from './seatPricing'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
 import { InviteUserForm } from './InviteUserForm'
+import { RoleAssignmentPicker, type RoleAssignmentInput } from './RoleAssignmentPicker'
 import { InviteLinkPanel, type IssuedInviteLink } from './InviteLinkPanel'
 
 export function UsersSection() {
@@ -170,15 +171,12 @@ export function UserRow({
     { fallbackCount: 2, maxCount: 6 }
   )
 
-  const [assignRoleId, setAssignRoleId] = useState('')
-  const [assignScope, setAssignScope] = useState<'system' | 'squad'>('system')
-  const [assignSquadId, setAssignSquadId] = useState('')
-  // Squads the current user can see (backend already filters to accessible ones): fetched when
-  // scoping an assignment to a squad, and to name the squads existing assignments are scoped to.
+  // Squads the current user can see (backend already filters to accessible ones), to name the squads
+  // existing assignments are scoped to. (The picker fetches its own when scoping a new one to a squad.)
   const hasSquadAssignment = userRoles.some((assignment) => assignment.scope === 'squad')
   const { data: assignableSquads = [] } = useQuery({
     ...queries.squads.list(),
-    enabled: assignScope === 'squad' || hasSquadAssignment,
+    enabled: hasSquadAssignment,
   })
   const squadNames = new Map(assignableSquads.map((squad) => [squad.id, squad.name]))
   const scopeLabel = (assignment: (typeof userRoles)[number]) =>
@@ -191,17 +189,9 @@ export function UserRow({
         : null
 
   const assignMutation = useMutation({
-    mutationFn: () =>
-      assignUserRole(user.id, {
-        roleId: assignRoleId,
-        scope: assignScope,
-        squadId: assignScope === 'squad' ? assignSquadId : undefined,
-      }),
+    mutationFn: (assignment: RoleAssignmentInput) => assignUserRole(user.id, assignment),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.users.roles(user.id) })
-      setAssignRoleId('')
-      setAssignScope('system')
-      setAssignSquadId('')
     },
   })
 
@@ -360,63 +350,12 @@ export function UserRow({
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-2">
-                <label htmlFor={`assign-role-${user.id}`} className="sr-only">
-                  Role to assign
-                </label>
-                <select
-                  id={`assign-role-${user.id}`}
-                  value={assignRoleId}
-                  onChange={(e) => setAssignRoleId(e.target.value)}
-                  className="ficus-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent"
-                >
-                  <option value="">Select role...</option>
-                  {roles.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.name}
-                    </option>
-                  ))}
-                </select>
-                <label htmlFor={`assign-scope-${user.id}`} className="sr-only">
-                  Assignment scope
-                </label>
-                <select
-                  id={`assign-scope-${user.id}`}
-                  value={assignScope}
-                  onChange={(e) => setAssignScope(e.target.value as 'system' | 'squad')}
-                  className="ficus-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent"
-                >
-                  <option value="system">System</option>
-                  <option value="squad">Squad</option>
-                </select>
-                {assignScope === 'squad' && (
-                  <>
-                    <label htmlFor={`assign-squad-${user.id}`} className="sr-only">
-                      Squad
-                    </label>
-                    <select
-                      id={`assign-squad-${user.id}`}
-                      value={assignSquadId}
-                      onChange={(e) => setAssignSquadId(e.target.value)}
-                      className="ficus-field text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary  focus:ring-1 focus:ring-accent max-w-44"
-                    >
-                      <option value="">Select squad…</option>
-                      {assignableSquads.map((squad) => (
-                        <option key={squad.id} value={squad.id}>
-                          {squad.name}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
-                <button
-                  onClick={() => assignMutation.mutate()}
-                  disabled={!assignRoleId || assignMutation.isPending || (assignScope === 'squad' && !assignSquadId)}
-                  className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
-                >
-                  {assignMutation.isPending ? 'Assigning...' : 'Assign'}
-                </button>
-              </div>
+              <RoleAssignmentPicker
+                idPrefix={`assign-${user.id}`}
+                roles={roles}
+                onAdd={(assignment) => assignMutation.mutate(assignment)}
+                busy={assignMutation.isPending}
+              />
               {assignMutation.isError && (
                 <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
                   {(assignMutation.error as Error)?.message || 'Failed to assign role'}

@@ -14,7 +14,7 @@ import {
 } from '../test-utils'
 import type { TestUser } from '../test-utils/rbac'
 import { db } from '../db'
-import { emailVerifications, roleAssignments, roles, users } from '../db/schema'
+import { emailVerifications, roleAssignments, roles, squads, users } from '../db/schema'
 import { sesSendMock } from '../test-utils/ses-mock'
 
 // Invites are the one flow that MUST send mail. The bug this suite pins down:
@@ -209,6 +209,80 @@ describe('POST /api/users assigns roles', () => {
     const { body } = await invite({ email: newEmail(), roleIds: [operatorRoleId, viewerRoleId] })
     const assignments = await assignmentsFor(body.id)
     expect(assignments.map((a) => a.roleId).sort()).toEqual([operatorRoleId, viewerRoleId].sort())
+  })
+
+  it('gives several roles in their own scopes: system-wide, every squad, and one squad', async () => {
+    delete process.env.SES_FROM_ADDRESS
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `${prefix} squad`, purpose: 'test' })
+      .returning()
+    try {
+      const { res, body } = await invite({
+        email: newEmail(),
+        assignments: [
+          { roleId: 'viewer', scope: 'system' },
+          { roleId: operatorRoleId, scope: 'squad', squadId: squad!.id },
+          { roleId: 'viewer', scope: 'squad_default' },
+          { roleId: 'viewer', scope: 'system' },
+        ],
+      })
+      expect(res.status).toBe(201)
+      expect(body.roles).toEqual(['viewer'])
+      const given = (await assignmentsFor(body.id)).map((a) => [a.roleId, a.scope, a.squadId])
+      expect(given.sort()).toEqual(
+        [
+          [viewerRoleId, 'system', null],
+          [operatorRoleId, 'squad', squad!.id],
+          [viewerRoleId, 'squad_default', null],
+        ].sort()
+      )
+    } finally {
+      await db.delete(squads).where(eq(squads.id, squad!.id))
+    }
+  })
+
+  it('choosing Farmer, which every new person already gets, gives it once', async () => {
+    delete process.env.SES_FROM_ADDRESS
+    let [farmer] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, 'farmer'))
+    const ownFarmer = !farmer
+    if (!farmer)
+      [farmer] = await db
+        .insert(roles)
+        .values({ name: 'Farmer', slug: 'farmer', permissions: ['farm:read', 'farm:chat'], isSystem: true })
+        .returning({ id: roles.id })
+    try {
+      const { res, body } = await invite({
+        email: newEmail(),
+        assignments: [
+          { roleId: 'viewer', scope: 'system' },
+          { roleId: 'farmer', scope: 'system' },
+        ],
+      })
+      expect(res.status).toBe(201)
+      const held = await db
+        .select({ roleId: roleAssignments.roleId })
+        .from(roleAssignments)
+        .where(eq(roleAssignments.subjectId, body.id))
+      expect(held.map((a) => a.roleId).sort()).toEqual([viewerRoleId, farmer!.id].sort())
+    } finally {
+      if (ownFarmer) await db.delete(roles).where(eq(roles.id, farmer!.id))
+    }
+  })
+
+  it('rejects a squad assignment without a real squad, and a bad scope, creating nobody', async () => {
+    delete process.env.SES_FROM_ADDRESS
+    for (const assignments of [
+      [{ roleId: 'viewer', scope: 'squad' }],
+      [{ roleId: 'viewer', scope: 'squad', squadId: randomUUID() }],
+      [{ roleId: 'viewer', scope: 'everywhere' }],
+      [{ roleId: 'viewer', scope: 'system', squadId: randomUUID() }],
+    ]) {
+      const email = newEmail()
+      const { res } = await invite({ email, assignments })
+      expect(res.status).toBe(400)
+      expect(await db.select().from(users).where(eq(users.email, email))).toEqual([])
+    }
   })
 
   it('rejects an unknown role without creating the user', async () => {

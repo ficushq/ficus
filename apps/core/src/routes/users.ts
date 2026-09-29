@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { eq, and, ne, isNull, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { roleAssignments, roles, sessions, users } from '../db/schema'
+import { roleAssignments, roles, sessions, squads, users } from '../db/schema'
 import { invalidatePermissionCache } from '../services/rbac/permissions'
 import { User } from '../entities/User'
 import { Role, isUserAssignable } from '../entities/Role'
@@ -92,6 +92,74 @@ async function resolveInviteRoles(
   return { roles: resolved }
 }
 
+type AssignmentScope = 'system' | 'squad_default' | 'squad'
+const ASSIGNMENT_SCOPES: readonly AssignmentScope[] = ['system', 'squad_default', 'squad']
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** One role an invite gives, in a scope, as the per-user role editor would assign it. */
+interface InviteAssignment {
+  role: Role
+  scope: AssignmentScope
+  squadId: string | null
+}
+
+/**
+ * Resolve an invite's role assignments: `assignments` (a role id or slug, a
+ * scope, and a squad for squad scope), plus any `roleIds` (system-wide, the
+ * older shape). Neither gives the default role system-wide. Each is validated
+ * as POST /:id/roles validates one (user-assignable, a real squad for squad
+ * scope, and within the caller's own permissions in that scope) before
+ * anything is written.
+ */
+async function resolveInviteAssignments(
+  assignments: unknown,
+  roleIds: string[] | undefined,
+  identity: Identity
+): Promise<{ assignments: InviteAssignment[] } | { error: string; status: 400 | 403 }> {
+  if (assignments !== undefined && !Array.isArray(assignments))
+    return { error: 'assignments must be an array', status: 400 }
+  const requested = (assignments ?? []) as Array<Record<string, unknown>>
+  if (!requested.length) {
+    const resolved = await resolveInviteRoles(roleIds, identity)
+    if ('error' in resolved)
+      return { error: resolved.error, status: resolved.error.startsWith('Cannot grant') ? 403 : 400 }
+    return { assignments: resolved.roles.map((role) => ({ role, scope: 'system', squadId: null })) }
+  }
+
+  const found = await Role.findAll()
+  const out: InviteAssignment[] = []
+  const wanted = [
+    ...(roleIds ?? []).map((roleId) => ({ roleId, scope: 'system' as unknown, squadId: undefined as unknown })),
+    ...requested,
+  ]
+  for (const item of wanted) {
+    const { roleId, scope, squadId } = item as { roleId?: unknown; scope?: unknown; squadId?: unknown }
+    if (typeof roleId !== 'string') return { error: 'Each assignment needs a roleId', status: 400 }
+    if (typeof scope !== 'string' || !ASSIGNMENT_SCOPES.includes(scope as AssignmentScope))
+      return { error: `scope must be one of: ${ASSIGNMENT_SCOPES.join(', ')}`, status: 400 }
+    if (scope === 'squad' && (typeof squadId !== 'string' || !UUID.test(squadId)))
+      return { error: 'squadId is required for squad scope', status: 400 }
+    if (scope !== 'squad' && squadId !== undefined && squadId !== null)
+      return { error: 'squadId must not be set for system or squad_default scope', status: 400 }
+    const role = found.find((r) => r.id === roleId || r.slug === roleId)
+    if (!role) return { error: `Unknown role: ${roleId}`, status: 400 }
+    if (!isUserAssignable(role)) return { error: `Role ${role.slug} cannot be assigned to a user`, status: 400 }
+    if (scope === 'squad') {
+      const [squad] = await db
+        .select({ id: squads.id })
+        .from(squads)
+        .where(eq(squads.id, squadId as string))
+      if (!squad) return { error: `Unknown squad: ${squadId}`, status: 400 }
+    }
+    const lacking = await ungrantablePermissions(identity, role, scope === 'squad' ? (squadId as string) : undefined)
+    if (lacking.length > 0)
+      return { error: `Cannot grant permissions you do not hold: ${lacking.join(', ')}`, status: 403 }
+    const next = { role, scope: scope as AssignmentScope, squadId: scope === 'squad' ? (squadId as string) : null }
+    if (!out.some((a) => a.role.id === role.id && a.scope === next.scope && a.squadId === next.squadId)) out.push(next)
+  }
+  return { assignments: out }
+}
+
 /**
  * What the caller learns about an invite that was just issued.
  *
@@ -180,7 +248,12 @@ usersRouter.get('/:id', requirePermission('users:read'), async (c) => {
 
 usersRouter.post('/', requirePermission('users:create'), async (c) => {
   const body = await c.req.json()
-  const { email, displayName, roleIds } = body as { email?: string; displayName?: string; roleIds?: string[] }
+  const { email, displayName, roleIds, assignments } = body as {
+    email?: string
+    displayName?: string
+    roleIds?: string[]
+    assignments?: unknown
+  }
   if (!email) return c.json({ error: 'Email is required' }, 400)
   if (roleIds !== undefined && (!Array.isArray(roleIds) || roleIds.some((r) => typeof r !== 'string'))) {
     return c.json({ error: 'roleIds must be an array of role ids or slugs' }, 400)
@@ -191,24 +264,27 @@ usersRouter.post('/', requirePermission('users:create'), async (c) => {
 
   // Resolve + authorise roles BEFORE creating anything, so a rejected role never
   // leaves a half-invited user behind.
-  const resolved = await resolveInviteRoles(roleIds, c.get('identity') as Identity)
-  if ('error' in resolved) {
-    return c.json({ error: resolved.error }, resolved.error.startsWith('Cannot grant') ? 403 : 400)
-  }
+  const resolved = await resolveInviteAssignments(assignments, roleIds, c.get('identity') as Identity)
+  if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status)
 
   // One transaction: an invitee who exists without their roles is a broken invite
   // (they sign in and see nothing, and the admin has no signal it went wrong).
   const user = await db.transaction(async (tx) => {
     const created = await User.create({ email, displayName }, tx)
-    if (resolved.roles.length > 0) {
-      await tx.insert(roleAssignments).values(
-        resolved.roles.map((role) => ({
-          subjectType: 'user' as const,
-          subjectId: created.id,
-          roleId: role.id,
-          scope: 'system' as const,
-        }))
-      )
+    if (resolved.assignments.length > 0) {
+      await tx
+        .insert(roleAssignments)
+        .values(
+          resolved.assignments.map((assignment) => ({
+            subjectType: 'user' as const,
+            subjectId: created.id,
+            roleId: assignment.role.id,
+            scope: assignment.scope,
+            squadId: assignment.squadId,
+          }))
+        )
+        // Choosing a role every new person already gets (Farmer, system-wide) is harmless.
+        .onConflictDoNothing()
     }
     return created
   })
@@ -224,8 +300,10 @@ usersRouter.post('/', requirePermission('users:create'), async (c) => {
   // POST /:id/invite below instead of deleting and re-inviting.
   const invite = await deliverInvite(email)
 
-  const roleSlugs = resolved.roles.map((r) => r.slug)
-  return c.json({ ...user.toJSON(), roles: roleSlugs, ...invite }, 201)
+  // `roles`: the system-wide ones (as before); `assignments`: everything the invite gave.
+  const roleSlugs = resolved.assignments.filter((a) => a.scope === 'system').map((a) => a.role.slug)
+  const given = resolved.assignments.map((a) => ({ role: a.role.slug, scope: a.scope, squadId: a.squadId }))
+  return c.json({ ...user.toJSON(), roles: roleSlugs, assignments: given, ...invite }, 201)
 })
 
 /**
