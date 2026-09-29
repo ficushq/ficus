@@ -46,8 +46,21 @@ type Listener = (message: AppToFarmMessage) => void
 const listeners = new Set<Listener>()
 let listening = false
 
+/**
+ * Only the app's own messages count. react-native-webview delivers them as
+ * events with no `source` window; anything posted by a frame inside the page,
+ * or by `window.postMessage`, carries one. Without this check an embedded frame
+ * could post a `handoff` with someone else's code and sign the web view into
+ * their account, or restyle the farm.
+ */
+export function isFromApp(event: MessageEvent): boolean {
+  return event.source == null
+}
+
 function receive(event: Event) {
-  const message = parseAppToFarmMessage((event as MessageEvent).data)
+  const messageEvent = event as MessageEvent
+  if (!isFromApp(messageEvent)) return
+  const message = parseAppToFarmMessage(messageEvent.data)
   if (message) for (const listener of listeners) listener(message)
 }
 

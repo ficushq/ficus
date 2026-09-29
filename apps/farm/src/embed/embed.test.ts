@@ -66,6 +66,27 @@ describe('farm embed', () => {
     expect(embedTheme()?.themeId).toBe('ember')
   })
 
+  it('ignores messages posted by a frame or the page, not the app', () => {
+    inWebView()
+    startEmbed()
+    const theme = appToFarmMessage({
+      type: 'theme',
+      theme: { themeId: 'iris', appearance: 'light', customTheme: null },
+    })
+    const frame = document.createElement('iframe')
+    document.body.appendChild(frame)
+    window.dispatchEvent(
+      new window.MessageEvent('message', { data: theme, source: frame.contentWindow as never }) as unknown as Event
+    )
+    window.dispatchEvent(
+      new window.MessageEvent('message', { data: theme, source: window as never }) as unknown as Event
+    )
+    expect(embedTheme()).toBeNull()
+    frame.remove()
+    send(theme)
+    expect(embedTheme()?.themeId).toBe('iris')
+  })
+
   it('posts haptics to the app in the versioned envelope', () => {
     inWebView()
     haptic('wave')
