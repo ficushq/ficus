@@ -11,6 +11,7 @@ import {
 } from '@ficus/shared'
 import type { Identity } from '../rbac'
 import { getAccessibleSquadIds, hasPermission } from '../rbac'
+import { invalidatePermissionCache } from '../rbac/permissions'
 import { assistantInboxOwner } from '../assistant-inbox'
 import type { ClientMessage, ServerMessage } from './types'
 import { isValidTopic } from './types'
@@ -470,9 +471,42 @@ export class WebSocketManager {
   }
 
   invalidateAccessCache(): void {
+    // Access changed (roles, assignments): re-read permissions now, not after the cache's TTL.
+    invalidatePermissionCache()
     for (const client of this.clients.values()) client.accessCache = undefined
     void this.revalidateActivitySubscriptions().catch((error) =>
       console.error('[ws] Activity subscription revalidation failed:', error)
+    )
+    void this.track(this.revalidateFarm()).catch((error) => console.error('[ws] farm revalidation failed:', error))
+  }
+
+  /**
+   * After access changes: whoever may no longer see the farm (farm:read) stops
+   * hearing its presence and chat, and whoever may no longer be on it
+   * (farm:chat) is taken off it, without waiting for them to reconnect.
+   */
+  private async revalidateFarm(): Promise<void> {
+    await Promise.all(
+      [...this.clients.values()]
+        .filter(
+          (client) =>
+            this.presence.isAnnounced(client.id) || [...PEOPLE_TOPICS].some((t) => client.subscriptions.has(t))
+        )
+        .map(async (client) => {
+          const [reads, talks] = await Promise.all([
+            client.identity.type === 'user' && hasPermission(client.identity, 'farm:read'),
+            this.mayTalk(client),
+          ])
+          if (this.clients.get(client.id) !== client) return
+          if (!reads) {
+            for (const topic of ['presence', 'farmChat'] as const)
+              if (client.subscriptions.delete(topic)) this.send(client.ws, { type: 'unsubscribed', topic })
+          }
+          if (!talks) {
+            const change = this.presence.withdraw(client.id)
+            if (change) await this.deliverPresence(change)
+          }
+        })
     )
   }
 

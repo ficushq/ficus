@@ -62,7 +62,7 @@ tau.example.com {
   # The farm UI (built into dist/farm) is its own app: its own HTML fallback, never the web app's.
   redir /farm /farm/ 301
   handle /farm/* {
-    root * /path/to/tau/apps/web/dist
+    root * /path/to/ficus/apps/web/dist
     try_files {path} /farm/index.html
     file_server
     @farmHtml path /farm/ /farm/index.html
@@ -140,12 +140,12 @@ server {
     return 301 /farm/;
   }
   location /farm/ {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     try_files $uri /farm/index.html;
     add_header Cache-Control "no-cache";
   }
   location /farm/assets/ {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     add_header Cache-Control "public, max-age=31536000, immutable";
   }
 

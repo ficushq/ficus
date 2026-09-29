@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { roleAssignments } from '../../db/schema'
+import { roleAssignments, roles } from '../../db/schema'
 import { Role } from '../../entities/Role'
 import { User } from '../../entities/User'
 import { getAuthSettings, updateAuthSettings } from './email'
@@ -24,6 +24,29 @@ async function register(domain = 'example.com') {
   if (user) ownedUsers.push(user)
   return user
 }
+// The default roles every member gets (the farm) exist here whatever ran earlier in the process,
+// so each case pins whether a sign-up gets them.
+let farmerId: string
+let ownFarmer = false
+beforeEach(async () => {
+  const [existing] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, 'farmer'))
+  if (existing) {
+    farmerId = existing.id
+    return
+  }
+  const [created] = await db
+    .insert(roles)
+    .values({ name: 'Farmer', slug: 'farmer', permissions: ['farm:read', 'farm:chat'], isSystem: true })
+    .returning({ id: roles.id })
+  farmerId = created!.id
+  ownFarmer = true
+})
+afterAll(async () => {
+  if (ownFarmer) await db.delete(roles).where(eq(roles.id, farmerId))
+})
+const heldRoleIds = async (user: User) =>
+  (await db.select().from(roleAssignments).where(eq(roleAssignments.subjectId, user.id))).map((a) => a.roleId).sort()
+
 afterEach(async () => {
   await updateAuthSettings({ requireInvite: true, allowedDomains: [], defaultSignupRoleId: null })
   for (const user of ownedUsers.splice(0)) await user.delete()
@@ -32,18 +55,20 @@ afterEach(async () => {
 
 describe('self-registration default role', () => {
   test.each([false, true])(
-    'assigns the role for requireInvite=%s when the domain is allowed',
+    'assigns the role, and the default roles, for requireInvite=%s when the domain is allowed',
     async (requireInvite) => {
       const selected = await role()
       await updateAuthSettings({ requireInvite, allowedDomains: ['Example.com'], defaultSignupRoleId: selected.id })
       const user = await register()
       expect(user).not.toBeNull()
       const assignments = await db.select().from(roleAssignments).where(eq(roleAssignments.subjectId, user!.id))
-      expect(assignments).toHaveLength(1)
-      expect(assignments[0]).toMatchObject({ roleId: selected.id, subjectType: 'user', scope: 'system', squadId: null })
+      expect(assignments.map((a) => a.roleId).sort()).toEqual([selected.id, farmerId].sort())
+      for (const assignment of assignments) {
+        expect(assignment).toMatchObject({ subjectType: 'user', scope: 'system', squadId: null })
+      }
     }
   )
-  test('No role creates an account without any grants', async () => {
+  test('No role creates an account without any grants, not even the default roles', async () => {
     await updateAuthSettings({ requireInvite: false, defaultSignupRoleId: null })
     const user = await register()
     expect(user).not.toBeNull()
@@ -64,9 +89,7 @@ describe('self-registration default role', () => {
     await updateAuthSettings({ requireInvite: false, defaultSignupRoleId: selected.id })
     const user = await register()
     await updateAuthSettings({ defaultSignupRoleId: null })
-    expect((await db.select().from(roleAssignments).where(eq(roleAssignments.subjectId, user!.id)))[0]?.roleId).toBe(
-      selected.id
-    )
+    expect(await heldRoleIds(user!)).toEqual([selected.id, farmerId].sort())
   })
   test('deleting the selected role resets the policy to No role', async () => {
     const selected = await role()

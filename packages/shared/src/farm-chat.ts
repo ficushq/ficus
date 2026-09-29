@@ -53,7 +53,7 @@ export interface FarmChatMessage {
 /** Someone on the instance, as the farm names them. */
 export interface FarmPerson {
   id: string
-  /** Their display name, or their email when they haven't set one. */
+  /** Their display name; without one, their email to people who may see emails (users:read), else UNNAMED_PERSON. */
   name: string
 }
 

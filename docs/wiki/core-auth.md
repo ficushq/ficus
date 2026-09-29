@@ -141,7 +141,7 @@ The Consultant is a squad-bound agent (`squadId` set, `ownerUserId` null) that i
 
 Sign-up settings can specify `defaultSignupRoleId` as a user-assignable role UUID or `null` for **No role**. The default is null. The selector appears for open sign-up and allowed-domain sign-up; invite-only accounts keep the roles selected in their invitations.
 
-A new account created after email verification receives the configured role at **system (instance-wide) scope**, in the same transaction as user creation. Existing accounts, passkey recovery, and additional passkey registration do not receive new grants. Changing the default does not update existing users. Deleting the role resets the setting to null. First-administrator bootstrap remains separate.
+A new account created after email verification receives the configured role at **system (instance-wide) scope**, in the same transaction as user creation. It also receives the default roles every member gets (the **Farmer** role, for the farm; see [Farm](farm.md)). Under **No role** it receives nothing, the default roles included: an administrator grants access later. Existing accounts, passkey recovery, and additional passkey registration do not receive new grants. Changing the default does not update existing users. Deleting the role resets the setting to null. First-administrator bootstrap remains separate.
 
 Updating admission settings with a non-null role requires the settings editor to hold every permission granted by that role, as with manual user-role assignments. Agent-only roles are rejected. The selected default is not exposed in anonymous auth status; it is part of the protected auth settings resource.
 

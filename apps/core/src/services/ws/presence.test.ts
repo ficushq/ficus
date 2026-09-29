@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { UNNAMED_PERSON, type FarmLook } from '@ficus/shared'
-import { db, farmPreferences, squads } from '../../db'
+import { db, farmPreferences, roleAssignments, squads } from '../../db'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
 import { WebSocketManager } from './manager'
 import { PresenceRegistry } from './presence'
@@ -334,5 +334,37 @@ describe('farm presence over the WebSocket', () => {
     )
     expect(events(aliceWs, 'farmChat.typing')).toHaveLength(1)
     expect(events(bobWs, 'farmChat.typing')).toHaveLength(1)
+  })
+
+  test('losing the farm takes effect straight away: no more farm chat or presence, and off the farm', async () => {
+    const carol = await createTestUser({ prefix, displayName: 'Carol' })
+    const farm = await createTestRole({ prefix, permissions: ['farm:read', 'farm:chat'] })
+    await assignRole({ userId: carol.id, roleId: farm.id, scope: 'system' })
+    const manager = new WebSocketManager()
+    const aliceWs = socket()
+    const carolWs = socket()
+    await manager.subscribe(manager.addClient(aliceWs, { type: 'user', userId: alice.id }), 'presence')
+    const carolClient = manager.addClient(carolWs, { type: 'user', userId: carol.id })
+    await manager.subscribe(carolClient, 'presence')
+    await manager.subscribe(carolClient, 'farmChat')
+    manager.handleMessage(carolWs, JSON.stringify({ type: 'presence', focus: null }))
+    await until(() => events(aliceWs, 'presence.updated').length === 1, 'Carol arriving')
+
+    await db
+      .delete(roleAssignments)
+      .where(and(eq(roleAssignments.subjectId, carol.id), eq(roleAssignments.roleId, farm.id)))
+    manager.invalidateAccessCache()
+    await manager.settled()
+
+    expect(frames(carolWs).filter((frame) => frame.type === 'unsubscribed')).toEqual([
+      { type: 'unsubscribed', topic: 'presence' },
+      { type: 'unsubscribed', topic: 'farmChat' },
+    ] as Frame[])
+    expect(events(aliceWs, 'presence.left').map((frame) => frame.data)).toEqual([{ userId: carol.id }])
+    manager.sendFarmChat('farmChat.roomsChanged', {})
+    expect(events(carolWs, 'farmChat.roomsChanged')).toHaveLength(0)
+    manager.handleMessage(aliceWs, JSON.stringify({ type: 'presence', focus: SQUAD }))
+    await manager.settled()
+    expect(events(carolWs, 'presence.updated')).toHaveLength(0)
   })
 })

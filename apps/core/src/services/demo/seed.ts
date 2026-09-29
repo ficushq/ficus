@@ -7,6 +7,7 @@ import {
   deviceTokens,
   messages,
   roleAssignments,
+  roles,
   squads,
   users,
   workStreams,
@@ -20,6 +21,8 @@ import { WorkStream } from '../../entities/WorkStream'
 import { createLogger } from '../../lib/infra/logger'
 import { readAccountStore } from '../agent/account-store'
 import { publishDeviceTokenRevocation } from '../auth/device-token-events'
+import { DEFAULT_USER_ROLE_SLUGS } from '../rbac/default-roles'
+import { invalidatePermissionCache } from '../rbac/permissions'
 import { openWait } from '../work-streams/waits'
 import { DEMO_REVIEWER_EMAIL, DEMO_REVIEWER_ROLE_SLUG } from './access'
 
@@ -255,6 +258,28 @@ export async function seedDemoInstance(): Promise<DemoSeedSummary> {
     await db.update(users).set({ disabledAt: null, updatedAt: new Date() }).where(eq(users.id, user.id))
     user = (await User.findByEmail(DEMO_REVIEWER_EMAIL))!
     created.push('re-enabled the demo account')
+  }
+  // The shared account holds only the demo reviewer role: take away any default role (the farm)
+  // it picked up, e.g. from an upgrade that granted a new default role to everyone.
+  const stripped = await db
+    .delete(roleAssignments)
+    .where(
+      and(
+        eq(roleAssignments.subjectType, 'user'),
+        eq(roleAssignments.subjectId, user.id),
+        inArray(
+          roleAssignments.roleId,
+          db
+            .select({ id: roles.id })
+            .from(roles)
+            .where(inArray(roles.slug, [...DEFAULT_USER_ROLE_SLUGS]))
+        )
+      )
+    )
+    .returning({ id: roleAssignments.id })
+  if (stripped.length) {
+    invalidatePermissionCache()
+    created.push('removed default roles from the demo account')
   }
   const [assignment] = await db
     .select({ id: roleAssignments.id })

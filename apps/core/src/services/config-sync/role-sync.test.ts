@@ -3,8 +3,9 @@ import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { db, roleAssignments, roles, users } from '../../db'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { createTestUser } from '../../test-utils'
+import { DEMO_REVIEWER_EMAIL } from '../demo/reviewer'
 import { RoleSync } from './role-sync'
 
 describe('RoleSync', () => {
@@ -119,8 +120,16 @@ describe('RoleSync', () => {
     }
   })
 
-  test('farmer role is the farm, and everyone already here gets it when it first arrives (once)', async () => {
+  test('farmer role is the farm, and the people already here with a role get it when it first arrives (once)', async () => {
+    // Someone already here holds a role; the default role arrives with the next sync.
+    const [existing] = await db
+      .insert(roles)
+      .values({ name: 'Existing', slug: `existing-${crypto.randomUUID()}`, permissions: ['squads:read'] })
+      .returning()
     const someone = await createTestUser({ prefix: `role-sync-${crypto.randomUUID()}` })
+    await db
+      .insert(roleAssignments)
+      .values({ subjectType: 'user', subjectId: someone.id, roleId: existing!.id, scope: 'squad_default' })
     await sync.sync()
     const [farmer] = await db.select().from(roles).where(eq(roles.slug, 'farmer'))
     expect(farmer?.permissions).toEqual(['farm:read', 'farm:chat'])
@@ -140,6 +149,34 @@ describe('RoleSync', () => {
         .where(and(eq(roleAssignments.subjectId, someone.id), eq(roleAssignments.roleId, farmer!.id)))
     ).toHaveLength(0)
     await db.delete(users).where(eq(users.id, someone.id))
+  })
+
+  test('the farmer backfill skips people without a role, disabled people and the demo reviewer', async () => {
+    const [existing] = await db
+      .insert(roles)
+      .values({ name: 'Existing', slug: `existing-${crypto.randomUUID()}`, permissions: ['squads:read'] })
+      .returning()
+    const roleless = await createTestUser({ prefix: `role-sync-${crypto.randomUUID()}` })
+    const disabled = await createTestUser({ prefix: `role-sync-${crypto.randomUUID()}` })
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, disabled.id))
+    await db.delete(users).where(eq(users.email, DEMO_REVIEWER_EMAIL))
+    const reviewer = await createTestUser({ email: DEMO_REVIEWER_EMAIL })
+    for (const person of [disabled, reviewer]) {
+      await db
+        .insert(roleAssignments)
+        .values({ subjectType: 'user', subjectId: person.id, roleId: existing!.id, scope: 'system' })
+    }
+    await sync.sync()
+    const [farmer] = await db.select().from(roles).where(eq(roles.slug, 'farmer'))
+    for (const person of [roleless, disabled, reviewer]) {
+      expect(
+        await db
+          .select()
+          .from(roleAssignments)
+          .where(and(eq(roleAssignments.subjectId, person.id), eq(roleAssignments.roleId, farmer!.id)))
+      ).toHaveLength(0)
+    }
+    await db.delete(users).where(inArray(users.id, [roleless.id, disabled.id, reviewer.id]))
   })
 
   test('admin role has wildcard permission', async () => {

@@ -6,6 +6,7 @@ import { buildMobilePairingServerUrl } from '../../lib/mobilePairingUrl'
 import { FixedWindowLimiter } from '../auth/device-auth-rate-limit'
 import { createPairingCode } from '../auth/pairing'
 import { getSecretStore } from '../secrets'
+import { DEMO_REVIEWER_EMAIL } from './reviewer'
 
 /**
  * Reviewer access to a designated demo instance.
@@ -23,8 +24,7 @@ import { getSecretStore } from '../secrets'
 export const DEMO_REVIEWER_ACCESS_ENV = 'FICUS_DEMO_REVIEWER_ACCESS'
 /** Secret-store key holding the reviewer credential; rotate to revoke. */
 export const DEMO_REVIEWER_SECRET_KEY = 'DEMO_REVIEWER_SECRET'
-/** RFC 2606 reserved TLD: the demo account can never receive mail. */
-export const DEMO_REVIEWER_EMAIL = 'demo-reviewer@demo.invalid'
+export { DEMO_REVIEWER_EMAIL }
 export const DEMO_REVIEWER_ROLE_SLUG = 'demo-reviewer'
 /** Shorter than this is a password, not a credential. */
 const MIN_SECRET_LENGTH = 16

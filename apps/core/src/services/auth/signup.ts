@@ -20,7 +20,9 @@ export async function createSelfRegisteredUser(input: CreateUserInput): Promise<
         .for('share')
       if (!role) return null
     }
-    const user = await User.create(input, tx)
+    // "No role" means an administrator grants access later, so that includes the default roles
+    // (the farm). With a sign-up role, they're a member like any other and get the defaults too.
+    const user = await User.create({ ...input, withoutDefaultRoles: !roleId }, tx)
     if (roleId) {
       await tx.insert(roleAssignments).values({ subjectType: 'user', subjectId: user.id, roleId, scope: 'system' })
     }
