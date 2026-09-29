@@ -23,6 +23,8 @@ import {
 import type {
   ThemePreference,
   CustomThemeDocument,
+  FarmSettings,
+  FarmChatRoomKind,
   AmtpEnvelope,
   AmtpSignedAgentCard,
   Attention,
@@ -1778,6 +1780,102 @@ export const userPreferences = pgTable('user_preferences', {
   theme: jsonb('theme').$type<ThemePreference>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// The farm UI's durable per-account state: one validated settings document
+// (@ficus/shared farm-preferences.ts), so a new setting needs no migration.
+// Kept apart from user_preferences so the web theme's row and migrations stay its own.
+export const farmPreferences = pgTable('farm_preferences', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  settings: jsonb('settings').$type<FarmSettings>().notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// The farm's chat (packages/shared farm-chat.ts): one general room, public rooms
+// managed with farm:manage-rooms, and DMs between two people (dm_user_a is the
+// lower user id). Messages are pruned after 30 days (services/farm-chat/retention.ts).
+export const farmChatRooms = pgTable(
+  'farm_chat_rooms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').$type<FarmChatRoomKind>().notNull(),
+    /** Empty for a DM, which is named for the other person. */
+    name: text('name').notNull().default(''),
+    description: text('description'),
+    dmUserA: uuid('dm_user_a').references(() => users.id, { onDelete: 'cascade' }),
+    dmUserB: uuid('dm_user_b').references(() => users.id, { onDelete: 'cascade' }),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('farm_chat_rooms_kind_valid', sql`${table.kind} IN ('general', 'room', 'dm')`),
+    check(
+      'farm_chat_rooms_dm_shape',
+      sql`(${table.kind} = 'dm') = (${table.dmUserA} IS NOT NULL AND ${table.dmUserB} IS NOT NULL AND ${table.dmUserA} < ${table.dmUserB})`
+    ),
+    uniqueIndex('farm_chat_rooms_one_general')
+      .on(table.kind)
+      .where(sql`${table.kind} = 'general'`),
+    uniqueIndex('farm_chat_rooms_dm_pair')
+      .on(table.dmUserA, table.dmUserB)
+      .where(sql`${table.kind} = 'dm'`),
+    uniqueIndex('farm_chat_rooms_room_name')
+      .on(sql`lower(${table.name})`)
+      .where(sql`${table.kind} = 'room'`),
+  ]
+)
+
+export const farmChatMessages = pgTable(
+  'farm_chat_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    roomId: uuid('room_id')
+      .notNull()
+      .references(() => farmChatRooms.id, { onDelete: 'cascade' }),
+    senderUserId: uuid('sender_user_id').references(() => users.id, { onDelete: 'set null' }),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** When the sender last edited it. */
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('farm_chat_messages_room_created').on(table.roomId, table.createdAt),
+    index('farm_chat_messages_created').on(table.createdAt),
+  ]
+)
+
+/** One person's emoji reaction to a message (each person reacts with each emoji at most once). */
+export const farmChatReactions = pgTable(
+  'farm_chat_reactions',
+  {
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => farmChatMessages.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    emoji: text('emoji').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.messageId, table.userId, table.emoji] })]
+)
+
+/** How far each person has read each room, for unread counts. */
+export const farmChatReads = pgTable(
+  'farm_chat_reads',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    roomId: uuid('room_id')
+      .notNull()
+      .references(() => farmChatRooms.id, { onDelete: 'cascade' }),
+    lastReadAt: timestamp('last_read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.roomId] })]
+)
 
 // Phase 1: every user's private library of saved theme presets (a v2 light/dark
 // document each). 'instance' visibility is reserved for Phase 2 sharing; Phase 1

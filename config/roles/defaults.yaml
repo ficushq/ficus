@@ -29,6 +29,7 @@ roles:
       - workstreams:*
       - workflows:*
       - chat:*
+      - farm:*
       - ssh:*
       - remote-hosts:*
       - env:*
@@ -63,6 +64,17 @@ roles:
       - amtp:register
       - amtp:write
 
+  # The farm's multiplayer (farm chat and presence), instance-wide. Every new
+  # person gets it when their account is created, and everyone already on an
+  # instance gets it when this role first arrives (services/rbac/default-roles.ts),
+  # as ordinary assignments an admin can remove. Narrow it to farm:read to make
+  # farm chat read-only for everyone.
+  - name: Farmer
+    slug: farmer
+    appliesTo: user
+    permissions:
+      - farm:read
+      - farm:chat
   - name: Viewer
     slug: viewer
     appliesTo: user
@@ -71,6 +83,7 @@ roles:
       - agents:read
       - workstreams:read
       - chat:read
+      - farm:read # see farm chat and who's on the farm, but not post
       - memory:read
       - inbox:read
       - inbox:read-squad # read agent inboxes within accessible squads

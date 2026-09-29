@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && bun run --cwd ../farm build:into-web",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:ci": "bun scripts/run-full-test-gate.ts",

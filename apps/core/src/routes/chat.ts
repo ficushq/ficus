@@ -93,12 +93,13 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
           input.clientId && actorUserId
             ? await findOrCreateConsultant(
                 consultantAgentId({ actorUserId, squadId: scopeId!, clientId: input.clientId }),
-                scopeId!
+                scopeId!,
+                'user'
               )
             : await Agent.create({
                 agentTypeId: 'consultant',
                 squadId: scopeId,
-                context: { scope },
+                context: { scope, origin: 'user' },
                 persist: false,
               })
       } else if (scopeId) {

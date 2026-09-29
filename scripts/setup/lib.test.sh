@@ -4967,8 +4967,10 @@ if [ "$1 $2" = "run build" ]; then
   printf 'built\n' >dist/migrate.js
   printf 'built\n' >dist/ficus.js
 elif [ "$1 $2" = "run build:web" ]; then
-  mkdir -p apps/web/dist
+  # The real build:web also writes the farm into apps/web/dist/farm.
+  mkdir -p apps/web/dist/farm
   printf 'built\n' >apps/web/dist/index.html
+  printf 'built\n' >apps/web/dist/farm/index.html
 fi
 exit 0
 FAKEBUN

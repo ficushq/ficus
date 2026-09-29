@@ -75,7 +75,9 @@ Diagnostics never retain payloads, tokens, peer URLs, response bodies, or except
 
 `EventMap` in `packages/shared/src/events.ts` is the complete event inventory and payload contract. Prefer ID payloads such as `{ agentId }`, `{ executionId, agentId, status }`, and `{ messageId, agentId }`; consumers refetch durable rows as needed.
 
-WebSocket routing is defined in `packages/shared/src/ws-topics.ts`. Current collection topics are `actions`, `agents`, `schedules`, `monitors`, `squads`, `workstreams`, `squadSchedules`, `worker`, `inbox`, `machines`, `onboarding`, and `squadActivity`. Instance topic families are `agents`, `schedules`, `squads`, `workstreams`, `inbox`, `machines`, and `squadActivity`.
+WebSocket routing is defined in `packages/shared/src/ws-topics.ts`. Current collection topics are `actions`, `agents`, `schedules`, `monitors`, `squads`, `workstreams`, `squadSchedules`, `worker`, `inbox`, `machines`, `onboarding`, `squadActivity`, `presence`, and `farmChat`. Instance topic families are `agents`, `schedules`, `squads`, `workstreams`, `inbox`, `machines`, and `squadActivity`.
+
+`presence` and `farmChat` are the farm's people-only topics. The API process sends their events itself, per recipient, and they never travel the event bus (the bridge ignores them). See [`farm.md`](farm.md).
 
 The backend bridge in `apps/core/src/services/ws/bridge.ts` maps typed events to topics. Its discriminated unions and exhaustive checks make the compiler flag unmapped events. Frontend subscribers receive the same typed `{ event, data }` entries and typically invalidate hierarchical React Query keys so current state is refetched.
 

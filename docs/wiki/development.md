@@ -138,6 +138,30 @@ To serve the UI from the core itself instead, run `bun run build:web` and start
 the core with `FICUS_SERVE_WEB=1`; the app, `/api/*` and `/ws` are then all on
 `PORT` (this is what setup configures).
 
+### The farm UI
+
+`apps/farm` is a game-style alternative UI (squads as fenced yards, work
+streams as plants, agents as robots) built on the same client packages. The web
+app's build also builds the farm into `apps/web/dist/farm/`, so every
+install, Core artifact and image that ships the web UI ships the farm, and
+Core serves it at `/farm` (`FICUS_FARM_DIST` overrides where Core looks).
+How it works (styles, settings, presence, farm chat, motion) is in
+[`farm.md`](farm.md).
+
+`bun run dev:farm` serves it at `http://127.0.0.1:5174/farm/`, proxying
+`/api` and `/ws` to local Core on `:3000` with your browser session (sign in on
+the web app first). Add `?demo` for a sample farm that needs no Core. To read
+a real instance instead, point it at a backend the CLI is signed in to (the
+store is found the way the CLI finds it, or set `FICUS_DEV_AUTH_STORE_PATH`):
+
+```bash
+FICUS_FARM_BACKEND=local bun run dev:farm
+```
+
+That backend is read-only: the dev server refuses every API write (except the
+WebSocket ticket) unless `FICUS_FARM_ALLOW_WRITES=1`. `FICUS_API_URL`
+overrides the stored URL, e.g. to use the instance's loopback port.
+
 The installed services and the foreground dev processes are separate.
 `ficus server status` and `ficus server logs -f` describe the registered
 installation; the dev processes write to their own terminals. To return to

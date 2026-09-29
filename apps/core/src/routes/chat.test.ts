@@ -599,6 +599,10 @@ describe('POST /api/chat consultant scope', () => {
       .from(agents)
       .where(and(eq(agents.squadId, consultantSquad.id), eq(agents.agentTypeId, 'consultant')))
     expect(consultants).toHaveLength(1)
+    expect(consultants[0]!.context).toMatchObject({
+      scope: { type: 'consultant', id: consultantSquad.id },
+      origin: 'user',
+    })
     const humanRows = await db
       .select()
       .from(messages)
@@ -675,6 +679,7 @@ describe('POST /api/chat consultant scope', () => {
     for (const c of consultants) {
       expect(c.persist).toBe(false)
       expect(c.ownerUserId).toBeNull()
+      expect(c.context).toMatchObject({ origin: 'user' })
     }
   })
 })

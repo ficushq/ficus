@@ -13,6 +13,8 @@ import { agentsResource } from './resources/agents'
 import { squadsResource } from './resources/squads'
 import { pushResource } from './resources/push'
 import { userPreferencesResource } from './resources/userPreferences'
+import { farmPreferencesResource } from './resources/farmPreferences'
+import { farmChatResource } from './resources/farmChat'
 import { themePresetsResource } from './resources/themePresets'
 import { notificationConfigResource } from './resources/notificationConfig'
 import { systemResource } from './resources/system'
@@ -43,6 +45,8 @@ export function createClient(t: Transport) {
     push: pushResource(t),
     notificationConfig: notificationConfigResource(t),
     userPreferences: userPreferencesResource(t),
+    farmPreferences: farmPreferencesResource(t),
+    farmChat: farmChatResource(t),
     themePresets: themePresetsResource(t),
     system: systemResource(t),
   }

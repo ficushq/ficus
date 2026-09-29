@@ -1,0 +1,932 @@
+.g-farm {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--g-page);
+}
+
+.g-viewport {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.g-viewport:active {
+  cursor: grabbing;
+}
+
+.g-scene {
+  display: block;
+  -webkit-user-drag: none;
+}
+
+.g-scene * {
+  -webkit-user-drag: none;
+}
+
+/* Interactive sprites */
+.g-hit {
+  cursor: pointer;
+  outline: none;
+}
+
+.g-hit-area {
+  fill: transparent;
+}
+
+.g-focus-ring {
+  fill: none;
+  stroke: var(--g-highlight-soft);
+  stroke-width: 3;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.g-hit:focus-visible .g-focus-ring {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .g-hit:hover > :not(.g-hit-area):not(.g-focus-ring) {
+    filter: brightness(1.06);
+  }
+}
+
+.g-badges {
+  pointer-events: none;
+}
+
+/* Wooden panels shared by the HUD */
+.g-panel {
+  background: var(--g-panel-fill);
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius-tile);
+  box-shadow: var(--g-lift);
+}
+
+.g-hud {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.g-hud > * {
+  pointer-events: auto;
+}
+
+.g-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px 5px 8px;
+  border-radius: var(--g-radius);
+  font: var(--g-display-weight) 22px/1 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  color: var(--g-accent);
+  background: var(--g-plank-fill);
+}
+
+.g-counters {
+  display: flex;
+  gap: 22px;
+  padding-left: 18px;
+}
+
+.g-counter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 30px;
+  font: var(--g-display-weight-soft) 16px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  white-space: nowrap;
+}
+
+.g-counter small {
+  font: 600 12px var(--g-font-body);
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--g-ink-soft);
+}
+
+.g-counter .g-hot {
+  color: var(--g-warn-text);
+}
+
+.g-counter-icon {
+  position: absolute;
+  left: -18px;
+  top: 50%;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  color: var(--g-ink);
+  background-image: var(--g-counter-gloss);
+}
+
+.g-counter-icon .g-icon {
+  width: 20px;
+  height: 18px;
+}
+
+.g-tools {
+  position: absolute;
+  right: 14px;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 8px));
+  display: flex;
+  gap: 10px;
+}
+
+.g-tool {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-tool-fill);
+  box-shadow: var(--g-lift);
+  color: var(--g-ink);
+  cursor: pointer;
+}
+
+.g-tool::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 6px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--g-button-gloss);
+  pointer-events: none;
+}
+
+.g-tool:active {
+  translate: var(--g-press);
+  box-shadow: var(--g-lift-pressed);
+}
+
+.g-tool:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: 3px;
+}
+
+.g-tool .g-icon {
+  width: 28px;
+  height: 26px;
+}
+
+.g-tool-label {
+  position: absolute;
+  bottom: -19px;
+  font: var(--g-display-weight-soft) 11px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  color: var(--g-label-text);
+  text-shadow: var(--g-label-outline);
+  white-space: nowrap;
+}
+
+.g-tool-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  border: var(--g-border-mid) solid var(--g-outline);
+  border-radius: var(--g-radius-tile);
+  background: var(--g-badge-fill);
+  color: var(--g-on-badge);
+  font: var(--g-display-weight) 13px/19px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  text-align: center;
+}
+
+.g-live-note {
+  position: absolute;
+  left: 14px;
+  bottom: 18px;
+  margin: 0;
+  padding: 6px 12px;
+  font: 600 13px var(--g-font-body);
+}
+
+/*
+ * The pop-up card. Its content scrolls inside it (.g-farm-card-body), not the
+ * card itself, so the pointer toward the thing it describes can stick out past
+ * the edge without being clipped or making the card scroll sideways.
+ */
+.g-farm-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: calc(100% - 32px);
+  outline: none;
+}
+
+.g-farm-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 16px 14px;
+  border-radius: inherit;
+}
+
+.g-card-close {
+  z-index: 1;
+}
+
+.g-farm-card.g-sheet {
+  left: 8px;
+  right: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  width: auto;
+  max-height: 70%;
+  border-radius: var(--g-radius-lg) var(--g-radius-lg) var(--g-radius-md) var(--g-radius-md);
+}
+
+.g-card-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-danger-fill);
+  color: var(--g-on-danger);
+  box-shadow: var(--g-lift-md);
+  cursor: pointer;
+}
+
+.g-card-close .g-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.g-eyebrow {
+  margin: 0 40px 2px 0;
+  font: 700 11px var(--g-font-body);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--g-eyebrow);
+}
+
+.g-card-title {
+  margin: 0 40px 8px 0;
+  font: var(--g-display-weight) 19px/1.15 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+}
+
+.g-card-text {
+  margin: 8px 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--g-text);
+}
+
+.g-state-tag {
+  display: inline-block;
+  margin: 0;
+  padding: 3px 10px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-good-tint);
+  font: 700 12.5px var(--g-font-body);
+  color: var(--g-good-text);
+}
+
+@media (max-width: 640px) {
+  .g-counters {
+    gap: 18px;
+  }
+
+  .g-counter small {
+    display: none;
+  }
+
+  .g-logo span {
+    display: none;
+  }
+
+  .g-tool {
+    width: 52px;
+    height: 52px;
+  }
+
+  .g-tools {
+    gap: 8px;
+  }
+
+  .g-tool-wide-only {
+    display: none;
+  }
+}
+
+/* Card pointer toward the thing it describes */
+.g-farm-card.g-point-left::before,
+.g-farm-card.g-point-right::before {
+  content: '';
+  position: absolute;
+  top: 104px;
+  width: 16px;
+  height: 16px;
+  background: var(--g-card);
+  border: var(--g-border) solid var(--g-outline);
+  rotate: 45deg;
+}
+
+.g-farm-card.g-point-left::before {
+  left: -10px;
+  border-top-color: transparent;
+  border-right-color: transparent;
+}
+
+.g-farm-card.g-point-right::before {
+  right: -10px;
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+}
+
+.g-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.g-card-head .g-card-title {
+  margin-bottom: 0;
+}
+
+.g-card-subtitle {
+  margin: 14px 0 6px;
+  font: var(--g-display-weight-soft) 14px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  color: var(--g-ink);
+}
+
+.g-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.g-card-wide {
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* A robot's Talk button comes before its questions and decisions, with room between. */
+.g-card-talk {
+  margin-bottom: 12px;
+}
+
+.g-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.g-delivery-note {
+  font-weight: 600;
+  color: var(--g-good-text);
+}
+
+.g-state-tag[data-state='question'],
+.g-state-tag[data-state='review'] {
+  background: var(--g-warn-tint);
+  color: var(--g-warn-text);
+}
+
+.g-state-tag[data-state='blocked'],
+.g-state-tag[data-state='failed'],
+.g-state-tag[data-state='idle'] {
+  background: var(--g-bad-tint);
+  color: var(--g-bad-text);
+}
+
+.g-state-tag[data-state='paused'],
+.g-state-tag[data-state='queued'],
+.g-state-tag[data-state='waiting'] {
+  background: var(--g-quiet-tint);
+  color: var(--g-ink-soft);
+}
+
+.g-crew,
+.g-link-list,
+.g-seed-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.g-crew-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 3px 8px 3px 3px;
+  border: var(--g-border-thin) solid transparent;
+  border-radius: var(--g-radius-tile);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-crew-row:hover,
+.g-crew-row:focus-visible {
+  border-color: var(--g-outline);
+  background: var(--g-paper);
+  outline: none;
+}
+
+.g-avatar {
+  flex: none;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-avatar-fill);
+}
+
+.g-crew-text {
+  display: grid;
+  min-width: 0;
+}
+
+.g-crew-name {
+  overflow: hidden;
+  font: 700 14px var(--g-font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.g-crew-meta {
+  font-size: 12px;
+  color: var(--g-ink-soft);
+}
+
+.g-link {
+  min-height: 36px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--g-accent);
+  font: 600 14px var(--g-font-body);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.g-disclosure {
+  margin-top: 10px;
+}
+
+.g-disclosure summary {
+  min-height: 36px;
+  padding: 6px 0;
+  font: 700 13px var(--g-font-body);
+  color: var(--g-ink-soft);
+  cursor: pointer;
+}
+
+.g-seed {
+  display: flex;
+  text-align: left;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 12px;
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius-tile);
+  background: var(--g-plank-fill);
+  box-shadow: var(--g-lift-md);
+  color: var(--g-ink);
+  font: var(--g-display-weight-soft) 16px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  cursor: pointer;
+}
+
+.g-seed .g-icon {
+  width: 22px;
+  height: 26px;
+}
+
+.g-seed:active {
+  translate: var(--g-press-sm);
+  box-shadow: var(--g-lift-pressed);
+}
+
+.g-farm-list {
+  position: absolute;
+  top: 72px;
+  left: 14px;
+  bottom: 96px;
+  width: min(380px, calc(100% - 28px));
+  overflow: auto;
+  padding: 16px;
+  outline: none;
+}
+
+.g-list-yard + .g-list-yard {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: var(--g-border-thin) var(--g-rule-style) var(--g-rule);
+}
+
+.g-list-needs {
+  font: 700 12px var(--g-font-body);
+  color: var(--g-warn-text);
+}
+
+.g-list-row {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: var(--g-border-thin) solid transparent;
+  border-radius: var(--g-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-list-row:hover,
+.g-list-row:focus-visible {
+  border-color: var(--g-outline);
+  background: var(--g-paper);
+  outline: none;
+}
+
+.g-list-title {
+  font: 600 14px var(--g-font-body);
+}
+
+.g-crew-meta[data-needs='yes'] {
+  color: var(--g-warn-text);
+  font-weight: 700;
+}
+
+.g-list-robots {
+  margin: 6px 8px 0;
+}
+
+.g-empty-farm {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: min(360px, calc(100% - 32px));
+  padding: 20px;
+  text-align: center;
+}
+
+/* Ficus Desktop inset title bar: clear the traffic lights and let the top strip move the window. */
+.g-titlebar {
+  display: none;
+}
+
+:root[data-desktop-shell='inset'] .g-titlebar {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  -webkit-app-region: drag;
+}
+
+:root[data-desktop-shell='inset'] .g-hud {
+  padding-left: 72px;
+}
+
+:root[data-desktop-shell='inset'] .g-hud > *,
+:root[data-desktop-shell='inset'] .g-farm-card,
+:root[data-desktop-shell='inset'] .g-farm-list,
+:root[data-desktop-shell='inset'] .g-chat {
+  -webkit-app-region: no-drag;
+}
+
+/* Floating chat windows (wide screens). The chat frame fills its window. */
+.g-chat-window {
+  position: absolute;
+  touch-action: none;
+}
+
+.g-chat-window > .g-chat {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  z-index: auto;
+}
+
+.g-chat-window .g-chat-header {
+  cursor: grab;
+  user-select: none;
+}
+
+.g-chat-window .g-chat-header:active {
+  cursor: grabbing;
+}
+
+.g-chat-resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 22px;
+  height: 22px;
+  cursor: nwse-resize;
+  border-radius: 0 0 var(--g-radius-md) 0;
+  background: linear-gradient(
+    135deg,
+    transparent 0 55%,
+    var(--g-outline) 55% 62%,
+    transparent 62% 72%,
+    var(--g-outline) 72% 79%,
+    transparent 79%
+  );
+  opacity: 0.55;
+}
+
+/* Phones: the frontmost chat is a full sheet, with chips to switch between open chats. */
+.g-chat-tabs {
+  position: fixed;
+  z-index: 999;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  gap: 6px;
+  padding: max(8px, env(safe-area-inset-top)) 8px 8px;
+  overflow-x: auto;
+  background: var(--g-page);
+}
+
+/* The sheet starts below the chips. */
+.g-chat-tabs + .g-chat {
+  top: calc(max(8px, env(safe-area-inset-top)) + 48px);
+}
+
+.g-chat-tab {
+  flex: none;
+  max-width: 45vw;
+  min-height: 36px;
+  padding: 4px 12px;
+  overflow: hidden;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-paper);
+  color: var(--g-ink);
+  font: 700 13px var(--g-font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.g-chat-tab[aria-current='true'] {
+  background: var(--g-accent);
+  color: var(--g-on-accent);
+}
+
+.g-crew-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.g-crew-line .g-crew-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.g-crew-talk {
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-accent-fill);
+  box-shadow: var(--g-lift-sm);
+  color: var(--g-on-accent);
+  font: var(--g-display-weight-soft) 13px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  cursor: pointer;
+}
+
+.g-pr-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+
+.g-pr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-field);
+  box-shadow: var(--g-lift-sm);
+  color: var(--g-ink);
+  font: 700 13px var(--g-font-body);
+  text-decoration: none;
+}
+
+a.g-pr-link:hover,
+a.g-pr-link:focus-visible {
+  background: var(--g-good-tint);
+  outline: none;
+}
+
+.g-pr-link .g-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.g-yard-places {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: var(--g-border-thin) var(--g-rule-style) var(--g-rule);
+}
+
+/* Phones: the tools behind More open as a second row above the toolbar. */
+.g-tools-more {
+  bottom: max(104px, calc(env(safe-area-inset-bottom) + 94px));
+}
+
+/*
+ * Planting (farm/Planting.tsx): a robot walks to a new plot, crouches to plant
+ * it with a little burst, and the new plant pops out of the soil. Every style
+ * draws its own robot; these only move it.
+ */
+.g-planter {
+  pointer-events: none;
+}
+.g-walking {
+  animation: g-walk 0.42s ease-in-out infinite;
+}
+@keyframes g-walk {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.g-planting {
+  animation: g-plant 0.65s ease-in-out 2;
+}
+@keyframes g-plant {
+  50% {
+    transform: translateY(3px) scaleY(0.94);
+  }
+}
+.g-sow circle {
+  fill: var(--g-highlight-strong);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: g-sow 1.2s ease-out both;
+}
+.g-sow circle:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.g-sow circle:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.g-sow circle:nth-child(4) {
+  animation-delay: 0.45s;
+}
+@keyframes g-sow {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6) translateY(-6px);
+  }
+}
+.g-pop {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: g-pop 0.6s cubic-bezier(0.3, 1.7, 0.5, 1) both;
+}
+@keyframes g-pop {
+  0% {
+    transform: scale(0.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* "Share in farm chat" on a plant's or robot's card: a quiet link, on its own line. */
+.g-link.g-share {
+  display: block;
+  min-height: 0;
+  margin: 8px 0 2px;
+  font-size: 13px;
+}
+
+/* A name in running text that takes you to it (a person's "Talking to Docs"). */
+.g-inline-link {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--g-accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.g-inline-link:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight-strong);
+  outline-offset: 2px;
+}
+
+/* A robot going in to rest fades into its hut. */
+.g-robot-walker-in {
+  opacity: 0;
+  transition: opacity 0.35s ease-in;
+}
+
+/* Letters flying to robots (FlyingLetters.tsx): a little envelope that pops as it lands. */
+.g-letter rect {
+  fill: var(--g-paper);
+  stroke: var(--g-outline);
+  stroke-width: 1.4;
+}
+
+.g-letter path {
+  stroke: var(--g-outline);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.g-letter-seal {
+  fill: var(--g-accent);
+}
+
+.g-letter-landed {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: g-letter-land 0.45s ease-out forwards;
+}
+
+@keyframes g-letter-land {
+  40% {
+    transform: scale(1.4);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}

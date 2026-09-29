@@ -1,3 +1,4 @@
+import type { ConsultantOrigin } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import { ChatIdempotencyConflictError } from './consultant-idempotency'
 
@@ -22,7 +23,7 @@ function matchesConsultantScope(agent: Agent, squadId: string): boolean {
   )
 }
 
-export async function findOrCreateConsultant(id: string, squadId: string): Promise<Agent> {
+export async function findOrCreateConsultant(id: string, squadId: string, origin: ConsultantOrigin): Promise<Agent> {
   const existing = await Agent.find(id)
   if (existing) {
     if (!matchesConsultantScope(existing, squadId)) throw new ChatIdempotencyConflictError()
@@ -34,7 +35,7 @@ export async function findOrCreateConsultant(id: string, squadId: string): Promi
       id,
       agentTypeId: 'consultant',
       squadId,
-      context: { scope: { type: 'consultant', id: squadId } },
+      context: { scope: { type: 'consultant', id: squadId }, origin },
       persist: false,
     })
   } catch (error) {

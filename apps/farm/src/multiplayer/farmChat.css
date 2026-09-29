@@ -1,0 +1,636 @@
+/*
+ * The farm chat panel, people's name tags and speech bubbles on the map, and
+ * the person card's badge. Everything reads the interface tokens, so each
+ * style (Nostalgic, Cozy, Futurist, Blueprint, Sketchbook) dresses it its own way.
+ */
+
+.g-farmchat {
+  position: fixed;
+  left: 14px;
+  top: 88px;
+  bottom: 104px;
+  width: min(600px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  padding: 14px 14px 12px;
+  overflow: hidden;
+}
+
+.g-farmchat-sheet {
+  inset: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+  width: auto;
+}
+
+.g-farmchat-head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.g-farmchat-head .g-card-title {
+  margin-bottom: 0;
+}
+
+.g-farmchat-back {
+  flex: none;
+  padding: 4px 10px;
+}
+
+.g-farmchat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+
+.g-farmchat-rooms {
+  flex: 0 0 190px;
+  overflow: auto;
+  padding-right: 4px;
+  border-right: var(--g-border-thin) var(--g-rule-style) var(--g-rule);
+}
+
+.g-farmchat-sheet .g-farmchat-rooms {
+  flex: 1;
+  border-right: none;
+}
+
+.g-farmchat-rooms ul {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.g-farmchat-section {
+  margin: 8px 0 4px;
+  font: 700 11px var(--g-font-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--g-eyebrow);
+}
+
+.g-farmchat-room {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--g-radius-sm);
+  background: transparent;
+  color: var(--g-text);
+  font: 600 14px var(--g-font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-farmchat-room:hover {
+  background: var(--g-row-hover);
+}
+
+.g-farmchat-room-current {
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+.g-farmchat-room-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.g-farmchat-hash {
+  width: 22px;
+  text-align: center;
+  color: var(--g-text-soft);
+}
+
+.g-farmchat-room-current .g-farmchat-hash {
+  color: inherit;
+}
+
+.g-farmchat-unread {
+  min-width: 20px;
+  padding: 0 5px;
+  border-radius: var(--g-radius-pill);
+  background: var(--g-badge-fill);
+  color: var(--g-on-badge);
+  font: 800 11px/20px var(--g-font-body);
+  text-align: center;
+}
+
+.g-farmchat-add {
+  width: 100%;
+  margin: 2px 0 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.g-farmchat-picker,
+.g-farmchat-form {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.g-farmchat-picker ul {
+  max-height: 220px;
+  overflow: auto;
+}
+
+.g-farmchat-conversation {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.g-farmchat-description {
+  margin: 0 0 6px;
+  color: var(--g-text-soft);
+  font: 400 13px var(--g-font-body);
+}
+
+.g-farmchat-manage {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.g-farmchat-manage .g-button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.g-farmchat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  list-style: none;
+  margin: 0;
+  padding: 4px 2px;
+  background: var(--g-chat-backdrop);
+  border-radius: var(--g-radius-sm);
+}
+
+.g-farmchat-message {
+  max-width: 85%;
+  margin: 2px 6px 2px 4px;
+}
+
+.g-farmchat-mine {
+  margin-left: auto;
+  text-align: right;
+}
+
+.g-farmchat-meta {
+  margin: 8px 2px 2px;
+  color: var(--g-text-soft);
+  font: 400 12px var(--g-font-body);
+}
+
+.g-farmchat-meta b {
+  color: var(--g-text);
+}
+
+.g-farmchat-text {
+  display: inline-block;
+  margin: 0;
+  padding: 7px 11px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-bubble-agent);
+  color: var(--g-text);
+  font: 400 14px/1.4 var(--g-font-body);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.g-farmchat-mine .g-farmchat-text {
+  background: var(--g-bubble-human);
+  color: var(--g-on-bubble-human);
+}
+
+.g-farmchat-earlier,
+.g-farmchat-empty {
+  margin: 10px;
+  color: var(--g-text-soft);
+  font: 400 13px var(--g-font-body);
+  text-align: center;
+}
+
+.g-farmchat-error {
+  margin: 6px 0;
+  color: var(--g-danger-text);
+  font: 600 13px var(--g-font-body);
+}
+
+.g-farmchat-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 8px;
+}
+
+.g-farmchat-composer textarea {
+  flex: 1;
+  resize: none;
+  font: 400 14px/1.4 var(--g-font-body);
+}
+
+/* ---- People on the map ---- */
+
+.g-person-tag rect {
+  fill: var(--g-card);
+  stroke: var(--g-outline);
+  stroke-width: 1.2;
+}
+
+.g-person-tag text {
+  fill: var(--g-text);
+  font: 700 10px var(--g-font-body);
+}
+
+/* Your own tag: the card colour with an accent rim and accent text, which reads in every style
+   (some draw accents as outlines, where the accent's own "on" colour is the accent itself). */
+.g-person-me rect {
+  stroke: var(--g-accent);
+  stroke-width: 2;
+}
+
+.g-person-me text {
+  fill: var(--g-accent);
+}
+
+.g-person-bubble path,
+.g-person-bubble rect {
+  fill: var(--g-paper);
+  stroke: var(--g-outline);
+  stroke-width: 1.3;
+}
+
+.g-person-bubble text {
+  fill: var(--g-text);
+  font: 600 11.5px var(--g-font-body);
+}
+
+.g-person-bubble {
+  animation: g-bubble-in 0.35s ease-out both;
+}
+
+@keyframes g-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* An emote (a wave, a reaction) pops up over someone and drifts away. */
+.g-person-emote {
+  font-size: 26px;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: g-emote 2.8s ease-out forwards;
+}
+
+@keyframes g-emote {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.5);
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(0) scale(1.2);
+  }
+  24% {
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-person-emote {
+    animation: none;
+  }
+}
+
+/* ---- The person card ---- */
+
+.g-person-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.g-person-card-head .g-card-title {
+  margin: 0;
+}
+
+.g-person-dm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.g-person-dm .g-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.g-person-initials {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-avatar-fill);
+  color: var(--g-text);
+  font: 800 13px var(--g-font-body);
+}
+
+.g-person-initials-sm {
+  width: 22px;
+  height: 22px;
+  border-width: var(--g-border-hair);
+  font-size: 9.5px;
+}
+
+/* ---- Message actions, reactions, edits and typing ---- */
+
+.g-farmchat-line {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.g-farmchat-mine .g-farmchat-line {
+  flex-direction: row-reverse;
+}
+
+.g-farmchat-actions {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.g-farmchat-message:hover .g-farmchat-actions,
+.g-farmchat-message:focus-within .g-farmchat-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .g-farmchat-actions {
+    opacity: 0.7;
+  }
+}
+
+.g-farmchat-action {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-card);
+  color: var(--g-text-soft);
+  font: 400 13px/1 var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-farmchat-edited {
+  color: var(--g-text-soft);
+  font-size: 12px;
+}
+
+.g-farmchat-palette {
+  display: inline-grid;
+  grid-template-columns: repeat(5, 30px);
+  gap: 2px;
+  margin: 4px 0;
+  padding: 4px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-card);
+  box-shadow: var(--g-drop);
+}
+
+.g-farmchat-palette button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--g-radius-round);
+  background: transparent;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.g-farmchat-palette button:hover {
+  background: var(--g-row-hover);
+}
+
+.g-farmchat-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 3px 0 2px;
+}
+
+.g-farmchat-mine .g-farmchat-reactions {
+  justify-content: flex-end;
+}
+
+.g-farmchat-reaction {
+  padding: 1px 8px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card);
+  color: var(--g-text);
+  font: 400 13px var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-farmchat-reaction b {
+  font-size: 11.5px;
+}
+
+.g-farmchat-reaction-mine {
+  border-color: var(--g-accent);
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+.g-farmchat-edit {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.g-farmchat-edit textarea {
+  resize: none;
+  font: 400 14px/1.4 var(--g-font-body);
+}
+
+.g-farmchat-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.g-farmchat-edit-actions .g-button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.g-farmchat-typing {
+  min-height: 18px;
+  margin: 4px 2px 0;
+  color: var(--g-text-soft);
+  font: italic 400 12px var(--g-font-body);
+}
+
+/* ---- Mentions, farm chips, links, suggestions, the bell ---- */
+
+.g-farmchat-mention {
+  padding: 0 3px;
+  border-radius: var(--g-radius-xs);
+  background: var(--g-row-hover);
+  font-weight: 700;
+}
+
+.g-farmchat-mention-me {
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+.g-farmchat-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.g-farmchat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin: 1px 1px;
+  padding: 1px 8px 1px 6px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card);
+  color: var(--g-text);
+  font: 600 13px/1.5 var(--g-font-body);
+  text-decoration: none;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.g-farmchat-chip:hover {
+  background: var(--g-row-hover);
+}
+
+.g-farmchat-chip-away {
+  opacity: 0.75;
+  cursor: default;
+}
+
+a.g-farmchat-chip-away {
+  cursor: pointer;
+}
+
+.g-farmchat-composer {
+  position: relative;
+}
+
+.g-farmchat-suggest {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  min-width: 220px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-card);
+  box-shadow: var(--g-drop);
+}
+
+.g-farmchat-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--g-radius-sm);
+  background: transparent;
+  color: var(--g-text);
+  font: 600 14px var(--g-font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-farmchat-suggestion-on,
+.g-farmchat-suggestion:hover {
+  background: var(--g-row-hover);
+}
+
+.g-farmchat-bell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 46px 0 auto;
+  padding: 4px 10px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card);
+  color: var(--g-text);
+  font: 600 12.5px var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-farmchat-bell[aria-pressed='true'] {
+  border-color: var(--g-accent);
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+@media (max-width: 640px) {
+  .g-farmchat-bell-label {
+    display: none;
+  }
+}
+
+/* Deleting a message asks again. */
+.g-farmchat-action-confirm {
+  border-color: var(--g-danger);
+  background: var(--g-danger-fill);
+  color: var(--g-on-danger);
+  font-weight: 800;
+}
+
+/* Someone who may only read farm chat (farm:read without farm:chat). */
+.g-farmchat-readonly {
+  margin: 8px 2px 0;
+  color: var(--g-text-soft);
+  font: 400 13px var(--g-font-body);
+}

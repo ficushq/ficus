@@ -1,17 +1,30 @@
 import type { ServerWebSocket } from 'bun'
 import {
+  parsePresenceFocus,
   parseWorkspaceVoiceUserId,
   parseAssistantInboxConversationId,
   SYSTEM_RECIPIENT_ID,
+  type PresenceFocus,
+  type PresencePerson,
   type SquadActivityProjectionEventData,
   type Topic,
 } from '@ficus/shared'
 import type { Identity } from '../rbac'
 import { getAccessibleSquadIds, hasPermission } from '../rbac'
+import { invalidatePermissionCache } from '../rbac/permissions'
 import { assistantInboxOwner } from '../assistant-inbox'
 import type { ClientMessage, ServerMessage } from './types'
 import { isValidTopic } from './types'
 import { agentTopicScope, eventSquadId, topicScope, type TopicScope } from './topic-scope'
+import {
+  PresenceRegistry,
+  forgetPresenceProfile,
+  personName,
+  presenceProfile,
+  type PresenceProfile,
+  type PresentPerson,
+} from './presence'
+import { audienceOf, FarmChatError, roomFor } from '../farm-chat/rooms'
 import {
   activityAccessSignature,
   activityEventVisible,
@@ -28,15 +41,40 @@ interface Client {
   activityTopicGenerations: Map<string, symbol>
   activityAccessEpoch: symbol
   accessCache?: { value: string[] | 'all'; expires: number }
+  /** When this connection last said it was typing, per farm chat room (to keep it to one every few seconds). */
+  typingAt?: Map<string, number>
+  /** When this connection last said it's typing anywhere (a gap across rooms, too). */
+  typedAt?: number
+  /** Presence announcements allowed right now (a token bucket), and when it was last topped up. */
+  presenceBucket?: { tokens: number; at: number }
+  /** Presence announcements are applied one after another, in the order sent. */
+  presenceChain?: Promise<void>
+  /** When this connection last waved (waves are rate-limited). */
+  wavedAt?: number
 }
 
 const ACCESS_CACHE_TTL_MS = 60_000
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MAX_PENDING_ACTIVITY_SUBSCRIPTIONS = 64
+/** Typing pings from one connection for one room are passed on at most this often. */
+const FARM_CHAT_TYPING_MIN_GAP_MS = 2000
+const WAVE_MIN_GAP_MS = 1500
+/** A connection may announce where it is this many times at once, refilling this many per second. */
+const PRESENCE_BURST = 5
+const PRESENCE_PER_SECOND = 5
+/** Typing pings from one connection, across all rooms, at most this often; and at most this many rooms remembered. */
+const FARM_CHAT_TYPING_ANY_GAP_MS = 250
+const FARM_CHAT_TYPING_ROOMS = 20
+
+/** Topics only people (never agents or tokens) may subscribe to: the farm's multiplayer. */
+const PEOPLE_TOPICS = new Set<string>(['presence', 'farmChat'])
 
 export class WebSocketManager {
   private clients: Map<string, Client> = new Map()
   private clientIdCounter = 0
+  private readonly presence = new PresenceRegistry()
+  /** Farm actions still being applied (they wait on a permission check), for settled(). */
+  private readonly pendingFarm = new Set<Promise<unknown>>()
 
   constructor(private readonly resolveActivityAccess: typeof resolveSquadActivityAccess = resolveSquadActivityAccess) {}
 
@@ -55,12 +93,21 @@ export class WebSocketManager {
   }
 
   removeClient(clientId: string): void {
-    this.clients.delete(clientId)
+    const client = this.clients.get(clientId)
+    if (client) this.forget(client)
   }
 
   removeByWs(ws: ServerWebSocket<unknown>): void {
     const client = this.getClientByWs(ws)
-    if (client) this.clients.delete(client.id)
+    if (client) this.forget(client)
+  }
+
+  /** Drops a connection, and its person from the farm when it was their last. */
+  private forget(client: Client): void {
+    if (this.clients.get(client.id) === client) this.clients.delete(client.id)
+    const change = this.presence.withdraw(client.id)
+    if (change)
+      void this.deliverPresence(change).catch((error) => console.error('[ws] presence delivery failed:', error))
   }
 
   getClientByWs(ws: ServerWebSocket<unknown>): Client | undefined {
@@ -93,6 +140,18 @@ export class WebSocketManager {
 
     if (!isValidTopic(topic)) {
       this.send(client.ws, { type: 'error', message: `Invalid topic: ${topic}` })
+      return
+    }
+
+    if (PEOPLE_TOPICS.has(topic)) {
+      // People only, who may see the farm (farm:read); see routes/farm-chat.ts.
+      if (client.identity.type !== 'user' || !(await hasPermission(client.identity, 'farm:read'))) {
+        this.send(client.ws, { type: 'error', code: 'FORBIDDEN_TOPIC', topic, message: 'Forbidden topic' })
+        return
+      }
+      client.subscriptions.add(topic)
+      this.send(client.ws, { type: 'subscribed', topic })
+      if (topic === 'presence') await this.sendPresenceSnapshot(client)
       return
     }
 
@@ -221,7 +280,7 @@ export class WebSocketManager {
       try {
         client.ws.send(json)
       } catch {
-        if (this.clients.get(client.id) === client) this.clients.delete(client.id)
+        this.forget(client)
       }
     }
   }
@@ -235,7 +294,7 @@ export class WebSocketManager {
     const clients = [...this.clients.values()]
     const candidates = clients.filter((client) => {
       if (client.ws.readyState !== undefined && client.ws.readyState !== WebSocket.OPEN) {
-        if (this.clients.get(client.id) === client) this.clients.delete(client.id)
+        this.forget(client)
         return false
       }
       return client.subscriptions.has(topic)
@@ -384,6 +443,25 @@ export class WebSocketManager {
         case 'unsubscribe':
           this.unsubscribe(client.id, message.topic)
           break
+        case 'presence':
+          this.announcePresence(client, message.focus)
+          break
+        case 'presence.wave':
+          void this.track(this.wave(client, message.toUserId)).catch((error) =>
+            console.error('[ws] wave failed:', error)
+          )
+          break
+        case 'farmChat.typing':
+          void this.track(this.farmChatTyping(client, message.roomId)).catch((error) =>
+            console.error('[ws] farm chat typing failed:', error)
+          )
+          break
+        case 'presence.leave': {
+          const change = this.presence.withdraw(client.id)
+          if (change)
+            void this.deliverPresence(change).catch((error) => console.error('[ws] presence delivery failed:', error))
+          break
+        }
         default:
           this.send(ws, { type: 'error', message: 'Unknown message type' })
       }
@@ -393,9 +471,42 @@ export class WebSocketManager {
   }
 
   invalidateAccessCache(): void {
+    // Access changed (roles, assignments): re-read permissions now, not after the cache's TTL.
+    invalidatePermissionCache()
     for (const client of this.clients.values()) client.accessCache = undefined
     void this.revalidateActivitySubscriptions().catch((error) =>
       console.error('[ws] Activity subscription revalidation failed:', error)
+    )
+    void this.track(this.revalidateFarm()).catch((error) => console.error('[ws] farm revalidation failed:', error))
+  }
+
+  /**
+   * After access changes: whoever may no longer see the farm (farm:read) stops
+   * hearing its presence and chat, and whoever may no longer be on it
+   * (farm:chat) is taken off it, without waiting for them to reconnect.
+   */
+  private async revalidateFarm(): Promise<void> {
+    await Promise.all(
+      [...this.clients.values()]
+        .filter(
+          (client) =>
+            this.presence.isAnnounced(client.id) || [...PEOPLE_TOPICS].some((t) => client.subscriptions.has(t))
+        )
+        .map(async (client) => {
+          const [reads, talks] = await Promise.all([
+            client.identity.type === 'user' && hasPermission(client.identity, 'farm:read'),
+            this.mayTalk(client),
+          ])
+          if (this.clients.get(client.id) !== client) return
+          if (!reads) {
+            for (const topic of ['presence', 'farmChat'] as const)
+              if (client.subscriptions.delete(topic)) this.send(client.ws, { type: 'unsubscribed', topic })
+          }
+          if (!talks) {
+            const change = this.presence.withdraw(client.id)
+            if (change) await this.deliverPresence(change)
+          }
+        })
     )
   }
 
@@ -464,6 +575,238 @@ export class WebSocketManager {
     // Null-scope agent resources were authorized against their current DB scope above.
     // Unrelated null-scope collections and unresolved instance resources remain fail-closed.
     return false
+  }
+
+  /* ---- The farm's multiplayer: presence and chat ---- */
+
+  /** Tracks a farm action until it's applied, so settled() can wait for it. */
+  private track<T>(work: Promise<T>): Promise<T> {
+    this.pendingFarm.add(work)
+    void work.finally(() => this.pendingFarm.delete(work)).catch(() => {})
+    return work
+  }
+
+  /** Resolves once every farm action sent so far (presence, waves, typing) has been applied. Used by tests. */
+  async settled(): Promise<void> {
+    while (this.pendingFarm.size) await Promise.allSettled([...this.pendingFarm])
+  }
+
+  /**
+   * Whether this connection may act on the farm (appear, wave, type): a person
+   * holding farm:chat. Checked per message (permissions are cached).
+   */
+  private async mayTalk(client: Client): Promise<boolean> {
+    return client.identity.type === 'user' && hasPermission(client.identity, 'farm:chat')
+  }
+
+  /**
+   * Records where someone is. Rate-limited per connection (a small token
+   * bucket), and applied in the order sent, since the permission check is async.
+   */
+  private announcePresence(client: Client, focusInput: unknown): void {
+    if (client.identity.type !== 'user') {
+      this.send(client.ws, { type: 'error', message: 'Only people can be on the farm' })
+      return
+    }
+    const parsed = parsePresenceFocus(focusInput)
+    if (!parsed.ok) {
+      this.send(client.ws, { type: 'error', message: 'Invalid presence' })
+      return
+    }
+    const now = Date.now()
+    const bucket = client.presenceBucket ?? { tokens: PRESENCE_BURST, at: now }
+    bucket.tokens = Math.min(PRESENCE_BURST, bucket.tokens + ((now - bucket.at) / 1000) * PRESENCE_PER_SECOND)
+    bucket.at = now
+    client.presenceBucket = bucket
+    if (bucket.tokens < 1) return
+    bucket.tokens -= 1
+    const userId = client.identity.userId
+    client.presenceChain = (client.presenceChain ?? Promise.resolve())
+      .then(async () => {
+        if (!(await this.mayTalk(client))) {
+          this.send(client.ws, { type: 'error', message: 'You can’t appear on the farm' })
+          return
+        }
+        if (this.clients.get(client.id) !== client) return
+        const person = this.presence.announce(client.id, userId, parsed.focus)
+        if (person) await this.deliverPresence({ person })
+      })
+      .catch((error) => console.error('[ws] presence delivery failed:', error))
+    void this.track(client.presenceChain)
+  }
+
+  /** The scope a focus lives in, so each recipient sees it only if they may see that thing. */
+  private async focusScope(focus: PresenceFocus): Promise<TopicScope> {
+    switch (focus.kind) {
+      case 'agent':
+        return topicScope(`agents:${focus.agentId}`)
+      case 'workstream':
+        return topicScope(`workstreams:${focus.workstreamId}`)
+      case 'squad':
+        return { kind: 'squad', squadId: focus.squadId }
+    }
+  }
+
+  /** A person as one recipient may see them: their focus only when the recipient can see it too. */
+  private async personFor(
+    client: Client,
+    person: PresentPerson,
+    profile: PresenceProfile,
+    scope: TopicScope | null
+  ): Promise<PresencePerson> {
+    const visible = person.focus && scope ? await this.canAccessTopicScope(client, scope) : false
+    return {
+      userId: person.userId,
+      name: personName(profile, await hasPermission(client.identity, 'users:read')),
+      focus: visible ? person.focus : null,
+      since: new Date(person.since).toISOString(),
+      look: profile.look,
+    }
+  }
+
+  /** Everyone else on the farm, for a person who just subscribed to presence. */
+  private async sendPresenceSnapshot(client: Client): Promise<void> {
+    const self = client.identity.type === 'user' ? client.identity.userId : null
+    const people = await Promise.all(
+      this.presence
+        .people()
+        .filter((person) => person.userId !== self)
+        .map(async (person) =>
+          this.personFor(
+            client,
+            person,
+            await presenceProfile(person.userId),
+            person.focus ? await this.focusScope(person.focus) : null
+          )
+        )
+    )
+    if (this.isActiveSubscriber(client, 'presence'))
+      this.send(client.ws, { type: 'event', topic: 'presence', event: 'presence.snapshot', data: { people } })
+  }
+
+  /** Tells everyone else subscribed to presence that someone moved, arrived or left. */
+  private async deliverPresence(change: { person: PresentPerson } | { left: string }): Promise<void> {
+    const userId = 'left' in change ? change.left : change.person.userId
+    const audience = [...this.clients.values()].filter(
+      (client) =>
+        client.identity.type === 'user' &&
+        client.identity.userId !== userId &&
+        this.isActiveSubscriber(client, 'presence')
+    )
+    if (!audience.length) return
+    if ('left' in change) {
+      const json = JSON.stringify({
+        type: 'event',
+        topic: 'presence',
+        event: 'presence.left',
+        data: { userId },
+      } satisfies ServerMessage)
+      for (const client of audience) client.ws.send(json)
+      return
+    }
+    const { person } = change
+    const [profile, scope] = await Promise.all([
+      presenceProfile(person.userId),
+      person.focus ? this.focusScope(person.focus) : null,
+    ])
+    await Promise.all(
+      audience.map(async (client) => {
+        const data = { person: await this.personFor(client, person, profile, scope) }
+        if (this.isActiveSubscriber(client, 'presence'))
+          this.send(client.ws, { type: 'event', topic: 'presence', event: 'presence.updated', data })
+      })
+    )
+  }
+
+  /** Shows everyone someone's new look straight away (after they save it), if they're on the farm. */
+  refreshPresence(userId: string): void {
+    forgetPresenceProfile(userId)
+    const person = this.presence.person(userId)
+    if (person)
+      void this.deliverPresence({ person }).catch((error) => console.error('[ws] presence delivery failed:', error))
+  }
+
+  /**
+   * Passes on a wave from someone on the farm to someone else on it, to
+   * everyone on the farm but the waver (whose farm shows it straight away).
+   * At most one every WAVE_MIN_GAP_MS per connection.
+   */
+  private async wave(client: Client, toUserId: unknown): Promise<void> {
+    if (client.identity.type !== 'user' || !this.presence.isAnnounced(client.id)) return
+    if (typeof toUserId !== 'string' || !this.presence.person(toUserId)) return
+    const fromUserId = client.identity.userId
+    if (toUserId === fromUserId) return
+    const now = Date.now()
+    if (now - (client.wavedAt ?? 0) < WAVE_MIN_GAP_MS) return
+    client.wavedAt = now
+    if (!(await this.mayTalk(client))) return
+    const json = JSON.stringify({
+      type: 'event',
+      topic: 'presence',
+      event: 'presence.waved',
+      data: { fromUserId, toUserId },
+    } satisfies ServerMessage)
+    for (const other of this.clients.values())
+      if (
+        other.identity.type === 'user' &&
+        other.identity.userId !== fromUserId &&
+        this.isActiveSubscriber(other, 'presence')
+      )
+        other.ws.send(json)
+  }
+
+  /** Passes on that someone is typing in a room they can use, at most every couple of seconds per room. */
+  private async farmChatTyping(client: Client, roomId: unknown): Promise<void> {
+    if (client.identity.type !== 'user' || typeof roomId !== 'string' || !UUID_PATTERN.test(roomId)) return
+    const now = Date.now()
+    client.typingAt ??= new Map()
+    if (now - (client.typedAt ?? 0) < FARM_CHAT_TYPING_ANY_GAP_MS) return
+    if (now - (client.typingAt.get(roomId) ?? 0) < FARM_CHAT_TYPING_MIN_GAP_MS) return
+    client.typedAt = now
+    client.typingAt.delete(roomId)
+    client.typingAt.set(roomId, now)
+    // Only the most recent rooms are remembered (Maps keep insertion order).
+    while (client.typingAt.size > FARM_CHAT_TYPING_ROOMS) client.typingAt.delete(client.typingAt.keys().next().value!)
+    if (!(await this.mayTalk(client))) return
+    const userId = client.identity.userId
+    let room
+    try {
+      room = await roomFor(roomId, userId)
+    } catch (error) {
+      if (error instanceof FarmChatError) return
+      throw error
+    }
+    this.sendFarmChat('farmChat.typing', { roomId, userId }, audienceOf(room) ?? undefined, userId)
+  }
+
+  /**
+   * Sends a farm chat event to the people subscribed to farmChat: everyone for
+   * the general room and public rooms, only the given people for a DM; never
+   * back to `except` (someone's own typing).
+   */
+  sendFarmChat(
+    event:
+      | 'farmChat.messageCreated'
+      | 'farmChat.messageUpdated'
+      | 'farmChat.messageDeleted'
+      | 'farmChat.roomsChanged'
+      | 'farmChat.typing',
+    data: unknown,
+    only?: Iterable<string>,
+    except?: string
+  ): void {
+    const audience = only ? new Set(only) : null
+    const json = JSON.stringify({ type: 'event', topic: 'farmChat', event, data } satisfies ServerMessage)
+    for (const client of this.clients.values()) {
+      if (client.identity.type !== 'user' || !this.isActiveSubscriber(client, 'farmChat')) continue
+      if (audience && !audience.has(client.identity.userId)) continue
+      if (except && client.identity.userId === except) continue
+      try {
+        client.ws.send(json)
+      } catch {
+        this.forget(client)
+      }
+    }
   }
 
   private send(ws: ServerWebSocket<unknown>, message: ServerMessage): void {

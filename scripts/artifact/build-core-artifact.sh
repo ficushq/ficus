@@ -151,7 +151,7 @@ bun run --filter web build
 
 for output in apps/core/dist/index.js apps/core/dist/worker.js apps/core/dist/migrate.js \
   apps/core/dist/smoke-configured-extensions.js apps/core/dist/box-control.js \
-  apps/core/dist/system-token-control.js apps/cli/dist/ficus.js apps/web/dist/index.html \
+  apps/core/dist/system-token-control.js apps/cli/dist/ficus.js apps/web/dist/index.html apps/web/dist/farm/index.html \
   apps/core/docs-dist/index.html apps/core/docs-dist/404.html apps/core/docs-dist/pagefind/pagefind.js; do
   if [[ ! -f "$output" ]]; then
     echo "error: build finished but $output does not exist" >&2

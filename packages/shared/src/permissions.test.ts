@@ -25,6 +25,22 @@ describe('slot permissions', () => {
   })
 })
 
+describe('farm permissions', () => {
+  it('are their own farm: resource, separate from agent chat', () => {
+    expect([Permissions.FARM_READ, Permissions.FARM_CHAT, Permissions.FARM_MANAGE_ROOMS]).toEqual([
+      'farm:read',
+      'farm:chat',
+      'farm:manage-rooms',
+    ])
+    for (const permission of [Permissions.FARM_READ, Permissions.FARM_CHAT, Permissions.FARM_MANAGE_ROOMS]) {
+      expect(isGrantablePermission(permission)).toBe(true)
+      // farm:* covers them all; agent chat permissions (chat:*, which the demo reviewer's chat:send is under) don't.
+      expect(permissionMatches('farm:*', permission)).toBe(true)
+      expect(permissionMatches('chat:*', permission)).toBe(false)
+    }
+  })
+})
+
 describe('theme preset moderation permission', () => {
   it('declares a dedicated moderation permission distinct from settings/users management', () => {
     expect(Permissions.THEME_PRESETS_MODERATE).toBe('theme-presets:moderate')

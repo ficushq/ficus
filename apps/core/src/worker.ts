@@ -439,6 +439,17 @@ const subsystems: Subsystem[] = [
     }
   ),
   subsystem(
+    'farm-chat-retention',
+    async () => {
+      const { startFarmChatRetention } = await import('./services/farm-chat')
+      startFarmChatRetention()
+    },
+    async () => {
+      const { stopFarmChatRetention } = await import('./services/farm-chat')
+      await stopFarmChatRetention()
+    }
+  ),
+  subsystem(
     'slot-terminal-retention',
     async () => {
       const { startSlotTerminalRetention } = await import('./services/slots')

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { serveStatic } from 'hono/bun'
 import type { Hono } from 'hono'
-import { resolveWebDist } from './web-dist'
+import { resolveFarmDist, resolveWebDist } from './web-dist'
 import { primaryWebOrigin } from '../services/auth/web-origins'
 
 type Log = { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
@@ -17,7 +17,11 @@ function envFlag(value: string | undefined): 'on' | 'off' | 'auto' {
   return 'auto'
 }
 
-const HASHED_ASSET = /\/assets\/[^/]+\.[0-9a-f]{8,}\./i
+/**
+ * A content-hashed build asset, safe to cache forever: Vite's `index-C2ucfeeU.js`
+ * (a dash, then an 8+ character base64url hash) or an older `name.abc12345.js`.
+ */
+const HASHED_ASSET = /\/assets\/[^/]+(?:-[A-Za-z0-9_-]{8,}|\.[0-9a-f]{8,})\.[a-z0-9]+$/i
 
 /**
  * The placeholder apps/web/index.html uses for absolute, self-referencing
@@ -100,6 +104,9 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
     return c.body(renderIndexHtml(await indexFile.text(), publicOrigin(c)))
   }
 
+  const farm = maybeMountFarmUi(app, log)
+  if (farm) log.info(`Serving farm UI from ${farm} at /farm`)
+
   // index.html is rendered, not streamed from disk, so the origin placeholder
   // never reaches a browser or a crawler. Registered ahead of serveStatic,
   // which would otherwise serve the raw file for '/' and '/index.html'.
@@ -122,4 +129,46 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
 
   log.info(`Serving web UI from ${distPath}`)
   return true
+}
+
+/**
+ * Mounts the farm UI (`apps/farm`) at `/farm` when a build exists. Only
+ * called from {@link maybeMountWebUi}, ahead of the web UI's static handler and
+ * SPA fallback, so `/farm/*` never falls through to the web app's index.
+ *
+ * Returns the served directory, or undefined when there is no farm build.
+ */
+function maybeMountFarmUi(app: Hono, log: Log): string | undefined {
+  const dist = resolveFarmDist()
+  if (!dist || !existsSync(join(dist, 'index.html'))) {
+    // Set by hand but pointing at no build: say so, rather than serve the web build's own farm copy unannounced.
+    if (process.env.FICUS_FARM_DIST)
+      log.warn(`FICUS_FARM_DIST is set but ${dist} has no index.html; /farm is not served`)
+    return undefined
+  }
+
+  const staticHandler = serveStatic({
+    root: dist,
+    rewriteRequestPath: (path) => path.replace(/^\/farm/, '') || '/',
+    onFound: (path, c) => {
+      if (HASHED_ASSET.test(path)) c.header('Cache-Control', 'public, max-age=31536000, immutable')
+    },
+  })
+  const indexFile = Bun.file(join(dist, 'index.html'))
+  const serveIndex = async (c: Parameters<typeof staticHandler>[0]) => {
+    c.header('Cache-Control', 'no-cache')
+    c.header('Content-Type', 'text/html; charset=utf-8')
+    return c.body(await indexFile.text())
+  }
+
+  // Relative, so the redirect survives a reverse proxy that strips APP_BASE_PATH.
+  app.get('/farm', (c) => c.redirect('farm/', 301))
+  app.get('/farm/', (c) => serveIndex(c))
+  app.get('/farm/index.html', (c) => serveIndex(c))
+  app.use('/farm/*', (c, next) => staticHandler(c, next))
+  app.get('/farm/*', async (c, next) => {
+    if (!(c.req.header('accept') ?? '').includes('text/html')) return next()
+    return serveIndex(c)
+  })
+  return dist
 }

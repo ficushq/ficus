@@ -54,6 +54,8 @@ COPY external/ external/
 COPY config/ config/
 COPY docs/ docs/
 COPY scripts/ scripts/
+# Brand sources: the farm (built with the web UI) imports the Ficus mark from brand/.
+COPY brand/ brand/
 COPY tsconfig.json ./
 
 # Clone git submodules (COPY only copies empty dirs for submodules).
@@ -84,6 +86,7 @@ RUN set -e; \
     if [ "$FICUS_INCLUDE_WEB" = "1" ]; then \
       FICUS_BUILD_ID="$FICUS_BUILD_ID" bun run --filter web build; \
       test -f apps/web/dist/index.html; \
+      test -f apps/web/dist/farm/index.html; \
     fi
 
 # --- Stage 2: Production image ---

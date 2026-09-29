@@ -1,0 +1,210 @@
+/*
+ * The character builder (LookBuilder.tsx). Reads the interface tokens, so each
+ * style dresses it its own way; the preview stage wears the previewed style's
+ * class and so draws in that style's colours.
+ */
+
+.g-look {
+  position: fixed;
+  left: 14px;
+  top: 88px;
+  bottom: 104px;
+  width: min(720px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  padding: 14px 14px 12px;
+  overflow: hidden;
+}
+
+.g-look-sheet {
+  inset: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+  width: auto;
+}
+
+.g-look-head {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.g-look-head .g-card-title {
+  margin-bottom: 0;
+}
+
+.g-look-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+
+.g-look-stage {
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.g-look-preview {
+  width: 100%;
+  aspect-ratio: 68 / 88;
+  max-height: 290px;
+  display: grid;
+  place-items: center;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-chat-backdrop);
+  overflow: hidden;
+}
+
+.g-look-preview svg {
+  width: 100%;
+  height: 100%;
+}
+
+.g-look-styles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+.g-look-random {
+  width: 100%;
+}
+
+.g-look-parts {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.g-look-part {
+  margin: 0 0 12px;
+  padding: 0;
+  border: none;
+}
+
+.g-look-legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font: 700 11px var(--g-font-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--g-eyebrow);
+}
+
+.g-look-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.g-look-chip {
+  padding: 4px 10px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card);
+  color: var(--g-text);
+  font: 600 13px var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-look-chip:hover {
+  background: var(--g-row-hover);
+}
+
+.g-look-chip-on,
+.g-look-chip-on:hover {
+  border-color: var(--g-accent);
+  background: var(--g-accent-fill);
+  color: var(--g-on-accent);
+}
+
+.g-look-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 4px;
+}
+
+.g-look-swatch {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  cursor: pointer;
+}
+
+.g-look-swatch-on {
+  outline: 2.5px solid var(--g-accent);
+  outline-offset: 2px;
+}
+
+.g-look-custom {
+  display: grid;
+  place-items: center;
+  /* A colour wheel (picture, not interface colour) says "any colour". */
+  background: conic-gradient(#e36c5a, #f2c14e, #7cbf7a, #5f9fd6, #b58ad6, #e36c5a);
+  color: var(--g-card);
+  font: 800 15px/1 var(--g-font-body);
+  text-shadow: 0 0 3px var(--g-ink);
+}
+
+.g-look-custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.g-look-chip:focus-visible,
+.g-look-swatch:focus-visible,
+.g-look-custom:focus-within {
+  outline: var(--g-focus-width) solid var(--g-highlight-strong);
+  outline-offset: 2px;
+}
+
+.g-look-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Phones: a small preview pinned at the top (styles and Surprise me beside it); the parts scroll under it. */
+.g-look-sheet .g-look-body {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.g-look-sheet .g-look-stage {
+  flex: none;
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 8px 10px;
+  align-items: center;
+}
+
+.g-look-sheet .g-look-preview {
+  grid-row: 1 / 3;
+  width: 104px;
+}
+
+.g-look-sheet .g-look-styles {
+  justify-content: flex-start;
+}
+
+.g-look-sheet .g-look-chip {
+  padding: 3px 9px;
+}
+
+.g-look-sheet .g-look-parts {
+  min-height: 0;
+}

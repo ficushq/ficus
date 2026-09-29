@@ -206,7 +206,7 @@ describe('User entity', () => {
         .onConflictDoNothing()
       const [adminRole] = await db.select().from(roles).where(eq(roles.slug, 'admin')).limit(1)
 
-      const user = await User.create({ email: testEmail() })
+      const user = await User.create({ email: testEmail(), withoutDefaultRoles: true })
       // Assign the canonical admin role (system scope) to this user
       await db.insert(roleAssignments).values({
         subjectType: 'user',

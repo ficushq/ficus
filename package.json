@@ -23,6 +23,8 @@
     "dev": "bun run --filter core --filter web dev",
     "dev:core": "bun run --filter core dev",
     "dev:web": "bun scripts/dev-web.ts",
+    "dev:farm": "bun run --filter farm dev",
+    "build:farm": "bun run --filter farm build",
     "postinstall": "bun run submodules && bun run extensions:install",
     "submodules": "git submodule update --init --recursive",
     "extensions:install": "find config/agent/extensions -name package.json -maxdepth 2 -execdir bun install --frozen-lockfile \\;",

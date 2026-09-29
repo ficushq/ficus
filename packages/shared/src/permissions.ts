@@ -228,6 +228,18 @@ export const Permissions = {
   // (owner-only, resolveActingUser — see routes/theme-presets.ts). Only removing
   // someone ELSE's preset from the instance-wide shared list is privileged.
   THEME_PRESETS_MODERATE: 'theme-presets:moderate',
+
+  // The farm's multiplayer (people talking to people: farm chat and presence,
+  // routes/farm-chat.ts and the ws presence/farmChat topics). Its own resource,
+  // checked instance-wide (never per squad), so anyone can be given farm:* even
+  // when their chat and squad roles are limited. farm:read sees farm chat and
+  // who's on the farm; farm:chat posts, reacts, DMs, types and appears there;
+  // farm:manage-rooms creates, renames and deletes rooms (never the general
+  // room) and deletes anyone's message outside DMs. Operators hold farm:*,
+  // Viewers farm:read.
+  FARM_READ: 'farm:read',
+  FARM_CHAT: 'farm:chat',
+  FARM_MANAGE_ROOMS: 'farm:manage-rooms',
 } as const
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions]

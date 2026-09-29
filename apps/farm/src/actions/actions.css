@@ -1,0 +1,569 @@
+/*
+ * "Needs you" actions: the forms inside mailbox letters, plot and robot cards.
+ * Same game art direction as the farm: wooden cards, chunky ink outlines,
+ * Fraunces for verbs and headings, Instrument Sans for everything you read.
+ */
+
+.g-action {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.g-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.g-action-text {
+  max-height: 16rem;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: var(--g-border-thin) var(--g-rule-style) var(--g-quote-rule);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-field);
+  color: var(--g-text);
+  font: 500 14px/1.5 var(--g-font-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.g-action-note {
+  margin: 0;
+  color: var(--g-ink-soft);
+  font: 500 13px/1.45 var(--g-font-body);
+}
+
+.g-action-sub {
+  padding-top: 12px;
+  border-top: var(--g-border-thin) var(--g-rule-style) var(--g-divider);
+}
+
+.g-alert {
+  margin: 0;
+  padding: 8px 12px;
+  border: var(--g-border-thin) solid var(--g-danger);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-danger-tint);
+  color: var(--g-alert-text);
+  font: 600 13px/1.4 var(--g-font-body);
+}
+
+/* Verb buttons: the farm verb on top, its plain meaning underneath. */
+.g-verb {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 52px;
+  padding: 6px 16px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.g-verb-label {
+  font: var(--g-display-weight) 17px/1.1 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+}
+
+.g-verb-help {
+  font: 600 11.5px/1.2 var(--g-font-body);
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.88;
+  text-shadow: none;
+}
+
+.g-verb:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.g-verb:disabled:active {
+  translate: none;
+  box-shadow: var(--g-lift);
+}
+
+.g-verb[aria-busy='true'] {
+  cursor: progress;
+  opacity: 0.8;
+}
+
+.g-button-harvest {
+  background: var(--g-harvest-fill);
+  color: var(--g-on-accent);
+  text-shadow: var(--g-text-emboss);
+}
+
+.g-button-prune {
+  background: var(--g-prune-fill);
+  color: var(--g-on-danger);
+  text-shadow: var(--g-text-emboss);
+}
+
+.g-button-quiet {
+  border-style: var(--g-rule-style);
+  border-color: var(--g-quiet-border);
+  background: var(--g-quiet-fill);
+  box-shadow: none;
+}
+
+.g-button-quiet:active {
+  translate: none;
+  box-shadow: none;
+}
+
+/* Inputs */
+.g-field {
+  font: var(--g-display-weight-soft) 14px/1.3 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  color: var(--g-ink);
+}
+
+.g-input,
+.g-textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-field);
+  box-shadow: var(--g-field-inset);
+  color: var(--g-ink);
+  /* 16px keeps mobile Safari from zooming on focus. */
+  font: 500 16px/1.4 var(--g-font-body);
+}
+
+.g-textarea {
+  resize: vertical;
+}
+
+.g-input::placeholder,
+.g-textarea::placeholder {
+  color: var(--g-placeholder);
+}
+
+.g-input:focus-visible,
+.g-textarea:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: 2px;
+  border-color: var(--g-accent);
+}
+
+.g-input:disabled,
+.g-textarea:disabled {
+  background: var(--g-field-disabled);
+  opacity: 0.75;
+}
+
+/* Questions */
+.g-question-form {
+  display: grid;
+  gap: 16px;
+}
+
+.g-question {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.g-question-title {
+  padding: 0;
+  font: var(--g-display-weight-soft) 15.5px/1.3 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  color: var(--g-ink);
+}
+
+.g-question-optional {
+  font: 600 12px var(--g-font-body);
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--g-ink-soft);
+}
+
+.g-question-context {
+  margin: 0;
+  color: var(--g-ink-soft);
+  font: 500 13px/1.45 var(--g-font-body);
+  white-space: pre-wrap;
+}
+
+.g-question-hint {
+  margin: 0;
+  color: var(--g-ink-soft);
+  font: 600 12.5px var(--g-font-body);
+}
+
+.g-options {
+  display: grid;
+  gap: 8px;
+}
+
+.g-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: var(--g-border-thin) solid var(--g-option-border);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-field);
+  font: 600 14px/1.3 var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-option input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--g-accent);
+}
+
+.g-option-on {
+  border-color: var(--g-outline);
+  background: var(--g-good-tint);
+  box-shadow: var(--g-lift-sm);
+}
+
+.g-option:focus-within {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: 2px;
+}
+
+.g-question-other {
+  margin-left: 30px;
+  width: calc(100% - 30px);
+}
+
+.g-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.g-chip {
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-paper);
+  color: var(--g-ink);
+  font: 700 13px var(--g-font-body);
+  cursor: pointer;
+}
+
+.g-chip-on {
+  background: var(--g-good-tint);
+  box-shadow: inset 0 0 0 var(--g-border-thin) var(--g-accent);
+}
+
+.g-chip:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: 2px;
+}
+
+/* Review confirmation and workflow decisions */
+.g-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: var(--g-border-thin) var(--g-rule-style) var(--g-accent);
+  border-radius: var(--g-radius-tile);
+  background: var(--g-confirm-tint);
+}
+
+.g-decision {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-decision-fill);
+  box-shadow: var(--g-lift-md);
+}
+
+.g-decision-tag {
+  margin: 0;
+  color: var(--g-eyebrow);
+  font: 700 11px var(--g-font-body);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.g-decision-title {
+  margin: 0;
+  font: var(--g-display-weight) 17px/1.2 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+}
+
+.g-materials {
+  display: grid;
+  gap: 6px;
+}
+
+.g-materials-title {
+  margin: 0;
+  font: var(--g-display-weight-soft) 13px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+}
+
+.g-material {
+  display: grid;
+  gap: 4px;
+}
+
+.g-material-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  font: 700 12.5px var(--g-font-body);
+}
+
+.g-link,
+.g-link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--g-accent);
+  font: 700 13px var(--g-font-body);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.g-link-button {
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.g-continue-all {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+/* Mailbox */
+.g-mailbox {
+  display: grid;
+  gap: 18px;
+}
+
+.g-mail-section {
+  display: grid;
+  gap: 8px;
+}
+
+.g-mail-section-head {
+  display: grid;
+  gap: 2px;
+}
+
+.g-mail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: var(--g-display-weight) 16px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+}
+
+.g-mail-count {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-tile);
+  background: var(--g-badge-fill);
+  color: var(--g-on-badge);
+  font: var(--g-display-weight) 12px/20px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  text-align: center;
+}
+
+.g-mail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.g-mail-item {
+  --g-mail-dot: var(--g-mail-dot-default);
+  overflow: hidden;
+  border: var(--g-border) solid var(--g-outline);
+  border-radius: var(--g-radius-md);
+  background: var(--g-paper);
+  box-shadow: var(--g-lift-md);
+}
+
+.g-mail-halted {
+  --g-mail-dot: var(--g-mail-dot-halted);
+}
+
+.g-mail-questions {
+  --g-mail-dot: var(--g-mail-dot-questions);
+}
+
+.g-mail-assistant {
+  --g-mail-dot: var(--g-mail-dot-assistant);
+}
+
+.g-mail-harvest {
+  --g-mail-dot: var(--g-mail-dot-harvest);
+}
+
+.g-mail-weeds {
+  --g-mail-dot: var(--g-mail-dot-weeds);
+}
+
+.g-mail-other {
+  --g-mail-dot: var(--g-mail-dot-other);
+}
+
+.g-mail-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-mail-toggle:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: -4px;
+}
+
+@media (hover: hover) {
+  .g-mail-toggle:hover {
+    background: var(--g-mail-hover);
+  }
+}
+
+.g-mail-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-mail-dot);
+}
+
+.g-mail-heading {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.g-mail-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font: var(--g-display-weight-soft) 15px/1.2 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.g-mail-subtitle {
+  overflow: hidden;
+  color: var(--g-ink-soft);
+  font: 600 12.5px var(--g-font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.g-mail-chevron {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-round);
+  background: var(--g-button-fill);
+  font: var(--g-display-weight) 18px/1 var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+}
+
+.g-mail-body {
+  padding: 12px 12px 14px;
+  border-top: var(--g-border-thin) var(--g-rule-style) var(--g-mail-divider);
+}
+
+.g-mailbox-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 24px 12px;
+  text-align: center;
+}
+
+.g-mailbox-empty-title {
+  margin: 0;
+  color: var(--g-accent);
+  font: var(--g-display-weight) 18px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+}
+
+/* A robot's pending questions in its chat: folded to one row until opened, with room around them. */
+.g-chat-scroll > .g-action,
+.g-questions-folded {
+  margin-top: 16px;
+}
+
+/* Opened, they get more air: between the questions, and before the composer. */
+.g-chat-scroll > .g-action:not(.g-questions-folded) {
+  gap: 16px;
+  margin: 24px 0 20px;
+}
+
+.g-chat-scroll > .g-action:not(.g-questions-folded) .g-action-sub {
+  padding-top: 18px;
+}
+
+.g-questions-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--g-text);
+  font: 700 14px var(--g-font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-questions-toggle:focus-visible {
+  outline: var(--g-focus-width) solid var(--g-highlight);
+  outline-offset: 2px;
+}

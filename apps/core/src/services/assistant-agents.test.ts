@@ -80,7 +80,7 @@ test('a squad target creates one consultant per squad with the consultant scope'
   expect(consultant.persist).toBe(false)
   expect(consultant.ownerUserId).toBeNull()
   expect(consultant.metadata?.name).toBe('Assistant task')
-  expect(consultant.context).toMatchObject({ scope: { type: 'consultant', id: squad.id } })
+  expect(consultant.context).toMatchObject({ scope: { type: 'consultant', id: squad.id }, origin: 'assistant' })
   // The general helper and the consultant coexist; the consultant never owns the page editor.
   const general = await db.transaction((tx) => resolveOwnedAgent(tx, row, { squadId: null }, []))
   expect(general.id).not.toBe(consultant.id)

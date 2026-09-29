@@ -2,6 +2,7 @@ export { holdRowLock, waitForBlockedBy } from './db-lock'
 
 export {
   createTestUser,
+  createTestSession,
   createTestAdmin,
   createTestRole,
   assignRole,

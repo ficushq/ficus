@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { IMAGE_CACHE_NAME, SW_RUNTIME_CACHE_PREFIXES } from '@ficus/shared/browser-keys'
-import { bypassesServiceWorker } from './swRoutes'
+import { bypassesServiceWorker, isUncachedApi } from './swRoutes'
 import {
   RETIRED_SW_CACHE_PREFIXES,
   runtimeServiceWorkerCaches,
@@ -25,7 +25,7 @@ describe('service-worker runtime caches', () => {
       current.static,
       current.api,
       'workbox-precache-v2-https://example.test/',
-      'garden-cache-v1',
+      'farm-cache-v1',
       IMAGE_CACHE_NAME,
     ]
     expect(staleServiceWorkerCaches(keys, 'v2')).toEqual(['ficus-cache-old', 'ficus-api-cache-old'])
@@ -41,32 +41,35 @@ describe('service-worker runtime caches', () => {
   test('clearing runtime caches covers current, older and retired caches but not foreign ones', () => {
     const current = serviceWorkerCacheNames('v2')
     const retired = RETIRED_SW_CACHE_PREFIXES.map((prefix) => `${prefix}old-build`)
-    const keys = [
-      current.static,
-      current.api,
-      'ficus-cache-old',
-      ...retired,
-      'workbox-precache-v2-x',
-      'garden-cache-v1',
-    ]
+    const keys = [current.static, current.api, 'ficus-cache-old', ...retired, 'workbox-precache-v2-x', 'farm-cache-v1']
     expect(runtimeServiceWorkerCaches(keys)).toEqual([current.static, current.api, 'ficus-cache-old', ...retired])
   })
 })
 
 describe('service-worker routes', () => {
-  test('sibling apps on the origin (docs, garden) bypass the service worker', () => {
+  test('sibling apps on the origin (docs, farm) bypass the service worker', () => {
     for (const base of ['/', '/ficus/']) {
       const at = (path: string) => base.replace(/\/$/, '') + path
-      for (const path of ['/docs', '/docs/', '/docs/start/cloud/', '/garden', '/garden/', '/garden/beds/1']) {
+      for (const path of ['/docs', '/docs/', '/docs/start/cloud/', '/farm', '/farm/', '/farm/beds/1']) {
         expect(bypassesServiceWorker(at(path), base)).toBe(true)
       }
-      for (const path of ['/', '/gardening', '/docsearch', '/settings', '/api/garden']) {
+      for (const path of ['/', '/farming', '/docsearch', '/settings', '/api/farm']) {
         expect(bypassesServiceWorker(at(path), base)).toBe(false)
       }
     }
   })
 
+  test("never caches the farm's chat or settings APIs", () => {
+    for (const base of ['/', '/ficus/']) {
+      const at = (path: string) => base.replace(/\/$/, '') + path
+      expect(isUncachedApi(at('/api/farm-chat/rooms/1/messages'), base)).toBe(true)
+      expect(isUncachedApi(at('/api/farm-chat/people'), base)).toBe(true)
+      expect(isUncachedApi(at('/api/farm-preferences/me'), base)).toBe(true)
+      expect(isUncachedApi(at('/api/squads'), base)).toBe(false)
+    }
+  })
+
   test('a sibling path outside the registration scope is not matched', () => {
-    expect(bypassesServiceWorker('/garden/x', '/ficus/')).toBe(false)
+    expect(bypassesServiceWorker('/farm/x', '/ficus/')).toBe(false)
   })
 })

@@ -9,6 +9,7 @@ import {
   inbox,
   messages,
   roleAssignments,
+  roles,
   squads,
   users,
   workStreamWaits,
@@ -138,5 +139,23 @@ describe('demo seed', () => {
     expect(again.created).toEqual(['re-enabled the demo account'])
     const [row] = await db.select({ disabledAt: users.disabledAt }).from(users).where(eq(users.id, seeded.user.id))
     expect(row.disabledAt).toBeNull()
+  })
+
+  it('takes a default role (the farm) back from the reviewer on re-seed', async () => {
+    const seeded = await seedDemoInstance()
+    const [farmer] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, 'farmer'))
+    expect(farmer).toBeDefined()
+    // As an upgrade that granted it to everyone would have.
+    await db
+      .insert(roleAssignments)
+      .values({ subjectType: 'user', subjectId: seeded.user.id, roleId: farmer!.id, scope: 'system' })
+    const again = await seedDemoInstance()
+    expect(again.created).toEqual(['removed default roles from the demo account'])
+    const held = await db
+      .select({ roleId: roleAssignments.roleId })
+      .from(roleAssignments)
+      .where(eq(roleAssignments.subjectId, seeded.user.id))
+    expect(held.map((a) => a.roleId)).not.toContain(farmer!.id)
+    expect(held).toHaveLength(1)
   })
 })

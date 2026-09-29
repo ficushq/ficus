@@ -2,7 +2,7 @@
 
 import { resolveNotificationTarget } from './lib/notificationTarget'
 import { runtimeServiceWorkerCaches, serviceWorkerCacheNames, staleServiceWorkerCaches } from './swCaches'
-import { bypassesServiceWorker } from './swRoutes'
+import { bypassesServiceWorker, isUncachedApi } from './swRoutes'
 
 // Ficus Service Worker
 // Provides offline caching and push notification support.
@@ -51,11 +51,12 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   if (url.origin !== self.location.origin) return
   if (url.pathname.startsWith(p('/ws'))) return
-  // Docs and the garden have their own HTML routes; never replace them with the cached app shell.
+  // Docs and the farm have their own HTML routes; never replace them with the cached app shell.
   if (bypassesServiceWorker(url.pathname, BASE_PATH)) return
 
   if (url.pathname.startsWith(p('/api/'))) {
     if (url.pathname.includes('/stream')) return
+    if (isUncachedApi(url.pathname, BASE_PATH)) return
     event.respondWith(handleCacheableApiRequest(request, url))
     return
   }

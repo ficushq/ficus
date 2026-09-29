@@ -6,6 +6,8 @@ import { db } from '../../db'
 import { roles, type RoleAppliesTo } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'
 import { CONFIG_DIR } from '../../lib/paths'
+import { backfillUserIds, DEFAULT_USER_ROLE_SLUGS, grantDefaultRoles } from '../rbac/default-roles'
+import { invalidatePermissionCache } from '../rbac/permissions'
 
 const log = createLogger('config-sync:roles')
 
@@ -107,17 +109,28 @@ export class RoleSync {
           skipped++
         }
       } else {
-        await db.insert(roles).values({
-          name: roleDef.name,
-          slug: roleDef.slug,
-          permissions: roleDef.permissions,
-          appliesTo: appliesToOf(roleDef),
-          isSystem: true,
-          readOnly: roleDef.readOnly ?? false,
-          updatedBy: 'yaml',
+        // Creating a default role and granting it to the people already here happen together: if the
+        // grant fails, the role isn't there either, so the next start tries both again. Only the first
+        // creation grants, so an assignment an admin removes later stays removed.
+        const isDefault = (DEFAULT_USER_ROLE_SLUGS as readonly string[]).includes(roleDef.slug)
+        await db.transaction(async (tx) => {
+          await tx.insert(roles).values({
+            name: roleDef.name,
+            slug: roleDef.slug,
+            permissions: roleDef.permissions,
+            appliesTo: appliesToOf(roleDef),
+            isSystem: true,
+            readOnly: roleDef.readOnly ?? false,
+            updatedBy: 'yaml',
+          })
+          if (isDefault) await grantDefaultRoles(await backfillUserIds(tx), [roleDef.slug], tx)
         })
         synced++
         log.info(`Created role: ${roleDef.slug}`)
+        if (isDefault) {
+          invalidatePermissionCache()
+          log.info(`Granted ${roleDef.slug} to everyone with a role`)
+        }
       }
     }
 

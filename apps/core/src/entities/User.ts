@@ -2,6 +2,7 @@ import { eq, and, sql, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { users, userCredentials, sessions, roleAssignments, agentTokens, emailVerifications } from '../db/schema'
 import { invalidatePermissionCache } from '../services/rbac/permissions'
+import { grantDefaultRoles } from '../services/rbac/default-roles'
 import type { InferSelectModel } from 'drizzle-orm'
 import { createHash, randomUUID } from 'crypto'
 import { SESSION_TOKEN_PREFIX } from '../services/auth/token-prefixes'
@@ -11,6 +12,8 @@ export type UserRow = InferSelectModel<typeof users>
 export interface CreateUserInput {
   email: string
   displayName?: string
+  /** Skip the roles every new person gets (e.g. a shared account like the demo reviewer). */
+  withoutDefaultRoles?: boolean
 }
 
 /**
@@ -82,6 +85,11 @@ export class User {
         displayName: input.displayName ?? null,
       })
       .returning()
+    // Every new person gets the default roles (the farm), as ordinary assignments.
+    if (!input.withoutDefaultRoles) {
+      await grantDefaultRoles([row!.id], undefined, tx)
+      invalidatePermissionCache()
+    }
     return new User(row)
   }
 

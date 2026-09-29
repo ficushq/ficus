@@ -191,6 +191,21 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
     return { topic: 'machines', instanceTopic: `machines:${data.machineId}` }
   }
 
+  // The farm's presence and chat are sent by the API process itself, per recipient
+  // (see presence.ts and routes/farm-chat.ts); they never travel the event bus.
+  if (
+    event === 'presence.snapshot' ||
+    event === 'presence.updated' ||
+    event === 'presence.left' ||
+    event === 'presence.waved' ||
+    event === 'farmChat.messageCreated' ||
+    event === 'farmChat.messageUpdated' ||
+    event === 'farmChat.messageDeleted' ||
+    event === 'farmChat.roomsChanged' ||
+    event === 'farmChat.typing'
+  )
+    return null
+
   // Internal worker nudges; no client-facing topic.
   if (
     event === 'sandbox.provision-transition' ||
