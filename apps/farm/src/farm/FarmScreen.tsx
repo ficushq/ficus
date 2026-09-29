@@ -27,6 +27,8 @@ import { chatKeys } from '../multiplayer/chatApi'
 import { useQueryClient } from '@tanstack/react-query'
 import { haltedAgentIds } from './state'
 import { useStableRef } from '../hooks/useStableRef'
+import { isDemo } from '../app/demo'
+import { readView, viewKey, writeView } from './savedView'
 import { useDesktopShellChrome } from '../desktop/shell'
 import { SKINS, useSkin } from '../skins'
 import type { Selection } from './selection'
@@ -55,8 +57,13 @@ import { webAppUrl } from '../api/base'
 // The one source of the mark (brand/), so fixes to it reach the farm without a copy to update.
 import ficusMark from '../../../../brand/ficus-mark.svg'
 
+/** How long after the last change the view (camera, card, chats) is saved. */
+const SAVE_VIEW_MS = 400
+
 export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus }) {
   useDesktopShellChrome()
+  // Where you were before a refresh: the camera, the card you had open and your chat windows.
+  const [saved] = useState(() => readView(viewKey(isDemo)))
   const { skin, setSkin } = useSkin()
   const layout = useMemo(() => layoutFarm(input), [input])
   // Robots walk to new jobs (and home to rest); one out walking plants when it's back.
@@ -93,7 +100,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     const b = screenBounds(Math.min(...is), Math.max(...is), Math.min(...js), Math.max(...js))
     return { minX: b.minX, maxX: b.maxX, minY: b.minY - 120, maxY: b.maxY }
   }, [layout])
-  const { camera, fit, zoomBy, focus, flyTo } = useCamera(viewport, world, focusBox)
+  const { camera, fit, zoomBy, focus, flyTo } = useCamera(viewport, world, focusBox, saved.camera)
   const cameraRef = useStableRef(camera)
   const sizeRef = useStableRef(size)
   /** Pan just enough to bring a world point into the comfortable middle of the screen. */
@@ -101,6 +108,8 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     (x: number, y: number) => {
       const c = cameraRef.current
       const { width, height } = sizeRef.current
+      // Not measured yet (the first moments after a load): everything would look off screen.
+      if (!width || !height) return
       const sx = (x - c.x) * c.zoom + width / 2
       const sy = (y - c.y) * c.zoom + height / 2
       const margin = Math.min(width, height) * 0.18
@@ -108,8 +117,19 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
     },
     [cameraRef, sizeRef, focus]
   )
-  const [selection, setSelection] = useState<Selection | null>(null)
-  const chats = useChatWindows(size)
+  const [selection, setSelection] = useState<Selection | null>(saved.selection)
+  const chats = useChatWindows(size, saved.chats)
+  // Keep the view for next time: a moment after it settles, and straight away when the page goes.
+  const view = useStableRef({ camera, selection, chats: chats.windows })
+  useEffect(() => {
+    const timer = window.setTimeout(() => writeView(viewKey(isDemo), view.current), SAVE_VIEW_MS)
+    return () => window.clearTimeout(timer)
+  }, [camera, selection, chats.windows, view])
+  useEffect(() => {
+    const flush = () => writeView(viewKey(isDemo), view.current)
+    window.addEventListener('pagehide', flush)
+    return () => window.removeEventListener('pagehide', flush)
+  }, [view])
   // Phones have room for one thing: a chat opened from a card replaces the card.
   const openChatRef = useStableRef((target: ChatTarget) => {
     if (size.width < 640) setSelection(null)
@@ -248,15 +268,17 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
 
   // On phones the card is a bottom sheet: lift the selected thing into the top of the screen.
   const selectionRef = useStableRef(selection)
+  // Only once the viewport is measured: before that every screen looks phone-sized.
+  const measured = size.width > 0
   useEffect(() => {
     const s = selectionRef.current
     const { width, height } = sizeRef.current
-    if (!s || width >= 640) return
+    if (!s || !measured || width >= 640) return
     const point = selectionAnchor(layout, s)
     if (!point) return
     const zoom = cameraRef.current.zoom
     focus(point[0], point[1] + (height * 0.5 - height * 0.18) / zoom, zoom)
-  }, [selection, layout, focus, selectionRef, sizeRef, cameraRef])
+  }, [selection, layout, focus, measured, selectionRef, sizeRef, cameraRef])
 
   const needsYou = input.pendingActions.length
   const nextSkin = SKINS[(SKINS.indexOf(skin) + 1) % SKINS.length]!

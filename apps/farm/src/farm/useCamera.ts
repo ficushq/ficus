@@ -53,12 +53,22 @@ export function zoomAround(camera: Camera, factor: number, dx: number, dy: numbe
  * A drag that moves more than a few pixels suppresses the click that ends it,
  * so panning never selects a plant by accident.
  */
-export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldBox, focusBox: WorldBox = world) {
-  const [camera, setCamera] = useState<Camera>(() => ({
-    x: (world.minX + world.maxX) / 2,
-    y: (world.minY + world.maxY) / 2,
-    zoom: 1,
-  }))
+export function useCamera(
+  viewport: RefObject<HTMLElement | null>,
+  world: WorldBox,
+  focusBox: WorldBox = world,
+  /** Where the camera was last time (a refresh): it starts there instead of fitting the farm. */
+  saved: Camera | null = null
+) {
+  const [camera, setCamera] = useState<Camera>(
+    () =>
+      saved ?? {
+        x: (world.minX + world.maxX) / 2,
+        y: (world.minY + world.maxY) / 2,
+        zoom: 1,
+      }
+  )
+  const savedRef = useRef(saved)
   const worldRef = useStableRef(world)
   const focusRef = useStableRef(focusBox)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
@@ -82,11 +92,13 @@ export function useCamera(viewport: RefObject<HTMLElement | null>, world: WorldB
     })
   }, [viewport, focusRef])
 
-  // Fit once the farm first has a real size.
+  // Fit once the farm first has a real size, unless coming back to where the camera was. That's left as it was:
+  // the farm's first size can come before its data does, and clamping to that would pull the camera in (the
+  // next pan or zoom keeps it on the farm).
   useEffect(() => {
     if (fitted.current || world.maxX - world.minX < 1) return
     fitted.current = true
-    fit()
+    if (!savedRef.current) fit()
   }, [fit, world.maxX, world.minX])
 
   const focus = useCallback(

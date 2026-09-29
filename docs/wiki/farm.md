@@ -28,6 +28,11 @@ keeps a copy in the browser under the `ficus-farm:` storage prefix for an
 instant start, and the account's value wins when it loads. A first visit
 (no `welcomed`) shows the welcome: pick a style, then make your farmer.
 
+The view itself is only in the browser (`ficus-farm:view`, `farm/savedView.ts`):
+where the camera was, the card you had open and your chat windows, so a
+refresh comes back to them. A person's card and an Assistant chat that was
+never started aren't brought back, and the demo keeps its own copy.
+
 ## Permissions
 
 The farm's multiplayer has its own resource, checked instance-wide (never per
