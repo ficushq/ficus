@@ -109,9 +109,11 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
       containerName: proto.containerName,
       getExistingContainer: lookup,
       proveContainerOwnership: proto.proveContainerOwnership,
+      removeProvenContainer: proto.removeProvenContainer,
+      removeDuplicateContainers: proto.removeDuplicateContainers,
       runLifecycleDocker: run,
       inspectContainerRunning: proto.inspectContainerRunning,
-      releaseSandboxState: () => {},
+      releaseSandboxState: (sandboxId: string) => void self.sandboxes.delete(sandboxId),
     }
     return { self, live, calls }
   }
@@ -163,6 +165,96 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
     })
     expect(refusing.live.size).toBe(1)
     expect(refusing.calls.some((args) => args[0] === 'rm')).toBe(false)
+  })
+
+  // M1: every candidate is proven before any is removed.
+  test('removeSandbox proves every candidate first: an unproven one removes nothing and keeps tracked state', async () => {
+    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+    const tracked = owned(SANDBOX_IDENTITY_WRITE, hex('a'))
+    const squatter: FakeContainer = { id: hex('b'), name: `${other.containerPrefix}agent_x`, labels: {} }
+    const docker = fakeDocker([tracked, squatter])
+    docker.self.sandboxes.set('agent_x', { sandboxId: 'agent_x', containerId: hex('a').slice(0, 12) })
+
+    const error = await proto.removeSandbox.call(docker.self, 'agent_x').catch((caught: unknown) => caught)
+    expect(error).toMatchObject({ code: 'LEGACY_OWNERSHIP_UNPROVEN', containerName: squatter.name })
+    expect([...docker.live.keys()].sort()).toEqual([hex('a'), hex('b')])
+    expect(docker.calls.some((args) => args[0] === 'rm')).toBe(false)
+    expect(docker.self.sandboxes.has('agent_x')).toBe(true)
+  })
+
+  test('removeSandbox removes the tracked container last, so a failed duplicate removal keeps it and its state', async () => {
+    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+    const docker = fakeDocker([owned(SANDBOX_IDENTITY_WRITE, hex('a')), owned(other, hex('b'))])
+    docker.self.sandboxes.set('agent_x', { sandboxId: 'agent_x', containerId: hex('a').slice(0, 12) })
+    const run = docker.self.runLifecycleDocker
+    // `rm` of the duplicate "succeeds" but the container stays: a REMOVE_FAILED postcondition.
+    docker.self.runLifecycleDocker = (args: string[]) => (args[0] === 'rm' && args[2] === hex('b') ? ok() : run(args))
+
+    await expect(proto.removeSandbox.call(docker.self, 'agent_x')).rejects.toMatchObject({ code: 'REMOVE_FAILED' })
+    expect(docker.live.has(hex('a'))).toBe(true)
+    expect(docker.self.sandboxes.has('agent_x')).toBe(true)
+
+    docker.self.runLifecycleDocker = run
+    await proto.removeSandbox.call(docker.self, 'agent_x')
+    expect(docker.live.size).toBe(0)
+    expect(docker.self.sandboxes.has('agent_x')).toBe(false)
+  })
+
+  // M2: a duplicate under the other prefix is removed on adopt, never left running.
+  describe('ensure with containers under both prefixes', () => {
+    const original = process.env.FICUS_SANDBOX_RUNTIME
+    beforeEach(() => {
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
+      clearRuntimeCache()
+    })
+    afterEach(() => {
+      if (original === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = original
+      clearRuntimeCache()
+    })
+
+    const opts: SandboxOptions = { workspacePath: '/host/ws' }
+    const contract = {
+      imageReference: 'sandbox:test',
+      imageId: 'unresolved:sandbox:test',
+      runtimeContractVersion: 1,
+      executorProtocolVersion: 1,
+      commandContractVersion: 1,
+    } as const
+    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+
+    function ensuringSelf(docker: ReturnType<typeof fakeDocker>) {
+      return {
+        ...docker.self,
+        resolveImageContract: () => contract,
+        getContainerSpecHash: () => computeDockerSpecHash(opts, contract),
+        isContainerRunning: () => true,
+        ensureBashrc: () => {},
+        connectExecutor: async () => {},
+        connectActiveDrift: async () => {},
+      }
+    }
+
+    test('adopts the write-name container and removes the proven duplicate', async () => {
+      const docker = fakeDocker([owned(SANDBOX_IDENTITY_WRITE, hex('a')), owned(other, hex('b'))])
+      await expect(proto.ensureSandbox.call(ensuringSelf(docker), 'agent_x', opts)).resolves.toBe(hex('a').slice(0, 12))
+      expect([...docker.live.keys()]).toEqual([hex('a')])
+      expect(docker.calls.filter((args) => args[0] === 'rm')).toEqual([['rm', '-f', hex('b')]])
+    })
+
+    test('an unproven container under the other prefix is left untouched', async () => {
+      const squatter: FakeContainer = { id: hex('b'), name: `${other.containerPrefix}agent_x`, labels: {} }
+      const docker = fakeDocker([owned(SANDBOX_IDENTITY_WRITE, hex('a')), squatter])
+      await expect(proto.ensureSandbox.call(ensuringSelf(docker), 'agent_x', opts)).resolves.toBe(hex('a').slice(0, 12))
+      expect(docker.live.size).toBe(2)
+      expect(docker.calls.some((args) => args[0] === 'rm')).toBe(false)
+    })
+
+    test('attach adopts the write-name container and removes the proven duplicate', async () => {
+      const docker = fakeDocker([owned(SANDBOX_IDENTITY_WRITE, hex('a')), owned(other, hex('b'))])
+      await expect(proto.attachExistingSandbox.call(ensuringSelf(docker), 'agent_x', opts)).resolves.toBe(true)
+      expect([...docker.live.keys()]).toEqual([hex('a')])
+    })
   })
 
   test('stopSandbox finds a new-identity container and reads its generation label', async () => {
@@ -1020,19 +1112,23 @@ describe('ensureSandbox spec-hash drift detection', () => {
     })
   }
 
-  it('prefers the write-name container when both prefixes hold one', async () => {
+  it('adopts the write-name container and hands the other-prefix one to duplicate removal', async () => {
     const hash = computeDockerSpecHash(opts)
     const ids: Record<string, string> = {
       [`${SANDBOX_IDENTITY_NEW.containerPrefix}s`]: 'new-c',
       [`${SANDBOX_IDENTITY_LEGACY.containerPrefix}s`]: 'legacy-c',
     }
-    const { self, created } = fakeManager({
+    const duplicates: string[][] = []
+    const { self, created, removed } = fakeManager({
       getExistingContainer: (name: string) => ids[name] ?? null,
       getContainerSpecHash: () => hash,
+      removeDuplicateContainers: (_id: string, refs: string[]) => void duplicates.push(refs),
     })
-    const expected = ids[`${SANDBOX_IDENTITY_WRITE.containerPrefix}s`]
-    await expect(ensure(self, 's', opts)).resolves.toBe(expected)
+    const write = ids[`${SANDBOX_IDENTITY_WRITE.containerPrefix}s`]
+    await expect(ensure(self, 's', opts)).resolves.toBe(write)
+    expect(duplicates).toEqual([Object.values(ids).filter((id) => id !== write)])
     expect(created).toEqual([])
+    expect(removed).toEqual([])
   })
 
   it('the create-time label uses computeDockerSpecHash so stamp and check agree', () => {

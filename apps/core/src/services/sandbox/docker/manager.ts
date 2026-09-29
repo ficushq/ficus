@@ -707,11 +707,14 @@ export class DockerSandboxManager implements ISandboxManager {
       if (!tracked.client) await this.connectExecutor(tracked.containerId, sandboxId)
       return true
     }
-    const containerId = findSandboxContainer(sandboxId, (candidate) => this.getExistingContainer(candidate))
+    const [containerId, ...duplicateContainers] = findSandboxContainers(sandboxId, (candidate) =>
+      this.getExistingContainer(candidate)
+    )
     if (!containerId) return false
     // No-create reconciliation adopts only already-reachable boxes. A stopped
     // container stays cold until its normal ensure lifecycle starts it.
     if (!this.isContainerRunning(containerId)) return false
+    if (duplicateContainers.length) this.removeDuplicateContainers(sandboxId, duplicateContainers, opts.workspacePath)
     const squadId = opts.squadId ?? getSquadIdFromSandbox(sandboxId) ?? undefined
     const layout = containerWorkspaceLayout({ squadId })
     const workRoot = containerWorkRoot({ squadId })
@@ -803,7 +806,9 @@ export class DockerSandboxManager implements ISandboxManager {
       // Check if container already exists (e.g. from a previous server run),
       // under any identity prefix: a container this release did not name is
       // still adopted or removed here, never left beside a new one.
-      const existingContainer = findSandboxContainer(sandboxId, (candidate) => this.getExistingContainer(candidate))
+      const [existingContainer, ...duplicateContainers] = findSandboxContainers(sandboxId, (candidate) =>
+        this.getExistingContainer(candidate)
+      )
       if (existingContainer) {
         // Adopt it only when its stamped spec matches; a missing label (pre-upgrade
         // container) or a mismatch means the mounts are stale — remove + recreate.
@@ -814,6 +819,9 @@ export class DockerSandboxManager implements ISandboxManager {
           if (!existingMatches) {
             log.info(`Container for ${sandboxId} spec drifted but session active; deferring recreate and adopting`)
           }
+          // Adopt the write-name container; a duplicate under another prefix is removed, never left running.
+          if (duplicateContainers.length)
+            this.removeDuplicateContainers(sandboxId, duplicateContainers, opts.workspacePath)
           // Start it if stopped
           if (!this.isContainerRunning(existingContainer)) {
             beginOnce('runtime_start')
@@ -859,7 +867,9 @@ export class DockerSandboxManager implements ISandboxManager {
         // Another process is initializing - wait for it to complete
         await this.waitForSandboxReady(sandboxId)
         // Now check again for the container
-        const containerAfterWait = findSandboxContainer(sandboxId, (candidate) => this.getExistingContainer(candidate))
+        const [containerAfterWait, ...duplicatesAfterWait] = findSandboxContainers(sandboxId, (candidate) =>
+          this.getExistingContainer(candidate)
+        )
         // Adopt the peer's container only when its spec matches ours; a stale or
         // missing label falls through to remove + recreate below. Idle/session
         // gate: a drifted box with an active session is adopted as-is (defer).
@@ -868,6 +878,8 @@ export class DockerSandboxManager implements ISandboxManager {
           if (!afterWaitMatches) {
             log.info(`Container for ${sandboxId} (post-wait) spec drifted but session active; deferring recreate`)
           }
+          if (duplicatesAfterWait.length)
+            this.removeDuplicateContainers(sandboxId, duplicatesAfterWait, opts.workspacePath)
           if (!this.isContainerRunning(containerAfterWait)) {
             Bun.spawnSync(['docker', 'start', containerAfterWait], { stdout: 'ignore', stderr: 'ignore' })
           }
@@ -1683,22 +1695,55 @@ export class DockerSandboxManager implements ISandboxManager {
     const found = findSandboxContainers(sandboxId, (candidate) => this.getExistingContainer(candidate))
     const requestedRefs = [...new Set([...(sandbox ? [sandbox.containerId] : []), ...found])]
     if (requestedRefs.length === 0) requestedRefs.push(this.containerName(sandboxId))
-    const removed = new Set<string>()
+    // Prove EVERY candidate before touching any: one unproven container throws
+    // here with nothing removed and the tracked state untouched.
+    const proven = new Map<string, string>()
     for (const requestedRef of requestedRefs) {
       const immutableId = this.proveContainerOwnership(requestedRef, sandboxId, sandbox, expectedWorkspacePath)
-      if (!immutableId || removed.has(immutableId)) continue
-      runDestructiveLifecycle({
-        operation: 'remove',
-        sandboxId,
-        immutableId,
-        containerName: this.containerName(sandboxId),
-        execute: () => this.runLifecycleDocker(['rm', '-f', immutableLifecycleTarget(immutableId)]),
-        inspect: () => this.inspectContainerRunning(immutableId),
-        release: () => {},
-      })
-      removed.add(immutableId)
+      if (immutableId) proven.set(requestedRef, immutableId)
     }
+    // The tracked container goes last, so a failed removal of another one
+    // leaves the tracked state pointing at a container that still exists.
+    const trackedId = sandbox ? proven.get(sandbox.containerId) : undefined
+    const targets = [...new Set(proven.values())].filter((id) => id !== trackedId)
+    if (trackedId) targets.push(trackedId)
+    for (const immutableId of targets) this.removeProvenContainer(sandboxId, immutableId)
     this.releaseSandboxState(sandboxId, sandbox)
+  }
+
+  /** Remove one container whose ownership is already proven, by its immutable id. */
+  private removeProvenContainer(sandboxId: string, immutableId: string): void {
+    runDestructiveLifecycle({
+      operation: 'remove',
+      sandboxId,
+      immutableId,
+      containerName: this.containerName(sandboxId),
+      execute: () => this.runLifecycleDocker(['rm', '-f', immutableLifecycleTarget(immutableId)]),
+      inspect: () => this.inspectContainerRunning(immutableId),
+      release: () => {},
+    })
+  }
+
+  /**
+   * Remove the duplicates of an adopted container found under another identity
+   * prefix, so a sandbox never keeps a second box running beside the one Core
+   * uses. Only proven containers are removed; an unproven one is left untouched
+   * and logged.
+   */
+  private removeDuplicateContainers(sandboxId: string, duplicateRefs: string[], expectedWorkspacePath?: string): void {
+    for (const ref of duplicateRefs) {
+      let immutableId: string | undefined
+      try {
+        immutableId = this.proveContainerOwnership(ref, sandboxId, undefined, expectedWorkspacePath)
+      } catch (error) {
+        if (!(error instanceof DockerSandboxLifecycleError) || error.code !== 'LEGACY_OWNERSHIP_UNPROVEN') throw error
+        log.warn(`Leaving unproven container ${ref} beside sandbox ${sandboxId}: its ownership is not proven`)
+        continue
+      }
+      if (!immutableId) continue
+      log.warn(`Removing duplicate container ${ref} of sandbox ${sandboxId} (another identity prefix)`)
+      this.removeProvenContainer(sandboxId, immutableId)
+    }
   }
 
   private releaseSandboxState(sandboxId: string, sandbox?: SandboxState): void {
@@ -2093,11 +2138,13 @@ export class DockerSandboxManager implements ISandboxManager {
       state?.workspacePath ?? expectedWorkspacePath
     )
     if (ownership === 'unproven')
+      // Name the container that failed the proof, which may carry another identity prefix.
       throw new DockerSandboxLifecycleError({
         operation: 'prove-ownership',
         sandboxId,
-        containerId: state?.containerId,
-        containerName: this.containerName(sandboxId),
+        containerId: typeof inspected?.Id === 'string' ? inspected.Id : state?.containerId,
+        containerName:
+          typeof inspected?.Name === 'string' ? inspected.Name.replace(/^\//, '') : this.containerName(sandboxId),
         reason: 'LEGACY_OWNERSHIP_UNPROVEN',
       })
     const immutableId = inspected?.Id
