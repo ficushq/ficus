@@ -1,5 +1,6 @@
 import { getDotenvEnv, getExplicitEnv, loadEnv } from './env'
 import { existsSync, readFileSync } from 'fs'
+import { sandboxPasswordPath } from '@ficus/shared/node'
 import { getActiveBackend, loadAuthStore } from './auth-store'
 loadEnv()
 
@@ -75,11 +76,20 @@ function webhookAuth(): ResolvedAuth | undefined {
 }
 
 /**
- * Read FICUS_PASSWORD from env var, active auth store backend, or mounted K8s Secret file.
- * In sandbox pods, the password is mounted at /etc/tau/password
- * and auto-updated by K8s when the secret changes.
+ * Read FICUS_PASSWORD from env var, active auth store backend, or the mounted sandbox
+ * secret file (`sandboxPasswordPath()`: the ficus path, else the legacy one, whichever is
+ * actually mounted) — auto-updated by K8s when the secret changes.
+ *
+ * `deps.secretExists`/`deps.readSecret` override the filesystem for tests only; every
+ * production call site (the `config.password` getter below) omits them and gets the real
+ * `existsSync`/`readFileSync`.
  */
-function getPassword(): string {
+export function getPassword(
+  deps: {
+    secretExists?: (path: string) => boolean
+    readSecret?: (path: string) => string
+  } = {}
+): string {
   if (webhookAuth()) {
     const credential = process.env.FICUS_TOKEN || process.env.FICUS_PASSWORD
     if (!credential)
@@ -103,9 +113,11 @@ function getPassword(): string {
   if (activeBackend) return activeBackend.backend.password
   const dotenvPassword = getDotenvEnv('FICUS_PASSWORD')
   if (dotenvPassword) return dotenvPassword
-  const secretPath = '/etc/tau/password'
-  if (existsSync(secretPath)) {
-    return readFileSync(secretPath, 'utf-8').trim()
+  const secretExists = deps.secretExists ?? existsSync
+  const readSecret = deps.readSecret ?? ((path: string) => readFileSync(path, 'utf-8').trim())
+  const secretPath = sandboxPasswordPath({ exists: secretExists })
+  if (secretExists(secretPath)) {
+    return readSecret(secretPath)
   }
   return ''
 }
@@ -163,8 +175,11 @@ export interface ResolvedAuth {
  * truthful inside sandboxes, where agents authenticate via the injected
  * FICUS_TOKEN and have no auth-store backend at all (the old "No active Ficus
  * backend configured" there read as "not logged in" while every command worked).
+ *
+ * `deps.secretExists` overrides the filesystem check for tests only; every production call
+ * site omits it and gets the real `existsSync`.
  */
-export function resolveAuth(): ResolvedAuth {
+export function resolveAuth(deps: { secretExists?: (path: string) => boolean } = {}): ResolvedAuth {
   const webhook = webhookAuth()
   if (webhook) return webhook
   if (isAgentContext()) {
@@ -186,7 +201,9 @@ export function resolveAuth(): ResolvedAuth {
   const activeBackend = getActiveBackend(loadAuthStore())
   if (activeBackend) return { source: 'auth-store', label: activeBackend.label, apiUrl, authenticated: true }
   if (getDotenvEnv('FICUS_PASSWORD')) return { source: 'dotenv', apiUrl, authenticated: true }
-  if (existsSync('/etc/tau/password')) return { source: 'secret-file', apiUrl, authenticated: true }
+  const secretExists = deps.secretExists ?? existsSync
+  if (secretExists(sandboxPasswordPath({ exists: secretExists })))
+    return { source: 'secret-file', apiUrl, authenticated: true }
   return { source: 'none', apiUrl, authenticated: false }
 }
 

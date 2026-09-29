@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { LEGACY_UNITS } from '@ficus/shared/node'
+
 import type { DeploymentFlavor } from './deployment-flavor'
 import {
   commandsForTasks,
@@ -7,6 +13,14 @@ import {
   isServiceRestartCommand,
   restartCommandsFor,
 } from './change-detector'
+
+// Empty dirs so hostSystemdUnits()/launchdLabel() take the legacy branch —
+// deterministic regardless of what is actually installed on the test host.
+const emptyHostDirs = () => {
+  const unitDir = mkdtempSync(join(tmpdir(), 'change-detector-test-units-'))
+  const launchAgentsDir = mkdtempSync(join(tmpdir(), 'change-detector-test-agents-'))
+  return { unitDir, launchAgentsDir }
+}
 
 const K3D_PM2: DeploymentFlavor = { source: 'git-checkout', supervisor: 'pm2', sandboxRuntime: 'k3d-local' }
 const SYSTEMD_DOCKER: DeploymentFlavor = {
@@ -58,18 +72,39 @@ describe('detectUpdateTasks', () => {
 
 describe('flavor-aware planning', () => {
   it('uses validated labeled targets for native user supervisors', () => {
-    expect(restartCommandsFor('systemd-user', { instance: 'Smoke' })).toEqual([
-      ['systemctl', '--user', 'restart', 'tau-smoke-worker.service'],
-      ['systemctl', '--user', '--no-block', 'restart', 'tau-smoke-api.service'],
-    ])
-    expect(restartCommandsFor('launchd', { instance: 'smoke', uid: 501 })).toEqual([
-      ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-smoke-worker'],
-      ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-smoke-api'],
-    ])
-    expect(() => restartCommandsFor('launchd', { instance: '../api', uid: 501 })).toThrow(/instance/i)
-    for (const command of restartCommandsFor('launchd', { instance: 'smoke', uid: 501 }))
-      expect(isServiceRestartCommand(command)).toBe(true)
-    expect(isApiRestartCommand(['systemctl', '--user', '--no-block', 'restart', 'tau-smoke-api.service'])).toBe(true)
+    const { unitDir, launchAgentsDir } = emptyHostDirs()
+    try {
+      expect(restartCommandsFor('systemd-user', { instance: 'Smoke' })).toEqual([
+        ['systemctl', '--user', 'restart', 'tau-smoke-worker.service'],
+        ['systemctl', '--user', '--no-block', 'restart', 'tau-smoke-api.service'],
+      ])
+      // No legacy plist installed for either processName, so the new label wins for both.
+      expect(restartCommandsFor('launchd', { instance: 'smoke', uid: 501, launchAgentsDir })).toEqual([
+        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-worker'],
+        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-api'],
+      ])
+      expect(() => restartCommandsFor('launchd', { instance: '../api', uid: 501 })).toThrow(/instance/i)
+      for (const command of restartCommandsFor('launchd', { instance: 'smoke', uid: 501, launchAgentsDir }))
+        expect(isServiceRestartCommand(command)).toBe(true)
+      expect(isApiRestartCommand(['systemctl', '--user', '--no-block', 'restart', 'tau-smoke-api.service'])).toBe(true)
+    } finally {
+      rmSync(unitDir, { recursive: true, force: true })
+      rmSync(launchAgentsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to the legacy launchd label when only its plist is installed', () => {
+    const launchAgentsDir = mkdtempSync(join(tmpdir(), 'change-detector-test-agents-'))
+    try {
+      // The legacy per-instance plist this host still has registered.
+      writeFileSync(join(launchAgentsDir, 'ai.hiretau.tau-smoke-worker.plist'), '') // ficus-p5-bridge
+      expect(restartCommandsFor('launchd', { instance: 'smoke', uid: 501, launchAgentsDir })).toEqual([
+        ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-smoke-worker'], // ficus-p5-bridge
+        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-api'],
+      ])
+    } finally {
+      rmSync(launchAgentsDir, { recursive: true, force: true })
+    }
   })
 
   it('keeps pm2 reload commands for the pm2 flavor', () => {
@@ -82,19 +117,41 @@ describe('flavor-aware planning', () => {
     const commands = commandsForTasks(['core'], [], SYSTEMD_DOCKER)
     const restarts = commands.filter((c) => c.command.includes('systemctl') || c.command.includes('sudo'))
     expect(restarts).toHaveLength(2)
-    expect(restarts[0].command.join(' ')).toContain('systemctl restart tau-worker')
-    expect(restarts[1].command.join(' ')).toContain('systemctl restart tau-api')
+    expect(restarts[0].command.join(' ')).toContain(`systemctl restart ${LEGACY_UNITS.worker}`)
+    expect(restarts[1].command.join(' ')).toContain(`systemctl restart ${LEGACY_UNITS.api}`)
   })
 
-  it('systemd restart commands are sudo-prefixed only when not root', () => {
-    expect(restartCommandsFor('systemd', { isRoot: true })[0]).toEqual(['systemctl', 'restart', 'tau-worker'])
-    expect(restartCommandsFor('systemd', { isRoot: false })[0]).toEqual([
-      'sudo',
-      '-n',
-      'systemctl',
-      'restart',
-      'tau-worker',
-    ])
+  it('systemd restart commands are sudo-prefixed only when not root, using the legacy units by default', () => {
+    const unitDir = mkdtempSync(join(tmpdir(), 'change-detector-test-units-'))
+    try {
+      expect(restartCommandsFor('systemd', { isRoot: true, unitDir })[0]).toEqual([
+        'systemctl',
+        'restart',
+        LEGACY_UNITS.worker,
+      ])
+      expect(restartCommandsFor('systemd', { isRoot: false, unitDir })[0]).toEqual([
+        'sudo',
+        '-n',
+        'systemctl',
+        'restart',
+        LEGACY_UNITS.worker,
+      ])
+    } finally {
+      rmSync(unitDir, { recursive: true, force: true })
+    }
+  })
+
+  it('systemd restart commands use the ficus units once the ficus-api unit file exists', () => {
+    const unitDir = mkdtempSync(join(tmpdir(), 'change-detector-test-units-'))
+    try {
+      writeFileSync(join(unitDir, 'ficus-api.service'), '')
+      expect(restartCommandsFor('systemd', { isRoot: true, unitDir })).toEqual([
+        ['systemctl', 'restart', 'ficus-worker'],
+        ['systemctl', 'restart', 'ficus-api'],
+      ])
+    } finally {
+      rmSync(unitDir, { recursive: true, force: true })
+    }
   })
 
   it('excludes the sandbox task for non-k3d runtimes', () => {

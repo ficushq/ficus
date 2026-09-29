@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { config, isAgentContext, resolveAuth, setSelectedBackend } from './config'
+import { config, getPassword, isAgentContext, resolveAuth, setSelectedBackend } from './config'
 import { loadEnv } from './env'
 
 const tempDirs: string[] = []
@@ -136,6 +136,45 @@ describe('agent context', () => {
     expect(config.apiUrl).toBe('https://cloud.example.com')
     expect(config.password).toBe('operator-token')
     expect(resolveAuth()).toMatchObject({ source: 'auth-store', label: 'cloud' })
+  })
+})
+
+describe('sandbox password secret fallback', () => {
+  // No env credential set, so both getPassword() and resolveAuth() fall through every
+  // earlier precedence step to the mounted-secret check — exercising the config.ts wiring
+  // around @ficus/shared/node's sandboxPasswordPath(), not just that function in isolation.
+  // `secretExists`/`readSecret` stand in for a real /etc mount: the ficus path is checked
+  // (and read) first, and the legacy path only when the ficus one is absent — never a real
+  // /etc read either way. FICUS_AUTH_STORE points at a file that deliberately doesn't
+  // exist, so the auth-store precedence step (which otherwise defaults to a real path
+  // under $HOME) can never short-circuit before reaching the secret check.
+  async function useEmptyAuthStore() {
+    const dir = await mkdtemp(join(tmpdir(), 'ficus-secret-fallback-'))
+    tempDirs.push(dir)
+    process.env.FICUS_AUTH_STORE = join(dir, 'does-not-exist.json')
+  }
+
+  it('reads the ficus secret path when it is the one mounted', async () => {
+    await useEmptyAuthStore()
+    const secretExists = (path: string) => path === '/etc/ficus/password'
+    const readSecret = (path: string) => `content of ${path}`
+    expect(getPassword({ secretExists, readSecret })).toBe('content of /etc/ficus/password')
+    expect(resolveAuth({ secretExists })).toMatchObject({ source: 'secret-file', authenticated: true })
+  })
+
+  it('falls back to the legacy secret path when only it is mounted', async () => {
+    await useEmptyAuthStore()
+    const secretExists = (path: string) => path === '/etc/tau/password' // ficus-p5-bridge
+    const readSecret = (path: string) => `content of ${path}`
+    expect(getPassword({ secretExists, readSecret })).toBe('content of /etc/tau/password') // ficus-p5-bridge
+    expect(resolveAuth({ secretExists })).toMatchObject({ source: 'secret-file', authenticated: true })
+  })
+
+  it('is unauthenticated when neither secret path is mounted', async () => {
+    await useEmptyAuthStore()
+    const secretExists = () => false
+    expect(getPassword({ secretExists })).toBe('')
+    expect(resolveAuth({ secretExists })).toMatchObject({ source: 'none', authenticated: false })
   })
 })
 

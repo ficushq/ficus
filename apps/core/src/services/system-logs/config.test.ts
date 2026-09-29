@@ -1,9 +1,39 @@
 import { describe, expect, it } from 'bun:test'
-import { homedir } from 'node:os'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+import { LEGACY_UNITS } from '@ficus/shared/node'
 
 import { loadExplicitSystemLogConfig } from './config'
 import { SystemLogProviderError } from './types'
+
+describe('loadExplicitSystemLogConfig — systemd default target names', () => {
+  it('falls back to the legacy unit names when the ficus units are not installed', () => {
+    const emptyDir = mkdtempSync(join(tmpdir(), 'system-logs-config-test-'))
+    try {
+      const config = loadExplicitSystemLogConfig({ FICUS_SYSTEM_LOG_PROVIDER: 'systemd' } as NodeJS.ProcessEnv, {
+        unitDir: emptyDir,
+      })
+      expect(config).toEqual({ provider: 'systemd', targets: { api: LEGACY_UNITS.api, worker: LEGACY_UNITS.worker } })
+    } finally {
+      rmSync(emptyDir, { recursive: true, force: true })
+    }
+  })
+
+  it('uses the ficus unit names once the ficus-api unit file exists', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'system-logs-config-test-'))
+    try {
+      writeFileSync(join(dir, 'ficus-api.service'), '')
+      const config = loadExplicitSystemLogConfig({ FICUS_SYSTEM_LOG_PROVIDER: 'systemd' } as NodeJS.ProcessEnv, {
+        unitDir: dir,
+      })
+      expect(config).toEqual({ provider: 'systemd', targets: { api: 'ficus-api', worker: 'ficus-worker' } })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('loadExplicitSystemLogConfig — file provider paths', () => {
   it('expands a leading ~ in FICUS_LOG_FILE_API / FICUS_LOG_FILE_WORKER', () => {

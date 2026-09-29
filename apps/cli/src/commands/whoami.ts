@@ -109,7 +109,7 @@ function describeSource(result: WhoamiResult): string {
     case 'dotenv':
       return 'FICUS_PASSWORD from a .env file'
     case 'secret-file':
-      return 'the mounted /etc/tau/password secret'
+      return 'the mounted sandbox password secret'
     case 'none':
       return 'no credential — not authenticated'
   }
