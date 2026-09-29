@@ -61,7 +61,7 @@ export function LinkedChatAccounts() {
             </p>
           </div>
           <button
-            className="ficus-button px-3 py-2 text-sm shrink-0"
+            className="ficus-button ficus-button-secondary px-3 py-2 text-sm shrink-0"
             disabled={remove.isPending}
             onClick={() => remove.mutate(link.id)}
           >
@@ -104,7 +104,7 @@ export function LinkedChatAccounts() {
             </>
           )}
           <button
-            className="ficus-button px-3 py-2 text-sm"
+            className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
             disabled={remove.isPending}
             onClick={() => remove.mutate(pending.id)}
           >
@@ -113,7 +113,7 @@ export function LinkedChatAccounts() {
         </div>
       ))}
       <button
-        className="ficus-button px-3 py-2 text-sm"
+        className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
         onClick={() => start.mutate()}
         disabled={start.isPending || query.isPending || query.isError || !!query.data?.pending.length}
       >

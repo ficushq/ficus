@@ -463,7 +463,7 @@ function ConnectionStep({ meta, item, onSkip, onUnskip, pending, embedded }: Ite
               type="button"
               onClick={item.state === 'skipped' ? onUnskip : onSkip}
               disabled={pending}
-              className="ficus-button shrink-0 px-3 py-1.5 text-sm text-secondary disabled:opacity-50"
+              className="ficus-button ficus-button-secondary shrink-0 px-3 py-1.5 text-sm disabled:opacity-50"
             >
               {item.state === 'skipped' ? 'Unskip' : 'Skip'}
             </button>

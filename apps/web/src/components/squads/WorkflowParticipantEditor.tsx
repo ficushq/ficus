@@ -131,7 +131,7 @@ export function WorkflowParticipantEditor({
           />
           <button
             type="button"
-            className="ficus-button rounded-md px-3 py-2 text-sm text-danger disabled:opacity-40"
+            className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm text-danger disabled:opacity-40"
             disabled={
               usedBy.length > 0 ||
               definition.subscriptions?.some(

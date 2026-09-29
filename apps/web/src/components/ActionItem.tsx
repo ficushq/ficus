@@ -398,7 +398,7 @@ function SquadQuestionActionContent({
       <Link
         to={`/squads/${data.squadId}?agent=${data.agentId}`}
         onClick={closeActionCenter}
-        className="inline-flex min-h-10 items-center px-2 py-2 text-sm text-muted hover:text-primary"
+        className="ficus-button ficus-button-secondary inline-flex min-h-10 items-center px-3 py-2 text-sm"
       >
         View Thread
       </Link>

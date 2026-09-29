@@ -93,7 +93,7 @@ export function InboxPage() {
           <button
             onClick={() => markAllAsReadMutation.mutate()}
             disabled={markAllAsReadMutation.isPending}
-            className="ficus-button px-3 py-2 text-sm text-accent-light shrink-0 disabled:opacity-50"
+            className="ficus-button ficus-button-secondary px-3 py-2 text-sm shrink-0 disabled:opacity-50"
           >
             Mark all as read
           </button>

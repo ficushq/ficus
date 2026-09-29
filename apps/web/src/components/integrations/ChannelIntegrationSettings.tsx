@@ -241,7 +241,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
               {canWrite && (
                 <button
                   type="button"
-                  className="ficus-button px-3 py-1.5 text-xs"
+                  className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs"
                   disabled={authorizeManaged.isPending}
                   onClick={() => authorizeManaged.mutate(authorizeManaged.variables)}
                 >
