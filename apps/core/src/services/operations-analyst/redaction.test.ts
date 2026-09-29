@@ -29,6 +29,7 @@ describe('redactEvidence', () => {
     ['PEM private key', 'before\n-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----\nafter'],
     ['JWT', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature-value'],
     ['Ficus token', 'ficus_abcdefghijklmno'],
+    ['pre-rename token', 'tau_abcdefghijklmno'], // ficus-36c
     ['Ficus system token', 'ficus_sys_abcdefghijklmno'],
     ['Ficus device token', 'ficus_dev_abcdefghijklmno'],
     ['GitHub token', 'github_pat_abcdefghijklmno_123456789'],

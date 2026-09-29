@@ -1,20 +1,23 @@
 import { describe, expect, test } from 'bun:test'
+import { LEGACY_ENTITY_REFERENCE_SCHEME } from '@ficus/shared'
 import { bubbleText, refFromUrl, tokenize } from './messageTokens'
 
 const WS = '11111111-2222-4333-8444-555555555555'
 const AGENT = '66666666-7777-4888-9999-aaaaaaaaaaaa'
 const SQUAD = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff'
 const PEOPLE = [{ id: 'rosa', name: 'Rosa Díaz' }]
+// References stored before the rename keep their old scheme (Task 36c migrates them).
+const LEGACY_AGENT_REF = `${LEGACY_ENTITY_REFERENCE_SCHEME}:agent:${AGENT}`
 
 describe('chat message tokens', () => {
   test('split text, mentions, farm references and links', () => {
-    const body = `@Rosa look at ficus:ws:${WS} and ficus:agent:${AGENT}, docs at https://example.com/guide.`
+    const body = `@Rosa look at ficus:ws:${WS} and ${LEGACY_AGENT_REF}, docs at https://example.com/guide.`
     expect(tokenize(body, PEOPLE)).toEqual([
       { kind: 'mention', text: '@Rosa', userId: 'rosa' },
       { kind: 'text', text: ' look at ' },
       { kind: 'ref', text: `ficus:ws:${WS}`, ref: { kind: 'ws', id: WS } },
       { kind: 'text', text: ' and ' },
-      { kind: 'ref', text: `ficus:agent:${AGENT}`, ref: { kind: 'agent', id: AGENT } },
+      { kind: 'ref', text: LEGACY_AGENT_REF, ref: { kind: 'agent', id: AGENT } },
       { kind: 'text', text: ', docs at ' },
       { kind: 'link', text: 'https://example.com/guide', href: 'https://example.com/guide' },
       { kind: 'text', text: '.' },
