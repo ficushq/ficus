@@ -1,5 +1,5 @@
 slug: deep
 label: Deep
 description: High-stakes judgment and review
-chain: openai-codex:gpt-6-astra:high,anthropic:claude-opus-5-5:high,zai:glm-5.3:high
+chain: anthropic:claude-opus-5-5:high,openai-codex:gpt-6-astra:high,zai:glm-5.3:high
 sortOrder: 30

@@ -1,5 +1,5 @@
 slug: standard
 label: Standard
 description: Balanced engineering work
-chain: openai-codex:gpt-6-sol:high,anthropic:claude-opus-5-5:medium,zai:glm-5.3:high
+chain: anthropic:claude-opus-5-5:medium,openai-codex:gpt-6-sol:high,zai:glm-5.3:high
 sortOrder: 20
