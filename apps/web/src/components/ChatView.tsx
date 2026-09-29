@@ -2166,7 +2166,7 @@ export function ChatView({
                           (!hasInput && pendingImages.length === 0)
                         }
                         className={clsx(
-                          'chat-composer-submit px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
+                          'chat-composer-submit whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
                           deliveryMode === 'steer'
                             ? 'hover:bg-accent-hover active:bg-accent-active'
                             : 'hover:bg-status-attention-700 active:bg-status-attention-800'
