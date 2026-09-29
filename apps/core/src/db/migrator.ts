@@ -11,6 +11,11 @@ import { backfillTrackedIssues } from './tracked-issue-backfill'
 import { backfillAssistantActivity } from './assistant-activity-backfill'
 import { backfillAssistantConversationKinds } from './assistant-conversation-kind-backfill'
 import { assertMigrationsMatchBuild } from './migration-build-manifest'
+import { backfillStoredText } from './stored-text-backfill'
+
+const rewriteStoredText = async (connection: postgres.ReservedSql) => {
+  await backfillStoredText(connection)
+}
 
 const CREATE_CONCURRENT_INDEX =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+"([^"]+)"\s+ON\s+(?:ONLY\s+)?(?:(?:"([^"]+)"\.)?)"([^"]+)"/i
@@ -472,7 +477,10 @@ export async function applyMigrations(
                         // column exist; the first activity index follows them in the generated SQL.
                         /CREATE INDEX "idx_assistant_tasks_conversation_updated"/.test(statement)
                         ? backfillAssistantActivity
-                        : undefined
+                        : // 0196 is only this rewrite; its statement is the marker it runs before.
+                          /AS "0196_ficus_stored_text"/.test(statement)
+                          ? rewriteStoredText
+                          : undefined
           if (backfill) {
             await flush()
             await backfill(connection)

@@ -374,10 +374,12 @@ describe('intents table adoption', () => {
       await connection<{ name: string }[]>`SELECT tablename AS name FROM pg_tables WHERE schemaname = ${schema}
         AND tablename LIKE '%online_migration_intents' ORDER BY tablename`
     ).map((row) => row.name)
-  const intents = (connection: import('postgres').ReservedSql, schema: string) =>
-    connection.unsafe<{ created_at: string; hash: string; index_name: string; started_at: string }[]>(
-      `SELECT created_at::text, hash, index_name, started_at::text FROM "${schema}"."${INTENTS}" ORDER BY created_at`
-    )
+  const intents = async (connection: import('postgres').ReservedSql, schema: string) =>
+    (
+      await connection.unsafe<{ created_at: string; hash: string; index_name: string; started_at: string }[]>(
+        `SELECT created_at::text, hash, index_name, extract(epoch FROM started_at)::bigint::text AS started_at FROM "${schema}"."${INTENTS}" ORDER BY created_at`
+      )
+    ).map((row) => ({ ...row }))
   const constraints = async (connection: import('postgres').ReservedSql, schema: string) =>
     (
       await connection<{ name: string }[]>`SELECT conname AS name FROM pg_constraint
@@ -406,7 +408,7 @@ describe('intents table adoption', () => {
       expect(await tables(connection, schema)).toEqual([INTENTS])
       expectFicusConstraints(await constraints(connection, schema))
       expect(await intents(connection, schema)).toEqual([
-        { created_at: '10', hash: 'crashed-build', index_name: 'idx_10', started_at: '2026-01-02 03:04:05+00' },
+        { created_at: '10', hash: 'crashed-build', index_name: 'idx_10', started_at: '1767323045' },
       ])
     })
   })
