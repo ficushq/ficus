@@ -5,7 +5,7 @@ import { permissionMatches, type DeliveryMode } from '@ficus/shared'
 import { chatQueries } from './queries'
 import { Composer } from './Composer'
 import { QuestionCard } from './QuestionCard'
-import { Transcript } from './Transcript'
+import { Transcript, type TranscriptProps } from './Transcript'
 import { sendLetter } from '../farm/letters'
 
 const NEAR_BOTTOM_PX = 80
@@ -33,6 +33,8 @@ export interface ConversationViewProps {
   afterConversation?: ReactNode
   /** Messages from before this agent (an Assistant conversation's earlier sessions), drawn as the top of the log. */
   beforeConversation?: ReactNode
+  /** Drawn under each of the agent's replies. */
+  renderReplyFooter?: TranscriptProps['renderReplyFooter']
   autoFocus?: boolean
 }
 
@@ -50,6 +52,7 @@ export function ConversationView({
   composerLabel = 'Message',
   afterConversation,
   beforeConversation,
+  renderReplyFooter,
   autoFocus = true,
 }: ConversationViewProps) {
   const client = useConversationClient()
@@ -174,6 +177,7 @@ export function ConversationView({
             hideInboxMessages={hideInboxMessages}
             workingLabel={workingLabel}
             onRetry={conv.retrySend}
+            renderReplyFooter={renderReplyFooter}
           />
         </div>
         {conv.compactionState && (

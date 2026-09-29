@@ -5,7 +5,7 @@ import { MarkdownContent } from './MarkdownContent'
 
 /**
  * The body of one task update: task label, reported status, sender and time, then the subject and
- * message. Shared by the Updates section and the task updates under an Assistant summary; the
+ * message. Shown inline under the Assistant reply that covers it (AssistantSummarySources); the
  * caller owns the wrapper (list item, read state, observers) and any trailing `action`.
  */
 export function AssistantUpdateCard({

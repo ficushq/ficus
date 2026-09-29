@@ -24,7 +24,7 @@ export interface CommandResult {
   id: string
   label: string
   detail: string
-  kind: 'Squad' | 'Work stream' | 'Conversation' | 'Needs you' | 'Page' | 'Setting' | 'Update'
+  kind: 'Squad' | 'Work stream' | 'Conversation' | 'Needs you' | 'Page' | 'Setting'
   destination?: CommandDestination | AssistantConversationDestination
   path?: string
   keywords?: string

@@ -4,7 +4,7 @@ import { useAgentConversation, useConversationClient } from '@ficus/client-react
 import { AgentPendingQuestions } from '../actions/AgentQuestions'
 import { agentLabel } from '../farm/agentLabels'
 import { ChatShell } from './ChatShell'
-import { ConversationView, useCanSendChat } from './ConversationView'
+import { ConversationView, useCanSendChat, type ConversationViewProps } from './ConversationView'
 import { chatQueries } from './queries'
 
 export interface AgentConversationProps {
@@ -14,6 +14,7 @@ export interface AgentConversationProps {
   draftKey?: string
   afterConversation?: ReactNode
   beforeConversation?: ReactNode
+  renderReplyFooter?: ConversationViewProps['renderReplyFooter']
   /** What to call it before it has loaded (e.g. the chat window's title). */
   agentName?: string
 }
@@ -26,6 +27,7 @@ export function AgentConversation({
   draftKey,
   afterConversation,
   beforeConversation,
+  renderReplyFooter,
   agentName,
 }: AgentConversationProps) {
   const client = useConversationClient()
@@ -52,6 +54,7 @@ export function AgentConversation({
         </>
       }
       beforeConversation={beforeConversation}
+      renderReplyFooter={renderReplyFooter}
     />
   )
 }

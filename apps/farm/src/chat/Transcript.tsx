@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ChevronIcon } from '../icons'
 import type { RenderItem } from '@ficus/client-react'
@@ -193,10 +193,19 @@ export interface TranscriptProps {
   hideInboxMessages?: boolean
   workingLabel: string
   onRetry: (clientId: string) => void
+  /** Drawn under an agent's reply (e.g. the Assistant's task updates it covers). */
+  renderReplyFooter?: (item: Extract<RenderItem, { kind: 'persisted' }>) => ReactNode
 }
 
 /** The conversation rows, one per RenderItem, in the order combine() produced. */
-export function Transcript({ items, viewingUserId, hideInboxMessages, workingLabel, onRetry }: TranscriptProps) {
+export function Transcript({
+  items,
+  viewingUserId,
+  hideInboxMessages,
+  workingLabel,
+  onRetry,
+  renderReplyFooter,
+}: TranscriptProps) {
   let previousSender: string | undefined
   return (
     <>
@@ -226,6 +235,7 @@ export function Transcript({ items, viewingUserId, hideInboxMessages, workingLab
             return (
               <div key={item.id} className="g-chat-msg g-chat-agent">
                 {item.blocks.length > 0 ? <MessageBlocks blocks={item.blocks} /> : <Markdown>{m.content}</Markdown>}
+                {renderReplyFooter?.(item)}
               </div>
             )
           }

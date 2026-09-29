@@ -126,7 +126,8 @@ export function AssistantCommandCenter({
     actions: actions.data ?? [],
     allowedSettings,
   }
-  // Durable Assistant activity leads the root landing list; it never queries while a squad is scoped.
+  // Assistant chats with new task updates lead the root landing list, as chats: opening one shows its
+  // updates inline and reads them. It never queries while a squad is scoped.
   const activity = useAssistantActivity({ enabled: enabled && !squadScope })
   const updateRows: CommandResult[] =
     !entry && !query.trim()
@@ -136,10 +137,15 @@ export function AssistantCommandCenter({
           .slice(0, 5)
           .map((conversation) => ({
             id: `update:${conversation.id}`,
-            kind: 'Update' as const,
+            kind: 'Conversation' as const,
             label: conversation.title,
-            detail: conversation.latestUpdate?.preview ?? summarizeAssistantTasks(conversation),
-            summary: conversation.latestUpdate ? summarizeAssistantTasks(conversation) : undefined,
+            detail: [
+              `${conversation.unreadUpdates} new update${conversation.unreadUpdates === 1 ? '' : 's'}`,
+              conversation.latestUpdate?.preview,
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            summary: summarizeAssistantTasks(conversation) || undefined,
             unread: conversation.unreadUpdates > 0,
             timestamp: conversation.latestUpdate?.createdAt ?? conversation.updatedAt,
             destination: { kind: 'assistant' as const, id: conversation.id, label: 'Assistant' },
@@ -368,16 +374,6 @@ export function AssistantCommandCenter({
           <div id="command-center-results" role="listbox" aria-label="Search results">
             {visible.map((result, i) => (
               <Fragment key={result.id}>
-                {i === 0 && result.kind === 'Update' && (
-                  <div role="presentation" className="px-3 pt-2 pb-1 text-[11px] font-medium text-muted">
-                    Updates
-                  </div>
-                )}
-                {i > 0 && visible[i - 1].kind === 'Update' && result.kind !== 'Update' && (
-                  <div role="presentation" className="px-3 pt-3 pb-1 text-[11px] font-medium text-muted">
-                    Recent
-                  </div>
-                )}
                 <button
                   id={`command-result-${i}`}
                   data-result-index={i}
@@ -392,13 +388,10 @@ export function AssistantCommandCenter({
                   {result.status && result.status !== 'idle' && (
                     <AgentActivityDot status={result.status} className="shrink-0" />
                   )}
-                  {result.kind === 'Update' && (
+                  {result.unread && (
                     <span
-                      aria-label={result.unread ? 'Unread updates' : undefined}
-                      className={clsx(
-                        'inline-block h-2 w-2 shrink-0 rounded-full',
-                        result.unread ? 'bg-accent' : 'bg-th-border'
-                      )}
+                      aria-label="Unread updates"
+                      className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent"
                     />
                   )}
                   <span className="min-w-0 flex-1">

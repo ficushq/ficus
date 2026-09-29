@@ -678,12 +678,14 @@ test('typing stays synchronous while URL updates are pending and external query 
   }
 })
 
-test('root Updates rows lead the landing list, take arrow keys and Enter, and disappear while searching', async () => {
+test('Assistant chats with new updates lead the landing list as chats, take arrow keys and Enter, and disappear while searching', async () => {
   const f = await fixture(undefined, [], false, { activity: true })
   try {
     const rows = () => [...f.container.querySelectorAll<HTMLButtonElement>('[role="option"]')]
-    expect(f.container.textContent).toContain('Updates')
+    // A chat like any other (no separate Updates group), saying how many updates are new.
+    expect(f.container.querySelector('[role="presentation"]')).toBeNull()
     expect(rows()[0].textContent).toContain('Hosting comparison')
+    expect(rows()[0].textContent).toMatch(/\d+ new updates?/)
     expect(rows()[0].textContent).toContain('Which region should the deployment use?')
     expect(rows()[0].textContent).toContain('1 task needs your input')
     expect(rows()[0].querySelector('[aria-label="Unread updates"]')).not.toBeNull()
@@ -705,10 +707,9 @@ test('root Updates rows lead the landing list, take arrow keys and Enter, and di
     })
     expect(f.opened).toEqual([{ kind: 'assistant', id: activityConversationId, label: 'Assistant' }])
     expect(f.chats).not.toHaveBeenCalled()
-    // Searching hides the Updates section; clearing the query restores it with the same selection model.
+    // Searching hides them; clearing the query restores them with the same selection model.
     await f.type(input, 'Fix')
     expect(f.container.textContent).not.toContain('Hosting comparison')
-    expect(f.container.textContent).not.toContain('Updates')
     await f.type(input, '')
     expect(rows()[0].textContent).toContain('Hosting comparison')
   } finally {
@@ -716,11 +717,11 @@ test('root Updates rows lead the landing list, take arrow keys and Enter, and di
   }
 })
 
-test('conversations with only quiet unfinished tasks stay off the root Updates list', async () => {
+test('conversations with only quiet unfinished tasks stay off the top of the landing list', async () => {
   const f = await fixture(undefined, [], false, { activity: 'quiet' })
   try {
     expect(f.container.textContent).not.toContain('Hosting comparison')
-    expect(f.container.textContent).not.toContain('Updates')
+    expect(f.container.textContent).not.toContain('new update')
   } finally {
     await f.cleanup()
   }
