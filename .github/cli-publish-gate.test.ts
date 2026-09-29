@@ -110,9 +110,9 @@ describe('CLI publish gate', () => {
 
   test('the CLI manifest and installer URLs point at the live control plane, not a redirecting host', () => {
     const run = String(steps[indexOfStep('Collect release assets')]?.run ?? '')
-    expect(run).not.toContain('ficus.sh')
+    expect(run).not.toContain('hiretau.ai')
     expect(run).toContain('"baseUrl": "https://ficus.sh/cli"')
-    expect(JSON.stringify(workflow)).not.toContain('ficus.sh')
+    expect(JSON.stringify(workflow)).not.toContain('hiretau.ai')
   })
 
   // The host's publisher (Platform's CLI-publish unit) reads manifest.json's
