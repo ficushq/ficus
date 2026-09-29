@@ -42,15 +42,30 @@ function localDeploymentDir(sandboxId: string, localDeploymentId: string): strin
  */
 const TIMESTAMP = `date -u '+%Y-%m-%dT%H:%M:%SZ'`
 
-const LAUNCHER_SCRIPT = `#!/usr/bin/env bash
+/**
+ * The PATH the start command ran with, saved beside run.sh. A tmux session does
+ * not inherit its caller's environment: it gets the environment the box's one
+ * tmux server started with, which is whichever process (another app, a monitor,
+ * an agent) happened to launch it first. An app whose command was a bare `node`
+ * therefore ran fine on one start and failed "node: command not found" on the
+ * next restart. The start command runs through the box's own command runner,
+ * which activates the box toolchain exactly as it does for agent commands, so
+ * the launcher restores that PATH — after the login shell's profile, so the box
+ * toolchain wins — rather than trusting the tmux server's.
+ */
+export const LAUNCH_PATH_FILE = 'launch-path'
+
+export const LAUNCHER_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
 mkdir -p "$FICUS_LOCAL_DEPLOYMENT_DIR/logs"
 ${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/startedAt" || true
+FICUS_LOCAL_DEPLOYMENT_PATH="$(cat "$FICUS_LOCAL_DEPLOYMENT_DIR/${LAUNCH_PATH_FILE}" 2>/dev/null || true)"
+export FICUS_LOCAL_DEPLOYMENT_PATH
 cd "$FICUS_LOCAL_DEPLOYMENT_CWD"
 set +e
 {
   echo "[ficus] starting localDeployment $FICUS_LOCAL_DEPLOYMENT_ID on port $FICUS_LOCAL_DEPLOYMENT_PORT"
-  bash -lc "$FICUS_LOCAL_DEPLOYMENT_COMMAND"
+  bash -lc '[ -n "$FICUS_LOCAL_DEPLOYMENT_PATH" ] && export PATH="$FICUS_LOCAL_DEPLOYMENT_PATH\${PATH:+:$PATH}"; unset FICUS_LOCAL_DEPLOYMENT_PATH; eval "$FICUS_LOCAL_DEPLOYMENT_COMMAND"'
 } 2>&1 | tee -a "$FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log"
 status=\${PIPESTATUS[0]}
 set -e
@@ -106,6 +121,7 @@ export class LocalDeploymentProcessSupervisor {
       `mkdir -p ${dir}/logs`,
       `cat > ${script} <<'EOF'\n${LAUNCHER_SCRIPT}EOF`,
       `chmod +x ${script}`,
+      `printf '%s\\n' "$PATH" > ${dir}/${LAUNCH_PATH_FILE}`,
       `tmux kill-session -t ${shellQuote(processId)} 2>/dev/null || true`,
       `for _ in {1..20}; do tmux has-session -t ${shellQuote(processId)} 2>/dev/null || break; sleep 0.1; done`,
       `tmux new-session -d -s ${shellQuote(processId)} ${shellQuote(launchCommand)}`,
