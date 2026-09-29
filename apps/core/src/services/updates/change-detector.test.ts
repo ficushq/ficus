@@ -20,6 +20,11 @@ describe('detectUpdateTasks', () => {
     expect(detectUpdateTasks(['apps/web/src/App.tsx'], K3D_PM2)).toEqual(['web'])
   })
 
+  it('rebuilds the web UI (with the farm) for farm and brand changes', () => {
+    expect(detectUpdateTasks(['apps/farm/src/farm/FarmScreen.tsx'], K3D_PM2)).toEqual(['web'])
+    expect(detectUpdateTasks(['brand/ficus-mark.svg'], K3D_PM2)).toEqual(['web'])
+  })
+
   it('runs install before dependent builds for lockfile changes', () => {
     expect(detectUpdateTasks(['bun.lock'], K3D_PM2)).toEqual(['install', 'cli', 'sandbox', 'core', 'web'])
   })

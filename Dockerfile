@@ -54,6 +54,8 @@ COPY external/ external/
 COPY config/ config/
 COPY docs/ docs/
 COPY scripts/ scripts/
+# Brand sources: the farm (built with the web UI) imports the Ficus mark from brand/.
+COPY brand/ brand/
 COPY tsconfig.json ./
 
 # Clone git submodules (COPY only copies empty dirs for submodules).

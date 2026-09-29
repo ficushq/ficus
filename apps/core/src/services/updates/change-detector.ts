@@ -47,8 +47,10 @@ const TASK_DEFINITIONS: readonly TaskDefinition[] = [
   },
   {
     task: 'web',
-    // build:web also builds the farm into apps/web/dist/farm.
-    paths: combinePaths(dependencyPaths(), sharedPaths(), clientPaths(), { prefixes: ['apps/web/', 'apps/farm/'] }),
+    // build:web also builds the farm into apps/web/dist/farm, which bundles the Ficus mark from brand/.
+    paths: combinePaths(dependencyPaths(), sharedPaths(), clientPaths(), {
+      prefixes: ['apps/web/', 'apps/farm/', 'brand/'],
+    }),
     commands: [['bun', 'run', 'build:web']],
   },
 ] as const
