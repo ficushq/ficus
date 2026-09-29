@@ -8,6 +8,8 @@ import { useRealtimeEnabled } from '../hooks/useVoiceEnabled'
 import { usePermissions } from '../hooks/usePermissions'
 import { useStableRef } from '../hooks/useStableRef'
 import { useAssistantPosition } from '../hooks/useAssistantPosition'
+import { assistantResizeHandle, useAssistantSize } from '../hooks/useAssistantSize'
+import { useKeepAssistantAcrossPages } from '../hooks/useKeepAssistantAcrossPages'
 import { assistantQueries } from '../queryOptions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { formatAssistantUpdateTime, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
@@ -18,7 +20,7 @@ import type { AssistantConversationLink } from '../lib/assistantConversationLink
 import type { CommandDestination } from '../lib/commandCenterSearch'
 import { AssistantConversationView, type AssistantViewControls } from './AssistantConversationView'
 import { AssistantPositionControl } from './AssistantPositionControl'
-import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon } from './icons'
+import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon, ResizeCornerIcon } from './icons'
 import { OPEN_ASSISTANT_EVENT, TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
 
 interface UnifiedAssistantProps {
@@ -44,6 +46,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   ])
   const location = useLocation()
   const navigate = useNavigate()
+  useKeepAssistantAcrossPages()
   const params = new URLSearchParams(location.search)
   const navigation = useAssistantNavigation()
   const destination = navigation.entries.at(-1)
@@ -84,6 +87,8 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
     small ? 'compact' : viewing || stack.length > 0 ? 'conversation' : 'search'
   )
   const positionControl = <AssistantPositionControl corner={corner} onChange={setCorner} />
+  const { size, resizing, handle: resizeHandle } = useAssistantSize(panel, corner)
+  const resizeCorner = assistantResizeHandle(corner).corner
   const recent = useQuery({ ...assistantQueries.list(search, offset), enabled: open && can('chat:send') })
   // Activity decorates saved rows with unread state and task summaries; the badge query already runs app-wide.
   const activity = useAssistantActivity({ enabled: open })
@@ -216,7 +221,12 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       hidden={!open && !live}
       {...drag}
       data-assistant-drag-handle={small || undefined}
-      style={{ ...style, display: !open && !live ? 'none' : undefined }}
+      style={{
+        ...style,
+        ...(!small && size ? { width: size.width, height: size.height } : {}),
+        ...(resizing ? { transition: 'none' } : {}),
+        display: !open && !live ? 'none' : undefined,
+      }}
       className={clsx(
         'ficus-assistant-panel fixed z-[60] ficus-glass rounded-2xl overflow-hidden flex flex-col transition-[left,top] duration-200 motion-reduce:transition-none max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
         small ? 'w-64 touch-none cursor-grab' : 'w-[42rem]',
@@ -437,6 +447,30 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
           positionControl={positionControl}
         />
       </div>
+      {!small && (
+        <button
+          type="button"
+          aria-label="Resize assistant"
+          title="Drag to resize · double-click to reset"
+          data-resize-corner={resizeCorner}
+          {...resizeHandle}
+          className={clsx(
+            'absolute z-10 flex h-5 w-5 touch-none items-center justify-center rounded text-muted opacity-60 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
+            resizeCorner.startsWith('top') ? 'top-0.5' : 'bottom-0.5',
+            resizeCorner.endsWith('left') ? 'left-0.5' : 'right-0.5',
+            resizeCorner === 'bottom-right' || resizeCorner === 'top-left' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'
+          )}
+        >
+          <ResizeCornerIcon
+            className={clsx(
+              'h-3.5 w-3.5',
+              { 'bottom-right': '', 'bottom-left': 'rotate-90', 'top-left': 'rotate-180', 'top-right': '-rotate-90' }[
+                resizeCorner
+              ]
+            )}
+          />
+        </button>
+      )}
     </div>
   )
 }
