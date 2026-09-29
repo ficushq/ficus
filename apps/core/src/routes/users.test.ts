@@ -12,8 +12,8 @@ import {
   cleanupTestRbac,
 } from '../test-utils'
 import { db } from '../db'
-import { emailVerifications, users } from '../db/schema'
-import { eq, like } from 'drizzle-orm'
+import { emailVerifications, roleAssignments, squads, users } from '../db/schema'
+import { eq, inArray, like } from 'drizzle-orm'
 import type { TestUser } from '../test-utils/rbac'
 import * as onboardingEvents from '../services/onboarding/events'
 import { eventEmitter } from '../lib/infra/event-emitter'
@@ -327,6 +327,91 @@ describe('GET /api/users/:id/roles', () => {
     expect(body.length).toBeGreaterThanOrEqual(1)
     expect(body[0]).toHaveProperty('roleName')
     expect(body[0]).toHaveProperty('roleSlug')
+  })
+})
+
+describe('GET /api/users/:id/permissions', () => {
+  it("resolves another user's effective permissions with the same squad precedence route guards use", async () => {
+    const pfx = `${prefix}-effective`
+    const target = await createTestUser({ prefix: pfx })
+    const baseline = await createTestRole({ permissions: ['chat:read'], prefix: `${pfx}-sys` })
+    const squadDefault = await createTestRole({ permissions: ['deployments:read'], prefix: `${pfx}-default` })
+    const override = await createTestRole({ permissions: ['workstreams:read'], prefix: `${pfx}-override` })
+    const [overridden, defaulted] = await db
+      .insert(squads)
+      .values([
+        { name: `${pfx}-overridden`, purpose: 'Test' },
+        { name: `${pfx}-defaulted`, purpose: 'Test' },
+      ])
+      .returning()
+    await assignRole({ userId: target.id, roleId: baseline.id, scope: 'system' })
+    await assignRole({ userId: target.id, roleId: squadDefault.id, scope: 'squad_default' })
+    await assignRole({ userId: target.id, roleId: override.id, scope: 'squad', squadId: overridden.id })
+    const read = async (squadId?: string) => {
+      const query = squadId ? `?squadId=${squadId}` : ''
+      const res = await app.request(`/api/users/${target.id}/permissions${query}`, {
+        headers: authHeaders(admin.token),
+      })
+      expect(res.status).toBe(200)
+      return res.json()
+    }
+    try {
+      const system = await read()
+      expect(system).toMatchObject({ userId: target.id, email: target.email, disabled: false, squad: null })
+      expect(system.permissions).toEqual(['chat:read'])
+
+      // No roles on this squad: the squad_default tier applies.
+      const byDefault = await read(defaulted.id)
+      expect(byDefault.squad).toEqual({ id: defaulted.id, name: defaulted.name })
+      expect(byDefault.permissions.sort()).toEqual(['chat:read', 'deployments:read'])
+
+      // A role on the squad REPLACES the default tier, and a short id names the same squad.
+      const byOverride = await read(overridden.id.slice(0, 8))
+      expect(byOverride.squad.id).toBe(overridden.id)
+      expect(byOverride.permissions.sort()).toEqual(['chat:read', 'workstreams:read'])
+      expect(byOverride.roles.map((role: { scope: string }) => role.scope).sort()).toEqual(['squad', 'system'])
+    } finally {
+      await db.delete(roleAssignments).where(eq(roleAssignments.subjectId, target.id))
+      await db.delete(squads).where(inArray(squads.id, [overridden.id, defaulted.id]))
+      for (const suffix of ['sys', 'default', 'override']) await cleanupTestRbac(`${pfx}-${suffix}`)
+      await cleanupTestRbac(pfx)
+    }
+  })
+
+  it('reports a disabled user as disabled', async () => {
+    const pfx = `${prefix}-effective-disabled`
+    const target = await createTestUser({ prefix: pfx })
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, target.id))
+    try {
+      const res = await app.request(`/api/users/${target.id}/permissions`, { headers: authHeaders(admin.token) })
+      expect((await res.json()).disabled).toBe(true)
+    } finally {
+      await cleanupTestRbac(pfx)
+    }
+  })
+
+  it('returns 404 for an unknown user or squad', async () => {
+    const missingUser = await app.request('/api/users/00000000-0000-0000-0000-000000000000/permissions', {
+      headers: authHeaders(admin.token),
+    })
+    expect(missingUser.status).toBe(404)
+    const missingSquad = await app.request(
+      `/api/users/${admin.id}/permissions?squadId=00000000-0000-0000-0000-000000000000`,
+      { headers: authHeaders(admin.token) }
+    )
+    expect(missingSquad.status).toBe(404)
+    expect((await missingSquad.json()).error).toBe('Squad not found')
+  })
+
+  it('requires users:read', async () => {
+    const pfx = `${prefix}-effective-denied`
+    const caller = await createTestUser({ prefix: pfx })
+    try {
+      const res = await app.request(`/api/users/${admin.id}/permissions`, { headers: authHeaders(caller.token) })
+      expect(res.status).toBe(403)
+    } finally {
+      await cleanupTestRbac(pfx)
+    }
   })
 })
 

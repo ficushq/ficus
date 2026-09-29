@@ -128,7 +128,10 @@ export function createAssistantTools(agentId: string, executionId: string, conve
   const taskTools = (['continue', 'retry', 'cancel'] as const).map((operation) =>
     tool(
       `${operation}_task`,
-      `${operation} exactly one task's current request. Does not stop unrelated work. Read list_tasks for the current request ID.`,
+      `${operation} exactly one task's current request. Does not stop unrelated work. Read list_tasks for the current request ID.` +
+        (operation === 'cancel'
+          ? ''
+          : ' The task stays on its existing delegate; to move work to another delegate, cancel_task it and delegate_task again.'),
       Type.Object({
         taskId: uuid,
         expectedRequestId: uuid,
@@ -147,7 +150,7 @@ export function createAssistantTools(agentId: string, executionId: string, conve
   return [
     tool(
       'delegate_task',
-      'Start an independent task. General workers use your current permissions; squad consultants require consultant creation access. Omit squadId for general or read-only work. Steer is default; independent scopes may run concurrently.',
+      'Start an independent task. Omit squadId for your general worker, your main delegate: it uses your current permissions and handles instance-wide work (users, roles, permissions and access, settings, work across squads) even when a squad is named. Pass squadId only when the work needs that squad’s expertise, code, or workspace; squad delegates are squad-scoped and cannot read accounts or roles, and squad consultants require consultant creation access. Steer is default; independent scopes may run concurrently.',
       Type.Object({
         request,
         squadId: Type.Optional(uuid),

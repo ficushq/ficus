@@ -7,7 +7,15 @@ import { User } from '../entities/User'
 import { Role, isUserAssignable } from '../entities/Role'
 import { requirePermission } from '../middleware/require-permission'
 import { wsManager } from '../services/ws/manager'
-import { auditActor, resolvePermissions, permissionMatches, type Identity } from '../services/rbac'
+import {
+  auditActor,
+  resolvePermissions,
+  resolveRoleSummaries,
+  permissionMatches,
+  type Identity,
+} from '../services/rbac'
+import { Squad } from '../entities/Squad'
+import { AmbiguousPrefixError } from '../db/prefix-match'
 import {
   sendInviteEmail,
   issueEmailChallenge,
@@ -479,6 +487,40 @@ usersRouter.get('/:id/roles', requirePermission('users:read'), async (c) => {
     .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.subjectId, userId)))
 
   return c.json(assignments)
+})
+
+/**
+ * What a user can actually do, resolved by the same rule every route guard applies — so an admin
+ * (or an agent acting with an admin's authority) can answer "can this person see X in that squad?"
+ * without re-deriving role precedence by hand. With `squadId`, the squad tier is included: the
+ * user's roles on that squad if any, otherwise their `squad_default` roles. Without it, system
+ * scope only.
+ */
+usersRouter.get('/:id/permissions', requirePermission('users:read'), async (c) => {
+  const user = await User.findById(c.req.param('id'))
+  if (!user) return c.json({ error: 'User not found' }, 404)
+  const squadParam = c.req.query('squadId')
+  let squad: Squad | null = null
+  if (squadParam) {
+    squad = await Squad.find(squadParam).catch((error) => {
+      if (error instanceof AmbiguousPrefixError) return null
+      throw error
+    })
+    if (!squad) return c.json({ error: 'Squad not found' }, 404)
+  }
+  const identity = { type: 'user' as const, userId: user.id }
+  const [permissions, roleSummaries] = await Promise.all([
+    resolvePermissions(identity, squad?.id),
+    resolveRoleSummaries(identity, squad?.id),
+  ])
+  return c.json({
+    userId: user.id,
+    email: user.email,
+    disabled: user.disabledAt !== null,
+    squad: squad ? { id: squad.id, name: squad.name } : null,
+    roles: roleSummaries,
+    permissions,
+  })
 })
 
 usersRouter.post('/:id/roles', requirePermission('users:update'), async (c) => {
