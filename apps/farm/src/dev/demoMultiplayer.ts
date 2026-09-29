@@ -132,7 +132,7 @@ export function demoMultiplayer(): DemoMultiplayer {
 
   const chat: FarmChatApi = {
     people: async () => [{ id: ME.userId, name: ME.name }, ROSA, SAM],
-    rooms: async () => ({ rooms: rooms.map((room) => ({ ...room })), canManageRooms: true }),
+    rooms: async () => ({ rooms: rooms.map((room) => ({ ...room })), canChat: true, canManageRooms: true }),
     createRoom: async ({ name, description }) => {
       const room: FarmChatRoom = {
         id: id('room'),
@@ -197,6 +197,13 @@ export function demoMultiplayer(): DemoMultiplayer {
       return changed(message)
     },
     react: async (roomId, messageId, emoji, on) => react(find(roomId, messageId)!, ME.userId, emoji, on),
+    deleteMessage: async (roomId, messageId) => {
+      messages.set(
+        roomId,
+        (messages.get(roomId) ?? []).filter((m) => m.id !== messageId)
+      )
+      emit({ event: 'farmChat.messageDeleted', data: { roomId, messageId } })
+    },
     markRead: async (roomId) => {
       const room = rooms.find((r) => r.id === roomId)
       if (room) room.unread = 0

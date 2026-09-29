@@ -37,6 +37,7 @@ export async function fakeMultiplayer(overrides: Partial<Multiplayer> = {}): Pro
     setNotify: mock(async () => true),
     openRoom: null,
     setViewing: mock(() => {}),
+    canChat: true,
     ...overrides,
   }
 }

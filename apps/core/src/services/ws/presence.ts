@@ -79,13 +79,25 @@ function sameFocus(a: PresenceFocus | null, b: PresenceFocus | null): boolean {
 const PROFILE_TTL_MS = 60_000
 const profiles = new Map<string, { profile: PresenceProfile; expires: number }>()
 
-/** What others see of someone besides their focus: their name and how they chose to look. */
+/**
+ * What others see of someone besides their focus: their name (display name,
+ * else email, which only viewers who may see emails get; see personName) and
+ * how they chose to look.
+ */
 export interface PresenceProfile {
-  name: string
+  displayName: string | null
+  email: string | null
   look: FarmLook | null
 }
 
-/** Someone's name (display name, else email) and chosen look, cached briefly. */
+/** Someone's name as a given viewer may see it (their email only with users:read). */
+export function personName(profile: PresenceProfile, showEmail: boolean): string {
+  return profile.email === null
+    ? profile.displayName?.trim() || 'Someone'
+    : farmPersonName({ displayName: profile.displayName, email: profile.email }, { showEmail })
+}
+
+/** Someone's name and chosen look, cached briefly. */
 export async function presenceProfile(userId: string): Promise<PresenceProfile> {
   const cached = profiles.get(userId)
   if (cached && cached.expires > Date.now()) return cached.profile
@@ -94,8 +106,9 @@ export async function presenceProfile(userId: string): Promise<PresenceProfile> 
     .from(users)
     .leftJoin(farmPreferences, eq(farmPreferences.userId, users.id))
     .where(eq(users.id, userId))
-  const profile = {
-    name: user ? farmPersonName(user) : 'Someone',
+  const profile: PresenceProfile = {
+    displayName: user?.displayName ?? null,
+    email: user?.email ?? null,
     look: readFarmSettings(user?.settings).look ?? null,
   }
   profiles.set(userId, { profile, expires: Date.now() + PROFILE_TTL_MS })

@@ -81,6 +81,8 @@ export interface Multiplayer {
   typingIn: (roomId: string) => string[]
   /** Say you're typing in a room (sent at most every few seconds). */
   sendTyping: (roomId: string) => void
+  /** May post, react, DM and appear on the farm (farm:chat); without it the farm is look-only. */
+  canChat: boolean
   /** Browser notifications for DMs and @mentions while the farm is in the background (this browser's choice). */
   notify: 'on' | 'off' | 'unsupported'
   /** Turns them on (asking the browser's permission) or off; false if the browser won't allow them. */
@@ -158,6 +160,7 @@ export type MultiplayerEvent =
   | { event: 'presence.left'; data: { userId: string } }
   | { event: 'farmChat.messageCreated'; data: { message: FarmChatMessage } }
   | { event: 'farmChat.messageUpdated'; data: { message: FarmChatMessage } }
+  | { event: 'farmChat.messageDeleted'; data: { roomId: string; messageId: string } }
   | { event: 'farmChat.roomsChanged'; data: Record<string, never> }
   | { event: 'farmChat.typing'; data: { roomId: string; userId: string } }
   | { event: 'presence.waved'; data: { fromUserId: string; toUserId: string } }
@@ -198,7 +201,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
   const me = useMemo(() => {
     if (demo) return demo.me
     const user = session.data
-    return user ? { userId: user.id, name: farmPersonName(user) } : null
+    return user ? { userId: user.id, name: farmPersonName(user, { showEmail: true }) } : null
   }, [demo, session.data])
   const meRef = useStableRef(me)
 
@@ -227,10 +230,14 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     writeEnabled(accountEnabled)
   }, [accountEnabled])
 
+  // Set once the rooms (and with them what you may do) are known; see below.
+  const canChatRef = useRef(true)
+
   /** Tells Core where you are, if you're on the farm (`on` overrides the setting while it's changing). */
   const announce = useCallback(
     (on = enabledRef.current) => {
-      if (!on) return
+      // Someone who may only look (no farm:chat) never appears on the farm.
+      if (!on || !canChatRef.current) return
       const json = JSON.stringify(focusRef.current)
       if (socket.current?.send?.({ type: 'presence', focus: focusRef.current })) sentFocus.current = json
     },
@@ -309,6 +316,13 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
           showEmote(entry.data.fromUserId, '👋')
           showEmote(entry.data.toUserId, '👋')
           return
+        case 'farmChat.messageDeleted': {
+          const { roomId, messageId } = entry.data
+          queryClient.setQueryData<FarmChatMessagePage>(chatKeys.messages(roomId), (page) =>
+            page ? { ...page, messages: page.messages.filter((m) => m.id !== messageId) } : page
+          )
+          return
+        }
         case 'farmChat.messageUpdated': {
           const { message } = entry.data
           // Someone just reacted: their emoji floats over them (reactions the cache already has aren't news).
@@ -405,6 +419,9 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     enabled: signedIn || demo !== null,
     staleTime: 60_000,
   })
+  // An older Core doesn't say; it let everyone talk.
+  const canChat = rooms.data?.canChat !== false
+  canChatRef.current = canChat
   useEffect(() => {
     if (!signedIn) return
     let disposed = false
@@ -562,6 +579,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       setNotify,
       openRoom,
       setViewing,
+      canChat,
     }),
     [
       enabled,
@@ -584,6 +602,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       setNotify,
       openRoom,
       setViewing,
+      canChat,
     ]
   )
   return <MultiplayerContext.Provider value={value}>{children}</MultiplayerContext.Provider>

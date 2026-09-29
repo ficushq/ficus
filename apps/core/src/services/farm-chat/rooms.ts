@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import {
   farmPersonName,
   type FarmChatMessage,
@@ -34,12 +34,15 @@ export async function ensureGeneralRoom(): Promise<RoomRow> {
 }
 
 /** Everyone who can be on the farm: people with an active account, named the farm's way. */
-export async function listPeople(): Promise<FarmPerson[]> {
+/** Everyone on the instance, named for this viewer (emails only if they may see them, users:read). */
+export async function listPeople(showEmail: boolean): Promise<FarmPerson[]> {
   const rows = await db
     .select({ id: users.id, displayName: users.displayName, email: users.email })
     .from(users)
     .where(isNull(users.disabledAt))
-  return rows.map((row) => ({ id: row.id, name: farmPersonName(row) })).sort((a, b) => a.name.localeCompare(b.name))
+  return rows
+    .map((row) => ({ id: row.id, name: farmPersonName(row, { showEmail }) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function canSee(room: RoomRow, userId: string): boolean {
@@ -59,7 +62,7 @@ export function audienceOf(room: RoomRow): string[] | null {
 }
 
 /** The rooms someone sees: general first, then public rooms by name, then their DMs by latest message. */
-export async function listRooms(userId: string): Promise<FarmChatRoom[]> {
+export async function listRooms(userId: string, showEmail: boolean): Promise<FarmChatRoom[]> {
   await ensureGeneralRoom()
   const rows = await db
     .select()
@@ -88,7 +91,7 @@ export async function listRooms(userId: string): Promise<FarmChatRoom[]> {
             .select({ id: users.id, displayName: users.displayName, email: users.email })
             .from(users)
             .where(inArray(users.id, others))
-        ).map((user) => [user.id, farmPersonName(user)])
+        ).map((user) => [user.id, farmPersonName(user, { showEmail })])
       : []
   )
   const rooms = rows.map((room): FarmChatRoom => {
@@ -239,14 +242,26 @@ async function messageIn(roomId: string, messageId: string): Promise<MessageRow>
   return row
 }
 
-/** The latest messages in a room (oldest first), or the page before `before`. */
-export async function listMessages(roomId: string, before: Date | null, limit: number): Promise<FarmChatMessagePage> {
+/**
+ * The latest messages in a room (oldest first), or the page before the message
+ * `beforeId`. The cursor is a message, compared on (created_at, id) in the
+ * database, so paging never skips messages to timestamp precision or ties.
+ */
+export async function listMessages(
+  roomId: string,
+  beforeId: string | null,
+  limit: number
+): Promise<FarmChatMessagePage> {
+  const cursor = beforeId ? await messageIn(roomId, beforeId) : null
   const rows = await db
     .select()
     .from(farmChatMessages)
     .where(
-      before
-        ? and(eq(farmChatMessages.roomId, roomId), lt(farmChatMessages.createdAt, before))
+      cursor
+        ? and(
+            eq(farmChatMessages.roomId, roomId),
+            sql`(${farmChatMessages.createdAt}, ${farmChatMessages.id}) < (select created_at, id from farm_chat_messages where id = ${cursor.id})`
+          )
         : eq(farmChatMessages.roomId, roomId)
     )
     .orderBy(desc(farmChatMessages.createdAt), desc(farmChatMessages.id))
@@ -280,6 +295,27 @@ export async function editMessage(
   return message!
 }
 
+/**
+ * Deletes a message for everyone: its sender may, and so may people who manage
+ * rooms (moderation), except in DMs, which only their two people see.
+ */
+export async function deleteMessage(
+  room: RoomRow,
+  messageId: string,
+  userId: string,
+  canModerate: boolean
+): Promise<void> {
+  const row = await messageIn(room.id, messageId)
+  const moderating = canModerate && room.kind !== 'dm'
+  if (row.senderUserId !== userId && !moderating)
+    throw new FarmChatError('Only the sender (or someone who manages rooms) can delete a message', 403)
+  await db.delete(farmChatMessages).where(eq(farmChatMessages.id, messageId))
+}
+
+/** How many different reactions one person may put on one message, and a message may carry. */
+export const MAX_REACTIONS_PER_PERSON = 10
+export const MAX_REACTIONS_PER_MESSAGE = 30
+
 /** Adds (on) or takes back (off) someone's emoji reaction to a message. */
 export async function reactToMessage(
   roomId: string,
@@ -289,8 +325,23 @@ export async function reactToMessage(
   on: boolean
 ): Promise<FarmChatMessage> {
   const row = await messageIn(roomId, messageId)
-  if (on) await db.insert(farmChatReactions).values({ messageId, userId, emoji }).onConflictDoNothing()
-  else
+  if (on) {
+    const existing = await db
+      .select({ userId: farmChatReactions.userId, emoji: farmChatReactions.emoji })
+      .from(farmChatReactions)
+      .where(eq(farmChatReactions.messageId, messageId))
+    const already = existing.some((r) => r.userId === userId && r.emoji === emoji)
+    if (!already) {
+      if (existing.filter((r) => r.userId === userId).length >= MAX_REACTIONS_PER_PERSON)
+        throw new FarmChatError('That’s as many reactions as you can add to one message', 400)
+      if (
+        new Set(existing.map((r) => r.emoji)).size >= MAX_REACTIONS_PER_MESSAGE &&
+        !existing.some((r) => r.emoji === emoji)
+      )
+        throw new FarmChatError('That message has as many different reactions as it can hold', 400)
+      await db.insert(farmChatReactions).values({ messageId, userId, emoji }).onConflictDoNothing()
+    }
+  } else
     await db
       .delete(farmChatReactions)
       .where(

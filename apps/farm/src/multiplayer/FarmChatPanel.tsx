@@ -21,7 +21,7 @@ import { useMultiplayer } from './MultiplayerProvider'
 /*
  * The farm chat: people talking to each other. Rooms on the left (the general
  * room, public rooms, your DMs), the conversation on the right; on phones one
- * at a time. Managing rooms shows only for people holding chat:manage-rooms.
+ * at a time. Managing rooms shows only for people holding farm:manage-rooms.
  */
 
 const roomTitle = (room: FarmChatRoom) => (room.kind === 'dm' ? room.name : `# ${room.name}`)
@@ -123,7 +123,7 @@ export function FarmChatPanel({
 }
 
 function RoomList({ currentId, onRoom }: { currentId: string | null; onRoom: (roomId: string) => void }) {
-  const { rooms, chat, me } = useMultiplayer()
+  const { rooms, chat, me, canChat } = useMultiplayer()
   const queryClient = useQueryClient()
   const [picking, setPicking] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -229,9 +229,11 @@ function RoomList({ currentId, onRoom }: { currentId: string | null; onRoom: (ro
           </button>
         </div>
       ) : (
-        <button type="button" className="g-button g-farmchat-add" onClick={() => setPicking(true)}>
-          + New message
-        </button>
+        canChat && (
+          <button type="button" className="g-button g-farmchat-add" onClick={() => setPicking(true)}>
+            + New message
+          </button>
+        )
       )}
       {error && <p className="g-farmchat-error">{error}</p>}
     </nav>
@@ -304,7 +306,7 @@ function Conversation({
   insert?: { text: string; at: number }
   onInserted?: () => void
 }) {
-  const { chat, me, rooms, sendTyping, setViewing } = useMultiplayer()
+  const { chat, me, rooms, sendTyping, setViewing, canChat } = useMultiplayer()
   const queryClient = useQueryClient()
   const messages = useQuery({ queryKey: chatKeys.messages(room.id), queryFn: () => chat.messages(room.id) })
   const people = useQuery({ queryKey: chatKeys.people(), queryFn: () => chat.people(), staleTime: 300_000 })
@@ -362,7 +364,7 @@ function Conversation({
   const earlier = async () => {
     const first = list[0]
     if (!first) return
-    const page = await chat.messages(room.id, first.createdAt)
+    const page = await chat.messages(room.id, first.id)
     queryClient.setQueryData<FarmChatMessagePage>(chatKeys.messages(room.id), (current) =>
       current ? { messages: [...page.messages, ...current.messages], hasMore: page.hasMore } : page
     )
@@ -480,7 +482,11 @@ function Conversation({
       </ol>
       {error && <p className="g-farmchat-error">{error}</p>}
       <TypingLine roomId={room.id} names={names} />
+      {!canChat && (
+        <p className="g-farmchat-readonly">You can read farm chat, but not post here (that needs farm:chat).</p>
+      )}
       <form
+        hidden={!canChat}
         className="g-farmchat-composer"
         onSubmit={(e) => {
           e.preventDefault()
@@ -567,7 +573,14 @@ function MessageItem({
   showMeta: boolean
   onError: (error: string | null) => void
 }) {
-  const { chat, me, emote } = useMultiplayer()
+  const { chat, me, emote, rooms, canChat } = useMultiplayer()
+  // Deleting takes a second click (within a few seconds), like dismissing a question.
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  useEffect(() => {
+    if (!confirmDelete) return
+    const timer = window.setTimeout(() => setConfirmDelete(false), 4000)
+    return () => window.clearTimeout(timer)
+  }, [confirmDelete])
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.body)
@@ -597,6 +610,21 @@ function MessageItem({
   const cancel = () => {
     setDraft(message.body)
     setEditing(false)
+  }
+
+  // Your own messages, or (managing rooms) anyone's outside DMs.
+  const canDelete = (mine && canChat) || (!!rooms?.canManageRooms && room.kind !== 'dm')
+  const remove = async () => {
+    if (!confirmDelete) return setConfirmDelete(true)
+    setConfirmDelete(false)
+    try {
+      await chat.deleteMessage(room.id, message.id)
+      queryClient.setQueryData<FarmChatMessagePage>(chatKeys.messages(room.id), (page) =>
+        page ? { ...page, messages: page.messages.filter((m) => m.id !== message.id) } : page
+      )
+    } catch (e) {
+      onError(errorText(e))
+    }
   }
 
   const save = async () => {
@@ -653,16 +681,18 @@ function MessageItem({
             {message.editedAt && <span className="g-farmchat-edited"> (edited)</span>}
           </p>
           <span className="g-farmchat-actions">
-            <button
-              type="button"
-              className="g-farmchat-action"
-              aria-label="React"
-              aria-expanded={picking}
-              onClick={() => setPicking((open) => !open)}
-            >
-              ☺︎
-            </button>
-            {mine && (
+            {canChat && (
+              <button
+                type="button"
+                className="g-farmchat-action"
+                aria-label="React"
+                aria-expanded={picking}
+                onClick={() => setPicking((open) => !open)}
+              >
+                ☺︎
+              </button>
+            )}
+            {mine && canChat && (
               <button
                 type="button"
                 className="g-farmchat-action"
@@ -673,6 +703,17 @@ function MessageItem({
                 }}
               >
                 ✎
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                className={clsx('g-farmchat-action', confirmDelete && 'g-farmchat-action-confirm')}
+                aria-label={confirmDelete ? 'Really delete? Click again' : 'Delete'}
+                title={confirmDelete ? 'Click again to delete it for everyone' : 'Delete for everyone'}
+                onClick={() => void remove()}
+              >
+                {confirmDelete ? '?' : '🗑'}
               </button>
             )}
           </span>
@@ -700,6 +741,7 @@ function MessageItem({
                 aria-pressed={mineToo}
                 aria-label={`${reaction.emoji} ${reaction.userIds.length}: ${who}`}
                 title={who}
+                disabled={!canChat}
                 onClick={() => void react(reaction.emoji)}
               >
                 {reaction.emoji} <b>{reaction.userIds.length}</b>

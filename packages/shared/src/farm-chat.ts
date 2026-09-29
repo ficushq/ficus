@@ -1,7 +1,7 @@
 /**
  * The farm's chat: people talking to each other (not to agents). A general
  * room everyone is always in, public rooms that anyone holding
- * `chat:manage-rooms` can create, rename and delete, and private DMs between
+ * `farm:manage-rooms` can create, rename and delete, and private DMs between
  * two people. Messages are kept for FARM_CHAT_RETENTION_DAYS; their senders
  * can edit them, anyone in the room can react, and typing shows live.
  */
@@ -59,6 +59,8 @@ export interface FarmPerson {
 
 export interface FarmChatRooms {
   rooms: FarmChatRoom[]
+  /** May post, react, DM and appear on the farm (farm:chat); without it, farm chat is read-only. */
+  canChat: boolean
   canManageRooms: boolean
 }
 
@@ -68,9 +70,19 @@ export interface FarmChatMessagePage {
   hasMore: boolean
 }
 
-/** What the farm calls someone: their display name, else their email. */
-export function farmPersonName(user: { displayName?: string | null; email: string }): string {
-  return user.displayName?.trim() || user.email
+/** What the farm calls someone who hasn't set a display name, for people who may not see emails. */
+export const UNNAMED_PERSON = 'Unnamed teammate'
+
+/**
+ * What the farm calls someone: their display name, else their email for a
+ * viewer who may see it (users:read), else UNNAMED_PERSON, so the farm never
+ * shows the user directory's emails to everyone.
+ */
+export function farmPersonName(
+  user: { displayName?: string | null; email: string },
+  { showEmail }: { showEmail: boolean }
+): string {
+  return user.displayName?.trim() || (showEmail ? user.email : UNNAMED_PERSON)
 }
 
 /** One or two letters for someone's badge: from the words of their name, or the start of an email. */

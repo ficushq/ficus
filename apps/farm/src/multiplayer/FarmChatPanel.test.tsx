@@ -73,6 +73,33 @@ describe('FarmChatPanel', () => {
     expect(container.querySelector('.g-farmchat-suggest')).toBeNull()
   })
 
+  it('deletes your own message after a confirming second click', async () => {
+    const { container, composer } = await openGeneral()
+    await send(composer, 'Oops, wrong room')
+    await waitFor(() => expect(container.querySelector('.g-farmchat-mine')).not.toBeNull())
+    const mine = container.querySelector('.g-farmchat-mine')!
+    await click(mine.querySelector('button[aria-label="Delete"]'))
+    expect(container.textContent).toContain('Oops, wrong room')
+    await click(mine.querySelector('button[aria-label^="Really delete"]'))
+    await waitFor(() => expect(container.textContent).not.toContain('Oops, wrong room'))
+  })
+
+  it('is read-only without farm:chat: no composer, reactions, edits or new DMs', async () => {
+    const multiplayer = await fakeMultiplayer({ canChat: false })
+    multiplayer.rooms = { ...multiplayer.rooms!, canChat: false, canManageRooms: false }
+    const view = await renderWith(
+      <FarmChatPanel roomId={null} onRoom={() => {}} onClose={() => {}} narrow={false} />,
+      multiplayer
+    )
+    mounted.push(view.unmount)
+    await waitFor(() => expect(view.container.textContent).toContain('Welcome to the farm, everyone.'))
+    expect(view.container.querySelector<HTMLFormElement>('.g-farmchat-composer')!.hidden).toBe(true)
+    expect(view.container.textContent).toContain('You can read farm chat, but not post here')
+    expect(view.container.querySelector('button[aria-label="React"]')).toBeNull()
+    expect(view.container.querySelector('button[aria-label="Delete"]')).toBeNull()
+    expect(view.container.textContent).not.toContain('+ New message')
+  })
+
   it('turns notifications on from the bell', async () => {
     const { container, multiplayer } = await openGeneral()
     await click(container.querySelector('.g-farmchat-bell'))

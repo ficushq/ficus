@@ -121,7 +121,11 @@ export type TopicEventMap = {
   presence: Extract<keyof EventMap, 'presence.snapshot' | 'presence.updated' | 'presence.left' | 'presence.waved'>
   farmChat: Extract<
     keyof EventMap,
-    'farmChat.messageCreated' | 'farmChat.messageUpdated' | 'farmChat.roomsChanged' | 'farmChat.typing'
+    | 'farmChat.messageCreated'
+    | 'farmChat.messageUpdated'
+    | 'farmChat.messageDeleted'
+    | 'farmChat.roomsChanged'
+    | 'farmChat.typing'
   >
 }
 

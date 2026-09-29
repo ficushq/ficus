@@ -18,6 +18,7 @@ import { agentTopicScope, eventSquadId, topicScope, type TopicScope } from './to
 import {
   PresenceRegistry,
   forgetPresenceProfile,
+  personName,
   presenceProfile,
   type PresenceProfile,
   type PresentPerson,
@@ -41,6 +42,12 @@ interface Client {
   accessCache?: { value: string[] | 'all'; expires: number }
   /** When this connection last said it was typing, per farm chat room (to keep it to one every few seconds). */
   typingAt?: Map<string, number>
+  /** When this connection last said it's typing anywhere (a gap across rooms, too). */
+  typedAt?: number
+  /** Presence announcements allowed right now (a token bucket), and when it was last topped up. */
+  presenceBucket?: { tokens: number; at: number }
+  /** Presence announcements are applied one after another, in the order sent. */
+  presenceChain?: Promise<void>
   /** When this connection last waved (waves are rate-limited). */
   wavedAt?: number
 }
@@ -51,6 +58,12 @@ const MAX_PENDING_ACTIVITY_SUBSCRIPTIONS = 64
 /** Typing pings from one connection for one room are passed on at most this often. */
 const FARM_CHAT_TYPING_MIN_GAP_MS = 2000
 const WAVE_MIN_GAP_MS = 1500
+/** A connection may announce where it is this many times at once, refilling this many per second. */
+const PRESENCE_BURST = 5
+const PRESENCE_PER_SECOND = 5
+/** Typing pings from one connection, across all rooms, at most this often; and at most this many rooms remembered. */
+const FARM_CHAT_TYPING_ANY_GAP_MS = 250
+const FARM_CHAT_TYPING_ROOMS = 20
 
 /** Topics only people (never agents or tokens) may subscribe to: the farm's multiplayer. */
 const PEOPLE_TOPICS = new Set<string>(['presence', 'farmChat'])
@@ -59,6 +72,8 @@ export class WebSocketManager {
   private clients: Map<string, Client> = new Map()
   private clientIdCounter = 0
   private readonly presence = new PresenceRegistry()
+  /** Farm actions still being applied (they wait on a permission check), for settled(). */
+  private readonly pendingFarm = new Set<Promise<unknown>>()
 
   constructor(private readonly resolveActivityAccess: typeof resolveSquadActivityAccess = resolveSquadActivityAccess) {}
 
@@ -128,7 +143,8 @@ export class WebSocketManager {
     }
 
     if (PEOPLE_TOPICS.has(topic)) {
-      if (client.identity.type !== 'user') {
+      // People only, who may see the farm (farm:read); see routes/farm-chat.ts.
+      if (client.identity.type !== 'user' || !(await hasPermission(client.identity, 'farm:read'))) {
         this.send(client.ws, { type: 'error', code: 'FORBIDDEN_TOPIC', topic, message: 'Forbidden topic' })
         return
       }
@@ -430,10 +446,12 @@ export class WebSocketManager {
           this.announcePresence(client, message.focus)
           break
         case 'presence.wave':
-          this.wave(client, message.toUserId)
+          void this.track(this.wave(client, message.toUserId)).catch((error) =>
+            console.error('[ws] wave failed:', error)
+          )
           break
         case 'farmChat.typing':
-          void this.farmChatTyping(client, message.roomId).catch((error) =>
+          void this.track(this.farmChatTyping(client, message.roomId)).catch((error) =>
             console.error('[ws] farm chat typing failed:', error)
           )
           break
@@ -527,6 +545,30 @@ export class WebSocketManager {
 
   /* ---- The farm's multiplayer: presence and chat ---- */
 
+  /** Tracks a farm action until it's applied, so settled() can wait for it. */
+  private track<T>(work: Promise<T>): Promise<T> {
+    this.pendingFarm.add(work)
+    void work.finally(() => this.pendingFarm.delete(work)).catch(() => {})
+    return work
+  }
+
+  /** Resolves once every farm action sent so far (presence, waves, typing) has been applied. Used by tests. */
+  async settled(): Promise<void> {
+    while (this.pendingFarm.size) await Promise.allSettled([...this.pendingFarm])
+  }
+
+  /**
+   * Whether this connection may act on the farm (appear, wave, type): a person
+   * holding farm:chat. Checked per message (permissions are cached).
+   */
+  private async mayTalk(client: Client): Promise<boolean> {
+    return client.identity.type === 'user' && hasPermission(client.identity, 'farm:chat')
+  }
+
+  /**
+   * Records where someone is. Rate-limited per connection (a small token
+   * bucket), and applied in the order sent, since the permission check is async.
+   */
   private announcePresence(client: Client, focusInput: unknown): void {
     if (client.identity.type !== 'user') {
       this.send(client.ws, { type: 'error', message: 'Only people can be on the farm' })
@@ -537,9 +579,26 @@ export class WebSocketManager {
       this.send(client.ws, { type: 'error', message: 'Invalid presence' })
       return
     }
-    const person = this.presence.announce(client.id, client.identity.userId, parsed.focus)
-    if (person)
-      void this.deliverPresence({ person }).catch((error) => console.error('[ws] presence delivery failed:', error))
+    const now = Date.now()
+    const bucket = client.presenceBucket ?? { tokens: PRESENCE_BURST, at: now }
+    bucket.tokens = Math.min(PRESENCE_BURST, bucket.tokens + ((now - bucket.at) / 1000) * PRESENCE_PER_SECOND)
+    bucket.at = now
+    client.presenceBucket = bucket
+    if (bucket.tokens < 1) return
+    bucket.tokens -= 1
+    const userId = client.identity.userId
+    client.presenceChain = (client.presenceChain ?? Promise.resolve())
+      .then(async () => {
+        if (!(await this.mayTalk(client))) {
+          this.send(client.ws, { type: 'error', message: 'You can’t appear on the farm' })
+          return
+        }
+        if (this.clients.get(client.id) !== client) return
+        const person = this.presence.announce(client.id, userId, parsed.focus)
+        if (person) await this.deliverPresence({ person })
+      })
+      .catch((error) => console.error('[ws] presence delivery failed:', error))
+    void this.track(client.presenceChain)
   }
 
   /** The scope a focus lives in, so each recipient sees it only if they may see that thing. */
@@ -564,7 +623,7 @@ export class WebSocketManager {
     const visible = person.focus && scope ? await this.canAccessTopicScope(client, scope) : false
     return {
       userId: person.userId,
-      name: profile.name,
+      name: personName(profile, await hasPermission(client.identity, 'users:read')),
       focus: visible ? person.focus : null,
       since: new Date(person.since).toISOString(),
       look: profile.look,
@@ -638,7 +697,7 @@ export class WebSocketManager {
    * everyone on the farm but the waver (whose farm shows it straight away).
    * At most one every WAVE_MIN_GAP_MS per connection.
    */
-  private wave(client: Client, toUserId: unknown): void {
+  private async wave(client: Client, toUserId: unknown): Promise<void> {
     if (client.identity.type !== 'user' || !this.presence.isAnnounced(client.id)) return
     if (typeof toUserId !== 'string' || !this.presence.person(toUserId)) return
     const fromUserId = client.identity.userId
@@ -646,6 +705,7 @@ export class WebSocketManager {
     const now = Date.now()
     if (now - (client.wavedAt ?? 0) < WAVE_MIN_GAP_MS) return
     client.wavedAt = now
+    if (!(await this.mayTalk(client))) return
     const json = JSON.stringify({
       type: 'event',
       topic: 'presence',
@@ -666,8 +726,14 @@ export class WebSocketManager {
     if (client.identity.type !== 'user' || typeof roomId !== 'string' || !UUID_PATTERN.test(roomId)) return
     const now = Date.now()
     client.typingAt ??= new Map()
+    if (now - (client.typedAt ?? 0) < FARM_CHAT_TYPING_ANY_GAP_MS) return
     if (now - (client.typingAt.get(roomId) ?? 0) < FARM_CHAT_TYPING_MIN_GAP_MS) return
+    client.typedAt = now
+    client.typingAt.delete(roomId)
     client.typingAt.set(roomId, now)
+    // Only the most recent rooms are remembered (Maps keep insertion order).
+    while (client.typingAt.size > FARM_CHAT_TYPING_ROOMS) client.typingAt.delete(client.typingAt.keys().next().value!)
+    if (!(await this.mayTalk(client))) return
     const userId = client.identity.userId
     let room
     try {
@@ -685,7 +751,12 @@ export class WebSocketManager {
    * back to `except` (someone's own typing).
    */
   sendFarmChat(
-    event: 'farmChat.messageCreated' | 'farmChat.messageUpdated' | 'farmChat.roomsChanged' | 'farmChat.typing',
+    event:
+      | 'farmChat.messageCreated'
+      | 'farmChat.messageUpdated'
+      | 'farmChat.messageDeleted'
+      | 'farmChat.roomsChanged'
+      | 'farmChat.typing',
     data: unknown,
     only?: Iterable<string>,
     except?: string

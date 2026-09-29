@@ -619,3 +619,18 @@ a.g-farmchat-chip-away {
     display: none;
   }
 }
+
+/* Deleting a message asks again. */
+.g-farmchat-action-confirm {
+  border-color: var(--g-danger);
+  background: var(--g-danger-fill);
+  color: var(--g-on-danger);
+  font-weight: 800;
+}
+
+/* Someone who may only read farm chat (farm:read without farm:chat). */
+.g-farmchat-readonly {
+  margin: 8px 2px 0;
+  color: var(--g-text-soft);
+  font: 400 13px var(--g-font-body);
+}

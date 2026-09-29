@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import type { FarmLook } from '@ficus/shared'
+import { UNNAMED_PERSON, type FarmLook } from '@ficus/shared'
 import { db, farmPreferences, squads } from '../../db'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
 import { WebSocketManager } from './manager'
@@ -40,6 +40,10 @@ describe('PresenceRegistry', () => {
 const prefix = `presence-${crypto.randomUUID()}`
 let alice: TestUser
 let bob: TestUser
+/** farm:read only: sees the farm, never appears on it. */
+let viewer: TestUser
+/** No farm permissions. */
+let outsider: TestUser
 
 function socket() {
   return { readyState: WebSocket.OPEN, send: mock((_data: string) => 0) } as any
@@ -66,6 +70,13 @@ beforeAll(async () => {
   // Bob can see the first squad only.
   const role = await createTestRole({ prefix, permissions: ['squads:read', 'agents:read'] })
   await assignRole({ userId: bob.id, roleId: role.id, scope: 'squad', squadId: SQUAD.squadId })
+  // Both are on the farm (farm permissions are instance-wide, whatever their squad roles).
+  const farm = await createTestRole({ prefix, permissions: ['farm:read', 'farm:chat'] })
+  for (const user of [alice, bob]) await assignRole({ userId: user.id, roleId: farm.id, scope: 'system' })
+  viewer = await createTestUser({ prefix, displayName: 'Viewer' })
+  const reads = await createTestRole({ prefix, permissions: ['farm:read'] })
+  await assignRole({ userId: viewer.id, roleId: reads.id, scope: 'system' })
+  outsider = await createTestUser({ prefix, displayName: 'Outsider' })
 })
 
 afterAll(async () => {
@@ -105,18 +116,62 @@ describe('farm presence over the WebSocket', () => {
     expect(events(bobWs, 'presence.left')[0]!.data).toEqual({ userId: alice.id })
   })
 
-  test('a newcomer gets everyone already there; names fall back to email', async () => {
+  test('a newcomer gets everyone already there; no email for someone unnamed', async () => {
     const manager = new WebSocketManager()
     const bobWs = socket()
     const aliceWs = socket()
     manager.addClient(bobWs, { type: 'user', userId: bob.id })
     manager.handleMessage(bobWs, JSON.stringify({ type: 'presence', focus: null }))
+    await manager.settled()
     const aliceClient = manager.addClient(aliceWs, { type: 'user', userId: alice.id })
     await manager.subscribe(aliceClient, 'presence')
     await until(() => events(aliceWs, 'presence.snapshot').length === 1, 'the snapshot')
     expect(events(aliceWs, 'presence.snapshot')[0]!.data.people).toEqual([
-      expect.objectContaining({ userId: bob.id, name: bob.email, focus: null }),
+      expect.objectContaining({ userId: bob.id, name: UNNAMED_PERSON, focus: null }),
     ])
+    expect(JSON.stringify(frames(aliceWs))).not.toContain(bob.email)
+  })
+
+  test('a flood of presence changes is rate-limited per connection', async () => {
+    const manager = new WebSocketManager()
+    const aliceWs = socket()
+    const bobWs = socket()
+    manager.addClient(aliceWs, { type: 'user', userId: alice.id })
+    const bobClient = manager.addClient(bobWs, { type: 'user', userId: bob.id })
+    await manager.subscribe(bobClient, 'presence')
+    for (let k = 0; k < 40; k++)
+      manager.handleMessage(aliceWs, JSON.stringify({ type: 'presence', focus: k % 2 ? SQUAD : OTHER }))
+    await manager.settled()
+    // A burst of 5 gets through (a little more may refill while they're sent), not 40.
+    expect(events(bobWs, 'presence.updated').length).toBeLessThanOrEqual(7)
+    expect(events(bobWs, 'presence.updated').length).toBeGreaterThanOrEqual(1)
+  })
+
+  test('farm:read sees the farm but never appears on it or waves; no farm permission, not even that', async () => {
+    const manager = new WebSocketManager()
+    const aliceWs = socket()
+    const viewerWs = socket()
+    const outsiderWs = socket()
+    const aliceClient = manager.addClient(aliceWs, { type: 'user', userId: alice.id })
+    const viewerClient = manager.addClient(viewerWs, { type: 'user', userId: viewer.id })
+    const outsiderClient = manager.addClient(outsiderWs, { type: 'user', userId: outsider.id })
+    await manager.subscribe(aliceClient, 'presence')
+    await manager.subscribe(viewerClient, 'presence')
+    await manager.subscribe(outsiderClient, 'presence')
+    await manager.subscribe(outsiderClient, 'farmChat')
+    expect(frames(outsiderWs).filter((frame) => frame.code === 'FORBIDDEN_TOPIC')).toHaveLength(2)
+    expect(events(viewerWs, 'presence.snapshot')).toHaveLength(1)
+
+    manager.handleMessage(viewerWs, JSON.stringify({ type: 'presence', focus: null }))
+    manager.handleMessage(aliceWs, JSON.stringify({ type: 'presence', focus: null }))
+    await manager.settled()
+    manager.handleMessage(viewerWs, JSON.stringify({ type: 'presence.wave', toUserId: alice.id }))
+    await manager.settled()
+    // Alice only ever sees... nobody: the viewer never appeared, and its wave went nowhere.
+    expect(events(aliceWs, 'presence.updated')).toEqual([])
+    expect(events(aliceWs, 'presence.waved')).toEqual([])
+    // The viewer still sees Alice arrive.
+    expect(events(viewerWs, 'presence.updated').map((frame) => frame.data.person.userId)).toEqual([alice.id])
   })
 
   test('a wave reaches everyone else on the farm, only between people there, and not too often', async () => {
@@ -133,23 +188,30 @@ describe('farm presence over the WebSocket', () => {
     // Nobody's on the farm yet: nothing to wave at, or from.
     wave(aliceWs, bob.id)
     manager.handleMessage(aliceWs, JSON.stringify({ type: 'presence', focus: null }))
+    await manager.settled()
     wave(aliceWs, bob.id)
+    await manager.settled()
     expect(events(bobWs, 'presence.waved')).toEqual([])
 
     manager.handleMessage(bobWs, JSON.stringify({ type: 'presence', focus: null }))
+    await manager.settled()
     wave(aliceWs, bob.id)
+    await manager.settled()
     expect(events(bobWs, 'presence.waved').map((frame) => frame.data)).toEqual([
       { fromUserId: alice.id, toUserId: bob.id },
     ])
     // The waver's own farm shows it already; and a second wave straight after is dropped.
     expect(events(aliceWs, 'presence.waved')).toEqual([])
     wave(aliceWs, bob.id)
+    await manager.settled()
     expect(events(bobWs, 'presence.waved')).toHaveLength(1)
     // Nor at yourself, or at nonsense.
     wave(bobWs, bob.id)
     wave(bobWs, { id: alice.id })
+    await manager.settled()
     expect(events(aliceWs, 'presence.waved')).toEqual([])
     wave(bobWs, alice.id)
+    await manager.settled()
     expect(events(aliceWs, 'presence.waved').map((frame) => frame.data)).toEqual([
       { fromUserId: bob.id, toUserId: alice.id },
     ])

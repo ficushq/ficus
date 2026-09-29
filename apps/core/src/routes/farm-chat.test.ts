@@ -7,12 +7,19 @@ import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/jso
 import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
 import { db, farmChatMessages, farmChatRooms } from '../db'
 import { pruneFarmChat } from '../services/farm-chat'
+import { UNNAMED_PERSON } from '@ficus/shared'
 
 const prefix = `farm-chat-${crypto.randomUUID()}`
 let alice: TestUser
 let bob: TestUser
 let carol: TestUser
 let manager: TestUser
+/** Like the built-in Viewer: farm:read only. */
+let viewer: TestUser
+/** No farm permissions at all. */
+let outsider: TestUser
+/** May see the user directory (users:read), so sees emails. */
+let admin: TestUser
 const createdRooms: string[] = []
 
 const app = new Hono()
@@ -39,8 +46,17 @@ beforeAll(async () => {
   bob = await createTestUser({ prefix, displayName: 'Bob' })
   carol = await createTestUser({ prefix, displayName: '' })
   manager = await createTestUser({ prefix, displayName: 'Manager' })
-  const role = await createTestRole({ prefix, permissions: ['chat:manage-rooms'] })
-  await assignRole({ userId: manager.id, roleId: role.id, scope: 'system' })
+  viewer = await createTestUser({ prefix, displayName: 'Viewer' })
+  outsider = await createTestUser({ prefix, displayName: 'Outsider' })
+  admin = await createTestUser({ prefix, displayName: 'Admin' })
+  const grant = async (user: TestUser, permissions: string[]) => {
+    const role = await createTestRole({ prefix, permissions })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'system' })
+  }
+  for (const user of [alice, bob, carol]) await grant(user, ['farm:read', 'farm:chat'])
+  await grant(manager, ['farm:*'])
+  await grant(viewer, ['farm:read'])
+  await grant(admin, ['farm:read', 'farm:chat', 'users:read'])
 })
 
 afterAll(async () => {
@@ -59,10 +75,38 @@ describe('farm chat', () => {
       expect((await call(null, method, path)).status).toBe(401)
   })
 
-  test('lists everyone by display name, else email', async () => {
+  test('lists everyone by display name; emails only to people who may see the user directory', async () => {
     const people = (await json(await call(alice, 'GET', '/people'))) as Array<{ id: string; name: string }>
     expect(people.find((p) => p.id === bob.id)?.name).toBe('Bob')
-    expect(people.find((p) => p.id === carol.id)?.name).toBe(carol.email)
+    expect(people.find((p) => p.id === carol.id)?.name).toBe(UNNAMED_PERSON)
+    expect(JSON.stringify(people)).not.toContain(carol.email)
+    const forAdmin = (await json(await call(admin, 'GET', '/people'))) as Array<{ id: string; name: string }>
+    expect(forAdmin.find((p) => p.id === carol.id)?.name).toBe(carol.email)
+  })
+
+  test('needs farm permissions: without them nothing; farm:read reads but never posts, DMs or reacts', async () => {
+    for (const [method, path] of [
+      ['GET', '/people'],
+      ['GET', '/rooms'],
+      ['POST', '/dms'],
+    ] as const)
+      expect((await call(outsider, method, path, method === 'POST' ? { userId: alice.id } : undefined)).status).toBe(
+        403
+      )
+    const room = await general(viewer)
+    expect((await call(viewer, 'GET', `/rooms/${room.id}/messages`)).status).toBe(200)
+    expect((await call(viewer, 'POST', `/rooms/${room.id}/read`)).status).toBe(204)
+    expect((await call(viewer, 'POST', `/rooms/${room.id}/messages`, { body: 'hi' })).status).toBe(403)
+    expect((await call(viewer, 'POST', '/dms', { userId: alice.id })).status).toBe(403)
+    const sent = await json(await call(alice, 'POST', `/rooms/${room.id}/messages`, { body: 'for the viewer' }))
+    expect(
+      (await call(viewer, 'POST', `/rooms/${room.id}/messages/${sent.id}/reactions`, { emoji: '👍', on: true })).status
+    ).toBe(403)
+    expect((await call(viewer, 'PATCH', `/rooms/${room.id}/messages/${sent.id}`, { body: 'x' })).status).toBe(403)
+    expect((await call(viewer, 'DELETE', `/rooms/${room.id}/messages/${sent.id}`)).status).toBe(403)
+    expect((await call(viewer, 'POST', '/rooms', { name: 'nope' })).status).toBe(403)
+    expect((await json(await call(viewer, 'GET', '/rooms'))).canChat).toBe(false)
+    expect((await json(await call(alice, 'GET', '/rooms'))).canChat).toBe(true)
   })
 
   test('everyone has the general room, can post in it, and sees unread counts', async () => {
@@ -84,16 +128,22 @@ describe('farm chat', () => {
     const room = await general(alice)
     expect((await call(alice, 'POST', `/rooms/${room.id}/messages`, { body: '   ' })).status).toBe(400)
     expect((await call(alice, 'POST', `/rooms/${room.id}/messages`, { body: 'x'.repeat(4001) })).status).toBe(400)
-    const first = await json(await call(alice, 'GET', `/rooms/${room.id}/messages`))
-    const oldest = first.messages[0].createdAt
-    const before = await json(
-      await call(alice, 'GET', `/rooms/${room.id}/messages?before=${encodeURIComponent(oldest)}`)
-    )
-    for (const message of before.messages) expect(message.createdAt < oldest).toBe(true)
+    // Messages written in the same instant still page cleanly: the cursor is a message, not a time.
+    const at = new Date()
+    const [a, b, c] = await db
+      .insert(farmChatMessages)
+      .values(['one', 'two', 'three'].map((body) => ({ roomId: room.id, senderUserId: alice.id, body, createdAt: at })))
+      .returning()
+    const ids = [a!.id, b!.id, c!.id].sort()
+    const page = await json(await call(alice, 'GET', `/rooms/${room.id}/messages?before=${ids[2]}`))
+    const seen = page.messages.map((m: { id: string }) => m.id)
+    expect(seen).toContain(ids[0])
+    expect(seen).toContain(ids[1])
+    expect(seen).not.toContain(ids[2])
     expect((await call(alice, 'GET', `/rooms/${room.id}/messages?before=soon`)).status).toBe(400)
   })
 
-  test('managing rooms needs chat:manage-rooms; the general room always stays', async () => {
+  test('managing rooms needs farm:manage-rooms; the general room always stays', async () => {
     expect((await json(await call(alice, 'GET', '/rooms'))).canManageRooms).toBe(false)
     expect((await json(await call(manager, 'GET', '/rooms'))).canManageRooms).toBe(true)
     const name = `design-${prefix.slice(-6)}`
@@ -184,6 +234,41 @@ describe('farm chat', () => {
     expect(
       (await call(carol, 'POST', `/rooms/${dm.id}/messages/${secret.id}/reactions`, { emoji: '👀', on: true })).status
     ).toBe(404)
+  })
+
+  test('senders delete their own messages; room managers any outside DMs; nobody else', async () => {
+    const room = await general(alice)
+    const post = async (user: TestUser, body: string) =>
+      (await json(await call(user, 'POST', `/rooms/${room.id}/messages`, { body }))) as { id: string }
+    const mine = await post(alice, 'oops, a secret')
+    expect((await call(bob, 'DELETE', `/rooms/${room.id}/messages/${mine.id}`)).status).toBe(403)
+    expect((await call(alice, 'DELETE', `/rooms/${room.id}/messages/${mine.id}`)).status).toBe(204)
+    expect((await call(alice, 'DELETE', `/rooms/${room.id}/messages/${mine.id}`)).status).toBe(404)
+    const bobs = await post(bob, 'something to moderate')
+    expect((await call(manager, 'DELETE', `/rooms/${room.id}/messages/${bobs.id}`)).status).toBe(204)
+    const page = await json(await call(alice, 'GET', `/rooms/${room.id}/messages`))
+    expect(page.messages.some((m: { id: string }) => m.id === mine.id || m.id === bobs.id)).toBe(false)
+
+    // A DM is private: a room manager outside it can't even find it.
+    const dm = await json(await call(alice, 'POST', '/dms', { userId: bob.id }))
+    createdRooms.push(dm.id)
+    const secret = (await json(await call(alice, 'POST', `/rooms/${dm.id}/messages`, { body: 'just us' }))) as {
+      id: string
+    }
+    expect((await call(manager, 'DELETE', `/rooms/${dm.id}/messages/${secret.id}`)).status).toBe(404)
+  })
+
+  test('caps how many different reactions one person can add to a message', async () => {
+    const room = await general(alice)
+    const sent = await json(await call(alice, 'POST', `/rooms/${room.id}/messages`, { body: 'react away' }))
+    const emoji = ['👍', '❤️', '😂', '🔥', '🎉', '🌱', '👀', '❓', '🙏', '✅', '🦄']
+    const statuses: number[] = []
+    for (const e of emoji)
+      statuses.push(
+        (await call(bob, 'POST', `/rooms/${room.id}/messages/${sent.id}/reactions`, { emoji: e, on: true })).status
+      )
+    expect(statuses.slice(0, 10).every((s) => s === 200)).toBe(true)
+    expect(statuses[10]).toBe(400)
   })
 
   test('a malformed room id is a 404', async () => {

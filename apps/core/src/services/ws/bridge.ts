@@ -200,6 +200,7 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
     event === 'presence.waved' ||
     event === 'farmChat.messageCreated' ||
     event === 'farmChat.messageUpdated' ||
+    event === 'farmChat.messageDeleted' ||
     event === 'farmChat.roomsChanged' ||
     event === 'farmChat.typing'
   )

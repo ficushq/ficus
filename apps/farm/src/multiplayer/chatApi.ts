@@ -13,6 +13,7 @@ export interface FarmChatApi {
   send(id: string, body: string): Promise<FarmChatMessage>
   editMessage(id: string, messageId: string, body: string): Promise<FarmChatMessage>
   react(id: string, messageId: string, emoji: string, on: boolean): Promise<FarmChatMessage>
+  deleteMessage(id: string, messageId: string): Promise<void>
   markRead(id: string): Promise<void>
 }
 

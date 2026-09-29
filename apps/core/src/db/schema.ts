@@ -1793,7 +1793,7 @@ export const farmPreferences = pgTable('farm_preferences', {
 })
 
 // The farm's chat (packages/shared farm-chat.ts): one general room, public rooms
-// managed with chat:manage-rooms, and DMs between two people (dm_user_a is the
+// managed with farm:manage-rooms, and DMs between two people (dm_user_a is the
 // lower user id). Messages are pruned after 30 days (services/farm-chat/retention.ts).
 export const farmChatRooms = pgTable(
   'farm_chat_rooms',

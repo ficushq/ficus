@@ -38,7 +38,7 @@ function describe(
 /** Someone on the farm: what they're at (a link there), and ways to message or wave at them. */
 export function PersonCard({ userId }: { userId: string }) {
   const env = useFarmCard()
-  const { people, me, focus, wave, enabled } = useMultiplayer()
+  const { people, me, focus, wave, enabled, canChat } = useMultiplayer()
   const isMe = me?.userId === userId
   const person = people.find((p) => p.userId === userId)
   const name = isMe ? (me?.name ?? 'You') : (person?.name ?? 'Someone')
@@ -76,7 +76,7 @@ export function PersonCard({ userId }: { userId: string }) {
         )}
       </p>
       <div className="g-card-actions">
-        {!isMe && (
+        {!isMe && canChat && (
           <button
             type="button"
             className="g-button g-button-primary g-person-dm"
@@ -87,7 +87,7 @@ export function PersonCard({ userId }: { userId: string }) {
             Message privately
           </button>
         )}
-        {!isMe && person && enabled && (
+        {!isMe && person && enabled && canChat && (
           <button type="button" className="g-button" onClick={() => wave(userId)}>
             <span aria-hidden="true">👋</span> Wave
           </button>

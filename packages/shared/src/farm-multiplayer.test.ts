@@ -5,6 +5,7 @@ import {
   FARM_CHAT_MESSAGE_MAX,
   farmPersonInitials,
   farmPersonName,
+  UNNAMED_PERSON,
   validateFarmChatBody,
   validateFarmChatRoom,
 } from './farm-chat'
@@ -16,9 +17,13 @@ const ID = '11111111-1111-4111-8111-111111111111'
 
 describe('farm people', () => {
   test('are named by display name, else email', () => {
-    expect(farmPersonName({ displayName: 'Noah Saso', email: 'n@example.com' })).toBe('Noah Saso')
-    expect(farmPersonName({ displayName: '  ', email: 'n@example.com' })).toBe('n@example.com')
-    expect(farmPersonName({ displayName: null, email: 'n@example.com' })).toBe('n@example.com')
+    const shown = { showEmail: true }
+    const hidden = { showEmail: false }
+    expect(farmPersonName({ displayName: 'Noah Saso', email: 'n@example.com' }, hidden)).toBe('Noah Saso')
+    expect(farmPersonName({ displayName: '  ', email: 'n@example.com' }, shown)).toBe('n@example.com')
+    expect(farmPersonName({ displayName: null, email: 'n@example.com' }, shown)).toBe('n@example.com')
+    // Someone who may not see emails never gets one.
+    expect(farmPersonName({ displayName: null, email: 'n@example.com' }, hidden)).toBe(UNNAMED_PERSON)
   })
 
   test('get initials from their name or the start of their email', () => {

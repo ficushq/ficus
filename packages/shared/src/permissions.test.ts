@@ -25,13 +25,19 @@ describe('slot permissions', () => {
   })
 })
 
-describe('farm chat room management permission', () => {
-  it('declares a dedicated permission that chat:* (Operator) covers and chat:send does not', () => {
-    expect(Permissions.CHAT_MANAGE_ROOMS).toBe('chat:manage-rooms')
-    expect(isGrantablePermission(Permissions.CHAT_MANAGE_ROOMS)).toBe(true)
-    // Operators hold chat:*, which covers it.
-    expect(permissionMatches('chat:*', Permissions.CHAT_MANAGE_ROOMS)).toBe(true)
-    expect(permissionMatches(Permissions.CHAT_SEND, Permissions.CHAT_MANAGE_ROOMS)).toBe(false)
+describe('farm permissions', () => {
+  it('are their own farm: resource, separate from agent chat', () => {
+    expect([Permissions.FARM_READ, Permissions.FARM_CHAT, Permissions.FARM_MANAGE_ROOMS]).toEqual([
+      'farm:read',
+      'farm:chat',
+      'farm:manage-rooms',
+    ])
+    for (const permission of [Permissions.FARM_READ, Permissions.FARM_CHAT, Permissions.FARM_MANAGE_ROOMS]) {
+      expect(isGrantablePermission(permission)).toBe(true)
+      // farm:* covers them all; agent chat permissions (chat:*, which the demo reviewer's chat:send is under) don't.
+      expect(permissionMatches('farm:*', permission)).toBe(true)
+      expect(permissionMatches('chat:*', permission)).toBe(false)
+    }
   })
 })
 

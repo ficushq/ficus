@@ -273,6 +273,8 @@ export type EventMap = {
   'farmChat.messageCreated': { message: FarmChatMessage }
   /** A message was edited or its reactions changed: the whole message, as it is now. */
   'farmChat.messageUpdated': { message: FarmChatMessage }
+  /** A message was deleted, by its sender or a room manager. */
+  'farmChat.messageDeleted': { roomId: string; messageId: string }
   'farmChat.roomsChanged': Record<string, never>
   /** Someone is typing in a room (ephemeral; never stored). */
   'farmChat.typing': { roomId: string; userId: string }

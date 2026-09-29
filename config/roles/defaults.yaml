@@ -29,6 +29,7 @@ roles:
       - workstreams:*
       - workflows:*
       - chat:*
+      - farm:*
       - ssh:*
       - remote-hosts:*
       - env:*
@@ -71,6 +72,7 @@ roles:
       - agents:read
       - workstreams:read
       - chat:read
+      - farm:read # see farm chat and who's on the farm, but not post
       - memory:read
       - inbox:read
       - inbox:read-squad # read agent inboxes within accessible squads

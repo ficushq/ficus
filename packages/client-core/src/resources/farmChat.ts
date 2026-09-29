@@ -3,7 +3,7 @@ import type { Transport } from '../transport'
 
 /**
  * The farm's chat between people: the general room, public rooms (managing
- * them needs `chat:manage-rooms`) and DMs. Live updates arrive on the
+ * them needs `farm:manage-rooms`) and DMs. Live updates arrive on the
  * `farmChat` WebSocket topic.
  */
 export function farmChatResource(t: Transport) {
@@ -19,7 +19,7 @@ export function farmChatResource(t: Transport) {
     /** The DM with someone, opened if it's the first time. */
     directRoom: (userId: string): Promise<FarmChatRoom> =>
       t.request('/farm-chat/dms', { method: 'POST', body: { userId } }),
-    /** The latest messages (oldest first), or the page before `before` (an ISO time). */
+    /** The latest messages (oldest first), or the page before the message `before` (its id). */
     messages: (id: string, before?: string): Promise<FarmChatMessagePage> =>
       t.request(`${room(id)}/messages${before ? `?before=${encodeURIComponent(before)}` : ''}`),
     send: (id: string, body: string): Promise<FarmChatMessage> =>
@@ -33,6 +33,9 @@ export function farmChatResource(t: Transport) {
         method: 'POST',
         body: { emoji, on },
       }),
+    /** Deletes a message for everyone: your own, or (with farm:manage-rooms) anyone's outside DMs. */
+    deleteMessage: (id: string, messageId: string): Promise<void> =>
+      t.request(`${room(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' }),
     markRead: (id: string): Promise<void> => t.request(`${room(id)}/read`, { method: 'POST' }),
   }
 }

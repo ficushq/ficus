@@ -51,8 +51,8 @@ People talk to each other (not to agents) in farm chat:
 `@ficus/shared/farm-chat`. Only people may use it; agents and tokens are refused.
 
 - **Rooms:** a general room that always exists, public rooms, and two-person
-  DMs. Creating, renaming and deleting public rooms needs `chat:manage-rooms`
-  (Operators hold it through `chat:*`); the general room can't be removed.
+  DMs. Creating, renaming and deleting public rooms needs `farm:manage-rooms`
+  (Operators hold it through `farm:*`); the general room can't be removed.
 - **Messages:** senders can edit their own; anyone in the room can react with
   one emoji; unread counts are per person. `@mentions` are plain text (a
   person's name or its first word) resolved in the farm.
