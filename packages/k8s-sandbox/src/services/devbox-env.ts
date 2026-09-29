@@ -14,6 +14,33 @@ import { execFile, execSync } from 'child_process'
 import { getDevboxDir, getDevboxJsonPath } from '../paths'
 import { existsSync, readFileSync, readdirSync, unlinkSync } from 'fs'
 
+/**
+ * The environment `devbox shellenv` runs in. shellenv re-exports EVERY variable
+ * it is handed, and its output is inlined into the preamble of every /bash
+ * command — which reaches the command as `bash -c` argv, readable by every user
+ * on a shared vm machine through /proc/<pid>/cmdline. Run with the executor's
+ * own environment, it copied EXECUTOR_AUTH_TOKEN (the sole cross-box boundary)
+ * and SANDBOX_CALLBACK_SECRET into every command's argv and environment,
+ * bypassing buildSandboxChildEnv's allowlist. So it sees only what resolving the
+ * toolchain needs: no executor secrets, and no agent credentials either
+ * (GITHUB_TOKEN reaches commands through their environment, never argv).
+ * NIX_CONFIG is left out because it can carry `access-tokens`.
+ */
+const SHELLENV_EXACT = new Set(['HOME', 'USER', 'LOGNAME', 'PATH', 'SHELL', 'TERM', 'LANG', 'LC_ALL', 'TZ'])
+const SHELLENV_PREFIXES = ['LC_', 'NIX_', 'DEVBOX_', 'XDG_']
+const SHELLENV_EXCLUDED = new Set(['NIX_CONFIG'])
+
+export function shellenvProcessEnv(
+  source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined || SHELLENV_EXCLUDED.has(key)) continue
+    if (SHELLENV_EXACT.has(key) || SHELLENV_PREFIXES.some((prefix) => key.startsWith(prefix))) out[key] = value
+  }
+  return out
+}
+
 let cachedShellEnv: string | null = null
 let cachedManagedToolchainEnv: string | null = null
 let cachedManagedToolchainFingerprint: string | null = null
@@ -79,7 +106,12 @@ export function prepareDevboxShellEnv(runShellenv?: (cwd: string) => string): bo
  */
 export function cacheDevboxShellEnv(
   runShellenv: (cwd: string) => string = (cwd) =>
-    execSync('devbox shellenv --init-hook 2>/dev/null', { encoding: 'utf-8', cwd, timeout: 30_000 })
+    execSync('devbox shellenv --init-hook 2>/dev/null', {
+      encoding: 'utf-8',
+      cwd,
+      env: shellenvProcessEnv(),
+      timeout: 30_000,
+    })
 ): boolean {
   const devboxJson = getDevboxJsonPath()
   if (!existsSync(devboxJson)) {
@@ -162,7 +194,7 @@ function runManagedShellenv(cwd: string): Promise<string> {
     execFile(
       'timeout',
       ['-k', '5', String(MANAGED_SHELLENV_TIMEOUT_SECONDS), 'devbox', 'shellenv', '--init-hook'],
-      { cwd, encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024 },
+      { cwd, env: shellenvProcessEnv(), encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024 },
       (error, stdout) => {
         if (!error) return resolve(stdout)
         // timeout exits 124 when the budget expires (137 when it had to SIGKILL).

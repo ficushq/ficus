@@ -93,6 +93,18 @@ describe('buildSandboxChildEnv', () => {
     expect(env.RANDOM_HOST_VAR).toBeUndefined()
   })
 
+  it("passes a vm box's own rootless DOCKER_HOST through, and nothing else server-only", () => {
+    const env = buildSandboxChildEnv({
+      FICUS_BOX_HOME: '/home/box_abc',
+      DOCKER_HOST: 'unix:///run/user/30173/docker.sock',
+      EXECUTOR_AUTH_TOKEN: 'box-token',
+      SANDBOX_CALLBACK_SECRET: 'callback-secret',
+    })
+    expect(env.DOCKER_HOST).toBe('unix:///run/user/30173/docker.sock')
+    expect(env.EXECUTOR_AUTH_TOKEN).toBeUndefined()
+    expect(env.SANDBOX_CALLBACK_SECRET).toBeUndefined()
+  })
+
   it('injects sandbox defaults when keys are missing', () => {
     const env = buildSandboxChildEnv({})
     expect(env.HOME).toBe('/root')
