@@ -1,5 +1,5 @@
 slug: exhaustive
 label: Exhaustive
 description: Maximum-depth security analysis
-chain: openai-codex:gpt-6-astra:max,anthropic:claude-fable-5-1:xhigh,zai:glm-5.3:xhigh
+chain: anthropic:claude-fable-5-1:xhigh,openai-codex:gpt-6-astra:max,zai:glm-5.3:xhigh
 sortOrder: 40
