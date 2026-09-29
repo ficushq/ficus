@@ -215,7 +215,7 @@ export function describeAuth(resolved: ResolvedAuth): string {
     case 'dotenv':
       return `Authenticated via FICUS_PASSWORD from .env against ${resolved.apiUrl}.`
     case 'secret-file':
-      return `Authenticated via the mounted /etc/tau/password secret against ${resolved.apiUrl}.`
+      return `Authenticated via the mounted sandbox password secret against ${resolved.apiUrl}.`
     case 'none':
       return 'No active Ficus backend configured. Run ficus auth login <label> --api-url <url>.'
   }

@@ -1,6 +1,7 @@
 import type { DeploymentFlavor, ProcessSupervisor } from './deployment-flavor'
 import type { PlannedCommand, UpdateTask } from './types'
 import { localProcessNames } from '@ficus/shared'
+import { hostSystemdUnits, launchdLabel } from '@ficus/shared/node'
 import { DEPENDENCY_INSTALL_COMMAND, DEPENDENCY_PATHS } from './dependency-install'
 
 type PathMatcher = {
@@ -96,7 +97,15 @@ export function detectUpdateTasks(changedFiles: string[], flavor: DeploymentFlav
  */
 export function restartCommandsFor(
   supervisor: ProcessSupervisor,
-  options: { isRoot?: boolean; instance?: string; uid?: number } = {}
+  options: {
+    isRoot?: boolean
+    instance?: string
+    uid?: number
+    /** Injectable for tests; production reads the real /etc/systemd/system. */
+    unitDir?: string
+    /** Injectable for tests; production reads the real ~/Library/LaunchAgents. */
+    launchAgentsDir?: string
+  } = {}
 ): string[][] {
   const isRoot = options.isRoot ?? (typeof process.getuid === 'function' && process.getuid() === 0)
   if (supervisor === 'pm2') {
@@ -107,9 +116,10 @@ export function restartCommandsFor(
   }
   if (supervisor === 'systemd') {
     const prefix = isRoot ? [] : ['sudo', '-n']
+    const units = hostSystemdUnits({ unitDir: options.unitDir })
     return [
-      [...prefix, 'systemctl', 'restart', 'tau-worker'],
-      [...prefix, 'systemctl', 'restart', 'tau-api'],
+      [...prefix, 'systemctl', 'restart', units.worker],
+      [...prefix, 'systemctl', 'restart', units.api],
     ]
   }
   const names = localProcessNames(options.instance ?? process.env.FICUS_INSTANCE ?? 'tau')
@@ -123,8 +133,18 @@ export function restartCommandsFor(
     const uid = options.uid ?? process.getuid?.()
     if (uid === undefined) throw new Error('launchd updates require a numeric user id')
     return [
-      ['launchctl', 'kickstart', '-k', `gui/${uid}/ai.hiretau.${names.worker}`],
-      ['launchctl', 'kickstart', '-k', `gui/${uid}/ai.hiretau.${names.api}`],
+      [
+        'launchctl',
+        'kickstart',
+        '-k',
+        `gui/${uid}/${launchdLabel(names.worker, { launchAgentsDir: options.launchAgentsDir })}`,
+      ],
+      [
+        'launchctl',
+        'kickstart',
+        '-k',
+        `gui/${uid}/${launchdLabel(names.api, { launchAgentsDir: options.launchAgentsDir })}`,
+      ],
     ]
   }
   return []
@@ -142,7 +162,8 @@ export function isApiRestartCommand(command: string[]): boolean {
   return (
     joined.includes('reload:api') ||
     joined.includes('reload:core') ||
-    /(?:^|[./-])tau(?:-[a-z0-9-]+)?-api(?:\.service)?$/.test(command.at(-1) ?? '')
+    // Phase-5 dual-reader: the target can still be a legacy tau-* unit until every host moves.
+    /(?:^|[./-])(?:tau|ficus)(?:-[a-z0-9-]+)?-api(?:\.service)?$/.test(command.at(-1) ?? '') // ficus-p5-bridge
   )
 }
 
@@ -159,7 +180,7 @@ export function isServiceRestartCommand(command: string[]): boolean {
   return (
     isApiRestartCommand(command) ||
     joined.includes('reload:worker') ||
-    /(?:^|[./-])tau(?:-[a-z0-9-]+)?-worker(?:\.service)?$/.test(target)
+    /(?:^|[./-])(?:tau|ficus)(?:-[a-z0-9-]+)?-worker(?:\.service)?$/.test(target) // ficus-p5-bridge
   )
 }
 

@@ -8,3 +8,4 @@
 export * from './tilde'
 export * from './checkout'
 export * from './env-naming'
+export * from './service-names'

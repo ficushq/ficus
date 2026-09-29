@@ -1,5 +1,6 @@
 import { getDotenvEnv, getExplicitEnv, loadEnv } from './env'
 import { existsSync, readFileSync } from 'fs'
+import { sandboxPasswordPath } from '@ficus/shared/node'
 import { getActiveBackend, loadAuthStore } from './auth-store'
 loadEnv()
 
@@ -103,7 +104,7 @@ function getPassword(): string {
   if (activeBackend) return activeBackend.backend.password
   const dotenvPassword = getDotenvEnv('FICUS_PASSWORD')
   if (dotenvPassword) return dotenvPassword
-  const secretPath = '/etc/tau/password'
+  const secretPath = sandboxPasswordPath()
   if (existsSync(secretPath)) {
     return readFileSync(secretPath, 'utf-8').trim()
   }
@@ -186,7 +187,7 @@ export function resolveAuth(): ResolvedAuth {
   const activeBackend = getActiveBackend(loadAuthStore())
   if (activeBackend) return { source: 'auth-store', label: activeBackend.label, apiUrl, authenticated: true }
   if (getDotenvEnv('FICUS_PASSWORD')) return { source: 'dotenv', apiUrl, authenticated: true }
-  if (existsSync('/etc/tau/password')) return { source: 'secret-file', apiUrl, authenticated: true }
+  if (existsSync(sandboxPasswordPath())) return { source: 'secret-file', apiUrl, authenticated: true }
   return { source: 'none', apiUrl, authenticated: false }
 }
 

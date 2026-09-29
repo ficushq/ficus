@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path'
-import { expandTilde } from '@ficus/shared/node'
+import { expandTilde, hostSystemdUnits } from '@ficus/shared/node'
 import { SystemLogProviderError, type SystemLogComponent, type SystemLogProviderId } from './types'
 
 type Targets = Record<SystemLogComponent, string>
@@ -25,7 +25,10 @@ const targets = (env: NodeJS.ProcessEnv, prefix: string, fallback?: Targets): Ta
   worker: clean(env[`${prefix}_WORKER`], `${prefix}_WORKER`, fallback?.worker),
 })
 
-export function loadExplicitSystemLogConfig(env: NodeJS.ProcessEnv = process.env): ExplicitSystemLogConfig | undefined {
+export function loadExplicitSystemLogConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  opts?: { unitDir?: string }
+): ExplicitSystemLogConfig | undefined {
   const configuredProvider = env.FICUS_SYSTEM_LOG_PROVIDER?.trim()
   if (!configuredProvider) return undefined
   if (!['pm2', 'systemd', 'docker', 'file', 'k8s'].includes(configuredProvider)) {
@@ -36,7 +39,7 @@ export function loadExplicitSystemLogConfig(env: NodeJS.ProcessEnv = process.env
     case 'pm2':
       return { provider, targets: targets(env, 'FICUS_PM2', { api: 'tau-api', worker: 'tau-worker' }) }
     case 'systemd':
-      return { provider, targets: targets(env, 'FICUS_SYSTEMD', { api: 'tau-api', worker: 'tau-worker' }) }
+      return { provider, targets: targets(env, 'FICUS_SYSTEMD', hostSystemdUnits({ unitDir: opts?.unitDir })) }
     case 'docker':
       return {
         provider,
