@@ -204,7 +204,7 @@ async function signalWorkerRestart(): Promise<void> {
  * so the 200 below reaches the caller first.
  *
  * Exit NON-ZERO on an intentional restart (PR #1051): systemd runs both units
- * with `Restart=on-failure` (scripts/setup/systemd/tau-*.service.tmpl), which
+ * with `Restart=on-failure` (scripts/setup/systemd/ficus-*.service.tmpl), which
  * restarts ONLY on a non-zero exit — a clean exit(0) is treated as an
  * intentional success and the unit stays DOWN. K8s (`restartPolicy: Always`)
  * restarts on any exit code, so non-zero is correct for both orchestrators.

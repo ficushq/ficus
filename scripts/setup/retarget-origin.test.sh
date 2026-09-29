@@ -241,6 +241,9 @@ run_err() { # ...ARGS
 # must stop before touching the yaml, the .env or Caddy.
 # The pre-Ficus encryption key the naming guard looks for (from lib.sh).
 PFK="$(bash -c 'source "$0"; printf %s "${PRE_FICUS_ENV_PREFIX}"' "${SCRIPT_DIR}/lib.sh")_ENCRYPTION_KEY"
+# The api/worker unit names retarget-origin.sh restarts on this host (lib.sh's
+# host layout, resolved in the same environment the script runs in).
+CORE_UNITS="$(bash -c 'source "$0"; printf "%s %s" "${HL_UNIT_API}" "${HL_UNIT_WORKER}"' "${SCRIPT_DIR}/lib.sh")"
 printf 'APP_URL=https://acme.example.com\nOLD_WEB_ORIGIN=https://acme.example.com\n%s=deadbeef\n' "${PFK}" >"${CORE_DEST}/.env"
 OLD_ENV_BYTES=$(cat "${CORE_DEST}/.env")
 for old_mode in --dry-run real; do
@@ -496,8 +499,8 @@ FICUS_PLATFORM_INGEST_URL=https://ficus.sh'
     reverse_proxy 127.0.0.1:4100
 }"
 
-    expect_match "${label}: restart was invoked (systemctl restart tau-api tau-worker)" \
-      "$(cat "${SHIM_LOG}")" 'systemctl restart tau-api tau-worker'
+    expect_match "${label}: restart was invoked (systemctl restart ${CORE_UNITS})" \
+      "$(cat "${SHIM_LOG}")" "systemctl restart ${CORE_UNITS}"
     expect_match "${label}: the health check probed the .env's PORT (4100), not the yaml's core.port (3000)" \
       "$(cat "${SHIM_LOG}")" '127\.0\.0\.1:4100/health'
 
@@ -578,8 +581,8 @@ FICUS_PLATFORM_INGEST_URL=https://ficus.sh'
     "$([[ $(cat "${CADDY_TLS_DIR}/origin.crt") == "$(cat "${FAIL_NEW_CERT}")" ]] && echo installed || echo not-installed)" 'not-installed'
   expect_eq 'failure injection: the Caddyfile is completely untouched (the caddy step was never reached)' \
     "$(cat "${CADDYFILE_PATH}")" "${before_fail_caddyfile}"
-  expect_match 'failure injection: tau-api/tau-worker were never restarted' \
-    "$([[ $(cat "${SHIM_LOG}") == *'systemctl restart tau-api tau-worker'* ]] && echo restarted || echo not-restarted)" 'not-restarted'
+  expect_match "failure injection: ${CORE_UNITS} were never restarted" \
+    "$([[ $(cat "${SHIM_LOG}") == *"systemctl restart ${CORE_UNITS}"* ]] && echo restarted || echo not-restarted)" 'not-restarted'
   # The yaml IS updated with the new (unreachable, install failed) paths —
   # documented, deliberate FAILURE BEHAVIOR (step 2 is forward progress for
   # a retry, not rolled back on a steps-3-5 failure).

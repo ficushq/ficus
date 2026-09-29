@@ -2441,7 +2441,7 @@ fi
 
 # --- restore_unpack_archive / restore_home_subdir ---------------------------
 # A miniature backup envelope, encrypted with the SAME openssl params
-# tau-backup.sh.tmpl uses (aes-256-cbc, pbkdf2), round-tripped to prove the
+# ficus-backup.sh.tmpl uses (aes-256-cbc, pbkdf2), round-tripped to prove the
 # restore path can open a real backup and that the envelope-shape guards fire.
 # The passphrase embeds a space AND a '&' — the presigned-URL/DSN metacharacter
 # — to confirm `-pass file:` carries it verbatim.
@@ -2451,7 +2451,7 @@ mkdir -p "${RESTORE_TMP}/src/.tau/agents"
 printf 'PGDUMPDATA' >"${RESTORE_TMP}/src/db.dump"
 printf 'FICUS_ENCRYPTION_KEY=deadbeef\nAPP_URL=https://old.example\n' >"${RESTORE_TMP}/src/.env"
 printf 'workspace-file\n' >"${RESTORE_TMP}/src/.tau/agents/a.txt"
-# Same top-level member layout tau-backup.sh.tmpl produces: db.dump, the
+# Same top-level member layout ficus-backup.sh.tmpl produces: db.dump, the
 # HOME_DIR tree, and .env.
 tar -czf "${RESTORE_TMP}/backup.tar.gz" \
   -C "${RESTORE_TMP}/src" db.dump \
@@ -2646,7 +2646,7 @@ expect_eq 'core_run_root: CORE_LAYOUT=artifact forces the artifact layout before
 # render_core_unit reads caller globals, exactly as setup-host.sh/upgrade-host.sh
 # supply them.
 SRC_DEST="${CU_TMP}" RUN_USER=ficus BUN_BIN=/usr/local/bin/bun DB_MODE=container
-cu_api=$(render_core_unit "${SCRIPT_DIR}/systemd/tau-api.service.tmpl")
+cu_api=$(render_core_unit "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl")
 expect_eq 'render_core_unit: git layout runs from <dest>/apps/core' \
   "$(printf '%s\n' "${cu_api}" | grep -Fxc "WorkingDirectory=${CU_TMP}/apps/core")" '1'
 expect_eq 'render_core_unit: git layout pins FICUS_ROOT to <dest>' \
@@ -2664,11 +2664,11 @@ expect_eq 'render_core_unit: a container database adds the docker ordering' \
 # the line position below is cosmetic, and the real guard is setup-host.sh
 # refusing a FICUS_ROOT through core.env (see the gate test).
 expect_eq 'render_core_unit: the unit documents that EnvironmentFile overrides Environment' \
-  "$(grep -Fc 'systemd applies EnvironmentFile= AFTER Environment=' "${SCRIPT_DIR}/systemd/tau-api.service.tmpl")" '1'
+  "$(grep -Fc 'systemd applies EnvironmentFile= AFTER Environment=' "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl")" '1'
 
 mkdir -p "${CU_TMP}/releases"
-cu_api_art=$(render_core_unit "${SCRIPT_DIR}/systemd/tau-api.service.tmpl")
-cu_worker_art=$(render_core_unit "${SCRIPT_DIR}/systemd/tau-worker.service.tmpl")
+cu_api_art=$(render_core_unit "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl")
+cu_worker_art=$(render_core_unit "${SCRIPT_DIR}/systemd/ficus-worker.service.tmpl")
 for cu_pair in "tau-api:${cu_api_art}" "tau-worker:${cu_worker_art}"; do
   cu_name=${cu_pair%%:*}
   cu_body=${cu_pair#*:}
@@ -2680,7 +2680,7 @@ for cu_pair in "tau-api:${cu_api_art}" "tau-worker:${cu_worker_art}"; do
     "$(printf '%s\n' "${cu_body}" | grep -Fxc "EnvironmentFile=${CU_TMP}/.env")" '1'
 done
 DB_MODE=external
-cu_api_ext=$(render_core_unit "${SCRIPT_DIR}/systemd/tau-api.service.tmpl")
+cu_api_ext=$(render_core_unit "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl")
 expect_eq 'render_core_unit: an external database orders on network only' \
   "$(printf '%s\n' "${cu_api_ext}" | grep -Fxc 'After=network-online.target')" '1'
 unset SRC_DEST RUN_USER BUN_BIN DB_MODE
@@ -2858,17 +2858,19 @@ expect_eq 'prune_artifacts: no manifest prunes nothing (fail-safe)' \
 # once; post-#689 units (inline line) are left alone entirely.
 FICUS_SYSTEMD_UNIT_DIR="${AR_TMP}/systemd"
 mkdir -p "${FICUS_SYSTEMD_UNIT_DIR}"
-printf '[Service]\nEnvironmentFile=/opt/tau-core/.env\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
-printf '[Service]\nEnvironmentFile=/opt/tau-core/.env\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-worker.service"
+# The units and the managed.env path are the host layout's (HL_*).
+ME_ENV_LINE="EnvironmentFile=-${HL_ETC}/managed.env"
+printf '[Service]\nEnvironmentFile=/srv/core/.env\n' >"${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service"
+printf '[Service]\nEnvironmentFile=/srv/core/.env\n' >"${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_WORKER}.service"
 
 ensure_managed_env_dropins
 expect_eq 'ensure_managed_env_dropins: pre-#689 unit -> drop-in written + flagged' \
   "${MANAGED_ENV_DROPIN_CHANGED}" '1'
 expect_eq 'ensure_managed_env_dropins: drop-in carries exactly the EnvironmentFile stanza' \
-  "$(cat "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/managed-env.conf")" \
-  $'[Service]\nEnvironmentFile=-/etc/tau/managed.env'
+  "$(cat "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d/managed-env.conf")" \
+  "[Service]"$'\n'"${ME_ENV_LINE}"
 expect_eq 'ensure_managed_env_dropins: worker drop-in written too' \
-  "$([[ -f ${FICUS_SYSTEMD_UNIT_DIR}/tau-worker.service.d/managed-env.conf ]] && echo present || echo absent)" 'present'
+  "$([[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_WORKER}.service.d/managed-env.conf ]] && echo present || echo absent)" 'present'
 
 # Second run: drop-ins already correct → NOT flagged (no spurious daemon-reload).
 ensure_managed_env_dropins
@@ -2878,18 +2880,21 @@ expect_eq 'ensure_managed_env_dropins: idempotent second run -> unflagged' \
 # Post-#689 units already carry the line inline → nothing written, unflagged.
 rm -rf "${FICUS_SYSTEMD_UNIT_DIR}"
 mkdir -p "${FICUS_SYSTEMD_UNIT_DIR}"
-printf '[Service]\nEnvironmentFile=/opt/tau-core/.env\nEnvironmentFile=-/etc/tau/managed.env\n' \
-  >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
-cp "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service" "${FICUS_SYSTEMD_UNIT_DIR}/tau-worker.service"
+printf '[Service]\nEnvironmentFile=/srv/core/.env\n%s\n' "${ME_ENV_LINE}" \
+  >"${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service"
+cp "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service" "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_WORKER}.service"
 ensure_managed_env_dropins
 expect_eq 'ensure_managed_env_dropins: inline-line unit -> no drop-in, unflagged' \
   "${MANAGED_ENV_DROPIN_CHANGED}" '0'
 expect_eq 'ensure_managed_env_dropins: inline-line unit -> no drop-in dir created' \
-  "$([[ -e ${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d ]] && echo present || echo absent)" 'absent'
+  "$([[ -e ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d ]] && echo present || echo absent)" 'absent'
 
-# --- tau-api memory guardrail -----------------------------------------------
-api_template="${SCRIPT_DIR}/systemd/tau-api.service.tmpl"
-worker_template="${SCRIPT_DIR}/systemd/tau-worker.service.tmpl"
+# --- api memory guardrail -----------------------------------------------------
+api_template="${SCRIPT_DIR}/systemd/ficus-api.service.tmpl"
+worker_template="${SCRIPT_DIR}/systemd/ficus-worker.service.tmpl"
+# The guardrail section runs against the layout's api unit (HL_UNIT_API).
+GR_API="${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service"
+GR_WORKER="${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_WORKER}.service"
 for directive in 'MemoryAccounting=yes' 'MemoryHigh=25%' 'MemoryMax=35%' \
   'OOMPolicy=kill' 'Restart=on-failure' 'RestartSec=5s' \
   'StartLimitIntervalSec=300s' 'StartLimitBurst=5'; do
@@ -2903,53 +2908,53 @@ done
 
 rm -rf "${FICUS_SYSTEMD_UNIT_DIR}"
 mkdir -p "${FICUS_SYSTEMD_UNIT_DIR}"
-printf '[Service]\nRestart=on-failure\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
-printf '[Service]\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-worker.service"
+printf '[Service]\nRestart=on-failure\n' >"${GR_API}"
+printf '[Service]\n' >"${GR_WORKER}"
 ensure_api_memory_guardrail
 expect_eq 'legacy api unit gets memory guardrail and changed flag' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}" '1'
 expected_guardrail=$'[Unit]\nStartLimitIntervalSec=300s\nStartLimitBurst=5\n\n[Service]\nMemoryAccounting=yes\nMemoryHigh=25%\nMemoryMax=35%\nOOMPolicy=kill\nRestart=on-failure\nRestartSec=5s'
 expect_eq 'memory guardrail drop-in has exact canonical policy' \
-  "$(cat "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" "${expected_guardrail}"
+  "$(cat "${GR_API}.d/memory-guardrail.conf")" "${expected_guardrail}"
 expect_eq 'worker never gets memory guardrail' \
-  "$([[ -e ${FICUS_SYSTEMD_UNIT_DIR}/tau-worker.service.d/memory-guardrail.conf ]] && echo present || echo absent)" 'absent'
+  "$([[ -e ${GR_WORKER}.d/memory-guardrail.conf ]] && echo present || echo absent)" 'absent'
 ensure_api_memory_guardrail
 expect_eq 'memory guardrail reconciliation is idempotent' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}" '0'
 printf '%s\n' "${expected_guardrail/MemoryMax=35%/MemoryMax=99%}" \
-  >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf"
+  >"${GR_API}.d/memory-guardrail.conf"
 ensure_api_memory_guardrail
-expect_eq 'mutated MemoryMax is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'MemoryMax=35%' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" '1:1'
+expect_eq 'mutated MemoryMax is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'MemoryMax=35%' "${GR_API}.d/memory-guardrail.conf")" '1:1'
 printf '%s\n' "${expected_guardrail/OOMPolicy=kill/OOMPolicy=continue}" \
-  >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf"
+  >"${GR_API}.d/memory-guardrail.conf"
 ensure_api_memory_guardrail
-expect_eq 'mutated OOMPolicy is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'OOMPolicy=kill' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" '1:1'
+expect_eq 'mutated OOMPolicy is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'OOMPolicy=kill' "${GR_API}.d/memory-guardrail.conf")" '1:1'
 printf '%s\n' "${expected_guardrail/Restart=on-failure/Restart=always}" \
-  >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf"
+  >"${GR_API}.d/memory-guardrail.conf"
 ensure_api_memory_guardrail
-expect_eq 'mutated Restart is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'Restart=on-failure' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" '1:1'
-printf '%s\nMemoryMax=infinity\n' "${expected_guardrail}" >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
+expect_eq 'mutated Restart is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'Restart=on-failure' "${GR_API}.d/memory-guardrail.conf")" '1:1'
+printf '%s\nMemoryMax=infinity\n' "${expected_guardrail}" >"${GR_API}"
 ensure_api_memory_guardrail
 expect_eq 'later conflicting MemoryMax keeps canonical managed drop-in' \
-  "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'MemoryMax=35%' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" '0:1'
-rm -rf "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d"
-printf '[Service]\nStartLimitIntervalSec=300s\nStartLimitBurst=5\nMemoryAccounting=yes\nMemoryHigh=25%%\nMemoryMax=35%%\nOOMPolicy=kill\nRestart=on-failure\nRestartSec=5s\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
+  "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'MemoryMax=35%' "${GR_API}.d/memory-guardrail.conf")" '0:1'
+rm -rf "${GR_API}.d"
+printf '[Service]\nStartLimitIntervalSec=300s\nStartLimitBurst=5\nMemoryAccounting=yes\nMemoryHigh=25%%\nMemoryMax=35%%\nOOMPolicy=kill\nRestart=on-failure\nRestartSec=5s\n' >"${GR_API}"
 ensure_api_memory_guardrail
 expect_eq 'unit directives in wrong section require canonical managed drop-in' \
-  "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$([[ -f ${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf ]] && echo present || echo absent)" '1:present'
+  "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$([[ -f ${GR_API}.d/memory-guardrail.conf ]] && echo present || echo absent)" '1:present'
 
-rm -rf "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d"
-printf '%s\n' "${expected_guardrail}" >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
+rm -rf "${GR_API}.d"
+printf '%s\n' "${expected_guardrail}" >"${GR_API}"
 ensure_api_memory_guardrail
 expect_eq 'inline canonical policy needs no managed drop-in' \
-  "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$([[ -e ${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf ]] && echo present || echo absent)" '0:absent'
-mkdir -p "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d"
-printf '[Service]\nMemoryMax=infinity\nOOMPolicy=continue\nRestart=no\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/zzzzz-local.conf"
+  "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$([[ -e ${GR_API}.d/memory-guardrail.conf ]] && echo present || echo absent)" '0:absent'
+mkdir -p "${GR_API}.d"
+printf '[Service]\nMemoryMax=infinity\nOOMPolicy=continue\nRestart=no\n' >"${GR_API}.d/zzzzz-local.conf"
 ensure_api_memory_guardrail
-ordered_guardrail=$(find "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d" -maxdepth 1 -name '*.z-tau-memory-guardrail.conf' -print)
+ordered_guardrail=$(find "${GR_API}.d" -maxdepth 1 -name "*.${HL_GUARDRAIL_SUFFIX}" -print)
 expect_eq 'lexically later conflict installs a provably final managed policy and flags change' \
   "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(tail -n 6 "${ordered_guardrail}" | tr '\n' ' ')" \
   '1:MemoryAccounting=yes MemoryHigh=25% MemoryMax=35% OOMPolicy=kill Restart=on-failure RestartSec=5s '
 expect_eq 'lexically later conflicting unrelated drop-in is preserved' \
-  "$(cat "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/zzzzz-local.conf")" $'[Service]\nMemoryMax=infinity\nOOMPolicy=continue\nRestart=no'
+  "$(cat "${GR_API}.d/zzzzz-local.conf")" $'[Service]\nMemoryMax=infinity\nOOMPolicy=continue\nRestart=no'
 ensure_api_memory_guardrail
 expect_eq 'dynamic final managed policy is idempotent on second run' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}" '0'
 expect_eq 'dynamic managed filename sorts after the conflicting drop-in' \
@@ -3519,7 +3524,9 @@ PYEOF
   # "any well-formed signature passes".
   "${ART_OPENSSL}" genpkey -algorithm ed25519 -out "${ART_TMP}/other-key.pem" 2>/dev/null
 
-  art_tree() { printf '%s/staging/tau-core-%s\n' "$1" "$2"; }
+  # The tarball root: the Ficus prefix unless a case sets the legacy one.
+  ART_ROOT_PREFIX=${HL_NEW_ARTIFACT_ROOT_PREFIX}
+  art_tree() { printf '%s/staging/%s%s\n' "$1" "${ART_ROOT_PREFIX}" "$2"; }
 
   # A miniature core release tree: the migration runner activate executes, the
   # CLI bundle (exec bit must survive the tarball round-trip) and a config file.
@@ -3545,7 +3552,9 @@ JSEOF
   # about bsdtar — the guards below are written to not depend on either one's
   # extraction quirks, which is the point of listing members before extracting.
   art_tar() { # WORK SHA
-    tar -C "${1}/staging" -czf "${1}/dist/tau-core-${2}-linux-x64.tar.gz" "tau-core-${2}"
+    # The tarball's FILE name stays the builder's legacy one (the cases below
+    # fetch it by that name); its ROOT is ART_ROOT_PREFIX.
+    tar -C "${1}/staging" -czf "${1}/dist/${HL_LEGACY_ARTIFACT_ROOT_PREFIX}${2}-linux-x64.tar.gz" "${ART_ROOT_PREFIX}${2}"
   }
 
   # Repack a tarball with one extra member under an arbitrary (hostile) name.
@@ -3636,10 +3645,10 @@ PYREPACK
   artifact_stage "${ART_DEST}" "${ART_TREE_A}" "${ART_SHA_A}" "${ART_DIGEST12_A}" 2>/dev/null
   expect_eq 'artifact_stage: the release lands at releases/<sha>-<digest12>' \
     "$([[ -f ${ART_RELEASE_A}/apps/core/dist/migrate.js ]] && echo staged || echo missing)" 'staged'
-  expect_eq 'artifact_stage: writes the .tau-release-complete marker' \
-    "$([[ -f ${ART_RELEASE_A}/.tau-release-complete ]] && echo marked || echo unmarked)" 'marked'
+  expect_eq "artifact_stage: writes the ${HL_NEW_RELEASE_MARKER} marker" \
+    "$([[ -f ${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER} ]] && echo marked || echo unmarked)" 'marked'
   expect_match 'artifact_stage: the marker records what was staged' \
-    "$(<"${ART_RELEASE_A}/.tau-release-complete")" "\"sha\":\"${ART_SHA_A}\".*\"digest\":\"sha256:[0-9a-f]{64}\""
+    "$(<"${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER}")" "\"sha\":\"${ART_SHA_A}\".*\"digest\":\"sha256:[0-9a-f]{64}\""
   expect_eq 'artifact_stage: the incoming session dir is cleaned up' \
     "$(art_incoming_count "${ART_DEST}")" '0'
 
@@ -3724,7 +3733,7 @@ PYREPACK
   expect_eq 'artifact_stage: an unmarked (partial) release dir is replaced, not merged into' \
     "$([[ -d ${ART_RELEASE_C}/half-extracted ]] && echo merged || echo replaced)" 'replaced'
   expect_eq 'artifact_stage: the replacement is complete' \
-    "$([[ -f ${ART_RELEASE_C}/.tau-release-complete ]] && echo marked || echo unmarked)" 'marked'
+    "$([[ -f ${ART_RELEASE_C}/${HL_NEW_RELEASE_MARKER} ]] && echo marked || echo unmarked)" 'marked'
 
   # --- the pre-flip hook: after the migrate, before the flip ---------------
   # upgrade-host.sh runs the host migrations here: the old release
@@ -3915,6 +3924,17 @@ PYREPACK
     "$([[ ${ART_RC} -ne 0 ]] && echo refused || echo activated)" 'refused'
   expect_eq 'artifact_activate: the refusal happens before any flip' \
     "$([[ -e ${ART_DEST3}/current ]] && echo flipped || echo untouched)" 'untouched'
+  # …while a release staged before the host migration (the legacy marker) is
+  # complete: activation goes on to the migrations (which fail here: no tree).
+  : >"${ART_DEST3}/releases/unmarked/${HL_LEGACY_RELEASE_MARKER}"
+  ART_ERR=$( (
+    sleep() { :; }
+    artifact_activate "${ART_DEST3}" "${ART_DEST3}/releases/unmarked" 3000
+  ) 2>&1 >/dev/null) || true
+  expect_match 'artifact_activate: a release carrying the legacy completion marker passes the marker check' \
+    "${ART_ERR}" 'database migrations failed'
+  expect_not_match 'artifact_activate: ...and is not refused as unverified' "${ART_ERR}" 'refusing to activate an unverified tree'
+  rm -f "${ART_DEST3}/releases/unmarked/${HL_LEGACY_RELEASE_MARKER}"
   artifact_stage "${ART_DEST3}" "${ART_TREE_A3}" "${ART_SHA_A}" "${ART_DIGEST12_A}" 2>/dev/null
   ART_RC=0
   artifact_activate "${ART_DEST3}" "${ART_RELEASE_A3}" 3000 >/dev/null 2>&1 || ART_RC=$?
@@ -4076,7 +4096,7 @@ PYREPACK
   art_publish "${ART_WORK_ESC}" "${ART_SHA_A}" "${ART_BUN}"
   python3 "${ART_TMP}/repack.py" \
     "${ART_WORK_ESC}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
-    "${ART_WORK_ESC}/dist/escaped.tar.gz" "tau-core-${ART_SHA_A}/../escape.txt"
+    "${ART_WORK_ESC}/dist/escaped.tar.gz" "${ART_ROOT_PREFIX}${ART_SHA_A}/../escape.txt"
   mv -f "${ART_WORK_ESC}/dist/escaped.tar.gz" "${ART_WORK_ESC}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
@@ -4103,6 +4123,26 @@ PYREPACK
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
   expect_eq 'artifact_acquire: a member outside tau-core-<sha>/ reports download_failed' \
     "${ART_ERR}" 'FICUS_ARTIFACT_ERROR=download_failed'
+
+  # The root: ficus-core-<sha>/ (above) or the legacy one; nothing else.
+  art_acquire_rooted() { # WORK PREFIX -> acquire's stdout (its tree on line 2, or its error)
+    local tarball
+    ART_ROOT_PREFIX=$2 art_publish "$1" "${ART_SHA_A}" "${ART_BUN}"
+    tarball=$(find "$1/dist" -name '*.tar.gz' | head -n 1)
+    artifact_acquire "${ART_DEST}" \
+      "file://${tarball}" \
+      "file://$1/dist/artifact.json" \
+      "file://$1/dist/artifact.sig" \
+      "${ART_TMP}/pub.pem" 2>/dev/null
+  }
+  ART_OUT=$(art_acquire_rooted "${ART_TMP}/work-legacy-root" "${HL_LEGACY_ARTIFACT_ROOT_PREFIX}" | sed -n 2p) || true
+  expect_eq 'artifact_acquire: a tarball rooted at the legacy <prefix><sha>/ is accepted' \
+    "$([[ ${ART_OUT} == */"${HL_LEGACY_ARTIFACT_ROOT_PREFIX}${ART_SHA_A}" && -f ${ART_OUT}/artifact.json ]] && echo accepted || echo "refused: ${ART_OUT}")" 'accepted'
+  ART_ERR=$(art_acquire_rooted "${ART_TMP}/work-other-root" 'other-core-') || true
+  expect_eq 'artifact_acquire: a tarball rooted at any other name is refused (download_failed)' \
+    "${ART_ERR}" 'FICUS_ARTIFACT_ERROR=download_failed'
+  { find "${ART_DEST}/releases/.incoming" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true; }
+  unset -f art_acquire_rooted
 
   # --- the tree carries a DIFFERENT artifact.json than the signed one ---
   # (the in-tree copy is what core reads to self-report its version, so it has
@@ -4678,7 +4718,19 @@ file_mtime() { stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1"; }
 
 # --- pure helpers: build_stamp_path / build_lock_hash / build_outputs_present
 expect_eq 'build_stamp_path lives next to the checkout' \
-  "$(build_stamp_path /opt/tau-core)" '/opt/tau-core/.tau-build-stamp'
+  "$(build_stamp_path /srv/core)" "/srv/core/${HL_NEW_BUILD_STAMP}"
+BS_LEGACY=$(mktemp -d)
+: >"${BS_LEGACY}/${HL_LEGACY_BUILD_STAMP}"
+expect_eq 'build_stamp_path: a checkout with only the legacy stamp is read under it' \
+  "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_LEGACY_BUILD_STAMP}"
+expect_eq 'build_stamp_path --write: always the Ficus name' \
+  "$(build_stamp_path "${BS_LEGACY}" --write)" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
+: >"${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
+expect_eq 'build_stamp_path: with both, the Ficus one' \
+  "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
+build_stamp_clear "${BS_LEGACY}"
+expect_eq 'build_stamp_clear: removes both names' "$(find "${BS_LEGACY}" -mindepth 1 | wc -l | tr -d ' ')" '0'
+rm -rf "${BS_LEGACY}"
 
 BS_TMP=$(mktemp -d)
 printf 'lockfile contents A' >"${BS_TMP}/bun.lock"
@@ -5213,12 +5265,14 @@ _legacy_render_backup_script() {
     -e "s|@S3_BUCKET@|${BACKUP_S3_BUCKET}|g" \
     -e "s|@S3_PREFIX@|${BACKUP_S3_PREFIX}|g" \
     -e "s|@BACKUP_ENV_FILE@|${BACKUP_ENV_TARGET_LEGACY}|g" \
-    "${SCRIPT_DIR}/tau-backup.sh.tmpl"
+    "${SCRIPT_DIR}/ficus-backup.sh.tmpl"
 }
 for rbs_mode in container external; do
   (
     unset BACKUP_SCRIPT_PATH BACKUP_ENV_TARGET
     source "${SCRIPT_DIR}/lib.sh"
+    # setup-host.sh's old literals are the layout-1 names.
+    host_layout_resolve 1
     SRC_DEST=/opt/tau-core BACKUP_HOME_DIR=/home/tau/.tau DB_MODE=${rbs_mode} DB_CONTAINER=tau-postgres
     BACKUP_S3_ENDPOINT=https://nyc3.digitaloceanspaces.com BACKUP_S3_REGION=nyc3
     BACKUP_S3_BUCKET=ficus-backups BACKUP_S3_PREFIX=tenants/acct-1/acme
@@ -5239,6 +5293,7 @@ expect_eq 'backup paths default to what setup-host.sh always used' \
   "$(
     unset BACKUP_SCRIPT_PATH BACKUP_ENV_TARGET
     source "${SCRIPT_DIR}/lib.sh"
+    host_layout_resolve 1
     printf '%s %s' "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}"
   )" '/usr/local/bin/tau-backup.sh /etc/tau/backup.env'
 expect_eq 'setup-host.sh no longer defines the backup paths itself (one definition, in lib.sh)' \
@@ -5285,10 +5340,12 @@ EOF
       log_error "FAIL: $1 — no line exactly '$3'"
     fi
   }
-  expect_contains_line 'setup-host --dry-run (backup on): plans the script render at the same path' "${rbs_dry}" \
-    '  render /usr/local/bin/tau-backup.sh from tau-backup.sh.tmpl (dest=/opt/tau-core, db.mode=external, s3=https://nyc3.digitaloceanspaces.com/ficus-backups)'
-  expect_contains_line 'setup-host --dry-run (backup on): plans backup.env at the same path' "${rbs_dry}" \
-    '  write /etc/tau/backup.env (0600 root-owned; secrets redacted below):'
+  # This host has no core unit, so setup-host.sh resolves the fresh (Ficus)
+  # layout, exactly as this shell's lib.sh did.
+  expect_match "setup-host --dry-run (backup on): plans the script render at the layout's path" "${rbs_dry}" \
+    "(^|"$'\n'")  render ${HL_BACKUP_SCRIPT} from ficus-backup\\.sh\\.tmpl \\(dest=[^,]+, db\\.mode=external, s3=https://nyc3\\.digitaloceanspaces\\.com/ficus-backups\\)("$'\n'"|$)"
+  expect_contains_line "setup-host --dry-run (backup on): plans backup.env at the layout's path" "${rbs_dry}" \
+    "  write ${HL_ETC}/backup.env (0600 root-owned; secrets redacted below):"
   unset -f expect_contains_line
 else
   log_warn "mikefarah yq not on PATH — skipping setup-host.sh backup dry-run test"
@@ -5692,6 +5749,39 @@ else
   log_warn 'jq not on PATH — skipping the core_release_is_ficus cases'
 fi
 
+# --- restart_core_services: the layout's unit names ------------------------------
+# systemctl is a PATH shim that records its argv; the health probe and the
+# crash-loop wait are stubbed, so this pins only which units are named.
+RCS_TMP=$(mktemp -d)
+cat >"${RCS_TMP}/systemctl" <<'RCSEOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${RCS_LOG}"
+if [[ $1 == show ]]; then printf '0\n'; fi
+exit 0
+RCSEOF
+chmod +x "${RCS_TMP}/systemctl"
+rcs_calls=$(
+  export RCS_LOG="${RCS_TMP}/calls" PATH="${RCS_TMP}:${PATH}"
+  as_root() { "$@"; }
+  core_api_health_ok() { return 0; }
+  sleep() { :; }
+  restart_core_services 3000 >/dev/null 2>&1 || printf 'restart_core_services failed\n'
+  cat "${RCS_LOG}"
+)
+expect_contains_rcs() { # DESCRIPTION LINE
+  if grep -qxF -- "$2" <<<"${rcs_calls}"; then PASS=$((PASS + 1)); else
+    FAIL=$((FAIL + 1))
+    log_error "FAIL: $1 — no call '$2' in: ${rcs_calls}"
+  fi
+}
+expect_contains_rcs 'restart_core_services: resets the layout units' "reset-failed ${HL_UNIT_API} ${HL_UNIT_WORKER}"
+expect_contains_rcs 'restart_core_services: restarts the layout units' "restart ${HL_UNIT_API} ${HL_UNIT_WORKER}"
+expect_contains_rcs 'restart_core_services: waits on the layout worker' "is-active --quiet ${HL_UNIT_WORKER}"
+expect_contains_rcs 'restart_core_services: reads the layout worker restart count' "show -p NRestarts --value ${HL_UNIT_WORKER}"
+expect_not_match 'restart_core_services: succeeds against the shim' "${rcs_calls}" 'restart_core_services failed'
+unset -f expect_contains_rcs
+rm -rf "${RCS_TMP}"
+
 # --- host migrations (journaled) ---------------------------------------------
 # lib.sh's generic framework, driven by a trivial test migration: the backup
 # set, the ABSENT list, the PENDING journal, settle/reconcile by the active
@@ -5741,7 +5831,7 @@ host_migration_testmark_absent() { printf '%s\n' "${FICUS_MANAGED_ENV_PATH}"; }
 hm_host() { # NAME
   HM_H="${HM}/host-$1"
   rm -rf "${HM_H}"
-  mkdir -p "${HM_H}/dest/releases/old" "${HM_H}/dest/releases/new" "${HM_H}/etc" "${HM_H}/units/tau-api.service.d" "${HM_H}/bin" # phase5-unit-name
+  mkdir -p "${HM_H}/dest/releases/old" "${HM_H}/dest/releases/new" "${HM_H}/etc" "${HM_H}/units/${HL_UNIT_API}.service.d" "${HM_H}/bin"
   : >"${HM_H}/dest/releases/new/NEEDS_TESTMARK"
   : >"${HM_H}/dest/releases/new/NEEDS_TESTMOVE"
   mkdir -p "${HM_H}/data"
@@ -5757,9 +5847,11 @@ hm_host() { # NAME
   export HOST_MIGRATE_BACKUP_ROOT="${HM_H}/bk"
   printf 'FICUS_ENCRYPTION_KEY=k\nFICUS_SANDBOX_RUNTIME=host\n' >"${SRC_DEST}/.env"
   printf "FICUS_BACKUP_PASSPHRASE='pp'\n" >"${BACKUP_ENV_TARGET}"
-  printf '[Service]\nEnvironment=FICUS_ROOT=%s/current\n' "${SRC_DEST}" >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"    # phase5-unit-name
-  printf '[Service]\nEnvironment=FICUS_ROOT=%s/current\n' "${SRC_DEST}" >"${FICUS_SYSTEMD_UNIT_DIR}/tau-worker.service" # phase5-unit-name
-  printf '[Service]\nMemoryHigh=1G\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/extra.conf"                         # phase5-unit-name
+  printf '[Service]\nEnvironment=FICUS_ROOT=%s/current\n' "${SRC_DEST}" >"${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service"
+  printf '[Service]\nEnvironment=FICUS_ROOT=%s/current\n' "${SRC_DEST}" >"${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_WORKER}.service"
+  printf '[Service]\nMemoryHigh=1G\n' >"${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d/extra.conf"
+  printf '[Service]\nExecStart=%s\n' "${BACKUP_SCRIPT_PATH}" >"${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.service"
+  printf '[Timer]\nOnCalendar=*-*-* 03:00:00\n' >"${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.timer"
   chmod 0600 "${SRC_DEST}/.env" "${BACKUP_ENV_TARGET}"
   HOST_MIGRATE_PENDING=0 HOST_MIGRATE_BACKUP_SET='' HOST_MIGRATE_RELEASE='' HOST_MIGRATE_NAMES=''
 }
@@ -5801,7 +5893,7 @@ expect_eq 'host_migrate: the migration ran and the run is pending' \
 expect_eq 'host_migrate: PENDING journals the set, the migrations and the release' \
   "$(cat "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")" "${HOST_MIGRATE_BACKUP_SET}"$'\t'"testmark"$'\t'"${SRC_DEST}/releases/new"
 expect_eq 'host_migrate: the set is root 0700 and holds every host config file' \
-  "$(hm_mode "${HOST_MIGRATE_BACKUP_SET}"):$(wc -l <"${HOST_MIGRATE_BACKUP_SET}/MANIFEST" | tr -d ' ')" '700:5'
+  "$(hm_mode "${HOST_MIGRATE_BACKUP_SET}"):$(wc -l <"${HOST_MIGRATE_BACKUP_SET}/MANIFEST" | tr -d ' ')" '700:7'
 expect_eq 'host_migrate: a file the migration may create is recorded ABSENT' \
   "$(cat "${HOST_MIGRATE_BACKUP_SET}/ABSENT")" "${FICUS_MANAGED_ENV_PATH}"
 host_migrate_settle_pending 2>/dev/null
@@ -5830,11 +5922,11 @@ expect_eq 'host_migrate_restore_pending: the rollback hook restores the set' \
 hm_host preflip
 mkdir -p "${HM}/templates/systemd"
 for hm_u in api worker; do
-  printf '[Service]\nWorkingDirectory=@RUN_ROOT@/apps/core\nEnvironment=FICUS_ROOT=@RUN_ROOT@\n' >"${HM}/templates/systemd/tau-${hm_u}.service.tmpl" # phase5-unit-name
+  printf '[Service]\nWorkingDirectory=@RUN_ROOT@/apps/core\nEnvironment=FICUS_ROOT=@RUN_ROOT@\n' >"${HM}/templates/systemd/ficus-${hm_u}.service.tmpl"
 done
 (SCRIPT_DIR="${HM}/templates" host_migrate_for "${SRC_DEST}/releases/new") >/dev/null 2>&1
 expect_eq 'host_migrate_for: migrates, then renders both units' \
-  "$(grep -c '^TESTMARK=1$' "${SRC_DEST}/.env"):$(grep -c '^WorkingDirectory=' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service")" '1:1' # phase5-unit-name
+  "$(grep -c '^TESTMARK=1$' "${SRC_DEST}/.env"):$(grep -c '^WorkingDirectory=' "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service")" '1:1'
 
 # Reconcile: an interrupted run (killed before it could settle) is made to
 # match the active release by the next run.
@@ -6010,10 +6102,9 @@ HOST_MIGRATIONS=(testmove)
 
 # (i) a migration that renames a listed file (a drop-in) does not fail the
 # flush after it ran: the flush follows the files as they are now.
-host_migration_testrename_needed() { [[ -f $1/NEEDS_TESTMARK ]] && compgen -G "${FICUS_SYSTEMD_UNIT_DIR}/*.service.d/extra.conf" >/dev/null; }
+host_migration_testrename_needed() { [[ -f $1/NEEDS_TESTMARK && -f ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d/extra.conf ]]; }
 host_migration_testrename_apply() {
-  local f
-  for f in "${FICUS_SYSTEMD_UNIT_DIR}"/*.service.d/extra.conf; do mv "${f}" "${f%/*}/extra2.conf" || return 1; done
+  mv "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d/extra.conf" "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d/extra2.conf"
 }
 HOST_MIGRATIONS=(testrename)
 hm_host tm-rename
@@ -6023,7 +6114,7 @@ hm_rc=0
   host_migrate "${SRC_DEST}/releases/new"
 ) >/dev/null 2>&1 || hm_rc=$?
 expect_eq 'host_migrate: a migration that renames a listed drop-in still flushes and succeeds' \
-  "${hm_rc}:$(compgen -G "${FICUS_SYSTEMD_UNIT_DIR}/*.service.d/extra2.conf" >/dev/null && echo renamed)" '0:renamed'
+  "${hm_rc}:$([[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d/extra2.conf ]] && echo renamed)" '0:renamed'
 expect_eq 'host_migrate: the flush covers the files as listed after the migration ran (the renamed drop-in)' \
   "$(grep -c '/extra2\.conf$' "${HM_H}/synced" || true)" '1'
 : >"${HM_H}/present"

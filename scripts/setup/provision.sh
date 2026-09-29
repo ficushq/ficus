@@ -759,30 +759,30 @@ for _f in \
   "${SCRIPT_DIR}/lib.sh" \
   "${SCRIPT_DIR}/setup-host.sh" \
   "${SCRIPT_DIR}/seed.sh" \
-  "${SCRIPT_DIR}/tau-backup.sh.tmpl" \
-  "${SCRIPT_DIR}/systemd/tau-api.service.tmpl" \
-  "${SCRIPT_DIR}/systemd/tau-worker.service.tmpl" \
-  "${SCRIPT_DIR}/systemd/tau-backup.service.tmpl" \
-  "${SCRIPT_DIR}/systemd/tau-backup.timer.tmpl"; do
+  "${SCRIPT_DIR}/ficus-backup.sh.tmpl" \
+  "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl" \
+  "${SCRIPT_DIR}/systemd/ficus-worker.service.tmpl" \
+  "${SCRIPT_DIR}/systemd/ficus-backup.service.tmpl" \
+  "${SCRIPT_DIR}/systemd/ficus-backup.timer.tmpl"; do
   [[ -f ${_f} ]] || die "toolkit file missing, cannot provision: ${_f}"
 done
 unset _f
 
 # only the toolkit, config, and small key files move — with COPYFILE_DISABLE=1.
 export COPYFILE_DISABLE=1
-# tau-backup.sh.tmpl belongs in THIS list: setup-host.sh's backup phase seds it
+# ficus-backup.sh.tmpl belongs in THIS list: setup-host.sh's backup phase seds it
 # from ${SCRIPT_DIR} on the VM (setup-host.sh:498). Omitting it failed the
 # provision at phase 6.6 with a bare
 #   sed: can't read /root/tau-setup/tau-backup.sh.tmpl: No such file or directory
 # after the instance was otherwise fully built — services up, caddy serving.
 "${SCP_BASE[@]}" "${SCRIPT_DIR}/lib.sh" "${SCRIPT_DIR}/setup-host.sh" "${SCRIPT_DIR}/seed.sh" \
-  "${SCRIPT_DIR}/tau-backup.sh.tmpl" \
+  "${SCRIPT_DIR}/ficus-backup.sh.tmpl" \
   "${SSH_USER}@${VM_HOST}:${REMOTE_DIR}/"
-# Every template setup-host.sh renders on the VM. tau-backup.{service,timer}
+# Every template setup-host.sh renders on the VM. The backup .service/.timer
 # were omitted, so the backup phase died on a missing file AFTER the instance
 # was fully built. Include every template rendered by instance setup.
-"${SCP_BASE[@]}" "${SCRIPT_DIR}/systemd/tau-api.service.tmpl" "${SCRIPT_DIR}/systemd/tau-worker.service.tmpl" \
-  "${SCRIPT_DIR}/systemd/tau-backup.service.tmpl" "${SCRIPT_DIR}/systemd/tau-backup.timer.tmpl" \
+"${SCP_BASE[@]}" "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl" "${SCRIPT_DIR}/systemd/ficus-worker.service.tmpl" \
+  "${SCRIPT_DIR}/systemd/ficus-backup.service.tmpl" "${SCRIPT_DIR}/systemd/ficus-backup.timer.tmpl" \
   "${SSH_USER}@${VM_HOST}:${REMOTE_DIR}/systemd/"
 
 # Rewrite key paths in the pushed config to their locations on the VM.

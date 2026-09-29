@@ -261,6 +261,172 @@ require_root_capability() {
   fi
 }
 
+# ------------------------------------------------ host layout (phase 5)
+#
+# Where this host keeps its install root, config, units, backup script, HOME
+# and container database — resolved ONCE, at source time, from what is
+# actually installed, and read by every toolkit path below through HL_*:
+#
+#   layout 1  the names this toolkit used before the Ficus host migration
+#             (HL_LEGACY_*)
+#   layout 2  the Ficus names (HL_NEW_*); a fresh host gets these
+#
+# host_layout_detect tells them apart by the api unit: layout 2 once
+# ${FICUS_SYSTEMD_UNIT_DIR}/<new prefix>-api.service is a regular file (on a
+# migrated host the legacy name is only an alias link to it), layout 1 while
+# only the legacy api unit exists, `fresh` when neither does.
+#
+# FICUS_HOST_ROOT (empty in production) prefixes every absolute path HL_*
+# resolves to, so a test can build a whole host under a scratch dir. The
+# HL_LEGACY_*/HL_NEW_* constants themselves never carry it.
+
+HL_LEGACY_DEST=/opt/tau-core                           # ficus-p5-bridge
+HL_LEGACY_ETC=/etc/tau                                 # ficus-p5-bridge
+HL_LEGACY_SETUP_DIR=/root/tau-setup                    # ficus-p5-bridge
+HL_LEGACY_SETUP_YAML=tau-setup.yaml                    # ficus-p5-bridge
+HL_LEGACY_UNIT_PREFIX=tau                              # ficus-p5-bridge
+HL_LEGACY_BACKUP_SCRIPT=/usr/local/bin/tau-backup.sh   # ficus-p5-bridge
+HL_LEGACY_HOME_NAME=.tau                               # ficus-p5-bridge
+HL_LEGACY_DB_CONTAINER=tau-postgres                    # ficus-p5-bridge
+HL_LEGACY_DB_VOLUME=tau-pgdata                         # ficus-p5-bridge
+HL_LEGACY_DB_NAME=tau                                  # ficus-p5-bridge
+HL_LEGACY_RELEASE_MARKER=.tau-release-complete         # ficus-p5-bridge
+HL_LEGACY_BUILD_STAMP=.tau-build-stamp                 # ficus-p5-bridge
+HL_LEGACY_ARTIFACT_ROOT_PREFIX=tau-core-               # ficus-p5-bridge
+HL_LEGACY_GUARDRAIL_SUFFIX=z-tau-memory-guardrail.conf # ficus-p5-bridge
+HL_LEGACY_SUDOERS=/etc/sudoers.d/tau-update            # ficus-p5-bridge
+
+HL_NEW_DEST=/opt/ficus-core
+HL_NEW_ETC=/etc/ficus
+HL_NEW_SETUP_DIR=/root/ficus-setup
+HL_NEW_SETUP_YAML=ficus-setup.yaml
+HL_NEW_UNIT_PREFIX=ficus
+HL_NEW_BACKUP_SCRIPT=/usr/local/bin/ficus-backup.sh
+HL_NEW_HOME_NAME=.ficus
+HL_NEW_DB_CONTAINER=ficus-postgres
+HL_NEW_DB_VOLUME=ficus-pgdata
+HL_NEW_DB_NAME=ficus
+HL_NEW_RELEASE_MARKER=.ficus-release-complete
+HL_NEW_BUILD_STAMP=.ficus-build-stamp
+HL_NEW_ARTIFACT_ROOT_PREFIX=ficus-core-
+HL_NEW_GUARDRAIL_SUFFIX=z-ficus-memory-guardrail.conf
+HL_NEW_SUDOERS=/etc/sudoers.d/ficus-update
+
+# Where the core, worker and backup units live (a seam: set it before sourcing
+# this file, or override it after).
+FICUS_SYSTEMD_UNIT_DIR=${FICUS_SYSTEMD_UNIT_DIR:-${FICUS_HOST_ROOT:-}/etc/systemd/system}
+
+# The path globals host_layout_resolve derives from the layout. Each is also a
+# seam: a value set BEFORE this file is sourced is captured here, once, and
+# keeps precedence over every later resolve (lib.test.sh and the e2e suites
+# point them at scratch files).
+if [[ -z ${_HL_SEAMS_CAPTURED:-} ]]; then
+  _HL_SEAMS_CAPTURED=1
+  _HL_SEAM_FICUS_DB_CA_DIR=${FICUS_DB_CA_DIR:-}
+  _HL_SEAM_FICUS_DB_CA_PATH=${FICUS_DB_CA_PATH:-}
+  _HL_SEAM_FICUS_ARTIFACTS_DIR=${FICUS_ARTIFACTS_DIR:-}
+  _HL_SEAM_FICUS_MANAGED_ENV_PATH=${FICUS_MANAGED_ENV_PATH:-}
+  _HL_SEAM_BACKUP_SCRIPT_PATH=${BACKUP_SCRIPT_PATH:-}
+  _HL_SEAM_BACKUP_ENV_TARGET=${BACKUP_ENV_TARGET:-}
+fi
+
+# Which layout this host is on: prints 2, 1 or fresh (see above). Read-only;
+# always exits 0.
+host_layout_detect() {
+  local new_api="${FICUS_SYSTEMD_UNIT_DIR}/${HL_NEW_UNIT_PREFIX}-api.service"
+  local legacy_api="${FICUS_SYSTEMD_UNIT_DIR}/${HL_LEGACY_UNIT_PREFIX}-api.service"
+  if [[ -f ${new_api} && ! -L ${new_api} ]]; then
+    printf '2\n'
+  elif [[ -e ${legacy_api} || -L ${legacy_api} ]]; then
+    printf '1\n'
+  else
+    printf 'fresh\n'
+  fi
+}
+
+# Set the HL_* names for LAYOUT (1, 2, or fresh, which gets the layout-2
+# names and HL_LAYOUT=2), then re-derive the path globals below from them —
+# except a global whose seam was set before this file was sourced.
+host_layout_resolve() { # 1|2|fresh
+  local p
+  case ${1:-} in
+    1) p=LEGACY ;;
+    2 | fresh) p=NEW ;;
+    *) die "host_layout_resolve: unknown host layout '${1:-}' (1, 2 or fresh)" ;;
+  esac
+  local root=${FICUS_HOST_ROOT:-} dest etc setup_dir yaml prefix backup_script home_name
+  local container volume db_name suffix sudoers
+  dest="HL_${p}_DEST" etc="HL_${p}_ETC" setup_dir="HL_${p}_SETUP_DIR" yaml="HL_${p}_SETUP_YAML"
+  prefix="HL_${p}_UNIT_PREFIX" backup_script="HL_${p}_BACKUP_SCRIPT" home_name="HL_${p}_HOME_NAME"
+  container="HL_${p}_DB_CONTAINER" volume="HL_${p}_DB_VOLUME" db_name="HL_${p}_DB_NAME"
+  suffix="HL_${p}_GUARDRAIL_SUFFIX" sudoers="HL_${p}_SUDOERS"
+  if [[ ${p} == LEGACY ]]; then HL_LAYOUT=1; else HL_LAYOUT=2; fi
+  HL_DEST="${root}${!dest}"
+  HL_ETC="${root}${!etc}"
+  HL_SETUP_DIR="${root}${!setup_dir}"
+  HL_CFG="${HL_SETUP_DIR}/${!yaml}"
+  HL_UNIT_API="${!prefix}-api"
+  HL_UNIT_WORKER="${!prefix}-worker"
+  HL_UNIT_BACKUP="${!prefix}-backup"
+  HL_BACKUP_SCRIPT="${root}${!backup_script}"
+  HL_HOME_NAME=${!home_name}
+  HL_DB_CONTAINER=${!container}
+  HL_DB_VOLUME=${!volume}
+  HL_DB_NAME=${!db_name}
+  HL_GUARDRAIL_SUFFIX=${!suffix}
+  HL_SUDOERS="${root}${!sudoers}"
+  # CA certificate for an EXTERNAL postgres, managed artifacts, managed.env,
+  # the backup script and its secrets: see their sections below.
+  FICUS_DB_CA_DIR=${_HL_SEAM_FICUS_DB_CA_DIR:-${HL_ETC}}
+  FICUS_DB_CA_PATH=${_HL_SEAM_FICUS_DB_CA_PATH:-${FICUS_DB_CA_DIR}/database-ca.crt}
+  FICUS_ARTIFACTS_DIR=${_HL_SEAM_FICUS_ARTIFACTS_DIR:-${HL_ETC}/artifacts}
+  FICUS_MANAGED_ENV_PATH=${_HL_SEAM_FICUS_MANAGED_ENV_PATH:-${HL_ETC}/managed.env}
+  BACKUP_SCRIPT_PATH=${_HL_SEAM_BACKUP_SCRIPT_PATH:-${HL_BACKUP_SCRIPT}}
+  BACKUP_ENV_TARGET=${_HL_SEAM_BACKUP_ENV_TARGET:-${HL_ETC}/backup.env}
+}
+
+# The host layout the Core release TREE declares: its artifact.json
+# `.hostLayout` (an artifact), else its root package.json `.ficusHostLayout`
+# (a git checkout), else 1. Read-only.
+core_release_host_layout() { # TREE
+  local tree=$1 value=''
+  have jq || die "core_release_host_layout: jq is required"
+  if [[ -f ${tree}/artifact.json ]]; then
+    value=$(jq -r '.hostLayout // empty' "${tree}/artifact.json" 2>/dev/null) || value=''
+  elif [[ -f ${tree}/package.json ]]; then
+    value=$(jq -r '.ficusHostLayout // empty' "${tree}/package.json" 2>/dev/null) || value=''
+  fi
+  _hl_layout_value "${value}"
+}
+
+# The same for revision REV of the checkout at DEST, read with `git show` —
+# so it can be asked before the checkout moves.
+git_rev_host_layout() { # DEST REV
+  local json value=''
+  have jq || die "git_rev_host_layout: jq is required"
+  if json=$(git -C "$1" show "$2:package.json" 2>/dev/null); then
+    value=$(jq -r '.ficusHostLayout // empty' <<<"${json}" 2>/dev/null) || value=''
+  fi
+  _hl_layout_value "${value}"
+}
+
+# A declared layout as printed by the two above: a positive integer, else 1.
+_hl_layout_value() { # VALUE
+  if [[ $1 =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s\n' "$1"
+  else
+    printf '1\n'
+  fi
+}
+
+# Is the release dir TREE complete (staged and verified)? Either marker counts:
+# a release staged before the host migration carries the legacy one.
+release_is_complete() { # TREE
+  [[ -f $1/${HL_NEW_RELEASE_MARKER} || -f $1/${HL_LEGACY_RELEASE_MARKER} ]]
+}
+
+host_layout_resolve "$(host_layout_detect)"
+
 # ------------------------------------------------------- atomic rendered installs
 
 # Render → verify → install; never render straight into the destination.
@@ -287,6 +453,11 @@ install_rendered() { # [--check-placeholders] MODE OWNER GROUP DEST RENDER_CMD [
   fi
   local mode=$1 owner=$2 group=$3 dest=$4 tmp
   shift 4
+  # install(1) would write THROUGH a symlink — on a migrated host the legacy
+  # unit names are systemd Alias= links to the Ficus units.
+  if [[ -L ${dest} ]]; then
+    die "install_rendered: ${dest} is a symlink (a systemd alias?) — refusing to write through it"
+  fi
   tmp=$(mktemp)
   chmod 600 "${tmp}"
   "$@" >"${tmp}" || {
@@ -563,7 +734,7 @@ cfg_has() { # .dotted.path
 # the one resolution every entrypoint uses (and the control plane's probes
 # mirror).
 cfg_source_dest() {
-  expand_tilde "$(cfg_get '.source.dest' '/opt/tau-core')"
+  expand_tilde "$(cfg_get '.source.dest' "${HL_DEST#"${FICUS_HOST_ROOT:-}"}")"
 }
 
 cfg_require() { # .dotted.path DESCRIPTION
@@ -1151,8 +1322,9 @@ install_origin_cert() { # CERT_SRC KEY_SRC [CERT_DEST KEY_DEST]
 # mismatch is not a degradation but a total connection failure, because
 # verify-full has no fallback to fall back to. That is the point: `require`
 # would happily connect to an impostor.
-FICUS_DB_CA_DIR='/etc/tau'
-FICUS_DB_CA_PATH="${FICUS_DB_CA_DIR}/database-ca.crt"
+#
+# FICUS_DB_CA_DIR (the layout's etc dir) and FICUS_DB_CA_PATH
+# (<dir>/database-ca.crt) are set by host_layout_resolve.
 
 # Install the supplied database CA to the canonical path above.
 #
@@ -1178,29 +1350,29 @@ install_database_ca() { # CA_SRC
 # sync. Both call the two functions below, so the on-host result is identical
 # regardless of path.
 #
-#   <stage>/managed.env      -> /etc/tau/managed.env  (0600 root)  [env artifacts]
-#   <stage>/files/<target>   -> /etc/tau/artifacts/<target>        [file artifacts]
+#   <stage>/managed.env      -> <etc>/managed.env  (0600 root)  [env artifacts]
+#   <stage>/files/<target>   -> <etc>/artifacts/<target>        [file artifacts]
 #   <stage>/manifest          "<mode> <target>" per file artifact
 #
+# <etc> is the host layout's etc dir (HL_ETC).
+#
 # FICUS_MANAGED_ENV_PATH is half of a two-sided contract: the OTHER half is the
-# `EnvironmentFile=-/etc/tau/managed.env` line in systemd/tau-api.service.tmpl
-# and tau-worker.service.tmpl. Change one and you must change the other.
+# `EnvironmentFile=-<etc>/managed.env` line in systemd/ficus-api.service.tmpl
+# and ficus-worker.service.tmpl. Change one and you must change the other.
 #
 # FICUS_ARTIFACTS_DIR is EXCLUSIVELY artifact-managed: nothing but these install
 # functions ever writes into it. Everything else the toolkit places lives
-# elsewhere — the database CA at /etc/tau/database-ca.crt, managed.env at
-# /etc/tau/managed.env (both SIBLINGS of this dir, never inside it), Caddy TLS
+# elsewhere — the database CA at <etc>/database-ca.crt, managed.env at
+# <etc>/managed.env (both SIBLINGS of this dir, never inside it), Caddy TLS
 # material under /etc/caddy/tls, units under /etc/systemd/system. That
 # exclusivity is what makes prune_artifacts safe: any file in this dir that
 # the current manifest doesn't list can only be a leftover of a DELETED
 # artifact, so removing it is reconciliation, not collateral damage.
 #
-# These three are also seams (lib.test.sh points them at scratch dirs); set
-# them before sourcing this file, or override them after.
-FICUS_ARTIFACTS_DIR=${FICUS_ARTIFACTS_DIR:-/etc/tau/artifacts}
-FICUS_MANAGED_ENV_PATH=${FICUS_MANAGED_ENV_PATH:-/etc/tau/managed.env}
-# Where the tau-api/tau-worker units live (overridden in lib.test.sh).
-FICUS_SYSTEMD_UNIT_DIR=${FICUS_SYSTEMD_UNIT_DIR:-/etc/systemd/system}
+# These are also seams (lib.test.sh points them at scratch dirs); set them
+# before sourcing this file, or override them after. Their defaults —
+# <layout etc dir>/artifacts and <layout etc dir>/managed.env — come from
+# host_layout_resolve, and FICUS_SYSTEMD_UNIT_DIR from the host layout section.
 
 # Install the staged managed.env (all platform-managed env credentials) to the
 # canonical path the units reference, byte for byte. 0600 root — it holds live
@@ -1301,9 +1473,9 @@ prune_artifacts() { # STAGE_DIR
   done
 }
 
-# Ensure the tau-api/tau-worker units actually LOAD managed.env — the fix for
-# tenants provisioned before the units' templates gained the
-# `EnvironmentFile=-/etc/tau/managed.env` line: on such hosts a sync would
+# Ensure the api/worker units (HL_UNIT_*) actually LOAD managed.env — the fix
+# for tenants provisioned before the units' templates gained the
+# `EnvironmentFile=-<etc>/managed.env` line: on such hosts a sync would
 # install managed.env, restart the services, and report success while the
 # running processes never saw a single variable (verified live: unit file
 # without the line, /proc/<pid>/environ without the keys). For each unit whose
@@ -1321,11 +1493,12 @@ MANAGED_ENV_DROPIN_CHANGED=0
 ensure_managed_env_dropins() {
   MANAGED_ENV_DROPIN_CHANGED=0
   local unit unit_file dropin content
-  content=$'[Service]\nEnvironmentFile=-/etc/tau/managed.env'
-  for unit in tau-api tau-worker; do
+  local managed_env="${HL_ETC#"${FICUS_HOST_ROOT:-}"}/managed.env"
+  content="[Service]"$'\n'"EnvironmentFile=-${managed_env}"
+  for unit in "${HL_UNIT_API}" "${HL_UNIT_WORKER}"; do
     unit_file="${FICUS_SYSTEMD_UNIT_DIR}/${unit}.service"
     dropin="${FICUS_SYSTEMD_UNIT_DIR}/${unit}.service.d/managed-env.conf"
-    if [[ -f ${unit_file} ]] && grep -qF '/etc/tau/managed.env' "${unit_file}"; then
+    if [[ -f ${unit_file} ]] && grep -qF "${managed_env}" "${unit_file}"; then
       continue # unit already loads managed.env inline
     fi
     if [[ -f ${dropin} && $(cat "${dropin}") == "${content}" ]]; then
@@ -1340,7 +1513,7 @@ ensure_managed_env_dropins() {
 
 # ---------------------------------------------------------- core unit files
 #
-# The tau-api/tau-worker units are rendered from the same templates by BOTH
+# The api/worker units (HL_UNIT_*) are rendered from the same templates by BOTH
 # setup-host.sh (provision) and upgrade-host.sh (artifact upgrades), which is
 # why the renderer lives here rather than in either script: two copies of this
 # sed would drift, and a drifted unit is the failure mode where `git log`
@@ -1389,15 +1562,16 @@ render_core_unit() { # TEMPLATE_FILE
 # start. Does NOT daemon-reload — callers own that (and the restart) so a
 # reload happens exactly once per run.
 install_core_units() { # TEMPLATE_DIR
-  local template_dir=$1 unit
-  for unit in tau-api tau-worker; do
-    install_rendered --check-placeholders 0644 root root \
-      "${FICUS_SYSTEMD_UNIT_DIR}/${unit}.service" \
-      render_core_unit "${template_dir}/${unit}.service.tmpl"
-  done
+  local template_dir=$1
+  install_rendered --check-placeholders 0644 root root \
+    "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service" \
+    render_core_unit "${template_dir}/ficus-api.service.tmpl"
+  install_rendered --check-placeholders 0644 root root \
+    "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_WORKER}.service" \
+    render_core_unit "${template_dir}/ficus-worker.service.tmpl"
 }
 
-# Canonical tau-api cgroup policy. Fresh units carry this inline; legacy units
+# Canonical api-unit cgroup policy. Fresh units carry this inline; legacy units
 # receive the same policy through the managed drop-in below.
 api_memory_guardrail_content() {
   printf '%s\n' '[Unit]' \
@@ -1417,8 +1591,8 @@ api_memory_guardrail_content() {
 FICUS_API_MEMORY_GUARDRAIL_CHANGED=0
 ensure_api_memory_guardrail() {
   FICUS_API_MEMORY_GUARDRAIL_CHANGED=0
-  local unit_file="${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
-  local dropin_dir="${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d"
+  local unit_file="${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service"
+  local dropin_dir="${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d"
   local content effective=0 candidate
   content=$(api_memory_guardrail_content)
 
@@ -1461,23 +1635,26 @@ ensure_api_memory_guardrail() {
   local dropin="${dropin_dir}/memory-guardrail.conf" max_base max_stem
   if (( ${#policy_files[@]} > 1 )); then
     max_base=$(basename -- "${policy_files[${#policy_files[@]}-1]}")
-    if [[ ${max_base} == memory-guardrail.conf || ${max_base} == *.z-tau-memory-guardrail.conf ]]; then
+    # A managed drop-in under either suffix is the canonical one (a host
+    # migrated from the legacy layout may still carry the legacy suffix).
+    if [[ ${max_base} == memory-guardrail.conf || ${max_base} == *".${HL_NEW_GUARDRAIL_SUFFIX}" ||
+      ${max_base} == *".${HL_LEGACY_GUARDRAIL_SUFFIX}" ]]; then
       dropin="${dropin_dir}/${max_base}" # repair the already-final managed file
     else
       max_stem=${max_base%.conf}
-      dropin="${dropin_dir}/${max_stem}.z-tau-memory-guardrail.conf"
+      dropin="${dropin_dir}/${max_stem}.${HL_GUARDRAIL_SUFFIX}"
     fi
   fi
   as_root install -d -m 0755 -o root -g root "${dropin_dir}" || die "could not create ${dropin_dir}"
   install_rendered 0644 root root "${dropin}" printf '%s\n' "${content}"
   FICUS_API_MEMORY_GUARDRAIL_CHANGED=1
-  log_info "installed ${dropin} (made the canonical tau-api memory policy the effective final assignment)"
+  log_info "installed ${dropin} (made the canonical ${HL_UNIT_API} memory policy the effective final assignment)"
 }
 
 # ------------------------------------------------------------------ restore
 #
 # Restore-from-backup unpack primitive. A tenant backup envelope (produced by
-# tau-backup.sh.tmpl) is an openssl-encrypted gzip tar whose top-level members
+# ficus-backup.sh.tmpl) is an openssl-encrypted gzip tar whose top-level members
 # are, exactly: `db.dump` (a `pg_dump -Fc` custom-format dump), the HOME_DIR
 # tree (a single directory, e.g. `.tau/`), and the instance `.env` (which
 # carries FICUS_ENCRYPTION_KEY). This decrypts + extracts one, asserting the
@@ -1486,7 +1663,7 @@ ensure_api_memory_guardrail() {
 #
 # The passphrase is read from PASSFILE (a 0600 tmpfile the caller writes from
 # $FICUS_SETUP_RESTORE_PASSPHRASE) and NEVER passed on argv — same discipline as
-# tau-backup.sh.tmpl's own `-pass file:` encryption. The openssl parameters
+# ficus-backup.sh.tmpl's own `-pass file:` encryption. The openssl parameters
 # here (aes-256-cbc + pbkdf2) mirror that template exactly; changing one side
 # without the other makes every existing backup undecryptable.
 #
@@ -1817,7 +1994,7 @@ sh_single_quote() { # VALUE
 # build_env_content's redact mode in setup-host.sh, kept as a pure lib.sh
 # helper (explicit args, no globals) so it is directly unit-testable.
 #
-# Values are single-quoted (sh_single_quote): tau-backup.sh.tmpl `source`s
+# Values are single-quoted (sh_single_quote): ficus-backup.sh.tmpl `source`s
 # this file, so a bare/unquoted assignment would let a passphrase containing
 # spaces, $(...), or backticks corrupt parsing or execute as root.
 render_backup_env_content() { # MODE(real|redact) ACCESS_KEY SECRET_KEY PASSPHRASE
@@ -1846,10 +2023,10 @@ EOF
 # only so tests can point them at a scratch directory (the same idiom as
 # CADDY_TLS_DIR/CADDYFILE_PATH); setup-host.sh and upgrade-host.sh never set
 # either.
-BACKUP_SCRIPT_PATH="${BACKUP_SCRIPT_PATH:-/usr/local/bin/tau-backup.sh}"
-BACKUP_ENV_TARGET="${BACKUP_ENV_TARGET:-/etc/tau/backup.env}"
+# BACKUP_SCRIPT_PATH (the layout's backup script) and BACKUP_ENV_TARGET
+# (<layout etc dir>/backup.env) are set by host_layout_resolve; both are seams.
 
-# Render tau-backup.sh.tmpl with its @TOKEN@ substitutions. Explicit args, no
+# Render ficus-backup.sh.tmpl with its @TOKEN@ substitutions. Explicit args, no
 # globals, so setup-host.sh (fresh render from its config) and
 # retarget-backup.sh (re-render of a live host, non-S3 values carried over
 # from the installed script) share exactly one render. The sed program is the
@@ -1892,7 +2069,7 @@ backup_script_read_values() { # SCRIPT
   done
   for _tok in ${tokens}; do
     [[ ${_found} == *" ${_tok} "* ]] ||
-      die "${script} has no ${_tok}='…' line — it was not rendered from a tau-backup.sh.tmpl this script understands; re-run setup-host.sh's phase_backup instead"
+      die "${script} has no ${_tok}='…' line — it was not rendered from a ficus-backup.sh.tmpl this script understands; re-run setup-host.sh's phase_backup instead"
   done
   for _tok in DEST HOME_DIR DB_MODE S3_PREFIX BACKUP_ENV_FILE; do
     _val="LIVE_${_tok}"
@@ -1984,7 +2161,7 @@ sh_env_parse() { # RAW LABEL KEY:VAR...
 }
 
 # curl config-file credentials, never argv (ps-visible) — the same user line
-# tau-backup.sh.tmpl builds for its own requests (that script is standalone
+# ficus-backup.sh.tmpl builds for its own requests (that script is standalone
 # and keeps its own copy). Escapes \ and " for the curl config quoted string.
 _s3_curl_user_config() { # ACCESS SECRET
   local a=${1//\\/\\\\} s=${2//\\/\\\\}
@@ -2501,7 +2678,16 @@ git_source_sync() {
 # missing or mid-write just fails the next skip check's hash comparison —
 # never to a corrupted skip.
 
-build_stamp_path() { printf '%s/.tau-build-stamp\n' "$1"; } # SRC_DEST
+# The stamp at SRC_DEST: the Ficus name, except that a checkout built before
+# the host migration is still read under the legacy name while only that one
+# exists. --write always names the Ficus one.
+build_stamp_path() { # SRC_DEST [--write]
+  if [[ ${2:-} != --write && ! -e $1/${HL_NEW_BUILD_STAMP} && -e $1/${HL_LEGACY_BUILD_STAMP} ]]; then
+    printf '%s/%s\n' "$1" "${HL_LEGACY_BUILD_STAMP}"
+  else
+    printf '%s/%s\n' "$1" "${HL_NEW_BUILD_STAMP}"
+  fi
+}
 
 # sha256 of bun.lock. Empty string (never matches a real stamp) when the
 # lockfile is missing, rather than dying — a missing lockfile is a build
@@ -2589,7 +2775,7 @@ build_stamp_is_current() { # SRC_DEST SERVE_WEB
 # NEVER on the skip path — so a build that dies halfway can never leave a
 # valid stamp sitting over stale or half-written outputs.
 build_stamp_clear() { # SRC_DEST
-  rm -f "$(build_stamp_path "$1")"
+  rm -f "$1/${HL_NEW_BUILD_STAMP}" "$1/${HL_LEGACY_BUILD_STAMP}"
 }
 
 # Write the stamp. Only ever called after build_app's own output assertions
@@ -2599,7 +2785,7 @@ build_stamp_clear() { # SRC_DEST
 # later skip check can prove content, not just presence.
 build_stamp_write() { # SRC_DEST SERVE_WEB
   local src_dest=$1 serve_web=$2 stamp
-  stamp=$(build_stamp_path "${src_dest}")
+  stamp=$(build_stamp_path "${src_dest}" --write)
   {
     printf 'FICUS_BUILD_COMMIT=%s\n' "$(git -C "${src_dest}" rev-parse HEAD)"
     printf 'FICUS_BUILD_LOCK_HASH=%s\n' "$(build_lock_hash "${src_dest}")"
@@ -2713,10 +2899,10 @@ core_api_health_ok() { # CORE_PORT
   return 1
 }
 
-core_worker_active() { as_root systemctl is-active --quiet tau-worker; }
-core_worker_restarts() { as_root systemctl show -p NRestarts --value tau-worker 2>/dev/null; }
+core_worker_active() { as_root systemctl is-active --quiet "${HL_UNIT_WORKER}"; }
+core_worker_restarts() { as_root systemctl show -p NRestarts --value "${HL_UNIT_WORKER}" 2>/dev/null; }
 
-# Restart tau-api + tau-worker and REFUSE to return until both are genuinely
+# Restart the api + worker units and REFUSE to return until both are genuinely
 # serving. Dies otherwise, dumping the relevant journal — a restart that is
 # reported as successful while the unit crash-loops is the second half of the
 # stale-bundle trap (the first half being a skipped build).
@@ -2727,16 +2913,16 @@ restart_core_services() { # CORE_PORT
   # quickly" — which is exactly the state a rollback finds the services in
   # after a bad release crash-looped (live-hit on the first artifact canary).
   # reset-failed clears the lockout; on a healthy unit it is a no-op.
-  as_root systemctl reset-failed tau-api tau-worker 2>/dev/null || true
-  as_root systemctl restart tau-api tau-worker
+  as_root systemctl reset-failed "${HL_UNIT_API}" "${HL_UNIT_WORKER}" 2>/dev/null || true
+  as_root systemctl restart "${HL_UNIT_API}" "${HL_UNIT_WORKER}"
   if ! retry_until 180 3 "core API up (GET /health → 200/401)" core_api_health_ok "${core_port}"; then
-    log_error "tau-api did not become healthy — last journald lines:"
-    as_root journalctl -u tau-api -n 60 --no-pager >&2 || true
+    log_error "${HL_UNIT_API} did not become healthy — last journald lines:"
+    as_root journalctl -u "${HL_UNIT_API}" -n 60 --no-pager >&2 || true
     die "core API failed to start"
   fi
-  if ! retry_until 60 2 'tau-worker active' core_worker_active; then
-    log_error "tau-worker is not active — last journald lines:"
-    as_root journalctl -u tau-worker -n 60 --no-pager >&2 || true
+  if ! retry_until 60 2 "${HL_UNIT_WORKER} active" core_worker_active; then
+    log_error "${HL_UNIT_WORKER} is not active — last journald lines:"
+    as_root journalctl -u "${HL_UNIT_WORKER}" -n 60 --no-pager >&2 || true
     die "worker failed to start"
   fi
   # is-active reads "active" even mid-crash-loop (the start→crash window under
@@ -2749,12 +2935,12 @@ restart_core_services() { # CORE_PORT
     sleep 8
     restarts_after=$(core_worker_restarts)
     if [[ ${restarts_after} != "${restarts_before}" ]] || ! core_worker_active; then
-      log_error "tau-worker is crash-looping (NRestarts ${restarts_before} → ${restarts_after:-?}) — last journald lines:"
-      as_root journalctl -u tau-worker -n 60 --no-pager >&2 || true
+      log_error "${HL_UNIT_WORKER} is crash-looping (NRestarts ${restarts_before} → ${restarts_after:-?}) — last journald lines:"
+      as_root journalctl -u "${HL_UNIT_WORKER}" -n 60 --no-pager >&2 || true
       die "worker started but did not stay up"
     fi
   else
-    log_warn "could not read NRestarts for tau-worker (got '${restarts_before}') — skipping the crash-loop check"
+    log_warn "could not read NRestarts for ${HL_UNIT_WORKER} (got '${restarts_before}') — skipping the crash-loop check"
   fi
   log_info "services up: api on :${core_port} (health 401 = up + auth-gated), worker active"
 }
@@ -2780,7 +2966,8 @@ restart_core_services() { # CORE_PORT
 # compared against the version the artifact was built for. Only after all of
 # that does anything get staged.
 #
-# The artifact format is P1's and frozen: tarball root `tau-core-<sha>/`,
+# The artifact format is P1's and frozen: tarball root `<prefix><sha>/`, the
+# prefix either HL_NEW_ARTIFACT_ROOT_PREFIX or the legacy one (both accepted),
 # `artifact.json` at that root (schema 1, files map keyed by POSIX relpath ->
 # `sha256:<hex>`, the root artifact.json excluded from its own map), digest =
 # sha256 over the canonical (key-sorted) files map, `artifact.sig` = base64
@@ -2874,7 +3061,7 @@ _artifact_symlink_swap() { # TARGET LINK
 # What does NOT move: `.env` (the secrets — FICUS_ENCRYPTION_KEY among them —
 # live at <dest>/.env in BOTH layouts, which is exactly why the units keep
 # `EnvironmentFile=<dest>/.env` while their WorkingDirectory follows the run
-# root), `releases/` itself, `.tau-build-stamp` (a claim about a checkout that
+# root), `releases/` itself, the build stamp (a claim about a checkout that
 # is no longer at <dest>; the outputs it names travel with the tree), and the
 # `current`/`previous` links, which are layout, not checkout content.
 #
@@ -2922,7 +3109,7 @@ artifact_convert_git_checkout() { # DEST
       die "artifact_convert_git_checkout: could not move ${name} into ${target}"
   done < <(
     find "${dest}" -mindepth 1 -maxdepth 1 \
-      ! -name releases ! -name .env ! -name .tau-build-stamp \
+      ! -name releases ! -name .env ! -name "${HL_NEW_BUILD_STAMP}" ! -name "${HL_LEGACY_BUILD_STAMP}" \
       ! -name current ! -name previous ! -name .git
     printf '%s\n' "${dest}/.git"
   )
@@ -3048,21 +3235,29 @@ artifact_acquire() { # DEST TARBALL_URL MANIFEST_URL SIG_URL PUBKEY_PEM_PATH
     _artifact_fail "${incoming}" manifest_invalid "artifact manifest lists no files"
 
   # --- 3. extract, refusing a tarball that reaches outside its own root ------
-  tree="${incoming}/tree/tau-core-${commit}"
+  # The root is ficus-core-<sha>/, or the legacy one for an artifact built
+  # before the rename; every member must sit under ONE of them.
   mkdir -p "${incoming}/tree"
   tar -tzf "${incoming}/artifact.tar.gz" >"${incoming}/members.txt" 2>/dev/null ||
     _artifact_fail "${incoming}" download_failed "the artifact tarball is not readable gzip (truncated download?)"
-  if grep -qvE "^tau-core-${commit}/" "${incoming}/members.txt" ||
-    grep -qE '(^|/)\.\.(/|$)' "${incoming}/members.txt"; then
-    _artifact_fail "${incoming}" download_failed "the tarball has members outside tau-core-${commit}/ — refusing to extract it"
+  local root_name='' root_candidate
+  for root_candidate in "${HL_NEW_ARTIFACT_ROOT_PREFIX}${commit}" "${HL_LEGACY_ARTIFACT_ROOT_PREFIX}${commit}"; do
+    if ! grep -qvE "^${root_candidate}/" "${incoming}/members.txt"; then
+      root_name=${root_candidate}
+      break
+    fi
+  done
+  if [[ -z ${root_name} ]] || grep -qE '(^|/)\.\.(/|$)' "${incoming}/members.txt"; then
+    _artifact_fail "${incoming}" download_failed "the tarball has members outside ${HL_NEW_ARTIFACT_ROOT_PREFIX}${commit}/ (or the legacy root) — refusing to extract it"
   fi
+  tree="${incoming}/tree/${root_name}"
   # --no-same-owner/--no-same-permissions: the archive's uid/gid/mode bits are
   # the BUILDER's, and this may run as root — the tree belongs to whoever the
   # box runs as, with a sane umask, not to whatever the tarball claims.
   tar -xzf "${incoming}/artifact.tar.gz" --no-same-owner --no-same-permissions -C "${incoming}/tree" ||
     _artifact_fail "${incoming}" download_failed "extracting the artifact tarball failed"
   [[ -d ${tree} ]] ||
-    _artifact_fail "${incoming}" download_failed "the tarball did not contain tau-core-${commit}/"
+    _artifact_fail "${incoming}" download_failed "the tarball did not contain ${root_name}/"
 
   # The tree carries its own copy of the manifest (core reads it to self-report
   # its version). It must be the very bytes we verified the signature over.
@@ -3123,15 +3318,15 @@ artifact_acquire() { # DEST TARBALL_URL MANIFEST_URL SIG_URL PUBKEY_PEM_PATH
 artifact_stage() { # DEST INCOMING_TREE SHA DIGEST12
   local dest=$1 tree=$2 sha=$3 digest12=$4 release marker digest tree_commit
   release=$(artifact_release_dir "${dest}" "${sha}" "${digest12}")
-  marker="${release}/.tau-release-complete"
-  if [[ -f ${marker} ]]; then
+  marker="${release}/${HL_NEW_RELEASE_MARKER}"
+  if release_is_complete "${release}"; then
     log_info "release ${sha:0:12}-${digest12} is already staged and complete — nothing to do"
     _artifact_discard_incoming "${dest}" "${tree}"
     return 0
   fi
   [[ -d ${tree} ]] || die "artifact_stage: '${tree}' is not a directory — nothing to stage"
   if [[ -e ${release} ]]; then
-    log_warn "replacing an incomplete release dir at ${release} (no .tau-release-complete marker)"
+    log_warn "replacing an incomplete release dir at ${release} (no ${HL_NEW_RELEASE_MARKER} marker)"
     rm -rf "${release}"
   fi
   # The caller passes the sha it thinks it verified; the tree carries the sha
@@ -3222,8 +3417,8 @@ cd "$2/apps/core" && exec bun dist/migrate.js'
 #                           runs.
 artifact_activate() { # DEST RELEASE_DIR CORE_PORT
   local dest=$1 release_dir=$2 core_port=$3 cur_before prev_before attempt hook_rc
-  [[ -f ${release_dir}/.tau-release-complete ]] ||
-    die "artifact_activate: ${release_dir} has no .tau-release-complete marker — refusing to activate an unverified tree"
+  release_is_complete "${release_dir}" ||
+    die "artifact_activate: ${release_dir} has no ${HL_NEW_RELEASE_MARKER} marker — refusing to activate an unverified tree"
   [[ -f ${dest}/.env ]] ||
     die "artifact_activate: ${dest}/.env is missing — a release tree carries no environment of its own"
 
@@ -3474,9 +3669,9 @@ envfile_read() { # VAR FILE KEY
 #
 # A generic way to change this host's root-owned config files — <dest>/.env,
 # managed.env, backup.env, the config yaml, the core units and their drop-ins,
-# the installed backup script — as part of moving it to a release, with a way
-# back. This release registers no migration: the framework runs nothing until
-# one is added to HOST_MIGRATIONS.
+# the backup units, the installed backup script — as part of moving it to a
+# release, with a way back. This release registers no migration: the framework
+# runs nothing until one is added to HOST_MIGRATIONS.
 #
 # A migration NAME ([a-z0-9_]+) is three functions:
 #   host_migration_NAME_needed RELEASE_DIR  0 when this host needs it for that
@@ -3616,11 +3811,13 @@ _host_config_candidates() { # [--no-units]
   local f
   printf '%s\n' "${SRC_DEST}/.env" "${FICUS_MANAGED_ENV_PATH}" "${BACKUP_ENV_TARGET}" "${CFG_FILE:-}"
   if [[ ${1:-} != --no-units ]]; then
-    printf '%s\n' "${FICUS_SYSTEMD_UNIT_DIR}"/tau-{api,worker}.service # phase5-unit-name
-    for f in "${FICUS_SYSTEMD_UNIT_DIR}"/tau-{api,worker}.service.d/*.conf; do # phase5-unit-name
+    printf '%s\n' "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service" "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_WORKER}.service"
+    for f in "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_API}.service.d"/*.conf "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_WORKER}.service.d"/*.conf; do
       printf '%s\n' "${f}"
     done
   fi
+  # Always, even without the core units: nothing re-renders the backup units.
+  printf '%s\n' "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.service" "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.timer"
   printf '%s\n' "${BACKUP_SCRIPT_PATH}"
 }
 
@@ -3759,7 +3956,7 @@ _hm_absent_ok() { # PATH MANIFEST_PATH...
 # Are both core unit templates next to this toolkit copy?
 _hm_have_unit_templates() {
   local t
-  for t in "${SCRIPT_DIR}/systemd"/tau-{api,worker}.service.tmpl; do # phase5-unit-name
+  for t in "${SCRIPT_DIR}/systemd"/ficus-{api,worker}.service.tmpl; do
     [[ -f ${t} ]] || return 1
   done
 }

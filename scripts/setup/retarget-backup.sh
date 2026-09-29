@@ -38,7 +38,7 @@
 # passphrase would make every existing backup unrestorable with the new
 # config), tau-backup.timer/.service (the schedule), backup.s3_prefix, and
 # every object in either bucket (copying old backups across is an ops step).
-# tau-backup.sh is re-rendered from the tau-backup.sh.tmpl shipped next to
+# The backup script is re-rendered from the ficus-backup.sh.tmpl shipped next to
 # this script, so its logic becomes that template's — exactly what a fresh
 # provision would install; --dry-run prints the diff.
 #
@@ -77,7 +77,7 @@
 #
 # Run as root on the tenant VM (EUID 0; sudo is not supported), from the
 # directory holding the copied toolkit: this script, lib.sh and
-# tau-backup.sh.tmpl side by side.
+# ficus-backup.sh.tmpl side by side.
 set -euo pipefail
 # Never trace: an inherited `bash -x` / SHELLOPTS=xtrace would print every
 # assignment below, secret key and passphrase included.
@@ -243,8 +243,8 @@ if [[ ${BACKUP_ENABLED} != true ]]; then
   exit "${EXIT_NOT_APPLICABLE}"
 fi
 
-TEMPLATE="${SCRIPT_DIR}/tau-backup.sh.tmpl"
-[[ -f ${TEMPLATE} ]] || die "tau-backup.sh.tmpl not found next to this script (${TEMPLATE}) — push it with retarget-backup.sh and lib.sh"
+TEMPLATE="${SCRIPT_DIR}/ficus-backup.sh.tmpl"
+[[ -f ${TEMPLATE} ]] || die "ficus-backup.sh.tmpl not found next to this script (${TEMPLATE}) — push it with retarget-backup.sh and lib.sh"
 
 # The live tau-backup.sh: the non-S3 values it was rendered with are carried
 # over verbatim (re-deriving them would need setup-host.sh's whole config,

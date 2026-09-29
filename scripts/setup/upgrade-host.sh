@@ -273,7 +273,7 @@ artifact_upgrade() {
   # to the box must push systemd/*.service.tmpl alongside them. Checked HERE,
   # before a single byte on the box moves — discovering it after the
   # conversion would leave the box mid-migration with stale units.
-  for tmpl in tau-api tau-worker; do
+  for tmpl in ficus-api ficus-worker; do
     [[ -f ${SCRIPT_DIR}/systemd/${tmpl}.service.tmpl ]] ||
       die "missing ${SCRIPT_DIR}/systemd/${tmpl}.service.tmpl — an artifact upgrade re-renders the systemd units, so the caller must push scripts/setup/systemd/*.service.tmpl to the box alongside lib.sh and upgrade-host.sh"
   done

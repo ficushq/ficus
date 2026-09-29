@@ -75,6 +75,19 @@ describe('setup helper CI gate', () => {
     expect(step).not.toContain('continue-on-error')
     expect(step).not.toContain('if:')
   })
+
+  test('runs the host layout suite AS ROOT, gated on its summary line', () => {
+    const start = workflow.indexOf('- name: Run host layout suite (root)')
+    expect(start).toBeGreaterThan(-1)
+    // Right after the retarget-backup step, like the other root suites.
+    expect(start).toBeGreaterThan(workflow.indexOf('- name: Run retarget-backup mutation-phase suite (root)'))
+    const nextStep = workflow.indexOf('\n      - name:', start + 1)
+    const step = workflow.slice(start, nextStep === -1 ? undefined : nextStep)
+    expect(step).toContain('sudo env "PATH=$PATH" bash scripts/setup/host-layout.test.sh')
+    expect(step).toContain("grep -Eq '^[0-9]+ passed, 0 failed$'") // summary-line gate
+    expect(step).not.toContain('continue-on-error')
+    expect(step).not.toContain('if:')
+  })
 })
 
 describe('lib.test.sh root-install marker', () => {

@@ -202,7 +202,7 @@ EOF
 
 # --- fixtures -----------------------------------------------------------------
 LIB="${SCRIPT_DIR}/lib.sh"
-TEMPLATE="${SCRIPT_DIR}/tau-backup.sh.tmpl"
+TEMPLATE="${SCRIPT_DIR}/ficus-backup.sh.tmpl"
 lib() { bash -c 'source "$0"; "$@"' "${LIB}" "$@"; }
 
 export BACKUP_SCRIPT_PATH="${SCRATCH}/bin/tau-backup.sh"
@@ -571,8 +571,8 @@ mkdir -p "${TOOLKIT_NO_TMPL}"
 cp "${RETARGET}" "${LIB}" "${TOOLKIT_NO_TMPL}/"
 rc=0
 out=$("${TOOLKIT_NO_TMPL}/retarget-backup.sh" "${ARGS[@]}" --dry-run 2>&1) || rc=$?
-expect_eq 'no tau-backup.sh.tmpl next to the script: exits 1' "${rc}" 1
-expect_contains 'no tau-backup.sh.tmpl next to the script: names it' "${out}" 'tau-backup.sh.tmpl not found next to this script'
+expect_eq 'no ficus-backup.sh.tmpl next to the script: exits 1' "${rc}" 1
+expect_contains 'no ficus-backup.sh.tmpl next to the script: names it' "${out}" 'ficus-backup.sh.tmpl not found next to this script'
 
 # Read-side injection (dry-run reaches every read): a silently short read of
 # the live backup.env, and a read error on the secrets file, must refuse.

@@ -224,7 +224,7 @@ fi
 # Optional nightly encrypted backup (pg dump + HOME_DIR → S3-compatible
 # storage) — off by default; a future cloud control plane turns this on so
 # tenant VMs have backups before anything else does. See phase_backup and
-# tau-backup.sh.tmpl for the mechanics.
+# ficus-backup.sh.tmpl for the mechanics.
 BACKUP_ENABLE=$(cfg_bool '.backup.enabled' 'false')
 BACKUP_S3_ENDPOINT=$(cfg_get '.backup.s3_endpoint' '')
 BACKUP_S3_REGION=$(cfg_get '.backup.s3_region' '')
@@ -239,7 +239,7 @@ if [[ ${BACKUP_ENABLE} == true ]]; then
   [[ -n ${BACKUP_S3_ENDPOINT} ]] || die "config: backup.enabled requires backup.s3_endpoint"
   [[ -n ${BACKUP_S3_REGION} ]] || die "config: backup.enabled requires backup.s3_region"
   [[ -n ${BACKUP_S3_BUCKET} ]] || die "config: backup.enabled requires backup.s3_bucket"
-  # A non-empty prefix is required, not just conventional: tau-backup.sh.tmpl's
+  # A non-empty prefix is required, not just conventional: ficus-backup.sh.tmpl's
   # 14-object retention window lists and deletes by this prefix — an empty
   # prefix would scope retention to the ENTIRE bucket, silently deleting any
   # unrelated object that happens to match the <YYYY-MM-DD>.tar.gz.enc shape.
@@ -640,7 +640,7 @@ EOF
 # in lib.sh, shared with retarget-backup.sh (which re-renders a live host's
 # backup target without re-running this script).
 render_backup_script() {
-  render_backup_script_content "${SCRIPT_DIR}/tau-backup.sh.tmpl" \
+  render_backup_script_content "${SCRIPT_DIR}/ficus-backup.sh.tmpl" \
     "${SRC_DEST}" "${BACKUP_HOME_DIR}" "${DB_MODE}" "${DB_CONTAINER}" \
     "${BACKUP_S3_ENDPOINT}" "${BACKUP_S3_REGION}" "${BACKUP_S3_BUCKET}" "${BACKUP_S3_PREFIX}" \
     "${BACKUP_ENV_TARGET}"
@@ -773,9 +773,9 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   fi
   printf '\nPhase 6 — systemd services\n'
   [[ ${RUN_USER} != "$(id -un)" ]] && plan "preflight: run_user '${RUN_USER}' exists AND can execute the resolved bun binary (fails fast with instructions otherwise)"
-  for unit in tau-api tau-worker; do
-    plan "install /etc/systemd/system/${unit}.service:"
-    render_core_unit "${SCRIPT_DIR}/systemd/${unit}.service.tmpl" | sed 's/^/  | /'
+  for unit in "${HL_UNIT_API}:api" "${HL_UNIT_WORKER}:worker"; do
+    plan "install /etc/systemd/system/${unit%%:*}.service:"
+    render_core_unit "${SCRIPT_DIR}/systemd/ficus-${unit#*:}.service.tmpl" | sed 's/^/  | /'
   done
   if [[ ${RUN_USER} != root ]]; then
     plan "install ${UPDATE_SUDOERS_FILE} (0440, visudo-validated) so the self-updater can restart non-root services:"
@@ -803,11 +803,11 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   if [[ ${BACKUP_ENABLE} == true ]]; then
     printf '\nPhase 6.6 — nightly encrypted backup (S3 prefix %s)\n' "${BACKUP_S3_PREFIX:-<none>}"
     plan "HOME_DIR resolved to: ${BACKUP_HOME_DIR}"
-    plan "render ${BACKUP_SCRIPT_PATH} from tau-backup.sh.tmpl (dest=${SRC_DEST}, db.mode=${DB_MODE}, s3=${BACKUP_S3_ENDPOINT}/${BACKUP_S3_BUCKET})"
+    plan "render ${BACKUP_SCRIPT_PATH} from ficus-backup.sh.tmpl (dest=${SRC_DEST}, db.mode=${DB_MODE}, s3=${BACKUP_S3_ENDPOINT}/${BACKUP_S3_BUCKET})"
     plan "write ${BACKUP_ENV_TARGET} (0600 root-owned; secrets redacted below):"
     render_backup_env_content redact "${BACKUP_S3_ACCESS_KEY_VALUE}" "${BACKUP_S3_SECRET_KEY_VALUE}" "${BACKUP_PASSPHRASE_VALUE}" | sed 's/^/  | /'
     plan "install tau-backup.service + tau-backup.timer (OnCalendar=${BACKUP_ONCALENDAR}):"
-    render_backup_unit "${SCRIPT_DIR}/systemd/tau-backup.timer.tmpl" | sed 's/^/  | /'
+    render_backup_unit "${SCRIPT_DIR}/systemd/ficus-backup.timer.tmpl" | sed 's/^/  | /'
     plan "systemctl daemon-reload && enable --now tau-backup.timer"
   fi
   printf '\nPhase 7 — seed (delegated to seed.sh)\n'
@@ -1348,9 +1348,9 @@ phase_backup() {
   # once landed a 0-byte tau-backup.service that daemon-reload accepted
   # silently, so the nightly backup never ran.
   install_rendered --check-placeholders 0644 root root /etc/systemd/system/tau-backup.service \
-    render_backup_unit "${SCRIPT_DIR}/systemd/tau-backup.service.tmpl"
+    render_backup_unit "${SCRIPT_DIR}/systemd/ficus-backup.service.tmpl"
   install_rendered --check-placeholders 0644 root root /etc/systemd/system/tau-backup.timer \
-    render_backup_unit "${SCRIPT_DIR}/systemd/tau-backup.timer.tmpl"
+    render_backup_unit "${SCRIPT_DIR}/systemd/ficus-backup.timer.tmpl"
 
   as_root systemctl daemon-reload
   as_root systemctl enable --now tau-backup.timer

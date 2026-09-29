@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tau-backup.test.sh — round-trip test of the RENDERED tau-backup.sh.tmpl.
+# ficus-backup.test.sh — round-trip test of the RENDERED ficus-backup.sh.tmpl.
 #
 # This does not exercise phase_backup()'s rendering machinery in
 # setup-host.sh (that needs a full cfg_load + secrets-resolution
@@ -11,7 +11,7 @@
 # S3. Asserts the resulting encrypted artifact decrypts + untars back to
 # exactly the inputs (db dump, HOME_DIR tree, .env).
 #
-# Run: bash scripts/setup/tau-backup.test.sh
+# Run: bash scripts/setup/ficus-backup.test.sh
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
@@ -69,7 +69,7 @@ sed \
   -e "s|@S3_BUCKET@|test-bucket|g" \
   -e "s|@S3_PREFIX@|tenants/test|g" \
   -e "s|@BACKUP_ENV_FILE@|${BACKUP_ENV_FILE}|g" \
-  "${SCRIPT_DIR}/tau-backup.sh.tmpl" >"${RENDERED}"
+  "${SCRIPT_DIR}/ficus-backup.sh.tmpl" >"${RENDERED}"
 chmod 755 "${RENDERED}"
 
 unrendered_rc=0
@@ -82,7 +82,7 @@ printf 'FICUS_BACKUP_S3_ACCESS_KEY=unused-in-dry-run\nFICUS_BACKUP_S3_SECRET_KEY
 chmod 600 "${BACKUP_ENV_FILE}"
 
 # --- fake pg_dump seam: write deterministic content instead of shelling to a
-# live postgres (see tau-backup.sh.tmpl's FICUS_BACKUP_PG_DUMP_CMD test seam).
+# live postgres (see ficus-backup.sh.tmpl's FICUS_BACKUP_PG_DUMP_CMD test seam).
 FAKE_DUMP_CONTENT='FAKE-PG-DUMP-CONTENT-1234'
 FAKE_PG_DUMP="${SCRATCH}/fake-pg-dump.sh"
 cat >"${FAKE_PG_DUMP}" <<EOF

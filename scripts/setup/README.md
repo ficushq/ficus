@@ -17,12 +17,12 @@ scripts/setup/
   provision-exe.sh               compat shim → provision.sh (kept for old bookmarks/muscle memory)
   seed.sh                        idempotent API seeding (called by setup-host.sh,
                                  also usable standalone against a running instance)
-  tau-backup.sh.tmpl             rendered → /usr/local/bin/tau-backup.sh (optional, backup.enabled)
+  ficus-backup.sh.tmpl           rendered → the nightly backup script (optional, backup.enabled)
   lib.sh                         shared helpers (logging, retry, config, http, git source, caddy, wizard)
-  systemd/tau-api.service.tmpl   rendered → /etc/systemd/system/tau-api.service
-  systemd/tau-worker.service.tmpl
-  systemd/tau-backup.service.tmpl  rendered → /etc/systemd/system/tau-backup.{service,timer}
-  systemd/tau-backup.timer.tmpl
+  systemd/ficus-api.service.tmpl    rendered → the api unit under /etc/systemd/system
+  systemd/ficus-worker.service.tmpl
+  systemd/ficus-backup.service.tmpl rendered → the backup .service and .timer
+  systemd/ficus-backup.timer.tmpl
 ```
 
 The setup and provisioning scripts install a complete Ficus instance: API, worker, database, sandbox runtime, and initial squad.
@@ -156,7 +156,8 @@ sed -i 's/^\(export \)\{0,1\}<OLD>_/\1FICUS_/' .env
 
 When a release needs this host's config files changed (`<dest>/.env`,
 `managed.env`, `backup.env`, the config, the core units and their drop-ins,
-the installed backup script), `lib.sh`'s journaled host-migration framework
+the backup service and timer, the installed backup script), `lib.sh`'s
+journaled host-migration framework
 does it: right before the `current` symlink moves (artifact mode) or before
 the restart (git mode). This release registers no migration.
 
@@ -176,6 +177,13 @@ the restart (git mode). This release registers no migration.
   match the release that is serving at that moment: restored byte for byte
   while the old release serves (or after the automatic rollback), finished
   and committed once the new one does.
+- **Migrations that change more than files.** A migration that moves
+  directories, links, units or data defines two more hooks: `_settle`, which
+  decides by its own commit point (not the serving release) whether a
+  journaled run is finished forward or undone, and `_reverse`, which undoes
+  the moves before the files are restored. Its backup set starts its
+  `MANIFEST` with a `#requires-reverse` line, and a plain byte restore of such
+  a set is refused.
 - **Reconcile.** A run that could not settle (`SIGKILL`, OOM, reboot) leaves
   the journal; the next `upgrade-host.sh`, `setup-host.sh` or
   `apply-artifacts.sh --config` settles it the same way. Those runs take an
@@ -190,7 +198,8 @@ sudo bash scripts/setup/upgrade-host.sh --config /root/tau-setup/tau-setup.yaml 
 ```
 
 It verifies every file against the set's `MANIFEST`, puts it back, clears the
-journal if it names that set, and exits. It also accepts the sets the
+journal if it names that set, and exits. It refuses a set marked
+`#requires-reverse` (see above), changing nothing. It also accepts the sets the
 previous release left under `/var/backups/ficus-env-rename/` (read only;
 nothing writes there any more). It reverts **any secret changed since that set
 was taken**, and it is root-only.
@@ -340,9 +349,9 @@ commented there. Ground rules:
   always wins. See
   `tau-setup.example.yaml` for the full contract.
 - `backup.enabled` (default `false`) turns on a flag-gated nightly encrypted
-  backup: setup renders `/usr/local/bin/tau-backup.sh` (from
-  `tau-backup.sh.tmpl`) plus a `tau-backup.timer` (`backup.schedule`, `HH:MM`
-  UTC) that triggers `tau-backup.service`. Each run: `pg_dump -Fc` (via
+  backup: setup renders the backup script under `/usr/local/bin` (from
+  `ficus-backup.sh.tmpl`) plus a backup timer (`backup.schedule`, `HH:MM`
+  UTC) that triggers the backup service. Each run: `pg_dump -Fc` (via
   `docker exec tau-postgres` in `database.mode: container`, else the DSN from
   `<dest>/.env`), tars it together with **`HOME_DIR`** (the agent
   workspace/memory tree — resolved the same way `apps/core` resolves it:
@@ -361,7 +370,7 @@ commented there. Ground rules:
   rendered script reads; they never touch curl argv, logs, or the tenant
   `.env`. Non-zero exit on any failure (systemd flags the unit as failed).
   See `tau-setup.example.yaml` for the full contract. `bash
-scripts/setup/tau-backup.test.sh` round-trip-tests the rendered script
+scripts/setup/ficus-backup.test.sh` round-trip-tests the rendered script
   (tar → encrypt → decrypt → untar) against a scratch dir with a fake
   `pg_dump` (the `FICUS_BACKUP_PG_DUMP_CMD` seam) — no live postgres or S3
   needed.
