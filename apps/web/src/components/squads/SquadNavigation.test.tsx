@@ -11,15 +11,26 @@ test('secondary tools remain reachable and Escape restores focus without changin
   dom = await acquireDomHarness({ url: 'http://localhost/settings' })
   const { container, root } = dom.createRoot()
   const changes: string[] = []
-  const tabs = ['home', 'agents', 'work', 'activity', 'workspace', 'settings'].map((path) => ({ path, label: path }))
+  const tabs = ['home', 'agents', 'work', 'activity', 'workspace', 'memory', 'apps', 'settings'].map((path) => ({
+    path,
+    label: path,
+  }))
   await dom.act(async () =>
-    root.render(<SquadNavigation tabs={tabs} activeTab="workspace" onChange={(tab) => changes.push(tab)} />)
+    root.render(<SquadNavigation tabs={tabs} activeTab="memory" onChange={(tab) => changes.push(tab)} />)
   )
-  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(4)
+  // Workspace and Apps sit in the tab bar right after Activity; the rest stay under More.
+  expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+    'home',
+    'agents',
+    'work',
+    'activity',
+    'workspace',
+    'apps',
+  ])
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="More squad tools"]')!
-  expect(trigger.textContent).toBe('workspace')
+  expect(trigger.textContent).toBe('memory')
   await dom.act(async () => trigger.click())
-  expect(dom.window.document.activeElement?.textContent).toBe('workspace')
+  expect(dom.window.document.activeElement?.textContent).toBe('memory')
   await dom.act(async () =>
     dom!.window.document.dispatchEvent(new dom!.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   )
@@ -38,7 +49,7 @@ test('touch selection survives a blur without a new focus target', async () => {
   dom = await acquireDomHarness({ url: 'http://localhost/squads/test' })
   const { container, root } = dom.createRoot()
   const changes: string[] = []
-  const tabs = ['home', 'workspace', 'settings'].map((path) => ({ path, label: path }))
+  const tabs = ['home', 'memory', 'settings'].map((path) => ({ path, label: path }))
   await dom.act(async () =>
     root.render(<SquadNavigation tabs={tabs} activeTab="home" onChange={(tab) => changes.push(tab)} />)
   )

@@ -45,7 +45,12 @@ export function SquadNavigation<T extends SquadTab>({
   }, [open])
   return (
     <div className="squad-detail-tabs mb-4 flex shrink-0 items-center gap-0.5 border-b border-panel-border pb-2">
-      <nav className="flex min-w-0 flex-1 items-center gap-0.5" role="tablist" aria-label="Squad sections">
+      {/* Scrolls sideways on narrow screens rather than squeezing the tabs; More stays pinned. */}
+      <nav
+        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        role="tablist"
+        aria-label="Squad sections"
+      >
         {tabs
           .filter((tab) => PRIMARY.has(tab.path))
           .map((tab) => (
@@ -55,7 +60,7 @@ export function SquadNavigation<T extends SquadTab>({
               role="tab"
               aria-selected={activeTab === tab.path}
               onClick={() => onChange(tab.path)}
-              className="ficus-button ficus-nav-item px-2 py-2.5 text-xs font-medium text-secondary sm:px-4 sm:text-sm"
+              className="ficus-button ficus-nav-item shrink-0 whitespace-nowrap px-2 py-2.5 text-xs font-medium text-secondary sm:px-4 sm:text-sm"
             >
               {tab.label}
             </button>
