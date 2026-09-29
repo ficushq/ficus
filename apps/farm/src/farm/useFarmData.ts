@@ -18,6 +18,11 @@ export function useFarmData(): { input: FarmInput | null; error: unknown } {
   })
   const agentsReady = squadAgents.every((q) => !q.isPending)
   const agentsKey = squadAgents.map((q) => q.dataUpdatedAt).join(',')
+  // Apps never hold the farm up: racks appear as their lists arrive.
+  const squadApps = useQueries({
+    queries: (squads.data ?? []).map((squad) => farmQueries.squadApps(squad.id)),
+  })
+  const appsKey = squadApps.map((q) => q.dataUpdatedAt).join(',')
 
   const input = useMemo<FarmInput | null>(() => {
     if (!squads.data || !streams.data || !agentsReady) return null
@@ -31,9 +36,20 @@ export function useFarmData(): { input: FarmInput | null; error: unknown } {
       assistants: [porchAssistant((assistant.data?.totals.needsInputTasks ?? 0) > 0)],
       assistantActivity: assistant.data,
       pendingActions: pending.data ?? [],
+      apps: squadApps.flatMap((q) => q.data ?? []),
     }
     // squadAgents is a new array every render; its update stamps are the real dep.
-  }, [squads.data, streams.data, pending.data, done.data, canceled.data, assistant.data, agentsReady, agentsKey])
+  }, [
+    squads.data,
+    streams.data,
+    pending.data,
+    done.data,
+    canceled.data,
+    assistant.data,
+    agentsReady,
+    agentsKey,
+    appsKey,
+  ])
 
   return { input, error: squads.error ?? streams.error ?? null }
 }

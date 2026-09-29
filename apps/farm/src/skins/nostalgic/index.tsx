@@ -1,5 +1,6 @@
 import './sprites.css'
 import { Person } from './sprites/Person'
+import { ServerRack } from './sprites/ServerRack'
 import type { FarmSkin } from '../types'
 import { cropFor, propFor, robotLookFor } from './looks'
 import {
@@ -61,6 +62,7 @@ export const nostalgicSkin: FarmSkin = {
   Person: ({ look }) => <Person look={look} />,
   Avatar: ({ agent, role, face }) => <Robot look={robotLookFor(agent, role)} face={face} prop={propFor(role, face)} />,
   avatarViewBox: '-26 -70 52 52',
+  Rack: ServerRack,
   Hut: ({ count, peek }) => <ChargingHut count={count} peek={peek ? robotLookFor(peek.agent, peek.role) : undefined} />,
   Stand: ({ count, host }) => (
     <ConsultingStand count={count} host={host ? robotLookFor(host.agent, host.role) : undefined} />
@@ -86,6 +88,7 @@ export const nostalgicSkin: FarmSkin = {
     plant: [-34, -78, 68, 92],
     sign: [-60, -72, 120, 78],
     hut: [-64, -96, 128, 118],
+    rack: [-30, -84, 60, 90],
     stand: [-58, -100, 116, 118],
     farmhouse: [-120, -190, 240, 220],
     seedShed: [-80, -120, 160, 150],

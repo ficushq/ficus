@@ -19,6 +19,7 @@ import type {
   RobotRole,
   YardLayout,
 } from './types'
+import type { FarmApp } from './apps'
 
 export interface FarmInput {
   /** Active squads. */
@@ -39,6 +40,8 @@ export interface FarmInput {
   pendingActions: PendingAction[]
   /** ms, for "recent consultant" (default Date.now()). */
   now?: number
+  /** Squads' openable apps (remote and local), for their server racks. */
+  apps?: FarmApp[]
 }
 
 /** Tile indices (inclusive) reserved for the farmhouse, seed shed and porch. */
@@ -95,6 +98,7 @@ export function occupiedTiles(layout: Omit<FarmLayout, 'decor' | 'bounds'>): Set
   around(layout.mailbox.i, layout.mailbox.j, 1)
   around(layout.crates.i, layout.crates.j, 1)
   around(layout.compost.i, layout.compost.j, 1)
+  for (const yard of layout.yards) if (yard.rack) around(yard.rack.i, yard.rack.j, 1)
   for (const robot of layout.porch.robots) around(robot.i, robot.j, 0)
   for (const yard of layout.yards) {
     fill(Math.floor(yard.i0) - 1, Math.ceil(yard.i0 + yard.w), Math.floor(yard.j0) - 1, Math.ceil(yard.j0 + yard.h))
@@ -157,6 +161,8 @@ interface LiveStream {
 
 export function layoutFarm(input: FarmInput): FarmLayout {
   const halted = haltedAgentIds(input.pendingActions)
+  const appsBySquad = new Map<string, FarmApp[]>()
+  for (const app of input.apps ?? []) appsBySquad.set(app.squadId, [...(appsBySquad.get(app.squadId) ?? []), app])
   const askingIds = askingAgentIds(input.pendingActions)
 
   // --- Lookup maps (one pass each) ---
@@ -337,7 +343,12 @@ export function layoutFarm(input: FarmInput): FarmLayout {
     }
     for (const robot of [...dock.robots, ...stand.robots]) drawn.add(robot.agent.id)
 
-    return { squad, i0, j0, w, h, plots, sign, farmer, dock, stand, needsYou }
+    // The server rack, diagonally off the back-left corner (mirroring the hut at the back-right), while the
+    // squad has apps to open; clear of neighbouring yards' huts, stands, signs and farmers (see layout.test.ts).
+    const apps = appsBySquad.get(squad.id) ?? []
+    const rack = apps.length ? { i: i0 - 0.8, j: j0 - 1, apps } : null
+
+    return { squad, i0, j0, w, h, plots, sign, farmer, dock, stand, rack, needsYou }
   })
 
   // The Assistant lives in the toolbar now, not on the farm; the porch stays empty.
@@ -379,6 +390,7 @@ export function layoutFarm(input: FarmInput): FarmLayout {
     include(yard.sign.i, yard.sign.j)
     include(yard.dock.i, yard.dock.j)
     include(yard.stand.i, yard.stand.j)
+    if (yard.rack) include(yard.rack.i, yard.rack.j)
     for (const robot of robotsOfYard(yard)) include(robot.i, robot.j)
   }
   const used = { minI, maxI, minJ, maxJ }

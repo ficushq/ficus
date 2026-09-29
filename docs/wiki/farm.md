@@ -113,6 +113,15 @@ Presence and farm chat are sent by the API process itself, per recipient, and
 never travel the event bus (the WebSocket bridge ignores them; see
 [event-emitter](event-emitter.md)).
 
+## Server racks
+
+A squad with apps to open gets a server rack just off its yard's back-left
+corner (`farm/apps.ts`): its remote deployments that have a URL
+(`/squads/:id/deployments`) and its live local apps (`/squads/:id/local-deployments`),
+which open through Core with the access token in the URL Core issues. The lists
+have no live events, so the farm polls them every 30s. Someone who may not list
+them sees no rack.
+
 ## Motion
 
 The farm animates changes it sees in live data rather than letting things pop

@@ -765,6 +765,43 @@ export function BlueprintHut({ count, peek }: { count: number; peek?: RobotPlace
   )
 }
 
+/**
+ * A squad's server rack: a tall cabinet with a stack of server faces, one shaded per app (up to four). In ink,
+ * not the accent: the accent means something needs you, and running apps don't.
+ */
+export function BlueprintRack({ count }: { count: number }) {
+  const [a, b, c, e] = [-0.24, 0.24, -0.2, 0.2]
+  const cabinet = block(a, b, c, e, 0, 58)
+  const slots = [0, 1, 2, 3].map((k) => {
+    const z = 8 + k * 12
+    return {
+      k,
+      face: poly([
+        [a + 0.03, e, z],
+        [b - 0.03, e, z],
+        [b - 0.03, e, z + 9],
+        [a + 0.03, e, z + 9],
+      ]),
+    }
+  })
+  return (
+    <g>
+      <Solid faces={cabinet.faces} hidden={cabinet.hidden} />
+      {slots.map(({ k, face }) => (
+        <Path
+          key={k}
+          d={face}
+          fill={k < count ? FG : BG}
+          fillOpacity={k < count ? 0.22 : 1}
+          stroke={FG}
+          strokeOpacity={0.7}
+        />
+      ))}
+      <Title below={[b, e]} text="Apps" count={count} />
+    </g>
+  )
+}
+
 export function BlueprintStand({ count, host }: { count: number; host?: RobotPlacement }) {
   const [a, b, c, e] = [-0.4, 0.4, -0.2, 0.2]
   const counter = block(a, b, c, e, 0, 12)

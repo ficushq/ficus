@@ -307,3 +307,20 @@
     opacity: 0;
   }
 }
+
+/* A server rack's lights blink, each on its own beat (see ServerRack.tsx). */
+.g-rack-light {
+  animation: g-rack-blink 1.6s steps(2, jump-none) infinite;
+}
+
+@keyframes g-rack-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-rack-light {
+    animation: none;
+  }
+}

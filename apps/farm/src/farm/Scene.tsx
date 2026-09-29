@@ -239,6 +239,29 @@ function buildDrawables(
         </Hit>
       ),
     })
+    // The server rack, while the squad has apps to open; its card opens them.
+    if (yard.rack) {
+      const apps = yard.rack.apps.length
+      const [rx, ry] = iso(yard.rack.i, yard.rack.j)
+      items.push({
+        key: `rack:${squad.id}`,
+        depth: depth(yard.rack.i, yard.rack.j),
+        node: (
+          <Hit
+            onReveal={onReveal}
+            key={`rack:${squad.id}`}
+            x={rx}
+            y={ry}
+            label={`Server rack, ${apps} app${apps === 1 ? '' : 's'} to open`}
+            selected={selected === `rack:${squad.id}`}
+            box={skin.boxes.rack}
+            onActivate={() => onSelect({ kind: 'rack', squadId: squad.id })}
+          >
+            <skin.Rack count={apps} />
+          </Hit>
+        ),
+      })
+    }
     // The consulting stand: one sprite whatever the count; its card lists the squad's consultant chats.
     const chats = yard.stand.ids?.length ?? 0
     const asking = yard.stand.asking?.length ?? 0

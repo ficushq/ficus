@@ -230,6 +230,52 @@ export function CozySeedShed() {
 
 /* ---- The charging hut ---- */
 
+/** A squad's server rack: a rounded cabinet with a stack of servers, their lights on while it has apps. */
+export function CozyRack({ count }: { count: number }) {
+  const [a, b, c, e] = [-0.24, 0.24, -0.2, 0.2]
+  return (
+    <g>
+      <Drop rx={26} ry={9} />
+      <Block a={a} b={b} c={c} e={e} z1={58} color="#7e8fb8" />
+      {[0, 1, 2, 3].map((k) => {
+        const z = 8 + k * 12
+        const on = k < count
+        return (
+          <g key={k}>
+            <Face
+              points={`${p(a + 0.04, e, z)} ${p(b - 0.04, e, z)} ${p(b - 0.04, e, z + 9)} ${p(a + 0.04, e, z + 9)}`}
+              fill="#3b3f5c"
+              round={3}
+            />
+            <Ball {...xyPoint(b - 0.1, e, z + 4.5)} r={1.9} fill={on ? '#8ff5b4' : '#6a6f86'} edge={false} />
+          </g>
+        )
+      })}
+      {count > 0 && (
+        <g transform="translate(22 -80)">
+          <Ball r={11} fill="#fff6e8" />
+          <text
+            y={4.5}
+            textAnchor="middle"
+            fontFamily={FONT}
+            fontWeight={700}
+            fontSize={count > 9 ? 10 : 13}
+            fill="#6b5a45"
+          >
+            {count > 99 ? '99+' : count}
+          </text>
+        </g>
+      )}
+    </g>
+  )
+}
+
+/** Where a tile point `up` pixels high lands, as circle coordinates. */
+function xyPoint(i: number, j: number, up: number): { cx: number; cy: number } {
+  const [x, y] = xy(i, j, up)
+  return { cx: x, cy: y }
+}
+
 export function CozyHut({ count, peek }: { count: number; peek?: RobotLook }) {
   const [a, b, c, e] = [-0.5, 0.5, -0.4, 0.4]
   const [lo, hi] = [24, 34]
