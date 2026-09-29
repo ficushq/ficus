@@ -497,8 +497,62 @@
 }
 
 .g-crew-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
   font-size: 12px;
   color: var(--g-ink-soft);
+}
+
+/* An agent's status, readable at a glance (Crew.tsx): the same tints as a plant's state tag. */
+.g-status-pill {
+  flex: none;
+  padding: 1px 8px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  font: 700 12px/1.4 var(--g-font-body);
+}
+
+.g-status-pill[data-tone='working'] {
+  background: var(--g-good-tint);
+  color: var(--g-good-text);
+}
+
+.g-status-pill[data-tone='needs'] {
+  background: var(--g-warn-tint);
+  color: var(--g-warn-text);
+}
+
+.g-status-pill[data-tone='halted'] {
+  background: var(--g-bad-tint);
+  color: var(--g-bad-text);
+}
+
+.g-status-pill[data-tone='quiet'] {
+  background: var(--g-quiet-tint);
+  color: var(--g-ink-soft);
+}
+
+/* Who's on a plant, right under its state: its own highlighted row. */
+.g-plot-lead {
+  margin: 10px 0 4px;
+  padding: 6px 6px 4px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-tile);
+  background: var(--g-paper);
+}
+
+.g-plot-lead-label {
+  margin: 0 0 2px 4px;
+  font: 700 11px var(--g-font-body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--g-ink-soft);
+}
+
+.g-plot-lead .g-crew-name {
+  font-size: 15px;
 }
 
 .g-link {
