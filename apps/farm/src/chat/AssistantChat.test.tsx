@@ -78,6 +78,57 @@ describe('AssistantChat', () => {
     )
   })
 
+  it('collapses a long task update to a few lines, with Show more / Show less', async () => {
+    const report = `${'finding '.repeat(80)}THE_TAIL`
+    const fake = makeFakeClient({
+      agents: { 'asst-agent': makeAgent({ id: 'asst-agent', agentTypeId: 'assistant', squadId: null }) },
+      messages: {
+        'asst-agent': [
+          makeMessage({
+            id: 'reply-1',
+            agentId: 'asst-agent',
+            role: 'assistant',
+            content: 'The audit is complete.',
+            metadata: { assistantUpdateIds: ['u1'] },
+          }),
+        ],
+      },
+      routes: {
+        'GET /assistant/c1': history('c1'),
+        'POST /assistant/c1/agent': { agentId: 'asst-agent' },
+        'GET /assistant/c1/activity': activity(0, 3),
+        'POST /assistant/c1/updates/read': [
+          {
+            messageId: 'u1',
+            taskId: 't1',
+            taskLabel: 'Audit access',
+            requestId: 'r1',
+            sequence: 3,
+            reportedStatus: 'completed',
+            content: report,
+            subject: null,
+            senderName: 'Drift',
+            processedAt: null,
+            seenAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    })
+    const view = await render(<AssistantChat conversationId="c1" onClose={() => {}} />, { client: fake.client })
+    mounted.push(view.unmount)
+    await waitFor(() => expect(view.container.querySelector('[aria-label="Task updates"] li')).not.toBeNull())
+    const card = view.container.querySelector('[aria-label="Task updates"] li')!
+    const toggle = () => card.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    expect(card.textContent).not.toContain('THE_TAIL')
+    expect(toggle().textContent).toBe('Show more')
+    toggle().click()
+    await waitFor(() => expect(card.textContent).toContain('THE_TAIL'))
+    expect(toggle().textContent).toBe('Show less')
+    toggle().click()
+    await waitFor(() => expect(card.textContent).not.toContain('THE_TAIL'))
+  })
+
   it('creates a conversation when there is none, ensures its agent, and chats with it', async () => {
     const fake = makeFakeClient({
       agents: { 'asst-agent': makeAgent({ id: 'asst-agent', agentTypeId: 'assistant', squadId: null }) },

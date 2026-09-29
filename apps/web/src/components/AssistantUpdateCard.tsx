@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import type { AssistantActivityUpdate } from '@ficus/shared'
 import { ASSISTANT_TASK_STATUS_LABELS, formatAssistantUpdateTime } from '../lib/assistantActivityPresentation'
-import { MarkdownContent } from './MarkdownContent'
+import { CollapsibleMarkdown } from './CollapsibleMarkdown'
 
 /**
  * The body of one task update: task label, reported status, sender and time, then the subject and
- * message. Shown inline under the Assistant reply that covers it (AssistantSummarySources); the
+ * message (long reports collapse to a few lines behind Show more). Shown inline under the Assistant reply that covers it (AssistantSummarySources); the
  * caller owns the wrapper (list item, read state, observers) and any trailing `action`.
  */
 export function AssistantUpdateCard({
@@ -35,7 +35,9 @@ export function AssistantUpdateCard({
         {action}
       </div>
       {update.subject && <p className="mt-1 font-medium">{update.subject}</p>}
-      <MarkdownContent className="mt-1 text-sm">{update.content}</MarkdownContent>
+      <CollapsibleMarkdown className="mt-1" markdownClassName="text-sm">
+        {update.content}
+      </CollapsibleMarkdown>
     </>
   )
 }
