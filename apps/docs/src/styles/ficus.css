@@ -7,16 +7,17 @@
   --sl-color-accent-low: #1c2b20;
   --sl-color-accent: #9fb57f;
   --sl-color-accent-high: #d98a5c;
-  --sl-color-white: #f4f3f8;
-  --sl-color-gray-1: #e6e4ed;
-  --sl-color-gray-2: #c4c1d0;
-  --sl-color-gray-3: #9994ad;
-  --sl-color-gray-4: #625d73;
-  --sl-color-gray-5: #302d40;
-  --sl-color-gray-6: #10111c;
-  --sl-color-black: #090a12;
-  --sl-color-bg-nav: #10111c;
-  --sl-color-bg-sidebar: #10111c;
+  /* Neutrals from the web app's Ficus dark theme: warm soil browns. */
+  --sl-color-white: #ede6de;
+  --sl-color-gray-1: #ddd6cd;
+  --sl-color-gray-2: #bdb6ad;
+  --sl-color-gray-3: #a7a199;
+  --sl-color-gray-4: #69635d;
+  --sl-color-gray-5: #4f4a43;
+  --sl-color-gray-6: #2f2a24;
+  --sl-color-black: #1c1a17;
+  --sl-color-bg-nav: #221f1b;
+  --sl-color-bg-sidebar: #221f1b;
   --sl-content-width: 46rem;
   --sl-text-body: 1rem;
 }
@@ -26,18 +27,19 @@
   --sl-color-accent-low: #eee8d9;
   --sl-color-accent: #3f6b4f;
   --sl-color-accent-high: #8a3e20;
-  --sl-color-white: #20202c;
-  --sl-color-gray-1: #353240;
-  --sl-color-gray-2: #514c60;
-  --sl-color-gray-3: #716a80;
-  --sl-color-gray-4: #a39cae;
-  --sl-color-gray-5: #e3deeb;
-  --sl-color-gray-6: #f2eef7;
-  --sl-color-gray-7: #faf9fc;
-  --sl-color-black: #ffffff;
-  --sl-color-bg: #faf9fc;
-  --sl-color-bg-nav: #ffffff;
-  --sl-color-bg-sidebar: #faf9fc;
+  /* Neutrals from the web app's Ficus light theme: linen and bark. */
+  --sl-color-white: #29241e;
+  --sl-color-gray-1: #3d372f;
+  --sl-color-gray-2: #564f48;
+  --sl-color-gray-3: #6e675f;
+  --sl-color-gray-4: #a8a097;
+  --sl-color-gray-5: #dad4cc;
+  --sl-color-gray-6: #e8e7db;
+  --sl-color-gray-7: #f1e9db;
+  --sl-color-black: #f5f0e6;
+  --sl-color-bg: #f1e9db;
+  --sl-color-bg-nav: #f5f0e6;
+  --sl-color-bg-sidebar: #f1e9db;
 }
 .site-title {
   gap: 0.65rem;
