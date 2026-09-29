@@ -11,7 +11,7 @@ import { findMentions } from './mentions'
  * A farm chat message, split into what it's made of: plain text, @mentions,
  * references to things on the farm (drawn as chips that fly the camera there)
  * and other links. References are the chat's own `ficus:ws:<id>` /
- * `ficus:agent:<id>` (the old `tau:` ones too), or a pasted web-app link to a
+ * `ficus:agent:<id>` (the old `tau:` ones too), or a pasted web-app link to a // ficus-36c
  * squad, a work stream or an agent.
  */
 

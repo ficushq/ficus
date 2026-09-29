@@ -13,7 +13,7 @@ export const SHORT_TERM_MEMORY_SNAPSHOT_TYPE = 'ficus:short-term-memory-snapshot
  * is read (never written) until the Wave 3 migration; otherwise those sessions would lose their
  * snapshot until the next compaction.
  */
-export const LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE = 'tau:short-term-memory-snapshot'
+export const LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE = 'tau:short-term-memory-snapshot' // ficus-36c
 const SNAPSHOT_TYPES: readonly string[] = [SHORT_TERM_MEMORY_SNAPSHOT_TYPE, LEGACY_SHORT_TERM_MEMORY_SNAPSHOT_TYPE]
 const isSnapshotType = (customType: string) => SNAPSHOT_TYPES.includes(customType)
 const EXTENSION_PATH = 'ficus:short-term-memory-context'

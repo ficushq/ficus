@@ -169,7 +169,7 @@ async function inTransaction<T>(connection: postgres.ReservedSql, callback: () =
 
 async function prepareLedger(connection: postgres.ReservedSql, schema: string, table: string): Promise<void> {
   const qualifiedLedger = `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`
-  const qualifiedIntents = `${quoteIdentifier(schema)}.${quoteIdentifier('__tau_online_migration_intents')}`
+  const qualifiedIntents = `${quoteIdentifier(schema)}.${quoteIdentifier('__tau_online_migration_intents')}` // ficus-36c
   await connection.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(schema)}`)
   await connection.unsafe(`
     CREATE TABLE IF NOT EXISTS ${qualifiedLedger} (
@@ -256,8 +256,8 @@ async function expectedIndexSignature(
   classification: Extract<MigrationClassification, { kind: 'concurrent-index' }>
 ): Promise<IndexSignature> {
   const suffix = crypto.randomUUID().replaceAll('-', '')
-  const shadowTable = `__tau_index_definition_${suffix}`
-  const shadowIndex = `__tau_index_definition_idx_${suffix}`
+  const shadowTable = `__tau_index_definition_${suffix}` // ficus-36c
+  const shadowIndex = `__tau_index_definition_idx_${suffix}` // ficus-36c
   const sourceTable = `${quoteIdentifier(classification.tableSchema)}.${quoteIdentifier(classification.tableName)}`
   const prefix = statement.match(CREATE_CONCURRENT_INDEX)
   if (!prefix) throw new Error('Unsupported CREATE INDEX CONCURRENTLY statement')
@@ -348,7 +348,7 @@ export async function applyMigrations(
   const schema = config.migrationsSchema ?? 'drizzle'
   const table = config.migrationsTable ?? '__drizzle_migrations'
   const qualifiedLedger = `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`
-  const qualifiedIntents = `${quoteIdentifier(schema)}.${quoteIdentifier('__tau_online_migration_intents')}`
+  const qualifiedIntents = `${quoteIdentifier(schema)}.${quoteIdentifier('__tau_online_migration_intents')}` // ficus-36c
   await prepareLedger(connection, schema, table)
 
   const latest = await connection.unsafe<{ created_at: string | number | null }[]>(
