@@ -1,4 +1,5 @@
 import type { GrantRisk } from './grantRisks'
+import { WarningIcon } from '../../icons'
 
 interface Props {
   risks: GrantRisk[]
@@ -25,7 +26,7 @@ export function GrantRiskBadge({ risks }: Props) {
       <summary
         className={`cursor-pointer inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded ${SEVERITY_STYLES[highest]}`}
       >
-        ⚠ {risks.length} warning{risks.length === 1 ? '' : 's'}
+        <WarningIcon className="h-3.5 w-3.5" /> {risks.length} warning{risks.length === 1 ? '' : 's'}
       </summary>
       <ul className="mt-2 ml-4 space-y-1 text-xs text-secondary list-disc">
         {risks.map((risk) => (

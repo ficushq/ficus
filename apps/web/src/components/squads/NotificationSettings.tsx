@@ -5,6 +5,7 @@ import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
 import { FormSkeleton } from '../loading/Skeleton'
+import { DiscordIcon, SlackIcon, TelegramIcon } from '../icons'
 
 interface Props {
   squadId: string
@@ -22,9 +23,9 @@ interface NotificationConfig {
 }
 
 const PROVIDERS = [
-  { key: 'discord', label: 'Discord', emoji: '🎮', idLabel: 'Channel ID' },
-  { key: 'slack', label: 'Slack', emoji: '💬', idLabel: 'Channel ID' },
-  { key: 'telegram', label: 'Telegram', emoji: '📱', idLabel: 'Chat ID' },
+  { key: 'discord', label: 'Discord', Icon: DiscordIcon, idLabel: 'Channel ID' },
+  { key: 'slack', label: 'Slack', Icon: SlackIcon, idLabel: 'Channel ID' },
+  { key: 'telegram', label: 'Telegram', Icon: TelegramIcon, idLabel: 'Chat ID' },
 ] as const
 
 type ProviderKey = (typeof PROVIDERS)[number]['key']
@@ -176,7 +177,7 @@ export function NotificationSettings({ squadId }: Props) {
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">{provider.emoji}</span>
+                  <provider.Icon className="h-5 w-5" />
                   <span className="text-sm font-medium text-primary">{provider.label}</span>
                 </div>
                 {cfg?.instanceId && (

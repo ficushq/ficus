@@ -2,7 +2,7 @@ import { useToolRenderers } from '../lib/ToolRenderersContext'
 import clsx from 'clsx'
 import { ToolInlineActions } from './ToolInlineActions'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { MarkdownContent } from './MarkdownContent'
 import { extractInboxBodies } from '@ficus/shared'
 import { parseMessageContent } from '../lib/message-parser'
@@ -14,7 +14,7 @@ import {
   type MonitorMessageKind,
 } from '@ficus/shared'
 import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
-import { ChevronRightIcon, MailIcon, WorkStreamIcon } from './icons'
+import { ActivityIcon, ChevronRightIcon, ClockIcon, MailIcon, WarningIcon, WorkStreamIcon } from './icons'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { useImageSrcs } from '../hooks/useImageSrcs'
 
@@ -282,7 +282,7 @@ function monitorTerminalStyle(
   border: string
   bg: string
   text: string
-  icon: string
+  icon: ReactNode
 } {
   switch (kind) {
     case 'failed':
@@ -311,14 +311,14 @@ function monitorTerminalStyle(
         border: 'border-status-attention-200 dark:border-status-attention-800',
         bg: 'bg-status-attention-50/50 dark:bg-status-attention-900/20',
         text: 'text-status-attention-700 dark:text-status-attention-300',
-        icon: '⏱',
+        icon: <ClockIcon className="h-3.5 w-3.5" />,
       }
     case 'overload':
       return {
         border: 'border-status-danger-200 dark:border-status-danger-800',
         bg: 'bg-status-danger-50/50 dark:bg-status-danger-900/20',
         text: 'text-status-danger-700 dark:text-status-danger-300',
-        icon: '⚠',
+        icon: <WarningIcon className="h-3.5 w-3.5" />,
       }
     case 'canceled':
     default:
@@ -350,9 +350,9 @@ function MonitorMessageRow({
           onClick={() => setExpanded(!expanded)}
           className="ficus-button w-full flex items-center gap-1.5 px-2.5 py-1.5 text-secondary hover:bg-surface-hover transition-colors text-left min-w-0 rounded-md"
         >
-          <span className={clsx('text-[10px] transition-transform shrink-0', expanded && 'rotate-90')}>&#9654;</span>
+          <ChevronRightIcon className={clsx('h-3 w-3 shrink-0 transition-transform', expanded && 'rotate-90')} />
           <span className="shrink-0" aria-label="Monitor">
-            &#128223;
+            <ActivityIcon className="h-3.5 w-3.5" />
           </span>
           <span className="font-medium shrink-0">Monitor &quot;{label}&quot;</span>
           {count !== undefined && (
@@ -380,7 +380,7 @@ function MonitorMessageRow({
     >
       <span className="shrink-0">{style.icon}</span>
       <span className="shrink-0" aria-label="Monitor">
-        &#128223;
+        <ActivityIcon className="h-3.5 w-3.5" />
       </span>
       {showRaw ? (
         <pre className="whitespace-pre-wrap font-mono text-xs font-medium">{content}</pre>

@@ -15,14 +15,14 @@ export const SQUAD_TABS = [
 ] as const
 
 export const SQUAD_SETTINGS_SECTIONS = [
-  { id: 'general', label: 'General', icon: '⚙️' },
-  { id: 'context', label: 'Instructions', icon: '📝' },
-  { id: 'workflows', label: 'Workflows', icon: '🔀' },
-  { id: 'integrations', label: 'Integrations', icon: '🔌' },
-  { id: 'notifications', label: 'Notifications', icon: '🔔' },
-  { id: 'workspace', label: 'Workspace', icon: '📦' },
-  { id: 'memory', label: 'Memory', icon: '🧠' },
-  { id: 'access', label: 'Remote access', icon: '🔑' },
+  { id: 'general', label: 'General' },
+  { id: 'context', label: 'Instructions' },
+  { id: 'workflows', label: 'Workflows' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'workspace', label: 'Workspace' },
+  { id: 'memory', label: 'Memory' },
+  { id: 'access', label: 'Remote access' },
 ] as const
 
 export function resolveSquadSettingsSection(section: string | null, target?: string | null): string {

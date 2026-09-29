@@ -1,7 +1,6 @@
 interface SectionItem {
   id: string
   label: string
-  icon: string
   description: string
 }
 
@@ -14,27 +13,24 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
   {
     label: 'Personal',
     items: [
-      { id: 'account', label: 'Account', icon: '👤', description: 'Your profile, email, password, and passkeys.' },
+      { id: 'account', label: 'Account', description: 'Your profile, email, password, and passkeys.' },
       {
         id: 'appearance',
         label: 'Appearance',
-        icon: '🎨',
         description: 'Theme, color, and dark mode preferences.',
       },
       {
         id: 'app',
         label: 'App',
-        icon: '📱',
         description: 'App installation, cache, and offline storage.',
       },
       {
         id: 'notifications',
         label: 'Notifications',
-        icon: '🔔',
         description: 'Your notification delivery and sound preferences.',
       },
-      { id: 'devices', label: 'Paired Devices', icon: '🔗', description: 'Pair and manage linked devices.' },
-      { id: 'sessions', label: 'Sessions', icon: '🔑', description: 'Active sign-in sessions and revocation.' },
+      { id: 'devices', label: 'Paired Devices', description: 'Pair and manage linked devices.' },
+      { id: 'sessions', label: 'Sessions', description: 'Active sign-in sessions and revocation.' },
     ],
   },
   {
@@ -43,25 +39,21 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'workflows',
         label: 'Workflows',
-        icon: '🔀',
         description: 'Reusable flows: participants, steps, handoffs, reviews, limits, and delivery policies.',
       },
       {
         id: 'agent-types',
         label: 'Agent Types',
-        icon: '🤖',
         description: 'Agent expertise, model tiers, tools, skills, and permissions.',
       },
       {
         id: 'skills',
         label: 'Skills',
-        icon: '🧩',
         description: 'Reusable agent instructions and supporting resources.',
       },
       {
         id: 'integrations',
         label: 'Integrations',
-        icon: '🔌',
         description: 'Enable apps, connect accounts, and configure integration credentials and services.',
       },
     ],
@@ -69,15 +61,14 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
   {
     label: 'Access',
     items: [
-      { id: 'users', label: 'Users', icon: '👥', description: 'Invite people and manage their access.' },
-      { id: 'roles', label: 'Access Roles', icon: '🔐', description: 'Create and edit permission-based access roles.' },
+      { id: 'users', label: 'Users', description: 'Invite people and manage their access.' },
+      { id: 'roles', label: 'Access Roles', description: 'Create and edit permission-based access roles.' },
       {
         id: 'system-tokens',
         label: 'System Tokens',
-        icon: '🎟️',
         description: 'Issue and revoke API tokens with selected permissions.',
       },
-      { id: 'signup', label: 'Sign-up', icon: '✉️', description: 'Registration policy and allowed email domains.' },
+      { id: 'signup', label: 'Sign-up', description: 'Registration policy and allowed email domains.' },
     ],
   },
   {
@@ -86,19 +77,16 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'squad-presets',
         label: 'Squad Presets',
-        icon: '👥',
         description: 'Starting templates copied into newly created squads.',
       },
       {
         id: 'git',
         label: 'Git',
-        icon: '🔀',
         description: 'Default commit author identity and GitHub identity overrides.',
       },
       {
         id: 'notification-rules',
         label: 'Notification Rules',
-        icon: '📋',
         description: 'Rules for routing events to outbound notifications.',
       },
     ],
@@ -109,23 +97,20 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'providers',
         label: 'AI Providers',
-        icon: '🧠',
         description: 'Connect model provider accounts and configure custom local providers.',
       },
       {
         id: 'memory',
         label: 'Assistant & Memory',
-        icon: '🧠',
         description: 'Voice assistant and semantic memory search, including OpenAI API setup.',
       },
-      { id: 'amtp', label: 'Federation', icon: '🌐', description: 'Federation identity, peers, and trust rules.' },
+      { id: 'amtp', label: 'Federation', description: 'Federation identity, peers, and trust rules.' },
       {
         id: 'machines',
         label: 'Machines',
-        icon: '🗄️',
         description: 'Machines and capacity used to run squad workloads.',
       },
-      { id: 'remote-hosts', label: 'Remote hosts', icon: '🛰️', description: 'Shared SSH targets squads can access.' },
+      { id: 'remote-hosts', label: 'Remote hosts', description: 'Shared SSH targets squads can access.' },
     ],
   },
   {
@@ -134,23 +119,20 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'system',
         label: 'System',
-        icon: '🖥️',
         description: 'Runtime health, maximum active agents, maintenance, and process controls.',
       },
       {
         id: 'storage',
         label: 'Storage',
-        icon: '🗄️',
         description: 'Disk usage by squad, repositories, worktrees, and tools.',
       },
-      { id: 'system-logs', label: 'Logs', icon: '📜', description: 'Search and inspect system logs.' },
+      { id: 'system-logs', label: 'Logs', description: 'Search and inspect system logs.' },
       {
         id: 'ops-insights',
         label: 'Recommendations',
-        icon: '⚡',
         description: 'Operational recommendations and optimization insights.',
       },
-      { id: 'updates', label: 'Updates', icon: '⬆️', description: 'Update source, schedule, and deployment progress.' },
+      { id: 'updates', label: 'Updates', description: 'Update source, schedule, and deployment progress.' },
     ],
   },
 ] as const

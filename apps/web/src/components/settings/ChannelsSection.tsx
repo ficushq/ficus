@@ -177,7 +177,7 @@ function SquadDropdown({
       <option value="" disabled={required}>
         {placeholder ?? 'Select a squad…'}
       </option>
-      {isUnknown && <option value={value ?? ''}>⚠ Unknown squad ({value})</option>}
+      {isUnknown && <option value={value ?? ''}>Unknown squad ({value})</option>}
       {squads.map((s) => (
         <option key={s.id} value={s.id}>
           {s.name}
