@@ -6,7 +6,7 @@ import { getSecretStore } from '../secrets'
 import type { Identity } from '../rbac'
 import { adminHasPasskey } from './admin-users'
 import { resolveSystemToken } from './system-tokens'
-import { resolveDeviceToken } from './device-tokens'
+import { findActiveDeviceTokenIds, resolveDeviceToken } from './device-tokens'
 import { AGENT_TOKEN_PREFIX, SESSION_TOKEN_PREFIX } from './token-prefixes'
 
 function hashToken(token: string): string {
@@ -27,7 +27,7 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
   // 1. Check sessions table
   const [session] = token.startsWith(SESSION_TOKEN_PREFIX)
     ? await db
-        .select({ userId: sessions.userId })
+        .select({ userId: sessions.userId, deviceTokenId: sessions.deviceTokenId })
         .from(sessions)
         .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())))
         .limit(1)
@@ -43,7 +43,15 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
     if (user?.disabledAt) {
       return null // Disabled users can't authenticate
     }
-    return { identity: { type: 'user', userId: session.userId }, deviceTokenId: null }
+    // A session a paired device handed to its web view lives only while the device
+    // stays paired, and carries the device so revoking it also cuts live connections.
+    if (
+      session.deviceTokenId &&
+      !(await findActiveDeviceTokenIds([session.deviceTokenId])).has(session.deviceTokenId)
+    ) {
+      return null
+    }
+    return { identity: { type: 'user', userId: session.userId }, deviceTokenId: session.deviceTokenId }
   }
 
   // 2. Check agent tokens table

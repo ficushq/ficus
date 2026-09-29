@@ -90,6 +90,10 @@ Immediate live socket termination is process-local; an already-open socket on an
 
 A device token still authenticates as its owning user and may approve a second, independently revocable device when that user has the required permission. Revoking one device does not revoke credentials it previously authorized; audit the Paired Devices list.
 
+### Web handoff (Ficus Mobile's Farm tab)
+
+A paired device can sign its embedded web view in without the device token leaving the app. The app, authenticated by its device token, calls `POST /api/auth/web-handoff` (device tokens only; browser sessions get 403) and receives a single-use code that lasts a minute, stored only as a hash (`web_handoffs`). It hands the code to the page by postMessage or injected script, never in a URL. The page posts it to `POST /api/auth/web-handoff/exchange`, which always requires the CSRF header (even with no cookie yet, so a cross-site page cannot sign a browser into someone else's account), is rate-limited per client, and sets an ordinary HttpOnly `ficus_session` cookie without returning the token. That session records the device (`sessions.device_token_id`), so it stops resolving when the device is unpaired, and it carries the device's id, so revocation also cuts its live connections. See `services/auth/web-handoff.ts`.
+
 ## WebSocket Authentication
 
 Browser WebSockets use a short-lived, single-use `?ticket=` minted by `/api/auth/ws-ticket`; non-browser clients may use `?token=`. Ticket precedence, Origin checks, and RBAC permission checks are applied before upgrade. Device provenance is preserved through tickets so ticket minting cannot launder a device credential past later revocation.

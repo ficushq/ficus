@@ -22,6 +22,27 @@ body {
   overscroll-behavior: none;
 }
 
+/*
+ * Inside Ficus Mobile's web view (embed/embed.ts marks the page): an app, not
+ * a page. No bounce, long-press callouts, tap flashes or stray text selection;
+ * what you type stays selectable. The app turns off the web view's own bounce
+ * and zoom too.
+ */
+html[data-embed='native'],
+html[data-embed='native'] body {
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html[data-embed='native'] :is(input, textarea, [contenteditable='true']) {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .g-card {
   background: var(--g-card);
   border: var(--g-border) solid var(--g-outline);

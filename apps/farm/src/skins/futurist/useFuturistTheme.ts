@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { farmQueries } from '../../api/queries'
 import { tripleFor } from './themeTriples'
+import { embedTheme, subscribeEmbedTheme } from '../../embed/embed'
 
 function usePrefersDark(): boolean {
   const query = typeof window === 'undefined' ? null : window.matchMedia?.('(prefers-color-scheme: dark)')
@@ -15,12 +16,19 @@ function usePrefersDark(): boolean {
   return dark
 }
 
-/** While the Futurist style is on, paint it in the user's web-app theme's three colours. */
+/**
+ * While the Futurist style is on, paint it in the user's theme's three
+ * colours: the theme Ficus Mobile sends (live, as it changes in Settings) when
+ * the farm is in its web view, else the account's web-app theme. A custom
+ * theme's palette primary is its accent.
+ */
 export function useFuturistTheme(active: boolean) {
-  const preference = useQuery({ ...farmQueries.themePreference(), enabled: active })
+  const appTheme = useSyncExternalStore(subscribeEmbedTheme, embedTheme, () => null)
+  const preference = useQuery({ ...farmQueries.themePreference(), enabled: active && !appTheme })
   const prefersDark = usePrefersDark()
-  const theme = preference.data?.theme
-  const triple = tripleFor(theme, prefersDark)
+  const theme = appTheme ?? preference.data?.theme
+  const base = tripleFor(theme, prefersDark)
+  const triple = { ...base, accent: theme?.customTheme?.palette?.primary ?? base.accent }
   // Native controls (scrollbars, pickers) match the theme's appearance; Futurist's own palette is dark.
   const scheme = !theme ? 'dark' : theme.appearance === 'system' ? (prefersDark ? 'dark' : 'light') : theme.appearance
   useEffect(() => {

@@ -2,6 +2,7 @@ import { getServerInfo } from '../services/server-info'
 import { permissionMatches } from '../services/rbac'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
+import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { zValidator } from '@hono/zod-validator'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { createHash, timingSafeEqual } from 'crypto'
@@ -37,6 +38,7 @@ import { identityMiddleware } from '../middleware/identity'
 import { requirePermission } from '../middleware/require-permission'
 import { resolvePermissions, resolveRoleSummaries, type Identity } from '../services/rbac'
 import { createWsTicket } from '../services/auth/ws-ticket'
+import { consumeWebHandoff, createWebHandoff } from '../services/auth/web-handoff'
 import { hasAdminUsers, adminHasPasskey, pendingAdminSetup } from '../services/auth/admin-users'
 import { createPairingCode, claimPairingCode } from '../services/auth/pairing'
 import { buildMobilePairingServerUrl } from '../lib/mobilePairingUrl'
@@ -49,7 +51,7 @@ import {
   inspectDeviceAuthorization,
   type DeviceAuthorizationPlatform,
 } from '../services/auth/device-authorization'
-import { deviceAuthorizationStartLimiter } from '../services/auth/device-auth-rate-limit'
+import { deviceAuthorizationStartLimiter, webHandoffExchangeLimiter } from '../services/auth/device-auth-rate-limit'
 import { setSessionCookie, clearSessionCookie, extractSessionToken } from '../services/auth/session-cookie'
 import { resolveToken } from '../services/auth/resolve-token'
 import { replaceCredentialsAfterRecovery } from '../services/auth/passkey-recovery'
@@ -655,6 +657,48 @@ authRouter.post('/ws-ticket', identityMiddleware, async (c) => {
   }
   const ticket = await createWsTicket(identity.userId, c.get('authContext').deviceTokenId)
   return c.json({ ticket })
+})
+
+// ── Web handoff: a paired device signs its embedded web view in ─────────────
+// See services/auth/web-handoff.ts. Responses are never cached, and the code is
+// returned in a body, never a URL.
+
+const handoffHeaders = { 'Cache-Control': 'no-store' }
+
+// POST /api/auth/web-handoff — a paired device (its device token, not a browser
+// session) mints a single-use, one-minute code for its web view.
+authRouter.post('/web-handoff', identityMiddleware, async (c) => {
+  const identity = c.get('identity') as Identity | undefined
+  const deviceTokenId = c.get('authContext').deviceTokenId
+  if (!identity || identity.type !== 'user' || !deviceTokenId) {
+    return c.json({ error: 'Web handoffs are for paired devices' }, 403, handoffHeaders)
+  }
+  const { code, expiresAt } = await createWebHandoff(identity.userId, deviceTokenId)
+  return c.json({ code, expiresAt: expiresAt.toISOString() }, 200, handoffHeaders)
+})
+
+// POST /api/auth/web-handoff/exchange — the web view trades the code for a
+// browser session cookie tied to the device. The session token is not returned.
+authRouter.post('/web-handoff/exchange', async (c) => {
+  if (!webHandoffExchangeLimiter.take(getClientAddress(c.req.raw), 20, 60_000)) {
+    return c.json({ error: 'rate_limited' }, 429, { ...handoffHeaders, 'Retry-After': '60' })
+  }
+  // Always require the first-party header, even with no cookie yet (the CSRF
+  // middleware checks it only for cookie requests): a cross-site page must not
+  // be able to post someone else's code and sign this browser into their account.
+  if (!c.req.header(CSRF_HEADER)) return c.json({ error: 'Missing CSRF token' }, 403, handoffHeaders)
+  const body = await parseOptionalJsonObjectBody(c, {} as { code?: unknown })
+  const consumed = typeof body.code === 'string' ? await consumeWebHandoff(body.code) : null
+  const user = consumed ? await User.findById(consumed.userId) : null
+  if (!consumed || !user) return c.json({ error: 'invalid_handoff' }, 401, handoffHeaders)
+
+  const token = await user.createSession({
+    userAgent: c.req.header('User-Agent'),
+    ipAddress: c.req.header('X-Forwarded-For') ?? c.req.header('X-Real-IP'),
+    deviceTokenId: consumed.deviceTokenId,
+  })
+  setSessionCookie(c, token)
+  return c.json({ ok: true }, 200, handoffHeaders)
 })
 
 // ── Browser-assisted CLI device authorization ───────────────────────────────

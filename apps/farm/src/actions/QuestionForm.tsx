@@ -24,6 +24,7 @@ import {
   settleSquadQuestion,
 } from './cache'
 import { ErrorNote, VerbButton } from './ui'
+import { haptic } from '../embed/embed'
 
 /** Where an answer goes. Each source makes the same call the web app makes for it. */
 export type QuestionSource =
@@ -83,6 +84,7 @@ function AgentQuestionForm({
   const answer = useMutation({
     mutationFn: ({ answer }: { answer: string; visit: boolean }) => api.answerAgentQuestion(questionId, answer),
     onSuccess: async (_result, { visit }) => {
+      haptic('answer')
       await settleAnswered()
       await callbacks.current.onAnswered?.()
       if (visit) callbacks.current.onOpenAgent?.(agentId)
@@ -171,6 +173,7 @@ function SquadQuestionForm({
     mutationFn: (answer: string) =>
       api.sendAgentMessage(source.agentId, answer, { imageIds: undefined, deliveryMode: undefined }),
     onSuccess: async () => {
+      haptic('answer')
       await settleSquadQuestion(queryClient, source.agentId)
       await onAnsweredRef.current?.()
     },
@@ -204,7 +207,10 @@ function InChatQuestionForm({
   onAnswer: (answer: string) => void | Promise<void>
 }) {
   const onAnswerRef = useStableRef(onAnswer)
-  const send = useMutation({ mutationFn: async (answer: string) => onAnswerRef.current(answer) })
+  const send = useMutation({
+    mutationFn: async (answer: string) => onAnswerRef.current(answer),
+    onSuccess: () => haptic('answer'),
+  })
   if (send.isPending || send.isSuccess) {
     return (
       <p className="g-action-note" role="status">

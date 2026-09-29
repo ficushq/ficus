@@ -1,9 +1,11 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { isHttpResponseError } from '@ficus/client-core'
 import { farmQueries } from '../api/queries'
 import { webAppUrl } from '../api/base'
 import { useLiveUpdates } from '../live/LiveUpdates'
+import { exchangeHandoff, isEmbedded, onAppMessage, postToApp } from '../embed/embed'
+import { useStableRef } from '../hooks/useStableRef'
 import { Farm } from './Farm'
 
 import { isDemo } from './demo'
@@ -26,9 +28,16 @@ function SignedInFarm() {
   const signedIn = session.isSuccess
   const live = useLiveUpdates(signedIn)
 
+  // Tell an embedding app the farm is up (once per sign-in).
+  useEffect(() => {
+    if (signedIn) postToApp({ type: 'ready' })
+  }, [signedIn])
+
   if (session.isPending) return <Splash message="Opening the farm gate…" />
   if (session.isError) {
     const signedOut = isHttpResponseError(session.error) && session.error.status === 401
+    // Inside Ficus Mobile the app signs the farm in; there is no web sign-in to send you to.
+    if (signedOut && isEmbedded()) return <AppSignIn onSignedIn={() => void session.refetch()} />
     return signedOut ? (
       <Splash message="Sign in to Ficus to visit your farm.">
         {/* Signs in on the web app, which then sends you back here (an installed farm app included). */}
@@ -45,6 +54,46 @@ function SignedInFarm() {
     )
   }
   return <Farm live={live} />
+}
+
+/**
+ * Signed out inside the app's web view: ask the app for a web handoff code and
+ * trade it for a session, then carry on.
+ */
+export function AppSignIn({ onSignedIn }: { onSignedIn: () => void }) {
+  const [failed, setFailed] = useState(false)
+  const onSignedInRef = useStableRef(onSignedIn)
+  useEffect(() => {
+    let active = true
+    const stop = onAppMessage((message) => {
+      if (message.type !== 'handoff') return
+      void exchangeHandoff(message.code).then((ok) => {
+        if (!active) return
+        if (ok) onSignedInRef.current()
+        else setFailed(true)
+      })
+    })
+    postToApp({ type: 'auth-required' })
+    return () => {
+      active = false
+      stop()
+    }
+  }, [onSignedInRef])
+  if (!failed) return <Splash message="Signing you in…" />
+  return (
+    <Splash message="The farm couldn't sign you in.">
+      <button
+        className="g-button"
+        type="button"
+        onClick={() => {
+          setFailed(false)
+          postToApp({ type: 'auth-required' })
+        }}
+      >
+        Try again
+      </button>
+    </Splash>
+  )
 }
 
 function Splash({ message, children }: { message: string; children?: React.ReactNode }) {
