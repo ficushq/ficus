@@ -167,9 +167,75 @@ async function inTransaction<T>(connection: postgres.ReservedSql, callback: () =
   }
 }
 
+/** Crash-recovery intents for concurrent index migrations; owned by this migrator. */
+const INTENTS_TABLE = '__ficus_online_migration_intents'
+/** The intents table's name before the Ficus rename, adopted (or merged) on the first run. */
+const PRE_RENAME_INTENTS_TABLE = '__tau_online_migration_intents'
+/** Temp shadow tables that capture a concurrent index's intended definition. */
+const SHADOW_PREFIX = '__ficus_index_definition_'
+const PRE_RENAME_SHADOW_PREFIX = '__tau_index_definition_'
+
+const quoteLiteral = (value: string): string => `'${value.replaceAll("'", "''")}'`
+
+/**
+ * Adopt the pre-rename intents table in one atomic statement, before anything reads intents.
+ * Only the old table: rename it and the constraints named after it. Both (a rollback recreated the old one):
+ * copy the old rows the new table lacks, then drop the old table. Neither, or only the new one: no-op.
+ */
+async function adoptPreRenameIntents(connection: postgres.ReservedSql, schema: string): Promise<void> {
+  const qualified = (table: string) => `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`
+  const regclass = (table: string) => `to_regclass(${quoteLiteral(qualified(table))})`
+  const columns = 'created_at, hash, table_schema, index_name, started_at'
+  await connection.unsafe(`DO $adopt$
+    DECLARE
+      constraint_name name;
+    BEGIN
+      IF ${regclass(PRE_RENAME_INTENTS_TABLE)} IS NULL THEN
+        RETURN;
+      END IF;
+      IF ${regclass(INTENTS_TABLE)} IS NULL THEN
+        ALTER TABLE ${qualified(PRE_RENAME_INTENTS_TABLE)} RENAME TO ${quoteIdentifier(INTENTS_TABLE)};
+        -- Its primary key (and, on PostgreSQL 18, its NOT NULL constraints) carry the table name too.
+        FOR constraint_name IN SELECT conname FROM pg_catalog.pg_constraint
+            WHERE conrelid = ${regclass(INTENTS_TABLE)} AND starts_with(conname, ${quoteLiteral(`${PRE_RENAME_INTENTS_TABLE}_`)})
+        LOOP
+          EXECUTE format('ALTER TABLE %s RENAME CONSTRAINT %I TO %I', ${quoteLiteral(qualified(INTENTS_TABLE))},
+            constraint_name, ${quoteLiteral(INTENTS_TABLE)} || substr(constraint_name, ${PRE_RENAME_INTENTS_TABLE.length + 1}));
+        END LOOP;
+      ELSE
+        INSERT INTO ${qualified(INTENTS_TABLE)} (${columns})
+          SELECT ${columns} FROM ${qualified(PRE_RENAME_INTENTS_TABLE)}
+          ON CONFLICT (created_at) DO NOTHING;
+        DROP TABLE ${qualified(PRE_RENAME_INTENTS_TABLE)};
+      END IF;
+    END
+  $adopt$`)
+}
+
+/**
+ * Drop shadow tables a crashed run left behind, under either name. They are TEMP tables, so a
+ * dead session's are already gone; this clears this session's own, and any stray non-temp copy.
+ * Other live sessions' temp schemas are never touched.
+ */
+async function dropLeftoverShadowTables(connection: postgres.ReservedSql): Promise<void> {
+  const leftovers = await connection.unsafe<{ schema: string; name: string }[]>(
+    `SELECT namespace.nspname AS schema, class.relname AS name
+    FROM pg_catalog.pg_class class
+    JOIN pg_catalog.pg_namespace namespace ON namespace.oid = class.relnamespace
+    WHERE class.relkind IN ('r', 'p')
+      AND (starts_with(class.relname, $1) OR starts_with(class.relname, $2))
+      AND (namespace.oid = pg_my_temp_schema()
+        OR (namespace.nspname NOT LIKE 'pg\\_temp\\_%' AND namespace.nspname NOT LIKE 'pg\\_toast\\_temp\\_%'))`,
+    [SHADOW_PREFIX, PRE_RENAME_SHADOW_PREFIX]
+  )
+  for (const { schema, name } of leftovers) {
+    await connection.unsafe(`DROP TABLE IF EXISTS ${quoteIdentifier(schema)}.${quoteIdentifier(name)} CASCADE`)
+  }
+}
+
 async function prepareLedger(connection: postgres.ReservedSql, schema: string, table: string): Promise<void> {
   const qualifiedLedger = `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`
-  const qualifiedIntents = `${quoteIdentifier(schema)}.${quoteIdentifier('__tau_online_migration_intents')}` // ficus-36c
+  const qualifiedIntents = `${quoteIdentifier(schema)}.${quoteIdentifier(INTENTS_TABLE)}`
   await connection.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(schema)}`)
   await connection.unsafe(`
     CREATE TABLE IF NOT EXISTS ${qualifiedLedger} (
@@ -177,6 +243,7 @@ async function prepareLedger(connection: postgres.ReservedSql, schema: string, t
       hash text NOT NULL,
       created_at bigint
     )`)
+  await adoptPreRenameIntents(connection, schema)
   await connection.unsafe(`
     CREATE TABLE IF NOT EXISTS ${qualifiedIntents} (
       created_at bigint PRIMARY KEY,
@@ -185,6 +252,7 @@ async function prepareLedger(connection: postgres.ReservedSql, schema: string, t
       index_name text NOT NULL,
       started_at timestamptz NOT NULL DEFAULT now()
     )`)
+  await dropLeftoverShadowTables(connection)
 }
 
 async function insertLedger(
@@ -256,8 +324,8 @@ async function expectedIndexSignature(
   classification: Extract<MigrationClassification, { kind: 'concurrent-index' }>
 ): Promise<IndexSignature> {
   const suffix = crypto.randomUUID().replaceAll('-', '')
-  const shadowTable = `__tau_index_definition_${suffix}` // ficus-36c
-  const shadowIndex = `__tau_index_definition_idx_${suffix}` // ficus-36c
+  const shadowTable = `${SHADOW_PREFIX}${suffix}`
+  const shadowIndex = `${SHADOW_PREFIX}idx_${suffix}`
   const sourceTable = `${quoteIdentifier(classification.tableSchema)}.${quoteIdentifier(classification.tableName)}`
   const prefix = statement.match(CREATE_CONCURRENT_INDEX)
   if (!prefix) throw new Error('Unsupported CREATE INDEX CONCURRENTLY statement')
@@ -348,7 +416,7 @@ export async function applyMigrations(
   const schema = config.migrationsSchema ?? 'drizzle'
   const table = config.migrationsTable ?? '__drizzle_migrations'
   const qualifiedLedger = `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`
-  const qualifiedIntents = `${quoteIdentifier(schema)}.${quoteIdentifier('__tau_online_migration_intents')}` // ficus-36c
+  const qualifiedIntents = `${quoteIdentifier(schema)}.${quoteIdentifier(INTENTS_TABLE)}`
   await prepareLedger(connection, schema, table)
 
   const latest = await connection.unsafe<{ created_at: string | number | null }[]>(
