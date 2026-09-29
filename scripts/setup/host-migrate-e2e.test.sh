@@ -36,11 +36,15 @@
 #     point is reversed; after it (a signal, a rollback) it is finished
 #     forward; --restore-host-backup refuses a set that must be reversed first.
 #
-# Nothing touches the real host: every path the toolkit writes is pointed at
-# the scratch directory through its seams (FICUS_HOST_ROOT,
-# FICUS_SYSTEMD_UNIT_DIR, FICUS_MANAGED_ENV_PATH, BACKUP_ENV_TARGET,
-# BACKUP_SCRIPT_PATH, HOST_MIGRATE_BACKUP_ROOT, FICUS_SYSTEM_BIN_DIR), and
-# systemctl, journalctl, swapon, sleep, pg_dump and pg_restore are PATH shims.
+# Every path the toolkit writes is pointed at the scratch directory through
+# its seams (FICUS_HOST_ROOT, FICUS_SYSTEMD_UNIT_DIR, FICUS_MANAGED_ENV_PATH,
+# BACKUP_ENV_TARGET, BACKUP_SCRIPT_PATH, HOST_MIGRATE_BACKUP_ROOT,
+# FICUS_SYSTEM_BIN_DIR), and systemctl, journalctl, swapon, sleep, pg_dump and
+# pg_restore are PATH shims — with one exception: E6 runs setup-host.sh's real
+# preflight, which writes its apt lock-timeout conf under
+# /etc/apt/apt.conf.d/, and would apt-get install a missing package or run the
+# bun installer on a bun mismatch. So run the suite on CI's runner or in a
+# throwaway container, never on a machine you care about.
 # curl is a shim that answers the core's /health probe (healthy only for the
 # releases the test names) and passes everything else to the real curl.
 #
@@ -48,7 +52,8 @@
 # and mikefarah yq, so the suite self-skips — loudly, without the ENABLED
 # marker — anywhere else. CI runs it as root; locally, run it in a throwaway
 # Ubuntu 24.04 container. The setup-host.sh case (E6) also needs a systemd
-# host (/run/systemd/system) and prints `SKIP E6: …` without one.
+# host (/run/systemd/system) and prints `SKIP E6: …` without one — except on
+# CI (GITHUB_ACTIONS=true), where a skip counts as a failure.
 #
 # Run: sudo bash scripts/setup/host-migrate-e2e.test.sh
 #   E2E_VERBOSE=1  print every entrypoint's output
@@ -764,8 +769,12 @@ wait_blocked || true
 kill_bg
 wait_bg
 e5b_set=$(first_set)
-expect_eq 'E5b conversion killed mid-migration: journaled, the set excluded the units, .env migrated' \
-  "$(pending):$([[ -e ${e5b_set}/UNITS_EXCLUDED ]] && echo excluded):$(marked "${DEST}/.env")" 'pending:excluded:marked'
+expect_eq 'E5b conversion killed mid-migration: journaled, the set excluded the units, .env migrated, current unmoved' \
+  "$(pending):$([[ -e ${e5b_set}/UNITS_EXCLUDED ]] && echo excluded):$(marked "${DEST}/.env"):$(readlink "${DEST}/current")" \
+  "pending:excluded:marked:${DEST}/releases/git-${CONV_SHA}"
+# The units as a later render would have left them: only a reconcile that
+# re-renders them brings back what render_core_unit gives (checked below).
+printf '# changed after the kill\n' | tee -a "$(unit "${HL_UNIT_API}.service")" >>"$(unit "${HL_UNIT_WORKER}.service")"
 snapshot "${H}/killed"
 run_script --tk "${TK_NOTMPL}" '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
 expect_eq 'E5b: apply-artifacts.sh --config (no unit templates) refuses (exit 1)' "${RC}" '1'
@@ -776,12 +785,19 @@ expect_eq 'E5b: --restore-host-backup of that set without --config: refused (exi
 expect_match 'E5b: ...naming --config' "${OUT}" 'pass --config'
 expect_eq 'E5b: ...changing nothing' "$(pending):$(same_as "${H}/killed")" 'pending:same'
 healthy_add "${SHA_MARK}-*"
-upgrade "${ART_MARK}"
+# Held at the run's first daemon-reload — its reconcile's restore, right after
+# the re-render — so the units are checked before the upgrade renders them again.
+rm -f "${CTL}/blocked.pid"
+: >"${CTL}/block-daemon-reload"
+start_bg "${ART_MARK}" upgrade-host.sh --config "${CONFIG}"
+wait_blocked || true
+expect_eq 'E5b: its reconcile re-rendered the units (what render_core_unit gives, the edit after the kill gone)' \
+  "$(cmp -s <(expected_unit api) "$(unit "${HL_UNIT_API}.service")" && echo api):$(cmp -s <(expected_unit worker) "$(unit "${HL_UNIT_WORKER}.service")" && echo worker)" 'api:worker'
+release_block
+wait_bg
 expect_eq 'E5b: the next upgrade (the full toolkit) exits 0' "${RC}" '0'
 [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
 expect_match 'E5b: its reconcile restored the set' "${OUT}" 'reconcile: restored'
-expect_eq 'E5b: the units run from <dest>/current' \
-  "$(grep -hc "^Environment=FICUS_ROOT=${DEST}/current$" "$(unit "${HL_UNIT_API}.service")" "$(unit "${HL_UNIT_WORKER}.service")" | tr '\n' ' ')" '1 1 '
 expect_eq 'E5b: the upgrade completed: migrated, no journal, the new release current' \
   "$(marked "${DEST}/.env"):$(pending):$([[ $(readlink "${DEST}/current") == *"/${SHA_MARK}-"* ]] && echo new)" 'marked:none:new'
 assert_converged 'E5b'
@@ -794,6 +810,13 @@ e6_skip=''
 [[ -d /run/systemd/system ]] || e6_skip='no /run/systemd/system (not a systemd host)'
 if [[ -z ${e6_skip} ]] && ! { grep -q '^ID=ubuntu' /etc/os-release && grep -q '^VERSION_ID="24.04"' /etc/os-release; } 2>/dev/null; then
   e6_skip='not Ubuntu 24.04'
+fi
+# On CI (GitHub's Ubuntu 24.04 systemd runner) E6 must run: a skip there is a failure.
+if [[ -n ${e6_skip} && ${GITHUB_ACTIONS:-} == true ]]; then
+  FAIL=$((FAIL + 1))
+  printf 'FAIL: E6 must run on CI, but it would skip: %s\n' "${e6_skip}" >&2
+  e6_skip=''
+  [[ -d /run/systemd/system ]] || e6_skip='no /run/systemd/system (counted as a failure above)'
 fi
 if [[ -z ${e6_skip} ]]; then
   new_host setup-rerun

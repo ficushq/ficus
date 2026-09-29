@@ -647,12 +647,7 @@ render_backup_script() {
 }
 
 render_backup_unit() { # TEMPLATE_FILE
-  local db_after=''
-  [[ ${DB_MODE} == container ]] && db_after=' docker.service'
-  sed -e "s|@SCRIPT_PATH@|${BACKUP_SCRIPT_PATH}|g" \
-    -e "s|@ONCALENDAR@|${BACKUP_ONCALENDAR}|g" \
-    -e "s|@DB_AFTER@|${db_after}|g" \
-    "$1"
+  render_backup_unit_content "$1" "${BACKUP_SCRIPT_PATH}" "${BACKUP_ONCALENDAR}" "${DB_MODE}"
 }
 
 # The self-updater (apps/core/src/services/updates) restarts the services after a
@@ -806,9 +801,9 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     plan "render ${BACKUP_SCRIPT_PATH} from ficus-backup.sh.tmpl (dest=${SRC_DEST}, db.mode=${DB_MODE}, s3=${BACKUP_S3_ENDPOINT}/${BACKUP_S3_BUCKET})"
     plan "write ${BACKUP_ENV_TARGET} (0600 root-owned; secrets redacted below):"
     render_backup_env_content redact "${BACKUP_S3_ACCESS_KEY_VALUE}" "${BACKUP_S3_SECRET_KEY_VALUE}" "${BACKUP_PASSPHRASE_VALUE}" | sed 's/^/  | /'
-    plan "install tau-backup.service + tau-backup.timer (OnCalendar=${BACKUP_ONCALENDAR}):"
+    plan "install ${HL_UNIT_BACKUP}.service + ${HL_UNIT_BACKUP}.timer (OnCalendar=${BACKUP_ONCALENDAR}):"
     render_backup_unit "${SCRIPT_DIR}/systemd/ficus-backup.timer.tmpl" | sed 's/^/  | /'
-    plan "systemctl daemon-reload && enable --now tau-backup.timer"
+    plan "systemctl daemon-reload && enable --now ${HL_UNIT_BACKUP}.timer"
   fi
   printf '\nPhase 7 — seed (delegated to seed.sh)\n'
   bash "${SCRIPT_DIR}/seed.sh" --config "${CFG_FILE}" --env-file "${ENV_FILE}" --api-url "http://127.0.0.1:${CORE_PORT}" --dry-run
@@ -1331,7 +1326,7 @@ phase_caddy() {
 
 phase_backup() {
   phase_step backup "phase 6.6/8: nightly encrypted backup (S3 prefix '${BACKUP_S3_PREFIX}', HOME_DIR ${BACKUP_HOME_DIR})"
-  as_root mkdir -p /etc/tau
+  as_root mkdir -p "${HL_ETC}"
 
   # Secrets: rendered to their own 0600 root-owned file via install_rendered's
   # 0600 tmp file — never through `as_root tee` (which would create the file
@@ -1347,13 +1342,17 @@ phase_backup() {
   # The units go through the same staged+verified path — a failed render here
   # once landed a 0-byte tau-backup.service that daemon-reload accepted
   # silently, so the nightly backup never ran.
-  install_rendered --check-placeholders 0644 root root /etc/systemd/system/tau-backup.service \
+  install_rendered --check-placeholders 0644 root root "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.service" \
     render_backup_unit "${SCRIPT_DIR}/systemd/ficus-backup.service.tmpl"
-  install_rendered --check-placeholders 0644 root root /etc/systemd/system/tau-backup.timer \
+  install_rendered --check-placeholders 0644 root root "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.timer" \
     render_backup_unit "${SCRIPT_DIR}/systemd/ficus-backup.timer.tmpl"
 
   as_root systemctl daemon-reload
-  as_root systemctl enable --now tau-backup.timer
+  # The service only when it carries an Alias= (its [Install] holds nothing else).
+  if grep -q '^Alias=' "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.service"; then
+    as_root systemctl enable "${HL_UNIT_BACKUP}.service"
+  fi
+  as_root systemctl enable --now "${HL_UNIT_BACKUP}.timer"
   log_info "backup timer installed (OnCalendar=${BACKUP_ONCALENDAR}); script: ${BACKUP_SCRIPT_PATH}, secrets: ${BACKUP_ENV_TARGET} (0600)"
 }
 

@@ -3903,6 +3903,54 @@ PYREPACK
     "$([[ -e ${ART_DEST2}/previous ]] && echo present || echo absent)" 'absent'
   rm -rf "${ART_DEST2}"
 
+  # --- a pre-flip hook that MOVES the install root (the host layout migration) ---
+  # It moves <dest> to a new path (a compat link left at the old one), points
+  # current/previous at the new path and says so in ARTIFACT_RELOCATED_FROM/TO.
+  # Every link the activation writes after it — current, previous, and the
+  # rollback swaps — must name the NEW absolute path, never the compat link.
+  art_relocation_box() { # prints the old dest; releases A and B staged, current=A, previous=A
+    local base old
+    base=$(mktemp -d)
+    old="${base}/old-core"
+    mkdir -p "${old}/releases"
+    cp -a "${ART_RELEASE_A}" "${old}/releases/A"
+    cp -a "${ART_RELEASE_B}" "${old}/releases/B"
+    printf 'DATABASE_URL=postgres://fixture/db\nMIGRATE_PROOF=%s\n' "${ART_PROOF}" >"${old}/.env"
+    ln -s "${old}/releases/A" "${old}/current"
+    ln -s "${old}/releases/A" "${old}/previous"
+    printf '%s' "${old}"
+  }
+  epr_relocate() {
+    local from=${ART_RELOC_OLD} to=${ART_RELOC_NEW} l
+    mv -T "${from}" "${to}" && ln -s "${to}" "${from}" || return 1
+    for l in current previous; do
+      [[ -L ${to}/${l} ]] && _artifact_symlink_swap "${to}/$(readlink "${to}/${l}" | sed "s:^${from}/::")" "${to}/${l}"
+    done
+    ARTIFACT_RELOCATED_FROM=${from} ARTIFACT_RELOCATED_TO=${to}
+  }
+  ART_RELOC_OLD=$(art_relocation_box)
+  ART_RELOC_NEW="$(dirname "${ART_RELOC_OLD}")/new-core"
+  ART_RC=0
+  ART_ACT_OUT=$(ARTIFACT_PREFLIP_HOOK=epr_relocate artifact_activate "${ART_RELOC_OLD}" "${ART_RELOC_OLD}/releases/B" 3000 2>/dev/null) || ART_RC=$?
+  expect_eq 'artifact_activate (relocating hook): a healthy activation exits 0' "${ART_RC}:${ART_ACT_OUT}" '0:FICUS_RELEASE_ROLLED_BACK=0'
+  expect_eq 'artifact_activate (relocating hook): current names the NEW absolute path' \
+    "$(readlink "${ART_RELOC_NEW}/current")" "${ART_RELOC_NEW}/releases/B"
+  expect_eq 'artifact_activate (relocating hook): previous names the NEW absolute path' \
+    "$(readlink "${ART_RELOC_NEW}/previous")" "${ART_RELOC_NEW}/releases/A"
+  rm -rf "$(dirname "${ART_RELOC_OLD}")"
+  ART_RELOC_OLD=$(art_relocation_box)
+  ART_RELOC_NEW="$(dirname "${ART_RELOC_OLD}")/new-core"
+  touch "${ART_TMP}/restart-fails"
+  ART_RC=0
+  ART_ACT_OUT=$(ARTIFACT_PREFLIP_HOOK=epr_relocate artifact_activate "${ART_RELOC_OLD}" "${ART_RELOC_OLD}/releases/B" 3000 2>/dev/null) || ART_RC=$?
+  expect_eq 'artifact_activate (relocating hook): an unhealthy activation rolls back' \
+    "$([[ ${ART_RC} -ne 0 ]] && echo failed):${ART_ACT_OUT}" 'failed:FICUS_RELEASE_ROLLED_BACK=1'
+  expect_eq 'artifact_activate (relocating hook): the rollback swap names the NEW path (current and previous)' \
+    "$(readlink "${ART_RELOC_NEW}/current"):$(readlink "${ART_RELOC_NEW}/previous")" \
+    "${ART_RELOC_NEW}/releases/A:${ART_RELOC_NEW}/releases/A"
+  rm -rf "$(dirname "${ART_RELOC_OLD}")"
+  unset -f epr_relocate art_relocation_box
+
   # --- the migrate step READS <dest>/.env, it does not EXECUTE it ---
   # `set -a; . .env` would expand `$` inside a password and run backticks as
   # root, out of a file whose whole purpose is to hold unvetted secrets.

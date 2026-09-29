@@ -237,5 +237,627 @@ expect_eq 'guardrail (layout 1): a new managed drop-in gets the legacy suffix' \
   "./zz-local.${HL_LEGACY_GUARDRAIL_SUFFIX} "
 host_layout_resolve fresh
 
+# =============================================================================
+# The host_layout migration (P5-T7): a whole layout-1 host under $R, moved by
+# the real framework (host_migrate creates the set, then runs apply), with
+# systemctl, docker, bun, visudo and getent as PATH stubs that append their
+# argv to $R/calls.log. Old names only through HL_LEGACY_*.
+hl_skip=''
+[[ $(uname -s) == Linux ]] || hl_skip='not Linux (GNU find/stat/mv -T)'
+[[ -n ${hl_skip} ]] || yq_is_mikefarah || hl_skip='mikefarah yq is not on PATH'
+# The section sets the caller globals lib.sh reads (SRC_DEST, RUN_USER, ...).
+# shellcheck disable=SC2034
+if [[ -n ${hl_skip} ]]; then
+  printf 'SKIP: the host_layout migration cases did not run — %s\n' "${hl_skip}" >&2
+  if [[ $(uname -s) == Linux ]]; then
+    FAIL=$((FAIL + 1))
+    log_error 'FAIL: the host_layout migration cases must run on Linux (install mikefarah yq)'
+  fi
+else
+  fail() {
+    FAIL=$((FAIL + 1))
+    log_error "FAIL: $*"
+  }
+  snapshot() { (
+    cd "$R" && find . -path ./calls.log -prune -o -printf '%p %y %l %m\n' | sort
+    find . -type f ! -name calls.log -exec sha256sum {} + | sort -k2
+  ); }
+  hl_pending_set() { cut -f1 "$(host_migrate_backup_root)/PENDING"; } # PENDING is <set>\t<names>\t<release>
+  hl_last_set() { ls -1dt "$(host_migrate_backup_root)"/*/ | head -1 | sed 's:/$::'; }
+  pending_state() { if [[ -e $(host_migrate_backup_root)/PENDING ]]; then echo y; else echo n; fi; }
+  HOST_MIGRATIONS=(host_layout)
+  _hm_is_root() { return 0; }
+  as_root() {
+    if [[ ${1:-} == install ]]; then
+      shift
+      local args=()
+      while (($#)); do
+        case "$1" in
+          -o | -g) shift 2 ;;
+          *)
+            args+=("$1")
+            shift
+            ;;
+        esac
+      done
+      install "${args[@]}"
+      return
+    fi
+    "$@"
+  }
+
+  STUB="${SCRATCH}/hl-stub"
+  DOCKER_STATE="${SCRATCH}/hl-docker"
+  mkdir -p "${STUB}"
+  export STUB_DOCKER_STATE="${DOCKER_STATE}"
+  cat >"${STUB}/systemctl" <<'STUBEOF'
+#!/usr/bin/env bash
+# systemctl, as far as the migration uses it: enable/disable make the links
+# systemd makes (one per WantedBy= target's .wants, one per Alias=).
+printf 'systemctl %s\n' "$*" >>"${FICUS_HOST_ROOT}/calls.log"
+U=${FICUS_SYSTEMD_UNIT_DIR}
+norm() { case $1 in *.service | *.timer | *.target) printf '%s' "$1" ;; *) printf '%s.service' "$1" ;; esac; }
+cmd=$1
+shift
+case ${cmd} in
+  enable | disable)
+    for a in "$@"; do
+      [[ ${a} == --now ]] && continue
+      u=$(norm "${a}") f="${U}/$(norm "${a}")"
+      if [[ ${cmd} == enable ]]; then
+        [[ -f ${f} ]] || { echo "Unit file ${u} does not exist." >&2; exit 1; }
+        while IFS= read -r t; do mkdir -p "${U}/${t}.wants" && ln -sfn "${f}" "${U}/${t}.wants/${u}"; done < <(sed -n 's/^WantedBy=//p' "${f}")
+        while IFS= read -r al; do ln -sfn "${f}" "${U}/${al}"; done < <(sed -n 's/^Alias=//p' "${f}")
+      else
+        [[ -e ${f} || -L ${f} ]] || { echo "Unit file ${u} does not exist." >&2; exit 1; }
+        for l in "${U}"/*.wants/"${u}" "${U}"/*; do
+          if [[ -L ${l} ]] && [[ ${l} == "${U}"/*.wants/"${u}" || $(readlink "${l}") == "${f}" ]]; then rm -f "${l}"; fi
+        done
+      fi
+    done
+    ;;
+  is-active)
+    q=0
+    if [[ ${1:-} == --quiet ]]; then q=1; shift; fi
+    u=$(norm "$1")
+    if [[ ${STUB_BACKUP_ACTIVE:-} == always && ${u} == *-backup.service ]]; then
+      ((q)) || echo activating
+      exit 3
+    fi
+    ((q)) || echo inactive
+    exit 3
+    ;;
+  is-enabled)
+    u=$(norm "$1")
+    for l in "${U}"/*.wants/"${u}"; do if [[ -L ${l} ]]; then echo enabled; exit 0; fi; done
+    echo disabled
+    exit 1
+    ;;
+  *) exit 0 ;;
+esac
+STUBEOF
+  cat >"${STUB}/docker" <<'STUBEOF'
+#!/usr/bin/env bash
+# docker, as far as the migration uses it: containers and volumes as files.
+printf 'docker %s\n' "$*" >>"${FICUS_HOST_ROOT}/calls.log"
+S=${STUB_DOCKER_STATE}
+mkdir -p "${S}/c" "${S}/v"
+case $1 in
+  info) exit 0 ;;
+  inspect)
+    if [[ $2 == -f ]]; then
+      [[ -e ${S}/c/$4 ]] || exit 1
+      case $3 in *Image*) echo 'paradedb/paradedb:latest' ;; *Running*) cat "${S}/c/$4" ;; esac
+      exit 0
+    fi
+    [[ -e ${S}/c/$2 ]]
+    ;;
+  volume)
+    case $2 in
+      create) mkdir -p "${S}/v/$3" && echo "$3" ;;
+      inspect)
+        if [[ $3 == -f ]]; then [[ -d ${S}/v/$5 ]] && echo "${S}/v/$5"; else [[ -d ${S}/v/$3 ]]; fi
+        ;;
+      rm) rm -rf "${S}/v/$3" ;;
+    esac
+    ;;
+  stop) [[ -e ${S}/c/$2 ]] && echo false >"${S}/c/$2" ;;
+  start) [[ -e ${S}/c/$2 ]] && echo true >"${S}/c/$2" ;;
+  rm)
+    if [[ $2 == -f ]]; then rm -f "${S}/c/$3"; else [[ -e ${S}/c/$2 ]] && rm -f "${S}/c/$2"; fi
+    ;;
+  run)
+    name=''
+    prev=''
+    for a in "$@"; do
+      [[ ${prev} == --name ]] && name=${a}
+      prev=${a}
+    done
+    if [[ -n ${name} ]]; then
+      echo true >"${S}/c/${name}"
+      printf 'docker-run-env POSTGRES_PASSWORD=%s\n' "${POSTGRES_PASSWORD:-}" >>"${FICUS_HOST_ROOT}/calls.log"
+    fi
+    ;;
+  exec) exit 0 ;;
+esac
+STUBEOF
+  cat >"${STUB}/bun" <<'STUBEOF'
+#!/usr/bin/env bash
+printf 'bun %s (cwd=%s FICUS_ROOT=%s HOME_DIR=%s)\n' "$*" "${PWD}" "${FICUS_ROOT:-}" "${HOME_DIR:-}" >>"${FICUS_HOST_ROOT}/calls.log"
+[[ -z ${STUB_BUN_FAILS:-} ]]
+STUBEOF
+  cat >"${STUB}/visudo" <<'STUBEOF'
+#!/usr/bin/env bash
+printf 'visudo %s\n' "$*" >>"${FICUS_HOST_ROOT}/calls.log"
+STUBEOF
+  cat >"${STUB}/getent" <<'STUBEOF'
+#!/usr/bin/env bash
+[[ $1 == passwd ]] || exit 2
+if [[ $2 == root ]]; then echo "root:x:0:0:root:${FICUS_HOST_ROOT}/root:/bin/bash"; else echo "$2:x:1000:1000::${FICUS_HOST_ROOT}/home/$2:/bin/bash"; fi
+STUBEOF
+  chmod 0755 "${STUB}"/*
+  export PATH="${STUB}:${PATH}"
+
+  REL="$R$HL_LEGACY_DEST/releases/aaaa-bbbb"
+  LEG_API="${HL_LEGACY_UNIT_PREFIX}-api"
+  LEG_WORKER="${HL_LEGACY_UNIT_PREFIX}-worker"
+  LEG_BACKUP="${HL_LEGACY_UNIT_PREFIX}-backup"
+
+  # A layout-1 host, as the fleet has it: absolute current/previous links, no
+  # source.dest in effect beyond the fixture's own, an external database whose
+  # DSN names the legacy CA path, the backup timer enabled and its service static.
+  make_legacy_host() { # [--db-mode container] [--home-dir DIR] [--sudoers] [--git] [--no-yaml-dest]
+    local db_mode=external home_dir='' sudoers=0 git=0 yaml_dest=1 d u
+    while (($#)); do
+      case $1 in
+        --db-mode)
+          db_mode=$2
+          shift 2
+          ;;
+        --home-dir)
+          home_dir=$2
+          shift 2
+          ;;
+        --sudoers)
+          sudoers=1
+          shift
+          ;;
+        --git)
+          git=1
+          shift
+          ;;
+        --no-yaml-dest)
+          yaml_dest=0
+          shift
+          ;;
+        *) return 1 ;;
+      esac
+    done
+    d="$R$HL_LEGACY_DEST"
+    mkdir -p "$d" "$R$HL_LEGACY_ETC/artifacts" "$R$HL_LEGACY_SETUP_DIR/keys" "$R/root" "$R/usr/local/bin" "$UNITS" "$DOCKER_STATE/c" "$DOCKER_STATE/v"
+    if ((git)); then
+      printf '{"name":"ficus","ficusHostLayout":2}\n' >"$d/package.json"
+      mkdir -p "$d/apps/core/dist" "$d/node_modules"
+      : >"$d/apps/core/dist/rebase-home.js"
+      printf 'stamp\n' >"$d/$HL_LEGACY_BUILD_STAMP"
+    else
+      mkdir -p "$d/releases/c0-legacy/node_modules" "$d/releases/b0-older" "$REL/apps/core/dist"
+      printf '{"name":"ficus"}\n' >"$d/releases/c0-legacy/package.json"
+      printf '{"sha":"c0"}\n' >"$d/releases/c0-legacy/$HL_LEGACY_RELEASE_MARKER"
+      printf '{"sha":"b0"}\n' >"$d/releases/b0-older/$HL_LEGACY_RELEASE_MARKER"
+      printf '{"hostLayout":2}\n' >"$REL/artifact.json"
+      printf '{"sha":"aaaa"}\n' >"$REL/.ficus-release-complete"
+      printf '// rebase-home (fixture)\n' >"$REL/apps/core/dist/rebase-home.js"
+      ln -s "$d/releases/c0-legacy" "$d/current"
+      ln -s "$d/releases/b0-older" "$d/previous"
+      ln -s "$d/releases/c0-legacy/node_modules" "$d/node_modules"
+      ln -s releases/c0-legacy "$d/relative-link"
+    fi
+    if [[ $db_mode == container ]]; then
+      printf 'DATABASE_URL=postgres://postgres:dbpw@127.0.0.1:5432/%s\n' "$HL_LEGACY_DB_NAME" >"$d/.env"
+      echo true >"$DOCKER_STATE/c/$HL_LEGACY_DB_CONTAINER"
+      mkdir -p "$DOCKER_STATE/v/$HL_LEGACY_DB_VOLUME"
+      printf 'pgdata\n' >"$DOCKER_STATE/v/$HL_LEGACY_DB_VOLUME/PG_VERSION"
+    else
+      printf 'DATABASE_URL=postgresql://tenant_x:pw@db.example:25060/x?sslmode=verify-full&sslrootcert=%s\n' \
+        "$(printf '%s/database-ca.crt' "$HL_LEGACY_ETC" | sed 's:/:%2F:g')" >"$d/.env"
+    fi
+    printf 'FICUS_ENCRYPTION_KEY=enc\nAPP_URL=https://acme.ficus.sh\n' >>"$d/.env"
+    if [[ -n $home_dir ]]; then
+      printf 'HOME_DIR=%s\n' "$home_dir" >>"$d/.env"
+      mkdir -p "$home_dir/inbox-attachments"
+      : >"$home_dir/inbox-attachments/a.txt"
+    else
+      mkdir -p "$R/root/$HL_LEGACY_HOME_NAME/inbox-attachments"
+      printf 'att\n' >"$R/root/$HL_LEGACY_HOME_NAME/inbox-attachments/a.txt"
+    fi
+    chmod 0600 "$d/.env"
+    printf 'SES=1\n' >"$R$HL_LEGACY_ETC/managed.env"
+    printf "FICUS_BACKUP_S3_ACCESS_KEY='ak'\n" >"$R$HL_LEGACY_ETC/backup.env"
+    printf 'ca\n' >"$R$HL_LEGACY_ETC/database-ca.crt"
+    chmod 0600 "$R$HL_LEGACY_ETC/managed.env" "$R$HL_LEGACY_ETC/backup.env"
+    cat >"$R$HL_LEGACY_SETUP_DIR/$HL_LEGACY_SETUP_YAML" <<YAMLEOF
+# setup config (fixture)
+source:
+  mode: artifact
+  dest: $d
+core:
+  run_user: root
+  port: 3000
+database:
+  mode: $db_mode
+  ca_path: $R$HL_LEGACY_SETUP_DIR/keys/database-ca.crt
+artifacts:
+  dir: $R$HL_LEGACY_SETUP_DIR/artifacts
+backup:
+  env_hint: $R$HL_LEGACY_ETC/backup.env
+  unrelated: $R$HL_LEGACY_ETC-other/x
+YAMLEOF
+    ((yaml_dest)) || sed -i '/^  dest: /d' "$R$HL_LEGACY_SETUP_DIR/$HL_LEGACY_SETUP_YAML"
+    printf 'ca\n' >"$R$HL_LEGACY_SETUP_DIR/keys/database-ca.crt"
+    for u in "$LEG_API" "$LEG_WORKER"; do
+      printf '[Unit]\nDescription=%s\n[Service]\nEnvironmentFile=%s/.env\nExecStart=/usr/local/bin/bun run dist/index.js\n[Install]\nWantedBy=multi-user.target\n' \
+        "$u" "$d" >"$UNITS/$u.service"
+      mkdir -p "$UNITS/$u.service.d"
+      printf '[Service]\nEnvironmentFile=-%s/managed.env\n' "$HL_LEGACY_ETC" >"$UNITS/$u.service.d/managed-env.conf"
+    done
+    api_memory_guardrail_content >"$UNITS/$LEG_API.service.d/zz-local.$HL_LEGACY_GUARDRAIL_SUFFIX"
+    printf '[Service]\nType=oneshot\nExecStart=%s\n' "$R$HL_LEGACY_BACKUP_SCRIPT" >"$UNITS/$LEG_BACKUP.service"
+    printf '[Timer]\nOnCalendar=*-*-* 03:15:00\nPersistent=true\nUnit=%s.service\n\n[Install]\nWantedBy=timers.target\n' "$LEG_BACKUP" >"$UNITS/$LEG_BACKUP.timer"
+    local container=''
+    [[ $db_mode != container ]] || container=$HL_LEGACY_DB_CONTAINER
+    render_backup_script_content "$SCRIPT_DIR/ficus-backup.sh.tmpl" "$d" "${home_dir:-$R/root/$HL_LEGACY_HOME_NAME}" "$db_mode" "$container" \
+      https://s3.example us-east-1 bucket tenant/acme "$R$HL_LEGACY_ETC/backup.env" >"$R$HL_LEGACY_BACKUP_SCRIPT"
+    chmod 0755 "$R$HL_LEGACY_BACKUP_SCRIPT"
+    if ((sudoers)); then
+      mkdir -p "$R/etc/sudoers.d"
+      printf 'svc ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' "$LEG_API" "$LEG_WORKER" >"$R$HL_LEGACY_SUDOERS"
+      chmod 0440 "$R$HL_LEGACY_SUDOERS"
+    fi
+    systemctl enable "$LEG_API" "$LEG_WORKER" "$LEG_BACKUP.timer"
+    : >"$R/calls.log"
+    # The caller globals an entrypoint holds.
+    SRC_DEST=$d CFG_FILE="$R$HL_LEGACY_SETUP_DIR/$HL_LEGACY_SETUP_YAML" CONFIG=$CFG_FILE
+    RUN_USER=root DB_MODE=$db_mode BUN_BIN=/usr/local/bin/bun CORE_LAYOUT=''
+    ((git)) || CORE_LAYOUT=artifact
+    ARTIFACT_RELEASE_DIR='' BACKUP_HOME_DIR="${home_dir:-$R/root/$HL_LEGACY_HOME_NAME}"
+    host_layout_resolve "$(host_layout_detect)"
+  }
+  hl_reset() {
+    reset_fixture
+    rm -rf "$DOCKER_STATE"
+    HOST_MIGRATE_PENDING=0 HOST_MIGRATE_BACKUP_SET='' HOST_MIGRATE_RELEASE='' HOST_MIGRATE_NAMES=''
+    ARTIFACT_RELOCATED_FROM='' ARTIFACT_RELOCATED_TO='' ARTIFACT_CONVERTED_THIS_RUN=0
+    unset _HM_REVERSE_SET _HM_REVERSE_DONE _HM_REVERSE_RUNNING _HM_IN_REVERSE _HM_REVERSED
+  }
+
+  # --- the happy path, through the framework -----------------------------------
+  hl_reset
+  make_legacy_host
+  expect_eq '(fixture) a layout-1 host' "$(host_layout_detect):$HL_UNIT_API" "1:$LEG_API"
+  expect_eq 'needed on a layout-1 host with a layout-2 target' "$(host_migration_host_layout_needed "$REL" && echo y)" 'y'
+  expect_eq 'deferred when a conversion ran this run' "$(ARTIFACT_CONVERTED_THIS_RUN=1 host_migration_host_layout_needed "$REL" 2>/dev/null && echo y || echo n)" 'n'
+  expect_eq 'not needed for a target that declares no layout' "$(host_migration_host_layout_needed "$R$HL_LEGACY_DEST/releases/c0-legacy" && echo y || echo n)" 'n'
+  host_migrate "$REL" 2>"$SCRATCH/hl-happy.log"
+  S=$(hl_pending_set)
+  expect_eq 'set is marked requires-reverse' "$(head -n1 "$S/MANIFEST")" $'#requires-reverse\thost_layout'
+  expect_eq 'set holds the backup timer' "$(grep -c "${LEG_BACKUP}.timer\$" "$S/MANIFEST")" '1'
+  expect_eq 'dest moved' "$(stat -c %F "$R/opt/ficus-core")" 'directory'
+  expect_eq 'compat dest link' "$(readlink "$R$HL_LEGACY_DEST")" "$R/opt/ficus-core"
+  expect_eq 'current re-pointed' "$(readlink "$R/opt/ficus-core/current")" "$R/opt/ficus-core/releases/c0-legacy"
+  expect_eq 'previous and node_modules re-pointed; a relative link untouched' \
+    "$(readlink "$R/opt/ficus-core/previous"):$(readlink "$R/opt/ficus-core/node_modules"):$(readlink "$R/opt/ficus-core/relative-link")" \
+    "$R/opt/ficus-core/releases/b0-older:$R/opt/ficus-core/releases/c0-legacy/node_modules:releases/c0-legacy"
+  expect_eq 'LINKS audit trail' "$(wc -l <"$S/hl/LINKS" | tr -d ' ')" '3'
+  expect_eq 'etc moved' "$(readlink "$R$HL_LEGACY_ETC")" "$R/etc/ficus"
+  expect_eq 'setup dir moved, config renamed' \
+    "$(readlink "$R$HL_LEGACY_SETUP_DIR"):$(readlink "$R/root/ficus-setup/$HL_LEGACY_SETUP_YAML"):$(stat -c %F "$R/root/ficus-setup/ficus-setup.yaml")" \
+    "$R/root/ficus-setup:ficus-setup.yaml:regular file"
+  expect_eq 'yaml dest' "$(yq -r .source.dest "$R/root/ficus-setup/ficus-setup.yaml")" "$R/opt/ficus-core"
+  expect_eq 'yaml paths re-prefixed (a lookalike prefix untouched)' \
+    "$(yq -r '[.database.ca_path, .artifacts.dir, .backup.env_hint, .backup.unrelated] | join(" ")' "$R/root/ficus-setup/ficus-setup.yaml")" \
+    "$R/root/ficus-setup/keys/database-ca.crt $R/root/ficus-setup/artifacts $R/etc/ficus/backup.env $R$HL_LEGACY_ETC-other/x"
+  expect_eq 'yaml comment kept' "$(head -n1 "$R/root/ficus-setup/ficus-setup.yaml")" '# setup config (fixture)'
+  expect_eq 'HOME moved' "$(stat -c %F "$R/root/.ficus"):$(readlink "$R/root/$HL_LEGACY_HOME_NAME")" "directory:$R/root/.ficus"
+  expect_eq 'HOME_DIR explicit' "$(grep '^HOME_DIR=' "$R/opt/ficus-core/.env")" "HOME_DIR=$R/root/.ficus"
+  expect_eq '.env keeps its mode and its DSN (the CA path is P5-T11)' \
+    "$(stat -c %a "$R/opt/ficus-core/.env"):$(grep -c 'sslrootcert=%2Fetc%2F' "$R/opt/ficus-core/.env")" '600:1'
+  expect_eq 'legacy unit is the alias link' "$(test -L "$UNITS/$LEG_API.service" && readlink "$UNITS/$LEG_API.service")" "$UNITS/ficus-api.service"
+  expect_match 'alias rendered' "$(cat "$UNITS/ficus-api.service")" "Alias=${LEG_API}.service"
+  expect_match 'worker alias rendered' "$(cat "$UNITS/ficus-worker.service")" "Alias=${LEG_WORKER}.service"
+  expect_eq 'the ficus units are enabled' "$(readlink "$UNITS/multi-user.target.wants/ficus-api.service"):$(test -e "$UNITS/multi-user.target.wants/$LEG_API.service" && echo stale || echo gone)" \
+    "$UNITS/ficus-api.service:gone"
+  expect_match 'the ficus api unit reads the moved .env' "$(cat "$UNITS/ficus-api.service")" "EnvironmentFile=$R/opt/ficus-core/.env"
+  expect_eq 'drop-in dirs moved, guardrail suffix renamed, managed-env rewritten' \
+    "$(cd "$UNITS/ficus-api.service.d" && ls | tr '\n' ' '):$(cat "$UNITS/ficus-worker.service.d/managed-env.conf" | tail -n1):$(test -e "$UNITS/$LEG_API.service.d" && echo stale || echo gone)" \
+    "managed-env.conf zz-local.$HL_NEW_GUARDRAIL_SUFFIX :EnvironmentFile=-/etc/ficus/managed.env:gone"
+  expect_match 'stop before mv' "$(grep -m1 'systemctl stop' "$R/calls.log")" "${LEG_BACKUP}.timer"
+  expect_eq 'api and worker stopped (stop-the-world) before anything else ran' \
+    "$(awk -v s="systemctl stop ${LEG_API} ${LEG_WORKER}" '$0 == s { print (seen ? "late" : "first"); exit } $1 != "systemctl" { seen = 1 }' "$R/calls.log")" 'first'
+  expect_match 'rebase ran' "$(cat "$R/calls.log")" "rebase-home.js --from $R/root/${HL_LEGACY_HOME_NAME} --to $R/root/.ficus"
+  expect_match 'rebase ran as migrate.js does (release apps/core, FICUS_ROOT, .env exported)' "$(grep rebase-home "$R/calls.log")" \
+    "cwd=$R$HL_LEGACY_DEST/releases/aaaa-bbbb/apps/core FICUS_ROOT=$R$HL_LEGACY_DEST/releases/aaaa-bbbb HOME_DIR=\\)"
+  expect_eq 'backup script rendered with the moved values; the legacy name is its link' \
+    "$(grep -E "^(DEST|HOME_DIR|BACKUP_ENV_FILE)=" "$R/usr/local/bin/ficus-backup.sh" | tr '\n' ' '):$(readlink "$R$HL_LEGACY_BACKUP_SCRIPT")" \
+    "DEST='$R/opt/ficus-core' HOME_DIR='$R/root/.ficus' BACKUP_ENV_FILE='$R/etc/ficus/backup.env' :ficus-backup.sh"
+  expect_eq 'backup units: aliases, timer enabled' \
+    "$(grep -h '^Alias=\|^Unit=\|^OnCalendar=\|^ExecStart=' "$UNITS/ficus-backup.service" "$UNITS/ficus-backup.timer" | tr '\n' ' ')" \
+    "ExecStart=$R/usr/local/bin/ficus-backup.sh Alias=${LEG_BACKUP}.service OnCalendar=*-*-* 03:15:00 Unit=ficus-backup.service Alias=${LEG_BACKUP}.timer "
+  expect_eq 'backup alias links and the timer wants link' \
+    "$(readlink "$UNITS/$LEG_BACKUP.service"):$(readlink "$UNITS/$LEG_BACKUP.timer"):$(readlink "$UNITS/timers.target.wants/ficus-backup.timer"):$(test -e "$UNITS/timers.target.wants/$LEG_BACKUP.timer" && echo stale || echo gone)" \
+    "$UNITS/ficus-backup.service:$UNITS/ficus-backup.timer:$UNITS/ficus-backup.timer:gone"
+  expect_eq 'release markers: the ficus one next to every legacy one (same record)' \
+    "$(cat "$R/opt/ficus-core/releases/c0-legacy/.ficus-release-complete" "$R/opt/ficus-core/releases/b0-older/.ficus-release-complete" | tr '\n' ' ')" \
+    '{"sha":"c0"} {"sha":"b0"} '
+  expect_eq 'globals relocated' "$SRC_DEST:$FICUS_MANAGED_ENV_PATH:$HL_UNIT_API" "$R/opt/ficus-core:$R/etc/ficus/managed.env:ficus-api"
+  expect_eq 'config globals follow the renamed config' "$CFG_FILE:$CONFIG:$BACKUP_HOME_DIR" \
+    "$R/root/ficus-setup/ficus-setup.yaml:$R/root/ficus-setup/ficus-setup.yaml:$R/root/.ficus"
+  expect_eq 'ARTIFACT_RELOCATED_*' "$ARTIFACT_RELOCATED_FROM>$ARTIFACT_RELOCATED_TO" "$R$HL_LEGACY_DEST>$R/opt/ficus-core"
+  expect_eq 'DONE written' "$(test -f "$S/hl/DONE" && echo y)" 'y'
+  expect_eq 'every step journaled, in order' "$(tr '\n' ' ' <"$S/hl/STEPS")" 'S1 S2 S3 S4 S5 S6 S7 S7b S8 S9 S10 S10b S11 S12 S13 '
+  expect_eq 'every step logged' "$(grep -o 'host_layout S[0-9b]*:' "$SCRATCH/hl-happy.log" | tr '\n' ' ')" \
+    'host_layout S1: host_layout S2: host_layout S3: host_layout S4: host_layout S5: host_layout S6: host_layout S7: host_layout S7b: host_layout S8: host_layout S9: host_layout S10: host_layout S10b: host_layout S11: host_layout S12: host_layout S13: '
+  expect_eq 'layout 2 now' "$(host_layout_detect)" '2'
+  expect_eq 'not needed twice' "$(host_migration_host_layout_needed "$REL" && echo y || echo n)" 'n'
+  expect_eq 'the framework re-renders the same units after it (host_migrate_for)' \
+    "$(cp "$UNITS/ficus-api.service" "$SCRATCH/api.before" && install_core_units "$SCRIPT_DIR/systemd" && cmp -s "$SCRATCH/api.before" "$UNITS/ficus-api.service" && echo same)" 'same'
+  host_migrate_commit
+  expect_eq 'committed' "$(pending_state)" 'n'
+
+  # --- every step fails once → reconcile reverses to byte-identical ----------------
+  for n in 1 2 3 4 5 6 7 7b 8 9 10 10b 11 12 13; do
+    hl_reset
+    case $n in 9) make_legacy_host --db-mode container ;; 2 | 10b) make_legacy_host --sudoers ;; *) make_legacy_host ;; esac
+    before=$(snapshot)
+    (HL_FAIL_AT=$n host_migrate "$REL") 2>/dev/null && fail "S$n injected failure did not fail"
+    : >"$R/calls.log"
+    (host_migrate_reconcile) 2>"$SCRATCH/hl-rec.log" || fail "reconcile died (line 1)"
+    expect_eq "S$n failure reverses to byte-identical" "$(snapshot)" "$before"
+    expect_match "S$n reverse restarts the legacy units" "$(cat "$R/calls.log")" "systemctl start ${LEG_API} ${LEG_WORKER}"
+    expect_eq "S$n no PENDING" "$(pending_state)" 'n'
+    expect_eq "S$n reversed (journal marked)" "$(test -f "$(hl_last_set)/hl/REVERSED" && echo y)" 'y'
+    case $n in
+      7b) expect_match 'S7b⁻¹ rebased the stored paths back' "$(cat "$R/calls.log")" "rebase-home.js --from $R/root/.ficus --to $R/root/${HL_LEGACY_HOME_NAME}" ;;
+      9) expect_match 'S9⁻¹ re-created the legacy container on its volume' "$(cat "$R/calls.log")" \
+        "docker run -d --name ${HL_LEGACY_DB_CONTAINER} .* -v ${HL_LEGACY_DB_VOLUME}:/var/lib/postgresql paradedb/paradedb:latest" ;;
+      10) expect_match 'S10⁻¹ logged its inverse' "$(cat "$SCRATCH/hl-rec.log")" 'host_layout S10⁻¹:' ;;
+    esac
+  done
+  # the same through the traps (settle_pending)
+  for n in 3 7b 10 12; do
+    hl_reset
+    make_legacy_host
+    before=$(snapshot)
+    (
+      host_migrate_install_traps
+      HL_FAIL_AT=$n host_migrate "$REL"
+    ) 2>/dev/null || true
+    expect_eq "S$n trap settle → byte-identical" "$(snapshot)" "$before"
+    expect_eq "S$n trap settle → no PENDING" "$(pending_state)" 'n'
+  done
+  # a SIGKILL inside every step (intent-first journal), then the next run's reconcile
+  for n in 1 2 3 4 5 6 7 7b 8 9 10 10b 11 12 13; do
+    hl_reset
+    case $n in 9) make_legacy_host --db-mode container ;; 2 | 10b) make_legacy_host --sudoers ;; *) make_legacy_host ;; esac
+    before=$(snapshot)
+    (HL_KILL_IN=$n host_migrate "$REL") 2>/dev/null || true
+    expect_eq "SIGKILL inside S$n leaves the journal" "$(pending_state):$(tail -n1 "$(hl_pending_set)/hl/STEPS")" "y:S$n"
+    (host_migrate_reconcile) 2>/dev/null || fail "reconcile died (line 2)"
+    expect_eq "SIGKILL inside S$n → reconcile reverses to byte-identical" "$(snapshot)" "$before"
+    expect_eq "SIGKILL inside S$n → no PENDING" "$(pending_state)" 'n'
+  done
+  # a SIGKILL inside the reverse itself: the next reconcile reverses again (idempotent)
+  for k in 12 10 7 5 3 restored; do
+    hl_reset
+    make_legacy_host --sudoers
+    before=$(snapshot)
+    (HL_FAIL_AT=13 host_migrate "$REL") 2>/dev/null || true
+    (HL_KILL_IN_REVERSE=$k host_migrate_reconcile) 2>/dev/null || true
+    expect_eq "reverse killed at $k: the journal is kept" "$(pending_state)" 'y'
+    (host_migrate_reconcile) 2>/dev/null || fail "reconcile died (line 3)"
+    expect_eq "reverse killed at $k: the next reconcile finishes it, byte-identical" "$(snapshot):$(pending_state)" "$before:n"
+  done
+  # apply never runs forward over a partial journal (the framework reverses that)
+  hl_reset
+  make_legacy_host
+  (HL_FAIL_AT=5 host_migrate "$REL") 2>/dev/null || true
+  partial=$(snapshot)
+  (
+    HOST_MIGRATE_BACKUP_SET=$(hl_pending_set)
+    host_migration_host_layout_apply "$REL"
+  ) 2>"$SCRATCH/hl-partial.log" && fail 'apply ran over a partial journal'
+  expect_match 'apply over a partial journal: refused' "$(cat "$SCRATCH/hl-partial.log")" 'reverse'
+  expect_eq 'apply over a partial journal: nothing changed' "$(snapshot)" "$partial"
+  (host_migrate_reconcile) 2>/dev/null || fail 'reconcile died (partial journal)'
+
+  # git mode (the release is the checkout, always "active"): _settle decides
+  hl_reset
+  make_legacy_host --git
+  before=$(snapshot)
+  (HL_FAIL_AT=12 host_migrate "$SRC_DEST") 2>/dev/null && fail 'git mode: the injected failure did not fail'
+  (host_migrate_reconcile) 2>/dev/null || fail "reconcile died (line 4)"
+  expect_eq 'git mode: a failure before DONE is reversed although the release is active' "$(snapshot):$(pending_state)" "$before:n"
+  host_migrate "$SRC_DEST" 2>/dev/null
+  expect_eq 'git mode: migrated; the build stamp renamed' \
+    "$(host_layout_detect):$SRC_DEST:$(test -f "$R/opt/ficus-core/.ficus-build-stamp" && echo stamp)" "2:$R/opt/ficus-core:stamp"
+  host_migrate_commit
+
+  # --- after DONE, before the flip: settle goes FORWARD and brings the units back --
+  hl_reset
+  make_legacy_host
+  (HL_FAIL_AFTER_DONE=1 host_migrate "$REL") 2>/dev/null || true
+  : >"$R/calls.log"
+  (host_migrate_reconcile) 2>/dev/null || fail "reconcile died (line 5)"
+  expect_eq 'adopt: (fixture) the reconciling shell still holds the legacy paths' "$SRC_DEST" "$R$HL_LEGACY_DEST"
+  host_layout_adopt
+  expect_eq 'forward after DONE' "$(host_layout_detect)" '2'
+  expect_eq 'no PENDING left' "$(pending_state)" 'n'
+  expect_match 'units started after the forward settle' "$(cat "$R/calls.log")" 'systemctl start ficus-api ficus-worker'
+  expect_eq 'adopt relocated SRC_DEST' "$SRC_DEST" "$R/opt/ficus-core"
+  expect_eq 'adopt relocated the config and resolved layout 2' "$CFG_FILE:$HL_UNIT_API:$ARTIFACT_RELOCATED_FROM" \
+    "$R/root/ficus-setup/ficus-setup.yaml:ficus-api:"
+  # the same through this run's trap (TERM between DONE and the flip)
+  hl_reset
+  make_legacy_host
+  (
+    host_migrate_install_traps
+    HL_FAIL_AFTER_DONE=1 host_migrate "$REL"
+  ) 2>/dev/null || true
+  expect_eq 'trap after DONE: settled forward, committed' "$(host_layout_detect):$(pending_state)" '2:n'
+
+  # --- rollback hook after the commit point: BOTH units stopped first, layout kept --
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  : >"$R/calls.log"
+  host_layout_rollback_hook 2>/dev/null
+  expect_match 'stop-the-world on rollback' "$(head -n1 "$R/calls.log")" 'systemctl stop ficus-api ficus-worker'
+  expect_eq 'layout kept on rollback' "$(host_layout_detect)" '2'
+  expect_eq 'rollback committed' "$(pending_state)" 'n'
+
+  # a requires-reverse set is never byte-restored by hand
+  expect_eq 'direct restore refused' "$( (host_migrate_backup_restore "$(hl_last_set)") >/dev/null 2>&1 && echo restored || echo refused)" 'refused'
+  expect_eq 'a direct call of the reverse (not through _hm_reverse) cannot restore the set' \
+    "$( (host_migration_host_layout_reverse "$(hl_last_set)") >/dev/null 2>&1 && echo ran || echo refused)" 'refused'
+
+  # --- manual reverse of a committed migration (F2 rollback 2) ------------------------
+  snap_outside_releases() { snapshot | grep -vE '(^|  )\./[^ ]*/releases/'; }
+  hl_reset
+  make_legacy_host
+  pristine=$(snap_outside_releases)
+  pristine_full=$(snapshot)
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  ln -sfn "$R/opt/ficus-core/releases/aaaa-bbbb" "$R/opt/ficus-core/current" # the U1 release serves
+  expect_eq 'manual reverse refuses while a layout-2 release serves' \
+    "$( (host_layout_reverse_committed "$(hl_last_set)") >/dev/null 2>&1 && echo ran || echo refused)" 'refused'
+  ln -sfn "$R/opt/ficus-core/releases/c0-legacy" "$R/opt/ficus-core/current" # rolled back to the pre-U1 release
+  : >"$R/calls.log"
+  (host_layout_reverse_committed "$(hl_last_set)") 2>/dev/null || fail 'the manual reverse died'
+  host_layout_adopt 2>/dev/null # the reverse's own adopt ran in the subshell
+  expect_eq 'manual reverse → layout 1' "$(host_layout_detect)" '1'
+  expect_eq 'manual reverse → byte-identical outside releases/ (current names the legacy path again)' \
+    "$(snap_outside_releases)" "$pristine"
+  expect_eq 'manual reverse → byte-identical to layout 1 everywhere (the release markers S12 added are gone too)' \
+    "$(snapshot)" "$pristine_full"
+  expect_eq 'manual reverse: both ficus units stopped first' "$(head -n1 "$R/calls.log")" 'systemctl stop ficus-api ficus-worker'
+  expect_eq 'manual reverse: the globals follow the host back' "$SRC_DEST:$CFG_FILE:$HL_UNIT_API" \
+    "$R$HL_LEGACY_DEST:$R$HL_LEGACY_SETUP_DIR/$HL_LEGACY_SETUP_YAML:$LEG_API"
+  expect_eq 'manual reverse: refused a second time (not on layout 2)' \
+    "$( (host_layout_reverse_committed "$(hl_last_set)") >/dev/null 2>&1 && echo ran || echo refused)" 'refused'
+
+  # --- the fleet's config names no source.dest: the move writes the new default explicitly --
+  hl_reset
+  make_legacy_host --no-yaml-dest
+  host_migrate "$REL" 2>/dev/null
+  expect_eq 'no source.dest before → the Ficus dest written explicitly (without FICUS_HOST_ROOT)' \
+    "$(yq -r .source.dest "$R/root/ficus-setup/ficus-setup.yaml")" '/opt/ficus-core'
+  host_migrate_commit
+
+  # --- a custom HOME_DIR is neither moved nor rebased ---------------------------------
+  hl_reset
+  make_legacy_host --home-dir "$R/srv/data"
+  host_migrate "$REL" 2>/dev/null
+  expect_eq 'custom HOME untouched' "$(stat -c %F "$R/srv/data")" 'directory'
+  expect_eq 'no rebase for custom HOME' "$(grep -c rebase-home "$R/calls.log" || true)" '0'
+  expect_eq 'custom HOME_DIR kept in .env and the backup script' \
+    "$(grep '^HOME_DIR=' "$R/opt/ficus-core/.env"):$(grep '^HOME_DIR=' "$R/usr/local/bin/ficus-backup.sh")" "HOME_DIR=$R/srv/data:HOME_DIR='$R/srv/data'"
+  host_migrate_commit
+
+  # --- a custom install root stays where it is -----------------------------------------
+  hl_reset
+  make_legacy_host
+  mv "$R$HL_LEGACY_DEST" "$R/srv-core"
+  for l in current previous node_modules; do ln -sfn "$(readlink "$R/srv-core/$l" | sed "s:^$R$HL_LEGACY_DEST:$R/srv-core:")" "$R/srv-core/$l"; done
+  SRC_DEST="$R/srv-core"
+  host_migrate "$R/srv-core/releases/aaaa-bbbb" 2>/dev/null
+  expect_eq 'custom dest: not moved, no compat link, units point at it' \
+    "$(test -e "$R/opt/ficus-core" && echo moved || echo kept):$SRC_DEST:$(grep -c "EnvironmentFile=$R/srv-core/.env" "$UNITS/ficus-api.service")" "kept:$R/srv-core:1"
+  host_migrate_commit
+
+  # --- container mode: copy, new container, rename, DSN path rewritten; old volume kept --
+  hl_reset
+  make_legacy_host --db-mode container
+  host_migrate "$REL" 2>/dev/null
+  expect_match 'volume copied' "$(cat "$R/calls.log")" "docker run --rm -v ${HL_LEGACY_DB_VOLUME}:/from:ro -v ficus-pgdata:/to"
+  expect_match 'new container on the copy' "$(cat "$R/calls.log")" "docker run -d --name ficus-postgres .* -v ficus-pgdata:/var/lib/postgresql"
+  expect_eq 'the password never in argv' "$(grep -c 'dbpw' <(grep '^docker ' "$R/calls.log") || true):$(grep -c 'docker-run-env POSTGRES_PASSWORD=dbpw' "$R/calls.log")" '0:1'
+  expect_match 'db renamed' "$(cat "$R/calls.log")" "ALTER DATABASE \"${HL_LEGACY_DB_NAME}\" RENAME TO \"ficus\""
+  expect_match 'dsn path' "$(grep '^DATABASE_URL=' "$R/opt/ficus-core/.env")" '/ficus(\?|$)'
+  expect_eq 'old volume kept' "$(grep -c "docker volume rm ${HL_LEGACY_DB_VOLUME}" "$R/calls.log" || true)" '0'
+  expect_eq 'the backup script dumps from the new container' "$(grep '^DB_CONTAINER=' "$R/usr/local/bin/ficus-backup.sh")" "DB_CONTAINER='ficus-postgres'"
+  expect_match 'the units order after docker' "$(cat "$UNITS/ficus-api.service" "$UNITS/ficus-backup.service")" 'After=network-online.target docker.service'
+  host_migrate_commit
+
+  # --- sudoers (non-root run user): both spellings while the bridge lasts; visudo-checked --
+  hl_reset
+  make_legacy_host --sudoers
+  host_migrate "$REL" 2>/dev/null
+  expect_match 'sudoers names ficus + legacy' "$(cat "$R/etc/sudoers.d/ficus-update")" "^svc .*restart ficus-api.*restart ${LEG_API}"
+  expect_match 'sudoers validated' "$(cat "$R/calls.log")" 'visudo -cf'
+  expect_eq 'sudoers 0440, the legacy file gone (its bytes in the journal)' \
+    "$(stat -c %a "$R/etc/sudoers.d/ficus-update"):$(test -e "$R$HL_LEGACY_SUDOERS" && echo stale || echo gone):$(test -f "$(hl_pending_set)/hl/EXTRA/${HL_LEGACY_SUDOERS##*/}" && echo kept)" '440:gone:kept'
+  host_migrate_commit
+
+  # --- a backup still running at S1 blocks the move -------------------------------------
+  hl_reset
+  make_legacy_host
+  before=$(snapshot)
+  (STUB_BACKUP_ACTIVE=always HL_BACKUP_WAIT_SECS=1 host_migrate "$REL") 2>/dev/null && fail 'apply proceeded while the backup ran'
+  expect_eq 'running backup: the core units were never stopped' "$(grep -c "systemctl stop ${LEG_API}" "$R/calls.log" || true)" '0'
+  (host_migrate_reconcile) 2>/dev/null || fail "reconcile died (line 6)"
+  expect_eq 'running backup → untouched' "$(snapshot)" "$before"
+
+  # --- preconditions: die with nothing changed ----------------------------------------------
+  hl_reset
+  make_legacy_host
+  mkdir -p "$R/etc/ficus"
+  before=$(snapshot)
+  (host_migrate "$REL") 2>"$SCRATCH/hl-pre.log" && fail 'a taken Ficus path did not stop the migration'
+  expect_match 'precondition: a taken path is named' "$(cat "$SCRATCH/hl-pre.log")" "$R/etc/ficus already exists"
+  expect_eq 'precondition: the journal is empty' "$(wc -c <"$(hl_pending_set)/hl/STEPS" | tr -d ' ')" '0'
+  (host_migrate_reconcile) 2>/dev/null || fail "reconcile died (line 7)"
+  expect_eq 'precondition failure settles as a restore, untouched' "$(snapshot):$(pending_state)" "$before:n"
+  hl_reset
+  make_legacy_host
+  rm -f "$REL/apps/core/dist/rebase-home.js"
+  (host_migrate "$REL") 2>"$SCRATCH/hl-pre.log" && fail 'a release without rebase-home.js did not stop the migration'
+  expect_match 'precondition: rebase-home.js' "$(cat "$SCRATCH/hl-pre.log")" 'rebase-home.js'
+  (host_migrate_reconcile) 2>/dev/null || fail "reconcile died (line 8)"
+
+  # --- cross-boundary downgrade on a layout-2 host: stop BOTH, run host_layout zero times --
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  : >"$R/calls.log"
+  ln -sfn "$R/opt/ficus-core/releases/aaaa-bbbb" "$R/opt/ficus-core/current"
+  OLD="$R/opt/ficus-core/releases/old-0000"
+  mkdir -p "$OLD"
+  printf '{"name":"ficus"}\n' >"$OLD/package.json"
+  (SCRIPT_DIR="$SCRIPT_DIR" host_layout_preflip "$OLD") >/dev/null 2>&1
+  expect_match 'downgrade is stop-the-world' "$(cat "$R/calls.log")" 'systemctl stop ficus-api ficus-worker'
+  expect_eq 'no new set for a downgrade' "$(ls -1d "$(host_migrate_backup_root)"/*/ | wc -l | tr -d ' ')" '1'
+  : >"$R/calls.log"
+  (SCRIPT_DIR="$SCRIPT_DIR" host_layout_preflip "$REL") >/dev/null 2>&1
+  expect_eq 'same layout on both sides: no extra stop' "$(grep -c 'systemctl stop' "$R/calls.log" || true)" '0'
+
+  # --- repair after an old toolkit wrote a regular legacy unit file over the alias link --
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  rm -f "$UNITS/$LEG_API.service"
+  printf '[Unit]\n' >"$UNITS/$LEG_API.service"
+  : >"$R/calls.log"
+  host_layout_adopt 2>/dev/null
+  expect_eq 'stray legacy unit file replaced by the alias link' "$(test -L "$UNITS/$LEG_API.service" && echo y || echo n)" 'y'
+  expect_match 'ficus unit re-enabled' "$(cat "$R/calls.log")" 'systemctl enable ficus-api'
+  expect_eq 'repair committed its set' "$(pending_state):$(grep -c "$LEG_API.service\$" "$(hl_last_set)/MANIFEST")" 'n:1'
+  : >"$R/calls.log"
+  host_layout_adopt 2>/dev/null
+  expect_eq 'repair: a no-op on a clean host' "$(cat "$R/calls.log")" ''
+fi
+
 printf '%s passed, %s failed\n' "$PASS" "$FAIL"
 [[ $FAIL -eq 0 ]]

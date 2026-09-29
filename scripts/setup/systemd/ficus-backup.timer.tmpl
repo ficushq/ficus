@@ -1,13 +1,14 @@
 # Rendered by scripts/setup/setup-host.sh — do not edit the installed copy by
 # hand; re-run setup-host.sh (or edit this template) instead.
 [Unit]
-Description=Nightly trigger for tau-backup.service
+Description=Nightly trigger for @UNIT_BACKUP@.service
 
 [Timer]
 OnCalendar=@ONCALENDAR@
 # Catch up on the next boot if the host was off at the scheduled time.
 Persistent=true
-Unit=tau-backup.service
+Unit=@UNIT_BACKUP@.service
 
 [Install]
 WantedBy=timers.target
+@ALIAS@

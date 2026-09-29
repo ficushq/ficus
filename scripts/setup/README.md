@@ -159,7 +159,8 @@ When a release needs this host's config files changed (`<dest>/.env`,
 the backup service and timer, the installed backup script), `lib.sh`'s
 journaled host-migration framework
 does it: right before the `current` symlink moves (artifact mode) or before
-the restart (git mode). This release registers no migration.
+the restart (git mode). This release registers one migration, `host_layout`:
+the move to the Ficus host layout.
 
 - **Backup sets.** Before the first change, every host config file is copied
   byte for byte (`cp -p`, verified with `cmp`, sha256 recorded in a
