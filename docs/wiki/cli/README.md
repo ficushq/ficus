@@ -80,6 +80,7 @@ Other current command groups include:
 | `ficus amtp` / `ficus remote`            | Manage federation and agent federation identity                                  |
 | `ficus machines`                         | Manage VM sandbox machines                                                       |
 | `ficus monitor`                          | Read or cancel agent-owned monitors                                              |
+| `ficus user` / `ficus role`              | Read users, role assignments, effective permissions, and role definitions        |
 | `ficus server`                           | Manage the instance installed on this machine                                    |
 | `ficus install` / `ficus update`         | Install the CLI or update an instance                                            |
 | `ficus admin`                            | Operator maintenance actions                                                     |
@@ -225,6 +226,21 @@ ficus secret delete <key>     # Delete a secret
 ficus whoami                  # Which instance this CLI talks to, as whom, and where that came from
 ficus whoami --json           # Same, as JSON
 ```
+
+### Users and Roles
+
+Read-only; `ficus user` needs `users:read` and `ficus role` needs `roles:read`. A user is named by id, short id, or email.
+
+```bash
+ficus user list                                   # Users with state: active, invited, disabled
+ficus user get <user>                             # One user and each role assignment with where it applies
+ficus user permissions <user> --squad <squadId>   # Effective permissions in that squad, resolved by the server
+ficus user permissions <user> --squad <squadId> --check deployments:read   # Does this user hold one permission?
+ficus role list [--user-assignable]               # Roles and how many permissions each grants
+ficus role get <slug>                             # Every permission one role grants
+```
+
+Instance-wide roles always apply. In a squad, the user's roles assigned on that squad replace their default-for-squads roles, so check a squad question with `ficus user permissions --squad` rather than reading assignments by hand.
 
 ### Squad Environment Commands
 

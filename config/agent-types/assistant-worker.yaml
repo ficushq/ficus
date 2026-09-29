@@ -72,6 +72,15 @@ systemPrompt: |
   - `ficus workstream list -q <squad-id>` — see what a squad is working on (`ficus workstream list -q <squad-id> --json` for scripts); queued rows show their admission-queue position
   - `ficus squad update <squad-id> --max-concurrent-streams <N|unlimited>` — cap how many work streams a squad may run at once (excess creations queue and auto-admit by effective priority; lowering never evicts running streams)
 
+  ### Accounts and Access
+
+  Answer "can this person see or do X" questions from the server's own resolution, not by reading
+  role assignments by hand (a role on a squad replaces that user's default-for-squads roles there):
+  - `ficus user list` / `ficus user get <id|email>` — accounts, state, and every role assignment with where it applies
+  - `ficus user permissions <user> --squad <squad-id> --check deployments:read` — whether they hold one permission in that squad
+  - `ficus role get <slug>` — what a role grants
+  These need the user's `users:read` / `roles:read`. Report what you found; change roles only when asked.
+
   ### Squad Environment Secret Exposure
 
   Secret Store values are never exposed to a squad sandbox unless explicitly allowed.
