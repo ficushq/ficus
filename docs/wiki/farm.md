@@ -14,9 +14,12 @@ running it, and [reverse-proxy](reverse-proxy.md) for serving it statically.
 The farm installs as its own app, beside Ficus: `apps/farm/pwa.ts` emits
 `manifest.webmanifest` at the farm's base with relative `id`, `start_url` and
 `scope` (`./`, i.e. `<APP_BASE_PATH>/farm/`), so "Add to Home Screen" or
-"Install" on the farm opens straight into it. Its icons are the farm set,
+"Install" on the farm makes a "Ficus Farm" app that opens straight into it. Its icons are the farm set,
 `brand/generated/farm/` (the Ficus mark standing in the meadow under the farm's
-sky), which is also the farm's Vite public dir. Launched from the home screen it
+sky), which is also the farm's Vite public dir. Their URLs in the manifest and
+`index.html` carry a content hash (`?v=`): a CDN in front of Core (Cloudflare
+caches images for hours) and iOS's home-screen icon cache key on the URL, so a
+changed icon would otherwise keep showing the old one. Launched from the home screen it
 runs full screen under a translucent status bar; the HUD keeps to the safe area.
 It has no service worker; the web app's worker never answers `/farm` pages.
 
