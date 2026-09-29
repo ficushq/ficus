@@ -200,7 +200,7 @@ let processToken: string | null = null
  * other secret derived from that key MUST use a different label, so that
  * disclosing one derived value never yields another.
  */
-const INTERNAL_EVENT_TOKEN_LABEL = 'tau-internal-events-v1' // ficus-36c
+const INTERNAL_EVENT_TOKEN_LABEL = 'ficus-internal-events-v1'
 
 /**
  * The shared secret both units must agree on, resolved in three steps:
