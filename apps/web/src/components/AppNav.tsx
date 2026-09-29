@@ -348,9 +348,7 @@ export function MobileBottomNav({
                     className={clsx(
                       'ficus-button',
                       'flex items-center gap-3 w-full px-4 py-3 text-sm',
-                      isActive
-                        ? 'text-accent-light bg-status-progress-50 dark:bg-status-progress-900/20'
-                        : 'text-primary hover:bg-surface-hover'
+                      isActive ? 'text-accent-light bg-selection' : 'text-primary hover:bg-surface-hover'
                     )}
                   >
                     {item.icon}

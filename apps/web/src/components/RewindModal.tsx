@@ -36,7 +36,7 @@ export function RewindModal({ isOpen, onClose, onConfirm, isLoading, steps }: Re
         <select
           value={selectedStep}
           onChange={(e) => setSelectedStep(e.target.value)}
-          className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary focus:border-status-progress-500 focus:ring-status-progress-500 px-3 py-2 border"
+          className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border"
         >
           <option value="">Select a step to rewind to...</option>
           {steps.map((step) => (
@@ -52,7 +52,7 @@ export function RewindModal({ isOpen, onClose, onConfirm, isLoading, steps }: Re
         <textarea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary focus:border-status-progress-500 focus:ring-status-progress-500 px-3 py-2 border"
+          className="ficus-field w-full rounded-md border-input-border bg-input-bg text-primary focus:border-accent focus:ring-accent px-3 py-2 border"
           rows={4}
           placeholder="Describe what needs to be changed..."
           autoFocus
@@ -72,7 +72,7 @@ export function RewindModal({ isOpen, onClose, onConfirm, isLoading, steps }: Re
           type="button"
           onClick={handleConfirm}
           disabled={!selectedStep || !reason.trim() || isLoading}
-          className="ficus-button px-4 py-2 text-sm font-medium text-on-strong bg-status-progress-600 rounded-md hover:bg-status-progress-700 disabled:opacity-50"
+          className="ficus-button px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
         >
           {isLoading ? 'Rewinding...' : 'Rewind'}
         </button>

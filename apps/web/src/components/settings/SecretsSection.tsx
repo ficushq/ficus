@@ -220,9 +220,7 @@ function ManagedSecretRow({ name, description }: { name: string; description: st
     <div className="px-4 py-3">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-primary">{name}</span>
-        <span className="text-xs px-1.5 py-0.5 rounded bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-400">
-          Managed by your platform
-        </span>
+        <span className="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent-light">Managed by your platform</span>
       </div>
       <p className="text-xs text-muted mt-0.5">{description}</p>
       <p className="text-xs text-muted mt-0.5">

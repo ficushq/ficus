@@ -196,8 +196,8 @@ export function AgentConversation({
                       onConfirm={() => compactMutation.mutate()}
                       disabled={compactMutation.isPending}
                       label="Compact"
-                      className="ficus-button px-1.5 py-0.5 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
-                      confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-progress-700 dark:text-status-progress-300 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 rounded transition-colors"
+                      className="ficus-button px-1.5 py-0.5 text-[11px] font-medium text-accent-light hover:bg-accent/10 rounded transition-colors"
+                      confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-accent-light bg-accent/10 hover:bg-accent/20 rounded transition-colors"
                     />
                     <ConfirmButton
                       onConfirm={() => resetMutation.mutate()}
@@ -226,8 +226,8 @@ export function AgentConversation({
                           }}
                           disabled={compactMutation.isPending}
                           label="Compact"
-                          className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
-                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-700 dark:text-status-progress-300 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 rounded transition-colors"
+                          className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-accent-light hover:bg-accent/10 rounded transition-colors"
+                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-accent-light bg-accent/10 hover:bg-accent/20 rounded transition-colors"
                         />
                         <ConfirmButton
                           onConfirm={() => {

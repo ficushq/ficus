@@ -117,7 +117,7 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
             onClick={() => restartMutation.mutate()}
             className={clsx(
               'ficus-button',
-              'rounded bg-status-progress-600/15 px-2 py-0.5 text-xs font-medium text-status-progress-600 transition-colors hover:bg-status-progress-600/25 dark:text-status-progress-400',
+              'rounded bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent-light transition-colors hover:bg-accent/25',
               !canStop && 'ml-auto'
             )}
             title={isStart ? 'Start sandbox' : 'Restart sandbox'}

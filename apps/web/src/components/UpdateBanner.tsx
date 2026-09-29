@@ -21,7 +21,7 @@ export function UpdateBanner({ usePWA: usePWAProp = usePWA }: { usePWA?: typeof 
   }
 
   return (
-    <div className="shrink-0 bg-status-progress-600 text-on-strong px-4 py-2 flex items-center justify-between gap-4">
+    <div className="shrink-0 bg-accent text-on-accent px-4 py-2 flex items-center justify-between gap-4">
       <div className="flex items-center gap-2">
         <RefreshIcon className="w-5 h-5 flex-shrink-0" />
         <span className="text-sm font-medium">{isApplying ? 'Applying update…' : 'A new version is available'}</span>
@@ -29,7 +29,7 @@ export function UpdateBanner({ usePWA: usePWAProp = usePWA }: { usePWA?: typeof 
       <button
         onClick={onApplyUpdate}
         disabled={isApplying}
-        className="ficus-button px-3 py-1 bg-chrome-paper text-status-progress-600 rounded text-sm font-medium hover:bg-status-progress-50 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+        className="ficus-button px-3 py-1 bg-on-accent text-accent rounded text-sm font-medium hover:bg-on-accent/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
       >
         {isApplying ? 'Updating…' : 'Update'}
       </button>

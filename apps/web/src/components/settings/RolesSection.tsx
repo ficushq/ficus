@@ -277,9 +277,7 @@ export function RolesSection() {
                         <span className="text-sm font-medium text-primary">{role.name}</span>
                         <span className="text-xs text-muted font-mono">({role.slug})</span>
                         {role.isSystem && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-400">
-                            System
-                          </span>
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent-light">System</span>
                         )}
                         {role.readOnly && (
                           <span className="text-xs px-1.5 py-0.5 rounded bg-status-attention-100 dark:bg-status-attention-900/30 text-status-attention-700 dark:text-status-attention-400">

@@ -484,12 +484,10 @@ const navigateRenderer: ToolRenderer = {
       <div className="flex items-center gap-2">
         <Link
           to={path}
-          className="inline-flex items-center gap-1 text-status-progress-600 dark:text-status-progress-400 hover:text-status-progress-800 dark:hover:text-status-progress-300 hover:underline text-[12px] font-medium"
+          className="inline-flex items-center gap-1 text-accent-light hover:text-accent-hover hover:underline text-[12px] font-medium"
         >
           {isPrompt ? 'Go to ' : ''}
-          <code className="bg-status-progress-50 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-300 px-1.5 py-0.5 rounded text-[11px]">
-            {path}
-          </code>
+          <code className="bg-accent/10 text-accent-light px-1.5 py-0.5 rounded text-[11px]">{path}</code>
           {isPrompt && <span aria-hidden="true">&rarr;</span>}
         </Link>
         {!isPrompt && <span className="text-[10px] text-muted">auto</span>}
@@ -498,11 +496,7 @@ const navigateRenderer: ToolRenderer = {
   },
   ResultView: ({ result, isError }) => {
     const text = extractResultText(result)
-    return isError ? (
-      <CodeBlock isError>{text}</CodeBlock>
-    ) : (
-      <div className="text-status-progress-600 text-[11px]">{text}</div>
-    )
+    return isError ? <CodeBlock isError>{text}</CodeBlock> : <div className="text-accent-light text-[11px]">{text}</div>
   },
 }
 

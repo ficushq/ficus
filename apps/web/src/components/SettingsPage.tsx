@@ -281,9 +281,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
                         <p className="text-sm font-medium text-primary truncate">
                           {sub.userAgent ? parseUserAgent(sub.userAgent) : 'Unknown device'}
                           {sub.id === currentSubscriptionId && (
-                            <span className="ml-2 text-xs text-status-progress-600 dark:text-status-progress-400">
-                              (this device)
-                            </span>
+                            <span className="ml-2 text-xs text-accent-light">(this device)</span>
                           )}
                         </p>
                         <p className="text-xs text-muted">Added {new Date(sub.createdAt).toLocaleDateString()}</p>
@@ -421,12 +419,10 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
           )}
 
           {pwa.updateAvailable && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-status-progress-50 dark:bg-status-progress-900/20 rounded-md">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-accent/10 rounded-md">
               <div>
-                <p className="font-medium text-status-progress-900 dark:text-status-progress-200">Update Available</p>
-                <p className="text-sm text-status-progress-700 dark:text-status-progress-300">
-                  A new version of Ficus is ready to install.
-                </p>
+                <p className="font-medium text-primary">Update Available</p>
+                <p className="text-sm text-secondary">A new version of Ficus is ready to install.</p>
               </div>
               <button
                 onClick={pwa.applyUpdate}

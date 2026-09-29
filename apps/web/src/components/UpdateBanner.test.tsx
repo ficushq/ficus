@@ -37,7 +37,7 @@ describe('UpdateBanner', () => {
 
     const banner = container.firstElementChild
     expect(banner).not.toBeNull()
-    expect(banner?.className).toContain('bg-status-progress-600')
+    expect(banner?.className).toContain('bg-accent')
     expect(banner?.className).toContain('shrink-0')
     expect(banner?.className).not.toContain('fixed')
     expect(banner?.className).not.toContain('safe-area')
