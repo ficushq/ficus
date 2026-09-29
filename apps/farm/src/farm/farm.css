@@ -333,8 +333,9 @@
     display: none;
   }
 
+  /* Just the mark: a square tile, as tall as it is wide. */
   .g-logo {
-    padding-right: 8px;
+    padding: 5px;
   }
 
   .g-logo span {
