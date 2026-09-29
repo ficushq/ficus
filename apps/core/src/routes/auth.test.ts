@@ -2050,7 +2050,9 @@ describe('sign-up policy default-role authorization', () => {
       const [user] = await db.select().from(users).where(eq(users.email, email))
       expect(user).toBeDefined()
       const assigned = await db.select().from(roleAssignments).where(eq(roleAssignments.subjectId, user!.id))
-      expect(assigned.map((r) => r.roleId)).toEqual([selected.id])
+      // The sign-up default role, besides the roles every new person gets (the Farmer role, when synced).
+      const [farmer] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, 'farmer'))
+      expect(assigned.map((r) => r.roleId).filter((id) => id !== farmer?.id)).toEqual([selected.id])
     } finally {
       await db.delete(emailVerifications).where(eq(emailVerifications.email, email))
     }

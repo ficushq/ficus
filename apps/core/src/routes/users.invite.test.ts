@@ -169,11 +169,14 @@ describe('POST /api/users sends the invite', () => {
 // ── B. Roles at invite time ──────────────────────────────────────────────────
 
 describe('POST /api/users assigns roles', () => {
+  /** The roles the invite gave, besides the ones every new person gets (the Farmer role, when synced). */
   async function assignmentsFor(userId: string) {
-    return db
+    const [farmer] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, 'farmer'))
+    const rows = await db
       .select({ roleId: roleAssignments.roleId, scope: roleAssignments.scope, squadId: roleAssignments.squadId })
       .from(roleAssignments)
       .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.subjectId, userId)))
+    return rows.filter((row) => row.roleId !== farmer?.id)
   }
 
   it('defaults to operator when the caller names no role', async () => {
