@@ -137,6 +137,16 @@
   margin: 4px 0 8px;
 }
 
+/* The room form's buttons stack full-width, like the column's other buttons (a row would wrap unevenly). */
+.g-farmchat-form .g-card-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.g-farmchat-form .g-card-actions .g-button {
+  width: 100%;
+}
+
 .g-farmchat-picker ul {
   max-height: 220px;
   overflow: auto;
