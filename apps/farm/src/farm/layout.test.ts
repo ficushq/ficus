@@ -331,6 +331,51 @@ describe('farmer, sign, dock and bench', () => {
     }
   })
 
+  it('puts a server rack by the back-left corner only while a squad has apps, clear of everything nearby', () => {
+    const counts = [2, 14, 5, 30, 1, 9, 20, 3, 7]
+    const squads = counts.map((_, s) => makeSquad({ id: `sq-${s}`, name: `Squad ${s}`, managerAgentId: `boss-${s}` }))
+    const streams = counts.flatMap((n, s) =>
+      Array.from({ length: n }, (_, k) => makeStream({ id: `ws-${s}-${k}`, squadId: `sq-${s}` }))
+    )
+    const agents = counts.map((_, s) => makeAgent({ id: `boss-${s}`, squadId: `sq-${s}`, agentTypeId: 'manager' }))
+    const app = (squadId: string) => ({
+      id: `local:${squadId}`,
+      squadId,
+      name: 'Dev',
+      kind: 'local' as const,
+      where: 'Sandbox',
+      status: 'running',
+      url: '/api/app/x/',
+    })
+    // Every squad but the first has an app.
+    const apps = squads.slice(1).map((squad) => app(squad.id))
+    const { yards } = layoutFarm(farm({ squads, streams, agents, apps }))
+    expect(yards[0]!.rack).toBeNull()
+    type Box = readonly [number, number, number, number]
+    const RACK: Box = [-30, -84, 60, 90]
+    const HUT: Box = [-64, -96, 128, 118]
+    const STAND: Box = [-58, -100, 116, 118]
+    const ROBOT: Box = [-22, -74, 44, 80]
+    const SIGN: Box = [-60, -72, 120, 78]
+    const place = (i: number, j: number, [l, t, w, h]: Box) => {
+      const [x, y] = iso(i, j)
+      return { x0: x + l, y0: y + t, x1: x + l + w, y1: y + t + h }
+    }
+    const overlaps = (a: ReturnType<typeof place>, b: ReturnType<typeof place>) =>
+      a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+    for (const yard of yards.slice(1)) {
+      expect(yard.rack).toMatchObject({ apps: [app(yard.squad.id)] })
+      expect(yard.rack!.i).toBeLessThan(yard.i0)
+      const rack = place(yard.rack!.i, yard.rack!.j, RACK)
+      for (const other of yards) {
+        expect(overlaps(rack, place(other.dock.i, other.dock.j, HUT))).toBe(false)
+        expect(overlaps(rack, place(other.stand.i, other.stand.j, STAND))).toBe(false)
+        expect(overlaps(rack, place(other.sign.i, other.sign.j, SIGN))).toBe(false)
+        if (other.farmer) expect(overlaps(rack, place(other.farmer.i, other.farmer.j, ROBOT))).toBe(false)
+      }
+    }
+  })
+
   it('falls back to a manager-typed agent in the squad', () => {
     const noPointer = makeSquad({ id: 'sq', managerAgentId: null })
     const [yard] = layoutFarm(farm({ squads: [noPointer], agents: [boss] })).yards

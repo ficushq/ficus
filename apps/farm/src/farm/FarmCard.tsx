@@ -9,6 +9,7 @@ import { PlotCard } from './cards/PlotCard'
 import { RobotCard } from './cards/RobotCard'
 import { YardCard } from './cards/YardCard'
 import { HutCard } from './cards/HutCard'
+import { RackCard } from './cards/RackCard'
 import { StandCard } from './cards/StandCard'
 import { AssistantCard } from './cards/AssistantCard'
 import { SeedShedCard } from './cards/SeedShedCard'
@@ -45,6 +46,10 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
     case 'stand': {
       const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
       return y ? iso(y.stand.i, y.stand.j) : null
+    }
+    case 'rack': {
+      const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
+      return y?.rack ? iso(y.rack.i, y.rack.j) : null
     }
     case 'assistant':
       // Opens from the toolbar, not a spot on the farm (FarmScreen places it).
@@ -139,6 +144,8 @@ function CardBody({ selection }: { selection: Selection }) {
       return <HutCard squadId={selection.squadId} />
     case 'stand':
       return <StandCard squadId={selection.squadId} />
+    case 'rack':
+      return <RackCard squadId={selection.squadId} />
     case 'assistant':
       return <AssistantCard />
     case 'seedShed':

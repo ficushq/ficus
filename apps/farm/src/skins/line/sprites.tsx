@@ -378,6 +378,10 @@ export function LineStand({ count, host }: { count: number; host?: RobotPlacemen
   )
 }
 
+/** A squad's server rack (its apps to open): a tall, lit node with a stack of server lines. */
+export const LineRack = ({ count }: { count: number }) => (
+  <Node w={0.45} d={0.4} h={40} label="APPS" count={count} lit={count > 0} glyph="≡" />
+)
 export const LineFarmhouse = () => <Node w={2} d={1.6} h={48} label="SETTINGS" glyph="◇" />
 export const LineSeedShed = () => <Node w={1.1} d={1} h={24} label="NEW" glyph="+" />
 export const LineMailbox = ({ count }: { count: number }) => (

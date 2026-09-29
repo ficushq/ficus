@@ -930,3 +930,46 @@ a.g-pr-link:focus-visible {
     transform: scale(0.3);
   }
 }
+
+/* A squad's server rack card: its apps, each with an Open button. */
+.g-rack-apps {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.g-rack-app {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-sm);
+  background: var(--g-card-alt);
+}
+
+.g-rack-app-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.g-rack-app-name {
+  overflow: hidden;
+  font: 700 14px var(--g-font-body);
+  color: var(--g-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.g-rack-app-meta {
+  color: var(--g-text-soft);
+  font: 400 12px var(--g-font-body);
+}
+
+.g-rack-open {
+  flex: none;
+  padding: 4px 12px;
+}

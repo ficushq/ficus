@@ -65,6 +65,8 @@ export interface FarmSkin {
   Person: ComponentType<{ look: FarmLook }>
   Hut: ComponentType<{ count: number; peek?: RobotPlacement }>
   Stand: ComponentType<{ count: number; host?: RobotPlacement }>
+  /** A squad's server rack while it has apps to open; `count` is how many. */
+  Rack: ComponentType<{ count: number }>
   Farmhouse: ComponentType
   SeedShed: ComponentType
   Mailbox: ComponentType<{ count: number }>
@@ -78,6 +80,7 @@ export interface FarmSkin {
     sign: HitBox
     hut: HitBox
     stand: HitBox
+    rack: HitBox
     farmhouse: HitBox
     seedShed: HitBox
     mailbox: HitBox

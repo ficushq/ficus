@@ -6,6 +6,8 @@ export type Selection =
   | { kind: 'yard'; squadId: string }
   | { kind: 'hut'; squadId: string }
   | { kind: 'stand'; squadId: string }
+  /** A squad's server rack: its apps to open. */
+  | { kind: 'rack'; squadId: string }
   | { kind: 'assistant' }
   | { kind: 'mailbox' }
   | { kind: 'farmhouse' }
@@ -28,6 +30,8 @@ export function selectionKey(s: Selection | null): string | null {
       return `hut:${s.squadId}`
     case 'stand':
       return `stand:${s.squadId}`
+    case 'rack':
+      return `rack:${s.squadId}`
     case 'person':
       return `person:${s.userId}`
     default:

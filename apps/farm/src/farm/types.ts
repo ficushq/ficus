@@ -1,4 +1,5 @@
 import type { Agent, Squad, WorkStream } from '@ficus/shared'
+import type { FarmApp } from './apps'
 
 /**
  * What a work stream's plant looks like. Done and canceled streams are not
@@ -81,6 +82,8 @@ export interface YardLayout {
   dock: CrowdSpot
   /** The consulting stand: `ids` has every consultant chat started for the squad; one stands behind the counter. */
   stand: CrowdSpot
+  /** The server rack by the yard's back-left corner, while the squad has apps to open. */
+  rack: { i: number; j: number; apps: FarmApp[] } | null
   needsYou: number
 }
 

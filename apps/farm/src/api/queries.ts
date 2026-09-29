@@ -1,6 +1,7 @@
 import { queryKeys } from '@ficus/client-core'
 import { queryOptions } from '@tanstack/react-query'
-import type { Agent, WorkStreamStatus } from '@ficus/shared'
+import type { Agent, LocalDeployment, WorkStreamStatus } from '@ficus/shared'
+import { squadApps as squadAppsOf, type RemoteDeployment } from '../farm/apps'
 import { client } from './client'
 import { assistantApi } from './assistant'
 
@@ -34,6 +35,27 @@ export const farmQueries = {
     queryOptions({
       queryKey: queryKeys.squads.agents(squadId),
       queryFn: () => client.squads.listSquadAgents(squadId),
+    }),
+  /**
+   * A squad's openable apps (remote deployments and live local apps), for its
+   * server rack. Neither list has live events, so it refreshes every 30s (and
+   * with squad events, being under the squads key). Someone who may not list
+   * them (a 403) simply sees no rack.
+   */
+  squadApps: (squadId: string) =>
+    queryOptions({
+      queryKey: [...queryKeys.squads.all, 'farm', 'apps', squadId],
+      queryFn: async () => {
+        const quietly = <T>(request: Promise<T[]>) => request.catch((): T[] => [])
+        const [remote, local] = await Promise.all([
+          quietly(client.transport.request<RemoteDeployment[]>(`/squads/${encodeURIComponent(squadId)}/deployments`)),
+          quietly(
+            client.transport.request<LocalDeployment[]>(`/squads/${encodeURIComponent(squadId)}/local-deployments`)
+          ),
+        ])
+        return squadAppsOf(remote, local)
+      },
+      refetchInterval: 30_000,
     }),
   /** Totals only: finished streams become harvest crates, canceled ones compost. */
   finishedCount: (status: 'done' | 'canceled') =>

@@ -189,6 +189,36 @@ export function sampleFarm(): FarmInput {
         metadata: { name: 'Assistant' },
       }),
     ],
+    // Server racks: Platform has a deployed site and a dev server; Docs a preview; Mobile nothing yet.
+    apps: [
+      {
+        id: 'remote:site',
+        squadId: 'sq-platform',
+        name: 'Marketing site',
+        kind: 'remote',
+        where: 'vercel · production',
+        status: 'ready',
+        url: 'https://example.com',
+      },
+      {
+        id: 'local:dev',
+        squadId: 'sq-platform',
+        name: 'Dev server',
+        kind: 'local',
+        where: 'Sandbox',
+        status: 'running',
+        url: '/api/app/demo-dev/?token=demo',
+      },
+      {
+        id: 'local:docs',
+        squadId: 'sq-docs',
+        name: 'Docs preview',
+        kind: 'local',
+        where: 'Sandbox',
+        status: 'running',
+        url: '/api/app/demo-docs/?token=demo',
+      },
+    ],
     pendingActions: [
       reviewAction(streams[2]!, 'Platform', 'w-cy'),
       reviewAction(streams[7]!, 'Docs', 'w-eli'),

@@ -10,6 +10,7 @@ import {
   CozyCrates,
   CozyFarmhouse,
   CozyHut,
+  CozyRack,
   CozyMailbox,
   CozySeedShed,
   CozyStand,
@@ -55,6 +56,7 @@ export const cozySkin: FarmSkin = {
     <CozyRobot look={robotLookFor(agent, role)} face={face} prop={null} shadow={false} />
   ),
   avatarViewBox: COZY_AVATAR_VIEWBOX,
+  Rack: CozyRack,
   Hut: ({ count, peek }) => <CozyHut count={count} peek={peek ? robotLookFor(peek.agent, peek.role) : undefined} />,
   Stand: ({ count, host }) => <CozyStand count={count} host={host ? robotLookFor(host.agent, host.role) : undefined} />,
   Farmhouse: CozyFarmhouse,
@@ -69,6 +71,7 @@ export const cozySkin: FarmSkin = {
     plant: [-30, -72, 60, 84],
     sign: [-96, -64, 192, 70],
     hut: [-58, -84, 116, 104],
+    rack: [-30, -94, 60, 100],
     stand: [-56, -104, 112, 122],
     farmhouse: [-128, -170, 256, 220],
     seedShed: [-80, -96, 160, 124],
