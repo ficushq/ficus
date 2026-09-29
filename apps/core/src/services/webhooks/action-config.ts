@@ -57,7 +57,7 @@ export interface WebhookActionCommand {
 
 export interface WebhookActionRule {
   branches: string[]
-  repos?: string[] // optional repo filter, e.g., ["ficusagent/tau-management"]
+  repos?: string[] // optional repo filter, e.g., ["ficusagent/ficus-management"]
   cwd?: string
   env?: Record<string, string>
   commands: WebhookActionCommand[]

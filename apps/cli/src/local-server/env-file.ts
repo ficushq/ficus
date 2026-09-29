@@ -5,7 +5,7 @@ export interface EnvUpdate {
   explicit: boolean
 }
 
-const TRAILER = '# --- added by tau setup ---'
+const TRAILER = '# --- added by ficus setup ---'
 /** .env.example ships this placeholder; treat it as "unset". */
 const PLACEHOLDERS: Record<string, string[]> = { APP_URL: ['https://your-domain.com'] }
 

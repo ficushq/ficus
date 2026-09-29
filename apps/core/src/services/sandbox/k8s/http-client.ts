@@ -273,7 +273,7 @@ export interface ShellSpawn {
   cwd?: string
   useDevboxRc?: boolean
   /** Per-session env overrides (applied last, over the pod's baked env). Used to
-   *  inject the live Core URL so the terminal's `tau` CLI survives a port change. */
+   *  inject the live Core URL so the terminal's `ficus` CLI survives a port change. */
   env?: Record<string, string>
 }
 

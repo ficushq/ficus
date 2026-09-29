@@ -32,7 +32,7 @@ export function normalizeOrigin(origin: string | undefined | null): string | und
 /**
  * Canonical web origin (bare: scheme://host, no path) — the WebAuthn RP origin and the
  * basis for cookie site detection. Normalized so an APP_URL carrying a base path (e.g.
- * https://host/tau) can't leak that path into the WebAuthn ceremony (which rejects it).
+ * https://host/ficus) can't leak that path into the WebAuthn ceremony (which rejects it).
  */
 export function primaryWebOrigin(): string {
   return normalizeOrigin(configuredWebOrigins()[0]) ?? 'http://localhost:5173'

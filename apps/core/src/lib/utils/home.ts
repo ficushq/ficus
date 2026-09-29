@@ -5,7 +5,7 @@ import { mkdirSync } from 'fs'
 import { expandTilde } from '@ficus/shared/node'
 
 /**
- * Resolve the tau home directory on every call (not cached at module load) so
+ * Resolve the Ficus home directory on every call (not cached at module load) so
  * that tests can override via `process.env.HOME_DIR` at runtime regardless of
  * module load order. Performance is negligible — this is not a hot path.
  */

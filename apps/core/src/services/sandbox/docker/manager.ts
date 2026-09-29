@@ -249,7 +249,7 @@ export function ensureNixBase(deps: { spawnSync?: SpawnLike } = {}): string {
   fs.mkdirSync(tmpPath)
 
   log.info('Seeding shared nix base store from the sandbox image...')
-  const tempName = `tau-nix-init-${randomBytes(4).toString('hex')}`
+  const tempName = `ficus-nix-init-${randomBytes(4).toString('hex')}`
   try {
     const createResult = spawnSync(['docker', 'create', '--name', tempName, SANDBOX_IMAGE])
     if (createResult.exitCode !== 0) {
@@ -521,7 +521,7 @@ export function buildDockerLogsArgs(containerName: string, opts: { tailLines?: n
 }
 
 /**
- * The Core API URL a Docker sandbox should use to reach the `tau` CLI / callbacks.
+ * The Core API URL a Docker sandbox should use to reach the `ficus` CLI / callbacks.
  * Re-injected per `docker exec` (overriding the value baked into the container at
  * creation) so the CLI survives a Core restart on a different dynamic port.
  */
@@ -1352,7 +1352,7 @@ export class DockerSandboxManager implements ISandboxManager {
       // Write command to a temp script in the workspace (which is mounted in the container)
       const tmpDir = path.join(workspacePath, '.tmp')
       fs.mkdirSync(tmpDir, { recursive: true })
-      const scriptName = `tau-exec-${randomBytes(8).toString('hex')}.sh`
+      const scriptName = `ficus-exec-${randomBytes(8).toString('hex')}.sh`
       const scriptPath = path.join(tmpDir, scriptName)
       const containerScriptPath = `${sandbox.workspaceMount}/.tmp/${scriptName}`
 
@@ -1378,7 +1378,7 @@ export class DockerSandboxManager implements ISandboxManager {
       fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
 
       const userArgs = this.getSandboxUserArgs()
-      // Inject the per-agent scoped token so `tau` CLI calls inside the sandbox
+      // Inject the per-agent scoped token so `ficus` CLI calls inside the sandbox
       // authenticate AS this agent (RBAC squad-scoped) rather than via the shared
       // FICUS_PASSWORD. Tokens are `ficus_agent_<uuid>` (no shell metacharacters).
       // Re-inject the live Core URL so the CLI reaches the current Core even if the
@@ -1570,7 +1570,7 @@ export class DockerSandboxManager implements ISandboxManager {
     const hasDevboxBashrc = workspacePath && fs.existsSync(path.join(workspacePath, '.tau', '.bashrc'))
 
     const shellWorkspaceMount = sandbox?.workspaceMount ?? containerWorkspaceLayout().workspaceMount
-    // Inject the live Core URL so the terminal's `tau` CLI reaches the current Core
+    // Inject the live Core URL so the terminal's `ficus` CLI reaches the current Core
     // even if the container baked a now-stale port. No token/password: the box is
     // shared with squad agents, so the terminal stays a token-free environment.
     const apiUrlArg = terminalApiUrlArgs(resolveDockerApiUrl())

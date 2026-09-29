@@ -63,8 +63,8 @@ export async function buildMachineBundles(outDir: string, deps: BuildMachineBund
   await rm(outDir, { recursive: true, force: true })
   await mkdir(outDir, { recursive: true })
 
-  const serverPrebuiltDir = await mkdtemp(join(tmpdir(), 'tau-artifact-server-'))
-  const cliPrebuiltDir = await mkdtemp(join(tmpdir(), 'tau-artifact-cli-'))
+  const serverPrebuiltDir = await mkdtemp(join(tmpdir(), 'ficus-artifact-server-'))
+  const cliPrebuiltDir = await mkdtemp(join(tmpdir(), 'ficus-artifact-cli-'))
   try {
     const server = await buildServer({ prebuiltDir: serverPrebuiltDir })
     const cli = await buildCli({ prebuiltDir: cliPrebuiltDir, lock: (section) => section() })

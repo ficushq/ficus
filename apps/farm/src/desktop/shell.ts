@@ -18,8 +18,8 @@ type Bridge = { version?: number; shell?: unknown }
 export function desktopShell(
   w: unknown = typeof window === 'undefined' ? undefined : window
 ): DesktopShell | undefined {
-  const host = w as { ficusDesktopApp?: Bridge; tauDesktopApp?: Bridge } | undefined // K5: until Ficus Desktop (D2) ships
-  const bridge = host?.ficusDesktopApp ?? host?.tauDesktopApp // K5: until Ficus Desktop (D2) ships
+  const host = w as { ficusDesktopApp?: Bridge; tauDesktopApp?: Bridge } | undefined // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
+  const bridge = host?.ficusDesktopApp ?? host?.tauDesktopApp // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
   if (bridge?.version !== 1) return undefined
   const shell = bridge.shell as Partial<DesktopShell> | undefined
   return shell && typeof shell.fullscreen === 'function' && typeof shell.onFullscreenChange === 'function'

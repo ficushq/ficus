@@ -25,7 +25,7 @@ export interface ExecutionFailure {
  * Rules (design doc docs/plans/2026-09-04-surface-pretool-admission-failures.md):
  * - classify by error TYPE + site context only; never parse prose (the single
  *   exception is the closed-set `isInternalExecutionError` guard below, which
- *   matches only strings tau itself throws).
+ *   matches only strings Ficus itself throws).
  * - `platform_pre_tool_refusal` means admission/sandbox/session infrastructure
  *   refused BEFORE any agent output: the incident class the stream must never
  *   display as ordinary `idle`.

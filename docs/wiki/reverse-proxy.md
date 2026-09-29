@@ -72,7 +72,7 @@ ficus.example.com {
   }
 
   handle {
-    root * /path/to/tau/apps/web/dist
+    root * /path/to/ficus/apps/web/dist
     try_files {path} /index.html
     file_server
 
@@ -131,7 +131,7 @@ server {
   }
 
   location / {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     try_files $uri $uri/ /index.html;
   }
 
@@ -153,15 +153,15 @@ server {
   # Caddy example above for why). sw.js/index.html/manifest must revalidate;
   # hashed assets are immutable.
   location = /sw.js {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     add_header Cache-Control "no-cache";
   }
   location = /manifest.webmanifest {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     add_header Cache-Control "no-cache";
   }
   location /assets/ {
-    root /path/to/tau/apps/web/dist;
+    root /path/to/ficus/apps/web/dist;
     add_header Cache-Control "public, max-age=31536000, immutable";
   }
 }
@@ -183,10 +183,10 @@ services:
       FICUS_SERVE_WEB: '1'
     labels:
       - traefik.enable=true
-      - traefik.http.routers.tau.rule=Host(`ficus.example.com`)
-      - traefik.http.routers.tau.entrypoints=websecure
-      - traefik.http.routers.tau.tls.certresolver=letsencrypt
-      - traefik.http.services.tau.loadbalancer.server.port=3000
+      - traefik.http.routers.ficus.rule=Host(`ficus.example.com`)
+      - traefik.http.routers.ficus.entrypoints=websecure
+      - traefik.http.routers.ficus.tls.certresolver=letsencrypt
+      - traefik.http.services.ficus.loadbalancer.server.port=3000
 ```
 
 For split-port deployments, create separate routers: `/api/*`, `/ws`, and `/ws/*` to Core on `3000`, and `/` to the web service or static file server.
@@ -201,7 +201,7 @@ single-origin mode (`FICUS_SERVE_WEB=1`), point it at Core:
 tailscale serve --bg --set-path=/tau http://localhost:3000
 ```
 
-Ficus is then reachable at `https://<your-machine>.<tailnet>/tau`. Because that
+Ficus is then reachable at `https://<your-machine>.<tailnet>/ficus`. Because that
 URL carries a path, set the base path and the WebAuthn origin explicitly, or
 passkeys break:
 

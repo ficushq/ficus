@@ -2,7 +2,7 @@ import { createLogger } from './logger'
 import type { LocalEventHandler } from './local-events'
 
 /**
- * Operator-triggered restart of BOTH tau processes.
+ * Operator-triggered restart of BOTH Ficus processes.
  *
  * `POST /api/system/restart` runs in the api process, but tau-api and
  * tau-worker are separate units (systemd, pm2, or two k8s pods) with no

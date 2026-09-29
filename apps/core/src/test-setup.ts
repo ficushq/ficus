@@ -54,7 +54,7 @@ import '@earendil-works/pi-coding-agent'
 
 // Stash the pristine global fetch. This preload runs before any test file, so
 // `globalThis.fetch` here is guaranteed to be the real one. Tests that must not
-// be affected by a fetch mock leaked from an earlier file (e.g. the tau↔node
+// be affected by a fetch mock leaked from an earlier file (e.g. the Ficus↔node
 // conformance matrix, which does real cross-process HTTP) can restore from this.
 // bun runs the whole suite in one process, and file order differs by platform,
 // so a leak that hides locally can surface only in CI.
@@ -568,7 +568,7 @@ if (useExternalDb) {
   //
   // The whole probe -> maybe tear down -> maybe recreate sequence runs under
   // a cross-process lock (see @ficus/shared/testDbLock's doc comment for the
-  // full story — tau issue #795). Without it, apps/core's and the hosted control plane's
+  // full story — Core issue #795). Without it, apps/core's and the hosted control plane's
   // `bun test` processes (launched ~simultaneously by the root `bun run
   // test`) can both probe the same container, both decide it's dead, and
   // both act — one process's `docker compose down --volumes` then yanks the

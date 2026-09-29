@@ -56,11 +56,11 @@ export function resolveGitHubIdentityFromMetadata(input: ResolveGitHubIdentityIn
  * Sandbox environment carrying the resolved git identity.
  *
  * Emits git's own `GIT_AUTHOR_*` / `GIT_COMMITTER_*` alongside the existing
- * `GIT_USER_*` pair. The distinction matters: `GIT_USER_*` are tau's own names,
+ * `GIT_USER_*` pair. The distinction matters: `GIT_USER_*` are Ficus's own names,
  * which git ignores — they only work because the sandbox image translates them
  * into `git config --global`. Global config loses to a repo-local `[user]`
  * section, and agents clone repositories themselves (see the workspace prompt),
- * so tau has no per-repo hook to clean one up. A single stale clone therefore
+ * so Ficus has no per-repo hook to clean one up. A single stale clone therefore
  * silently reattributed every commit made inside it, failing CLA checks on the
  * resulting PRs while all 20 sandboxes reported the correct global identity.
  *

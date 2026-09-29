@@ -8,7 +8,7 @@ import { machineExistsWithProvider } from './queries'
  * 2026-07-13): a key placed in a VM's own authorized_keys is REJECTED, and one
  * account key reaches EVERY VM under that account (the lobby API and every
  * provisioned VM alike). So the exe credential is the account's SSH PRIVATE key,
- * not an API token — tau runs instance-per-tenant, so one tenant's account key
+ * not an API token — Ficus runs instance-per-tenant, so one tenant's account key
  * backs all its exe VMs. It lives in the secret store (never in a machine row,
  * never logged) under {@link EXE_PROVIDER_SSH_KEY}.
  */
@@ -64,7 +64,7 @@ export async function isExeBacked(
 
 /**
  * Default OCI image exe VMs boot from: the prebaked `ficus-machine` image (exeuntu
- * + bun/nix/devbox/rootless-docker prereqs + tau scripts). PUBLIC on ghcr, so no
+ * + bun/nix/devbox/rootless-docker prereqs + Ficus scripts). PUBLIC on ghcr, so no
  * `--registry-auth` is needed. Booting from it turns box provisioning from a
  * multi-minute bootstrap install into a seconds-long boot.
  */

@@ -127,7 +127,7 @@ async function readPrebuiltCliBundle(prebuiltDir: string | undefined): Promise<C
 
 /**
  * Advisory-lock key for the CLI-bundle build's cross-process critical section.
- * Stable constant, unique among tau's pg advisory locks (42 = db migrations,
+ * Stable constant, unique among Ficus's pg advisory locks (42 = db migrations,
  * 424242 = first-user admin bootstrap, hashtext keys elsewhere).
  */
 export const CLI_BUILD_LOCK_KEY = 421_001
@@ -171,7 +171,7 @@ async function withCliBuildAdvisoryLock<T>(section: () => Promise<T>): Promise<T
 }
 
 /**
- * Build the tau CLI into a single-file bundle via
+ * Build the ficus CLI into a single-file bundle via
  * `bun build apps/cli/src/index.ts --outfile <scratch>/ficus.js --target bun`,
  * captured from a throwaway scratch dir. Returns the bundle bytes and the
  * combined sha256 hex over bundle + wrapper (the version stamp). Throws

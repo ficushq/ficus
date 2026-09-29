@@ -1,6 +1,6 @@
 // Ficus host adapters for amtp-engine (docs/history/superpowers/specs/2026-07-08-amtp-engine-design.md §7.1/§7.2).
 // Every adapter here is a thin, logic-free mapping from an engine port onto an
-// existing tau entity. All normative AMTP behavior stays in amtp-engine; these
+// existing Ficus entity. All normative AMTP behavior stays in amtp-engine; these
 // adapters only translate shapes.
 import type {
   AttachmentStore,

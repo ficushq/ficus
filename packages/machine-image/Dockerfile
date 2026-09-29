@@ -195,7 +195,7 @@ RUN chown -R root:root /opt/tau/browser && \
     chown -R tau-browser:tau-browser /opt/tau/browser/home && \
     chmod 0700 /opt/tau/browser/home
 
-# --- tau scripts + prebaked marker --------------------------------------------
+# --- Ficus scripts + prebaked marker --------------------------------------------
 # Bake the machine scripts where the manager expects them. bootstrap.sh's
 # prebaked fast-path (and humans debugging a VM) read /opt/tau/prebaked to
 # know the toolchain above is already installed; the JSON records the pins it

@@ -326,11 +326,11 @@ async function stagePrunedNodeModules(
     dependencies[pkg] = version
   }
 
-  const scratch = await mkdtemp(join(tmpdir(), 'tau-core-artifact-prune-'))
+  const scratch = await mkdtemp(join(tmpdir(), 'ficus-core-artifact-prune-'))
   try {
     await writeFile(
       join(scratch, 'package.json'),
-      `${JSON.stringify({ name: 'tau-core-artifact-externals', version: '0.0.0', private: true, dependencies }, null, 2)}\n`
+      `${JSON.stringify({ name: 'ficus-core-artifact-externals', version: '0.0.0', private: true, dependencies }, null, 2)}\n`
     )
     log(
       `pruned node_modules: installing ${Object.entries(dependencies)
@@ -365,7 +365,7 @@ async function runSmoke(opts: {
   run: Run
   log: (message: string) => void
 }): Promise<SmokeResult> {
-  const extractDir = await mkdtemp(join(tmpdir(), 'tau-core-artifact-smoke-'))
+  const extractDir = await mkdtemp(join(tmpdir(), 'ficus-core-artifact-smoke-'))
   try {
     const untar = await opts.run(['tar', '-xzf', opts.tarballPath, '-C', extractDir], {})
     if (untar.exitCode !== 0) throw new Error(`smoke: extracting the tarball failed: ${untar.stderr}`)
@@ -474,7 +474,7 @@ export async function assembleCoreArtifact(opts: AssembleCoreArtifactOptions): P
     if (commitDate.length === 0) throw new Error(`git returned an empty commit date for ${commit}`)
   }
 
-  const staging = await mkdtemp(join(tmpdir(), 'tau-core-artifact-stage-'))
+  const staging = await mkdtemp(join(tmpdir(), 'ficus-core-artifact-stage-'))
   try {
     // A FRESH staging dir every run: the manifest walker signs whatever it
     // finds, so a reused directory would fold a previous run's leftovers into

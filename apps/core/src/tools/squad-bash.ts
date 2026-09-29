@@ -47,7 +47,7 @@ function buildSquadBashDescription(workspaceMount: string): string {
  *                              `~/workspace` on vm). The Docker branch is structurally
  *                              unchanged — its cwd comes from the warm box's own
  *                              `sandbox.workspaceMount` (set in A2).
- * @param ficusToken              Per-agent scoped token for `tau` CLI auth inside the box.
+ * @param ficusToken              Per-agent scoped token for `ficus` CLI auth inside the box.
  * @param agentId               The calling agent's id — used to register a recovery watch
  *                              (and wake this agent) when the warm box turns out to be down.
  *

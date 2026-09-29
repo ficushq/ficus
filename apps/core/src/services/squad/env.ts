@@ -61,7 +61,7 @@ const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
  * these are literal env names, not a namespace.
  */
 const IDENTITY_REASON =
-  "the agent's identity is injected by tau; setting it here would make agents act as a different identity"
+  "the agent's identity is injected by Ficus; setting it here would make agents act as a different identity"
 
 export const RESERVED_SQUAD_ENV_KEYS: Readonly<Record<string, string>> = {
   FICUS_TOKEN: IDENTITY_REASON,
@@ -77,8 +77,8 @@ export const RESERVED_SQUAD_ENV_KEYS: Readonly<Record<string, string>> = {
 }
 
 // PATH is deliberately NOT reserved: `PATH=$PATH:/opt/toolchain` is a legitimate
-// squad env, and the host preamble re-prepends the `tau` shim dir after the file
-// is sourced, so squad additions are honoured but cannot displace `tau`.
+// squad env, and the host preamble re-prepends the `ficus` shim dir after the file
+// is sourced, so squad additions are honoured but cannot displace `ficus`.
 
 const ENV_ASSIGNMENT_PATTERN = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
 

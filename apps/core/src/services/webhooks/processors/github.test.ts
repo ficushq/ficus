@@ -404,7 +404,7 @@ describe('webhooks/processors/github', () => {
           push: [
             {
               branches: ['refs/heads/main'],
-              repos: ['ficusagent/tau-management'],
+              repos: ['ficusagent/ficus-management'],
               commands: [{ run: 'echo deploy-tau' }],
             },
           ],
@@ -441,7 +441,7 @@ describe('webhooks/processors/github', () => {
           push: [
             {
               branches: ['refs/heads/main'],
-              repos: ['ficusagent/tau-management'],
+              repos: ['ficusagent/ficus-management'],
               commands: [{ run: 'echo deploy-tau' }],
             },
           ],
@@ -455,7 +455,7 @@ describe('webhooks/processors/github', () => {
         eventType: 'push',
         payload: {
           ref: 'refs/heads/main',
-          repository: { full_name: 'ficusagent/tau-management' },
+          repository: { full_name: 'ficusagent/ficus-management' },
           head_commit: { message: 'test commit', id: 'abc1234567' },
         },
         headers: {},
@@ -466,7 +466,7 @@ describe('webhooks/processors/github', () => {
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('[github-webhook]'),
-        'Processing push to refs/heads/main for ficusagent/tau-management'
+        'Processing push to refs/heads/main for ficusagent/ficus-management'
       )
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('[github-webhook]'),

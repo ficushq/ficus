@@ -1,5 +1,5 @@
 /**
- * Structured logger for tau-management services.
+ * Structured logger for Ficus services.
  *
  * Usage:
  *   import { logger, createLogger } from '@/lib/infra/logger'

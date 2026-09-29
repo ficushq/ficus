@@ -1,6 +1,6 @@
-# tau setup toolkit
+# Ficus setup toolkit
 
-Takes a fresh host from **nothing → a running tau** whose only remaining step
+Takes a fresh host from **nothing → a running Ficus** whose only remaining step
 is a human opening a URL and creating the first admin passkey. Config-driven,
 idempotent (every script is safe to re-run), and headless-friendly — this is
 the per-tenant provisioning primitive a future cloud control-plane calls.
@@ -373,7 +373,7 @@ it on the Linux target; on a control machine: `brew install yq`.
 | Phase                                       | Re-run behavior                                                                                                                                                                             |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | source                                      | clone → `fetch` + `checkout` of the configured ref                                                                                                                                          |
-| database                                    | container + volume reused; password recovered from `<dest>/.env`; `tau` DB created only if missing                                                                                          |
+| database                                    | container + volume reused; password recovered from `<dest>/.env`; the database created only if missing                                                                                          |
 | .env                                        | rewritten, but existing secret values are preserved                                                                                                                                         |
 | systemd                                     | units re-rendered, `daemon-reload`, `restart`                                                                                                                                               |
 | caddy (optional, `ingress.caddy`)           | Caddyfile rewritten and caddy `reload`d (never restarted) only when its content changed; the origin cert/key are re-installed to `/etc/caddy/tls/`                                          |
@@ -470,7 +470,7 @@ unique runtime unit, triggers a test-only 64 MiB cgroup OOM, verifies the
 replacement serves HTTP, and removes all runtime state:
 
 ```bash
-sudo FICUS_API_MEMORY_E2E=1 bash scripts/setup/tau-api-memory-guardrail-e2e.sh
+sudo FICUS_API_MEMORY_E2E=1 bash scripts/setup/api-memory-guardrail-e2e.sh
 ```
 
 Never run the memory test on a tenant host.

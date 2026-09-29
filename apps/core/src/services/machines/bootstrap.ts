@@ -30,7 +30,7 @@ const log = createLogger('machine-bootstrap')
  */
 
 /** Scratch path the bootstrap script is streamed to before being run. */
-const BOOTSTRAP_REMOTE_PATH = '/tmp/tau-bootstrap.sh'
+const BOOTSTRAP_REMOTE_PATH = '/tmp/ficus-bootstrap.sh'
 /**
  * Wall-clock bound for the `bootstrap.sh` run (apt + bun + multi-user nix +
  * devbox on a fresh VM). Minutes, not the SSH runner's 30s default. 15 min

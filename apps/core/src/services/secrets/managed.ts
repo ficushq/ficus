@@ -1,7 +1,7 @@
 /**
  * Platform-managed instance markers.
  *
- * On tau's hosted platform, the control plane delivers credentials it sets on a
+ * On Ficus's hosted platform, the control plane delivers credentials it sets on a
  * tenant's behalf as environment variables in /etc/tau/managed.env (loaded by
  * systemd via EnvironmentFile). Two control vars ride along in that same file:
  *

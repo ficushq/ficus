@@ -96,7 +96,7 @@ export class MachineUnavailableError extends Error {
   }
 }
 
-/** A `dedicated` box was requested but no cloud provider is configured, so tau
+/** A `dedicated` box was requested but no cloud provider is configured, so Ficus
  *  cannot provision a VM for it (BYO-SSH machines are registered, not
  *  provisioned). Distinct from the cap error: the capability is absent, not
  *  exhausted. */
@@ -388,7 +388,7 @@ export async function defaultProvisionMachine(
     sshPublicKey: '',
     status: 'registered' as const,
     purpose: opts.purpose,
-    // Mark the row as tau-created: the empty-machine reaper only ever terminates
+    // Mark the row as Ficus-created: the empty-machine reaper only ever terminates
     // auto-provisioned VMs. User-registered machines (BYO SSH, and operator
     // exe-provisions via POST /api/machines, which are otherwise row-identical
     // to packer VMs) keep the column's false default and are never auto-reaped.

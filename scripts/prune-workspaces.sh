@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compatibility wrapper. Prefer: tau admin workspace-gc [--apply]
+# Compatibility wrapper. Prefer: ficus admin workspace-gc [--apply]
 set -euo pipefail
 
 args=()

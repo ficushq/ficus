@@ -90,9 +90,9 @@ export function readThemeSelection(storage: ThemeStorage | null): StoredThemeSel
 function hostDefaultAppearance(): AppearanceSetting | undefined {
   try {
     if (typeof window === 'undefined') return undefined
-    // K5: until Ficus Desktop (D2) ships
-    const w = window as unknown as { ficusDesktopApp?: { version?: unknown }; tauDesktopApp?: { version?: unknown } }
-    const bridge = w.ficusDesktopApp ?? w.tauDesktopApp // K5: until Ficus Desktop (D2) ships
+    type Bridge = { version?: unknown }
+    const w = window as unknown as { ficusDesktopApp?: Bridge; tauDesktopApp?: Bridge } // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
+    const bridge = w.ficusDesktopApp ?? w.tauDesktopApp // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
     return bridge?.version === 1 ? 'system' : undefined
   } catch {
     return undefined

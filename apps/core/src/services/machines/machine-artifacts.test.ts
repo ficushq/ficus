@@ -11,7 +11,7 @@ import { serverArtifact } from './server-bundle'
 import type { SshResult, SshRunner } from './ssh'
 
 /**
- * True when `command` stages into a UNIQUE '<dest>.tau-new.<token>' path and then
+ * True when `command` stages into a UNIQUE '<dest>.ficus-new.<token>' path and then
  * renames that same path onto `dest` — the contract that makes concurrent pushes
  * of one artifact to one host independent (see stagingPathFor).
  */
@@ -19,7 +19,7 @@ function stagedThenRenamed(command: string, dest: string): boolean {
   const match = command.match(/install -D -m [0-7]{3,4} \/dev\/stdin '([^']+)' &&/)
   if (!match) return false
   const staging = match[1]!
-  if (staging === dest || !staging.startsWith(`${dest}.tau-new.`)) return false
+  if (staging === dest || !staging.startsWith(`${dest}.ficus-new.`)) return false
   // The destination is only ever a rename target, never an install target.
   return command.includes(`mv -f '${staging}' '${dest}'`) && !command.includes(`/dev/stdin '${dest}'`)
 }
@@ -131,15 +131,15 @@ describe('ensureArtifact', () => {
     // -D still creates missing parent dirs, so a fresh artifact directory needs
     // no separate mkdir step.
     // The staging name carries a per-attempt token (see stagingPathFor), so
-    // assert the SHAPE: install into a unique '<dest>.tau-new.<token>' beside
+    // assert the SHAPE: install into a unique '<dest>.ficus-new.<token>' beside
     // the destination, then rename that exact path onto the destination.
     expect(calls[0].command).toMatch(
-      /^sudo install -D -m 0755 \/dev\/stdin '\/opt\/tau\/x\/a\.js\.tau-new\.[0-9a-f]{8}' && /
+      /^sudo install -D -m 0755 \/dev\/stdin '\/opt\/tau\/x\/a\.js\.ficus-new\.[0-9a-f]{8}' && /
     )
     expect(stagedThenRenamed(calls[0].command, '/opt/tau/x/a.js')).toBe(true)
     expect(calls[0].stdin).toBe(fileA.bytes)
     expect(calls[1].command).toMatch(
-      /^sudo install -D -m 0644 \/dev\/stdin '\/opt\/tau\/x\/b\.so\.tau-new\.[0-9a-f]{8}' && /
+      /^sudo install -D -m 0644 \/dev\/stdin '\/opt\/tau\/x\/b\.so\.ficus-new\.[0-9a-f]{8}' && /
     )
     expect(stagedThenRenamed(calls[1].command, '/opt/tau/x/b.so')).toBe(true)
     expect(calls[1].stdin).toBe(fileB.bytes)
@@ -159,7 +159,7 @@ describe('ensureArtifact', () => {
     // artifact to one host are routine. With a shared staging name they
     // collided: each install overwrote the one path, the first mv consumed it,
     // and every loser died with
-    //     mv: cannot stat '<path>.tau-new': No such file or directory
+    //     mv: cannot stat '<path>.ficus-new': No such file or directory
     // surfacing to the operator as a failed agent execution (observed live).
     //
     // Model that host: a staging path may be renamed exactly ONCE. Any second

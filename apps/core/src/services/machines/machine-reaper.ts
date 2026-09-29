@@ -31,8 +31,8 @@ const log = createLogger('machine-reaper')
  *    a crashed pass (see the recovery note below). An unreachable/parked/
  *    bootstrapping machine is never touched — the health sweep and the operator
  *    own those states;
- *  - `autoProvisioned` — tau created the VM unattended (placement's
- *    defaultProvisionMachine), so tau may reclaim it unattended. User-registered
+ *  - `autoProvisioned` — Ficus created the VM unattended (placement's
+ *    defaultProvisionMachine), so Ficus may reclaim it unattended. User-registered
  *    machines (BYO SSH, and operator exe-provisions via POST /api/machines,
  *    which are otherwise row-identical to packer VMs) are NEVER auto-terminated;
  *  - `provider='exe'` (belt on top of the marker: only billed cloud VMs are

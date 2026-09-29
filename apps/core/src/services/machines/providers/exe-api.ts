@@ -4,7 +4,7 @@ import { MachineProviderError } from '../provider'
 const log = createLogger('exe-api')
 
 /**
- * exe-api.ts — the ONLY module in tau that knows exe.dev's wire format.
+ * exe-api.ts — the ONLY module in Ficus that knows exe.dev's wire format.
  *
  * The wire format below is VERIFIED against a real exe.dev account (live recon
  * 2026-07-13) plus the official docs (https://exe.dev/docs/api.md, /proxy.md),

@@ -137,7 +137,7 @@ describe('classifyTurnFailure', () => {
 
   test('a ficus-internal error classifies as execution_failure / internal', () => {
     // The one closed-set text guard, used defensively: these strings are all
-    // ones tau itself throws (see INTERNAL_EXECUTION_ERROR_MARKERS).
+    // ones Ficus itself throws (see INTERNAL_EXECUTION_ERROR_MARKERS).
     expect(classifyTurnFailure(new Error('sandbox provisioning failed'), false)).toEqual({
       failureClass: 'execution_failure',
       failureReason: 'internal',

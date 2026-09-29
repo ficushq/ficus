@@ -350,7 +350,7 @@ describe('assembleCoreArtifact', () => {
     expect(marker.trim()).toBe('{"name":"ficus","private":true,"workspaces":[]}')
 
     // apps/core/src/lib/web-dist.ts walks UP from the running bundle's
-    // directory looking for a package.json named "ficus" or "tau" (or carrying
+    // directory looking for a package.json named "ficus" (or carrying
     // a workspaces array) and then expects <root>/apps/web/dist. Without the
     // marker the search falls off the top of the tree and the API mounts no
     // web UI at all. This mirrors that walk.

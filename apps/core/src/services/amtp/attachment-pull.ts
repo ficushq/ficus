@@ -5,7 +5,7 @@
 // KEPT rather than deleted — but it now contains no logic of its own: all
 // normative behavior (per-item cap check, URL/signing, verify) lives in
 // `createDefaultAttachmentPull` (amtp-engine src/attachment-pull.ts).
-// `getCaps` reads tau's settings store PER CALL (unlike the engine's internal
+// `getCaps` reads Ficus's settings store PER CALL (unlike the engine's internal
 // once-per-receive snapshot), preserving today's per-pull settings read here.
 import { createDefaultAttachmentPull } from 'amtp-engine'
 import type { ReceiveCaps } from 'amtp-engine'

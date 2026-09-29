@@ -347,13 +347,13 @@ describe('ensureServerBundle', () => {
     expect(calls).toHaveLength(2)
     // The staging name carries a per-attempt token (machine-artifacts.ts's
     // stagingPathFor) so concurrent pushes cannot share it, hence shape rather
-    // than an exact string: install into a unique '<dest>.tau-new.<token>',
+    // than an exact string: install into a unique '<dest>.ficus-new.<token>',
     // then rename THAT path onto the destination.
     const stagedThenRenamed = (command: string, dest: string): boolean => {
       const staging = command.match(/install -D -m 0755 \/dev\/stdin '([^']+)' &&/)?.[1]
       return (
         !!staging &&
-        staging.startsWith(`${dest}.tau-new.`) &&
+        staging.startsWith(`${dest}.ficus-new.`) &&
         command.includes(`mv -f '${staging}' '${dest}'`) &&
         !command.includes(`/dev/stdin '${dest}'`)
       )

@@ -115,7 +115,7 @@ export async function bootstrap(options: BootstrapOptions, deps: BootstrapDeps):
         'pipefail',
         '-c',
         'curl -fsSL https://bun.sh/install | bash -s -- "$1"',
-        'tau-bun-bootstrap',
+        'ficus-bun-bootstrap',
         `bun-v${version}`,
       ],
       { inherit: true, env }

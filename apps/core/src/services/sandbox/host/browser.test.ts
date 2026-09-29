@@ -291,7 +291,7 @@ describe('buildHostLaunchOptions', () => {
   })
 
   // Chrome renders untrusted pages; it inherits the CORE's environment unless
-  // we hand it one, and that environment holds every credential tau has.
+  // we hand it one, and that environment holds every credential Ficus has.
   test('hands Chrome a minimal env, so core secrets never reach the browser process', () => {
     const opts = buildHostLaunchOptions({ executablePath: '/x/chrome' }, 501, {
       PATH: '/usr/bin:/bin',

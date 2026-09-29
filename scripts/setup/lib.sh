@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib.sh — shared helpers for the tau setup toolkit.
+# lib.sh — shared helpers for the Ficus setup toolkit.
 #
 # Sourced by setup-host.sh, provision.sh, and seed.sh. Not a standalone
 # script. Everything here is side-effect free at source time.
@@ -34,7 +34,7 @@ log_step() { printf '\n%s %s==>%s %s\n' "$(_ts)" "$_C_STEP" "$_C_OFF" "$*" >&2 |
 # lib.test.sh so adding a phase without a marker fails CI rather than silently
 # freezing a customer's progress display.
 FICUS_PHASE_TOTAL=13
-_tau_phase_n=0
+_ficus_phase_n=0
 
 # Announce a phase on two channels at once:
 #   - the human banner on stderr, exactly as log_step always printed it;
@@ -47,8 +47,8 @@ _tau_phase_n=0
 phase_step() { # SLUG HUMAN_TEXT...
   local slug=$1
   shift
-  _tau_phase_n=$((_tau_phase_n + 1))
-  printf 'FICUS_PHASE=%s/%s %s\n' "${_tau_phase_n}" "${FICUS_PHASE_TOTAL}" "${slug}"
+  _ficus_phase_n=$((_ficus_phase_n + 1))
+  printf 'FICUS_PHASE=%s/%s %s\n' "${_ficus_phase_n}" "${FICUS_PHASE_TOTAL}" "${slug}"
   log_step "$@"
 }
 # Dry-run plan lines go to stdout so they can be captured/reviewed.
@@ -176,7 +176,7 @@ install_pinned_bun() { # VERSION
     return 1
   fi
   log_info "installing bun ${version} (official installer, pinned)"
-  out=$(mktemp "/tmp/tau-bun-install.XXXXXX")
+  out=$(mktemp "/tmp/ficus-bun-install.XXXXXX")
   if ! bun_official_install "${version}" >"${out}" 2>&1; then
     log_error "bun ${version}: the official installer failed (network to bun.sh / GitHub?):"
     tail -n 5 "${out}" >&2
@@ -232,7 +232,7 @@ ensure_system_bun_node() { # RUN_USER SOURCE_BUN
     PATH="${system_bin}:/usr/bin:/bin" test -x "${system_node}" ||
     die "managed Node runtime is not executable by ${run_user}"
 
-  smoke=$(mktemp "/tmp/tau-node-smoke.XXXXXX")
+  smoke=$(mktemp "/tmp/ficus-node-smoke.XXXXXX")
   printf '#!/usr/bin/env node\nconsole.log("stable-node-ok")\n' >"${smoke}"
   chmod 0755 "${smoke}"
   output=$(as_root runuser -u "${run_user}" -- env -i \
@@ -554,7 +554,7 @@ cfg_get() { # .dotted.path [DEFAULT]
 # `runtime.exe.ssh_key_path: ''` (present, empty, meaning "prompt me") must
 # still go through it. cfg_get can't tell those two apart; this can.
 cfg_has() { # .dotted.path
-  local path=$1 sentinel='__tau_cfg_absent__' val
+  local path=$1 sentinel='__ficus_cfg_absent__' val
   val=$(yq -r "(${path} // \"${sentinel}\")" "${CFG_FILE}" 2>/dev/null) || die "failed to probe ${path} in ${CFG_FILE}"
   [[ ${val} != "${sentinel}" ]]
 }
@@ -1158,7 +1158,7 @@ FICUS_DB_CA_PATH="${FICUS_DB_CA_DIR}/database-ca.crt"
 #
 # 0644 and root-owned, DELIBERATELY unlike the origin key next door: a CA
 # certificate is a public document, and several unprivileged readers need it —
-# the tau api and worker units (which run as the configured run user, not
+# the core api and worker units (which run as the configured run user, not
 # root) and pg_dump inside the nightly backup. Locking it down would only
 # break them. The private key is the secret; this is not.
 install_database_ca() { # CA_SRC
@@ -1242,7 +1242,7 @@ install_artifacts() { # STAGE_DIR
 }
 
 # Would installing <stage>/managed.env CHANGE the effective managed
-# environment of the tau services? Prints 1 or 0. The sync executor restarts
+# environment of the core services? Prints 1 or 0. The sync executor restarts
 # tau-api/tau-worker only when this says 1 (file-kind artifacts are read
 # per-use and never need a restart), so the comparison is deliberately
 # SEMANTIC, not byte-level:
@@ -1399,7 +1399,7 @@ install_core_units() { # TEMPLATE_DIR
 
 # Canonical tau-api cgroup policy. Fresh units carry this inline; legacy units
 # receive the same policy through the managed drop-in below.
-tau_api_memory_guardrail_content() {
+api_memory_guardrail_content() {
   printf '%s\n' '[Unit]' \
     'StartLimitIntervalSec=300s' \
     'StartLimitBurst=5' \
@@ -1415,12 +1415,12 @@ tau_api_memory_guardrail_content() {
 
 # shellcheck disable=SC2034 # consumed by maintenance scripts and tests
 FICUS_API_MEMORY_GUARDRAIL_CHANGED=0
-ensure_tau_api_memory_guardrail() {
+ensure_api_memory_guardrail() {
   FICUS_API_MEMORY_GUARDRAIL_CHANGED=0
   local unit_file="${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
   local dropin_dir="${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d"
   local content effective=0 candidate
-  content=$(tau_api_memory_guardrail_content)
+  content=$(api_memory_guardrail_content)
 
   # systemd merges drop-ins in C-locale lexical order and scalar directives
   # use the final assignment. Parse that exact sequence; mere presence of the
@@ -1507,8 +1507,8 @@ restore_unpack_archive() { # ENC_FILE PASSFILE OUT_DIR
   tar -xzf "${tar_file}" -C "${out}" ||
     die "restore: could not extract the decrypted backup archive"
   rm -f "${tar_file}"
-  [[ -f ${out}/db.dump ]] || die "restore: archive is missing db.dump — not a tau backup envelope"
-  [[ -f ${out}/.env ]] || die "restore: archive is missing .env — not a tau backup envelope"
+  [[ -f ${out}/db.dump ]] || die "restore: archive is missing db.dump — not a Ficus backup envelope"
+  [[ -f ${out}/.env ]] || die "restore: archive is missing .env — not a Ficus backup envelope"
 }
 
 # The sole top-level DIRECTORY extracted from a backup envelope — the HOME_DIR
@@ -1556,7 +1556,7 @@ caddy_validate_rendered() { # CONTENT
 # atomic on the destination filesystem rather than a truncate-and-copy.
 caddy_install_atomically() { # SOURCE
   local source=$1 live_stage
-  live_stage=$(as_root mktemp "${CADDYFILE_PATH}.tau-new.XXXXXX")
+  live_stage=$(as_root mktemp "${CADDYFILE_PATH}.ficus-new.XXXXXX")
   if ! as_root install -m 0644 -o root -g root "${source}" "${live_stage}"; then
     as_root rm -f "${live_stage}" || true
     die "failed to stage ${CADDYFILE_PATH}"
@@ -1689,7 +1689,7 @@ swap_fstab_has_entry() { # PATH FSTAB
 }
 
 install_fstab_atomically() { # SOURCE FSTAB
-  local source=$1 fstab=$2 staged="${fstab}.tau-new.$$"
+  local source=$1 fstab=$2 staged="${fstab}.ficus-new.$$"
   cleanup_swap_temp "${staged}"
   if ! as_root install -m 0644 -o root -g root "${source}" "${staged}"; then
     cleanup_swap_temp "${staged}"
@@ -1715,7 +1715,7 @@ ensure_swap_fstab_entry() { # PATH
   ' "${fstab}" 2>/dev/null) || return 1
   read -r matching canonical <<<"${counts}"
   [[ ${matching} == 1 && ${canonical} == 1 ]] && return 0
-  temp=$(mktemp "/tmp/tau-swap-fstab.XXXXXX")
+  temp=$(mktemp "/tmp/ficus-swap-fstab.XXXXXX")
   if ! awk -v path="${path}" '
     $1 == path && $3 == "swap" { if (!written++) print path " none swap sw 0 0"; next }
     { print }
@@ -1773,7 +1773,7 @@ ensure_swapfile() { # [SIZE=4G] [PATH=/swapfile]
   available=$(df -B1 --output=avail "${parent}" | awk 'NR == 2 { print $1 }')
   [[ ${available} =~ ^[0-9]+$ ]] || die "could not determine free space for swapfile at ${parent}"
   ((available >= bytes)) || die "insufficient free space for ${size} swapfile at ${path}"
-  temp="${path}.tau-new.$$"
+  temp="${path}.ficus-new.$$"
   cleanup_swap_temp "${temp}"
   trap 'cleanup_swap_temp_on_return "${temp}"' RETURN
   log_info "creating ${size} swapfile at ${path}"
@@ -2018,7 +2018,7 @@ s3_list_probe() { # ENDPOINT REGION BUCKET PREFIX ACCESS SECRET
   fi
 }
 
-# ------------------------------------------------------------------ tau API
+# ------------------------------------------------------------------ Ficus API
 
 # Callers set FICUS_API_BASE (e.g. http://127.0.0.1:3000) and FICUS_BEARER.
 API_STATUS=''
@@ -2347,7 +2347,7 @@ git_env_setup() {
       GIT_ASKPASS_HELPER=$(mktemp)
       cat >"${GIT_ASKPASS_HELPER}" <<'EOF'
 #!/bin/sh
-# tau-setup GIT_ASKPASS helper — answers git credential prompts from the env.
+# Ficus setup GIT_ASKPASS helper — answers git credential prompts from the env.
 printf '%s\n' "${FICUS_SETUP_GIT_TOKEN:-}"
 EOF
       chmod 700 "${GIT_ASKPASS_HELPER}"
@@ -2619,13 +2619,13 @@ build_stamp_write() { # SRC_DEST SERVE_WEB
 # quietly) if the core build did not actually produce the two entrypoints the
 # systemd units execute.
 #
-# Sets the global _tau_build_skipped (true|false) so callers — currently only
+# Sets the global _ficus_build_skipped (true|false) so callers — currently only
 # upgrade-host.sh's final summary line — can tell whether this call actually
 # rebuilt anything.
 build_app() { # SRC_DEST SERVE_WEB(true|false)
   local src_dest=$1 serve_web=$2
   cd "${src_dest}" || die "build_app: cannot enter '${src_dest}'"
-  _tau_build_skipped=false
+  _ficus_build_skipped=false
   if build_stamp_is_current "${src_dest}" "${serve_web}"; then
     local stamp_commit
     stamp_commit=$(envfile_get "$(build_stamp_path "${src_dest}")" FICUS_BUILD_COMMIT)
@@ -2634,7 +2634,7 @@ build_app() { # SRC_DEST SERVE_WEB(true|false)
     # current" for the upgrade path's external mtime probe.
     touch apps/core/dist/index.js apps/core/dist/worker.js apps/core/dist/migrate.js apps/cli/dist/ficus.js
     [[ ${serve_web} == true ]] && touch apps/web/dist/index.html
-    _tau_build_skipped=true
+    _ficus_build_skipped=true
     return 0
   fi
   # A real build is about to happen — clear any stamp NOW, so a death partway
@@ -2763,7 +2763,7 @@ restart_core_services() { # CORE_PORT
 #
 # The box side of the prebuilt-core-artifact pipeline (spec
 # docs/history/superpowers/specs/2026-08-20-prebuilt-core-artifacts-design.md §4.4).
-# A tenant VM stops building tau: it downloads an immutable, content-addressed
+# A tenant VM stops building Core: it downloads an immutable, content-addressed
 # release artifact, verifies it, and activates it by moving ONE symlink.
 #
 #   <dest>/releases/<sha>-<digest12>/   an extracted, verified artifact
@@ -3230,7 +3230,7 @@ artifact_activate() { # DEST RELEASE_DIR CORE_PORT
   # --- 1. migrate from the candidate (forward-only, same retry as git mode) --
   for attempt in 1 2 3; do
     if env FICUS_ROOT="${release_dir}" FICUS_MIGRATE_LIVE=1 \
-      bash -c "${_ARTIFACT_MIGRATE_PROGRAM}" tau-migrate "${dest}/.env" "${release_dir}"; then
+      bash -c "${_ARTIFACT_MIGRATE_PROGRAM}" ficus-migrate "${dest}/.env" "${release_dir}"; then
       log_info "migrations complete (candidate ${release_dir})"
       break
     fi
@@ -3820,7 +3820,7 @@ host_migrate_backup_restore() { # SETDIR
     # subshell, so a die in the render is contained to this restore.
     if ! (
       install_core_units "${SCRIPT_DIR}/systemd"
-      ensure_tau_api_memory_guardrail
+      ensure_api_memory_guardrail
     ); then
       log_error "host restore: files restored, but re-rendering the units failed"
       return 1
@@ -3950,7 +3950,7 @@ host_migrate() { # RELEASE_DIR
 host_migrate_for() { # RELEASE_DIR
   host_migrate "$1"
   install_core_units "${SCRIPT_DIR}/systemd"
-  ensure_tau_api_memory_guardrail
+  ensure_api_memory_guardrail
 }
 
 # Remove the staging files an interrupted restore left next to each file of
@@ -4219,7 +4219,7 @@ wizard_write_config() { # OUT_FILE
     [[ ${overwrite} == y || ${overwrite} == Y ]] || die "aborted (kept existing ${out})"
   fi
 
-  log_step "tau setup wizard — writes ${out} (secrets are NEVER stored in it)"
+  log_step "Ficus setup wizard — writes ${out} (secrets are NEVER stored in it)"
 
   local src_mode src_repo src_ref src_dest deploy_key=''
   prompt_value "source mode (git-ssh | git-https) [git-ssh]" src_mode
@@ -4241,8 +4241,8 @@ wizard_write_config() { # OUT_FILE
   fi
 
   local vm_name ssh_user core_port origin
-  prompt_value "exe VM name (instance lives at https://<name>.exe.xyz) [my-tau]" vm_name
-  vm_name=${vm_name:-my-tau}
+  prompt_value "exe VM name (instance lives at https://<name>.exe.xyz) [my-ficus]" vm_name
+  vm_name=${vm_name:-my-ficus}
   prompt_value "VM ssh user [exedev]" ssh_user
   ssh_user=${ssh_user:-exedev}
   prompt_value "core API port [3000]" core_port
@@ -4317,7 +4317,7 @@ wizard_write_config() { # OUT_FILE
 
   umask 077
   cat >"${out}" <<EOF
-# Generated by the tau setup wizard on $(date -u '+%Y-%m-%dT%H:%M:%SZ').
+# Generated by the Ficus setup wizard on $(date -u '+%Y-%m-%dT%H:%M:%SZ').
 # Secrets are never stored here — see the env vars / key paths referenced below.
 source:
   mode: ${src_mode}

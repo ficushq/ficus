@@ -417,8 +417,8 @@ with `--instance`.
 
 ### Notes
 
-- The default checkout `~/.tau/tau` lives inside `~/.tau`, which is also tau's
-  default data root (`HOME_DIR`). Source and data sit side by side; tau's
+- The default checkout `~/.tau/tau` lives inside `~/.tau`, which is also Ficus's
+  default data root (`HOME_DIR`). Source and data sit side by side; Ficus's
   storage never writes into `~/.tau/tau`.
 - The k3d runtime bind-mounts `~/.tau` into the cluster so pods and the host see
   the same workspace files. That mount includes the checkout at `~/.tau/tau` —
@@ -562,10 +562,10 @@ Passkeys are strict about the origin, and this is the common footgun:
 
 - **`FICUS_WEB_ORIGIN`** must be the **bare origin** — `scheme://host[:port]`,
   **no path**. If the app is served under a base path
-  (`APP_URL=https://home.example.com/tau` with `APP_BASE_PATH=/tau`), set
+  (`APP_URL=https://home.example.com/ficus` with `APP_BASE_PATH=/ficus`), set
   `FICUS_WEB_ORIGIN=https://home.example.com`. WebAuthn rejects an origin with a
   path, which surfaces as a **500 on passkey registration**
-  (`Unexpected registration response origin … expected …/tau`). It also drives
+  (`Unexpected registration response origin … expected …/ficus`). It also drives
   the CORS allowlist and the session-cookie SameSite/Secure choice.
 - **`WEBAUTHN_RP_ID`** must be the **bare registrable domain**
   (`home.example.com` — no scheme, port or path). It defaults to the host of

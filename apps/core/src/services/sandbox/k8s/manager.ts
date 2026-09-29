@@ -599,7 +599,7 @@ export class K8sSandboxManager implements ISandboxManager {
     const stream = state.client.shell()
 
     // Send spawn message — always use container path for K8s.
-    // Inject the live Core URL so the terminal's `tau` CLI reaches the current Core
+    // Inject the live Core URL so the terminal's `ficus` CLI reaches the current Core
     // even if the pod baked a now-stale port at creation. No token/password is sent:
     // the warm box is shared with squad agents, so it stays a token-free environment.
     stream.write({

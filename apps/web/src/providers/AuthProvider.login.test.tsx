@@ -6,7 +6,7 @@ import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 /**
  * Password login must carry the CSRF header. Browser cookies ignore ports, so a
- * ficus_session cookie from another tau instance on the same host rides along
+ * ficus_session cookie from another Ficus instance on the same host rides along
  * with this request; without the header the CSRF middleware answered 403 and
  * the page reported "Invalid password" for a password that was correct.
  */

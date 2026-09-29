@@ -4,7 +4,7 @@
  * core host), where each GOES (a logical destination each runtime resolves to
  * an absolute path), its mode, and its scope.
  *
- * tau delivers these assets to sandboxes over three transports — vm push
+ * Ficus delivers these assets to sandboxes over three transports — vm push
  * (`vm/file-sync.ts`), k8s subPath mounts (`k8s/pod-spec.ts`), docker bind
  * mounts (`ensure.ts`). The asset PRODUCTION (materializers) is already
  * shared; this module dedupes the DECLARATION so adding a per-sandbox asset is

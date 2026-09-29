@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# retarget-backup.sh — ON-TARGET tau backup-target retarget primitive.
+# retarget-backup.sh — ON-TARGET Ficus backup-target retarget primitive.
 #
-# Points an ALREADY SET UP tau host's nightly encrypted backup at a new
-# S3-compatible bucket (e.g. tau-backups -> ficus-backups) with a new scoped
+# Points an ALREADY SET UP Ficus host's nightly encrypted backup at a new
+# S3-compatible bucket (e.g. old-backups -> ficus-backups) with a new scoped
 # key, without re-running setup-host.sh. setup-host.sh's phase_backup bakes
 # the endpoint/region/bucket into /usr/local/bin/tau-backup.sh and the S3 key
 # into /etc/tau/backup.env at provision time, and nothing re-reads them

@@ -1053,12 +1053,12 @@ export function registerSquadCommands(program: Command) {
         const { spawnSync } = await import('child_process')
 
         // Generate key pair in temp directory
-        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-ssh-'))
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ficus-ssh-'))
         const keyPath = path.join(tmpDir, keyName)
 
         const result = spawnSync(
           'ssh-keygen',
-          ['-t', options.type, '-f', keyPath, '-N', '', '-C', `tau-squad-${squadId}`],
+          ['-t', options.type, '-f', keyPath, '-N', '', '-C', `ficus-squad-${squadId}`],
           {
             stdio: 'inherit',
           }

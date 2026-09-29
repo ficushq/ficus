@@ -1,4 +1,4 @@
-// Runs amtp-engine's contract-test kit (§4.12) against tau's real
+// Runs amtp-engine's contract-test kit (§4.12) against Ficus's real
 // drizzle-backed adapters (adapters.ts) and delivery hooks (hooks.ts), using
 // the normal apps/core test database (see src/test-setup.ts). This proves the
 // two normative behaviors that necessarily leak to hosts: DeliveryHooks
@@ -10,7 +10,7 @@
 // a real agent uuid). Where that happens, this file's `make()` factories wrap
 // the real adapter/hook behind a thin translation shim that maps the
 // contract kit's synthetic identifiers to real rows created on the fly — the
-// logic under test is always tau's real adapter, never a fake.
+// logic under test is always Ficus's real adapter, never a fake.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { generateKeyPairSync, randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'fs/promises'

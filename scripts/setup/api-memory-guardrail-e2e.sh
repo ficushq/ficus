@@ -12,7 +12,7 @@ command -v curl >/dev/null
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 suffix="${$}-$(date +%s)"
-unit="tau-api-memory-e2e-${suffix}"
+unit="ficus-api-memory-e2e-${suffix}"
 runtime_dir="/run/${unit}"
 unit_file="/run/systemd/system/${unit}.service"
 dropin_dir="/run/systemd/system/${unit}.service.d"
@@ -52,7 +52,7 @@ if not os.path.exists(state):
 else:
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            self.send_response(200); self.end_headers(); self.wfile.write(b'tau-api-memory-e2e-ok')
+            self.send_response(200); self.end_headers(); self.wfile.write(b'ficus-api-memory-e2e-ok')
         def log_message(self, *_): pass
     http.server.ThreadingHTTPServer(('127.0.0.1', port), Handler).serve_forever()
 PY
@@ -75,10 +75,10 @@ systemctl daemon-reload
 systemctl start "${unit}.service"
 
 for _ in $(seq 1 90); do
-  if curl --fail --silent --max-time 1 "http://127.0.0.1:${port}/" | grep -qx 'tau-api-memory-e2e-ok'; then break; fi
+  if curl --fail --silent --max-time 1 "http://127.0.0.1:${port}/" | grep -qx 'ficus-api-memory-e2e-ok'; then break; fi
   sleep 1
 done
-curl --fail --silent --max-time 2 "http://127.0.0.1:${port}/" | grep -qx 'tau-api-memory-e2e-ok'
+curl --fail --silent --max-time 2 "http://127.0.0.1:${port}/" | grep -qx 'ficus-api-memory-e2e-ok'
 [[ $(systemctl show "${unit}.service" -p MemoryHigh --value) == 50331648 ]]
 [[ $(systemctl show "${unit}.service" -p MemoryMax --value) == 67108864 ]]
 (( $(systemctl show "${unit}.service" -p NRestarts --value) >= 1 ))

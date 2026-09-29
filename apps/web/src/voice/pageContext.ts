@@ -9,7 +9,7 @@ export interface VisibleAgentContext {
 
 function getUrlAgentId(path: string): string | null {
   const agentMatch = path.match(/\/chat\/([^/?]+)/)
-  const url = new URL(path, 'https://tau.local')
+  const url = new URL(path, 'https://ficus.local')
   const tab = url.pathname.split('/')[3] ?? url.searchParams.get('tab')
   const agentParam = !tab || tab === 'agents' ? path.match(/[?&]agent=([^&]+)/) : null
   const agentId = agentMatch?.[1] ?? agentParam?.[1]
@@ -38,7 +38,7 @@ export function getVisibleAgentContexts(
 
   const context: VisibleAgentContext[] = []
 
-  const params = new URL(path, 'https://tau.local').searchParams
+  const params = new URL(path, 'https://ficus.local').searchParams
   const selected = readAssistantNavigation(params).at(-1)
   if (params.get('chat') !== 'closed' && params.has('chat') && selected?.kind === 'chat' && selected.agentId)
     context.push({ id: selected.agentId, source: 'command-bar-chat' })

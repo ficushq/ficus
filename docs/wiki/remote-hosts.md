@@ -30,7 +30,7 @@ in-agent usage guide this document backs.
    printed block looks like:
 
    ```
-   ssh-ed25519 AAAA... tau-remote-host-<id>
+   ssh-ed25519 AAAA... ficus-remote-host-<id>
    Ask the owner of 10.1.2.3 to append the line above to ~/.ssh/authorized_keys for user deploy.
    Then verify with: ficus remote-hosts check staging.
    ```

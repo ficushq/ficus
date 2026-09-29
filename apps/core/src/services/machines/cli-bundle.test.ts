@@ -107,7 +107,7 @@ const describeSubprocess = describe.skipIf(process.env.FICUS_TEST_SKIP_SUBPROCES
 
 describeSubprocess('CLI wrapper constants', () => {
   it('pins the exact wrapper script: sh shebang exec-ing the machine bun against the pushed bundle', () => {
-    // The wrapper is what makes `tau …` work in every box shell; its bytes are
+    // The wrapper is what makes `ficus …` work in every box shell; its bytes are
     // part of the pushed artifact AND folded into the version hash, so this
     // string is a wire contract, not an implementation detail.
     expect(new TextDecoder().decode(CLI_WRAPPER_BYTES)).toBe(

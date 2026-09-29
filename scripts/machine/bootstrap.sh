@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# tau machine bootstrap
+# Ficus machine bootstrap
 # =====================
-# Prepares a VM host to run tau VM-based sandbox "boxes" (per-sandbox unix users
+# Prepares a VM host to run Ficus VM-based sandbox "boxes" (per-sandbox unix users
 # managed by box-provision.sh, which this script installs into /opt/tau/bin).
 #
 # Target OS : Ubuntu 24.04 LTS ONLY (systemd 255, bash 5.2). Other distros are
@@ -26,7 +26,7 @@
 #                   internet + any --core-cidr, drop RFC1918 / link-local /
 #                   cloud-metadata / other special-use ranges.
 # --core-cidr       (repeatable) a CIDR allowed through the egress lockdown even
-#                   though it may fall inside a dropped private range — the tau
+#                   though it may fall inside a dropped private range — the Ficus
 #                   Core endpoint the box must reach.
 #
 # Final line on stdout is exactly one machine-readable capabilities marker:
@@ -250,7 +250,7 @@ install_base_packages() {
 
 make_dirs() {
   # /opt/tau/server and /opt/tau/cli receive core-pushed machine artifacts (the
-  # sandbox-server bundle and the tau CLI); the push's `install -D` also creates
+  # sandbox-server bundle and the ficus CLI); the push's `install -D` also creates
   # them, so pre-creating here is belt-and-braces.
   "${SUDO[@]}" mkdir -p "${FICUS_ROOT}/bin" "${FICUS_ROOT}/server" "${FICUS_ROOT}/cli"
 }
@@ -1143,7 +1143,7 @@ BROWSER_APPARMOR
 write_browser_unit() {
   "${SUDO[@]}" tee "${FICUS_BROWSER_UNIT}" >/dev/null <<'BROWSER_UNIT'
 [Unit]
-Description=tau shared browser service (per-box contexts, token auth, caps)
+Description=Ficus shared browser service (per-box contexts, token auth, caps)
 After=network-online.target
 Wants=network-online.target
 

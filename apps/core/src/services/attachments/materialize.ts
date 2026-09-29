@@ -168,7 +168,7 @@ export function materializationStagingRoot(privateRoot: string): string {
 function createTemporaryFile(privateRoot: string): TemporaryFile {
   const native = loadNativeAt()
   const stagingRoot = materializationStagingRoot(privateRoot)
-  const template = cPath(join(stagingRoot, '.tau-agent-attachment-XXXXXX'), true)
+  const template = cPath(join(stagingRoot, '.ficus-agent-attachment-XXXXXX'), true)
   const result = callNative('mkstemp(3)', () => native.mkstemp(template.pointer))
   if (result.errno !== null) throw new NativeAtError('mkstemp(3)', result.errno)
   const terminator = template.buffer.indexOf(0)

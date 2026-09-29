@@ -4,7 +4,7 @@
  * No transport: read/write use pi's local filesystem defaults, edit uses the
  * shared verified-edit planner over local fs, bash uses pi's local shell
  * backend with a spawn hook that swaps in the host runtime env (login-shell
- * snapshot + TAU vars) and prepends the squad `.tau/.env` preamble. Paths are
+ * snapshot + FICUS vars) and prepends the squad `.tau/.env` preamble. Paths are
  * absolute (enforceAbsolutePaths) exactly as on every other runtime.
  */
 
@@ -89,7 +89,7 @@ export function createLocalVerifiedEditOperations(deps: LocalVerifiedEditFsDeps 
       // original permissions — the explicit chmod after write is load-bearing, not
       // redundant.
       const mode = st.mode & 0o7777
-      const tmp = join(dirname(realPath), `.${basename(realPath)}.${process.pid}.${randomUUID()}.tau-edit.tmp`)
+      const tmp = join(dirname(realPath), `.${basename(realPath)}.${process.pid}.${randomUUID()}.ficus-edit.tmp`)
       try {
         await fsWriteFile(tmp, result, { flag: 'wx', mode })
         await fsChmod(tmp, mode)

@@ -143,12 +143,12 @@ linear:
       const tmpPath = join(__dirname, '../../../../../.tmp-test-config6.yaml')
       await Bun.write(
         tmpPath,
-        `github:\n  push:\n    - branches: ["refs/heads/main"]\n      repos: ["ficusagent/tau-management"]\n      commands:\n        - run: "echo hi"\n`
+        `github:\n  push:\n    - branches: ["refs/heads/main"]\n      repos: ["ficusagent/ficus-management"]\n      commands:\n        - run: "echo hi"\n`
       )
 
       try {
         const config = await loadWebhookActionConfig(tmpPath)
-        expect(config.github.push[0].repos).toEqual(['ficusagent/tau-management'])
+        expect(config.github.push[0].repos).toEqual(['ficusagent/ficus-management'])
       } finally {
         const { unlink } = await import('fs/promises')
         await unlink(tmpPath).catch(() => {})
@@ -207,11 +207,11 @@ linear:
 
   describe('matchesRepo', () => {
     it('matches exact repo name', () => {
-      expect(matchesRepo('ficusagent/tau-management', ['ficusagent/tau-management'])).toBe(true)
+      expect(matchesRepo('ficusagent/ficus-management', ['ficusagent/ficus-management'])).toBe(true)
     })
 
     it('does not match different repo', () => {
-      expect(matchesRepo('other/repo', ['ficusagent/tau-management'])).toBe(false)
+      expect(matchesRepo('other/repo', ['ficusagent/ficus-management'])).toBe(false)
     })
 
     it('matches wildcard *', () => {
@@ -223,7 +223,7 @@ linear:
     })
 
     it('matches glob pattern with prefix', () => {
-      expect(matchesRepo('ficusagent/tau-management', ['ficusagent/tau-*'])).toBe(true)
+      expect(matchesRepo('ficusagent/ficus-management', ['ficusagent/ficus-*'])).toBe(true)
     })
 
     it('does not match unrelated glob', () => {
@@ -231,7 +231,7 @@ linear:
     })
 
     it('matches if any pattern in array matches', () => {
-      expect(matchesRepo('ficusagent/tau-management', ['other/repo', 'ficusagent/tau-management'])).toBe(true)
+      expect(matchesRepo('ficusagent/ficus-management', ['other/repo', 'ficusagent/ficus-management'])).toBe(true)
     })
 
     it('returns true for empty patterns (matches all)', () => {
@@ -302,7 +302,7 @@ linear:
           push: [
             {
               branches: ['refs/heads/main'],
-              repos: ['ficusagent/tau-management'],
+              repos: ['ficusagent/ficus-management'],
               commands: [{ run: 'deploy-tau.sh' }],
             },
             {
@@ -314,7 +314,7 @@ linear:
       }
 
       // With matching repo, first rule matches
-      const rule1 = getMatchingRule(configWithRepos, 'github', 'push', 'refs/heads/main', 'ficusagent/tau-management')
+      const rule1 = getMatchingRule(configWithRepos, 'github', 'push', 'refs/heads/main', 'ficusagent/ficus-management')
       expect(rule1).not.toBeNull()
       expect(rule1!.commands[0].run).toBe('deploy-tau.sh')
 
@@ -348,7 +348,7 @@ linear:
           push: [
             {
               branches: ['refs/heads/main'],
-              repos: ['ficusagent/tau-management'],
+              repos: ['ficusagent/ficus-management'],
               commands: [{ run: 'deploy.sh' }],
             },
           ],
@@ -367,7 +367,7 @@ linear:
           push: [
             {
               branches: ['refs/heads/main'],
-              repos: ['ficusagent/tau-management'],
+              repos: ['ficusagent/ficus-management'],
               commands: [{ run: 'deploy.sh' }],
             },
           ],

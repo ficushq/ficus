@@ -214,7 +214,7 @@ Then `/ficus help` in the provider. The card's **Connection** section shows the
 validation state and the identity the provider reported; a rejected credential
 is kept and explained there rather than silently ignored.
 
-Apps set up before the rename from Tau still register `/tau`, which Ficus no
+Apps set up before the rename still register the old slash command, which Ficus no
 longer answers. For Slack, download the manifest again and update the app's
 slash command to `/ficus`; for Discord, save the card again to register
 `/ficus`.

@@ -42,12 +42,12 @@ export async function probeOpenAICompatible(input: {
     signal,
     body: JSON.stringify({
       model: input.model,
-      messages: [{ role: 'user', content: 'Call tau_probe now.' }],
+      messages: [{ role: 'user', content: 'Call ficus_probe now.' }],
       tools: [
         {
           type: 'function',
           function: {
-            name: 'tau_probe',
+            name: 'ficus_probe',
             description: 'Capability probe',
             parameters: { type: 'object', properties: {} },
           },

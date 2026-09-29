@@ -2853,52 +2853,52 @@ rm -rf "${FICUS_SYSTEMD_UNIT_DIR}"
 mkdir -p "${FICUS_SYSTEMD_UNIT_DIR}"
 printf '[Service]\nRestart=on-failure\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
 printf '[Service]\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-worker.service"
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'legacy api unit gets memory guardrail and changed flag' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}" '1'
 expected_guardrail=$'[Unit]\nStartLimitIntervalSec=300s\nStartLimitBurst=5\n\n[Service]\nMemoryAccounting=yes\nMemoryHigh=25%\nMemoryMax=35%\nOOMPolicy=kill\nRestart=on-failure\nRestartSec=5s'
 expect_eq 'memory guardrail drop-in has exact canonical policy' \
   "$(cat "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" "${expected_guardrail}"
 expect_eq 'worker never gets memory guardrail' \
   "$([[ -e ${FICUS_SYSTEMD_UNIT_DIR}/tau-worker.service.d/memory-guardrail.conf ]] && echo present || echo absent)" 'absent'
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'memory guardrail reconciliation is idempotent' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}" '0'
 printf '%s\n' "${expected_guardrail/MemoryMax=35%/MemoryMax=99%}" \
   >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf"
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'mutated MemoryMax is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'MemoryMax=35%' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" '1:1'
 printf '%s\n' "${expected_guardrail/OOMPolicy=kill/OOMPolicy=continue}" \
   >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf"
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'mutated OOMPolicy is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'OOMPolicy=kill' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" '1:1'
 printf '%s\n' "${expected_guardrail/Restart=on-failure/Restart=always}" \
   >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf"
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'mutated Restart is repaired and flagged' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'Restart=on-failure' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" '1:1'
 printf '%s\nMemoryMax=infinity\n' "${expected_guardrail}" >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'later conflicting MemoryMax keeps canonical managed drop-in' \
   "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(grep -Fxc 'MemoryMax=35%' "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf")" '0:1'
 rm -rf "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d"
 printf '[Service]\nStartLimitIntervalSec=300s\nStartLimitBurst=5\nMemoryAccounting=yes\nMemoryHigh=25%%\nMemoryMax=35%%\nOOMPolicy=kill\nRestart=on-failure\nRestartSec=5s\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'unit directives in wrong section require canonical managed drop-in' \
   "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$([[ -f ${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf ]] && echo present || echo absent)" '1:present'
 
 rm -rf "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d"
 printf '%s\n' "${expected_guardrail}" >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service"
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'inline canonical policy needs no managed drop-in' \
   "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$([[ -e ${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/memory-guardrail.conf ]] && echo present || echo absent)" '0:absent'
 mkdir -p "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d"
 printf '[Service]\nMemoryMax=infinity\nOOMPolicy=continue\nRestart=no\n' >"${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/zzzzz-local.conf"
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 ordered_guardrail=$(find "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d" -maxdepth 1 -name '*.z-tau-memory-guardrail.conf' -print)
 expect_eq 'lexically later conflict installs a provably final managed policy and flags change' \
   "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}:$(tail -n 6 "${ordered_guardrail}" | tr '\n' ' ')" \
   '1:MemoryAccounting=yes MemoryHigh=25% MemoryMax=35% OOMPolicy=kill Restart=on-failure RestartSec=5s '
 expect_eq 'lexically later conflicting unrelated drop-in is preserved' \
   "$(cat "${FICUS_SYSTEMD_UNIT_DIR}/tau-api.service.d/zzzzz-local.conf")" $'[Service]\nMemoryMax=infinity\nOOMPolicy=continue\nRestart=no'
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 expect_eq 'dynamic final managed policy is idempotent on second run' "${FICUS_API_MEMORY_GUARDRAIL_CHANGED}" '0'
 expect_eq 'dynamic managed filename sorts after the conflicting drop-in' \
   "$([[ $(basename "${ordered_guardrail}") > zzzzz-local.conf ]] && echo yes || echo no)" 'yes'
@@ -2909,7 +2909,7 @@ source "${SCRIPT_DIR}/lib.sh"
 
 # Delivery paths must reconcile before reloading/restarting systemd.
 for caller in setup-host.sh upgrade-host.sh; do
-  guard_line=$(grep -n 'ensure_tau_api_memory_guardrail' "${SCRIPT_DIR}/${caller}" | head -1 | cut -d: -f1)
+  guard_line=$(grep -n 'ensure_api_memory_guardrail' "${SCRIPT_DIR}/${caller}" | head -1 | cut -d: -f1)
   action_line=$(grep -nE 'systemctl daemon-reload|restart_core_services' "${SCRIPT_DIR}/${caller}" | tail -1 | cut -d: -f1)
   expect_eq "${caller} reconciles api guardrail before service action" \
     "$([[ ${guard_line} -lt ${action_line} ]] && echo yes || echo no)" 'yes'
@@ -4394,7 +4394,7 @@ rm -rf "${SBN_TMP}"
 # --- ensure_swapfile state-machine contract --------------------------------
 SWAP_LIB_SOURCE=$(<"${SCRIPT_DIR}/lib.sh")
 expect_match 'ensure_swapfile exposes an isolated fstab test seam' "${SWAP_LIB_SOURCE}" 'FICUS_SWAP_FSTAB'
-expect_match 'ensure_swapfile allocates through a same-directory temporary file' "${SWAP_LIB_SOURCE}" '\.tau-new\.\$\$'
+expect_match 'ensure_swapfile allocates through a same-directory temporary file' "${SWAP_LIB_SOURCE}" '\.ficus-new\.\$\$'
 expect_match 'ensure_swapfile capacity-checks with df before allocating' "${SWAP_LIB_SOURCE}" 'df .*--output=avail'
 expect_match 'ensure_swapfile exact-matches fstab fields with awk' "${SWAP_LIB_SOURCE}" '\$1 == path && \$3 == "swap"'
 expect_match 'ensure_swapfile cleanup clears its RETURN trap before root removal' \
@@ -4468,7 +4468,7 @@ if [[ ${FICUS_TEST_ROOT_INSTALL} -eq 1 ]]; then
   # through the root-capable seam rather than leaving a multi-GB orphan.
   swap_cleanup_result=$(
     (
-      path="${SWAP_TMP}/cleanup-swap"; temp="${path}.tau-new.$$"
+      path="${SWAP_TMP}/cleanup-swap"; temp="${path}.ficus-new.$$"
       : >"${SWAP_TMP}/cleanup-fstab"; FICUS_SWAP_FSTAB="${SWAP_TMP}/cleanup-fstab"
       swapon() { return 0; }
       fallocate() { : >"$3"; }
@@ -4485,7 +4485,7 @@ if [[ ${FICUS_TEST_ROOT_INSTALL} -eq 1 ]]; then
       }
       ensure_swapfile 1M "${path}"
     ) >/dev/null 2>&1 || true
-    if find "${SWAP_TMP}" -maxdepth 1 -name 'cleanup-swap.tau-new.*' -print -quit | grep -q .; then
+    if find "${SWAP_TMP}" -maxdepth 1 -name 'cleanup-swap.ficus-new.*' -print -quit | grep -q .; then
       cleanup_state=orphaned
     else
       cleanup_state=removed
@@ -4520,7 +4520,7 @@ if [[ ${FICUS_TEST_ROOT_INSTALL} -eq 1 ]]; then
       }
       ensure_swap_fstab_entry /swapfile >/dev/null 2>&1 && status=accepted || status=rejected
       printf '%s|%s|%s' "${status}" "$(cat "${fstab}")" \
-        "$(find "${SWAP_TMP}" -maxdepth 1 -name 'fault-fstab.tau-new.*' -print | wc -l | tr -d ' ')"
+        "$(find "${SWAP_TMP}" -maxdepth 1 -name 'fault-fstab.ficus-new.*' -print | wc -l | tr -d ' ')"
     )
   )
   expect_eq 'ensure_swap_fstab_entry fails closed on a mid-stream read error' \
@@ -4533,7 +4533,7 @@ if [[ ${FICUS_TEST_ROOT_INSTALL} -eq 1 ]]; then
       as_root() { [[ $1 == sync ]] && return 1; "$@"; }
       ensure_swap_fstab_entry /swapfile >/dev/null 2>&1 && status=accepted || status=rejected
       printf '%s|%s|%s' "${status}" "$(cat "${fstab}")" \
-        "$(find "${SWAP_TMP}" -maxdepth 1 -name 'sync-fault-fstab.tau-new.*' -print | wc -l | tr -d ' ')"
+        "$(find "${SWAP_TMP}" -maxdepth 1 -name 'sync-fault-fstab.ficus-new.*' -print | wc -l | tr -d ' ')"
     )
   )
   expect_eq 'ensure_swap_fstab_entry preserves fstab and cleans staging when fsync fails' \
@@ -4802,9 +4802,9 @@ ba_skip1=$(
   PATH="${FAKE_BIN}:${PATH}" BUN_FAKE_LOG="${BA_LOG}" bash -c '
     source "'"${SCRIPT_DIR}"'/lib.sh"
     build_app "'"${BA_TMP}"'" true
-    printf %s "${_tau_build_skipped}"'
+    printf %s "${_ficus_build_skipped}"'
 )
-expect_eq 'build_app: no stamp -> does NOT skip (_tau_build_skipped=false)' "${ba_skip1}" 'false'
+expect_eq 'build_app: no stamp -> does NOT skip (_ficus_build_skipped=false)' "${ba_skip1}" 'false'
 expect_eq 'build_app: no stamp -> bun install actually ran' \
   "$(grep -c '^bun install --ignore-scripts$' "${BA_LOG}")" '1'
 expect_eq 'build_app: no stamp -> bun run build actually ran (core + cli)' \
@@ -4828,9 +4828,9 @@ ba_skip2=$(
   PATH="${FAKE_BIN}:${PATH}" BUN_FAKE_LOG="${BA_LOG}" bash -c '
     source "'"${SCRIPT_DIR}"'/lib.sh"
     build_app "'"${BA_TMP}"'" true
-    printf %s "${_tau_build_skipped}"'
+    printf %s "${_ficus_build_skipped}"'
 )
-expect_eq 'build_app: matching stamp -> DOES skip (_tau_build_skipped=true)' "${ba_skip2}" 'true'
+expect_eq 'build_app: matching stamp -> DOES skip (_ficus_build_skipped=true)' "${ba_skip2}" 'true'
 expect_eq 'build_app: matching stamp -> fake bun is never invoked' \
   "$([[ -s ${BA_LOG} ]] && echo called || echo untouched)" 'untouched'
 mtime_after=$(file_mtime "${BA_TMP}/apps/core/dist/index.js")
@@ -4866,7 +4866,7 @@ ba_skip3=$(
   PATH="${FAKE_BIN}:${PATH}" BUN_FAKE_LOG="${BA_LOG}" bash -c '
     source "'"${SCRIPT_DIR}"'/lib.sh"
     build_app "'"${BA_TMP2}"'" false
-    printf %s "${_tau_build_skipped}"'
+    printf %s "${_ficus_build_skipped}"'
 )
 expect_eq 'build_app: stamp for an OLD commit -> does NOT skip on the new commit' "${ba_skip3}" 'false'
 expect_eq 'build_app: new-commit rebuild -> bun run build actually ran (core + cli)' \
@@ -4931,7 +4931,7 @@ ba_skip5=$(
   PATH="${FAKE_BIN}:${PATH}" BUN_FAKE_LOG="${BA_LOG}" bash -c '
     source "'"${SCRIPT_DIR}"'/lib.sh"
     build_app "'"${BA_TMP4}"'" true
-    printf %s "${_tau_build_skipped}"'
+    printf %s "${_ficus_build_skipped}"'
 )
 expect_eq 'build_app: index.js truncated to 0 bytes under a valid stamp -> does NOT skip' "${ba_skip5}" 'false'
 # Twice: build_app runs `bun run build` once in apps/core and once in apps/cli
@@ -4959,7 +4959,7 @@ ba_skip6=$(
   PATH="${FAKE_BIN}:${PATH}" BUN_FAKE_LOG="${BA_LOG}" bash -c '
     source "'"${SCRIPT_DIR}"'/lib.sh"
     build_app "'"${BA_TMP5}"'" false
-    printf %s "${_tau_build_skipped}"'
+    printf %s "${_ficus_build_skipped}"'
 )
 expect_eq 'build_app: worker.js tampered (index.js untouched) under a valid stamp -> does NOT skip' "${ba_skip6}" 'false'
 rm -rf "${BA_TMP5}"
@@ -5007,12 +5007,12 @@ expect_eq 'upgrade_result_message: same commit but build NOT skipped -> the old 
 
 # upgrade-host.sh must actually use this function (not a hand-rolled
 # duplicate of the same branching) and must feed it build_app's own
-# _tau_build_skipped rather than assuming false — that's what keeps this file
+# _ficus_build_skipped rather than assuming false — that's what keeps this file
 # from silently drifting back to the "always claims rebuilt" bug.
 expect_eq 'upgrade-host.sh calls the shared upgrade_result_message helper' \
   "$(grep -c 'upgrade_result_message "${BEFORE_SHA}" "${AFTER_SHA}"' "${SCRIPT_DIR}/upgrade-host.sh")" '1'
-expect_eq 'upgrade-host.sh feeds it build_app'"'"'s own _tau_build_skipped' \
-  "$(grep -c '\${_tau_build_skipped:-false}' "${SCRIPT_DIR}/upgrade-host.sh")" '1'
+expect_eq 'upgrade-host.sh feeds it build_app'"'"'s own _ficus_build_skipped' \
+  "$(grep -c '\${_ficus_build_skipped:-false}' "${SCRIPT_DIR}/upgrade-host.sh")" '1'
 
 
 # --- phase_step ---------------------------------------------------------

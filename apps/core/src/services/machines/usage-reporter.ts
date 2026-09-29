@@ -1,6 +1,6 @@
 import { MAX_INGEST_MACHINES, type IngestMachine } from '@ficus/shared/platform-usage'
 /**
- * Platform usage-sample reporter — the tau-instance side of the shadow-
+ * Platform usage-sample reporter — the Ficus-instance side of the shadow-
  * metering loop. Every 5 minutes, samples the
  * live `machines` fleet and POSTs it to the platform's ingest endpoint, which
  * stores it for later billing aggregation. Entirely inert on a self-hosted
@@ -10,7 +10,7 @@ import { MAX_INGEST_MACHINES, type IngestMachine } from '@ficus/shared/platform-
  * Shadow metering must never hurt the instance it's reporting on: every
  * failure mode (missing config, network error, non-2xx response) is caught
  * and logged at `warn`, never thrown — a bad or unreachable platform must
- * never affect this tau instance's own operation. The next 5-minute tick is
+ * never affect this Ficus instance's own operation. The next 5-minute tick is
  * the only retry; there is no backoff/queue, matching the "sample, don't
  * guarantee delivery" nature of the shadow-metering design.
  */

@@ -105,7 +105,7 @@ export function DevicesSection() {
       )}
 
       <div className="border-b border-panel-border last:border-b-0 p-4 space-y-2">
-        <h3 data-setting-target="connect-the-tau-cli" className="text-sm font-medium text-primary">
+        <h3 data-setting-target="connect-the-ficus-cli" className="text-sm font-medium text-primary">
           Connect the Ficus CLI
         </h3>
         <p className="text-sm text-muted">Run this command, then approve the request opened in your browser.</p>
@@ -116,7 +116,7 @@ export function DevicesSection() {
 
       {/* Pair */}
       <div className="border-b border-panel-border last:border-b-0 p-4 space-y-3">
-        <h3 data-setting-target="pair-the-tau-mobile-app" className="text-sm font-medium text-primary">
+        <h3 data-setting-target="pair-the-ficus-mobile-app" className="text-sm font-medium text-primary">
           Pair the Ficus mobile app
         </h3>
         {qr ? (

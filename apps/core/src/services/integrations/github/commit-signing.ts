@@ -15,7 +15,7 @@ export class GitHubSigningError extends Error {
   }
 }
 
-/** Why Core refused to sign an agent's commit; surfaced verbatim by the `tau` signing program. */
+/** Why Core refused to sign an agent's commit; surfaced verbatim by the `ficus` signing program. */
 export class GitHubSignRefused extends Error {
   constructor(
     readonly code: 'not_configured' | 'signing_off' | 'invalid_payload' | 'identity_mismatch',
@@ -107,7 +107,7 @@ export class GitHubCommitSigning {
       if (present !== false) return this.status(connectionId)
     }
 
-    const key = generateSshSigningKey(`tau-commit-signing-${account.login}`)
+    const key = generateSshSigningKey(`ficus-commit-signing-${account.login}`)
     const created = await this.deps.keys.create(account.accessToken, {
       title: this.deps.keyTitle(),
       key: key.publicKey,

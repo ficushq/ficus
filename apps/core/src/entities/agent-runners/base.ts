@@ -512,7 +512,7 @@ export abstract class AgentRunner {
 
   /**
    * The tool bundle every sandboxed runner wires identically: a scoped agent
-   * token (so `tau` CLI calls authenticate AS this agent under RBAC), the
+   * token (so `ficus` CLI calls authenticate AS this agent under RBAC), the
    * sandboxed coding tools, live sandbox_status, and short-term memory tools.
    *
    * `sandboxStatusTool` is `null` on the host runtime: there is no sandbox to

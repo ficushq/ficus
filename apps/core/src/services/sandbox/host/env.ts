@@ -241,9 +241,9 @@ export function agentIdFromSandboxId(sandboxId?: string): string | undefined {
 }
 
 /**
- * The `tau` CLI auth store for an agent shell. Per agent, and NEVER the
+ * The `ficus` CLI auth store for an agent shell. Per agent, and NEVER the
  * operator's `~/.tau/cli/auth.json`: host agents run as the operator with the
- * operator's $HOME, so without this an agent's `tau` falls back to the human's
+ * operator's $HOME, so without this an agent's `ficus` falls back to the human's
  * active backend and acts as the human, against whatever instance the human
  * logged into. The file is deliberately not created — a missing store reads as
  * empty.
@@ -284,7 +284,7 @@ export interface HostIdentityOptions {
   agentId?: string
 }
 
-/** Per-command env: base login env + tau vars + shim PATH (+ squad ssh config). */
+/** Per-command env: base login env + Ficus vars + shim PATH (+ squad ssh config). */
 export function buildHostCommandEnv(
   opts: HostIdentityOptions & {
     squadId?: string
@@ -299,7 +299,7 @@ export function buildHostCommandEnv(
   // An INJECTED TOKEN is what makes a shell an agent's. Operator-driven shells
   // (web terminals, `exec`, the manager's spawns) get no token, and must keep
   // the operator's own CLI auth store and resolution — overriding those would
-  // only break the human's `tau` without protecting anything.
+  // only break the human's `ficus` without protecting anything.
   const agentId = normalizeAgentId(opts.agentId)
   if (opts.ficusToken) {
     env.FICUS_TOKEN = opts.ficusToken
@@ -356,7 +356,7 @@ export function buildHostCommandEnv(
  * - Identity names this shell is not given are UNSET after sourcing, so a stale
  *   squad env cannot hand a credential to a shell that was given none.
  * - `PATH` is re-asserted with the shim dir first, so a squad env cannot route
- *   `tau` to another binary (e.g. an older globally installed CLI) — while
+ *   `ficus` to another binary (e.g. an older globally installed CLI) — while
  *   keeping whatever the squad env added, which stays a supported thing to do.
  * - Values travel in the process env, never in this string: the command string
  *   becomes argv, which is world-readable through /proc on Linux.
@@ -366,7 +366,7 @@ export function buildHostCommandEnv(
 export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string } = {}): string {
   const agentId = normalizeAgentId(opts.agentId)
   // Fresh per command: the sourced file cannot assign a name it cannot predict.
-  const local = (name: string) => `__tau_${randomBytes(3).toString('hex')}_${name}`
+  const local = (name: string) => `__ficus_${randomBytes(3).toString('hex')}_${name}`
   const urlVar = local('url')
   const binVar = local('bin')
   const tokenVar = local('tok')

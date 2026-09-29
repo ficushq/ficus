@@ -61,13 +61,13 @@ describe('mergeEnvFile', () => {
       { key: 'FICUS_SYSTEM_LOG_PROVIDER', value: 'pm2', explicit: false },
     ])
     expect(
-      out.endsWith('\n# --- added by tau setup ---\nFICUS_SANDBOX_RUNTIME=host\nFICUS_SYSTEM_LOG_PROVIDER=pm2\n')
+      out.endsWith('\n# --- added by ficus setup ---\nFICUS_SANDBOX_RUNTIME=host\nFICUS_SYSTEM_LOG_PROVIDER=pm2\n')
     ).toBe(true)
   })
   it('reuses an existing trailer instead of adding a second one', () => {
     const once = mergeEnvFile(base, [{ key: 'X', value: '1', explicit: true }])
     const twice = mergeEnvFile(once, [{ key: 'Y', value: '2', explicit: true }])
-    expect(twice.split('# --- added by tau setup ---').length).toBe(2)
+    expect(twice.split('# --- added by ficus setup ---').length).toBe(2)
     expect(twice.endsWith('X=1\nY=2\n')).toBe(true)
   })
   it('quotes values containing whitespace or #', () => {

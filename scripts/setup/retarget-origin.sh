@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# retarget-origin.sh — ON-TARGET tau retarget primitive.
+# retarget-origin.sh — ON-TARGET Ficus retarget primitive.
 #
-# Moves an ALREADY SET UP, RUNNING tau host to a new public origin (e.g. a
+# Moves an ALREADY SET UP, RUNNING Ficus host to a new public origin (e.g. a
 # tenant subdomain moving from ficus.sh to ficus.sh) without re-running
 # setup-host.sh. A full re-run cannot work on a hosted tenant: setup-host.sh
 # needs secrets that are deleted from the box after provisioning, re-syncs
@@ -73,7 +73,7 @@ Usage: retarget-origin.sh --config tau-setup.yaml --origin https://<sub>.<domain
                            --tls-cert PATH --tls-key PATH \
                            [--dns-zone DOMAIN] [--ingest-url https://URL] [--dry-run]
 
-Moves an already-running tau host to a new public origin. See the header
+Moves an already-running Ficus host to a new public origin. See the header
 comment in this file for the full behavior.
 
 Options:

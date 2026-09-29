@@ -1,8 +1,8 @@
-// tau <-> amtp-node conformance matrix (spec docs/superpowers/specs/
+// Ficus <-> amtp-node conformance matrix (spec docs/superpowers/specs/
 // 2026-07-08-amtp-node-design.md §10). Spawns a REAL `amtp` node subprocess
 // (the installed amtp-node npm package) against a temp AMTP_HOME and drives it
 // as a black box through its `--json` CLI output, alongside a real
-// in-process tau Hono app served over `Bun.serve`. Both hosts talk over real
+// in-process Ficus Hono app served over `Bun.serve`. Both hosts talk over real
 // HTTP — this file never touches `__setPullImpl`/`__setKeyFetchImpl`; TOFU
 // key fetches and attachment pulls go over the wire exactly as they would in
 // production, in both directions.
@@ -133,7 +133,7 @@ const OUTBOX_POLL_INTERVAL_MS = 750
 const prefix = `node-conf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 // ---------------------------------------------------------------------------
-// tau side: the same Hono app the frozen route tests build (§10.2), served
+// Ficus side: the same Hono app the frozen route tests build (§10.2), served
 // for real over Bun.serve so the node's HTTP client hits it exactly like any
 // other peer.
 // ---------------------------------------------------------------------------
@@ -161,7 +161,7 @@ let nodeInstanceId: string
 let nodePublicKeyPem: string
 
 let filesDir: string | null = null // scratch dir for attachment source files passed to `amtp attach upload`
-let homeDir: string | null = null // tau's HOME_DIR for InboxAttachment file storage
+let homeDir: string | null = null // Ficus's HOME_DIR for InboxAttachment file storage
 const origHomeDir = process.env.HOME_DIR
 
 let sharedAgentTypeId: string
@@ -551,7 +551,7 @@ async function startNodeServe(): Promise<void> {
 // in CI runs 30947168870/30952651592, where a #10 timeout took two #11 tests
 // down with it). Detect a dead node before each test and restart it: the
 // AMTP_HOME (identity, registrations, sqlite state) survives, so only the
-// port changes — repoint tau's peer row at it.
+// port changes — repoint Ficus's peer row at it.
 beforeEach(async () => {
   if (!nodeHome || !nodeProc || !nodeCapture) return // beforeAll not (successfully) run yet
   if (nodeProc.exitCode !== null || nodeProc.signalCode !== null) {
@@ -600,7 +600,7 @@ async function sendFromFicus(
   return { id: entry.id, status: row.status }
 }
 
-/** Seed a real InboxAttachment (tau's outbound-attachment storage — §4.7/adapters.ts) for use in a send's `attachments` array. */
+/** Seed a real InboxAttachment (Ficus's outbound-attachment storage — §4.7/adapters.ts) for use in a send's `attachments` array. */
 async function seedFicusOutboundAttachment(bytes: Uint8Array, filename: string): Promise<InboxAttachment> {
   const [msgRow] = await db
     .insert(inbox)
@@ -615,7 +615,7 @@ async function seedFicusOutboundAttachment(bytes: Uint8Array, filename: string):
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-  // This matrix does real cross-process HTTP; tau's outbound delivery and its
+  // This matrix does real cross-process HTTP; Ficus's outbound delivery and its
   // TOFU key-fetch both go through the engine's late-bound `globalThis.fetch`.
   // An earlier test file in the single-process run may have left a fetch mock
   // installed (file order is platform-dependent — this only bites in CI), which
@@ -840,7 +840,7 @@ async function exerciseFicusToNodeWrongPin(casePrefix: string): Promise<void> {
   const toAddress = formatAmtpAddress(nodeInstanceId, nodeHandle)
   const from = formatAmtpAddress(ficusInstanceId, ficusAgent.amtpHandle!)
 
-  // #2: first signed contact pins tau's agent key on the node.
+  // #2: first signed contact pins Ficus's agent key on the node.
   const id1 = crypto.randomUUID()
   const agentSig1 = signEnvelope(
     kp1.privateKeyPem,
@@ -869,7 +869,7 @@ async function exerciseFicusToNodeWrongPin(casePrefix: string): Promise<void> {
   const read1 = await cli<{ agentSigVerified: boolean }>(['inbox', 'read', msgs[0].id])
   expect(read1.agentSigVerified).toBe(true)
 
-  // #3: re-sign with a DIFFERENT (unpinned) tau agent key.
+  // #3: re-sign with a DIFFERENT (unpinned) Ficus agent key.
   const kp2 = generateInstanceKeyPair()
   const id2 = crypto.randomUUID()
   const agentSig2 = signEnvelope(
@@ -1302,7 +1302,7 @@ describe('#8 attachment default-deny', () => {
 })
 
 // ---------------------------------------------------------------------------
-// §10.3 #9 — replay (node as receiver; tau's side is its frozen suite,
+// §10.3 #9 — replay (node as receiver; Ficus's side is its frozen suite,
 // amtp.receive-signed.test.ts)
 // ---------------------------------------------------------------------------
 
@@ -1385,7 +1385,7 @@ describe('#10 duplicate-enqueue idempotency', () => {
 
 // ---------------------------------------------------------------------------
 // #11 — agent cards (docs/history/superpowers/specs/2026-07-09-amtp-agent-card-design.md
-// §4.6/§11): publish/fetch/verify a signed card across the tau<->node boundary,
+// §4.6/§11): publish/fetch/verify a signed card across the Ficus<->node boundary,
 // TOFU-pinning it exactly like a first signed send, plus the unsigned discovery
 // hints that ride the existing /handles listing. New row, numbered #11 (not
 // #8) because #8 above is already the frozen "attachment default-deny" case

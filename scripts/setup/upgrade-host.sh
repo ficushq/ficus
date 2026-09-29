@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# upgrade-host.sh — ON-TARGET tau upgrade primitive.
+# upgrade-host.sh — ON-TARGET Ficus upgrade primitive.
 #
-# Moves an ALREADY SET UP tau host to a different source ref: fetch + checkout
+# Moves an ALREADY SET UP Ficus host to a different source ref: fetch + checkout
 # → dependencies + core build + web build → database migrations → restart
 # tau-api/tau-worker and wait for both to actually serve.
 #
@@ -63,7 +63,7 @@ usage() {
 Usage: upgrade-host.sh --config tau-setup.yaml [--ref REF]
        upgrade-host.sh [--config tau-setup.yaml] --restore-host-backup SET
 
-Upgrades the tau instance ON THIS HOST to a source ref: source sync → build
+Upgrades the Ficus instance ON THIS HOST to a source ref: source sync → build
 (core AND web) → migrations → service restart + health wait.
 
 Options:
@@ -318,7 +318,7 @@ artifact_upgrade() {
     install_core_units "${SCRIPT_DIR}/systemd"
     # shellcheck disable=SC2034 # read by lib.sh's host_migrate / host_migrate_backup_create
     ARTIFACT_CONVERTED_THIS_RUN=1
-    ensure_tau_api_memory_guardrail
+    ensure_api_memory_guardrail
     as_root systemctl daemon-reload
     log_info "units now run from ${SRC_DEST}/current (conversion complete; a manual rollback is: point current at releases/git-<sha> and restart)"
   else
@@ -444,7 +444,7 @@ build_app "${SRC_DEST}" "${CORE_SERVE_WEB}"
 log_step "phase 3/4: database migrations"
 run_db_migrations "${SRC_DEST}"
 
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 if [[ ${FICUS_API_MEMORY_GUARDRAIL_CHANGED} -eq 1 ]]; then
   as_root systemctl daemon-reload
 fi
@@ -461,12 +461,12 @@ host_migrate_commit
 
 AFTER_SHA=$(git -C "${SRC_DEST}" rev-parse HEAD)
 AFTER_REF=$(git -C "${SRC_DEST}" rev-parse --abbrev-ref HEAD)
-# _tau_build_skipped is set by build_app (lib.sh) above — true only when the
+# _ficus_build_skipped is set by build_app (lib.sh) above — true only when the
 # stamp proved the build current for this exact commit + bun.lock, in which
 # case the expensive compile step was skipped (migrations + restart still
 # ran, which is what keeps the platform's post-upgrade mtime probe honest;
 # see build_app's comment in lib.sh).
-log_info "$(upgrade_result_message "${BEFORE_SHA}" "${AFTER_SHA}" "${_tau_build_skipped:-false}")"
+log_info "$(upgrade_result_message "${BEFORE_SHA}" "${AFTER_SHA}" "${_ficus_build_skipped:-false}")"
 
 # Machine-readable trailer, last lines on stdout (all logging goes to stderr).
 # The control plane parses these; humans get the log_info lines above.

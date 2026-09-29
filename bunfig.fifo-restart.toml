@@ -1,5 +1,5 @@
 [test]
 # The standalone persistent-volume restart fixture does not import Core's DB
 # layer. Keep the runtime guard, but deliberately omit Core's normal DB preload
-# so this phase owns exactly its tau-fifo-restart-* Compose project.
+# so this phase owns exactly its ficus-fifo-restart-* Compose project.
 preload = ["./scripts/check-bun-test-runtime.ts"]

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# tau box provisioning
+# Ficus box provisioning
 # ====================
 # Creates (or removes) ONE per-sandbox "box": a dedicated unix user that runs
-# the tau sandbox server as a systemd service — either a per-box SYSTEM unit or
+# the Ficus sandbox server as a systemd service — either a per-box SYSTEM unit or
 # a lingering systemd --user service, see --unit-mode.
 #
 # A box is THREE units, not one (spec D2, "socket activation + idle self-exit"):

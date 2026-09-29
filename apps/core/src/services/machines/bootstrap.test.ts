@@ -333,11 +333,11 @@ describe('bootstrapMachine', () => {
     // Order: push bootstrap.sh, run bootstrap.sh, push box-provision.sh.
     expect(calls.length).toBe(3)
     expect(calls[0].command).toContain('install ')
-    expect(calls[0].command).toContain('/tmp/tau-bootstrap.sh')
+    expect(calls[0].command).toContain('/tmp/ficus-bootstrap.sh')
     expect(calls[0].stdin).toBe(bootstrapSh)
 
     expect(calls[1].command).toContain('bash ')
-    expect(calls[1].command).toContain('/tmp/tau-bootstrap.sh')
+    expect(calls[1].command).toContain('/tmp/ficus-bootstrap.sh')
     expect(calls[1].command).toContain('--version')
     expect(calls[1].command).toContain(expectedVersion)
 

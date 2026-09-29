@@ -79,7 +79,7 @@ describe('resolveGitHubIdentityFromMetadata', () => {
 describe('gitIdentityEnv', () => {
   test("emits git's own author/committer vars, not just tau's GIT_USER_* names", () => {
     const env = gitIdentityEnv({ gitUserName: 'ficusagent', gitUserEmail: 'agent@users.noreply.github.com' })
-    // GIT_USER_* are tau's names and git ignores them; only these four are honored by git.
+    // GIT_USER_* are Ficus's names and git ignores them; only these four are honored by git.
     expect(env).toMatchObject({
       GIT_AUTHOR_NAME: 'ficusagent',
       GIT_AUTHOR_EMAIL: 'agent@users.noreply.github.com',
@@ -121,7 +121,7 @@ describe('gitIdentityEnv', () => {
       await Bun.$`git config --local user.email stale@example.invalid`.cwd(dir).quiet()
 
       // Clear any ambient git identity: a git hook, `git rebase -x`, some CI
-      // runners, or a Docker-runtime tau sandbox can already export these, and
+      // runners, or a Docker-runtime Ficus sandbox can already export these, and
       // they outrank the local [user] this probe is trying to demonstrate.
       const hermetic = {
         ...process.env,

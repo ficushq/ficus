@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# seed.sh — seed a freshly-installed tau instance via the FICUS_PASSWORD
+# seed.sh — seed a freshly-installed Ficus instance via the FICUS_PASSWORD
 # bootstrap bearer (fully privileged until the first admin passkey exists):
 #
 #   1. AI provider account   POST /api/provider-auth/<provider>/accounts
@@ -28,7 +28,7 @@ usage() {
 Usage: seed.sh --config tau-setup.yaml [options]
 
 Seeds an exe SSH key secret, and — only when explicitly configured — an AI
-provider account and/or a starter squad + agent, on a running tau instance,
+provider account and/or a starter squad + agent, on a running Ficus instance,
 using the FICUS_PASSWORD bootstrap bearer. A config with no ai.model and no
 squad.name skips both cleanly (the in-app onboarding checklist is the path
 instead).
@@ -176,7 +176,7 @@ fi
 [[ -n ${FICUS_BEARER} ]] || die "FICUS_PASSWORD is empty — cannot authenticate seeding requests"
 
 retry_until 30 2 "API up at ${API_URL}" api_is_up "${API_URL}" ||
-  die "tau API is not reachable at ${API_URL}"
+  die "Ficus API is not reachable at ${API_URL}"
 
 # Once an admin exists the bootstrap bearer is dead — seeding is a no-op.
 AUTH_STATUS=$(curl -sS --max-time 10 "${API_URL}/api/auth/status")

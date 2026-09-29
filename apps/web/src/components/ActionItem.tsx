@@ -457,7 +457,7 @@ function AgentQuestionActionContent({
           type="button"
           onClick={() => dismissMutation.mutate()}
           disabled={dismissMutation.isPending || retryMutation.isPending}
-          className="tau-button min-h-10 px-3 py-2 text-sm disabled:opacity-50"
+          className="min-h-10 px-3 py-2 text-sm disabled:opacity-50"
         >
           {dismissMutation.isPending ? 'Dismissing…' : 'Dismiss notice'}
         </button>

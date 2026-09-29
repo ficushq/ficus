@@ -326,7 +326,7 @@ describe('ensureBox', () => {
       }
     )
 
-    // The artifact ensure (box-provision.sh + server bundle + tau cli, per the
+    // The artifact ensure (box-provision.sh + server bundle + Ficus cli, per the
     // registry) must land on the machine before the box row is bound /
     // provisioning begins.
     expect(events.indexOf('artifacts')).toBeGreaterThanOrEqual(0)

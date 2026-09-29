@@ -132,7 +132,7 @@ describe('bootstrap', () => {
         'pipefail',
         '-c',
         'curl -fsSL https://bun.sh/install | bash -s -- "$1"',
-        'tau-bun-bootstrap',
+        'ficus-bun-bootstrap',
         'bun-v1.4.2',
       ])
       expect(joined(rec.calls).slice(-3)).toEqual([

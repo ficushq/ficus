@@ -236,7 +236,7 @@ describe('ssh-family shims (functional matrix)', () => {
 
   test('aliases outside the managed block (user stanza) are never resolved by the shim', () => {
     // 'github-work' sits in the USER section of the same config — only the
-    // marker-delimited block is tau's. A user alias needs an explicit -F.
+    // marker-delimited block is Ficus's. A user alias needs an explicit -F.
     expect(run('ssh github-work true').lines).toEqual(['github-work', 'true'])
   })
 })

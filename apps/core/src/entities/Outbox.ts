@@ -168,7 +168,7 @@ export class Outbox {
    * Returns true iff an outbox row destined for `peerInstanceId` advertises
    * `attachmentId` in its envelope's `attachments` array. Used by the
    * attachment-serve route to enforce default-deny: a peer may pull only
-   * attachments tau actually sent to it.
+   * attachments Ficus actually sent to it.
    */
   static async hasOutboundAttachmentForPeer(peerInstanceId: string, attachmentId: string): Promise<boolean> {
     const rows = await db

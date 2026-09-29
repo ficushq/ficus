@@ -468,7 +468,7 @@ export const amtpRouter = new Hono()
     const result = await amtpEngine.receiveEnvelope({ peerInstanceId, rawBody })
     return c.json(result.body, result.httpStatus)
   })
-  // Peer-authenticated attachment serve. A peer may pull only attachments tau actually sent to it
+  // Peer-authenticated attachment serve. A peer may pull only attachments Ficus actually sent to it
   // (default-deny via outbox check). Both the auth-failed and the not-authorized cases return 404
   // to avoid leaking existence. TLS-at-transport assumption (§10) makes the 5-min replay window
   // acceptable for this idempotent, read-only route.

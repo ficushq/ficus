@@ -70,7 +70,7 @@ async function waitReady(project: string, env: Record<string, string>) {
 
 test('message enqueue sequence and rows survive a persistent-volume restart', async () => {
   const suffix = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`
-  const project = `tau-fifo-restart-${suffix}`
+  const project = `ficus-fifo-restart-${suffix}`
   const volume = `${project}-data`
   const env = { FIFO_RESTART_PORT: String(await findFreeTestDbPort()), FIFO_RESTART_VOLUME: volume }
   const cleanup = () => compose(project, env, ['down', '-v', '--remove-orphans'])

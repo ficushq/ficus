@@ -36,7 +36,7 @@ export function buildFicusEnginePorts(): AmtpEnginePorts {
 }
 
 /**
- * Builds a fresh tau-wired AmtpEngine. Exposed (rather than only exporting the
+ * Builds a fresh Ficus-wired AmtpEngine. Exposed (rather than only exporting the
  * singleton below) so the future outbox-delivery.ts compat wrapper (§7.4) can
  * build a per-call engine with an injected signer, matching today's
  * `DrainOutboxDeps` seam.

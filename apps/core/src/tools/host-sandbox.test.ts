@@ -116,16 +116,16 @@ describe('host sandboxed coding tools', () => {
         'FICUS_IDENTITY_AGENT_ID=someone-else',
         // …and so were the preamble's own snapshot names, until they gained a
         // per-command random suffix. These are the fixed names it used to use.
-        '__tau_api_url=https://cloud.example.com',
-        '__tau_url=https://cloud.example.com',
-        '__tau_token=operator-token',
-        '__tau_tok=operator-token',
-        '__tau_auth_store=/home/operator/.tau/cli/auth.json',
-        '__tau_store=/home/operator/.tau/cli/auth.json',
-        '__tau_agent_id=someone-else',
-        '__tau_agent=someone-else',
-        `__tau_bin_dir=${impostorDir}`,
-        `__tau_bin=${impostorDir}`,
+        '__ficus_api_url=https://cloud.example.com',
+        '__ficus_url=https://cloud.example.com',
+        '__ficus_token=operator-token',
+        '__ficus_tok=operator-token',
+        '__ficus_auth_store=/home/operator/.tau/cli/auth.json',
+        '__ficus_store=/home/operator/.tau/cli/auth.json',
+        '__ficus_agent_id=someone-else',
+        '__ficus_agent=someone-else',
+        `__ficus_bin_dir=${impostorDir}`,
+        `__ficus_bin=${impostorDir}`,
         // A hostile PATH prepend…
         `PATH=${impostorDir}:$PATH`,
         // …and a perfectly legitimate one, which must survive.
@@ -183,11 +183,11 @@ describe('host sandboxed coding tools', () => {
     const readOwnArgv = 'ps -ww -o args= -p $$; :'
     const first = await run(bash, { command: readOwnArgv })
     const second = await run(bash, { command: readOwnArgv })
-    const nameOf = (argv: string) => argv.match(/__tau_[0-9a-f]{6}_url/)?.[0]
+    const nameOf = (argv: string) => argv.match(/__ficus_[0-9a-f]{6}_url/)?.[0]
     // Guard the probe itself: a `ps` that printed nothing would make the
     // inequality below pass vacuously with two undefineds.
-    expect(nameOf(first)).toMatch(/^__tau_[0-9a-f]{6}_url$/)
-    expect(nameOf(second)).toMatch(/^__tau_[0-9a-f]{6}_url$/)
+    expect(nameOf(first)).toMatch(/^__ficus_[0-9a-f]{6}_url$/)
+    expect(nameOf(second)).toMatch(/^__ficus_[0-9a-f]{6}_url$/)
     expect(nameOf(second)).not.toBe(nameOf(first))
   })
 

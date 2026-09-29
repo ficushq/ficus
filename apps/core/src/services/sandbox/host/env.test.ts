@@ -332,7 +332,7 @@ describe('host env', () => {
 
   test('buildHostCommandEnv leaves an operator shell (no injected token) exactly as it was', () => {
     // Web terminals and `exec` get no token: overriding their auth store would
-    // only break the human's own `tau`, and protects nothing.
+    // only break the human's own `ficus`, and protects nothing.
     const env = buildHostCommandEnv({ base: { PATH: '/bin' }, squadId: SQUAD, agentId: 'agent-1' })
     expect(env.FICUS_AUTH_STORE).toBeUndefined()
     expect(env.FICUS_AGENT_CONTEXT).toBeUndefined()
@@ -365,7 +365,7 @@ describe('host env', () => {
   /** The snapshot names carry a per-command random suffix, so tests read them back. */
   function snapshotNames(preamble: string): Record<string, string> {
     const names: Record<string, string> = {}
-    for (const [, name, suffix] of preamble.matchAll(/(__tau_[0-9a-f]{6}_(url|bin|tok|store|agent))\b/g)) {
+    for (const [, name, suffix] of preamble.matchAll(/(__ficus_[0-9a-f]{6}_(url|bin|tok|store|agent))\b/g)) {
       names[suffix] = name
     }
     return names

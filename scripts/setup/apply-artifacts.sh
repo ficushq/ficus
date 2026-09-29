@@ -18,7 +18,7 @@
 # every manifest-listed file is installed, and anything under
 # /etc/tau/artifacts/ the manifest no longer lists is PRUNED (lib.sh's
 # prune_artifacts — that is how an artifact DELETED from the platform registry
-# leaves the fleet). It also ensures the tau units actually load managed.env
+# leaves the fleet). It also ensures the core units actually load managed.env
 # (ensure_managed_env_dropins — hosts provisioned before the unit templates
 # carried the EnvironmentFile line need a drop-in, or every sync is a silent
 # no-op for the running processes). Same lib.sh functions a fresh provision
@@ -86,7 +86,7 @@ install_managed_env "${STAGE_DIR}"
 install_artifacts "${STAGE_DIR}"
 prune_artifacts "${STAGE_DIR}"
 ensure_managed_env_dropins
-ensure_tau_api_memory_guardrail
+ensure_api_memory_guardrail
 log_info "artifacts applied from ${STAGE_DIR}"
 
 # Machine-readable markers for the sync executor (stdout; logs go to stderr).

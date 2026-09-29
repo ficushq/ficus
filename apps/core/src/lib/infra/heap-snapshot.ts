@@ -30,7 +30,7 @@ export async function captureHeapSnapshot(options: HeapSnapshotOptions): Promise
     // writeHeapSnapshot creates a secrets-bearing file inside it.
     await restrictFile(directory, 0o700)
     const timestamp = (options.now ?? (() => new Date()))().toISOString().replace(/[.:]/g, '-')
-    const path = join(directory, `tau-${options.role}-${timestamp}-${options.pid ?? process.pid}.heapsnapshot`)
+    const path = join(directory, `ficus-${options.role}-${timestamp}-${options.pid ?? process.pid}.heapsnapshot`)
     await writer(path)
     await restrictFile(path, 0o600)
     return path

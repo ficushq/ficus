@@ -1,8 +1,8 @@
 # ficus-machine image
 
-Prebaked OCI image for tau's VM sandbox "machines" on [exe.dev](https://exe.dev):
+Prebaked OCI image for Ficus's VM sandbox "machines" on [exe.dev](https://exe.dev):
 everything `scripts/machine/bootstrap.sh` installs (bun, multi-user nix, devbox,
-Docker engine + rootless extras, nftables, the tau machine scripts) baked into an
+Docker engine + rootless extras, nftables, the Ficus machine scripts) baked into an
 exe-compatible image, at the **same pinned versions and paths** bootstrap uses.
 Booting a box VM from this image collapses bootstrap from a multi-minute install
 to seconds: every idempotent check-then-act step finds its artifact already in
@@ -48,7 +48,7 @@ regression ever needs freezing out.
 | bun | `1.2.23` | `/opt/tau/bun`, symlinks `/opt/tau/bin/bun` + `/usr/local/bin/bun` | `install_bun` (`BUN_VERSION`) |
 | nix (multi-user) | `2.24.9` | `/nix`, daemon units enabled, symlink `/usr/local/bin/nix` | `install_nix` (`NIX_VERSION`) + `link_nix_on_path` |
 | devbox | `0.14.0` | `/usr/local/bin/devbox` | `install_devbox` (`DEVBOX_VERSION`) |
-| tau dirs + scripts | — | `/opt/tau/{bin,server,archive}`, `bootstrap.sh` + `box-provision.sh` in `/opt/tau/bin/` | `make_dirs` / manager push |
+| Ficus dirs + scripts | — | `/opt/tau/{bin,server,archive}`, `bootstrap.sh` + `box-provision.sh` in `/opt/tau/bin/` | `make_dirs` / manager push |
 | prebaked marker | — | `/opt/tau/prebaked` (JSON: baked pins) | read by bootstrap's fast-path |
 
 `/opt/tau/manifest.json` is deliberately **not** baked — bootstrap writes it

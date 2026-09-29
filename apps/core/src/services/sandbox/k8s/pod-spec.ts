@@ -75,7 +75,7 @@ export function getSandboxImagePullPolicy(_opts: { isLocalDev?: boolean } = {}):
 }
 
 /**
- * Resolve the Core API URL a sandbox should use to reach `tau` CLI / callbacks.
+ * Resolve the Core API URL a sandbox should use to reach `ficus` CLI / callbacks.
  *
  * In local dev the Core runs on the host (k3d routes `host.k3d.internal` to it)
  * on a *dynamic* port, so this is recomputed from the live `PORT` on every bash
@@ -296,7 +296,7 @@ async function buildSandboxEnv(input: {
   // Baked default. NOTE: in local dev this captures the Core's port at pod
   // creation; the per-command bash env re-injects the *live* URL (see
   // createHttpBashOperations) so a Core restart on a new port doesn't orphan
-  // the pod's `tau` CLI. The cluster-mode URL is stable Service DNS.
+  // the pod's `ficus` CLI. The cluster-mode URL is stable Service DNS.
   const apiUrl = resolveSandboxApiUrl(namespace)
 
   const sharedVolumeGid = getSharedVolumeGid()

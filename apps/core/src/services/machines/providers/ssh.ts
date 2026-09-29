@@ -4,7 +4,7 @@ import { MachineProviderError, type MachineExecFn, type MachineProvider, type Ma
 /**
  * BYO-SSH machine provider. These machines are user-owned hardware that gets
  * registered (via the machines admin API, outside this module), never
- * provisioned or destroyed by tau. `status()` probes reachability over SSH;
+ * provisioned or destroyed by Ficus. `status()` probes reachability over SSH;
  * there is no parked state for BYO boxes.
  *
  * `exec` is injected rather than imported directly because Task 3's

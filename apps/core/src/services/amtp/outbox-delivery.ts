@@ -4,7 +4,7 @@
 // frozen `outbox-delivery.test.ts` by building a per-call engine over `deps` and
 // delegating to it. `deps.signer` maps HONESTLY onto `identity.getSigning` (the
 // injected test signers supply exactly `{instanceId, privateKeyPem}` and are
-// never asked to self-certify); `identity.get` stays the tau default.
+// never asked to self-certify); `identity.get` stays the Ficus default.
 import { createAmtpEngine } from 'amtp-engine'
 import type { PeerStore } from 'amtp-engine'
 import type { PeerResolver } from '../../entities/Peer'

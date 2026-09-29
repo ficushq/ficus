@@ -139,7 +139,7 @@ export const Permissions = {
   MACHINES_WRITE: 'machines:write',
   MACHINES_FORCE_MIGRATE: 'machines:force-migrate',
 
-  // Remote hosts (team-owned SSH targets agents reach out to; not tau substrate)
+  // Remote hosts (team-owned SSH targets agents reach out to; not Ficus substrate)
   REMOTE_HOSTS_READ: 'remote-hosts:read',
   REMOTE_HOSTS_WRITE: 'remote-hosts:write',
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# setup-host.sh — ON-TARGET tau setup primitive.
+# setup-host.sh — ON-TARGET Ficus setup primitive.
 #
-# Takes a fresh Ubuntu 24.04 host from nothing → a running tau (core API +
+# Takes a fresh Ubuntu 24.04 host from nothing → a running Ficus (core API +
 # worker under systemd, DB migrated, web UI served, and — only when
 # ai.model/squad.name are explicitly configured — an AI provider + starter
 # squad seeded) whose ONLY remaining step is a human opening the printed URL
@@ -24,7 +24,7 @@ usage() {
 Usage: setup-host.sh --config tau-setup.yaml [options]
        setup-host.sh --wizard [--config OUT.yaml]
 
-Sets up a complete tau instance ON THIS HOST (fresh Ubuntu 24.04 + systemd).
+Sets up a complete Ficus instance ON THIS HOST (fresh Ubuntu 24.04 + systemd).
 To provision a cloud VM and set it up remotely, use provision.sh instead.
 
 Options:
@@ -894,10 +894,10 @@ phase_preflight() {
   # Unquoted final assignment (`=${var}`, not `="…"`) on purpose: the gate
   # matches the single literal pin above via `^\s*FICUS_BUN_VERSION="…"`, and a
   # second quoted assignment here would register as a divergent pin.
-  _tau_bun_version_file="${SCRIPT_DIR}/../../.bun-version"
-  if [[ -f "${_tau_bun_version_file}" ]]; then
-    _tau_bun_version_pinned=$(tr -d '[:space:]' <"${_tau_bun_version_file}")
-    [[ -n "${_tau_bun_version_pinned}" ]] && FICUS_BUN_VERSION=${_tau_bun_version_pinned}
+  _ficus_bun_version_file="${SCRIPT_DIR}/../../.bun-version"
+  if [[ -f "${_ficus_bun_version_file}" ]]; then
+    _ficus_bun_version_pinned=$(tr -d '[:space:]' <"${_ficus_bun_version_file}")
+    [[ -n "${_ficus_bun_version_pinned}" ]] && FICUS_BUN_VERSION=${_ficus_bun_version_pinned}
   fi
   if have bun && [[ "$(bun --version)" != "${FICUS_BUN_VERSION}" ]]; then
     log_info "bun $(bun --version) does not match pinned ${FICUS_BUN_VERSION} — reinstalling"
@@ -1166,7 +1166,7 @@ phase_restore() {
   fi
 
   local workdir passfile archive
-  workdir=$(mktemp -d -t tau-restore.XXXXXX)
+  workdir=$(mktemp -d -t ficus-restore.XXXXXX)
   chmod 700 "${workdir}"
   passfile=$(mktemp)
   chmod 600 "${passfile}"
@@ -1291,7 +1291,7 @@ phase_services() {
   if [[ ${RUN_USER} != root ]]; then
     install_update_sudoers
   fi
-  ensure_tau_api_memory_guardrail
+  ensure_api_memory_guardrail
   as_root systemctl daemon-reload
   as_root systemctl enable tau-api tau-worker >/dev/null 2>&1
   if [[ ${SRC_MODE} == artifact ]]; then
@@ -1404,7 +1404,7 @@ phase_report() {
   cat <<EOF
 
 ================================================================================
- tau is up.
+ Ficus is up.
 
    URL:  ${CORE_ORIGIN}
 

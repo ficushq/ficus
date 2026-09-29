@@ -707,7 +707,7 @@ describe('ficus server', () => {
   })
   it('setup honours --instance from argv', async () => {
     // Regression: a group-level --instance on `server` swallowed the flag here,
-    // so `bun run setup -- --instance smoke` silently configured the tau instance.
+    // so `bun run setup -- --instance smoke` silently configured the default instance.
     const seen: unknown[] = []
     const { run, deps } = make()
     deps.runSetup = async (opts) => {

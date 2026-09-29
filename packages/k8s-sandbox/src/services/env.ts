@@ -48,9 +48,9 @@ const EXACT_ALLOW = new Set<string>([
   'GIT_USER_NAME',
   'GIT_USER_EMAIL',
   // git's OWN identity variables. Distinct from GIT_USER_* above, which are
-  // tau's names and which git ignores — those work only because the image
+  // Ficus's names and which git ignores — those work only because the image
   // translates them into `git config --global`, and global config LOSES to a
-  // repo-local [user] section. Agents clone repos themselves, so tau has no
+  // repo-local [user] section. Agents clone repos themselves, so Ficus has no
   // per-repo hook to clean a stale one up; these four outrank every config
   // file and are the only thing that cannot be shadowed. Omitting them here
   // silently strips them before `git` ever runs (this allowlist gates every

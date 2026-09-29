@@ -40,7 +40,7 @@ export async function generateSshKeypair(
   secretKey: string,
   comment: string
 ): Promise<{ publicKey: string; secretKeyId: string }> {
-  const dir = await mkdtemp(join(tmpdir(), 'tau-machine-keygen-'))
+  const dir = await mkdtemp(join(tmpdir(), 'ficus-machine-keygen-'))
   const keyPath = join(dir, 'id_ed25519')
 
   try {
@@ -70,7 +70,7 @@ export async function generateSshKeypair(
  * was stored under (to persist on the `machines` row as `sshKeyId`).
  */
 export async function generateMachineKeypair(machineId: string): Promise<{ publicKey: string; secretKeyId: string }> {
-  return generateSshKeypair(machineSecretKey(machineId), `tau-machine-${machineId}`)
+  return generateSshKeypair(machineSecretKey(machineId), `ficus-machine-${machineId}`)
 }
 
 /**
@@ -79,7 +79,7 @@ export async function generateMachineKeypair(machineId: string): Promise<{ publi
  * it was stored under (to persist on the `remote_hosts` row as `sshKeyId`).
  */
 export async function generateRemoteHostKeypair(hostId: string): Promise<{ publicKey: string; secretKeyId: string }> {
-  return generateSshKeypair(remoteHostSecretKey(hostId), `tau-remote-host-${hostId}`)
+  return generateSshKeypair(remoteHostSecretKey(hostId), `ficus-remote-host-${hostId}`)
 }
 
 /**

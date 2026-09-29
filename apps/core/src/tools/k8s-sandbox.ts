@@ -575,7 +575,7 @@ export function createHttpBashOperations(
           // because their cached `devbox shellenv` re-exports PATH). It would also leak
           // the Core's host env into the sandbox. The pod owns PATH/HOME/etc via its own
           // process.env; we inject ONLY the deliberate per-command vars: the *live* Core
-          // URL (so the `tau` CLI reaches the current Core even if the pod baked a stale
+          // URL (so the `ficus` CLI reaches the current Core even if the pod baked a stale
           // dynamic port at creation) and the per-agent token. Agent `bash` and
           // `squad_bash` share this op, so both behave identically.
           env: {

@@ -139,7 +139,7 @@ kubectl -n tau-sandboxes create secret generic tau-git-credentials \
 
 kubectl -n tau-sandboxes create configmap tau-git-config \
   --from-literal=user-name="Ficus Bot" \
-  --from-literal=user-email="tau@example.com"
+  --from-literal=user-email="ficus@example.com"
 ```
 
 ## 6. Deploy Core

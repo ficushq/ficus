@@ -1,4 +1,4 @@
-# tau-setup.yaml — configuration contract for the tau setup toolkit.
+# tau-setup.yaml — configuration contract for the Ficus setup toolkit.
 #
 # Copy to tau-setup.yaml and edit, or generate one interactively:
 #   scripts/setup/setup-host.sh --wizard
@@ -18,7 +18,7 @@
 # the Linux target; on a control machine install it first (`brew install yq`).
 
 # -----------------------------------------------------------------------------
-# Where the tau source comes from.
+# Where the Ficus source comes from.
 # -----------------------------------------------------------------------------
 source:
   # git-ssh    clone over SSH with a read-only deploy key (recommended).
@@ -55,7 +55,7 @@ core:
   # hetzner VM behind Caddy + Cloudflare DNS this is portless, e.g.
   # https://<subdomain>.<dns.zone> — provision.sh derives the DNS record name
   # (dns.upsert target) from this origin's host.
-  origin: https://my-tau.exe.xyz:3000
+  origin: https://my-ficus.exe.xyz:3000
   # Port the core API listens on.
   port: 3000
   # Serve the built web UI from the core process (single-origin deployment).
@@ -197,7 +197,7 @@ runtime:
   # Only used when sandbox=vm with exe.dev boxes:
   exe:
     # Path to the exe.dev account SSH key ON THE MACHINE RUNNING setup-host.sh.
-    # Seeded into tau's encrypted secret store as `exe-provider-ssh-key`.
+    # Seeded into Ficus's encrypted secret store as `exe-provider-ssh-key`.
     # Prompted if empty and running interactively.
     ssh_key_path: ''
     # Image new agent/squad boxes boot from.
@@ -274,7 +274,7 @@ provision:
   # and core.origin should be https://<name>.exe.xyz:<core.port>. For hetzner/
   # digitalocean, this is the server/droplet name (idempotent lookup key — a
   # same-name server/droplet is reused rather than recreated).
-  name: my-tau
+  name: my-ficus
   # SSH user on the provisioned VM. Default: exedev (exe) / root (hetzner,
   # digitalocean).
   ssh_user: exedev

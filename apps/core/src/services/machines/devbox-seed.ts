@@ -43,7 +43,7 @@
  * of the pristine `devbox.json`) and seed it into every later box's devbox dir
  * BEFORE running `devbox install`, so `devbox` resolves from the local lock
  * instead of the network. The cache is machine-independent (per-system lock
- * entries cover `x86_64-linux`, which is every tau machine), so it benefits new
+ * entries cover `x86_64-linux`, which is every Ficus machine), so it benefits new
  * machines too.
  *
  * This ONLY applies when the devbox.json being installed is the exact pristine

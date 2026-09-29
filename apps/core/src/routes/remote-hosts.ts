@@ -118,7 +118,7 @@ async function getValidSquadId(squadIdParam: string): Promise<string | null> {
  */
 async function probeHost(sshRunner: SshRunner, host: RemoteHost): Promise<{ reachable: boolean; error?: string }> {
   try {
-    const result = await sshRunner.run(hostAsSshTarget(host), 'echo tau-remote-check')
+    const result = await sshRunner.run(hostAsSshTarget(host), 'echo ficus-remote-check')
     if (result.exitCode === 0) {
       return { reachable: true }
     }
@@ -179,7 +179,7 @@ export function createRemoteHostsRouter(
    *
    * Re-minting under the same `hostId` overwrites the existing
    * `remote-host-ssh:<hostId>` secret in place — `sshKeyId` is unchanged; only
-   * the key material rotates. The remote host is NEVER touched (tau may have no
+   * the key material rotates. The remote host is NEVER touched (Ficus may have no
    * access) — the new public key is returned so the operator can install it in
    * the host's ~/.ssh/authorized_keys.
    */

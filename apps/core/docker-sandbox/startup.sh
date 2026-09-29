@@ -3,7 +3,7 @@ set -eu
 
 # PID 1 owns the Docker daemon (when required), the authenticated executor, and
 # a permission-scoping raw byte forwarder to the daemon socket. The forwarder
-# does not filter Docker APIs or create an escape boundary: tau retains full
+# does not filter Docker APIs or create an escape boundary: Ficus retains full
 # daemon authority (host-root-equivalent in socket mode). Secrets stay in a
 # root-only file, never Docker env.
 unset DOCKER_HOST
@@ -19,7 +19,7 @@ PROXY_PID_FILE=/run/tau/proxy.pid
 EXECUTOR_PID_FILE=/run/tau/executor.pid
 CHILD_EXIT_FIFO=/run/tau/child-exit
 
-. /usr/local/lib/tau-shutdown.sh
+. /usr/local/lib/ficus-shutdown.sh
 
 supervise_child() {
   label=$1
@@ -60,7 +60,7 @@ if [ ! -S /var/run/docker.sock ]; then
     sleep 1
   done
   if ! docker info >/dev/null 2>&1; then
-    echo '[tau-sandbox] Docker failed to start' >&2
+    echo '[ficus-sandbox] Docker failed to start' >&2
     exit 1
   fi
 fi
@@ -73,7 +73,7 @@ if printf '%s' "${FICUS_HOST_UID:-}:${FICUS_HOST_GID:-}" | grep -Eq '^[1-9][0-9]
    [ "$FICUS_HOST_UID" -ne 65534 ] && [ "$FICUS_HOST_GID" -ne 65534 ]; then
   if awk -F: -v id="$FICUS_HOST_UID" '$3 == id && $1 != "tau" { found=1 } END { exit !found }' /etc/passwd ||
      awk -F: -v id="$FICUS_HOST_GID" '$3 == id && $1 != "tau" { found=1 } END { exit !found }' /etc/group; then
-    echo '[tau-sandbox] requested command identity collides with the image' >&2
+    echo '[ficus-sandbox] requested command identity collides with the image' >&2
     exit 1
   fi
   groupmod -g "$FICUS_HOST_GID" tau
@@ -90,7 +90,7 @@ test "$(awk -F: '$1 == "tau" { print $3 }' /etc/passwd)" = "$RESOLVED_UID"
 test "$(awk -F: '$1 == "tau" { print $3 }' /etc/group)" = "$RESOLVED_GID"
 test "${#CONTRACT_DIGEST}" = 64
 jq -e '.version == 1 and .user == "tau" and .home == "/home/tau" and .uid == 1000 and .gid == 1000' /opt/tau/command-identity.json >/dev/null
-su-exec tau sh -eu -c 'test -w /home/tau; test -w "$1"; probe="$1/.tau-runtime-write-$$"; : >"$probe"; rm -f "$probe"' sh "$(pwd)"
+su-exec tau sh -eu -c 'test -w /home/tau; test -w "$1"; probe="$1/.ficus-runtime-write-$$"; : >"$probe"; rm -f "$probe"' sh "$(pwd)"
 
 # The proxy directory remains root-owned and non-writable by the command user.
 install -d -o root -g root -m 0711 "$PROXY_DIR"
@@ -155,7 +155,7 @@ EXECUTOR_PID=$!
 # already launched inheriting it) and the browser service (below) see it.
 start_browser_service() {
   service=/opt/tau/browser/service/tau-browser.js
-  [ -f "$service" ] || { echo '[tau-sandbox] tau-browser service not present; skipping (dev parity)' >&2; return 0; }
+  [ -f "$service" ] || { echo '[ficus-sandbox] tau-browser service not present; skipping (dev parity)' >&2; return 0; }
   tokens_dir="${FICUS_BROWSER_TOKENS_DIR:-/opt/tau/browser-tokens}"
   ( umask 077; mkdir -p "$tokens_dir"; mkdir -p "$(dirname "$FICUS_BROWSER_SOCK")" )
   # sha256 of the container's own box token (trimmed of the trailing newline via
@@ -165,12 +165,12 @@ start_browser_service() {
   # NOT the command user — the two differ (root vs tau) and the header wins.
   ( umask 077; printf '%s' "$digest" >"$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token" )
   FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service" >/var/log/tau-browser.log 2>&1 &
-  echo "[tau-sandbox] tau-browser service started (pid $!, sock $FICUS_BROWSER_SOCK, dev-user $FICUS_BROWSER_DEV_ALLOW_USER)" >&2
+  echo "[ficus-sandbox] tau-browser service started (pid $!, sock $FICUS_BROWSER_SOCK, dev-user $FICUS_BROWSER_DEV_ALLOW_USER)" >&2
 }
-start_browser_service || echo '[tau-sandbox] tau-browser service failed to start (non-fatal, dev parity)' >&2
+start_browser_service || echo '[ficus-sandbox] tau-browser service failed to start (non-fatal, dev parity)' >&2
 
 # Either child reports its exact exit through the root-only FIFO. The EXIT trap
 # then performs bounded termination and join of both supervised wrappers.
 IFS= read -r FAILED_CHILD <"$CHILD_EXIT_FIFO"
-echo "[tau-sandbox] $FAILED_CHILD exited unexpectedly" >&2
+echo "[ficus-sandbox] $FAILED_CHILD exited unexpectedly" >&2
 exit 1

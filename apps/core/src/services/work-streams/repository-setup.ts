@@ -32,7 +32,7 @@ export async function prepareRepository(
   recordOwnership?: RecordOwnership,
   validateTarget?: (target: string, repository: string) => unknown
 ): Promise<Record<string, unknown>> {
-  const physical = (dir: string) => exec(['sh', '-c', 'cd -- "$1" && pwd -P', 'tau-worktree', dir])
+  const physical = (dir: string) => exec(['sh', '-c', 'cd -- "$1" && pwd -P', 'ficus-worktree', dir])
   const root = (await physical(workspace)).trim()
   const inside = (value: string) => value === root || value.startsWith(`${root}/`)
   const requestedRepo = path.resolve(root, input.repository!)
@@ -85,7 +85,7 @@ export async function prepareRepository(
   if (!inside(requestedTarget) || requestedTarget === root)
     throw new Error('Worktree must be inside the squad workspace')
   const pathExists = async (value: string) =>
-    (await exec(['sh', '-c', 'if [ -e "$1" ] || [ -L "$1" ]; then printf yes; fi', 'tau-worktree', value])) === 'yes'
+    (await exec(['sh', '-c', 'if [ -e "$1" ] || [ -L "$1" ]; then printf yes; fi', 'ficus-worktree', value])) === 'yes'
   // Canonicalize the closest existing ancestor before creating any parent dirs.
   let ancestor = path.dirname(requestedTarget)
   const missing: string[] = []

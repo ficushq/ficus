@@ -243,7 +243,7 @@ export interface BootArtifactReconcileDeps {
 
 /**
  * Boot-time fleet artifact reconcile (vm runtime only): push the current
- * machine artifacts (box-provision.sh + sandbox-server bundle + tau CLI) to
+ * machine artifacts (box-provision.sh + sandbox-server bundle + ficus CLI) to
  * every `ready` machine.
  *
  * Why at boot: ensureBox's healthy fast-path returns BEFORE
@@ -1011,7 +1011,7 @@ async function startup(): Promise<void> {
     }
   })()
 
-  // Deliver changed machine artifacts (box-provision.sh, server bundle, tau CLI)
+  // Deliver changed machine artifacts (box-provision.sh, server bundle, ficus CLI)
   // fleet-wide at boot — see reconcileMachineArtifactsAtBoot. Fire-and-forget: boot must not
   // be gated on SSH to every machine; per-machine failures are logged inside.
   // Re-bootstrap drifted hosts (e.g. a bootstrap.sh change like install_browser)

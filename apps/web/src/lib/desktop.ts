@@ -58,12 +58,12 @@ declare global {
     /** Set by Ficus Desktop D2+. Preferred over the D1 bridge when both are present. */
     ficusDesktopApp?: DesktopBridge
     /** Set by Ficus Desktop D1, the only Desktop build installed until D2 ships. */
-    tauDesktopApp?: DesktopBridge // K5: until Ficus Desktop (D2) ships
+    tauDesktopApp?: DesktopBridge // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
   }
 }
 export function desktopBridge(): DesktopBridge | undefined {
   if (typeof window === 'undefined') return undefined
-  const bridge = window.ficusDesktopApp ?? window.tauDesktopApp // K5: until Ficus Desktop (D2) ships
+  const bridge = window.ficusDesktopApp ?? window.tauDesktopApp // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
   return bridge?.version === 1 ? bridge : undefined
 }
 
