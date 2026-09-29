@@ -692,6 +692,10 @@ jobs:
       - name: Run web DOM order gate
         run: bun run --cwd apps/web test:dom-order:ci
 
+      # The farm (apps/farm) ships inside the web build, so its tests gate it here too.
+      - name: Run farm tests
+        run: bun run --cwd apps/farm test
+
   test:
     # The required check. It runs no tests itself: it fails unless every lane
     # succeeded, so splitting the suites did not quietly narrow what blocks a

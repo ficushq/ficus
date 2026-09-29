@@ -170,6 +170,16 @@ export function validateWebTestGate(
   ) {
     errors.push('the web test gate must use the canonical fail-closed command after frozen install')
   }
+  // The farm ships inside the web build, so its whole suite runs in this lane, fail closed.
+  const farm = steps.filter((step) => step.name === 'Run farm tests')
+  if (
+    farm.length !== 1 ||
+    farm[0]!.run !== 'bun run --cwd apps/farm test' ||
+    farm[0]!.if !== undefined ||
+    farm[0]!['continue-on-error'] !== undefined ||
+    steps.indexOf(farm[0]!) <= installIndex
+  )
+    errors.push('the test job must run the farm tests fail closed after frozen install')
   // Guard steps were consolidated into `test-gates` when the suites were split.
   const guards = (guardJob?.steps ?? []).filter((step) => step.name === 'Validate CI web test gate')
   if (
@@ -271,6 +281,21 @@ describe('CI web test gate', () => {
 
   test('uses the exact unconditional full-suite contract', () => {
     expect(validateWebTestGate(workflow)).toEqual([])
+  })
+
+  test('requires the farm tests, fail closed', () => {
+    const missing = structuredClone(workflow)
+    const steps = missing.jobs!['test-web']!.steps!
+    steps.splice(
+      steps.findIndex((step) => step.name === 'Run farm tests'),
+      1
+    )
+    expect(validateWebTestGate(missing)).toContain(
+      'the test job must run the farm tests fail closed after frozen install'
+    )
+    const swallowed = structuredClone(workflow)
+    swallowed.jobs!['test-web']!.steps!.find((step) => step.name === 'Run farm tests')!['continue-on-error'] = true
+    expect(validateWebTestGate(swallowed).length).toBeGreaterThan(0)
   })
 
   test.each([
