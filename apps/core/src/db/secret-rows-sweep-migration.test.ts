@@ -6,7 +6,7 @@ import { MONOREPO_ROOT } from '../lib/paths'
 import { createPostgresConnection, getConnectionString } from './connection'
 import { applyMigrations } from './migrator'
 
-// Migration history: this file pins 0194 (the Wave 3 secret-row sweep). The pre-rename key names
+// Migration history: this file pins 0195 (the Wave 3 secret-row sweep). The pre-rename key names
 // below are the rows that migration exists to remove, so they are its fixtures.
 const migrations = readMigrationFiles({ migrationsFolder: join(MONOREPO_ROOT, 'apps/core/drizzle') })
 const target = migrations.find((migration) => migration.sql.join('\n').includes('DELETE FROM "secrets" t'))
@@ -17,6 +17,7 @@ interface SecretRow {
   encrypted_value: string
   iv: string
   updated_by: string | null
+  updated_at: string
 }
 
 function urlFor(name: string): string {
@@ -46,31 +47,30 @@ async function withMigratedPredecessors(run: (connection: postgres.ReservedSql) 
 }
 
 async function insertRow(connection: postgres.ReservedSql, key: string, ciphertext: string): Promise<void> {
-  await connection.unsafe('INSERT INTO secrets (key, encrypted_value, iv, updated_by) VALUES ($1, $2, $3, $4)', [
-    key,
-    ciphertext,
-    `iv-${ciphertext}`,
-    'admin',
-  ])
+  // A fixed past timestamp, so a rename that touched updated_at would show.
+  await connection.unsafe(
+    'INSERT INTO secrets (key, encrypted_value, iv, updated_by, updated_at) VALUES ($1, $2, $3, $4, $5)',
+    [key, ciphertext, `iv-${ciphertext}`, 'admin', '2026-01-02T03:04:05Z']
+  )
 }
 
 async function selectRows(connection: postgres.ReservedSql): Promise<Map<string, SecretRow>> {
   const rows = await connection.unsafe<SecretRow[]>(
-    'SELECT key, encrypted_value, iv, updated_by FROM secrets ORDER BY key'
+    'SELECT key, encrypted_value, iv, updated_by, updated_at::text AS updated_at FROM secrets ORDER BY key'
   )
   return new Map(rows.map((row) => [row.key, { ...row }]))
 }
 
 describe('secret-row sweep migration (real runner, isolated database)', () => {
-  test('is the migration after the theme-id rewrite', () => {
+  test('is the migration after 0194 (the memory full-text search)', () => {
     expect(target).toBeDefined()
     expect(predecessors.length).toBeGreaterThan(0)
     expect(predecessors.at(-1)!.sql.join('\n')).not.toContain('DELETE FROM "secrets" t')
   })
 
-  test('deletes the four copied rows whose twin exists, renames a custom row, and leaves a differing pair', async () => {
+  test('deletes the four copied rows whose twin exists, renames a custom row, and leaves a custom pair', async () => {
     await withMigratedPredecessors(async (connection) => {
-      // The four rows 0190 copied, each beside its FICUS_ twin (one of them differing).
+      // The four rows 0191 copied, each beside its FICUS_ twin (one of them differing).
       for (const suffix of ['PASSWORD', 'PUSH_RELAY_TOKEN', 'PLATFORM_INSTANCE_TOKEN']) {
         await insertRow(connection, `TAU_${suffix}`, `old-${suffix}`)
         await insertRow(connection, `FICUS_${suffix}`, `old-${suffix}`)
