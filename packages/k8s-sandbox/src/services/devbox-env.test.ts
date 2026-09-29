@@ -14,6 +14,7 @@ import {
   cacheManagedToolchainEnv,
   ManagedToolchainTimeoutError,
   clearManagedToolchainEnv,
+  shellenvProcessEnv,
 } from './devbox-env'
 
 function writeDevbox(contents: string): string {
@@ -386,5 +387,87 @@ describe('prepareDevboxShellEnv readiness proof', () => {
       else process.env.FICUS_DEVBOX_DIR = previous
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('devbox shellenv never sees executor secrets or agent credentials', () => {
+  // shellenv re-exports whatever environment it runs in, and its cached output
+  // reaches every /bash command as `bash -c` argv. A fake `devbox` that prints
+  // its whole environment makes any leak visible.
+  const secrets = {
+    EXECUTOR_AUTH_TOKEN: 'leaked-executor-token',
+    SANDBOX_CALLBACK_SECRET: 'leaked-callback-secret',
+    GITHUB_TOKEN: 'leaked-github-token',
+    NIX_CONFIG: 'access-tokens = github.com=leaked-nix-token',
+  }
+  const saved: Record<string, string | undefined> = {}
+  const touched = [...Object.keys(secrets), 'PATH', 'FICUS_DEVBOX_DIR', 'FICUS_TOOLCHAIN_DIR', 'WORKSPACE_PATH']
+  let root: string
+
+  function setup(): void {
+    for (const key of touched) saved[key] = process.env[key]
+    root = mkdtempSync(join(tmpdir(), 'devbox-env-secrets-'))
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    writeFileSync(join(bin, 'devbox'), '#!/bin/sh\nexport -p\n', { mode: 0o755 })
+    for (const dir of ['devbox', 'toolchain']) {
+      mkdirSync(join(root, dir))
+      writeFileSync(join(root, dir, 'devbox.json'), '{"packages":["nodejs_24@latest"]}')
+    }
+    Object.assign(process.env, secrets)
+    process.env.PATH = `${bin}:${process.env.PATH}`
+    process.env.FICUS_DEVBOX_DIR = join(root, 'devbox')
+    process.env.FICUS_TOOLCHAIN_DIR = join(root, 'toolchain')
+  }
+
+  afterEach(() => {
+    if (!root) return
+    // Drop the cached environments this block captured.
+    process.env.FICUS_DEVBOX_DIR = join(root, 'missing')
+    cacheDevboxShellEnv()
+    clearManagedToolchainEnv()
+    for (const key of touched) {
+      if (saved[key] === undefined) delete process.env[key]
+      else process.env[key] = saved[key]
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  function expectNoSecrets(captured: string): void {
+    expect(captured).toContain(join(root, 'bin'))
+    for (const value of Object.values(secrets)) expect(captured).not.toContain(value.split('=').at(-1)!)
+  }
+
+  test('the comfort devbox shellenv', () => {
+    setup()
+    expect(cacheDevboxShellEnv()).toBe(true)
+    expectNoSecrets(getDevboxShellEnv())
+  })
+
+  test.skipIf(!Bun.which('timeout'))('the managed toolchain shellenv', async () => {
+    setup()
+    expect(await cacheManagedToolchainEnv(true)).toBe('refreshed')
+    expectNoSecrets(getDevboxShellEnv())
+  })
+
+  test('shellenvProcessEnv keeps only what resolving the toolchain needs', () => {
+    expect(
+      shellenvProcessEnv({
+        HOME: '/home/box_abc',
+        PATH: '/usr/bin',
+        NIX_SSL_CERT_FILE: '/etc/ssl/certs/ca-certificates.crt',
+        XDG_RUNTIME_DIR: '/run/user/30173',
+        DEVBOX_CONFIG_DIR: '/home/box_abc/.tau/devbox/devbox.d',
+        FICUS_API_URL: 'http://127.0.0.1:50080',
+        DOCKER_HOST: 'unix:///run/user/30173/docker.sock',
+        ...secrets,
+      })
+    ).toEqual({
+      HOME: '/home/box_abc',
+      PATH: '/usr/bin',
+      NIX_SSL_CERT_FILE: '/etc/ssl/certs/ca-certificates.crt',
+      XDG_RUNTIME_DIR: '/run/user/30173',
+      DEVBOX_CONFIG_DIR: '/home/box_abc/.tau/devbox/devbox.d',
+    })
   })
 })

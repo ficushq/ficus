@@ -17,7 +17,8 @@
  *     The sandbox uses mounted keys at /root/.ssh, never a host agent.
  *   - KUBERNETES_* and pod service env (<SVC>_PORT*, <SVC>_SERVICE_*)
  *   - Executor-internal vars (EXECUTOR_PORT, WORKSPACE_PATH)
- *   - DOCKER_HOST (mutated by docker.ts on purpose)
+ *   - DOCKER_HOST (mutated by docker.ts on purpose), except a vm box's own
+ *     rootless socket
  *   - TMPDIR / LD_LIBRARY_PATH / PLAYWRIGHT_* (re-set by runtime-env.sh)
  */
 
@@ -102,6 +103,12 @@ export function buildSandboxChildEnv(
     if (!isAllowed(key)) continue
     out[key] = value
   }
+
+  // A vm box's own rootless docker socket. Commands reached it only because the
+  // cached devbox shellenv used to re-export the executor's whole environment
+  // (see shellenvProcessEnv), so pass it on explicitly. k8s never sets
+  // FICUS_BOX_HOME, and docker.ts clears DOCKER_HOST there.
+  if (source.FICUS_BOX_HOME && source.DOCKER_HOST) out.DOCKER_HOST = source.DOCKER_HOST
 
   for (const [key, value] of Object.entries(DEFAULTS)) {
     if (out[key] === undefined) out[key] = value
