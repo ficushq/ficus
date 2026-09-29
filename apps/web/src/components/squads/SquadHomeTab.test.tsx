@@ -176,7 +176,9 @@ describe('SquadHomeTab', () => {
     expect(html).toContain('href="/squads/squad-1/agents?agent=chat-6"')
     expect(html).toContain('href="/squads/squad-1/agents"')
     expect(html).toContain('Browse chats')
-    const recentSection = html.slice(html.indexOf('Recent chats'), html.indexOf('Squad coordinator'))
+    // The coordinator sits between active work and recent chats, so it stays visible above a long chat list.
+    expect(html.indexOf('Squad coordinator')).toBeLessThan(html.indexOf('Recent chats'))
+    const recentSection = html.slice(html.indexOf('Recent chats'))
     expect(recentSection).not.toContain('<button')
     expect(recentSection).not.toContain('aria-expanded')
   })
