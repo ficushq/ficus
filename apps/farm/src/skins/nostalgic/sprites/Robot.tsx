@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { RobotFace } from '../../../farm/types'
 import type { RobotAntenna, RobotHat, RobotHead, RobotLook, RobotProp } from '../types'
 import { shellFill } from './Defs'
-import { FONT_DISPLAY, INK, LEAF_PATH } from './shared'
+import { CountBadge, FONT_DISPLAY, INK, LEAF_PATH } from './shared'
 
 /** The default overalls/apron fill: denim. */
 export const DENIM = 'url(#g-denim)'
@@ -454,10 +454,7 @@ function HelperDrone({ count, glow, panel, x }: { count: number; glow: string; p
         <circle cx={0.6} cy={-0.4} r={1.6} fill={glow} />
         {count > 1 && (
           <g transform="translate(7 -7)">
-            <circle r={5.4} fill="#b0582f" {...OL2} />
-            <text y={2.6} textAnchor="middle" fontFamily={FONT_DISPLAY} fontWeight={900} fontSize={7.5} fill="#fff">
-              {count > 9 ? '9+' : count}
-            </text>
+            <CountBadge count={count} small />
           </g>
         )}
       </g>

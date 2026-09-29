@@ -204,7 +204,7 @@ function RoomList({ currentId, onRoom }: { currentId: string | null; onRoom: (ro
       {picking ? (
         <div className="g-farmchat-picker">
           <input
-            className="g-field"
+            className="g-input"
             placeholder="Find someone"
             aria-label="Find someone to message"
             value={filter}
@@ -266,7 +266,7 @@ function RoomForm({ room, onDone }: { room?: FarmChatRoom; onDone: (room: FarmCh
   return (
     <form className="g-farmchat-form" onSubmit={(e) => void submit(e)}>
       <input
-        className="g-field"
+        className="g-input"
         aria-label="Room name"
         placeholder="Room name"
         maxLength={40}
@@ -275,7 +275,7 @@ function RoomForm({ room, onDone }: { room?: FarmChatRoom; onDone: (room: FarmCh
         onChange={(e) => setName(e.target.value)}
       />
       <input
-        className="g-field"
+        className="g-input"
         aria-label="What it's for (optional)"
         placeholder="What it's for (optional)"
         maxLength={200}
@@ -515,11 +515,11 @@ function Conversation({
         )}
         <textarea
           ref={textarea}
-          className="g-field"
+          className="g-textarea"
           aria-label={`Message ${roomTitle(room)}`}
           placeholder={room.kind === 'dm' ? `Message ${room.name}` : `Message # ${room.name}`}
           maxLength={FARM_CHAT_MESSAGE_MAX}
-          rows={2}
+          rows={1}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value)
@@ -573,7 +573,7 @@ function MessageItem({
   showMeta: boolean
   onError: (error: string | null) => void
 }) {
-  const { chat, me, emote, rooms, canChat } = useMultiplayer()
+  const { chat, me, emote, canChat } = useMultiplayer()
   // Deleting takes a second click (within a few seconds), like dismissing a question.
   const [confirmDelete, setConfirmDelete] = useState(false)
   useEffect(() => {
@@ -585,6 +585,32 @@ function MessageItem({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.body)
   const [picking, setPicking] = useState(false)
+  const palette = useRef<HTMLDivElement>(null)
+  const reactButton = useRef<HTMLButtonElement>(null)
+  // The reaction palette closes on anything outside it (a click, a tap, focus moving on) or Escape.
+  useEffect(() => {
+    if (!picking) return
+    const outside = (e: Event) => {
+      const target = e.target as Node | null
+      if (target && (palette.current?.contains(target) || reactButton.current?.contains(target))) return
+      setPicking(false)
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      // Just the palette, not the chat window around it.
+      e.stopPropagation()
+      setPicking(false)
+      reactButton.current?.focus()
+    }
+    document.addEventListener('pointerdown', outside, true)
+    document.addEventListener('focusin', outside)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('pointerdown', outside, true)
+      document.removeEventListener('focusin', outside)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [picking])
   const mine = message.senderUserId === me?.userId
   const nameOf = (userId: string | null) =>
     userId === me?.userId ? 'You' : userId ? (names.get(userId) ?? 'Someone') : 'Someone'
@@ -612,8 +638,8 @@ function MessageItem({
     setEditing(false)
   }
 
-  // Your own messages, or (managing rooms) anyone's outside DMs.
-  const canDelete = (mine && canChat) || (!!rooms?.canManageRooms && room.kind !== 'dm')
+  // Only your own messages.
+  const canDelete = mine && canChat
   const remove = async () => {
     if (!confirmDelete) return setConfirmDelete(true)
     setConfirmDelete(false)
@@ -648,7 +674,7 @@ function MessageItem({
       {editing ? (
         <div className="g-farmchat-edit">
           <textarea
-            className="g-field"
+            className="g-textarea"
             aria-label="Edit your message"
             maxLength={FARM_CHAT_MESSAGE_MAX}
             rows={2}
@@ -685,6 +711,7 @@ function MessageItem({
               <button
                 type="button"
                 className="g-farmchat-action"
+                ref={reactButton}
                 aria-label="React"
                 aria-expanded={picking}
                 onClick={() => setPicking((open) => !open)}
@@ -720,7 +747,7 @@ function MessageItem({
         </div>
       )}
       {picking && (
-        <div className="g-farmchat-palette" role="group" aria-label="Pick a reaction">
+        <div ref={palette} className="g-farmchat-palette" role="group" aria-label="Pick a reaction">
           {FARM_CHAT_REACTIONS.map((emoji) => (
             <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => void react(emoji)}>
               {emoji}

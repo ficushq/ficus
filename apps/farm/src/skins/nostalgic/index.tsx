@@ -13,6 +13,7 @@ import {
   Crates,
   Crop,
   Farmhouse,
+  FARMHOUSE_DOOR,
   Flowers,
   Grass,
   HayBale,
@@ -68,6 +69,7 @@ export const nostalgicSkin: FarmSkin = {
     <ConsultingStand count={count} host={host ? robotLookFor(host.agent, host.role) : undefined} />
   ),
   Farmhouse,
+  farmhouseDoor: FARMHOUSE_DOOR,
   SeedShed,
   Mailbox,
   Crates,

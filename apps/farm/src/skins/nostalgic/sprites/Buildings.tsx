@@ -1,5 +1,5 @@
 import { iso, pt } from '../../../farm/iso'
-import { FONT_DISPLAY, INK, Shadow } from './shared'
+import { CountBadge, FONT_DISPLAY, Shadow } from './shared'
 
 /** Seed shed footprint in tiles (w along i, d along j). Origin is its centre. */
 export const SEED_SHED_FOOTPRINT = { w: 1.5, d: 1.3 } as const
@@ -99,21 +99,7 @@ export function Mailbox({ count }: { count: number }) {
       </g>
       {has && (
         <g transform="translate(-20 -74)">
-          <circle r={13} fill="url(#g-badge-mail)" className="g-ol" />
-          <ellipse cx={-3} cy={-6} rx={6} ry={2.6} fill="#fff" opacity={0.5} />
-          <text
-            y={6}
-            textAnchor="middle"
-            fontFamily={FONT_DISPLAY}
-            fontWeight={900}
-            fontSize={count > 9 ? 13 : 16}
-            fill="#fff"
-            stroke={INK}
-            strokeWidth={2.4}
-            paintOrder="stroke"
-          >
-            {count > 99 ? '99+' : count}
-          </text>
+          <CountBadge count={count} />
         </g>
       )}
     </g>

@@ -2,7 +2,7 @@ import { useId } from 'react'
 import { iso } from '../../../farm/iso'
 import type { RobotLook } from '../types'
 import { Robot } from './Robot'
-import { FONT_DISPLAY, INK, Shadow } from './shared'
+import { CountBadge, INK, Shadow } from './shared'
 
 /** The hut's footprint in tiles (i × j), centred on its anchor. */
 export const CHARGING_HUT_FOOTPRINT = { w: 1.1, d: 0.9 } as const
@@ -118,17 +118,7 @@ export function ChargingHut({ count, peek }: { count: number; peek?: RobotLook }
       {/* how many are resting, on the roof */}
       {on && (
         <g transform={`translate(${rx} ${ry - WALL - 34})`}>
-          <circle r={11} fill="#5d9a58" className="g-ol" />
-          <text
-            y={4.5}
-            textAnchor="middle"
-            fontFamily={FONT_DISPLAY}
-            fontWeight={900}
-            fontSize={count > 9 ? 10 : 13}
-            fill="#fffaf1"
-          >
-            {count}
-          </text>
+          <CountBadge count={count} />
         </g>
       )}
     </g>

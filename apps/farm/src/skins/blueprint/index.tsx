@@ -46,6 +46,8 @@ export const blueprintSkin: FarmSkin = {
   Rack: BlueprintRack,
   Stand: BlueprintStand,
   Farmhouse: BlueprintFarmhouse,
+  // Its door (i -0.18..0.18 on the wall at j 0.75) onto a porch 4px up, out to j 1.25.
+  farmhouseDoor: { i: 0, j: 0.75, floor: 4, steps: [1.25, 1.3] },
   SeedShed: BlueprintSeedShed,
   Mailbox: BlueprintMailbox,
   Crates: BlueprintCrates,

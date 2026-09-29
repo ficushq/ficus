@@ -137,6 +137,16 @@
   margin: 4px 0 8px;
 }
 
+/* The room form's buttons stack full-width, like the column's other buttons (a row would wrap unevenly). */
+.g-farmchat-form .g-card-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.g-farmchat-form .g-card-actions .g-button {
+  width: 100%;
+}
+
 .g-farmchat-picker ul {
   max-height: 220px;
   overflow: auto;
@@ -239,11 +249,33 @@
 
 .g-farmchat-composer textarea {
   flex: 1;
+  min-width: 0;
+  /* One line to start, growing with what you write (up to a few lines, then it scrolls). */
+  min-height: 48px;
+  max-height: 30vh;
+  field-sizing: content;
   resize: none;
-  font: 400 14px/1.4 var(--g-font-body);
+}
+
+.g-farmchat-composer .g-button {
+  min-height: 48px;
 }
 
 /* ---- People on the map ---- */
+
+/* Stepping through the farmhouse door (People.tsx): faded while in the doorway. */
+.g-person {
+  transition: opacity 0.3s ease;
+}
+
+.g-person-in-door {
+  opacity: 0;
+}
+
+/* Walking home after leaving the farm: just passing, not someone to click. */
+.g-person-leaving {
+  pointer-events: none;
+}
 
 .g-person-tag rect {
   fill: var(--g-card);
@@ -413,7 +445,9 @@
 }
 
 .g-farmchat-edited {
-  color: var(--g-text-soft);
+  /* The bubble's own text colour, quieter: readable on others' bubbles and on your own (accent) ones. */
+  color: inherit;
+  opacity: 0.72;
   font-size: 12px;
 }
 
@@ -482,8 +516,9 @@
 }
 
 .g-farmchat-edit textarea {
+  max-height: 30vh;
+  field-sizing: content;
   resize: none;
-  font: 400 14px/1.4 var(--g-font-body);
 }
 
 .g-farmchat-edit-actions {

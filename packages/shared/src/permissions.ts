@@ -235,7 +235,7 @@ export const Permissions = {
   // when their chat and squad roles are limited. farm:read sees farm chat and
   // who's on the farm; farm:chat posts, reacts, DMs, types and appears there;
   // farm:manage-rooms creates, renames and deletes rooms (never the general
-  // room) and deletes anyone's message outside DMs. Operators hold farm:*,
+  // room). Only a message's sender edits or deletes it. Operators hold farm:*,
   // Viewers farm:read.
   FARM_READ: 'farm:read',
   FARM_CHAT: 'farm:chat',

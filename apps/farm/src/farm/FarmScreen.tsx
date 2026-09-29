@@ -161,10 +161,31 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         look: multiplayer.myLook,
       })
     const spots = huddle(everyone.map((p) => ({ key: p.userId, spot: spotFor(layout, p.focus, agentsById) })))
-    return everyone.map(({ focus: _focus, ...p }) => ({ ...p, spot: spots.get(p.userId)! }))
+    const here = everyone.map(({ focus: _focus, ...p }) => ({
+      ...p,
+      spot: spots.get(p.userId)!,
+      // Out of the farmhouse: someone who just came onto the farm, or you, arriving.
+      coming: p.isMe || multiplayer.arrivals.has(p.userId),
+      leaving: false,
+    }))
+    // Whoever just left walks back into the farmhouse from where they were.
+    const going = multiplayer.departures
+      .filter((p) => !here.some((h) => h.userId === p.userId))
+      .map((p) => ({
+        userId: p.userId,
+        name: p.name,
+        isMe: false,
+        look: lookFor(p.userId, p.look),
+        spot: spotFor(layout, p.focus, agentsById),
+        coming: false,
+        leaving: true,
+      }))
+    return [...here, ...going]
   }, [
     multiplayer.enabled,
     multiplayer.people,
+    multiplayer.arrivals,
+    multiplayer.departures,
     multiplayer.me,
     multiplayer.focus,
     multiplayer.myLook,
@@ -328,6 +349,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
               />
             ))}
             <People
+              layout={layout}
               people={placed}
               bubbles={multiplayer.bubbles}
               emotes={multiplayer.emotes}

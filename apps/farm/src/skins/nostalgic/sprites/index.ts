@@ -8,5 +8,5 @@ export { SeedShed, SEED_SHED_FOOTPRINT, Mailbox, Crates, Compost } from './Build
 export { Tree, Bush, Flowers, HayBale, Butterfly } from './Decor'
 export { Grass } from './Terrain'
 export { ChargingHut, CHARGING_HUT_FOOTPRINT } from './ChargingHut'
-export { Farmhouse, FARMHOUSE_FOOTPRINT, FARMHOUSE_PORCH_DEPTH, FARMHOUSE_DOOR_I } from './Farmhouse'
+export { Farmhouse, FARMHOUSE_DOOR, FARMHOUSE_FOOTPRINT, FARMHOUSE_PORCH_DEPTH, FARMHOUSE_DOOR_I } from './Farmhouse'
 export { ConsultingStand } from './ConsultingStand'

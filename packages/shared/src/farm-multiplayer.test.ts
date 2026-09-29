@@ -74,6 +74,17 @@ describe('presence focus', () => {
     expect(parsePresenceFocus({ kind: 'squad', squadId: ID }).ok).toBe(true)
   })
 
+  test('a squad focus may be at its consulting stand; any other place is dropped, not refused', () => {
+    expect(parsePresenceFocus({ kind: 'squad', squadId: ID, at: 'stand' })).toEqual({
+      ok: true,
+      focus: { kind: 'squad', squadId: ID, at: 'stand' },
+    })
+    expect(parsePresenceFocus({ kind: 'squad', squadId: ID, at: 'moon' })).toEqual({
+      ok: true,
+      focus: { kind: 'squad', squadId: ID },
+    })
+  })
+
   test('rejects anything else', () => {
     for (const bad of [undefined, 'agent', { kind: 'agent' }, { kind: 'agent', agentId: 'nope' }, { kind: 'house' }])
       expect(parsePresenceFocus(bad).ok).toBe(false)

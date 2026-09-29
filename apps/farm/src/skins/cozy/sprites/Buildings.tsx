@@ -5,14 +5,16 @@ import { CozyRobot } from './Robot'
 
 /* ---- The speech bubbles that say something needs you ---- */
 
-/** A round white speech bubble with a count, for buildings. Anchored at its tail. */
-function CountBubble({ count, tone = '#ff8f7a' }: { count: number; tone?: string }) {
+/** The counter on anything that counts: one round white speech bubble everywhere. Anchored at its tail. */
+function CountBubble({ count }: { count: number }) {
+  const text = count > 99 ? '99+' : String(count)
+  const width = Math.max(26, 10 + text.length * 8)
   return (
     <g className="cz-bob">
       <path d="M-4 -8 L0 0 L4 -8 Z" fill="#fffaf0" />
-      <Pill x={-13} y={-26} width={26} height={19} r={9.5} fill="#fffaf0" />
-      <text y={-12} textAnchor="middle" fontFamily={FONT} fontWeight={700} fontSize={13} fill={tone}>
-        {count > 99 ? '99+' : count}
+      <Pill x={-width / 2} y={-26} width={width} height={19} r={9.5} fill="#fffaf0" />
+      <text y={-12} textAnchor="middle" fontFamily={FONT} fontWeight={700} fontSize={13} fill="#ff8f7a">
+        {text}
       </text>
     </g>
   )
@@ -252,18 +254,8 @@ export function CozyRack({ count }: { count: number }) {
         )
       })}
       {count > 0 && (
-        <g transform="translate(22 -80)">
-          <Ball r={11} fill="#fff6e8" />
-          <text
-            y={4.5}
-            textAnchor="middle"
-            fontFamily={FONT}
-            fontWeight={700}
-            fontSize={count > 9 ? 10 : 13}
-            fill="#6b5a45"
-          >
-            {count > 99 ? '99+' : count}
-          </text>
+        <g transform="translate(22 -64)">
+          <CountBubble count={count} />
         </g>
       )}
     </g>
@@ -339,7 +331,7 @@ export function CozyHut({ count, peek }: { count: number; peek?: RobotLook }) {
       <circle cx={px} cy={py - 10} r={1.4} fill="#7be0a0" className="cz-pulse" />
       {count > 0 && (
         <g transform={`translate(${at(0, 0, hi + 10)})`}>
-          <CountBubble count={count} tone="#3cb8a0" />
+          <CountBubble count={count} />
         </g>
       )}
     </g>

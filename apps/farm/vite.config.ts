@@ -31,6 +31,8 @@ export default defineConfig(({ mode, command }) => {
       allowedHosts: env.VITE_ALLOWED_HOSTS?.split(',').filter(Boolean) ?? [],
       proxy: backend ? devProxy({ ...env, ...process.env }, backend) : undefined,
     },
+    // The brand's web icons (favicons, home-screen icon), the same set the web UI ships, from their source.
+    publicDir: path.resolve(process.cwd(), '../../brand/generated/web'),
     build: { outDir: 'dist', emptyOutDir: true },
   }
 })

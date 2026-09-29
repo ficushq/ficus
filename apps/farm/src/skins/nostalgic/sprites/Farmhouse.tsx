@@ -1,3 +1,4 @@
+import type { FarmhouseDoor } from '../../types'
 import { iso } from '../../../farm/iso'
 import { INK, Shadow } from './shared'
 
@@ -14,6 +15,14 @@ const WALL = 56
 const RIDGE = 46
 const PORCH = FARMHOUSE_PORCH_DEPTH
 const DECK = 7
+
+/** Its front door and porch for people coming and going: up on the deck, then two steps down (0.14 tiles each). */
+export const FARMHOUSE_DOOR: FarmhouseDoor = {
+  i: FARMHOUSE_DOOR_I,
+  j: D,
+  floor: DECK,
+  steps: [D + PORCH, D + PORCH + 0.28],
+}
 
 /** A point on the house, in tiles from its centre, `up` pixels above the ground. */
 function p(i: number, j: number, up = 0): string {

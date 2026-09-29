@@ -34,8 +34,8 @@ import { wsManager } from '../services/ws/manager'
  * The farm's chat (packages/shared farm-chat.ts). People only (never agents or
  * tokens), by the instance-wide farm: permissions: reading rooms, messages and
  * the people list needs farm:read; posting, editing, reacting and DMs need
- * farm:chat; creating, renaming and deleting public rooms, and deleting
- * anyone's message outside DMs, need farm:manage-rooms (Operators hold
+ * farm:chat (and only a message's sender can edit or delete it); creating,
+ * renaming and deleting public rooms need farm:manage-rooms (Operators hold
  * farm:*). People's emails are only shown to callers with users:read. Live
  * updates go out on the `farmChat` WebSocket topic.
  */
@@ -176,20 +176,14 @@ farmChatRouter.patch('/rooms/:id/messages/:messageId', async (c) => {
   return c.json(message)
 })
 
-/** Deletes a message for everyone: your own, or (managing rooms) anyone's outside DMs. */
+/** Deletes one of your own messages for everyone. */
 farmChatRouter.delete('/rooms/:id/messages/:messageId', async (c) => {
-  const me = person(c)
-  if (!me) return c.json({ error: 'Unauthorized' }, 401)
-  c.set('authzChecked', true)
-  const [canSend, canModerate] = await Promise.all([
-    hasPermission(me.identity, 'farm:chat'),
-    hasPermission(me.identity, 'farm:manage-rooms'),
-  ])
-  if (!canSend && !canModerate) return c.json({ error: 'Forbidden' }, 403)
+  const me = await chatter(c)
+  if (me instanceof Response) return me
   if (!uuidParam.safeParse(c.req.param('messageId')).success) return c.json({ error: 'Message not found' }, 404)
   const room = await roomFor(c.req.param('id'), me.userId)
   const messageId = c.req.param('messageId')
-  await deleteMessage(room, messageId, me.userId, canModerate)
+  await deleteMessage(room.id, messageId, me.userId)
   wsManager.sendFarmChat('farmChat.messageDeleted', { roomId: room.id, messageId }, audienceOf(room) ?? undefined)
   return c.body(null, 204)
 })

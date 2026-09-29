@@ -233,12 +233,23 @@ export function demoMultiplayer(): DemoMultiplayer {
         look: who === ROSA ? ROSA_LOOK : null,
       })
       sink({ event: 'presence.snapshot', data: { people: [person(ROSA, ROSA_ROUTE[0]!), person(SAM, SAM_ROUTE[0]!)] } })
+      let samHome = false
       const moves = window.setInterval(() => {
         rosa = (rosa + 1) % ROSA_ROUTE.length
         sink({ event: 'presence.updated', data: { person: person(ROSA, ROSA_ROUTE[rosa]!) } })
         if (rosa % 2 === 0) {
-          sam = (sam + 1) % SAM_ROUTE.length
-          sink({ event: 'presence.updated', data: { person: person(SAM, SAM_ROUTE[sam]!) } })
+          // Every so often Sam heads home (into the farmhouse) and comes back out a little later.
+          if (samHome) {
+            samHome = false
+            sink({ event: 'presence.updated', data: { person: person(SAM, SAM_ROUTE[sam]!) } })
+          } else if (sam === SAM_ROUTE.length - 1) {
+            samHome = true
+            sam = 0
+            sink({ event: 'presence.left', data: { userId: SAM.id } })
+          } else {
+            sam += 1
+            sink({ event: 'presence.updated', data: { person: person(SAM, SAM_ROUTE[sam]!) } })
+          }
         }
       }, 7000)
       const talk = window.setInterval(() => {
