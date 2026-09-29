@@ -1,3 +1,4 @@
+import { loadLaunchPathLines, runWithLaunchPath } from '../sandbox/launch-path'
 import { isHostRuntime, isVmRuntime } from '../sandbox/runtime'
 import {
   containerWorkspaceLayout,
@@ -69,9 +70,10 @@ export const LAUNCHER_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
 mkdir -p "$FICUS_MONITOR_DIR/logs"
 ${TIMESTAMP} > "$FICUS_MONITOR_DIR/startedAt" || true
+${loadLaunchPathLines('FICUS_MONITOR_DIR')}
 cd "$FICUS_MONITOR_CWD"
 set +e
-bash -lc "$FICUS_MONITOR_COMMAND" 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"
+${runWithLaunchPath('FICUS_MONITOR_COMMAND')} 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"
 status=\${PIPESTATUS[0]}
 set -e
 echo "$status" > "$FICUS_MONITOR_DIR/exitCode"

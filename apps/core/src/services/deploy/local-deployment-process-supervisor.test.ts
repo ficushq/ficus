@@ -9,11 +9,8 @@ import {
   buildStreamAttachedLogCommand,
   LocalDeploymentLogPathOutsideWorkspaceError,
 } from './local-deployment-log-path'
-import {
-  LAUNCH_PATH_FILE,
-  LAUNCHER_SCRIPT,
-  LocalDeploymentProcessSupervisor,
-} from './local-deployment-process-supervisor'
+import { LAUNCH_PATH_FILE } from '../sandbox/launch-path'
+import { LAUNCHER_SCRIPT, LocalDeploymentProcessSupervisor } from './local-deployment-process-supervisor'
 
 class FakeSandboxManager implements ISandboxManager {
   execCalls: Array<{ sandboxId: string; args: string[] }> = []
@@ -217,7 +214,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
     const command = manager.execCalls[0].args[2]
     const record = command.indexOf(
-      `printf '%s\\n' "$PATH" > /workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc/${LAUNCH_PATH_FILE}`
+      `printf '%s\\n' "$PATH" > '/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc/${LAUNCH_PATH_FILE}'`
     )
     expect(record).toBeGreaterThan(-1)
     expect(record).toBeLessThan(command.indexOf('tmux new-session'))
@@ -420,7 +417,7 @@ describe('local deployment launcher', () => {
   })
 
   it('keeps the recorded PATH out of the app environment', () => {
-    const run = runLauncher('echo "leak=${FICUS_LOCAL_DEPLOYMENT_PATH-unset}"', '<toolchain>\n')
+    const run = runLauncher('echo "leak=${FICUS_LAUNCH_PATH-unset}"', '<toolchain>\n')
     expect(run.log).toContain('leak=unset')
   })
 

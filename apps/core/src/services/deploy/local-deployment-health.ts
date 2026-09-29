@@ -141,9 +141,32 @@ export interface RestartLocalDeploymentOptions {
   skipIfMigrating?: boolean
 }
 
-export async function restartManagedLocalDeployment(
+/**
+ * Restarts in flight in this process, by deployment id. Each start kills the
+ * deployment's tmux session and creates it again under the same name, so two
+ * overlapping starts collide: the second `tmux new-session` fails with
+ * "duplicate session". A worker restart made that routine — every execution
+ * resuming on a squad box ran ensureSquadSandbox's restart at once — so a
+ * concurrent caller joins the restart already under way instead.
+ */
+const restartsInFlight = new Map<string, Promise<LocalDeployment>>()
+
+export function restartManagedLocalDeployment(
   localDeploymentId: string,
   opts: RestartLocalDeploymentOptions = {}
+): Promise<LocalDeployment> {
+  const inFlight = restartsInFlight.get(localDeploymentId)
+  if (inFlight) return inFlight
+  const restart = restartManagedLocalDeploymentOnce(localDeploymentId, opts).finally(() => {
+    restartsInFlight.delete(localDeploymentId)
+  })
+  restartsInFlight.set(localDeploymentId, restart)
+  return restart
+}
+
+async function restartManagedLocalDeploymentOnce(
+  localDeploymentId: string,
+  opts: RestartLocalDeploymentOptions
 ): Promise<LocalDeployment> {
   const localDeployment = await requireLocalDeployment(localDeploymentId)
   if (localDeployment.mode !== 'managed') {
@@ -191,14 +214,31 @@ export async function ensureSandboxesForLiveManagedLocalDeployments(): Promise<v
   }
 }
 
+/**
+ * Bring a box's managed deployments back up after the box (re)appears. A
+ * deployment whose tmux session is still alive is left alone: Core restarting
+ * does not stop the box, so killing a healthy app here only cost it a restart
+ * (and raced any other start). A live-but-unhealthy app is the health poller's
+ * to restart. One deployment failing does not stop the rest; the first error
+ * is rethrown once every deployment has been tried.
+ */
 export async function restartManagedLocalDeploymentsForSandbox(
   sandboxId: string,
   opts: RestartLocalDeploymentOptions = {}
 ): Promise<void> {
+  const { supervisor } = getDependencies()
   const localDeployments = await listRestartableManagedLocalDeploymentsForSandbox(sandboxId)
+  let firstError: unknown
   for (const localDeployment of localDeployments) {
-    await restartManagedLocalDeployment(localDeployment.id, opts)
+    try {
+      if (localDeployment.processId && (await supervisor.hasSession(sandboxId, localDeployment.processId))) continue
+      await restartManagedLocalDeployment(localDeployment.id, opts)
+    } catch (err) {
+      log.warn(`Failed to restart managed localDeployment ${localDeployment.id} on ${sandboxId}:`, err)
+      firstError ??= err
+    }
   }
+  if (firstError !== undefined) throw firstError
 }
 
 /**

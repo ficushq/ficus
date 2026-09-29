@@ -7,6 +7,7 @@ import { Monitor } from '../../entities/Monitor'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { getSandboxManager, type ISandboxManager } from '../sandbox'
+import { recordLaunchPathCommand } from '../sandbox/launch-path'
 import { LAUNCHER_SCRIPT, monitorDir, monitorWorkRoot, sessionNameForMonitor, shellQuote } from './launcher'
 
 const log = createLogger('monitor-supervisor')
@@ -129,6 +130,8 @@ export class MonitorSupervisor {
       `mkdir -p ${shellQuote(`${dir}/logs`)}`,
       `cat > ${shellQuote(script)} <<'EOF'\n${LAUNCHER_SCRIPT}EOF`,
       `chmod +x ${shellQuote(script)}`,
+      // The tmux session gets the tmux server's PATH, not ours (see launch-path.ts).
+      recordLaunchPathCommand(dir),
       `tmux kill-session -t ${shellQuote(processId)} 2>/dev/null || true`,
       `tmux new-session -d -s ${shellQuote(processId)} ${shellQuote(launchCommand)}`,
     ].join('\n')

@@ -27,6 +27,8 @@ class FakeSupervisor {
     return this.sessions.get(processId) ?? false
   }
 
+  failStartsFor = new Set<string>()
+
   async startManagedLocalDeployment(args: {
     localDeploymentId: string
     sandboxId: string
@@ -35,6 +37,7 @@ class FakeSupervisor {
     port: number
   }): Promise<{ processId: string }> {
     this.starts.push(args)
+    if (this.failStartsFor.has(args.localDeploymentId)) throw new Error('duplicate session')
     return { processId: `tau-local-deployment-${args.localDeploymentId.slice(0, 8)}` }
   }
 }
@@ -132,6 +135,52 @@ describe('localDeployment health', () => {
       sandboxId: squad.sandboxId,
       command: 'bun run dev',
     })
+  })
+
+  it('joins a restart already in flight instead of starting the deployment twice', async () => {
+    const squad = await createTestSquad('single-flight')
+    const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+
+    const [first, second] = await Promise.all([
+      restartManagedLocalDeployment(localDeployment.id),
+      restartManagedLocalDeployment(localDeployment.id),
+    ])
+
+    expect(supervisor.starts).toHaveLength(1)
+    expect(second).toBe(first)
+    expect(first.restartCount).toBe(1)
+
+    await restartManagedLocalDeployment(localDeployment.id)
+    expect(supervisor.starts).toHaveLength(2)
+  })
+
+  it('leaves a deployment whose tmux session is still alive when its box reappears', async () => {
+    const squad = await createTestSquad('alive-on-reensure')
+    const alive = await createLocalDeployment(squad, { name: 'alive', port: 5173, command: 'bun run dev' })
+    const gone = await createLocalDeployment(squad, { name: 'gone', port: 5174, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(alive.id, { status: 'running', processId: 'tau-local-deployment-alive' })
+    await updateLocalDeploymentRecord(gone.id, { status: 'running', processId: 'tau-local-deployment-gone' })
+    supervisor.sessions.set('tau-local-deployment-alive', true)
+
+    await restartManagedLocalDeploymentsForSandbox(squad.sandboxId)
+
+    expect(supervisor.starts.map((start) => start.localDeploymentId)).toEqual([gone.id])
+    const untouched = (await getLocalDeployment(alive.id)) as LocalDeployment
+    expect(untouched.status).toBe('running')
+    expect(untouched.restartCount).toBe(0)
+  })
+
+  it('restarts the remaining deployments when one fails, then reports the failure', async () => {
+    const squad = await createTestSquad('one-fails')
+    const failing = await createLocalDeployment(squad, { name: 'failing', port: 5173, command: 'bun run dev' })
+    const healthy = await createLocalDeployment(squad, { name: 'healthy', port: 5174, command: 'bun run dev' })
+    supervisor.failStartsFor.add(failing.id)
+
+    await expect(restartManagedLocalDeploymentsForSandbox(squad.sandboxId)).rejects.toThrow('duplicate session')
+
+    expect(supervisor.starts.map((start) => start.localDeploymentId).sort()).toEqual([failing.id, healthy.id].sort())
+    const restarted = (await getLocalDeployment(healthy.id)) as LocalDeployment
+    expect(restarted.status).toBe('restarting')
   })
 
   it('does not restart attached localDeployments', async () => {
