@@ -5743,6 +5743,9 @@ hm_host() { # NAME
   rm -rf "${HM_H}"
   mkdir -p "${HM_H}/dest/releases/old" "${HM_H}/dest/releases/new" "${HM_H}/etc" "${HM_H}/units/tau-api.service.d" "${HM_H}/bin" # phase5-unit-name
   : >"${HM_H}/dest/releases/new/NEEDS_TESTMARK"
+  : >"${HM_H}/dest/releases/new/NEEDS_TESTMOVE"
+  mkdir -p "${HM_H}/data"
+  : >"${HM_H}/data/x"
   ln -sfn "${HM_H}/dest/releases/old" "${HM_H}/dest/current"
   SRC_DEST="${HM_H}/dest"
   FICUS_MANAGED_ENV_PATH="${HM_H}/etc/managed.env"
@@ -5760,10 +5763,12 @@ hm_host() { # NAME
   chmod 0600 "${SRC_DEST}/.env" "${BACKUP_ENV_TARGET}"
   HOST_MIGRATE_PENDING=0 HOST_MIGRATE_BACKUP_SET='' HOST_MIGRATE_RELEASE='' HOST_MIGRATE_NAMES=''
 }
-# Compare every MANIFEST path with its backed-up copy.
+# Compare every MANIFEST path with its backed-up copy (the #requires-reverse
+# line is no entry).
 hm_matches_manifest() { # SETDIR
   local idx _sha path ok=yes
   while IFS=$'\t' read -r idx _sha path; do
+    [[ ${idx} == '#'* ]] && continue
     cmp -s "$1/${idx}" "${path}" || ok="no (${path})"
   done <"$1/MANIFEST"
   printf '%s' "${ok}"
@@ -5868,6 +5873,168 @@ expect_eq 'host_migrate: a journaled run is reconciled before a new one starts' 
   "$(grep -c '^TESTMARK=1$' "${SRC_DEST}/.env"):$(hm_pending)" '1:pending'
 host_migrate_commit 2>/dev/null
 expect_eq 'host_migrate_commit: forgets the journal' "$(hm_pending):${HOST_MIGRATE_PENDING}" 'none:0'
+
+# --- the optional _settle / _reverse hooks ------------------------------------
+# testmove moves a scratch dir (what a byte restore cannot put back), journals
+# its own commit point (TM_DONE) inside the set, and settles by it: forward
+# once TM_DONE exists, restore (reverse first) before it — whatever release is
+# active.
+host_migration_testmove_needed() { [[ -f $1/NEEDS_TESTMOVE && -d ${HM_H}/data ]]; }
+host_migration_testmove_apply() {
+  local s=${HOST_MIGRATE_BACKUP_SET:?}
+  if [[ -e $s/TM_DONE ]]; then printf 'resumed\n' >>"$s/TM_LOG"; return 0; fi
+  mv "${HM_H}/data" "${HM_H}/data.moved" && printf 'TESTMOVE=1\n' >>"${SRC_DEST}/.env" || return 1
+  [[ -z ${TM_FAIL:-} ]] || return 1
+  : >"$s/TM_DONE"
+}
+host_migration_testmove_settle() { if [[ -e $1/TM_DONE ]]; then echo forward; else echo restore; fi; }
+host_migration_testmove_reverse() {
+  [[ -z ${TM_REVERSE_FAIL:-} ]] || return 1
+  if [[ -d ${HM_H}/data.moved && ! -e ${HM_H}/data ]]; then mv "${HM_H}/data.moved" "${HM_H}/data"; fi
+}
+hm_moved() { # where the scratch dir is, and whether .env carries the move
+  printf '%s:%s' "$([[ -d ${HM_H}/data ]] && echo data || echo data.moved)" "$(grep -c '^TESTMOVE=1$' "${SRC_DEST}/.env" || true)"
+}
+HOST_MIGRATIONS=(testmove)
+
+# (a) a failure before the commit point: reconcile reverses, then restores.
+hm_host tm-fail
+hm_env_before=$(cat "${SRC_DEST}/.env")
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+hm_set=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+expect_eq 'requires-reverse: the MANIFEST of a set whose migration defines _reverse starts with the marker' \
+  "$(head -n 1 "${hm_set}/MANIFEST")" $'#requires-reverse\ttestmove'
+expect_eq 'requires-reverse: (fixture) the failed run moved the dir and is journaled' "$(hm_moved):$(hm_pending)" 'data.moved:1:pending'
+(host_migrate_reconcile) 2>/dev/null || true
+expect_eq 'reconcile (settle=restore): the move is reversed, .env byte-identical, PENDING gone' \
+  "$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_pending)" 'data:0:same:none'
+
+# (b) past the commit point, the rollback shape (the release is not serving):
+# settled FORWARD, and the finish-forward resumes inside the set it journaled.
+hm_host tm-forward
+host_migrate "${SRC_DEST}/releases/new" 2>/dev/null
+hm_set=${HOST_MIGRATE_BACKUP_SET}
+host_migrate_restore_pending 2>/dev/null || true
+expect_eq 'settle (settle=forward, release not serving): the move is kept and committed' \
+  "$(hm_moved):$(hm_pending):${HOST_MIGRATE_PENDING}" 'data.moved:1:none:0'
+expect_eq 'settle (settle=forward): the finish-forward resumed the migration from its set' \
+  "$(cat "${hm_set}/TM_LOG" 2>/dev/null)" 'resumed'
+# ...and the same through reconcile, from a fresh shell's point of view (the
+# finish-forward must hand the set to the migration: HOST_MIGRATE_BACKUP_SET).
+hm_host tm-forward-reconcile
+(host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1
+hm_set=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+HOST_MIGRATE_BACKUP_SET=''
+(host_migrate_reconcile) 2>/dev/null || true
+expect_eq 'reconcile (settle=forward): finished forward in its own set, committed' \
+  "$(hm_moved):$(hm_pending):$(cat "${hm_set}/TM_LOG" 2>/dev/null)" 'data.moved:1:none:resumed'
+
+# (c) the hook decides, not the active release: a failure before the commit
+# point while the release IS serving is still reversed and restored.
+hm_host tm-active
+hm_env_before=$(cat "${SRC_DEST}/.env")
+ln -sfn "${SRC_DEST}/releases/new" "${SRC_DEST}/current"
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+(host_migrate_reconcile) 2>/dev/null || true
+expect_eq 'reconcile (settle=restore, release serving): reversed and restored anyway' \
+  "$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_pending)" 'data:0:same:none'
+# ...and the same through this run's own settle (the traps' path).
+hm_host tm-active-settle
+hm_env_before=$(cat "${SRC_DEST}/.env")
+ln -sfn "${SRC_DEST}/releases/new" "${SRC_DEST}/current"
+(
+  TM_FAIL=1
+  host_migrate "${SRC_DEST}/releases/new"
+) >/dev/null 2>&1 || true
+HOST_MIGRATE_PENDING=1 HOST_MIGRATE_BACKUP_SET=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+HOST_MIGRATE_NAMES=testmove HOST_MIGRATE_RELEASE="${SRC_DEST}/releases/new"
+host_migrate_settle_pending 2>/dev/null || true
+expect_eq 'settle (settle=restore, release serving): reversed and restored by this run' \
+  "$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_pending)" 'data:0:same:none'
+
+# (d) a reverse that fails keeps everything: the journal, the migrated files.
+hm_host tm-reverse-fails
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+hm_out=$( (TM_REVERSE_FAIL=1 host_migrate_reconcile) 2>&1) && hm_rc=0 || hm_rc=$?
+expect_match 'reconcile: a reverse that fails dies, naming it' "${hm_out}" "could not be reversed"
+expect_eq 'reconcile: ...and keeps the journal and the migrated state' \
+  "$([[ ${hm_rc} -ne 0 ]] && echo died):$(hm_pending):$(hm_moved)" 'died:pending:data.moved:1'
+
+# (e) a marked set is never byte-restored on its own — not directly, not by hand.
+hm_set=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+hm_env_now=$(cat "${SRC_DEST}/.env")
+hm_out=$(host_migrate_backup_restore "${hm_set}" 2>&1) && hm_rc=0 || hm_rc=$?
+expect_eq 'host_migrate_backup_restore: a requires-reverse set is refused (rc 1)' "${hm_rc}" '1'
+expect_match 'host_migrate_backup_restore: ...naming the migrations to reverse first' "${hm_out}" \
+  'taken for host migration\(s\) testmove, which must be reversed first .* nothing was restored'
+expect_eq 'host_migrate_backup_restore: ...changing nothing' \
+  "$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_now}" ]] && echo same):$(hm_moved):$(hm_pending)" 'same:data.moved:1:pending'
+if [[ ${EUID} -eq 0 ]]; then
+  hm_out=$(bash "${SCRIPT_DIR}/upgrade-host.sh" --restore-host-backup "${hm_set}" 2>&1) && hm_rc=0 || hm_rc=$?
+  expect_eq 'upgrade-host.sh --restore-host-backup: a requires-reverse set is refused (exit 1)' "${hm_rc}" '1'
+  expect_match 'upgrade-host.sh --restore-host-backup: ...with the same reason' "${hm_out}" 'which must be reversed first'
+  expect_eq 'upgrade-host.sh --restore-host-backup: ...changing nothing' \
+    "$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_now}" ]] && echo same):$(hm_moved):$(hm_pending)" 'same:data.moved:1:pending'
+fi
+(host_migrate_reconcile) 2>/dev/null || true
+expect_eq 'reconcile: once the reverse works, the marked set settles' "$(hm_moved):$(hm_pending)" 'data:0:none'
+
+# (f) a toolkit that does not define the journaled migration leaves a marked
+# set alone (rc 3), rather than byte-restoring around a move it cannot undo.
+hm_host tm-unknown
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+hm_env_now=$(cat "${SRC_DEST}/.env")
+HOST_MIGRATIONS=()
+hm_rc=0
+(host_migrate_reconcile) 2>/dev/null || hm_rc=$?
+expect_eq 'reconcile: a marked set whose migration this toolkit does not define returns 3, untouched' \
+  "${hm_rc}:$(hm_pending):$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_now}" ]] && echo same)" '3:pending:data.moved:1:same'
+HOST_MIGRATIONS=(testmove)
+(host_migrate_reconcile) 2>/dev/null || true
+expect_eq 'reconcile: ...and a toolkit that defines it reverses it' "$(hm_moved):$(hm_pending)" 'data:0:none'
+
+# (g) two needed migrations that both decide their own settle: refused up front.
+host_migration_testmove2_needed() { host_migration_testmove_needed "$@"; }
+host_migration_testmove2_apply() { host_migration_testmove_apply "$@"; }
+host_migration_testmove2_settle() { host_migration_testmove_settle "$@"; }
+host_migration_testmove2_reverse() { host_migration_testmove_reverse "$@"; }
+HOST_MIGRATIONS=(testmove testmove2)
+hm_host tm-two-settlers
+hm_out=$( (host_migrate "${SRC_DEST}/releases/new") 2>&1) && hm_rc=0 || hm_rc=$?
+expect_match 'host_migrate: two needed migrations that both define _settle are refused' "${hm_out}" \
+  'at most one migration per run may decide its own settle direction'
+expect_eq 'host_migrate: ...before any backup set or journal, with nothing moved' \
+  "$([[ ${hm_rc} -ne 0 ]] && echo died):$([[ -d ${HOST_MIGRATE_BACKUP_ROOT} ]] && find "${HOST_MIGRATE_BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ' || echo 0):$(hm_pending):$(hm_moved)" \
+  'died:0:none:data:0'
+HOST_MIGRATIONS=(testmove)
+
+# (i) a migration that renames a listed file (a drop-in) does not fail the
+# flush after it ran: the flush follows the files as they are now.
+host_migration_testrename_needed() { [[ -f $1/NEEDS_TESTMARK ]] && compgen -G "${FICUS_SYSTEMD_UNIT_DIR}/*.service.d/extra.conf" >/dev/null; }
+host_migration_testrename_apply() {
+  local f
+  for f in "${FICUS_SYSTEMD_UNIT_DIR}"/*.service.d/extra.conf; do mv "${f}" "${f%/*}/extra2.conf" || return 1; done
+}
+HOST_MIGRATIONS=(testrename)
+hm_host tm-rename
+hm_rc=0
+(
+  _hm_sync() { printf '%s\n' "$1" >>"${HM_H}/synced"; }
+  host_migrate "${SRC_DEST}/releases/new"
+) >/dev/null 2>&1 || hm_rc=$?
+expect_eq 'host_migrate: a migration that renames a listed drop-in still flushes and succeeds' \
+  "${hm_rc}:$(compgen -G "${FICUS_SYSTEMD_UNIT_DIR}/*.service.d/extra2.conf" >/dev/null && echo renamed)" '0:renamed'
+expect_eq 'host_migrate: the flush covers the files as listed after the migration ran (the renamed drop-in)' \
+  "$(grep -c '/extra2\.conf$' "${HM_H}/synced" || true)" '1'
+: >"${HM_H}/present"
+expect_eq '_hm_sync_files: a path that no longer exists is skipped' \
+  "$( (_hm_sync() { printf '%s\n' "$1"; }; _hm_sync_files "${HM_H}/gone/x" "${HM_H}/present") )" "${HM_H}/present"
+rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+HOST_MIGRATIONS=(testmark)
+unset -f host_migration_testmove_needed host_migration_testmove_apply host_migration_testmove_settle \
+  host_migration_testmove_reverse host_migration_testmove2_needed host_migration_testmove2_apply \
+  host_migration_testmove2_settle host_migration_testmove2_reverse host_migration_testrename_needed \
+  host_migration_testrename_apply hm_moved
 
 # Restore verification: a corrupted copy stops the restore before any change.
 hm_host corrupt

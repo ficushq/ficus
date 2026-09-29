@@ -3485,6 +3485,19 @@ envfile_read() { # VAR FILE KEY
 #                                           on failure)
 #   host_migration_NAME_absent              optional: host config files the
 #                                           migration may create, one per line
+#   host_migration_NAME_settle SETDIR   optional, read-only: print `forward` or `restore` — which way a
+#                                       journaled run of NAME settles, whatever release is active
+#   host_migration_NAME_reverse SETDIR  optional: undo what NAME changed beyond the set's files (moves,
+#                                       links, units, data); idempotent; non-zero keeps the journal
+#
+# The two optional hooks are for a migration that changes more than the files
+# a byte restore can put back. A set taken for a migration that defines
+# _reverse starts its MANIFEST with `#requires-reverse<TAB><names>`, and a byte
+# restore of it runs only after the reverse (_HM_REVERSED=1): restoring the
+# files alone would leave moved directories and links half way. At most one
+# needed migration per run may define _settle; its answer, not the active
+# release, decides whether a journaled run is finished forward or reversed
+# and restored.
 #
 # Safety, in the order it happens:
 #   * backup set: every host config file is copied byte for byte (cp -p, cmp,
@@ -3497,7 +3510,7 @@ envfile_read() { # VAR FILE KEY
 #     without either — KILL, OOM, reboot — leaves it for the next toolkit run,
 #     whose host_migrate_reconcile makes the files match the ACTIVE release:
 #     finished forward when that release is the journaled one, restored
-#     otherwise.
+#     otherwise (unless a migration's _settle decides).
 #   * restore: the EXIT/TERM/HUP/INT traps (host_migrate_install_traps) and
 #     the artifact rollback hook settle a run that fails after migrating.
 #   * one run at a time: host_migrate_lock (flock on the backup root).
@@ -3527,6 +3540,21 @@ HOST_MIGRATE_BACKUP_SET=''
 HOST_MIGRATE_RELEASE=''
 HOST_MIGRATE_NAMES=''
 
+# The first MANIFEST line of a set whose migrations must be reversed before
+# its files are restored (see host_migrate_backup_create).
+_HM_REQUIRES_REVERSE_RE=$'^#requires-reverse\t[a-z0-9_,]+$'
+
+# The migrations SETDIR's MANIFEST says must be reversed first (its
+# `#requires-reverse` line), comma-separated; returns 1 when the set is not
+# marked.
+_hm_set_reverse_names() { # SETDIR
+  local first=''
+  [[ -f $1/MANIFEST ]] || return 1
+  IFS= read -r first <"$1/MANIFEST" || [[ -n ${first} ]] || return 1
+  [[ ${first} =~ ${_HM_REQUIRES_REVERSE_RE} ]] || return 1
+  printf '%s' "${first#*$'\t'}"
+}
+
 # Backups, restores and reconciles write root-owned files and are ROOT-ONLY. A
 # non-root (sudo) run takes no lock and proceeds only while none of them is
 # needed; it refuses otherwise, with the reason.
@@ -3551,10 +3579,12 @@ _hm_sync() { # FILE
   fi
 }
 
-# Flush the filesystem of each FILE (each touched filesystem once).
+# Flush the filesystem of each FILE (each touched filesystem once). A FILE
+# that no longer exists (a migration moved or renamed it) is skipped.
 _hm_sync_files() { # FILE...
   local f seen=$'\n' d
   for f in "$@"; do
+    [[ -e ${f} ]] || continue
     d=$(dirname -- "${f}") || return 1
     [[ ${seen} == *$'\n'"${d}"$'\n'* ]] && continue
     seen+="${d}"$'\n'
@@ -3615,12 +3645,20 @@ host_config_files() { # [--no-units]
 # of what it replaces. An `absent:<path>` argument records a file that does
 # NOT exist yet (in the set's ABSENT list): the run may create it, and a
 # restore removes it, so the host goes back to exactly what the set saw.
+# When any of NAMES defines host_migration_<m>_reverse, the MANIFEST's first
+# line is `#requires-reverse<TAB><those names>` (see the section header).
 host_migrate_backup_create() { # NAMES RELEASE_DIR FILE... [absent:PATH...]
-  local names=$1 release=$2 root setdir ts f idx=0 sha manifest='' tmp absent=''
+  local names=$1 release=$2 root setdir ts f idx=0 sha manifest='' tmp absent='' m reversible=''
   shift 2
   root=$(host_migrate_backup_root)
   [[ ${names} =~ ^[a-z0-9_]+(,[a-z0-9_]+)*$ ]] ||
     die "host_migrate_backup_create: '${names}' is not a list of migration names"
+  local -a name_list=()
+  IFS=, read -r -a name_list <<<"${names}"
+  for m in "${name_list[@]}"; do
+    if declare -F "host_migration_${m}_reverse" >/dev/null; then reversible+="${reversible:+,}${m}"; fi
+  done
+  [[ -z ${reversible} ]] || manifest="#requires-reverse"$'\t'"${reversible}"$'\n'
   if [[ -e ${root}/PENDING ]]; then
     die "host_migrate_backup_create: ${root}/PENDING already journals a migration — reconcile it first"
   fi
@@ -3733,8 +3771,12 @@ _hm_have_unit_templates() {
 # PENDING kept — when the set excluded the units and the unit templates are
 # not next to this script (apply-artifacts.sh). Never exits: the rollback
 # hook calls it and must still reach the rollback restart.
+#
+# A set whose MANIFEST starts with `#requires-reverse<TAB><names>` is restored
+# only when the caller has reversed those migrations first and says so with
+# _HM_REVERSED=1; otherwise it returns 1 having changed nothing.
 host_migrate_backup_restore() { # SETDIR
-  local setdir=$1 raw rest line idx sha path dir tmp got n=0 pending
+  local setdir=$1 raw rest line idx sha path dir tmp got n=0 pending reverse_names=''
   local re=$'^([0-9]+)\t([0-9a-f]{64})\t(/.+)$'
   local -a idxs=() shas=() paths=()
   if [[ ! -d ${setdir} || ! -f ${setdir}/MANIFEST ]]; then
@@ -3743,6 +3785,11 @@ host_migrate_backup_restore() { # SETDIR
   fi
   read_file_exact "${setdir}/MANIFEST" raw || return 1
   rest=${raw}
+  line=${rest%%$'\n'*}
+  if [[ ${line} =~ ${_HM_REQUIRES_REVERSE_RE} ]]; then
+    reverse_names=${line#*$'\t'}
+    if [[ ${line} == "${rest}" ]]; then rest=''; else rest=${rest#*$'\n'}; fi
+  fi
   while [[ -n ${rest} ]]; do
     line=${rest%%$'\n'*}
     if [[ ${line} == "${rest}" ]]; then rest=''; else rest=${rest#*$'\n'}; fi
@@ -3755,6 +3802,10 @@ host_migrate_backup_restore() { # SETDIR
     shas+=("${BASH_REMATCH[2]}")
     paths+=("${BASH_REMATCH[3]}")
   done
+  if [[ -n ${reverse_names} && ${_HM_REVERSED:-0} != 1 ]]; then
+    log_error "host restore: ${setdir} was taken for host migration(s) ${reverse_names}, which must be reversed first (their reverse puts moved directories, links and units back) — nothing was restored"
+    return 1
+  fi
   # Every copy must still be what was backed up before ANYTHING is touched.
   for ((n = 0; n < ${#idxs[@]}; n++)); do
     got=$(_hm_sha256 "${setdir}/${idxs[n]}") || got=''
@@ -3905,17 +3956,23 @@ host_migrate_require_privilege() { # RELEASE_DIR
 }
 
 # Apply the migrations NAMES (comma-separated) for RELEASE_DIR, flush and
-# daemon-reload. Dies on any failure.
+# daemon-reload. Dies on any failure. What is flushed is this host's config
+# files as listed AFTER the migrations ran (a migration may have moved one),
+# plus each FILE (the pre-migration list) that still exists.
 _hm_apply() { # NAMES RELEASE_DIR [FILE...]
-  local names=$1 release=$2 m
+  local names=$1 release=$2 m listing f
   shift 2
-  local -a list=()
+  local -a list=() flush=()
   IFS=, read -r -a list <<<"${names}"
   for m in ${list[@]+"${list[@]}"}; do
     _hm_known "${m}" || die "host migration '${m}' is not defined in this toolkit"
     "host_migration_${m}_apply" "${release}" || die "host migration '${m}' failed"
   done
-  _hm_sync_files "$@" || die "could not flush the migrated files to disk"
+  listing=$(host_config_files) || die "could not list this host's config files after the host migration"
+  while IFS= read -r f; do
+    [[ -n ${f} ]] && flush+=("${f}")
+  done <<<"${listing}"
+  _hm_sync_files ${flush[@]+"${flush[@]}"} "$@" || die "could not flush the migrated files to disk"
   as_root systemctl daemon-reload || die "systemctl daemon-reload failed after the host migration"
 }
 
@@ -3935,6 +3992,15 @@ host_migrate() { # RELEASE_DIR
   fi
   need=$(host_migrate_needed "${release}") || die "could not tell which host migrations ${release} needs"
   [[ -n ${need} ]] || return 0
+  local -a need_list=()
+  local settlers=''
+  IFS=, read -r -a need_list <<<"${need}"
+  for m in "${need_list[@]}"; do
+    if declare -F "host_migration_${m}_settle" >/dev/null; then settlers+="${settlers:+,}${m}"; fi
+  done
+  if [[ ${settlers} == *,* ]]; then
+    die "host migrations ${settlers} both decide their own settle direction, and at most one migration per run may decide its own settle direction — nothing was changed"
+  fi
   host_migrate_require_privilege "${release}"
   [[ ${ARTIFACT_CONVERTED_THIS_RUN:-0} -eq 1 ]] && no_units=--no-units
   # shellcheck disable=SC2086 # an empty ${no_units} must vanish, not pass ''
@@ -3942,8 +4008,6 @@ host_migrate() { # RELEASE_DIR
   while IFS= read -r f; do
     [[ -n ${f} ]] && files+=("${f}")
   done <<<"${listing}"
-  local -a need_list=()
-  IFS=, read -r -a need_list <<<"${need}"
   for m in "${need_list[@]}"; do
     declare -F "host_migration_${m}_absent" >/dev/null || continue
     listing=$("host_migration_${m}_absent") || die "host migration '${m}' could not list the files it may create"
@@ -3973,6 +4037,7 @@ _hm_clean_staging() { # SETDIR
   local idx _sha path dir base f
   [[ -f $1/MANIFEST ]] || return 0
   while IFS=$'\t' read -r idx _sha path; do
+    [[ ${idx} == '#'* ]] && continue # the #requires-reverse line
     [[ -n ${path} ]] || continue
     dir=$(dirname -- "${path}") && base=$(basename -- "${path}") || continue
     for f in "${dir}/.${base}.ficus-restore."*; do
@@ -3992,6 +4057,51 @@ _hm_release_is_active() { # RELEASE_DIR
   [[ $(readlink -f -- "$1" 2>/dev/null) == "$(readlink -f -- "${active}" 2>/dev/null)" ]]
 }
 
+# Which way SETDIR's journaled run of NAMES toward RELEASE_DIR settles:
+# `forward` (finish it and commit) or `restore` (reverse it and put the files
+# back). The first of NAMES that defines _settle decides — its answer must be
+# one of the two, or this returns 1. Otherwise the active release decides:
+# forward when RELEASE_DIR is serving, restore when it is not. Read-only.
+_hm_direction() { # SETDIR NAMES RELEASE_DIR
+  local setdir=$1 names=$2 release=$3 m answer
+  local -a list=()
+  IFS=, read -r -a list <<<"${names}"
+  for m in ${list[@]+"${list[@]}"}; do
+    declare -F "host_migration_${m}_settle" >/dev/null || continue
+    answer=$("host_migration_${m}_settle" "${setdir}") || return 1
+    case ${answer} in
+      forward | restore)
+        printf '%s\n' "${answer}"
+        return 0
+        ;;
+      *) return 1 ;;
+    esac
+  done
+  if _hm_release_is_active "${release}"; then
+    printf 'forward\n'
+  else
+    printf 'restore\n'
+  fi
+}
+
+# Undo, newest first, what each of NAMES that defines _reverse changed beyond
+# SETDIR's files. Each reverse runs in a subshell, so a die inside it cannot
+# end the caller (the rollback hook must still reach the rollback restart).
+# Returns 1, the journal kept, when one fails.
+_hm_reverse() { # SETDIR NAMES
+  local setdir=$1 names=$2 i m
+  local -a list=()
+  IFS=, read -r -a list <<<"${names}"
+  for ((i = ${#list[@]} - 1; i >= 0; i--)); do
+    m=${list[i]}
+    declare -F "host_migration_${m}_reverse" >/dev/null || continue
+    if ! ("host_migration_${m}_reverse" "${setdir}"); then
+      log_error "host migration '${m}' could not be reversed from ${setdir} — the journal is kept"
+      return 1
+    fi
+  done
+}
+
 # Finish SETDIR's migrations NAMES forward — RELEASE_DIR is serving — and
 # commit. Contained: on any failure it returns 1 with the journal kept, so the
 # next toolkit run's reconcile finishes the job.
@@ -4006,6 +4116,8 @@ _hm_finish_forward() { # SETDIR NAMES RELEASE_DIR
     while IFS= read -r f; do
       [[ -n ${f} ]] && files+=("${f}")
     done <<<"${listing}"
+    # A resumable migration finds its own journal inside the set.
+    HOST_MIGRATE_BACKUP_SET=${setdir}
     _hm_apply "${names}" "${release}" ${files[@]+"${files[@]}"} || exit 1
   ); then
     return 1
@@ -4015,12 +4127,13 @@ _hm_finish_forward() { # SETDIR NAMES RELEASE_DIR
 }
 
 # Make a journaled migration match the ACTIVE release: finish it forward and
-# commit when the journaled release is serving, restore the set otherwise. No
-# journal: nothing to do. Returns 3 (the journal kept) when this toolkit copy
-# cannot finish the job here — a migration it does not define, or unit
-# templates it does not carry.
+# commit when the journaled release is serving, restore the set otherwise —
+# unless a journaled migration's _settle decides (_hm_direction). A restore
+# first reverses the migrations that define _reverse. No journal: nothing to
+# do. Returns 3 (the journal kept) when this toolkit copy cannot finish the job
+# here — a migration it does not define, or unit templates it does not carry.
 host_migrate_reconcile() {
-  local root raw line setdir names release rc=0 m
+  local root raw line setdir names release rc=0 m dir why
   root=$(host_migrate_backup_root)
   if ! _hm_is_root; then
     if [[ -e ${root}/PENDING ]]; then
@@ -4042,20 +4155,34 @@ host_migrate_reconcile() {
     die "${root}/PENDING names '${setdir}', which is not a backup set under ${root} — inspect it by hand before re-running"
   fi
   log_warn "found a journaled host migration (set ${setdir}, migrations ${names}, release ${release:-<none>}) from an interrupted run"
-  if ! _hm_release_is_active "${release}"; then
-    host_migrate_backup_restore "${setdir}" || rc=$?
+  local -a list=()
+  IFS=, read -r -a list <<<"${names}"
+  dir=$(_hm_direction "${setdir}" "${names}" "${release}") ||
+    die "reconcile: could not tell which way ${setdir} settles — the journal is kept"
+  if [[ ${dir} == restore ]]; then
+    if _hm_set_reverse_names "${setdir}" >/dev/null; then
+      for m in ${list[@]+"${list[@]}"}; do
+        if ! _hm_known "${m}"; then
+          log_warn "reconcile: ${setdir} must be reversed by the host migration '${m}', which this toolkit does not define — leaving it journaled for a toolkit that does"
+          return 3
+        fi
+      done
+    fi
+    _hm_reverse "${setdir}" "${names}" ||
+      die "reconcile: reversing the host migration(s) ${names} journaled in ${setdir} failed — the journal is kept; inspect it before re-running"
+    why="${release:-its release} is not the active release"
+    if _hm_release_is_active "${release}"; then why="its migration settles by restoring"; fi
+    _HM_REVERSED=1 host_migrate_backup_restore "${setdir}" || rc=$?
     case ${rc} in
       0)
         _hm_clean_staging "${setdir}"
-        log_info "reconcile: restored ${setdir} (${release:-its release} is not the active release)"
+        log_info "reconcile: restored ${setdir} (${why})"
         ;;
       3) return 3 ;;
       *) die "reconcile: restoring ${setdir} failed — the journal is kept; inspect ${setdir}/MANIFEST before re-running" ;;
     esac
     return 0
   fi
-  local -a list=()
-  IFS=, read -r -a list <<<"${names}"
   for m in ${list[@]+"${list[@]}"}; do
     if ! _hm_known "${m}"; then
       log_warn "reconcile: this toolkit does not define the host migration '${m}' — leaving it journaled for a toolkit that does"
@@ -4064,29 +4191,39 @@ host_migrate_reconcile() {
   done
   _hm_finish_forward "${setdir}" "${names}" "${release}" ||
     die "reconcile: finishing the host migration journaled in ${setdir} failed — the journal is kept; re-run"
-  log_info "reconcile: finished the host migration journaled in ${setdir} (${release} is serving)"
+  log_info "reconcile: finished the host migration journaled in ${setdir} (${release} is serving, or its migration settles forward)"
 }
 
 # Settle THIS run's pending migration after a failure or a signal: the host's
 # files must end up matching the ACTIVE release. When the release this run
 # migrated for is not serving (the flip never happened, or was rolled back),
-# the set is restored; when it is, the migration is finished forward and
-# committed. When either step fails, the journal is kept and the next toolkit
-# run's reconcile settles it. Runs once (the flag is cleared first): the TERM
-# trap runs it, and then the EXIT trap does again.
+# the migrations are reversed and the set is restored; when it is, the
+# migration is finished forward and committed. A migration's _settle, when it
+# defines one, decides instead of the active release (_hm_direction). When
+# either way fails, the journal is kept and the next toolkit run's reconcile
+# settles it. Runs once (the flag is cleared first): the TERM trap runs it,
+# and then the EXIT trap does again.
 host_migrate_settle_pending() {
-  local rc=0
+  local rc=0 dir
   [[ ${HOST_MIGRATE_PENDING:-0} -eq 1 ]] || return 0
   HOST_MIGRATE_PENDING=0
-  if ! _hm_release_is_active "${HOST_MIGRATE_RELEASE}"; then
-    log_warn "restoring this host's files from ${HOST_MIGRATE_BACKUP_SET} (the run that migrated them did not complete, and ${HOST_MIGRATE_RELEASE} is not serving)"
-    host_migrate_backup_restore "${HOST_MIGRATE_BACKUP_SET}" || rc=$?
+  if ! dir=$(_hm_direction "${HOST_MIGRATE_BACKUP_SET}" "${HOST_MIGRATE_NAMES}" "${HOST_MIGRATE_RELEASE}"); then
+    log_error "could not tell which way the host migration journaled in ${HOST_MIGRATE_BACKUP_SET} settles — $(host_migrate_backup_root)/PENDING is kept, and the next toolkit run reconciles it"
+    return 1
+  fi
+  if [[ ${dir} == restore ]]; then
+    log_warn "restoring this host's files from ${HOST_MIGRATE_BACKUP_SET} (the run that migrated them did not complete, and ${HOST_MIGRATE_RELEASE} is not serving or its migration settles by restoring)"
+    if ! _hm_reverse "${HOST_MIGRATE_BACKUP_SET}" "${HOST_MIGRATE_NAMES}"; then
+      log_error "the host migration(s) ${HOST_MIGRATE_NAMES} could not be reversed — $(host_migrate_backup_root)/PENDING is kept, and the next toolkit run reconciles it"
+      return 1
+    fi
+    _HM_REVERSED=1 host_migrate_backup_restore "${HOST_MIGRATE_BACKUP_SET}" || rc=$?
     if [[ ${rc} -ne 0 ]]; then
       log_error "the host restore from ${HOST_MIGRATE_BACKUP_SET} did not complete (rc ${rc}) — $(host_migrate_backup_root)/PENDING is kept, and the next toolkit run reconciles it"
     fi
     return "${rc}"
   fi
-  log_warn "${HOST_MIGRATE_RELEASE} is serving: keeping this host's migrated files and committing (set ${HOST_MIGRATE_BACKUP_SET})"
+  log_warn "${HOST_MIGRATE_RELEASE} is serving, or its migration settles forward: keeping this host's migrated files and committing (set ${HOST_MIGRATE_BACKUP_SET})"
   if ! _hm_finish_forward "${HOST_MIGRATE_BACKUP_SET}" "${HOST_MIGRATE_NAMES}" "${HOST_MIGRATE_RELEASE}"; then
     log_error "finishing the host migration forward did not complete — $(host_migrate_backup_root)/PENDING is kept, and the next toolkit run reconciles it"
     return 1
