@@ -277,13 +277,13 @@ export function AgentChat({
     ) : undefined
 
   const terminatedNotice = isTerminated ? (
-    <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border border-status-neutral-300 dark:border-status-neutral-600 bg-status-neutral-50 dark:bg-status-neutral-800/50 p-3 text-sm text-status-neutral-600 dark:text-status-neutral-400 text-center">
+    <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border border-th-border bg-surface-secondary p-3 text-sm text-secondary text-center">
       This agent was terminated and can no longer receive messages. You can still view the conversation history.
     </div>
   ) : null
 
   const dormantNotice = isDormant ? (
-    <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border border-status-neutral-300 dark:border-status-neutral-600 bg-status-neutral-50 dark:bg-status-neutral-800/50 p-3 text-sm text-status-neutral-600 dark:text-status-neutral-400 text-center">
+    <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border border-th-border bg-surface-secondary p-3 text-sm text-secondary text-center">
       This agent is dormant. Sending a message will wake it.
     </div>
   ) : null

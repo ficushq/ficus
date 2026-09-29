@@ -112,7 +112,7 @@ export function VoiceMicButton({
         {state === 'transcribing' ? (
           <span
             className={clsx(
-              'inline-block border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin',
+              'inline-block border-2 border-th-border border-t-secondary rounded-full animate-spin',
               sizes.spinner
             )}
           />

@@ -434,10 +434,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                   <span
                     className={clsx(
                       'text-xs px-1.5 py-0.5 rounded font-medium ml-auto hidden md:inline-block',
-                      scope
-                        ? (SCOPE_COLORS[scope] ??
-                            'bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-700 dark:text-status-neutral-300')
-                        : 'bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-700 dark:text-status-neutral-300'
+                      scope ? (SCOPE_COLORS[scope] ?? 'bg-pill text-secondary') : 'bg-pill text-secondary'
                     )}
                   >
                     {scope ? SCOPE_LABELS[scope] || scope : agent.agentTypeId}

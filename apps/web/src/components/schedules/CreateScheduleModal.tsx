@@ -177,12 +177,12 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               <WarningIcon className="h-4 w-4 shrink-0" /> Save this token - it will not be shown again!
             </p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs font-mono bg-chrome-toggle-thumb dark:bg-status-neutral-900 px-2 py-1.5 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">
+              <code className="flex-1 text-xs font-mono bg-surface px-2 py-1.5 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">
                 {webhookResult.token}
               </code>
               <button
                 onClick={() => copyToClipboard(webhookResult.token)}
-                className="ficus-button p-1.5 text-muted hover:text-primary bg-chrome-toggle-thumb dark:bg-status-neutral-900 rounded border border-status-review-200 dark:border-status-review-800"
+                className="ficus-button p-1.5 text-muted hover:text-primary bg-surface rounded border border-status-review-200 dark:border-status-review-800"
                 title="Copy token"
               >
                 <ClipboardIcon className="w-4 h-4" />

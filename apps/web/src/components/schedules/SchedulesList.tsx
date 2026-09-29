@@ -577,7 +577,7 @@ function ScheduleCard({
           className={clsx(
             'ficus-button',
             'relative w-9 h-5 rounded-full transition-colors shrink-0',
-            schedule.enabled ? 'bg-status-success-500' : 'bg-status-neutral-300 dark:bg-status-neutral-600'
+            schedule.enabled ? 'bg-status-success-500' : 'bg-th-border'
           )}
           title={schedule.enabled ? 'Disable' : 'Enable'}
         >
@@ -1161,7 +1161,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 <WarningIcon className="h-3.5 w-3.5 shrink-0" /> Save this token - it will not be shown again!
               </p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs font-mono bg-chrome-toggle-thumb dark:bg-status-neutral-900 px-2 py-1 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">
+                <code className="flex-1 text-xs font-mono bg-surface px-2 py-1 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">
                   {showToken}
                 </code>
                 <button

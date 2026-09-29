@@ -35,9 +35,7 @@ export function PresentationRenderer({
     <article className={clsx(chrome === 'default' && 'space-y-6 p-5') || undefined}>
       {chrome === 'default' && (
         <header>
-          <h1 className="text-2xl font-semibold text-status-neutral-950 dark:text-status-neutral-50">
-            {presentation.title}
-          </h1>
+          <h1 className="text-2xl font-semibold text-primary">{presentation.title}</h1>
         </header>
       )}
       <div className={clsx(chrome === 'default' && 'space-y-5') || undefined}>
@@ -45,16 +43,11 @@ export function PresentationRenderer({
           <section
             key={section.id}
             className={
-              clsx(
-                chrome === 'default' &&
-                  'space-y-4 rounded-xl border border-status-neutral-200 bg-chrome-paper p-4 dark:border-status-neutral-800 dark:bg-status-neutral-900'
-              ) || undefined
+              clsx(chrome === 'default' && 'space-y-4 rounded-xl border border-th-border bg-surface p-4') || undefined
             }
           >
             {chrome === 'default' && section.title && (
-              <h2 className="text-lg font-semibold text-status-neutral-900 dark:text-status-neutral-100">
-                {section.title}
-              </h2>
+              <h2 className="text-lg font-semibold text-primary">{section.title}</h2>
             )}
             <div className={clsx(chrome === 'default' && 'space-y-4') || undefined}>
               {section.blocks.map((block, index) => (
@@ -98,10 +91,8 @@ function MetricsBlockView({ block }: { block: MetricsBlock }) {
     <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {block.items.map((item) => (
         <div key={item.label} className={clsx('rounded-lg border p-4', toneClasses(item.tone, 'card'))}>
-          <dt className="text-sm font-medium text-status-neutral-500 dark:text-status-neutral-400">{item.label}</dt>
-          <dd className="mt-2 text-2xl font-semibold text-status-neutral-950 dark:text-status-neutral-50">
-            {item.value}
-          </dd>
+          <dt className="text-sm font-medium text-muted">{item.label}</dt>
+          <dd className="mt-2 text-2xl font-semibold text-primary">{item.value}</dd>
         </div>
       ))}
     </dl>
@@ -110,26 +101,22 @@ function MetricsBlockView({ block }: { block: MetricsBlock }) {
 
 function TableBlockView({ block }: { block: TableBlock }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-status-neutral-200 dark:border-status-neutral-800">
-      <table className="ficus-table min-w-full divide-y divide-status-neutral-200 text-sm dark:divide-status-neutral-800">
-        <thead className="bg-status-neutral-50 dark:bg-status-neutral-900">
+    <div className="overflow-x-auto rounded-lg border border-th-border">
+      <table className="ficus-table min-w-full divide-y divide-th-border text-sm">
+        <thead className="bg-surface-secondary">
           <tr>
             {block.columns.map((column) => (
-              <th
-                key={column.key}
-                scope="col"
-                className="px-3 py-2 text-left font-semibold text-status-neutral-700 dark:text-status-neutral-200"
-              >
+              <th key={column.key} scope="col" className="px-3 py-2 text-left font-semibold text-secondary">
                 {column.label}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-status-neutral-100 bg-chrome-paper dark:divide-status-neutral-800 dark:bg-status-neutral-950">
+        <tbody className="divide-y divide-th-border bg-surface">
           {block.rows.map((row, rowIndex) => (
             <tr key={rowIndex}>
               {block.columns.map((column) => (
-                <td key={column.key} className="px-3 py-2 text-status-neutral-700 dark:text-status-neutral-300">
+                <td key={column.key} className="px-3 py-2 text-secondary">
                   {formatCellValue(row[column.key])}
                 </td>
               ))}
@@ -161,7 +148,7 @@ function ChartBlockView({ block }: { block: ChartBlock }) {
 
   return (
     <ChartErrorBoundary>
-      <div className="overflow-hidden rounded-lg border border-status-neutral-200 bg-chrome-paper p-3 dark:border-status-neutral-800 dark:bg-status-neutral-950">
+      <div className="overflow-hidden rounded-lg border border-th-border bg-surface p-3">
         <VegaEmbed
           spec={block.spec as VegaEmbedProps['spec']}
           options={{ actions: false, renderer: 'canvas', loader: blockingVegaLoader, config }}
@@ -209,24 +196,18 @@ function CalloutBlockView({ block }: { block: CalloutBlock }) {
 
 function TimelineBlockView({ block }: { block: TimelineBlock }) {
   return (
-    <ol className="space-y-3 border-l border-status-neutral-200 pl-4 dark:border-status-neutral-800">
+    <ol className="space-y-3 border-l border-th-border pl-4">
       {block.items.map((item, index) => (
         <li key={`${item.title}-${item.at ?? index}`} className="relative">
           <span
             aria-hidden="true"
-            className="absolute -left-[21px] top-1.5 h-3 w-3 rounded-full border-2 border-chrome-highlight bg-status-progress-500 dark:border-status-neutral-900"
+            className="absolute -left-[21px] top-1.5 h-3 w-3 rounded-full border-2 border-surface bg-status-progress-500"
           />
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <h3 className="font-medium text-status-neutral-900 dark:text-status-neutral-100">{item.title}</h3>
-            {item.at && (
-              <time className="text-xs uppercase tracking-wide text-status-neutral-500 dark:text-status-neutral-400">
-                {item.at}
-              </time>
-            )}
+            <h3 className="font-medium text-primary">{item.title}</h3>
+            {item.at && <time className="text-xs uppercase tracking-wide text-muted">{item.at}</time>}
           </div>
-          {item.content && (
-            <p className="mt-1 text-sm text-status-neutral-600 dark:text-status-neutral-300">{item.content}</p>
-          )}
+          {item.content && <p className="mt-1 text-sm text-secondary">{item.content}</p>}
         </li>
       ))}
     </ol>
@@ -295,10 +276,7 @@ function HtmlBlockView({ block, chrome }: { block: HtmlBlock; chrome: 'default' 
       sandbox="allow-scripts"
       srcDoc={srcDoc}
       style={{ height }}
-      className={clsx(
-        'w-full bg-white',
-        chrome === 'none' ? 'border-0' : 'rounded-lg border border-status-neutral-200 dark:border-status-neutral-800'
-      )}
+      className={clsx('w-full bg-white', chrome === 'none' ? 'border-0' : 'rounded-lg border border-th-border')}
     />
   )
 }
@@ -380,10 +358,7 @@ function isBlockedUri(uri: string) {
 }
 
 function toneClasses(tone: PresentationTone | undefined, variant: 'card' | 'callout') {
-  const base =
-    variant === 'card'
-      ? 'bg-chrome-paper dark:bg-status-neutral-950'
-      : 'bg-status-neutral-50 text-status-neutral-800 dark:bg-status-neutral-900 dark:text-status-neutral-200'
+  const base = variant === 'card' ? 'bg-surface' : 'bg-surface-secondary text-primary'
 
   switch (tone) {
     case 'info':
@@ -396,6 +371,6 @@ function toneClasses(tone: PresentationTone | undefined, variant: 'card' | 'call
       return 'border-status-danger-200 bg-status-danger-50 text-status-danger-900 dark:border-status-danger-900/60 dark:bg-status-danger-950/40 dark:text-status-danger-100'
     case 'neutral':
     default:
-      return clsx('border-status-neutral-200 dark:border-status-neutral-800', base)
+      return clsx('border-th-border', base)
   }
 }

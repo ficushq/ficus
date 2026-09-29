@@ -1803,7 +1803,7 @@ export function ChatView({
                                 cy="16"
                                 r="14"
                                 fill="none"
-                                stroke="rgb(var(--status-neutral-200))"
+                                stroke="rgb(var(--color-border))"
                                 strokeWidth="3"
                               />
                               <circle
@@ -2067,7 +2067,7 @@ export function ChatView({
                         }
                       >
                         {voiceState === 'transcribing' ? (
-                          <span className="inline-block w-5 h-5 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin" />
+                          <span className="inline-block w-5 h-5 border-2 border-th-border border-t-secondary rounded-full animate-spin" />
                         ) : (
                           <MicIcon className="w-5 h-5" />
                         )}
@@ -2625,7 +2625,7 @@ function StreamingBlockGroupSection({
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
         />
         {hasRunningTool && (
-          <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin shrink-0" />
+          <span className="inline-block w-3 h-3 border-2 border-th-border border-t-secondary rounded-full animate-spin shrink-0" />
         )}
         <span className="font-medium">{summary}</span>
       </button>
@@ -2697,7 +2697,7 @@ function StreamingToolCallItem({
           className="ficus-button flex-1 flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
         >
           {inProgress ? (
-            <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin shrink-0" />
+            <span className="inline-block w-3 h-3 border-2 border-th-border border-t-secondary rounded-full animate-spin shrink-0" />
           ) : isError ? (
             <span className="text-status-danger-500 dark:text-status-danger-400 shrink-0 inline-block w-3 text-center">
               &#10007;

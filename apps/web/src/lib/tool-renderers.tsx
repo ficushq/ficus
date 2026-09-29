@@ -246,7 +246,7 @@ function BashCodeBlock({
 const bashRenderer: ToolRenderer = {
   summary: (args) => truncate(args.command ?? '', 60),
   ArgsView: ({ args }) => (
-    <div className="bg-status-neutral-800 dark:bg-status-neutral-900 text-status-neutral-300 rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+    <div className="bg-code-bg text-code-text rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
       <span className="text-muted select-none">$ </span>
       {args.command ?? ''}
     </div>
