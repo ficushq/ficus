@@ -2,7 +2,7 @@ import type { WorkStream } from '@ficus/shared'
 import { plantStateLabel } from '../selection'
 import { deliveryNote } from '../delivery'
 import { findPlot } from '../find'
-import { Crew } from './Crew'
+import { Crew, statusTone } from './Crew'
 import { useFarmCard } from './context'
 import { PlotActions } from './slots'
 import { workStreamPullRequests } from '../pullRequests'
@@ -43,6 +43,11 @@ export function PlotCard({ streamId }: { streamId: string }) {
     stream,
     (id) => id === squad?.managerAgentId || env.agentsById.get(id)?.agentTypeId === 'manager'
   )
+  // Who's on it: the assignee, else the robot tending the plant.
+  const lead = stream.assigneeAgentId ?? plot.tender?.agent.id ?? null
+  const leadAgent = lead ? env.agentsById.get(lead) : undefined
+  const rest = crew.ids.filter((id) => id !== lead)
+  const openAgent = (id: string) => env.select({ kind: 'robot', agentId: id })
   return (
     <>
       <p className="g-eyebrow">{plot.squadName}</p>
@@ -50,6 +55,26 @@ export function PlotCard({ streamId }: { streamId: string }) {
       <p className="g-state-tag" data-state={plot.state}>
         {plantStateLabel(plot.state)}
       </p>
+      <section className="g-plot-lead" aria-label="Who's on it">
+        <h3 className="g-plot-lead-label">
+          {leadAgent && statusTone(leadAgent.status, env.halted.has(leadAgent.id)) === 'working'
+            ? 'Working on it'
+            : 'Assigned to'}
+        </h3>
+        {lead ? (
+          <Crew
+            agentIds={[lead]}
+            notes={crew.notes}
+            omit={stream.title}
+            known={env.agentsById}
+            squad={squad}
+            halted={env.halted}
+            onOpenAgent={openAgent}
+          />
+        ) : (
+          <p className="g-card-text">Nobody yet.</p>
+        )}
+      </section>
       {note && <p className="g-card-text g-delivery-note">{note}</p>}
       {pullRequests.length > 0 && (
         <p className="g-pr-links">
@@ -77,15 +102,20 @@ export function PlotCard({ streamId }: { streamId: string }) {
         Share in farm chat
       </button>
       <PlotActions stream={stream} />
-      <h3 className="g-card-subtitle">Crew</h3>
-      <Crew
-        agentIds={crew.ids}
-        notes={crew.notes}
-        known={env.agentsById}
-        squad={squad}
-        halted={env.halted}
-        onOpenAgent={(id) => env.select({ kind: 'robot', agentId: id })}
-      />
+      {rest.length > 0 && (
+        <>
+          <h3 className="g-card-subtitle">{lead ? 'Also on the crew' : 'Crew'}</h3>
+          <Crew
+            agentIds={rest}
+            notes={crew.notes}
+            omit={stream.title}
+            known={env.agentsById}
+            squad={squad}
+            halted={env.halted}
+            onOpenAgent={openAgent}
+          />
+        </>
+      )}
     </>
   )
 }
