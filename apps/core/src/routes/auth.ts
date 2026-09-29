@@ -42,7 +42,7 @@ import { consumeWebHandoff, createWebHandoff } from '../services/auth/web-handof
 import { hasAdminUsers, adminHasPasskey, pendingAdminSetup } from '../services/auth/admin-users'
 import { createPairingCode, claimPairingCode } from '../services/auth/pairing'
 import { buildMobilePairingServerUrl } from '../lib/mobilePairingUrl'
-import { listDeviceTokens, revokeDeviceToken } from '../services/auth/device-tokens'
+import { DEVICE_TOKEN_PREFIX, listDeviceTokens, revokeDeviceToken } from '../services/auth/device-tokens'
 import {
   approveDeviceAuthorization,
   createDeviceAuthorization,
@@ -51,7 +51,11 @@ import {
   inspectDeviceAuthorization,
   type DeviceAuthorizationPlatform,
 } from '../services/auth/device-authorization'
-import { deviceAuthorizationStartLimiter, webHandoffExchangeLimiter } from '../services/auth/device-auth-rate-limit'
+import {
+  deviceAuthorizationStartLimiter,
+  webHandoffExchangeLimiter,
+  webHandoffMintLimiter,
+} from '../services/auth/device-auth-rate-limit'
 import { setSessionCookie, clearSessionCookie, extractSessionToken } from '../services/auth/session-cookie'
 import { resolveToken } from '../services/auth/resolve-token'
 import { replaceCredentialsAfterRecovery } from '../services/auth/passkey-recovery'
@@ -670,8 +674,15 @@ const handoffHeaders = { 'Cache-Control': 'no-store' }
 authRouter.post('/web-handoff', identityMiddleware, async (c) => {
   const identity = c.get('identity') as Identity | undefined
   const deviceTokenId = c.get('authContext').deviceTokenId
-  if (!identity || identity.type !== 'user' || !deviceTokenId) {
+  // The device token itself, not a session that merely carries its id: a web view's
+  // handoff session also resolves with the device, and must not mint more codes
+  // (script on the page could otherwise export a portable session past HttpOnly).
+  const byDeviceToken = extractSessionToken(c)?.startsWith(DEVICE_TOKEN_PREFIX) === true
+  if (!identity || identity.type !== 'user' || !deviceTokenId || !byDeviceToken) {
     return c.json({ error: 'Web handoffs are for paired devices' }, 403, handoffHeaders)
+  }
+  if (!webHandoffMintLimiter.take(deviceTokenId, 10, 60_000)) {
+    return c.json({ error: 'rate_limited' }, 429, { ...handoffHeaders, 'Retry-After': '60' })
   }
   const { code, expiresAt } = await createWebHandoff(identity.userId, deviceTokenId)
   return c.json({ code, expiresAt: expiresAt.toISOString() }, 200, handoffHeaders)
@@ -692,6 +703,8 @@ authRouter.post('/web-handoff/exchange', async (c) => {
   const user = consumed ? await User.findById(consumed.userId) : null
   if (!consumed || !user) return c.json({ error: 'invalid_handoff' }, 401, handoffHeaders)
 
+  // One live web session per device: the new one replaces any earlier handoff session.
+  await db.delete(sessions).where(eq(sessions.deviceTokenId, consumed.deviceTokenId))
   const token = await user.createSession({
     userAgent: c.req.header('User-Agent'),
     ipAddress: c.req.header('X-Forwarded-For') ?? c.req.header('X-Real-IP'),

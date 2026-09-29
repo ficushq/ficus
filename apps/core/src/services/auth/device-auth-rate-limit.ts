@@ -52,3 +52,6 @@ export const deviceAuthorizationStartLimiter = new FixedWindowLimiter()
 
 /** Web handoff exchanges, per client address (the codes are unguessable; this bounds hammering). */
 export const webHandoffExchangeLimiter = new FixedWindowLimiter()
+
+/** Web handoff mints, per paired device. */
+export const webHandoffMintLimiter = new FixedWindowLimiter()

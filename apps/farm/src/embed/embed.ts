@@ -52,6 +52,11 @@ let listening = false
  * or by `window.postMessage`, carries one. Without this check an embedded frame
  * could post a `handoff` with someone else's code and sign the web view into
  * their account, or restyle the farm.
+ *
+ * This is not a boundary against script already running on the farm's own
+ * origin: such script can dispatch a source-less event itself, but it could
+ * equally call the exchange directly. Keeping foreign pages out of the web
+ * view (and never handing them codes) is the app's job; see @ficus/shared/farm-embed.
  */
 export function isFromApp(event: MessageEvent): boolean {
   return event.source == null

@@ -42,6 +42,48 @@ describe('AppSignIn', () => {
     expect(posted()).toEqual([{ type: 'auth-required' }])
   })
 
+  it('ignores a handoff posted by a frame inside the page', async () => {
+    const { onSignedIn } = await signIn(200)
+    let exchanges = 0
+    globalThis.fetch = (async () => {
+      exchanges++
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+    const frame = document.createElement('iframe')
+    document.body.appendChild(frame)
+    await act(async () => {
+      window.dispatchEvent(
+        new window.MessageEvent('message', {
+          data: appToFarmMessage({ type: 'handoff', code: 'ficus_wh_theirs' }),
+          source: frame.contentWindow as never,
+        }) as unknown as Event
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    frame.remove()
+    expect(exchanges).toBe(0)
+    expect(onSignedIn).not.toHaveBeenCalled()
+  })
+
+  it('exchanges one code at a time and signs in once', async () => {
+    const { onSignedIn, sendHandoff } = await signIn(200)
+    let exchanges = 0
+    globalThis.fetch = (async () => {
+      exchanges++
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+    await act(async () => {
+      for (const code of ['ficus_wh_1', 'ficus_wh_2'])
+        window.dispatchEvent(
+          new window.MessageEvent('message', { data: appToFarmMessage({ type: 'handoff', code }) }) as unknown as Event
+        )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await sendHandoff('ficus_wh_3')
+    expect(exchanges).toBe(1)
+    expect(onSignedIn).toHaveBeenCalledTimes(1)
+  })
+
   it('offers to try again when the code does not work', async () => {
     const { posted, onSignedIn, view, sendHandoff } = await signIn(401)
     await sendHandoff('ficus_wh_used')

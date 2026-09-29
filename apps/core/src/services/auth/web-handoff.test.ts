@@ -30,6 +30,13 @@ describe('web handoff', () => {
     expect(await consumeWebHandoff(code)).toBeNull()
   })
 
+  it('a code racing itself is used once', async () => {
+    const { user, device } = await pairedPhone()
+    const { code } = await createWebHandoff(user.id, device.id)
+    const results = await Promise.all(Array.from({ length: 8 }, () => consumeWebHandoff(code)))
+    expect(results.filter(Boolean)).toEqual([{ userId: user.id, deviceTokenId: device.id }])
+  })
+
   it('stores only a hash of the code', async () => {
     const { user, device } = await pairedPhone()
     const { code } = await createWebHandoff(user.id, device.id)

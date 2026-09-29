@@ -47,7 +47,9 @@ Ficus Mobile shows the farm in a web view in its Farm tab. The farm notices (`wi
 - **Theme:** the Futurist style follows the theme the app sends, live, including a custom theme's palette primary as its accent. The other styles keep their own palettes.
 - **Haptics:** the farm asks the app for a light tap on a harvest, a wave involving you, someone else's chat message for you or in the room you have open, and an answer you submit.
 
-The messages are a small, versioned contract in `@ficus/shared/farm-embed`: JSON with `source` and `v`, and each side ignores versions and types it doesn't know. Links out of the farm are left to the app, which intercepts the web view's navigation.
+The messages are a small, versioned contract in `@ficus/shared/farm-embed`: JSON with `source` and `v`, and each side ignores versions and types it doesn't know. The farm accepts only messages with no `source` window (the native bridge's), not ones posted by a frame in the page.
+
+**What the app must do (required).** The native bridge has no target origin: the startup script runs on every page load, postMessage reaches whatever page is showing, and any page can post `auth-required`. So the app mints, injects or posts a `handoff` only when the web view's main-frame URL (its navigation state or `onMessage`'s `nativeEvent.url`, never the message body) has exactly the paired server's origin under its farm path. It also keeps the main frame on that origin (`originWhitelist` and `onShouldStartLoadWithRequest`) and opens every other link outside the web view. A code handed to any other page is a session for whoever runs it.
 
 ## Styles
 

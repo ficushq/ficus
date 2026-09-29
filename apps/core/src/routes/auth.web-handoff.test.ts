@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
@@ -10,6 +10,10 @@ import { cleanupTestRbac, createTestUser } from '../test-utils'
 import { User } from '../entities/User'
 import { createDeviceToken, revokeDeviceToken } from '../services/auth/device-tokens'
 import { resolveTokenContext } from '../services/auth/resolve-token'
+import { consumeWsTicket } from '../services/auth/ws-ticket'
+import { DeviceConnectionRegistry } from '../services/auth/device-connection-registry'
+import { findActiveDeviceTokenIds } from '../services/auth/device-tokens'
+import { withDeviceRevocation } from '../services/ws/device-revocation'
 
 const PREFIX = 'web-handoff-route'
 
@@ -125,6 +129,69 @@ describe('web handoff routes', () => {
     expect(await resolveTokenContext(token)).toBeNull()
     const res = await app.request('/api/protected', { headers: { Cookie: `ficus_session=${token}` } })
     expect(res.status).toBe(401)
+  })
+
+  it('a web view session cannot mint more codes: only the device token itself can', async () => {
+    const app = buildApp()
+    const { device } = await pairedPhone()
+    const { code } = (await (await mint(app, device.token)).json()) as { code: string }
+    const cookie = sessionCookie(await exchange(app, code))
+    // Script on the page has the cookie (sent automatically) and can set the CSRF header.
+    const res = await app.request('/api/auth/web-handoff', {
+      method: 'POST',
+      headers: { Cookie: `ficus_session=${cookie}`, [CSRF_HEADER]: '1' },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('keeps one web view session per device: a new handoff replaces the old one', async () => {
+    const app = buildApp()
+    const { device } = await pairedPhone()
+    const first = sessionCookie(
+      await exchange(app, ((await (await mint(app, device.token)).json()) as { code: string }).code)
+    )
+    const second = sessionCookie(
+      await exchange(app, ((await (await mint(app, device.token)).json()) as { code: string }).code)
+    )
+    expect(await resolveTokenContext(first)).toBeNull()
+    expect(await resolveTokenContext(second)).not.toBeNull()
+    expect(await db.select().from(sessions).where(eq(sessions.deviceTokenId, device.id))).toHaveLength(1)
+  })
+
+  it('rejects an exchange carrying a bearer from an origin outside the allowlist', async () => {
+    const app = buildApp()
+    const { device } = await pairedPhone()
+    const { code } = (await (await mint(app, device.token)).json()) as { code: string }
+    const res = await exchange(app, code, {
+      [CSRF_HEADER]: '1',
+      Authorization: `Bearer ${device.token}`,
+      Origin: 'https://evil.example',
+    })
+    expect(res.status).toBe(403)
+    expect(res.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('unpairing closes a live socket the web view session opened', async () => {
+    const app = buildApp()
+    const { user, device } = await pairedPhone()
+    const { code } = (await (await mint(app, device.token)).json()) as { code: string }
+    const cookie = sessionCookie(await exchange(app, code))
+    const minted = await app.request('/api/auth/ws-ticket', {
+      method: 'POST',
+      headers: { Cookie: `ficus_session=${cookie}`, [CSRF_HEADER]: '1' },
+    })
+    const { ticket } = (await minted.json()) as { ticket: string }
+    // The ticket keeps the device, so the socket is registered against it.
+    const context = await consumeWsTicket(ticket)
+    expect(context?.deviceTokenId).toBe(device.id)
+
+    const registry = new DeviceConnectionRegistry(findActiveDeviceTokenIds)
+    const raw = { close: mock(() => {}) }
+    const delegate = { onOpen: mock(async () => {}), onMessage: mock(() => {}), onClose: mock(() => {}) }
+    const handlers = withDeviceRevocation(context!, delegate, registry)
+    await handlers.onOpen?.({} as never, { raw } as never)
+    await revokeDeviceToken(user.id, device.id, { publishRevocation: async (id) => registry.revoke(id) })
+    expect(raw.close).toHaveBeenCalledWith(4401, 'Authentication revoked')
   })
 
   it('rejects a malformed exchange without a cookie', async () => {

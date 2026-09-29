@@ -65,12 +65,18 @@ export function AppSignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const onSignedInRef = useStableRef(onSignedIn)
   useEffect(() => {
     let active = true
+    // One exchange at a time: a second code (a repeated auth-required answer) waits its turn out.
+    let exchanging = false
     const stop = onAppMessage((message) => {
-      if (message.type !== 'handoff') return
+      if (message.type !== 'handoff' || exchanging || !active) return
+      exchanging = true
       void exchangeHandoff(message.code).then((ok) => {
+        exchanging = false
         if (!active) return
-        if (ok) onSignedInRef.current()
-        else setFailed(true)
+        if (ok) {
+          active = false
+          onSignedInRef.current()
+        } else setFailed(true)
       })
     })
     postToApp({ type: 'auth-required' })

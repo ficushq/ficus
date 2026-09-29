@@ -52,6 +52,12 @@ html[data-embed='native'] :is(input, textarea, [contenteditable='true']) {
   user-select: text;
 }
 
+/* What people say stays copyable: agent chat transcripts and farm chat messages. */
+html[data-embed='native'] :is(.g-chat-log, .g-farmchat-text) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .g-card {
   background: var(--g-card);
   border: var(--g-border) solid var(--g-outline);

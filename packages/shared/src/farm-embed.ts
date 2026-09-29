@@ -17,6 +17,20 @@ import { SYNC_THEME_DESCRIPTORS } from './theme-preferences'
  * - `handoff`: a web handoff code (Core's `POST /api/auth/web-handoff`), which
  *   the farm trades for a session. Never put one in a URL.
  * - `theme`: the app's active theme; the Futurist style follows it.
+ *
+ * The app's side of the trust boundary (required, not advice). The native
+ * bridge has no target origin: the startup script runs on every page load and
+ * postMessage reaches whatever page is showing, and any page can post
+ * `auth-required`. So the app must:
+ * - mint, inject or post a `handoff` only when the web view's main-frame URL
+ *   (the navigation state, or `onMessage`'s `nativeEvent.url`, never the
+ *   message body) has exactly the paired server's origin under its farm path;
+ * - keep the main frame on that origin (`originWhitelist` plus
+ *   `onShouldStartLoadWithRequest`), opening every other URL outside the web view.
+ * A code handed to any other page is a session for whoever runs it.
+ *
+ * Versions are exact (`v === 1`): a future version needs both sides to ship
+ * together, or a receiver that accepts a range.
  */
 export const FARM_EMBED_VERSION = 1
 
