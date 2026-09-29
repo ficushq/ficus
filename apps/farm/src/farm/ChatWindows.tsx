@@ -29,8 +29,9 @@ export interface ChatWindowsApi {
   snap: (key: string, snap: Snap) => void
 }
 
-export function useChatWindows(viewport: Viewport): ChatWindowsApi {
-  const [windows, dispatch] = useReducer(chatWindowsReducer, [])
+export function useChatWindows(viewport: Viewport, saved: ChatWindowState[] = []): ChatWindowsApi {
+  // Windows open last time (a refresh) come back where they were; the fit below keeps them on screen.
+  const [windows, dispatch] = useReducer(chatWindowsReducer, saved)
   const viewportRef = useStableRef(viewport)
   const windowsRef = useStableRef(windows)
 
