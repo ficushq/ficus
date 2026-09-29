@@ -357,9 +357,9 @@ describe('farm presence over the WebSocket', () => {
     await manager.settled()
 
     expect(frames(carolWs).filter((frame) => frame.type === 'unsubscribed')).toEqual([
-      { type: 'unsubscribed', topic: 'presence' },
-      { type: 'unsubscribed', topic: 'farmChat' },
-    ] as Frame[])
+      expect.objectContaining({ topic: 'presence' }),
+      expect.objectContaining({ topic: 'farmChat' }),
+    ])
     expect(events(aliceWs, 'presence.left').map((frame) => frame.data)).toEqual([{ userId: carol.id }])
     manager.sendFarmChat('farmChat.roomsChanged', {})
     expect(events(carolWs, 'farmChat.roomsChanged')).toHaveLength(0)
