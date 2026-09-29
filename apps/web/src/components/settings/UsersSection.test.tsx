@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { queryKeys } from '../../queryKeys'
-import { UsersSection } from './UsersSection'
+import { UserRow, UsersSection } from './UsersSection'
 import { userSetupStatus } from './userSetupStatus'
 import { resendInviteFeedback } from './resendInviteFeedback'
 import type { UserListEntry } from '../../api/users'
@@ -214,5 +214,35 @@ describe('resendInviteFeedback', () => {
 
   test('falls back to a generic message when the failure carries none', () => {
     expect(resendInviteFeedback({ isError: true, error: undefined }).message).toBe('Failed to resend invite')
+  })
+})
+
+describe('role scope', () => {
+  test('a squad-scoped role names its squad, and squad_default reads as every squad', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(queryKeys.users.roles('u1'), [
+      { id: 'a1', roleId: 'r1', roleName: 'Operator', roleSlug: 'operator', scope: 'squad', squadId: 'squad-uuid-1' },
+      { id: 'a2', roleId: 'r2', roleName: 'Viewer', roleSlug: 'viewer', scope: 'squad_default', squadId: null },
+      { id: 'a3', roleId: 'r3', roleName: 'Admin', roleSlug: 'admin', scope: 'system', squadId: null },
+    ])
+    queryClient.setQueryData(queryKeys.squads.list(), [{ id: 'squad-uuid-1', name: 'Attune' }])
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <UserRow
+          user={user()}
+          roles={[]}
+          isExpanded
+          onToggleExpand={() => {}}
+          onDelete={() => {}}
+          isDeleting={false}
+          onInviteLink={() => {}}
+          onToggleDisable={() => {}}
+        />
+      </QueryClientProvider>
+    )
+    expect(html).toContain('Operator')
+    expect(html).toContain('(Attune)')
+    expect(html).toContain('(every squad)')
+    expect(html).not.toContain('(squad)')
   })
 })

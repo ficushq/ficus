@@ -136,7 +136,7 @@ export function UsersSection() {
   )
 }
 
-function UserRow({
+export function UserRow({
   user,
   roles,
   isExpanded,
@@ -173,9 +173,22 @@ function UserRow({
   const [assignRoleId, setAssignRoleId] = useState('')
   const [assignScope, setAssignScope] = useState<'system' | 'squad'>('system')
   const [assignSquadId, setAssignSquadId] = useState('')
-  // Squads the current user can see (backend already filters to accessible ones);
-  // only fetched when scoping an assignment to a specific squad.
-  const { data: assignableSquads = [] } = useQuery({ ...queries.squads.list(), enabled: assignScope === 'squad' })
+  // Squads the current user can see (backend already filters to accessible ones): fetched when
+  // scoping an assignment to a squad, and to name the squads existing assignments are scoped to.
+  const hasSquadAssignment = userRoles.some((assignment) => assignment.scope === 'squad')
+  const { data: assignableSquads = [] } = useQuery({
+    ...queries.squads.list(),
+    enabled: assignScope === 'squad' || hasSquadAssignment,
+  })
+  const squadNames = new Map(assignableSquads.map((squad) => [squad.id, squad.name]))
+  const scopeLabel = (assignment: (typeof userRoles)[number]) =>
+    assignment.scope === 'squad'
+      ? assignment.squadId
+        ? (squadNames.get(assignment.squadId) ?? `squad ${assignment.squadId.slice(0, 8)}`)
+        : 'squad'
+      : assignment.scope === 'squad_default'
+        ? 'every squad'
+        : null
 
   const assignMutation = useMutation({
     mutationFn: () =>
@@ -333,9 +346,7 @@ function UserRow({
                       className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-accent/10 text-accent-light"
                     >
                       {assignment.roleName || assignment.roleSlug || 'Role'}
-                      {assignment.scope && assignment.scope !== 'system' && (
-                        <span className="text-muted">({assignment.scope})</span>
-                      )}
+                      {scopeLabel(assignment) && <span className="text-muted">({scopeLabel(assignment)})</span>}
                       <button
                         onClick={() => removeMutation.mutate(assignment.id)}
                         className="ficus-button ml-0.5 text-accent-light hover:text-status-danger-500 font-bold"
