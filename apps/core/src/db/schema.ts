@@ -2486,6 +2486,9 @@ export const sessions = pgTable('sessions', {
   ipAddress: text('ip_address'),
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  // A browser session a paired device handed to its embedded web view (see
+  // web_handoffs): it lives only while that device stays paired.
+  deviceTokenId: uuid('device_token_id').references(() => deviceTokens.id, { onDelete: 'cascade' }),
 })
 
 /**
@@ -2719,6 +2722,23 @@ export const authSettings = pgTable('auth_settings', {
 
 // Single-use, short-lived tickets minted from a user session so the long-lived
 // session bearer never travels in a WebSocket URL query string.
+// Single-use, short-lived codes a paired device (Ficus Mobile) trades for a
+// browser session in its embedded farm web view, so the device token itself
+// never leaves the app (services/auth/web-handoff.ts).
+export const webHandoffs = pgTable('web_handoffs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tokenHash: text('token_hash').notNull().unique(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  deviceTokenId: uuid('device_token_id')
+    .notNull()
+    .references(() => deviceTokens.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at').notNull(),
+  usedAt: timestamp('used_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+})
+
 export const wsTickets = pgTable('ws_tickets', {
   id: uuid('id').primaryKey().defaultRandom(),
   tokenHash: text('token_hash').notNull().unique(),

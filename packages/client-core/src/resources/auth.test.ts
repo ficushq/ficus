@@ -41,6 +41,15 @@ describe('authResource', () => {
     ])
   })
 
+  test('createWebHandoff posts to the web handoff route with no body', async () => {
+    const { t, calls } = mockTransport(() => ({ code: 'ficus_wh_x', expiresAt: '2026-09-30T00:01:00.000Z' }))
+    expect(await authResource(t).createWebHandoff()).toEqual({
+      code: 'ficus_wh_x',
+      expiresAt: '2026-09-30T00:01:00.000Z',
+    })
+    expect(calls).toEqual([{ path: '/auth/web-handoff', options: { method: 'POST' } }])
+  })
+
   test('pairClaim posts the code/name/platform body', async () => {
     const { t, calls } = mockTransport(() => ({ token: 'ficus_dev_x', user: { id: 'u1', email: 'a@b.c' } }))
     await authResource(t).pairClaim({ code: 'ABC123', name: 'iPhone', platform: 'ios' })

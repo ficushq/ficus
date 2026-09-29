@@ -37,6 +37,20 @@ shows the login page and, once signed in, returns to the farm. That matters on
 iOS, where each home-screen app keeps its own cookies and a new farm app starts
 signed out.
 
+## In Ficus Mobile
+
+Ficus Mobile shows the farm in a web view in its Farm tab. The farm notices (`window.ReactNativeWebView`) and switches to app behaviour in `src/embed/embed.ts`:
+
+- **Native feel:** the page is marked `data-embed="native"`, so there's no bounce, long-press callout, tap flash or text selection outside fields. Page zoom is off, since the farm pinches its own camera.
+- **Sign-in:** there is no web sign-in. The app injects a web handoff code (`window.__FICUS_EMBED__`) or sends one when the farm asks (`auth-required`), and the farm trades it for a session (see [Core auth](core-auth.md#web-handoff-ficus-mobiles-farm-tab)).
+- **Dock:** the app sets `--g-embed-inset-bottom` (`FARM_EMBED_INSET_BOTTOM_VAR`) to the height its dock covers, and the farm keeps its bottom controls above it (`--g-safe-bottom`).
+- **Theme:** the Futurist style follows the theme the app sends, live, including a custom theme's palette primary as its accent. The other styles keep their own palettes.
+- **Haptics:** the farm asks the app for a light tap on a harvest, a wave involving you, someone else's chat message for you or in the room you have open, and an answer you submit.
+
+The messages are a small, versioned contract in `@ficus/shared/farm-embed`: JSON with `source` and `v`, and each side ignores versions and types it doesn't know. The farm accepts only messages with no `source` window (the native bridge's), not ones posted by a frame in the page.
+
+**What the app must do (required).** The native bridge has no target origin: the startup script runs on every page load, postMessage reaches whatever page is showing, and any page can post `auth-required`. So the app mints, injects or posts a `handoff` only when the web view's main-frame URL (its navigation state or `onMessage`'s `nativeEvent.url`, never the message body) has exactly the paired server's origin under its farm path. It also keeps the main frame on that origin (`originWhitelist` and `onShouldStartLoadWithRequest`) and opens every other link outside the web view. A code handed to any other page is a session for whoever runs it.
+
 ## Styles
 
 The farm is drawn in one of five styles (`apps/farm/src/skins/`): Nostalgic,

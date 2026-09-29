@@ -3,6 +3,7 @@ import type { FarmLayout } from '../farm/types'
 import { useAccountSettings } from '../settings/useAccountSettings'
 import { playChime, readSoundPreference, writeSoundPreference } from './chimes'
 import { chimeFor, tallyFarm, type FarmTally } from './farmSounds'
+import { haptic } from '../embed/embed'
 
 /**
  * Sound on/off plus chimes when the live farm changes. The choice follows the
@@ -27,6 +28,8 @@ export function useFarmSounds(layout: FarmLayout, needsYou: number) {
     const chime = chimeFor(previous.current, tally)
     previous.current = tally
     if (on && chime) playChime(chime)
+    // Inside Ficus Mobile a harvest is felt too, whatever the sound setting.
+    if (chime === 'harvested') haptic('harvest')
   }, [layout, needsYou, on])
 
   const toggle = useCallback(() => {

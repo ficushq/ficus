@@ -6,6 +6,15 @@
   box-sizing: border-box;
 }
 
+:root {
+  /*
+   * The bottom edge to keep clear: the device's safe area, or more when an
+   * embedding app's dock floats over the page (Ficus Mobile sets
+   * --g-embed-inset-bottom; see embed/embed.ts).
+   */
+  --g-safe-bottom: max(env(safe-area-inset-bottom), var(--g-embed-inset-bottom, 0px));
+}
+
 html,
 body,
 #root {
@@ -20,6 +29,33 @@ body {
   font-family: var(--g-font-body);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+}
+
+/*
+ * Inside Ficus Mobile's web view (embed/embed.ts marks the page): an app, not
+ * a page. No bounce, long-press callouts, tap flashes or stray text selection;
+ * what you type stays selectable. The app turns off the web view's own bounce
+ * and zoom too.
+ */
+html[data-embed='native'],
+html[data-embed='native'] body {
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html[data-embed='native'] :is(input, textarea, [contenteditable='true']) {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* What people say stays copyable: agent chat transcripts and farm chat messages. */
+html[data-embed='native'] :is(.g-chat-log, .g-farmchat-text) {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .g-card {

@@ -11,13 +11,20 @@ import { ChatProvider } from './chat'
 import { SkinProvider } from './skins'
 import { MultiplayerProvider } from './multiplayer/MultiplayerProvider'
 import { resumeLastApp } from './app/appSurface'
+import { exchangeHandoff, startEmbed } from './embed/embed'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: true } },
 })
 
+// In Ficus Mobile's web view: sign in with the code the app injected before the first query.
+const embed = startEmbed()
+const signingIn = embed.handoff ? exchangeHandoff(embed.handoff) : Promise.resolve(true)
+
 // An installed Farm app last left in the web app reopens there instead.
-if (!resumeLastApp()) {
+if (!resumeLastApp()) void signingIn.then(render)
+
+function render() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

@@ -27,6 +27,7 @@ import { lookFor } from './personLook'
 import { mentionsUser } from './mentions'
 import { bubbleText } from './messageTokens'
 import { playChime, readSoundPreference } from '../sound/chimes'
+import { haptic } from '../embed/embed'
 
 /*
  * The farm's multiplayer: who else is here (and what they're at), and chat
@@ -343,11 +344,14 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
           )
           return
         }
-        case 'presence.waved':
+        case 'presence.waved': {
           if (!enabledRef.current) return
           showEmote(entry.data.fromUserId, '👋')
           showEmote(entry.data.toUserId, '👋')
+          const mine = meRef.current?.userId
+          if (mine && (entry.data.toUserId === mine || entry.data.fromUserId === mine)) haptic('wave')
           return
+        }
         case 'farmChat.messageDeleted': {
           const { roomId, messageId } = entry.data
           queryClient.setQueryData<FarmChatMessagePage>(chatKeys.messages(roomId), (page) =>
@@ -398,8 +402,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
           const me = meRef.current
           if (sender && me && sender !== me.userId) {
             const people = queryClient.getQueryData<FarmPerson[]>(chatKeys.people()) ?? []
-            if (!room || room.kind === 'dm' || mentionsUser(message.body, people, me.userId))
-              alertAbout(message, room, people)
+            const forYou = !room || room.kind === 'dm' || mentionsUser(message.body, people, me.userId)
+            if (forYou) alertAbout(message, room, people)
+            // Someone else's message for you, or in the room you have open: a light tap in Ficus Mobile.
+            if (forYou || viewing.current === message.roomId) haptic('message')
           }
           // Yours too, over your own head.
           if (enabledRef.current && sender && room && room.kind !== 'dm') {

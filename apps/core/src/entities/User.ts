@@ -216,7 +216,13 @@ export class User {
     await db.delete(users).where(eq(users.id, this.id))
   }
 
-  async createSession(opts?: { userAgent?: string; ipAddress?: string; expiresInMs?: number }): Promise<string> {
+  async createSession(opts?: {
+    userAgent?: string
+    ipAddress?: string
+    expiresInMs?: number
+    /** A paired device's embedded web view (a web handoff): the session ends with the device. */
+    deviceTokenId?: string | null
+  }): Promise<string> {
     const token = `${SESSION_TOKEN_PREFIX}${randomUUID()}`
     const tokenHash = createHash('sha256').update(token).digest('hex')
     const expiresAt = new Date(Date.now() + (opts?.expiresInMs ?? 30 * 24 * 60 * 60 * 1000))
@@ -227,6 +233,7 @@ export class User {
       userAgent: opts?.userAgent ?? null,
       ipAddress: opts?.ipAddress ?? null,
       expiresAt,
+      deviceTokenId: opts?.deviceTokenId ?? null,
     })
 
     return token

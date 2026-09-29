@@ -149,7 +149,7 @@
 .g-tools {
   position: absolute;
   right: 14px;
-  bottom: max(18px, calc(env(safe-area-inset-bottom) + 8px));
+  bottom: max(18px, calc(var(--g-safe-bottom) + 8px));
   display: flex;
   gap: 10px;
 }
@@ -263,7 +263,7 @@
 .g-farm-card.g-sheet {
   left: 8px;
   right: 8px;
-  bottom: max(8px, env(safe-area-inset-bottom));
+  bottom: max(8px, var(--g-safe-bottom));
   width: auto;
   max-height: 70%;
   border-radius: var(--g-radius-lg) var(--g-radius-lg) var(--g-radius-md) var(--g-radius-md);
@@ -855,7 +855,7 @@ a.g-pr-link:focus-visible {
 
 /* Phones: the tools behind More open as a second row above the toolbar. */
 .g-tools-more {
-  bottom: max(104px, calc(env(safe-area-inset-bottom) + 94px));
+  bottom: max(104px, calc(var(--g-safe-bottom) + 94px));
 }
 
 /*

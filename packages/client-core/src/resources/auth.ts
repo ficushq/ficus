@@ -107,6 +107,13 @@ export function authResource(t: Transport) {
     validateAuth: (): Promise<AuthValidation> => t.request('/auth/validate'),
     /** Mint a single-use, short-lived ticket for authenticating a WebSocket connection. */
     fetchWsTicket: (): Promise<{ ticket: string }> => t.request('/auth/ws-ticket', { method: 'POST' }),
+    /**
+     * (paired device) Mint a single-use, one-minute code the device's embedded web view trades
+     * for a browser session (Ficus Mobile's Farm tab). Hand it to the page by postMessage or
+     * injected script, never in a URL.
+     */
+    createWebHandoff: (): Promise<{ code: string; expiresAt: string }> =>
+      t.request('/auth/web-handoff', { method: 'POST' }),
     getCurrentUser: (): Promise<AuthUser> => t.request('/auth/me'),
     updateCurrentUser: (input: { displayName?: string }): Promise<AuthUser> =>
       t.request('/auth/me', { method: 'PATCH', body: input }),

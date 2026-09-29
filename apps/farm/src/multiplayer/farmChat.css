@@ -17,7 +17,7 @@
 }
 
 .g-farmchat-sheet {
-  inset: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+  inset: max(8px, env(safe-area-inset-top)) 8px max(8px, var(--g-safe-bottom));
   width: auto;
 }
 

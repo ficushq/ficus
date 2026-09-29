@@ -8,5 +8,6 @@
 export const SESSION_TOKEN_PREFIX = 'ficus_sess_'
 export const AGENT_TOKEN_PREFIX = 'ficus_agent_'
 export const WS_TICKET_PREFIX = 'ficus_wst_'
+export const WEB_HANDOFF_PREFIX = 'ficus_wh_'
 /** Every system token carries this prefix; resolveSystemToken rejects anything else before any lookup. */
 export const SYSTEM_TOKEN_PREFIX = 'ficus_sys_'
