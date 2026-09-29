@@ -435,7 +435,7 @@ describe('deployments routes', () => {
       const localDeployment = await res.json()
       const compactId = localDeployment.id.replaceAll('-', '').slice(0, 12)
       expect(localDeployment.urlPathOrHost).toMatch(
-        new RegExp(`^https://team--blue--${compactId}\\.hiretau\\.app/\\?_tau_token=.+$`)
+        new RegExp(`^https://team--blue--${compactId}\\.ficus\\.app/\\?_tau_token=.+$`)
       )
     } finally {
       if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN

@@ -17,7 +17,7 @@ describe('GitHub plugin validation', () => {
   })
 
   test('a renamed account refreshes its login under the same account id', async () => {
-    const renamed = { version: 1 as const, userId: 42, login: 'ficusagent' }
+    const renamed = { version: 1 as const, userId: 42, login: 'ficusagent-renamed' }
     expect(await validateAs(renamed)).toEqual({ ok: true, grantedScopes: [], configuration: renamed })
   })
 
