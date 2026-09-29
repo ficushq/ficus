@@ -39,7 +39,7 @@ describe('csrfProtection', () => {
   test('cookie-authed mutation carrying only the pre-Ficus CSRF header spelling → 403', async () => {
     const res = await app().request('/api/thing', {
       method: 'POST',
-      headers: { Cookie: 'ficus_session=t', 'X-Tau-Csrf': '1' }, // D14
+      headers: { Cookie: 'ficus_session=t', 'X-Tau-Csrf': '1' }, // D14 // ficus-negative-test
     })
     expect(res.status).toBe(403)
   })

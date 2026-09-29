@@ -19,15 +19,15 @@ describe('local deployment proxy error marker', () => {
     expect(LOCAL_DEPLOYMENT_PROXY_ERROR_MARKER_HEADERS).toEqual(['x-ficus-app-proxy'])
   })
 
-  // The control plane no longer strips client-sent x-tau-* headers, and reads
+  // The control plane no longer strips client-sent x-tau-* headers, and reads // ficus-negative-test
   // only x-ficus-app-proxy: a pre-Ficus marker gets no special treatment here,
   // so an app response carrying one passes through as the app's own header.
-  it('gives an app-supplied x-tau-app-proxy header no special treatment', async () => {
-    const upstream = new Response('app body', { status: 502, headers: { 'x-tau-app-proxy': 'error' } })
+  it('gives an app-supplied pre-Ficus app-proxy header no special treatment', async () => {
+    const upstream = new Response('app body', { status: 502, headers: { 'x-tau-app-proxy': 'error' } }) // ficus-negative-test
     const response = stripLocalDeploymentProxyErrorMarker(upstream)
-    expect(response.headers.get('x-tau-app-proxy')).toBe('error')
+    expect(response.headers.get('x-tau-app-proxy')).toBe('error') // ficus-negative-test
     expect(response.headers.get(LOCAL_DEPLOYMENT_PROXY_ERROR_HEADER)).toBeNull()
-    expect(localDeploymentProxyJsonError('x', 404).headers.get('x-tau-app-proxy')).toBeNull()
+    expect(localDeploymentProxyJsonError('x', 404).headers.get('x-tau-app-proxy')).toBeNull() // ficus-negative-test
   })
 
   const appSuppliedMarkers = ['x-ficus-app-proxy']
