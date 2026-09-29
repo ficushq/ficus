@@ -226,6 +226,15 @@ printf '[Service]\nMemoryMax=infinity\n' >"${UNITS}/${HL_UNIT_API}.service.d/aa-
 (ensure_api_memory_guardrail) >/dev/null 2>&1
 expect_eq 'guardrail (layout 1): a mutated legacy-suffix drop-in is repaired in place, no second one' \
   "$(grep -c '^MemoryMax=35%$' "${GR_LEGACY}"):$(find "${UNITS}/${HL_UNIT_API}.service.d" -name '*memory-guardrail.conf' | wc -l | tr -d ' ')" '1:1'
+# Ruling 73 (accepted deviation): on layout 1 a NEW managed drop-in carries
+# the layout's (legacy) suffix, never the Ficus one — the host-layout
+# migration's unit-step inverse renames it back, and a Ficus-suffixed file on
+# a layout-1 host would collide with that.
+rm -f "${UNITS}/${HL_UNIT_API}.service.d"/*memory-guardrail.conf "${UNITS}/${HL_UNIT_API}.service.d/aa-early.conf"
+(ensure_api_memory_guardrail) >/dev/null 2>&1
+expect_eq 'guardrail (layout 1): a new managed drop-in gets the legacy suffix' \
+  "$(cd "${UNITS}/${HL_UNIT_API}.service.d" && find . -name '*memory-guardrail.conf' | sort | tr '\n' ' ')" \
+  "./zz-local.${HL_LEGACY_GUARDRAIL_SUFFIX} "
 host_layout_resolve fresh
 
 printf '%s passed, %s failed\n' "$PASS" "$FAIL"

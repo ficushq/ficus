@@ -313,7 +313,7 @@ HL_NEW_GUARDRAIL_SUFFIX=z-ficus-memory-guardrail.conf
 HL_NEW_SUDOERS=/etc/sudoers.d/ficus-update
 
 # Where the core, worker and backup units live (a seam: set it before sourcing
-# this file, or override it after).
+# this file, or override it after — host_layout_resolve never touches it).
 FICUS_SYSTEMD_UNIT_DIR=${FICUS_SYSTEMD_UNIT_DIR:-${FICUS_HOST_ROOT:-}/etc/systemd/system}
 
 # The path globals host_layout_resolve derives from the layout. Each is also a
@@ -624,14 +624,14 @@ require_env_file_sandbox_runtime() { # ENV_FILE
   value=${value#"${value%%[![:space:]]*}"}
   value=${value%"${value##*[![:space:]]}"}
   [[ -n ${value} ]] ||
-    die "FICUS_SANDBOX_RUNTIME is not set in ${file} — tau-api and tau-worker refuse to start without it, so restarting them now would take this instance DOWN. Add one of ${FICUS_SANDBOX_RUNTIMES} to that file (see docs/wiki/sandbox-runtimes.md) and re-run."
+    die "FICUS_SANDBOX_RUNTIME is not set in ${file} — ${HL_UNIT_API} and ${HL_UNIT_WORKER} refuse to start without it, so restarting them now would take this instance DOWN. Add one of ${FICUS_SANDBOX_RUNTIMES} to that file (see docs/wiki/sandbox-runtimes.md) and re-run."
   case "${value}" in
     docker-sysbox | docker-socket | k8s | vm | host) return 0 ;;
     sysbox) hint=' — this host predates the rename: use docker-sysbox' ;;
     socket) hint=' — this host predates the rename: use docker-socket' ;;
     auto | docker) hint=' — auto-detection was removed, choose docker-sysbox or docker-socket' ;;
   esac
-  die "FICUS_SANDBOX_RUNTIME in ${file} must be one of ${FICUS_SANDBOX_RUNTIMES} (got '${value}')${hint}. tau-api and tau-worker refuse to start otherwise, so restarting them now would take this instance DOWN; fix that file and re-run."
+  die "FICUS_SANDBOX_RUNTIME in ${file} must be one of ${FICUS_SANDBOX_RUNTIMES} (got '${value}')${hint}. ${HL_UNIT_API} and ${HL_UNIT_WORKER} refuse to start otherwise, so restarting them now would take this instance DOWN; fix that file and re-run."
 }
 
 # Resolve runtime.exe.ssh_key_path for `runtime.sandbox: vm`, tolerating an
@@ -1369,8 +1369,9 @@ install_database_ca() { # CA_SRC
 # the current manifest doesn't list can only be a leftover of a DELETED
 # artifact, so removing it is reconciliation, not collateral damage.
 #
-# These are also seams (lib.test.sh points them at scratch dirs); set them
-# before sourcing this file, or override them after. Their defaults —
+# These are also seams (lib.test.sh points them at scratch dirs): a value set
+# BEFORE this file is sourced keeps precedence over every host_layout_resolve;
+# one assigned after sourcing lasts only until the next resolve. Defaults —
 # <layout etc dir>/artifacts and <layout etc dir>/managed.env — come from
 # host_layout_resolve, and FICUS_SYSTEMD_UNIT_DIR from the host layout section.
 
@@ -2798,6 +2799,9 @@ build_stamp_write() { # SRC_DEST SERVE_WEB
     fi
     printf 'FICUS_BUILD_AT=%s\n' "$(date -u +%FT%TZ)"
   } >"${stamp}"
+  # While the host-layout bridge lasts, the same stamp under the legacy name
+  # too: a toolkit from before it reads only that one.
+  cp -f "${stamp}" "${src_dest}/${HL_LEGACY_BUILD_STAMP}" # ficus-p5-bridge
 }
 
 # Install dependencies and build the app from a checkout. ALWAYS builds core;
@@ -3341,9 +3345,14 @@ artifact_stage() { # DEST INCOMING_TREE SHA DIGEST12
     die "artifact_stage: could not move the verified tree into ${release} (same-filesystem rename expected)"
   digest=$(jq -r '.digest // empty' <"${release}/artifact.json" 2>/dev/null || true)
   # Marker last, and renamed into place, so its mere existence is proof the
-  # whole tree landed.
+  # whole tree landed. While the host-layout bridge lasts the legacy marker is
+  # written too (first), so a toolkit from before it — an emergency Platform
+  # rollback — still sees this release as complete.
   printf '{"sha":"%s","digest":"%s","digest12":"%s","stagedAt":"%s"}\n' \
     "${sha}" "${digest}" "${digest12}" "$(date -u +%FT%TZ)" >"${marker}.tmp"
+  cp -f "${marker}.tmp" "${release}/${HL_LEGACY_RELEASE_MARKER}.tmp" &&        # ficus-p5-bridge
+    mv -f "${release}/${HL_LEGACY_RELEASE_MARKER}.tmp" "${release}/${HL_LEGACY_RELEASE_MARKER}" || # ficus-p5-bridge
+    die "artifact_stage: could not write the legacy completion marker in ${release}" # ficus-p5-bridge
   mv -f "${marker}.tmp" "${marker}"
   # The tree has moved out; the tarball, signature and work files it came with
   # have not. Leaving them would grow releases/.incoming by one artifact-sized
@@ -3693,6 +3702,19 @@ envfile_read() { # VAR FILE KEY
 # needed migration per run may define _settle; its answer, not the active
 # release, decides whether a journaled run is finished forward or reversed
 # and restored.
+#
+# The contract for _reverse: it runs in a subshell (a die inside it is a
+# failure, never the caller's exit) with _HM_IN_REVERSE=1 exported. It may put
+# the set's files back itself (`_HM_REVERSED=1 host_migrate_backup_restore
+# SETDIR`) when a step of its own must follow them, but that restore never
+# clears the journal: only the framework's own restore, after every _reverse
+# returned 0, removes PENDING — once, after the last inverse step. A kill
+# anywhere inside a reverse leaves the set journaled, and the next run reverses
+# (idempotently) again. The framework byte-restores a marked set only when
+# every migration its `#requires-reverse` line names defines _reverse here.
+# _settle and _reverse are looked up as defined functions (declare -F); a
+# marked set whose migrations this toolkit does not register is left
+# journaled (reconcile returns 3).
 #
 # Safety, in the order it happens:
 #   * backup set: every host config file is copied byte for byte (cp -p, cmp,
@@ -4089,6 +4111,11 @@ host_migrate_backup_restore() { # SETDIR
     fi
   fi
   pending=$(_hm_pending_set) || pending=''
+  # Inside a migration's _reverse the journal stays: the reverse is not done
+  # until it returns, and only the framework's restore after it commits.
+  if [[ ${_HM_IN_REVERSE:-0} == 1 ]]; then
+    pending=''
+  fi
   if [[ -n ${pending} && $(readlink -f -- "${pending}" 2>/dev/null) == "$(readlink -f -- "${setdir}" 2>/dev/null)" ]]; then
     if ! rm -f -- "$(host_migrate_backup_root)/PENDING"; then
       log_error "host restore: files restored, but the journal could not be removed"
@@ -4281,6 +4308,25 @@ _hm_direction() { # SETDIR NAMES RELEASE_DIR
   fi
 }
 
+# May SETDIR's files be byte-restored after _hm_reverse? Always for an
+# unmarked set; for a set marked `#requires-reverse`, only when every
+# migration its marker names defines _reverse in this toolkit — otherwise the
+# reverse would silently skip it and the restore would write the old files
+# over whatever it moved. Names the first missing one in _HM_NO_REVERSE.
+_hm_reverse_complete() { # SETDIR
+  local names m
+  _HM_NO_REVERSE=''
+  names=$(_hm_set_reverse_names "$1") || return 0
+  local -a list=()
+  IFS=, read -r -a list <<<"${names}"
+  for m in ${list[@]+"${list[@]}"}; do
+    if ! declare -F "host_migration_${m}_reverse" >/dev/null; then
+      _HM_NO_REVERSE=${m}
+      return 1
+    fi
+  done
+}
+
 # Undo, newest first, what each of NAMES that defines _reverse changed beyond
 # SETDIR's files. Each reverse runs in a subshell, so a die inside it cannot
 # end the caller (the rollback hook must still reach the rollback restart).
@@ -4292,7 +4338,10 @@ _hm_reverse() { # SETDIR NAMES
   for ((i = ${#list[@]} - 1; i >= 0; i--)); do
     m=${list[i]}
     declare -F "host_migration_${m}_reverse" >/dev/null || continue
-    if ! ("host_migration_${m}_reverse" "${setdir}"); then
+    if ! (
+      export _HM_IN_REVERSE=1
+      "host_migration_${m}_reverse" "${setdir}"
+    ); then
       log_error "host migration '${m}' could not be reversed from ${setdir} — the journal is kept"
       return 1
     fi
@@ -4364,6 +4413,10 @@ host_migrate_reconcile() {
           return 3
         fi
       done
+      if ! _hm_reverse_complete "${setdir}"; then
+        log_warn "reconcile: ${setdir} must be reversed by the host migration '${_HM_NO_REVERSE}', which defines no reverse in this toolkit — leaving it journaled for a toolkit that does"
+        return 3
+      fi
     fi
     _hm_reverse "${setdir}" "${names}" ||
       die "reconcile: reversing the host migration(s) ${names} journaled in ${setdir} failed — the journal is kept; inspect it before re-running"
@@ -4409,6 +4462,10 @@ host_migrate_settle_pending() {
     return 1
   fi
   if [[ ${dir} == restore ]]; then
+    if ! _hm_reverse_complete "${HOST_MIGRATE_BACKUP_SET}"; then
+      log_error "${HOST_MIGRATE_BACKUP_SET} must be reversed by the host migration '${_HM_NO_REVERSE}', which defines no reverse in this toolkit — nothing was restored; $(host_migrate_backup_root)/PENDING is kept"
+      return 1
+    fi
     log_warn "restoring this host's files from ${HOST_MIGRATE_BACKUP_SET} (the run that migrated them did not complete, and ${HOST_MIGRATE_RELEASE} is not serving or its migration settles by restoring)"
     if ! _hm_reverse "${HOST_MIGRATE_BACKUP_SET}" "${HOST_MIGRATE_NAMES}"; then
       log_error "the host migration(s) ${HOST_MIGRATE_NAMES} could not be reversed — $(host_migrate_backup_root)/PENDING is kept, and the next toolkit run reconciles it"

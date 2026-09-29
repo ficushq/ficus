@@ -3649,6 +3649,11 @@ PYREPACK
     "$([[ -f ${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER} ]] && echo marked || echo unmarked)" 'marked'
   expect_match 'artifact_stage: the marker records what was staged' \
     "$(<"${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER}")" "\"sha\":\"${ART_SHA_A}\".*\"digest\":\"sha256:[0-9a-f]{64}\""
+  # Bridge: a toolkit from before the host layout reads only the legacy marker.
+  expect_eq 'artifact_stage: also writes the legacy marker (same record), so an older toolkit sees the release complete' \
+    "$(cmp -s "${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER}" "${ART_RELEASE_A}/${HL_LEGACY_RELEASE_MARKER}" && echo both || echo missing)" 'both'
+  expect_eq 'artifact_stage: no marker staging file is left behind' \
+    "$(find "${ART_RELEASE_A}" -maxdepth 1 -name '*.tmp' | wc -l | tr -d ' ')" '0'
   expect_eq 'artifact_stage: the incoming session dir is cleaned up' \
     "$(art_incoming_count "${ART_DEST}")" '0'
 
@@ -4789,6 +4794,10 @@ expect_eq 'build_stamp_is_current: no stamp on disk -> not current' \
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'no'
 
 build_stamp_write "${BS_GIT}" true
+# Bridge: the legacy stamp is written too (same bytes) for a toolkit from
+# before the host layout.
+expect_eq 'build_stamp_write: writes the Ficus stamp and the legacy one, byte-identical' \
+  "$(cmp -s "${BS_GIT}/${HL_NEW_BUILD_STAMP}" "${BS_GIT}/${HL_LEGACY_BUILD_STAMP}" && echo both || echo missing)" 'both'
 expect_eq 'build_stamp_is_current: fresh stamp, commit+lock+outputs all match -> current (skip)' \
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'yes'
 
@@ -5982,7 +5991,19 @@ host_migration_testmove_apply() {
 host_migration_testmove_settle() { if [[ -e $1/TM_DONE ]]; then echo forward; else echo restore; fi; }
 host_migration_testmove_reverse() {
   [[ -z ${TM_REVERSE_FAIL:-} ]] || return 1
+  [[ -z ${TM_REVERSE_DIE:-} ]] || die 'testmove: the reverse died'
   if [[ -d ${HM_H}/data.moved && ! -e ${HM_H}/data ]]; then mv "${HM_H}/data.moved" "${HM_H}/data"; fi
+  if [[ -n ${TM_REVERSE_RESTORE:-} ]]; then
+    # The host_layout shape: the files back first, then a step that needs
+    # them (there: start the legacy units).
+    _HM_REVERSED=1 host_migrate_backup_restore "$1" || return 1
+    if [[ -n ${TM_KILL_PID:-} ]]; then
+      kill -KILL "${TM_KILL_PID}"
+      kill -KILL "${BASHPID}"
+    fi
+    [[ -z ${TM_REVERSE_FAIL_AFTER:-} ]] || return 1
+    : >"${HM_H}/units-started"
+  fi
 }
 hm_moved() { # where the scratch dir is, and whether .env carries the move
   printf '%s:%s' "$([[ -d ${HM_H}/data ]] && echo data || echo data.moved)" "$(grep -c '^TESTMOVE=1$' "${SRC_DEST}/.env" || true)"
@@ -6084,6 +6105,78 @@ expect_eq 'reconcile: a marked set whose migration this toolkit does not define 
 HOST_MIGRATIONS=(testmove)
 (host_migrate_reconcile) 2>/dev/null || true
 expect_eq 'reconcile: ...and a toolkit that defines it reverses it' "$(hm_moved):$(hm_pending)" 'data:0:none'
+
+# (I1) a toolkit that registers the migration but defines no _reverse for it
+# must not byte-restore a marked set around the move it cannot undo.
+hm_saved_reverse=$(declare -f host_migration_testmove_reverse)
+hm_host tm-no-reverse
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+hm_env_now=$(cat "${SRC_DEST}/.env")
+unset -f host_migration_testmove_reverse
+hm_rc=0
+(host_migrate_reconcile) 2>/dev/null || hm_rc=$?
+expect_eq 'reconcile: a marked set whose migration defines no _reverse here returns 3, untouched' \
+  "${hm_rc}:$(hm_pending):$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_now}" ]] && echo same)" '3:pending:data.moved:1:same'
+hm_rc=0
+(
+  HOST_MIGRATE_PENDING=1 HOST_MIGRATE_BACKUP_SET=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+  HOST_MIGRATE_NAMES=testmove HOST_MIGRATE_RELEASE="${SRC_DEST}/releases/new"
+  host_migrate_settle_pending
+) 2>/dev/null || hm_rc=$?
+expect_eq "settle: ...and this run's own settle returns 1, untouched, the journal kept" \
+  "${hm_rc}:$(hm_pending):$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_now}" ]] && echo same)" '1:pending:data.moved:1:same'
+eval "${hm_saved_reverse}"
+(host_migrate_reconcile) 2>/dev/null || true
+expect_eq 'reconcile: ...and once _reverse is defined again, it settles' "$(hm_moved):$(hm_pending)" 'data:0:none'
+
+# (I2) a _reverse that restores the files itself, then has a step of its own
+# (host_layout: start the legacy units after the files are back). Its restore
+# never clears the journal: a failure — or a SIGKILL — after it leaves the set
+# journaled, and the next run settles it, finishing that last step.
+hm_host tm-reverse-restores
+hm_env_before=$(cat "${SRC_DEST}/.env")
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+(TM_REVERSE_RESTORE=1 TM_REVERSE_FAIL_AFTER=1 host_migrate_reconcile) >/dev/null 2>&1 || true
+expect_eq 'reverse: a restore inside _reverse keeps the journal when the reverse then fails' \
+  "$(hm_pending):$([[ -e ${HM_H}/units-started ]] && echo started || echo stopped)" 'pending:stopped'
+(
+  export TM_REVERSE_RESTORE=1
+  host_migrate_reconcile
+) >/dev/null 2>&1 || true
+expect_eq 'reverse: ...the next reconcile finishes it: restored, last step run, journal cleared once' \
+  "$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_pending):$([[ -e ${HM_H}/units-started ]] && echo started)" \
+  'data:0:same:none:started'
+hm_host tm-reverse-killed
+hm_env_before=$(cat "${SRC_DEST}/.env")
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+(
+  export TM_REVERSE_RESTORE=1 TM_KILL_PID=${BASHPID}
+  host_migrate_reconcile
+) >/dev/null 2>&1 || true
+expect_eq "reverse: SIGKILL between the reverse's own restore and its last step leaves the set journaled" \
+  "$(hm_pending):$([[ -e ${HM_H}/units-started ]] && echo started || echo stopped):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo restored)" \
+  'pending:stopped:restored'
+(
+  export TM_REVERSE_RESTORE=1
+  host_migrate_reconcile
+) >/dev/null 2>&1 || true
+expect_eq 'reverse: ...and the host is still settleable: the next reconcile completes it' \
+  "$(hm_moved):$(hm_pending):$([[ -e ${HM_H}/units-started ]] && echo started)" 'data:0:none:started'
+
+# (M3) a _reverse that dies is a failed reverse, never the caller's exit: the
+# rollback hook's settle must still return to reach the rollback restart.
+hm_host tm-reverse-dies
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+hm_out=$(
+  HOST_MIGRATE_PENDING=1 HOST_MIGRATE_BACKUP_SET=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+  HOST_MIGRATE_NAMES=testmove HOST_MIGRATE_RELEASE="${SRC_DEST}/releases/new" TM_REVERSE_DIE=1
+  hm_rc=0
+  host_migrate_settle_pending 2>/dev/null || hm_rc=$?
+  printf 'survived rc=%s' "${hm_rc}"
+) || true
+expect_eq 'settle: a _reverse that dies fails the settle (rc 1) and the caller survives' "${hm_out}" 'survived rc=1'
+expect_eq 'settle: ...with the journal and the migrated state kept' "$(hm_pending):$(hm_moved)" 'pending:data.moved:1'
+(host_migrate_reconcile) 2>/dev/null || true
 
 # (g) two needed migrations that both decide their own settle: refused up front.
 host_migration_testmove2_needed() { host_migration_testmove_needed "$@"; }
