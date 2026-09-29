@@ -51,7 +51,7 @@ function Splash({ message, children }: { message: string; children?: React.React
   return (
     <main className="g-splash">
       <div className="g-card g-splash-card">
-        <h1 className="g-wordmark">ficus farm</h1>
+        <h1 className="g-wordmark">Ficus Farm</h1>
         <p>{message}</p>
         {children}
       </div>
