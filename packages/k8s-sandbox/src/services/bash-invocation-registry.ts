@@ -125,6 +125,9 @@ export class BashInvocationRegistry {
     const result = await this.lock<{ remainingPids: [] }>(key, async () => {
       const record = await this.readValidated(key)
       if (record && (await this.persistOwnedCompletion(key, record))) return { remainingPids: [] }
+      // No record is a truthful "nothing running": a record is written before any spawn and only a
+      // terminal record is ever pruned. A start request still pending admission is not here yet;
+      // cancelBashInvocation forbids and settles it before asking.
       if (!record || !['starting', 'running', 'cancelling', 'quarantined'].includes(record.state))
         return { remainingPids: [] }
       if (record.state === 'quarantined' && !record.pid) throw new InvocationQuarantinedError()
