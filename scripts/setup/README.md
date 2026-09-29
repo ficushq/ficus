@@ -182,8 +182,9 @@ the restart (git mode). This release registers no migration.
   decides by its own commit point (not the serving release) whether a
   journaled run is finished forward or undone, and `_reverse`, which undoes
   the moves before the files are restored. Its backup set starts its
-  `MANIFEST` with a `#requires-reverse` line, and a plain byte restore of such
-  a set is refused.
+  `MANIFEST` with a `#requires-reverse` line, and a byte restore of such a set
+  is refused — whoever asks — until the same run has reversed every migration
+  that line names (even one the journal does not list).
 - **Reconcile.** A run that could not settle (`SIGKILL`, OOM, reboot) leaves
   the journal; the next `upgrade-host.sh`, `setup-host.sh` or
   `apply-artifacts.sh --config` settles it the same way. Those runs take an

@@ -3442,29 +3442,35 @@ expect_eq 'artifact_current_release_id: reads the release id through current' \
 rm -rf "${ART_ID_TMP}"
 
 # --- toolchain shim (or skip) ---
+# Each probe captures the tool's output first and matches it after: under
+# pipefail, `tool --version | grep -q …` fails whenever grep -q exits early and
+# the tool dies of SIGPIPE, which once dropped this whole block at random.
 ART_SKIP=''
 ART_OPENSSL=''
 ART_PATH_BEFORE=${PATH}
 ART_SHIM=$(mktemp -d)
-if mv --version 2>/dev/null | grep -q 'GNU coreutils'; then
+art_probe() { # CMD... — the command's stdout+stderr, never a failure
+  "$@" 2>&1 || true
+}
+if [[ $(art_probe mv --version) == *'GNU coreutils'* ]]; then
   : # already GNU
 elif have gmv; then
   ln -sfn "$(command -v gmv)" "${ART_SHIM}/mv"
 else
   ART_SKIP='GNU mv (needs -T)'
 fi
-if sha256sum --version 2>/dev/null | grep -q 'GNU coreutils'; then
+if [[ $(art_probe sha256sum --version) == *'GNU coreutils'* ]]; then
   : # already GNU
 elif have gsha256sum; then
   ln -sfn "$(command -v gsha256sum)" "${ART_SHIM}/sha256sum"
 else
   ART_SKIP=${ART_SKIP:-'GNU sha256sum (needs -c --strict)'}
 fi
-if openssl pkeyutl -help 2>&1 | grep -q -- '-rawin'; then
+if [[ $(art_probe openssl pkeyutl -help) == *-rawin* ]]; then
   ART_OPENSSL=$(command -v openssl)
 else
   for art_cand in /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl /opt/homebrew/bin/openssl /usr/local/bin/openssl; do
-    if [[ -x ${art_cand} ]] && "${art_cand}" pkeyutl -help 2>&1 | grep -q -- '-rawin'; then
+    if [[ -x ${art_cand} && $(art_probe "${art_cand}" pkeyutl -help) == *-rawin* ]]; then
       ART_OPENSSL=${art_cand}
       ln -sfn "${ART_OPENSSL}" "${ART_SHIM}/openssl"
       break
@@ -3477,7 +3483,14 @@ for art_cmd in python3 jq bun curl tar; do
 done
 
 if [[ -n ${ART_SKIP} ]]; then
-  log_warn "skipping the core release artifact tests — ${ART_SKIP} not available"
+  # Loud: a skipped block must never pass for a green one. Every tool it needs
+  # ships on the Linux lanes (CI, the Ubuntu container), so there a skip is a
+  # failure; elsewhere (macOS without the GNU tools) it is a SKIP line.
+  printf 'SKIP: the core release artifact tests did not run — %s not available\n' "${ART_SKIP}" >&2
+  if [[ $(uname -s) == Linux ]]; then
+    FAIL=$((FAIL + 1))
+    log_error "FAIL: the core release artifact tests must run on Linux — ${ART_SKIP} not available"
+  fi
 else
   PATH="${ART_SHIM}:${PATH}"
   ART_TMP=$(mktemp -d)
@@ -6177,6 +6190,96 @@ hm_out=$(
 expect_eq 'settle: a _reverse that dies fails the settle (rc 1) and the caller survives' "${hm_out}" 'survived rc=1'
 expect_eq 'settle: ...with the journal and the migrated state kept' "$(hm_pending):$(hm_moved)" 'pending:data.moved:1'
 (host_migrate_reconcile) 2>/dev/null || true
+
+# (R1) an _HM_IN_REVERSE=1 from outside the framework never turns its own
+# restore — the commit point after every reverse — into one that keeps the
+# journal: not through reconcile, not through this run's settle, and not
+# through a lib.sh sourced with it in the environment.
+hm_host tm-inherited-in-reverse
+hm_env_before=$(cat "${SRC_DEST}/.env")
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+(
+  export _HM_IN_REVERSE=1
+  host_migrate_reconcile
+) >/dev/null 2>&1 || true
+expect_eq 'reconcile: an exported _HM_IN_REVERSE=1 does not keep the journal after the reverse and restore' \
+  "$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_pending)" 'data:0:same:none'
+hm_host tm-inherited-in-reverse-settle
+hm_env_before=$(cat "${SRC_DEST}/.env")
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+(
+  export _HM_IN_REVERSE=1
+  HOST_MIGRATE_PENDING=1 HOST_MIGRATE_BACKUP_SET=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+  HOST_MIGRATE_NAMES=testmove HOST_MIGRATE_RELEASE="${SRC_DEST}/releases/new"
+  host_migrate_settle_pending
+) >/dev/null 2>&1 || true
+expect_eq "settle: an exported _HM_IN_REVERSE=1 does not keep this run's journal either" \
+  "$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_pending)" 'data:0:same:none'
+expect_eq 'lib.sh: no reverse bookkeeping survives sourcing it (none is taken from the environment)' \
+  "$(_HM_IN_REVERSE=1 _HM_REVERSED=1 _HM_REVERSE_SET=/x _HM_REVERSE_DONE=,testmove, _HM_REVERSE_RUNNING=testmove \
+    bash -c 'source "$1/lib.sh"; printf %s "${_HM_IN_REVERSE-u}${_HM_REVERSED-u}${_HM_REVERSE_SET-u}${_HM_REVERSE_DONE-u}${_HM_REVERSE_RUNNING-u}"' _ "${SCRIPT_DIR}")" \
+  'uuuuu'
+
+# (R2) host_migrate_backup_restore itself refuses a marked set whose reverses
+# this process did not run — _HM_REVERSED=1 (set by the caller, or exported)
+# is not enough, and neither is a reverse run from another set.
+hm_host tm-reversed-claimed
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+hm_set=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+hm_env_now=$(cat "${SRC_DEST}/.env")
+hm_out=$(_HM_REVERSED=1 host_migrate_backup_restore "${hm_set}" 2>&1) && hm_rc=0 || hm_rc=$?
+expect_match 'host_migrate_backup_restore: _HM_REVERSED=1 without the reverse having run is refused' \
+  "${hm_rc}:${hm_out}" '^1:.*which must be reversed first'
+hm_out=$(
+  export _HM_REVERSED=1
+  host_migrate_backup_restore "${hm_set}" 2>&1
+) && hm_rc=0 || hm_rc=$?
+expect_eq 'host_migrate_backup_restore: ...exported _HM_REVERSED=1 too (rc 1)' "${hm_rc}" '1'
+hm_out=$(
+  _HM_REVERSE_SET="${HM}/elsewhere" _HM_REVERSE_DONE=',testmove,'
+  _HM_REVERSED=1 host_migrate_backup_restore "${hm_set}" 2>&1
+) && hm_rc=0 || hm_rc=$?
+expect_eq 'host_migrate_backup_restore: ...and a reverse recorded for another set does not count (rc 1)' "${hm_rc}" '1'
+expect_eq 'host_migrate_backup_restore: ...each changing nothing' \
+  "$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_now}" ]] && echo same):$(hm_moved):$(hm_pending)" 'same:data.moved:1:pending'
+if [[ ${EUID} -eq 0 ]]; then
+  hm_out=$(env _HM_REVERSED=1 _HM_REVERSE_SET="${hm_set}" _HM_REVERSE_DONE=',testmove,' \
+    bash "${SCRIPT_DIR}/upgrade-host.sh" --restore-host-backup "${hm_set}" 2>&1) && hm_rc=0 || hm_rc=$?
+  expect_match 'upgrade-host.sh --restore-host-backup: an exported _HM_REVERSED=1 (and a forged record) is refused' \
+    "${hm_rc}:${hm_out}" '^1:.*which must be reversed first'
+  expect_eq 'upgrade-host.sh --restore-host-backup: ...changing nothing' \
+    "$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_now}" ]] && echo same):$(hm_moved):$(hm_pending)" 'same:data.moved:1:pending'
+fi
+(host_migrate_reconcile) 2>/dev/null || true
+expect_eq 'reconcile: ...while the framework, which runs the reverse, still settles it' "$(hm_moved):$(hm_pending)" 'data:0:none'
+
+# (R3) the set's #requires-reverse line, not PENDING, says what is reversed: a
+# PENDING whose names were edited (here to a registered migration with no
+# reverse) cannot skip the reverse and byte-restore around the move.
+host_migration_testother_needed() { return 1; }
+host_migration_testother_apply() { :; }
+HOST_MIGRATIONS=(testmove testother)
+hm_host tm-pending-edited
+hm_env_before=$(cat "${SRC_DEST}/.env")
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+sed -i.bak $'s/\ttestmove\t/\ttestother\t/' "${HOST_MIGRATE_BACKUP_ROOT}/PENDING" && rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING.bak"
+expect_eq 'requires-reverse: (fixture) PENDING names another migration than the set was taken for' \
+  "$(cut -f2 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"):$(head -n 1 "$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")/MANIFEST" | cut -f2)" 'testother:testmove'
+(host_migrate_reconcile) >/dev/null 2>&1 || true
+expect_eq "reconcile: the migration the set's marker names is reversed even when PENDING does not list it" \
+  "$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_pending)" 'data:0:same:none'
+hm_host tm-pending-edited-settle
+hm_env_before=$(cat "${SRC_DEST}/.env")
+(TM_FAIL=1 host_migrate "${SRC_DEST}/releases/new") >/dev/null 2>&1 || true
+(
+  HOST_MIGRATE_PENDING=1 HOST_MIGRATE_BACKUP_SET=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")
+  HOST_MIGRATE_NAMES=testother HOST_MIGRATE_RELEASE="${SRC_DEST}/releases/new"
+  host_migrate_settle_pending
+) >/dev/null 2>&1 || true
+expect_eq "settle: ...and so is this run's settle, whatever names it carries" \
+  "$(hm_moved):$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_pending)" 'data:0:same:none'
+HOST_MIGRATIONS=(testmove)
+unset -f host_migration_testother_needed host_migration_testother_apply
 
 # (g) two needed migrations that both decide their own settle: refused up front.
 host_migration_testmove2_needed() { host_migration_testmove_needed "$@"; }

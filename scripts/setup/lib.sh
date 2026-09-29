@@ -3710,8 +3710,12 @@ envfile_read() { # VAR FILE KEY
 # clears the journal: only the framework's own restore, after every _reverse
 # returned 0, removes PENDING — once, after the last inverse step. A kill
 # anywhere inside a reverse leaves the set journaled, and the next run reverses
-# (idempotently) again. The framework byte-restores a marked set only when
-# every migration its `#requires-reverse` line names defines _reverse here.
+# (idempotently) again. The migrations a marked set's `#requires-reverse` line
+# names are reversed even when PENDING does not list them, and
+# host_migrate_backup_restore itself byte-restores a marked set only after
+# every one of them was reversed from it by this process (or, for the reverse
+# that is running, from inside it) — _HM_REVERSED=1 alone is not enough, and
+# none of this bookkeeping is ever taken from the environment.
 # _settle and _reverse are looked up as defined functions (declare -F); a
 # marked set whose migrations this toolkit does not register is left
 # journaled (reconcile returns 3).
@@ -3757,6 +3761,14 @@ HOST_MIGRATE_BACKUP_SET=''
 HOST_MIGRATE_RELEASE=''
 HOST_MIGRATE_NAMES=''
 
+# The reverse bookkeeping belongs to this process alone: _hm_reverse records
+# what it reversed (_HM_REVERSE_SET, _HM_REVERSE_DONE, _HM_REVERSE_RUNNING and
+# the exported _HM_IN_REVERSE), and host_migrate_backup_restore reads it. A
+# value inherited from the environment — an operator's export, a toolkit child
+# started from inside a _reverse — must never keep a journal or let a marked
+# set be restored, so none survives sourcing this file.
+unset _HM_IN_REVERSE _HM_REVERSED _HM_REVERSE_SET _HM_REVERSE_DONE _HM_REVERSE_RUNNING
+
 # The first MANIFEST line of a set whose migrations must be reversed before
 # its files are restored (see host_migrate_backup_create).
 _HM_REQUIRES_REVERSE_RE=$'^#requires-reverse\t[a-z0-9_,]+$'
@@ -3770,6 +3782,21 @@ _hm_set_reverse_names() { # SETDIR
   IFS= read -r first <"$1/MANIFEST" || [[ -n ${first} ]] || return 1
   [[ ${first} =~ ${_HM_REQUIRES_REVERSE_RE} ]] || return 1
   printf '%s' "${first#*$'\t'}"
+}
+
+# Has this process reversed every migration NAMES (comma-separated: a marked
+# set's `#requires-reverse` names) from SETDIR — each one's _reverse returned 0
+# in _hm_reverse, or is the one running now (a reverse that restores the files
+# itself, before a step of its own)?
+_hm_reversed_here() { # SETDIR NAMES
+  local m
+  local -a list=()
+  [[ -n ${_HM_REVERSE_SET:-} ]] || return 1
+  [[ $(readlink -f -- "${_HM_REVERSE_SET}" 2>/dev/null) == "$(readlink -f -- "$1" 2>/dev/null)" ]] || return 1
+  IFS=, read -r -a list <<<"$2"
+  for m in ${list[@]+"${list[@]}"}; do
+    [[ ${_HM_REVERSE_DONE:-} == *",${m},"* || ${m} == "${_HM_REVERSE_RUNNING:-}" ]] || return 1
+  done
 }
 
 # Backups, restores and reconciles write root-owned files and are ROOT-ONLY. A
@@ -3992,8 +4019,10 @@ _hm_have_unit_templates() {
 # hook calls it and must still reach the rollback restart.
 #
 # A set whose MANIFEST starts with `#requires-reverse<TAB><names>` is restored
-# only when the caller has reversed those migrations first and says so with
-# _HM_REVERSED=1; otherwise it returns 1 having changed nothing.
+# only when the caller says so with _HM_REVERSED=1 AND every one of those
+# migrations was reversed from this set by this process (_hm_reversed_here) —
+# whoever the caller is, --restore-host-backup included; otherwise it returns
+# 1 having changed nothing.
 host_migrate_backup_restore() { # SETDIR
   local setdir=$1 raw rest line idx sha path dir tmp got n=0 pending reverse_names=''
   local re=$'^([0-9]+)\t([0-9a-f]{64})\t(/.+)$'
@@ -4021,7 +4050,7 @@ host_migrate_backup_restore() { # SETDIR
     shas+=("${BASH_REMATCH[2]}")
     paths+=("${BASH_REMATCH[3]}")
   done
-  if [[ -n ${reverse_names} && ${_HM_REVERSED:-0} != 1 ]]; then
+  if [[ -n ${reverse_names} ]] && { [[ ${_HM_REVERSED:-0} != 1 ]] || ! _hm_reversed_here "${setdir}" "${reverse_names}"; }; then
     log_error "host restore: ${setdir} was taken for host migration(s) ${reverse_names}, which must be reversed first (their reverse puts moved directories, links and units back) — nothing was restored"
     return 1
   fi
@@ -4328,23 +4357,37 @@ _hm_reverse_complete() { # SETDIR
 }
 
 # Undo, newest first, what each of NAMES that defines _reverse changed beyond
-# SETDIR's files. Each reverse runs in a subshell, so a die inside it cannot
-# end the caller (the rollback hook must still reach the rollback restart).
-# Returns 1, the journal kept, when one fails.
+# SETDIR's files — and what each migration SETDIR's own `#requires-reverse`
+# line names changed, even one NAMES (PENDING) does not list: the set, not a
+# journal line that may have been edited, says what must be reversed (those
+# are reversed first). Each reverse runs in a subshell, so a die inside it
+# cannot end the caller (the rollback hook must still reach the rollback
+# restart). Records each reverse that returned 0 for host_migrate_backup_restore
+# (_hm_reversed_here). Returns 1, the journal kept, when one fails.
 _hm_reverse() { # SETDIR NAMES
-  local setdir=$1 names=$2 i m
-  local -a list=()
+  local setdir=$1 names=$2 i m marked=''
+  local -a list=() extra=()
   IFS=, read -r -a list <<<"${names}"
+  if marked=$(_hm_set_reverse_names "${setdir}"); then
+    IFS=, read -r -a extra <<<"${marked}"
+    for m in ${extra[@]+"${extra[@]}"}; do
+      [[ ,${names}, == *",${m},"* ]] || list+=("${m}")
+    done
+  fi
+  _HM_REVERSE_SET=${setdir}
+  _HM_REVERSE_DONE=','
   for ((i = ${#list[@]} - 1; i >= 0; i--)); do
     m=${list[i]}
     declare -F "host_migration_${m}_reverse" >/dev/null || continue
     if ! (
       export _HM_IN_REVERSE=1
+      _HM_REVERSE_RUNNING=${m}
       "host_migration_${m}_reverse" "${setdir}"
     ); then
       log_error "host migration '${m}' could not be reversed from ${setdir} — the journal is kept"
       return 1
     fi
+    _HM_REVERSE_DONE+="${m},"
   done
 }
 
@@ -4379,7 +4422,7 @@ _hm_finish_forward() { # SETDIR NAMES RELEASE_DIR
 # do. Returns 3 (the journal kept) when this toolkit copy cannot finish the job
 # here — a migration it does not define, or unit templates it does not carry.
 host_migrate_reconcile() {
-  local root raw line setdir names release rc=0 m dir why
+  local root raw line setdir names release rc=0 m dir why marked=''
   root=$(host_migrate_backup_root)
   if ! _hm_is_root; then
     if [[ -e ${root}/PENDING ]]; then
@@ -4406,8 +4449,9 @@ host_migrate_reconcile() {
   dir=$(_hm_direction "${setdir}" "${names}" "${release}") ||
     die "reconcile: could not tell which way ${setdir} settles — the journal is kept"
   if [[ ${dir} == restore ]]; then
-    if _hm_set_reverse_names "${setdir}" >/dev/null; then
-      for m in ${list[@]+"${list[@]}"}; do
+    if marked=$(_hm_set_reverse_names "${setdir}"); then
+      # The journaled names and the ones the set itself says must be reversed.
+      for m in ${list[@]+"${list[@]}"} ${marked//,/ }; do
         if ! _hm_known "${m}"; then
           log_warn "reconcile: ${setdir} must be reversed by the host migration '${m}', which this toolkit does not define — leaving it journaled for a toolkit that does"
           return 3
@@ -4422,7 +4466,8 @@ host_migrate_reconcile() {
       die "reconcile: reversing the host migration(s) ${names} journaled in ${setdir} failed — the journal is kept; inspect it before re-running"
     why="${release:-its release} is not the active release"
     if _hm_release_is_active "${release}"; then why="its migration settles by restoring"; fi
-    _HM_REVERSED=1 host_migrate_backup_restore "${setdir}" || rc=$?
+    # Never an inherited _HM_IN_REVERSE: this restore is the commit point.
+    _HM_IN_REVERSE=0 _HM_REVERSED=1 host_migrate_backup_restore "${setdir}" || rc=$?
     case ${rc} in
       0)
         _hm_clean_staging "${setdir}"
@@ -4471,7 +4516,7 @@ host_migrate_settle_pending() {
       log_error "the host migration(s) ${HOST_MIGRATE_NAMES} could not be reversed — $(host_migrate_backup_root)/PENDING is kept, and the next toolkit run reconciles it"
       return 1
     fi
-    _HM_REVERSED=1 host_migrate_backup_restore "${HOST_MIGRATE_BACKUP_SET}" || rc=$?
+    _HM_IN_REVERSE=0 _HM_REVERSED=1 host_migrate_backup_restore "${HOST_MIGRATE_BACKUP_SET}" || rc=$?
     if [[ ${rc} -ne 0 ]]; then
       log_error "the host restore from ${HOST_MIGRATE_BACKUP_SET} did not complete (rc ${rc}) — $(host_migrate_backup_root)/PENDING is kept, and the next toolkit run reconciles it"
     fi
