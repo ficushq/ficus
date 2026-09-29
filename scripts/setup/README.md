@@ -7,7 +7,7 @@ the per-tenant provisioning primitive a future cloud control-plane calls.
 
 ```
 scripts/setup/
-  tau-setup.example.yaml         the TENANT config contract (fully commented)
+  ficus-setup.example.yaml       the TENANT config contract (fully commented)
   setup-host.sh                  ON-TARGET primitive: runs ON a fresh Ubuntu 24.04 host
   upgrade-host.sh                ON-TARGET primitive: moves an ALREADY SET UP host to another
                                  source ref (sync → build core+web → migrate → restart). Needs
@@ -32,14 +32,14 @@ The setup and provisioning scripts install a complete Ficus instance: API, worke
 ### Path A — cloud VM, from your laptop
 
 ```bash
-# 1. Generate a config (interactive; writes ./tau-setup.yaml, never stores secrets)
+# 1. Generate a config (interactive; writes ./ficus-setup.yaml, never stores secrets)
 scripts/setup/provision.sh --wizard
 
 # 2. Review the plan
-OPENAI_API_KEY=sk-... scripts/setup/provision.sh --config tau-setup.yaml --dry-run
+OPENAI_API_KEY=sk-... scripts/setup/provision.sh --config ficus-setup.yaml --dry-run
 
 # 3. Go
-OPENAI_API_KEY=sk-... scripts/setup/provision.sh --config tau-setup.yaml
+OPENAI_API_KEY=sk-... scripts/setup/provision.sh --config ficus-setup.yaml
 ```
 
 This creates the VM, waits for SSH, pushes the toolkit + config + key files
@@ -59,7 +59,7 @@ picks the VM provider:
   the TLS bullet below).
   Needs `$HCLOUD_TOKEN` (and `$CLOUDFLARE_API_TOKEN` if DNS is on) on the
   control machine only — never forwarded to the target. See
-  `tau-setup.example.yaml` for the full contract.
+  `ficus-setup.example.yaml` for the full contract.
 - **digitalocean** — creates (or reuses, by tag + exact name) a Droplet via
   the DO API (`provision.digitalocean.{size,region,image,ssh_key_id}`),
   polls until it's `active` with a public IPv4 (`networks.v4[].type ==
@@ -81,25 +81,26 @@ picks the VM provider:
   `root`. Pair it with `dns.provider: cloudflare` + `dns.zone` the same way
   as hetzner. Needs `$DIGITALOCEAN_TOKEN` (and `$CLOUDFLARE_API_TOKEN` if
   DNS is on) on the control machine only — never forwarded to the target.
-  See `tau-setup.example.yaml` for the full contract.
+  See `ficus-setup.example.yaml` for the full contract.
 
 ### Path B — any Ubuntu 24.04 host, on the host itself
 
 ```bash
-scripts/setup/setup-host.sh --wizard                       # or write tau-setup.yaml by hand
-OPENAI_API_KEY=sk-... scripts/setup/setup-host.sh --config tau-setup.yaml --dry-run
-OPENAI_API_KEY=sk-... scripts/setup/setup-host.sh --config tau-setup.yaml
+scripts/setup/setup-host.sh --wizard                       # or write ficus-setup.yaml by hand
+OPENAI_API_KEY=sk-... scripts/setup/setup-host.sh --config ficus-setup.yaml --dry-run
+OPENAI_API_KEY=sk-... scripts/setup/setup-host.sh --config ficus-setup.yaml
 ```
 
 ### Upgrading a host that is already set up
 
 ```bash
 # ON the host (root), against the config it was set up with:
-GH_TOKEN=ghp_... scripts/setup/upgrade-host.sh --config /root/tau-setup/tau-setup.yaml --ref main
+GH_TOKEN=ghp_... scripts/setup/upgrade-host.sh --config /root/ficus-setup/ficus-setup.yaml --ref main
 ```
 
 Source sync → `bun install` → **core build** → web build → migrations →
-`systemctl restart tau-api tau-worker` + health wait. `--ref` takes a branch,
+`systemctl restart ficus-api ficus-worker` (the host layout's unit names) +
+health wait. `--ref` takes a branch,
 tag or commit sha and defaults to the config's `source.ref`.
 
 Before either tenant setup or upgrade builds, the toolkit reconciles swap and
@@ -117,7 +118,7 @@ needs no host migration, restore or reconcile. When it would have to run one,
 finish a journaled one, or restore a set (`--restore-host-backup`), it stops
 before changing anything and says so: re-run it as root.
 
-Do NOT hand-roll this sequence. `tau-api` runs `bun run dist/index.js`, so a
+Do NOT hand-roll this sequence. The api unit runs `bun run dist/index.js`, so a
 fetch without the core build leaves the OLD server running while `git log` on
 the box shows the new commit — a failure that looks exactly like a successful
 deploy. `upgrade-host.sh` and `setup-host.sh` both go through `lib.sh`'s
@@ -127,7 +128,7 @@ merely discouraged.
 The control plane drives this same script over SSH for its `upgrade` job
 (the hosted control plane's admin "Upgrade" / "Upgrade all"), and independently verifies
 afterwards that `apps/core/dist/index.js` was rebuilt and that the running
-`tau-api` process started after it.
+api process started after it.
 
 ### Hosts and archives from before the Ficus naming
 
@@ -195,7 +196,7 @@ the move to the Ficus host layout.
 **`--restore-host-backup <set>`** is the manual way back:
 
 ```bash
-sudo bash scripts/setup/upgrade-host.sh --config /root/tau-setup/tau-setup.yaml \
+sudo bash scripts/setup/upgrade-host.sh --config /root/ficus-setup/ficus-setup.yaml \
   --restore-host-backup /var/backups/ficus-host-migrate/<set>
 ```
 
@@ -206,6 +207,81 @@ previous release left under `/var/backups/ficus-env-rename/` (read only;
 nothing writes there any more). It reverts **any secret changed since that set
 was taken**, and it is root-only.
 
+### The host layout
+
+Where a host keeps its install root, `/etc` dir, setup dir, units, backup
+script, `HOME_DIR` and container database is resolved once per run from what
+is installed (`lib.sh`'s host layout section), never assumed:
+
+|                                                            | layout 1 (before the Ficus host migration) | layout 2 (Ficus)                                            |
+| ---------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------- |
+| install root                                               | the legacy `/opt/<old>-core`               | `/opt/ficus-core`                                           |
+| `/etc` dir (CA, `managed.env`, `artifacts/`, `backup.env`) | the legacy one                             | `/etc/ficus`                                                |
+| setup dir, config                                          | the legacy ones                            | `/root/ficus-setup/ficus-setup.yaml`                        |
+| units                                                      | the legacy names                           | `ficus-api`, `ficus-worker`, `ficus-backup.{service,timer}` |
+| backup script                                              | the legacy name                            | `/usr/local/bin/ficus-backup.sh`                            |
+| `HOME_DIR` default                                         | `<run user home>/.<old>`                   | `<run user home>/.ficus`                                    |
+| container database                                         | the legacy container, volume and name      | `ficus-postgres`, `ficus-pgdata`, `ficus`                   |
+
+A host is on layout 2 once `/etc/systemd/system/ficus-api.service` is a
+regular file, on layout 1 while only the legacy api unit exists; a fresh host
+is set up on layout 2. The unit templates carry the layout as tokens
+(`@ETC_DIR@`, `@UNIT_API@`, `@UNIT_WORKER@`, `@UNIT_BACKUP@`, `@ALIAS@`, and
+`@DB_NAME@` in the backup script), so a layout-1 host renders exactly the
+units it always had.
+
+**The move.** A release that declares `hostLayout: 2` (`artifact.json`; a git
+checkout: root `package.json` `ficusHostLayout: 2`) moves a layout-1 host to
+layout 2 through the `host_layout` host migration, right before the flip
+(git mode: before the restart; `setup-host.sh`: before its `.env` phase). It
+stops the backup timer and both units, moves the install root, `/etc` dir,
+setup dir and `HOME_DIR` (leaving a compat symlink at each legacy path),
+rebases the database rows that store absolute `HOME_DIR` paths (the release's
+`dist/rebase-home.js`), renames the units (each keeps its legacy name as an
+`Alias=`), the backup script (a compat link), the update sudoers rule and, in
+container mode, the database container, volume and name. Every step is
+journaled in the framework's backup set (`<set>/hl/`), intent first, and
+logged as `host_layout S<n>: …`. The last trailer line of `upgrade-host.sh` is
+`FICUS_HOST_LAYOUT=<1|2>`.
+
+- **Before its commit point** (`hl/DONE`), any failure, signal or `SIGKILL` is
+  reversed: the host is put back byte for byte and the legacy units are
+  started again.
+- **After it, the move is kept** — also when the release is rolled back: the
+  older release runs on layout 2 through the compat links and `Alias=` names.
+  Both units are stopped before any flip across the layouts (they use
+  different admission-lock keys).
+- A git mode run as non-root on a layout-1 host refuses a revision that
+  declares layout 2 before its checkout moves (the move is root-only).
+- A host set up fresh on layout 2 whose external database DSN still names the
+  CA under the legacy `/etc` dir (a stored tenant DSN; the control plane
+  rewrites it to `/etc/ficus` when it renames the tenant database) gets the
+  same compat link a migrated host has (legacy `/etc` dir → `/etc/ficus`), so
+  the DSN resolves until it is rewritten.
+- An older toolkit that writes over the bridges (a regular legacy unit file
+  where the `Alias=` link was) is repaired by the next run of this one.
+
+**`--reverse-host-layout <set>`** is the manual way back after the commit
+point, once the release serving is from before the move again (roll back
+first):
+
+```bash
+sudo grep -l "$(printf '^#requires-reverse\thost_layout')" /var/backups/ficus-host-migrate/*/MANIFEST
+sudo bash scripts/setup/upgrade-host.sh --config /root/ficus-setup/ficus-setup.yaml \
+  --reverse-host-layout /var/backups/ficus-host-migrate/<set>
+```
+
+It takes only the latest set that reached its commit point and was not
+reversed since (`hl/DONE` without `hl/REVERSED`), refuses while another
+run's journal is pending, and is root-only. It moves everything back, rebases
+the stored `HOME_DIR` paths back, then restores the set's files byte for byte
+— **which reverts any change made to them since the move** (re-run the
+artifact sync afterwards). On a container database it also returns to the
+legacy volume as it was at the move, losing every write since, and needs
+`--accept-database-revert`. It is journaled: a reverse that is killed half way
+is finished by the next toolkit run, or by running it again. A set marked
+`#requires-reverse` is never byte-restored by `--restore-host-backup`.
+
 ### What you end up with (the contract)
 
 1. Core API healthy (`GET /health` → **401 means up**: healthy + auth-gated),
@@ -214,8 +290,8 @@ was taken**, and it is root-only.
    origin, no path. This is what makes passkeys work.
 3. AI provider account + `exe-provider-ssh-key` secret + starter squad with one
    agent, seeded through the API with the `FICUS_PASSWORD` bootstrap bearer.
-4. `tau-api` + `tau-worker` under systemd (auto-restart, survive reboot,
-   `journalctl -u tau-api`). The in-UI Restart (`POST /api/system/restart`)
+4. `ficus-api` + `ficus-worker` under systemd (auto-restart, survive reboot,
+   `journalctl -u ficus-api`; the host layout below). The in-UI Restart (`POST /api/system/restart`)
    restarts BOTH units: the api signals the worker over the internal event
    transport, and each exits non-zero so `Restart=on-failure` brings it back.
 5. A printed URL + instruction: open it, register the first admin passkey.
@@ -224,7 +300,7 @@ was taken**, and it is root-only.
 
 ## The config file
 
-See [`tau-setup.example.yaml`](tau-setup.example.yaml) — every field is
+See [`ficus-setup.example.yaml`](ficus-setup.example.yaml) — every field is
 commented there. Ground rules:
 
 - **`runtime.sandbox` is required and has no default.** It is exactly one of
@@ -304,9 +380,9 @@ commented there. Ground rules:
   certificate, on the machine running the script. It rides the exact same
   delivery path as the origin cert (scp into `<remote dir>/keys/`, config value
   rewritten to match) and `setup-host.sh` installs it at
-  `/etc/tau/database-ca.crt` — **0644, root-owned**, deliberately unlike the
+  `/etc/ficus/database-ca.crt` (the host layout's etc dir) — **0644, root-owned**, deliberately unlike the
   origin key, because a CA certificate is a public document with several
-  unprivileged readers (the `tau-api`/`tau-worker` units, the nightly
+  unprivileged readers (the api/worker units, the nightly
   `pg_dump`).
 
   Required whenever the DSN uses `sslmode=verify-full`, and both scripts refuse
@@ -319,11 +395,11 @@ commented there. Ground rules:
 
 - The generated `.env` always includes `FICUS_SYSTEM_LOG_PROVIDER=systemd`, so
   Settings → System Logs streams from journald on toolkit installs (the units
-  default to `tau-api`/`tau-worker`; see `docs/wiki/system-logs.md`). Installs
+  default to the api/worker unit names; see `docs/wiki/system-logs.md`). Installs
   created before this line existed must add it to `<dest>/.env` by hand and
   restart both services.
 - The generated `.env` also carries `FICUS_WORKER_EVENT_PORT=3003` and a
-  generated `FICUS_INTERNAL_EVENT_TOKEN`. tau-api and tau-worker exchange agent
+  generated `FICUS_INTERNAL_EVENT_TOKEN`. The api and worker units exchange agent
   control signals, forwarded events and secret-cache invalidations over
   loopback HTTP (the worker's listener binds `127.0.0.1` only); the token
   authenticates both directions and MUST be identical in both units, which is
@@ -349,15 +425,15 @@ commented there. Ground rules:
   override a built-in (`APP_URL`, `FICUS_WEB_ORIGIN`, `DATABASE_URL`,
   `FICUS_ENCRYPTION_KEY`, `FICUS_PASSWORD`, `FICUS_INTERNAL_EVENT_TOKEN`), which
   always wins. See
-  `tau-setup.example.yaml` for the full contract.
+  `ficus-setup.example.yaml` for the full contract.
 - `backup.enabled` (default `false`) turns on a flag-gated nightly encrypted
   backup: setup renders the backup script under `/usr/local/bin` (from
   `ficus-backup.sh.tmpl`) plus a backup timer (`backup.schedule`, `HH:MM`
   UTC) that triggers the backup service. Each run: `pg_dump -Fc` (via
-  `docker exec tau-postgres` in `database.mode: container`, else the DSN from
+  `docker exec ficus-postgres` in `database.mode: container`, else the DSN from
   `<dest>/.env`), tars it together with **`HOME_DIR`** (the agent
   workspace/memory tree — resolved the same way `apps/core` resolves it:
-  `core.env.HOME_DIR` if set, else `<core.run_user's home>/.tau`) **and
+  `core.env.HOME_DIR` if set, else `<core.run_user's home>/.ficus`) **and
   `<dest>/.env`** (the backup envelope carries `FICUS_ENCRYPTION_KEY` itself,
   by design — never the platform's tenant registry), encrypts the tarball
   with `openssl enc -aes-256-cbc -pbkdf2` using a passphrase, and uploads it
@@ -368,10 +444,10 @@ commented there. Ground rules:
   the env vars named by `backup.s3_access_key_env` /
   `backup.s3_secret_key_env` / `backup.passphrase_env` (the same `*_env`
   indirection convention used elsewhere — never stored in the yaml) and
-  rendered into a 0600 root-owned `/etc/tau/backup.env` that only the
+  rendered into a 0600 root-owned `/etc/ficus/backup.env` that only the
   rendered script reads; they never touch curl argv, logs, or the tenant
   `.env`. Non-zero exit on any failure (systemd flags the unit as failed).
-  See `tau-setup.example.yaml` for the full contract. `bash
+  See `ficus-setup.example.yaml` for the full contract. `bash
 scripts/setup/ficus-backup.test.sh` round-trip-tests the rendered script
   (tar → encrypt → decrypt → untar) against a scratch dir with a fake
   `pg_dump` (the `FICUS_BACKUP_PG_DUMP_CMD` seam) — no live postgres or S3
@@ -403,8 +479,8 @@ tail journald so you see _why_. (The platform app is different: it really
 Re-seed (or seed a manually-installed instance) without re-running setup:
 
 ```bash
-scripts/setup/seed.sh --config tau-setup.yaml \
-  --env-file /opt/tau/.env --api-url http://127.0.0.1:3000
+scripts/setup/seed.sh --config ficus-setup.yaml \
+  --env-file /opt/ficus-core/.env --api-url http://127.0.0.1:3000
 ```
 
 ## Pitfalls this toolkit encodes (hit live, 2026-07-14)
@@ -451,9 +527,9 @@ scripts/setup/seed.sh --config tau-setup.yaml \
 - `ecosystem.config.example.js` (pm2) — superseded by the systemd units for
   hosts set up with this toolkit; still used for local dev.
 
-## tau-api memory guardrail
+## API memory guardrail
 
-Tenant hosts constrain `tau-api` with a host-relative cgroup budget: soft
+Tenant hosts constrain the api unit (`ficus-api`) with a host-relative cgroup budget: soft
 reclaim begins at 25% of host RAM and `MemoryMax=35%` is the hard cap. This
 leaves 65% for the OS, machine agent, worker, database/runtime, and sandboxes
 across the supported roughly 2–16 GiB host range. A cgroup OOM kills the whole
@@ -462,20 +538,20 @@ seconds, bounded to five starts per five minutes. A repeated wedge therefore
 fails closed instead of causing an unbounded restart storm. After repair:
 
 ```bash
-sudo systemctl reset-failed tau-api
-sudo systemctl start tau-api
+sudo systemctl reset-failed ficus-api
+sudo systemctl start ficus-api
 ```
 
 Inspect the current budget, OOM result, and restart count with:
 
 ```bash
-systemctl show tau-api -p Result -p NRestarts -p MemoryCurrent -p MemoryPeak -p MemoryHigh -p MemoryMax
-journalctl -u tau-api -b --no-pager
+systemctl show ficus-api -p Result -p NRestarts -p MemoryCurrent -p MemoryPeak -p MemoryHigh -p MemoryMax
+journalctl -u ficus-api -b --no-pager
 ```
 
 This guardrail is pilot host insurance, not the memory-leak fix. If fleet-wide
 aggregation becomes necessary, a separate change should add one low-cardinality
-`tau-api` `NRestarts` delta to the machine usage payload; no API restart-count
+api unit `NRestarts` delta to the machine usage payload; no API restart-count
 payload seam exists today, so this pilot uses systemd and journald.
 
 On a disposable Ubuntu 24.04 systemd host only, the opt-in proof renders a

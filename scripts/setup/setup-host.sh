@@ -12,7 +12,13 @@
 # is reused, secrets already in <dest>/.env are preserved, systemd units are
 # re-rendered and services restarted, and seeding checks before creating.
 #
-# See scripts/setup/README.md and tau-setup.example.yaml for the full story.
+# See scripts/setup/README.md and ficus-setup.example.yaml for the full story.
+#
+# A fresh host is set up on the Ficus host layout (layout 2: lib.sh's host
+# layout section): /opt/ficus-core, /etc/ficus, the ficus-* units, HOME
+# <run user home>/.ficus and, in container mode, the ficus-postgres container.
+# A re-run on an existing host keeps the layout it is on, and moves a layout-1
+# host to layout 2 when the release it installs declares that (host_migrate).
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
@@ -21,16 +27,16 @@ source "${SCRIPT_DIR}/lib.sh"
 
 usage() {
   cat <<'EOF'
-Usage: setup-host.sh --config tau-setup.yaml [options]
+Usage: setup-host.sh --config ficus-setup.yaml [options]
        setup-host.sh --wizard [--config OUT.yaml]
 
 Sets up a complete Ficus instance ON THIS HOST (fresh Ubuntu 24.04 + systemd).
 To provision a cloud VM and set it up remotely, use provision.sh instead.
 
 Options:
-  --config FILE   config file (see tau-setup.example.yaml). With --wizard,
+  --config FILE   config file (see ficus-setup.example.yaml). With --wizard,
                   the path the generated config is written to (default
-                  ./tau-setup.yaml).
+                  ./ficus-setup.yaml).
   --wizard        interactively generate a config file, then exit
   --dry-run       print the full plan (phases, rendered .env with secrets
                   redacted, rendered systemd units) without executing anything
@@ -72,7 +78,7 @@ done
 
 if [[ ${WIZARD} -eq 1 ]]; then
   ensure_yq
-  wizard_write_config "${CONFIG:-./tau-setup.yaml}"
+  wizard_write_config "${CONFIG:-./ficus-setup.yaml}"
   exit 0
 fi
 
@@ -95,11 +101,14 @@ cfg_load "${CONFIG}"
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
 SRC_REPO=$(cfg_require '.source.repo' 'git repository')
 SRC_REF=$(cfg_get '.source.ref' 'main')
-# Default dest is /opt/tau-CORE, deliberately NOT /opt/tau: the prebaked
-# ficus-machine image (the default core VM image) OWNS /opt/tau for its own
-# tooling (/opt/tau/bin, /opt/tau/prebaked, /opt/tau/bun, ...), so cloning the
-# app there collides with a non-empty root-owned dir. Keep them separate.
-SRC_DEST=$(expand_tilde "$(cfg_get '.source.dest' '/opt/tau-core')")
+# Default dest is the host layout's install root (cfg_source_dest: HL_DEST,
+# /opt/ficus-core on a fresh host) — deliberately NOT the prebaked
+# ficus-machine image's own root (the default core VM image owns that for its
+# tooling: bin/, prebaked/, bun/, ...), so cloning the app there would collide
+# with a non-empty root-owned dir. Keep them separate. Read again (with every
+# other layout-derived global, resolve_layout_globals below) once this run
+# has settled the host's layout.
+SRC_DEST=$(cfg_source_dest)
 SRC_DEPLOY_KEY=$(expand_tilde "$(cfg_get '.source.deploy_key_path')")
 case "${SRC_MODE}" in git-ssh | git-https | artifact) ;; *) die "config: source.mode must be git-ssh, git-https, or artifact (got '${SRC_MODE}')" ;; esac
 
@@ -192,7 +201,7 @@ load_core_env_pairs() {
       # with no error anywhere. Refuse it at render time, where it is a one-line
       # config fix instead of a mystery.
       FICUS_ROOT)
-        die "config: core.env may not set '${core_env_key}' — it is unit-managed (Environment=FICUS_ROOT in tau-api/tau-worker, pointing at the active release) and a value in .env would override the unit and detach the running code from its own tree" ;;
+        die "config: core.env may not set '${core_env_key}' — it is unit-managed (Environment=FICUS_ROOT in the api/worker units, pointing at the active release) and a value in .env would override the unit and detach the running code from its own tree" ;;
     esac
   done <<<"${CORE_ENV_PAIRS}"
 }
@@ -234,7 +243,7 @@ BACKUP_S3_ACCESS_KEY_ENV=$(cfg_get '.backup.s3_access_key_env' 'FICUS_BACKUP_S3_
 BACKUP_S3_SECRET_KEY_ENV=$(cfg_get '.backup.s3_secret_key_env' 'FICUS_BACKUP_S3_SECRET_KEY')
 BACKUP_PASSPHRASE_ENV=$(cfg_get '.backup.passphrase_env' 'FICUS_BACKUP_PASSPHRASE')
 BACKUP_SCHEDULE=$(cfg_get '.backup.schedule' '03:15')
-BACKUP_ONCALENDAR='' BACKUP_HOME_DIR=''
+BACKUP_ONCALENDAR='' BACKUP_HOME_DIR='' BACKUP_HOME_EXPLICIT='' BACKUP_RUN_USER_HOME=''
 if [[ ${BACKUP_ENABLE} == true ]]; then
   [[ -n ${BACKUP_S3_ENDPOINT} ]] || die "config: backup.enabled requires backup.s3_endpoint"
   [[ -n ${BACKUP_S3_REGION} ]] || die "config: backup.enabled requires backup.s3_region"
@@ -247,8 +256,9 @@ if [[ ${BACKUP_ENABLE} == true ]]; then
   BACKUP_ONCALENDAR=$(backup_oncalendar_from_schedule "${BACKUP_SCHEDULE}")
 
   # HOME_DIR resolution — MUST match what apps/core itself resolves
-  # (process.env.HOME_DIR || join(os.homedir(), '.tau'), see
-  # apps/core/src/lib/utils/home.ts). core.env can pass an explicit HOME_DIR
+  # (process.env.HOME_DIR, else the host layout's home dir name under
+  # os.homedir(), see apps/core/src/lib/utils/home.ts; resolve_layout_globals
+  # below adds that name). core.env can pass an explicit HOME_DIR
   # through to <dest>/.env (it's not one of the built-ins core.env is
   # forbidden from overriding), so honor that override first; otherwise
   # derive it deterministically from core.run_user's actual home directory
@@ -259,7 +269,7 @@ if [[ ${BACKUP_ENABLE} == true ]]; then
     [[ ${_backup_env_line} == HOME_DIR=* ]] && _backup_core_env_home_dir=${_backup_env_line#HOME_DIR=}
   done <<<"${CORE_ENV_PAIRS}"
   if [[ -n ${_backup_core_env_home_dir} ]]; then
-    BACKUP_HOME_DIR=${_backup_core_env_home_dir}
+    BACKUP_HOME_EXPLICIT=${_backup_core_env_home_dir}
   else
     _backup_run_user_home=''
     if have getent; then
@@ -270,7 +280,7 @@ if [[ ${BACKUP_ENABLE} == true ]]; then
     fi
     [[ -n ${_backup_run_user_home} ]] ||
       die "config: backup.enabled could not resolve core.run_user '${RUN_USER}''s home directory to derive HOME_DIR — set it explicitly via core.env.HOME_DIR"
-    BACKUP_HOME_DIR="${_backup_run_user_home}/.tau"
+    BACKUP_RUN_USER_HOME=${_backup_run_user_home}
   fi
   unset _backup_core_env_home_dir _backup_env_line _backup_run_user_home
 fi
@@ -301,8 +311,6 @@ DB_CA_PATH=$(expand_tilde "$(cfg_get '.database.ca_path')")
 # never had this key.
 ARTIFACTS_DIR=$(expand_tilde "$(cfg_get '.artifacts.dir')")
 DB_IMAGE='paradedb/paradedb:latest'
-DB_CONTAINER='tau-postgres'
-DB_VOLUME='tau-pgdata'
 case "${DB_MODE}" in
   container) ;;
   external)
@@ -382,7 +390,24 @@ fi
 SEC_ENC_ENV=$(cfg_get '.secrets.encryption_key_env')
 SEC_PW_ENV=$(cfg_get '.secrets.password_env')
 
-ENV_FILE="${SRC_DEST}/.env"
+# Everything that follows the host layout (lib.sh's HL_*): the install root
+# and its .env, the container database's container, volume and name, the
+# backup HOME_DIR, the update sudoers file. Set here from the layout resolved
+# when lib.sh was sourced, and set again whenever this run's view of the layout
+# changes: after the reconcile (host_layout_adopt) and after host_migrate
+# moved a layout-1 host to layout 2.
+resolve_layout_globals() {
+  SRC_DEST=$(cfg_source_dest)
+  ENV_FILE="${SRC_DEST}/.env"
+  DB_CONTAINER=${HL_DB_CONTAINER}
+  DB_VOLUME=${HL_DB_VOLUME}
+  DB_NAME=${HL_DB_NAME}
+  UPDATE_SUDOERS_FILE=${HL_SUDOERS}
+  if [[ ${BACKUP_ENABLE} == true ]]; then
+    BACKUP_HOME_DIR=${BACKUP_HOME_EXPLICIT:-${BACKUP_RUN_USER_HOME}/${HL_HOME_NAME}}
+  fi
+}
+resolve_layout_globals
 
 # ============================================================== secrets
 
@@ -433,7 +458,7 @@ resolve_secrets() {
   fi
 
   # FICUS_INTERNAL_EVENT_TOKEN — shared secret authenticating the loopback HTTP
-  # event transport between tau-api and tau-worker (agent control signals,
+  # event transport between the api and worker units (agent control signals,
   # event forwarding, secret invalidation). Both units read THIS .env, which is
   # what lets them agree on one value. Without it, both derive the token from
   # FICUS_ENCRYPTION_KEY; only if both are absent do random per-process tokens
@@ -471,7 +496,7 @@ resolve_secrets() {
 
   # Backup S3 credentials + encryption passphrase — only when backup.enabled.
   # These never live in <dest>/.env (unlike the secrets above): they are
-  # rendered into their own 0600 root-owned /etc/tau/backup.env by
+  # rendered into their own 0600 root-owned backup.env (BACKUP_ENV_TARGET) by
   # phase_backup, so the tenant .env backed up nightly never itself carries
   # the credentials that can reach the backups.
   if [[ ${BACKUP_ENABLE} == true ]]; then
@@ -528,6 +553,11 @@ if [[ ${DRY_RUN} -eq 0 ]]; then
   [[ ${reconcile_rc} -eq 0 ]] ||
     die "a journaled host migration could not be reconciled (${reconcile_rc}) — run this from the complete toolkit (systemd/*.service.tmpl)"
   host_migrate_install_traps
+  # The host layout as the reconcile left it, BEFORE anything below reads a
+  # path: the reconcile may have finished the host layout migration (in a
+  # subshell) or reversed it since lib.sh resolved the layout at source time.
+  host_layout_adopt
+  resolve_layout_globals
 fi
 
 # A host whose settings predate the Ficus naming (a re-run of this script on
@@ -550,7 +580,7 @@ fi
 
 db_dsn() {
   if [[ ${DB_MODE} == container ]]; then
-    printf 'postgres://postgres:%s@127.0.0.1:5432/tau' "$1" # $1 = password (real or redacted)
+    printf 'postgres://postgres:%s@127.0.0.1:5432/%s' "$1" "${DB_NAME}" # $1 = password (real or redacted)
   else
     printf '%s' "${DB_DSN_CFG}"
   fi
@@ -605,7 +635,7 @@ FICUS_ENCRYPTION_KEY=${enc}
 # Bootstrap bearer — fully privileged ONLY until the first admin passkey
 # exists, then it self-disables.
 FICUS_PASSWORD=${pw}
-# tau-api and tau-worker exchange events over authenticated HTTP instead of pg
+# The api and worker units exchange events over authenticated HTTP instead of pg
 # LISTEN/NOTIFY. The worker binds loopback by default; supported split-namespace
 # deployments may override it to a private interface. The token authenticates
 # BOTH directions and MUST be identical in both units, which is
@@ -625,7 +655,7 @@ EOF
     printf '%s=%s\n' "${AI_KEY_TARGET}" "${key}"
   fi
   if [[ -n ${core_env} ]]; then
-    printf '# core.env passthrough (operator/control-plane env knobs; see tau-setup.example.yaml).\n'
+    printf '# core.env passthrough (operator/control-plane env knobs; see ficus-setup.example.yaml).\n'
     printf '%s\n' "${core_env}"
   fi
 }
@@ -651,14 +681,20 @@ render_backup_unit() { # TEMPLATE_FILE
 }
 
 # The self-updater (apps/core/src/services/updates) restarts the services after a
-# git-diff-driven rebuild via `systemctl restart tau-api`/`tau-worker`. When the
-# services run as a non-root RUN_USER it shells out with `sudo -n`, which refuses
-# to prompt — so without a NOPASSWD rule the restart step fails and every update
-# is recorded as failed. Root installs restart directly and need no rule. The
-# grant is scoped to exactly these two commands (no wildcards).
-UPDATE_SUDOERS_FILE='/etc/sudoers.d/tau-update'
+# git-diff-driven rebuild via `systemctl restart <api unit>`/`<worker unit>`. When
+# the services run as a non-root RUN_USER it shells out with `sudo -n`, which
+# refuses to prompt — so without a NOPASSWD rule the restart step fails and every
+# update is recorded as failed. Root installs restart directly and need no rule.
+# The grant is scoped to exactly these commands (no wildcards): the layout's two
+# units (UPDATE_SUDOERS_FILE is the layout's HL_SUDOERS) — and on layout 2, while
+# the legacy unit names are bridged as Alias=, their legacy spellings too (an
+# older release restarts those; lib.sh's host_layout_sudoers_content).
 update_sudoers_content() {
-  printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart tau-api, /usr/bin/systemctl restart tau-worker\n' "${RUN_USER}"
+  if [[ ${HL_LAYOUT} == 2 && ${HL_BRIDGE_ALIASES:-0} == 1 ]]; then
+    host_layout_sudoers_content "${RUN_USER}"
+  else
+    printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' "${RUN_USER}" "${HL_UNIT_API}" "${HL_UNIT_WORKER}"
+  fi
 }
 
 install_update_sudoers() {
@@ -673,7 +709,7 @@ install_update_sudoers() {
   fi
   as_root install -m 0440 -o root -g root "${tmp}" "${UPDATE_SUDOERS_FILE}"
   rm -f "${tmp}"
-  log_info "installed ${UPDATE_SUDOERS_FILE} (NOPASSWD systemctl restart tau-api/tau-worker for ${RUN_USER})"
+  log_info "installed ${UPDATE_SUDOERS_FILE} (NOPASSWD systemctl restart ${HL_UNIT_API}/${HL_UNIT_WORKER} for ${RUN_USER})"
 }
 
 # ============================================================== dry run
@@ -725,10 +761,13 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   if [[ ${DB_MODE} == container ]]; then
     plan "unmask+start docker if needed (ficus-machine masks rootful docker for BOX security; the core host is not a box host)"
     plan "docker run -d --name ${DB_CONTAINER} --restart unless-stopped -p 127.0.0.1:5432:5432 -v ${DB_VOLUME}:/var/lib/postgresql ${DB_IMAGE}"
-    plan "wait: pg_isready; ensure database 'tau' exists (reuses container + password from ${ENV_FILE} on re-run)"
+    plan "wait: pg_isready; ensure database '${DB_NAME}' exists (reuses container + password from ${ENV_FILE} on re-run)"
   else
     [[ -n ${DB_CA_PATH} ]] &&
       plan "install ${DB_CA_PATH} → ${FICUS_DB_CA_PATH} (0644 root; a CA certificate is public, and the app/worker/pg_dump all read it)"
+    if host_layout_dsn_needs_legacy_ca_link "${DB_DSN_CFG}"; then
+      plan "link ${FICUS_HOST_ROOT:-}${HL_LEGACY_ETC} -> ${HL_ETC}: the DSN's sslrootcert names the CA under the legacy etc dir (the compat link a migrated host has)"
+    fi
     plan "use external DSN from config/\$FICUS_SETUP_DATABASE_DSN; TCP-probe host before migrating"
   fi
   if [[ -n ${RESTORE_URL} ]]; then
@@ -738,7 +777,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     plan "download the encrypted backup from ${RESTORE_URL%%\?*} (presigned GET; query string omitted — it is a credential)"
     plan "decrypt (openssl aes-256-cbc/pbkdf2, passphrase via \$FICUS_SETUP_RESTORE_PASSPHRASE, never argv) + untar to a 0700 temp dir"
     plan "pg_restore --clean --if-exists --no-owner the db.dump into the tenant database — BEFORE the migrate phase, which then fast-forwards if the code is newer"
-    plan "unpack the archived HOME_DIR tree into ${BACKUP_HOME_DIR:-<run_user home>/.tau} (before services start)"
+    plan "unpack the archived HOME_DIR tree into ${BACKUP_HOME_DIR:-<run_user home>/${HL_HOME_NAME}} (before services start)"
     plan "carry FICUS_ENCRYPTION_KEY forward from the archived .env (else the restored DB's encrypted secrets are unreadable)"
     [[ ${RESTORE_STRIP_CREDENTIALS} == 1 ]] &&
       plan "cross-subdomain restore: DELETE FROM user_credentials (WebAuthn passkeys are origin-bound; users are kept)"
@@ -776,7 +815,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     plan "install ${UPDATE_SUDOERS_FILE} (0440, visudo-validated) so the self-updater can restart non-root services:"
     update_sudoers_content | sed 's/^/  | /'
   fi
-  plan "systemctl daemon-reload && enable tau-api tau-worker"
+  plan "systemctl daemon-reload && enable ${HL_UNIT_API} ${HL_UNIT_WORKER}"
   if [[ ${SRC_MODE} == artifact ]]; then
     plan "artifact_activate ${SRC_DEST} <release_dir> ${CORE_PORT}: migrate → flip ${SRC_DEST}/current → restart → health-check (auto-rollback on a failed check; no rollback target on a fresh box)"
     plan "artifact_retention ${SRC_DEST}: prune old releases"
@@ -859,7 +898,9 @@ phase_preflight() {
   # later, exactly the lock-release window. A config file (not per-call flags)
   # covers all 13 apt invocations across the toolkit in one place.
   printf 'DPkg::Lock::Timeout "120";\n' |
-    as_root tee /etc/apt/apt.conf.d/99tau-lock-timeout >/dev/null
+    as_root tee /etc/apt/apt.conf.d/99ficus-lock-timeout >/dev/null
+  # The same setting under its name from before the Ficus naming: one copy.
+  as_root rm -f /etc/apt/apt.conf.d/99tau-lock-timeout # ficus-p5-bridge
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     log_info "installing missing packages: ${missing[*]}"
@@ -986,7 +1027,7 @@ phase_source() {
     # git_source_sync does this same dest-creation for git mode
     # (lib.sh ~1832) — artifact mode needs it too, and for the identical
     # reason: on the default exe provider the ssh_user (e.g. exedev) cannot
-    # create /opt/tau-core, and artifact_acquire's first writes (the
+    # create the install root under /opt, and artifact_acquire's first writes (the
     # incoming/ staging dir) are unprivileged. Skipping this here would die
     # deep inside artifact_acquire with a misleading "could not create an
     # incoming dir" instead of a clear one.
@@ -1075,8 +1116,11 @@ phase_database() {
     # The CA goes in FIRST: the DSN names it via `sslrootcert`, and every
     # later consumer — the app's own connections, `bun run db:migrate`, the
     # nightly pg_dump — needs it present at that exact path or the connection
-    # is refused outright under verify-full.
+    # is refused outright under verify-full. A DSN that still names the CA
+    # under the legacy etc dir (a stored tenant DSN the control plane has not
+    # rewritten yet) gets the compat link a migrated host has.
     [[ -z ${DB_CA_PATH} ]] || install_database_ca "${DB_CA_PATH}"
+    host_layout_link_legacy_ca_dir "${DB_DSN_CFG}"
     # Best-effort reachability probe before we try to migrate.
     if [[ ${DB_DSN_CFG} =~ @([^:/@]+):([0-9]+)/ ]]; then
       local host=${BASH_REMATCH[1]} port=${BASH_REMATCH[2]}
@@ -1110,14 +1154,14 @@ phase_database() {
   else
     log_info "starting ${DB_IMAGE} as ${DB_CONTAINER} (ParadeDB: postgres + pgvector + pg_search)"
     as_root docker run -d --name "${DB_CONTAINER}" --restart unless-stopped \
-      -e POSTGRES_USER=postgres -e "POSTGRES_PASSWORD=${DB_PASSWORD}" -e POSTGRES_DB=tau \
+      -e POSTGRES_USER=postgres -e "POSTGRES_PASSWORD=${DB_PASSWORD}" -e "POSTGRES_DB=${DB_NAME}" \
       -p 127.0.0.1:5432:5432 -v "${DB_VOLUME}:/var/lib/postgresql" \
       "${DB_IMAGE}" >/dev/null
   fi
   retry_until 120 2 'postgres stably ready' pg_stably_ready || die "postgres did not become ready"
-  if ! as_root docker exec "${DB_CONTAINER}" psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='tau'" | grep -q 1; then
-    log_info "creating database 'tau'"
-    as_root docker exec "${DB_CONTAINER}" createdb -U postgres tau
+  if ! as_root docker exec "${DB_CONTAINER}" psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+    log_info "creating database '${DB_NAME}'"
+    as_root docker exec "${DB_CONTAINER}" createdb -U postgres "${DB_NAME}"
   fi
   log_info "database ready"
 }
@@ -1157,7 +1201,7 @@ phase_restore() {
     have getent && run_home=$(getent passwd "${RUN_USER}" 2>/dev/null | cut -d: -f6)
     [[ -z ${run_home} && ${RUN_USER} == "$(id -un)" ]] && run_home=${HOME}
     [[ -n ${run_home} ]] || die "restore: could not resolve HOME_DIR for run_user '${RUN_USER}' (set core.env.HOME_DIR)"
-    target_home="${run_home}/.tau"
+    target_home="${run_home}/${HL_HOME_NAME}"
   fi
 
   local workdir passfile archive
@@ -1199,7 +1243,7 @@ phase_restore() {
   # differs). Runs BEFORE migrate on purpose (see the phase header).
   log_info "restoring database (pg_restore)"
   if [[ ${DB_MODE} == container ]]; then
-    as_root docker exec -i "${DB_CONTAINER}" pg_restore --clean --if-exists --no-owner -U postgres -d tau \
+    as_root docker exec -i "${DB_CONTAINER}" pg_restore --clean --if-exists --no-owner -U postgres -d "${DB_NAME}" \
       <"${workdir}/db.dump" || die "restore: pg_restore into the ${DB_CONTAINER} container failed"
   else
     pg_restore --clean --if-exists --no-owner -d "${dsn}" "${workdir}/db.dump" ||
@@ -1234,7 +1278,7 @@ phase_restore() {
   if [[ ${RESTORE_STRIP_CREDENTIALS} == 1 ]]; then
     log_info "cross-subdomain restore: stripping WebAuthn credentials (users kept)"
     if [[ ${DB_MODE} == container ]]; then
-      as_root docker exec "${DB_CONTAINER}" psql -U postgres -d tau -c 'DELETE FROM user_credentials;' >/dev/null ||
+      as_root docker exec "${DB_CONTAINER}" psql -U postgres -d "${DB_NAME}" -c 'DELETE FROM user_credentials;' >/dev/null ||
         die "restore: failed to strip WebAuthn credentials"
     else
       psql "${dsn}" -c 'DELETE FROM user_credentials;' >/dev/null ||
@@ -1257,10 +1301,11 @@ phase_env() {
 }
 
 # Platform-managed artifacts (SES env creds, APNs cert files, ...). Installs
-# managed.env → /etc/tau/managed.env and each staged file → /etc/tau/artifacts/
-# from the staging directory provision.sh pushed (artifacts.dir). Runs BEFORE
-# phase_services so managed.env exists when the units first start (they load it
-# via EnvironmentFile=-/etc/tau/managed.env). A no-op when artifacts.dir is
+# managed.env → FICUS_MANAGED_ENV_PATH and each staged file → FICUS_ARTIFACTS_DIR
+# (both under the layout's etc dir) from the staging directory provision.sh
+# pushed (artifacts.dir). Runs BEFORE phase_services so managed.env exists when
+# the units first start (they load it via their optional EnvironmentFile= line
+# for it). A no-op when artifacts.dir is
 # empty — the self-hosted / no-artifacts case, byte-identical to before.
 phase_artifacts() {
   phase_step artifacts "phase 5.5/8: platform-managed artifacts"
@@ -1284,7 +1329,7 @@ phase_migrate() {
 }
 
 phase_services() {
-  phase_step services "phase 6/8: systemd services (tau-api, tau-worker)"
+  phase_step services "phase 6/8: systemd services (${HL_UNIT_API}, ${HL_UNIT_WORKER})"
   install_core_units "${SCRIPT_DIR}/systemd"
   # Non-root services need a NOPASSWD sudoers rule so the self-updater can restart
   # them (`sudo -n systemctl restart ...`). Root installs restart directly.
@@ -1293,18 +1338,19 @@ phase_services() {
   fi
   ensure_api_memory_guardrail
   as_root systemctl daemon-reload
-  as_root systemctl enable tau-api tau-worker >/dev/null 2>&1
+  as_root systemctl enable "${HL_UNIT_API}" "${HL_UNIT_WORKER}" >/dev/null 2>&1
   if [[ ${SRC_MODE} == artifact ]]; then
     # Activation migrates, flips <dest>/current, restarts, health-checks, and
     # auto-rolls-back on a failed health check — on a fresh box there is no
     # rollback target, which artifact_activate already handles.
     # On a re-run that migrated this host's files (host_migrate above), a
     # rollback swaps back to a release the migration was not for: the hook
-    # restores the backup set (and daemon-reloads) BEFORE the rollback
-    # restart, exactly as in upgrade-host.sh. A no-op when nothing was
-    # migrated this run.
+    # stops both units, then settles the backup set (and daemon-reloads)
+    # BEFORE the rollback restart, exactly as in upgrade-host.sh — restored,
+    # or, for the host layout after its commit point, kept. Only the stop when
+    # nothing was migrated this run.
     # shellcheck disable=SC2034 # read by lib.sh's artifact_activate
-    ARTIFACT_ROLLBACK_HOOK=host_migrate_restore_pending
+    ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook
     artifact_activate "${SRC_DEST}" "${ARTIFACT_RELEASE_DIR}" "${CORE_PORT}"
     artifact_retention "${SRC_DEST}"
   else
@@ -1340,7 +1386,7 @@ phase_backup() {
     render_backup_script
 
   # The units go through the same staged+verified path — a failed render here
-  # once landed a 0-byte tau-backup.service that daemon-reload accepted
+  # once landed a 0-byte backup .service that daemon-reload accepted
   # silently, so the nightly backup never ran.
   install_rendered --check-placeholders 0644 root root "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.service" \
     render_backup_unit "${SCRIPT_DIR}/systemd/ficus-backup.service.tmpl"
@@ -1425,7 +1471,7 @@ EOF
    itself automatically the moment the first admin passkey is created —
    nothing to revoke.
 
- Services: systemctl status tau-api tau-worker   (logs: journalctl -u tau-api)
+ Services: systemctl status ${HL_UNIT_API} ${HL_UNIT_WORKER}   (logs: journalctl -u ${HL_UNIT_API})
 ================================================================================
 EOF
 
@@ -1465,8 +1511,11 @@ phase_build
 phase_database
 [[ -n ${RESTORE_URL} ]] && phase_restore
 # The host migrations the release needs (a re-run of this script on an
-# existing host), with a journaled backup set, right before phase_env.
+# existing host), with a journaled backup set, right before phase_env. A host
+# layout move relocates SRC_DEST, the config and the release dir in this shell;
+# every other layout-derived global follows.
 host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"
+resolve_layout_globals
 phase_env
 phase_migrate
 [[ -n ${ARTIFACTS_DIR} ]] && phase_artifacts

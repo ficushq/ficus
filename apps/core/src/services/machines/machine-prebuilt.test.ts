@@ -107,6 +107,13 @@ describe('machine-prebuilt', () => {
       expect(readArtifactManifest(tmp)).toEqual({ commit: SHA, digest: 'sha256:x' })
     })
 
+    it('parses a manifest with or without hostLayout the same way', () => {
+      writeFileSync(join(tmp, 'artifact.json'), JSON.stringify({ commit: SHA, digest: 'sha256:x', hostLayout: 2 }))
+      expect(readArtifactManifest(tmp)).toEqual({ commit: SHA, digest: 'sha256:x' })
+      writeFileSync(join(tmp, 'artifact.json'), JSON.stringify({ commit: SHA, digest: 'sha256:y', envPrefix: 'FICUS' }))
+      expect(readArtifactManifest(tmp)).toEqual({ commit: SHA, digest: 'sha256:y' })
+    })
+
     it('returns null when artifact.json is missing', () => {
       expect(readArtifactManifest(tmp)).toBeNull()
     })

@@ -462,8 +462,8 @@ host_layout_resolve "$(host_layout_detect)"
 # ------------------------------------------------------- atomic rendered installs
 
 # Render → verify → install; never render straight into the destination.
-# Observed live: a failed sed piped into `as_root tee /etc/systemd/system/
-# tau-backup.service` left a 0-byte unit file behind — and an empty or
+# Observed live: a failed sed piped into `as_root tee` of the backup .service
+# unit left a 0-byte unit file behind — and an empty or
 # truncated unit is WORSE than a missing one, because `systemctl daemon-reload`
 # accepts it silently and the unit simply never works. So the render is staged
 # to a private 0600 tmp file and only `install`ed over the destination after
@@ -626,7 +626,7 @@ require_sandbox_runtime() { # VALUE
   die "config: runtime.sandbox must be one of ${FICUS_SANDBOX_RUNTIMES} (got '${value}')${hint}"
 }
 
-# Refuse to restart tau-api/tau-worker against an env file that does not name a
+# Refuse to restart the api/worker units against an env file that does not name a
 # supported FICUS_SANDBOX_RUNTIME.
 #
 # An upgrade deliberately rewrites no .env — that is what makes it runnable long
@@ -1373,6 +1373,46 @@ install_database_ca() { # CA_SRC
   log_info "installed database CA ${FICUS_DB_CA_PATH} (0644)"
 }
 
+# The CA path DSN's `sslrootcert` names, percent-decoded (a stored tenant DSN
+# carries it URL-encoded); nothing when it names none.
+dsn_sslrootcert() { # DSN
+  local v
+  [[ $1 =~ [?\&]sslrootcert=([^\&#]*) ]] || return 0
+  v=${BASH_REMATCH[1]}
+  printf '%b' "${v//%/\\x}"
+}
+
+# The CA path a stored tenant DSN names can lag behind the host layout: the
+# control plane writes the Ficus etc dir into a DSN only when it renames the
+# tenant database, and until then a migrated host resolves the legacy path
+# through its compat link (legacy etc dir -> the Ficus one). A host set up
+# fresh on layout 2 gets that same link when its DSN names the legacy etc dir
+# (a restore or re-provision reuses the stored DSN), so the two kinds of
+# layout-2 host look alike and finalize removes the link from both. Is DSN
+# such a case on this host right now (layout 2, sslrootcert under the legacy
+# etc dir, nothing at that path yet)?
+host_layout_dsn_needs_legacy_ca_link() { # DSN
+  local cert
+  [[ ${HL_LAYOUT:-} == 2 ]] || return 1
+  cert=$(dsn_sslrootcert "$1")
+  [[ ${cert} == "${HL_LEGACY_ETC}/"* ]] || return 1
+  [[ ! -e ${FICUS_HOST_ROOT:-}${HL_LEGACY_ETC} && ! -L ${FICUS_HOST_ROOT:-}${HL_LEGACY_ETC} ]]
+}
+
+# Create that compat link (see above) when DSN needs it; a no-op otherwise.
+host_layout_link_legacy_ca_dir() { # DSN
+  local legacy="${FICUS_HOST_ROOT:-}${HL_LEGACY_ETC}" cert
+  if ! host_layout_dsn_needs_legacy_ca_link "$1"; then
+    cert=$(dsn_sslrootcert "$1")
+    if [[ ${HL_LAYOUT:-} == 2 && ${cert} == "${HL_LEGACY_ETC}/"* && ! -L ${legacy} && ! -e ${FICUS_HOST_ROOT:-}${cert} ]]; then
+      log_warn "the database DSN's sslrootcert names ${cert}, but ${legacy} is a directory without it (not the compat link to ${HL_ETC}) — a verify-full connection will fail until the DSN names ${FICUS_DB_CA_PATH#"${FICUS_HOST_ROOT:-}"}"
+    fi
+    return 0
+  fi
+  as_root ln -s -- "${HL_ETC}" "${legacy}" || die "could not link ${legacy} -> ${HL_ETC} for the DSN's sslrootcert"
+  log_info "linked ${legacy} -> ${HL_ETC}: the database DSN still names the CA under the legacy path"
+}
+
 # ------------------------------------------------------ managed artifacts
 #
 # Fleet-wide platform-managed credentials, delivered as a STAGING DIRECTORY
@@ -1448,7 +1488,7 @@ install_artifacts() { # STAGE_DIR
 
 # Would installing <stage>/managed.env CHANGE the effective managed
 # environment of the core services? Prints 1 or 0. The sync executor restarts
-# tau-api/tau-worker only when this says 1 (file-kind artifacts are read
+# the api/worker units only when this says 1 (file-kind artifacts are read
 # per-use and never need a restart), so the comparison is deliberately
 # SEMANTIC, not byte-level:
 #   * destination exists      -> changed iff the bytes differ (header lines are
@@ -1557,6 +1597,12 @@ ensure_managed_env_dropins() {
 #               it lives (a release tree carries no secrets of its own)
 #   @RUN_ROOT@  the tree the services actually run FROM: <dest>/current under
 #               the artifact layout, <dest> itself for a git checkout
+# and the host layout's names (see the host layout section), so a layout-1
+# host rendering from them still gets the unit it always had:
+#   @ETC_DIR@   the /etc dir managed.env lives in (HL_ETC)
+#   @UNIT_API@ / @UNIT_WORKER@   the units' own names (in comments)
+#   @ALIAS@     the legacy name as an Alias= line on layout 2 while the bridge
+#               lasts, else nothing (the line is dropped)
 #
 # Caller globals (the toolkit's established convention — see git_source_sync):
 # SRC_DEST, RUN_USER, BUN_BIN, DB_MODE, and optionally CORE_LAYOUT.
@@ -1586,6 +1632,9 @@ render_core_unit() { # TEMPLATE_FILE
     -e "s|@BUN_BIN@|${BUN_BIN}|g" \
     -e "s|@BUN_DIR@|${bun_dir}|g" \
     -e "s|@DB_AFTER@|${db_after}|g" \
+    -e "s|@ETC_DIR@|${HL_ETC#"${FICUS_HOST_ROOT:-}"}|g" \
+    -e "s|@UNIT_API@|${HL_UNIT_API}|g" \
+    -e "s|@UNIT_WORKER@|${HL_UNIT_WORKER}|g" \
     -e "$(_hl_alias_sed "$1")" \
     "$1"
 }
@@ -2037,8 +2086,8 @@ sh_single_quote() { # VALUE
   printf "'%s'" "${v}"
 }
 
-# Render the contents of the 0600 root-owned /etc/tau/backup.env file the
-# rendered tau-backup.sh reads its S3 credentials + encryption passphrase
+# Render the contents of the 0600 root-owned backup.env file (BACKUP_ENV_TARGET)
+# the rendered backup script reads its S3 credentials + encryption passphrase
 # from. MODE redact is for --dry-run plan output — same shape as
 # build_env_content's redact mode in setup-host.sh, kept as a pure lib.sh
 # helper (explicit args, no globals) so it is directly unit-testable.
@@ -2058,7 +2107,7 @@ render_backup_env_content() { # MODE(real|redact) ACCESS_KEY SECRET_KEY PASSPHRA
   fi
   cat <<EOF
 # Generated by scripts/setup/setup-host.sh — backup S3 credentials +
-# encryption passphrase. 0600 root-owned; read by tau-backup.sh. Never log or
+# encryption passphrase. 0600 root-owned; read by the backup script. Never log or
 # print these values in full. Values are single-quoted so this file sources
 # safely even if a secret contains spaces, \$(...), or backticks.
 FICUS_BACKUP_S3_ACCESS_KEY=$(sh_single_quote "${access}")
@@ -2075,15 +2124,18 @@ EOF
 # BACKUP_SCRIPT_PATH (the layout's backup script) and BACKUP_ENV_TARGET
 # (<layout etc dir>/backup.env) are set by host_layout_resolve; both are seams.
 
-# Render ficus-backup.sh.tmpl with its @TOKEN@ substitutions. Explicit args, no
-# globals, so setup-host.sh (fresh render from its config) and
+# Render ficus-backup.sh.tmpl with its @TOKEN@ substitutions. Explicit args
+# (the one global is the layout's HL_DB_NAME, below), so setup-host.sh (fresh render from its config) and
 # retarget-backup.sh (re-render of a live host, non-S3 values carried over
 # from the installed script) share exactly one render. The sed program is the
 # one setup-host.sh has always used: values are spliced in verbatim, so a
 # value containing '|', '&' or '\' would corrupt the output — callers that
 # take values from outside the toolkit validate them first.
+# @DB_NAME@ (the container database the script dumps) is this layout's
+# (HL_DB_NAME): the host layout migration renames it with the container.
 render_backup_script_content() { # TEMPLATE DEST HOME_DIR DB_MODE DB_CONTAINER S3_ENDPOINT S3_REGION S3_BUCKET S3_PREFIX BACKUP_ENV_FILE
   sed -e "s|@DEST@|${2}|g" \
+    -e "s|@DB_NAME@|${HL_DB_NAME}|g" \
     -e "s|@HOME_DIR@|${3}|g" \
     -e "s|@DB_MODE@|${4}|g" \
     -e "s|@DB_CONTAINER@|${5}|g" \
@@ -2095,7 +2147,7 @@ render_backup_script_content() { # TEMPLATE DEST HOME_DIR DB_MODE DB_CONTAINER S
     "$1"
 }
 
-# Read the values a live tau-backup.sh was rendered with — the `NAME='value'`
+# Read the values a live backup script was rendered with — the `NAME='value'`
 # lines its template writes near the top — into LIVE_<NAME> for DEST HOME_DIR
 # DB_MODE DB_CONTAINER S3_ENDPOINT S3_REGION S3_BUCKET S3_PREFIX
 # BACKUP_ENV_FILE, and the script's exact bytes into LIVE_SCRIPT. Re-deriving
@@ -2221,7 +2273,7 @@ _s3_curl_user_config() { # ACCESS SECRET
 
 # Read-only credential + reachability check for a backup target: ONE signed
 # ListObjectsV2 (max-keys=1) under PREFIX — the same request shape, auth
-# (curl --aws-sigv4) and URL form tau-backup.sh's retention step uses, so a
+# (curl --aws-sigv4) and URL form the backup script's retention step uses, so a
 # pass means the nightly job can authenticate to and list this bucket with
 # this key. Writes nothing. Credentials travel in a curl --config file over a
 # process-substitution fd (never argv, never disk). Returns 1 after a
@@ -2604,7 +2656,7 @@ git_source_sync() {
   # with a clear instruction instead of git's opaque "destination path already
   # exists and is not an empty directory" fatal.
   if [[ ! -d ${SRC_DEST}/.git ]] && [[ -n $(ls -A "${SRC_DEST}" 2>/dev/null) ]]; then
-    die "source.dest '${SRC_DEST}' already exists, is non-empty, and is not a git checkout — pick an unused path (the ficus-machine image owns /opt/tau; use e.g. /opt/tau-core)"
+    die "source.dest '${SRC_DEST}' already exists, is non-empty, and is not a git checkout — pick an unused path (not the ficus-machine image's own tooling root; use e.g. ${HL_DEST#"${FICUS_HOST_ROOT:-}"})"
   fi
 
   if [[ -d ${SRC_DEST}/.git ]]; then
@@ -2668,7 +2720,7 @@ git_source_sync() {
 # THE most expensive lesson this toolkit encodes, and the reason these three
 # functions live in lib.sh rather than inline in setup-host.sh:
 #
-#   tau-api runs `bun run dist/index.js`. A checkout that has been fetched and
+#   The api unit runs `bun run dist/index.js`. A checkout that has been fetched and
 #   moved to a new ref but NOT rebuilt therefore keeps serving the OLD bundle
 #   while `git log` on the box shows the new commit. Every symptom points at
 #   "the deploy didn't land" and every check an operator naturally reaches for
@@ -4382,13 +4434,22 @@ _hm_release_is_active() { # RELEASE_DIR
 
 # Which way SETDIR's journaled run of NAMES toward RELEASE_DIR settles:
 # `forward` (finish it and commit) or `restore` (reverse it and put the files
-# back). The first of NAMES that defines _settle decides — its answer must be
-# one of the two, or this returns 1. Otherwise the active release decides:
-# forward when RELEASE_DIR is serving, restore when it is not. Read-only.
+# back). The first of NAMES that defines _settle decides — then the first of
+# the migrations SETDIR's own `#requires-reverse` line names (the set, not a
+# journal line that may have been edited, says which migrations it was taken
+# for; _hm_reverse reads it the same way). The answer must be one of the two,
+# or this returns 1. Otherwise the active release decides: forward when
+# RELEASE_DIR is serving, restore when it is not. Read-only.
 _hm_direction() { # SETDIR NAMES RELEASE_DIR
-  local setdir=$1 names=$2 release=$3 m answer
-  local -a list=()
+  local setdir=$1 names=$2 release=$3 m answer marked=''
+  local -a list=() extra=()
   IFS=, read -r -a list <<<"${names}"
+  if marked=$(_hm_set_reverse_names "${setdir}"); then
+    IFS=, read -r -a extra <<<"${marked}"
+    for m in ${extra[@]+"${extra[@]}"}; do
+      [[ ,${names}, == *",${m},"* ]] || list+=("${m}")
+    done
+  fi
   for m in ${list[@]+"${list[@]}"}; do
     declare -F "host_migration_${m}_settle" >/dev/null || continue
     answer=$("host_migration_${m}_settle" "${setdir}") || return 1
@@ -4519,6 +4580,13 @@ host_migrate_reconcile() {
   dir=$(_hm_direction "${setdir}" "${names}" "${release}") ||
     die "reconcile: could not tell which way ${setdir} settles — the journal is kept"
   if [[ ${dir} == restore ]]; then
+    # A set that excluded the units needs the unit templates to be restored:
+    # without them nothing may be reversed either (the restore would then
+    # return 3 on a host already reversed but with its files still migrated).
+    if [[ -e ${setdir}/UNITS_EXCLUDED ]] && ! _hm_have_unit_templates; then
+      log_warn "reconcile: ${setdir} excluded the core units, and restoring it re-renders them from the unit templates, which are not next to this script — leaving it journaled for the complete toolkit"
+      return 3
+    fi
     if marked=$(_hm_set_reverse_names "${setdir}"); then
       # The journaled names and the ones the set itself says must be reversed.
       for m in ${list[@]+"${list[@]}"} ${marked//,/ }; do
@@ -4538,6 +4606,8 @@ host_migrate_reconcile() {
     if _hm_release_is_active "${release}"; then why="its migration settles by restoring"; fi
     # Never an inherited _HM_IN_REVERSE: this restore is the commit point.
     _HM_IN_REVERSE=0 _HM_REVERSED=1 host_migrate_backup_restore "${setdir}" || rc=$?
+    # The reverse record authorised this one restore, and nothing after it.
+    unset _HM_REVERSE_SET _HM_REVERSE_DONE
     case ${rc} in
       0)
         _hm_clean_staging "${setdir}"
@@ -4547,6 +4617,18 @@ host_migrate_reconcile() {
       *) die "reconcile: restoring ${setdir} failed — the journal is kept; inspect ${setdir}/MANIFEST before re-running" ;;
     esac
     return 0
+  fi
+  # Finished forward: the journaled names, and those the set's own
+  # `#requires-reverse` line adds (a migration that decided `forward` through
+  # _settle must also resume, even when an edited journal line dropped it).
+  if marked=$(_hm_set_reverse_names "${setdir}"); then
+    for m in ${marked//,/ }; do
+      [[ ,${names}, == *",${m},"* ]] || {
+        list+=("${m}")
+        names+=",${m}"
+      }
+    done
+    names=${names#,}
   fi
   for m in ${list[@]+"${list[@]}"}; do
     if ! _hm_known "${m}"; then
@@ -4587,6 +4669,7 @@ host_migrate_settle_pending() {
       return 1
     fi
     _HM_IN_REVERSE=0 _HM_REVERSED=1 host_migrate_backup_restore "${HOST_MIGRATE_BACKUP_SET}" || rc=$?
+    unset _HM_REVERSE_SET _HM_REVERSE_DONE
     if [[ ${rc} -ne 0 ]]; then
       log_error "the host restore from ${HOST_MIGRATE_BACKUP_SET} did not complete (rc ${rc}) — $(host_migrate_backup_root)/PENDING is kept, and the next toolkit run reconciles it"
     fi
@@ -4941,8 +5024,10 @@ host_migration_host_layout_needed() { # RELEASE_DIR
 
 # Decision 3: a run that reached the commit point is finished forward, one
 # that did not is reversed and restored — whichever release is active.
+# A manual reverse of a committed run (hl/REVERSING, host_layout_reverse_committed)
+# settles by restoring too: an interrupted one is finished by the next reconcile.
 host_migration_host_layout_settle() { # SETDIR
-  if [[ -f $1/hl/DONE ]]; then printf 'forward\n'; else printf 'restore\n'; fi
+  if [[ -f $1/hl/DONE && ! -e $1/hl/REVERSING ]]; then printf 'forward\n'; else printf 'restore\n'; fi
 }
 
 # Move this host to layout 2 (see the section header). Resumes after the
@@ -5976,20 +6061,36 @@ host_layout_latest_committed_set() {
 # SETDIR is the latest host_layout set that reached its commit point and was
 # not reversed since (host_layout_latest_committed_set: an older or reversed
 # set's files are stale, and restoring them would overwrite live secrets),
-# this host is on layout 2, the active release declares layout 1, and — when
-# HOME moved — the
-# journaled release still has rebase-home.js. Then both units stop and the
+# this host is on layout 2, the active release declares layout 1, when HOME
+# moved the journaled release still has rebase-home.js, and — for a container
+# database, whose writes since the migration are lost — HL_REVERSE_ACCEPT_DB_REVERT=1
+# (upgrade-host.sh --accept-database-revert). Then both units stop and the
 # reverse runs through the framework (_hm_reverse: a direct call to the
-# reverse could not restore the set, and would leave the host half reversed).
+# reverse could not restore the set, and would leave the host half reversed),
+# JOURNALED: hl/REVERSING turns the set's _settle to `restore` and PENDING
+# names the set again, so a reverse that is killed or fails half way is
+# finished by the next toolkit run's reconcile — or by running this again,
+# which then resumes it (the one PENDING it accepts).
 host_layout_reverse_committed() { # SETDIR
-  local set=${1%/} hl names dest active latest rc=0
+  local set=${1%/} hl names dest active latest pend root tmp rc=0
   _hl_paths
   _hm_is_root || die "host_layout: reversing the host layout is root-only"
-  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
-    die "host_layout: $(host_migrate_backup_root)/PENDING journals a run — reconcile it first"
+  root=$(host_migrate_backup_root)
   names=$(_hm_set_reverse_names "${set}") && [[ ${names} == host_layout ]] ||
     die "host_layout: ${set} is not a set taken for the host_layout migration"
   hl="${set}/hl"
+  if [[ -e ${root}/PENDING ]]; then
+    pend=$(_hm_pending_set) || pend=''
+    if [[ -e ${hl}/REVERSING && -n ${pend} && $(readlink -f -- "${pend}") == "$(readlink -f -- "${set}")" ]]; then
+      log_warn "host_layout: resuming the interrupted reverse journaled in ${set}"
+      rc=0
+      host_migrate_reconcile || rc=$?
+      [[ ${rc} -eq 0 ]] || die "host_layout: finishing the reverse of ${set} failed (${rc}) — the journal is kept; see the log above"
+      host_layout_adopt
+      return 0
+    fi
+    die "host_layout: ${root}/PENDING journals a run — reconcile it first"
+  fi
   [[ -f ${hl}/DONE ]] || die "host_layout: ${set}'s migration never reached its commit point — there is nothing committed to reverse"
   [[ ! -e ${hl}/REVERSED ]] ||
     die "host_layout: ${set} was already reversed ($(cat "${hl}/REVERSED" 2>/dev/null)) — its files are stale; nothing was changed"
@@ -6005,11 +6106,31 @@ host_layout_reverse_committed() { # SETDIR
   if [[ -n ${_HLJ_HOME_FROM} && ! -f ${_HLJ_RELEASE}/apps/core/dist/rebase-home.js ]]; then
     die "host_layout: ${_HLJ_RELEASE}/apps/core/dist/rebase-home.js is gone, and moving HOME back needs it to rebase the stored paths"
   fi
+  # A container database goes back to the legacy container on its untouched
+  # volume: every write since the migration is lost (the migrated copy stays
+  # in the Ficus volume). Only with the operator's explicit say-so.
+  if [[ ${_HLJ_DB_MODE} == container && ${HL_REVERSE_ACCEPT_DB_REVERT:-0} != 1 ]]; then
+    die "host_layout: this host's container database would go back to ${HL_LEGACY_DB_CONTAINER} on ${HL_LEGACY_DB_VOLUME} exactly as it was at the migration — every database write since is lost (the migrated copy stays in ${HL_NEW_DB_VOLUME}); re-run with --accept-database-revert to go ahead — nothing was changed"
+  fi
   log_warn "host_layout: reversing the committed migration journaled in ${set} — stopping ${_HLN_API} and ${_HLN_WORKER}"
   as_root systemctl stop "${_HLN_API}" "${_HLN_WORKER}" || die "host_layout: could not stop ${_HLN_API}/${_HLN_WORKER}"
+  # Journal the reverse before it changes anything (see above).
+  _hl_put "${hl}" REVERSING "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" || die "host_layout: could not journal the reverse — nothing was changed"
+  tmp="${root}/.PENDING.tmp.$$"
+  if ! printf '%s\t%s\t%s\n' "${set}" host_layout "${_HLJ_RELEASE}" >"${tmp}" || ! _hm_sync "${tmp}" ||
+    ! mv -f -- "${tmp}" "${root}/PENDING" || ! _hm_sync "${root}/PENDING"; then
+    rm -f -- "${tmp}" "${root}/PENDING" "${hl}/REVERSING"
+    die "host_layout: could not journal the reverse in ${root}/PENDING — nothing was changed (${_HLN_API}/${_HLN_WORKER} are stopped: start them)"
+  fi
   _hm_reverse "${set}" host_layout || rc=$?
+  if [[ ${rc} -eq 0 ]]; then
+    # The framework's own restore after the reverse: its commit point (it
+    # clears PENDING), exactly as a reconcile's.
+    _HM_IN_REVERSE=0 _HM_REVERSED=1 host_migrate_backup_restore "${set}" || rc=$?
+  fi
   unset _HM_REVERSE_SET _HM_REVERSE_DONE
-  [[ ${rc} -eq 0 ]] || die "host_layout: reversing ${set} failed — see the log above; the host may be half way (re-run the reverse)"
+  [[ ${rc} -eq 0 ]] ||
+    die "host_layout: reversing ${set} failed — see the log above; the journal is kept, and the next toolkit run (or this command again) finishes the reverse"
   host_layout_adopt
 }
 
@@ -6068,7 +6189,7 @@ render_authorized_keys_line() { # RRSYNC_PATH CLI_DIR PUBLIC_KEY
 
 # ------------------------------------------------------------------ wizard
 
-# Interactive generator for tau-setup.yaml. Prompts for the essentials, writes
+# Interactive generator for a setup config (ficus-setup.yaml). Prompts for the essentials, writes
 # the file (no secrets — env var names and key paths only).
 wizard_write_config() { # OUT_FILE
   local out=$1
@@ -6091,8 +6212,8 @@ wizard_write_config() { # OUT_FILE
   src_repo=${src_repo:-${default_repo}}
   prompt_value "ref (branch/tag/sha) [main]" src_ref
   src_ref=${src_ref:-main}
-  prompt_value "install dest on the target [/opt/tau]" src_dest
-  src_dest=${src_dest:-/opt/tau}
+  prompt_value "install dest on the target [${HL_NEW_DEST}]" src_dest
+  src_dest=${src_dest:-${HL_NEW_DEST}}
   if [[ ${src_mode} == git-ssh ]]; then
     prompt_value "deploy key path (read access to the repo)" deploy_key
     [[ -n ${deploy_key} ]] || die "git-ssh mode needs a deploy key path"

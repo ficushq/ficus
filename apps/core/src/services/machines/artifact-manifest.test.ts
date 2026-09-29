@@ -8,6 +8,7 @@ import {
   buildManifest,
   computeDigest,
   computeFilesMap,
+  type CoreArtifactManifest,
   signManifest,
   verifyManifestSignature,
 } from '../../../../../scripts/artifact/lib/manifest'
@@ -108,6 +109,42 @@ describe('buildManifest', () => {
     } finally {
       await rm(rootDir, { recursive: true, force: true })
     }
+  })
+
+  it('declares the Ficus host layout (hostLayout 2) next to envPrefix, which the host toolkit reads', async () => {
+    const rootDir = await makeFixtureTree()
+    try {
+      const manifest = await buildManifest({
+        rootDir,
+        commit: 'deadbeef',
+        commitDate: '2026-08-25T00:00:00Z',
+        bun: '1.3.8',
+        builder: 'test-builder',
+      })
+      expect(manifest.envPrefix).toBe('FICUS')
+      expect(manifest.hostLayout).toBe(2)
+      // Serialized as the toolkit's jq reads it (`.hostLayout`), a number.
+      expect(JSON.parse(JSON.stringify(manifest)).hostLayout).toBe(2)
+    } finally {
+      await rm(rootDir, { recursive: true, force: true })
+    }
+  })
+
+  it('still types and parses a manifest from before hostLayout (an older release)', () => {
+    const older: CoreArtifactManifest = {
+      schema: 1,
+      commit: 'deadbeef',
+      commitDate: '2026-08-25T00:00:00Z',
+      bun: '1.3.8',
+      platform: 'linux-x64',
+      builder: 'test-builder',
+      envPrefix: 'FICUS',
+      files: {},
+      digest: computeDigest({}),
+    }
+    const parsed = JSON.parse(JSON.stringify(older)) as CoreArtifactManifest
+    expect(parsed.hostLayout).toBeUndefined()
+    expect(parsed.digest).toBe(computeDigest({}))
   })
 
   it('returns a lexicographically key-sorted files map even when the walk finds them out of order', async () => {

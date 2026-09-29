@@ -99,11 +99,11 @@ terminal sessions, so a `/ws/*`-only matcher is not enough — match both.
 already owns. Configure it in `.env`:
 
 ```bash
-WEB_DIST_SYNC_DIR=/var/www/tau
+WEB_DIST_SYNC_DIR=/var/www/ficus
 WEB_DIST_SYNC_OWNER=caddy:caddy  # optional
 ```
 
-Then point Caddy's `root` at that directory (`root * /var/www/tau`). Leave
+Then point Caddy's `root` at that directory (`root * /var/www/ficus`). Leave
 `WEB_DIST_SYNC_DIR` unset for normal local development, Docker, or Kubernetes
 builds.
 

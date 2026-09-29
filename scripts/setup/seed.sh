@@ -25,7 +25,7 @@ source "${SCRIPT_DIR}/lib.sh"
 
 usage() {
   cat <<'EOF'
-Usage: seed.sh --config tau-setup.yaml [options]
+Usage: seed.sh --config ficus-setup.yaml [options]
 
 Seeds an exe SSH key secret, and — only when explicitly configured — an AI
 provider account and/or a starter squad + agent, on a running Ficus instance,
@@ -34,7 +34,7 @@ squad.name skips both cleanly (the in-app onboarding checklist is the path
 instead).
 
 Options:
-  --config FILE     tau-setup.yaml (required; see tau-setup.example.yaml)
+  --config FILE     ficus-setup.yaml (required; see ficus-setup.example.yaml)
   --env-file FILE   .env holding FICUS_PASSWORD (default: <source.dest>/.env)
   --api-url URL     API base URL (default: http://127.0.0.1:<core.port>)
   --dry-run         print what would be seeded, without calling the API
@@ -114,7 +114,7 @@ RT_SANDBOX=$(trim_ws "$(cfg_get '.runtime.sandbox')") # compared against `vm` be
 require_sandbox_runtime "${RT_SANDBOX}"
 EXE_KEY_PATH=$(expand_tilde "$(cfg_get '.runtime.exe.ssh_key_path')")
 CORE_PORT=$(cfg_get '.core.port' '3000')
-SRC_DEST=$(expand_tilde "$(cfg_get '.source.dest' '/opt/tau')")
+SRC_DEST=$(cfg_source_dest) # the host layout's install root when the config names none
 
 # A squad is configured but there is no model to spawn its agent with — ai:
 # is absent/opted-out AND squad.agent.model was not set explicitly either.

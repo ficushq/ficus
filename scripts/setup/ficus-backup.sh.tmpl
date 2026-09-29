@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# tau-backup.sh — Rendered by scripts/setup/setup-host.sh (phase_backup); do
-# not edit the installed copy by hand — re-run setup-host.sh instead.
+# The nightly backup script — rendered by scripts/setup/setup-host.sh
+# (phase_backup); do not edit the installed copy by hand — re-run setup-host.sh
+# instead.
 #
 # Nightly encrypted backup: pg_dump the Ficus database, tar it together with
 # HOME_DIR (the agent workspace/memory tree) and <dest>/.env (which carries
@@ -8,8 +9,8 @@
 # envelope, never in the platform's tenant registry), encrypt the tarball
 # with a passphrase, and upload it to S3-compatible storage. Prunes local
 # temp files and enforces a 14-object retention window under the configured
-# prefix. Standalone — runs under systemd (Type=oneshot, triggered by
-# tau-backup.timer) or manually; not sourced from lib.sh so it has no
+# prefix. Standalone — runs under systemd (Type=oneshot, triggered by the
+# backup timer) or manually; not sourced from lib.sh so it has no
 # dependency on the source checkout still being present at @DEST@ (beyond
 # reading its .env / running its DB container).
 #
@@ -49,9 +50,9 @@ S3_BUCKET='@S3_BUCKET@'
 S3_PREFIX='@S3_PREFIX@'
 BACKUP_ENV_FILE='@BACKUP_ENV_FILE@'
 
-log_info() { printf '%s tau-backup: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2; }
+log_info() { printf '%s ficus-backup: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2; }
 die() {
-  printf '%s tau-backup: ERROR %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2
+  printf '%s ficus-backup: ERROR %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2
   exit 1
 }
 
@@ -107,7 +108,7 @@ log_info "dumping database (mode=${DB_MODE})"
 if [[ -n ${FICUS_BACKUP_PG_DUMP_CMD:-} ]]; then
   "${FICUS_BACKUP_PG_DUMP_CMD}" "${DUMP_FILE}" || die "test pg-dump seam (\$FICUS_BACKUP_PG_DUMP_CMD) failed"
 elif [[ ${DB_MODE} == container ]]; then
-  docker exec "${DB_CONTAINER}" pg_dump -U postgres -Fc tau >"${DUMP_FILE}" ||
+  docker exec "${DB_CONTAINER}" pg_dump -U postgres -Fc @DB_NAME@ >"${DUMP_FILE}" ||
     die "pg_dump via 'docker exec ${DB_CONTAINER}' failed"
 else
   dsn_line=$(grep -E '^DATABASE_URL=' "${DEST}/.env" | tail -n 1) ||
@@ -154,7 +155,7 @@ if [[ -n ${FICUS_TERMINATION_BACKUP_EFFECT_ID:-} ]]; then
   [[ ${FICUS_TERMINATION_BACKUP_EFFECT_ID} =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
     die "FICUS_TERMINATION_BACKUP_EFFECT_ID must be a canonical UUID"
   OBJECT_KEY="${S3_PREFIX:+${S3_PREFIX%/}/}terminations/${FICUS_TERMINATION_BACKUP_EFFECT_ID}.tar.gz.enc"
-  UPLOAD_HEADERS=(-H "x-amz-meta-tau-termination-backup-effect-id:${FICUS_TERMINATION_BACKUP_EFFECT_ID}")
+  UPLOAD_HEADERS=(-H "x-amz-meta-ficus-termination-backup-effect-id:${FICUS_TERMINATION_BACKUP_EFFECT_ID}")
 else
   OBJECT_KEY="${S3_PREFIX:+${S3_PREFIX%/}/}${DATE}.tar.gz.enc"
 fi

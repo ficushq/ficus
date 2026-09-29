@@ -17,7 +17,7 @@ EnvironmentFile=@DEST@/.env
 # such file and are unaffected. Listed AFTER .env so a managed key wins on any
 # collision. Written whole by the hosted platform's artifact sync — the
 # tenant's own .env is never edited.
-EnvironmentFile=-/etc/tau/managed.env
+EnvironmentFile=-@ETC_DIR@/managed.env
 # The tree core reads config, migrations and the web dist from: the ACTIVE
 # release (<dest>/current) in artifact mode, the checkout in git mode. Note
 # systemd applies EnvironmentFile= AFTER Environment= regardless of the order
@@ -35,9 +35,9 @@ Restart=on-failure
 RestartSec=5s
 LimitNOFILE=65536
 # Inspect OOM/restart state:
-# systemctl show tau-api -p Result -p NRestarts -p MemoryCurrent -p MemoryPeak -p MemoryHigh -p MemoryMax
-# journalctl -u tau-api -b --no-pager
-# Logs: journalctl -u tau-api -f
+# systemctl show @UNIT_API@ -p Result -p NRestarts -p MemoryCurrent -p MemoryPeak -p MemoryHigh -p MemoryMax
+# journalctl -u @UNIT_API@ -b --no-pager
+# Logs: journalctl -u @UNIT_API@ -f
 StandardOutput=journal
 StandardError=journal
 

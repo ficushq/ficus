@@ -24,7 +24,7 @@ source "${SCRIPT_DIR}/lib.sh"
 
 usage() {
   cat <<'EOF'
-Usage: provision.sh --config tau-setup.yaml [options]
+Usage: provision.sh --config ficus-setup.yaml [options]
        provision.sh --wizard [--config OUT.yaml]
 
 Provisions a VM (exe.dev, Hetzner Cloud, or DigitalOcean — see
@@ -33,7 +33,7 @@ running Ficus whose only remaining step is creating the first admin passkey in
 a browser.
 
 Options:
-  --config FILE   config file (see tau-setup.example.yaml); the `provision`
+  --config FILE   config file (see ficus-setup.example.yaml); the `provision`
                   section drives this script. With --wizard, the output path.
   --wizard        interactively generate a config file, then exit
   --dry-run       print the plan (VM command, files pushed with secrets
@@ -71,7 +71,7 @@ done
 yq_is_mikefarah || ensure_yq # dies with install instructions on non-Linux
 
 if [[ ${WIZARD} -eq 1 ]]; then
-  wizard_write_config "${CONFIG:-./tau-setup.yaml}"
+  wizard_write_config "${CONFIG:-./ficus-setup.yaml}"
   exit 0
 fi
 
@@ -234,7 +234,9 @@ if [[ ${SSH_USER} == root ]]; then
 else
   REMOTE_HOME="/home/${SSH_USER}"
 fi
-REMOTE_DIR="${REMOTE_HOME}/tau-setup"
+# A fresh host is set up on the Ficus host layout: its setup dir is the
+# layout-2 name (lib.sh HL_NEW_SETUP_DIR under the ssh user's home).
+REMOTE_DIR="${REMOTE_HOME}/${HL_NEW_SETUP_DIR##*/}"
 
 if [[ ${PROVIDER} == exe ]]; then
   EXPECTED_ORIGIN="https://${VM_HOST}:${CORE_PORT}"
@@ -282,7 +284,7 @@ while IFS= read -r core_env_forward_name; do
   [[ -n ${core_env_forward_name} ]] && FORWARD_ENVS+=("${core_env_forward_name}")
 done <<<"${CORE_ENV_FORWARD_NAMES}"
 
-REMOTE_CMD="set -a; [ -f ${REMOTE_DIR}/secrets.env ] && . ${REMOTE_DIR}/secrets.env; set +a; bash ${REMOTE_DIR}/setup-host.sh --config ${REMOTE_DIR}/tau-setup.yaml"
+REMOTE_CMD="set -a; [ -f ${REMOTE_DIR}/secrets.env ] && . ${REMOTE_DIR}/secrets.env; set +a; bash ${REMOTE_DIR}/setup-host.sh --config ${REMOTE_DIR}/${HL_NEW_SETUP_YAML}"
 
 HCLOUD_API_BASE='https://api.hetzner.cloud/v1'
 DO_API_BASE='https://api.digitalocean.com/v2'
@@ -335,7 +337,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   plan "retry ssh ${SSH_USER}@${VM_HOST:-<resolved after VM creation>} true (account key, IdentityAgent=none) until reachable (timeout 300s)"
   printf '\nStep 3 — push toolkit + config + credentials (COPYFILE_DISABLE=1)\n'
   plan "→ ${REMOTE_DIR}/: lib.sh setup-host.sh seed.sh systemd/*.tmpl"
-  plan "→ ${REMOTE_DIR}/tau-setup.yaml (key paths rewritten to ${REMOTE_DIR}/keys/*)"
+  plan "→ ${REMOTE_DIR}/${HL_NEW_SETUP_YAML} (key paths rewritten to ${REMOTE_DIR}/keys/*)"
   [[ ${SRC_MODE} == git-ssh && -n ${DEPLOY_KEY} ]] && plan "→ ${REMOTE_DIR}/keys/deploy_key (0600) from ${DEPLOY_KEY}"
   [[ ${RT_SANDBOX} == vm && -n ${EXE_KEY} ]] && plan "→ ${REMOTE_DIR}/keys/exe_key (0600) from ${EXE_KEY}"
   # Paths only — the origin key's CONTENTS are never printed, here or anywhere.
@@ -773,7 +775,7 @@ export COPYFILE_DISABLE=1
 # ficus-backup.sh.tmpl belongs in THIS list: setup-host.sh's backup phase seds it
 # from ${SCRIPT_DIR} on the VM (setup-host.sh:498). Omitting it failed the
 # provision at phase 6.6 with a bare
-#   sed: can't read /root/tau-setup/tau-backup.sh.tmpl: No such file or directory
+#   sed: can't read <remote dir>/<backup script template>: No such file or directory
 # after the instance was otherwise fully built — services up, caddy serving.
 "${SCP_BASE[@]}" "${SCRIPT_DIR}/lib.sh" "${SCRIPT_DIR}/setup-host.sh" "${SCRIPT_DIR}/seed.sh" \
   "${SCRIPT_DIR}/ficus-backup.sh.tmpl" \
@@ -815,7 +817,7 @@ if [[ -n ${ARTIFACTS_DIR} ]]; then
   "${SSH_BASE[@]}" "${SSH_USER}@${VM_HOST}" "chmod -R go-rwx ${REMOTE_DIR}/artifacts 2>/dev/null || true"
   yq -i ".artifacts.dir = \"${REMOTE_DIR}/artifacts\"" "${REWRITTEN_CFG}"
 fi
-"${SCP_BASE[@]}" "${REWRITTEN_CFG}" "${SSH_USER}@${VM_HOST}:${REMOTE_DIR}/tau-setup.yaml"
+"${SCP_BASE[@]}" "${REWRITTEN_CFG}" "${SSH_USER}@${VM_HOST}:${REMOTE_DIR}/${HL_NEW_SETUP_YAML}"
 rm -f "${REWRITTEN_CFG}"
 "${SSH_BASE[@]}" "${SSH_USER}@${VM_HOST}" "chmod 600 ${REMOTE_DIR}/keys/* 2>/dev/null || true"
 

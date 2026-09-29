@@ -34,7 +34,17 @@
 #     rollback restart;
 #   * the _settle / _reverse hooks: a failure before the migration's commit
 #     point is reversed; after it (a signal, a rollback) it is finished
-#     forward; --restore-host-backup refuses a set that must be reversed first.
+#     forward; --restore-host-backup refuses a set that must be reversed first;
+#   * the real registry's host_layout migration (EHL1-EHL12) on a fleet-shaped
+#     layout-1 host: an upgrade onto a hostLayout-2 release moves it and the
+#     services come up on the ficus-* units (a second upgrade is a no-op); a
+#     release without the field leaves it byte-identical; an unhealthy one is
+#     rolled back onto the new layout with both units stopped first; TERM
+#     before the commit point reverses it; SIGKILL after it is finished by the
+#     artifact sync; every entrypoint adopts the layout its reconcile left
+#     before it reads a path; --reverse-host-layout moves it back; a non-root
+#     git-mode run is refused before its checkout moves; setup-host.sh moves a
+#     layout-1 host on a re-run and sets a fresh one up on layout 2.
 #
 # Every path the toolkit writes is pointed at the scratch directory through
 # its seams (FICUS_HOST_ROOT, FICUS_SYSTEMD_UNIT_DIR, FICUS_MANAGED_ENV_PATH,
@@ -140,44 +150,66 @@ cp -a "${SCRIPT_DIR}/." "${TK_NOTMPL}/"
 rm -rf "${TK_NOTMPL}/systemd"
 
 # The mutation proofs: E2E_MUTATE=N edits both toolkit copies (never the real
-# lib.sh) so that the cases which must catch the fault go red.
+# scripts) so that the cases which must catch the fault go red.
 #   1  delete `trap '' PIPE`                                  → E3c
 #   2  host_migrate_on_exit returns 0 at once                  → E3 before the flip
 #   3  _hm_direction ignores a migration's _settle             → E7 (b) (c)
 #   4  host_migrate_backup_restore no longer re-renders the
 #      units of a UNITS_EXCLUDED set                            → E5
 #   5  host_migrate_restore_pending returns 0 at once          → E2
-mutate_toolkit() { # LIB_SH
+#   6  upgrade-host.sh does not adopt the layout after its
+#      reconcile                                                → EHL9b
+#   7  apply-artifacts.sh does not adopt the layout             → EHL9a
+#   8  upgrade-host.sh's rollback hook is the framework's (no
+#      stop-the-world)                                          → EHL3
+#   9  upgrade-host.sh's pre-flip hook is the framework's (no
+#      stop across the layout boundary)                         → EHL10
+#  10  upgrade-host.sh's git-mode refusal of a non-root layout
+#      move is gone (review-B M5)                               → EHL8
+#  11  upgrade-host.sh prints no FICUS_HOST_LAYOUT trailer      → EHL1, EHL2
+#  12  setup-host.sh does not re-derive its layout globals after
+#      its host_migrate                                         → EHL11
+#  13  setup-host.sh does not link the legacy etc dir for a DSN
+#      that names the CA there                                  → EHL12
+# (Where each entrypoint adopts the layout relative to its first path read is
+# also pinned line by line in lib.test.sh.)
+mutate_toolkit() { # TOOLKIT_DIR
   [[ -n ${E2E_MUTATE:-} ]] || return 0
-  local before
-  before=$(cksum <"$1")
-  python3 - "$1" "${E2E_MUTATE}" <<'PYEOF'
+  local file
+  file=$(python3 - "$1" "${E2E_MUTATE}" <<'PYEOF'
 import sys
-path, which = sys.argv[1], sys.argv[2]
-src = open(path).read()
+tk, which = sys.argv[1], sys.argv[2]
 edits = {
-    "1": ("  trap '' PIPE\n", ""),
-    "2": ("host_migrate_on_exit() { # RC\n", "host_migrate_on_exit() { # RC\n  return 0\n"),
-    "3": ('    declare -F "host_migration_${m}_settle" >/dev/null || continue\n', "    continue\n"),
-    "4": ('    if ! (\n      install_core_units "${SCRIPT_DIR}/systemd"\n', "    if ! (\n      true\n"),
-    "5": ("host_migrate_restore_pending() {\n  host_migrate_settle_pending\n}\n", "host_migrate_restore_pending() {\n  return 0\n}\n"),
+    "1": ("lib.sh", "  trap '' PIPE\n", ""),
+    "2": ("lib.sh", "host_migrate_on_exit() { # RC\n", "host_migrate_on_exit() { # RC\n  return 0\n"),
+    "3": ("lib.sh", '    declare -F "host_migration_${m}_settle" >/dev/null || continue\n', "    continue\n"),
+    "4": ("lib.sh", '    if ! (\n      install_core_units "${SCRIPT_DIR}/systemd"\n', "    if ! (\n      true\n"),
+    "5": ("lib.sh", "host_migrate_restore_pending() {\n  host_migrate_settle_pending\n}\n", "host_migrate_restore_pending() {\n  return 0\n}\n"),
+    "6": ("upgrade-host.sh", "host_layout_adopt\nSRC_DEST=$(cfg_source_dest)\n", ""),
+    "7": ("apply-artifacts.sh", "  host_layout_adopt\n", ""),
+    "8": ("upgrade-host.sh", "ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook\n", "ARTIFACT_ROLLBACK_HOOK=host_migrate_restore_pending\n"),
+    "9": ("upgrade-host.sh", "ARTIFACT_PREFLIP_HOOK=host_layout_preflip\n", "ARTIFACT_PREFLIP_HOOK=host_migrate_for\n"),
+    "10": ("upgrade-host.sh", '  if ! _hm_is_root && [[ $(git_rev_host_layout "${SRC_DEST}" "$1") == 2 && $(host_layout_detect) == 1 ]]; then\n', "  if false; then\n"),
+    "11": ("upgrade-host.sh", "printf 'FICUS_HOST_LAYOUT=%s\\n' \"${HL_LAYOUT}\"\n}\n", "}\n"),
+    "12": ("setup-host.sh", 'host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"\nresolve_layout_globals\n', 'host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"\n'),
+    "13": ("setup-host.sh", '    host_layout_link_legacy_ca_dir "${DB_DSN_CFG}"\n', ""),
 }
 if which not in edits:
-    sys.exit("E2E_MUTATE=%s: no such mutation (1-5)" % which)
-old, new = edits[which]
+    sys.exit("E2E_MUTATE=%s: no such mutation (1-13)" % which)
+name, old, new = edits[which]
+path = tk + "/" + name
+src = open(path).read()
 if src.count(old) != 1:
-    sys.exit("E2E_MUTATE=%s: the text to mutate is not in lib.sh exactly once" % which)
+    sys.exit("E2E_MUTATE=%s: the text to mutate is not in %s exactly once" % (which, name))
 open(path, "w").write(src.replace(old, new))
+print(path)
 PYEOF
-  [[ $(cksum <"$1") != "${before}" ]] || {
-    printf 'E2E_MUTATE=%s changed nothing in %s\n' "${E2E_MUTATE}" "$1" >&2
-    exit 2
-  }
-  printf 'E2E_MUTATE=%s applied to %s\n' "${E2E_MUTATE}" "$1" >&2
+  ) || exit 2
+  printf 'E2E_MUTATE=%s applied to %s\n' "${E2E_MUTATE}" "${file}" >&2
 }
 
 for tk in "${TK}" "${TK_NOTMPL}"; do
-  mutate_toolkit "${tk}/lib.sh"
+  mutate_toolkit "${tk}"
   cat >>"${tk}/lib.sh" <<'PLUGIN'
 # ---- host-migrate-e2e test plugin (appended to a scratch copy by host-migrate-e2e.test.sh; never shipped)
 host_migration_e2emark_needed() { [[ -f $1/NEEDS_E2EMARK ]] && ! grep -qx 'E2EMARK=1' "${SRC_DEST}/.env"; }
@@ -237,6 +269,38 @@ if [[ -f ${CTL}/block-\${verb} ]]; then
   fi
 fi
 [[ -f ${CTL}/fail-\${verb} ]] && exit 1
+# E2E_UNIT_EMULATION (the host_layout hosts): enable/disable/is-enabled act on
+# FICUS_SYSTEMD_UNIT_DIR the way systemd does — a wants link per WantedBy=, a
+# link per Alias= — so the Alias= bridge and the reverse can be checked on disk.
+if [[ -n \${E2E_UNIT_EMULATION:-} && -n \${FICUS_SYSTEMD_UNIT_DIR:-} ]]; then
+  U=\${FICUS_SYSTEMD_UNIT_DIR}
+  norm() { case \$1 in *.service | *.timer | *.socket | *.target) printf '%s' "\$1" ;; *) printf '%s.service' "\$1" ;; esac; }
+  case "\${verb}" in
+    enable | disable)
+      shift
+      for a in "\$@"; do
+        [[ \${a} == --* ]] && continue
+        u=\$(norm "\${a}") f="\${U}/\$(norm "\${a}")"
+        if [[ \${verb} == enable ]]; then
+          [[ -f \${f} ]] || { echo "Unit file \${u} does not exist." >&2; exit 1; }
+          while IFS= read -r t; do mkdir -p "\${U}/\${t}.wants" && ln -sfn "\${f}" "\${U}/\${t}.wants/\${u}"; done < <(sed -n 's/^WantedBy=//p' "\${f}")
+          while IFS= read -r al; do ln -sfn "\${f}" "\${U}/\${al}"; done < <(sed -n 's/^Alias=//p' "\${f}")
+        else
+          for l in "\${U}"/*.wants/"\${u}" "\${U}"/*; do
+            if [[ -L \${l} ]] && [[ \${l} == "\${U}"/*.wants/"\${u}" || \$(readlink "\${l}") == "\${f}" ]]; then rm -f "\${l}"; fi
+          done
+        fi
+      done
+      exit 0
+      ;;
+    is-enabled)
+      u=\$(norm "\${2:-}")
+      for l in "\${U}"/*.wants/"\${u}"; do if [[ -L \${l} ]]; then echo enabled; exit 0; fi; done
+      echo disabled
+      exit 1
+      ;;
+  esac
+fi
 case "\${verb}" in
   show) printf '0\n' ;;
 esac
@@ -275,6 +339,21 @@ for a in "\$@"; do
 done
 exec ${REAL_CURL} "\$@"
 SHIMEOF
+# getent: root's home under the fake host root when E2E_ROOT_HOME says so (the
+# host_layout hosts, whose HOME_DIR is the run user's default); else the real one.
+REAL_GETENT=$(command -v getent)
+cat >"${SHIM}/getent" <<SHIMEOF
+#!/usr/bin/env bash
+if [[ \${1:-} == passwd && \${2:-} == root && -n \${E2E_ROOT_HOME:-} ]]; then
+  printf 'root:x:0:0:root:%s:/bin/bash\n' "\${E2E_ROOT_HOME}"
+  exit 0
+fi
+exec ${REAL_GETENT} "\$@"
+SHIMEOF
+# docker and visudo: record argv (a host_layout move on an external-database,
+# root-run host calls neither).
+printf '#!/usr/bin/env bash\nprintf "docker %%s\\n" "$*" >>"%s"\nexit 0\n' "${CTL}/tools" >"${SHIM}/docker"
+printf '#!/usr/bin/env bash\nprintf "visudo %%s\\n" "$*" >>"%s"\nexit 0\n' "${CTL}/tools" >"${SHIM}/visudo"
 chmod +x "${SHIM}"/*
 # A non-interactive shell starts background jobs with SIGINT/SIGQUIT ignored,
 # and bash cannot trap a signal that was ignored when it started. The
@@ -333,7 +412,8 @@ make_tree() { # DIR
 }
 
 # Publish a signed artifact: prints the four FICUS_ARTIFACT_* assignments.
-# Each MARKER (NEEDS_E2EMARK, NEEDS_E2EMOVE) is a file in the release tree.
+# Each MARKER (NEEDS_E2EMARK, NEEDS_E2EMOVE) is a file in the release tree;
+# PUB_HOST_LAYOUT sets the manifest's hostLayout.
 publish() { # NAME SHA [MARKER...]
   local work="${SCRATCH}/pub-$1" sha=$2 tree m
   shift 2
@@ -341,7 +421,12 @@ publish() { # NAME SHA [MARKER...]
   mkdir -p "${work}/dist"
   make_tree "${tree}"
   for m in "$@"; do : >"${tree}/${m}"; done
-  python3 "${SCRATCH}/manifest.py" "${tree}" "${sha}" "${BUN_VERSION}" >"${work}/dist/artifact.json"
+  # PUB_REBASE: the release's rebase-home program, a stub that records its argv.
+  if [[ -n ${PUB_REBASE:-} ]]; then
+    printf '%s\n' "require('node:fs').appendFileSync(process.env.E2E_REBASE_PROOF, process.argv.slice(2).join(' ') + '\\n')" \
+      >"${tree}/apps/core/dist/rebase-home.js"
+  fi
+  python3 "${SCRATCH}/manifest.py" "${tree}" "${sha}" "${BUN_VERSION}" ${PUB_HOST_LAYOUT:+"${PUB_HOST_LAYOUT}"} >"${work}/dist/artifact.json"
   cp "${work}/dist/artifact.json" "${tree}/artifact.json"
   openssl pkeyutl -sign -inkey "${SCRATCH}/key.pem" -rawin -in "${work}/dist/artifact.json" -out "${work}/dist/artifact.sig.raw"
   base64 -w0 <"${work}/dist/artifact.sig.raw" >"${work}/dist/artifact.sig"
@@ -414,6 +499,7 @@ YAMLEOF
   rm -f "${CTL}"/block-* "${CTL}"/fail-* "${CTL}/blocked.pid"
   MIGS=e2emark
   EXTRA_ENV=()
+  HOST_KIND=e2e
   snapshot "${H}/pristine"
 }
 # Copies of every host config file into DIR (a file that does not exist is
@@ -479,6 +565,23 @@ assert_converged() { # LABEL
 # Run an entrypoint as the fake host sees it. ARTIFACT_ENV names the file of
 # FICUS_ARTIFACT_* assignments (or '' for none). Sets RC and OUT.
 host_env() {
+  if [[ ${HOST_KIND:-e2e} == layout1 ]]; then
+    # A host_layout host: its paths are the layout's defaults under the root.
+    printf '%s\n' \
+      "PATH=${SHIM}:${PATH}" \
+      "FICUS_HOST_ROOT=${R}" \
+      "FICUS_SYSTEMD_UNIT_DIR=${U}" \
+      "HOST_MIGRATE_BACKUP_ROOT=${H}/bk" \
+      "HOST_MIGRATE_LEGACY_BACKUP_ROOT=${H}/bk-legacy" \
+      "FICUS_SYSTEM_BIN_DIR=${H}/sysbin" \
+      "E2E_MIGRATIONS=" \
+      "E2E_CTL=${CTL}" \
+      "E2E_UNIT_EMULATION=1" \
+      "E2E_ROOT_HOME=${R}/root" \
+      "E2E_REBASE_PROOF=${H}/rebase-proof" \
+      ${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}
+    return 0
+  fi
   printf '%s\n' \
     "PATH=${SHIM}:${PATH}" \
     "FICUS_HOST_ROOT=${H}/root" \
@@ -893,5 +996,450 @@ run_script '' upgrade-host.sh --config "${CONFIG}" --restore-host-backup "${e7_s
 EXTRA_ENV=()
 expect_eq 'E7d: ...an exported _HM_REVERSED=1 does not get it past the refusal' "${RC}" '1'
 expect_eq 'E7d: ...still changing nothing' "$(same_as "${H}/before-restore"):$(moved):$(pending)" 'same:data.moved:1:none'
+
+# ================================================================== host_layout
+# EHL1–EHL11: the REAL registry (E2E_MIGRATIONS empty: HOST_MIGRATIONS=(host_layout))
+# on a fleet-shaped layout-1 host, built under FICUS_HOST_ROOT=${H}/root from
+# lib.sh's HL_LEGACY_* constants (never retyped). Its units, backup script,
+# backup.env and managed.env sit at their resolved defaults under the root (no
+# path seams); only the backup-set root is outside it (${H}/bk). The systemctl
+# shim emulates enable/disable (wants and Alias= links), getent answers root's
+# home under the root, and the candidate carries an apps/core/dist/rebase-home.js
+# stub that records its argv in ${H}/rebase-proof.
+eval "$(bash -c 'source "$1/lib.sh"; declare -p HL_LEGACY_DEST HL_LEGACY_ETC HL_LEGACY_SETUP_DIR HL_LEGACY_SETUP_YAML \
+  HL_LEGACY_UNIT_PREFIX HL_LEGACY_BACKUP_SCRIPT HL_LEGACY_HOME_NAME HL_LEGACY_RELEASE_MARKER HL_NEW_DEST HL_NEW_ETC \
+  HL_NEW_SETUP_DIR HL_NEW_SETUP_YAML HL_NEW_UNIT_PREFIX HL_NEW_BACKUP_SCRIPT HL_NEW_HOME_NAME' _ "${TK}")"
+L_API="${HL_LEGACY_UNIT_PREFIX}-api" L_WORKER="${HL_LEGACY_UNIT_PREFIX}-worker" L_BACKUP="${HL_LEGACY_UNIT_PREFIX}-backup"
+N_API="${HL_NEW_UNIT_PREFIX}-api" N_WORKER="${HL_NEW_UNIT_PREFIX}-worker"
+SHA_L2='2222222222222222222222222222222222222222'
+SHA_PLAIN='3333333333333333333333333333333333333333'
+ART_L2="${SCRATCH}/l2.artifact.env"
+ART_PLAIN="${SCRATCH}/plain.artifact.env"
+PUB_HOST_LAYOUT=2 PUB_REBASE=1 publish l2 "${SHA_L2}" >"${ART_L2}"
+PUB_REBASE=1 publish plain "${SHA_PLAIN}" >"${ART_PLAIN}"
+
+# Render a toolkit-owned file for this host as lib.sh renders it on LAYOUT.
+l1_render() { # LAYOUT FUNCTION ARGS...
+  local layout=$1
+  shift
+  FICUS_HOST_ROOT="${R}" FICUS_SYSTEMD_UNIT_DIR="${U}" bash -c '
+    source "$1/lib.sh"; host_layout_resolve "$2"; SRC_DEST=$3; shift 3
+    RUN_USER=root BUN_BIN=/usr/local/bin/bun DB_MODE=external CORE_LAYOUT=artifact
+    "$@"' _ "${TK}" "${layout}" "${DEST}" "$@"
+}
+new_l1_host() { # NAME
+  H="${SCRATCH}/host-$1"
+  R="${H}/root"
+  U="${R}/etc/systemd/system"
+  DEST="${R}${HL_LEGACY_DEST}"
+  NEW_DEST="${R}${HL_NEW_DEST}"
+  OLD_REL="${DEST}/releases/${SHA_OLD}-000000000000"
+  local rel
+  mkdir -p "${U}/multi-user.target.wants" "${U}/timers.target.wants" "${R}${HL_LEGACY_ETC}/artifacts" \
+    "${R}${HL_LEGACY_SETUP_DIR}" "${R}/root/${HL_LEGACY_HOME_NAME}/inbox-attachments" "${R}/usr/local/bin" \
+    "${H}/sysbin" "${H}/stage"
+  for rel in "${SHA_OLD}-000000000000" prev-0000 older-3 older-2 older-1; do
+    mkdir -p "${DEST}/releases/${rel}"
+    make_tree "${DEST}/releases/${rel}"
+    printf '{"schema":1,"commit":"%s","envPrefix":"FICUS"}\n' "${rel}" >"${DEST}/releases/${rel}/artifact.json"
+    printf '{"sha":"%s"}\n' "${rel}" >"${DEST}/releases/${rel}/${HL_LEGACY_RELEASE_MARKER}"
+  done
+  touch -d '2026-01-01 00:00:03' "${DEST}/releases/older-1"
+  touch -d '2026-01-01 00:00:02' "${DEST}/releases/older-2"
+  touch -d '2026-01-01 00:00:01' "${DEST}/releases/older-3"
+  ln -s "${OLD_REL}" "${DEST}/current"
+  ln -s "${DEST}/releases/prev-0000" "${DEST}/previous"
+  # The fleet's .env: no HOME_DIR, an external DSN whose sslrootcert names the
+  # CA under the legacy etc dir (URL-encoded).
+  printf 'DATABASE_URL=postgresql://tenant_x:pw@db.example:25060/x?sslmode=verify-full&sslrootcert=%s\nFICUS_ENCRYPTION_KEY=enc-key-1\nFICUS_PASSWORD=pw-1\nFICUS_SANDBOX_RUNTIME=host\nAPP_URL=https://acme.ficus.sh\n' \
+    "$(printf '%s/database-ca.crt' "${HL_LEGACY_ETC}" | sed 's:/:%2F:g')" >"${DEST}/.env"
+  chmod 0600 "${DEST}/.env"
+  printf 'att\n' >"${R}/root/${HL_LEGACY_HOME_NAME}/inbox-attachments/a.txt"
+  printf 'SES=1\n' >"${R}${HL_LEGACY_ETC}/managed.env"
+  printf "FICUS_BACKUP_S3_ACCESS_KEY='ak'\nFICUS_BACKUP_S3_SECRET_KEY='sk'\nFICUS_BACKUP_PASSPHRASE='pp'\n" >"${R}${HL_LEGACY_ETC}/backup.env"
+  printf 'ca\n' >"${R}${HL_LEGACY_ETC}/database-ca.crt"
+  chmod 0600 "${R}${HL_LEGACY_ETC}/managed.env" "${R}${HL_LEGACY_ETC}/backup.env"
+  CONFIG="${R}${HL_LEGACY_SETUP_DIR}/${HL_LEGACY_SETUP_YAML}"
+  NEW_CONFIG="${R}${HL_NEW_SETUP_DIR}/${HL_NEW_SETUP_YAML}"
+  cat >"${CONFIG}" <<YAMLEOF
+source:
+  mode: artifact
+  repo: https://example.invalid/core.git
+  dest: ${DEST}
+core:
+  origin: https://acme.ficus.sh
+  port: 3999
+  run_user: root
+database:
+  mode: external
+  dsn: postgres://user:pw@localhost/db
+runtime:
+  sandbox: host
+backup:
+  enabled: false
+YAMLEOF
+  # The units, backup script and backup units exactly as this toolkit renders
+  # them on layout 1 (so a run that changes nothing leaves them byte-identical).
+  l1_render 1 install_core_units "${TK}/systemd"
+  l1_render 1 install_rendered 0755 root root "${R}${HL_LEGACY_BACKUP_SCRIPT}" render_backup_script_content \
+    "${TK}/ficus-backup.sh.tmpl" "${DEST}" "${R}/root/${HL_LEGACY_HOME_NAME}" external '' https://s3.example.com us-east-1 bucket tenants/acme \
+    "${R}${HL_LEGACY_ETC}/backup.env"
+  l1_render 1 install_rendered 0644 root root "${U}/${L_BACKUP}.service" render_backup_unit_content \
+    "${TK}/systemd/ficus-backup.service.tmpl" "${R}${HL_LEGACY_BACKUP_SCRIPT}" '*-*-* 03:15:00' external
+  l1_render 1 install_rendered 0644 root root "${U}/${L_BACKUP}.timer" render_backup_unit_content \
+    "${TK}/systemd/ficus-backup.timer.tmpl" "${R}${HL_LEGACY_BACKUP_SCRIPT}" '*-*-* 03:15:00' external
+  ln -s "${U}/${L_API}.service" "${U}/multi-user.target.wants/${L_API}.service"
+  ln -s "${U}/${L_WORKER}.service" "${U}/multi-user.target.wants/${L_WORKER}.service"
+  ln -s "${U}/${L_BACKUP}.timer" "${U}/timers.target.wants/${L_BACKUP}.timer"
+  printf '%s' "${DEST}" >"${CTL}/dest"
+  basename "${OLD_REL}" >"${CTL}/healthy"
+  : >"${CALLS}"
+  : >"${CTL}/trace"
+  rm -f "${CTL}"/block-* "${CTL}"/fail-* "${CTL}/blocked.pid"
+  HOST_KIND=layout1
+  MIGS=''
+  EXTRA_ENV=()
+  snap_root >"${H}/pristine.snap"
+}
+# Every path under the host root with its type, link target and mode, then
+# every regular file's sha256 — the staged releases, the release links and the
+# artifact staging dir left out (a run always moves those).
+snap_root() {
+  (
+    cd "${R}" &&
+      find . -printf '%p %y %l %m\n' | grep -vE '/(releases|current|previous|\.incoming)( |/)' | LC_ALL=C sort &&
+      find . -type f -exec sha256sum {} + | grep -vE ' \./.*/(releases|\.incoming)/' | LC_ALL=C sort -k2
+  )
+}
+# The layout lib.sh detects on this host, as a fresh toolkit process sees it.
+l_detect() { FICUS_HOST_ROOT="${R}" FICUS_SYSTEMD_UNIT_DIR="${U}" bash -c 'source "$1/lib.sh"; host_layout_detect' _ "${TK}"; }
+# The machine-readable trailer lines, in order.
+trailer() { grep -E '^FICUS_[A-Z_]+=' <<<"${OUT}" | tr '\n' '|'; }
+hl_set() { grep -l "$(printf '^#requires-reverse\thost_layout$')" "${H}"/bk/*/MANIFEST 2>/dev/null | head -n 1 | xargs -r dirname; }
+
+# ============ EHL1. upgrade a layout-1 host onto a release that declares hostLayout 2
+new_l1_host ehl1
+healthy_add "${SHA_L2}-*"
+upgrade "${ART_L2}"
+expect_eq 'EHL1 upgrade onto the hostLayout-2 release: exits 0' "${RC}" '0'
+[[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+expect_match 'EHL1: the trailer ends with FICUS_HOST_LAYOUT=2, after FICUS_RELEASE_AFTER' "$(trailer)" \
+  '(^|\|)FICUS_RELEASE_AFTER=[^|]*\|([^|]*\|)*FICUS_HOST_LAYOUT=2\|$'
+expect_eq 'EHL1: the host is on layout 2' "$(l_detect)" '2'
+expect_match 'EHL1: current names the release at its NEW absolute path' "$(readlink "${NEW_DEST}/current")" "^${NEW_DEST}/releases/${SHA_L2}-"
+expect_eq 'EHL1: previous names the old release at its new path' "$(readlink "${NEW_DEST}/previous")" "${NEW_DEST}/releases/${SHA_OLD}-000000000000"
+expect_eq 'EHL1: the compat links (install root, etc dir, setup dir, config, HOME, backup script)' \
+  "$(readlink "${DEST}"):$(readlink "${R}${HL_LEGACY_ETC}"):$(readlink "${R}${HL_LEGACY_SETUP_DIR}"):$(readlink "${NEW_CONFIG%/*}/${HL_LEGACY_SETUP_YAML}"):$(readlink "${R}/root/${HL_LEGACY_HOME_NAME}"):$(readlink "${R}${HL_LEGACY_BACKUP_SCRIPT}")" \
+  "${NEW_DEST}:${R}${HL_NEW_ETC}:${R}${HL_NEW_SETUP_DIR}:${HL_NEW_SETUP_YAML}:${R}/root/${HL_NEW_HOME_NAME}:${HL_NEW_BACKUP_SCRIPT##*/}"
+expect_eq 'EHL1: the legacy unit names are Alias= links to the ficus units' \
+  "$(readlink "${U}/${L_API}.service"):$(readlink "${U}/${L_WORKER}.service")" "${U}/${N_API}.service:${U}/${N_WORKER}.service"
+expect_match 'EHL1: the ficus units are enabled' "$(calls_line)" "\\|enable ${N_API} ${N_WORKER}\\|"
+expect_match 'EHL1: ...and the services come up on them (the activation restarts ficus-api/ficus-worker)' \
+  "$(calls_line)" "\\|enable ${N_API} ${N_WORKER}\\|.*\\|restart ${N_API} ${N_WORKER}\\|"
+expect_eq 'EHL1: no restart names a legacy unit' "$(grep -cE "^systemctl restart .*${L_API}" "${CALLS}" || true)" '0'
+expect_match 'EHL1: the unit reads managed.env from /etc/ficus' "$(cat "${U}/${N_API}.service")" "EnvironmentFile=-${R}${HL_NEW_ETC}/managed.env|EnvironmentFile=-${HL_NEW_ETC}/managed.env"
+e1_set=$(hl_set)
+expect_eq 'EHL1: one backup set, taken for host_layout (#requires-reverse), and no journal' \
+  "$(sets):$(head -n 1 "${e1_set}/MANIFEST" 2>/dev/null):$(pending)" "1:#requires-reverse	host_layout:none"
+expect_eq 'EHL1: its commit point is recorded' "$([[ -f ${e1_set}/hl/DONE ]] && echo 'done')" 'done'
+# Six releases (current, previous and four others) → retention keeps four.
+expect_eq 'EHL1: artifact_retention ran on the NEW install root (current, previous and two others left there)' \
+  "$(find "${NEW_DEST}/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l | tr -d ' '):$(grep -c 'retention: removing old release older-' <<<"${OUT}")" '4:2'
+expect_eq 'EHL1: rebase-home.js ran from the candidate: HOME moved from the legacy name to .ficus' \
+  "$(cat "${H}/rebase-proof" 2>/dev/null)" "--from ${R}/root/${HL_LEGACY_HOME_NAME} --to ${R}/root/${HL_NEW_HOME_NAME}"
+expect_eq 'EHL1: the stored HOME_DIR is explicit and the config names the new install root' \
+  "$(grep '^HOME_DIR=' "${NEW_DEST}/.env"):$(yq -r .source.dest "${NEW_CONFIG}")" "HOME_DIR=${R}/root/${HL_NEW_HOME_NAME}:${NEW_DEST}"
+expect_match 'EHL1: the log shows the journaled steps S1 … S13' "${OUT}" 'host_layout S1: .*host_layout S13: '
+# A second upgrade — through the legacy config path (links), then the new one — is a no-op for the layout.
+for cfg in "${CONFIG}" "${NEW_CONFIG}"; do
+  : >"${CALLS}"
+  run_script "${ART_L2}" upgrade-host.sh --config "${cfg}"
+  expect_eq "EHL1: a second upgrade (config ${cfg#"${R}"}) exits 0, no new set, no journal, still layout 2" \
+    "${RC}:$(sets):$(pending):$(l_detect)" '0:1:none:2'
+  expect_eq "EHL1: ...runs no host_layout step and reports FICUS_HOST_LAYOUT=2" \
+    "$(grep -c 'host_layout S[0-9]' <<<"${OUT}" || true):$(trailer | grep -o 'FICUS_HOST_LAYOUT=[0-9]*')" '0:FICUS_HOST_LAYOUT=2'
+  expect_eq "EHL1: ...and restarts the ficus units" "$(grep -c "^systemctl restart ${N_API} ${N_WORKER}\$" "${CALLS}")" '1'
+done
+
+# ============ EHL7. --restore-host-backup refuses the host_layout set
+snapshot_before=$(snap_root)
+run_script '' upgrade-host.sh --config "${NEW_CONFIG}" --restore-host-backup "${e1_set}"
+expect_eq 'EHL7 --restore-host-backup <host_layout set>: refused (exit 1)' "${RC}" '1'
+expect_match 'EHL7: ...it must be reversed first' "${OUT}" 'must be reversed first'
+expect_eq 'EHL7: ...changing nothing' "$([[ $(snap_root) == "${snapshot_before}" ]] && echo same):$(pending)" 'same:none'
+
+# ============ EHL2. the same upgrade to a release WITHOUT hostLayout: layout 1 stays
+new_l1_host ehl2
+healthy_add "${SHA_PLAIN}-*"
+upgrade "${ART_PLAIN}"
+expect_eq 'EHL2 upgrade to a release without hostLayout: exits 0, layout 1, no set' "${RC}:$(l_detect):$(sets)" '0:1:0'
+[[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+expect_eq 'EHL2: the host is byte-identical outside releases/ and the release links' \
+  "$([[ $(snap_root) == "$(cat "${H}/pristine.snap")" ]] && echo same || diff <(cat "${H}/pristine.snap") <(snap_root) | head -n 20)" 'same'
+expect_match 'EHL2: current is the new release at the legacy path; FICUS_HOST_LAYOUT=1' \
+  "$(readlink "${DEST}/current")|$(trailer)" "^${DEST}/releases/${SHA_PLAIN}-[^|]*\\|.*FICUS_HOST_LAYOUT=1\\|$"
+expect_eq 'EHL2: no rebase ran' "$([[ -e ${H}/rebase-proof ]] && echo ran || echo none)" 'none'
+
+# ============ EHL3. an unhealthy candidate after the commit point: rolled back, layout kept
+new_l1_host ehl3
+upgrade "${ART_L2}"
+expect_eq 'EHL3 unhealthy hostLayout-2 candidate: fails' "$([[ ${RC} -ne 0 ]] && echo failed)" 'failed'
+expect_match 'EHL3: FICUS_RELEASE_ROLLED_BACK=1' "${OUT}" 'FICUS_RELEASE_ROLLED_BACK=1'
+expect_eq 'EHL3: current is the old release at its NEW absolute path' "$(readlink "${NEW_DEST}/current")" "${NEW_DEST}/releases/${SHA_OLD}-000000000000"
+expect_eq 'EHL3: previous is back as it was, at its new path' "$(readlink "${NEW_DEST}/previous")" "${NEW_DEST}/releases/prev-0000"
+expect_match 'EHL3: both units are stopped after the failing restart and before the rollback restart' \
+  "$(calls_line)" "\\|restart ${N_API} ${N_WORKER}\\|([^|]*\\|)*stop ${N_API} ${N_WORKER}\\|([^|]*\\|)*restart ${N_API} ${N_WORKER}\\|"
+expect_eq 'EHL3: the rollback restart is the last restart' "$(grep '^systemctl restart' "${CALLS}" | tail -n 1)" "systemctl restart ${N_API} ${N_WORKER}"
+expect_eq 'EHL3: layout 2 is kept, committed (no journal)' "$(l_detect):$(pending)" '2:none'
+e3_set=$(hl_set)
+
+# ============ EHL6. --reverse-host-layout (after EHL3: the old release serves on layout 2)
+: >"${CALLS}"
+: >"${H}/rebase-proof"
+run_script '' upgrade-host.sh --config "${NEW_CONFIG}" --reverse-host-layout "${e3_set}"
+expect_eq 'EHL6 --reverse-host-layout: exits 0, the host is on layout 1 again' "${RC}:$(l_detect)" '0:1'
+[[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+expect_eq 'EHL6: current names the old release at the LEGACY absolute path' "$(readlink "${DEST}/current")" "${OLD_REL}"
+expect_eq 'EHL6: the host is byte-identical to before the upgrade (outside releases/)' \
+  "$([[ $(snap_root) == "$(cat "${H}/pristine.snap")" ]] && echo same || diff <(cat "${H}/pristine.snap") <(snap_root) | head -n 20)" 'same'
+expect_match 'EHL6: the legacy units are started' "$(calls_line)" "\\|start ${L_API} ${L_WORKER}\\|"
+expect_eq 'EHL6: the stored HOME paths were rebased back' "$(cat "${H}/rebase-proof")" \
+  "--from ${R}/root/${HL_NEW_HOME_NAME} --to ${R}/root/${HL_LEGACY_HOME_NAME}"
+expect_eq 'EHL6: no journal, the set marked reversed; the trailer says FICUS_HOST_LAYOUT=1' \
+  "$(pending):$([[ -f ${e3_set}/hl/REVERSED ]] && echo reversed):$(trailer)" 'none:reversed:FICUS_HOST_LAYOUT=1|'
+run_script '' upgrade-host.sh --config "${CONFIG}" --reverse-host-layout "${e3_set}"
+expect_eq 'EHL6: a second reverse of the same set is refused (exit 1)' "${RC}" '1'
+
+# ============ EHL4. TERM while blocked in S10's first daemon-reload: reversed
+new_l1_host ehl4
+healthy_add "${SHA_L2}-*"
+: >"${CTL}/block-daemon-reload"
+start_bg "${ART_L2}" upgrade-host.sh --config "${CONFIG}"
+wait_blocked || true
+expect_eq 'EHL4 (fixture): stopped inside S10, journaled' "$(pending):$(grep -c '^S10$' "$(hl_set)/hl/STEPS" 2>/dev/null)" 'pending:1'
+kill -TERM "${BG_PID}"
+release_block
+wait_bg
+expect_eq 'EHL4 SIGTERM in S10: exits 143' "${RC}" '143'
+expect_eq 'EHL4: the host root is byte-identical to before (outside releases/)' \
+  "$([[ $(snap_root) == "$(cat "${H}/pristine.snap")" ]] && echo same || diff <(cat "${H}/pristine.snap") <(snap_root) | head -n 20)" 'same'
+expect_eq 'EHL4: the last service actions start the legacy units (and their backup timer) again' \
+  "$(grep -E '^systemctl (start|stop|restart) ' "${CALLS}" | tail -n 2 | sed 's/^systemctl //' | tr '\n' '|')" \
+  "start ${L_API} ${L_WORKER}|start ${L_BACKUP}.timer|"
+expect_eq 'EHL4: no journal, layout 1, current unmoved' "$(pending):$(l_detect):$(readlink "${DEST}/current")" "none:1:${OLD_REL}"
+
+# ============ EHL5. SIGKILL in the activation's restart (after DONE and the flip)
+new_l1_host ehl5
+healthy_add "${SHA_L2}-*"
+: >"${CTL}/block-restart"
+start_bg "${ART_L2}" upgrade-host.sh --config "${CONFIG}"
+wait_blocked || true
+kill_bg
+wait_bg
+expect_eq 'EHL5 SIGKILL after the flip: journaled, layout 2, committed past DONE' \
+  "$(pending):$(l_detect):$([[ -f $(hl_set)/hl/DONE ]] && echo 'done')" 'pending:2:done'
+printf 'SES=2\n' >"${H}/stage/managed.env"
+run_script --tk "${TK_NOTMPL}" '' apply-artifacts.sh --config "${NEW_CONFIG}" "${H}/stage"
+expect_eq 'EHL5: apply-artifacts.sh --config <new yaml> from the template-less toolkit exits 0' "${RC}" '0'
+[[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+expect_match 'EHL5: its reconcile finished the host migration forward' "${OUT}" 'reconcile: finished the host migration'
+expect_eq 'EHL5: no journal, still layout 2' "$(pending):$(l_detect)" 'none:2'
+expect_eq 'EHL5: the artifacts are applied under /etc/ficus' "$(cat "${R}${HL_NEW_ETC}/managed.env" 2>/dev/null)" 'SES=2'
+expect_match 'EHL5: ...and reported changed' "${OUT}" 'FICUS_MANAGED_ENV_CHANGED=1'
+
+# ============ EHL9. adopt before any path is read: a SIGKILL inside S10 (the
+# layout-2 signal already written, no commit point) is REVERSED by the next
+# run's reconcile — which must then work at the legacy paths, whatever layout
+# it resolved when lib.sh was sourced.
+ehl9_kill_in_s10() { # NAME
+  new_l1_host "$1"
+  healthy_add "${SHA_L2}-*"
+  : >"${CTL}/block-daemon-reload"
+  start_bg "${ART_L2}" upgrade-host.sh --config "${CONFIG}"
+  wait_blocked || true
+  kill_bg
+  wait_bg
+  expect_eq "EHL9 ($1, fixture): SIGKILL inside S10 left the journal and the layout-2 signal (${N_API}.service)" \
+    "$(pending):$(l_detect):$([[ -f $(hl_set)/hl/DONE ]] && echo 'done' || echo 'no-commit')" 'pending:2:no-commit'
+}
+# (a) the artifact sync, from the template-less toolkit, with the legacy config path.
+ehl9_kill_in_s10 ehl9a
+printf 'SES=9\n' >"${H}/stage/managed.env"
+run_script --tk "${TK_NOTMPL}" '' apply-artifacts.sh --config "${CONFIG}" "${H}/stage"
+expect_eq 'EHL9a: apply-artifacts.sh exits 0' "${RC}" '0'
+[[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+expect_match 'EHL9a: its reconcile reversed and restored the set' "${OUT}" 'reconcile: restored'
+expect_eq 'EHL9a: layout 1 again, no journal' "$(l_detect):$(pending)" '1:none'
+expect_eq 'EHL9a: the artifacts land under the LEGACY etc dir, and no Ficus etc dir is created' \
+  "$(cat "${R}${HL_LEGACY_ETC}/managed.env" 2>/dev/null):$([[ -e ${R}${HL_NEW_ETC} ]] && echo created || echo none)" 'SES=9:none'
+# (b) the tenant upgrade, with the config path the control plane's probe picks for layout 2.
+ehl9_kill_in_s10 ehl9b
+run_script "${ART_L2}" upgrade-host.sh --config "${NEW_CONFIG}"
+expect_eq 'EHL9b: upgrade-host.sh --config <new yaml> after the kill exits 0' "${RC}" '0'
+[[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+expect_match 'EHL9b: its reconcile restored first, then it migrated again' "${OUT}" 'reconcile: restored.*host_layout S13: '
+expect_eq 'EHL9b: layout 2, no journal, two sets, current at the new path' \
+  "$(l_detect):$(pending):$(sets):$([[ $(readlink "${NEW_DEST}/current") == "${NEW_DEST}/releases/${SHA_L2}-"* ]] && echo new)" '2:none:2:new'
+
+# ============ EHL10. back across the boundary on a migrated host: both units stop before the flip
+new_l1_host ehl10
+upgrade "${ART_L2}" # unhealthy: rolled back — the old release now serves on layout 2
+expect_eq 'EHL10 (fixture): the old release serves on layout 2' "$(l_detect):$(readlink "${NEW_DEST}/current")" "2:${NEW_DEST}/releases/${SHA_OLD}-000000000000"
+healthy_add "${SHA_L2}-*"
+: >"${CTL}/trace"
+: >"${CALLS}"
+upgrade "${ART_L2}"
+expect_eq 'EHL10: the upgrade across the boundary exits 0, no new set' "${RC}:$(sets)" '0:1'
+[[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+expect_match 'EHL10: both units were stopped while the OLD release was still current (before the flip)' \
+  "$(tr '\n' '|' <"${CTL}/trace")" "(^|\\|)stop env=plain cur=${SHA_OLD}-000000000000\\|"
+expect_match 'EHL10: ...the pre-flip stop names the ficus units' "$(calls_line)" "(^|\\|)stop ${N_API} ${N_WORKER}\\|([^|]*\\|)*restart ${N_API} ${N_WORKER}\\|"
+
+# ============ EHL8. a non-root git-mode run: a revision that declares layout 2 is refused before the checkout moves
+ehl8_user=nobody
+if id -u "${ehl8_user}" >/dev/null 2>&1; then
+  new_l1_host ehl8
+  rm -rf "${DEST}/releases" "${DEST}/current" "${DEST}/previous"
+  make_tree "${DEST}"
+  git init -q --bare "${H}/origin.git"
+  (
+    cd "${DEST}"
+    git init -q -b main
+    git -c user.email=t@example.com -c user.name=t add package.json apps
+    git -c user.email=t@example.com -c user.name=t commit -q -m pre-layout
+    git remote add origin "${H}/origin.git"
+    git push -q origin main
+    printf '{"name":"ficus","private":true,"workspaces":[],"ficusHostLayout":2}\n' >package.json
+    git -c user.email=t@example.com -c user.name=t commit -q -am layout-2
+    git push -q origin main
+    git reset -q --hard HEAD~1
+  )
+  ehl8_head=$(git -C "${DEST}" rev-parse HEAD)
+  EHL8_REPO="${H}/origin.git" EHL8_USER=${ehl8_user} yq -i \
+    '.source.mode = "git-ssh" | .source.repo = strenv(EHL8_REPO) | .source.ref = "main" | .core.run_user = strenv(EHL8_USER)' "${CONFIG}"
+  # What a non-root operator's sudo stands in for here: commands run as that
+  # operator, root-only effects (chown root, install -o root) are skipped.
+  mkdir -p "${H}/usershim"
+  cat >"${H}/usershim/sudo" <<'SUDOEOF'
+#!/usr/bin/env bash
+[[ ${1:-} == -n ]] && shift
+if [[ ${1:-} == runuser ]]; then
+  shift
+  while [[ $# -gt 0 && $1 != -- ]]; do shift; done
+  shift
+  exec "$@"
+fi
+"$@" 2>/dev/null || true
+SUDOEOF
+  cp "$(command -v bun)" "${H}/usershim/bun"
+  cp "$(command -v bun)" "${H}/sysbin/bun"
+  chmod 0755 "${H}/usershim/sudo" "${H}/usershim/bun"
+  mkdir -p "${H}/userhome"
+  chown -R "${ehl8_user}" "${DEST}" "${H}/sysbin" "${H}/userhome" "${H}/origin.git"
+  chmod o+rx "${SCRATCH}" "${H}" "${R}" "${R}/opt" "${R}/root" "${R}${HL_LEGACY_SETUP_DIR}" "${TK}" "${TK}/systemd" "${SHIM}"
+  chmod o+r "${CONFIG}"
+  chmod -R o+rX "${TK}" "${SHIM}" "${H}/usershim"
+  ehl8_rc=0
+  : >"${H}/ehl8.start"
+  ehl8_out=$(cd / && runuser -u "${ehl8_user}" -- env -i HOME="${H}/userhome" \
+    PATH="${H}/usershim:${SHIM}:/usr/local/bin:/usr/bin:/bin" \
+    FICUS_HOST_ROOT="${R}" FICUS_SYSTEMD_UNIT_DIR="${U}" HOST_MIGRATE_BACKUP_ROOT="${H}/bk" \
+    FICUS_SYSTEM_BIN_DIR="${H}/sysbin" GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*' \
+    bash "${TK}/upgrade-host.sh" --config "${CONFIG}" 2>&1) || ehl8_rc=$?
+  [[ -z ${E2E_VERBOSE:-} ]] || printf '\n===== EHL8 (rc %s)\n%s\n' "${ehl8_rc}" "${ehl8_out}" >&2
+  # The run's node smoke test leaves bun's per-user node shim dir in /tmp,
+  # owned by that account — where it would break a later root run's shim.
+  find /tmp -maxdepth 1 -name 'bun-node-*' -user "${ehl8_user}" -newer "${H}/ehl8.start" -exec rm -rf {} + 2>/dev/null || true
+  expect_eq 'EHL8 non-root git-mode run to a revision declaring hostLayout 2 on a layout-1 host: refused (exit 1)' "${ehl8_rc}" '1'
+  expect_match 'EHL8: ...saying the move is root-only' "${ehl8_out}" 'moves the host to the Ficus layout, which is root-only — re-run as root'
+  expect_eq 'EHL8: ...before the checkout moved (HEAD unchanged), still layout 1, no set' \
+    "$(git -c safe.directory='*' -C "${DEST}" rev-parse HEAD):$(l_detect):$(sets)" "${ehl8_head}:1:0"
+else
+  FAIL=$((FAIL + 1))
+  printf 'FAIL: EHL8 needs the %s account\n' "${ehl8_user}" >&2
+fi
+
+# ============ EHL11. setup-host.sh re-run on a layout-1 host with the hostLayout-2
+# release: its host_migrate (before the .env phase) moves the host, and every
+# later phase works at the Ficus names. Guarded like E6 (a real preflight).
+if [[ -z ${e6_skip} ]]; then
+  new_l1_host ehl11
+  healthy_add "${SHA_L2}-*"
+  run_script "${ART_L2}" setup-host.sh --config "${CONFIG}"
+  expect_eq 'EHL11 setup-host.sh re-run with the hostLayout-2 release: exits 0' "${RC}" '0'
+  [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+  expect_eq 'EHL11: layout 2, no journal, one set' "$(l_detect):$(pending):$(sets)" '2:none:1'
+  expect_eq 'EHL11: the move (S10) and then the services phase enable the ficus units' \
+    "$(grep -c "^systemctl enable ${N_API} ${N_WORKER}\$" "${CALLS}")" '2'
+  expect_eq 'EHL11: no service action names a legacy unit after the move' \
+    "$(sed -n "/^systemctl enable ${N_API} ${N_WORKER}\$/,\$p" "${CALLS}" | grep -cE "^systemctl (enable|start|restart) ${L_API}" || true)" '0'
+  expect_eq 'EHL11: the .env it renders is at the new install root (a real file, not through the link)' \
+    "$([[ -f ${NEW_DEST}/.env && ! -L ${NEW_DEST}/.env && -L ${DEST} ]] && echo new)" 'new'
+  expect_match 'EHL11: current names the new release at the new path' "$(readlink "${NEW_DEST}/current")" "^${NEW_DEST}/releases/${SHA_L2}-"
+  expect_match 'EHL11: every phase after the move names the new install root (its .env phase)' "${OUT}" "phase 4/8: render ${NEW_DEST}/\.env"
+
+  # ============ EHL12. setup-host.sh on a FRESH host: set up on layout 2 throughout —
+  # install root, etc dir, units, backup units and script, HOME — and the compat
+  # link for an external DSN that still names the CA under the legacy etc dir.
+  H="${SCRATCH}/host-ehl12"
+  R="${H}/root"
+  U="${R}/etc/systemd/system"
+  DEST="${R}${HL_LEGACY_DEST}"
+  NEW_DEST="${R}${HL_NEW_DEST}"
+  mkdir -p "${U}" "${R}/root" "${R}/usr/local/bin" "${H}/sysbin" "${H}/keys"
+  printf 'ca\n' >"${H}/keys/database-ca.crt"
+  CONFIG="${H}/ficus-setup.yaml"
+  cat >"${CONFIG}" <<YAMLEOF
+source:
+  mode: artifact
+  repo: https://example.invalid/core.git
+  dest: ${NEW_DEST}
+core:
+  origin: https://acme.ficus.sh
+  port: 3999
+  run_user: root
+database:
+  mode: external
+  ca_path: ${H}/keys/database-ca.crt
+runtime:
+  sandbox: host
+backup:
+  enabled: true
+  s3_endpoint: https://s3.example.com
+  s3_region: us-east-1
+  s3_bucket: acme-backups
+  s3_prefix: tenants/acme
+YAMLEOF
+  printf '%s' "${NEW_DEST}" >"${CTL}/dest"
+  printf '%s-*\n' "${SHA_L2}" >"${CTL}/healthy"
+  : >"${CALLS}"
+  rm -f "${CTL}"/block-* "${CTL}"/fail-* "${CTL}/blocked.pid"
+  HOST_KIND=layout1
+  EXTRA_ENV=(
+    "FICUS_SETUP_DATABASE_DSN=postgresql://tenant_x:pw@localhost/x?sslmode=verify-full&sslrootcert=$(printf '%s/database-ca.crt' "${HL_LEGACY_ETC}" | sed 's:/:%2F:g')"
+    FICUS_BACKUP_S3_ACCESS_KEY=ak FICUS_BACKUP_S3_SECRET_KEY=sk FICUS_BACKUP_PASSPHRASE=pp
+  )
+  run_script "${ART_L2}" setup-host.sh --config "${CONFIG}"
+  EXTRA_ENV=()
+  expect_eq 'EHL12 setup-host.sh on a fresh host: exits 0, the host is on layout 2' "${RC}:$(l_detect)" '0:2'
+  [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+  expect_match 'EHL12: current names the release under /opt/ficus-core' "$(readlink "${NEW_DEST}/current")" "^${NEW_DEST}/releases/${SHA_L2}-"
+  expect_eq 'EHL12: the ficus units (Alias= the legacy names while the bridge lasts), enabled' \
+    "$([[ -f ${U}/${N_API}.service && -f ${U}/${N_WORKER}.service ]] && echo units):$(readlink "${U}/${L_API}.service"):$(grep -c "^systemctl enable ${N_API} ${N_WORKER}\$" "${CALLS}")" \
+    "units:${U}/${N_API}.service:1"
+  expect_eq 'EHL12: the units read /etc/ficus/managed.env' "$(grep -c "^EnvironmentFile=-${HL_NEW_ETC}/managed.env\$" "${U}/${N_API}.service")" '1'
+  expect_eq 'EHL12: the CA is installed under /etc/ficus; the legacy etc dir is the compat link the DSN resolves through' \
+    "$(cat "${R}${HL_NEW_ETC}/database-ca.crt" 2>/dev/null):$(readlink "${R}${HL_LEGACY_ETC}"):$(cat "${R}${HL_LEGACY_ETC}/database-ca.crt" 2>/dev/null)" \
+    "ca:${R}${HL_NEW_ETC}:ca"
+  expect_eq 'EHL12: the backup script, env and units under the Ficus names; HOME_DIR is .ficus' \
+    "$(grep -E '^(DEST|HOME_DIR|BACKUP_ENV_FILE)=' "${R}${HL_NEW_BACKUP_SCRIPT}" 2>/dev/null | tr '\n' ' ')|$([[ -f ${R}${HL_NEW_ETC}/backup.env && -f ${U}/ficus-backup.service && -f ${U}/ficus-backup.timer ]] && echo units)" \
+    "DEST='${NEW_DEST}' HOME_DIR='${R}/root/${HL_NEW_HOME_NAME}' BACKUP_ENV_FILE='${R}${HL_NEW_ETC}/backup.env' |units"
+  expect_eq 'EHL12: the backup service is enabled for its alias only, the timer --now' \
+    "$(grep -cx 'systemctl enable ficus-backup.service' "${CALLS}"):$(grep -cx 'systemctl enable --now ficus-backup.timer' "${CALLS}"):$(readlink "${U}/${L_BACKUP}.timer")" \
+    "1:1:${U}/ficus-backup.timer"
+  expect_eq 'EHL12: nothing at the legacy install root or setup dir, no legacy unit file' \
+    "$([[ -e ${DEST} || -e ${R}${HL_LEGACY_SETUP_DIR} || -f ${U}/${L_API}.service && ! -L ${U}/${L_API}.service ]] && echo legacy || echo none)" 'none'
+  expect_match 'EHL12: the release trailer' "${OUT}" "FICUS_RELEASE_AFTER=${SHA_L2}-"
+fi
 
 summary

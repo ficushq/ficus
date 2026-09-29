@@ -375,7 +375,9 @@ expect_contains '--dry-run masks the secret key completely' "${OUT}" 'FICUS_BACK
 expect_contains '--dry-run keeps the passphrase' "${OUT}" 'FICUS_BACKUP_PASSPHRASE=<unchanged, redacted>'
 expect_contains '--dry-run plans the yaml endpoint' "${OUT}" "backup.s3_endpoint: ${NEW_ENDPOINT} (was ${OLD_ENDPOINT})"
 expect_contains '--dry-run plans the yaml bucket' "${OUT}" "backup.s3_bucket: ${NEW_BUCKET} (was ${OLD_BUCKET})"
-expect_contains '--dry-run names what stays untouched' "${OUT}" 'tau-backup.timer / tau-backup.service (schedule)'
+# The backup unit's name as this host's layout resolves it (lib.sh).
+RB_UNIT_BACKUP=$(bash -c 'source "$0"; printf %s "${HL_UNIT_BACKUP}"' "${LIB}")
+expect_contains '--dry-run names what stays untouched' "${OUT}" "${RB_UNIT_BACKUP}.timer / ${RB_UNIT_BACKUP}.service (schedule)"
 assert_no_secrets '--dry-run' "${OUT}"
 dry_stdout=$("${RETARGET}" "${ARGS[@]}" --dry-run 2>/dev/null)
 # Each marker on its own line, each findable by its own full name (the

@@ -247,6 +247,90 @@ hl_skip=''
 [[ -n ${hl_skip} ]] || yq_is_mikefarah || hl_skip='mikefarah yq is not on PATH'
 # The section sets the caller globals lib.sh reads (SRC_DEST, RUN_USER, ...).
 # shellcheck disable=SC2034
+# --- the unit and backup templates carry the layout as tokens --------------------
+# A layout-1 host rendering from the Ficus-named templates gets the unit it
+# always had; layout 2 (and a fresh host) the Ficus names plus the legacy
+# Alias= while the bridge lasts. No @TOKEN@ survives on either layout.
+tmpl_render() { # LAYOUT FUNCTION ARGS... — in a subshell, the caller's globals of an entrypoint
+  (
+    host_layout_resolve "$1"
+    shift
+    SRC_DEST="$R/dest" RUN_USER=root BUN_BIN=/usr/local/bin/bun DB_MODE=external CORE_LAYOUT=artifact
+    "$@"
+  )
+}
+for hl_l in 1 2 fresh; do
+  if [[ ${hl_l} == 1 ]]; then
+    want_etc=${HL_LEGACY_ETC} want_prefix=${HL_LEGACY_UNIT_PREFIX} want_alias='' want_db=${HL_LEGACY_DB_NAME}
+  else
+    want_etc=/etc/ficus want_prefix=ficus want_alias="Alias=${HL_LEGACY_UNIT_PREFIX}-" want_db=ficus
+  fi
+  for hl_u in api worker; do
+    hl_unit=$(tmpl_render "${hl_l}" render_core_unit "$SCRIPT_DIR/systemd/ficus-${hl_u}.service.tmpl")
+    expect_eq "templates (layout ${hl_l}, ${hl_u}): managed.env from the layout's etc dir" \
+      "$(grep -Fxc "EnvironmentFile=-${want_etc}/managed.env" <<<"${hl_unit}")" '1'
+    expect_eq "templates (layout ${hl_l}, ${hl_u}): the Alias= line" \
+      "$(grep '^Alias=' <<<"${hl_unit}" || true)" "${want_alias:+${want_alias}${hl_u}.service}"
+    expect_eq "templates (layout ${hl_l}, ${hl_u}): its comments name the layout's unit" \
+      "$(grep -c "journalctl -u ${want_prefix}-${hl_u} " <<<"${hl_unit}")" "$([[ ${hl_u} == api ]] && echo 2 || echo 1)"
+    expect_eq "templates (layout ${hl_l}, ${hl_u}): no @TOKEN@ left, and on layout 2 no legacy etc path" \
+      "$(grep -c '@[A-Z_]*@' <<<"${hl_unit}" || true):$(if [[ ${hl_l} == 1 ]]; then echo 0; else grep -c "${HL_LEGACY_ETC}/" <<<"${hl_unit}" || true; fi)" '0:0'
+    rm -f "$SCRATCH/unit.out"
+    expect_eq "templates (layout ${hl_l}, ${hl_u}): install_rendered --check-placeholders accepts it" \
+      "$( (tmpl_render "${hl_l}" install_rendered --check-placeholders 0644 "$(id -u)" "$(id -g)" "$SCRATCH/unit.out" \
+        render_core_unit "$SCRIPT_DIR/systemd/ficus-${hl_u}.service.tmpl") >/dev/null 2>&1 && echo ok)" 'ok'
+  done
+  for hl_k in service timer; do
+    hl_unit=$(tmpl_render "${hl_l}" render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.${hl_k}.tmpl" /usr/local/bin/x.sh '*-*-* 03:15:00' external)
+    expect_eq "templates (layout ${hl_l}, backup .${hl_k}): the layout's unit name, its Alias=, no @TOKEN@" \
+      "$(grep -c "${want_prefix}-backup" <<<"${hl_unit}"):$(grep '^Alias=' <<<"${hl_unit}" || true):$(grep -c '@[A-Z_]*@' <<<"${hl_unit}" || true)" \
+      "2:${want_alias:+${want_alias}backup.${hl_k}}:0"
+  done
+  hl_unit=$(tmpl_render "${hl_l}" render_backup_script_content "$SCRIPT_DIR/ficus-backup.sh.tmpl" /d /h container c e r b p /b.env)
+  expect_eq "templates (layout ${hl_l}, backup script): the container dump names the layout's database, no @TOKEN@" \
+    "$(grep -c "pg_dump -U postgres -Fc ${want_db} " <<<"${hl_unit}"):$(grep -c '@[A-Z_]*@' <<<"${hl_unit}" || true)" '1:0'
+done
+expect_eq 'templates: the backup service [Install] holds only the Alias= (so `enable` creates just the alias)' \
+  "$(tmpl_render 2 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | sed -n '/^\[Install\]/,$p' | tr '\n' '|')" \
+  "[Install]|Alias=${HL_LEGACY_UNIT_PREFIX}-backup.service|"
+expect_eq 'templates: a layout-1 backup service has an empty [Install] (nothing to enable)' \
+  "$(tmpl_render 1 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | sed -n '/^\[Install\]/,$p' | tr '\n' '|')" \
+  '[Install]|'
+(
+  HL_BRIDGE_ALIASES=0
+  expect_eq 'templates: with the bridge off (finalize), layout 2 carries no Alias=' \
+    "$(tmpl_render 2 render_core_unit "$SCRIPT_DIR/systemd/ficus-api.service.tmpl" | grep -c '^Alias=' || true)" '0'
+  printf '%s %s\n' "${PASS}" "${FAIL}" >"$SCRATCH/sub.counts"
+)
+read -r PASS FAIL <"$SCRATCH/sub.counts"
+
+# --- the DSN's CA path, and the compat link a fresh layout-2 host gets for it ---
+hl_legacy_dsn="postgresql://t:p@db.example:25060/x?sslmode=verify-full&sslrootcert=$(printf '%s/database-ca.crt' "${HL_LEGACY_ETC}" | sed 's:/:%2F:g')&connect_timeout=5"
+expect_eq 'dsn_sslrootcert: the path a DSN names, percent-decoded' "$(dsn_sslrootcert "${hl_legacy_dsn}")" "${HL_LEGACY_ETC}/database-ca.crt"
+expect_eq 'dsn_sslrootcert: a plain path' "$(dsn_sslrootcert 'postgres://a@h/x?sslrootcert=/etc/ficus/database-ca.crt')" '/etc/ficus/database-ca.crt'
+expect_eq 'dsn_sslrootcert: none named → nothing' "$(dsn_sslrootcert 'postgres://a@h/x?sslmode=require')" ''
+reset_fixture
+host_layout_resolve fresh
+host_layout_link_legacy_ca_dir "${hl_legacy_dsn}" 2>/dev/null
+expect_eq 'fresh (layout 2) host, DSN names the legacy CA path: the legacy etc dir becomes the compat link to /etc/ficus' \
+  "$(readlink "$R${HL_LEGACY_ETC}")" "$R/etc/ficus"
+host_layout_link_legacy_ca_dir "${hl_legacy_dsn}" 2>/dev/null
+expect_eq '...idempotent (the link is left as it is)' "$(readlink "$R${HL_LEGACY_ETC}")" "$R/etc/ficus"
+reset_fixture
+host_layout_link_legacy_ca_dir "${hl_legacy_dsn//${HL_LEGACY_ETC##*/}%2F/ficus%2F}" 2>/dev/null
+expect_eq 'a DSN that names /etc/ficus: no link' "$([[ -e $R${HL_LEGACY_ETC} || -L $R${HL_LEGACY_ETC} ]] && echo link || echo none)" 'none'
+host_layout_link_legacy_ca_dir 'postgres://a@h/x?sslmode=require' 2>/dev/null
+expect_eq 'a DSN that names no CA: no link' "$([[ -e $R${HL_LEGACY_ETC} || -L $R${HL_LEGACY_ETC} ]] && echo link || echo none)" 'none'
+host_layout_resolve 1
+host_layout_link_legacy_ca_dir "${hl_legacy_dsn}" 2>/dev/null
+expect_eq 'a layout-1 host: no link (its etc dir is the legacy one)' "$([[ -L $R${HL_LEGACY_ETC} ]] && echo link || echo none)" 'none'
+host_layout_resolve fresh
+mkdir -p "$R${HL_LEGACY_ETC}"
+expect_match 'a real legacy etc dir without the CA: left alone, with a warning' \
+  "$(host_layout_link_legacy_ca_dir "${hl_legacy_dsn}" 2>&1; [[ -L $R${HL_LEGACY_ETC} ]] && echo LINKED)" 'verify-full connection will fail'
+reset_fixture
+host_layout_resolve "$(host_layout_detect)"
+
 if [[ -n ${hl_skip} ]]; then
   printf 'SKIP: the host_layout migration cases did not run — %s\n' "${hl_skip}" >&2
   if [[ $(uname -s) == Linux ]]; then
@@ -527,6 +611,7 @@ YAMLEOF
     SRC_DEST=$d CFG_FILE="$R$HL_LEGACY_SETUP_DIR/$HL_LEGACY_SETUP_YAML" CONFIG=$CFG_FILE
     RUN_USER=root DB_MODE=$db_mode BUN_BIN=/usr/local/bin/bun CORE_LAYOUT=''
     ((git)) || CORE_LAYOUT=artifact
+    # shellcheck disable=SC2034 # caller globals lib.sh's host_layout_relocate_globals re-prefixes
     ARTIFACT_RELEASE_DIR='' BACKUP_HOME_DIR="${home_dir:-$R/root/$HL_LEGACY_HOME_NAME}"
     host_layout_resolve "$(host_layout_detect)"
   }
@@ -941,6 +1026,95 @@ YAMLEOF
   : >"$R/calls.log"
   host_layout_adopt 2>/dev/null
   expect_eq 'repair: a no-op on a clean host' "$(cat "$R/calls.log")" ''
+
+  # --- T6a M6: an edited journal line cannot turn host_layout's settle into the active release's --
+  # PENDING names another (registered) migration, while the set's #requires-reverse line
+  # names host_layout: its _settle (DONE → forward) still decides, and it resumes.
+  host_migration_hlother_needed() { return 1; }
+  host_migration_hlother_apply() { :; }
+  HOST_MIGRATIONS=(host_layout hlother)
+  hl_reset
+  make_legacy_host
+  (HL_FAIL_AFTER_DONE=1 host_migrate "$REL") 2>/dev/null || true
+  S=$(hl_pending_set)
+  sed -i "s/\thost_layout\t/\thlother\t/" "$(host_migrate_backup_root)/PENDING"
+  expect_eq 'M6 (fixture): the journal line names hlother, the set host_layout; past DONE; its release not serving' \
+    "$(cut -f2 "$(host_migrate_backup_root)/PENDING"):$(head -n1 "$S/MANIFEST" | cut -f2):$(test -f "$S/hl/DONE" && echo 'done'):$(readlink "$R/opt/ficus-core/current")" \
+    "hlother:host_layout:done:$R/opt/ficus-core/releases/c0-legacy"
+  : >"$R/calls.log"
+  (host_migrate_reconcile) 2>/dev/null || fail 'M6: the reconcile died'
+  expect_eq 'M6: settled FORWARD by the set'"'"'s host_layout (not reversed by the active release), committed' \
+    "$(host_layout_detect):$(pending_state):$(test -e "$S/hl/REVERSED" && echo reversed || echo kept)" '2:n:kept'
+  expect_match 'M6: ...and host_layout resumed (the units it stopped are started)' "$(cat "$R/calls.log")" 'systemctl start ficus-api ficus-worker'
+  HOST_MIGRATIONS=(host_layout)
+  unset -f host_migration_hlother_needed host_migration_hlother_apply
+
+  # --- T6a M7: a set without the core units (UNITS_EXCLUDED) is not reversed where the templates are missing --
+  hl_reset
+  make_legacy_host
+  (HL_FAIL_AT=12 host_migrate "$REL") 2>/dev/null && fail 'M7: the injected failure did not fail'
+  S=$(hl_pending_set)
+  : >"$S/UNITS_EXCLUDED"
+  m7_rc=0
+  (SCRIPT_DIR="$SCRATCH/no-templates" host_migrate_reconcile) 2>/dev/null || m7_rc=$?
+  expect_eq 'M7: rc 3, nothing reversed (still moved), the journal kept' \
+    "${m7_rc}:$(test -d "$R/opt/ficus-core" && echo moved):$(pending_state)" '3:moved:y'
+  (host_migrate_reconcile) 2>/dev/null || fail 'M7: the reconcile with the templates died'
+  expect_eq 'M7: the complete toolkit then reverses it' "$(host_layout_detect):$(pending_state)" '1:n'
+
+  # --- T6a M5: the reverse record authorises one restore, not a later one -----------------
+  hl_reset
+  make_legacy_host
+  (HL_FAIL_AT=12 host_migrate "$REL") 2>/dev/null || true
+  S=$(hl_pending_set)
+  host_migrate_reconcile 2>/dev/null
+  expect_eq 'M5: after the reconcile restored the set, no reverse record is left' \
+    "${_HM_REVERSE_SET:-unset}:${_HM_REVERSE_DONE:-unset}" 'unset:unset'
+  expect_eq 'M5: ...so a later _HM_REVERSED=1 restore of the same set in this process is refused' \
+    "$( (_HM_REVERSED=1 host_migrate_backup_restore "$S") >/dev/null 2>&1 && echo restored || echo refused)" 'refused'
+
+  # --- the manual reverse is journaled: killed half way, it is finished --------------------
+  for hl_k in 10 5 restored; do
+    hl_reset
+    make_legacy_host
+    pristine_full=$(snapshot)
+    host_migrate "$REL" 2>/dev/null
+    host_migrate_commit
+    S=$(hl_last_set)
+    (HL_KILL_IN_REVERSE=${hl_k} host_layout_reverse_committed "$S") 2>/dev/null && fail "manual reverse: the SIGKILL at ${hl_k} did not kill it"
+    expect_eq "manual reverse killed at ${hl_k}: PENDING journals the set, marked REVERSING, not REVERSED" \
+      "$(hl_pending_set):$(test -e "$S/hl/REVERSING" && echo reversing):$(test -e "$S/hl/REVERSED" && echo reversed || echo open)" \
+      "$S:reversing:open"
+    if [[ ${hl_k} == 5 ]]; then
+      # resumed by running the manual reverse again (the one PENDING it accepts)
+      (host_layout_reverse_committed "$S") 2>/dev/null || fail 'manual reverse: the resume died'
+    else
+      # finished by the next toolkit run's reconcile
+      (host_migrate_reconcile) 2>/dev/null || fail "manual reverse: the reconcile after the kill at ${hl_k} died"
+    fi
+    expect_eq "manual reverse killed at ${hl_k}, then finished: layout 1, byte-identical, no journal" \
+      "$(host_layout_detect):$([[ $(snapshot) == "${pristine_full}" ]] && echo same || echo differs):$(pending_state)" '1:same:n'
+  done
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  : >"$(host_migrate_backup_root)/PENDING"
+  expect_match 'manual reverse: any other journal → refused' \
+    "$( (host_layout_reverse_committed "$(hl_last_set)") 2>&1 && echo ran)" 'PENDING journals a run — reconcile it first'
+  rm -f "$(host_migrate_backup_root)/PENDING"
+
+  # --- a container database: the manual reverse needs the operator's acceptance -----------
+  hl_reset
+  make_legacy_host --db-mode container
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  before=$(snapshot)
+  expect_match 'manual reverse (container mode) without the acceptance: refused, naming --accept-database-revert' \
+    "$( (host_layout_reverse_committed "$(hl_last_set)") 2>&1 && echo ran)" 'every database write since is lost.*--accept-database-revert'
+  expect_eq '...changing nothing' "$([[ $(snapshot) == "${before}" ]] && echo same):$(host_layout_detect)" 'same:2'
+  (HL_REVERSE_ACCEPT_DB_REVERT=1 host_layout_reverse_committed "$(hl_last_set)") 2>/dev/null || fail 'the accepted container-mode reverse died'
+  expect_eq 'manual reverse (container mode) with the acceptance: layout 1 again' "$(host_layout_detect):$(pending_state)" '1:n'
 fi
 
 printf '%s passed, %s failed\n' "$PASS" "$FAIL"

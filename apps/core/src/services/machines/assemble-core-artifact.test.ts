@@ -381,6 +381,9 @@ describe('assembleCoreArtifact', () => {
     expect(JSON.parse(await readFile(join(tree, 'package.json'), 'utf8')).name).toBe('ficus')
     expect(JSON.parse(await readFile(result.manifestPath, 'utf8')).envPrefix).toBe('FICUS')
     expect(JSON.parse(await readFile(join(tree, 'artifact.json'), 'utf8')).envPrefix).toBe('FICUS')
+    // The host layout the release declares: the toolkit moves a layout-1 host there.
+    expect(JSON.parse(await readFile(result.manifestPath, 'utf8')).hostLayout).toBe(2)
+    expect(JSON.parse(await readFile(join(tree, 'artifact.json'), 'utf8')).hostLayout).toBe(2)
   })
 
   it('drops node_modules/.bin directories, whose shims cannot survive materialization', async () => {

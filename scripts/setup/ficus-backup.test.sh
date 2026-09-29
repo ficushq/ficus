@@ -3,8 +3,9 @@
 #
 # This does not exercise phase_backup()'s rendering machinery in
 # setup-host.sh (that needs a full cfg_load + secrets-resolution
-# environment); instead it renders the template directly with the same
-# @TOKEN@ substitutions setup-host.sh's render_backup_script() performs, then
+# environment); instead it renders the template with lib.sh's
+# render_backup_script_content — the render setup-host.sh's
+# render_backup_script() and the host layout migration call — then
 # runs the rendered script for real against a scratch DEST/.env + HOME_DIR
 # tree and a fake pg_dump (via the FICUS_BACKUP_PG_DUMP_CMD test seam — no live
 # postgres needed), with FICUS_BACKUP_DRY_RUN=1 so it stops before contacting
@@ -42,15 +43,15 @@ expect_file_absent() { # DESCRIPTION FILE
   fi
 }
 
-SCRATCH=$(mktemp -d -t tau-backup-test.XXXXXX)
+SCRATCH=$(mktemp -d -t ficus-backup-test.XXXXXX)
 cleanup() { rm -rf "${SCRATCH}"; }
 trap cleanup EXIT
 
 DEST="${SCRATCH}/dest"
-HOME_DIR="${SCRATCH}/home/.tau"
+HOME_DIR="${SCRATCH}/home/.ficus"
 WORKDIR="${SCRATCH}/work"
 BACKUP_ENV_FILE="${SCRATCH}/backup.env"
-RENDERED="${SCRATCH}/tau-backup.sh"
+RENDERED="${SCRATCH}/ficus-backup.sh"
 DECRYPT_DIR="${SCRATCH}/decrypted"
 
 mkdir -p "${DEST}" "${HOME_DIR}/workspace/agent-1" "${DECRYPT_DIR}"
@@ -58,19 +59,22 @@ printf 'FICUS_ENCRYPTION_KEY=test-encryption-key-envelope\nDATABASE_URL=postgres
 printf 'agent memory contents\n' >"${HOME_DIR}/workspace/agent-1/notes.md"
 printf 'shared context\n' >"${HOME_DIR}/context.md"
 
-# --- render the template with the same tokens render_backup_script() uses --
-sed \
-  -e "s|@DEST@|${DEST}|g" \
-  -e "s|@HOME_DIR@|${HOME_DIR}|g" \
-  -e "s|@DB_MODE@|container|g" \
-  -e "s|@DB_CONTAINER@|tau-postgres-test-unused|g" \
-  -e "s|@S3_ENDPOINT@|https://s3.invalid.example|g" \
-  -e "s|@S3_REGION@|test-region|g" \
-  -e "s|@S3_BUCKET@|test-bucket|g" \
-  -e "s|@S3_PREFIX@|tenants/test|g" \
-  -e "s|@BACKUP_ENV_FILE@|${BACKUP_ENV_FILE}|g" \
-  "${SCRIPT_DIR}/ficus-backup.sh.tmpl" >"${RENDERED}"
-chmod 755 "${RENDERED}"
+# --- render the template with lib.sh's renderer, for host LAYOUT (1, or 2 /
+# fresh) under a scratch host root: the layout decides @DB_NAME@.
+render_for_layout() { # LAYOUT DB_MODE DB_CONTAINER OUT
+  (
+    export FICUS_HOST_ROOT="${SCRATCH}/host-root" FICUS_SYSTEMD_UNIT_DIR="${SCRATCH}/host-root/units"
+    # shellcheck source=lib.sh
+    source "${SCRIPT_DIR}/lib.sh"
+    host_layout_resolve "$1"
+    render_backup_script_content "${SCRIPT_DIR}/ficus-backup.sh.tmpl" "${DEST}" "${HOME_DIR}" "$2" "$3" \
+      https://s3.invalid.example test-region test-bucket tenants/test "${BACKUP_ENV_FILE}"
+  ) >"$4"
+  chmod 755 "$4"
+}
+render_for_layout fresh container ficus-postgres-test-unused "${RENDERED}"
+# The layouts' database names, from lib.sh (never retyped here).
+eval "$(bash -c 'source "$1/lib.sh"; declare -p HL_LEGACY_DB_NAME HL_NEW_DB_NAME' _ "${SCRIPT_DIR}")"
 
 unrendered_rc=0
 grep -q '@[A-Z_]*@' "${RENDERED}" && unrendered_rc=1
@@ -100,7 +104,7 @@ FICUS_BACKUP_DRY_RUN=1 \
   "${RENDERED}"
 run_rc=$?
 set -e
-expect_eq 'rendered tau-backup.sh exits 0 under FICUS_BACKUP_DRY_RUN=1' "${run_rc}" '0'
+expect_eq 'rendered ficus-backup.sh exits 0 under FICUS_BACKUP_DRY_RUN=1' "${run_rc}" '0'
 
 TODAY=$(date -u '+%Y-%m-%d')
 ENC_FILE="${WORKDIR}/${TODAY}.tar.gz.enc"
@@ -120,9 +124,9 @@ expect_eq '.env round-trips (carries FICUS_ENCRYPTION_KEY into the envelope)' \
   "$(cat "${DECRYPT_DIR}/.env" 2>/dev/null || echo MISSING)" \
   "$(cat "${DEST}/.env")"
 expect_eq 'HOME_DIR file round-trips (context.md)' \
-  "$(cat "${DECRYPT_DIR}/.tau/context.md" 2>/dev/null || echo MISSING)" 'shared context'
+  "$(cat "${DECRYPT_DIR}/.ficus/context.md" 2>/dev/null || echo MISSING)" 'shared context'
 expect_eq 'HOME_DIR nested file round-trips (workspace/agent-1/notes.md)' \
-  "$(cat "${DECRYPT_DIR}/.tau/workspace/agent-1/notes.md" 2>/dev/null || echo MISSING)" 'agent memory contents'
+  "$(cat "${DECRYPT_DIR}/.ficus/workspace/agent-1/notes.md" 2>/dev/null || echo MISSING)" 'agent memory contents'
 
 # --- a wrong passphrase must NOT decrypt (encryption is doing something) ----
 wrong_rc=0
@@ -236,7 +240,9 @@ unset -f curl
 expect_eq 'termination backup uploads to its immutable effect-scoped key' \
   "$([[ $(cat "${CURL_ARGS_LOG}") == *"tenants/test/terminations/${EFFECT_ID}.tar.gz.enc"* ]] && echo yes || echo no)" 'yes'
 expect_eq 'termination backup sends exactly one matching effect metadata header' \
-  "$(grep -o "x-amz-meta-tau-termination-backup-effect-id:${EFFECT_ID}" "${CURL_ARGS_LOG}" | wc -l | tr -d ' ')" '1'
+  "$(grep -o "x-amz-meta-ficus-termination-backup-effect-id:${EFFECT_ID}" "${CURL_ARGS_LOG}" | wc -l | tr -d ' ')" '1'
+expect_eq 'termination backup sends the effect metadata header under its Ficus name only' \
+  "$(grep -o "x-amz-meta-[a-z]*-termination-backup-effect-id" "${CURL_ARGS_LOG}" | sort -u)" 'x-amz-meta-ficus-termination-backup-effect-id'
 
 : >"${CURL_ARGS_LOG}"
 curl() {
@@ -253,7 +259,7 @@ FICUS_BACKUP_PG_DUMP_CMD="${FAKE_PG_DUMP}" \
   "${RENDERED}" >/dev/null 2>"${SCRATCH}/ordinary.stderr"
 unset -f curl
 expect_eq 'ordinary nightly upload sends no termination metadata' \
-  "$([[ $(cat "${CURL_ARGS_LOG}") == *'x-amz-meta-tau-termination-backup-effect-id'* ]] && echo leaked || echo absent)" 'absent'
+  "$([[ $(cat "${CURL_ARGS_LOG}") == *'-termination-backup-effect-id'* ]] && echo leaked || echo absent)" 'absent'
 
 # This template reads the effect id under its FICUS_ name only: the same name
 # under another prefix, passed alongside it, changes nothing.
@@ -303,6 +309,26 @@ FICUS_TERMINATION_BACKUP_EFFECT_ID='../other' \
 expect_eq 'malformed termination effect ID is rejected' "$([[ ${malformed_rc} -ne 0 ]] && echo yes || echo no)" 'yes'
 expect_eq 'malformed termination effect rejection names canonical UUID requirement' \
   "$([[ $(cat "${SCRATCH}/malformed-effect.stderr") == *'canonical UUID'* ]] && echo yes || echo no)" 'yes'
+
+# --- container mode dumps the database the host layout names (@DB_NAME@):
+# a docker shim records its argv and stands in for pg_dump's output.
+DOCKER_SHIM_DIR="${SCRATCH}/docker-shim"
+DOCKER_ARGS_LOG="${SCRATCH}/docker-args.log"
+mkdir -p "${DOCKER_SHIM_DIR}"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s"\nprintf "FAKE-CONTAINER-DUMP\\n"\n' "${DOCKER_ARGS_LOG}" >"${DOCKER_SHIM_DIR}/docker"
+chmod 755 "${DOCKER_SHIM_DIR}/docker"
+for layout in 1 2; do
+  : >"${DOCKER_ARGS_LOG}"
+  render_for_layout "${layout}" container dbc-test "${SCRATCH}/container-${layout}.sh"
+  container_rc=0
+  PATH="${DOCKER_SHIM_DIR}:${PATH}" FICUS_BACKUP_DRY_RUN=1 FICUS_BACKUP_WORKDIR="${SCRATCH}/container-work-${layout}" \
+    "${SCRATCH}/container-${layout}.sh" >/dev/null 2>"${SCRATCH}/container-${layout}.stderr" || container_rc=$?
+  want_db=${HL_NEW_DB_NAME}
+  [[ ${layout} == 2 ]] || want_db=${HL_LEGACY_DB_NAME}
+  expect_eq "container mode on layout ${layout}: the backup exits 0 (dry run)" "${container_rc}" '0'
+  expect_eq "container mode on layout ${layout}: pg_dump inside the container dumps the layout's database (@DB_NAME@)" \
+    "$(cat "${DOCKER_ARGS_LOG}")" "exec dbc-test pg_dump -U postgres -Fc ${want_db}"
+done
 
 # --- Finding 3a (review): backup.enabled requires a non-empty
 # backup.s3_prefix — setup-host.sh's config validation, exercised via
