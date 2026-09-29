@@ -22,7 +22,7 @@ export function workBucket(stream: WorkBucketFacts): WorkBucket {
   return 'queued'
 }
 
-/** One row in the activity's short list. Mirrors `StreamLite` in TauWorkAttributes.swift. */
+/** One row in the activity's short list. Mirrors `StreamLite` in FicusWorkAttributes.swift. */
 export interface StreamLite {
   number?: number
   id: string

@@ -251,7 +251,7 @@ export function createLiveActivityFanout(deps: LiveActivityFanoutDeps): LiveActi
           payload: {
             event: 'start' as const,
             contentState,
-            attributesType: 'TauWorkAttributes',
+            attributesType: 'FicusWorkAttributes',
             attributes: { origin: deps.origin() },
           },
         }))
@@ -269,7 +269,7 @@ export function createLiveActivityFanout(deps: LiveActivityFanoutDeps): LiveActi
           payload: {
             event: 'start' as const,
             contentState,
-            attributesType: 'TauWorkAttributes',
+            attributesType: 'FicusWorkAttributes',
             attributes: { origin: deps.origin() },
           },
         }))

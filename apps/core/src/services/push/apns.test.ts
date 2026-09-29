@@ -535,16 +535,16 @@ describe('APNs', () => {
       const start = buildLiveActivityPayload({
         event: 'start',
         contentState,
-        attributesType: 'TauWorkAttributes',
+        attributesType: 'FicusWorkAttributes',
         attributes: { origin: 'https://demo.ficus.sh' },
       }).aps as Record<string, unknown>
-      expect(start['attributes-type']).toBe('TauWorkAttributes')
+      expect(start['attributes-type']).toBe('FicusWorkAttributes')
       expect(start.attributes).toEqual({ origin: 'https://demo.ficus.sh' })
 
       const update = buildLiveActivityPayload({
         event: 'update',
         contentState,
-        attributesType: 'TauWorkAttributes',
+        attributesType: 'FicusWorkAttributes',
         attributes: { origin: 'https://demo.ficus.sh' },
       }).aps as Record<string, unknown>
       expect(update['attributes-type']).toBeUndefined()

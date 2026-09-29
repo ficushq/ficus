@@ -125,11 +125,11 @@ export type LiveActivityEvent = 'start' | 'update' | 'end'
 
 export interface LiveActivityPushInput {
   event: LiveActivityEvent
-  /** Must match TauWorkAttributes.ContentState in the native companion — field-for-field. */
+  /** Must match FicusWorkAttributes.ContentState in the native companion — field-for-field. */
   contentState: Record<string, unknown>
   /** Seconds since epoch after which iOS renders the card as stale. */
   staleDate?: number
-  /** Attributes TYPE NAME, e.g. 'TauWorkAttributes'. Required for `start`. */
+  /** Attributes TYPE NAME, e.g. 'FicusWorkAttributes'. Required for `start`. */
   attributesType?: string
   /** Static attributes, e.g. { origin }. Required for `start`. */
   attributes?: Record<string, unknown>

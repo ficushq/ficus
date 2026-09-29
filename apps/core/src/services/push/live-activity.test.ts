@@ -64,7 +64,7 @@ function harness(options: {
   tokens?: unknown[]
   sendResult?: (token: string, event: string) => { ok: boolean; status: number }
 }) {
-  const sent: { token: string; event: string; attributes?: unknown }[] = []
+  const sent: { token: string; event: string; attributes?: unknown; attributesType?: string }[] = []
   const deleted: string[] = []
   let streamLoads = 0
   const timers = fakeTimers()
@@ -79,8 +79,8 @@ function harness(options: {
     // below would pass vacuously because pushFor() would bail at the config check.
     hasApnsConfig: () => true,
     listTokens: (async () => options.tokens ?? [UPDATE_TOKEN]) as unknown as LiveActivityFanoutDeps['listTokens'],
-    send: (async (token: string, payload: { event: string; attributes?: unknown }) => {
-      sent.push({ token, event: payload.event, attributes: payload.attributes })
+    send: (async (token: string, payload: { event: string; attributes?: unknown; attributesType?: string }) => {
+      sent.push({ token, event: payload.event, attributes: payload.attributes, attributesType: payload.attributesType })
       return options.sendResult?.(token, payload.event) ?? { ok: true, status: 200 }
     }) as unknown as LiveActivityFanoutDeps['send'],
     deleteToken: (async (token: string) => {
@@ -205,6 +205,14 @@ describe('live activity fan-out delivery', () => {
     streams = [running('a')]
     await fanout.flushUser('user-1')
     expect(sent.map((s) => s.event)).toEqual(['start', 'update'])
+    fanout.stop()
+  })
+
+  test('a push-to-start payload declares the FicusWorkAttributes APNs attributes type', async () => {
+    const { fanout, sent } = harness({ streams: () => [running('a')], tokens: [START_TOKEN] })
+    await fanout.flushUser('user-1')
+    const start = sent.find((s) => s.event === 'start')
+    expect(start?.attributesType).toBe('FicusWorkAttributes')
     fanout.stop()
   })
 

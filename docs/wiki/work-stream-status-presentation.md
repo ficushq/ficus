@@ -47,7 +47,7 @@ Widget summaries add an authoritative optional `bucket`, boolean `pause` (never 
 
 Source compatibility was inspected at `ficushq/tau-mobile` commit `c84b39e57de916a7acfeda2987e01c8d529c98e1`:
 
-- Both copies of `TauWorkAttributes.swift` decode bucket as `String`, not a closed Codable enum.
+- Both copies of `FicusWorkAttributes.swift` decode bucket as `String`, not a closed Codable enum.
 - `WorkStreamsClient.swift` likewise decodes Live Activity buckets as strings and ignores additive summary/count fields.
 - `StatusPalette.swift` maps unknown strings to neutral `.unknown`; an older Live Activity therefore shows neutral “Unknown” for the new buckets rather than rejecting its entire update.
 - Older widget rows recompute their own buckets and cannot adopt the new semantics until updated; server totals remain authoritative. This is source verification, not a claim about every installed binary.
