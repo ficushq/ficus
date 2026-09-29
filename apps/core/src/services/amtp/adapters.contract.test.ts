@@ -6,7 +6,7 @@
 // conformance for every other store.
 //
 // Several suites use identifiers that are opaque to the ENGINE but must be
-// real, FK-valid rows in TAU's schema (e.g. `recipientRef: 'agent-1'` is not
+// real, FK-valid rows in Ficus's schema (e.g. `recipientRef: 'agent-1'` is not
 // a real agent uuid). Where that happens, this file's `make()` factories wrap
 // the real adapter/hook behind a thin translation shim that maps the
 // contract kit's synthetic identifiers to real rows created on the fly — the

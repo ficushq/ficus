@@ -131,10 +131,7 @@ describeSubprocess('migrate bundle build contract', () => {
       const runBundle = async (ficusRoot: string) => {
         const env: Record<string, string> = {}
         for (const [key, value] of Object.entries(process.env)) {
-          if (
-            value === undefined ||
-            /^(DATABASE_URL|FICUS_MIGRATE_LIVE|FICUS_ROOT|TAU_ROOT|FICUS_TEST_MODE)$/.test(key)
-          )
+          if (value === undefined || /^(DATABASE_URL|FICUS_MIGRATE_LIVE|FICUS_ROOT|FICUS_TEST_MODE)$/.test(key))
             continue
           env[key] = value
         }
