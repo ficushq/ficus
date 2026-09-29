@@ -274,8 +274,9 @@ export function BlueprintPlant({ plot }: { plot: PlotLayout }) {
         <Path d="M-15 0 H15" stroke={FG} strokeOpacity={0.6} />
       </g>
     )
-  const tall = s === 'review' ? 30 : s === 'waiting' ? 15 : 24
-  const pairs = s === 'review' ? 3 : s === 'waiting' ? 1 : 2
+  const ripe = s === 'review' || s === 'delivering'
+  const tall = ripe ? 30 : s === 'waiting' ? 15 : 24
+  const pairs = ripe ? 3 : s === 'waiting' ? 1 : 2
   const leaves = Array.from({ length: pairs }, (_, k) => {
     const y = -7 - k * ((tall - 8) / pairs)
     const size = 9 - k * 1.5
@@ -290,18 +291,32 @@ export function BlueprintPlant({ plot }: { plot: PlotLayout }) {
         stroke={stroke}
         strokeDasharray={s === 'waiting' ? '3 2' : undefined}
       />
-      {s !== 'review' && <Circle cy={-tall - 2} r={2} fill={BG} stroke={stroke} />}
-      {s === 'review' &&
+      {!ripe && <Circle cy={-tall - 2} r={2} fill={BG} stroke={stroke} />}
+      {ripe &&
         [
           [-8, -13],
           [8, -19],
           [0, -tall - 4],
-        ].map(([x, y]) => (
-          <g key={`${x}${y}`}>
-            <Circle cx={x} cy={y} r={4} fill={fruitWash ?? BG} stroke={ACCENT} strokeWidth={1.4} />
-            <Path d={`M${x! - 1.8} ${y! - 1.2} q1 -1.4 2.6 -1.2`} fill="none" stroke={ACCENT} strokeOpacity={0.8} />
-          </g>
-        ))}
+        ].map(([x, y]) => {
+          // Waiting on the code host: ripe, but in plain ink, not the "harvest me" accent.
+          const ink = s === 'review' ? ACCENT : stroke
+          return (
+            <g key={`${x}${y}`}>
+              <Circle cx={x} cy={y} r={4} fill={fruitWash ?? BG} stroke={ink} strokeWidth={1.4} />
+              <Path d={`M${x - 1.8} ${y - 1.2} q1 -1.4 2.6 -1.2`} fill="none" stroke={ink} strokeOpacity={0.8} />
+            </g>
+          )
+        })}
+      {s === 'delivering' && (
+        <g className="ln-float">
+          <Path
+            d={`M-5.5 ${-tall - 24} H5.5 L1 ${-tall - 16} L5.5 ${-tall - 8} H-5.5 L-1 ${-tall - 16} Z M-3.2 ${-tall - 9.5} H3.2`}
+            fill={BG}
+            stroke={stroke}
+            strokeWidth={1.3}
+          />
+        </g>
+      )}
       {s === 'growing' && <Circle cy={-tall - 2} r={1.2} fill={ACCENT} className="ln-pulse" />}
       {s === 'blocked' && (
         <Path d={`M-10 ${-tall + 2} L10 -4 M10 ${-tall + 2} L-10 -4`} stroke={ACCENT} strokeWidth={1.6} />

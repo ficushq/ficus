@@ -98,6 +98,12 @@ export function sampleFarm(): FarmInput {
     stream('sq-mobile', 'Offline drafts for replies', { ...question('ws-10'), agentIds: ['w-gus'] }),
     stream('sq-mobile', 'Push notification grouping', { agentIds: ['w-hal'] }),
     stream('sq-mobile', 'Fix the share sheet crash', { agentIds: ['w-ivy'] }),
+    // Handed to the code host: its pull request is open, nobody here has to act.
+    stream('sq-docs', 'Link the changelog from the footer', {
+      derivedState: 'waiting_on_dependency',
+      completionMode: 'pr-merge',
+      delivery: { kind: 'external', explanation: { pullRequests: [{ number: 42, state: 'open' }] } },
+    }),
   ]
 
   const agent = (id: string, squadId: string, o: Parameters<typeof makeAgent>[0] = {}) =>

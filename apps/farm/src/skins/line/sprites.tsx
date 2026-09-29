@@ -138,6 +138,29 @@ export function LinePlot({ i, j, selected }: { i: number; j: number; selected: b
   )
 }
 
+/** Where a ripe line plant's fruit sit. */
+const RIPE_FRUIT = (tall: number) =>
+  [
+    [-7, -12],
+    [7, -18],
+    [0, -tall - 3],
+  ] as const
+
+/** Handed to the code host: an outlined hourglass floating over the plant. `y` is its centre. */
+export function LineHourglass({ y, stroke = FG }: { y: number; stroke?: string }) {
+  return (
+    <g className="ln-float">
+      <path
+        d={`M-5 ${y - 7} H5 L0.8 ${y} L5 ${y + 7} H-5 L-0.8 ${y} Z M-3 ${y + 5.5} H3`}
+        fill={BG}
+        stroke={stroke}
+        strokeWidth={1.2}
+        strokeLinejoin="round"
+      />
+    </g>
+  )
+}
+
 /** Line-art plants: a stem and a few chevron leaves, drawn by state. */
 export function LinePlant({ plot }: { plot: PlotLayout }) {
   const s = plot.state
@@ -164,18 +187,24 @@ export function LinePlant({ plot }: { plot: PlotLayout }) {
         {s === 'failed' && <path d="M6 -22 L12 -16 M12 -22 L6 -16" stroke={ACCENT} strokeWidth={1.5} />}
       </g>
     )
-  const tall = s === 'review' ? 30 : s === 'waiting' ? 16 : 24
+  const ripe = s === 'review' || s === 'delivering'
+  const tall = ripe ? 30 : s === 'waiting' ? 16 : 24
   return (
     <g className={s === 'growing' ? 'ln-sway' : undefined}>
       <path d={`M0 0 V${-tall}`} stroke={stroke} strokeDasharray={s === 'waiting' ? '2 3' : undefined} />
-      <path d={leaves(tall, s === 'review' ? 4 : 3)} fill="none" stroke={stroke} strokeOpacity={0.9} />
+      <path d={leaves(tall, ripe ? 4 : 3)} fill="none" stroke={stroke} strokeOpacity={0.9} />
+      {s === 'delivering' && (
+        <>
+          {/* Ripe but not lit: done here, out with the code host. */}
+          {RIPE_FRUIT(tall).map(([x, y]) => (
+            <circle key={`${x}${y}`} cx={x} cy={y} r={2.6} fill="none" stroke={FG} strokeWidth={1.2} />
+          ))}
+          <LineHourglass y={-tall - 16} />
+        </>
+      )}
       {s === 'review' && (
         <g filter="url(#ln-glow)">
-          {[
-            [-7, -12],
-            [7, -18],
-            [0, -tall - 3],
-          ].map(([x, y]) => (
+          {RIPE_FRUIT(tall).map(([x, y]) => (
             <circle key={`${x}${y}`} cx={x} cy={y} r={2.6} fill="none" stroke={ACCENT} strokeWidth={1.4} />
           ))}
         </g>

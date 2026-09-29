@@ -99,7 +99,7 @@ const CASES: {
     name: 'delivery external (CI / code host)',
     stream: facts({ ...active, delivery: { kind: 'external' } }),
     presentation: 'delivery_external',
-    plant: 'growing',
+    plant: 'delivering',
   },
   {
     name: 'delivery setup',
@@ -197,6 +197,8 @@ describe('badgeFor', () => {
     expect(badges['question']).toBe('question')
     expect(badges['review wait']).toBe('harvest')
     expect(badges['delivery merge']).toBe('harvest')
+    // Waiting on the code host asks nothing of you: an hourglass on the plant, no badge.
+    expect(badges['delivery external (CI / code host)']).toBeNull()
     expect(badges['manual blocker']).toBe('blocked')
     expect(badges['legacy blocked (no wait list)']).toBe('blocked')
     expect(badges['in progress']).toBeNull()

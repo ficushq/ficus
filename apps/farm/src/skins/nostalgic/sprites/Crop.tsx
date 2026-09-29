@@ -251,6 +251,25 @@ function Crow() {
 }
 
 /**
+ * Handed to the code host: an hourglass bobbing where a badge would float,
+ * without a bubble, since nothing is asked of you. `y` is its centre.
+ */
+function Hourglass({ y }: { y: number }) {
+  return (
+    <g className="g-bob">
+      <g transform={`translate(0 ${y})`}>
+        <path d="M-7 -9 H7 L1.2 0 L7 9 H-7 L-1.2 0 Z" fill="#e9f6fb" fillOpacity={0.9} className="g-ol2" />
+        <path d="M-4.6 -6 H4.6 L0 -1.4 Z" fill="#e7c27a" />
+        <path d="M0 -1 V6" stroke="#e7c27a" strokeWidth={1.2} />
+        <path d="M-5.2 8.6 Q0 3.6 5.2 8.6 Z" fill="#e7c27a" />
+        <rect x={-9.5} y={-12.5} width={19} height={4} rx={1.8} fill="#a0673f" className="g-ol2" />
+        <rect x={-9.5} y={8.5} width={19} height={4} rx={1.8} fill="#a0673f" className="g-ol2" />
+      </g>
+    </g>
+  )
+}
+
+/**
  * A work stream's plant, anchored at its ground point. The mock placed it at
  * the tile centre nudged 2px down: iso(i + 0.5, j + 0.5) + (0, 2).
  * Badges are drawn separately (see Badge / badgeLift).
@@ -281,6 +300,15 @@ export function Crop({ kind, state }: { kind: CropKind; state: PlantState }) {
           <Plant stage="ripe" />
           <Spark x={-22} y={-44} />
           <Spark x={20} y={-54} s={0.8} late />
+        </>
+      )
+      break
+    case 'delivering':
+      // Ripe but not glowing: done here, out with the code host.
+      body = (
+        <>
+          <Plant stage="ripe" />
+          <Hourglass y={kind === 'sunflower' ? -92 : -76} />
         </>
       )
       break
@@ -318,6 +346,14 @@ export function Crop({ kind, state }: { kind: CropKind; state: PlantState }) {
         </>
       )
       break
+    default:
+      // Every plant state is drawn: a new one must be added above.
+      body = unreachablePlantState(state)
   }
   return <g>{body}</g>
+}
+
+function unreachablePlantState(state: never): null {
+  void state
+  return null
 }

@@ -153,6 +153,24 @@ function Crow() {
   )
 }
 
+/**
+ * Handed to the code host: a soft hourglass floating where a badge would,
+ * without a bubble, since nothing is asked of you. `y` is its centre.
+ */
+function CozyHourglass({ y }: { y: number }) {
+  return (
+    <g className="cz-hover">
+      <g transform={`translate(0 ${y})`}>
+        <path d="M-6.5 -8 H6.5 L1.2 0 L6.5 8 H-6.5 L-1.2 0 Z" fill="#e8f7ff" stroke="#ffffff" strokeWidth={1.2} />
+        <path d="M-4.2 -5.4 H4.2 L0 -1.2 Z" fill="#ffd54a" />
+        <path d="M-4.8 7.6 Q0 3.4 4.8 7.6 Z" fill="#ffd54a" />
+        <rect x={-8.5} y={-11} width={17} height={3.6} rx={1.8} fill="#c9905a" />
+        <rect x={-8.5} y={7.4} width={17} height={3.6} rx={1.8} fill="#c9905a" />
+      </g>
+    </g>
+  )
+}
+
 /** A cozy plant by state. Anchored at the middle of its bed. */
 export function CozyPlant({ kind, state }: { kind: CropKind; state: PlantState }) {
   switch (state) {
@@ -200,6 +218,14 @@ export function CozyPlant({ kind, state }: { kind: CropKind; state: PlantState }
           />
         </g>
       )
+    case 'delivering':
+      // Ripe but not glowing: done here, out with the code host.
+      return (
+        <g>
+          <Ripe kind={kind} />
+          <CozyHourglass y={cozyBadgeLift(kind, 'review') - 14} />
+        </g>
+      )
     case 'blocked':
       return (
         <g>
@@ -240,7 +266,15 @@ export function CozyPlant({ kind, state }: { kind: CropKind; state: PlantState }
           {state === 'failed' && <Crow />}
         </g>
       )
+    default:
+      // Every plant state is drawn: a new one must be added above.
+      return unreachablePlantState(state)
   }
+}
+
+function unreachablePlantState(state: never): null {
+  void state
+  return null
 }
 
 /** How far above a plant's anchor its badge's tip sits. */

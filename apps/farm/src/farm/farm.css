@@ -444,7 +444,8 @@
 
 .g-state-tag[data-state='paused'],
 .g-state-tag[data-state='queued'],
-.g-state-tag[data-state='waiting'] {
+.g-state-tag[data-state='waiting'],
+.g-state-tag[data-state='delivering'] {
   background: var(--g-quiet-tint);
   color: var(--g-ink-soft);
 }
