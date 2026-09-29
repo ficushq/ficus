@@ -1,7 +1,7 @@
 import type { DeploymentFlavor, ProcessSupervisor } from './deployment-flavor'
 import type { PlannedCommand, UpdateTask } from './types'
 import { localProcessNames } from '@ficus/shared'
-import { hostSystemdUnits, launchdLabel } from '@ficus/shared/node'
+import { ficusProcessName, hostSystemdUnits, launchdLabel } from '@ficus/shared/node'
 import { DEPENDENCY_INSTALL_COMMAND, DEPENDENCY_PATHS } from './dependency-install'
 
 type PathMatcher = {
@@ -137,13 +137,19 @@ export function restartCommandsFor(
         'launchctl',
         'kickstart',
         '-k',
-        `gui/${uid}/${launchdLabel(names.worker, { launchAgentsDir: options.launchAgentsDir })}`,
+        `gui/${uid}/${launchdLabel(
+          { legacy: names.worker, new: ficusProcessName(names.worker) },
+          { launchAgentsDir: options.launchAgentsDir }
+        )}`,
       ],
       [
         'launchctl',
         'kickstart',
         '-k',
-        `gui/${uid}/${launchdLabel(names.api, { launchAgentsDir: options.launchAgentsDir })}`,
+        `gui/${uid}/${launchdLabel(
+          { legacy: names.api, new: ficusProcessName(names.api) },
+          { launchAgentsDir: options.launchAgentsDir }
+        )}`,
       ],
     ]
   }

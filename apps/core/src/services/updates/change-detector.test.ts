@@ -78,10 +78,10 @@ describe('flavor-aware planning', () => {
         ['systemctl', '--user', 'restart', 'tau-smoke-worker.service'],
         ['systemctl', '--user', '--no-block', 'restart', 'tau-smoke-api.service'],
       ])
-      // No legacy plist installed for this processName, so the new label wins.
+      // No legacy plist installed for either processName, so the new label wins for both.
       expect(restartCommandsFor('launchd', { instance: 'smoke', uid: 501, launchAgentsDir })).toEqual([
-        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.tau-smoke-worker'],
-        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.tau-smoke-api'],
+        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-worker'],
+        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-api'],
       ])
       expect(() => restartCommandsFor('launchd', { instance: '../api', uid: 501 })).toThrow(/instance/i)
       for (const command of restartCommandsFor('launchd', { instance: 'smoke', uid: 501, launchAgentsDir }))
@@ -89,6 +89,20 @@ describe('flavor-aware planning', () => {
       expect(isApiRestartCommand(['systemctl', '--user', '--no-block', 'restart', 'tau-smoke-api.service'])).toBe(true)
     } finally {
       rmSync(unitDir, { recursive: true, force: true })
+      rmSync(launchAgentsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to the legacy launchd label when only its plist is installed', () => {
+    const launchAgentsDir = mkdtempSync(join(tmpdir(), 'change-detector-test-agents-'))
+    try {
+      // The legacy per-instance plist this host still has registered.
+      writeFileSync(join(launchAgentsDir, 'ai.hiretau.tau-smoke-worker.plist'), '') // ficus-p5-bridge
+      expect(restartCommandsFor('launchd', { instance: 'smoke', uid: 501, launchAgentsDir })).toEqual([
+        ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-smoke-worker'], // ficus-p5-bridge
+        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-api'],
+      ])
+    } finally {
       rmSync(launchAgentsDir, { recursive: true, force: true })
     }
   })
