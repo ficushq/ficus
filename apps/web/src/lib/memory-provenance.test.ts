@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import {
-  LEGACY_MEMORY_PROVENANCE_MARKER,
-  MEMORY_PROVENANCE_MARKER,
-  parseMemoryProvenance,
-  stripProvenanceBlock,
-} from './memory-provenance'
+import { MEMORY_PROVENANCE_MARKER, parseMemoryProvenance, stripProvenanceBlock } from './memory-provenance'
 
 const block =
   '<!--ficus:memory-provenance [{"sourceSquadId":"squad-aaaa","path":"/memory/a.md","title":"A","sourceType":"memory_file","sensitivity":"internal","score":0.9,"documentId":"d1"}] -->'
@@ -33,17 +28,14 @@ describe('stripProvenanceBlock', () => {
   })
 })
 
-describe('provenance written before the rename', () => {
-  const legacy = block.replace(MEMORY_PROVENANCE_MARKER, LEGACY_MEMORY_PROVENANCE_MARKER)
-
-  it('writes the ficus marker', () => {
+describe('the provenance marker', () => {
+  it('is the ficus one', () => {
     expect(MEMORY_PROVENANCE_MARKER).toBe('ficus:memory-provenance')
     expect(block).toStartWith('<!--ficus:memory-provenance ')
   })
 
-  it('stored tool results with the old marker still parse and strip', () => {
-    expect(legacy).not.toBe(block)
-    expect(parseMemoryProvenance(`Found 1 result(s):\n${legacy}`)![0].sourceSquadId).toBe('squad-aaaa')
-    expect(stripProvenanceBlock(`hi\n${legacy}`).trim()).toBe('hi')
+  it('is the only one read: Core migration 0196 rewrote the pre-rename marker in stored results (Task 36c)', () => {
+    const preRename = block.replace('<!--ficus:', '<!--tau:') // ficus-negative-test
+    expect(parseMemoryProvenance(`Found 1 result(s):\n${preRename}`)).toBeNull()
   })
 })

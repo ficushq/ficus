@@ -1,18 +1,12 @@
-import {
-  ENTITY_REFERENCE_SCHEME,
-  entityReferenceHref,
-  LEGACY_ENTITY_REFERENCE_SCHEME,
-  parseEntityReference,
-  type FarmPerson,
-} from '@ficus/shared'
+import { ENTITY_REFERENCE_SCHEME, entityReferenceHref, parseEntityReference, type FarmPerson } from '@ficus/shared'
 import { findMentions } from './mentions'
 
 /*
  * A farm chat message, split into what it's made of: plain text, @mentions,
  * references to things on the farm (drawn as chips that fly the camera there)
  * and other links. References are the chat's own `ficus:ws:<id>` /
- * `ficus:agent:<id>` (the old `tau:` ones too), or a pasted web-app link to a // ficus-36c
- * squad, a work stream or an agent.
+ * `ficus:agent:<id>`, or a pasted web-app link to a squad, a work stream or
+ * an agent.
  */
 
 export type FarmRef = { kind: 'ws'; id: string } | { kind: 'agent'; id: string } | { kind: 'squad'; id: string }
@@ -24,11 +18,8 @@ export type MessageToken =
   | { kind: 'ref'; text: string; ref: FarmRef; href?: string }
   | { kind: 'link'; text: string; href: string }
 
-// The schemes the shared entity references accept (the current one, and the one stored before the rename).
-const REFERENCE = new RegExp(
-  `\\b(?:${ENTITY_REFERENCE_SCHEME}|${LEGACY_ENTITY_REFERENCE_SCHEME}):(?:ws|agent):[0-9a-f-]{1,36}\\b`,
-  'gi'
-)
+// The scheme the shared entity references accept.
+const REFERENCE = new RegExp(`\\b${ENTITY_REFERENCE_SCHEME}:(?:ws|agent):[0-9a-f-]{1,36}\\b`, 'gi')
 // Trailing punctuation isn't part of a pasted link.
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]'"]/gi
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

@@ -3,16 +3,7 @@ export type EntityReference = { kind: 'ws' | 'agent'; id: string }
 /** The link scheme chat writes for work streams and agents: `ficus:ws:42`, `ficus:agent:<uuid>`. */
 export const ENTITY_REFERENCE_SCHEME = 'ficus'
 
-/**
- * The scheme written before the Ficus rename. Chat messages and activity previews stored in the
- * database still carry it, so it is read (never written) until the Wave 3 data migration.
- */
-export const LEGACY_ENTITY_REFERENCE_SCHEME = 'tau' // ficus-36c
-
-const REFERENCE_PATTERN = new RegExp(
-  `^(?:${ENTITY_REFERENCE_SCHEME}|${LEGACY_ENTITY_REFERENCE_SCHEME}):(ws|agent):([0-9a-f-]{1,36})$`,
-  'i'
-)
+const REFERENCE_PATTERN = new RegExp(`^${ENTITY_REFERENCE_SCHEME}:(ws|agent):([0-9a-f-]{1,36})$`, 'i')
 
 /** The link target for a work stream or agent reference. */
 export function entityReferenceHref(kind: EntityReference['kind'], id: string): string {

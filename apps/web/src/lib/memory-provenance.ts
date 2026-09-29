@@ -11,15 +11,7 @@ export interface MemoryProvenanceEntry {
 
 /** The marker Core's memory_search writes: `<!--ficus:memory-provenance [...] -->`. */
 export const MEMORY_PROVENANCE_MARKER = 'ficus:memory-provenance'
-/**
- * The marker written before the Ficus rename. Tool results stored in conversation history still
- * carry it, so it is read (never written) until the Wave 3 migration.
- */
-export const LEGACY_MEMORY_PROVENANCE_MARKER = 'tau:memory-provenance' // ficus-36c
-
-const BLOCK_RE = new RegExp(
-  String.raw`<!--(?:${MEMORY_PROVENANCE_MARKER}|${LEGACY_MEMORY_PROVENANCE_MARKER})\s+(\[[\s\S]*?\])\s*-->`
-)
+const BLOCK_RE = new RegExp(String.raw`<!--${MEMORY_PROVENANCE_MARKER}\s+(\[[\s\S]*?\])\s*-->`)
 
 export function parseMemoryProvenance(result: string): MemoryProvenanceEntry[] | null {
   const match = result.match(BLOCK_RE)
