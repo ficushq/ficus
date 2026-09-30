@@ -74,9 +74,9 @@ The first tokenized request redirects to the validated HTTPS host, removes
 Secure, HttpOnly, SameSite=Lax cookie. Platform forwards its credential to Core;
 setting that cookie is not token validation. Core validates the deployment token
 and deployment state. Platform removes authorization headers, client-supplied
-`x-ficus-*` headers, and hop-by-hop headers before forwarding. Its transport is
-HTTP streaming: `Upgrade` is stripped, so this route does not provide WebSocket
-tunneling.
+`x-ficus-*` headers, and hop-by-hop headers before forwarding. Its HTTP
+transport is streaming and strips `Upgrade`; WebSockets follow the separate
+contract below.
 
 ### Cookies and host on the app origin
 
@@ -149,6 +149,61 @@ concurrency, and
 [Core URL generation](../../apps/core/src/services/deploy/local-deployment-service.ts).
 Historical rationale: app subdomain design.
 The historical status and error-response checklist do not override current code.
+
+### WebSockets on either mount
+
+A WebSocket handshake (a GET with `Upgrade: websocket` that `Connection`
+names) to `/api/app/<id>/*` is an ordinary app request that becomes a socket.
+Dev servers use it for hot reload (Next.js `/_next/webpack-hmr`, Vite).
+
+- **Core** authorizes the handshake exactly like HTTP: the same credential,
+  the same 404/401 before anything reaches the app, and the same cookie,
+  host and client-address headers for each mount. It also checks the
+  handshake's `Origin`, because a socket is not gated by CORS and the Lax
+  credential cookie is sent from any same-site page (other apps and tenants
+  share the site). On the per-app origin, `Origin` must be exactly
+  `https://<app host>`. On the path mount, it must be a Ficus web origin. A
+  missing `Origin` means a non-browser client, which is allowed. Anything
+  else gets a marked 403. Core opens the app's socket first. If the app
+  refuses or does not answer within 15 seconds, Core returns a marked 502 and
+  no socket opens. The app's chosen subprotocol goes back in the 101. Frames
+  are relayed unchanged in both directions, and so are close codes and
+  reasons (a code that cannot be sent becomes 1000 toward the app and 1011
+  toward the browser). Each hop negotiates its own extensions. A `Set-Cookie`
+  on the app's 101 is not relayed, so set cookies on HTTP responses.
+- **Tenant Caddy** needs no change: `reverse_proxy` passes upgrades, and the
+  `@app_bridge` rule treats a handshake like any other `/api/app/*` request.
+  A Caddy config reload closes open sockets, and HMR clients reconnect.
+- **Platform bridge** (per-app origin), still to implement:
+  1. Recognize the handshake the same way. Validate the host, tenant and
+     `__Host-ficus_app` credential exactly as for HTTP, and refuse with the
+     same fixed responses before dialing.
+  2. Dial the tenant exactly as for HTTP (registry IP, port 443, tenant SNI,
+     Origin CA verification) and send an HTTP/1.1 GET for the same rewritten
+     target: `/api/app/<deploy12>/<path>` with the browser query plus
+     `_ficus_token`. Apply the HTTP request-header rules above: `Cookie` minus
+     Ficus names, `Host` set to the tenant host, `X-Forwarded-Host` set to
+     the validated app host, `X-Forwarded-Proto: https`, the client-address
+     rules, and authorization and `x-ficus-*` stripped. Also keep
+     `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Key`,
+     `Sec-WebSocket-Version`, `Sec-WebSocket-Protocol` and
+     `Sec-WebSocket-Extensions` unchanged. Keep `Origin` unchanged, because
+     Core checks it against the app host.
+  3. On `101`, send the browser a 101 with Core's `Upgrade`, `Connection`,
+     `Sec-WebSocket-Accept`, `Sec-WebSocket-Protocol` and
+     `Sec-WebSocket-Extensions`, and apply the `Set-Cookie` response rule.
+     Then splice raw bytes in both directions without parsing frames. When
+     either side ends or errors, end the other. Any other status is an
+     ordinary HTTP response and goes through the existing error
+     normalization, so a marked 401/403/404/502 gets its fixed message.
+  4. A socket is long-lived. It must not hold one of the 64 request leases
+     for its lifetime, the 100 MiB and 30-second HTTP bounds do not apply, and
+     it needs its own per-tenant cap on open sockets. Use an idle timeout
+     well above two minutes, because Core's side pings idle sockets and
+     closes them after 120 seconds without traffic. Logs follow the HTTP
+     rule: no tokens or full URLs.
+- **Cloudflare**: WebSockets must stay enabled (the default) on the Ficus zone
+  and the apps-domain zone.
 
 ## Hosted GitHub: subscription interest does not grant authority
 

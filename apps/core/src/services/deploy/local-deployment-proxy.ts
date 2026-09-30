@@ -14,6 +14,12 @@ import {
   presentedLocalDeploymentToken,
 } from './local-deployment-auth'
 import { localDeploymentProxyError, stripLocalDeploymentProxyErrorMarker } from './local-deployment-proxy-response'
+import {
+  isAllowedLocalAppWebSocketOrigin,
+  isWebSocketUpgradeRequest,
+  proxyLocalAppWebSocket,
+  type WebSocketUpgradeServer,
+} from './local-deployment-websocket'
 
 /** The app-proxy token's query name before the Ficus rename (stripped, never accepted). */
 const LEGACY_TOKEN_QUERY_PARAM = '_tau_token' // ficus-p5-bridge
@@ -121,6 +127,8 @@ interface LocalDeploymentProxyDependencies {
   ensureSquadSandbox: typeof ensureSquadSandbox
   resolveLocalDeploymentTarget: typeof resolveLocalDeploymentTarget
   fetch: typeof fetch
+  /** How long the app gets to accept a WebSocket upgrade. */
+  webSocketConnectTimeoutMs?: number
 }
 
 let dependencyOverrides: Partial<LocalDeploymentProxyDependencies> = {}
@@ -130,6 +138,7 @@ function getDependencies(): LocalDeploymentProxyDependencies {
     ensureSquadSandbox: dependencyOverrides.ensureSquadSandbox ?? ensureSquadSandbox,
     resolveLocalDeploymentTarget: dependencyOverrides.resolveLocalDeploymentTarget ?? resolveLocalDeploymentTarget,
     fetch: dependencyOverrides.fetch ?? fetch,
+    webSocketConnectTimeoutMs: dependencyOverrides.webSocketConnectTimeoutMs,
   }
 }
 
@@ -139,10 +148,17 @@ export function configureLocalDeploymentProxyDependencies(
   dependencyOverrides = overrides
 }
 
+/**
+ * Proxy one request to a local app. `server` is Bun's server (Hono's `c.env`),
+ * needed only to accept a WebSocket upgrade: an upgrade is authorized and gets
+ * the same cookie, host and client-address headers as HTTP, then is relayed as
+ * a socket (local-deployment-websocket.ts) instead of fetched.
+ */
 export async function proxyLocalDeploymentRequest(
   localDeploymentId: string,
   request: Request,
-  path: string
+  path: string,
+  server?: WebSocketUpgradeServer
 ): Promise<Response> {
   const localDeployment = await getLocalDeployment(localDeploymentId)
   if (!localDeployment || localDeployment.status === 'stopped')
@@ -202,6 +218,20 @@ export async function proxyLocalDeploymentRequest(
     headers.set('x-forwarded-proto', 'https')
   } else if (!trustedPeer || !headers.has('x-forwarded-host')) {
     headers.set('x-forwarded-host', request.headers.get('host') ?? sourceUrl.host)
+  }
+
+  if (isWebSocketUpgradeRequest(request)) {
+    if (!isAllowedLocalAppWebSocketOrigin(request.headers.get('origin'), publicHost)) {
+      return localDeploymentProxyError('Forbidden', 403)
+    }
+    if (!server) return localDeploymentProxyError('WebSocket upgrades are not available on this route', 501)
+    return proxyLocalAppWebSocket({
+      server,
+      request,
+      targetUrl,
+      headers,
+      connectTimeoutMs: deps.webSocketConnectTimeoutMs,
+    })
   }
 
   const upstream = stripLocalDeploymentProxyErrorMarker(

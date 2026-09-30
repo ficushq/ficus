@@ -92,6 +92,8 @@ ficus.example.com {
 The `/api/*` and `/ws*` handles both point at Core on `3000`. The bare `/ws`
 route is what the app event WebSocket connects to and `/ws/terminal` is used for
 terminal sessions, so a `/ws/*`-only matcher is not enough — match both.
+Caddy's `reverse_proxy` passes WebSocket upgrades on its own, which local apps
+under `/api/app/*` use for dev-server hot reload.
 
 ### Serving the web build from a system web-server root
 
@@ -110,12 +112,29 @@ builds.
 ## nginx
 
 ```nginx
+# Local apps under /api/app/ may open WebSockets (dev-server hot reload), so
+# pass Upgrade through there, and only when the client asked for one.
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      '';
+}
+
 server {
   listen 80;
   server_name ficus.example.com;
 
   location /api/ {
     proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location /api/app/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
