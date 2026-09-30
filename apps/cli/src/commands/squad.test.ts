@@ -34,6 +34,52 @@ describe('squad CLI commands', () => {
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
 
+  describe('cleanup-agents', () => {
+    const result = { checked: 3, terminated: 1, agents: [], deferred: 1, deferredAgents: [] }
+
+    it('routes a scoped dry run and keeps JSON output intact', async () => {
+      ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(result)
+      ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
+      await run(['squad', 'cleanup-agents', '--squad', 'squad-1', '--dry-run', '--json'])
+      expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/cleanup-agents?dryRun=true', {})
+      expect(output).toHaveBeenCalledWith(result)
+    })
+
+    it('identifies the scope and reports deferred workers separately', async () => {
+      ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(result)
+      const log = spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        await run(['squad', 'cleanup-agents', '--squad', 'squad-1'])
+        expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/cleanup-agents', {})
+        expect(log.mock.calls.flat().join(' ')).toContain('squad squad-1')
+        expect(log.mock.calls.flat().join(' ')).toContain('made dormant 1')
+        expect(log.mock.calls.flat().join(' ')).toContain('deferred 1')
+      } finally {
+        log.mockRestore()
+      }
+    })
+
+    it('preserves the administrator global route with and without dry-run', async () => {
+      ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(result)
+      ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
+      await run(['squad', 'cleanup-agents'])
+      expect(apiPost).toHaveBeenLastCalledWith('/api/squads/cleanup-agents', {})
+      await run(['squad', 'cleanup-agents', '--dry-run'])
+      expect(apiPost).toHaveBeenLastCalledWith('/api/squads/cleanup-agents?dryRun=true', {})
+    })
+
+    it('documents scoped authorization and retained history', () => {
+      const program = new Command()
+      registerSquadCommands(program)
+      const cleanup = program.commands
+        .find((c) => c.name() === 'squad')
+        ?.commands.find((c) => c.name() === 'cleanup-agents')
+      expect(cleanup?.options.find((o) => o.long === '--squad')?.description).toContain('agents:terminate')
+      expect(cleanup?.helpInformation()).toContain('history and worktrees')
+      expect(cleanup?.helpInformation()).toContain('system:cleanup')
+    })
+  })
+
   it('sets and applies a squad toolchain', async () => {
     ;(apiPut as ReturnType<typeof mock>).mockResolvedValue({ packages: ['python3@latest'] })
     await run(['squad', 'toolchain', 'set', 'squad-1', '--package', 'python3@latest'])

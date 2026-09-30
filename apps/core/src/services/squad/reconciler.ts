@@ -144,10 +144,12 @@ export async function reconcileAgents(squad: Squad): Promise<number> {
 }
 
 /**
- * Clean up all unterminated flex agents by checking termination eligibility.
- * @param dryRun If true, returns agents that would be terminated without actually terminating them.
+ * Make eligible live flex agents dormant, retaining their history and worktrees.
+ * @param dryRun If true, preview eligibility without requesting dormancy.
+ * @param squadId Canonical authorized squad ID; omitted for the administrator global sweep.
+ * Authorization belongs to the caller. Scoped requests filter before loading any candidates.
  */
-export async function cleanupFlexAgents(dryRun = false): Promise<CleanupFlexAgentsResult> {
+export async function cleanupFlexAgents(dryRun = false, squadId?: string): Promise<CleanupFlexAgentsResult> {
   const flexAgents = await db
     .select({
       id: agents.id,
@@ -158,6 +160,7 @@ export async function cleanupFlexAgents(dryRun = false): Promise<CleanupFlexAgen
     .from(agents)
     .where(
       and(
+        squadId === undefined ? undefined : eq(agents.squadId, squadId),
         not(eq(agents.agentTypeId, 'manager')),
         not(eq(agents.agentTypeId, 'consultant')),
         inArray(agents.status, [...LIVE_AGENT_STATUSES]),
@@ -181,29 +184,43 @@ export async function cleanupFlexAgents(dryRun = false): Promise<CleanupFlexAgen
   }
 
   const terminatedAgents: FlexAgentInfo[] = []
+  const deferredAgents: FlexAgentInfo[] = []
 
   // Dynamic import to avoid circular dependency
   const { Agent } = await import('../../entities/Agent')
 
   for (const agentRow of flexAgents) {
     const agent = await Agent.mustFind(agentRow.id)
-    const wouldTerminate = dryRun
-      ? (await agent.canTerminate()).canTerminate
-      : await agent
-          .tryTerminate()
-          .then(() => true)
-          .catch(() => false)
+    const meta = agentRow.metadata as Record<string, unknown> | null
+    const info: FlexAgentInfo = {
+      id: agentRow.id,
+      name: (meta?.name as string) ?? null,
+      agentTypeId: agentRow.agentTypeId,
+      squadName: agentRow.squadId ? (squadMap.get(agentRow.squadId) ?? null) : null,
+    }
 
-    if (wouldTerminate) {
-      const meta = agentRow.metadata as Record<string, unknown> | null
-      terminatedAgents.push({
-        id: agentRow.id,
-        name: (meta?.name as string) ?? null,
-        agentTypeId: agentRow.agentTypeId,
-        squadName: agentRow.squadId ? (squadMap.get(agentRow.squadId) ?? null) : null,
-      })
+    if (dryRun) {
+      if ((await agent.canTerminate()).canTerminate) terminatedAgents.push(info)
+      continue
+    }
+
+    try {
+      await agent.tryTerminate()
+      // tryTerminate may only enqueue dormancy, and does not refresh the entity
+      // in that case. Report persisted lifecycle state, not promise fulfillment.
+      await agent.reload()
+      if (agent.status === 'dormant') terminatedAgents.push(info)
+      else if (agent.pendingDormancyAt) deferredAgents.push(info)
+    } catch {
+      // Eligibility can change since the candidate query; guarded lifecycle wins.
     }
   }
 
-  return { checked: flexAgents.length, terminated: terminatedAgents.length, agents: terminatedAgents }
+  return {
+    checked: flexAgents.length,
+    terminated: terminatedAgents.length,
+    agents: terminatedAgents,
+    deferred: deferredAgents.length,
+    deferredAgents,
+  }
 }

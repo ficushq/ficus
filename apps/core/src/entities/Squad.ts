@@ -156,8 +156,12 @@ export interface FlexAgentInfo {
 
 export interface CleanupFlexAgentsResult {
   checked: number
+  /** Legacy name: workers made dormant, or eligible workers in a dry run. */
   terminated: number
   agents: FlexAgentInfo[]
+  /** Accepted dormancy requests still waiting for an execution to settle. */
+  deferred: number
+  deferredAgents: FlexAgentInfo[]
 }
 
 export interface SearchMessagesOptions {
@@ -556,11 +560,12 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
   }
 
   /**
-   * Clean up all unterminated flex agents by checking termination eligibility.
-   * @param dryRun If true, returns agents that would be terminated without actually terminating them.
+   * Make eligible live flex agents dormant, preserving history and worktrees.
+   * @param dryRun Preview eligibility without requesting dormancy.
+   * @param squadId Canonical authorized squad ID; omitted for the global sweep.
    */
-  static async cleanupFlexAgents(dryRun = false): Promise<CleanupFlexAgentsResult> {
-    return squadReconciler.cleanupFlexAgents(dryRun)
+  static async cleanupFlexAgents(dryRun = false, squadId?: string): Promise<CleanupFlexAgentsResult> {
+    return squadReconciler.cleanupFlexAgents(dryRun, squadId)
   }
 
   /**

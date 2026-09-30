@@ -17,6 +17,7 @@ import {
   type SquadActivityKind,
 } from '@ficus/shared'
 import { requirePermission, requireSquadPermission } from '../middleware'
+import { resolvedSquadId } from '../middleware/require-permission'
 import { getAccessibleSquadIds, type Identity } from '../services/rbac'
 import { resolveSquadActivityAccess } from '../services/squad-activity/access'
 import { filterToAccessibleSquads } from '../middleware/require-entity-permission'
@@ -230,6 +231,11 @@ export const squadsRouter = new Hono()
     const dryRun = c.req.query('dryRun') === 'true'
     const result = await Squad.cleanupFlexAgents(dryRun)
     return c.json(result)
+  })
+  // Scoped cleanup uses the canonical squad resolved and authorized by RBAC.
+  .post('/:id/cleanup-agents', requireSquadPermission('agents:terminate'), async (c) => {
+    const dryRun = c.req.query('dryRun') === 'true'
+    return c.json(await Squad.cleanupFlexAgents(dryRun, resolvedSquadId(c)))
   })
   .get('/:id/activity', requireSquadPermission('squads:read'), async (c) => {
     const squad = await Squad.find(c.req.param('id'))
