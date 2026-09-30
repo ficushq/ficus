@@ -1,3 +1,4 @@
+import { SelectionPopup } from './ThemedPopup'
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
@@ -2267,26 +2268,34 @@ export function ChatView({
                                 ? 'Interrupt'
                                 : 'Follow up'}
                       </button>
-                      <label
+                      <SelectionPopup
+                        label="Message delivery"
                         title="Choose when this message is delivered"
+                        value={deliveryMode}
+                        onChange={onDeliveryModeChange}
+                        width={320}
+                        disabled={disabled || isUploading || isPreparingImages || isSubmitting}
+                        options={[
+                          {
+                            value: 'steer',
+                            label: 'Interrupt',
+                            description: 'When sent, interrupt the current turn at the next delivery point.',
+                          },
+                          {
+                            value: 'follow-up',
+                            label: 'Follow up',
+                            description: 'When sent, queue this message for after the current turn.',
+                          },
+                        ]}
                         className={clsx(
-                          'chat-composer-mode relative flex cursor-pointer items-center border-l px-1.5 transition-colors',
+                          'ficus-button chat-composer-mode flex min-h-[44px] md:min-h-0 items-center border-l px-2.5 transition-colors disabled:opacity-50',
                           deliveryMode === 'steer'
                             ? 'border-accent-active hover:bg-accent-hover'
                             : 'border-status-attention-700 hover:bg-status-attention-700'
                         )}
                       >
                         <ChevronDownIcon className="h-4 w-4" />
-                        <select
-                          aria-label="Message delivery"
-                          value={deliveryMode}
-                          onChange={(event) => onDeliveryModeChange(event.target.value as DeliveryMode)}
-                          className="absolute inset-0 cursor-pointer opacity-0"
-                        >
-                          <option value="steer">Interrupt: send now</option>
-                          <option value="follow-up">Follow up: send after this turn</option>
-                        </select>
-                      </label>
+                      </SelectionPopup>
                     </div>
                   ) : (
                     <button

@@ -1,6 +1,6 @@
-import { Presence } from './Presence'
+import { ActionPopup, SelectionPopup } from './ThemedPopup'
 import clsx from 'clsx'
-import { useEffect, useRef, useState, type ChangeEvent, type ComponentType } from 'react'
+import { type ComponentType } from 'react'
 import { ChevronDownIcon, MoreIcon } from './icons'
 
 export interface AgentViewTabItem<T extends string> {
@@ -20,35 +20,16 @@ interface AgentViewTabsProps<T extends string> {
 }
 
 export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: AgentViewTabsProps<T>) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const pointerSelection = useRef(false)
-  useEffect(() => {
-    if (!menuOpen) return
-    menuRef.current?.querySelector<HTMLButtonElement>('[aria-current="page"]')?.focus()
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !menuRef.current?.contains(event.target)) setMenuOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      pointerSelection.current = false
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        setMenuOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [menuOpen])
-
-  const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    onChange(event.target.value as T)
-  }
+  const viewLabel = (tab: AgentViewTabItem<T>) =>
+    (tab.activeCount ?? 0) > 0
+      ? `${tab.label}, ${tab.activeCount} active subagent${tab.activeCount === 1 ? '' : 's'}`
+      : tab.label
+  const currentTab = tabs.find((tab) => tab.value === activeTab)
+  const options = tabs.map((tab) => ({
+    value: tab.value,
+    label: (tab.activeCount ?? 0) > 0 ? `${tab.label} (${tab.activeCount} active)` : tab.label,
+    ariaLabel: viewLabel(tab),
+  }))
 
   const renderTabButton = (tab: AgentViewTabItem<T>, index: number) => {
     const Icon = tab.icon
@@ -93,76 +74,31 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
 
   return (
     <div className="ml-auto">
-      <div
-        ref={menuRef}
-        className="relative md:hidden"
-        onPointerDownCapture={() => {
-          pointerSelection.current = true
-        }}
-        onBlur={(event) => {
-          // Touch browsers may move focus to the page before the option's click.
-          // Let an inside pointer finish selecting; outside pointers dismiss above.
-          if (
-            !pointerSelection.current &&
-            event.relatedTarget instanceof Node &&
-            !event.currentTarget.contains(event.relatedTarget)
-          )
-            setMenuOpen(false)
-        }}
-      >
-        <button
-          type="button"
-          ref={triggerRef}
-          aria-label={`Conversation options, ${tabs.find((tab) => tab.value === activeTab)?.label ?? activeTab} view`}
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}
+      <div className="md:hidden">
+        <ActionPopup
+          label={`Conversation options, ${currentTab?.label ?? activeTab} view`}
           className="ficus-button flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary"
+          items={options.map((option) => ({
+            ...option,
+            id: option.value,
+            active: option.value === activeTab,
+            onSelect: () => onChange(option.value),
+          }))}
         >
           <MoreIcon className="h-4 w-4" />
-        </button>
-        <Presence
-          open={menuOpen}
-          className="ficus-overlay absolute right-0 top-full z-30 mt-1 w-40 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
-        >
-          {tabs.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              aria-current={activeTab === tab.value ? 'page' : undefined}
-              onClick={() => {
-                onChange(tab.value)
-                setMenuOpen(false)
-                triggerRef.current?.focus()
-              }}
-              className={clsx(
-                'ficus-button',
-                'block w-full rounded-md px-3 py-2 text-left text-sm',
-                activeTab === tab.value ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface-hover'
-              )}
-            >
-              {tab.label}
-              {(tab.activeCount ?? 0) > 0 && ` (${tab.activeCount} active)`}
-            </button>
-          ))}
-        </Presence>
+        </ActionPopup>
       </div>
-      <div className="relative hidden md:block lg:hidden">
-        <select
-          aria-label="Agent view"
+      <div className="hidden md:block lg:hidden">
+        <SelectionPopup
+          label="Agent view"
           value={activeTab}
-          onChange={handleSelectChange}
-          className="ficus-field max-w-36 appearance-none rounded-md border border-th-border bg-surface py-1 pl-2 pr-7 text-xs font-medium text-primary  focus:ring-2 focus:ring-accent"
+          onChange={onChange}
+          options={options}
+          className="ficus-button flex max-w-36 items-center gap-2 rounded-md border border-th-border bg-surface px-2 py-1 text-xs font-medium text-primary"
         >
-          {tabs.map((tab) => {
-            const activeCount = tab.activeCount ?? 0
-            return (
-              <option key={tab.value} value={tab.value}>
-                {activeCount > 0 ? `${tab.label} (${activeCount} active)` : tab.label}
-              </option>
-            )
-          })}
-        </select>
-        <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted" />
+          <span className="truncate">{options.find((option) => option.value === activeTab)?.label ?? activeTab}</span>
+          <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted" />
+        </SelectionPopup>
       </div>
       <div className="hidden lg:flex border border-th-border rounded-md overflow-hidden">
         {tabs.map(renderTabButton)}
