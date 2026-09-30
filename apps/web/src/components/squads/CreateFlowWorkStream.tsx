@@ -6,6 +6,7 @@ import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'
 import { Modal } from '../Modal'
 import { WorkflowEditor } from './WorkflowEditor'
+import { PlusIcon } from '../icons'
 
 export function CreateFlowWorkStream({ squadId }: { squadId: string }) {
   const { can } = usePermissions(squadId)
@@ -27,7 +28,12 @@ export function CreateFlowWorkStream({ squadId }: { squadId: string }) {
   if (!can('workstreams:create')) return null
   return (
     <>
-      <button type="button" className="text-sm text-accent" onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className="ficus-button ficus-button-primary flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium"
+        onClick={() => setOpen(true)}
+      >
+        <PlusIcon className="h-4 w-4" />
         New work stream
       </button>
       <Modal isOpen={open} onClose={() => setOpen(false)} title="New work stream">

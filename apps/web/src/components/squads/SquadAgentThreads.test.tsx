@@ -419,15 +419,33 @@ describe('SquadAgentThreads header', () => {
     expect(renderThreads([agent()])).toContain('Manager <span class="font-normal text-secondary">(Pearl)</span>')
   })
 
-  test('shows purpose with title-cased type before the generated name', () => {
+  test('shows purpose with the name, not the type again (the agent list groups by type)', () => {
     expect(
       getAgentHeaderTitleParts(
         agent({ agentTypeId: 'code-reviewer', metadata: { name: 'Pearl', purpose: 'Review PRs' } })
       )
     ).toEqual({
       title: 'Review PRs',
-      suffix: '(Code Reviewer • Pearl)',
+      suffix: '(Pearl)',
     })
+  })
+
+  test("a workflow agent's name shows its participant id title-cased, once", () => {
+    expect(
+      getAgentHeaderTitleParts(
+        agent({
+          agentTypeId: 'engineer',
+          metadata: { name: 'engineer · Forward the real client IP', purpose: 'Fix local-app client IP forwarding' },
+        })
+      )
+    ).toEqual({
+      title: 'Fix local-app client IP forwarding',
+      suffix: '(Engineer · Forward the real client IP)',
+    })
+    expect(
+      getAgentHeaderTitleParts(agent({ agentTypeId: 'engineer', metadata: { name: 'code-reviewer · Check the diff' } }))
+        .suffix
+    ).toBe('(Code Reviewer · Check the diff)')
   })
 
   test('shows title-cased type followed by name when purpose is absent or blank', () => {
@@ -452,7 +470,7 @@ describe('SquadAgentThreads mobile agent picker modal', () => {
     expect(html).toContain('hidden md:flex items-baseline')
   })
 
-  test('shows the selected agent purpose with name and type metadata in the mobile header trigger', async () => {
+  test('shows the selected agent purpose with its name in the mobile header trigger', async () => {
     const dom = await installDom()
     const { window } = dom
     try {
@@ -468,7 +486,8 @@ describe('SquadAgentThreads mobile agent picker modal', () => {
       const trigger = window.document.querySelector('[aria-label="Choose agent"]') as HTMLButtonElement
       expect(trigger).toBeTruthy()
       expect(trigger.textContent).toContain('Review PRs')
-      expect(trigger.textContent).toContain('(Engineer • Pearl)')
+      expect(trigger.textContent).toContain('(Pearl)')
+      expect(trigger.textContent).not.toContain('Engineer')
 
       await dom.act(async () => {
         root.unmount()

@@ -757,6 +757,8 @@ interface WorkStreamListProps {
   hideFilters?: boolean
   /** Render filters in a popup at this header slot instead of above the lists. */
   filterContainer?: HTMLElement | null
+  /** The page's primary action (e.g. New work stream), at the trailing end of the filter row. */
+  filterActions?: ReactNode
   /** Only render active work streams and hide the Done section (default: false) */
   activeOnly?: boolean
   /** Make the Active section header collapsible (default: false) */
@@ -794,6 +796,7 @@ export function WorkStreamList({
   emptyMessage = 'No work streams yet',
   hideFilters = false,
   filterContainer,
+  filterActions,
   activeOnly = false,
   activeCollapsible = false,
   activeHeaderActions,
@@ -943,7 +946,12 @@ export function WorkStreamList({
     <div className={clsx('flex flex-col', feedLayout ? 'gap-4' : 'gap-6')}>
       {/* Filters */}
       {filterContainer === undefined
-        ? filters
+        ? (filters || filterActions) && (
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">{filters}</div>
+              {filterActions && <div className="shrink-0">{filterActions}</div>}
+            </div>
+          )
         : filterContainer &&
           !hideFilters &&
           createPortal(
