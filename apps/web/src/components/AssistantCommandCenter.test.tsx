@@ -211,7 +211,7 @@ test('work opens inline, assigned chats stay mounted, and Back restores the quer
     )
     expect(f.container.querySelector('[data-command-preview]')?.textContent).toContain('Fix OAuth implementation')
     const footer = f.container.querySelector('footer')!
-    expect(footer.textContent).toContain('Enter to open · Shift+Enter for its page · ↑ ↓ select · Esc back')
+    expect(footer.textContent).toContain('Enter to open · Shift/⌘+Enter for its page · ↑ ↓ select · Esc back')
     expect(footer.textContent).toContain('Assistant conversations')
     expect(footer.parentElement).toBe(f.container.querySelector('[data-command-preview]')!.parentElement)
     expect(footer.closest('[style*="display: none"]')).toBeNull()
@@ -258,7 +258,7 @@ test('a squad-targeted request opens a consultant chat with the exact initial pr
   }
 })
 
-test('Shift+Enter goes to the result page and closes the Assistant; Enter still opens it inline', async () => {
+test('Shift+Enter or ⌘/Ctrl+Enter goes to the result page and closes the Assistant; Enter still opens it inline', async () => {
   const f = await fixture()
   try {
     const input = f.container.querySelector<HTMLInputElement>('[role="combobox"]')!
@@ -270,7 +270,7 @@ test('Shift+Enter goes to the result page and closes the Assistant; Enter still 
       )
     await f.type(input, 'Ficus')
     expect(f.container.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain('Squad')
-    expect(f.container.querySelector('footer')?.textContent).toContain('Shift+Enter for its page')
+    expect(f.container.querySelector('footer')?.textContent).toContain('Shift/⌘+Enter for its page')
     await shiftEnter()
     expect(f.location.current).toBe('/squads/ficus')
     expect(f.navigated).toHaveBeenCalledTimes(1)
@@ -280,12 +280,23 @@ test('Shift+Enter goes to the result page and closes the Assistant; Enter still 
     await shiftEnter()
     expect(f.location.current).toBe('/squads/ficus/work?ws=work')
 
+    // ⌘+Enter (Ctrl+Enter off a Mac) does the same.
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+      await f.type(input, 'Ficus')
+      await f.dom.act(async () =>
+        input.dispatchEvent(
+          new f.dom.window.KeyboardEvent('keydown', { key: 'Enter', ...modifier, bubbles: true, cancelable: true })
+        )
+      )
+      expect(f.location.current).toBe('/squads/ficus')
+    }
+
     // Plain Enter keeps the nested Assistant view, and doesn't leave the page.
     await f.dom.act(async () =>
       input.closest('form')!.dispatchEvent(new f.dom.window.Event('submit', { bubbles: true, cancelable: true }))
     )
     expect(f.container.querySelector('[data-command-preview]')?.textContent).toContain('Fix OAuth')
-    expect(f.navigated).toHaveBeenCalledTimes(2)
+    expect(f.navigated).toHaveBeenCalledTimes(4)
   } finally {
     await f.cleanup()
   }
