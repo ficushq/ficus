@@ -76,17 +76,25 @@ try {
   if (exists(path.join(o.commonDirectory, 'refs/heads', o.branch + '.lock'))) fail('Branch lock present');
   if (git(o.worktree, 'symbolic-ref', '--short', 'HEAD').trim() !== o.branch || git(o.worktree, 'rev-parse', 'HEAD').trim() !== head)
     fail('Delivered head or branch changed');
+  // Only uncommitted and unpushed changes block cleanup. Files Git ignores
+  // (dependencies, build output, caches) are regenerable and removed with the
+  // worktree. Hidden index flags would make modified tracked files invisible
+  // to status, so they still fail closed.
   if (git(o.worktree, 'ls-files', '-v', '-z').split('\0').some((entry) => /^[a-zS]/.test(entry)))
-    fail('Hidden index flags require manual retention');
-  if (git(o.worktree, 'status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching').length)
-    fail('Tracked, untracked or ignored data must be preserved');
+    fail('Uncommitted changes may be hidden by assume-unchanged or skip-worktree index flags');
+  if (git(o.worktree, 'status', '--porcelain=v1', '--untracked-files=all', '--ignored=no').length)
+    fail('Uncommitted changes: modified, staged or untracked (not ignored) files');
   if (git(o.worktree, 'ls-files', '--stage', '-z').split('\0').some((entry) => entry.startsWith('160000 ')))
     fail('Submodule worktrees require manual retention');
   // Removing a linked worktree also destroys its private refs, reflogs and
-  // in-progress state. A clean delivered HEAD alone is not recovery proof.
-  const ordinaryState = new Set(['HEAD', 'index', 'commondir', 'gitdir', 'logs', 'ORIG_HEAD', 'COMMIT_EDITMSG', 'FETCH_HEAD', 'refs']);
+  // in-progress state (merge, rebase, cherry-pick, bisect...), which are
+  // uncommitted work. Leftover scratch files from finished operations are not:
+  // COMMIT_EDITMSG (message draft), FETCH_HEAD (fetched objects stay in the
+  // shared object store and on the remote), AUTO_MERGE (a tree, never a commit)
+  // and REBASE_HEAD (its commit is checked for reachability below).
+  const ordinaryState = new Set(['HEAD', 'index', 'commondir', 'gitdir', 'logs', 'ORIG_HEAD', 'COMMIT_EDITMSG', 'FETCH_HEAD', 'AUTO_MERGE', 'REBASE_HEAD', 'refs']);
   if (fs.readdirSync(o.gitDirectory).some((name) => !ordinaryState.has(name)))
-    fail('Worktree-local Git recovery state must be retained');
+    fail('Uncommitted in-progress Git operation or worktree-local state must be retained');
   // Git 2.52's files_ref_store_create_on_disk creates this compatibility
   // directory even for linked worktrees. Only an actually empty directory is
   // disposable; private refs, nested directories and unknown evidence retain it.
@@ -97,11 +105,12 @@ try {
       fail('Worktree-local refs or evidence must be retained');
   }
   const roots = new Set();
-  const originalHead = path.join(o.gitDirectory, 'ORIG_HEAD');
-  if (exists(originalHead)) {
-    physical(originalHead);
-    const oid = fs.readFileSync(originalHead, 'utf8').trim();
-    if (!/^[0-9a-f]{40}$/.test(oid)) fail('Unrecognized original HEAD; retain for inspection');
+  for (const name of ['ORIG_HEAD', 'REBASE_HEAD']) {
+    const pseudoRef = path.join(o.gitDirectory, name);
+    if (!exists(pseudoRef)) continue;
+    physical(pseudoRef);
+    const oid = fs.readFileSync(pseudoRef, 'utf8').trim();
+    if (!/^[0-9a-f]{40}$/.test(oid)) fail('Unrecognized ' + name + '; retain for inspection');
     if (!/^0+$/.test(oid)) roots.add(oid);
   }
   const logs = path.join(o.gitDirectory, 'logs');
@@ -123,48 +132,32 @@ try {
   const surviving = git(o.repository, 'for-each-ref', '--format=%(objectname)', 'refs/heads/', 'refs/tags/', 'refs/remotes/').trim().split('\n').filter(Boolean);
   const revisions = [...roots, ...surviving.map((oid) => '^' + oid)].join('\n') + '\n';
   if (roots.size && runGit(o.repository, ['rev-list', '--stdin'], revisions).trim())
-    fail('Worktree history contains commits without surviving shared refs; retain for recovery');
-  // A commit's unchanged message scratch is recoverable from its retained
-  // commit object. Edited drafts, templates and extra comments are not disposable.
-  const editMessage = path.join(o.gitDirectory, 'COMMIT_EDITMSG');
-  if (exists(editMessage)) {
-    physical(editMessage);
-    const scratch = fs.readFileSync(editMessage);
-    const represented = [...new Set([head, ...roots])].some((oid) => {
-      const commit = git(o.repository, 'cat-file', 'commit', oid);
-      const boundary = commit.indexOf('\n\n');
-      return boundary >= 0 && Buffer.from(commit.slice(boundary + 2)).equals(scratch);
-    });
-    if (!represented) fail('Commit-message scratch contains unrepresented edits; retain for inspection');
-  }
-  // Recognize only ordinary named-branch/tag fetch records whose exact source and
-  // object are still represented by configured remotes and shared tracking refs.
-  // FETCH_HEAD-only objects, custom refspecs and unknown notes remain protected.
-  const fetchHead = path.join(o.gitDirectory, 'FETCH_HEAD');
-  if (exists(fetchHead)) {
-    physical(fetchHead);
-    const bytes = fs.readFileSync(fetchHead);
-    const text = bytes.toString('utf8');
-    if (!Buffer.from(text).equals(bytes) || (text && !text.endsWith('\n')))
-      fail('Unrecognized fetch evidence; retain for inspection');
-    const known = new Set();
-    for (const remote of git(o.repository, 'remote').trim().split('\n').filter(Boolean)) {
-      const url = git(o.repository, 'remote', 'get-url', remote).trim()
-        .replace(/^(.*?:\/\/)[^/]*@/, '$1').replace(/^[^/@]+@([^/:]+:)/, '$1')
-        .replace(/\/$/, '').replace(/\.git$/, '');
-      for (const ref of git(o.repository, 'for-each-ref', '--format=%(objectname) %(refname)', 'refs/tags/').trim().split('\n').filter(Boolean)) {
-        const [oid, name] = ref.split(' ');
-        for (const flag of ['', 'not-for-merge']) known.add(oid + '\t' + flag + "\ttag '" + name.slice('refs/tags/'.length) + "' of " + url);
-      }
-      const prefix = 'refs/remotes/' + remote + '/';
-      for (const ref of git(o.repository, 'for-each-ref', '--format=%(objectname) %(refname)', prefix).trim().split('\n').filter(Boolean)) {
-        const [oid, name] = ref.split(' ');
-        const branch = name.slice(prefix.length);
-        for (const flag of ['', 'not-for-merge']) known.add(oid + '\t' + flag + "\tbranch '" + branch + "' of " + url);
-      }
+    fail('Unpushed commits: worktree history has commits no surviving branch, tag or remote ref contains');
+  // The worktree's project-scoped test database (packages/shared/src/testDbPort.ts)
+  // would be orphaned by removal. Only containers labelled with this exact
+  // Compose project AND this worktree's repo root are ever touched.
+  const docker = Bun.which('docker');
+  if (docker) {
+    const project = 'tau-test-' + crypto.createHash('sha256').update(o.worktree).digest('hex').slice(0, 8);
+    const recorded = exists(path.join(o.worktree, '.test-db-port'));
+    // Name the project explicitly; never let Compose discover a file or project.
+    const dockerEnv = { ...process.env };
+    for (const key of Object.keys(dockerEnv)) if (key.startsWith('COMPOSE_')) delete dockerEnv[key];
+    const listTestDb = () => {
+      const listed = Bun.spawnSync([docker, 'ps', '-a', '--filter', 'label=com.docker.compose.project=' + project, '--format', '{{.Label "dev.ficus.test-db.repo-root"}}'], { env: dockerEnv, cwd: '/', stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', timeout: 30000 });
+      return listed.exitCode === 0 ? listed.stdout.toString().split('\n').filter((line) => line !== '') : null;
+    };
+    const running = listTestDb();
+    if (!running && recorded)
+      fail('Could not verify whether this worktree\'s test database (Compose project ' + project + ') is running; cleanup will retry');
+    if (running && running.length) {
+      if (running.some((root) => root !== o.worktree))
+        fail('Compose project ' + project + ' is not labelled with this worktree; its containers were left untouched');
+      const down = Bun.spawnSync([docker, 'compose', '-p', project, 'down', '--volumes'], { env: dockerEnv, cwd: '/', stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', timeout: 120000 });
+      const remaining = listTestDb();
+      if (down.exitCode !== 0 || !remaining || remaining.length)
+        fail('Could not stop this worktree\'s test database (Compose project ' + project + '); cleanup will retry');
     }
-    for (const line of text ? text.slice(0, -1).split('\n') : [])
-      if (!known.has(line)) fail('Fetch evidence lacks an exact surviving tracking reference; retain for inspection');
   }
   // All managed users remain fenced. Recheck the directory identity immediately
   // before the only destructive command. No force, prune, or branch deletion.

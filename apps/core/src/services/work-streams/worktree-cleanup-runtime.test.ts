@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, realpath, rm, writeFile, readFile, rename, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { testDbProjectName } from '@ficus/shared/testDbPort'
 import { prepareRepository, type WorktreeOwnership } from './repository-setup'
 import * as runtime from './worktree-cleanup-runtime'
 
@@ -28,7 +29,7 @@ beforeEach(async () => {
   repo = join(root, 'repo')
   await mkdir(repo)
   await exec(['git', 'init', '-b', 'main', repo])
-  await writeFile(join(repo, '.gitignore'), 'evidence/\n')
+  await writeFile(join(repo, '.gitignore'), 'evidence/\nnode_modules/\ndist/\n*.tsbuildinfo\n.test-db-port\n')
   await writeFile(join(repo, 'README'), 'recoverable\n')
   await exec(['git', '-C', repo, 'add', '.'])
   await exec([
@@ -81,14 +82,39 @@ test('replays the exact terminal receipt without deleting a replacement director
   expect(await readFile(join(ownership.worktree, 'evidence'), 'utf8')).toBe('new data')
 })
 
-for (const kind of ['tracked', 'untracked', 'ignored', 'lock', 'head'] as const) {
-  test(`retains ${kind} evidence or identity changes`, async () => {
+test('removes a worktree whose only leftovers are files Git ignores', async () => {
+  await mkdir(join(ownership.worktree, 'node_modules/pkg'), { recursive: true })
+  await writeFile(join(ownership.worktree, 'node_modules/pkg/index.js'), 'module.exports = 1\n')
+  await mkdir(join(ownership.worktree, 'dist'))
+  await writeFile(join(ownership.worktree, 'dist/app.js'), 'built\n')
+  await writeFile(join(ownership.worktree, 'tsconfig.tsbuildinfo'), '{}')
+  await mkdir(join(ownership.worktree, 'evidence'))
+  await writeFile(join(ownership.worktree, 'evidence/log'), 'regenerable')
+  expect(await remove()).toMatchObject({ status: 'succeeded' })
+  expect(await Bun.file(join(ownership.worktree, 'node_modules/pkg/index.js')).exists()).toBe(false)
+  expect((await exec(['git', '-C', repo, 'rev-parse', 'feature'])).trim()).toBe(head)
+})
+
+for (const kind of ['tracked', 'staged', 'untracked'] as const) {
+  test(`retains uncommitted ${kind} changes even alongside ignored files`, async () => {
+    await mkdir(join(ownership.worktree, 'node_modules'))
+    await writeFile(join(ownership.worktree, 'node_modules/dep'), 'ignored')
     if (kind === 'tracked') await writeFile(join(ownership.worktree, 'README'), 'changed')
-    if (kind === 'untracked') await writeFile(join(ownership.worktree, 'notes'), 'evidence')
-    if (kind === 'ignored') {
-      await mkdir(join(ownership.worktree, 'evidence'))
-      await writeFile(join(ownership.worktree, 'evidence/secret'), 'retain')
+    if (kind === 'staged') {
+      await writeFile(join(ownership.worktree, 'added'), 'staged work')
+      await exec(['git', '-C', ownership.worktree, 'add', 'added'])
     }
+    if (kind === 'untracked') await writeFile(join(ownership.worktree, 'notes'), 'evidence')
+    expect(await remove()).toMatchObject({
+      status: 'retained',
+      reason: 'Uncommitted changes: modified, staged or untracked (not ignored) files',
+    })
+    expect(await Bun.file(join(ownership.worktree, 'node_modules/dep')).exists()).toBe(true)
+  })
+}
+
+for (const kind of ['lock', 'head'] as const) {
+  test(`retains ${kind} identity changes`, async () => {
     if (kind === 'lock') await exec(['git', '-C', repo, 'worktree', 'lock', ownership.worktree])
     if (kind === 'head') head = 'a'.repeat(40)
     expect(await remove()).toMatchObject({ status: 'retained' })
@@ -135,7 +161,10 @@ for (const flag of ['--assume-unchanged', '--skip-worktree']) {
   test(`retains tracked evidence hidden by ${flag}`, async () => {
     await exec(['git', '-C', ownership.worktree, 'update-index', flag, 'README'])
     await writeFile(join(ownership.worktree, 'README'), 'hidden evidence')
-    expect(await remove()).toMatchObject({ status: 'retained', reason: 'Hidden index flags require manual retention' })
+    expect(await remove()).toMatchObject({
+      status: 'retained',
+      reason: 'Uncommitted changes may be hidden by assume-unchanged or skip-worktree index flags',
+    })
     expect(await readFile(join(ownership.worktree, 'README'), 'utf8')).toBe('hidden evidence')
   })
 }
@@ -238,7 +267,7 @@ test('preserves an unpublished detached commit protected only by this worktree H
   expect(await exec(['git', '-C', ownership.worktree, 'status', '--porcelain'])).toBe('')
   expect(await remove()).toMatchObject({
     status: 'retained',
-    reason: expect.stringContaining('without surviving shared refs'),
+    reason: expect.stringContaining('Unpushed commits'),
   })
   expect(await readFile(join(ownership.gitDirectory, 'logs/HEAD'), 'utf8')).toContain(unpublished)
   expect(await exec(['git', '-C', repo, 'fsck', '--unreachable'])).not.toContain(unpublished)
@@ -293,22 +322,139 @@ for (const operation of ['commit', 'fetch', 'tag-fetch']) {
   })
 }
 
-for (const file of ['COMMIT_EDITMSG', 'FETCH_HEAD']) {
-  test(`retains edited or unknown ${file} evidence`, async () => {
+for (const file of ['COMMIT_EDITMSG', 'FETCH_HEAD', 'AUTO_MERGE']) {
+  test(`leftover ${file} scratch does not block removal`, async () => {
     await commitFeature()
-    await writeFile(join(ownership.gitDirectory, file), 'uncommitted investigation notes\n')
-    expect(await remove()).toMatchObject({ status: 'retained' })
-    expect(await readFile(join(ownership.gitDirectory, file), 'utf8')).toBe('uncommitted investigation notes\n')
+    await writeFile(join(ownership.gitDirectory, file), 'draft notes\n')
+    expect(await remove()).toMatchObject({ status: 'succeeded' })
   })
 }
 
-test('retains valid fetch records after their tracking proof disappears', async () => {
-  await exec(['git', '-C', repo, 'remote', 'set-url', 'origin', repo])
-  await exec(['git', '-C', ownership.worktree, 'fetch', 'origin'])
-  await exec(['git', '-C', repo, 'update-ref', '-d', 'refs/remotes/origin/main'])
-  expect(await remove()).toMatchObject({
-    status: 'retained',
-    reason: expect.stringContaining('exact surviving tracking reference'),
+async function commit(message: string) {
+  await writeFile(join(ownership.worktree, 'README'), `${message}\n`)
+  await exec(['git', '-C', ownership.worktree, 'add', 'README'])
+  await exec([
+    'git',
+    '-C',
+    ownership.worktree,
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@example.com',
+    'commit',
+    '-m',
+    message,
+  ])
+  return (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
+}
+
+test('retains an unpushed commit discarded from the branch and kept only by ORIG_HEAD and the reflog', async () => {
+  await commit('unpushed')
+  await exec(['git', '-C', ownership.worktree, 'reset', '--hard', head])
+  expect(await exec(['git', '-C', ownership.worktree, 'status', '--porcelain'])).toBe('')
+  expect(await remove()).toMatchObject({ status: 'retained', reason: expect.stringContaining('Unpushed commits') })
+})
+
+test('retains an unpushed commit recorded only by a leftover REBASE_HEAD', async () => {
+  const unpushed = await commit('rebased away')
+  await exec(['git', '-C', ownership.worktree, 'reset', '--hard', head])
+  await rm(join(ownership.gitDirectory, 'ORIG_HEAD'), { force: true })
+  await writeFile(join(ownership.gitDirectory, 'logs/HEAD'), '')
+  await writeFile(join(ownership.gitDirectory, 'REBASE_HEAD'), `${unpushed}\n`)
+  expect(await remove()).toMatchObject({ status: 'retained', reason: expect.stringContaining('Unpushed commits') })
+})
+
+for (const via of ['pushed', 'merged'] as const) {
+  test(`removes a worktree whose discarded commit was ${via}`, async () => {
+    const published = await commit(via)
+    if (via === 'pushed') await exec(['git', '-C', repo, 'update-ref', 'refs/remotes/origin/published', published])
+    else await exec(['git', '-C', repo, 'update-ref', 'refs/heads/main', published])
+    await exec(['git', '-C', ownership.worktree, 'reset', '--hard', head])
+    expect(await remove()).toMatchObject({ status: 'succeeded' })
+  })
+}
+
+describe('project-scoped test database', () => {
+  let bin: string
+  let state: string
+  let calls: string
+  let project: string
+  // A fake docker CLI: the state file holds the repo-root label of this
+  // project's running container; `compose down` clears it unless told to fail.
+  beforeEach(async () => {
+    bin = join(root, 'docker-bin')
+    state = join(root, 'docker-state')
+    calls = join(root, 'docker-calls')
+    project = testDbProjectName(ownership.worktree)
+    await mkdir(bin)
+    await writeFile(
+      join(bin, 'docker'),
+      `#!/bin/sh
+echo "$*" >> "${calls}"
+[ -f "${root}/docker-broken" ] && exit 1
+case "$1" in
+  ps) [ "$4" = "label=com.docker.compose.project=${project}" ] && [ -f "${state}" ] && cat "${state}"; exit 0 ;;
+  compose) [ -f "${root}/docker-stuck" ] && exit 1; rm -f "${state}"; exit 0 ;;
+esac
+exit 2
+`,
+      { mode: 0o755 }
+    )
+  })
+  const removeWithDocker = () =>
+    runtime.removeOwnedWorktree((args) => exec(['env', `PATH=${bin}:${process.env.PATH}`, ...args]), {
+      ownership,
+      head,
+      operationId: crypto.randomUUID(),
+    })
+  const dockerCalls = async () => ((await Bun.file(calls).exists()) ? await readFile(calls, 'utf8') : '')
+
+  test('tears down only this worktree’s running test database before removal', async () => {
+    await writeFile(join(ownership.worktree, '.test-db-port'), '55432')
+    await writeFile(state, `${ownership.worktree}\n`)
+    expect(await removeWithDocker()).toMatchObject({ status: 'succeeded' })
+    expect(await dockerCalls()).toContain(`compose -p ${project} down --volumes`)
+    expect(await Bun.file(state).exists()).toBe(false)
+  })
+
+  test('removes without touching Docker resources when no test database is running', async () => {
+    await writeFile(join(ownership.worktree, '.test-db-port'), '55432')
+    expect(await removeWithDocker()).toMatchObject({ status: 'succeeded' })
+    expect(await dockerCalls()).not.toContain('compose -p')
+  })
+
+  test('never stops a project labelled with another worktree', async () => {
+    await writeFile(state, `${root}/other-worktree\n`)
+    expect(await removeWithDocker()).toMatchObject({
+      status: 'retained',
+      reason: expect.stringContaining('not labelled with this worktree'),
+    })
+    expect(await dockerCalls()).not.toContain('compose -p')
+    expect(await Bun.file(state).exists()).toBe(true)
+  })
+
+  test('defers when the recorded test database cannot be verified or stopped', async () => {
+    await writeFile(join(ownership.worktree, '.test-db-port'), '55432')
+    await writeFile(join(root, 'docker-broken'), '')
+    expect(await removeWithDocker()).toMatchObject({
+      status: 'retained',
+      reason: expect.stringContaining('Could not verify'),
+    })
+    await rm(join(root, 'docker-broken'))
+    await writeFile(join(root, 'docker-stuck'), '')
+    await writeFile(state, `${ownership.worktree}\n`)
+    expect(await removeWithDocker()).toMatchObject({
+      status: 'retained',
+      reason: expect.stringContaining('Could not stop'),
+    })
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+  })
+
+  test('does not tear down the test database when uncommitted changes block removal', async () => {
+    await writeFile(state, `${ownership.worktree}\n`)
+    await writeFile(join(ownership.worktree, 'notes'), 'uncommitted')
+    expect(await removeWithDocker()).toMatchObject({ status: 'retained' })
+    expect(await dockerCalls()).not.toContain('compose -p')
   })
 })
 
