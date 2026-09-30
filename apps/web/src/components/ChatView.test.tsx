@@ -930,12 +930,146 @@ describe('ChatView monitor-source and sender label', () => {
       <ChatView items={items} onSend={() => {}} hideComposer viewingUserId="me" />
     )
 
-    // The name "Me" should NOT appear as a sender label
-    // (body still contains "me" in class names etc. but not as a standalone label text)
-    const body = window.document.body.innerHTML
-    // The span with sender name would contain the text in a specific span pattern
-    // We check it doesn't contain the name as a sender label by checking the specific class
-    expect(body).not.toContain('text-[11px] text-muted self-end mr-1 mb-0.5')
+    // The name "Me" should NOT appear as a sender label; the meta line above the
+    // viewer's own bubble carries only the time.
+    expect(window.document.querySelector('[data-testid="message-sender"]')).toBeNull()
+    const meta = window.document.querySelector('[data-testid="message-meta"]')
+    expect(meta?.textContent).toBe(meta?.querySelector('time')?.textContent)
+    expect(meta?.textContent).not.toContain('Me')
+  })
+})
+
+describe('ChatView timestamps', () => {
+  const base = new Date()
+  base.setHours(12, 0, 0, 0)
+  const at = (minutes: number, dayOffset = 0) =>
+    new Date(base.getFullYear(), base.getMonth(), base.getDate() + dayOffset, 12, minutes, 10)
+
+  function timed(message: Message, date: Date): Message {
+    return { ...message, createdAt: date.toISOString() } as Message
+  }
+
+  function persisted(message: Message, mergedFrom?: Message[]): RenderItem {
+    return { kind: 'persisted', id: message.id, message, mergedFrom, blocks: [] }
+  }
+
+  function metaFor(doc: ParentNode, id: string) {
+    const container = doc.querySelector(`[data-message-id~="${id}"]`)
+    return container?.querySelector('[data-testid="message-meta"]') ?? null
+  }
+
+  test('the group head shows a <time>; a message within five minutes shows none; a 6-minute gap shows one', async () => {
+    const items: RenderItem[] = [
+      persisted(timed(humanMsg('h1', 'first'), at(0))),
+      persisted(timed(humanMsg('h2', 'second'), at(4))),
+      persisted(timed(humanMsg('h3', 'third'), at(10))),
+    ]
+    const { window } = await renderChatView(<ChatView items={items} onSend={() => {}} hideComposer />)
+
+    const head = metaFor(window.document, 'h1')?.querySelector('time')
+    expect(head).not.toBeNull()
+    expect(head?.getAttribute('datetime')).toBe(at(0).toISOString())
+    expect(head?.textContent).toBe(at(0).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))
+    expect(metaFor(window.document, 'h2')).toBeNull()
+    expect(metaFor(window.document, 'h3')?.querySelector('time')).not.toBeNull()
+  })
+
+  test('agent replies show a left-aligned time from their earliest merged row, grouped the same way', async () => {
+    const a1 = timed(assistantMsg('a1', 'part one'), at(2))
+    const a1b = timed(assistantMsg('a1b', 'part two'), at(3))
+    const items: RenderItem[] = [
+      persisted(timed(humanMsg('h1', 'question'), at(0))),
+      persisted(a1, [a1, a1b]),
+      persisted(timed(assistantMsg('a2', 'follow-up'), at(5))),
+    ]
+    const { window } = await renderChatView(<ChatView items={items} onSend={() => {}} hideComposer />)
+
+    const agentTime = metaFor(window.document, 'a1')?.querySelector('time')
+    expect(agentTime?.getAttribute('datetime')).toBe(at(2).toISOString())
+    expect(metaFor(window.document, 'a1')?.className).not.toContain('self-end')
+    expect(metaFor(window.document, 'a2')).toBeNull()
+  })
+
+  test('a day divider appears between two days and the next message shows its time', async () => {
+    const items: RenderItem[] = [
+      persisted(timed(humanMsg('h1', 'yesterday'), at(0, -1))),
+      persisted(timed(humanMsg('h2', 'today'), at(1))),
+    ]
+    const { window } = await renderChatView(<ChatView items={items} onSend={() => {}} hideComposer />)
+
+    const dividers = [...window.document.querySelectorAll('[data-testid="day-divider"]')].map((d) => d.textContent)
+    expect(dividers).toEqual(['Yesterday', 'Today'])
+    expect(metaFor(window.document, 'h2')?.querySelector('time')).not.toBeNull()
+  })
+
+  test('another user keeps the sender name joined to the time exactly where it appeared before', async () => {
+    const alice: MessageMetadata = { sender: { userId: 'other', name: 'Alice' } }
+    const items: RenderItem[] = [
+      persisted(timed(humanMsg('h1', 'one', alice), at(0))),
+      persisted(timed(humanMsg('h2', 'two', alice), at(1))),
+      persisted(timed(humanMsg('h3', 'three', alice), at(20))),
+    ]
+    const { window } = await renderChatView(
+      <ChatView items={items} onSend={() => {}} hideComposer viewingUserId="me" />
+    )
+
+    const time = at(0).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    expect(metaFor(window.document, 'h1')?.textContent).toBe(`Alice · ${time}`)
+    expect(metaFor(window.document, 'h2')).toBeNull()
+    // A new group after the gap shows its time, but the name only repeats when it did before.
+    expect(metaFor(window.document, 'h3')?.querySelector('[data-testid="message-sender"]')).toBeNull()
+    expect(metaFor(window.document, 'h3')?.querySelector('time')).not.toBeNull()
+    expect(window.document.querySelectorAll('[data-testid="message-sender"]')).toHaveLength(1)
+  })
+
+  test('every message has the full timestamp as its tooltip', async () => {
+    const items: RenderItem[] = [
+      persisted(timed(humanMsg('h1', 'first'), at(0))),
+      persisted(timed(humanMsg('h2', 'second'), at(1))),
+      persisted(timed(assistantMsg('a1', 'reply'), at(2))),
+      persisted(timed(assistantMsg('s1', '[System] Agent restarted'), at(3))),
+    ]
+    const { window } = await renderChatView(<ChatView items={items} onSend={() => {}} hideComposer />)
+
+    const full = (date: Date) =>
+      date.toLocaleString(undefined, {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    for (const [id, date] of [
+      ['h1', at(0)],
+      ['h2', at(1)],
+      ['a1', at(2)],
+      ['s1', at(3)],
+    ] as const) {
+      expect(window.document.querySelector(`[data-message-id~="${id}"]`)?.getAttribute('title')).toBe(full(date))
+    }
+  })
+
+  test('system rows reset grouping and pending or streaming items show no time', async () => {
+    const items: RenderItem[] = [
+      persisted(timed(assistantMsg('a1', 'reply'), at(0))),
+      persisted(timed(assistantMsg('s1', '[System] Context compacted'), at(1))),
+      persisted(timed(assistantMsg('a2', 'another reply'), at(2))),
+      { kind: 'pending', id: 'client-1', content: 'optimistic', status: 'sending' },
+      {
+        kind: 'streaming',
+        id: 'sg-1',
+        agentId: 'agent-1',
+        blocks: [{ type: 'text', content: 'streaming text' }] as StreamingContentBlock[],
+        status: 'streaming',
+      },
+    ]
+    const { window } = await renderChatView(<ChatView items={items} onSend={() => {}} hideComposer />)
+
+    expect(metaFor(window.document, 'a2')?.querySelector('time')).not.toBeNull()
+    expect(window.document.querySelectorAll('[data-testid="message-meta"]')).toHaveLength(2)
+    expect(window.document.querySelectorAll('[data-testid="day-divider"]')).toHaveLength(1)
   })
 })
 
