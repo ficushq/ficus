@@ -241,16 +241,36 @@ test('failed server cancellation leaves the device flow visible for retry', asyn
   )
 })
 
-test('onboarding provider selection opens sign-in inline without a settings redirect', async () => {
+async function renderOnboardingProviders(
+  run: (ctx: {
+    dom: Awaited<ReturnType<typeof acquireDomHarness>>
+    container: HTMLElement
+    calls: FetchCall[]
+  }) => Promise<void>
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  // Saving a key invalidates these, so the stubbed server answers with the same data.
+  const responses: Record<string, unknown> = {
+    '/provider-auth': [],
+    '/provider-auth/catalog': [{ id: 'zai', label: 'Z.ai', modelCount: 12, oauthAvailable: false, disabled: false }],
+    '/provider-auth/oauth/providers': [{ id: 'openai-codex', name: 'OpenAI' }],
+    '/provider-auth/openrouter/routing': {},
+  }
   client.setQueryData(queryKeys.auth.permissions(undefined), {
     permissions: ['provider-auth:read', 'provider-auth:write'],
   })
-  client.setQueryData(queryKeys.providerAuth.list(), [])
-  client.setQueryData(queryKeys.providerAuth.catalog(), [])
-  client.setQueryData(queryKeys.providerAuth.oauthProviders(), [{ id: 'openai-codex', name: 'OpenAI' }])
-  client.setQueryData(queryKeys.providerAuth.openRouterRouting(), {})
+  client.setQueryData(queryKeys.providerAuth.list(), responses['/provider-auth'])
+  client.setQueryData(queryKeys.providerAuth.catalog(), responses['/provider-auth/catalog'])
+  client.setQueryData(queryKeys.providerAuth.oauthProviders(), responses['/provider-auth/oauth/providers'])
+  client.setQueryData(queryKeys.providerAuth.openRouterRouting(), responses['/provider-auth/openrouter/routing'])
   const dom = await acquireDomHarness({ url: 'http://localhost/onboarding' })
+  const calls: FetchCall[] = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), method: init?.method, body: init?.body as string | undefined })
+    const path = new URL(String(input), 'http://localhost').pathname.replace(/^\/api/, '')
+    return Response.json((init?.method ?? 'GET') === 'GET' ? (responses[path] ?? {}) : {})
+  }) as unknown as typeof fetch
   try {
     const { root, container } = dom.createRoot()
     await dom.act(async () =>
@@ -260,17 +280,76 @@ test('onboarding provider selection opens sign-in inline without a settings redi
         </QueryClientProvider>
       )
     )
-    expect(container.textContent).not.toContain('Choose an AI provider')
-    expect(container.querySelector('select')?.getAttribute('aria-label')).toBe('Choose an AI provider')
-    expect(container.querySelector('a[href*="settings"]')).toBeNull()
-    await dom.act(async () => fireEvent.change(container.querySelector('select')!, { target: { value: 'openai' } }))
-    expect(container.textContent).toContain('ChatGPT Plus/Pro')
-    expect(container.textContent).toContain('API key')
-    expect(container.querySelector('a[href*="settings"]')).toBeNull()
+    await run({ dom, container, calls })
   } finally {
+    globalThis.fetch = originalFetch
+    await client.cancelQueries()
     await dom.cleanup()
     client.clear()
   }
+}
+
+test('onboarding provider selection opens sign-in inline without a settings redirect', async () => {
+  await renderOnboardingProviders(async ({ dom, container }) => {
+    expect(container.querySelector('select')).toBeNull()
+    expect(container.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Choose an AI provider')
+    const radios = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+    expect(radios.map((radio) => radio.getAttribute('aria-label'))).toEqual(['Anthropic', 'OpenAI'])
+    expect(container.querySelector('a[href*="settings"]')).toBeNull()
+    await dom.act(async () => radios[1]!.click())
+    expect(radios[1]!.getAttribute('aria-checked')).toBe('true')
+    expect(container.textContent).toContain('ChatGPT Plus/Pro')
+    expect(container.textContent).toContain('API key')
+    expect(container.querySelector('a[href*="settings"]')).toBeNull()
+  })
+})
+
+test('onboarding providers chosen from More providers drive the same setup as before', async () => {
+  await renderOnboardingProviders(async ({ dom, container, calls }) => {
+    const document = dom.window.document
+    const openMore = () =>
+      dom.act(async () => container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click())
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"][data-state="open"]')
+    const listed = () => [...dialog()!.querySelectorAll<HTMLButtonElement>('ul button')]
+
+    await openMore()
+    const names = listed().map((button) => button.querySelector('.font-medium')!.textContent)
+    // Everything the old <select> offered besides the two cards, in the same (common-first) order.
+    expect(names).toEqual([
+      'OpenRouter',
+      'Z.ai',
+      'GitHub Copilot',
+      'Google',
+      'Google Antigravity',
+      'Local or custom provider',
+    ])
+
+    await dom.act(async () =>
+      fireEvent.change(dialog()!.querySelector('input[type="search"]')!, { target: { value: 'z.a' } })
+    )
+    await dom.act(async () => listed()[0]!.click())
+    expect(dialog()).toBeNull()
+    // The catalog provider's setup opens straight to its API key form, keyed by the same id.
+    const keyInput = container.querySelector<HTMLInputElement>('input[type="password"]')!
+    await dom.act(async () => fireEvent.change(keyInput, { target: { value: 'sk-test' } }))
+    const posts = () => calls.filter((call) => call.method === 'POST')
+    await dom.act(async () => {
+      ;[...container.querySelectorAll('button')].find((button) => button.textContent === 'Save')!.click()
+      await waitFor(() => expect(posts()).toHaveLength(1))
+    })
+    expect(posts()[0]!.url).toEndWith('/provider-auth/zai/accounts')
+    expect(JSON.parse(posts()[0]!.body!)).toEqual({ key: 'sk-test' })
+
+    await openMore()
+    await dom.act(async () =>
+      listed()
+        .find((button) => button.textContent?.includes('Local or custom provider'))!
+        .click()
+    )
+    // "custom" still opens the compatible-server setup in place of the Z.ai account form.
+    expect(container.querySelector('[aria-label="Custom server URL"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Account label')
+  })
 })
 
 test('device login stays visible through delayed startup and code preparation', async () => {

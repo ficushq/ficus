@@ -28,6 +28,12 @@ const logos = {
   custom: PlusIcon,
 }
 
+/** Brand mark for a provider id, falling back to a generic code glyph. */
+export function ProviderLogo({ providerId, className }: { providerId: string; className?: string }) {
+  const Logo = logos[providerId as keyof typeof logos] ?? CodeIcon
+  return <Logo className={className} />
+}
+
 export function ProviderDirectoryCard({
   providerId,
   name,
@@ -44,7 +50,6 @@ export function ProviderDirectoryCard({
   children: ReactNode
 }) {
   const [expanded, setExpanded] = useState(false)
-  const Logo = logos[providerId as keyof typeof logos] ?? CodeIcon
   return (
     <article
       className={clsx(
@@ -58,7 +63,7 @@ export function ProviderDirectoryCard({
             aria-hidden="true"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-panel-border bg-surface-secondary text-primary"
           >
-            <Logo className="h-7 w-7" />
+            <ProviderLogo providerId={providerId} className="h-7 w-7" />
           </div>
           <div className="min-w-0 flex-1">
             <h4 className="font-semibold text-primary">{name}</h4>
