@@ -39,7 +39,7 @@ When Ficus runs on your own computer, agents can use Claude through [Claude Code
 1. Install Claude Code and sign in with its own login in a terminal: `claude auth login`.
 2. In **Settings → AI Providers**, open **Anthropic / Claude Code**, choose **Connect account**, then **Claude Code (your Claude plan)**, and choose **Use Claude Code**.
 
-Claude Code becomes the first Anthropic account, so Claude models use your plan before any Anthropic API key. Reorder, disable or delete it under Anthropic like any account. When Claude Code is signed out or your plan reaches its limit, agents fall back to the next Anthropic account.
+Claude Code becomes the first Anthropic account, so Claude models use your plan before any Anthropic API key. Reorder, disable or delete it under Anthropic like any account. When Claude Code is signed out or your plan reaches its limit, agents try the next healthy Anthropic account, then the next available model in the tier's priority list. Session-limit refusals put only the Claude Code account on cooldown, using the reported UTC reset time when available.
 
 Ficus runs Claude Code and only reads whether it is signed in; it never sees or stores your Claude sign-in. Requests count against your plan's usage limits, and Anthropic may bill some to extra usage. Use it for your own agents only. Claude Code is not available on Ficus Cloud.
 

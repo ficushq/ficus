@@ -34,3 +34,9 @@ test("Anthropic's out-of-extra-usage refusal is exhausted plan credit, not a sto
 test('other Claude Code errors pass through unchanged', () => {
   expect(describeClaudeCodeFailure('API Error: 529 Overloaded')).toBe('API Error: 529 Overloaded')
 })
+
+test('a structured rate limit still fails over when its prose is unfamiliar', () => {
+  expect(classifyCaughtProviderError(describeClaudeCodeFailure('Try later', 'rate_limit'))).toMatchObject({
+    kind: 'rate-limit',
+  })
+})
