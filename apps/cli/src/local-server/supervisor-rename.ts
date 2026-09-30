@@ -8,10 +8,13 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
   statSync,
+  truncateSync,
+  writeFileSync,
   writeSync,
   type Stats,
 } from 'fs'
@@ -21,7 +24,8 @@ import { parseEnvFile, renderValue } from './env-file'
 import { moveCliHome, unmoveCliHome } from './home-move'
 import { CURRENT_IDENTITY, generateEcosystem, instanceNames, recordIdentity, type InstanceIdentity } from './instance'
 import { launchdNames, launchdSupervisor, nativeLogPath } from './launchd'
-import { parseJlist, runPm2 } from './pm2'
+import { containerVolumeName } from './postgres'
+import { parseJlist, pm2Args, runPm2 } from './pm2'
 import {
   finalizeLocalPostgresRename,
   localPostgresMove,
@@ -33,7 +37,7 @@ import {
 } from './postgres-rename'
 import type { Runner } from './runner'
 import { canonicalRoot, readRegistryStrict, writeRegistry, type LocalServerRegistry } from './state'
-import { pm2Supervisor, statusSupervisor, supervisorAdapter, type SupervisorContext } from './supervisor'
+import { statusSupervisor, supervisorAdapter, type SupervisorContext } from './supervisor'
 import { systemdUserNames, systemdUserSupervisor } from './systemd-user'
 import type { LocalSupervisor } from './types'
 
@@ -66,6 +70,12 @@ export interface SupervisorDeps {
   root: string
   /** The adapter context for one identity of the instance at `root`. */
   context(id: SupervisorIdentity, root: string): SupervisorContext
+  /**
+   * The environment a pm2 start hands its client (laid over this process's; undefined removes a
+   * key). pm2 bakes its client's environment into the apps it starts; launchd and systemd do not,
+   * so only pm2 uses it.
+   */
+  startEnv?(root: string): Record<string, string | undefined>
 }
 
 async function must(ctx: SupervisorContext, command: string[]): Promise<void> {
@@ -84,9 +94,28 @@ async function pm2Present(ctx: SupervisorContext, id: SupervisorIdentity): Promi
   return [id.api, id.worker].filter((name) => known.has(name))
 }
 
-async function pm2Must(ctx: SupervisorContext, args: string[]): Promise<void> {
-  const result = await runPm2(ctx.runner, ctx.root, args, true)
+async function pm2Must(
+  ctx: SupervisorContext,
+  args: string[],
+  env?: Record<string, string | undefined>
+): Promise<void> {
+  const result = await runPm2(ctx.runner, ctx.root, args, true, env)
   if (result.code !== 0) throw new Error(`pm2 ${args.join(' ')} failed (exit ${result.code})`)
+}
+
+/** Deletes the instance's apps pm2 knows and saves the list, so a resurrect cannot bring them back. */
+async function pm2Remove(ctx: SupervisorContext, id: SupervisorIdentity): Promise<void> {
+  const present = await pm2Present(ctx, id)
+  if (present.length === 0) return
+  await pm2Must(ctx, ['delete', ...present])
+  // --force: an empty process list is saved too (plain `save` then keeps the old dump).
+  await pm2Must(ctx, ['save', '--force'])
+}
+
+/** `launchctl enable|disable gui/<uid>/<label>` for both jobs: the override survives a reboot. */
+async function launchdOverride(ctx: SupervisorContext, verb: 'enable' | 'disable'): Promise<void> {
+  for (const component of ['api', 'worker'] as const)
+    await must(ctx, ['launchctl', verb, `gui/${ctx.uid}/${launchdNames(ctx, component).label}`])
 }
 
 /** The unit files of an identity that exist, api first. */
@@ -95,33 +124,41 @@ function systemdUnitsPresent(ctx: SupervisorContext) {
 }
 
 /**
- * Stops both processes of `id` so that nothing brings them back by itself: launchd `bootout`
- * (API, then worker; a loaded job must be this checkout's), systemd `disable --now`, pm2 `delete`.
- * The definitions (plists, unit files) stay; a missing process is not an error.
+ * Stops both processes of `id` so that nothing brings them back by itself, not even a reboot:
+ * launchd `bootout` (API, then worker; a loaded job must be this checkout's) and `disable` (the
+ * plists stay, and would otherwise load again at login), systemd `disable --now`, pm2 `delete`
+ * then `save --force` (else `pm2 resurrect` at login restores them from the dump). The
+ * definitions stay; a missing process is not an error.
  */
 export async function stopSupervisor(id: SupervisorIdentity, deps: SupervisorDeps): Promise<void> {
   const ctx = deps.context(id, deps.root)
-  if (id.supervisor === 'launchd') return launchdSupervisor.stop(ctx)
+  if (id.supervisor === 'launchd') {
+    await launchdSupervisor.stop(ctx)
+    await launchdOverride(ctx, 'disable')
+    return
+  }
   if (id.supervisor === 'systemd-user') {
     for (const names of systemdUnitsPresent(ctx))
       await must(ctx, ['systemctl', '--user', 'disable', '--now', names.unit])
     return
   }
-  const present = await pm2Present(ctx, id)
-  if (present.length > 0) await pm2Must(ctx, ['delete', ...present])
+  await pm2Remove(ctx, id)
 }
 
 /**
- * Writes the definitions of `id` and starts it: launchd plists + `bootstrap`, systemd units +
- * `enable --now`, pm2 `start ecosystem.config.js` for its two apps, then `save`.
+ * Writes the definitions of `id` and starts it: launchd `enable` + plists + `bootstrap`, systemd
+ * units + `enable --now`, pm2 `start ecosystem.config.js` for its two apps (with
+ * `deps.startEnv(root)` as its client environment), then `save`. launchd plists and systemd units
+ * carry no `.env` value: the app reads `<root>/.env` itself when it starts.
  */
 export async function installSupervisor(id: SupervisorIdentity, root: string, deps: SupervisorDeps): Promise<void> {
   const ctx = deps.context(id, root)
   if (id.supervisor === 'pm2') {
-    await pm2Supervisor.start(ctx)
+    await pm2Must(ctx, pm2Args('start', id), deps.startEnv?.(root))
     await pm2Must(ctx, ['save'])
     return
   }
+  if (id.supervisor === 'launchd') await launchdOverride(ctx, 'enable')
   await supervisorAdapter(id.supervisor).start(ctx)
 }
 
@@ -152,9 +189,7 @@ async function removeSupervisor(id: SupervisorIdentity, root: string, deps: Supe
     if (present.length > 0) await must(ctx, ['systemctl', '--user', 'daemon-reload'])
     return
   }
-  const present = await pm2Present(ctx, id)
-  if (present.length > 0) await pm2Must(ctx, ['delete', ...present])
-  await pm2Must(ctx, ['save'])
+  await pm2Remove(ctx, id)
 }
 
 // ─── Registry ───────────────────────────────────────────────────────────────
@@ -180,7 +215,7 @@ export function relabelInstance(registry: LocalServerRegistry, from: string, to:
 // ─── .env edits ─────────────────────────────────────────────────────────────
 
 /** One key of `.env` changed by a step: its whole line before (null: absent) and after. */
-interface EnvEdit {
+export interface EnvEdit {
   key: string
   before: string | null
   after: string
@@ -224,8 +259,11 @@ function applyEnvEdits(text: string, edits: EnvEdit[]): string {
   return lines.join('\n') + '\n'
 }
 
-/** Puts back each line an edit wrote; a line changed since then is left alone and reported. */
-function revertEnvEdits(text: string, edits: EnvEdit[]): { text: string; kept: string[] } {
+/**
+ * Puts back each line an edit wrote; a line changed since then is left alone and reported.
+ * `noFinalNewline`: the file had no final newline before the edits (which always add one).
+ */
+function revertEnvEdits(text: string, edits: EnvEdit[], noFinalNewline = false): { text: string; kept: string[] } {
   const { lines, newline } = splitLines(text)
   const kept: string[] = []
   for (const edit of [...edits].reverse()) {
@@ -239,7 +277,8 @@ function revertEnvEdits(text: string, edits: EnvEdit[]): { text: string; kept: s
     if (edit.before === null) lines.splice(at, 1)
     else lines[at] = edit.before
   }
-  return { text: lines.join('\n') + (newline || lines.length > 0 ? '\n' : ''), kept }
+  const final = noFinalNewline ? '' : newline || lines.length > 0 ? '\n' : ''
+  return { text: lines.join('\n') + final, kept }
 }
 
 /** Replaces a file in one step, keeping its mode (a temp file in the same directory, then a rename). */
@@ -276,7 +315,7 @@ type JournalEntry =
   | { op: 'stopped' }
   | { op: 'home-move'; home: string }
   | { op: 'home-rebase'; from: string; to: string }
-  | { op: 'env'; edits: EnvEdit[]; backup?: string }
+  | { op: 'env'; edits: EnvEdit[]; backup?: string; noFinalNewline?: true }
   | { op: 'postgres'; runId: string; preRelabelLabel: string }
   | { op: 'postgres-done' }
   | { op: 'postgres-rolled-back' }
@@ -292,6 +331,12 @@ type Begin = Extract<JournalEntry, { op: 'begin' }>
 
 function appendJournal(path: string, entry: JournalEntry): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  // A torn last line (a crash mid-append) is cut off first, so it never ends up mid-file.
+  if (existsSync(path)) {
+    const text = readFileSync(path, 'utf8')
+    if (text.length > 0 && !text.endsWith('\n'))
+      truncateSync(path, Buffer.byteLength(text.slice(0, text.lastIndexOf('\n') + 1)))
+  }
   const fd = openSync(path, 'a', 0o600)
   try {
     writeSync(fd, JSON.stringify(entry) + '\n')
@@ -361,6 +406,33 @@ export interface RenameDeps {
   now(): Date
   log(line: string): void
   postgres?: Partial<PostgresOps>
+  /**
+   * This process's environment. A CLI run from inside a checkout auto-loaded that checkout's `.env`
+   * at launch, so it may hold values the run has since rewritten: every child that reads `.env`
+   * values gets them from the file on disk instead (see `childEnv`).
+   */
+  env?: Record<string, string | undefined>
+}
+
+/** Keys a `.env` owns: a child must never inherit them from this process instead of the file. */
+const ENV_OWNED_KEY = /^(DATABASE_URL|HOME_DIR|FICUS_[A-Z0-9_]*)$/
+
+/**
+ * The environment for a child that must see `<root>/.env` as it is on disk NOW: every key of the
+ * file with its current value, and every key this process holds that a `.env` owns
+ * (`ENV_OWNED_KEY`) or that the checkout's `.env` held when this invocation began (what the CLI's
+ * own dotenv autoload may have put there) but the file no longer has, removed (undefined).
+ */
+function childEnv(root: string, deps: RunDeps): Record<string, string | undefined> {
+  const path = join(root, '.env')
+  const file = existsSync(path) ? parseEnvFile(readFileSync(path, 'utf8')) : {}
+  const env: Record<string, string | undefined> = {}
+  const stale = new Set([
+    ...Object.keys(deps.env ?? process.env).filter((k) => ENV_OWNED_KEY.test(k)),
+    ...deps.startKeys,
+  ])
+  for (const key of stale) if (!(key in file)) env[key] = undefined
+  return { ...env, ...file }
 }
 
 export interface RenameReport {
@@ -414,45 +486,83 @@ interface Plan {
   newId: SupervisorIdentity
   moveHome: boolean
   postgres: LocalPostgresPlan
+  /** Step 7's change (pm2 only). */
+  ecosystem?: EcosystemChange
+}
+
+/** RenameDeps plus what one invocation fixes at its start. */
+type RunDeps = RenameDeps & {
+  /** The keys of `<root>/.env` when this invocation began: what the CLI may have auto-loaded. */
+  startKeys: ReadonlySet<string>
 }
 
 /** Everything a run and its undo share. */
-function runContext(deps: RenameDeps, root: string, begin: Omit<Begin, 'op'>) {
+function runContext(deps: RunDeps, root: string, begin: Omit<Begin, 'op'>) {
   const oldId = supervisorIdentity(begin.supervisor, begin.from, 1)
   const newId = supervisorIdentity(begin.supervisor, begin.to, CURRENT_IDENTITY)
-  const supervisors: SupervisorDeps = { root, context: deps.supervisorContext }
+  const supervisors: SupervisorDeps = {
+    root,
+    context: deps.supervisorContext,
+    startEnv: (dir) => childEnv(dir, deps),
+  }
   const pg: PostgresOps = { ...POSTGRES, ...deps.postgres }
   const docker = { runner: deps.runner, sleep: deps.sleep }
   return { oldId, newId, supervisors, pg, docker, envPath: join(root, '.env') }
 }
 
-async function rebaseHome(root: string, from: string, to: string, deps: RenameDeps): Promise<void> {
-  const envPath = join(root, '.env')
+async function rebaseHome(
+  root: string,
+  from: string,
+  to: string,
+  deps: RunDeps,
+  opts: { dryRun?: boolean } = {}
+): Promise<string[]> {
   // The rebase program reads DATABASE_URL from its environment only: hand it the checkout's .env.
-  const env = existsSync(envPath) ? parseEnvFile(readFileSync(envPath, 'utf8')) : {}
-  const result = await deps.runner(['bun', join(root, 'apps/core/dist/rebase-home.js'), '--from', from, '--to', to], {
-    cwd: join(root, 'apps/core'),
-    env,
-  })
-  for (const line of result.stdout.split('\n').filter(Boolean)) deps.log(`    ${line}`)
+  const result = await deps.runner(
+    [
+      'bun',
+      join(root, 'apps/core/dist/rebase-home.js'),
+      '--from',
+      from,
+      '--to',
+      to,
+      ...(opts.dryRun ? ['--dry-run'] : []),
+    ],
+    { cwd: join(root, 'apps/core'), env: childEnv(root, deps) }
+  )
+  const lines = result.stdout.split('\n').filter(Boolean)
+  if (!opts.dryRun) for (const line of lines) deps.log(`    ${line}`)
   if (result.code !== 0) {
     const reason = result.stderr.trim().split('\n').at(-1)
     throw new Error(`rebase-home --from ${from} --to ${to} exited with ${result.code}${reason ? `: ${reason}` : ''}`)
   }
+  return lines
 }
 
-async function waitHealthy(port: number, deps: RenameDeps): Promise<void> {
-  const url = `http://localhost:${port}/health`
-  for (let i = 0; i < 31; i++) {
+/** How long `/ready` gets after a start: a cold boot waits for the database and runs migrations. */
+const READY_ATTEMPTS = 61
+const READY_INTERVAL_MS = 2000
+
+/**
+ * Waits for `GET /ready` to answer 200. Unlike `/health` (served before boot finishes), `/ready`
+ * turns 200 only once the database is reachable, the migrations have run and init is done, and a
+ * failed init ends the process — so a wrong DATABASE_URL, a missing database or a failed
+ * migration fails this check. Core serves `/ready` publicly on the local port (no auth), so only
+ * 200 counts.
+ */
+async function waitReady(port: number, deps: RenameDeps): Promise<void> {
+  const url = `http://localhost:${port}/ready`
+  for (let i = 0; i < READY_ATTEMPTS; i++) {
     try {
-      const res = await deps.fetch(url)
-      // 401 still means the API answers (an auth-gated proxy in front of it).
-      if (res.status === 200 || res.status === 401) return
+      if ((await deps.fetch(url)).status === 200) return
     } catch {
       /* not up yet */
     }
-    if (i === 30) throw new Error(`the API did not answer ${url} within 60s (health check) — see \`ficus server logs\``)
-    await deps.sleep(2000)
+    if (i === READY_ATTEMPTS - 1)
+      throw new Error(
+        `the API did not answer ${url} with 200 within ${((READY_ATTEMPTS - 1) * READY_INTERVAL_MS) / 1000}s (readiness check) — see \`ficus server logs\``
+      )
+    await deps.sleep(READY_INTERVAL_MS)
   }
 }
 
@@ -484,6 +594,71 @@ function identityEnvValues(plan: Plan, env: Record<string, string>, deps: Rename
   return values
 }
 
+// ─── ecosystem.config.js ────────────────────────────────────────────────────
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * The ecosystem file with the old identity's app names swapped for the new ones IN PLACE: every
+ * string literal that is exactly an old app name — each app's `name:`, `FICUS_PM2_*_NAME`, any
+ * other reference — becomes the new name; every other byte is kept (hand edits such as
+ * `max_memory_restart` or pinned ports included). Throws, changing nothing, unless each old app
+ * is declared (`name: '<old>'`) exactly once.
+ */
+export function renameEcosystemApps(
+  text: string,
+  from: { api: string; worker: string },
+  to: { api: string; worker: string }
+): string {
+  for (const component of ['api', 'worker'] as const) {
+    const declared = text.match(new RegExp(`\\bname:\\s*(['"\`])${escapeRegExp(from[component])}\\1`, 'g'))
+    if (declared?.length !== 1)
+      throw new Error(
+        `ecosystem.config.js declares the app "${from[component]}" ${declared?.length ?? 0} times, not once — rename it there by hand, then run again`
+      )
+  }
+  let out = text
+  for (const component of ['api', 'worker'] as const) {
+    const literal = new RegExp(`(['"\`])${escapeRegExp(from[component])}\\1`, 'g')
+    out = out.replace(literal, (_match, quote: string) => `${quote}${to[component]}${quote}`)
+  }
+  return out
+}
+
+/** The lines that differ between two versions of a file with the same line count, as a small diff. */
+function lineDiff(before: string, after: string): string[] {
+  const a = before.split('\n')
+  const b = after.split('\n')
+  const out: string[] = []
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i] === b[i]) continue
+    out.push(`@@ line ${i + 1}`, `- ${a[i] ?? ''}`, `+ ${b[i] ?? ''}`)
+  }
+  return out
+}
+
+/** Step 7's change: the file as it is and as it will be (`before` null: there is none yet). */
+interface EcosystemChange {
+  before: string | null
+  after: string
+}
+
+function planEcosystem(root: string, plan: Pick<Plan, 'oldId' | 'newId' | 'toLabel'>): EcosystemChange {
+  const path = join(root, 'ecosystem.config.js')
+  if (existsSync(path)) {
+    const before = readFileSync(path, 'utf8')
+    return { before, after: renameEcosystemApps(before, plan.oldId, plan.newId) }
+  }
+  // Nothing to preserve: the file setup would write.
+  const examplePath = join(root, 'ecosystem.config.example.js')
+  if (!existsSync(examplePath))
+    throw new Error(`${root} has neither ecosystem.config.js nor ecosystem.config.example.js — pm2 cannot start it`)
+  const example = readFileSync(examplePath, 'utf8')
+  return { before: null, after: generateEcosystem(example, instanceNames(plan.toLabel)) }
+}
+
+// ─── Plan output ────────────────────────────────────────────────────────────
+
 function stepLines(plan: Plan, deps: RenameDeps, env: Record<string, string>): Array<[string, string[]]> {
   const { oldId, newId, root } = plan
   const oldCtx = deps.supervisorContext(oldId, root)
@@ -491,10 +666,13 @@ function stepLines(plan: Plan, deps: RenameDeps, env: Record<string, string>): A
   const ficusHome = join(deps.home, FICUS_HOME_DIR_NAME)
   const stop =
     oldId.supervisor === 'launchd'
-      ? (['api', 'worker'] as const).map((c) => `launchctl bootout gui/${oldCtx.uid}/${launchdNames(oldCtx, c).label}`)
+      ? (['api', 'worker'] as const).flatMap((c) => [
+          `launchctl bootout gui/${oldCtx.uid}/${launchdNames(oldCtx, c).label}`,
+          `launchctl disable gui/${oldCtx.uid}/${launchdNames(oldCtx, c).label}`,
+        ])
       : oldId.supervisor === 'systemd-user'
         ? (['api', 'worker'] as const).map((c) => `systemctl --user disable --now ${systemdUserNames(oldCtx, c).unit}`)
-        : [`pm2 delete ${oldId.api} ${oldId.worker}`]
+        : [`pm2 delete ${oldId.api} ${oldId.worker}`, 'pm2 save --force']
   const newCtx = deps.supervisorContext(newId, root)
   const start =
     newId.supervisor === 'launchd'
@@ -511,9 +689,13 @@ function stepLines(plan: Plan, deps: RenameDeps, env: Record<string, string>): A
             ),
             ...(['worker', 'api'] as const).map((c) => `remove ${systemdUserNames(oldCtx, c).path}`),
           ]
-        : [`pm2 start ecosystem.config.js --only ${newId.api},${newId.worker}`, 'pm2 save']
+        : [
+            `pm2 start ecosystem.config.js --only ${newId.api},${newId.worker} (environment from ${join(root, '.env')} as rewritten)`,
+            'pm2 save',
+          ]
   const homeDir = plan.moveHome ? `~/${FICUS_HOME_DIR_NAME}` : env.HOME_DIR?.trim() || `~/${FICUS_HOME_DIR_NAME}`
   const identity = identityEnvValues(plan, env, deps)
+  const ecosystem = plan.ecosystem
   return [
     [`Registry entry "${plan.label}" (${plan.supervisor}, port ${plan.port}) at ${root}`, []],
     [`Stop "${plan.label}" under ${plan.supervisor} (${oldId.api}, ${oldId.worker})`, stop],
@@ -539,9 +721,14 @@ function stepLines(plan: Plan, deps: RenameDeps, env: Record<string, string>): A
     ],
     [
       'ecosystem.config.js',
-      plan.supervisor === 'pm2'
-        ? [`regenerate for ${newId.api} / ${newId.worker} from ecosystem.config.example.js (the old one is kept)`]
-        : ['native supervisor — no ecosystem file'],
+      !ecosystem
+        ? ['native supervisor — no ecosystem file']
+        : ecosystem.before === null
+          ? [`create it from ecosystem.config.example.js for ${newId.api} / ${newId.worker}`]
+          : [
+              'rename the apps in place — every other line is kept; the old file is kept beside the journal:',
+              ...lineDiff(ecosystem.before, ecosystem.after),
+            ],
     ],
     [
       'Registry',
@@ -553,9 +740,9 @@ function stepLines(plan: Plan, deps: RenameDeps, env: Record<string, string>): A
     ],
     [`Start "${plan.toLabel}" under ${plan.supervisor} (${newId.api}, ${newId.worker})`, start],
     [
-      'Health check',
+      'Readiness check',
       [
-        `http://localhost:${plan.port}/health answers 200 or 401`,
+        `http://localhost:${plan.port}/ready answers 200 (database reached, migrations run) within ${((READY_ATTEMPTS - 1) * READY_INTERVAL_MS) / 1000}s`,
         ...(plan.postgres.action === 'rename' ? [`give ${plan.postgres.to.container} the old restart policy`] : []),
       ],
     ],
@@ -582,6 +769,50 @@ function report(plan: Plan, status: RenameReport['status'], extra: Partial<Renam
   }
 }
 
+// ─── Lock ───────────────────────────────────────────────────────────────────
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * One rename-identity at a time: `<journal>.lock` holds the running invocation's pid, and a lock
+ * whose process is gone is taken over. It lives beside the journal, so it moves with the CLI home.
+ */
+async function withLock<T>(deps: RenameDeps, fn: () => Promise<T>): Promise<T> {
+  const path = `${deps.journalPath()}.lock`
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  for (let attempt = 0; ; attempt++) {
+    try {
+      writeFileSync(path, String(process.pid), { flag: 'wx', mode: 0o600 })
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt > 0) throw error
+      const pid = Number(readFileSync(path, 'utf8').trim())
+      if (Number.isInteger(pid) && pid > 0 && processAlive(pid))
+        throw new Error(`another \`ficus server rename-identity\` (pid ${pid}) is running — wait for it to finish`)
+      rmSync(path, { force: true })
+    }
+  }
+  try {
+    return await fn()
+  } finally {
+    rmSync(`${deps.journalPath()}.lock`, { force: true })
+  }
+}
+
+// ─── The rename ─────────────────────────────────────────────────────────────
+
+function envKeys(root: string): Set<string> {
+  const path = join(root, '.env')
+  return new Set(Object.keys(existsSync(path) ? parseEnvFile(readFileSync(path, 'utf8')) : {}))
+}
+
 /**
  * `ficus server rename-identity`: moves one registered local instance from its pre-rename names
  * to the ficus names — supervisor labels and process names, the CLI home (when the instance uses
@@ -589,13 +820,24 @@ function report(plan: Plan, status: RenameReport['status'], extra: Partial<Renam
  * registry (`identity: 2`; the legacy default label becomes `ficus`). Every step is journaled in
  * `<cliHome>/rename-identity.journal` before it acts; a failure undoes the completed steps in
  * reverse and restarts the old identity, and a run cut short is resolved by the next invocation
- * before anything else. `undo` replays a completed run's journal in reverse.
+ * before anything else. `undo` replays a completed run's journal in reverse. Every start reads the
+ * checkout's `.env` as it is on disk at that moment (see `childEnv`).
  */
 export async function renameIdentity(
   opts: { root: string; dryRun?: boolean; undo?: boolean },
-  deps: RenameDeps
+  renameDeps: RenameDeps
 ): Promise<RenameReport> {
   const root = canonicalRoot(opts.root)
+  const deps: RunDeps = { ...renameDeps, startKeys: envKeys(root) }
+  const run = () => renameOrResolve(root, opts, deps)
+  return opts.dryRun ? run() : withLock(deps, run)
+}
+
+async function renameOrResolve(
+  root: string,
+  opts: { dryRun?: boolean; undo?: boolean },
+  deps: RunDeps
+): Promise<RenameReport> {
   const active = readJournal(deps.journalPath())
   if (active) return resolveInterrupted(root, active, opts, deps)
   if (opts.undo) return undoCompleted(root, opts, deps)
@@ -644,6 +886,7 @@ export async function renameIdentity(
         `${script} is missing — update this checkout (ficus server update --root ${root}), then run again`
       )
   }
+  const ecosystem = record.supervisor === 'pm2' ? planEcosystem(root, base) : undefined
   const ctx = runContext(deps, root, {
     root,
     supervisor: record.supervisor,
@@ -654,11 +897,12 @@ export async function renameIdentity(
   })
   const move = localPostgresMove({ preRelabelLabel: label })
   const postgres = await ctx.pg.plan(move, root, { runner: deps.runner })
-  const plan: Plan = { ...base, moveHome, postgres }
+  const plan: Plan = { ...base, moveHome, postgres, ecosystem }
 
   if (opts.dryRun) {
     deps.log(`Dry run — nothing will be changed. rename-identity would move "${label}" to "${toLabel}":`)
     printSteps(plan, deps, env)
+    if (moveHome) await previewRebase(root, legacyHome, ficusHome, deps)
     return report(plan, 'dry-run')
   }
 
@@ -713,7 +957,12 @@ export async function renameIdentity(
           ? undefined
           : `~/${FICUS_HOME_DIR_NAME}`
       const edits = homeDir ? planEnvEdits(text, { HOME_DIR: homeDir }) : []
-      journal({ op: 'env', edits, backup })
+      journal({
+        op: 'env',
+        edits,
+        backup,
+        ...(text.length > 0 && !text.endsWith('\n') ? { noFinalNewline: true } : {}),
+      })
       if (edits.length > 0) writeFileAtomic(ctx.envPath, applyEnvEdits(text, edits))
     }
 
@@ -741,19 +990,18 @@ export async function renameIdentity(
       }
     }
 
-    if (record.supervisor === 'pm2') {
+    if (ecosystem) {
       step(7, 'ecosystem.config.js')
-      const example = readFileSync(join(root, 'ecosystem.config.example.js'), 'utf8')
-      const generated = generateEcosystem(example, instanceNames(toLabel))
-      const ecosystem = join(root, 'ecosystem.config.js')
+      const path = join(root, 'ecosystem.config.js')
+      const change = planEcosystem(root, base)
       let backup: string | null = null
-      if (existsSync(ecosystem)) {
+      if (change.before !== null) {
         // Beside the journal, not in the checkout: a new file there would dirty the tree.
         backup = join(dirname(deps.journalPath()), `ecosystem.config.js.pre-ficus-rename-${utcStamp(deps.now())}`)
-        copyFileSync(ecosystem, backup)
+        copyFileSync(path, backup)
       }
       journal({ op: 'ecosystem', backup })
-      writeFileAtomic(ecosystem, generated)
+      writeFileAtomic(path, change.after)
     }
 
     step(8, 'registry')
@@ -768,13 +1016,9 @@ export async function renameIdentity(
     await installSupervisor(ctx.newId, root, ctx.supervisors)
     await removeSupervisorDefinitions(ctx.oldId, root, ctx.supervisors)
 
-    step(10, 'health check')
-    await waitHealthy(record.port, deps)
+    step(10, 'readiness check')
+    await waitReady(record.port, deps)
     journal({ op: 'healthy' })
-    if (postgres.action === 'rename') {
-      const policy = await ctx.pg.finalize(move, { runner: deps.runner })
-      journal({ op: 'postgres-finalized', policy })
-    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     const entries = readJournal(deps.journalPath()) ?? []
@@ -787,8 +1031,20 @@ export async function renameIdentity(
     }
     rmSync(deps.journalPath(), { force: true })
     throw new Error(
-      `rename-identity failed: ${reason}. Every completed step was undone and "${label}" restarted under its old names${keptNote(undone.keptVolume)}`
+      `rename-identity failed: ${reason}. Every completed step was undone and "${label}" restarted under its old names${notReadyNote(undone.notReady)}${keptNote(undone.keptVolume)}`
     )
+  }
+  if (postgres.action === 'rename') {
+    try {
+      const policy = await ctx.pg.finalize(move, { runner: deps.runner })
+      journal({ op: 'postgres-finalized', policy })
+    } catch (error) {
+      // The instance is renamed and ready; only the restart policy is missing. Keep the journal:
+      // the next invocation finishes it (resolveInterrupted), no undo.
+      throw new Error(
+        `"${toLabel}" is renamed and ready, but giving ${postgres.to.container} the old restart policy failed (${error instanceof Error ? error.message : String(error)}). The journal is kept: run \`ficus server rename-identity --root ${root}\` again to finish`
+      )
+    }
   }
   complete(deps, toLabel)
   deps.log(
@@ -797,10 +1053,29 @@ export async function renameIdentity(
   return report(plan, 'renamed')
 }
 
+/** The dry run's view of step 3: rebase-home's own read-only count, and whether it would refuse. */
+async function previewRebase(root: string, from: string, to: string, deps: RunDeps): Promise<void> {
+  try {
+    const lines = await rebaseHome(root, from, to, deps, { dryRun: true })
+    deps.log('rebase-home --dry-run (step 3):')
+    for (const line of lines) deps.log(`    ${line}`)
+    if (lines.some((line) => /^REBASE_HOME_TARGET \S+=[1-9]\d*$/.test(line)))
+      deps.log(
+        `  warning: the database already holds paths under ${to} (REBASE_HOME_TARGET above): step 3 would refuse and the run would be undone — inspect those rows first`
+      )
+  } catch (error) {
+    deps.log(`  warning: could not preview step 3 (${error instanceof Error ? error.message : String(error)})`)
+  }
+}
+
 function keptNote(volume: string | undefined): string {
   return volume
     ? `. The volume ${volume} is kept: it holds whatever the app wrote since the rename (the restored database is the snapshot from before it)`
     : ''
+}
+
+function notReadyNote(reason: string | undefined): string {
+  return reason ? `, but it is not ready: ${reason}` : ''
 }
 
 /** A finished run: its journal moves aside for `--undo`, and `ficus server start` is free again. */
@@ -810,21 +1085,28 @@ function complete(deps: RenameDeps, toLabel: string): void {
 
 /**
  * Undoes a journal's entries in reverse, skipping those already undone, and records each as it
- * goes (so a failed undo resumes where it stopped). Never throws: the first failure is returned.
+ * goes (so a failed undo resumes where it stopped). It first stops both identities the journal
+ * may have running — the new one, and the old one (a reboot mid-run can have brought it back) —
+ * so nothing is reversed under a live app. When it restarts the old identity it waits for
+ * `/ready`; a failure there is reported as `notReady` (the undo itself is complete). Never throws:
+ * the first failure is returned as `error`.
  */
 async function undoEntries(
   root: string,
   entries: JournalEntry[],
-  deps: RenameDeps
-): Promise<{ keptVolume?: string; error?: string }> {
+  deps: RunDeps
+): Promise<{ keptVolume?: string; error?: string; notReady?: string }> {
   const begin = entries[0] as Begin
   const ctx = runContext(deps, root, begin)
   const done = new Set(entries.flatMap((e) => (e.op === 'undone' ? [e.index] : [])))
+  const pending = (op: JournalEntry['op']) => entries.some((e, i) => e.op === op && !done.has(i))
   // The Postgres undo keeps the new volume once the new identity may have written to it.
   const appStarted = entries.some((e) => e.op === 'new-identity')
   const rolledBack = entries.some((e) => e.op === 'postgres-rolled-back')
   let keptVolume: string | undefined
   try {
+    if (pending('new-identity')) await stopSupervisor(ctx.newId, ctx.supervisors)
+    if (pending('stopped')) await stopSupervisor(ctx.oldId, ctx.supervisors)
     for (let index = entries.length - 1; index >= 0; index--) {
       const entry = entries[index]
       if (done.has(index)) continue
@@ -843,7 +1125,7 @@ async function undoEntries(
         }
         case 'env':
           if (existsSync(ctx.envPath) && entry.edits.length > 0) {
-            const reverted = revertEnvEdits(readFileSync(ctx.envPath, 'utf8'), entry.edits)
+            const reverted = revertEnvEdits(readFileSync(ctx.envPath, 'utf8'), entry.edits, entry.noFinalNewline)
             writeFileAtomic(ctx.envPath, reverted.text)
             for (const key of reverted.kept) deps.log(`  warning: ${key} in .env changed since the rename — left as is`)
           }
@@ -874,7 +1156,16 @@ async function undoEntries(
     return { keptVolume, error: error instanceof Error ? error.message : String(error) }
   }
   if (keptVolume) deps.log(`  warning${keptNote(keptVolume)}`)
-  return { keptVolume }
+  let notReady: string | undefined
+  if (entries.some((e, i) => e.op === 'stopped' && !done.has(i))) {
+    try {
+      await waitReady(begin.port, deps)
+    } catch (error) {
+      notReady = error instanceof Error ? error.message : String(error)
+      deps.log(`  warning: "${begin.from}" was restarted but is not ready: ${notReady}`)
+    }
+  }
+  return { keptVolume, notReady }
 }
 
 /** Step 8 in reverse: the entry goes back to its old label and loses `identity: 2`. */
@@ -889,12 +1180,19 @@ function undoRegistry(statePath: string, root: string, from: string, to: string)
   writeRegistry(next, statePath)
 }
 
+/** The Postgres move a journal records, unless it rolled itself back. */
+function journalledMove(entries: JournalEntry[]) {
+  const entry = entries.find((e): e is Extract<JournalEntry, { op: 'postgres' }> => e.op === 'postgres')
+  if (!entry || entries.some((e) => e.op === 'postgres-rolled-back')) return undefined
+  return localPostgresMove({ preRelabelLabel: entry.preRelabelLabel })
+}
+
 /** A journal left by a run that did not finish, found at the start of the next invocation. */
 async function resolveInterrupted(
   root: string,
   entries: JournalEntry[],
   opts: { dryRun?: boolean; undo?: boolean },
-  deps: RenameDeps
+  deps: RunDeps
 ): Promise<RenameReport> {
   const begin = entries[0] as Begin
   if (canonicalRoot(begin.root) !== root) {
@@ -916,7 +1214,7 @@ async function resolveInterrupted(
   }
   const moved = { postgres: postgresMoved(entries) }
   const undoRequested = opts.undo || entries.some((e) => e.op === 'undo')
-  // Past the health check only the Postgres restart policy and the bookkeeping were left: finish.
+  // Past the readiness check only the Postgres restart policy and the bookkeeping were left: finish.
   const finish = !undoRequested && entries.some((e) => e.op === 'healthy')
   if (opts.dryRun) {
     deps.log(
@@ -925,15 +1223,25 @@ async function resolveInterrupted(
     return report(plan, 'dry-run', moved)
   }
   if (finish) {
-    const postgres = entries.find((e) => e.op === 'postgres')
-    if (postgres && !entries.some((e) => e.op === 'postgres-finalized' || e.op === 'postgres-rolled-back')) {
-      const policy = await ctx.pg.finalize(localPostgresMove({ preRelabelLabel: postgres.preRelabelLabel }), {
-        runner: deps.runner,
-      })
-      appendJournal(deps.journalPath(), { op: 'postgres-finalized', policy })
+    const move = journalledMove(entries)
+    if (move) {
+      if (!entries.some((e) => e.op === 'postgres-finalized')) {
+        const policy = await ctx.pg.finalize(move, { runner: deps.runner })
+        appendJournal(deps.journalPath(), { op: 'postgres-finalized', policy })
+      }
+      // A reboot since the check left the moved container stopped (it was `--restart no` until now).
+      const started = await deps.runner(['docker', 'start', move.ficus.container])
+      if (started.code !== 0) deps.log(`  warning: docker start ${move.ficus.container} failed (exit ${started.code})`)
     }
     complete(deps, begin.to)
-    deps.log(`Finished the interrupted rename of "${begin.from}" → "${begin.to}" (its health check had passed).`)
+    deps.log(`Finished the interrupted rename of "${begin.from}" → "${begin.to}" (its readiness check had passed).`)
+    try {
+      await waitReady(begin.port, deps)
+    } catch (error) {
+      throw new Error(
+        `finished the interrupted rename of "${begin.from}" → "${begin.to}", but ${error instanceof Error ? error.message : String(error)} — run \`ficus server restart --root ${root}\``
+      )
+    }
     return report(plan, 'renamed', { ...moved, resumed: true })
   }
   deps.log(`A rename-identity run for ${root} did not finish; undoing it first (journal ${deps.journalPath()})`)
@@ -944,20 +1252,51 @@ async function resolveInterrupted(
     )
   }
   rmSync(deps.journalPath(), { force: true })
-  if (undoRequested) return report(plan, 'undone', { ...moved, keptVolume: undone.keptVolume })
+  if (undoRequested && !undone.notReady) return report(plan, 'undone', { ...moved, keptVolume: undone.keptVolume })
   throw new Error(
-    `an interrupted rename-identity run for ${root} was found and undone: "${begin.from}" runs under its old names again${keptNote(undone.keptVolume)}. Nothing is renamed — run the command again to rename it`
+    undoRequested
+      ? `the undo finished: "${begin.from}" runs under its old names again${notReadyNote(undone.notReady)}${keptNote(undone.keptVolume)}`
+      : `an interrupted rename-identity run for ${root} was found and undone: "${begin.from}" runs under its old names again${notReadyNote(undone.notReady)}${keptNote(undone.keptVolume)}. Nothing is renamed — run the command again to rename it`
   )
 }
 
 /** 'rename' when the journal moved the local Postgres (and the move was not rolled back). */
 function postgresMoved(entries: JournalEntry[]): LocalPostgresPlan['action'] | undefined {
-  const moved = entries.some((e) => e.op === 'postgres') && !entries.some((e) => e.op === 'postgres-rolled-back')
-  return moved ? 'rename' : undefined
+  return journalledMove(entries) ? 'rename' : undefined
+}
+
+/**
+ * What `--undo` needs that it cannot create, checked read-only before anything changes: the old
+ * Postgres container and its volume, the rebase program, the home the move left.
+ */
+async function assertUndoable(root: string, entries: JournalEntry[], deps: RunDeps): Promise<void> {
+  const problems: string[] = []
+  const move = journalledMove(entries)
+  if (move) {
+    const inspected = await deps.runner(['docker', 'inspect', '-f', '{{.Name}}', move.legacy.container])
+    if (inspected.code !== 0) problems.push(`the old Postgres container ${move.legacy.container} is gone`)
+    else {
+      const volume = await containerVolumeName(deps.runner, move.legacy.container, move.legacy.volume)
+      if ((await deps.runner(['docker', 'volume', 'inspect', volume])).code !== 0)
+        problems.push(`the old Postgres volume ${volume} is gone`)
+    }
+  }
+  const rebase = entries.find((e): e is Extract<JournalEntry, { op: 'home-rebase' }> => e.op === 'home-rebase')
+  if (rebase && !existsSync(join(root, 'apps/core/dist/rebase-home.js')))
+    problems.push(`${join(root, 'apps/core/dist/rebase-home.js')} is missing`)
+  const homeMove = entries.find((e): e is Extract<JournalEntry, { op: 'home-move' }> => e.op === 'home-move')
+  if (homeMove) {
+    const legacy = join(homeMove.home, LEGACY_HOME_DIR_NAME)
+    const link = lstatOrNull(legacy)
+    const ficus = lstatOrNull(join(homeMove.home, FICUS_HOME_DIR_NAME))
+    if (!(link?.isSymbolicLink() && readlinkSync(legacy) === FICUS_HOME_DIR_NAME && isRealDir(ficus)))
+      problems.push(`${legacy} is no longer the link to ${FICUS_HOME_DIR_NAME} the move left`)
+  }
+  if (problems.length > 0) throw new Error(`--undo cannot run: ${problems.join('; ')}. Nothing was changed`)
 }
 
 /** `--undo` after a completed run: its kept journal, replayed in reverse. */
-async function undoCompleted(root: string, opts: { dryRun?: boolean }, deps: RenameDeps): Promise<RenameReport> {
+async function undoCompleted(root: string, opts: { dryRun?: boolean }, deps: RunDeps): Promise<RenameReport> {
   const registry = readRegistryStrict(deps.statePath)
   const found = Object.entries(registry.instances).find(([, record]) => canonicalRoot(record.root) === root)
   if (!found) throw new Error(`${root} is not a registered instance — see \`ficus server list\``)
@@ -988,6 +1327,7 @@ async function undoCompleted(root: string, opts: { dryRun?: boolean }, deps: Ren
       ['new-identity', 'registry', 'ecosystem', 'env', 'postgres', 'home-rebase', 'home-move', 'stopped'].includes(op)
     )
     .reverse()
+  await assertUndoable(root, entries, deps)
   if (opts.dryRun) {
     deps.log(`Dry run — --undo would put "${begin.to}" back to "${begin.from}", in this order: ${actions.join(', ')}`)
     return report(plan, 'dry-run', moved)
@@ -1002,6 +1342,10 @@ async function undoCompleted(root: string, opts: { dryRun?: boolean }, deps: Ren
     )
   }
   rmSync(deps.journalPath(), { force: true })
+  if (undone.notReady)
+    throw new Error(
+      `the undo finished: "${begin.from}" runs under its old names again${notReadyNote(undone.notReady)}${keptNote(undone.keptVolume)}`
+    )
   deps.log(`"${begin.from}" runs under its old names again${keptNote(undone.keptVolume)}.`)
   return report(plan, 'undone', { ...moved, keptVolume: undone.keptVolume })
 }

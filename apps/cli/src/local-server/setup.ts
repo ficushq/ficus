@@ -209,8 +209,17 @@ export async function runSetup(
     )
   }
   if (!rootOwner && persistedLabel(root) === LEGACY_LOCAL_INSTANCE) {
+    // rename-identity moves a registered instance only, and the CLI that installed this one is
+    // gone once this one is installed: say how to register it by hand.
+    const entry = JSON.stringify({
+      root,
+      port: Number(parseEnvFile(readFileSync(join(root, '.env'), 'utf8')).PORT) || options.port,
+      supervisor: options.supervisor,
+      createdAt: deps.now(),
+      updatedAt: deps.now(),
+    })
     throw new SetupFailure(
-      `this checkout's .env names the pre-rename default instance "${LEGACY_LOCAL_INSTANCE}" (FICUS_INSTANCE), whose container and data keep their old names, and it is not registered, so \`ficus server rename-identity\` cannot move it: register it again with the CLI it was installed with, then run \`ficus server rename-identity --root ${root}\` — or set up a fresh checkout`
+      `this checkout's .env names the pre-rename default instance "${LEGACY_LOCAL_INSTANCE}" (FICUS_INSTANCE), whose processes, container and data keep their old names, and it is not registered, so setup would bring it up a second time under the new names. Register it as it is — add "${LEGACY_LOCAL_INSTANCE}": ${entry} to "instances" in ${deps.statePath} (use the supervisor it actually runs under) — then run \`ficus server rename-identity --root ${root}\`, or set up a fresh checkout`
     )
   }
   if (rootOwner && (rootOwner[0] !== options.instance || rootOwner[1].supervisor !== options.supervisor)) {

@@ -16,6 +16,25 @@ describe('defaultRunner', () => {
     expect(result.stderr).toBe('')
   })
 
+  it('lays options.env over the process env and removes a key mapped to undefined', async () => {
+    process.env.FICUS_RUNNER_TEST_STALE = 'stale'
+    process.env.FICUS_RUNNER_TEST_KEPT = 'kept'
+    try {
+      const result = await defaultRunner(
+        [
+          'sh',
+          '-c',
+          'printf "%s|%s|%s" "${FICUS_RUNNER_TEST_STALE-unset}" "$FICUS_RUNNER_TEST_KEPT" "$FICUS_RUNNER_TEST_NEW"',
+        ],
+        { env: { FICUS_RUNNER_TEST_STALE: undefined, FICUS_RUNNER_TEST_NEW: 'new' } }
+      )
+      expect(result.stdout).toBe('unset|kept|new')
+    } finally {
+      delete process.env.FICUS_RUNNER_TEST_STALE
+      delete process.env.FICUS_RUNNER_TEST_KEPT
+    }
+  })
+
   it('resolves with non-zero exit code', async () => {
     const result = await defaultRunner(['sh', '-c', 'exit 3'])
     expect(result.code).toBe(3)

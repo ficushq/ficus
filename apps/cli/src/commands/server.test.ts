@@ -17,7 +17,7 @@ import { isJsonMode, output, outputError, setOutputOptions } from '../output'
 import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { recordingRunner } from '../local-server/runner'
 import { readRegistry, upsertInstance } from '../local-server/state'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+import { LEGACY_HOME_DIR_NAME, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
 import { cliHome } from '../local-server/home-move'
 import { registerServerCommands, type ServerDeps } from './server'
 
@@ -815,12 +815,20 @@ describe('ficus server and the ficus identity', () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-rename-home-')))
     try {
       writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://app:pw@db.example.com:5432/app\n')
+      // The pm2 process file the pre-rename setup wrote (step 7 renames its apps in place).
+      writeFileSync(
+        join(root, 'ecosystem.config.js'),
+        `module.exports = { apps: [{ name: '${LEGACY_UNITS.api}' }, { name: '${LEGACY_UNITS.worker}' }] }\n`
+      )
       const before = readFileSync(statePath, 'utf8')
       const { run, calls } = make({}, { env: { HOME: home } })
       await run(['server', 'rename-identity', '--root', root, '--dry-run'])
       expect(outputError).not.toHaveBeenCalled()
       expect(output).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'dry-run', from: expect.objectContaining({ label: 'tau' }) }),
+        expect.objectContaining({
+          status: 'dry-run',
+          from: expect.objectContaining({ label: LEGACY_LOCAL_INSTANCE }),
+        }),
         expect.stringContaining('ficus')
       )
       expect(readFileSync(statePath, 'utf8')).toBe(before)

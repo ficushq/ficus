@@ -8,15 +8,18 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'fs'
 import { tmpdir } from 'os'
 import { basename, join } from 'path'
 import { LEGACY_HOME_DIR_NAME, LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
+import { parseEnvFile } from './env-file'
 import { cliHome } from './home-move'
 import { launchdDefinition, launchdNames as launchdNamesOf } from './launchd'
-import type { Runner, RunResult } from './runner'
+import type { RunOptions, Runner, RunResult } from './runner'
 import type { LocalServerRegistry } from './state'
 import type { SupervisorContext } from './supervisor'
 import {
@@ -37,9 +40,9 @@ import type { LocalSupervisor } from './types'
 const L = LEGACY_LOCAL_INSTANCE
 const EXAMPLE = readFileSync(join(__dirname, '../../../../ecosystem.config.example.js'), 'utf8')
 /** The ecosystem file a pre-rename setup generated: the example with the legacy app names. */
-const LEGACY_ECOSYSTEM = EXAMPLE.replaceAll('ficus-api', LEGACY_UNITS.api).replaceAll(
-  'ficus-worker',
-  LEGACY_UNITS.worker
+const LEGACY_ECOSYSTEM = EXAMPLE.replaceAll("'ficus-api'", `'${LEGACY_UNITS.api}'`).replaceAll(
+  "'ficus-worker'",
+  `'${LEGACY_UNITS.worker}'`
 )
 const UID = 501
 const BUN = '/usr/bin/bun'
@@ -59,6 +62,14 @@ interface World {
   envText: string
   registryText: string
   calls: string[][]
+  /** The options of each call, parallel to `calls`. */
+  options: RunOptions[]
+  /** launchd labels `launchctl disable` has turned off (the override survives a reboot). */
+  disabled: Set<string>
+  /** Answers GET /ready (default 200). */
+  ready: { status: number }
+  /** What the fake rebase-home prints for a --dry-run. */
+  rebasePreview: { stdout: string }
   /** Commands the fake answers with a failure while `fail(joined)` says so. */
   fail: { match?: (joined: string) => boolean }
   pm2: Set<string>
@@ -80,6 +91,10 @@ function world(
     envExtra?: string
     postgres?: Partial<PostgresOps>
     fetch?: typeof fetch
+    /** The CLI process's environment (what it auto-loaded from a .env at launch). */
+    env?: Record<string, string | undefined>
+    databaseUrl?: string
+    ecosystem?: string
   } = {}
 ): World {
   const label = opts.label ?? L
@@ -98,10 +113,10 @@ function world(
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
   writeFileSync(join(root, 'ecosystem.config.example.js'), EXAMPLE)
   const legacyNames = label === L ? { ...LEGACY_UNITS } : { api: `${L}-${label}-api`, worker: `${L}-${label}-worker` }
-  if (supervisor === 'pm2') writeFileSync(join(root, 'ecosystem.config.js'), LEGACY_ECOSYSTEM)
+  if (supervisor === 'pm2') writeFileSync(join(root, 'ecosystem.config.js'), opts.ecosystem ?? LEGACY_ECOSYSTEM)
   const envText =
     `PORT=3900\n` +
-    `DATABASE_URL=postgres://app:secret@db.example.com:5432/app\n` +
+    `DATABASE_URL=${opts.databaseUrl ?? 'postgres://app:secret@db.example.com:5432/app'}\n` +
     `FICUS_INSTANCE=${label}\n` +
     (supervisor === 'pm2'
       ? `FICUS_SYSTEM_LOG_PROVIDER=pm2\nFICUS_PM2_API_NAME=${legacyNames.api}\nFICUS_PM2_WORKER_NAME=${legacyNames.worker}\n`
@@ -118,14 +133,19 @@ function world(
   writeFileSync(statePath, registryText)
 
   const calls: string[][] = []
+  const options: RunOptions[] = []
+  const disabled = new Set<string>()
+  const ready = { status: 200 }
+  const rebasePreview = { stdout: 'REBASE_HOME sessions.cwd=3\nREBASE_HOME_TARGET sessions.cwd=0\n' }
   const fail: World['fail'] = {}
   const pm2 = new Set<string>(supervisor === 'pm2' ? [legacyNames.api, legacyNames.worker] : [])
   const loaded = new Set<string>()
   const printed: string[] = []
   const contexts: SupervisorContext[] = []
   const ok = (stdout = ''): RunResult => ({ code: 0, stdout, stderr: '' })
-  const runner: Runner = async (command) => {
+  const runner: Runner = async (command, runOptions = {}) => {
     calls.push(command)
+    options.push(runOptions)
     const joined = command.join(' ')
     if (fail.match?.(joined)) return { code: 1, stdout: '', stderr: 'injected failure' }
     if (command[0] === 'bunx' && command[1] === 'pm2') {
@@ -167,12 +187,22 @@ function world(
         return ok()
       }
       if (verb === 'bootstrap') {
-        loaded.add(basename(plist).replace(/\.plist$/, ''))
+        const label = basename(plist).replace(/\.plist$/, '')
+        // What launchd answers for a label `launchctl disable` turned off.
+        if (disabled.has(label)) return { code: 5, stdout: '', stderr: 'Bootstrap failed: 5: Input/output error' }
+        loaded.add(label)
+        return ok()
+      }
+      if (verb === 'disable' || verb === 'enable') {
+        const label = target.split('/')[2]
+        if (verb === 'disable') disabled.add(label)
+        else disabled.delete(label)
         return ok()
       }
       return ok()
     }
-    if (command[0] === 'bun' && command[1]?.endsWith('rebase-home.js')) return ok('REBASE_HOME sessions.cwd=3\n')
+    if (command[0] === 'bun' && command[1]?.endsWith('rebase-home.js'))
+      return ok(command.includes('--dry-run') ? rebasePreview.stdout : 'REBASE_HOME sessions.cwd=3\n')
     return ok()
   }
   // The loaded-job provenance the fake launchctl prints must match what the adapter derives.
@@ -185,7 +215,10 @@ function world(
     statePath,
     journalPath: () => join(cliHome({ homedir: home }), RENAME_JOURNAL),
     home,
-    fetch: opts.fetch ?? (async () => new Response('ok', { status: 200 })),
+    fetch:
+      opts.fetch ??
+      (async (url) => new Response('ok', { status: String(url).endsWith('/ready') ? ready.status : 200 })),
+    env: opts.env ?? { PATH: '/usr/bin' },
     sleep: async () => {},
     now: () => new Date('2026-09-30T12:00:00Z'),
     log: (line) => printed.push(line),
@@ -218,6 +251,10 @@ function world(
     envText,
     registryText,
     calls,
+    options,
+    disabled,
+    ready,
+    rebasePreview,
     fail,
     pm2,
     loaded,
@@ -267,6 +304,8 @@ describe('renameIdentity (pm2)', () => {
     const pm2Calls = joined(w.calls).filter((c) => c.startsWith('bunx pm2') && !c.endsWith('jlist'))
     expect(pm2Calls).toEqual([
       `bunx pm2 delete ${LEGACY_UNITS.api} ${LEGACY_UNITS.worker}`,
+      // Saved right away: a reboot mid-run must not resurrect the old apps from the dump.
+      'bunx pm2 save --force',
       'bunx pm2 start ecosystem.config.js --only ficus-api,ficus-worker --update-env',
       'bunx pm2 save',
     ])
@@ -333,10 +372,12 @@ describe('renameIdentity (pm2)', () => {
     expect(existsSync(join(w.home, '.ficus'))).toBe(false)
     expect(readdirSync(w.root).some((f) => f.includes('pre-ficus-rename'))).toBe(false)
     expect(existsSync(w.journal())).toBe(false)
-    // Only reads reached the supervisor; the rebase program never ran.
-    for (const call of joined(w.calls)) expect(call).toMatch(/^bunx pm2 jlist$/)
+    // Nothing reached the supervisor; the rebase program only ran its read-only --dry-run.
+    for (const call of joined(w.calls)) expect(call).toMatch(/^bun \S+rebase-home\.js .* --dry-run$/)
     const text = w.printed.join('\n')
     expect(text).toContain(`pm2 delete ${LEGACY_UNITS.api} ${LEGACY_UNITS.worker}`)
+    expect(text).toContain('REBASE_HOME_TARGET sessions.cwd=0')
+    expect(text).not.toContain('warning')
     expect(text).toContain('ficus-api')
     expect(text).toContain('Postgres: external')
     expect(text).toContain('Dry run')
@@ -370,7 +411,7 @@ describe('renameIdentity (pm2)', () => {
     const pm2Calls = joined(w.calls).filter((c) => c.startsWith('bunx pm2') && !c.endsWith('jlist'))
     expect(pm2Calls).toEqual([
       'bunx pm2 delete ficus-api ficus-worker',
-      'bunx pm2 save',
+      'bunx pm2 save --force',
       `bunx pm2 start ecosystem.config.js --only ${LEGACY_UNITS.api},${LEGACY_UNITS.worker} --update-env`,
       'bunx pm2 save',
     ])
@@ -380,9 +421,9 @@ describe('renameIdentity (pm2)', () => {
     expect(existsSync(join(w.home, LEGACY_HOME_DIR_NAME, 'rename-identity.ficus.journal'))).toBe(false)
   })
 
-  it('a failed health check undoes everything and restarts the old apps', async () => {
+  it('a failed readiness check undoes everything and restarts the old apps', async () => {
     const w = world('pm2', { fetch: async () => new Response('down', { status: 502 }) })
-    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/health/)
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/ready/)
     expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
     expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
     expect(readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')).toBe(LEGACY_ECOSYSTEM)
@@ -542,8 +583,12 @@ describe('renameIdentity and the local Postgres', () => {
   it('a failure before the new identity starts undoes the move with appStarted false', async () => {
     const pg = stubPostgres()
     const w = world('pm2', { postgres: pg.ops })
-    // Step 7 cannot regenerate the ecosystem file from an example that lacks the app lines.
-    writeFileSync(join(w.root, 'ecosystem.config.example.js'), 'module.exports = {}\n')
+    // Step 7 finds the ecosystem file edited since the plan: it declares the old api twice now.
+    const rename = pg.ops.rename!
+    pg.ops.rename = async (...args) => {
+      writeFileSync(join(w.root, 'ecosystem.config.js'), LEGACY_ECOSYSTEM + LEGACY_ECOSYSTEM)
+      return rename(...args)
+    }
     await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/undone/)
     const undo = pg.calls.find((c) => c.fn === 'undo')
     expect(undo?.args).toEqual({ appStarted: false, runId: (pg.calls[1].args as { runId: string }).runId })
@@ -606,5 +651,294 @@ describe('supervisor identity switch (systemd-user)', () => {
         .filter((f) => f.endsWith('.service'))
         .sort()
     ).toEqual(['ficus-api.service', 'ficus-worker.service'])
+  })
+})
+
+/** The env a recorded call ran with, for a call matching `prefix`. */
+function envOf(w: World, prefix: string, which: 'first' | 'last' = 'first'): Record<string, string | undefined> {
+  const indexes = w.calls.flatMap((c, i) => (c.join(' ').startsWith(prefix) ? [i] : []))
+  const index = which === 'first' ? indexes[0] : indexes.at(-1)
+  if (index === undefined) throw new Error(`no call ${prefix}`)
+  return w.options[index].env ?? {}
+}
+
+describe('every start reads the checkout .env as it is on disk', () => {
+  // The installer-managed database URL, before (legacy database) and after the move.
+  const managedUrl = (database: string) => `postgres://postgres:postgres@localhost:5432/${database}`
+
+  /** A Postgres move that rewrites DATABASE_URL the way renameLocalPostgres and its undo do. */
+  function movingPostgres(root: string): Partial<PostgresOps> {
+    const repoint = (from: string, to: string) => {
+      const path = join(root, '.env')
+      writeFileSync(path, readFileSync(path, 'utf8').replace(managedUrl(from), managedUrl(to)))
+    }
+    return {
+      plan: async (move) => ({
+        action: 'rename',
+        from: { container: move.legacy.container, volume: move.legacy.volume, running: true },
+        to: { container: move.ficus.container, volume: move.ficus.volume },
+        port: 5432,
+        image: 'sha256:img',
+        dataDir: '/var/lib/postgresql',
+        database: { from: move.legacy.database, to: move.ficus.database },
+      }),
+      rename: async () => {
+        repoint(L, 'ficus')
+        return 'renamed'
+      },
+      undo: async () => {
+        repoint('ficus', L)
+        return { keptVolume: 'ficus_postgres-data' }
+      },
+      finalize: async () => 'unless-stopped',
+    }
+  }
+
+  it('pm2 starts the new apps with the rewritten DATABASE_URL, HOME_DIR and label, not the CLI env', async () => {
+    const root = join(tmp, 'checkout')
+    // What a CLI launched from inside the checkout auto-loaded: the .env as it was before the run.
+    const stale = {
+      PATH: '/usr/bin',
+      DATABASE_URL: managedUrl(L),
+      FICUS_INSTANCE: L,
+      FICUS_PM2_API_NAME: LEGACY_UNITS.api,
+      FICUS_ONLY_IN_THE_OLD_FILE: 'x',
+    }
+    const w = world('pm2', { postgres: movingPostgres(root), databaseUrl: managedUrl(L), env: stale })
+    await renameIdentity({ root: w.root }, w.deps)
+    const env = envOf(w, 'bunx pm2 start')
+    expect(env.DATABASE_URL).toBe(managedUrl('ficus'))
+    expect(env.HOME_DIR).toBe('~/.ficus')
+    expect(env.FICUS_INSTANCE).toBe('ficus')
+    expect(env.FICUS_PM2_API_NAME).toBe('ficus-api')
+    // A key only the process env holds is removed (the runner drops undefined), not inherited.
+    expect('FICUS_ONLY_IN_THE_OLD_FILE' in env).toBe(true)
+    expect(env.FICUS_ONLY_IN_THE_OLD_FILE).toBeUndefined()
+    expect(env.PATH).toBeUndefined()
+  })
+
+  it('the undo restarts the old apps with the restored .env, not the CLI env of the undo', async () => {
+    const root = join(tmp, 'checkout')
+    const w = world('pm2', { postgres: movingPostgres(root), databaseUrl: managedUrl(L) })
+    await renameIdentity({ root: w.root }, w.deps)
+    // The --undo runs from inside the checkout too: its process env is the renamed .env.
+    w.deps.env = { PATH: '/usr/bin', ...parseEnvFile(readFileSync(join(w.root, '.env'), 'utf8')) }
+    w.calls.length = 0
+    w.options.length = 0
+    await renameIdentity({ root: w.root, undo: true }, w.deps)
+    const env = envOf(w, 'bunx pm2 start')
+    expect(env.DATABASE_URL).toBe(managedUrl(L))
+    expect(env.FICUS_INSTANCE).toBe(L)
+    expect(env.FICUS_PM2_API_NAME).toBe(LEGACY_UNITS.api)
+    // HOME_DIR was added by the run and is gone from the restored file: removed, not inherited.
+    expect('HOME_DIR' in env).toBe(true)
+    expect(env.HOME_DIR).toBeUndefined()
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+  })
+
+  it('the rebase program gets the file database URL too', async () => {
+    const w = world('pm2', { env: { DATABASE_URL: 'postgres://stale@localhost/stale' } })
+    await renameIdentity({ root: w.root }, w.deps)
+    expect(envOf(w, 'bun ').DATABASE_URL).toBe('postgres://app:secret@db.example.com:5432/app')
+  })
+
+  it('launchd plists and systemd units carry no .env value: the app reads the file itself', async () => {
+    const w = world('launchd')
+    installLegacyLaunchd(w)
+    await renameIdentity({ root: w.root }, w.deps)
+    const plist = readFileSync(join(w.home, 'Library/LaunchAgents/sh.ficus.ficus-api.plist'), 'utf8')
+    for (const key of ['DATABASE_URL', 'HOME_DIR', 'FICUS_']) expect(plist).not.toContain(key)
+    const unit = systemdUnit(w.deps.supervisorContext(supervisorIdentity('systemd-user', 'ficus', 2), w.root), 'api')
+    for (const key of ['DATABASE_URL', 'HOME_DIR', 'FICUS_']) expect(unit).not.toContain(key)
+  })
+})
+
+describe('ecosystem.config.js is renamed in place', () => {
+  const customized = LEGACY_ECOSYSTEM.replace(
+    "      cwd: './',",
+    "      cwd: './',\n      max_memory_restart: '4G',\n      env_pinned: { PORT: 62832, WORKER_PORT: 62833 },"
+  )
+
+  it('keeps hand edits, swaps only the app names, and --undo restores the original bytes', async () => {
+    const w = world('pm2', { ecosystem: customized })
+    await renameIdentity({ root: w.root, dryRun: true }, w.deps)
+    const dry = w.printed.join('\n')
+    expect(dry).toContain(`-       name: '${LEGACY_UNITS.api}',`)
+    expect(dry).toContain(`+       name: 'ficus-api',`)
+    expect(dry).not.toContain('max_memory_restart')
+    await renameIdentity({ root: w.root }, w.deps)
+    const renamed = readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')
+    expect(renamed).toContain("max_memory_restart: '4G',")
+    expect(renamed).toContain('env_pinned: { PORT: 62832, WORKER_PORT: 62833 },')
+    expect(renamed).toBe(
+      customized
+        .replaceAll(`'${LEGACY_UNITS.api}'`, "'ficus-api'")
+        .replaceAll(`'${LEGACY_UNITS.worker}'`, "'ficus-worker'")
+    )
+    await renameIdentity({ root: w.root, undo: true }, w.deps)
+    expect(readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')).toBe(customized)
+  })
+
+  it('refuses before changing anything when an old app is not declared exactly once', async () => {
+    const twice = customized + customized
+    const w = world('pm2', { ecosystem: twice })
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/declares the app .* 2 times/)
+    expect(w.calls).toEqual([])
+    expect(readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')).toBe(twice)
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+    expect(existsSync(w.journal())).toBe(false)
+  })
+})
+
+describe('nothing comes back by itself mid-run', () => {
+  it('launchd: step 2 disables the old jobs after booting them out; the undo enables them again', async () => {
+    const w = world('launchd')
+    installLegacyLaunchd(w)
+    const oldApi = `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}`
+    w.fail.match = (line) => line.startsWith('launchctl bootstrap') && line.endsWith('sh.ficus.ficus-api.plist')
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/undone/)
+    const lines = joined(w.calls)
+    expect(lines.indexOf(`launchctl disable gui/${UID}/${oldApi}`)).toBeGreaterThan(
+      lines.indexOf(`launchctl bootout gui/${UID}/${oldApi}`)
+    )
+    // The fake launchd refuses to bootstrap a disabled label: the restart shows it was enabled first.
+    expect(w.disabled.has(oldApi)).toBe(false)
+    expect(w.loaded.has(oldApi)).toBe(true)
+  })
+
+  it('pm2: after a reboot resurrected the old apps, recovery deletes them before reversing anything', async () => {
+    const w = world('pm2')
+    const legacyHome = join(w.home, LEGACY_HOME_DIR_NAME)
+    const ficusHome = join(w.home, '.ficus')
+    // A run killed after step 3: the home moved and rebased; then a reboot, and `pm2 resurrect`
+    // brought the old apps back from a dump saved before the run.
+    renameSync(legacyHome, ficusHome)
+    symlinkSync('.ficus', legacyHome)
+    writeFileSync(
+      join(ficusHome, RENAME_JOURNAL),
+      [
+        { op: 'begin', root: w.root, supervisor: 'pm2', from: L, to: 'ficus', port: 3900, home: w.home },
+        { op: 'stopped' },
+        { op: 'home-move', home: w.home },
+        { op: 'home-rebase', from: legacyHome, to: ficusHome },
+      ]
+        .map((e) => JSON.stringify(e))
+        .join('\n') + '\n'
+    )
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/interrupted.*undone/)
+    const lines = joined(w.calls)
+    const deleted = lines.indexOf(`bunx pm2 delete ${LEGACY_UNITS.api} ${LEGACY_UNITS.worker}`)
+    const saved = lines.indexOf('bunx pm2 save --force')
+    const reversed = lines.findIndex((l) => l.includes('rebase-home.js') && l.endsWith(`--to ${legacyHome}`))
+    expect(deleted).toBeGreaterThan(-1)
+    expect(saved).toBeGreaterThan(deleted)
+    expect(reversed).toBeGreaterThan(saved)
+    expect(lstatSync(legacyHome).isDirectory()).toBe(true)
+    expect([...w.pm2].sort()).toEqual([LEGACY_UNITS.api, LEGACY_UNITS.worker].sort())
+  })
+})
+
+describe('readiness, finishing and refusing', () => {
+  it('step 10 waits for /ready, not /health: an API that never gets ready is undone', async () => {
+    const w = world('pm2')
+    w.ready.status = 503
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/\/ready/)
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+    expect([...w.pm2].sort()).toEqual([LEGACY_UNITS.api, LEGACY_UNITS.worker].sort())
+  })
+
+  it('a finalize failure keeps the renamed instance and the journal; the next run finishes', async () => {
+    let fail = true
+    const finalized: string[] = []
+    const w = world('pm2', {
+      postgres: {
+        plan: async (move) => ({
+          action: 'rename',
+          from: { container: move.legacy.container, volume: move.legacy.volume, running: true },
+          to: { container: move.ficus.container, volume: move.ficus.volume },
+          port: 5432,
+          image: 'sha256:img',
+          dataDir: '/var/lib/postgresql',
+          database: undefined,
+        }),
+        rename: async () => 'renamed',
+        undo: async () => {
+          throw new Error('undo must not run')
+        },
+        finalize: async (move) => {
+          if (fail) throw new Error('docker update failed')
+          finalized.push(move.ficus.container)
+          return 'unless-stopped'
+        },
+      },
+    })
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/renamed and ready.*journal is kept/)
+    expect(JSON.parse(readFileSync(w.statePath, 'utf8')).instances.ficus.identity).toBe(2)
+    expect(readRenameJournal(w.journal())?.root).toBe(w.root)
+    fail = false
+    w.calls.length = 0
+    const report = await renameIdentity({ root: w.root }, w.deps)
+    expect(report).toMatchObject({ status: 'renamed', resumed: true })
+    expect(finalized).toEqual(['postgres-ficus'])
+    // The container may have stayed stopped since (it was --restart no until finalize).
+    expect(joined(w.calls)).toContain('docker start postgres-ficus')
+    expect(existsSync(w.journal())).toBe(false)
+  })
+
+  it('--undo checks what it cannot recreate before changing anything', async () => {
+    const w = world('pm2')
+    await renameIdentity({ root: w.root }, w.deps)
+    rmSync(join(w.root, 'apps/core/dist/rebase-home.js'))
+    const registry = readFileSync(w.statePath, 'utf8')
+    w.calls.length = 0
+    await expect(renameIdentity({ root: w.root, undo: true }, w.deps)).rejects.toThrow(
+      /rebase-home\.js is missing.*Nothing was changed/
+    )
+    expect(w.calls).toEqual([])
+    expect(readFileSync(w.statePath, 'utf8')).toBe(registry)
+    expect([...w.pm2].sort()).toEqual(['ficus-api', 'ficus-worker'])
+  })
+
+  it('dry-run warns when the database already holds paths under the new home', async () => {
+    const w = world('pm2')
+    w.rebasePreview.stdout = 'REBASE_HOME sessions.cwd=3\nREBASE_HOME_TARGET sessions.cwd=2\n'
+    await renameIdentity({ root: w.root, dryRun: true }, w.deps)
+    expect(w.printed.join('\n')).toMatch(/warning: the database already holds paths under .*\.ficus/)
+  })
+
+  it('a torn last journal line is cut off before the next append, so the journal stays readable', async () => {
+    const w = world('pm2')
+    const journal = join(w.home, LEGACY_HOME_DIR_NAME, RENAME_JOURNAL)
+    const begin = { op: 'begin', root: w.root, supervisor: 'pm2', from: L, to: 'ficus', port: 3900, home: w.home }
+    // A run killed while appending its fourth line.
+    const lines = [begin, { op: 'stopped' }, { op: 'env', edits: [] }].map((e) => JSON.stringify(e)).join('\n')
+    writeFileSync(journal, `${lines}\n{"op":"home-mo`)
+    // The first recovery appends progress, then fails to restart the old apps: the journal is kept.
+    w.fail.match = (line) => line.startsWith('bunx pm2 start')
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/journal .* is kept/)
+    expect(readFileSync(journal, 'utf8')).not.toContain('home-mo')
+    // …and the next one can still read it.
+    w.fail.match = undefined
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/interrupted.*undone/)
+    expect(existsSync(journal)).toBe(false)
+  })
+
+  it('restores a .env that had no final newline byte for byte', async () => {
+    const w = world('pm2', { fetch: async () => new Response('down', { status: 502 }) })
+    const text = w.envText.slice(0, -1)
+    writeFileSync(join(w.root, '.env'), text)
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/ready/)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(text)
+  })
+
+  it('one run at a time: a live lock refuses, a stale one is taken over', async () => {
+    const w = world('pm2')
+    const lock = `${w.journal()}.lock`
+    writeFileSync(lock, String(process.pid))
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/another .* is running/)
+    expect(w.calls).toEqual([])
+    writeFileSync(lock, '2147483646')
+    await renameIdentity({ root: w.root }, w.deps)
+    expect(existsSync(join(w.home, '.ficus', `${RENAME_JOURNAL}.lock`))).toBe(false)
   })
 })

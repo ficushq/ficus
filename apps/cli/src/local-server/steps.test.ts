@@ -306,11 +306,11 @@ describe('the env step', () => {
     const { root, deps, logs } = fixture()
     try {
       // An install made before labels existed: a .env and an ecosystem, no FICUS_INSTANCE.
-      writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\n')
+      writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/ficus\n')
       writeFileSync(join(root, 'ecosystem.config.js'), readFileSync(join(REPO_ROOT, 'ecosystem.config.example.js')))
       await stepOf(opts({ root, instance: 'smoke', explicit: new Set(['instance']) }), deps).run()
       expect(logs).toContain(
-        'warning: HOME_DIR now points at ~/.ficus-smoke; DATABASE_URL is unchanged (postgres://postgres:postgres@localhost:5432/tau)'
+        'warning: HOME_DIR now points at ~/.ficus-smoke; DATABASE_URL is unchanged (postgres://postgres:postgres@localhost:5432/ficus)'
       )
     } finally {
       rmSync(root, { recursive: true, force: true })

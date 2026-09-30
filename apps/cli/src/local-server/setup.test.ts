@@ -36,7 +36,7 @@ beforeEach(() => {
   writeFileSync(join(root, '.bun-version'), '1.3.8\n')
   writeFileSync(
     join(root, '.env.example'),
-    'FICUS_SERVE_WEB=1\nFICUS_ENCRYPTION_KEY=\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nFICUS_SANDBOX_RUNTIME=\n'
+    'FICUS_SERVE_WEB=1\nFICUS_ENCRYPTION_KEY=\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/ficus\nFICUS_SANDBOX_RUNTIME=\n'
   )
   // The real example: the config-files step generates a per-instance config from it.
   copyFileSync(join(__dirname, '../../../../ecosystem.config.example.js'), join(root, 'ecosystem.config.example.js'))
@@ -52,8 +52,8 @@ function opts(partial: Partial<SetupOptions> = {}): SetupOptions {
     apiUrl: 'http://localhost:3000',
     appUrl: 'http://localhost:3000',
     databaseMode: 'compose',
-    databaseUrl: 'postgres://postgres:postgres@localhost:5432/tau',
-    dbName: 'tau',
+    databaseUrl: 'postgres://postgres:postgres@localhost:5432/ficus',
+    dbName: 'ficus',
     instance: 'ficus',
     makeDefault: false,
     start: true,
@@ -124,11 +124,11 @@ describe('runSetup', () => {
       'docker info',
       'docker inspect -f {{json .}} postgres-ficus',
       'docker inspect -f {{.State.Running}} postgres-ficus',
-      'docker run -d --name postgres-ficus --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5432:5432 -v ficus_postgres-data:/var/lib/postgresql paradedb/paradedb:latest',
+      'docker run -d --name postgres-ficus --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ficus -p 127.0.0.1:5432:5432 -v ficus_postgres-data:/var/lib/postgresql paradedb/paradedb:latest',
       'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
       'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
       'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
-      "docker exec postgres-ficus psql -U postgres -tAc SELECT 1 FROM pg_database WHERE datname='tau'",
+      "docker exec postgres-ficus psql -U postgres -tAc SELECT 1 FROM pg_database WHERE datname='ficus'",
       'bun run db:migrate',
       'bun run build:core',
       'bun run build:cli',
@@ -139,7 +139,7 @@ describe('runSetup', () => {
     ])
     const migrate = calls.find((c) => c.command.join(' ') === 'bun run db:migrate')!
     expect(migrate.options.env).toEqual({
-      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/tau',
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/ficus',
       FICUS_MIGRATE_LIVE: '1',
     })
     expect(migrate.options.cwd).toBe(root)
@@ -263,18 +263,18 @@ describe('runSetup', () => {
     const joined = calls.map((c) => c.command.join(' '))
     expect(joined).toContain('docker inspect -f {{.State.Running}} postgres-ficus-smoke')
     expect(joined).toContain(
-      'docker run -d --name postgres-ficus-smoke --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5433:5432 -v ficus-smoke_postgres-data:/var/lib/postgresql paradedb/paradedb:latest'
+      'docker run -d --name postgres-ficus-smoke --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ficus -p 127.0.0.1:5433:5432 -v ficus-smoke_postgres-data:/var/lib/postgresql paradedb/paradedb:latest'
     )
     expect(
       joined.filter((c) => c === 'docker exec postgres-ficus-smoke psql -h 127.0.0.1 -U postgres -tAc SELECT 1')
     ).toHaveLength(3)
     expect(joined).toContain(
-      "docker exec postgres-ficus-smoke psql -U postgres -tAc SELECT 1 FROM pg_database WHERE datname='tau'"
+      "docker exec postgres-ficus-smoke psql -U postgres -tAc SELECT 1 FROM pg_database WHERE datname='ficus'"
     )
     expect(joined).toContain(
       'bunx pm2 start ecosystem.config.js --only ficus-smoke-api,ficus-smoke-worker --update-env'
     )
-    const url = 'postgres://postgres:postgres@localhost:5433/tau'
+    const url = 'postgres://postgres:postgres@localhost:5433/ficus'
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(`DATABASE_URL=${url}\n`)
     expect(calls.find((c) => c.command.join(' ') === 'bun run db:migrate')!.options.env?.DATABASE_URL).toBe(url)
   })
@@ -294,10 +294,10 @@ describe('runSetup', () => {
     await runSetup(opts({ instance: 'smoke', explicit: new Set(['runtime', 'instance']) }), d)
     expect(probed).toEqual([])
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(
-      'DATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'DATABASE_URL=postgres://postgres:postgres@localhost:5433/ficus\n'
     )
     expect(calls.find((c) => c.command.join(' ') === 'bun run db:migrate')!.options.env?.DATABASE_URL).toBe(
-      'postgres://postgres:postgres@localhost:5433/tau'
+      'postgres://postgres:postgres@localhost:5433/ficus'
     )
   })
   it('follows the mapping of a STOPPED container and refuses a --db-port it cannot honour', async () => {
@@ -321,7 +321,7 @@ describe('runSetup', () => {
     expect(probed).toEqual([])
     expect(calls.map((c) => c.command.join(' '))).toContain('docker start postgres-ficus-smoke')
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(
-      'DATABASE_URL=postgres://postgres:postgres@localhost:5434/tau\n'
+      'DATABASE_URL=postgres://postgres:postgres@localhost:5434/ficus\n'
     )
     const conflict = deps(stopped)
     await expect(
@@ -397,7 +397,7 @@ describe('runSetup', () => {
     // and 5432 is never probed — its occupant is not this run's business.
     writeFileSync(
       join(root, '.env'),
-      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/ficus\n'
     )
     const { d, calls } = deps({
       [PORT_INSPECT]: {
@@ -415,7 +415,7 @@ describe('runSetup', () => {
     const joined = calls.map((c) => c.command.join(' '))
     expect(joined.some((c) => c.startsWith('docker run'))).toBe(false)
     expect(joined).toContain('docker exec postgres-ficus-smoke psql -h 127.0.0.1 -U postgres -tAc SELECT 1')
-    const url = 'postgres://postgres:postgres@localhost:5433/tau'
+    const url = 'postgres://postgres:postgres@localhost:5433/ficus'
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(`DATABASE_URL=${url}\n`)
     expect(calls.find((c) => c.command.join(' ') === 'bun run db:migrate')!.options.env?.DATABASE_URL).toBe(url)
   })
@@ -424,7 +424,7 @@ describe('runSetup', () => {
     // 5433 is another container-shaped install — sharing it would corrupt both.
     writeFileSync(
       join(root, '.env'),
-      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/ficus\n'
     )
     const { d, calls } = deps()
     d.connect = async (_host, port) => {
@@ -438,7 +438,7 @@ describe('runSetup', () => {
   it('manages the container normally when it is the one publishing that port', async () => {
     writeFileSync(
       join(root, '.env'),
-      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/ficus\n'
     )
     const { d, calls } = deps({
       [PORT_INSPECT]: {
@@ -452,7 +452,7 @@ describe('runSetup', () => {
     const joined = calls.map((c) => c.command.join(' '))
     expect(joined).toContain('docker exec postgres-ficus-smoke psql -h 127.0.0.1 -U postgres -tAc SELECT 1')
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(
-      'DATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'DATABASE_URL=postgres://postgres:postgres@localhost:5433/ficus\n'
     )
   })
   it('refuses a database name adopted from the DSN that is not a safe identifier', async () => {
@@ -541,7 +541,7 @@ describe('runSetup', () => {
       'docker inspect -f {{.State.Running}} postgres-ficus-smoke'
     )
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(
-      'DATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'DATABASE_URL=postgres://postgres:postgres@localhost:5433/ficus\n'
     )
   })
   it('honours an explicit --db-port over both the probe and the .env', async () => {
@@ -555,7 +555,7 @@ describe('runSetup', () => {
     expect(probed).toEqual([])
     expect(calls.map((c) => c.command.join(' ')).some((c) => c.includes('-p 127.0.0.1:6000:5432'))).toBe(true)
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(
-      'DATABASE_URL=postgres://postgres:postgres@localhost:6000/tau\n'
+      'DATABASE_URL=postgres://postgres:postgres@localhost:6000/ficus\n'
     )
   })
   it('refuses to start when pm2 already runs ficus from another root', async () => {
@@ -889,7 +889,11 @@ describe('instances installed before the Ficus rename', () => {
   it('refuses an unregistered checkout whose .env still names the pre-rename default instance', async () => {
     const { d, calls } = deps()
     writeFileSync(join(root, '.env'), `FICUS_INSTANCE=${LEGACY_LOCAL_INSTANCE}\n`)
-    await expect(runSetup(opts({ instance: LEGACY_LOCAL_INSTANCE }), d)).rejects.toThrow(/rename-identity/)
+    const error = await runSetup(opts({ instance: LEGACY_LOCAL_INSTANCE }), d).catch((e: Error) => e)
+    // The recipe: the registry entry to add by hand, where, and the command to run next.
+    expect((error as Error).message).toContain(`"${LEGACY_LOCAL_INSTANCE}": {"root":"${root}","port":3000`)
+    expect((error as Error).message).toContain(d.statePath)
+    expect((error as Error).message).toContain(`ficus server rename-identity --root ${root}`)
     expect(calls).toEqual([])
   })
 })

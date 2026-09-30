@@ -553,6 +553,7 @@ Examples:
             fetch: deps.fetch,
             sleep: deps.sleep,
             now: () => new Date(),
+            env: deps.env,
             log: isJsonMode() ? () => {} : narrate,
             supervisorContext: (id, checkout) =>
               deps.supervisorContext?.(checkout, id.label, id.supervisor, id.identity) ??

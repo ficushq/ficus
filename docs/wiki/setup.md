@@ -439,8 +439,9 @@ ficus server rename-identity --root <checkout> --undo      # back to the old nam
 In order, printing each step:
 
 1. reads the instance's registry entry;
-2. stops both processes under the old names (launchd `bootout`, systemd
-   `disable --now`, pm2 `delete`);
+2. stops both processes under the old names so that nothing restarts them, not
+   even a reboot (launchd `bootout` and `disable`, systemd `disable --now`, pm2
+   `delete` and `save --force`);
 3. when the instance uses the default data home, moves the CLI home to
    `~/.ficus` (leaving the old path as a link to it) and rewrites the home paths
    stored in the database (`apps/core/dist/rebase-home.js`);
@@ -451,20 +452,28 @@ In order, printing each step:
    alone);
 6. rewrites `FICUS_INSTANCE`, `FICUS_PM2_*_NAME` and `FICUS_LOG_FILE_*` where
    they name the old identity;
-7. regenerates `ecosystem.config.js` (pm2), keeping the old one beside the
-   journal;
+7. renames the apps in `ecosystem.config.js` in place (pm2) — every other line,
+   such as `max_memory_restart` or a pinned port, is kept, and the old file is
+   kept beside the journal;
 8. relabels the default instance to `ficus` in the registry and marks the entry
    `identity: 2` (the registry stays at version 3);
 9. installs and starts the new launchd jobs, systemd units or pm2 apps, and
-   removes the old plists or units;
-10. waits for `/health` (200 or 401), then gives the new PostgreSQL container
-    the old one's restart policy.
+   removes the old plists or units. pm2 gets the environment from `.env` as the
+   run rewrote it, never the one the CLI loaded when it started;
+10. waits up to 120 s for `/ready` to answer 200 (the database is reachable and
+    migrated), then gives the new PostgreSQL container the old one's restart
+    policy.
 
-Every step is written to `~/.ficus/rename-identity.journal` before it acts. If a
-step fails, the completed steps are undone in reverse and the instance is
-restarted under its old names. A run cut short (a crash, a closed terminal) is
+`--dry-run` also prints the `ecosystem.config.js` change as a diff, and asks the
+rebase program how many rows it would change (and warns when the database
+already holds paths under `~/.ficus`, which would make step 3 refuse).
+
+Every step is written to `~/.ficus/rename-identity.journal` before it acts, and
+only one run holds it at a time. If a step fails, both identities are stopped,
+the completed steps are undone in reverse, and the instance is restarted under
+its old names and checked with `/ready`. A run cut short (a crash, a closed terminal) is
 resolved by the next `rename-identity` for that checkout before anything else —
-finished if its health check had passed, undone otherwise — and
+finished if its readiness check had passed, undone otherwise — and
 `ficus server start`, `restart` and `update` refuse to run until then. A
 completed run keeps its journal as `rename-identity.<label>.journal` for
 `--undo`. Once the new processes may have written to the new PostgreSQL volume,
