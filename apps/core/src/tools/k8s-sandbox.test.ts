@@ -1398,6 +1398,44 @@ describe('createHttpBashOperations', () => {
     }
   })
 
+  test('a lost outcome is logged with what arrived before it, never the command text', async () => {
+    const stream = createMockStream()
+    const priorWarn = console.warn
+    const lines: string[] = []
+    console.warn = (...args: unknown[]) => {
+      lines.push(args.map(String).join(' '))
+    }
+    try {
+      const result = createHttpBashOperations(createMockManager(stream), 'squad_test', undefined, {
+        agentId: 'agent-1',
+      }).exec('SECRET_COMMAND_TEXT', '/workspace', { onData: () => {}, timeout: 240 })
+      stream.emitData({ invocation: { id: 'stable-invocation' } } as BashResponse)
+      stream.emitData({ stdout: Buffer.from('twelve bytes').toString('base64') })
+      stream.emitEnd()
+      await result.catch(() => {})
+    } finally {
+      console.warn = priorWarn
+    }
+    const line = lines.find((entry) => entry.includes('Bash command lost its outcome'))
+    expect(line).toBeDefined()
+    const fields = JSON.parse(line!.slice(line!.indexOf('{')))
+    expect(fields).toMatchObject({
+      sandboxId: 'squad_test',
+      agentId: 'agent-1',
+      invocationId: 'stable-invocation',
+      failureClass: 'protocol_truncated',
+      started: true,
+      frames: 2,
+      outputBytes: 12,
+      timeoutSeconds: 240,
+      cleanup: 'confirmed',
+      recoveredTransport: false,
+      boxOutage: false,
+    })
+    expect(typeof fields.elapsedMs).toBe('number')
+    expect(line).not.toContain('SECRET_COMMAND_TEXT')
+  })
+
   test('handles pre-aborted signal', async () => {
     const mockStream = createMockStream()
     mockStream.cancelAndWait = mock(async () => {
