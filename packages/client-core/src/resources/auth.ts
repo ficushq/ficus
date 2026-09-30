@@ -119,6 +119,14 @@ export function authResource(t: Transport) {
     getCurrentUser: (): Promise<AuthUser> => t.request('/auth/me'),
     updateCurrentUser: (input: { displayName?: string }): Promise<AuthUser> =>
       t.request('/auth/me', { method: 'PATCH', body: input }),
+    /**
+     * Give a no-email account an address. Where the instance can mail it, a code is sent and
+     * `verificationRequired` is true (finish with verifyAddedEmail); otherwise it is set directly.
+     */
+    addEmail: (email: string): Promise<{ verificationRequired: boolean; user?: AuthUser }> =>
+      t.request('/auth/me/email', { method: 'POST', body: { email } }),
+    verifyAddedEmail: (email: string, code: string): Promise<{ user: AuthUser }> =>
+      t.request('/auth/me/email/verify', { method: 'POST', body: { email, code } }),
     getMyPermissions: (squadId?: string): Promise<{ permissions: string[]; identity: AuthIdentity }> => {
       const query = squadId ? `?${new URLSearchParams({ squadId })}` : ''
       return t.request(`/auth/permissions${query}`)

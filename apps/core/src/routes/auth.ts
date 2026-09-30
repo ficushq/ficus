@@ -971,6 +971,61 @@ authRouter.patch('/me', identityMiddleware, async (c) => {
   return c.json(updated.toJSON())
 })
 
+// POST /api/auth/me/email — give a no-email account (the first admin who skipped it) a real address.
+//
+// Only the placeholder can be replaced here: changing an existing address is a separate
+// feature. Where the instance can mail, the address is verified with a code first
+// (/me/email/verify); without a mail provider no code can reach the owner and they are
+// already signed in, so the address is set directly.
+authRouter.post('/me/email', identityMiddleware, async (c) => {
+  const identity = c.get('identity')
+  if (identity.type !== 'user') return c.json({ error: 'Not a user' }, 400)
+  const user = await User.findById(identity.userId)
+  if (!user) return c.json({ error: 'User not found' }, 404)
+  if (!isPlaceholderEmail(user.email)) return c.json({ error: 'This account already has an email address' }, 409)
+
+  const { email: raw } = await parseOptionalJsonObjectBody(c, {} as { email?: string })
+  const email = raw?.trim() ?? ''
+  if (!email || !email.includes('@') || isPlaceholderEmail(email)) {
+    return c.json({ error: 'Valid email required' }, 400)
+  }
+  if (await User.findByEmailInsensitive(email)) {
+    return c.json({ error: 'Another account already uses this email' }, 409)
+  }
+
+  if (!isEmailConfigured()) {
+    const updated = await user.update({ email })
+    return c.json({ verificationRequired: false, user: updated.toJSON() })
+  }
+  if ((await recentVerificationCount(email)) >= VERIFICATION_RATE_LIMIT) {
+    return c.json({ error: 'Too many verification attempts. Try again later.' }, 429)
+  }
+  await sendVerificationEmail(email)
+  return c.json({ verificationRequired: true })
+})
+
+// POST /api/auth/me/email/verify — finish adding an email with the code mailed to it.
+authRouter.post('/me/email/verify', identityMiddleware, async (c) => {
+  const identity = c.get('identity')
+  if (identity.type !== 'user') return c.json({ error: 'Not a user' }, 400)
+  const user = await User.findById(identity.userId)
+  if (!user) return c.json({ error: 'User not found' }, 404)
+  if (!isPlaceholderEmail(user.email)) return c.json({ error: 'This account already has an email address' }, 409)
+
+  const { email: raw, code } = await parseOptionalJsonObjectBody(c, {} as { email?: string; code?: string })
+  const email = raw?.trim() ?? ''
+  if (!email || !code) return c.json({ error: 'Email and code required' }, 400)
+  if (!(await verifyEmailCode(email, code))) {
+    return c.json({ error: 'Invalid or expired verification code' }, 401)
+  }
+  // Re-check: another account may have taken the address while the code was in flight.
+  if (await User.findByEmailInsensitive(email)) {
+    return c.json({ error: 'Another account already uses this email' }, 409)
+  }
+  const updated = await user.update({ email })
+  return c.json({ user: updated.toJSON() })
+})
+
 // GET /api/auth/me/credentials — list passkeys (safe fields only)
 authRouter.get('/me/credentials', identityMiddleware, async (c) => {
   const identity = c.get('identity')
