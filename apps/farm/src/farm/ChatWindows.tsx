@@ -106,6 +106,7 @@ export function ChatWindows({ chats, narrow }: { chats: ChatWindowsApi; narrow: 
       return agent ? agentLabel(agent).primary : 'Robot'
     }
     if (target.kind === 'consultant') return `New consultant · ${env.squadsById.get(target.squadId)?.name ?? ''}`
+    if (target.kind === 'fieldLog') return `Field log · ${env.squadsById.get(target.squadId)?.name ?? ''}`
     return 'Assistant'
   }
 

@@ -40,7 +40,6 @@ import {
   EnvelopeIcon,
   FitIcon,
   LeafIcon,
-  ListIcon,
   MailboxIcon,
   MinusIcon,
   PlusIcon,
@@ -51,7 +50,6 @@ import {
   SpeakerIcon,
   StyleIcon,
 } from '../icons'
-import { FarmList } from './FarmList'
 import { useFarmSounds } from '../sound/useFarmSounds'
 import { webAppUrl } from '../api/base'
 // The one source of the mark (brand/), so fixes to it reach the farm without a copy to update.
@@ -249,6 +247,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       select: setSelection,
       openChat: (agentId) => openChatRef.current({ kind: 'agent', agentId } satisfies ChatTarget),
       startConsultant: (squadId) => openChatRef.current({ kind: 'consultant', squadId }),
+      openFieldLog: (squadId) => openChatRef.current({ kind: 'fieldLog', squadId }),
       openAssistant: (conversationId) => openChatRef.current({ kind: 'assistant', conversationId }),
       startAssistant: () => openChatRef.current({ kind: 'assistant', fresh: crypto.randomUUID() }),
       messagePerson: (userId) => void openDmRef.current(userId),
@@ -283,7 +282,6 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   const needsYou = input.pendingActions.length
   const nextSkin = SKINS[(SKINS.indexOf(skin) + 1) % SKINS.length]!
   const sound = useFarmSounds(layout, needsYou)
-  const [listOpen, setListOpen] = useState(false)
   // Phones have room for four tools; the rest sit behind More.
   const narrow = size.width > 0 && size.width < 640
   const [moreOpen, setMoreOpen] = useState(false)
@@ -309,9 +307,6 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       <ToolButton label="Change your look" short="Look" expanded={lookOpen} onClick={() => env.changeLook()}>
         <ShirtIcon />
       </ToolButton>
-      <ToolButton label="List everything on the farm" short="List" onClick={() => setListOpen((o) => !o)}>
-        <ListIcon />
-      </ToolButton>
       <ToolButton
         label={`Style: ${skin.label}. Switch to ${nextSkin.label}`}
         short={skin.label}
@@ -333,7 +328,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   const lastAnchor = useRef<readonly [number, number] | null>(null)
   const person = selection?.kind === 'person' ? placed.find((p) => p.userId === selection.userId) : undefined
   const anchor =
-    selection?.kind === 'assistant'
+    selection?.kind === 'assistant' || selection?.kind === 'overview'
       ? ([camera.x, camera.y] as const)
       : person
         ? iso(person.spot.at[0], person.spot.at[1])
@@ -397,13 +392,24 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
             value={needsYou}
             label="need you"
             hot={needsYou > 0}
+            opens="Open the mailbox"
+            onClick={() => setSelection({ kind: 'mailbox' })}
           />
-          <Counter icon={<LeafIcon />} tint="var(--g-counter-growing)" value={growing} label="growing" />
+          <Counter
+            icon={<LeafIcon />}
+            tint="var(--g-counter-growing)"
+            value={growing}
+            label="growing"
+            opens="See everything growing"
+            onClick={() => setSelection({ kind: 'overview' })}
+          />
           <Counter
             icon={<BasketIcon />}
             tint="var(--g-counter-harvested)"
             value={layout.crates.count}
             label="harvested"
+            opens="See the harvest"
+            onClick={() => setSelection({ kind: 'crates' })}
           />
         </div>
       </header>
@@ -476,14 +482,12 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
         </div>
       )}
 
-      {listOpen && <FarmList layout={layout} onSelect={setSelection} onClose={() => setListOpen(false)} />}
-
       <FarmCardContext.Provider value={env}>
         {selection && anchor && (
           <FarmCard
             selection={selection}
             screen={toScreen(anchor[0], anchor[1])}
-            dock={selection.kind === 'assistant' ? 'tools' : undefined}
+            dock={selection.kind === 'assistant' ? 'tools' : selection.kind === 'overview' ? 'counters' : undefined}
             viewport={size}
             onClose={() => setSelection(null)}
           />
@@ -512,21 +516,32 @@ function Counter({
   value,
   label,
   hot,
+  opens,
+  onClick,
 }: {
   icon: React.ReactNode
   tint: string
   value: number
   label: string
   hot?: boolean
+  /** What clicking it opens, e.g. "Open the mailbox". */
+  opens: string
+  onClick: () => void
 }) {
   return (
-    <div className="g-counter g-panel">
+    <button
+      type="button"
+      className="g-counter g-panel"
+      aria-label={`${value} ${label}. ${opens}`}
+      title={opens}
+      onClick={onClick}
+    >
       <span className="g-counter-icon" style={{ background: tint }}>
         {icon}
       </span>
       <b className={hot ? 'g-hot' : undefined}>{value}</b>
       <small>{label}</small>
-    </div>
+    </button>
   )
 }
 

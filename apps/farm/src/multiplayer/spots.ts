@@ -16,6 +16,7 @@ import type { FarmLayout, YardLayout } from '../farm/types'
 export function focusFor(selection: Selection | null, frontChat: ChatTarget | undefined): PresenceFocus | null {
   if (frontChat?.kind === 'agent') return { kind: 'agent', agentId: frontChat.agentId }
   if (frontChat?.kind === 'consultant') return { kind: 'squad', squadId: frontChat.squadId, at: 'stand' }
+  if (frontChat?.kind === 'fieldLog') return { kind: 'squad', squadId: frontChat.squadId }
   // An Assistant conversation is private: you're simply around the farm.
   if (frontChat?.kind === 'assistant') return null
   switch (selection?.kind) {
@@ -26,7 +27,6 @@ export function focusFor(selection: Selection | null, frontChat: ChatTarget | un
     case 'stand':
       return { kind: 'squad', squadId: selection.squadId, at: 'stand' }
     case 'yard':
-    case 'fieldLog':
     case 'hut':
     case 'rack':
       return { kind: 'squad', squadId: selection.squadId }

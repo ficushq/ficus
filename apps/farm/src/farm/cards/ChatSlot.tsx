@@ -8,12 +8,15 @@ import { roleFor } from '../appearance'
 import { RobotAvatar } from '../RobotAvatar'
 import { PORCH_ASSISTANT_ID } from '../useFarmData'
 import { useFarmCard } from './context'
+import { FieldLog } from './FieldLog'
 
 export type ChatTarget =
   | { kind: 'agent'; agentId: string }
   | { kind: 'consultant'; squadId: string }
   /** `fresh` starts a new Assistant conversation (a token so each start gets its own window). */
   | { kind: 'assistant'; conversationId?: string; fresh?: string }
+  /** A squad's field log: not a conversation, but it floats and pins the same way. */
+  | { kind: 'fieldLog'; squadId: string }
 
 /** The robot's animated portrait in a chat's title bar; clicking it opens the robot's card. */
 function Portrait({ agentId }: { agentId: string }) {
@@ -41,7 +44,7 @@ function Portrait({ agentId }: { agentId: string }) {
   )
 }
 
-/** The one open conversation: a robot, a new consultant from a seed packet, or the assistant. */
+/** One window's contents: a robot, a new consultant from a seed packet, the assistant, or a squad's field log. */
 export function ChatSlot({ target, onClose }: { target: ChatTarget; onClose: () => void }) {
   const env = useFarmCard()
   // A new consultant has no agent until its first message is answered.
@@ -85,5 +88,7 @@ export function ChatSlot({ target, onClose }: { target: ChatTarget; onClose: () 
           onClose={onClose}
         />
       )
+    case 'fieldLog':
+      return <FieldLog key={target.squadId} squadId={target.squadId} onClose={onClose} />
   }
 }
