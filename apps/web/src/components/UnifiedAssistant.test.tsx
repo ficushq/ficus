@@ -1,9 +1,9 @@
-import { useContext } from 'react'
+import { useContext, useLayoutEffect } from 'react'
 import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { useAssistantPageNavigation } from '../hooks/useAssistantPageNavigation'
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { Link, MemoryRouter, useLocation } from 'react-router-dom'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { ThemeProvider } from '../providers/ThemeProvider'
 import { acquireDomHarness } from '../test/domHarness'
@@ -113,6 +113,60 @@ test('assistant-driven navigation keeps the text conversation visible on the des
     expect(params.get('chat')).toBe('open')
     expect(panel.hidden).toBe(false)
     expect(panel.textContent).toContain('Open workflows')
+  } finally {
+    await dom.cleanup()
+    cache.clear()
+  }
+})
+
+test('ordinary page links never commit a closed assistant or hide its conversation while repairing the URL', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  cache.setQueryData(queries.voice.status().queryKey, { enabled: false })
+  const commits: { hidden: boolean; visible: boolean; id: string }[] = []
+  let current = ''
+  function Conversation(props: Parameters<typeof import('./AssistantConversationView').AssistantConversationView>[0]) {
+    const location = useLocation()
+    current = location.pathname + location.search
+    useLayoutEffect(() => {
+      const panel = document.querySelector('[role="dialog"][aria-label="Assistant"]') as HTMLElement
+      commits.push({ hidden: panel.hidden, visible: props.visible, id: props.id })
+    })
+    return <input aria-label="Retained draft" defaultValue="Keep this draft" />
+  }
+  const { root } = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter initialEntries={['/feed?chat=open&assistantConversation=existing&commandQuery=hello']}>
+            <PermissionsProvider
+              usePermissions={() => ({ can: () => false, permissions: [], isLoading: false, isError: false })}
+            >
+              <Link to="/settings?section=providers#accounts" data-page-link>
+                Settings
+              </Link>
+              <UnifiedAssistant dependencies={{ ConversationComponent: Conversation }} />
+            </PermissionsProvider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Retained draft"]')!
+    input.focus()
+    input.setSelectionRange(2, 5)
+    commits.length = 0
+    await dom.act(async () => document.querySelector<HTMLAnchorElement>('[data-page-link]')!.click())
+    expect(current.startsWith('/settings?')).toBe(true)
+    expect(new URLSearchParams(current.split('?')[1]).get('section')).toBe('providers')
+    expect(new URLSearchParams(current.split('?')[1]).get('commandQuery')).toBe('hello')
+    expect(commits.length).toBeGreaterThan(0)
+    expect(commits.every((commit) => !commit.hidden && commit.visible && commit.id === 'existing')).toBe(true)
+    expect(document.querySelector('[aria-label="Retained draft"]')).toBe(input)
+    expect(input.value).toBe('Keep this draft')
+    expect(document.activeElement).toBe(input)
+    expect(input.selectionStart).toBe(2)
+    expect(input.selectionEnd).toBe(5)
   } finally {
     await dom.cleanup()
     cache.clear()

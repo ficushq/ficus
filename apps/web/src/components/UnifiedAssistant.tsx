@@ -3,12 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { useAssistantNavigation, assistantNavigationParams } from '../hooks/useAssistantNavigation'
-import { useURLStringState } from '../hooks/useURLState'
 import { useRealtimeEnabled } from '../hooks/useVoiceEnabled'
 import { usePermissions } from '../hooks/usePermissions'
 import { useStableRef } from '../hooks/useStableRef'
 import { useAssistantWindow } from '../hooks/useAssistantWindow'
-import { useKeepAssistantAcrossPages } from '../hooks/useKeepAssistantAcrossPages'
 import { assistantQueries } from '../queryOptions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { formatAssistantUpdateTime, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
@@ -38,16 +36,10 @@ export function UnifiedAssistant(props: UnifiedAssistantProps = {}) {
 
 function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   const ConversationComponent = dependencies?.ConversationComponent ?? AssistantConversationView
-  const [state, setState] = useURLStringState<'closed' | 'open' | 'expanded'>('chat', 'closed', [
-    'closed',
-    'open',
-    'expanded',
-  ])
   const location = useLocation()
   const navigate = useNavigate()
-  useKeepAssistantAcrossPages()
-  const params = new URLSearchParams(location.search)
   const navigation = useAssistantNavigation()
+  const { params, state, setState } = navigation
   const destination = navigation.entries.at(-1)
   const assistantEntry = [...navigation.entries].reverse().find((entry) => entry.kind === 'assistant')
   const linkedId = assistantEntry?.id ?? null
