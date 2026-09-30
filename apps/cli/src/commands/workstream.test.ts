@@ -1320,6 +1320,42 @@ describe('workstream CLI commands', () => {
       expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/request-input', { message: 'need credentials' })
     })
 
+    it('request-input forwards a validated --actor', async () => {
+      for (const actor of ['human', 'owner']) {
+        ;(apiPost as ReturnType<typeof mock>).mockClear()
+        await run(['workstream', 'request-input', 'ws-1', '-m', 'hold', '--actor', actor])
+        expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/request-input', { message: 'hold', actor })
+      }
+    })
+
+    it('request-input rejects an unknown --actor before calling the API', async () => {
+      ;(apiPost as ReturnType<typeof mock>).mockClear()
+      for (const actor of ['robot', 'manager', 'external']) {
+        await expect(run(['workstream', 'request-input', 'ws-1', '-m', 'hold', '--actor', actor])).rejects.toThrow()
+      }
+      expect(apiPost).not.toHaveBeenCalled()
+    })
+
+    it('wait-actor relabels the single open manual wait with an audit note', async () => {
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
+        id: wsId,
+        openWaits: [{ id: 'wait-manual-1', type: 'manual', actor: 'human', message: 'hold' }],
+      })
+      ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ id: wsId, title: 'T', changed: true })
+      await run(['workstream', 'wait-actor', 'ws-1', 'owner', '-m', 'owner-held hold'])
+      expect(apiPost).toHaveBeenCalledWith(`/api/workstreams/${wsId}/waits/wait-manual-1/actor`, {
+        actor: 'owner',
+        note: 'owner-held hold',
+      })
+    })
+
+    it('wait-actor rejects an unknown actor without calling the API', async () => {
+      ;(apiPost as ReturnType<typeof mock>).mockClear()
+      await run(['workstream', 'wait-actor', 'ws-1', 'manager'])
+      expect(apiPost).not.toHaveBeenCalled()
+      expect(outputError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('manager') }))
+    })
+
     it('request-review opens the review wait via the new route', async () => {
       ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ id: wsId, title: 'R', alreadyOpen: false })
       await run(['workstream', 'request-review', 'ws-1', '-m', 'please review'])

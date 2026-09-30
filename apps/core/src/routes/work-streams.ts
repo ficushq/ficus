@@ -25,6 +25,7 @@ import {
   requestReviewWorkStreamSchema,
   sendBackWorkStreamSchema,
   requestInputWorkStreamSchema,
+  setWorkStreamWaitActorSchema,
   unblockWorkStreamSchema,
   parkWorkStreamSchema,
   mapLegacyWorkStreamStatus,
@@ -1276,7 +1277,48 @@ export const workStreamsRouter = new Hono()
       }
     }
   )
-  // Opens a manual wait: the stream needs input/action from the owner/operator.
+  // Correct who must act on one open manual wait. Restricted to holders of
+  // workstreams:update on the squad; an agent must also be the stream's owner
+  // or the squad manager (a worker cannot relabel its own blocker).
+  .post(
+    '/:id/waits/:waitId/actor',
+    requireEntityPermission('workstreams:update', async (c) => routeWorkStreamSquadId(c)),
+    zValidator('json', setWorkStreamWaitActorSchema),
+    async (c) => {
+      const existing = await WorkStream.find(await routeWorkStreamId(c))
+      if (!existing) return c.json({ error: 'Work stream not found' }, 404)
+      const identity = c.get('identity') as Identity | undefined
+      if (identity?.type === 'agent' && existing.ownerAgentId !== identity.agentId) {
+        const squad = await Squad.find(existing.squadId)
+        if (squad?.managerAgentId !== identity.agentId) {
+          return c.json({ error: "Only the work stream's owner or the squad manager can change a wait's actor" }, 403)
+        }
+      }
+      const input = c.req.valid('json')
+      try {
+        const { wait, changed } = await existing.setWaitActor(c.req.param('waitId'), {
+          actor: input.actor,
+          note: input.note,
+          changedByAgentId: identity?.type === 'agent' ? identity.agentId : null,
+          changedByUserId: identity?.type === 'user' ? identity.userId : null,
+        })
+        return c.json({ ...existing.toJson(), wait: toWaitJson(wait), changed })
+      } catch (error) {
+        if (error instanceof WorkStreamWaitResolveError) {
+          const status =
+            error.code === 'wait_not_found'
+              ? 404
+              : error.code === 'wait_already_closed' || error.code === 'work_stream_terminal'
+                ? 409
+                : 400
+          return c.json({ error: error.message, code: error.code }, status)
+        }
+        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+      }
+    }
+  )
+  // Opens a manual wait: the stream cannot proceed until `actor` acts
+  // (human by default; owner when the stream's owning agent clears it).
   .post(
     '/:id/request-input',
     requireWorkStreamUpdatePermission,

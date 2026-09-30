@@ -1,4 +1,4 @@
-import { selectWorkStreamPresentationState, workStreamTitle } from '@ficus/shared'
+import { selectWorkStreamPresentationState, workStreamTitle, workStreamWaitActor } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
 import {
@@ -258,6 +258,9 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     .orderBy(desc(workStreamWaits.openedAt))
 
   for (const { ws, squad, wait } of actionableWorkStreams) {
+    // Only manual waits a human must clear are human actions. Owner-actor
+    // waits still block the stream, but are not "Needs you".
+    if (wait.type === 'manual' && workStreamWaitActor(wait) !== 'human') continue
     const isReview = wait.type === 'review'
     // Synthesize the legacy prompt shape from the wait so the Action Center
     // respond flows (#970) keep working unchanged.

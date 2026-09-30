@@ -1,4 +1,4 @@
-import type { WorkStreamWaitType, InboxRecipientType } from './types'
+import type { WorkStreamWaitActor, WorkStreamWaitType, InboxRecipientType } from './types'
 import type { SquadActivityItem } from './squad-activity'
 import type { FarmChatMessage } from './farm-chat'
 import type { PresencePerson } from './farm-presence'
@@ -167,7 +167,14 @@ export type EventMap = {
   'workStream.agentAdded': { workStreamId: string; squadId: string; agentId: string }
   'workStream.agentRemoved': { workStreamId: string; squadId: string; agentId: string }
   // Emitted when a manual/system wait opens (the stream needs attention).
-  'workStream.blocked': { workStreamId: string; squadId: string; waitId?: string; actorAgentId?: string | null }
+  // `waitActor` says who must act; absent (older emitters) means human.
+  'workStream.blocked': {
+    workStreamId: string
+    squadId: string
+    waitId?: string
+    actorAgentId?: string | null
+    waitActor?: WorkStreamWaitActor
+  }
   // Emitted when a review wait opens (handoff to review).
   'workStream.review': { workStreamId: string; squadId: string; waitId?: string; actorAgentId?: string | null }
   'workStream.responded': {

@@ -13,7 +13,7 @@ import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from 
 import { Command, Option } from 'commander'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
-import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@ficus/shared'
+import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES, WORK_STREAM_WAIT_ACTORS } from '@ficus/shared'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { selectOpenWait } from './workstream-wait-selection'
 import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
@@ -80,6 +80,8 @@ interface WorkStreamWaitSummary {
   type: 'dependency' | 'question' | 'review' | 'manual'
   referenceId: string | null
   message: string | null
+  /** Manual waits: who must act (human | owner). Older servers omit it. */
+  actor?: string
   createdBy: string
   /** Review waits: false = mid-work checkpoint (approval does not complete the stream). */
   completesOnApproval?: boolean
@@ -560,8 +562,9 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
               // The id is what `resolve`/`approve`/`send-back --wait <id>`
               // take when multiple waits of one type are open.
               const checkpoint = wait.type === 'review' && wait.completesOnApproval === false ? ', checkpoint' : ''
+              const actor = wait.type === 'manual' && wait.actor ? `, actor: ${wait.actor}` : ''
               console.log(
-                `  [${wait.type}] ${wait.id} (since ${opened}${checkpoint})${wait.message ? ` — ${wait.message}` : ''}`
+                `  [${wait.type}] ${wait.id} (since ${opened}${checkpoint}${actor})${wait.message ? ` — ${wait.message}` : ''}`
               )
             }
           }
@@ -732,8 +735,16 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
 
   // ficus workstream request-input <id> --message <msg> [--file <path>...]
   ws.command('request-input <id>')
-    .description('Open a manual wait: the work stream needs input/action from the owner/operator')
-    .requiredOption('-m, --message <msg>', 'What input/action is needed (the wait message)')
+    .description(
+      'Open a manual wait: the work stream cannot proceed until the named actor acts (--actor human by default)'
+    )
+    .requiredOption('-m, --message <msg>', 'What input/action is needed, and from whom (the wait message)')
+    .addOption(
+      new Option(
+        '--actor <actor>',
+        "Who must act: human (the user/operator must act; shown to users as an action to take) or owner (the stream's owning agent; the squad manager if none). Questions use ask_human; prerequisite deliverables use dependsOn"
+      ).choices([...WORK_STREAM_WAIT_ACTORS])
+    )
     .option('-f, --file <path>', 'File to include for context (can repeat; stored on the work stream)', collect, [])
     .option('--scope <scope>', 'Wait scope: stream or attempt (agents default to their active attempt)')
     .option('--attempt <id>', 'Flow attempt ID to block', parseInt)
@@ -746,8 +757,41 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           message: options.message,
           scope: options.scope,
           flowAttemptId: options.attempt,
+          actor: options.actor,
         })
-        output(ws, `Work stream ${workStreamLabel(ws)} is requesting input (manual wait opened): ${options.message}`)
+        const actor = options.actor && options.actor !== 'human' ? ` [actor: ${options.actor}]` : ''
+        output(
+          ws,
+          `Work stream ${workStreamLabel(ws)} is requesting input (manual wait opened${actor}): ${options.message}`
+        )
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // ficus workstream wait-actor <id> <actor> [--wait <waitId>] [-m <note>]
+  ws.command('wait-actor <id> <actor>')
+    .description(
+      'Correct who must act on an open manual wait (human|owner); the wait stays open and keeps blocking. Stream owner agent or squad manager only; audited on the wait'
+    )
+    .option('--wait <waitId>', 'Manual wait id to relabel (required when several manual waits are open)')
+    .option('-m, --message <note>', 'Why the actor changed (recorded in the wait audit trail)')
+    .action(async (id, actor, options) => {
+      try {
+        if (!(WORK_STREAM_WAIT_ACTORS as readonly string[]).includes(actor)) {
+          throw new Error(`Invalid actor '${actor}'. Use one of: ${WORK_STREAM_WAIT_ACTORS.join(', ')}`)
+        }
+        const { ws: found, wait } = await resolveTargetWait(id, 'manual', 'manual (input-request)', options.wait)
+        const ws = await apiPost<WorkStream & { changed?: boolean }>(
+          `/api/workstreams/${found.id}/waits/${wait.id}/actor`,
+          { actor, ...(options.message ? { note: options.message } : {}) }
+        )
+        output(
+          ws,
+          ws.changed === false
+            ? `Wait ${wait.id.slice(0, 8)} on work stream ${workStreamLabel(ws)} already has actor ${actor}`
+            : `Wait ${wait.id.slice(0, 8)} on work stream ${workStreamLabel(ws)} now waits on: ${actor}`
+        )
       } catch (error) {
         outputError(error as Error)
       }

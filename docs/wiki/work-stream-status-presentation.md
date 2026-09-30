@@ -47,9 +47,24 @@ Because `review` and `merge` are not `external`, the `automatedReviewGate` annot
 
 Delivery `review` and `merge` gates have no wait, so Core can also list them in `/api/actions/pending` as `workstream-delivery` actions (the web feed's Needs you section and Action Center, and the Assistant's Needs you tool) with the stream, the delivery kind, and its open designated pull requests. They are computed from the same batched classification, only for unpaused streams without an open wait (which has its own action), and are view-only: the person acts on the code host, and delivery completes when the provider settles the gate. Visibility follows the squad's `actions:read` permission and the stream's `decisions` attention level. The type is **opt-in**: only requests with `?include=workstream-delivery` (client-core `listPendingActions({ include: ['workstream-delivery'] })`) receive it, and the default response is unchanged. Shipped mobile builds render every pending action through an exhaustive switch without a fallback and would fail on an unknown type, so mobile must add an unknown-type fallback and delivery-gate rendering before opting in. Its Work tab Needs you section already follows the shared selector.
 
+### Manual wait actors
+
+Each manual wait records who must act (`WorkStreamWait.actor`, manual waits only). The column defaults to `human`, so existing rows and callers that omit it keep today's behavior; nothing infers an actor from message text. Consumers treat a missing or unknown actor as `human`.
+
+| Actor | Presentation state | Label | Semantic role | Human attention | Native bucket | Canonical order (active) |
+| ----- | ------------------ | ----- | ------------- | --------------- | ------------- | ------------------------ |
+| `human` | `blocked` | Blocked | danger | yes | needsYou | tier 0 (human-actionable) |
+| `owner` | `waiting_on_owner` | Waiting on Owner | externalWait | no | externalWait | tier 3 (with dependency/external waits) |
+
+`owner` means the stream's owner agent, or the squad manager when the stream has none. Provider or third-party events also use `owner`, with the wait message naming what it waits on. When several manual waits are open, any human wait wins (human > owner). Wait-type precedence is unchanged: a question, review or dependency still outranks any manual wait, and the exact workflow-owned delivery-approval wait (`approvalWaitId`) is still presented as approval. Workflow human-approval gates keep the default `human` actor and cannot be relabeled.
+
+The actor changes attribution only. Every manual wait blocks admission, auto-parking, queued positioning (`queuedHasWait`) and flow attempts exactly as before. `waiting_on_owner` is presentation-only: Core's `derivedState` keeps `blocked` for older consumers, and older clients that ignore `actor` keep their historical Needs you rendering. The native bucket reuses `externalWait` rather than adding a value, so older native binaries keep rendering these rows as a known, non-alarming wait.
+
+Notifications follow the same rule. Human watchers (inbox and push), channel notifications and Action Center items are produced only for human-actor waits. An open owner wait still outranks a delivery gate, so such a stream presents as `waiting_on_owner` and gets neither a wait action nor a `workstream-delivery` action. The owner agent (else the squad manager) is still woken for every actor, with an actor-specific message. Correcting an open wait's actor (`POST /api/workstreams/:id/waits/:waitId/actor`, CLI `ficus workstream wait-actor`) is limited to users with `workstreams:update`, the owner agent or the squad manager. The change is appended to the wait's `actorChanges` audit trail. It never closes, reopens or re-dispatches the wait, and it sends the normal blocked notice when the new actor is `human`.
+
 ## Native projection and version skew
 
-`workBucket` deliberately aggregates human review, questions and manual blockers into amber `needsYou`. It preserves execution failures as `blocked`, uses neutral `paused`, and distinguishes orange `externalWait` from failures. Neither paused nor external work contributes to running or Needs you counts. Terminal rows are not part of Core's nonterminal interest query.
+`workBucket` deliberately aggregates human review, questions and human-actor manual blockers into amber `needsYou`. Owner-actor manual waits use `externalWait`. It preserves execution failures as `blocked`, uses neutral `paused`, and distinguishes orange `externalWait` from failures. Neither paused nor external work contributes to running or Needs you counts. Terminal rows are not part of Core's nonterminal interest query.
 
 Widget summaries add an authoritative optional `bucket`, boolean `pause` (never private pause reasons), and typed `delivery`. Prefer `bucket` when present; older payloads can fall back to the shared selector. This also preserves the omitted-waits compatibility projection without fabricating waits. `openWaitTypes` remains an explicit array for existing native decoders. New `bucketCounts.paused` and `bucketCounts.externalWait` keys are optional in the consumer type, and should default to zero against older servers. Interest authorization, uncapped counts, title privacy and attention-first ordering remain unchanged. Foreground snapshots and APNs use the same builder.
 
@@ -61,6 +76,8 @@ Source compatibility was inspected at `ficushq/tau-mobile` commit `c84b39e57de91
 - Older widget rows recompute their own buckets and cannot adopt the new semantics until updated; server totals remain authoritative. This is source verification, not a claim about every installed binary.
 
 ### Mobile adoption
+
+Actor-aware manual waits need the same adoption: map the `waiting_on_owner` label in JS adapters, and let native decoders tolerate the optional wait `actor`. Until then, older mobile builds render owner waits as Needs you in their own rows, while server-owned widget buckets and counts already exclude them.
 
 Repack the shared package from the **independently reviewed, merged Core commit**, recording the actual source SHA and package checksum. Do not use an unreviewed branch archive. Update JS adapters plus both Swift attribute copies, native bucket/label/color mapping and widget summary decoding together. Map `paused` to neutral and `externalWait` to orange; retain amber Needs you. Preserve unknown-value fallback. Consume optional new count keys with zero defaults, and prefer the server's summary bucket. Run foreground/APNs parity, legacy-payload decoding and widget fixtures before release. This contract does not authorize a mobile release.
 

@@ -20,13 +20,19 @@ import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
 import { eq, desc, and, sql, inArray, type SQL } from 'drizzle-orm'
 import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } from '../db'
 import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
-import { describeCodeHostReference, WORK_STREAM_ADMITTED_STATUSES, workStreamSourceLinkKindSchema } from '@ficus/shared'
+import {
+  describeCodeHostReference,
+  WORK_STREAM_ADMITTED_STATUSES,
+  workStreamSourceLinkKindSchema,
+  workStreamWaitActor,
+} from '@ficus/shared'
 import type {
   WorkStream as WorkStreamJson,
   WorktreeCleanupSummary,
   WorkStreamStatus,
   WorkStreamPriority,
   WorkStreamCompletionMode,
+  WorkStreamWaitActor,
   WorkStreamWaitCreatedBy,
   WorkStreamWaitCallerResolution,
   CreateWorkStreamInput,
@@ -73,6 +79,7 @@ export type WorkStreamWaitResolveErrorCode =
   | 'wait_already_closed'
   | 'work_stream_terminal'
   | 'invalid_resolution' // resolution not valid for the wait's type (or missing required note)
+  | 'wait_actor_immutable' // only an open, non-workflow manual wait's actor can be corrected
 
 /** Typed failure from {@link WorkStream.resolveWait} so routes can map codes to HTTP statuses. */
 export class WorkStreamWaitResolveError extends Error {
@@ -1801,6 +1808,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     scope?: 'stream' | 'attempt'
     flowAttemptId?: number
     message: string
+    /** Who must act to clear the wait; defaults to human. */
+    actor?: WorkStreamWaitActor
     createdBy?: WorkStreamWaitCreatedBy
     createdByAgentId?: string | null
     createdByUserId?: string | null
@@ -1819,6 +1828,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         scope: opts.scope,
         flowAttemptId: opts.flowAttemptId,
         message: opts.message,
+        actor: opts.actor ?? 'human',
         createdBy: opts.createdBy ?? 'system',
         createdByAgentId: opts.createdByAgentId ?? null,
         createdByUserId: opts.createdByUserId ?? null,
@@ -1832,8 +1842,14 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     const actionId = `workstream-blocked:${this.id}:${wait.id}`
     // The wait's creator IS the actor here — no separate parameter needed.
     const actorAgentId = opts.createdByAgentId ?? null
-    await notifyWorkStreamBlocked(this, { waitId: wait.id, actionId }, actorAgentId)
-    const payload = { workStreamId: this.id, squadId: this.squadId, waitId: wait.id, actorAgentId }
+    await notifyWorkStreamBlocked(this, { waitId: wait.id, actionId }, actorAgentId, wait)
+    const payload = {
+      workStreamId: this.id,
+      squadId: this.squadId,
+      waitId: wait.id,
+      actorAgentId,
+      waitActor: workStreamWaitActor(wait),
+    }
     eventEmitter.emit('workStream.blocked', payload)
     eventEmitter.emit('workStream.updated', payload)
     const { ensureFlowDispatch } = await import('../services/workflows/execution')
@@ -1983,6 +1999,85 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
     const [closed] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, wait.id))
     return closed
+  }
+
+  /**
+   * Correct who must act on one OPEN manual wait (human | owner).
+   * The wait stays open and keeps blocking exactly as before: nothing is
+   * closed, reopened, re-dispatched or re-admitted. Each change is appended to
+   * the wait's `actorChanges` audit trail. Workflow-owned manual waits (human
+   * approval gates) are not relabelable. Relabeling to `human` sends the normal
+   * blocked notice so the people who must now act hear about it.
+   */
+  async setWaitActor(
+    waitId: string,
+    input: {
+      actor: WorkStreamWaitActor
+      note?: string
+      changedByAgentId?: string | null
+      changedByUserId?: string | null
+    }
+  ): Promise<{ wait: WorkStreamWaitRow; changed: boolean }> {
+    const now = new Date()
+    const note = input.note?.trim() ? input.note.trim() : null
+    const result = await db.transaction(async (tx) => {
+      const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, this.id)).for('update')
+      if (!locked) throw new WorkStreamWaitResolveError('wait_not_found', `Work stream ${this.id} not found`)
+      if (locked.status === 'done' || locked.status === 'canceled') {
+        throw new WorkStreamWaitResolveError(
+          'work_stream_terminal',
+          `Cannot change a wait on a ${locked.status} work stream`
+        )
+      }
+      const [wait] = await tx.select().from(workStreamWaits).where(eq(workStreamWaits.id, waitId)).for('update')
+      if (!wait || wait.workStreamId !== this.id) {
+        throw new WorkStreamWaitResolveError('wait_not_found', `Wait ${waitId} not found on this work stream`)
+      }
+      if (wait.closedAt !== null) {
+        throw new WorkStreamWaitResolveError(
+          'wait_already_closed',
+          `Wait ${waitId} is already closed (${wait.resolution ?? 'no resolution'})`
+        )
+      }
+      if (wait.type !== 'manual' || wait.resolutionHandler === 'workflow') {
+        throw new WorkStreamWaitResolveError(
+          'wait_actor_immutable',
+          wait.type !== 'manual'
+            ? `Only manual (input-request) waits have an actor; wait ${waitId} is a ${wait.type} wait`
+            : `Wait ${waitId} is owned by the workflow; its actor cannot be changed`
+        )
+      }
+      const from = workStreamWaitActor(wait)
+      if (from === input.actor) return { wait, changed: false }
+      const change = {
+        from,
+        to: input.actor,
+        changedAt: now.toISOString(),
+        changedByAgentId: input.changedByAgentId ?? null,
+        changedByUserId: input.changedByUserId ?? null,
+        note,
+      }
+      const [updated] = await tx
+        .update(workStreamWaits)
+        .set({ actor: input.actor, actorChanges: [...(wait.actorChanges ?? []), change] })
+        .where(eq(workStreamWaits.id, wait.id))
+        .returning()
+      // Presentation/attention read models key off updatedAt; bump it so they refresh.
+      await tx.update(workStreams).set({ updatedAt: now }).where(eq(workStreams.id, this.id))
+      return { wait: updated!, changed: true }
+    })
+    if (!result.changed) return result
+    await this.reload()
+    if (input.actor === 'human') {
+      await notifyWorkStreamBlocked(
+        this,
+        { waitId: result.wait.id, actionId: `workstream-blocked:${this.id}:${result.wait.id}` },
+        input.changedByAgentId ?? null,
+        result.wait
+      )
+    }
+    eventEmitter.emit('workStream.updated', { workStreamId: this.id, squadId: this.squadId })
+    return result
   }
 
   /**

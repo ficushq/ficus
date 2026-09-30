@@ -1,9 +1,9 @@
 import { WorktreeCleanupSettings } from './WorktreeCleanupSettings'
-import { workStreamTitle, workStreamWaitDisplayType } from '@ficus/shared'
+import { workStreamTitle, workStreamWaitActor } from '@ficus/shared'
 import { WORK_STREAM_STATUS_ROLE } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
-import { getWsDisplayState, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'
+import { getWsDisplayState, WS_STATUS_LABELS, workStreamWaitBadge } from '../lib/workStreamStatusPresentation'
 export { getWsDisplayState, WS_STATUS_LABELS, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
 import { workStreamGithubRepository, workStreamPullRequests } from '../lib/workStreamGithub'
 import { WorkStreamPauseControls } from './WorkStreamPauseControls'
@@ -24,7 +24,7 @@ import { Badge, type BadgeColor } from './Badge'
 import { WorkStreamFileList } from './WorkStreamFileCard'
 import { GitHubIcon, PullRequestIcon } from './icons'
 import { AttentionMenu } from './AttentionMenu'
-import type { WorkStream, WorkStreamPriority, WorkStreamWaitType, Squad, Agent } from '@ficus/shared'
+import type { WorkStream, WorkStreamPriority, WorkStreamWait, Squad, Agent } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
 import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
 import { useTick } from '../hooks/useTick'
@@ -91,18 +91,10 @@ export function getWorkStreamNextSteps(metadata: Record<string, unknown> | null 
   return trimmed.length > 0 ? trimmed : null
 }
 
-const WAIT_TYPE_LABELS: Record<WorkStreamWaitType, string> = {
-  dependency: 'Dependency',
-  question: 'Question',
-  review: 'Review',
-  manual: 'Manual',
-}
-
-const WAIT_TYPE_BADGE_COLORS: Record<WorkStreamWaitType, BadgeColor> = {
-  dependency: 'externalWait',
-  question: 'humanWait',
-  review: 'review',
-  manual: 'danger',
+/** A wait's badge: its display type, and for manual waits who must act. */
+function WaitBadge({ wait, history }: { wait: WorkStreamWait; history?: boolean }) {
+  const { label, color } = workStreamWaitBadge(wait, { history })
+  return <Badge color={color}>{label}</Badge>
 }
 
 /** Friendly labels for a closed wait's resolution, shown in the audit history. */
@@ -323,7 +315,7 @@ export function WorkStreamDetailModal({
         {needsResponse && (
           <div className="p-4 rounded-xl bg-surface-secondary">
             <div className="flex items-center gap-2 mb-1.5">
-              <Badge color={reviewWait ? 'review' : 'danger'}>{reviewWait ? 'Review' : 'Manual'}</Badge>
+              {reviewWait ? <Badge color="review">Review</Badge> : manualWait && <WaitBadge wait={manualWait} />}
               {reviewWait && workStream.reviewRounds != null && (
                 <span className="text-xs text-muted">Round {workStream.reviewRounds + 1}</span>
               )}
@@ -341,6 +333,11 @@ export function WorkStreamDetailModal({
                 {(reviewWait ? (reviewWait.message ?? workStream.handoffMessage) : manualWait?.message) ?? ''}
               </MarkdownContent>
             </div>
+            {manualWait && workStreamWaitActor(manualWait) !== 'human' && (
+              <p className="mt-1.5 text-xs text-muted">
+                The stream&apos;s owner agent clears this wait; no action is needed from you.
+              </p>
+            )}
 
             {respondMutation.isError && (
               <p role="alert" className="mt-2 text-xs text-status-danger-600 dark:text-status-danger-400">
@@ -575,7 +572,7 @@ export function WorkStreamDetailModal({
               {questionWaits.map((wait) => (
                 <li key={wait.id} className="text-xs rounded-lg p-3 bg-surface-secondary">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge color={WAIT_TYPE_BADGE_COLORS.question}>{WAIT_TYPE_LABELS.question}</Badge>
+                    <WaitBadge wait={wait} />
                     {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
                     <span className="text-muted ml-auto">{new Date(wait.openedAt).toLocaleString()}</span>
                   </div>
@@ -823,9 +820,7 @@ export function WorkStreamDetailModal({
               {remainingWaits.map((wait) => (
                 <li key={wait.id} className={clsx('text-xs rounded-lg p-3 bg-surface-secondary')}>
                   <div className="flex items-center gap-2">
-                    <Badge color={WAIT_TYPE_BADGE_COLORS[workStreamWaitDisplayType(wait)]}>
-                      {WAIT_TYPE_LABELS[workStreamWaitDisplayType(wait)]}
-                    </Badge>
+                    <WaitBadge wait={wait} />
                     {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
                     {wait.type === 'review' && workStream.reviewRounds != null && (
                       <span className="text-muted">Round {workStream.reviewRounds + 1}</span>
@@ -859,7 +854,7 @@ export function WorkStreamDetailModal({
                 {closed.map((wait) => (
                   <li key={wait.id} className="text-xs bg-surface-secondary rounded-lg p-3">
                     <div className="flex items-center gap-2">
-                      <Badge color={WAIT_TYPE_BADGE_COLORS[wait.type]}>{WAIT_TYPE_LABELS[wait.type]}</Badge>
+                      <WaitBadge wait={wait} history />
                       {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
                       {wait.resolution && (
                         <span className="text-muted">{WAIT_RESOLUTION_LABELS[wait.resolution] ?? wait.resolution}</span>

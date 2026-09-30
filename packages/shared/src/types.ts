@@ -1153,6 +1153,30 @@ export type WorkStreamWaitResolution = 'satisfied' | 'answered' | 'approved' | '
 
 export type WorkStreamWaitCreatedBy = 'system' | 'agent' | 'manager' | 'operator'
 
+/**
+ * Who must act to clear a manual wait: `human` (the user/operator) or `owner`
+ * (the stream's owning agent; the squad manager when it has none). Only `human`
+ * manual waits ask for human attention; every actor blocks scheduling and flow
+ * progress identically.
+ */
+export const WORK_STREAM_WAIT_ACTORS = ['human', 'owner'] as const
+export type WorkStreamWaitActor = (typeof WORK_STREAM_WAIT_ACTORS)[number]
+
+/** One audited correction of a manual wait's actor (append-only, oldest first). */
+export interface WorkStreamWaitActorChange {
+  from: WorkStreamWaitActor
+  to: WorkStreamWaitActor
+  changedAt: string
+  changedByAgentId: string | null
+  changedByUserId: string | null
+  note: string | null
+}
+
+/** Normalize a possibly missing or unknown actor: anything unrecognized is human (older payloads). */
+export function workStreamWaitActor(wait: { actor?: string | null }): WorkStreamWaitActor {
+  return wait.actor === 'owner' ? 'owner' : 'human'
+}
+
 export interface WorkStreamWait {
   /** Missing/null means whole-stream; an ID pins the wait to one flow attempt. */
   flowAttemptId?: number | null
@@ -1161,6 +1185,13 @@ export interface WorkStreamWait {
   id: string
   workStreamId: string
   type: WorkStreamWaitType
+  /**
+   * Manual waits only: who must act. Omitted on other wait types and by older
+   * servers; consumers treat a missing or unknown actor as `human`.
+   */
+  actor?: WorkStreamWaitActor
+  /** Manual waits only, when the actor was corrected after opening: the audit trail. */
+  actorChanges?: WorkStreamWaitActorChange[]
   /** The dependency stream id or agent-question id; null for manual waits. */
   referenceId: string | null
   message: string | null

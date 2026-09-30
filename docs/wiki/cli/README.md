@@ -172,7 +172,7 @@ ficus ws list                 # List work streams
 ficus ws create <title>       # Create work stream
 ficus ws get <id>             # Get work stream details
 ficus ws update <id>          # Update work stream
-ficus ws request-input <id> -m "<msg>"   # Open a manual wait (needs input/action)
+ficus ws request-input <id> -m "<msg>"   # Open a manual wait (--actor human|owner)
 ficus ws unblock <id> -m "<note>"        # Resolve the input request
 ficus ws request-review <id> -m "<msg>"  # Open the review wait (--no-complete = checkpoint gate)
 ficus ws approve <id> [-m "<note>"]      # Approve review (completes the stream by default)

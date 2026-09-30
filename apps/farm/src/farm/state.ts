@@ -40,9 +40,10 @@ import type { BadgeKind, PlantState, RobotFace } from './types'
  *
  * `blocked` is split with `workStreamNeedsHumanAttention`, which is the
  * shared definition of "a manual wait the human can clear". The selector only
- * yields `blocked` from a manual wait or from a legacy payload with no wait
- * list, and both count as attention, so the `waiting` branch is a guard for
- * future producers rather than a path taken today.
+ * yields `blocked` from a human-actor manual wait or from a legacy payload
+ * with no wait list, and both count as attention, so the `waiting` branch is a
+ * guard for future producers rather than a path taken today. Owner-actor
+ * manual waits have their own state and draw as `waiting`.
  *
  * A queued stream whose dependencies aren't done (`waitingOnDependencies`,
  * set by the server) is drawn as `waiting`, not a seed stake: it is waiting on
@@ -59,6 +60,8 @@ const PLANT_FOR_STATE: Record<WorkStreamPresentationState, PlantRule> = {
   canceled: null,
   queued: (stream) => (stream.waitingOnDependencies ? 'waiting' : 'queued'),
   waiting_on_dependency: 'waiting',
+  // A manual wait the stream's owner agent must clear: nobody here has to act.
+  waiting_on_owner: 'waiting',
   paused: 'paused',
   in_progress: 'growing',
   active: 'growing',

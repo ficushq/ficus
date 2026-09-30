@@ -8,7 +8,14 @@ export interface CanonicalWorkStreamOrderInput {
   id: string
   status: WorkStreamStatus
   derivedState?: WorkStreamDerivedState
-  openWaits?: ReadonlyArray<Pick<WorkStreamWait, 'type' | 'closedAt'> & { id?: string }>
+  /** `actor` (manual waits) is optional; missing or unknown actors order as human. */
+  openWaits?: ReadonlyArray<
+    Pick<WorkStreamWait, 'type' | 'closedAt'> &
+      Partial<Pick<WorkStreamWait, 'resolutionHandler' | 'flowAttemptId'>> & {
+        id?: string
+        actor?: WorkStreamWait['actor'] | string | null
+      }
+  >
   priority?: WorkStreamPriority
   effectivePriority?: WorkStreamPriority
   queuePosition?: number
@@ -69,14 +76,18 @@ export function isValidQueuePosition(value: unknown): value is number {
 
 // Active urgency tiers, most human-actionable first:
 // 0. Waits a human must clear: a review that needs a human verdict, a
-//    question, or a manual/blocked wait.
+//    question, or a human-actor manual wait (legacy actor-less waits are
+//    human).
 // 1. Running work (in_progress).
 // 2. A review gate the delivery pipeline settles itself (annotated
 //    `automatedReviewGate`): CI / auto-merge pending, no human input needed.
 //    A human delivery gate (PR review/merge) stays in tier 0 regardless.
 // 3. Everything else: dependency waits (they wait on another stream, not a
-//    person), other external delivery waits, delivery setup/failure, idle,
-//    and failed executions.
+//    person), manual waits the stream's owner agent must clear, external
+//    delivery waits, delivery setup/failure, idle, and failed
+//    executions.
+// The tier follows the same shared presentation state as the badge and the
+// native bucket, so a row never sorts as if it belonged to another section.
 function activeUrgency(item: CanonicalWorkStreamOrderInput): number {
   const state = selectWorkStreamPresentationState({
     ...item,

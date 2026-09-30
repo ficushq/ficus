@@ -195,3 +195,43 @@ test('widget and live activity preserve pause/delivery, safe fields and omitted-
   expect(snapshot.liveActivity.top.find((row) => row.id === 'paused')?.bucket).toBe('paused')
   expect(JSON.stringify(snapshot)).not.toContain('private operator reason')
 })
+
+describe('manual wait actors in native projections', () => {
+  const manual = (actor?: string) =>
+    [
+      { id: `w-${actor ?? 'legacy'}`, type: 'manual', message: 'secret', ...(actor ? { actor } : {}) },
+    ] as WorkStream['openWaits']
+
+  test('only human (or actor-less) manual waits count as needs-you; owner waits are external waits', () => {
+    const snapshot = buildWorkInterestSnapshot([
+      stream({ id: 'human', openWaits: manual('human'), derivedState: 'blocked' }),
+      stream({ id: 'legacy', openWaits: manual(), derivedState: 'blocked' }),
+      stream({ id: 'owner', openWaits: manual('owner'), derivedState: 'blocked' }),
+      // The pre-rename value is unknown, so it is human.
+      stream({ id: 'unknown', openWaits: manual('manager'), derivedState: 'blocked' }),
+    ])
+    expect(snapshot.bucketCounts).toMatchObject({ needsYou: 3, externalWait: 1, blocked: 0 })
+    expect(snapshot.liveActivity.needsYouCount).toBe(3)
+    expect(Object.fromEntries(snapshot.top.map((row) => [row.id, row.bucket]))).toEqual({
+      human: 'needsYou',
+      legacy: 'needsYou',
+      owner: 'externalWait',
+      unknown: 'needsYou',
+    })
+    // Attention-first ordering puts only the human-actionable rows first.
+    expect(
+      snapshot.top
+        .slice(0, 3)
+        .map((row) => row.id)
+        .sort()
+    ).toEqual(['human', 'legacy', 'unknown'])
+    // The widget row keeps its existing shape: wait types only, never the actor's message.
+    expect(snapshot.top.find((row) => row.id === 'owner')?.openWaitTypes).toEqual(['manual'])
+  })
+
+  test('an owner-only wait does not keep the Live Activity visible', () => {
+    const state = buildLiveActivityState([stream({ openWaits: manual('owner'), derivedState: 'blocked' })])
+    expect(state).toMatchObject({ activeCount: 0, needsYouCount: 0 })
+    expect(shouldShowLiveActivity(state)).toBe(false)
+  })
+})

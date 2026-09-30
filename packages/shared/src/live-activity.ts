@@ -15,7 +15,11 @@ export type WorkBucketFacts = WorkStreamPresentationFacts
 export function workBucket(stream: WorkBucketFacts): WorkBucket {
   const state = selectWorkStreamPresentationState(stream)
   if (state === 'paused') return 'paused'
-  if (state === 'waiting_on_dependency' || state === 'delivery_external') return 'externalWait'
+  // Owner-actor manual waits are waits on someone other than
+  // the user: the existing non-alarming bucket, never Needs you. No new bucket
+  // value is introduced, so older native binaries keep rendering them.
+  if (state === 'waiting_on_dependency' || state === 'delivery_external' || state === 'waiting_on_owner')
+    return 'externalWait'
   if (workStreamNeedsHumanAttention(stream)) return 'needsYou'
   if (['blocked', 'idle', 'execution_failed', 'delivery_setup', 'delivery_failure'].includes(state)) return 'blocked'
   if (state === 'active' || state === 'in_progress') return 'running'

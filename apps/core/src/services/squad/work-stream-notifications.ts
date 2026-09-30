@@ -2,12 +2,14 @@ import {
   parseInboxPushPresentation,
   workStreamRef,
   workStreamTitle,
+  workStreamWaitActor,
   type AttentionKind,
   type InboxPushPresentation,
+  type WorkStreamWaitActor,
 } from '@ficus/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, inbox, squads } from '../../db/schema'
+import { agents, inbox, squads, workStreamWaits } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { InboxMessage, type SendInboxMessageInput } from '../../entities/InboxMessage'
 import { Squad } from '../../entities/Squad'
@@ -240,9 +242,10 @@ function getWorkStreamNextSteps(workStream: WorkStream): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined
 }
 
-// Human-facing lifecycle events. `blocked` is here because a manual wait is a DECISION waiting on a
-// person — the same class of interruption as a review — and a stream can sit blocked for hours
-// while everyone assumes an agent is working.
+// Human-facing lifecycle events. `blocked` is here because a human-actor manual wait is a DECISION
+// waiting on a person — the same class of interruption as a review — and a stream can sit blocked
+// for hours while everyone assumes an agent is working. Owner-actor manual waits
+// never reach human watchers (see notifyWorkStreamBlocked).
 const HUMAN_SUBSCRIBER_EVENTS: ReadonlySet<WorkStreamInboxEvent> = new Set(['review', 'blocked', 'done'])
 
 /** Which attention kind decides who hears about an event. */
@@ -396,8 +399,19 @@ async function notifyWorkStreamOwner(
   // Eligible human watchers are notified regardless of whether an agent owner
   // exists — and regardless of the actor. A human watching a stream still wants
   // to see that the manager cancelled it; only the ACTING AGENT's own copy is
-  // redundant, so the self-notification guard below sits after this call.
+  // redundant, so the self-notification guard sits in the owner-agent notice.
   await notifyWorkStreamSubscribers(workStream, event, message, target, pushDetail)
+  await notifyWorkStreamOwnerAgent(workStream, event, message, target, actorAgentId)
+}
+
+/** The owning agent's (owner, else squad manager) copy of a lifecycle event. It wakes the agent. */
+async function notifyWorkStreamOwnerAgent(
+  workStream: WorkStream,
+  event: WorkStreamInboxEvent,
+  message: string,
+  target?: ExactActionTarget,
+  actorAgentId?: WorkStreamActorAgentId
+): Promise<void> {
   try {
     const nextSteps = event === 'done' ? getWorkStreamNextSteps(workStream) : undefined
     const recipient = await resolveWorkStreamRecipient(workStream)
@@ -482,15 +496,53 @@ export async function notifyWorkStreamAssigned(
   }
 }
 
+type BlockedWaitFacts = { actor?: WorkStreamWaitActor | string | null; message?: string | null }
+
+/** Read the opened wait's actor/message when the caller (an event fallback) only knows its id. */
+async function loadBlockedWait(waitId: string): Promise<BlockedWaitFacts | undefined> {
+  try {
+    const [row] = await db
+      .select({ actor: workStreamWaits.actor, message: workStreamWaits.message })
+      .from(workStreamWaits)
+      .where(eq(workStreamWaits.id, waitId))
+      .limit(1)
+    return row
+  } catch (error) {
+    log.error(`Failed to load wait ${waitId} for blocked notification:`, error)
+    return undefined
+  }
+}
+
+/**
+ * A manual wait opened. Who hears about it follows the wait's actor:
+ * - human (also missing/unknown): human watchers (inbox + push) and the owning agent, as before;
+ * - owner: only the owning agent (owner, else squad manager) is woken — no human watcher is told.
+ */
 export async function notifyWorkStreamBlocked(
   workStream: WorkStream,
   target?: ExactActionTarget,
-  actorAgentId?: WorkStreamActorAgentId
+  actorAgentId?: WorkStreamActorAgentId,
+  wait?: BlockedWaitFacts
 ): Promise<void> {
-  await notifyWorkStreamOwner(
+  const facts = wait ?? (target ? await loadBlockedWait(target.waitId) : undefined)
+  const actor = workStreamWaitActor(facts ?? {})
+  const title = workStreamTitle(workStream)
+  if (actor === 'human') {
+    await notifyWorkStreamOwner(
+      workStream,
+      'blocked',
+      `Work stream "${title}" is blocked and needs attention.`,
+      target,
+      actorAgentId
+    )
+    return
+  }
+  const summary = `Work stream "${title}" is waiting on owner action (manual wait, actor: owner). No human action was requested; clear it with \`ficus workstream unblock ${workStreamRef(workStream)}${target ? ` --wait ${target.waitId}` : ''}\` once the condition is met.`
+  const reason = facts?.message?.trim()
+  await notifyWorkStreamOwnerAgent(
     workStream,
     'blocked',
-    `Work stream "${workStreamTitle(workStream)}" is blocked and needs attention.`,
+    reason ? `${summary}\n\nWait: ${reason}` : summary,
     target,
     actorAgentId
   )
