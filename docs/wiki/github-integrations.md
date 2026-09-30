@@ -133,6 +133,37 @@ If a previously started work stream is parked, subscribed events such as a PR me
 
 Existing repository/team routing and saved event triggers appear as editable rules on upgrade. No notification shell scripts are needed. Squad update permission is required to save rules. The CLI/API can also update `metadata.integrationRules.github` or `metadata.integrationRules.linear` on a squad. Each ordered rule has an `id`, `enabled`, `source` (`integration`, `output`, `version`, optional `connectionId`), `filters`, and one of the four `action.type` values: `notify-manager`, `notify-consultant`, `start-workstream`, `ignore`. The start action’s optional `workflow` uses the same preset/inline reference as work-stream creation.
 
+### Agent notification content
+
+GitHub notifications describe the event rather than replaying the parent issue or
+PR description on every update. Lifecycle and branch updates include the action,
+state, resource link, current head when available, and merge-conflict warning.
+An `edited` event explicitly points to the current title and description at that
+link, including when a description was cleared; it does not claim to know which
+field changed or provide a historical diff. Agents can retrieve full details with
+`gh pr view <url>` or `gh issue view <url>` using their squad connection.
+
+Opening, assignment, and review-request events retain their description context.
+Comments (including edits), submitted reviews, review-thread file/line links, and
+CI results retain their existing event text and identifiers. Unchanged parent
+descriptions are not added to feedback. Existing provider text-size limits still
+apply; this policy is not a new blanket truncation limit.
+
+Presentation is stateless and shared by worker delivery, parked-owner notices,
+manager/consultant and legacy fallback notices, and event-created work. It does
+not depend on a recipient having seen an earlier event. The original normalized
+fact and provider evidence remain unchanged, as do rule matching (including
+mentions), Event reference blocks, subscriptions, delivery receipts, and waits.
+Retained facts use the compact presentation when an inbox message is first
+created; already-created inbox messages and existing work descriptions are not
+rewritten.
+
+This policy does not expand event coverage: PR polling currently detects
+lifecycle/head transitions and feedback, not description-only edits. The output
+adapter admits submitted reviews, not edited or dismissed review events. Webhook
+and polling presentation is identical for the same admitted fact. Operator-defined
+webhook shell commands remain outside this native presentation policy.
+
 ### Typed conditions and match preview
 
 **Typed conditions** add an optional `predicates` array to each rule. Conditions are ANDed with one another, the existing per-rule filters and saved legacy equality matches. Shared scope is an additional AND only when enabled. Rules run in their stored array order, not ID order; the first enabled match wins, including `ignore`. Later rules are shown as **shadowed**, not as additional actions.

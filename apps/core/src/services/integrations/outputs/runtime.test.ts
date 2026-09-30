@@ -2851,3 +2851,140 @@ test('new delivery presentation evidence invalidates watchers once without chang
     stop()
   }
 })
+
+const repeatedDescription = 'Unchanged PR description that should stay in canonical evidence.\n'.repeat(80)
+function descriptionFact(number: number) {
+  return githubOutputAdapter.normalize({
+    type: 'pull_request',
+    payload: {
+      repository: { full_name: `${prefix}/repo` },
+      action: 'synchronize',
+      pull_request: {
+        id: number,
+        number,
+        body: repeatedDescription,
+        state: 'open',
+        updated_at: new Date().toISOString(),
+        head: { sha: 'abc123' },
+        html_url: `https://github.com/${prefix}/repo/pull/${number}`,
+      },
+    },
+  })[0]!
+}
+
+test('normal and parked/readmitted code-host deliveries compact descriptions but retain canonical facts and waits', async () => {
+  for (const parked of [false, true]) {
+    const number = parked ? 3101 : 3100
+    const owner = await Agent.create({ squadId, agentTypeId: prefix })
+    const id = parked ? await parkedCodeWork(number, owner.id) : await create(number, { codeHost: true })
+    const event = descriptionFact(number)
+    const eventId = await publish(event)
+    await publish(event)
+    const [stored] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    expect(stored!.fact).toEqual(event)
+    expect(stored!.fact.body).toContain(repeatedDescription)
+    expect(await deliveries(id)).toHaveLength(1)
+    if (parked) {
+      const notices = await ownerNotices(id)
+      expect(notices).toHaveLength(1)
+      expect(notices[0]!.content).not.toContain(repeatedDescription)
+      expect(notices[0]!.content).toContain(event.url!)
+      expect((await deliveries(id))[0]!.targets).toEqual([])
+      const { listOpenWaits } = await import('../../work-streams/waits')
+      expect(await listOpenWaits(db, id)).toHaveLength(1)
+      await (await WorkStream.mustFind(id)).unblock({ note: 'External dependency resolved' })
+      await reconcileOutputDeliveries(id)
+    }
+    const [delivery] = await deliveries(id)
+    expect(delivery!.targets).toHaveLength(1)
+    const [message] = await db.select().from(inbox).where(eq(inbox.id, delivery!.targets[0]!.inboxId))
+    expect(message!.content).not.toContain(repeatedDescription)
+    expect(message!.content).toContain('synchronize')
+    expect(message!.content).toContain('abc123')
+    expect(message!.content).toContain(event.url!)
+  }
+})
+
+test('manager fallback and legacy recipients get compact bodies without losing Event references', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    await db
+      .update(squads)
+      .set({
+        metadata: {
+          integrationRules: {
+            github: [
+              {
+                id: 'updates',
+                source: { integration: 'github', output: 'pull_request.updated', version: 1 },
+                filters: { audience: 'any' },
+                action: { type: 'notify-manager' },
+              },
+            ],
+          },
+        },
+      })
+      .where(eq(squads.id, squadId))
+    for (const legacy of [false, true]) {
+      const number = legacy ? 3111 : 3110
+      if (legacy)
+        await db.insert(workStreams).values({
+          squadId,
+          title: prefix,
+          assigneeAgentId: managerId,
+          metadata: { github: { repo: `${prefix}/repo`, pr: { number } } },
+        })
+      const event = descriptionFact(number)
+      const eventId = (await publishIntegrationOutput('github', event, { kind: 'connection', connectionId, squadId }))!
+      eventIds.push(eventId)
+      const messages = await managerMessages(managerId, eventId)
+      expect(messages).toHaveLength(1)
+      expect(messages[0]!.content).not.toContain(repeatedDescription)
+      expect(messages[0]!.content).toContain(event.url!)
+      if (!legacy) {
+        expect(messages[0]!.content).toContain(`Event reference: ${eventId}`)
+        expect(messages[0]!.content).toContain(`ficus workstream track <work-stream> --event ${eventId}`)
+      }
+    }
+  })
+})
+
+test('event-created work uses compact presentation and a retrieval link without altering its origin fact', async () => {
+  const event = descriptionFact(3120)
+  await db
+    .update(squads)
+    .set({
+      metadata: {
+        integrationTriggers: [
+          {
+            id: 'compact-update',
+            source: { integration: 'github', output: 'pull_request.updated', version: 1 },
+            match: { repository: { value: `${prefix}/repo` }, 'pullRequest.number': { value: 3120 } },
+            create: {
+              workflow: { kind: 'inline', definition: definition() },
+              titlePrefix: '',
+              metadata: {
+                'github.repo': { event: 'repository' },
+                'github.pr.number': { event: 'pullRequest.number' },
+              },
+            },
+          },
+        ],
+      },
+    })
+    .where(eq(squads.id, squadId))
+  try {
+    const eventId = await publish(event)
+    const [receipt] = await db
+      .select()
+      .from(integrationOutputTriggerRuns)
+      .where(eq(integrationOutputTriggerRuns.eventId, eventId))
+    const stream = await WorkStream.mustFind(receipt!.workStreamId!)
+    expect(stream.description).not.toContain(repeatedDescription)
+    expect(stream.description).toContain(event.url!)
+    expect(stream.pause).not.toBeNull()
+    const [stored] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    expect(stored!.fact).toEqual(event)
+  } finally {
+    await db.update(squads).set({ metadata: {} }).where(eq(squads.id, squadId))
+  }
+})
