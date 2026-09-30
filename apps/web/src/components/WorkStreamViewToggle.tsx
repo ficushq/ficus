@@ -1,8 +1,10 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import clsx from 'clsx'
 import { WORK_STREAM_VIEW_CHANGED_EVENT, WORK_STREAM_VIEW_STORAGE_PREFIX } from '@ficus/shared/browser-keys'
+import { SegmentedControl } from './SegmentedControl'
 
 export type WorkStreamViewMode = 'list' | 'kanban' | 'graph'
+
+const VIEW_LABELS: Record<WorkStreamViewMode, string> = { list: 'List', kanban: 'Kanban', graph: 'Graph' }
 export type WorkStreamViewSurface = 'work' | 'home'
 
 export function workStreamViewStorageKey(squadId: string, surface: WorkStreamViewSurface): string {
@@ -80,23 +82,12 @@ export function WorkStreamViewToggle({
 }) {
   const [view, setView] = useWorkStreamViewMode(squadId, surface, modes)
   return (
-    <div className="inline-flex overflow-hidden rounded-md border border-th-border" aria-label="Work stream view">
-      {modes.map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={view === option}
-          onClick={() => setView(option)}
-          className={clsx(
-            'ficus-button',
-            'px-2.5 py-1.5 text-xs font-medium capitalize transition-colors',
-            option !== modes[0] && 'border-l border-th-border',
-            view === option ? 'bg-accent text-on-accent' : 'bg-surface text-secondary hover:bg-surface-hover'
-          )}
-        >
-          {option}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      ariaLabel="Work stream view"
+      size="compact"
+      options={modes.map((mode) => ({ value: mode, label: VIEW_LABELS[mode] }))}
+      value={view}
+      onChange={setView}
+    />
   )
 }

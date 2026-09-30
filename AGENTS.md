@@ -220,6 +220,26 @@ light and dark.
   `apps/web/index.html`; a test fails when it is stale.
 - Details: [web themes](docs/wiki/theme/README.md); adding a new built-in theme has its own checklist: [Adding a built-in theme](docs/wiki/theme/builtins.md#adding-a-built-in-theme).
 
+### Shared components
+
+Before building a control in `apps/web`, use the shared one. Hand-rolled
+copies drift in look, keyboard behaviour and accessibility. If a shared
+component almost fits, extend it rather than forking it.
+
+| Need                                                                             | Use (`apps/web/src/components/`)                                                                                                                  |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A single choice among a few options in a row (view switcher, mode, scope, range) | `SegmentedControl` (`size="compact"` in toolbars and headers)                                                                                     |
+| A dropdown to pick one value                                                     | `SelectionPopup` (`ThemedPopup.tsx`; see `ThemedPopup.md`) for new pickers, not a custom listbox (some older forms still use a native `<select>`) |
+| A menu of actions, or in-app section navigation from a button                    | `ActionPopup` (`ThemedPopup.tsx`)                                                                                                                 |
+| A "…" overflow of row actions                                                    | `OverflowMenu`                                                                                                                                    |
+| A dialog or sheet                                                                | `Modal` (follows the visual viewport on mobile; never position your own fixed overlay)                                                            |
+| A destructive action that needs a second tap                                     | `ConfirmButton`                                                                                                                                   |
+| A status or label pill                                                           | `Badge` (and `WorkStreamStatusBadges` for work stream state)                                                                                      |
+| Loading placeholders                                                             | `LoadingContent` and the skeletons in `loading/Skeleton.tsx`                                                                                      |
+| Buttons, fields, nav items and tables                                            | the `ficus-button`, `ficus-button-primary`, `ficus-field`, `ficus-nav-item` and `ficus-table` classes                                             |
+| Icons                                                                            | `components/icons` (see Icons below)                                                                                                              |
+| Colors in JS                                                                     | `useThemeColors` / `tokenReader` (see Theme colors above)                                                                                         |
+
 ### Stable Refs
 
 Use `useStableRef` from `hooks/useStableRef` whenever you need to read a
