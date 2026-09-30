@@ -101,7 +101,18 @@ ficus workstream flow STREAM_ID
 ficus workstream advance STREAM_ID --content '{"expectedVersion":1,"attemptId":1,"action":"complete","outcome":"completed","evidence":"Tests passed"}' --request-id REQUEST_UUID
 ```
 
-Commands can complete, return, delegate, request completion-ready rework, or revise according to the flow and caller's permission. Authorized revisions may keep current attempt snapshots or restart with a new attempt/session. Retrying the same command uses the same request ID. Do not use legacy assignee/status edits to bypass a flow.
+Commands can complete, return, delegate, request completion-ready rework, or revise according to the flow and caller's permission. Retrying the same command uses the same request ID. Do not use legacy assignee/status edits to bypass a flow.
+
+### Keep outcomes live; restart only for fresh context
+
+An authorized manager can use `action: revise`, customization `operations`, `reason`, and `active: keep` to add, change, or remove outcomes on running work without resetting its conversation. Each affected kept running attempt, including parallel branches sharing the changed step, receives the revised outcome map. Completion at the new `expectedVersion` uses those routes; removed outcomes and old versions fail. Limited adaptive workers may revise permitted future work, but changing live outcomes requires flow-management permission.
+
+Keep preserves the attempt ID, **initial instructions and expected output**, all other step fields, participant/agent snapshots, session binding, branch, incoming evidence, returns, and waits. Revised instructions and participant settings apply to future attempts, not the old brief. Existing human gates, joins, return destinations, limits, and delivery requirements still apply; outcome changes do not approve a gate, clear a blocker, or authorize merge/deploy.
+
+Flow inspection exposes `activeOutcomes` (attempt ID, agent ID, binding version, routes) separately from the original `state.attempts[].step` snapshot. An affected attempt records `effectiveOutcomes: {version, outcomes}`; revision history records `affectedAttemptIds` and the immutable Core acceptance receipt `outcomeUpdates` alongside the definition, version, and reason. The receipt freezes agent identities at acceptance, including `agentId: null` for an unbound queued attempt; later admission changes live inspection, not the historical receipt. Completed/canceled snapshots are never retroactively changed. The revision response's `outcomeUpdates` identifies affected running attempts and agents and remains stable on request-ID retries, even after later revisions. Record scope in the stream description first, then steer every affected active agent with the new version/outcomes. Do not automatically dispatch new workers or fabricate approval to fit an old outcome.
+
+Use `active: restart` only when a fresh context is intended: it cancels the selected attempt, creates a new snapshot/attempt, and starts a **fresh session even for reuse-within-stream**. Old attempt tokens fail, and superseded attempt-scoped waits are retired. Other kept branches retain their sessions (and receive any affected outcome changes). Restart behavior and explicit session policies are unchanged.
+
 
 ## Questions and scoped waits
 

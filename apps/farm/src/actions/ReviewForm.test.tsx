@@ -318,3 +318,15 @@ describe('UnblockForm', () => {
     expect(api.resolveWorkStreamWait).not.toHaveBeenCalled()
   })
 })
+
+it('kept gates offer live outcomes instead of the original verdicts', async () => {
+  const value = workflowRun('gate')
+  const attempt = value.state.attempts.find((a) => a.id === value.state.activeAttemptId)!
+  attempt.effectiveOutcomes = { version: 8, outcomes: { accepted: { next: 'finish' } } }
+  value.version = 8
+  const api = fakeApi({ workflowRun: () => Promise.resolve(value), getWorkStream: () => Promise.resolve(stream()) })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  expect(hasButton(container, 'Accepted')).toBe(true)
+  expect(hasButton(container, 'Approved')).toBe(false)
+  expect(container.textContent).toContain('Taste the tomatoes')
+})

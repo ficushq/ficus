@@ -1,9 +1,9 @@
-import { isEarlierWorkflowStep, type WorkflowAttempt, type WorkflowRun } from '@ficus/shared'
+import { effectiveWorkflowStep, isEarlierWorkflowStep, type WorkflowAttempt, type WorkflowRun } from '@ficus/shared'
 
 /** Explain the actual run's capabilities, including the active attempt's pinned handoffs. */
 export function flowCapabilityInstructions(state: WorkflowRun, attempt: WorkflowAttempt, version = state.version) {
   const { definition } = state
-  const step = attempt.step ?? definition.steps.find((step) => step.id === attempt.stepId)!
+  const step = effectiveWorkflowStep(state, attempt)
   const remaining = Math.max(0, definition.limits.maxDelegations - (state.delegationCount ?? 0))
   const lines = [
     'Outcomes:\n',
@@ -57,7 +57,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
     )
   lines.push(
     definition.routing.mode === 'adaptive'
-      ? 'Live revision: use action=revise, operations, reason, and active=keep. Preserve existing steps, current attempts, participants, and delivery policy; do not increase limits. Other changes require the manager.'
+      ? 'Live revision: use action=revise, operations, reason, and active=keep. Live outcome changes require flow management permission; workers may revise permitted future work. Preserve existing steps, current attempts and their outcomes, participants, and delivery policy; do not increase limits. Other changes require the manager.'
       : 'Other flow changes: flow-management permission is required; ask the manager.'
   )
   const limits = [

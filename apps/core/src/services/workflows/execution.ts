@@ -8,8 +8,10 @@ import { createLogger } from '../../lib/infra/logger'
 import { and, eq } from 'drizzle-orm'
 import {
   activeWorkflowAttempts,
+  effectiveWorkflowStep,
   deliveryPullRequests,
   type WorkflowAttempt,
+  type WorkflowOutcomeBinding,
   advanceWorkflowRun,
   reopenWorkflowRun,
   createWorkflowRun,
@@ -142,6 +144,24 @@ function responseAssignments(id: string, run: Run, requestId: string, identity: 
       : []
   })
   return assignments.length ? { assignments } : {}
+}
+
+/** Inspection exposes live routing separately from the auditable initial attempt snapshot. */
+export function activeOutcomeBindings(run: Run): WorkflowOutcomeBinding[] {
+  return activeWorkflowAttempts(run.state).map((attempt) => ({
+    attemptId: attempt.id,
+    stepId: attempt.stepId,
+    agentId: run.attemptAgents[String(attempt.id)] ?? null,
+    version: attempt.effectiveOutcomes?.version ?? run.state.revisions?.[(attempt.revision ?? 0) - 1]?.version ?? 0,
+    outcomes: effectiveWorkflowStep(run.state, attempt).outcomes,
+  }))
+}
+
+/** Use the revision receipt, not today's routing, so request-id retries stay stable. */
+function revisionOutcomeUpdates(run: Run, version: number): { outcomeUpdates: WorkflowOutcomeBinding[] } {
+  const revision = run.state.revisions?.find((entry) => entry.version === version)
+  // Older revisions have no receipt; do not fabricate identities from today's live bindings.
+  return { outcomeUpdates: revision?.outcomeUpdates ?? [] }
 }
 
 export async function dispatchFlow(
@@ -364,6 +384,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         stateStatus: prior.stateStatus,
         activeAttemptId: prior.activeAttemptId,
         ...responseAssignments(id, run, requestId, identity),
+        ...(command.action === 'revise' ? revisionOutcomeUpdates(run, prior.version) : {}),
       }
     }
     if (stream.pause && command.action !== 'revise')
@@ -460,6 +481,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       })
       if (
         weakens ||
+        (state.revisions?.at(-1)?.affectedAttemptIds?.length ?? 0) > 0 ||
         command.active !== 'keep' ||
         state.definition.completion.mode !== previous.completion.mode ||
         (state.definition.limits.maxStepAttempts ?? Infinity) > (previous.limits.maxStepAttempts ?? Infinity) ||
@@ -517,6 +539,13 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         })
     }
     const updated = { ...run, state, participantSnapshots, version: state.version }
+    if (command.action === 'revise') {
+      const revision = state.revisions!.at(-1)!
+      // Freeze the accepted identities before dispatch can bind a previously queued attempt.
+      revision.outcomeUpdates = structuredClone(
+        activeOutcomeBindings(updated).filter((binding) => revision.affectedAttemptIds?.includes(binding.attemptId))
+      )
+    }
     await tx
       .update(workStreamFlowRuns)
       .set({ state, participantSnapshots, version: state.version, updatedAt: new Date() })
@@ -537,7 +566,11 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       .insert(workStreamFlowTransitions)
       .values({ workStreamId: id, requestId, requestHash: fingerprint, command, actorKey: actor, ...receipt })
     const [dispatched] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id))
-    return { ...receipt, ...responseAssignments(id, dispatched!, requestId, identity) }
+    return {
+      ...receipt,
+      ...responseAssignments(id, dispatched!, requestId, identity),
+      ...(command.action === 'revise' ? revisionOutcomeUpdates(dispatched!, state.version) : {}),
+    }
   })
   callbacks.forEach((callback) => callback())
   if (command.action === 'rework') {

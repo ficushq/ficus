@@ -358,3 +358,50 @@ test('deliverable auto-completion explicitly reports done instead of sending the
     await db.delete(workStreams).where(eq(workStreams.id, stream!.id))
   }
 })
+
+test('flow inspection exposes effective active outcomes separately from the initial human brief', async () => {
+  const flow = structuredClone(definition)
+  flow.steps = [
+    {
+      id: 'approval',
+      kind: 'human-approval',
+      approver: 'reviewers',
+      instructions: 'Original instructions',
+      output: 'Original verdict',
+      outcomes: { approved: { next: 'finish' } },
+    },
+  ]
+  flow.entry = 'approval'
+  const [stream] = await db.insert(workStreams).values({ squadId, title: prefix, status: 'active' }).returning()
+  try {
+    await db.transaction(async (tx) => {
+      await attachFlow(tx, stream!, { kind: 'inline', definition: flow })
+    })
+    const response = await request(`/runs/${stream!.id}/advance`, admin, 'POST', {
+      requestId: randomUUID(),
+      command: {
+        action: 'revise',
+        expectedVersion: 0,
+        attemptId: 1,
+        active: 'keep',
+        reason: 'New human verdict',
+        operations: [
+          {
+            op: 'put-step',
+            step: { ...flow.steps[0]!, instructions: 'Future brief', outcomes: { accepted: { next: 'finish' } } },
+          },
+        ],
+      },
+    })
+    expect(response.status).toBe(200)
+    const result = await response.json()
+    const inspected = await (await request(`/runs/${stream!.id}`, admin)).json()
+    expect(inspected.activeOutcomes).toEqual(result.outcomeUpdates)
+    expect(inspected.activeOutcomes).toEqual([
+      { attemptId: 1, stepId: 'approval', agentId: null, version: 1, outcomes: { accepted: { next: 'finish' } } },
+    ])
+    expect(inspected.state.attempts[0].step).toEqual(flow.steps[0])
+  } finally {
+    await db.delete(workStreams).where(eq(workStreams.id, stream!.id))
+  }
+})

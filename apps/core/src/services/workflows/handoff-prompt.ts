@@ -2,6 +2,7 @@ import {
   workStreamLabel,
   workStreamRef,
   activeWorkflowAttempts,
+  effectiveWorkflowStep,
   type WorkflowAttempt,
   type WorkflowRun,
 } from '@ficus/shared'
@@ -22,7 +23,7 @@ export function flowMessage(
   run: { state: WorkflowRun; version: number },
   attempt: WorkflowAttempt
 ) {
-  const step = attempt.step ?? run.state.definition.steps.find((entry) => entry.id === attempt.stepId)!
+  const step = effectiveWorkflowStep(run.state, attempt)
   const metadata = stream.metadata as { git?: Record<string, unknown>; codeHost?: Record<string, unknown> } | null
   const workspace = [
     ['Worktree', metadata?.git?.worktree],

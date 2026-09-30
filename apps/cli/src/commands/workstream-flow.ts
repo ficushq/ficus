@@ -27,7 +27,7 @@ export function registerWorkstreamFlowCommands(
   }
   command
     .command(`${legacy ? 'run' : 'flow'} <id>`, { hidden: legacy })
-    .description('Inspect the current flow, version, attempts, and return obligations')
+    .description('Inspect the current flow, version, attempts, effective active outcomes, and return obligations')
     .action((id: string) =>
       run(async () => {
         deps.output(await deps.apiGet(`/api/workflows/runs/${encodeURIComponent(id)}`))
@@ -38,7 +38,7 @@ export function registerWorkstreamFlowCommands(
     .option('--request-id <id>', 'Stable UUID for retrying this exact command')
     .addHelpText(
       'after',
-      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).'
+      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.'
     )
     .action((id: string, options: StructuredInputOptions & { requestId?: string }) =>
       run(async () => {

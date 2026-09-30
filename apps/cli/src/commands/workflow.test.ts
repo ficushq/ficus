@@ -162,3 +162,19 @@ test('workstream alias exposes execution commands and workflow help only adverti
   await legacy.run('run', 'stream-id')
   expect(legacy.calls).toEqual(f.calls)
 })
+
+test('advance help distinguishes live outcomes from deliberate session restart', () => {
+  const program = new Command()
+  registerWorkstreamCommands(program)
+  const command = program.commands.find((c) => c.name() === 'workstream')!.commands.find((c) => c.name() === 'advance')!
+  let help = ''
+  command.configureOutput({
+    writeOut: (text) => {
+      help += text
+    },
+  })
+  command.outputHelp()
+  expect(help).toContain('active=keep')
+  expect(help).toContain('active=restart')
+  expect(help).toContain('outcomeUpdates')
+})
