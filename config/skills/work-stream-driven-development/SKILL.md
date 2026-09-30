@@ -99,7 +99,10 @@ and review; repair conflicts through the flow and review the affected changes.
 Record follow-up work with the owner. Preserve other work and any shared branch;
 clean up owned temporary resources only after delivery and dependent use finish.
 
-The primary delivery PR is `codeHost.changeRequest`. When an integration
+The primary delivery PR is `codeHost.changeRequest`. A PR opened from the
+work stream's branch against its base branch is bound automatically as soon as
+the code host reports it; set it by hand only for a PR from a different branch.
+When an integration
 notification supplies `Event reference: <id>`, create or attach work with
 `ficus workstream create ... --from-event <id>` or
 `ficus workstream track <ws-id> --event <id>` — never hand-write

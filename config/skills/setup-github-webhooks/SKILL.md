@@ -108,9 +108,10 @@ When GitHub requests review from the connected GitHub account, or requests revie
 
 ## Step 5: Configure PR Tracking on Work Streams
 
-The work stream's own delivery PR (`codeHost.changeRequest`) is normally recorded
-automatically when a reviewer agent creates the PR through the git/worktree flow —
-do not hand-write it. To follow an _additional_ PR (a related PR, or one observed
+The work stream's own delivery PR (`codeHost.changeRequest`) is recorded
+automatically as soon as a webhook or poll reports a PR opened from the work
+stream's branch — do not hand-write it (a manual `set-meta` is only for a delivery
+PR opened from a different branch). To follow an _additional_ PR (a related PR, or one observed
 from an integration event) so its webhook events route to the right agent, track
 it instead of writing metadata directly:
 

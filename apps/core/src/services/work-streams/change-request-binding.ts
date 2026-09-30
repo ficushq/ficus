@@ -2,19 +2,22 @@ import { eq } from 'drizzle-orm'
 import { db, squads, workStreams } from '../../db'
 
 /**
- * Persist a finish-time-resolved delivery change request binding.
+ * Persist a resolved delivery change request binding.
  *
- * `finishFlow` resolves the delivery pull request from the stream's branch when
- * `codeHost.changeRequest` is missing; this records the outcome so the binding survives the
- * finish that produced it (and every later read shows what was actually verified). The write is
+ * Two callers resolve the delivery pull request from the stream's branch when
+ * `codeHost.changeRequest` is missing: code-host events for a pull request opened from that
+ * branch (as soon as it is observed), and `finishFlow` (the fallback). This records the outcome
+ * so the binding survives (and every later read shows what was actually verified). The write is
  * canonical `codeHost` (which legitimately shadows a legacy `github` shape), row-locked in the
  * codebase's squad-before-stream order, and never overwrites an existing binding: a manual
- * binding written concurrently always wins over the resolution.
+ * binding written concurrently always wins over the resolution. `stillMatches` re-checks, under
+ * the lock, that the stream metadata still identifies this pull request.
  */
 export async function recordChangeRequestBinding(
   streamId: string,
   reference: { integration: string; repository: string; connectionId?: string },
-  chosen: { number: number; url?: string }
+  chosen: { number: number; url?: string },
+  stillMatches?: (metadata: unknown) => boolean
 ): Promise<boolean> {
   const url =
     chosen.url ??
@@ -36,6 +39,7 @@ export async function recordChangeRequestBinding(
     const existing = codeHost.changeRequest as { number?: number } | undefined
     // Re-resolving what is already bound, or losing a race to a manual binding, changes nothing.
     if (existing?.number != null) return existing.number === chosen.number
+    if (stillMatches && !stillMatches(locked.metadata)) return false
     await tx
       .update(workStreams)
       .set({
