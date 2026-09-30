@@ -177,6 +177,11 @@ function Popup({
     if (disabled) setOpen(false)
   }, [disabled])
 
+  // A pointer selection only suppresses blur-dismissal within the current opening.
+  useEffect(() => {
+    pointerSelection.current = false
+  }, [open])
+
   const onBlur = (event: FocusEvent<HTMLElement>) => {
     const target = event.relatedTarget
     // Portal guards transfer Tab to the logical sibling before dismissing.

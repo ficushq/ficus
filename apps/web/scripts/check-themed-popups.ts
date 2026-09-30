@@ -220,6 +220,19 @@ try {
     }
   }
 
+  // Desktop composer: the mode trigger must not grow the split button beyond the submit half.
+  await load('delivery', 'bottom-right', 1200, 700)
+  const heights = await page.locator('.chat-composer-delivery').evaluate((group) => ({
+    submit: group.querySelector('button[type="submit"]')!.getBoundingClientRect().height,
+    mode: group.querySelector('button[aria-label="Message delivery"]')!.getBoundingClientRect().height,
+  }))
+  assert(
+    heights.mode <= heights.submit + 0.5,
+    `Desktop mode trigger ${heights.mode}px exceeds submit ${heights.submit}px`
+  )
+  assert(heights.submit < 44, `Desktop submit should stay compact, got ${heights.submit}px`)
+  cases++
+
   for (const edge of ['top-right', 'bottom-right']) {
     await load('delivery', edge, 1200, 700)
     await trigger('Message delivery').click()

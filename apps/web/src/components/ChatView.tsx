@@ -2288,7 +2288,7 @@ export function ChatView({
                           },
                         ]}
                         className={clsx(
-                          'ficus-button chat-composer-mode flex min-h-11 items-center border-l px-2.5 transition-colors disabled:opacity-50',
+                          'ficus-button chat-composer-mode flex min-h-[44px] md:min-h-0 items-center border-l px-2.5 transition-colors disabled:opacity-50',
                           deliveryMode === 'steer'
                             ? 'border-accent-active hover:bg-accent-hover'
                             : 'border-status-attention-700 hover:bg-status-attention-700'
