@@ -84,7 +84,14 @@ export interface WorkflowRun {
   attempts: WorkflowAttempt[]
   returns: WorkflowReturnObligation[]
   completedStepIds: string[]
-  revisions?: Array<{ version: number; definition: WorkflowDefinition; reason: string; affectedAttemptIds?: number[] }>
+  revisions?: Array<{
+    version: number
+    definition: WorkflowDefinition
+    reason: string
+    affectedAttemptIds?: number[]
+    /** Core acceptance receipt, including explicit null identities before participant binding. */
+    outcomeUpdates?: WorkflowOutcomeBinding[]
+  }>
   delegationCount?: number
   attemptEpoch?: number
   pauseReason?: { type: 'attempt-limit'; stepId: string }

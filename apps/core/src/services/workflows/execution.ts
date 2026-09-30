@@ -160,18 +160,8 @@ export function activeOutcomeBindings(run: Run): WorkflowOutcomeBinding[] {
 /** Use the revision receipt, not today's routing, so request-id retries stay stable. */
 function revisionOutcomeUpdates(run: Run, version: number): { outcomeUpdates: WorkflowOutcomeBinding[] } {
   const revision = run.state.revisions?.find((entry) => entry.version === version)
-  return {
-    outcomeUpdates: (revision?.affectedAttemptIds ?? []).map((id) => {
-      const attempt = run.state.attempts.find((entry) => entry.id === id)!
-      return {
-        attemptId: id,
-        stepId: attempt.stepId,
-        agentId: run.attemptAgents[String(id)] ?? null,
-        version,
-        outcomes: revision!.definition.steps.find((entry) => entry.id === attempt.stepId)!.outcomes,
-      }
-    }),
-  }
+  // Older revisions have no receipt; do not fabricate identities from today's live bindings.
+  return { outcomeUpdates: revision?.outcomeUpdates ?? [] }
 }
 
 export async function dispatchFlow(
@@ -549,6 +539,13 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         })
     }
     const updated = { ...run, state, participantSnapshots, version: state.version }
+    if (command.action === 'revise') {
+      const revision = state.revisions!.at(-1)!
+      // Freeze the accepted identities before dispatch can bind a previously queued attempt.
+      revision.outcomeUpdates = structuredClone(
+        activeOutcomeBindings(updated).filter((binding) => revision.affectedAttemptIds?.includes(binding.attemptId))
+      )
+    }
     await tx
       .update(workStreamFlowRuns)
       .set({ state, participantSnapshots, version: state.version, updatedAt: new Date() })

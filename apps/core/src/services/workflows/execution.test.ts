@@ -2031,3 +2031,36 @@ test('live outcome revision reports the affected sibling agent without touching 
   expect(await bindings(id)).toEqual(bindingsBefore)
   expect(await messages(id)).toEqual(messagesBefore)
 })
+
+test('queued live revision receipts retain unbound identities after admission and dispatch', async () => {
+  const id = await create('queued')
+  const initial = (await getFlow(id))!
+  const step = initial.state.definition.steps[0]!
+  const command = {
+    action: 'revise',
+    expectedVersion: initial.version,
+    attemptId: initial.state.activeAttemptId,
+    active: 'keep',
+    reason: 'Add a truthful verdict while awaiting admission',
+    operations: [{ op: 'put-step', step: { ...step, outcomes: { ...step.outcomes, waived: { next: 'review' } } } }],
+  }
+  const requestId = randomUUID()
+  const first = await advanceFlow(id, command, requestId, actor)
+  expect(first.outcomeUpdates).toEqual([
+    {
+      attemptId: 1,
+      stepId: 'build',
+      agentId: null,
+      version: 1,
+      outcomes: { ...step.outcomes, waived: { next: 'review' } },
+    },
+  ])
+  expect(await bindings(id)).toHaveLength(0)
+  await db.update(workStreams).set({ status: 'active' }).where(eq(workStreams.id, id))
+  await ensureFlowDispatch(id)
+  const admitted = (await getFlow(id))!
+  expect(admitted.attemptAgents['1']).toBeString()
+  expect(activeOutcomeBindings(admitted)[0]!.agentId).toBe(admitted.attemptAgents['1']!)
+  expect(await advanceFlow(id, command, requestId, actor)).toEqual(first)
+  expect(admitted.state.revisions!.at(-1)!.outcomeUpdates).toEqual(first.outcomeUpdates!)
+})
