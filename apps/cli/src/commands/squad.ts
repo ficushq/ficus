@@ -1095,14 +1095,23 @@ export function registerSquadCommands(program: Command) {
   // ficus squad cleanup-agents
   squad
     .command('cleanup-agents')
-    .description('Terminate eligible flex agents (those with all work streams done)')
-    .option('--dry-run', 'Show agents that would be terminated without actually terminating')
+    .description(
+      'Make eligible flex workers dormant; preserves history and worktrees (not deletion). Without --squad, sweeps all squads and requires system:cleanup.'
+    )
+    .option('--squad <id>', 'Clean only this squad (requires squad-scoped agents:terminate)')
+    .option('--dry-run', 'Preview eligible workers without requesting dormancy')
     .action(async (options) => {
       try {
-        const url = options.dryRun ? '/api/squads/cleanup-agents?dryRun=true' : '/api/squads/cleanup-agents'
+        const baseUrl = options.squad
+          ? `/api/squads/${encodeURIComponent(options.squad)}/cleanup-agents`
+          : '/api/squads/cleanup-agents'
+        const url = options.dryRun ? `${baseUrl}?dryRun=true` : baseUrl
+        const scope = options.squad ? `squad ${options.squad}` : 'all squads'
         const result = await apiPost<{
           checked: number
           terminated: number
+          deferred?: number
+          deferredAgents?: Array<{ id: string; name: string | null; agentTypeId: string; squadName: string | null }>
           agents: Array<{ id: string; name: string | null; agentTypeId: string; squadName: string | null }>
         }>(url, {})
 
@@ -1110,7 +1119,7 @@ export function registerSquadCommands(program: Command) {
           output(result)
         } else if (options.dryRun) {
           console.log(
-            `[Dry run] Would terminate ${result.terminated} of ${result.checked} flex agents${result.agents.length > 0 ? `:` : ''}`
+            `[Dry run: ${scope}] Would make dormant ${result.terminated} of ${result.checked} flex agents${result.agents.length > 0 ? `:` : ''}`
           )
           if (result.agents.length > 0) {
             outputTable(
@@ -1125,7 +1134,7 @@ export function registerSquadCommands(program: Command) {
           }
         } else {
           console.log(
-            `Checked ${result.checked} flex agents, terminated ${result.terminated}${result.agents.length > 0 ? `:` : ''}`
+            `[${scope}] Checked ${result.checked} flex agents, made dormant ${result.terminated}, deferred ${result.deferred ?? 0}${result.agents.length > 0 ? `:` : ''}`
           )
           if (result.agents.length > 0) {
             outputTable(

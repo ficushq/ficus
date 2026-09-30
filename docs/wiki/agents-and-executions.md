@@ -65,6 +65,29 @@ Retention uses two independent settings. `AGENT_DORMANT_RETENTION_DAYS` controls
 >
 > **Runtime wake cost:** Docker may recreate legacy pre-generation containers once during this upgrade. Afterward, dormancy stops/removes the personal container while retaining `/private`, and every wake creates a new container rather than resuming the old one. VM agent wake currently cannot use the parked-box fast path after its lifecycle generation rotates: dormancy parks the personal box, but wake performs full placement/provisioning again. Do not assume Docker-style resume latency or VM performance parity.
 
+### Guarded flex-worker cleanup
+
+Use `ficus squad cleanup-agents --squad <id> --dry-run` to preview eligible workers in one squad,
+then omit `--dry-run` to request cleanup. Both operations require `agents:terminate` on that squad;
+a squad manager can use its existing permission only within its own squad. No administrator grant is needed.
+Without `--squad`, the legacy command sweeps all squads and still requires instance-wide `system:cleanup`.
+
+Cleanup considers only live, non-persistent flex workers. Managers, consultants, parented subagents,
+and dormant/terminated records are excluded. Open work streams and protected transitional states
+prevent dormancy through the existing guarded lifecycle checks. Mid-turn requests are deferred until
+execution settlement, not force-stopped or reported as completed cleanup.
+
+This is **dormancy, not hard deletion**: eligible workers stop/sleep while their history and worktrees
+remain retained. Dormant workers can recover during `AGENT_DORMANT_RETENTION_DAYS` (default seven days);
+final termination and private-archive retention are separate backend policies. This command does not
+remove worktrees or purge historical agent rows.
+
+The API equivalents are `POST /api/squads/:id/cleanup-agents` and the administrator-only
+`POST /api/squads/cleanup-agents`, with optional `?dryRun=true`. JSON output preserves `checked`,
+`terminated`, and `agents`: the legacy `terminated` field counts workers made **dormant** (or eligible
+workers for a dry run), not irreversible final termination. `deferred` and `deferredAgents` separately
+report accepted requests still awaiting execution settlement; dry runs do not create deferred requests.
+
 ## Agent Types
 
 Agent types are defined as YAML files in `config/agent-types/` and synced to the `agent_types` table on startup via ConfigSync (`services/config-sync/agent-type-sync.ts`).
