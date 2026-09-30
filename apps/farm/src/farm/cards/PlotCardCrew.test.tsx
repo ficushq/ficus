@@ -104,11 +104,11 @@ describe('PlotCard crew', () => {
   })
 
   it('shows the description last, folded when long, with Show more', async () => {
-    const long = `${'The checklist should explain every step. '.repeat(12)}\nAnd a closing line.`
+    const long = `${'The checklist should explain every step. '.repeat(12)}\n\nAnd a closing line.`
     const card = await openPlot('w1', [], long)
     const headings = [...card.querySelectorAll('h3')].map((h) => h.textContent)
     expect(headings.at(-1)).toBe('Description')
-    const text = card.querySelector('.g-expandable-text')!
+    const text = card.querySelector('.g-expandable-md')!
     expect(text.textContent).toContain('And a closing line.')
     expect(text.getAttribute('data-folded')).toBe('true')
     const toggle = card.querySelector<HTMLButtonElement>('.g-expandable-toggle')!
@@ -119,9 +119,19 @@ describe('PlotCard crew', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('renders the description as markdown, not raw syntax', async () => {
+    const card = await openPlot('w1', [], '## Goal\n\n1. Cache the **slug** map.\n2. Keep `first paint` the same.')
+    const md = card.querySelector('.g-expandable-md .g-card-md')!
+    expect(md.querySelector('h2')?.textContent).toBe('Goal')
+    expect([...md.querySelectorAll('ol > li')]).toHaveLength(2)
+    expect(md.querySelector('strong')?.textContent).toBe('slug')
+    expect(md.querySelector('code')?.textContent).toBe('first paint')
+    expect(md.textContent).not.toContain('##')
+  })
+
   it('shows a short description whole, with no toggle', async () => {
     const card = await openPlot('w1', [], 'Rename it everywhere.')
-    expect(card.querySelector('.g-expandable-text')?.getAttribute('data-folded')).toBeNull()
+    expect(card.querySelector('.g-expandable-md')?.getAttribute('data-folded')).toBeNull()
     expect(card.querySelector('.g-expandable-toggle')).toBeNull()
   })
 
