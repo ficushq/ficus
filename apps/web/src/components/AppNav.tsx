@@ -14,6 +14,7 @@ import { getTabNavigationTarget, recordTabPath } from '../hooks/useTabHistory'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { AssistantActivityBadge } from './AssistantActivityBadge'
+import { SquadSwitcher } from './SquadSwitcher'
 import { ThemeQuickPicker } from './ThemeQuickPicker'
 import { useTheme } from '../providers/ThemeProvider'
 import { selfServiceQueryEnabled, useOptionalAuth } from '../providers/AuthProvider'
@@ -134,6 +135,30 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
                       location.pathname.startsWith('/actions')
                     : location.pathname.startsWith(item.to)
                 const showActionBadge = item.to === '/' && (actionsError || (actionCount ?? 0) > 0)
+                // Squads is a split button, like the composer's send mode: the link, then an
+                // attached chevron to jump to another squad on the same tab.
+                if (item.to === '/squads')
+                  return (
+                    <span
+                      key={item.to}
+                      className={clsx('flex items-stretch overflow-hidden rounded-md', isActive && 'bg-selection')}
+                    >
+                      <NavLink
+                        to={item.to}
+                        className={clsx(
+                          'ficus-nav-item relative px-4 py-2 text-sm font-medium transition-colors',
+                          isActive ? 'text-accent-light' : 'text-secondary  hover:text-accent-light'
+                        )}
+                      >
+                        {item.label}
+                      </NavLink>
+                      <span
+                        aria-hidden="true"
+                        className={clsx('w-px shrink-0', isActive ? 'bg-accent/25' : 'my-2.5 bg-th-border')}
+                      />
+                      <SquadSwitcher active={isActive} />
+                    </span>
+                  )
                 return (
                   <NavLink
                     key={item.to}

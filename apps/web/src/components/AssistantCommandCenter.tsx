@@ -198,13 +198,26 @@ export function AssistantCommandCenter({
     if (active && (!entry || entry.kind === 'squad'))
       resultsRef.current?.querySelector(`[data-result-index="${index}"]`)?.scrollIntoView?.({ block: 'nearest' })
   }, [index, active, entry])
+  /** The app page a result stands for, for Shift+Enter: the squad itself, a stream on its Work tab, a chat in its squad. */
+  const pagePath = (result: CommandResult | undefined): string | undefined => {
+    const target = result?.destination
+    if (!target) return result?.path
+    if (target.kind === 'squad') return `/squads/${slugFor(target.id)}`
+    if (target.kind === 'work') return `/squads/${slugFor(target.squadId)}/work?ws=${encodeURIComponent(target.id)}`
+    if (target.kind === 'chat' && target.squadId && target.agentId)
+      return `/squads/${slugFor(target.squadId)}/agents?agent=${encodeURIComponent(target.agentId)}`
+    return undefined
+  }
+  /** Leave the Assistant for a page: it closes rather than following along. */
+  const openPage = (path: string) => {
+    onNavigate()
+    navigate(path, { state: CLOSE_ASSISTANT_STATE })
+  }
   const choose = (result: CommandResult) => {
     if (result.destination) push(result.destination)
-    else if (result.path) {
-      onNavigate()
-      navigate(result.path, { state: CLOSE_ASSISTANT_STATE })
-    }
+    else if (result.path) openPage(result.path)
   }
+  const selectedPage = pagePath(visible[index])
   const start = (targetId: string, text?: string) =>
     push({
       kind: 'chat',
@@ -279,6 +292,12 @@ export function AssistantCommandCenter({
             setSelected(0)
           }}
           onKeyDown={(event) => {
+            // Shift+Enter: go to the result's own page (the squad, not its nested Assistant view).
+            if (event.key === 'Enter' && event.shiftKey && selectedPage) {
+              event.preventDefault()
+              openPage(selectedPage)
+              return
+            }
             if (squadScope && !query.trim() && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
               event.preventDefault()
               const rows = viewRef.current?.querySelectorAll<HTMLButtonElement>(
@@ -509,6 +528,7 @@ export function AssistantCommandCenter({
                 : squadScope
                   ? 'Enter to start'
                   : 'Enter to ask'}
+            {selectedPage && visible[index]?.destination && ' · Shift+Enter for its page'}
             {' · ↑ ↓ select · Esc back'}
           </span>
           {!squadScope && (
