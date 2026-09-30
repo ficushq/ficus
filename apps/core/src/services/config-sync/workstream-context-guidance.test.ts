@@ -111,3 +111,20 @@ test('workflow guidance prefers inline content and stdin rather than mandatory t
     expect(text).not.toContain('--flow source.yaml')
   }
 })
+
+test('consultants opt into terminal observation for reporting, never management', async () => {
+  const prompt = (await readRepoFile('config/agent-types/consultant.yaml')).replace(/\s+/g, ' ')
+  for (const syntax of [
+    '--observe terminal',
+    'ficus workstream observe <id>',
+    'ficus workstream unobserve <id>',
+    'ficus workstream observation <id>',
+  ])
+    expect(prompt).toContain(syntax)
+  expect(prompt).toContain('one-shot')
+  expect(prompt).toContain('already terminal')
+  expect(prompt).toContain('USER subscribe/unsubscribe')
+  expect(prompt).toContain('not management instructions')
+  expect(prompt).toContain('Assistant task reporting')
+  expect(prompt).toContain('do not poll')
+})

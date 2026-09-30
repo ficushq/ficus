@@ -10,7 +10,7 @@ import {
 } from '@ficus/shared'
 import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
 import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@ficus/shared'
@@ -68,6 +68,7 @@ export interface WorkStream {
   worktree?: string
   baseBranch?: string
   spawnedAgents?: WorkStreamSpawnedAgentSummary[]
+  observing?: boolean
   createdAt: string
   metrics?: WorkStreamMetrics | null
   /** create returns 200 with this set when an idempotent replay from --from-event matched an existing stream. */
@@ -422,6 +423,11 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('-t, --task <taskId>', 'Associated task ID')
     .option('-d, --description <desc>', 'Description')
     .option('--owner <agentId>', 'Owner agent for this work stream (receives lifecycle notifications)')
+    .addOption(
+      new Option('--observe <events>', 'Agent-only, one-shot terminal update; does not change ownership').choices([
+        'terminal',
+      ])
+    )
     .option('--reviewer <userId>', 'Assign a reviewer user ID (can repeat)', collect, [])
     .option('--depends-on <wsId>', 'Dependency work stream ID (can repeat)', collect, [])
     .option('--priority <priority>', `Scheduling priority: ${WORK_STREAM_PRIORITIES.join(', ')} (default: normal)`)
@@ -464,6 +470,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           title,
           description: options.description,
           ownerAgentId: options.owner,
+          ...(options.observe ? { observe: options.observe } : {}),
           ...(options.reviewer?.length ? { assignedReviewerIds: options.reviewer } : {}),
           handoffMessage: options.message,
           ...(options.requestingUser ? { requestingUserId: options.requestingUser } : {}),
@@ -507,6 +514,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           console.log(`Work:        ${workStreamLabel(ws)}`)
           console.log(`Title:       ${ws.title}`)
           console.log(`Status:      ${formatState(ws)}`)
+          if (ws.observing !== undefined) console.log(`Observing:   ${ws.observing ? 'terminal (one-shot)' : 'no'}`)
           console.log(
             `Auto cleanup: ${ws.autoCleanupWorktree ? 'enabled (after delivery and execution settlement)' : 'disabled (retain worktree)'}`
           )
@@ -1171,6 +1179,35 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       try {
         await apiDelete(`/api/workstreams/${encodeURIComponent(id)}`)
         console.log(`Deleted work stream ${id}`)
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  ws.command('observe <id>')
+    .description('Observe one terminal outcome as the calling agent (not a user subscription)')
+    .addOption(new Option('--events <events>', 'Event set').choices(['terminal']).default('terminal'))
+    .action(async (id, options) => {
+      try {
+        output(await apiPost(`/api/workstreams/${encodeURIComponent(id)}/observe`, { events: options.events }))
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+  ws.command('unobserve <id>')
+    .description('Remove the calling agent’s terminal observation')
+    .action(async (id) => {
+      try {
+        output(await apiDelete(`/api/workstreams/${encodeURIComponent(id)}/observe`))
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+  ws.command('observation <id>')
+    .description('Show whether the calling agent is observing terminal delivery')
+    .action(async (id) => {
+      try {
+        output(await apiGet(`/api/workstreams/${encodeURIComponent(id)}/observation`))
       } catch (error) {
         outputError(error as Error)
       }

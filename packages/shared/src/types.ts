@@ -1377,6 +1377,8 @@ export interface WorkStreamRuntime {
 }
 
 export interface CreateWorkStreamInput {
+  /** One-shot terminal observation for the server-authenticated creating agent. */
+  observe?: 'terminal'
   /** Automatically reclaim an owned worktree after delivery and associated execution settlement. Defaults true for new streams. */
   autoCleanupWorktree?: boolean
   assignedReviewerIds?: string[]

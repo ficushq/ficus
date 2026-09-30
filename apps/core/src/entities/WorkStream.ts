@@ -1,3 +1,4 @@
+import { observeWorkStreamInTransaction, persistTerminalObservers } from '../services/work-streams/observers'
 import { worktreeAttachmentPaths } from '../services/work-streams/worktree-cleanup-attachments'
 import {
   assertWorktreeCleanupMutable,
@@ -729,6 +730,10 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           metadata: mergedMetadata,
         })
         .returning()
+      if (input.observe === 'terminal') {
+        if (!input.creatorAgentId) throw new Error('Agent identity required for observation')
+        await observeWorkStreamInTransaction(tx, created.id, input.creatorAgentId)
+      }
       if (ownership)
         await tx.insert(workStreamWorktrees).values({ workStreamId: created.id, squadId: created.squadId, ownership })
       // System-maintained dependency waits: one open record per unsatisfied
@@ -1105,6 +1110,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     // acts on exactly the agents the durable request accepted. Deriving the
     // eligible set twice would let the two paths disagree about who may sleep.
     let crewMarkedForDormancy: string[] = []
+    const observerAfterCommit: Array<() => void> = []
     const row = await db.transaction(async (tx) => {
       // Global lock order: transactions that may touch both rows always lock
       // squad before work_stream. Promotion/admission uses the same order.
@@ -1293,12 +1299,14 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         (updated.status === 'done' && previousStatus !== 'done') ||
         (updated.status === 'canceled' && previousStatus !== 'canceled')
       ) {
+        await persistTerminalObservers(tx, updated, observerAfterCommit)
         crewMarkedForDormancy = await markCrewForDormancy(tx, updated.agentIds ?? [])
       }
       return updated
     })
 
     await this.assignMutationRow(row)
+    await Promise.all(observerAfterCommit.map((callback) => callback()))
 
     const payload = { workStreamId: this.id, squadId: this.squadId }
 
@@ -1601,6 +1609,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   ): Promise<this> {
     this.assertNotTerminal('approve')
     const note = opts.note && opts.note.trim().length > 0 ? opts.note : undefined
+    const observerAfterCommit: Array<() => void> = []
     const result = await db.transaction(async (tx) => {
       const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, this.id)).for('update')
       if (!locked) throw new Error(`Work stream ${this.id} not found`)
@@ -1673,6 +1682,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         }
         throw new Error('Work stream status changed concurrently; approval aborted')
       }
+      await persistTerminalObservers(tx, updated, observerAfterCommit)
       await enqueueWorktreeCleanup(tx, this.id, updated.metadata as Record<string, unknown>)
       if (locked.status === 'active') {
         await invalidateContinuationCycle(tx, this.id)
@@ -1689,6 +1699,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       return { row: updated, completed: true as const }
     })
     await this.assignMutationRow(result.row)
+    await Promise.all(observerAfterCommit.map((callback) => callback()))
 
     const payload = { workStreamId: this.id, squadId: this.squadId }
     eventEmitter.emit('workStream.responded', {

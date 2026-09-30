@@ -1150,6 +1150,12 @@ async function startup(): Promise<void> {
       task: reconcileWorktreeCleanup,
     }).start()
   }
+  createPeriodicRunner({
+    name: 'work-stream-observers',
+    intervalMs: 15_000,
+    runImmediately: true,
+    task: async () => (await import('./services/work-streams/observers')).reconcileObserverDeliveries(),
+  }).start()
   registerSandboxWarmupHandlers()
   setPrecompactionLifecycleSink(precompactionLifecycleSink)
   registerPrecompactionEviction()

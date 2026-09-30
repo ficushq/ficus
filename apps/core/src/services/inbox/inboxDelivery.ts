@@ -14,7 +14,48 @@ export async function deliverInboxMessagesToAgent(agentId: string): Promise<void
   const pending = await InboxMessage.listUndeliveredUnread('agent', agent.id)
   const { isCurrentFlowMessage } = await import('../workflows/execution')
   const messages: InboxMessage[] = []
-  for (const message of pending) if (await isCurrentFlowMessage(message)) messages.push(message)
+  // Observer mail is informational, never a lifecycle wake. Recheck at delivery:
+  // an agent may have been stopped/deleted or lost access after the terminal commit.
+  const hasObserverMail = pending.some((message) => message.metadata?.source === 'work-stream-observer')
+  const latest = hasObserverMail ? await agent.getLatestExecution() : null
+  for (const message of pending) {
+    if (message.metadata?.source === 'work-stream-observer') {
+      const { hasPermission } = await import('../rbac/permissions')
+      const squadId = message.metadata.squadId
+      if (
+        agent.pendingDormancyAt ||
+        ['terminated', 'dormant', 'waiting-input'].includes(agent.status) ||
+        (latest && ['stopping', 'stopped', 'failed'].includes(latest.status)) ||
+        typeof squadId !== 'string' ||
+        agent.squadId !== squadId ||
+        !(await hasPermission(
+          { type: 'agent', agentId: agent.id, squadId: agent.squadId },
+          'workstreams:read',
+          squadId
+        ))
+      ) {
+        await message.markAsRead()
+        continue
+      }
+    }
+    if (message.metadata?.source === 'work-stream-observer') {
+      // A stable chat receipt, rather than a pre-send deliveredAt claim, closes
+      // both crash windows: before acceptance and after acceptance before ack.
+      // Keep the mode/payload stable even if the conversation becomes active.
+      const delivery = prepareInboxDelivery([message], 'follow-up', 'follow-up')
+      try {
+        const result = await agent.sendMessage(delivery.prompt, {
+          deliveryMode: 'follow-up',
+          metadata: { ...delivery.metadata, clientId: `work-stream-observer:${message.id}` },
+        })
+        if (result.success) await message.update({ deliveredAt: new Date() })
+      } catch {
+        // The committed inbox row remains pending; receipt replay is safe.
+      }
+      continue
+    }
+    if (await isCurrentFlowMessage(message)) messages.push(message)
+  }
   if (messages.length === 0) return
   if (agent.status === 'terminated') return
   if (agent.status === 'dormant' && !messages.some(isInboxMessageWakeEligible)) return

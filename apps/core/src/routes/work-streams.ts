@@ -1,3 +1,9 @@
+import {
+  isObservingWorkStream,
+  observeWorkStream,
+  unobserveWorkStream,
+  ObservationError,
+} from '../services/work-streams/observers'
 import { inspectWorktreeCleanup } from '../services/work-streams/worktree-cleanup-inspection'
 import { WorktreeCleanupConflictError } from '../services/work-streams/worktree-cleanup-store'
 import { HTTPException } from 'hono/http-exception'
@@ -802,6 +808,11 @@ export const workStreamsRouter = new Hono()
     const allowed = await hasPermission(identity, 'workstreams:create', input.squadId)
     c.set('authzChecked', true)
     if (!allowed) return c.json({ error: 'Forbidden' }, 403)
+    if (
+      input.observe &&
+      (identity.type !== 'agent' || !(await hasPermission(identity, 'workstreams:read', input.squadId)))
+    )
+      return c.json({ error: 'Observation requires an authenticated agent with stream read access' }, 403)
 
     // Verify squad exists
     const squad = await Squad.find(input.squadId)
@@ -876,12 +887,36 @@ export const workStreamsRouter = new Hono()
       const stream = await WorkStream.create({ ...input, requestingUserId, creatorAgentId })
       // Auto-subscribe the requester to the stream's lifecycle updates (like watching a GitHub PR).
       if (requestingUserId) await subscribeToWorkStream(stream.id, requestingUserId)
-      return c.json(stream.toJson(), 201)
+      return c.json(
+        {
+          ...stream.toJson(),
+          ...(identity.type === 'agent' ? { observing: await isObservingWorkStream(stream.id, identity.agentId) } : {}),
+        },
+        201
+      )
     } catch (error) {
       if (error instanceof WorkStreamEventAlreadyHandledError) {
         const existing = await WorkStream.mustFind(error.workStreamId)
-        return c.json({ ...existing.toJson(), reusedFromEvent: true }, 200)
+        if (input.observe && identity.type === 'agent') {
+          try {
+            await observeWorkStream(existing.id, identity.agentId)
+          } catch (error) {
+            if (error instanceof ObservationError) return c.json({ error: error.message }, error.status)
+            throw error
+          }
+        }
+        return c.json(
+          {
+            ...existing.toJson(),
+            reusedFromEvent: true,
+            ...(identity.type === 'agent'
+              ? { observing: await isObservingWorkStream(existing.id, identity.agentId) }
+              : {}),
+          },
+          200
+        )
       }
+      if (error instanceof ObservationError) return c.json({ error: error.message }, error.status)
       if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)
       if (error instanceof WorktreeCleanupConflictError)
         return c.json({ error: error.message, code: 'worktree_cleanup_conflict' }, 409)
@@ -927,8 +962,10 @@ export const workStreamsRouter = new Hono()
             .then((u) => u?.displayName || u?.email || null)
             .catch(() => null)
         : null
+      const identity = c.get('identity') as Identity | undefined
       const json = {
         ...stream.toJson(),
+        ...(identity?.type === 'agent' ? { observing: await isObservingWorkStream(stream.id, identity.agentId) } : {}),
         runtime,
         requestingUserName,
         ...priorityAnnotations,
@@ -944,6 +981,49 @@ export const workStreamsRouter = new Hono()
       }
 
       return c.json(json)
+    }
+  )
+  // Agent-only, self-service observations. User subscriptions below remain unchanged.
+  .get(
+    '/:id/observation',
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
+    async (c) => {
+      const identity = c.get('identity') as Identity | undefined
+      if (identity?.type !== 'agent') return c.json({ error: 'Agent identity required' }, 403)
+      const id = await routeWorkStreamId(c)
+      return c.json({ observing: await isObservingWorkStream(id, identity.agentId), events: 'terminal' })
+    }
+  )
+  .post(
+    '/:id/observe',
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
+    async (c) => {
+      const identity = c.get('identity') as Identity | undefined
+      if (identity?.type !== 'agent') return c.json({ error: 'Agent identity required' }, 403)
+      const body = await parseOptionalJsonObjectBody(c, {} as Record<string, unknown>)
+      const parsed = z
+        .object({ events: z.literal('terminal').optional() })
+        .strict()
+        .safeParse(body)
+      if (!parsed.success)
+        return c.json({ error: 'Only terminal events are supported; recipient is the calling agent' }, 400)
+      try {
+        await observeWorkStream(await routeWorkStreamId(c), identity.agentId)
+        return c.json({ observing: true, events: 'terminal' })
+      } catch (error) {
+        if (error instanceof ObservationError) return c.json({ error: error.message }, error.status)
+        throw error
+      }
+    }
+  )
+  .delete(
+    '/:id/observe',
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
+    async (c) => {
+      const identity = c.get('identity') as Identity | undefined
+      if (identity?.type !== 'agent') return c.json({ error: 'Agent identity required' }, 403)
+      await unobserveWorkStream(await routeWorkStreamId(c), identity.agentId)
+      return c.json({ observing: false, events: 'terminal' })
     }
   )
   // --- Work-stream attention (levels for this stream; a row here overrides the squad's) ---

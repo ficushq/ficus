@@ -133,3 +133,17 @@ Consultants use `squad_bash` for repository and project commands so they operate
 - [Core API Authentication](core-auth.md) — agent identities, RBAC role resolution
 - [Notifications](notifications.md) — work-stream owner notification on creation
 - [Mobile App](mobile-app.md) — consultant chat and conversation list popup
+
+### Reporting delegated outcomes
+
+A consultant can opt into a one-shot terminal update with
+`ficus workstream create ... --observe terminal`, or later with
+`ficus workstream observe <id>`. Inspect with `ficus workstream observation <id>`
+and remove with `ficus workstream unobserve <id>`. This is agent observation,
+not USER subscribe/unsubscribe; the manager remains the owner and orchestrator.
+
+Only delivered done or cancellation consumes the watch. Already-terminal streams
+reject registration; reopening requires a new watch. Observer updates are context
+for reporting to the user or originating Assistant task, not management instructions.
+They do not replace Assistant task reporting obligations, wake stopped/deleted
+conversations, or justify polling or duplicate orchestration.
