@@ -5,8 +5,8 @@
  * individual agent session, so request-time auth resolution sees exactly the
  * account the failover controller selected for that agent.
  *
- * Writes flow back onto the selected account via the serialized
- * `mutateAccountStoreAsync` writer, preserving the same merge semantics the
+ * Writes flow back onto the selected account via the serialized, row-locked
+ * `mutateAccountStore` writer, preserving the same merge semantics the
  * legacy `AuthStorageBackend`/`AccountScopedAuthBackend` had: a provider's selected account receives the
  * rotated/logged-in credential.
  */
@@ -15,7 +15,7 @@ import { routeDecision } from '@ficus/shared/provider-health'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
 import { providerHealth } from '../provider-health/registry'
 import { selectAccount } from './account-selection'
-import { getAccount, mutateAccountStoreAsync, readAccountStore } from './account-store'
+import { getAccount, mutateAccountStore, readAccountStore, readAccountStoreFresh } from './account-store'
 
 export class AccountScopedCredentialStore implements CredentialStore {
   private selected = new Map<string, string>()
@@ -65,11 +65,14 @@ export class AccountScopedCredentialStore implements CredentialStore {
       // Observe inside the per-account queue so a second concurrent modify sees
       // the first one's stored refresh and pi-ai's double-check callback can
       // return undefined instead of performing a second network refresh.
-      const observed = readEnabledSelectedCredential(providerId, accountId)
+      // Observe the DB, not this process's cache: the other process may have
+      // just rotated the token, and refreshing with the old refresh token gets
+      // the whole sign-in revoked for reuse.
+      const observed = enabledCredential(getAccount(await readAccountStoreFresh(), providerId, accountId))
       const next = await fn(observed)
       if (next === undefined) return readEnabledSelectedCredential(providerId, accountId)
       let resolved: Credential | undefined
-      await mutateAccountStoreAsync(async (store) => {
+      await mutateAccountStore((store) => {
         const account = getAccount(store, providerId, accountId)
         const current = account?.enabled ? account.credential : undefined
         if (!account?.enabled || !credentialsEqual(current, observed)) {
@@ -90,7 +93,7 @@ export class AccountScopedCredentialStore implements CredentialStore {
     const accountId = this.selected.get(providerId)
     if (!accountId) return
     await this.modifyQueue.run(scopedCredentialQueueKey(providerId, accountId), async () => {
-      await mutateAccountStoreAsync(async (store) => {
+      await mutateAccountStore((store) => {
         const account = getAccount(store, providerId, accountId)
         if (!account) return false
         // Logout should not remove the user's account entry, but it also must
@@ -124,7 +127,7 @@ export function createAccountScopedCredentialStore(providers: string[]): {
   // Stamp lastUsedAt through the serialized mutate queue — a snapshot write
   // here would race (and clobber) concurrent credential merge-backs.
   if (selected.length > 0) {
-    mutateAccountStoreAsync(async (s) => {
+    mutateAccountStore((s) => {
       let touched = false
       for (const { provider, accountId } of selected) {
         const account = getAccount(s, provider, accountId)
@@ -148,7 +151,10 @@ function scopedCredentialQueueKey(provider: string, accountId: string): string {
 }
 
 function readEnabledSelectedCredential(provider: string, accountId: string): Credential | undefined {
-  const account = getAccount(readAccountStore(), provider, accountId)
+  return enabledCredential(getAccount(readAccountStore(), provider, accountId))
+}
+
+function enabledCredential(account: { enabled: boolean; credential: Credential } | undefined): Credential | undefined {
   return account?.enabled ? account.credential : undefined
 }
 

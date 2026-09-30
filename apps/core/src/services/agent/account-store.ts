@@ -155,32 +155,27 @@ const onboardingFingerprint = (s: AccountStoreV1): string =>
     .join('|')
 
 /**
- * Async-mutation variant for callbacks that need to await a short local action
- * while holding the serialized blob-write lock. Do not run OAuth/network token
- * refresh callbacks inside this lock; read the observed credential first, run
- * the network callback outside the lock, then re-enter this mutation path for a
- * short compare-and-swap write.
- *
- * NOTE: unlike `mutateAccountStore` (row-locked `mutateSecret`, cross-process
- * safe), this variant serializes only in-process — `mutateSecret`'s mutator
- * must be synchronous, so an async callback cannot ride the row lock.
- *
- * Return `false` from `mutate` to skip the write (nothing changed).
+ * Hold the in-process account-store write lock while `fn` runs. Every
+ * {@link mutateAccountStore} in this process queues behind it. It writes
+ * nothing itself: a write always goes through mutateAccountStore, which bases
+ * the change on the fresh, row-locked DB value. (A whole-blob write from this
+ * process's cache would silently revert another process's newer write, such as
+ * a just-rotated OAuth token.)
  */
-export function mutateAccountStoreAsync(
-  mutate: (store: AccountStoreV1) => Promise<boolean | void>,
-  actor: string
-): Promise<void> {
-  return mutateQueue.run(PROVIDER_AUTH_DATA_KEY, async () => {
-    const store = readAccountStore()
-    const fingerprintBefore = onboardingFingerprint(store)
-    if ((await mutate(store)) === false) return
-    await writeAccountStore(store, actor)
-    // Same chokepoint as mutateAccountStore above — covers the OAuth login
-    // round-trip's compare-and-swap write path. Same fingerprint gating: only
-    // notify when the onboarding-relevant signal actually changed.
-    if (onboardingFingerprint(store) !== fingerprintBefore) notifyOnboardingChanged()
-  })
+export function withAccountStoreWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+  return mutateQueue.run(PROVIDER_AUTH_DATA_KEY, fn)
+}
+
+/**
+ * Re-read the store from the DB before a decision that must not act on a stale
+ * cache. The other process's writes reach this cache by NOTIFY, a moment after
+ * they commit; an OAuth refresh decided in that moment would spend a refresh
+ * token the other process already rotated, and the provider revokes the
+ * sign-in for reuse.
+ */
+export async function readAccountStoreFresh(): Promise<AccountStoreV1> {
+  await getSecretStore().refreshKey(PROVIDER_AUTH_DATA_KEY)
+  return readAccountStore()
 }
 
 export function migrateLegacyAuthData(raw: Record<string, Credential>): AccountStoreV1 {

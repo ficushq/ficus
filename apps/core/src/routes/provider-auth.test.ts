@@ -26,7 +26,7 @@ import {
   addAccount,
   listAccounts,
   mutateAccountStore,
-  mutateAccountStoreAsync,
+  withAccountStoreWriteLock,
   readAccountStore,
 } from '../services/agent/account-store'
 import { getModelRuntime, refreshModelRuntime } from '../services/agent/auth-backend'
@@ -1866,11 +1866,10 @@ describe('provider-auth routes', () => {
       let releaseLock!: () => void
       const lockHeld = new Promise<void>((r) => (releaseLock = r))
       let lockAcquired = false
-      const blocker = mutateAccountStoreAsync(async () => {
+      const blocker = withAccountStoreWriteLock(async () => {
         lockAcquired = true
         await lockHeld
-        return false // hold the lock, write nothing
-      }, 'system')
+      })
       while (!lockAcquired) await Bun.sleep(5)
 
       // Let the login resolve: its handler now runs and parks on the lock.
