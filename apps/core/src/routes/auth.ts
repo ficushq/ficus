@@ -65,7 +65,7 @@ import { MAX_CREDENTIAL_NAME_LENGTH, resolveCredentialName } from '../services/a
 import { createLogger } from '../lib/infra/logger'
 import { getClientAddress } from '../lib/client-address'
 import { demoReviewerAccess } from '../services/demo/access'
-import { primaryWebOrigin } from '../services/auth/web-origins'
+import { primaryWebAppUrl, primaryWebOrigin } from '../services/auth/web-origins'
 
 const log = createLogger('auth-routes')
 
@@ -797,7 +797,7 @@ authRouter.post('/device/start', async (c) => {
     return c.json({ error: 'HTTPS is required' }, 400, deviceAuthHeaders)
   }
   const grant = await createDeviceAuthorization({ name, platform })
-  const verificationUri = `${webOrigin}/settings?section=devices#device_request=${grant.verificationCode}`
+  const verificationUri = `${primaryWebAppUrl()}/settings?section=devices#device_request=${grant.verificationCode}`
   return c.json(
     {
       deviceCode: grant.deviceCode,

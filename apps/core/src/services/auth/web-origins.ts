@@ -38,6 +38,17 @@ export function primaryWebOrigin(): string {
   return normalizeOrigin(configuredWebOrigins()[0]) ?? 'http://localhost:5173'
 }
 
+/**
+ * The web app's root URL: the primary origin plus APP_BASE_PATH (e.g. https://host/ficus),
+ * no trailing slash. Links that land on a WEB route (/settings, /register) must use this;
+ * the bare origin is only for WebAuthn and cookies. Built from configuration only, never
+ * from the request, so a caller cannot steer the link to another host or path.
+ */
+export function primaryWebAppUrl(): string {
+  const basePath = (process.env.APP_BASE_PATH ?? '').trim().replace(/^\/+|\/+$/g, '')
+  return basePath ? `${primaryWebOrigin()}/${basePath}` : primaryWebOrigin()
+}
+
 /** Origins allowed to make credentialed cross-origin requests (the CORS allowlist). */
 export function corsAllowOrigins(): string[] {
   const configured = configuredWebOrigins()

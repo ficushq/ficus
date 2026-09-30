@@ -463,3 +463,22 @@ describe('email-change notice', () => {
     }
   })
 })
+
+describe('buildPasskeyRegistrationLink', () => {
+  it('lands on /register under the app base path', async () => {
+    const { buildPasskeyRegistrationLink } = await import('./email')
+    const saved = { origin: process.env.FICUS_WEB_ORIGIN, base: process.env.APP_BASE_PATH }
+    process.env.FICUS_WEB_ORIGIN = 'https://home.example.com'
+    try {
+      process.env.APP_BASE_PATH = '/ficus'
+      expect(buildPasskeyRegistrationLink('a b')).toBe('https://home.example.com/ficus/register?token=a%20b')
+      delete process.env.APP_BASE_PATH
+      expect(buildPasskeyRegistrationLink('a b')).toBe('https://home.example.com/register?token=a%20b')
+    } finally {
+      if (saved.origin === undefined) delete process.env.FICUS_WEB_ORIGIN
+      else process.env.FICUS_WEB_ORIGIN = saved.origin
+      if (saved.base === undefined) delete process.env.APP_BASE_PATH
+      else process.env.APP_BASE_PATH = saved.base
+    }
+  })
+})

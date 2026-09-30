@@ -163,6 +163,28 @@ describe('device authorization routes', () => {
     })
   })
 
+  it('points the verification URI at the web app under APP_BASE_PATH', async () => {
+    const previous = process.env.APP_BASE_PATH
+    process.env.APP_BASE_PATH = '/ficus'
+    try {
+      await withWebOrigin('https://ficus.example.com', async () => {
+        const response = await app.request('/api/auth/device/start', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}',
+        })
+        expect(response.status).toBe(200)
+        const grant = (await response.json()) as { verificationUri: string }
+        expect(grant.verificationUri).toStartWith(
+          'https://ficus.example.com/ficus/settings?section=devices#device_request='
+        )
+      })
+    } finally {
+      if (previous === undefined) delete process.env.APP_BASE_PATH
+      else process.env.APP_BASE_PATH = previous
+    }
+  })
+
   it('ignores a caller-supplied Origin instead of reflecting it into the verification URI', async () => {
     await withWebOrigin('https://ficus.example.com', async () => {
       const response = await app.request('/api/auth/device/start', {

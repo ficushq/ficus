@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { normalizeOrigin, corsAllowOrigins, isAllowedWsOrigin, primaryWebOrigin } from './web-origins'
+import { normalizeOrigin, corsAllowOrigins, isAllowedWsOrigin, primaryWebAppUrl, primaryWebOrigin } from './web-origins'
 
-const KEYS = ['FICUS_WEB_ORIGIN', 'WEBAUTHN_ORIGIN', 'APP_URL', 'NODE_ENV'] as const
+const KEYS = ['FICUS_WEB_ORIGIN', 'WEBAUTHN_ORIGIN', 'APP_URL', 'APP_BASE_PATH', 'NODE_ENV'] as const
 const orig: Record<string, string | undefined> = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
 afterEach(() => {
   for (const k of KEYS) {
@@ -26,6 +26,24 @@ describe('primaryWebOrigin', () => {
     delete process.env.WEBAUTHN_ORIGIN
     delete process.env.APP_URL
     expect(primaryWebOrigin()).toBe('http://localhost:5173')
+  })
+})
+
+describe('primaryWebAppUrl', () => {
+  test('adds APP_BASE_PATH to the origin, whatever slashes it was written with', () => {
+    process.env.FICUS_WEB_ORIGIN = 'https://home.example.com'
+    for (const base of ['/ficus', 'ficus', '/ficus/', ' /ficus ']) {
+      process.env.APP_BASE_PATH = base
+      expect(primaryWebAppUrl()).toBe('https://home.example.com/ficus')
+    }
+  })
+  test('is the bare origin when there is no base path', () => {
+    process.env.FICUS_WEB_ORIGIN = 'https://home.example.com'
+    for (const base of [undefined, '', '/']) {
+      if (base === undefined) delete process.env.APP_BASE_PATH
+      else process.env.APP_BASE_PATH = base
+      expect(primaryWebAppUrl()).toBe('https://home.example.com')
+    }
   })
 })
 
