@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test'
-import { launchdDefinition, launchdNames } from './launchd'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+import { launchdDefinition, launchdNames, nativeLogPath } from './launchd'
 import type { SupervisorContext } from './supervisor'
 
 const context: SupervisorContext = {
@@ -25,7 +29,7 @@ describe('launchdDefinition', () => {
       process: 'tau-smoke-worker',
       label: 'ai.hiretau.tau-smoke-worker',
       plist: '/Users/me/Library/LaunchAgents/ai.hiretau.tau-smoke-worker.plist',
-      log: '/Users/me/.tau/logs/tau-smoke-worker.log',
+      log: '/Users/me/.ficus/logs/tau-smoke-worker.log',
     })
     const xml = launchdDefinition(context, 'worker')
     expect(xml).toContain('<string>ai.hiretau.tau-smoke-worker</string>')
@@ -33,7 +37,7 @@ describe('launchdDefinition', () => {
     expect(xml).toContain('<string>apps/core/dist/worker.js</string>')
     expect(xml).toContain('/tmp/Ficus &amp; &lt;repo&gt; “one”')
     expect(xml).toContain('/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib')
-    expect(xml.match(/\/Users\/me\/\.tau\/logs\/tau-smoke-worker\.log/g)?.length).toBe(2)
+    expect(xml.match(/\/Users\/me\/\.ficus\/logs\/tau-smoke-worker\.log/g)?.length).toBe(2)
     for (const key of ['RunAtLoad', 'KeepAlive', 'ThrottleInterval', 'ProcessType', 'Umask'])
       expect(xml).toContain(`<key>${key}</key>`)
     expect(xml).not.toContain('FORCE_COLOR')
@@ -51,6 +55,20 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { launchdSupervisor } from './launchd'
+
+describe('nativeLogPath', () => {
+  it('keeps logs in a legacy CLI home that has not moved yet', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-launchd-home-')))
+    try {
+      mkdirSync(join(home, LEGACY_HOME_DIR_NAME))
+      expect(nativeLogPath({ home, label: 'Smoke' }, 'worker')).toBe(
+        join(home, LEGACY_HOME_DIR_NAME, 'logs', launchdNames({ home, label: 'Smoke' }, 'worker').process + '.log')
+      )
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('launchd lifecycle', () => {
   it('validates both definitions before bootstrapping worker first and API last', async () => {
@@ -172,7 +190,7 @@ describe('launchd loaded-job provenance', () => {
         if (command[0] === 'launchctl' && command[1] === 'print' && command[2] === 'gui/501')
           return { code: 0, stdout: '', stderr: '' }
         if (command[0] === 'launchctl' && command[1] === 'print')
-          return { code: 0, stdout: printOf('/other/bun', '/Users/me/.tau/logs/tau-smoke-worker.log'), stderr: '' }
+          return { code: 0, stdout: printOf('/other/bun', '/Users/me/.ficus/logs/tau-smoke-worker.log'), stderr: '' }
         return { code: 0, stdout: '', stderr: '' }
       },
     }

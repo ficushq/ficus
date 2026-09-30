@@ -24,13 +24,13 @@ describe('systemdUnit', () => {
       process: 'tau-smoke-api',
       unit: 'tau-smoke-api.service',
       path: '/home/me/.config/systemd/user/tau-smoke-api.service',
-      log: '/home/me/.tau/logs/tau-smoke-api.log',
+      log: '/home/me/.ficus/logs/tau-smoke-api.log',
     })
     const unit = systemdUnit(context, 'api')
     expect(unit).toContain('WorkingDirectory=/home/me/Ficus\\x20repo%%\\x20“x”')
     expect(unit).toContain('ExecStart="/home/me/bin/bun" "run" "apps/core/dist/index.js"')
     expect(unit).toContain('Environment="PATH=/home/me/a\\"b:/usr/bin"')
-    expect(unit).toContain('StandardOutput=append:"/home/me/.tau/logs/tau-smoke-api.log"')
+    expect(unit).toContain('StandardOutput=append:"/home/me/.ficus/logs/tau-smoke-api.log"')
     expect(unit).toContain('UMask=0077')
     expect(unit).not.toMatch(/^User=/m)
     expect(unit).not.toContain('network-online.target')

@@ -84,7 +84,7 @@ function deps(responses: Record<string, { code?: number; stdout?: string; stderr
     runner: rec.runner,
     env: { HOME: home },
     home,
-    which: (cmd) => (cmd === 'ficus' ? join(home, '.tau', 'bin', 'ficus') : null),
+    which: (cmd) => (cmd === 'ficus' ? join(home, '.ficus', 'bin', 'ficus') : null),
     preflight: {
       runner: rec.runner,
       platform: 'darwin',
@@ -801,7 +801,7 @@ describe('handoffLines PATH hint', () => {
 
 describe('end-of-setup CLI PATH check', () => {
   const home = '/home/fixture'
-  const installedBinary = join(home, '.tau', 'bin', 'ficus')
+  const installedBinary = join(home, '.ficus', 'bin', 'ficus')
 
   it('runSetup reports cliOnPath: true and prints no PATH hint when ficus resolves to the installed binary', async () => {
     const { d } = deps()
@@ -826,7 +826,7 @@ describe('end-of-setup CLI PATH check', () => {
     expect(result.cliOnPath).toBe(false)
     const handoff = result.handoff.join('\n')
     expect(handoff).toContain(`ficus is not on PATH yet (installed at ${installedBinary})`)
-    expect(handoff).toContain(`export PATH="${join(home, '.tau', 'bin')}:$PATH"`)
+    expect(handoff).toContain(`export PATH="${join(home, '.ficus', 'bin')}:$PATH"`)
     expect(handoff).toContain(`>> ~/.zshrc`)
     expect(handoff).toContain('or open a new terminal')
   })
@@ -840,8 +840,8 @@ describe('end-of-setup CLI PATH check', () => {
       which: () => null,
     })
     const handoff = result.handoff.join('\n')
-    expect(handoff).toContain(`set -gx PATH "${join(home, '.tau', 'bin')}" $PATH`)
-    expect(handoff).toContain(`fish_add_path ${join(home, '.tau', 'bin')}`)
+    expect(handoff).toContain(`set -gx PATH "${join(home, '.ficus', 'bin')}" $PATH`)
+    expect(handoff).toContain(`fish_add_path ${join(home, '.ficus', 'bin')}`)
     expect(handoff).not.toContain('.zshrc')
     expect(handoff).not.toContain('.bashrc')
   })

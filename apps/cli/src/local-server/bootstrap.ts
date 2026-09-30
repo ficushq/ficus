@@ -3,9 +3,21 @@ import { join, resolve } from 'path'
 import { SetupOptionsError } from './options'
 import type { Runner } from './runner'
 import { isCheckout } from './state'
+import { cliHome } from './home-move'
 
 export const DEFAULT_REPO = 'https://github.com/ficushq/tau.git'
-export const defaultInstallDir = (home: string) => join(home, '.tau', 'tau')
+/** The default checkout's directory name before the rename, kept by installs that already have one. */
+export const LEGACY_CHECKOUT_NAME = 'tau' // ficus-p5-bridge
+
+/**
+ * `<cli home>/ficus` (`~/.ficus/ficus`). An existing checkout under its pre-rename name in the
+ * CLI home is reused, so re-running the installer never clones a second copy beside it.
+ */
+export function defaultInstallDir(home: string): string {
+  const dir = cliHome({ homedir: home })
+  const legacyCheckout = join(dir, LEGACY_CHECKOUT_NAME)
+  return isCheckout(legacyCheckout) ? legacyCheckout : join(dir, 'ficus')
+}
 
 export interface BootstrapDeps {
   runner: Runner

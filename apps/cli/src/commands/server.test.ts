@@ -17,6 +17,8 @@ import { isJsonMode, output, outputError, setOutputOptions } from '../output'
 import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { recordingRunner } from '../local-server/runner'
 import { readRegistry, upsertInstance } from '../local-server/state'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+import { cliHome } from '../local-server/home-move'
 import { registerServerCommands, type ServerDeps } from './server'
 
 let root: string
@@ -321,11 +323,17 @@ describe('ficus server', () => {
     expect(calls.some((c) => c.command.join(' ').startsWith('bunx pm2 logs'))).toBe(false)
   })
   it('uninstall deletes pm2 apps, saves, removes the state file and names the volume docker actually has', async () => {
-    const { run, calls } = make({
-      'docker inspect -f {{json .Mounts}}': {
-        stdout: JSON.stringify([{ Type: 'volume', Name: 'taumain_postgres-data', Destination: '/var/lib/postgresql' }]),
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-home-')))
+    const { run, calls } = make(
+      {
+        'docker inspect -f {{json .Mounts}}': {
+          stdout: JSON.stringify([
+            { Type: 'volume', Name: 'taumain_postgres-data', Destination: '/var/lib/postgresql' },
+          ]),
+        },
       },
-    })
+      { env: { HOME: home } }
+    )
     await run(['server', 'uninstall', '--yes'])
     expect(joined(calls)).toEqual([
       'bunx pm2 delete tau-api tau-worker',
@@ -338,8 +346,19 @@ describe('ficus server', () => {
     // The discovered compose project name, not the derived instance name.
     expect(message).toContain('docker rm -f postgres-tau && docker volume rm taumain_postgres-data')
     expect(data.kept).toContain('taumain_postgres-data')
-    expect(message).toContain('~/.tau')
+    expect(data.kept).toContain('~/.ficus')
+    expect(message).toContain('data:       ~/.ficus')
     expect(message).toContain('removed instance "tau"')
+    rmSync(home, { recursive: true, force: true })
+  })
+  it('uninstall names a legacy CLI home that has not moved yet as the default instance data', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-home-')))
+    mkdirSync(join(home, LEGACY_HOME_DIR_NAME))
+    const { run } = make({ 'docker inspect -f {{json .Mounts}}': { code: 1, stdout: '' } }, { env: { HOME: home } })
+    await run(['server', 'uninstall', '--yes'])
+    const message = (output as ReturnType<typeof mock>).mock.calls.at(-1)?.[1] as string
+    expect(message).toContain(`data:       ~/${LEGACY_HOME_DIR_NAME}\n`)
+    rmSync(home, { recursive: true, force: true })
   })
   it('uninstall falls back to the derived volume name when docker cannot answer', async () => {
     const { run } = make({ 'docker inspect -f {{json .Mounts}}': { code: 1, stdout: '' } })
@@ -573,6 +592,15 @@ describe('ficus server', () => {
     ])
     rmSync(installTmp, { recursive: true, force: true })
   })
+  it('install without --root clones into the CLI home as ~/.ficus/ficus', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-home-')))
+    const installRoot = join(home, '.ficus', 'ficus')
+    const { runner, calls } = cloningRunner(installRoot)
+    const { run } = make({}, { env: { HOME: home }, runner })
+    await run(['server', 'install', '--repo', 'x', '--ref', 'main', '--runtime', 'host'])
+    expect(joined(calls)[0]).toBe(`git clone --recurse-submodules --branch main x ${installRoot}`)
+    rmSync(home, { recursive: true, force: true })
+  })
   it('install refuses malformed registry state before clone or destination mutation', async () => {
     const installRoot = join(root, 'new-install')
     writeFileSync(statePath, JSON.stringify({ version: 3 }))
@@ -609,7 +637,7 @@ describe('ficus server', () => {
     const install = program.commands.find((c) => c.name() === 'server')!.commands.find((c) => c.name() === 'install')!
     install.configureOutput({ writeOut: (chunk) => (help += chunk) })
     install.outputHelp()
-    expect(help).toContain('--root ~/.tau/instances/lab --instance lab --runtime host --yes')
+    expect(help).toContain('--root ~/.ficus/instances/lab --instance lab --runtime host --yes')
     rmSync(installTmp, { recursive: true, force: true })
   })
   it('install parses the production form (no `--` separator) and still forwards the trailing flags to setup', async () => {
@@ -965,7 +993,7 @@ describe('registry-backed supervisor dispatch', () => {
     const uid = process.getuid?.() ?? 0
     const home = process.env.HOME ?? homedir()
     const printOf = (component: 'api' | 'worker') =>
-      `program arguments = {\n\t/usr/bin/bun\n}\n\tworking directory = ${realpathSync(root)}\n\tstderr path = ${join(home, '.tau', 'logs', `tau-${component}.log`)}\n`
+      `program arguments = {\n\t/usr/bin/bun\n}\n\tworking directory = ${realpathSync(root)}\n\tstderr path = ${join(cliHome({ homedir: home }), 'logs', `tau-${component}.log`)}\n`
     const { run, calls } = make({
       [`launchctl print gui/${uid}/ai.hiretau.tau-worker`]: { stdout: printOf('worker') },
       [`launchctl print gui/${uid}/ai.hiretau.tau-api`]: { stdout: printOf('api') },

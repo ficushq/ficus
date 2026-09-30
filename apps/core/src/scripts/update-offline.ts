@@ -7,7 +7,7 @@
  *
  * Same constants as services/updates/change-detector.ts (tasks selected from
  * `git diff --name-only <from>..HEAD`), same status file as LocalUpdateManager
- * (`.tau/local-update-status.json`, mode 'offline'), MINUS the restart
+ * (`.ficus/local-update-status.json`, mode 'offline'), MINUS the restart
  * commands: the CLI restarts through pm2 afterwards, so a failed build never
  * leaves a half-restarted pair. This module must not import anything that
  * opens a database connection at load time.
@@ -20,6 +20,7 @@
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
+import { ficusOrLegacyDir } from '@ficus/shared/node'
 import { commandsForTasks, detectUpdateTasks, isServiceRestartCommand } from '../services/updates/change-detector'
 import { CommandRunner, type RunProcess } from '../services/updates/command-runner'
 import { detectDeploymentFlavor, resolveRepoRoot, type DeploymentFlavor } from '../services/updates/deployment-flavor'
@@ -84,7 +85,8 @@ export interface OfflineUpdateOptions {
 }
 
 export async function runOfflineUpdate(options: OfflineUpdateOptions): Promise<LocalUpdateRun> {
-  const statusPath = options.statusPath ?? join(options.repoRoot, '.tau', 'local-update-status.json')
+  // <root>/.ficus, or the pre-rename status dir while the checkout has only that one (LocalUpdateManager agrees).
+  const statusPath = options.statusPath ?? join(ficusOrLegacyDir(options.repoRoot), 'local-update-status.json')
   const now = options.now ?? (() => new Date().toISOString())
   const persist = (run: LocalUpdateRun) => {
     try {

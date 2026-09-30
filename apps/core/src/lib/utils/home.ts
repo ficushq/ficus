@@ -2,7 +2,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { lstatSync, mkdirSync, realpathSync, statSync } from 'fs'
 
-import { expandTilde } from '@ficus/shared/node'
+import { expandTilde, LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 
 /** The default HOME_DIR, under the service user's home: `~/.ficus`. */
 export const HOME_DIR_NAME = '.ficus'
@@ -10,9 +10,10 @@ export const HOME_DIR_NAME = '.ficus'
 /**
  * The default HOME_DIR before the host layout moved it (a layout-1 host, or an
  * install that has not moved yet). Used while it is a real directory; the
- * finalize release deletes it.
+ * finalize release deletes it. Defined once in `@ficus/shared/node`, beside the
+ * CLI home that shares it.
  */
-export const LEGACY_HOME_DIR_NAME = '.tau' // ficus-p5-bridge
+export { LEGACY_HOME_DIR_NAME }
 
 /**
  * What marks a directory as holding Core's data: the `sessions/` directory Core creates at every

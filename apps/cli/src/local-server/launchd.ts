@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, wri
 import { isAbsolute, join } from 'path'
 import { localProcessNames, parseLaunchdJobIdentity } from '@ficus/shared'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
+import { cliHome } from './home-move'
 
 export type NativeComponent = 'api' | 'worker'
 const COMPONENTS_WORKER_FIRST: NativeComponent[] = ['worker', 'api']
@@ -40,7 +41,7 @@ export function bunPtyLibrary(context: Pick<SupervisorContext, 'root' | 'platfor
 }
 
 export function nativeLogPath(context: Pick<SupervisorContext, 'home' | 'label'>, component: NativeComponent): string {
-  return join(context.home, '.tau', 'logs', localProcessNames(context.label)[component] + '.log')
+  return join(cliHome({ homedir: context.home }), 'logs', localProcessNames(context.label)[component] + '.log')
 }
 
 export function launchdNames(context: Pick<SupervisorContext, 'home' | 'label'>, component: NativeComponent) {
@@ -100,7 +101,7 @@ function assertOwned(path: string, root: string): void {
 }
 
 function prepareLogs(context: SupervisorContext): void {
-  const dir = join(context.home, '.tau', 'logs')
+  const dir = join(cliHome({ homedir: context.home }), 'logs')
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   chmodSync(dir, 0o700)
   for (const component of COMPONENTS_WORKER_FIRST) {

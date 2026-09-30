@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { bootstrap, defaultInstallDir, type BootstrapDeps } from './bootstrap'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+import { bootstrap, defaultInstallDir, LEGACY_CHECKOUT_NAME, type BootstrapDeps } from './bootstrap'
 import { SetupOptionsError } from './options'
 import { recordingRunner } from './runner'
 
@@ -28,8 +29,22 @@ function deps(overrides: Partial<BootstrapDeps> = {}) {
 const joined = (calls: { command: string[] }[]) => calls.map((c) => c.command.join(' '))
 
 describe('bootstrap', () => {
-  it('defaults the install dir to ~/.tau/tau', () => {
-    expect(defaultInstallDir('/home/x')).toBe('/home/x/.tau/tau')
+  it('defaults the install dir to ~/.ficus/ficus', () => {
+    expect(defaultInstallDir(tmp)).toBe(join(tmp, '.ficus', 'ficus'))
+  })
+  it('puts the checkout in a legacy CLI home that has not moved yet', () => {
+    mkdirSync(join(tmp, LEGACY_HOME_DIR_NAME))
+    expect(defaultInstallDir(tmp)).toBe(join(tmp, LEGACY_HOME_DIR_NAME, 'ficus'))
+  })
+  it('keeps using an existing checkout under its pre-rename name, before and after the home moves', () => {
+    const makeCheckout = (dir: string) => {
+      mkdirSync(join(dir, '.git'), { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'ficus' }))
+    }
+    makeCheckout(join(tmp, LEGACY_HOME_DIR_NAME, LEGACY_CHECKOUT_NAME))
+    expect(defaultInstallDir(tmp)).toBe(join(tmp, LEGACY_HOME_DIR_NAME, LEGACY_CHECKOUT_NAME))
+    renameSync(join(tmp, LEGACY_HOME_DIR_NAME), join(tmp, '.ficus'))
+    expect(defaultInstallDir(tmp)).toBe(join(tmp, '.ficus', LEGACY_CHECKOUT_NAME))
   })
   it('clones, installs and execs the checkout setup with pass-through args', async () => {
     const root = join(tmp, 'ficus')

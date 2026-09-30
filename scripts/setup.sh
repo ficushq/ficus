@@ -3,11 +3,18 @@
 #   curl -fsSL https://ficus.sh/cli/setup.sh | bash
 #   curl -fsSL https://ficus.sh/cli/setup.sh | bash -s -- --runtime host --yes
 # Installs the ficus CLI (if missing), then hands off to `ficus server install`,
-# which clones the source into ~/.tau/tau and runs the checkout's own setup.
+# which clones the source into ~/.ficus/ficus and runs the checkout's own setup.
 set -eu
 
 INSTALLER_URL="${FICUS_INSTALL_URL:-https://ficus.sh/cli/install.sh}"
-FICUS_BIN="${FICUS_INSTALL_DIR:-$HOME/.tau/bin}/ficus"
+# Where install.sh puts the CLI: FICUS_INSTALL_DIR, else ~/.ficus/bin — or the bin
+# of a legacy CLI home that has not been moved yet (install.sh's own rule).
+LEGACY_HOME_NAME=.tau # ficus-p5-bridge
+CLI_HOME="$HOME/.ficus"
+if [ ! -e "$CLI_HOME" ] && [ ! -L "$CLI_HOME" ] && { [ -e "$HOME/$LEGACY_HOME_NAME" ] || [ -L "$HOME/$LEGACY_HOME_NAME" ]; }; then
+  CLI_HOME="$HOME/$LEGACY_HOME_NAME" # ficus-p5-bridge
+fi
+FICUS_BIN="${FICUS_INSTALL_DIR:-$CLI_HOME/bin}/ficus"
 
 err() { printf '\n✗ error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || err "required command not found: $1"; }

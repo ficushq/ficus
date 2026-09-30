@@ -5,6 +5,7 @@ import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared
 import { expandTilde } from '@ficus/shared/node'
 import { DEFAULT_INSTANCE, normalizeLabel } from './instance'
 import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
+import { cliHome } from './home-move'
 
 /** One installed instance: the checkout it lives in and the port it serves on. */
 export interface InstanceRecord {
@@ -71,7 +72,9 @@ export class UnknownInstanceError extends Error {
 }
 
 export function getStatePath(env: Record<string, string | undefined> = process.env): string {
-  return expandTilde(env.FICUS_LOCAL_SERVER_STATE || join(homedir(), '.tau', 'cli', 'local-server.json'))
+  return expandTilde(
+    env.FICUS_LOCAL_SERVER_STATE || join(cliHome({ homedir: env.HOME ?? homedir() }), 'cli', 'local-server.json')
+  )
 }
 
 function emptyRegistry(): LocalServerRegistry {

@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { expandTilde } from '@ficus/shared/node'
+import { cliHome } from '../local-server/home-move'
 import type { Command } from 'commander'
 import { apiDelete, apiGet, apiGetRaw, apiPost, apiPut } from '../client'
 import { isJsonMode, output, outputError, outputTable } from '../output'
@@ -85,11 +86,11 @@ function isSupportedSkill(skill: string): skill is SupportedSkill {
 
 function getBundledSkillDir(skill: SupportedSkill): string {
   const thisFile = fileURLToPath(import.meta.url)
-  const shareDir = process.env.FICUS_SHARE_DIR ?? join(process.env.HOME ?? '', '.tau/share')
+  const shareDir = process.env.FICUS_SHARE_DIR ?? join(cliHome(), 'share')
   const sourceCandidates = [
-    // Running installed CLI with bundled skills copied to ~/.tau/share/skills.
+    // Running installed CLI with bundled skills copied to <cli home>/share/skills (~/.ficus/share/skills).
     resolve(expandTilde(shareDir), 'skills', skill),
-    // Running installed CLI from ~/.tau/bin/ficus with bundled skills copied to ~/.tau/share/skills.
+    // Running installed CLI from <cli home>/bin/ficus with bundled skills copied to <cli home>/share/skills.
     resolve(dirname(thisFile), '../share/skills', skill),
     // Running bundled dev CLI from apps/cli/dist/ficus.js with skills copied beside dist.
     resolve(dirname(thisFile), '../skills', skill),

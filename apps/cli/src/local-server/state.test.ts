@@ -12,6 +12,7 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import {
   NoRootError,
   UnknownInstanceError,
@@ -59,9 +60,13 @@ describe('canonicalRoot', () => {
 })
 
 describe('state file', () => {
-  it('defaults to ~/.tau/cli/local-server.json and honours FICUS_LOCAL_SERVER_STATE', () => {
-    expect(getStatePath({})).toMatch(/\/\.tau\/cli\/local-server\.json$/)
+  it('defaults to <cli home>/cli/local-server.json and honours FICUS_LOCAL_SERVER_STATE', () => {
+    expect(getStatePath({ HOME: tmp })).toBe(join(tmp, '.ficus', 'cli', 'local-server.json'))
     expect(getStatePath({ FICUS_LOCAL_SERVER_STATE: '/x/y.json' })).toBe('/x/y.json')
+  })
+  it('keeps reading the registry from a legacy CLI home that has not moved yet', () => {
+    mkdirSync(join(tmp, LEGACY_HOME_DIR_NAME))
+    expect(getStatePath({ HOME: tmp })).toBe(join(tmp, LEGACY_HOME_DIR_NAME, 'cli', 'local-server.json'))
   })
   it('round-trips an instance through a directory it has to create, and removes it', () => {
     const path = join(tmp, 'nested', 'state.json')

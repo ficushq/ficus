@@ -1,11 +1,12 @@
 import { Command } from 'commander'
 import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { join, resolve } from 'path'
+import { basename, join, resolve } from 'path'
 import { assertEnvFileNaming, expandTilde } from '@ficus/shared/node'
 import { applyUpdate, type UpdateDeps } from './update'
 import { bootstrap, defaultInstallDir, DEFAULT_REPO } from '../local-server/bootstrap'
 import { parseEnvFile } from '../local-server/env-file'
+import { cliHome } from '../local-server/home-move'
 import { runOfflineUpdate } from '../local-server/offline-update'
 import { resolveSetupOptions, type Prompter, type RawSetupFlags, SetupOptionsError } from '../local-server/options'
 import { defaultSysboxHostDeps, runSysboxBootstrap, type SysboxHostDeps } from '../local-server/sysbox'
@@ -130,6 +131,9 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
   // setup deliberately ignores the state file: it must configure the checkout you
   // are in, never the one that happens to be installed. See resolveSetupRoot.
   const setupRoot = (opts: { root?: string }) => resolveSetupRoot({ flag: opts.root, env: deps.env, cwd: deps.cwd })
+  // The default instance's data dir when neither the checkout's .env nor its label names one:
+  // the CLI home (`~/.ficus`, or a legacy home that has not moved yet), shown with a `~`.
+  const defaultDataDir = () => join('~', basename(cliHome({ homedir: deps.env.HOME ?? homedir() })))
   const managed = (opts: { root?: string; instance?: string }) => {
     const selected = root(opts)
     const registered = findInstanceByRoot(selected, deps.statePath)
@@ -175,7 +179,7 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
   server
     .command('install')
     .description('Clone Ficus, install deps and run its setup (the curl one-liner calls this)')
-    .option('--root <dir>', 'Where to clone (default ~/.tau/tau) (must precede any pass-through setup flags)')
+    .option('--root <dir>', 'Where to clone (default ~/.ficus/ficus) (must precede any pass-through setup flags)')
     .option('--repo <url>', 'Git repository', DEFAULT_REPO)
     .option('--ref <ref>', 'Branch or tag to check out', 'main')
     .allowUnknownOption()
@@ -188,14 +192,14 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
       'after',
       `
 Examples:
-  Install the first instance into ~/.tau/tau:
+  Install the first instance into ~/.ficus/ficus:
     $ ficus server install --runtime host --yes
 
   Install a SECOND instance that cannot collide with the first. --instance
   names every per-instance resource — services tau-lab-api/tau-lab-worker, the
   postgres container postgres-tau-lab, and data under ~/.tau-lab — so both run
   side by side. --root must come before the forwarded setup flags:
-    $ ficus server install --root ~/.tau/instances/lab --instance lab --runtime host --yes
+    $ ficus server install --root ~/.ficus/instances/lab --instance lab --runtime host --yes
 
   Address it afterwards (--instance is per subcommand, not global):
     $ ficus server status --instance lab
@@ -228,7 +232,7 @@ Examples:
     .option('--runtime <runtime>', 'host | docker-socket | docker-sysbox | k3d')
     .option('--supervisor <supervisor>', 'pm2 | launchd | systemd-user')
     .option('--instance <label>', 'Instance label — names every per-instance resource (default tau)')
-    .option('--home-dir <path>', 'HOME_DIR for Ficus data (default ~/.tau)')
+    .option('--home-dir <path>', 'HOME_DIR for Ficus data (default ~/.ficus)')
     .option('--port <n>', 'API/web port (default 3000)')
     .option('--app-url <origin>', 'Browser origin (default http://localhost:<port>)')
     .option('--database-url <dsn>', 'Use an existing PostgreSQL instead of the docker compose container')
@@ -581,7 +585,7 @@ Examples:
             cleanup = `supervisor cleanup failed (${reason}) — remove ${names.api} and ${names.worker} from ${record.supervisor} by hand`
           }
           removeInstance(label, deps.statePath)
-          const home = names.homeDir ?? '~/.tau'
+          const home = names.homeDir ?? defaultDataDir()
           output(
             {
               ok: true,
@@ -606,7 +610,7 @@ Examples:
         // discover the one docker actually has (falling back to the derived
         // name when docker cannot answer) rather than printing a guess.
         const volume = await containerVolumeName(deps.runner, names.container, names.volume)
-        const home = rootEnv(dir).HOME_DIR ?? names.homeDir ?? '~/.tau'
+        const home = rootEnv(dir).HOME_DIR ?? names.homeDir ?? defaultDataDir()
         // Name the registry this command actually read and wrote — under a
         // FICUS_LOCAL_SERVER_STATE override the default location is the wrong
         // file to go looking in.

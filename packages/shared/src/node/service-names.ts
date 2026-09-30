@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -11,8 +11,15 @@ import { join } from 'node:path'
 export const LEGACY_UNITS = { api: 'tau-api', worker: 'tau-worker' } // ficus-p5-bridge
 export const LEGACY_LAUNCHD_PREFIX = 'ai.hiretau' // ficus-p5-bridge
 export const LEGACY_SANDBOX_PASSWORD = '/etc/tau/password' // ficus-p5-bridge
+/**
+ * The home directory name before the rename: the CLI home (`~/<legacy>`), Core's default
+ * HOME_DIR, and the status dir in a checkout root. Used while it is a real directory.
+ */
+export const LEGACY_HOME_DIR_NAME = '.tau' // ficus-p5-bridge
 
 const NEW_LAUNCHD_PREFIX = 'sh.ficus'
+/** The home directory name after the rename (`~/.ficus`). */
+export const FICUS_HOME_DIR_NAME = '.ficus'
 const FICUS_SANDBOX_PASSWORD = '/etc/ficus/password'
 const DEFAULT_UNIT_DIR = '/etc/systemd/system'
 
@@ -64,4 +71,26 @@ export function launchdLabel(names: { legacy: string; new: string }, opts?: { la
 export function sandboxPasswordPath(opts?: { exists?: (path: string) => boolean }): string {
   const exists = opts?.exists ?? existsSync
   return exists(FICUS_SANDBOX_PASSWORD) ? FICUS_SANDBOX_PASSWORD : LEGACY_SANDBOX_PASSWORD
+}
+
+function existsNoFollow(path: string): boolean {
+  try {
+    lstatSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * `<parent>/.ficus` when it exists (a directory, or a link) or when no legacy directory
+ * (see `LEGACY_HOME_DIR_NAME` above) exists; otherwise the legacy directory, which has not
+ * been moved yet. The one rule for the CLI home (`parent` = the user's home), the sandbox
+ * identity cache (the private root) and a checkout's update-status dir (the checkout root).
+ */
+export function ficusOrLegacyDir(parent: string, exists: (path: string) => boolean = existsNoFollow): string {
+  const ficus = join(parent, FICUS_HOME_DIR_NAME)
+  if (exists(ficus)) return ficus
+  const legacy = join(parent, LEGACY_HOME_DIR_NAME)
+  return exists(legacy) ? legacy : ficus
 }

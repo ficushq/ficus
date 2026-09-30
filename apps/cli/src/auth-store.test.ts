@@ -3,6 +3,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 
 import { getAuthStorePath } from './auth-store'
+import { cliHome } from './local-server/home-move'
 
 describe('getAuthStorePath', () => {
   const original = process.env.FICUS_AUTH_STORE
@@ -12,9 +13,9 @@ describe('getAuthStorePath', () => {
     else process.env.FICUS_AUTH_STORE = original
   })
 
-  it('defaults to ~/.tau/cli/auth.json', () => {
+  it('defaults to <cli home>/cli/auth.json', () => {
     delete process.env.FICUS_AUTH_STORE
-    expect(getAuthStorePath()).toBe(join(homedir(), '.tau', 'cli', 'auth.json'))
+    expect(getAuthStorePath()).toBe(join(cliHome({ homedir: homedir() }), 'cli', 'auth.json'))
   })
 
   it('expands a leading ~ in FICUS_AUTH_STORE', () => {
