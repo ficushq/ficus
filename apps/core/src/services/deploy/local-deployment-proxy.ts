@@ -123,6 +123,9 @@ export async function proxyLocalDeploymentRequest(
   })
 }
 
+/** CDN cache headers Cloudflare honors over Cache-Control and CDN-Cache-Control. */
+const CDN_OVERRIDE_HEADERS = ['cloudflare-cdn-cache-control', 'surrogate-control'] as const
+
 /** Cache-Control directives that only speak to shared caches (a CDN or proxy), dropped with `public`. */
 const SHARED_CACHE_DIRECTIVES = new Set(['public', 's-maxage', 'proxy-revalidate'])
 
@@ -146,6 +149,11 @@ export function keepOutOfSharedCaches(headers: Headers): void {
     has('no-store') || has('private') ? directives.join(', ') : ['private', ...directives].join(', ')
   )
   headers.set('cdn-cache-control', 'no-store')
+  // Cloudflare reads these ahead of both headers above: Cloudflare-CDN-Cache-Control
+  // outranks CDN-Cache-Control, and with Surrogate-Control present Cache-Control
+  // is ignored. An app sending either could still have its private responses
+  // stored at the edge and served without a token.
+  for (const name of CDN_OVERRIDE_HEADERS) headers.delete(name)
 }
 
 function stripUnsafeProxyHeaders(headers: Headers): void {
