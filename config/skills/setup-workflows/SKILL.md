@@ -121,6 +121,29 @@ It is durable for that stream without polluting the catalog. Save it later
 only if it is useful as a reusable preset. Users can revisit this conversation
 or edit the squad's workflow settings whenever their needs change.
 
+## Revise live outcomes without resetting context
+
+Record scope changes in the work stream description first. Inspect the current
+version and attempt with `ficus workstream flow ID`, then use the versioned
+`advance` command with `action: revise`, customization `operations`, `reason`, and
+`active: keep` for live outcome changes. This requires flow-management permission;
+limited adaptive workers can still revise permitted future work, not live outcomes.
+
+Keep refreshes only outcome transitions for affected kept running attempts,
+including other active branches of a changed step. The initial instructions,
+output, participant snapshot, attempt ID, and conversation stay unchanged. Future
+attempts use the full revised definition. Inspect the response's `outcomeUpdates`
+for affected attempt/agent IDs, version, and routes (`activeOutcomes` in inspection).
+Steer all affected active agents after recording scope; do not create new workers
+or assume revised instructions replace their original brief. Choose a truthful
+outcome rather than fabricating approval as a waiver. Gates, waits, returns,
+joins, limits, and delivery authorization still apply.
+
+Use `active: restart` only when you deliberately want to cancel the selected
+attempt and start a new attempt with a fresh session, even with session reuse.
+It invalidates the old attempt token and retires its attempt-scoped waits. It is
+not necessary merely to add an outcome. Completed/canceled history is not rewritten.
+
 ## Pause without changing the process
 
 When asked to hold work briefly, use `ficus workstream pause <id> --reason "..."`.

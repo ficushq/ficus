@@ -8,7 +8,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { workflowPresetSchema, workflowSourceSchema, workflowCommandSchema } from '@ficus/shared'
-import { advanceFlow, finishFlow, getFlow } from '../services/workflows/execution'
+import { advanceFlow, finishFlow, getFlow, activeOutcomeBindings } from '../services/workflows/execution'
 import { WorkStream } from '../entities/WorkStream'
 import { db, squads, workflows } from '../db'
 import { authorizeWorkflow, authorizeWorkflowSource, canAccessWorkflow } from '../services/workflows/access'
@@ -70,6 +70,7 @@ export const workflowsRouter = new Hono()
             version: run.version,
             workStreamStatus: stream.status,
             attemptAgents: run.attemptAgents,
+            activeOutcomes: activeOutcomeBindings(run),
             deliveryInstructions: deliveryInstructionsForRun(stream, run.state, run.version),
             openWaits: (await listOpenWaits(db, stream.id)).map(toWaitJson),
             integrationDeliveries: await outputDeliveryHistory(stream.id),

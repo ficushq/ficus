@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, createWorkflowRun, workflowCommandSchema } from '@ficus/shared'
+import { createBlankWorkflow, createWorkflowRun, advanceWorkflowRun, workflowCommandSchema } from '@ficus/shared'
 import { flowMessage } from './handoff-prompt'
 import { deliveryInstructionsForRun } from './completion-prompt'
 
@@ -104,4 +104,33 @@ test('delivery instructions are available only for current active completion wor
   expect(instructions).not.toContain('github.repo/github.pr')
   expect(deliveryInstructionsForRun({ ...stream, status: 'done' }, state, 4)).toBeUndefined()
   expect(deliveryInstructionsForRun({ ...stream, status: 'active', pause: {} }, state, 4)).toBeUndefined()
+})
+
+test('a kept attempt handoff uses the live outcome but not revised instructions', () => {
+  const initial = createWorkflowRun(createBlankWorkflow())
+  const state = advanceWorkflowRun(initial, {
+    action: 'revise',
+    expectedVersion: 0,
+    attemptId: 1,
+    active: 'keep',
+    reason: 'Accurate verdict',
+    operations: [
+      {
+        op: 'put-step',
+        step: {
+          ...initial.definition.steps[0]!,
+          instructions: 'Future instructions',
+          outcomes: { waived: { next: 'finish' } },
+        },
+      },
+    ],
+  })
+  const message = flowMessage(
+    { id: 'stream', title: 'Kept work', description: '', metadata: {} },
+    { state, version: state.version },
+    state.attempts[0]!
+  )
+  expect(message).toContain(initial.attempts[0]!.step!.instructions)
+  expect(message).not.toContain('Future instructions')
+  expect(message).toContain('"outcome": "waived"')
 })

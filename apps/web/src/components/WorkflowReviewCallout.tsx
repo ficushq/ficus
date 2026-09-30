@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   activeWorkflowAttempts,
+  effectiveWorkflowStep,
   workflowReworkAttempt,
   type WorkflowAttempt,
   type WorkflowRun,
@@ -24,7 +25,7 @@ import { MarkdownContent } from './MarkdownContent'
 import { ChatIcon, PullRequestIcon } from './icons'
 
 const stepOf = (run: WorkflowRun, attempt: WorkflowAttempt): WorkflowStep | undefined =>
-  attempt.step ?? run.definition.steps.find((entry) => entry.id === attempt.stepId)
+  effectiveWorkflowStep(run, attempt)
 
 const stepName = (run: WorkflowRun, stepId: string) =>
   run.definition.steps.find((entry) => entry.id === stepId)?.name ?? stepId

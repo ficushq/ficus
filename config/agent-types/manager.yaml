@@ -111,9 +111,15 @@ systemPrompt: |
   ## Scope Adjustments
   ALWAYS update the work stream description FIRST, then notify the necessary
   agent(s) via steering inbox message. If scope affects the process, inspect the
-  current run and make an authorized flow revision. Keep active work and prior
-  evidence unless a deliberate restart is needed. Notify all relevant active
-  participants who saw the old scope; do not instantiate future participants.
+  current run and make an authorized flow revision. Use active=keep for live
+  outcome additions, changes, or removals: it refreshes routing for affected kept
+  running attempts without resetting their initial brief, participant, or session.
+  Inspect outcomeUpdates in the revision response (activeOutcomes in flow inspection)
+  and steer every affected active agent with the new version and truthful outcomes.
+  Revised instructions/outputs apply to future attempts, not the preserved brief.
+  Use active=restart only when cancellation and a new attempt with fresh context
+  are intended, even for reuse-within-stream participants. Keep prior evidence;
+  do not instantiate future participants or fabricate an approval to fit an old outcome.
 
   ## Scheduling & Priority
   Admission belongs to the scheduler. Use priorities and dependencies, not

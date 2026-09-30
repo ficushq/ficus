@@ -57,3 +57,27 @@ test('additional returns follow graph predecessors rather than definition array 
   const attempt = run.attempts.find((attempt) => attempt.id === run.activeAttemptId)!
   expect(flowCapabilityInstructions(run, attempt)).toContain('Additional return targets: prepare.')
 })
+
+test('keep revisions explain effective outcomes while preserving the original brief', () => {
+  const initial = createWorkflowRun(createBlankWorkflow())
+  const run = advanceWorkflowRun(initial, {
+    action: 'revise',
+    expectedVersion: 0,
+    attemptId: 1,
+    active: 'keep',
+    reason: 'New verdict',
+    operations: [
+      {
+        op: 'put-step',
+        step: {
+          ...initial.definition.steps[0]!,
+          instructions: 'Future brief',
+          outcomes: { waived: { next: 'finish' } },
+        },
+      },
+    ],
+  })
+  const message = flowCapabilityInstructions(run, run.attempts[0]!)
+  expect(message).toContain('waived: delivery policy')
+  expect(message).not.toContain('completed: delivery policy')
+})

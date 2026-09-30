@@ -45,6 +45,7 @@ import {
   flowAgentType,
   finishFlow,
   guardFlowWaitResolution,
+  activeOutcomeBindings,
 } from './execution'
 
 const prefix = `flow-execution-${randomUUID()}`
@@ -1761,4 +1762,272 @@ test('a self-handoff in a parallel branch stays durable while an earlier sibling
     'security',
     'qa-followup',
   ])
+})
+
+describe('live outcome binding', () => {
+  test('manager keep updates routing without dispatch or session changes; retries return the original binding', async () => {
+    const id = await create()
+    await ensureFlowDispatch(id)
+    const manager = await createTestUser({ prefix })
+    const role = await createTestRole({ prefix, permissions: ['workstreams:revise-flow'] })
+    await assignRole({ userId: manager.id, roleId: role.id, scope: 'squad', squadId })
+    const managerIdentity = { type: 'user', userId: manager.id } as const
+    const initial = (await getFlow(id))!
+    const agentId = initial.attemptAgents['1']!
+    const worker = { type: 'agent', agentId, squadId } as const
+    const binding = await bindings(id)
+    const handoffs = await messages(id)
+    const dispatchCount = send.mock.calls.length
+    const execution = await (await Agent.mustFind(agentId)).queueExecution({ message: 'Preserved conversation' })
+    await db
+      .insert(chatMessages)
+      .values({ agentId, role: 'human', content: 'Initial session context', metadata: { executionId: execution.id } })
+    const history = await db.select().from(chatMessages).where(eq(chatMessages.agentId, agentId))
+    const step = initial.state.definition.steps[0]!
+    const command = {
+      action: 'revise',
+      expectedVersion: 0,
+      attemptId: 1,
+      active: 'keep',
+      reason: 'Owner waived build',
+      operations: [
+        {
+          op: 'put-step',
+          step: {
+            ...step,
+            instructions: 'Future instructions',
+            output: 'Future output',
+            outcomes: { ...step.outcomes, waived: { next: 'review' } },
+          },
+        },
+      ],
+    }
+    const requestId = randomUUID()
+    const first = await advanceFlow(id, command, requestId, managerIdentity)
+    expect(first.outcomeUpdates).toEqual([
+      {
+        attemptId: 1,
+        stepId: 'build',
+        agentId,
+        version: 1,
+        outcomes: { ...step.outcomes, waived: { next: 'review' } },
+      },
+    ])
+    expect(await advanceFlow(id, command, requestId, managerIdentity)).toEqual(first)
+    const kept = (await getFlow(id))!
+    expect(kept.state.attempts[0]!.step).toEqual(initial.state.attempts[0]!.step)
+    expect(kept.attemptAgents).toEqual(initial.attemptAgents)
+    expect(activeOutcomeBindings(kept)).toEqual(first.outcomeUpdates!)
+    expect(send.mock.calls.length).toBe(dispatchCount)
+    expect(await bindings(id)).toEqual(binding)
+    expect(await messages(id)).toEqual(handoffs)
+    expect(await db.select().from(chatMessages).where(eq(chatMessages.agentId, agentId))).toEqual(history)
+    expect(await isCurrentFlowMessage(handoffs[0]!)).toBe(true)
+    await expect(
+      advanceFlow(
+        id,
+        { action: 'complete', expectedVersion: 0, attemptId: 1, outcome: 'completed', evidence: 'Stale' },
+        randomUUID(),
+        worker
+      )
+    ).rejects.toThrow('Stale')
+    await advanceFlow(
+      id,
+      {
+        ...command,
+        expectedVersion: 1,
+        operations: [{ op: 'put-step', step: { ...step, outcomes: { waived: { next: 'review' } } } }],
+      },
+      randomUUID(),
+      managerIdentity
+    )
+    await expect(
+      advanceFlow(
+        id,
+        { action: 'complete', expectedVersion: 2, attemptId: 1, outcome: 'completed', evidence: 'Removed' },
+        randomUUID(),
+        worker
+      )
+    ).rejects.toThrow('Unknown outcome')
+    expect(await advanceFlow(id, command, requestId, managerIdentity)).toEqual(first)
+    await advanceFlow(
+      id,
+      { action: 'complete', expectedVersion: 2, attemptId: 1, outcome: 'waived', evidence: 'Actual owner waiver' },
+      randomUUID(),
+      worker
+    )
+    expect((await getFlow(id))!.state.attempts[1]!.stepId).toBe('review')
+    await execution.stop()
+  })
+
+  test('limited adaptive workers may revise future outcomes but not any kept active outcomes', async () => {
+    const definition = structuredClone(flow)
+    definition.routing.mode = 'adaptive'
+    const id = await create('active', definition)
+    const agentId = (await getFlow(id))!.attemptAgents['1']!
+    const worker = { type: 'agent', agentId, squadId } as const
+    const command = {
+      action: 'revise',
+      expectedVersion: 0,
+      attemptId: 1,
+      active: 'keep',
+      reason: 'Attempt to bypass review',
+      operations: [
+        {
+          op: 'put-step',
+          step: { ...definition.steps[0]!, outcomes: { completed: { next: 'review' }, waived: { next: 'finish' } } },
+        },
+      ],
+    }
+    await expect(advanceFlow(id, command, randomUUID(), worker)).rejects.toThrow('flow management permission')
+    expect((await getFlow(id))!.version).toBe(0)
+    await advanceFlow(
+      id,
+      {
+        ...command,
+        operations: [
+          {
+            op: 'put-step',
+            step: {
+              ...definition.steps[1]!,
+              outcomes: { ...definition.steps[1]!.outcomes, verified: { next: 'finish' } },
+            },
+          },
+        ],
+      },
+      randomUUID(),
+      worker
+    )
+    expect((await getFlow(id))!.state.attempts[0]!.effectiveOutcomes).toBeUndefined()
+  })
+
+  test('outcome keep preserves waits and human gates; restart explicitly replaces the session and stale token', async () => {
+    const id = await create()
+    const initial = (await getFlow(id))!
+    const oldAgent = initial.attemptAgents['1']!
+    const { wait } = await openWait(db, {
+      workStreamId: id,
+      type: 'manual',
+      flowAttemptId: 1,
+      message: 'Required input',
+    })
+    const step = initial.state.definition.steps[0]!
+    const gate = {
+      id: 'approval',
+      kind: 'human-approval',
+      approver: 'reviewers',
+      instructions: 'Human verdict',
+      output: 'Approval',
+      outcomes: { approved: { next: 'review' } },
+    }
+    await advanceFlow(
+      id,
+      {
+        action: 'revise',
+        expectedVersion: 0,
+        attemptId: 1,
+        active: 'keep',
+        reason: 'Route through human',
+        operations: [
+          { op: 'put-step', step: gate },
+          { op: 'put-step', step: { ...step, outcomes: { verified: { next: 'approval' } } } },
+        ],
+      },
+      randomUUID(),
+      actor
+    )
+    expect((await listOpenWaits(db, id)).map((w) => w.id)).toEqual([wait.id])
+    await expect(advance(id, 'verified')).rejects.toThrow('Resolve the waits')
+    await advanceFlow(
+      id,
+      {
+        action: 'revise',
+        expectedVersion: 1,
+        attemptId: 1,
+        active: 'restart',
+        reason: 'Deliberate fresh context',
+        operations: [{ op: 'set-name', name: 'Restart' }],
+      },
+      randomUUID(),
+      actor
+    )
+    const restarted = (await getFlow(id))!
+    expect(restarted.state.attempts[0]!.status).toBe('canceled')
+    expect(restarted.state.attempts[1]!.freshSession).toBe(true)
+    expect(restarted.attemptAgents['2']).not.toBe(oldAgent)
+    expect(await bindings(id)).toHaveLength(2)
+    expect(await listOpenWaits(db, id)).toHaveLength(0)
+    await expect(
+      advanceFlow(
+        id,
+        { action: 'complete', expectedVersion: 2, attemptId: 1, outcome: 'verified', evidence: 'Old token' },
+        randomUUID(),
+        actor
+      )
+    ).rejects.toThrow('Stale step attempt')
+    await advance(id, 'verified')
+    const human = (await getFlow(id))!
+    expect(human.state.attempts.at(-1)!.stepId).toBe('approval')
+    const waits = await listOpenWaits(db, id)
+    await advanceFlow(
+      id,
+      {
+        action: 'revise',
+        expectedVersion: human.version,
+        attemptId: human.state.activeAttemptId,
+        active: 'keep',
+        reason: 'Alternate human verdict',
+        operations: [{ op: 'put-step', step: { ...gate, outcomes: { accepted: { next: 'review' } } } }],
+      },
+      randomUUID(),
+      actor
+    )
+    expect(await listOpenWaits(db, id)).toEqual(waits)
+    await expect(advance(id, 'accepted')).rejects.toThrow('designated human approver')
+  })
+})
+
+test('live outcome revision reports the affected sibling agent without touching unrelated active work', async () => {
+  const definition = parallelDefinition()
+  definition.routing.mode = 'adaptive'
+  const id = await create('active', definition)
+  await completeStep(id, 'execute')
+  await ensureFlowDispatch(id)
+  const initial = (await getFlow(id))!
+  const security = activeWorkflowAttempts(initial.state).find((a) => a.stepId === 'security')!
+  const qa = activeWorkflowAttempts(initial.state).find((a) => a.stepId === 'qa')!
+  const command = {
+    action: 'revise',
+    expectedVersion: initial.version,
+    attemptId: qa.id,
+    active: 'keep',
+    reason: 'Accurate security verdict',
+    operations: [
+      {
+        op: 'put-step',
+        step: { ...security.step!, outcomes: { ...security.step!.outcomes, waived: { next: 'deliver' } } },
+      },
+    ],
+  }
+  const bindingsBefore = await bindings(id)
+  const messagesBefore = await messages(id)
+  await expect(
+    advanceFlow(id, command, randomUUID(), { type: 'agent', agentId: initial.attemptAgents[String(qa.id)]!, squadId })
+  ).rejects.toThrow('flow management permission')
+  const result = await advanceFlow(id, command, randomUUID(), actor)
+  expect(result.outcomeUpdates).toEqual([
+    {
+      attemptId: security.id,
+      stepId: 'security',
+      agentId: initial.attemptAgents[String(security.id)],
+      version: initial.version + 1,
+      outcomes: { ...security.step!.outcomes, waived: { next: 'deliver' } },
+    },
+  ])
+  const revised = (await getFlow(id))!
+  expect(revised.state.attempts.find((a) => a.id === qa.id)).toEqual(qa)
+  expect(revised.state.joins).toEqual(initial.state.joins)
+  expect(revised.attemptAgents).toEqual(initial.attemptAgents)
+  expect(await bindings(id)).toEqual(bindingsBefore)
+  expect(await messages(id)).toEqual(messagesBefore)
 })

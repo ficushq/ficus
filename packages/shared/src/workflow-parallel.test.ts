@@ -336,3 +336,91 @@ test('handoff sources follow only the immediate route through sequential steps a
   run = reopenWorkflowRun(run)
   expect(activeWorkflowAttempts(run)[0]!.sourceAttemptIds).toEqual([])
 })
+
+test('keep refreshes the same running step in every branch and preserves open joins and returns', () => {
+  const flow = definition()
+  for (const id of ['security', 'qa'])
+    flow.steps.find((s) => s.id === id)!.outcomes.rework = { returnTo: 'shared', afterRework: 'return-to-requester' }
+  flow.steps.push(
+    workflowStepSchema.parse({
+      id: 'shared',
+      participant: 'worker',
+      instructions: 'Original brief',
+      output: 'Original output',
+      outcomes: { completed: { next: 'deliver' } },
+    })
+  )
+  let run = complete(createWorkflowRun(flow), 'execute')
+  for (const a of activeWorkflowAttempts(run))
+    run = advanceWorkflowRun(run, {
+      action: 'complete',
+      expectedVersion: run.version,
+      attemptId: a.id,
+      outcome: 'rework',
+      evidence: 'Needs shared correction',
+    })
+  const before = structuredClone(run)
+  const shared = run.definition.steps.find((s) => s.id === 'shared')!
+  run = advanceWorkflowRun(run, {
+    action: 'revise',
+    expectedVersion: run.version,
+    attemptId: run.activeAttemptId,
+    active: 'keep',
+    reason: 'Add accurate verdict',
+    operations: [
+      { op: 'put-step', step: { ...shared, instructions: 'Future only', outcomes: { waived: { next: 'deliver' } } } },
+    ],
+  })
+  const kept = activeWorkflowAttempts(run)
+  expect(kept.map((a) => a.effectiveOutcomes?.outcomes)).toEqual([
+    { waived: { next: 'deliver' } },
+    { waived: { next: 'deliver' } },
+  ])
+  expect(run.revisions!.at(-1)!.affectedAttemptIds).toEqual(kept.map((a) => a.id))
+  expect(kept.map((a) => a.step)).toEqual(activeWorkflowAttempts(before).map((a) => a.step))
+  expect(run.attempts.filter((a) => a.status !== 'running')).toEqual(
+    before.attempts.filter((a) => a.status !== 'running')
+  )
+  expect(run.joins).toEqual(before.joins)
+  expect(run.returns).toEqual(before.returns)
+  for (const a of kept)
+    run = advanceWorkflowRun(run, {
+      action: 'complete',
+      expectedVersion: run.version,
+      attemptId: a.id,
+      outcome: 'waived',
+      evidence: 'Owner waived this check',
+    })
+  expect(active(run)).toEqual(['security', 'qa'])
+  expect(run.returns.every((r) => r.status === 'open')).toBe(true)
+  expect(run.joins![0]!.status).toBe('open')
+})
+
+test('new effective outcomes cannot orphan an already open join', () => {
+  const run = complete(createWorkflowRun(definition()), 'execute')
+  expect(() =>
+    advanceWorkflowRun(run, {
+      action: 'revise',
+      expectedVersion: run.version,
+      attemptId: run.activeAttemptId,
+      active: 'keep',
+      reason: 'Remove join',
+      operations: [
+        ...run.definition.steps
+          .filter((s) => s.id !== 'deliver')
+          .map((step) => ({
+            op: 'put-step',
+            step: {
+              ...step,
+              outcomes:
+                step.id === 'execute'
+                  ? { completed: { parallel: ['security', 'qa'], join: 'finish' } }
+                  : { completed: { next: 'finish' } },
+            },
+          })),
+        { op: 'remove-step', id: 'deliver' },
+      ],
+    })
+  ).toThrow('open parallel join')
+  expect(run.joins![0]!.status).toBe('open')
+})

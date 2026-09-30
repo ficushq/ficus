@@ -6,6 +6,7 @@ import type {
   WorkflowDefinition,
   WorkflowPreset,
   WorkflowRun,
+  WorkflowOutcomeBinding,
   WorkflowUsage,
   WorkflowSource,
   WorkStreamWait,
@@ -24,6 +25,7 @@ export interface WorkflowRunDetail {
   state: WorkflowRun
   version: number
   attemptAgents: Record<string, string>
+  activeOutcomes?: WorkflowOutcomeBinding[]
   openWaits?: WorkStreamWait[]
   integrationDeliveries?: IntegrationDeliveryView[]
   usage?: WorkflowUsage
@@ -62,10 +64,12 @@ export function workflowsResource(t: Transport) {
         body: { squadId, source },
       }),
     advance: (id: string, command: WorkflowCommand, requestId: string) =>
-      t.request<{ version: number; stateStatus: WorkflowRun['status']; activeAttemptId: number | null }>(
-        `${runPath(id)}/advance`,
-        { method: 'POST', body: { command, requestId } }
-      ),
+      t.request<{
+        version: number
+        stateStatus: WorkflowRun['status']
+        activeAttemptId: number | null
+        outcomeUpdates?: WorkflowOutcomeBinding[]
+      }>(`${runPath(id)}/advance`, { method: 'POST', body: { command, requestId } }),
     finish: (id: string, version: number) =>
       t.request<WorkStream>(`${runPath(id)}/finish`, { method: 'POST', body: { version } }),
     createStream: (input: CreateWorkStreamInput) =>

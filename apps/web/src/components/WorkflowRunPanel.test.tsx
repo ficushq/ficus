@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from 'bun:test'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createWorkflowRun, workflowPresetSchema, type WorkStream } from '@ficus/shared'
+import { createWorkflowRun, advanceWorkflowRun, workflowPresetSchema, type WorkStream } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import { acquireDomHarness } from '../test/domHarness'
 import { client } from '../api/clientInstance'
@@ -520,6 +520,39 @@ test('a human gate shows the handoff it reviews and labels each outcome with whe
     // The forward outcome is the primary action even when a rework outcome is declared first.
     expect(buttons[1]!.className).toContain('ficus-button-primary')
     expect(buttons[0]!.className).not.toContain('ficus-button-primary')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('kept human gates show only the effective outcomes and retain their initial brief', async () => {
+  const value = run(true)
+  value.state = advanceWorkflowRun(value.state, {
+    action: 'revise',
+    expectedVersion: 0,
+    attemptId: 1,
+    active: 'keep',
+    reason: 'New human verdict',
+    operations: [
+      {
+        op: 'put-step',
+        step: {
+          ...value.state.definition.steps[0]!,
+          instructions: 'Future brief',
+          outcomes: { accepted: { next: 'finish' } },
+        },
+      },
+    ],
+  })
+  value.version = value.state.version
+  const f = await fixture(value, ['workstreams:review'])
+  try {
+    await f.render(<WorkflowReviewCallout stream={stream} />)
+    const text = f.dom.window.document.body.textContent!
+    expect(text).toContain('Accepted')
+    expect(text).not.toContain('Approved')
+    expect(text).toContain('Approve this draft')
+    expect(text).not.toContain('Future brief')
   } finally {
     await f.cleanup()
   }

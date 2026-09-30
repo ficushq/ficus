@@ -32,13 +32,25 @@ export interface WorkflowAttempt {
   id: number
   stepId: string
   status: 'running' | 'completed' | 'returned' | 'canceled'
+  /** Initial brief and routing snapshot; never rewritten by a keep revision. */
   step?: WorkflowStep
+  /** Live routing overlay, bound at this run version. Non-outcome fields stay pinned. */
+  effectiveOutcomes?: { version: number; outcomes: WorkflowStep['outcomes'] }
   revision?: number
   participant?: WorkflowParticipant
   freshSession?: boolean
   outcome?: string
   evidence?: string
   feedback?: string
+}
+
+/** Effective routing exposed by flow inspection and live revision receipts. */
+export interface WorkflowOutcomeBinding {
+  attemptId: number
+  stepId: string
+  agentId: string | null
+  version: number
+  outcomes: WorkflowStep['outcomes']
 }
 
 export interface WorkflowReturnObligation {
@@ -72,7 +84,7 @@ export interface WorkflowRun {
   attempts: WorkflowAttempt[]
   returns: WorkflowReturnObligation[]
   completedStepIds: string[]
-  revisions?: Array<{ version: number; definition: WorkflowDefinition; reason: string }>
+  revisions?: Array<{ version: number; definition: WorkflowDefinition; reason: string; affectedAttemptIds?: number[] }>
   delegationCount?: number
   attemptEpoch?: number
   pauseReason?: { type: 'attempt-limit'; stepId: string }
@@ -135,6 +147,26 @@ function stepById(state: WorkflowRun, id: string): WorkflowStep {
   const step = state.definition.steps.find((step) => step.id === id)
   if (!step) throw new Error(`Unknown step '${id}'`)
   return step
+}
+
+/** Outcome/transition keys may be reordered by JSONB persistence; branch array order stays significant. */
+function sameOutcomes(left: WorkflowStep['outcomes'], right: WorkflowStep['outcomes']): boolean {
+  return (
+    Object.keys(left).length === Object.keys(right).length &&
+    Object.entries(left).every(([name, target]) => {
+      const other = right[name]
+      return (
+        other !== undefined &&
+        JSON.stringify(target, Object.keys(target).sort()) === JSON.stringify(other, Object.keys(other).sort())
+      )
+    })
+  )
+}
+
+/** Resolve pinned work with its latest authorized outcome binding (also for historical attempts). */
+export function effectiveWorkflowStep(state: WorkflowRun, attempt: WorkflowAttempt): WorkflowStep {
+  const initial = attempt.step ?? stepById(state, attempt.stepId)
+  return attempt.effectiveOutcomes ? { ...initial, outcomes: attempt.effectiveOutcomes.outcomes } : initial
 }
 
 export function activeWorkflowAttempts(state: WorkflowRun): WorkflowAttempt[] {
@@ -388,11 +420,21 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
       )
         throw new Error('Cannot remove a destination of an open parallel join')
     }
+    const affectedAttemptIds: number[] = []
     for (const kept of activeWorkflowAttempts(state).filter((entry) => entry !== active || command.active === 'keep')) {
       const step = kept.step ?? stepById(state, kept.stepId)
       if (step.kind === 'agent' && !resolved.definition.participants[step.participant])
         throw new Error('Cannot remove the active participant while keeping its attempt')
-      for (const target of Object.values(step.outcomes)) {
+      const revised = resolved.definition.steps.find((entry) => entry.id === kept.stepId)!.outcomes
+      const current = effectiveWorkflowStep(state, kept).outcomes
+      // Do not silently repair legacy stale snapshots when an unrelated field is revised.
+      const outcomes = sameOutcomes(stepById(state, kept.stepId).outcomes, revised) ? current : revised
+      if (!sameOutcomes(current, outcomes)) {
+        kept.effectiveOutcomes = { version: state.version + 1, outcomes: structuredClone(outcomes) }
+        affectedAttemptIds.push(kept.id)
+      }
+      // Validate the newly effective routes, not destinations in the preserved initial snapshot.
+      for (const target of Object.values(outcomes)) {
         const ids =
           'next' in target
             ? [target.next]
@@ -410,6 +452,7 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
       version: state.version,
       definition: structuredClone(state.definition),
       reason: command.reason,
+      affectedAttemptIds,
     })
     if (active && command.active === 'restart') {
       active.status = 'canceled'
@@ -431,7 +474,7 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
   const state = structuredClone(previous)
   const attempt = state.attempts.find((attempt) => attempt.id === command.attemptId)
   if (!attempt || attempt.status !== 'running') throw new Error('No active step attempt')
-  const step = attempt.step ?? stepById(state, attempt.stepId)
+  const step = effectiveWorkflowStep(state, attempt)
   state.version += 1
 
   if (command.action === 'delegate') {

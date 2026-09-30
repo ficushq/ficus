@@ -518,3 +518,173 @@ test('completion-ready rework honors the configured code-host engineer and repea
   expect(active(state)).toBe('review')
   expect(complete(state, 'approved').status).toBe('completion-ready')
 })
+
+describe('live outcome revisions', () => {
+  test('keep adds, changes, and removes outcomes without replacing the initial snapshot', async () => {
+    const initial = await run('builder-reviewer')
+    const snapshot = structuredClone(initial.attempts[0]!)
+    const revise = (state: WorkflowRun, outcomes: NonNullable<(typeof initial.definition.steps)[0]>['outcomes']) =>
+      advanceWorkflowRun(state, {
+        action: 'revise',
+        expectedVersion: state.version,
+        attemptId: 1,
+        active: 'keep',
+        reason: 'Truthful routing',
+        operations: [
+          {
+            op: 'put-step',
+            step: { ...state.definition.steps[0]!, instructions: 'Future brief', output: 'Future output', outcomes },
+          },
+        ],
+      })
+    const added = revise(initial, { ...snapshot.step!.outcomes, waived: { next: 'review' } })
+    expect(added.attempts).toHaveLength(1)
+    expect(added.attempts[0]!.step).toEqual(snapshot.step)
+    expect(added.attempts[0]!.participant).toEqual(snapshot.participant)
+    expect(added.attempts[0]!.revision).toBe(snapshot.revision)
+    expect(added.attempts[0]!.sourceAttemptIds).toEqual(snapshot.sourceAttemptIds)
+    expect(added.attempts[0]!.freshSession).toBeUndefined()
+    expect(added.attempts[0]!.effectiveOutcomes).toEqual({ version: 1, outcomes: added.definition.steps[0]!.outcomes })
+    expect(added.revisions!.at(-1)!.affectedAttemptIds).toEqual([1])
+    expect(active(complete(added, 'waived'))).toBe('review')
+    const changed = revise(added, { completed: { next: 'review' }, waived: { next: 'finish' } })
+    expect(complete(changed, 'waived').status).toBe('completion-ready')
+    const removed = revise(changed, { completed: { next: 'review' } })
+    expect(() => complete(removed, 'waived')).toThrow("Unknown outcome 'waived'")
+    expect(removed.attempts[0]!.step).toEqual(snapshot.step)
+    const repeated = revise(removed, removed.definition.steps[0]!.outcomes)
+    expect(repeated.attempts[0]!.effectiveOutcomes!.version).toBe(3)
+    expect(repeated.revisions!.at(-1)!.affectedAttemptIds).toEqual([])
+    expect(() =>
+      advanceWorkflowRun(removed, {
+        action: 'complete',
+        expectedVersion: 0,
+        attemptId: 1,
+        outcome: 'completed',
+        evidence: 'Old command',
+      })
+    ).toThrow('Stale workflow version')
+    expect(initial.attempts[0]).toEqual(snapshot)
+  })
+
+  test('keep can replace a destination while removing it, without rewriting completed history', async () => {
+    const initial = await run('builder-reviewer')
+    const revised = advanceWorkflowRun(initial, {
+      action: 'revise',
+      expectedVersion: 0,
+      attemptId: 1,
+      active: 'keep',
+      reason: 'Replace future review',
+      operations: [
+        { op: 'put-step', step: { ...initial.definition.steps[0]!, outcomes: { completed: { next: 'finish' } } } },
+        { op: 'remove-step', id: 'review' },
+      ],
+    })
+    const finished = complete(revised)
+    const history = structuredClone(finished.attempts)
+    const later = advanceWorkflowRun(finished, {
+      action: 'revise',
+      expectedVersion: finished.version,
+      attemptId: null,
+      active: 'keep',
+      reason: 'Future routing',
+      operations: [
+        { op: 'put-step', step: { ...revised.definition.steps[0]!, outcomes: { later: { next: 'finish' } } } },
+      ],
+    })
+    expect(later.attempts).toEqual(history)
+    expect(later.revisions!.at(-1)!.affectedAttemptIds).toEqual([])
+  })
+})
+
+test('outcome revisions cannot orphan open return destinations', async () => {
+  const state = complete(complete(await directReturnRun('builder-reviewer')), 'changes-requested')
+  const before = structuredClone(state)
+  expect(() =>
+    advanceWorkflowRun(state, {
+      action: 'revise',
+      expectedVersion: state.version,
+      attemptId: state.activeAttemptId,
+      active: 'keep',
+      reason: 'Remove requester',
+      operations: [
+        { op: 'put-step', step: { ...state.definition.steps[0]!, outcomes: { completed: { next: 'finish' } } } },
+        { op: 'remove-step', id: 'review' },
+      ],
+    })
+  ).toThrow('open return')
+  expect(state).toEqual(before)
+})
+
+test('a new keep outcome can declare a return without changing the original brief', async () => {
+  const initial = complete(complete(await run()))
+  const step = initial.definition.steps.find((s) => s.id === 'review')!
+  const revised = advanceWorkflowRun(initial, {
+    action: 'revise',
+    expectedVersion: initial.version,
+    attemptId: initial.activeAttemptId,
+    active: 'keep',
+    reason: 'Direct design correction',
+    operations: [
+      {
+        op: 'put-step',
+        step: {
+          ...step,
+          outcomes: { ...step.outcomes, correction: { returnTo: 'design', afterRework: 'return-to-requester' } },
+        },
+      },
+    ],
+  })
+  const returned = returnTo(revised, 'design')
+  expect(active(returned)).toBe('design')
+  expect(returned.returns[0]!.resumeAt).toBe('review')
+  expect(returned.attempts[2]!.step).toEqual(initial.attempts[2]!.step)
+})
+
+test('unrelated keep revisions do not refresh legacy stale outcome snapshots', async () => {
+  const state = await run('builder-reviewer')
+  // A persisted run from before live outcome bindings: definition changed but the attempt stayed pinned.
+  state.definition.steps[0]!.outcomes.waived = { next: 'review' }
+  const revised = advanceWorkflowRun(state, {
+    action: 'revise',
+    expectedVersion: 0,
+    attemptId: 1,
+    active: 'keep',
+    reason: 'Rename only',
+    operations: [{ op: 'set-name', name: 'New name' }],
+  })
+  expect(revised.attempts).toEqual(state.attempts)
+  expect(revised.revisions!.at(-1)!.affectedAttemptIds).toEqual([])
+  expect(() => complete(revised, 'waived')).toThrow('Unknown outcome')
+})
+
+test('outcome bindings survive JSON and ignore transition key ordering on repeated revisions', async () => {
+  const state = complete(complete(await directReturnRun()))
+  const step = state.definition.steps.find((s) => s.id === 'review')!
+  const outcomes = { ...step.outcomes, correction: { returnTo: 'design', afterRework: 'return-to-requester' } }
+  const revised = advanceWorkflowRun(state, {
+    action: 'revise',
+    expectedVersion: state.version,
+    attemptId: state.activeAttemptId,
+    active: 'keep',
+    reason: 'Add correction',
+    operations: [{ op: 'put-step', step: { ...step, outcomes } }],
+  })
+  const persisted = JSON.parse(JSON.stringify(revised)) as WorkflowRun
+  for (const map of [
+    persisted.definition.steps.find((s) => s.id === 'review')!.outcomes,
+    persisted.attempts[2]!.effectiveOutcomes!.outcomes,
+  ])
+    map.correction = { afterRework: 'return-to-requester', returnTo: 'design' }
+  const repeated = advanceWorkflowRun(persisted, {
+    action: 'revise',
+    expectedVersion: persisted.version,
+    attemptId: persisted.activeAttemptId,
+    active: 'keep',
+    reason: 'Same routing',
+    operations: [{ op: 'put-step', step: { ...step, outcomes } }],
+  })
+  expect(repeated.attempts).toEqual(persisted.attempts)
+  expect(repeated.revisions!.at(-1)!.affectedAttemptIds).toEqual([])
+  expect(active(complete(repeated, 'correction'))).toBe('design')
+})
