@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_LOCAL_INSTANCE } from '../packages/shared/src/local-instance'
 
 interface WorkflowStep {
   name?: string
@@ -23,7 +24,8 @@ describe('native local-setup CI authority', () => {
   test('collects native supervisor diagnostics rather than querying pm2', () => {
     const run = step('Show logs on failure')?.run ?? ''
 
-    expect(run).toContain('server logs --instance ficus')
+    // The default local instance's name (still `tau`), not the product name.
+    expect(run).toContain(`server logs --instance ${DEFAULT_LOCAL_INSTANCE}`)
     expect(run).toContain('systemctl --user status')
     expect(run).toContain('~/.tau/logs/tau-api.log')
     expect(run).not.toContain('bunx pm2 logs')
