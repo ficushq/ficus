@@ -9,6 +9,8 @@ interface FicusLogoProps {
   /** Hide the mark from assistive tech when visible text next to it already
    * names the product (e.g. the header wordmark), so it isn't announced twice. */
   decorative?: boolean
+  /** The leaves dance (the agent is working). Still for reduced motion. */
+  animated?: boolean
 }
 
 /**
@@ -20,13 +22,13 @@ interface FicusLogoProps {
  * simplified mark) but always renders the dark palette — see its own doc
  * comment for why.
  */
-export function FicusLogo({ className = 'w-8 h-8', size, decorative = false }: FicusLogoProps) {
+export function FicusLogo({ className = 'w-8 h-8', size, decorative = false, animated = false }: FicusLogoProps) {
   const theme = useOptionalTheme()
   const dark = theme?.theme === 'dark'
   const dimensions = size !== undefined ? { width: size, height: size } : {}
   const a11y = decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': 'Ficus' }
 
-  if (size !== undefined && size <= 16) {
+  if (size !== undefined && size <= 16 && !animated) {
     // Same recolor the generator applies to brand/ficus-favicon-16.svg for
     // web/dark (see scripts/brand/generate.ts's DARK_RECOLOR map).
     const leaf = dark ? '#5e7f4e' : '#3f6b4f'
@@ -53,24 +55,31 @@ export function FicusLogo({ className = 'w-8 h-8', size, decorative = false }: F
     <svg className={className} {...dimensions} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" {...a11y}>
       {/* translate(0 -2.5) centers the artwork's bounding box in the viewBox
           — see brand/ficus-mark.svg / brand/ficus-mark-dark.svg. */}
-      <g transform="translate(0 -2.5)">
-        <g transform="translate(32 39) rotate(-36) scale(0.78 0.84)">
-          <path
-            d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
-            fill={sideLeaf}
-          />
-        </g>
-        <g transform="translate(32 39) rotate(36) scale(0.78 0.84)">
-          <path
-            d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
-            fill={sideLeaf}
-          />
-        </g>
+      {/* Each leaf pivots at its base (the pot's rim, 32,39), so an animated mark can sway it. */}
+      <g transform="translate(0 -2.5)" className={animated ? 'ficus-dance' : undefined}>
         <g transform="translate(32 39)">
-          <path
-            d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
-            fill={centerLeaf}
-          />
+          <g className={animated ? 'ficus-dance-left' : undefined}>
+            <g transform="rotate(-36) scale(0.78 0.84)">
+              <path
+                d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
+                fill={sideLeaf}
+              />
+            </g>
+          </g>
+          <g className={animated ? 'ficus-dance-right' : undefined}>
+            <g transform="rotate(36) scale(0.78 0.84)">
+              <path
+                d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
+                fill={sideLeaf}
+              />
+            </g>
+          </g>
+          <g className={animated ? 'ficus-dance-center' : undefined}>
+            <path
+              d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
+              fill={centerLeaf}
+            />
+          </g>
         </g>
         <rect x="18" y="39" width="28" height="5" rx="2.5" fill={pot} />
         <path d="M20 44 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill={pot} />
