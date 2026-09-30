@@ -1,7 +1,7 @@
 /**
  * Browser authentication for the local-app proxy.
  *
- * The tokenized URL carries `?_tau_token=<token>`, which authenticates the
+ * The tokenized URL carries `?_ficus_token=<token>`, which authenticates the
  * DOCUMENT request. It cannot authenticate anything the document then loads:
  * the browser issues subresource requests (`/api/app/<id>/assets/index-*.js`)
  * with no query string of their own, so every script, stylesheet and fetch
@@ -20,7 +20,7 @@
  */
 import { getLocalDeployment, isValidLocalDeploymentBrowserToken } from './local-deployment-service'
 
-const TOKEN_QUERY_PARAM = '_tau_token'
+const TOKEN_QUERY_PARAM = '_ficus_token'
 const LOCAL_DEPLOYMENT_UUID_PREFIX =
   /^[0-9a-f]{1,8}(?:-[0-9a-f]{0,4}(?:-[0-9a-f]{0,4}(?:-[0-9a-f]{0,4}(?:-[0-9a-f]{0,12})?)?)?)?$/
 

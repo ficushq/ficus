@@ -117,7 +117,7 @@ describe('deployments localDeployment integration', () => {
       },
     ])
 
-    const response = await app.request(`/api/app/${prefix}/?_tau_token=irrelevant`)
+    const response = await app.request(`/api/app/${prefix}/?_ficus_token=irrelevant`)
 
     expect(response.status).toBe(409)
     expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
@@ -156,13 +156,13 @@ describe('deployments localDeployment integration', () => {
     })
     expect(createRes.status).toBe(201)
     const localDeployment = await createRes.json()
-    const token = new URL(localDeployment.urlPathOrHost, 'http://ficus.test').searchParams.get('_tau_token')!
+    const token = new URL(localDeployment.urlPathOrHost, 'http://ficus.test').searchParams.get('_ficus_token')!
     const hyphenatedPrefix = localDeployment.id.slice(0, 13)
 
-    const wrongToken = await app.request(`/api/app/${hyphenatedPrefix}/?_tau_token=wrong`)
+    const wrongToken = await app.request(`/api/app/${hyphenatedPrefix}/?_ficus_token=wrong`)
     expect(wrongToken.status).toBe(401)
 
-    const response = await app.request(`/api/app/${hyphenatedPrefix}/?_tau_token=${encodeURIComponent(token)}`)
+    const response = await app.request(`/api/app/${hyphenatedPrefix}/?_ficus_token=${encodeURIComponent(token)}`)
     expect(response.status).toBe(200)
     expect(await response.text()).toBe('hello localDeployment')
     expect(response.headers.get('set-cookie')).toContain(`ficus_app_${localDeployment.id}=`)
@@ -205,8 +205,8 @@ describe('deployments localDeployment integration', () => {
     const localDeployment = await createRes.json()
     expect(localDeployment.status).toBe('running')
 
-    // The proxy uses the _tau_token URL — identityMiddleware bypasses auth for valid tokens.
-    // No Bearer token needed here; the _tau_token query param is the auth mechanism for
+    // The proxy uses the _ficus_token URL — identityMiddleware bypasses auth for valid tokens.
+    // No Bearer token needed here; the _ficus_token query param is the auth mechanism for
     // in-browser asset loading (see publicRoute comment in deploymentsRouter).
     const proxyRes = await app.request(localDeployment.urlPathOrHost)
     expect(proxyRes.status).toBe(200)
@@ -220,7 +220,7 @@ describe('deployments localDeployment integration', () => {
     const stopped = await stopRes.json()
     expect(stopped.status).toBe('stopped')
 
-    // Use the _tau_token URL so identityMiddleware allows the unauthenticated browser request through.
+    // Use the _ficus_token URL so identityMiddleware allows the unauthenticated browser request through.
     // After stopping, the proxy target is gone — the handler returns 404.
     const stoppedProxyRes = await app.request(stopped.urlPathOrHost)
     expect(stoppedProxyRes.status).toBe(404)

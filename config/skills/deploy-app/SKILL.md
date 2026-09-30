@@ -115,7 +115,7 @@ page, and the browser console shows 404s (or Ficus's own HTML) for every
 
 For browser tools, prefer `browser_open({ "localDeploymentId": "<full-deployment-uuid>" })`. Ficus checks the calling agent's current deployment-read permission and deployment state, then passes the issued URL directly to the browser backend. You do not need to print or copy a capability through tool output. To inspect a run without its credential URL, use `ficus deploy local get <id> --json | jq '{id, name, status, port}'`. See `frontend-visual-review` for the full loop.
 
-The URL Ficus gives you carries `?_tau_token=…`. That token authenticates the
+The URL Ficus gives you carries `?_ficus_token=…`. That token authenticates the
 first request and Ficus then sets a cookie scoped to that one app, so the app's
 own scripts, styles and fetches authenticate automatically — nothing to
 configure. Hosted `.app` URLs always use HTTPS.

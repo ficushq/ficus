@@ -7,8 +7,8 @@ import { join } from 'node:path'
  * NOTHING in the chain that produces Ficus's environment expands `~`: Bun's
  * built-in dotenv loader, the `dotenv` package, the CLI's own `.env` parser and
  * systemd's `EnvironmentFile=` all hand the value through verbatim, because a
- * `~` is only meaningful to an interactive shell. So `HOME_DIR=~/.tau` in a
- * `.env` reaches `getHomeDir()` as the literal seven characters `~/.tau`, and
+ * `~` is only meaningful to an interactive shell. So `HOME_DIR=~/.ficus` in a
+ * `.env` reaches `getHomeDir()` as the literal eight characters `~/.ficus`, and
  * the process cheerfully creates a directory literally named `~` under its cwd
  * — a data tree in the wrong place that looks, from the outside, like Ficus
  * simply ignored the setting.

@@ -407,7 +407,7 @@ describe('deployments routes', () => {
     expect(res.status).toBe(201)
     const localDeployment = await res.json()
     expect(localDeployment.name).toBe('web-app')
-    expect(localDeployment.urlPathOrHost).toMatch(new RegExp(`^/api/app/${localDeployment.id}/\\?_tau_token=.+`))
+    expect(localDeployment.urlPathOrHost).toMatch(new RegExp(`^/api/app/${localDeployment.id}/\\?_ficus_token=.+`))
     expect(localDeployment.processId).toBe(`tau-local-deployment-${localDeployment.id.slice(0, 8)}`)
     expect(supervisorStarts).toHaveLength(1)
     expect(supervisorStarts[0]).toMatchObject({
@@ -435,7 +435,7 @@ describe('deployments routes', () => {
       const localDeployment = await res.json()
       const compactId = localDeployment.id.replaceAll('-', '').slice(0, 12)
       expect(localDeployment.urlPathOrHost).toMatch(
-        new RegExp(`^https://team--blue--${compactId}\\.ficus\\.app/\\?_tau_token=.+$`)
+        new RegExp(`^https://team--blue--${compactId}\\.ficus\\.app/\\?_ficus_token=.+$`)
       )
     } finally {
       if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN

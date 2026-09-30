@@ -5,7 +5,7 @@ import { expandTilde } from '@ficus/shared/node'
 // while during normal operation, process.cwd() is the core app root.
 //
 // `FICUS_ROOT` takes precedence when set (the units point it at
-// `/opt/tau-core/current`): a prebuilt-artifact box activates a new release by
+// `/opt/ficus-core/current`): a prebuilt-artifact box activates a new release by
 // flipping the `current` symlink, and inferring the root from cwd through a
 // symlink being renamed in flight could resolve to a stale/partial tree. An
 // explicit anchor removes that ambiguity; unset, the cwd rule is unchanged.

@@ -32,7 +32,7 @@ Never change a registered checkout in place. Run `ficus server uninstall --root 
 | squad workspace | `squads.host_workspace_path` if set, else `<HOME_DIR>/workspaces/squads/<squadId>` |
 | squad memory    | `<HOME_DIR>/memory/<squadId>`                                                      |
 
-`HOME_DIR` defaults to `~/.tau`. These are the same directories every other
+`HOME_DIR` defaults to `~/.ficus`. These are the same directories every other
 runtime mounts into its sandbox, so nothing is copied.
 
 ## Environment

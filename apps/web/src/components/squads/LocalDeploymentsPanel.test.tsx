@@ -18,7 +18,7 @@ function localDeployment(overrides: Partial<LocalDeployment> = {}): LocalDeploym
     name: 'web',
     port: 5173,
     targetHost: '127.0.0.1',
-    urlPathOrHost: '/api/app/local-1/?_tau_token=token',
+    urlPathOrHost: '/api/app/local-1/?_ficus_token=token',
     visibility: 'private',
     mode: 'attached',
     status: 'running',

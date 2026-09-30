@@ -250,7 +250,7 @@ export const deploymentsRouter = new Hono()
    * requireEntityPermission. In-browser asset loads (HTML, JS, CSS) cannot carry a
    * Bearer token, so a traditional RBAC guard would break the app for all browsers.
    *
-   * Auth is handled by the global identityMiddleware's _tau_token query-param bypass:
+   * Auth is handled by the global identityMiddleware's _ficus_token query-param bypass:
    * each local deployment has a unique browserAccessToken embedded in its urlPathOrHost.
    * identityMiddleware validates that token and calls next() without setting an identity,
    * so no identity is present on the context for this handler.

@@ -70,7 +70,7 @@ against the configured Origin CA root. There is no HTTP or TLS-verification
 fallback.
 
 The first tokenized request redirects to the validated HTTPS host, removes
-`_tau_token` from the browser URL, and sets `__Host-tau_app` as a host-only,
+`_ficus_token` from the browser URL, and sets `__Host-ficus_app` as a host-only,
 Secure, HttpOnly, SameSite=Lax cookie. Platform forwards its credential to Core;
 setting that cookie is not token validation. Core validates the deployment token
 and deployment state. Platform removes unrelated cookies, authorization headers,

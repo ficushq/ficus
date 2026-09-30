@@ -41,7 +41,7 @@ describe('localDeployment proxy', () => {
 
   /** The token is not on the DTO; it rides the URL Ficus hands the browser. */
   function browserToken(localDeployment: { urlPathOrHost: string }): string {
-    return new URL(`http://ficus.test${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token') ?? ''
+    return new URL(`http://ficus.test${localDeployment.urlPathOrHost}`).searchParams.get('_ficus_token') ?? ''
   }
 
   async function createTestSquad(): Promise<Squad> {
@@ -92,7 +92,7 @@ describe('localDeployment proxy', () => {
     )
     const invalid = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_tau_token=wrong`),
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_ficus_token=wrong`),
       ''
     )
 
@@ -154,7 +154,7 @@ describe('localDeployment proxy', () => {
     expect(response.status).toBe(201)
     expect(fetchCalls).toHaveLength(1)
     expect(fetchCalls[0].url).toBe('http://127.0.0.1:5173/api/items?filter=all')
-    expect(fetchCalls[0].url).not.toContain('_tau_token')
+    expect(fetchCalls[0].url).not.toContain('_ficus_token')
     expect(fetchCalls[0].init.method).toBe('POST')
     expect(await new Response(fetchCalls[0].init.body as BodyInit).text()).toBe('hello')
   })
@@ -260,7 +260,7 @@ describe('localDeployment proxy', () => {
 
     await proxyLocalDeploymentRequest(
       localDeployment.id,
-      // Use the valid signed URL (carries _tau_token) so the request authenticates,
+      // Use the valid signed URL (carries _ficus_token) so the request authenticates,
       // then assert the Ficus auth credentials are not forwarded upstream.
       new Request(localDeploymentUrl(localDeployment), {
         headers: {
@@ -285,7 +285,7 @@ describe('localDeployment proxy', () => {
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
     await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
 
-    // Ficus auth header but NO _tau_token: previously a Ficus auth header
+    // Ficus auth header but NO _ficus_token: previously a Ficus auth header
     // short-circuited the token check and proxied (201). Must now be 401.
     const noToken = await proxyLocalDeploymentRequest(
       localDeployment.id,
@@ -299,7 +299,7 @@ describe('localDeployment proxy', () => {
     // Wrong token, also rejected — never reaches the upstream fetch.
     const wrongToken = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_tau_token=wrong`, {
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_ficus_token=wrong`, {
         headers: { authorization: 'Bearer ficus-session' },
       }),
       ''

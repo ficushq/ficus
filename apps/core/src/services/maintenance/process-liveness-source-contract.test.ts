@@ -8,7 +8,7 @@ const reservations = readFileSync(join(import.meta.dir, 'admission-reservation.t
 
 describe('admission process liveness source contract', () => {
   test('uses a dedicated versioned 64-bit session lock and a single fatal close path', () => {
-    expect(liveness).toContain("ADMISSION_LIVENESS_LOCK_VERSION = 'tau:admission-owner:v1:'")
+    expect(liveness).toContain("ADMISSION_LIVENESS_LOCK_VERSION = 'ficus:admission-owner:v1:'")
     expect(liveness).toContain('hashtextextended(')
     expect(liveness).toContain('const connection = await client.reserve()')
     expect(liveness).toContain('if (!stopping && !fatalTriggered)')

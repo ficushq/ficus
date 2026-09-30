@@ -848,6 +848,7 @@ jobs:
           src/services/machines/cli-bundle.test.ts
           src/db/model-tiers-migration.test.ts
           src/db/migrate-bundle.test.ts
+          src/scripts/rebase-home.cli.test.ts
           src/db/load-root-env.test.ts
           src/tools/sandbox-tools.real-edit.test.ts
           src/index.test.ts

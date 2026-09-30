@@ -75,7 +75,7 @@ export async function proxyLocalDeploymentRequest(
   }
   const normalizedPath = path.replace(/^\/+/, '')
   const targetUrl = new URL(`http://${target.host}:${target.port}/${normalizedPath}`)
-  sourceUrl.searchParams.delete('_tau_token')
+  sourceUrl.searchParams.delete('_ficus_token')
   targetUrl.search = sourceUrl.search
 
   const headers = new Headers(request.headers)

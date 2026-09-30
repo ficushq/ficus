@@ -33,7 +33,7 @@ describe('local deployment browser auth', () => {
   })
 
   it('prefers the URL token and reports that a cookie must be set', () => {
-    const request = new Request(`https://t.example/api/app/${ID}/?_tau_token=abc`)
+    const request = new Request(`https://t.example/api/app/${ID}/?_ficus_token=abc`)
     expect(presentedLocalDeploymentToken(request, ID)).toEqual({ token: 'abc', fromQuery: true })
   })
 
