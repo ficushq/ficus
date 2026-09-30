@@ -5878,6 +5878,9 @@ _hl_resume() { # HLDIR
     start+=("${_HLN_BACKUP}.timer")
   fi
   if ((${#start[@]} > 0)); then
+    # A crash-looping candidate can exhaust the unit's start limit before the rollback;
+    # reset-failed clears that lockout (a no-op on a healthy unit), as restart_core_services does.
+    as_root systemctl reset-failed "${start[@]}" 2>/dev/null || true
     as_root systemctl start "${start[@]}" || die "host_layout: could not start ${start[*]} — the journal is kept"
   fi
 }
@@ -6159,8 +6162,10 @@ _hl_undo_s1() {
   if [[ ${_HLJ_TIMER_WAS_ENABLED} == 1 ]]; then
     as_root systemctl enable "${_HLO_BACKUP}.timer" || log_error "host_layout S1⁻¹: enabling ${_HLO_BACKUP}.timer failed"
   fi
+  as_root systemctl reset-failed "${_HLO_API}" "${_HLO_WORKER}" 2>/dev/null || true
   as_root systemctl start "${_HLO_API}" "${_HLO_WORKER}" || log_error "host_layout S1⁻¹: starting ${_HLO_API}/${_HLO_WORKER} failed"
   if [[ ${_HLJ_TIMER_WAS_ENABLED} == 1 ]]; then
+    as_root systemctl reset-failed "${_HLO_BACKUP}.timer" 2>/dev/null || true
     as_root systemctl start "${_HLO_BACKUP}.timer" || log_error "host_layout S1⁻¹: starting ${_HLO_BACKUP}.timer failed"
   fi
 }

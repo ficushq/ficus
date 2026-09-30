@@ -400,8 +400,9 @@ else
 
   STUB="${SCRATCH}/hl-stub"
   DOCKER_STATE="${SCRATCH}/hl-docker"
+  SYSTEMCTL_STATE="${SCRATCH}/hl-systemctl"
   mkdir -p "${STUB}"
-  export STUB_DOCKER_STATE="${DOCKER_STATE}"
+  export STUB_DOCKER_STATE="${DOCKER_STATE}" STUB_SYSTEMCTL_STATE="${SYSTEMCTL_STATE}"
   cat >"${STUB}/systemctl" <<'STUBEOF'
 #!/usr/bin/env bash
 # systemctl, as far as the migration uses it: enable/disable make the links
@@ -450,6 +451,21 @@ case ${cmd} in
     for l in "${U}"/*.wants/"${u}"; do if [[ -L ${l} ]]; then echo enabled; exit 0; fi; done
     echo disabled
     exit 1
+    ;;
+  # STUB_START_LIMIT: units whose start limit a crash-looping candidate exhausted;
+  # like real systemd, `start` refuses them until a `reset-failed` names them.
+  reset-failed)
+    mkdir -p "${STUB_SYSTEMCTL_STATE}"
+    for a in "$@"; do touch "${STUB_SYSTEMCTL_STATE}/reset-failed.$(norm "${a}")"; done
+    ;;
+  start)
+    for a in "$@"; do
+      u=$(norm "${a}")
+      if [[ " ${STUB_START_LIMIT:-} " == *" ${u} "* && ! -e ${STUB_SYSTEMCTL_STATE}/reset-failed.${u} ]]; then
+        echo "Job for ${u} failed. start-limit-hit" >&2
+        exit 1
+      fi
+    done
     ;;
   *) exit 0 ;;
 esac
@@ -652,7 +668,7 @@ YAMLEOF
   }
   hl_reset() {
     reset_fixture
-    rm -rf "$DOCKER_STATE"
+    rm -rf "$DOCKER_STATE" "$SYSTEMCTL_STATE"
     HOST_MIGRATE_PENDING=0 HOST_MIGRATE_BACKUP_SET='' HOST_MIGRATE_RELEASE='' HOST_MIGRATE_NAMES=''
     ARTIFACT_RELOCATED_FROM='' ARTIFACT_RELOCATED_TO='' ARTIFACT_CONVERTED_THIS_RUN=0
     unset _HM_REVERSE_SET _HM_REVERSE_DONE _HM_REVERSE_RUNNING _HM_IN_REVERSE _HM_REVERSED
@@ -831,6 +847,17 @@ YAMLEOF
     HL_FAIL_AFTER_DONE=1 host_migrate "$REL"
   ) 2>/dev/null || true
   expect_eq 'trap after DONE: settled forward, committed' "$(host_layout_detect):$(pending_state)" '2:n'
+  # R-1 case 2: a crash-looping candidate exhausted the units' start limit before the rollback;
+  # the forward settle must reset-failed them, or the start fails and PENDING is kept.
+  hl_reset
+  make_legacy_host
+  (HL_FAIL_AFTER_DONE=1 host_migrate "$REL") 2>/dev/null || true
+  rm -rf "$SYSTEMCTL_STATE"
+  (STUB_START_LIMIT='ficus-api.service ficus-worker.service' host_migrate_reconcile) 2>/dev/null \
+    || fail 'reconcile died after a start-limit lockout'
+  expect_eq 'start-limit lockout: no PENDING left' "$(pending_state)" 'n'
+  expect_eq 'start-limit lockout: reset-failed before start' \
+    "$(test -e "$SYSTEMCTL_STATE/reset-failed.ficus-api.service" -a -e "$SYSTEMCTL_STATE/reset-failed.ficus-worker.service" && echo y)" 'y'
 
   # --- rollback hook after the commit point: BOTH units stopped first, layout kept --
   hl_reset
