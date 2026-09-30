@@ -313,10 +313,10 @@ ficus workstream request-input ws-123 --actor owner -m "Waiting for the provider
 
 The actor decides who is asked to act, never whether the stream is blocked:
 
-| Actor | Who must act | Presented as | Needs you / human notices |
-|-------|--------------|--------------|---------------------------|
-| `human` | The user/operator | Blocked | Yes (Action Center, push, watchers) |
-| `owner` | The stream's owner agent (squad manager if none) | Waiting on Owner | No; the owner agent is woken |
+| Actor   | Who must act                                     | Presented as     | Needs you / human notices           |
+| ------- | ------------------------------------------------ | ---------------- | ----------------------------------- |
+| `human` | The user/operator                                | Blocked          | Yes (Action Center, push, watchers) |
+| `owner` | The stream's owner agent (squad manager if none) | Waiting on Owner | No; the owner agent is woken        |
 
 Questions for a human use `ask_human`; waiting on another work stream's deliverable uses a `dependsOn` dependency, not a manual wait. Provider or third-party events use `owner`, with the message saying what the wait is for. Older servers ignore `--actor` and open a human wait.
 
