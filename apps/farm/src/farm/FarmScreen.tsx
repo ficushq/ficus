@@ -381,10 +381,11 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
       {/* Desktop's hidden title bar: the top strip drags the window (see desktop/shell.ts). */}
       <div className="g-titlebar" aria-hidden="true" />
       <header className="g-hud">
-        <div className="g-logo g-panel">
+        {/* Back to the regular app, like the farmhouse's Open Ficus (Ficus Mobile catches it and shows its feed). */}
+        <a className="g-logo g-panel" href={webAppUrl('/')} aria-label="Ficus Farm: open Ficus" title="Open Ficus">
           <img src={ficusMark} alt="" width={32} height={32} />
-          <span>Ficus Farm</span>
-        </div>
+          <span aria-hidden="true">Ficus Farm</span>
+        </a>
         <div className="g-counters" aria-live="polite">
           <Counter
             icon={<EnvelopeIcon />}

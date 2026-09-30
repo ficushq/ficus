@@ -94,6 +94,13 @@
   letter-spacing: var(--g-display-tracking);
   color: var(--g-accent);
   background: var(--g-plank-fill);
+  text-decoration: none;
+}
+
+/* It's the way back to the regular app. */
+.g-logo:active {
+  translate: var(--g-press-sm);
+  box-shadow: var(--g-lift-pressed);
 }
 
 .g-counters {
