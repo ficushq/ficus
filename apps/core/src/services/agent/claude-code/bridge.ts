@@ -70,6 +70,12 @@ const scheduleTimeout: Schedule = (fn, ms) => {
 export const CLAUDE_CODE_SESSION_CLOSED = 'Claude Code session closed mid-response (connection lost)'
 /** The same for a Claude Code process that exits mid-turn (crashed or killed). */
 export const CLAUDE_CODE_EXITED = 'Claude Code exited mid-response (connection lost)'
+/**
+ * The answer to a call that is not a turn. pi's cache warmer replays a session's last request (one
+ * output token) to keep the provider's prompt cache from expiring, including while that request is
+ * still streaming. Claude Code keeps its own cache. The warmer treats an error as best effort.
+ */
+export const CLAUDE_CODE_SIDE_REQUEST = 'Claude Code keeps its own prompt cache; nothing new to send'
 
 type CallToolResult = ReturnType<typeof mcpToolResult>
 
@@ -235,14 +241,15 @@ class Bridge {
    */
   private scheduleIdleClose() {
     this.clearIdle()
-    if (this.inTurn()) return
+    if (this.busy()) return
     this.cancelIdle = this.schedule(() => {
       this.cancelIdle = undefined
-      if (!this.inTurn()) this.close()
+      if (!this.busy()) this.close()
     }, IDLE_CLOSE_MS)
   }
 
-  private inTurn(): boolean {
+  /** A turn is in flight: pi's loop starts no other, so any other call for this session is a side request. */
+  busy(): boolean {
     return this.turn !== undefined && !this.turn.done
   }
 
@@ -385,6 +392,15 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
       const signature = hash({ model: model.id, effort, systemPrompt, tools: tools.map(toolSignature) })
 
       let bridge = bridges.get(key)
+      // A side request must never touch the live session. Taken as a turn the session could not
+      // continue, it closed the session and failed the turn in flight (pi's cache warm, ~270s into a
+      // long thinking turn). pi's cache warmer caps its replay at one token, which pi's agent loop
+      // never does; and while a turn is in flight pi's loop is waiting on it, so any other call is
+      // a side request too.
+      if (options?.maxTokens === 1 || (bridge && !bridge.closed && bridge.busy())) {
+        turn.fail('error', CLAUDE_CODE_SIDE_REQUEST)
+        return stream
+      }
       const tail = bridge && !bridge.closed && !bridge.desynced ? continuation(bridge.anchor, conversation) : undefined
       // A changed prompt, model, or tool set needs a new Claude Code process, resumed from this one.
       // Mid tool call the running process keeps going; the change applies from the next user turn.

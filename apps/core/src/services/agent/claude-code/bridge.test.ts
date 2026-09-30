@@ -14,7 +14,12 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
-import { CLAUDE_CODE_EXITED, CLAUDE_CODE_SESSION_CLOSED, createClaudeCodeStream } from './bridge'
+import {
+  CLAUDE_CODE_EXITED,
+  CLAUDE_CODE_SESSION_CLOSED,
+  CLAUDE_CODE_SIDE_REQUEST,
+  createClaudeCodeStream,
+} from './bridge'
 import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
@@ -376,29 +381,27 @@ test('a late result from the previous turn never closes the session under the ne
   expect(claude.closed).toBe(true)
 })
 
-test('a session that closes under a live turn fails it retryably, and the retry gets a new session', async () => {
+test('a session that ends under a live turn fails it retryably, and the retry gets a new session', async () => {
   for (const text of [CLAUDE_CODE_SESSION_CLOSED, CLAUDE_CODE_EXITED]) {
     expect(isRetryableAssistantError({ stopReason: 'error', errorMessage: text } as AssistantMessage)).toBe(true)
   }
 
   const { stream, processes } = harness()
-  const live = stream(model, context([user('long task')]), { sessionId: 's9' })
+  const request = context([user('long task')])
+  const live = stream(model, request, { sessionId: 's9' })
   await processes[0]!.nextPrompt(1)
-  // Something else closes the session mid-response (here: a history this process never saw).
-  const other = stream(model, context([user('something else')]), { sessionId: 's9' })
+  // The Claude Code process dies mid-response.
+  processes[0]!.end()
   const failed = await live.result()
   expect(failed.stopReason).toBe('error')
-  expect(failed.errorMessage).toBe(CLAUDE_CODE_SESSION_CLOSED)
   expect(isRetryableAssistantError(failed)).toBe(true)
-  processes[1]!.emit(...textResponse('msg_2', 'ok'))
-  expect((await other.result()).stopReason).toBe('stop')
 
   // pi's retry of the failed turn starts over in a fresh Claude Code process.
-  const retry = stream(model, context([user('long task')]), { sessionId: 's9' })
-  const claude = processes.at(-1)!
-  expect(processes).toHaveLength(3)
+  const retry = stream(model, request, { sessionId: 's9' })
+  expect(processes).toHaveLength(2)
+  const claude = processes[1]!
   await claude.nextPrompt(1)
-  claude.emit(...textResponse('msg_3', 'finished'))
+  claude.emit(...textResponse('msg_2', 'finished'))
   expect((await retry.result()).stopReason).toBe('stop')
 })
 
@@ -410,4 +413,54 @@ test('a Claude Code process that exits mid-turn fails it retryably', async () =>
   const message = await out.result()
   expect(message.errorMessage).toBe(CLAUDE_CODE_EXITED)
   expect(isRetryableAssistantError(message)).toBe(true)
+})
+
+test('pi’s cache warm during a long turn never touches the live session', async () => {
+  const { stream, processes } = harness()
+  const request = context([user('think hard')])
+  const live = stream(model, request, { sessionId: 's11', reasoning: 'xhigh' })
+  const claude = processes[0]!
+  await claude.nextPrompt(1)
+
+  // ~270s in, pi's cache warmer replays the same request with a one-token cap.
+  const warm = await stream(model, request, {
+    sessionId: 's11',
+    reasoning: 'xhigh',
+    maxTokens: 1,
+    maxRetries: 0,
+  }).result()
+  expect(warm.stopReason).toBe('error')
+  expect(warm.errorMessage).toBe(CLAUDE_CODE_SIDE_REQUEST)
+  // Any other call while the turn is in flight is a side request too.
+  const other = await stream(model, request, { sessionId: 's11' }).result()
+  expect(other.errorMessage).toBe(CLAUDE_CODE_SIDE_REQUEST)
+
+  expect(claude.closed).toBe(false)
+  expect(processes).toHaveLength(1)
+  expect(claude.prompts).toHaveLength(1)
+  claude.emit(...textResponse('msg_1', 'thought it through'))
+  const message = await live.result()
+  expect(message.stopReason).toBe('stop')
+  expect(message.content).toEqual([{ type: 'text', text: 'thought it through' }])
+})
+
+test('a cache warm between turns starts no Claude Code turn and keeps the session', async () => {
+  const { stream, processes } = harness()
+  const first = stream(model, context([user('hi')]), { sessionId: 's12' })
+  const claude = processes[0]!
+  await claude.nextPrompt(1)
+  claude.emit(...textResponse('msg_1', 'hello'))
+  const reply = (await first.result()) as AssistantMessage
+
+  const warm = await stream(model, context([user('hi')]), { sessionId: 's12', maxTokens: 1 }).result()
+  expect(warm.errorMessage).toBe(CLAUDE_CODE_SIDE_REQUEST)
+  expect(processes).toHaveLength(1)
+  expect(claude.prompts).toHaveLength(1)
+
+  // The next real turn continues the same Claude Code process.
+  const next = stream(model, context([user('hi'), reply, user('again')]), { sessionId: 's12' })
+  expect((await claude.nextPrompt(2)).message.content).toEqual([{ type: 'text', text: 'again' }])
+  claude.emit(...textResponse('msg_2', 'hello again'))
+  expect((await next.result()).stopReason).toBe('stop')
+  expect(processes).toHaveLength(1)
 })
