@@ -70,6 +70,7 @@ interface World {
   ready: { status: number }
   /** What the fake rebase-home prints for a --dry-run. */
   rebasePreview: { stdout: string }
+  rebaseDown: { refusals: number }
   /** Commands the fake answers with a failure while `fail(joined)` says so. */
   fail: { match?: (joined: string) => boolean }
   pm2: Set<string>
@@ -95,6 +96,8 @@ function world(
     env?: Record<string, string | undefined>
     databaseUrl?: string
     ecosystem?: string
+    /** The old pm2 apps are running when the rename starts (default); false: stopped and deleted. */
+    pm2Running?: boolean
   } = {}
 ): World {
   const label = opts.label ?? L
@@ -137,8 +140,12 @@ function world(
   const disabled = new Set<string>()
   const ready = { status: 200 }
   const rebasePreview = { stdout: 'REBASE_HOME sessions.cwd=3\nREBASE_HOME_TARGET sessions.cwd=0\n' }
+  /** The next `refusals` runs of rebase-home fail as a Postgres that is still starting does. */
+  const rebaseDown = { refusals: 0 }
   const fail: World['fail'] = {}
-  const pm2 = new Set<string>(supervisor === 'pm2' ? [legacyNames.api, legacyNames.worker] : [])
+  const pm2 = new Set<string>(
+    supervisor === 'pm2' && opts.pm2Running !== false ? [legacyNames.api, legacyNames.worker] : []
+  )
   const loaded = new Set<string>()
   const printed: string[] = []
   const contexts: SupervisorContext[] = []
@@ -201,6 +208,10 @@ function world(
       }
       return ok()
     }
+    if (command[0] === 'bun' && command[1]?.endsWith('rebase-home.js') && rebaseDown.refusals > 0) {
+      rebaseDown.refusals--
+      return { code: 1, stdout: '', stderr: 'Error: connect ECONNREFUSED 127.0.0.1:5432' }
+    }
     if (command[0] === 'bun' && command[1]?.endsWith('rebase-home.js'))
       return ok(command.includes('--dry-run') ? rebasePreview.stdout : 'REBASE_HOME sessions.cwd=3\n')
     return ok()
@@ -255,6 +266,7 @@ function world(
     disabled,
     ready,
     rebasePreview,
+    rebaseDown,
     fail,
     pm2,
     loaded,
@@ -994,5 +1006,116 @@ describe('readiness, finishing and refusing', () => {
     const kept = readFileSync(journal, 'utf8')
     expect(kept.startsWith(`${lines}\n`)).toBe(true)
     expect(kept).toContain('"op":"undone","index":2')
+  })
+})
+
+describe('final-review fixes', () => {
+  it('retries rebase-home while the restarted Postgres still refuses connections', async () => {
+    const w = world('pm2')
+    await renameIdentity({ root: w.root }, w.deps)
+    w.calls.length = 0
+    // The undo's reverse rebase meets a server that is still starting, twice.
+    w.rebaseDown.refusals = 2
+    const report = await renameIdentity({ root: w.root, undo: true }, w.deps)
+    expect(report.status).toBe('undone')
+    const rebases = joined(w.calls).filter((c) => c.includes('rebase-home.js'))
+    expect(rebases).toHaveLength(3)
+    expect(lstatSync(join(w.home, LEGACY_HOME_DIR_NAME)).isDirectory()).toBe(true)
+  })
+
+  it('gives up on rebase-home after a bounded number of refused connections', async () => {
+    const w = world('pm2')
+    w.rebaseDown.refusals = 100
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/ECONNREFUSED/)
+    const attempts = joined(w.calls).filter((c) => c.includes('rebase-home.js') && !c.endsWith('--dry-run'))
+    expect(attempts.length).toBeGreaterThan(1)
+    expect(attempts.length).toBeLessThanOrEqual(6)
+  })
+
+  it('refuses, changing nothing, when the legacy home is a symlink to somewhere else', async () => {
+    for (const homeDir of [undefined, `~/${LEGACY_HOME_DIR_NAME}`]) {
+      rmSync(join(tmp, 'home'), { recursive: true, force: true })
+      rmSync(join(tmp, 'checkout'), { recursive: true, force: true })
+      const w = world('pm2', { envExtra: homeDir ? `HOME_DIR=${homeDir}\n` : '' })
+      // The home lives on another disk, reached through the legacy name.
+      const legacyHome = join(w.home, LEGACY_HOME_DIR_NAME)
+      const elsewhere = join(tmp, `external-${homeDir ? 'explicit' : 'unset'}`)
+      renameSync(legacyHome, elsewhere)
+      symlinkSync(elsewhere, legacyHome)
+      const registry = readFileSync(w.statePath, 'utf8')
+      for (const dryRun of [true, false]) {
+        const error = await renameIdentity({ root: w.root, dryRun }, w.deps).catch((e: Error) => e)
+        expect((error as Error).message).toContain(`${legacyHome} is a symlink to ${elsewhere}`)
+        expect((error as Error).message).toContain('by hand')
+      }
+      expect(w.calls).toEqual([])
+      expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+      expect(readFileSync(w.statePath, 'utf8')).toBe(registry)
+      expect(existsSync(join(w.home, '.ficus'))).toBe(false)
+    }
+  })
+
+  it('pins HOME_DIR only when the home moves', async () => {
+    // The home already moved (by an earlier rename): the legacy name is the link to .ficus.
+    const w = world('pm2')
+    const legacyHome = join(w.home, LEGACY_HOME_DIR_NAME)
+    renameSync(legacyHome, join(w.home, '.ficus'))
+    symlinkSync('.ficus', legacyHome)
+    await renameIdentity({ root: w.root }, w.deps)
+    expect(parseEnvFile(readFileSync(join(w.root, '.env'), 'utf8')).HOME_DIR).toBeUndefined()
+    expect(joined(w.calls).some((c) => c.includes('rebase-home.js'))).toBe(false)
+  })
+
+  it('does not start an old identity that was stopped before the run', async () => {
+    // pm2: the old apps were stopped and deleted before the run; a failed run leaves them so.
+    const w = world('pm2', { pm2Running: false, fetch: async () => new Response('down', { status: 502 }) })
+    const error = await renameIdentity({ root: w.root }, w.deps).catch((e: Error) => e)
+    expect((error as Error).message).toMatch(/undone/)
+    expect((error as Error).message).not.toMatch(/not ready/)
+    expect(joined(w.calls).some((c) => c.startsWith(`bunx pm2 start`) && c.includes(LEGACY_UNITS.api))).toBe(false)
+    expect(w.pm2.size).toBe(0)
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+  })
+
+  it('launchd: restores the plists of an old identity that was not loaded, without loading them', async () => {
+    const w = world('launchd')
+    const agents = installLegacyLaunchd(w)
+    const plists = Object.fromEntries(readdirSync(agents).map((f) => [f, readFileSync(join(agents, f), 'utf8')]))
+    for (const label of [...w.loaded]) w.loaded.delete(label) // stopped before the run (`ficus server stop`)
+    await renameIdentity({ root: w.root }, w.deps)
+    await renameIdentity({ root: w.root, undo: true }, w.deps)
+    expect(readdirSync(agents).sort()).toEqual(Object.keys(plists).sort())
+    for (const [file, text] of Object.entries(plists)) expect(readFileSync(join(agents, file), 'utf8')).toBe(text)
+    expect(w.loaded.size).toBe(0)
+    expect(w.disabled.size).toBe(0)
+  })
+
+  it('a failed docker start fails the resume, keeping the journal', async () => {
+    let finalized = 0
+    const w = world('pm2', {
+      postgres: {
+        plan: async (move) => ({
+          action: 'rename',
+          from: { container: move.legacy.container, volume: move.legacy.volume, running: true },
+          to: { container: move.ficus.container, volume: move.ficus.volume },
+          port: 5432,
+          image: 'sha256:img',
+          dataDir: '/var/lib/postgresql',
+          database: undefined,
+        }),
+        rename: async () => 'renamed',
+        finalize: async () => {
+          if (finalized++ === 0) throw new Error('docker update failed')
+          return 'unless-stopped'
+        },
+      },
+    })
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/journal is kept/)
+    w.fail.match = (line) => line === 'docker start postgres-ficus'
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/docker start postgres-ficus/)
+    expect(readRenameJournal(w.journal())?.root).toBe(w.root)
+    w.fail.match = undefined
+    expect((await renameIdentity({ root: w.root }, w.deps)).status).toBe('renamed')
+    expect(existsSync(w.journal())).toBe(false)
   })
 })

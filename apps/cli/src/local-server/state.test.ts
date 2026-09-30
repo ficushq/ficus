@@ -21,6 +21,7 @@ import {
   getStatePath,
   isCheckout,
   readRegistry,
+  readRegistryListing,
   readRegistryStrict,
   removeInstance,
   resolveRoot,
@@ -188,7 +189,26 @@ describe('registry', () => {
     expect(written.instances.ficus.identity).toBe(2)
     expect(written.instances.lab.identity).toBeUndefined()
     writeFileSync(path, JSON.stringify({ version: 3, instances: { ficus: { ...record('/a'), identity: 3 } } }))
-    expect(() => readRegistryStrict(path)).toThrow(/invalid record/)
+    expect(() => readRegistryStrict(path)).toThrow(/newer CLI/)
+  })
+  it('keeps an entry with an identity it does not know in the lenient read (for list), never drops it', () => {
+    const path = join(tmp, 'newer.json')
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 3,
+        default: 'ficus',
+        instances: { ficus: { ...record('/a'), identity: 3 }, smoke: record('/b', 3100) },
+      })
+    )
+    expect(readRegistry(path).instances.ficus).toEqual({ ...record('/a'), identity: 3 })
+    expect(readRegistry(path).default).toBe('ficus')
+    const listing = readRegistryListing(path)
+    expect([...listing.unsupported]).toEqual(['ficus'])
+    expect(Object.keys(listing.registry.instances).sort()).toEqual(['ficus', 'smoke'])
+    // Any other damage still fails the listing, as before.
+    writeFileSync(path, JSON.stringify({ version: 3, instances: { ficus: { root: 5 } } }))
+    expect(() => readRegistryListing(path)).toThrow(/invalid record/)
   })
   it('reads an empty registry for a missing or malformed file', () => {
     expect(readRegistry(join(tmp, 'missing.json'))).toEqual({ version: 3, instances: {} })

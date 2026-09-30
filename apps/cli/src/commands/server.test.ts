@@ -838,6 +838,30 @@ describe('ficus server and the ficus identity', () => {
     }
   })
 
+  it('list shows an instance a newer CLI registered instead of hiding or failing on it', async () => {
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        version: 3,
+        default: 'ficus',
+        instances: {
+          ficus: { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 3 },
+        },
+      })
+    )
+    const { run, calls } = make()
+    await run(['server', 'list'])
+    expect(outputError).not.toHaveBeenCalled()
+    const [data, text] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [
+      { instances: { label: string; unsupportedIdentity?: number }[] },
+      string,
+    ]
+    expect(data.instances).toEqual([expect.objectContaining({ label: 'ficus', unsupportedIdentity: 3 })])
+    expect(text).toContain('identity 3')
+    // It asks no supervisor about names it cannot derive.
+    expect(calls).toEqual([])
+  })
+
   it('names the ficus identity in its help', () => {
     const program = new Command()
     registerServerCommands(program, make().deps)

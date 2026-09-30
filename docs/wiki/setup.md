@@ -445,8 +445,8 @@ In order, printing each step:
 3. when the instance uses the default data home, moves the CLI home to
    `~/.ficus` (leaving the old path as a link to it) and rewrites the home paths
    stored in the database (`apps/core/dist/rebase-home.js`);
-4. writes `HOME_DIR` explicitly into `.env`, after copying `.env` to
-   `.env.pre-ficus-rename-<UTC time>`;
+4. copies `.env` to `.env.pre-ficus-rename-<UTC time>` and, when the home moved,
+   writes `HOME_DIR=~/.ficus` into it;
 5. moves an installer-managed PostgreSQL to `postgres-ficus`,
    `ficus_postgres-data` and the database `ficus` (an external database is left
    alone);
@@ -468,10 +468,15 @@ In order, printing each step:
 rebase program how many rows it would change (and warns when the database
 already holds paths under `~/.ficus`, which would make step 3 refuse).
 
-Every step is written to `~/.ficus/rename-identity.journal` before it acts, and
-only one run holds it at a time. If a step fails, both identities are stopped,
-the completed steps are undone in reverse, and the instance is restarted under
-its old names and checked with `/ready`. A run cut short (a crash, a closed terminal) is
+The command refuses, changing nothing, when the old CLI home is a symlink to a
+directory elsewhere: move that directory to `~/.ficus` by hand and leave the old
+path as a link to `.ficus` first.
+
+Every step is written to `<CLI home>/rename-identity.journal` before it acts,
+and only one run holds it at a time. If a step fails, both identities are
+stopped, the completed steps are undone in reverse, and the instance is
+restarted under its old names and checked with `/ready` — or, if it was not
+running when the command started, left stopped with its definitions restored. A run cut short (a crash, a closed terminal) is
 resolved by the next `rename-identity` for that checkout before anything else —
 finished if its readiness check had passed, undone otherwise — and
 `ficus server start`, `restart` and `update` refuse to run until then. A

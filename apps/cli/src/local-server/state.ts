@@ -17,9 +17,10 @@ export interface InstanceRecord {
   /**
    * `2`: the instance runs under the ficus names (setup registers it so, `ficus server
    * rename-identity` moves an older one). Absent: it still has the names it was installed under.
-   * Every read → write keeps it; the registry `version` stays 3 either way.
+   * Every read → write keeps it; the registry `version` stays 3 either way. Any other number was
+   * written by a newer CLI: the lenient read (`list`) keeps and shows it, mutating reads refuse.
    */
-  identity?: typeof CURRENT_IDENTITY
+  identity?: number
 }
 
 /**
@@ -107,16 +108,22 @@ function toRecord(value: unknown, legacy: boolean): InstanceRecord | null {
   const supervisor = legacy ? 'pm2' : v.supervisor
   if (!supervisor || !(LOCAL_SUPERVISORS as readonly string[]).includes(supervisor)) return null
   if (!legacy && (typeof v.createdAt !== 'string' || typeof v.updatedAt !== 'string')) return null
-  // An identity this code does not know is a registry from a newer CLI: refuse it, never drop it.
-  if (v.identity !== undefined && v.identity !== CURRENT_IDENTITY) return null
+  // An identity is a whole number; one this code does not know (a newer CLI's) is kept as it is —
+  // see unsupportedIdentity — never dropped.
+  if (v.identity !== undefined && !Number.isInteger(v.identity)) return null
   return {
     root: v.root,
     port: v.port as number,
     supervisor,
     createdAt: typeof v.createdAt === 'string' ? v.createdAt : '',
     updatedAt: typeof v.updatedAt === 'string' ? v.updatedAt : '',
-    ...(v.identity === CURRENT_IDENTITY ? { identity: CURRENT_IDENTITY } : {}),
+    ...(v.identity !== undefined ? { identity: v.identity } : {}),
   }
+}
+
+/** An entry a newer CLI wrote: an identity this code does not know how to name. */
+export function unsupportedIdentity(record: InstanceRecord): boolean {
+  return record.identity !== undefined && record.identity !== CURRENT_IDENTITY
 }
 
 function validRegistryLabel(label: string): boolean {
@@ -137,6 +144,21 @@ export function readRegistry(path = getStatePath()): LocalServerRegistry {
   return parseRegistryFile(path).registry
 }
 
+/**
+ * The read `ficus server list` makes: strict, except that entries a newer CLI wrote are kept and
+ * named in `unsupported` rather than failing the listing — they are shown, never hidden.
+ */
+export function readRegistryListing(path = getStatePath()): {
+  registry: LocalServerRegistry
+  unsupported: Set<string>
+} {
+  const parsed = parseRegistryFile(path)
+  const unsupported = new Set(parsed.unsupported ?? [])
+  const onlyUnsupported = unsupported.size > 0 && !parsed.strictError?.startsWith('registry has an invalid')
+  if (parsed.strictError && !onlyUnsupported) throw new InvalidRegistryError(parsed.strictError, path)
+  return { registry: parsed.registry, unsupported }
+}
+
 /** The same read, but a damaged/unknown registry is an error, never an empty one. */
 export function readRegistryStrict(path = getStatePath()): LocalServerRegistry {
   const parsed = parseRegistryFile(path)
@@ -150,7 +172,12 @@ export function readRegistryStrict(path = getStatePath()): LocalServerRegistry {
  * know), while `strictError` names the first reason a mutating command must
  * refuse to touch the file at all.
  */
-function parseRegistryFile(path: string): { registry: LocalServerRegistry; strictError?: string } {
+function parseRegistryFile(path: string): {
+  registry: LocalServerRegistry
+  strictError?: string
+  /** Entries a newer CLI wrote (see unsupportedIdentity); the only strict error when alone. */
+  unsupported?: string[]
+} {
   if (!existsSync(path)) return { registry: emptyRegistry() }
   let parsed: unknown
   try {
@@ -189,6 +216,7 @@ function parseRegistryFile(path: string): { registry: LocalServerRegistry; stric
   }
   const instances: Record<string, InstanceRecord> = {}
   let invalid = false
+  const unsupported: string[] = []
   for (const [label, value] of Object.entries(object.instances)) {
     if (!validRegistryLabel(label)) {
       invalid = true
@@ -197,6 +225,7 @@ function parseRegistryFile(path: string): { registry: LocalServerRegistry; stric
     const record = toRecord(value, legacy)
     if (record) instances[label] = record
     else invalid = true
+    if (record && unsupportedIdentity(record)) unsupported.push(label)
   }
   let fallback: string | undefined
   if (object.default !== undefined) {
@@ -211,7 +240,14 @@ function parseRegistryFile(path: string): { registry: LocalServerRegistry; stric
     ...(fallback ? { default: fallback } : {}),
     instances,
   }
-  return invalid ? { registry, strictError: 'registry has an invalid record or default' } : { registry }
+  if (invalid) return { registry, strictError: 'registry has an invalid record or default', unsupported }
+  if (unsupported.length > 0)
+    return {
+      registry,
+      unsupported,
+      strictError: `instance ${unsupported.map((l) => `"${l}"`).join(', ')} was registered by a newer CLI (an identity this one does not know) — update the CLI`,
+    }
+  return { registry }
 }
 
 /**

@@ -23,7 +23,7 @@ import { expandTilde, FICUS_HOME_DIR_NAME, LEGACY_HOME_DIR_NAME, renamedLocalIns
 import { parseEnvFile, renderValue } from './env-file'
 import { moveCliHome, unmoveCliHome } from './home-move'
 import { CURRENT_IDENTITY, generateEcosystem, instanceNames, recordIdentity, type InstanceIdentity } from './instance'
-import { launchdNames, launchdSupervisor, nativeLogPath } from './launchd'
+import { launchdDefinition, launchdNames, launchdSupervisor, nativeLogPath } from './launchd'
 import { containerVolumeName } from './postgres'
 import { parseJlist, pm2Args, runPm2 } from './pm2'
 import {
@@ -38,7 +38,7 @@ import {
 import type { Runner } from './runner'
 import { canonicalRoot, readRegistryStrict, writeRegistry, type LocalServerRegistry } from './state'
 import { statusSupervisor, supervisorAdapter, type SupervisorContext } from './supervisor'
-import { systemdUserNames, systemdUserSupervisor } from './systemd-user'
+import { systemdUnit, systemdUserNames, systemdUserSupervisor } from './systemd-user'
 import type { LocalSupervisor } from './types'
 
 // ─── Supervisor identities ──────────────────────────────────────────────────
@@ -202,6 +202,38 @@ async function removeSupervisor(id: SupervisorIdentity, root: string, deps: Supe
   await pm2Remove(ctx, id)
 }
 
+/**
+ * The undo of step 2 for an identity that was NOT running before the run: its definitions are
+ * back and enabled, as `ficus server stop` leaves them, but nothing is started. launchd: the
+ * plists (rewritten when step 9 removed them) and the labels enabled, not bootstrapped; systemd:
+ * the unit files and `enable` (not `--now`); pm2: nothing — its apps were not running, and
+ * `ficus server start` adds them from the restored ecosystem file.
+ */
+async function restoreSupervisorStopped(id: SupervisorIdentity, root: string, deps: SupervisorDeps): Promise<void> {
+  const ctx = deps.context(id, root)
+  if (id.supervisor === 'launchd') {
+    for (const component of ['api', 'worker'] as const) {
+      const names = launchdNames(ctx, component)
+      if (existsSync(names.plist)) continue
+      mkdirSync(dirname(names.plist), { recursive: true })
+      writeFileSync(names.plist, launchdDefinition(ctx, component), { mode: 0o644 })
+    }
+    await launchdOverride(ctx, 'enable')
+    return
+  }
+  if (id.supervisor === 'systemd-user') {
+    for (const component of ['api', 'worker'] as const) {
+      const names = systemdUserNames(ctx, component)
+      if (existsSync(names.path)) continue
+      mkdirSync(dirname(names.path), { recursive: true })
+      writeFileSync(names.path, systemdUnit(ctx, component), { mode: 0o644 })
+    }
+    await must(ctx, ['systemctl', '--user', 'daemon-reload'])
+    for (const component of ['api', 'worker'] as const)
+      await must(ctx, ['systemctl', '--user', 'enable', systemdUserNames(ctx, component).unit])
+  }
+}
+
 // ─── Registry ───────────────────────────────────────────────────────────────
 
 /**
@@ -322,7 +354,7 @@ export const RENAME_JOURNAL = 'rename-identity.journal'
  */
 type JournalEntry =
   | { op: 'begin'; root: string; supervisor: LocalSupervisor; from: string; to: string; port: number; home: string }
-  | { op: 'stopped' }
+  | { op: 'stopped'; wasRunning?: boolean }
   | { op: 'home-move'; home: string }
   | { op: 'home-rebase'; from: string; to: string }
   | { op: 'env'; edits: EnvEdit[]; backup?: string; noFinalNewline?: true }
@@ -542,18 +574,23 @@ async function rebaseHome(
   opts: { dryRun?: boolean } = {}
 ): Promise<string[]> {
   // The rebase program reads DATABASE_URL from its environment only: hand it the checkout's .env.
-  const result = await deps.runner(
-    [
-      'bun',
-      join(root, 'apps/core/dist/rebase-home.js'),
-      '--from',
-      from,
-      '--to',
-      to,
-      ...(opts.dryRun ? ['--dry-run'] : []),
-    ],
-    { cwd: join(root, 'apps/core'), env: childEnv(root, deps) }
-  )
+  const command = [
+    'bun',
+    join(root, 'apps/core/dist/rebase-home.js'),
+    '--from',
+    from,
+    '--to',
+    to,
+    ...(opts.dryRun ? ['--dry-run'] : []),
+  ]
+  let result = await deps.runner(command, { cwd: join(root, 'apps/core'), env: childEnv(root, deps) })
+  // A Postgres that was just (re)started may still refuse connections: try again, a few times.
+  // rebase-home is one transaction, so a run that could not connect wrote nothing.
+  for (let attempt = 1; attempt < REBASE_ATTEMPTS && result.code !== 0 && notYetAccepting(result.stderr); attempt++) {
+    deps.log(`    the database is not accepting connections yet — trying rebase-home again`)
+    await deps.sleep(REBASE_RETRY_MS)
+    result = await deps.runner(command, { cwd: join(root, 'apps/core'), env: childEnv(root, deps) })
+  }
   const lines = result.stdout.split('\n').filter(Boolean)
   if (!opts.dryRun) for (const line of lines) deps.log(`    ${line}`)
   if (result.code !== 0) {
@@ -561,6 +598,16 @@ async function rebaseHome(
     throw new Error(`rebase-home --from ${from} --to ${to} exited with ${result.code}${reason ? `: ${reason}` : ''}`)
   }
   return lines
+}
+
+const REBASE_ATTEMPTS = 6
+const REBASE_RETRY_MS = 5000
+
+/** rebase-home's failure is a Postgres not accepting connections yet (refused, or still starting). */
+function notYetAccepting(stderr: string): boolean {
+  return /ECONNREFUSED|ECONNRESET|connection refused|the database system is (starting up|shutting down|in recovery mode)|57P03/i.test(
+    stderr
+  )
 }
 
 /** How long `/ready` gets after a start: a cold boot waits for the database and runs migrations. */
@@ -720,7 +767,9 @@ function stepLines(plan: Plan, deps: RenameDeps, env: Record<string, string>): A
             `pm2 start ecosystem.config.js --only ${newId.api},${newId.worker} (environment from ${join(root, '.env')} as rewritten)`,
             'pm2 save',
           ]
-  const homeDir = plan.moveHome ? `~/${FICUS_HOME_DIR_NAME}` : env.HOME_DIR?.trim() || `~/${FICUS_HOME_DIR_NAME}`
+  const homeDir = plan.moveHome
+    ? `HOME_DIR=~/${FICUS_HOME_DIR_NAME}`
+    : `HOME_DIR unchanged (${env.HOME_DIR?.trim() || 'unset'}): the home does not move`
   const identity = identityEnvValues(plan, env, deps)
   const ecosystem = plan.ecosystem
   return [
@@ -735,10 +784,7 @@ function stepLines(plan: Plan, deps: RenameDeps, env: Record<string, string>): A
           ]
         : [`HOME_DIR is ${env.HOME_DIR?.trim() || ficusHome} — nothing to move`],
     ],
-    [
-      '.env: explicit HOME_DIR',
-      [`HOME_DIR=${homeDir}`, `backup: ${join(root, `.env.pre-ficus-rename-${utcStamp(deps.now())}`)}`],
-    ],
+    ['.env: HOME_DIR', [homeDir, `backup: ${join(root, `.env.pre-ficus-rename-${utcStamp(deps.now())}`)}`]],
     ['Postgres', [describePostgres(plan.postgres)]],
     [
       '.env: instance and process names',
@@ -941,7 +987,20 @@ async function renameOrResolve(
   const moveHome = homeIsLegacyDefault(env.HOME_DIR, deps.home)
   const legacyHome = join(deps.home, LEGACY_HOME_DIR_NAME)
   const ficusHome = join(deps.home, FICUS_HOME_DIR_NAME)
-  const legacyHomeIsDir = isRealDir(lstatOrNull(legacyHome))
+  const legacyStat = lstatOrNull(legacyHome)
+  const legacyHomeIsDir = isRealDir(legacyStat)
+  // The legacy home is either a real directory (not moved yet) or the relative link the move
+  // leaves. Anything else — a symlink to a directory elsewhere — would be split: the database
+  // rebased to ~/.ficus while the data stays behind the link.
+  if (legacyStat && !legacyHomeIsDir) {
+    const target = legacyStat.isSymbolicLink() ? readlinkSync(legacyHome) : undefined
+    if (target !== FICUS_HOME_DIR_NAME)
+      throw new Error(
+        target !== undefined
+          ? `${legacyHome} is a symlink to ${target}, not the link to ${FICUS_HOME_DIR_NAME} a move leaves — move that directory to ${ficusHome} by hand, replace ${legacyHome} with a link to ${FICUS_HOME_DIR_NAME} (ln -s ${FICUS_HOME_DIR_NAME} ${legacyHome}), then run again. Nothing was changed`
+          : `${legacyHome} is neither a directory nor the link to ${FICUS_HOME_DIR_NAME} a move leaves — move it aside by hand, then run again. Nothing was changed`
+      )
+  }
   if (moveHome) {
     if (legacyHomeIsDir && lstatOrNull(ficusHome))
       throw new Error(`${ficusHome} already exists beside ${legacyHome} — merge the two by hand, then run again`)
@@ -986,7 +1045,11 @@ async function renameOrResolve(
   })
   try {
     step(2, `stopping "${label}"`)
-    journal({ op: 'stopped' })
+    // Whether it runs now: the undo restores that state rather than always starting it.
+    const wasRunning = (await statusSupervisor(deps.supervisorContext(ctx.oldId, root))).some(
+      (p) => p.status === 'online' || p.status === 'launching'
+    )
+    journal({ op: 'stopped', wasRunning })
     await stopSupervisor(ctx.oldId, ctx.supervisors)
 
     if (moveHome) {
@@ -1016,12 +1079,9 @@ async function renameOrResolve(
       const backup = join(root, `.env.pre-ficus-rename-${utcStamp(deps.now())}`)
       copyFileSync(ctx.envPath, backup)
       const text = readFileSync(ctx.envPath, 'utf8')
-      const homeDir = moveHome
-        ? `~/${FICUS_HOME_DIR_NAME}`
-        : env.HOME_DIR?.trim()
-          ? undefined
-          : `~/${FICUS_HOME_DIR_NAME}`
-      const edits = homeDir ? planEnvEdits(text, { HOME_DIR: homeDir }) : []
+      // Pinned only when the home moves (or .env named the legacy home): an unset HOME_DIR on a home
+      // that does not move stays unset, so Core keeps resolving the directory it resolves today.
+      const edits = moveHome ? planEnvEdits(text, { HOME_DIR: `~/${FICUS_HOME_DIR_NAME}` }) : []
       journal({
         op: 'env',
         edits,
@@ -1209,7 +1269,9 @@ async function undoEntries(
           unmoveCliHome({ homedir: entry.home })
           break
         case 'stopped':
-          await installSupervisor(ctx.oldId, root, ctx.supervisors)
+          // A journal written before wasRunning existed says nothing: start it, as that code did.
+          if (entry.wasRunning === false) await restoreSupervisorStopped(ctx.oldId, root, ctx.supervisors)
+          else await installSupervisor(ctx.oldId, root, ctx.supervisors)
           break
         default:
           continue
@@ -1222,7 +1284,7 @@ async function undoEntries(
   }
   if (keptVolume) deps.log(`  warning${keptNote(keptVolume)}`)
   let notReady: string | undefined
-  if (entries.some((e, i) => e.op === 'stopped' && !done.has(i))) {
+  if (entries.some((e, i) => e.op === 'stopped' && e.wasRunning !== false && !done.has(i))) {
     try {
       await waitReady(begin.port, deps)
     } catch (error) {
@@ -1296,7 +1358,10 @@ async function resolveInterrupted(
       }
       // A reboot since the check left the moved container stopped (it was `--restart no` until now).
       const started = await deps.runner(['docker', 'start', move.ficus.container])
-      if (started.code !== 0) deps.log(`  warning: docker start ${move.ficus.container} failed (exit ${started.code})`)
+      if (started.code !== 0)
+        throw new Error(
+          `the interrupted rename of "${begin.from}" → "${begin.to}" passed its readiness check, but \`docker start ${move.ficus.container}\` failed (exit ${started.code}${started.stderr.trim() ? `: ${started.stderr.trim()}` : ''}). The journal ${deps.journalPath()} is kept: run \`docker start ${move.ficus.container}\`, then \`ficus server rename-identity --root ${root}\` again`
+        )
     }
     complete(deps, begin.to)
     deps.log(`Finished the interrupted rename of "${begin.from}" → "${begin.to}" (its readiness check had passed).`)

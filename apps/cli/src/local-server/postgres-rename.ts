@@ -399,7 +399,13 @@ export async function renameLocalPostgres(
   const undo: (() => Promise<void>)[] = []
   try {
     await must(runner, ['docker', 'stop', '-t', STOP_TIMEOUT_S, from.container])
-    if (from.running) undo.push(() => must(runner, ['docker', 'start', from.container]))
+    // Back up AND accepting connections before the rollback returns: the caller's next step (T19's
+    // undo) may connect to it right away.
+    if (from.running)
+      undo.push(async () => {
+        await must(runner, ['docker', 'start', from.container])
+        await waitForPostgres(runner, from.container, { sleep: deps.sleep })
+      })
     await must(runner, ['docker', 'volume', 'create', '--label', `${RENAME_RUN_LABEL}=${opts.runId}`, to.volume])
     // Only ever this run's own volume: the plan refused one that already existed.
     undo.push(() => removeIfPresent(runner, ['docker', 'volume', 'rm', to.volume]))
@@ -560,6 +566,15 @@ export async function undoLocalPostgresRename(
   await must(runner, ['docker', 'start', legacy.container])
   if (!(await inspectOrAbsent(runner, legacy.container))?.State?.Running) {
     throw new Error(`${legacy.container} did not stay running after docker start; ${ficus.volume} is kept`)
+  }
+  // Running is not accepting connections: the server is still starting. The caller's next step
+  // (T19's reverse rebase-home) connects to it at once, so wait until it answers.
+  try {
+    await waitForPostgres(runner, legacy.container, { sleep: deps.sleep })
+  } catch (error) {
+    throw new Error(
+      `${legacy.container} did not become ready after docker start (${error instanceof Error ? error.message : String(error)}); ${ficus.volume} is kept`
+    )
   }
   const envPath = join(root, '.env')
   if (existsSync(envPath)) pointEnvAt(envPath, ficus.database, legacy.database)

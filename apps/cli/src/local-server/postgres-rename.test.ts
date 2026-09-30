@@ -260,7 +260,7 @@ describe('planLocalPostgresRename', () => {
   it('describes the move without changing anything (what a dry run prints)', async () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl()))
     const docker = legacyDocker()
-    expect(await planLocalPostgresRename(move, root, { runner: docker.runner })).toEqual({
+    expect(await planLocalPostgresRename(move, root, { runner: docker.runner, sleep: noSleep })).toEqual({
       action: 'rename',
       from: { container: move.legacy.container, volume: move.legacy.volume, running: true },
       to: { container: 'postgres-ficus', volume: 'ficus_postgres-data' },
@@ -278,7 +278,7 @@ describe('planLocalPostgresRename', () => {
     expect(await planLocalPostgresRename(move, root, { runner: external.runner })).toEqual({ action: 'external' })
     expect(external.calls).toEqual([])
     const docker = await renamedDocker()
-    expect(await planLocalPostgresRename(move, root, { runner: docker.runner })).toEqual({
+    expect(await planLocalPostgresRename(move, root, { runner: docker.runner, sleep: noSleep })).toEqual({
       action: 'already',
       container: 'postgres-ficus',
     })
@@ -374,7 +374,9 @@ describe('renameLocalPostgres', () => {
     ]) {
       writeFileSync(join(root, '.env'), envText(url))
       const docker = legacyDocker()
-      expect(await renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN })).toBe('external')
+      expect(await renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })).toBe(
+        'external'
+      )
       expect(docker.calls).toEqual([])
       expect(readEnv()).toBe(envText(url))
     }
@@ -386,9 +388,9 @@ describe('renameLocalPostgres', () => {
       envText(`postgres://postgres:postgres@localhost:5433/${move.legacy.database} # local db`)
     )
     const docker = legacyDocker()
-    expect(await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))).toMatch(
-      /not end in a plain database name/
-    )
+    expect(
+      await thrown(renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN }))
+    ).toMatch(/not end in a plain database name/)
     expect(docker.calls).toEqual([])
   })
   it('is "already" on a second run, touching nothing', async () => {
@@ -404,19 +406,23 @@ describe('renameLocalPostgres', () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl('appdb')))
     const docker = legacyDocker()
     await renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })
-    expect(await renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN })).toBe('already')
+    expect(await renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })).toBe(
+      'already'
+    )
     // A container of the new name that something else created, next to the intact old one: refused.
     delete docker.containers['postgres-ficus'].labels
     docker.calls.length = 0
-    expect(await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))).toMatch(
-      /no rename created/
-    )
+    expect(
+      await thrown(renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN }))
+    ).toMatch(/no rename created/)
     expect(mutations(docker.calls)).toEqual([])
   })
   it('is "already" when a container of the new name exists and there is no old container', async () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl()))
     const docker = fakeDocker({ containers: { 'postgres-ficus': newContainer({ running: true }) }, volumes: [] })
-    expect(await renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN })).toBe('already')
+    expect(await renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })).toBe(
+      'already'
+    )
     expect(mutations(docker.calls)).toEqual([])
   })
   it('on an interrupted run of its own, says what it found and exactly how to go back', async () => {
@@ -425,7 +431,9 @@ describe('renameLocalPostgres', () => {
     docker.containers[move.legacy.container].running = false
     docker.containers['postgres-ficus'] = newContainer({ labels: label })
     docker.volumes.add('ficus_postgres-data')
-    const message = await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))
+    const message = await thrown(
+      renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })
+    )
     expect(message).toContain('an earlier rename')
     expect(message).toContain('did not finish')
     expect(message).toContain(`postgres-ficus (stopped), ${move.legacy.container} (stopped)`)
@@ -441,7 +449,9 @@ describe('renameLocalPostgres', () => {
       containers: { 'postgres-ficus': newContainer({ labels: label }) },
       volumes: ['ficus_postgres-data'],
     })
-    const message = await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))
+    const message = await thrown(
+      renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })
+    )
     expect(message).toContain('did not finish')
     expect(message).toContain('may hold the only copy of the data: do not remove them')
     expect(message).not.toContain('docker volume rm')
@@ -450,7 +460,9 @@ describe('renameLocalPostgres', () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl()))
     const docker = legacyDocker()
     docker.containers['postgres-ficus'] = newContainer({ port: 5499 })
-    const message = await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))
+    const message = await thrown(
+      renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })
+    )
     expect(message).toContain(`no ${RENAMED_FROM_LABEL} label`)
     expect(message).not.toContain('interrupted')
     expect(message).not.toContain('docker volume rm')
@@ -460,7 +472,9 @@ describe('renameLocalPostgres', () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl()))
     const docker = legacyDocker()
     docker.volumes.add('ficus_postgres-data')
-    const message = await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))
+    const message = await thrown(
+      renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })
+    )
     expect(message).toContain('volume ficus_postgres-data already exists')
     expect(message).toContain(`${move.legacy.container} (running) and its volume ${move.legacy.volume} still hold`)
     expect(message).toContain('holding writes made after that rename')
@@ -472,7 +486,9 @@ describe('renameLocalPostgres', () => {
     const docker = legacyDocker()
     docker.containers[move.legacy.container].volume = 'ficus_postgres-data'
     docker.volumes.add('ficus_postgres-data')
-    const message = await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))
+    const message = await thrown(
+      renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN })
+    )
     expect(message).toContain("holds this instance's only data — do not remove it")
     expect(message).not.toContain('docker volume rm')
     expect(mutations(docker.calls)).toEqual([])
@@ -482,25 +498,25 @@ describe('renameLocalPostgres', () => {
     const docker = legacyDocker(move, {
       'docker volume inspect': { stderr: 'Cannot connect to the Docker daemon' },
     })
-    expect(await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))).toMatch(
-      /volume inspect ficus_postgres-data failed/
-    )
+    expect(
+      await thrown(renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN }))
+    ).toMatch(/volume inspect ficus_postgres-data failed/)
     expect(mutations(docker.calls)).toEqual([])
   })
   it('treats a failing docker inspect as an error, not as "no such container"', async () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl()))
     const docker = legacyDocker(move, { 'docker inspect': { stderr: 'Cannot connect to the Docker daemon' } })
-    expect(await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))).toMatch(
-      /docker inspect .* failed/
-    )
+    expect(
+      await thrown(renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN }))
+    ).toMatch(/docker inspect .* failed/)
     expect(mutations(docker.calls)).toEqual([])
   })
   it('refuses when there is no old container to move', async () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl()))
     const docker = fakeDocker({ containers: {}, volumes: [] })
-    expect(await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))).toContain(
-      `no container ${move.legacy.container}`
-    )
+    expect(
+      await thrown(renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN }))
+    ).toContain(`no container ${move.legacy.container}`)
     expect(mutations(docker.calls)).toEqual([])
   })
 
@@ -525,6 +541,9 @@ describe('renameLocalPostgres', () => {
       'docker volume rm ficus_postgres-data',
       `docker start ${move.legacy.container}`,
     ])
+    // The rollback returns only once the restarted server accepts connections: whoever runs
+    // next (T19's reverse rebase) connects to it straight away.
+    expect(afterStart(docker.calls, move.legacy.container)).toEqual(readinessProbes(move.legacy.container))
     rolledBack(docker)
   })
   it('puts everything back when the new container cannot bind the port', async () => {
@@ -573,9 +592,9 @@ describe('renameLocalPostgres', () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl()))
     const docker = legacyDocker(move, { 'docker run --rm': { stderr: 'no space left on device' } })
     docker.containers[move.legacy.container].running = false
-    expect(await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: RUN }))).toMatch(
-      /no space left/
-    )
+    expect(
+      await thrown(renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: RUN }))
+    ).toMatch(/no space left/)
     expect(mutations(docker.calls).at(-1)).toBe('docker volume rm ficus_postgres-data')
     expect(docker.containers[move.legacy.container].running).toBe(false)
   })
@@ -585,41 +604,89 @@ describe('finalizeLocalPostgresRename', () => {
   it("the new container starts with --restart no; finalize gives it the old container's policy", async () => {
     const docker = await renamedDocker()
     expect(docker.containers['postgres-ficus'].restart).toEqual({ Name: 'no' })
-    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner })).toBe('unless-stopped')
+    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner, sleep: noSleep })).toBe('unless-stopped')
     expect(mutations(docker.calls)).toEqual(['docker update --restart unless-stopped postgres-ficus'])
     expect(docker.containers['postgres-ficus'].restart).toEqual({ Name: 'unless-stopped' })
   })
   it('carries over another policy, including on-failure with its retry count', async () => {
     const docker = await renamedDocker()
     docker.containers[move.legacy.container].restart = { Name: 'always' }
-    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner })).toBe('always')
+    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner, sleep: noSleep })).toBe('always')
     docker.containers[move.legacy.container].restart = { Name: 'on-failure', MaximumRetryCount: 3 }
-    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner })).toBe('on-failure:3')
+    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner, sleep: noSleep })).toBe('on-failure:3')
     expect(docker.containers['postgres-ficus'].restart).toEqual({ Name: 'on-failure', MaximumRetryCount: 3 })
   })
   it('defaults to unless-stopped when docker reports no policy or the old container is gone', async () => {
     const docker = await renamedDocker()
     docker.containers[move.legacy.container].restart = { Name: '' }
-    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner })).toBe('unless-stopped')
+    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner, sleep: noSleep })).toBe('unless-stopped')
     delete docker.containers[move.legacy.container]
-    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner })).toBe('unless-stopped')
+    expect(await finalizeLocalPostgresRename(move, { runner: docker.runner, sleep: noSleep })).toBe('unless-stopped')
   })
   it('refuses a new-name container the rename did not create, or none at all', async () => {
     const docker = legacyDocker()
-    expect(await thrown(finalizeLocalPostgresRename(move, { runner: docker.runner }))).toContain(
+    expect(await thrown(finalizeLocalPostgresRename(move, { runner: docker.runner, sleep: noSleep }))).toContain(
       'no container postgres-ficus to finalize'
     )
     docker.containers['postgres-ficus'] = newContainer({ running: true })
-    expect(await thrown(finalizeLocalPostgresRename(move, { runner: docker.runner }))).toContain('not changing it')
+    expect(await thrown(finalizeLocalPostgresRename(move, { runner: docker.runner, sleep: noSleep }))).toContain(
+      'not changing it'
+    )
     expect(mutations(docker.calls)).toEqual([])
   })
 })
 
+/** The calls after the last `docker start <container>`. */
+const afterStart = (calls: string[][], container: string) => {
+  const lines = calls.map((c) => c.join(' '))
+  return lines.slice(lines.lastIndexOf(`docker start ${container}`) + 1)
+}
+/** waitForPostgres's probes of a container that answers: three in a row. */
+const readinessProbes = (container: string) =>
+  Array(3).fill(`docker exec ${container} psql -h 127.0.0.1 -U postgres -tAc SELECT 1`)
+
 describe('undoLocalPostgresRename', () => {
+  it('returns only once the restarted old server accepts connections', async () => {
+    const docker = await renamedDocker()
+    await undoLocalPostgresRename(
+      move,
+      root,
+      { runner: docker.runner, sleep: noSleep },
+      { appStarted: true, runId: RUN }
+    )
+    const after = afterStart(docker.calls, move.legacy.container)
+    // start → running check → readiness probes → then .env and the volume decision.
+    expect(after.filter((c) => c.endsWith('-tAc SELECT 1'))).toEqual(readinessProbes(move.legacy.container))
+    const firstProbe = after.findIndex((c) => c.endsWith('-tAc SELECT 1'))
+    expect(after.slice(0, firstProbe).every((c) => c.startsWith('docker inspect'))).toBe(true)
+  })
+  it('keeps the new volume and throws when the restarted old server never becomes ready', async () => {
+    const docker = await renamedDocker({
+      [`docker exec ${move.legacy.container} psql -h 127.0.0.1 -U postgres -tAc SELECT 1`]: {
+        stderr: 'the database system is starting up',
+      },
+    })
+    expect(
+      await thrown(
+        undoLocalPostgresRename(
+          move,
+          root,
+          { runner: docker.runner, sleep: noSleep },
+          { appStarted: false, runId: RUN }
+        )
+      )
+    ).toMatch(/not ready|did not become ready/)
+    expect(docker.volumes.has('ficus_postgres-data')).toBe(true)
+  })
   it('after the app ran on the new database: stops and removes the new container, starts the old one, KEEPS the new volume and names it', async () => {
     const docker = await renamedDocker()
     expect(
-      await undoLocalPostgresRename(move, root, { runner: docker.runner }, { appStarted: true, runId: RUN })
+      await undoLocalPostgresRename(
+        move,
+        root,
+        { runner: docker.runner, sleep: noSleep },
+        { appStarted: true, runId: RUN }
+      )
     ).toEqual({
       keptVolume: 'ficus_postgres-data',
       keptBecause: 'the app may have written to it since the rename',
@@ -637,7 +704,12 @@ describe('undoLocalPostgresRename', () => {
   it('before the app started on it: removes the new volume last, once the old container runs, so a retry copies afresh', async () => {
     const docker = await renamedDocker()
     expect(
-      await undoLocalPostgresRename(move, root, { runner: docker.runner }, { appStarted: false, runId: RUN })
+      await undoLocalPostgresRename(
+        move,
+        root,
+        { runner: docker.runner, sleep: noSleep },
+        { appStarted: false, runId: RUN }
+      )
     ).toEqual({
       keptVolume: undefined,
     })
@@ -658,7 +730,7 @@ describe('undoLocalPostgresRename', () => {
     delete docker.containers[move.legacy.container]
     docker.volumes.delete(move.legacy.volume)
     const message = await thrown(
-      undoLocalPostgresRename(move, root, { runner: docker.runner }, { appStarted: false, runId: RUN })
+      undoLocalPostgresRename(move, root, { runner: docker.runner, sleep: noSleep }, { appStarted: false, runId: RUN })
     )
     expect(message).toContain('may hold the only copy of the data — left untouched')
     expect(mutations(docker.calls)).toEqual([])
@@ -669,7 +741,14 @@ describe('undoLocalPostgresRename', () => {
   it('keeps the new volume when the old container does not come back up', async () => {
     const docker = await renamedDocker({ 'docker start': { stderr: 'driver failed' } })
     expect(
-      await thrown(undoLocalPostgresRename(move, root, { runner: docker.runner }, { appStarted: false, runId: RUN }))
+      await thrown(
+        undoLocalPostgresRename(
+          move,
+          root,
+          { runner: docker.runner, sleep: noSleep },
+          { appStarted: false, runId: RUN }
+        )
+      )
     ).toMatch(/driver failed/)
     expect(docker.volumes.has('ficus_postgres-data')).toBe(true)
     expect(mutations(docker.calls).some((c) => c.startsWith('docker volume rm'))).toBe(false)
@@ -693,7 +772,12 @@ describe('undoLocalPostgresRename', () => {
     docker.containers[move.legacy.container].running = false
     docker.volumes.add('ficus_postgres-data')
     docker.volumeLabels.set('ficus_postgres-data', { [RENAME_RUN_LABEL]: RUN })
-    await undoLocalPostgresRename(move, root, { runner: docker.runner }, { appStarted: false, runId: RUN })
+    await undoLocalPostgresRename(
+      move,
+      root,
+      { runner: docker.runner, sleep: noSleep },
+      { appStarted: false, runId: RUN }
+    )
     expect(docker.containers[move.legacy.container].running).toBe(true)
     expect(docker.volumes.has('ficus_postgres-data')).toBe(false)
     expect(readEnv()).toBe(envText(legacyUrl()))
@@ -703,7 +787,7 @@ describe('undoLocalPostgresRename', () => {
     const result = await undoLocalPostgresRename(
       move,
       root,
-      { runner: docker.runner },
+      { runner: docker.runner, sleep: noSleep },
       { appStarted: false, runId: 'run-2' }
     )
     expect(result).toEqual({
@@ -722,7 +806,7 @@ describe('undoLocalPostgresRename', () => {
     const result = await undoLocalPostgresRename(
       move,
       root,
-      { runner: docker.runner },
+      { runner: docker.runner, sleep: noSleep },
       { appStarted: false, runId: RUN }
     )
     expect(result).toEqual({
@@ -734,9 +818,14 @@ describe('undoLocalPostgresRename', () => {
   it('never lets a later run delete the volume an earlier undo kept (plan → journal → rename, then a wrong undo)', async () => {
     // Run 1 completes; the app writes; --undo keeps the new volume (appStarted: true).
     const docker = await renamedDocker()
-    await undoLocalPostgresRename(move, root, { runner: docker.runner }, { appStarted: true, runId: RUN })
+    await undoLocalPostgresRename(
+      move,
+      root,
+      { runner: docker.runner, sleep: noSleep },
+      { appStarted: true, runId: RUN }
+    )
     // Run 2: the plan refuses (the kept volume exists), so the move never starts...
-    expect(await thrown(planLocalPostgresRename(move, root, { runner: docker.runner }))).toContain(
+    expect(await thrown(planLocalPostgresRename(move, root, { runner: docker.runner, sleep: noSleep }))).toContain(
       'volume ficus_postgres-data already exists'
     )
     expect(
@@ -746,7 +835,7 @@ describe('undoLocalPostgresRename', () => {
     const result = await undoLocalPostgresRename(
       move,
       root,
-      { runner: docker.runner },
+      { runner: docker.runner, sleep: noSleep },
       { appStarted: false, runId: 'run-2' }
     )
     expect(result.keptVolume).toBe('ficus_postgres-data')
@@ -758,7 +847,7 @@ describe('undoLocalPostgresRename', () => {
     docker.containers[move.legacy.container].running = false
     docker.containers['postgres-ficus'] = newContainer({ running: true, volume: 'something_else' })
     const message = await thrown(
-      undoLocalPostgresRename(move, root, { runner: docker.runner }, { appStarted: false, runId: RUN })
+      undoLocalPostgresRename(move, root, { runner: docker.runner, sleep: noSleep }, { appStarted: false, runId: RUN })
     )
     expect(message).toContain('no rename from')
     expect(message).toContain('a container of that name exists (running, data volume something_else)')
@@ -770,16 +859,21 @@ describe('undoLocalPostgresRename', () => {
   it('rejects a run id that cannot be a docker label value', async () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl()))
     const docker = legacyDocker()
-    expect(await thrown(renameLocalPostgres(move, root, { runner: docker.runner }, { runId: 'bad id=x' }))).toMatch(
-      /run id/
-    )
+    expect(
+      await thrown(renameLocalPostgres(move, root, { runner: docker.runner, sleep: noSleep }, { runId: 'bad id=x' }))
+    ).toMatch(/run id/)
     expect(docker.calls).toEqual([])
     expect(newRenameRunId()).toMatch(/^[0-9a-f-]{36}$/)
   })
   it('leaves a chosen database name alone', async () => {
     writeFileSync(join(root, '.env'), envText(legacyUrl('appdb')))
     const docker = legacyDocker()
-    await undoLocalPostgresRename(move, root, { runner: docker.runner }, { appStarted: true, runId: RUN })
+    await undoLocalPostgresRename(
+      move,
+      root,
+      { runner: docker.runner, sleep: noSleep },
+      { appStarted: true, runId: RUN }
+    )
     expect(readEnv()).toBe(envText(legacyUrl('appdb')))
   })
 })

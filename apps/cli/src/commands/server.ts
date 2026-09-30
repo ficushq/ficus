@@ -43,6 +43,7 @@ import {
   findInstanceByRoot,
   getStatePath,
   isCheckout,
+  readRegistryListing,
   readRegistryStrict,
   removeInstance,
   resolveRoot,
@@ -339,7 +340,7 @@ Examples:
     .action(
       guarded(async (opts) => {
         if ((opts as { json?: boolean }).json) setOutputOptions({ json: true })
-        const registry = readRegistryStrict(deps.statePath)
+        const { registry, unsupported } = readRegistryListing(deps.statePath)
         // The same answer resolveRoot uses, so the `*` can never point at an
         // instance a bare `ficus server` command would not act on.
         const def = defaultLabel(registry)
@@ -356,8 +357,23 @@ Examples:
           default: boolean
           supervisor: LocalSupervisor
           processes: Awaited<ReturnType<typeof statusSupervisor>>
+          /** Registered by a newer CLI: this one cannot derive its names, so it is shown, not queried. */
+          unsupportedIdentity?: number
         }[] = []
         for (const [label, record] of entries) {
+          if (unsupported.has(label)) {
+            rows.push({
+              label,
+              root: record.root,
+              port: record.port,
+              url: `http://localhost:${record.port}`,
+              default: label === def,
+              supervisor: record.supervisor,
+              processes: [],
+              unsupportedIdentity: record.identity,
+            })
+            continue
+          }
           let processes
           const identity = recordIdentity(record)
           try {
@@ -402,6 +418,8 @@ Examples:
             ? '(none) — run `ficus server setup` inside a checkout to install one'
             : rows
                 .map((r) => {
+                  if (r.unsupportedIdentity !== undefined)
+                    return `${r.default ? '*' : ' '} ${r.label.padEnd(labelW)}  ${r.supervisor}  ${r.root.padEnd(rootW)}  ${r.url.padEnd(urlW)}  identity ${r.unsupportedIdentity}: registered by a newer CLI — update this one to manage it`
                   const names = instanceNames(r.label, recordIdentity(registry.instances[r.label]))
                   const state = (name: string) => r.processes.find((p) => p.name === name)?.status ?? 'not registered'
                   const procs = `api: ${state(names.api)}  worker: ${state(names.worker)}`
