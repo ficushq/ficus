@@ -137,7 +137,7 @@ test('CI outputs retain monotonic workflow run/attempt identity for every linked
   expect(events[0]!.eventKey).not.toBe(events[1]!.eventKey)
   expect(events[0]!.subject).toBe('CI failure: acme/project#3 · CI / Core')
   expect(events[0]!.body).toBe(
-    'CI / Core: failure\nHead: abc · Run #10 · Attempt 2\nhttps://github.com/Acme/Project/actions/runs/50'
+    'CI / Core: failure\nHead: abc · Run 10 · Attempt 2\nhttps://github.com/Acme/Project/actions/runs/50'
   )
 })
 

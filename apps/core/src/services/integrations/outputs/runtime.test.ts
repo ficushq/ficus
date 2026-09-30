@@ -235,7 +235,7 @@ test('distinct CI workflows on one PR each deliver immediately with identifiable
         )
       )
     const message = messages.find((entry) => entry.subject === event!.subject)!
-    expect(message.content).toContain(`${name}: ${conclusion}\nHead: abc123 · Run #1 · Attempt 1`)
+    expect(message.content).toContain(`${name}: ${conclusion}\nHead: abc123 · Run 1 · Attempt 1`)
     expect(message.content).not.toContain('deliveryInstructions')
     expect(message.content).not.toContain('rework')
   }

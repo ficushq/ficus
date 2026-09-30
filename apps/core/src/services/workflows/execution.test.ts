@@ -928,7 +928,9 @@ describe('parallel dispatch and pause', () => {
             : null
         )) as any)
       missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
-      expect(missing).toContain("Branch 'feature' does not identify one delivery pull request (candidates #1, #2)")
+      expect(missing).toContain(
+        "Branch 'feature' does not identify one delivery pull request (candidates PR #1, PR #2)"
+      )
       api.mockImplementation(((path: string) => Promise.resolve(path.includes('pulls?head=') ? null : null)) as any)
       missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
       expect(missing).toContain("pull requests for branch 'feature' could not be read through the github integration")
