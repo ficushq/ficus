@@ -5,7 +5,7 @@ import { eq, and, gt, isNull, desc, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { emailVerifications, authSettings, type EmailVerificationPurpose } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'
-import { primaryWebOrigin } from './web-origins'
+import { primaryWebAppUrl } from './web-origins'
 
 const log = createLogger('auth-email')
 
@@ -280,10 +280,11 @@ export const VERIFICATION_RATE_LIMIT = 3
  * Where a deep link must land. Deliberately `primaryWebOrigin()` (FICUS_WEB_ORIGIN
  * → WEBAUTHN_ORIGIN → APP_URL) rather than APP_URL directly: the link's whole
  * purpose is to open a WebAuthn ceremony, and a ceremony only verifies on the RP
- * origin, so the link has to point at the same origin WebAuthn is pinned to.
+ * origin, so the link has to point at the same origin WebAuthn is pinned to — under
+ * the app's base path, where the web app serves /register.
  */
 export function buildPasskeyRegistrationLink(token: string): string {
-  return `${primaryWebOrigin()}/register?token=${encodeURIComponent(token)}`
+  return `${primaryWebAppUrl()}/register?token=${encodeURIComponent(token)}`
 }
 
 export interface IssuedChallenge {
