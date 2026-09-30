@@ -18,7 +18,10 @@ import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { useFullscreen } from '../../hooks/useFullscreen'
 import { useSidebarWidth } from '../../hooks/useSidebarWidth'
-import { SQUAD_CHAT_SIDEBAR_WIDTH_STORAGE_KEY } from '@ficus/shared/browser-keys'
+import {
+  SQUAD_CHAT_CONSULTANTS_COLLAPSED_STORAGE_KEY,
+  SQUAD_CHAT_SIDEBAR_WIDTH_STORAGE_KEY,
+} from '@ficus/shared/browser-keys'
 import { useURLStringState, useURLBooleanState } from '../../hooks/useURLState'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useSquadAgentThreadsApi } from './squadAgentThreadsApi'
@@ -348,7 +351,10 @@ export function SquadAgentThreads({
     })
   }, [visibleAgents])
 
-  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(() => new Set())
+  // Recent chats (consultants) remembers whether you keep it closed, in this browser.
+  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(() =>
+    readConsultantsCollapsed() ? new Set(['consultant']) : new Set()
+  )
   const consultantsCollapsed = !isPage && !isSearching && collapsedTypes.has('consultant')
   const [terminatedCollapsed, setTerminatedCollapsed] = useState(true)
   const effectiveTerminatedCollapsed = isSearching ? false : terminatedCollapsed
@@ -384,6 +390,7 @@ export function SquadAgentThreads({
       const next = new Set(prev)
       if (next.has(agentTypeId)) next.delete(agentTypeId)
       else next.add(agentTypeId)
+      if (agentTypeId === 'consultant') writeConsultantsCollapsed(next.has('consultant'))
       return next
     })
 
@@ -1169,4 +1176,23 @@ export function SquadAgentThreads({
       )}
     </div>
   )
+}
+
+function readConsultantsCollapsed(): boolean {
+  try {
+    return (
+      typeof window !== 'undefined' && window.localStorage.getItem(SQUAD_CHAT_CONSULTANTS_COLLAPSED_STORAGE_KEY) === '1'
+    )
+  } catch {
+    return false
+  }
+}
+
+function writeConsultantsCollapsed(collapsed: boolean): void {
+  try {
+    if (collapsed) window.localStorage.setItem(SQUAD_CHAT_CONSULTANTS_COLLAPSED_STORAGE_KEY, '1')
+    else window.localStorage.removeItem(SQUAD_CHAT_CONSULTANTS_COLLAPSED_STORAGE_KEY)
+  } catch {
+    // Storage can be unavailable (private or locked-down browsers); the choice just isn't remembered.
+  }
 }

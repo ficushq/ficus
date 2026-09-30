@@ -644,6 +644,34 @@ describe('SquadAgentThreads recent consultant chats', () => {
     expect(html).toContain('m1')
   })
 
+  test('remembers, in this browser, when Recent chats is kept closed', async () => {
+    const dom = await installDom()
+    const { window } = dom
+    try {
+      window.localStorage.setItem('ficus-squad-chat-consultants-collapsed', '1')
+      const { root } = dom.createRoot()
+      const agents = [
+        agent({ id: 'm1', agentTypeId: 'manager' }),
+        agent({ id: 'k1', agentTypeId: 'consultant', metadata: { name: 'Cassius', purpose: 'Plan auth' } }),
+      ]
+      await dom.act(async () => renderThreadsDom(root, makeQueryClient(), agents))
+      const toggle = () => window.document.querySelector<HTMLButtonElement>('button[aria-label$="Recent chats"]')!
+      // Stored closed: it opens collapsed.
+      expect(toggle().getAttribute('aria-expanded')).toBe('false')
+
+      await dom.act(async () => toggle().click())
+      expect(toggle().getAttribute('aria-expanded')).toBe('true')
+      expect(window.localStorage.getItem('ficus-squad-chat-consultants-collapsed')).toBeNull()
+
+      await dom.act(async () => toggle().click())
+      expect(window.localStorage.getItem('ficus-squad-chat-consultants-collapsed')).toBe('1')
+      await dom.act(async () => root.unmount())
+    } finally {
+      window.localStorage.removeItem('ficus-squad-chat-consultants-collapsed')
+      await dom.cleanup()
+    }
+  })
+
   test('keeps all recent consultant rows visible alongside the selected chat', () => {
     initialSearchParams = 'agent=k1'
     // Consultant chats stay expanded even alongside another category.

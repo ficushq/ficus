@@ -39,6 +39,8 @@ export const LOADING_SHAPE_STORAGE_PREFIX = 'ficus.loadingShape.v1'
 export const DEV_BACKEND_SHAPE_SCOPE_STORAGE_KEY = 'ficus.devBackend.shapeScope'
 export const ASSISTANT_POSITION_STORAGE_KEY = 'ficus-assistant-position'
 export const SQUAD_CHAT_SIDEBAR_WIDTH_STORAGE_KEY = 'ficus-squad-chat-sidebar-width'
+/** '1' when the squad chat sidebar's Recent chats (consultants) group is collapsed. */
+export const SQUAD_CHAT_CONSULTANTS_COLLAPSED_STORAGE_KEY = 'ficus-squad-chat-consultants-collapsed'
 export const ASSISTANT_WINDOW_STORAGE_KEY = 'ficus-assistant-window'
 export const VOICE_INPUT_MODE_STORAGE_KEY = 'ficus_voice_workspace_input_mode'
 export const PUSH_SUBSCRIPTION_ID_STORAGE_KEY = 'ficus_push_subscription_id'
