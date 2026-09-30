@@ -146,23 +146,70 @@ describe('agent-to-agent inbox rows (operator decision 2026-08-27)', () => {
   })
 })
 
-describe('chat extraction (operator decision 2026-08-27, verbose retired)', () => {
-  test('only the first substantive assistant message becomes a row', () => {
+describe('chat extraction: one row per execution, its latest step', () => {
+  const execution = {
+    squadId: '4ea8b934-a90a-42d1-b6fe-483a2ab9a18b',
+    executionId: 'c1a2b3d4-0000-4000-8000-00000000000e',
+    agentId: 'aeb03ca8-9290-4d2f-9878-79561bd931ce',
+    agentTypeId: 'engineer',
+  }
+
+  test('shows the latest substantive assistant message, keyed by the execution', () => {
     const rows = extractChatExecution({
-      squadId: '4ea8b934-a90a-42d1-b6fe-483a2ab9a18b',
-      executionId: 'c1a2b3d4-0000-4000-8000-00000000000e',
-      agentId: 'aeb03ca8-9290-4d2f-9878-79561bd931ce',
-      agentTypeId: 'engineer',
+      ...execution,
       messages: [
-        { id: 'm3', role: 'assistant', content: 'Later reply', createdAt: new Date('2026-08-27T10:02:00Z') },
-        { id: 'm1', role: 'assistant', content: '  \n ', createdAt: new Date('2026-08-27T10:00:00Z') },
-        { id: 'm2', role: 'assistant', content: 'First real reply', createdAt: new Date('2026-08-27T10:01:00Z') },
+        {
+          id: 'm3',
+          role: 'assistant',
+          content: 'Now checking the setup files',
+          createdAt: new Date('2026-08-27T10:02:00Z'),
+        },
+        { id: 'm4', role: 'assistant', content: '  \n ', createdAt: new Date('2026-08-27T10:03:00Z') },
+        { id: 'm1', role: 'user', content: 'Please review', createdAt: new Date('2026-08-27T10:04:00Z') },
+        { id: 'm2', role: 'assistant', content: 'I read the diff', createdAt: new Date('2026-08-27T10:01:00Z') },
       ],
     })
     expect(rows).toHaveLength(1)
-    expect(rows[0].rowId).toBe('m2')
-    expect(rows[0].summary).toBe('First real reply')
+    expect(rows[0].rowId).toBe(execution.executionId)
+    expect(rows[0].id).toBe(`10:${execution.executionId}`)
+    expect(rows[0].summary).toBe('Now checking the setup files')
+    expect(rows[0].at).toBe('2026-08-27T10:02:00.000Z')
+    expect(rows[0].ref).toMatchObject({ messageId: 'm3', executionId: execution.executionId })
     expect(rows[0].quietEligible).toBe(true)
+  })
+
+  test('a new step updates the same row: same identity, newer text and time', () => {
+    const first = {
+      id: 'm1',
+      role: 'assistant',
+      content: 'Reading the diff',
+      createdAt: new Date('2026-08-27T10:00:00Z'),
+    }
+    const [before] = extractChatExecution({ ...execution, messages: [first] })
+    const [after] = extractChatExecution({
+      ...execution,
+      messages: [
+        first,
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: 'Live Caddy tests look good',
+          createdAt: new Date('2026-08-27T10:05:00Z'),
+        },
+      ],
+    })
+    expect([after.squadId, after.lane, after.rowId]).toEqual([before.squadId, before.lane, before.rowId])
+    expect(after.summary).toBe('Live Caddy tests look good')
+    expect(after.at > before.at).toBe(true)
+  })
+
+  test('no row until the agent has said something', () => {
+    expect(
+      extractChatExecution({
+        ...execution,
+        messages: [{ id: 'm1', role: 'assistant', content: ' ', createdAt: new Date('2026-08-27T10:00:00Z') }],
+      })
+    ).toEqual([])
   })
 })
 

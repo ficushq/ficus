@@ -20,7 +20,7 @@ describe('materialized activity extractors', () => {
     expect([...firstLineSummary('😀'.repeat(170))]).toHaveLength(160)
   })
 
-  it('extracts only the first qualifying assistant message and is deterministic', () => {
+  it('extracts one row per execution from its latest qualifying assistant message, deterministically', () => {
     const snapshot = {
       squadId,
       executionId,
@@ -35,9 +35,11 @@ describe('materialized activity extractors', () => {
     const originalOrder = snapshot.messages.map((message) => message.id)
     const first = extractChatExecution(snapshot)
     expect(snapshot.messages.map((message) => message.id)).toEqual(originalOrder)
-    // First-message-only extraction (operator decision 2026-08-27): later
-    // messages are never rowed at all with the Verbose toggle retired.
-    expect(first.map((item) => [item.rowId, item.quietEligible])).toEqual([[id(1), true]])
+    // One row per execution, keyed by it, showing the latest assistant message
+    // (a timestamp tie breaks by id); tool output never counts.
+    expect(first.map((item) => [item.rowId, item.quietEligible])).toEqual([[executionId, true]])
+    expect(first[0]!.summary).toBe('later')
+    expect(first[0]!.ref).toMatchObject({ messageId: id(2) })
     expect(extractChatExecution(structuredClone(snapshot))).toEqual(first)
     expect(activityPayloadHash(first[0])).toBe(activityPayloadHash(extractChatExecution(snapshot)[0]))
   })
