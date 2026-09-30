@@ -745,12 +745,16 @@ export function AddAccountChooser({
           <button
             type="button"
             onClick={onChooseBrowser}
-            className="ficus-button text-xs text-muted hover:text-primary"
+            className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs rounded font-medium"
           >
             Browser login (fallback)
           </button>
         )}
-        <button type="button" onClick={onCancel} className="ficus-button ml-auto text-sm text-muted hover:text-primary">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ficus-button ficus-button-secondary ml-auto rounded-lg px-4 py-2 text-sm font-medium"
+        >
           Cancel
         </button>
       </div>
@@ -825,7 +829,7 @@ export function AddAccountForm({
           type="button"
           onClick={onCancel}
           disabled={addMutation.isPending}
-          className="ficus-button text-sm text-muted hover:text-primary disabled:opacity-50"
+          className="ficus-button ficus-button-secondary disabled:opacity-50 rounded-lg px-4 py-2 text-sm font-medium"
         >
           Cancel
         </button>
@@ -1130,7 +1134,10 @@ function ApiKeyForm({
       >
         {mutation.isPending ? 'Saving...' : 'Save'}
       </button>
-      <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
+      <button
+        onClick={onCancel}
+        className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs rounded font-medium"
+      >
         Cancel
       </button>
       {mutation.isError && (
@@ -1356,7 +1363,10 @@ export function SelectStep({
           >
             Use browser login instead
           </button>
-          <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
+          <button
+            onClick={onCancel}
+            className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs rounded font-medium"
+          >
             Cancel
           </button>
         </div>
@@ -1382,7 +1392,10 @@ export function SelectStep({
             {option.label}
           </button>
         ))}
-        <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
+        <button
+          onClick={onCancel}
+          className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs rounded font-medium"
+        >
           Cancel
         </button>
       </div>
@@ -1443,7 +1456,10 @@ export function CodeStep({
         >
           {isSubmitting ? 'Submitting...' : 'Submit'}
         </button>
-        <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
+        <button
+          onClick={onCancel}
+          className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs rounded font-medium"
+        >
           Cancel
         </button>
       </div>
@@ -1554,7 +1570,7 @@ export function DeviceCodeStep({
         <button
           onClick={onCancel}
           disabled={!need}
-          className="ficus-button text-xs text-muted hover:text-primary disabled:opacity-50"
+          className="ficus-button ficus-button-secondary disabled:opacity-50 px-3 py-1.5 text-xs rounded font-medium"
         >
           Cancel
         </button>
@@ -1579,7 +1595,10 @@ export function ErrorStep({
         <button onClick={onRetry} className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium">
           Try Again
         </button>
-        <button onClick={onCancel} className="ficus-button text-xs text-muted hover:text-primary">
+        <button
+          onClick={onCancel}
+          className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs rounded font-medium"
+        >
           Cancel
         </button>
       </div>

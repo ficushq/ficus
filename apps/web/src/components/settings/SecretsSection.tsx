@@ -469,7 +469,10 @@ function SecretRow({
               )}
               {saveMutation.isPending ? (validated ? 'Validating with GitHub…' : 'Saving...') : 'Save'}
             </button>
-            <button onClick={handleCancel} className="ficus-button text-xs text-muted hover:text-primary">
+            <button
+              onClick={handleCancel}
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs rounded font-medium"
+            >
               Cancel
             </button>
           </div>
