@@ -47,8 +47,8 @@ Each K8s Deployment overrides the CMD to run a different service:
 
 ## tau-sandbox
 
-**File:** `packages/k8s-sandbox/Dockerfile`  
-**Build:** `bun run sandbox:build:k8s` or `docker build -t tau-sandbox:latest -f packages/k8s-sandbox/Dockerfile .`
+**File:** `packages/sandbox-server/Dockerfile`  
+**Build:** `bun run sandbox:build:k8s` or `docker build -t tau-sandbox:latest -f packages/sandbox-server/Dockerfile .`
 
 Single-stage build from `ubuntu:24.04` with nix, devbox, and all development packages baked in.
 
@@ -59,7 +59,7 @@ Single-stage build from `ubuntu:24.04` with nix, devbox, and all development pac
 | System packages       | bash, git, ssh, curl, wget, sudo, docker.io, unzip, xz-utils                                                     |
 | Nix                   | Single-user mode, filter-syscalls disabled (for sysbox), flakes enabled                                          |
 | Devbox                | Installed from jetpack.io, default `devbox.json` pre-installed                                                   |
-| Devbox packages       | All packages from `packages/k8s-sandbox/sandbox/devbox.json` baked into `/nix/store` (~1.2GB)                    |
+| Devbox packages       | All packages from `packages/sandbox-server/sandbox/devbox.json` baked into `/nix/store` (~1.2GB)                 |
 | Bun                   | Installed to `/usr/local`                                                                                        |
 | Ficus CLI             | Not bundled; Core stages `cli/ficus.js` into the shared core-data volume and mounts it at `/usr/local/bin/ficus` |
 | Tool executor         | HTTP service at `/opt/sandbox/` using bun-pty for shell sessions                                                 |
@@ -67,7 +67,7 @@ Single-stage build from `ubuntu:24.04` with nix, devbox, and all development pac
 
 ### Runtime
 
-- **Entrypoint:** `packages/k8s-sandbox/sandbox/entrypoint.sh` — handles sysbox user namespace setup, SSH key permissions for PVC-mounted keys
+- **Entrypoint:** `packages/sandbox-server/sandbox/entrypoint.sh` — handles sysbox user namespace setup, SSH key permissions for PVC-mounted keys
 - **Runtime class:** `sysbox-runc` for secure container isolation
 - **Healthcheck:** `GET /healthz` on port 50051
 - **Directories:** `/workspace` (code), `/memory` (memory files), `/home/tau`
@@ -95,7 +95,7 @@ Both should target `linux/amd64` for K8s deployment:
 
 ```bash
 docker build --platform linux/amd64 -t tau-core:latest .
-docker build --platform linux/amd64 -t tau-sandbox:latest -f packages/k8s-sandbox/Dockerfile .
+docker build --platform linux/amd64 -t tau-sandbox:latest -f packages/sandbox-server/Dockerfile .
 ```
 
 ## Layer Caching

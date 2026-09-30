@@ -10,7 +10,7 @@ import {
   mergeDevboxJson,
   type SeedBoxRole,
 } from './devbox-seed'
-import { SandboxHttpError } from '../sandbox/k8s/http-client'
+import { SandboxHttpError } from '../sandbox/client/http-client'
 import { boxUnixUser } from './box-manager'
 
 // ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ describe('devbox comfort-set package lists mirror the Dockerfile stages', () => 
     if (!ghRef) throw new Error('Agent comfort set must pin gh directly to Nixpkgs')
     expect(ghRef).toMatch(/^github:NixOS\/nixpkgs\/[a-f0-9]{40}#gh$/)
     expect(SQUAD_COMFORT_PACKAGES).toContain(ghRef)
-    const sandboxRoot = new URL('../../../../../packages/k8s-sandbox/', import.meta.url)
+    const sandboxRoot = new URL('../../../../../packages/sandbox-server/', import.meta.url)
     const template = JSON.parse(readFileSync(new URL('sandbox/devbox.json', sandboxRoot), 'utf8'))
     expect(template.packages).toEqual(SQUAD_COMFORT_PACKAGES)
     const dockerfile = readFileSync(new URL('Dockerfile', sandboxRoot), 'utf8')
@@ -234,7 +234,7 @@ describe('devbox comfort-set package lists mirror the Dockerfile stages', () => 
 
   test('agent light set matches the k8s agent-stage global nix profile comfort set', () => {
     // Dockerfile `agent` stage: nix profile install of node/python + the ergonomic
-    // CLI tools. Kept in lockstep with packages/k8s-sandbox/Dockerfile.
+    // CLI tools. Kept in lockstep with packages/sandbox-server/Dockerfile.
     expect(AGENT_COMFORT_PACKAGES).toEqual([
       'nodejs_24@latest',
       'python3@latest',
@@ -256,7 +256,7 @@ describe('devbox comfort-set package lists mirror the Dockerfile stages', () => 
   })
 
   test('squad heavier set matches the k8s squad-stage baked devbox.json packages', () => {
-    // Mirrors packages/k8s-sandbox/sandbox/devbox.json exactly.
+    // Mirrors packages/sandbox-server/sandbox/devbox.json exactly.
     expect(SQUAD_COMFORT_PACKAGES).toEqual([
       'nodejs_24@latest',
       'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun',

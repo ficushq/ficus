@@ -2,7 +2,7 @@
 
 The sandbox is an HTTP service that runs inside each sandbox pod. It provides command execution, file operations, and interactive shells. Agent intelligence stays in Ficus Core — the sandbox only executes operations.
 
-**Source:** `packages/k8s-sandbox/`
+**Source:** `packages/sandbox-server/`
 
 ## Startup Flow
 
@@ -249,7 +249,7 @@ This prevents agents from reading or writing arbitrary files on the host.
 
 ## Docker Image
 
-The Dockerfile (`packages/k8s-sandbox/Dockerfile`) builds a multi-stage image:
+The Dockerfile (`packages/sandbox-server/Dockerfile`) builds a multi-stage image:
 
 1. **Base:** Ubuntu 24.04 with Nix, devbox, Bun
 2. **Default packages:** A `devbox.json` with common tools is baked in and `devbox install` is run at build time (~2.5GB of nix packages). This makes runtime `devbox install` a fast no-op.
@@ -290,7 +290,7 @@ To verify the publish target locally with buildx, run:
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
   -t tau-sandbox:headless-browser-test \
-  -f packages/k8s-sandbox/Dockerfile .
+  -f packages/sandbox-server/Dockerfile .
 ```
 
 ## Environment Variables

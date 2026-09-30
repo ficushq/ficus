@@ -10,8 +10,8 @@
 # its heavy delta.
 #
 # Build (BuildKit reuses the `base` stage across both targets):
-#   docker build --target agent -t tau-sandbox-agent:latest -f packages/k8s-sandbox/Dockerfile .
-#   docker build --target squad -t tau-sandbox:latest       -f packages/k8s-sandbox/Dockerfile .
+#   docker build --target agent -t tau-sandbox-agent:latest -f packages/sandbox-server/Dockerfile .
+#   docker build --target squad -t tau-sandbox:latest       -f packages/sandbox-server/Dockerfile .
 
 # ============================================================================
 # Stage: base — shared minimal core (ubuntu + nix + devbox + bun + server)
@@ -56,8 +56,8 @@ RUN curl -fsSL --retry 3 --retry-delay 5 https://get.jetpack.io/devbox | bash -s
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
 
 # --- Tool executor service ---
-COPY packages/k8s-sandbox/package.json /opt/sandbox/package.json
-COPY packages/k8s-sandbox/src /opt/sandbox/src
+COPY packages/sandbox-server/package.json /opt/sandbox/package.json
+COPY packages/sandbox-server/src /opt/sandbox/src
 # The executor depends on @ficus/shared as `workspace:*`, which bun can only
 # resolve inside a workspace. Make /opt/sandbox that workspace: copy the member
 # in and declare it on the executor's own manifest (same shape as
@@ -72,15 +72,15 @@ RUN bun -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("package.j
 RUN bun -e "require('bun-pty'); require('@ficus/shared/advisory-lock')" || (echo "ERROR: executor dependencies not available" && exit 1)
 
 # --- Sandbox scaffolding ---
-COPY packages/k8s-sandbox/sandbox/runtime-env.sh /opt/sandbox/runtime-env.sh
+COPY packages/sandbox-server/sandbox/runtime-env.sh /opt/sandbox/runtime-env.sh
 RUN chmod +x /opt/sandbox/runtime-env.sh
 
-COPY packages/k8s-sandbox/sandbox/git-credential-github-token /usr/local/bin/git-credential-github-token
+COPY packages/sandbox-server/sandbox/git-credential-github-token /usr/local/bin/git-credential-github-token
 RUN chmod +x /usr/local/bin/git-credential-github-token
 
-COPY packages/k8s-sandbox/sandbox/ssh_config.d/99-github-ssh-over-443.conf /etc/ssh/ssh_config.d/99-github-ssh-over-443.conf
+COPY packages/sandbox-server/sandbox/ssh_config.d/99-github-ssh-over-443.conf /etc/ssh/ssh_config.d/99-github-ssh-over-443.conf
 
-COPY packages/k8s-sandbox/sandbox/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY packages/sandbox-server/sandbox/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 RUN mkdir -p /workspace /memory /home/tau \
@@ -112,7 +112,7 @@ FROM base AS agent
 # the (package-less) template the entrypoint seeds as the agent's own devbox in
 # /private (FICUS_DEVBOX_DIR). With no packages declared, the entrypoint's
 # `devbox install` is skipped — the comfort set already lives on PATH below.
-COPY packages/k8s-sandbox/sandbox/devbox.agent.json /opt/tau/defaults/devbox.json
+COPY packages/sandbox-server/sandbox/devbox.agent.json /opt/tau/defaults/devbox.json
 
 # Comfort set → global nix profile (/root/.nix-profile, already first on PATH via
 # the base ENV). Installed at build time so the tools are on PATH at pod start
@@ -193,7 +193,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Devbox packages (baked in for instant startup) ---
-COPY packages/k8s-sandbox/sandbox/devbox.json /opt/tau/defaults/devbox.json
+COPY packages/sandbox-server/sandbox/devbox.json /opt/tau/defaults/devbox.json
 
 # Pre-install all devbox packages into /nix/store at build time.
 # This adds ~1.2GB but eliminates 5+ min download on every pod start.
@@ -219,5 +219,5 @@ RUN mkdir -p /tmp/devbox-install \
 RUN ls /nix/store | sort > /nix-base-manifest.txt
 
 # --- Headless browser smoke test ---
-COPY packages/k8s-sandbox/scripts/smoke-headless-browser.sh /opt/sandbox/scripts/smoke-headless-browser.sh
+COPY packages/sandbox-server/scripts/smoke-headless-browser.sh /opt/sandbox/scripts/smoke-headless-browser.sh
 RUN chmod +x /opt/sandbox/scripts/smoke-headless-browser.sh

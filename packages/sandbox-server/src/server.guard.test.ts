@@ -186,7 +186,7 @@ function scanJsonParse(source: string, file: string) {
   return calls
 }
 
-describe('k8s-sandbox inbound JSON boundary guard', () => {
+describe('sandbox-server inbound JSON boundary guard', () => {
   test('detects fallback catches and permits a classifier that always throws', () => {
     const fixture = `
 async function promiseFallback(req: Request) { return req.json().catch(() => ({})) }

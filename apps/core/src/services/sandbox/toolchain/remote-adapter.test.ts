@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { SandboxHttpError, SandboxTransportError } from '../k8s/http-client'
+import { SandboxHttpError, SandboxTransportError } from '../client/http-client'
 import { reconcileRemoteToolchain } from './remote-adapter'
 
 function clientHarness(marker = '', activationFails: boolean | Error = false, activationGate?: Promise<void>) {

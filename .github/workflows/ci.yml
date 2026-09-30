@@ -368,7 +368,7 @@ jobs:
       # bunfig.toml applies (root preloads need the ParadeDB container).
       - name: Run sandbox executor tests
         run: bun run test
-        working-directory: packages/k8s-sandbox
+        working-directory: packages/sandbox-server
 
   test-typecheck:
     # Typecheck and the production builds. Its own lane because a type error aborts
@@ -809,7 +809,7 @@ jobs:
           src/db/model-tiers-migration.test.ts
           src/db/migrate-bundle.test.ts
           src/db/load-root-env.test.ts
-          src/tools/k8s-sandbox.real-edit.test.ts
+          src/tools/sandbox-tools.real-edit.test.ts
           src/index.test.ts
           src/worker.test.ts
           src/lib/paths.test.ts

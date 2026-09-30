@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SandboxClient, SandboxTransportError } from '../k8s/http-client'
+import { SandboxClient, SandboxTransportError } from '../client/http-client'
 import { runIdempotentSandboxOperation } from './retry'
 
 describe('VM transport recovery integration', () => {

@@ -3,7 +3,7 @@ set -euo pipefail
 
 mode=${1:-}
 root=$(git rev-parse --show-toplevel)
-factory="$root/apps/core/src/tools/k8s-sandbox.ts"
+factory="$root/apps/core/src/tools/sandbox-tools.ts"
 executor="$root/apps/core/src/tools/verified-edit.ts"
 : "${DATABASE_URL:?DATABASE_URL must name the explicitly owned worktree test database}"
 : "${TEST_DB_PROJECT:?TEST_DB_PROJECT must name the explicitly owned tau-test-* project}"
@@ -11,11 +11,11 @@ executor="$root/apps/core/src/tools/verified-edit.ts"
 [[ $(bun --version) == "$(cat "$root/.bun-version")" ]]
 
 case "$mode" in
-  verified-route-expected-result-drop) source=$factory; filter='diff-text transport contamination rejected by server'; signature='Expected: 500'; test_file='src/tools/k8s-sandbox.real-edit.test.ts' ;;
-  verified-route-expected-original-drop) source=$factory; filter='concurrent stale-base edit refuses after cooperating restore'; signature='expectedOriginal'; test_file='src/tools/k8s-sandbox.real-edit.test.ts' ;;
-  factory-legacy-write-fallback) source=$factory; filter='verified large-file edit preserves distant suffix'; signature='verified edit must never fall back to legacy write'; test_file='src/tools/k8s-sandbox.test.ts' ;;
+  verified-route-expected-result-drop) source=$factory; filter='diff-text transport contamination rejected by server'; signature='Expected: 500'; test_file='src/tools/sandbox-tools.real-edit.test.ts' ;;
+  verified-route-expected-original-drop) source=$factory; filter='concurrent stale-base edit refuses after cooperating restore'; signature='expectedOriginal'; test_file='src/tools/sandbox-tools.real-edit.test.ts' ;;
+  factory-legacy-write-fallback) source=$factory; filter='verified large-file edit preserves distant suffix'; signature='verified edit must never fall back to legacy write'; test_file='src/tools/sandbox-tools.test.ts' ;;
   commit-response-identity-skip) source=$executor; filter='suppresses success on a commit response identity mismatch'; signature='Received value: undefined'; test_file='src/tools/verified-edit.test.ts' ;;
-  core-final-readback-skip) source=$executor; filter='corrupt Core final readback suppresses success after server response'; signature='expected real edit rejection'; test_file='src/tools/k8s-sandbox.real-edit.test.ts' ;;
+  core-final-readback-skip) source=$executor; filter='corrupt Core final readback suppresses success after server response'; signature='expected real edit rejection'; test_file='src/tools/sandbox-tools.real-edit.test.ts' ;;
   post-commit-abort-generic) source=$executor; filter='honors abort checkpoints without releasing around an unsettled commit'; signature='Received: "Operation aborted"'; test_file='src/tools/verified-edit.test.ts' ;;
   post-readback-abort-generic) source=$executor; filter='reports post-publication uncertainty for abort after final readback'; signature='Received: "Operation aborted"'; test_file='src/tools/verified-edit.test.ts' ;;
   crlf-normalization-drop) source=$executor; filter='matches multiline LF edit text against CRLF bytes'; signature='match was not found'; test_file='src/tools/verified-edit.test.ts' ;;

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { consultantSandboxId, consultantSandboxSquadId, consultantScratchPath } from './consultant-sandbox'
 import { buildWorkspacePrompt } from '../../lib/prompts/workspace-prompt'
-import { resolveAgentBashCwd } from '../../tools/k8s-sandbox'
+import { resolveAgentBashCwd } from '../../tools/sandbox-tools'
 
 test('consultant scratch paths are distinct and the prompt describes shared custody', () => {
   const sandboxId = consultantSandboxId('squad-one')

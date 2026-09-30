@@ -1,9 +1,9 @@
 import { Type } from '@sinclair/typebox'
 import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-agent'
 import { getSandboxManager } from '../services/sandbox/factory'
-import { SandboxHttpError } from '../services/sandbox/k8s/http-client'
+import { SandboxHttpError } from '../services/sandbox/client/http-client'
 import type { BrowserBackend } from '../services/sandbox/browser-backend'
-import type { SandboxToolsManager } from './k8s-sandbox'
+import type { SandboxToolsManager } from './sandbox-tools'
 import { resolveLocalDeploymentBrowserUrl } from '../services/deploy/local-deployment-browser-url'
 
 // --- Types ---

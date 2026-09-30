@@ -12,7 +12,7 @@
  * delivered + drift-updated by machine-artifact delivery), shared by every box
  * on the machine.
  *
- * ## `/write` contract (read from packages/k8s-sandbox/src/services/filesystem.ts)
+ * ## `/write` contract (read from packages/sandbox-server/src/services/filesystem.ts)
  * `POST /write { path, content /* base64 *\/, createDirs?, mode? }`. Two consequences:
  *  1. **Binary-safe.** The server base64-DECODES `content` before writing, so
  *     raw bytes round-trip losslessly — no `/bash`-decode dance needed.
@@ -79,7 +79,7 @@ import { createHash } from 'crypto'
 import { readFileSync } from 'fs'
 import { readdir } from 'fs/promises'
 import { join, relative } from 'path'
-import { BashOutcomeUnknownError, type BashResponse, type SandboxClient } from '../k8s/http-client'
+import { BashOutcomeUnknownError, type BashResponse, type SandboxClient } from '../client/http-client'
 import { getSquadIdFromSandbox, type SandboxOptions } from '../types'
 import { boxUnixUser } from '../../machines/box-manager'
 import { machineTunnels } from '../../machines/tunnel-manager'
@@ -241,7 +241,7 @@ async function pushFile(
  * FAILURE (not success): the server sends an explicit exit code on every path
  * (including timeout/spawn-failure), so a missing code means the stream was
  * truncated or the server regressed. Defaulting the missing code to 0 could mask
- * a failure. See packages/k8s-sandbox/src/services/bash.ts.
+ * a failure. See packages/sandbox-server/src/services/bash.ts.
  *
  * Exported for the vm manager's post-ensure box setup (git credential helper).
  */

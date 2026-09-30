@@ -12,10 +12,11 @@ import type { Machine } from './queries'
 /**
  * Sandbox-server bundle pipeline.
  *
- * The per-box sandbox-server is the k8s `packages/k8s-sandbox` server, bundled
- * to a single file with `bun build ... --target bun` (the package's own build
- * script shape) and pushed to each machine at `/opt/tau/server/server.js`, where
- * box-provision's systemd unit runs it per box. Delivery goes through the
+ * The per-box sandbox-server is the `packages/sandbox-server` server (the same
+ * one k8s pods and Docker containers run), bundled to a single file with
+ * `bun build ... --target bun` (the package's own build script shape) and pushed
+ * to each machine at `/opt/tau/server/server.js`, where box-provision's systemd
+ * unit runs it per box. Delivery goes through the
  * generic machine-artifact pipeline ({@link serverArtifact} +
  * `ensureArtifact`): the push is version-stamped by content sha256 under
  * `machines.artifact_versions['server']` so re-pushes are skipped when the
@@ -36,7 +37,7 @@ import type { Machine } from './queries'
  */
 
 /** Entry module bun-bundled into the box server. */
-const SERVER_ENTRY = 'packages/k8s-sandbox/src/server.ts'
+const SERVER_ENTRY = 'packages/sandbox-server/src/server.ts'
 /** Deterministic entry-point output name for `bun build <server.ts>`. */
 const SERVER_OUTPUT_NAME = 'server.js'
 /** Where the bundle lands on the machine (dir created by bootstrap.sh). */
@@ -67,7 +68,7 @@ export const SERVER_LIB_REMOTE_PATH = '/opt/tau/server/librust_pty.so'
  *   - bundled dist: import.meta.dir = …/apps/core/dist   (production `bun build`)
  * A hardcoded `../../../../../` assumed the SOURCE depth; run from the dist it
  * overshot the repo root and resolved to `/`, so the entry became the
- * filesystem-absolute `/packages/k8s-sandbox/src/server.ts` — a FileNotFound
+ * filesystem-absolute `/packages/sandbox-server/src/server.ts` — a FileNotFound
  * that only surfaced in a production dist deployment, never in a source run.
  * `FICUS_REPO_ROOT` overrides for non-standard deployments (e.g. dist and source
  * trees separated). The optional `home` threads through to expandTilde so
@@ -113,7 +114,7 @@ export interface BuildServerBundleDeps {
    * {@link readPrebuiltMachineFile}) reads `<MONOREPO_ROOT>/machine`, where a
    * missing/empty file is fatal; a git checkout never reads prebuilt files and
    * always source-builds. In a shipped core artifact the sandbox-server is
-   * prebuilt (the artifact never carries `packages/k8s-sandbox/src`), so
+   * prebuilt (the artifact never carries `packages/sandbox-server/src`), so
    * runtime reads `server.js` + `librust_pty.so` from disk instead of running
    * `bun build`.
    */
@@ -156,7 +157,7 @@ async function readPrebuiltServerBundle(prebuiltDir: string | undefined): Promis
 
 /**
  * Build the sandbox-server into a single-file bundle via the real
- * `bun build packages/k8s-sandbox/src/server.ts --target bun`, captured from a
+ * `bun build packages/sandbox-server/src/server.ts --target bun`, captured from a
  * throwaway scratch outdir, and collect the linux-x64 bun-pty native lib the
  * bundled server dlopens at boot. Returns the entry bundle bytes, the lib bytes,
  * and their combined sha256 hex (the version stamp). Throws (surfacing bun's

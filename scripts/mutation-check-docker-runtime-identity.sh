@@ -13,9 +13,9 @@ baseline() {
     apps/core/src/services/sandbox/k8s/network-policy.test.ts \
     apps/core/src/services/sandbox/docker/lifecycle-contract.test.ts \
     apps/core/src/tools/docker-tool-boundary.test.ts \
-    packages/k8s-sandbox/src/services/command-identity.test.ts \
-    packages/k8s-sandbox/src/services/auth.test.ts \
-    packages/k8s-sandbox/src/services/health.test.ts
+    packages/sandbox-server/src/services/command-identity.test.ts \
+    packages/sandbox-server/src/services/auth.test.ts \
+    packages/sandbox-server/src/services/health.test.ts
 }
 [ "${1:-}" != --baseline ] || { baseline; exit; }
 baseline
@@ -55,7 +55,7 @@ mutate swallow-remove apps/core/src/services/sandbox/docker/lifecycle-runtime.ts
 mutate cleanup-aggregation apps/core/src/services/sandbox/docker/lifecycle-runtime.ts "if (failures.length) throw new AggregateError(failures, 'Docker sandbox cleanup was not proven')" "if (false) throw new AggregateError()" apps/core/src/services/sandbox/docker/lifecycle-contract.test.ts 'cleanup attempts all entries and reports every failure'
 mutate direct-tool-docker apps/core/src/tools/docker-tool-boundary.ts 'manager.execWithStdin' 'manager.exec' apps/core/src/tools/docker-tool-boundary.test.ts 'writes only through the verified stdin execution boundary'
 mutate stdin-identity apps/core/src/services/sandbox/docker/lifecycle-runtime.ts "...userArgs, '-w'" "'-w'" apps/core/src/services/sandbox/docker/lifecycle-contract.test.ts 'stdin execution behavior includes the exact command-user boundary'
-mutate launch-user packages/k8s-sandbox/src/services/command-identity.ts "executable: 'su-exec'" "executable: 'bash'" packages/k8s-sandbox/src/services/command-identity.test.ts 'uses an execing named-user launcher'
+mutate launch-user packages/sandbox-server/src/services/command-identity.ts "executable: 'su-exec'" "executable: 'bash'" packages/sandbox-server/src/services/command-identity.test.ts 'uses an execing named-user launcher'
 mutate startup-writability apps/core/docker-sandbox/startup.sh 'test -w /home/tau' 'true' apps/core/src/services/sandbox/docker/startup-contract.test.ts 'fails closed on identity collisions and reports the resolved source'
 mutate bounded-kill apps/core/docker-sandbox/shutdown.sh 'kill -KILL "$pid"' 'kill -TERM "$pid"' apps/core/src/services/sandbox/docker/startup-contract.test.ts 'a TERM-resistant child cannot hang final cleanup'
 mutate primary-cleanup apps/core/src/services/sandbox/docker/lifecycle-runtime.ts 'await cleanup()' 'return await cleanup()' apps/core/src/services/sandbox/docker/lifecycle-contract.test.ts 'rethrows the primary failure when cleanup succeeds'

@@ -6,7 +6,7 @@ import { db, agents, agentExtraScopes, localDeployments, roleAssignments, squads
 import { createTestUser, createTestRole, assignRole, cleanupTestRbac } from '../test-utils/rbac'
 import { invalidatePermissionCache } from '../services/rbac/permissions'
 import { getLocalDeployment, isValidLocalDeploymentBrowserToken } from '../services/deploy/local-deployment-service'
-import { SandboxHttpError } from '../services/sandbox/k8s/http-client'
+import { SandboxHttpError } from '../services/sandbox/client/http-client'
 import { createBrowserTools } from './browser'
 
 describe('browser_open local deployment handoff', () => {

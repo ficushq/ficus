@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { retryDelays, runIdempotentSandboxOperation } from './retry'
-import { SandboxTransportError } from '../k8s/http-client'
+import { SandboxTransportError } from '../client/http-client'
 
 describe('VM sandbox retry policy', () => {
   test('uses bounded deterministic 0/200/800ms delays with at most 20% jitter', () => {

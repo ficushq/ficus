@@ -125,8 +125,8 @@ try {
   })
   await proof({
     name: 'Darwin must not inspect protected unrelated sessions',
-    source: 'packages/k8s-sandbox/src/services/process-session.ts',
-    test: 'packages/k8s-sandbox/src/services/process-session.test.ts',
+    source: 'packages/sandbox-server/src/services/process-session.ts',
+    test: 'packages/sandbox-server/src/services/process-session.test.ts',
     match: 'does not inspect protected processes outside the owned session',
     mutate: (source) =>
       replaceOnce(source, 'if ((await native.getSessionId(pid)) !== sid) continue', '// mutation: inspect every PID'),

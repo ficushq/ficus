@@ -15,7 +15,7 @@ function validate(candidate: Workflow): string[] {
   if (
     tests.length !== 1 ||
     tests[0]?.run !== 'bun run test' ||
-    tests[0]?.['working-directory'] !== 'packages/k8s-sandbox' ||
+    tests[0]?.['working-directory'] !== 'packages/sandbox-server' ||
     tests[0]?.if !== undefined ||
     tests[0]?.['continue-on-error'] !== undefined
   )
@@ -40,7 +40,7 @@ function validate(candidate: Workflow): string[] {
 
 describe('sandbox executor CI gate', () => {
   test('discovers every sandbox file in a fresh completion-checked process', () => {
-    const manifest = JSON.parse(readFileSync(join(import.meta.dir, '../packages/k8s-sandbox/package.json'), 'utf8'))
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, '../packages/sandbox-server/package.json'), 'utf8'))
     expect(manifest.scripts.test).toBe('bun ../../scripts/test-runner.ts --isolated src')
   })
 
@@ -70,7 +70,7 @@ describe('sandbox executor CI gate', () => {
             {
               name: 'Run sandbox executor tests',
               run: 'bun run test',
-              'working-directory': 'packages/k8s-sandbox',
+              'working-directory': 'packages/sandbox-server',
               if: 'false',
               'continue-on-error': true,
             },

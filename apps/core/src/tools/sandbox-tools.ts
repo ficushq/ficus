@@ -40,7 +40,7 @@ function processCarriageReturns(buf: Buffer): Buffer {
 import { posix } from 'path'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import { createReadTool, createWriteTool, createBashTool, type ReadOperations } from '@earendil-works/pi-coding-agent'
-import { BashOutcomeUnknownError, SandboxHttpError, type SandboxClient } from '../services/sandbox/k8s/http-client'
+import { BashOutcomeUnknownError, SandboxHttpError, type SandboxClient } from '../services/sandbox/client/http-client'
 import { createVerifiedEditTool, type VerifiedEditOperations } from './verified-edit'
 import { withSharedWorkspaceHint } from './private-bash-hint'
 import { createLogger } from '../lib/infra/logger'
@@ -190,7 +190,7 @@ type FileOpTarget = FileOpDestination & { path: string }
  * normalized boundary): the tools always pass absolute paths
  * (`enforceAbsolutePaths`), and core has no filesystem access to the box, so it
  * cannot resolve symlinks. The destination box's sandbox-server enforces its
- * own allow-prefixes (packages/k8s-sandbox/src/paths.ts) as the real security
+ * own allow-prefixes (packages/sandbox-server/src/paths.ts) as the real security
  * boundary, backstopping any symlink escape this check cannot see. When a
  * squadRoute is present the NORMALIZED path is forwarded, so the path the
  * destination box sees is the one that was classified (a `..`-laden path can

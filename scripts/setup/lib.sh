@@ -81,7 +81,7 @@ require_cmd() { # NAME [INSTALL_HINT]
 
 # The gh release that introduced `gh --attach`. Agent prompts instruct agents to
 # attach screenshots with it, so anywhere an agent runs gh, this is the floor.
-# Kept beside the sandbox images' own pin (packages/k8s-sandbox/Dockerfile,
+# Kept beside the sandbox images' own pin (packages/sandbox-server/Dockerfile,
 # apps/core/docker-sandbox/Dockerfile) — bump all three together.
 FICUS_MIN_GH_VERSION='2.99.0'
 

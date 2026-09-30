@@ -18,7 +18,7 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { mkdirSync } from 'fs'
 import { spawn as ptySpawn, type IPty } from 'bun-pty'
-import { WorkspaceWatcher, isSafeWatchPattern } from '@ficus/k8s-sandbox/watcher'
+import { WorkspaceWatcher, isSafeWatchPattern } from '@ficus/sandbox-server/watcher'
 import type { ISandboxManager, SandboxOptions, SandboxRuntime, SpawnHook } from '../types'
 import { getSquadIdFromSandbox } from '../types'
 import { hostWorkspaceLayout, type WorkspaceLayout, type WorkspaceLayoutContext } from '../workspace-layout'

@@ -16,7 +16,7 @@ import {
 import type { SshResult, SshRunner } from './ssh'
 
 describe('resolveRepoRoot', () => {
-  const SERVER_ENTRY = 'packages/k8s-sandbox/src/server.ts'
+  const SERVER_ENTRY = 'packages/sandbox-server/src/server.ts'
 
   it('resolves a repo root that actually contains the server entry (source layout)', () => {
     const root = resolveRepoRoot(import.meta.dir, undefined)
@@ -25,7 +25,7 @@ describe('resolveRepoRoot', () => {
 
   it('resolves the SAME root from the production dist depth (…/apps/core/dist)', () => {
     // The bug: run from the bundled dist, a hardcoded "../../../../../" overshot
-    // to "/" and the entry became "/packages/k8s-sandbox/src/server.ts". Walking
+    // to "/" and the entry became "/packages/sandbox-server/src/server.ts". Walking
     // up from the deeper source path and the shallower dist path must both land
     // on the real repo root.
     const realRoot = resolveRepoRoot(import.meta.dir, undefined)
@@ -52,7 +52,7 @@ describe('resolveRepoRoot', () => {
     const homeRoot = await mkdtemp(join(tmpdir(), 'ficus-repo-root-home-'))
     const fixture = join(homeRoot, '.tau-repo-root-fixture')
     try {
-      await mkdir(join(fixture, 'packages/k8s-sandbox/src'), { recursive: true })
+      await mkdir(join(fixture, 'packages/sandbox-server/src'), { recursive: true })
       await writeFile(join(fixture, SERVER_ENTRY), '// fixture')
       const asTilde = '~/.tau-repo-root-fixture'
       expect(resolveRepoRoot('/nowhere/at/all', asTilde, homeRoot)).toBe(fixture)
@@ -116,7 +116,7 @@ function makeFakeRunner(handler: (command: string) => SshResult | Error): {
 const ok = (): SshResult => ({ exitCode: 0, stdout: '', stderr: '' })
 
 describe('buildServerBundle', () => {
-  it('bundles the real k8s-sandbox server into a single non-empty file', async () => {
+  it('bundles the real sandbox-server into a single non-empty file', async () => {
     const { content, version } = await buildServerBundle()
     expect(content.length).toBeGreaterThan(0)
     // The bundle inlines the server entry + its services/ modules; a known
@@ -160,7 +160,7 @@ describe('buildServerBundle', () => {
 
 describe('buildServerBundle prebuilt fallback', () => {
   // A shipped core artifact carries the sandbox-server prebuilt under
-  // <root>/machine and NO packages/k8s-sandbox source; runtime must READ the
+  // <root>/machine and NO packages/sandbox-server source; runtime must READ the
   // bundle from disk (same sha256(server.js || lib) stamp) and never `bun
   // build`. `spawn` throws here to prove the build path is not taken.
   const throwingSpawn = (() => {
@@ -221,7 +221,7 @@ describe('buildServerBundle prebuilt fallback', () => {
     const dir = await mkdtemp(join(tmpdir(), 'ficus-prebuilt-server-empty-'))
     const calls: string[][] = []
     // Record the build spawn and reject its exit so the fallthrough is provable
-    // without depending on the real k8s-sandbox source / bun-pty lib being
+    // without depending on the real sandbox-server source / bun-pty lib being
     // present in this checkout.
     const recordingSpawn = ((cmd: string[]) => {
       calls.push(cmd)

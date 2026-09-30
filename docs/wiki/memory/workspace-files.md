@@ -109,7 +109,7 @@ The sandbox reads `FICUS_PASSWORD` from the environment or `/etc/tau/password` (
 
 ## Implementation
 
-- Watcher: `packages/k8s-sandbox/src/services/watcher.ts`
+- Watcher: `packages/sandbox-server/src/services/watcher.ts`
 - Source: `apps/core/src/services/memory/sources/WorkspaceFileSource.ts`
 - Core endpoint: `apps/core/src/routes/memory.ts` (`POST /api/memory/:squadId/workspace-files`)
 - Watch setup: `apps/core/src/services/sandbox/ensure.ts` (`configureWorkspaceWatch`)

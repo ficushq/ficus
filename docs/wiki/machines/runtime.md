@@ -2,7 +2,7 @@
 
 The `vm` runtime runs each sandbox as a **box**: a dedicated Unix user
 (`box_<hash>`) on a registered **machine** (a provider VM or a BYO-SSH host),
-serving the same `packages/k8s-sandbox` sandbox-server the k8s runtime uses —
+serving the same `packages/sandbox-server` sandbox-server the k8s runtime uses —
 only reached over an SSH tunnel instead of cluster DNS. To callers (routes,
 tools, `ensure.ts`) it is behaviourally interchangeable with the k8s and docker
 runtimes: it implements the same `ISandboxManager` contract via
@@ -340,7 +340,7 @@ k8s **logical** container roots — `/private`, `/workspace/<squadId>`,
 `/memory[/<squadId>]`. In a k8s pod those are real mount points; on a box they
 are literal, root-owned machine paths the box user cannot touch. So the
 **sandbox-server rebases** them onto the box's physical HOME layout, transparent
-to Core's tools (`packages/k8s-sandbox` `resolvePath` for `/read`/`/write`/`/stat`
+to Core's tools (`packages/sandbox-server` `resolvePath` for `/read`/`/write`/`/stat`
 and the `/bash` `cwd`):
 
 | logical root             | box path (`$FICUS_BOX_HOME` = `~`) | where it's provisioned / synced          |
@@ -1060,7 +1060,7 @@ runs its **own rootless dockerd** instead (spec §5):
   (set only by vm boxes): it never spawns rootful `dockerd` or `chmod 666`s a
   system socket — it only **verifies** the box's own rootless socket answers
   (`docker info`). k8s pods (sysbox) and local docker leave `FICUS_BOX_HOME` unset
-  and are byte-identical to before (`packages/k8s-sandbox/src/docker.ts`).
+  and are byte-identical to before (`packages/sandbox-server/src/docker.ts`).
 - **Known workload gaps** (spec §5): no `--privileged` in the rootful sense,
   ports <1024 need a sysctl, some exotic network modes fail. These are inherent to
   rootless docker; the escalation tiers below cover workloads that truly need more.
@@ -1159,7 +1159,7 @@ paying it per box (design: `docs/history/superpowers/specs/2026-08-21-browser-to
   by the 15-minute context-idle sweep below. Both writes are **non-fatal**
   (self-cleaning on failure) so a pre-browser machine's provisioning is
   unaffected.
-- **Box server pass-through.** `packages/k8s-sandbox/src/server.ts` proxies
+- **Box server pass-through.** `packages/sandbox-server/src/server.ts` proxies
   `/browser/open|click|type|scroll|screenshot|read|console|close` straight to
   the socket with the box's own token — no Playwright dependency in the box
   server, and the socket peer's status/body are forwarded verbatim. If the
@@ -1243,7 +1243,7 @@ box's own `/write` + `/bash`, never root):
 - **Role split.** Agent (light) boxes get the LIGHT set (node/python + ripgrep/fd/
   tree/less/gh/tmux/procps, mirroring the Dockerfile `agent` stage's global nix
   profile); squad + system-manager boxes get the HEAVIER set (adds bun/jq/gnumake/
-  gcc/diffutils/patch/perl, mirroring `packages/k8s-sandbox/sandbox/devbox.json`).
+  gcc/diffutils/patch/perl, mirroring `packages/sandbox-server/sandbox/devbox.json`).
 - **Hash marker (no per-ensure tax).** The intended `devbox.json` content is
   hashed; after a successful install the hash is recorded in `~/.tau/devbox/.seeded`.
   A later ensure whose content hashes to the same marker SKIPS the slow install

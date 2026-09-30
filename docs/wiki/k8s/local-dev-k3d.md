@@ -114,7 +114,7 @@ For local dev, pods run with `securityContext: { privileged: true }` when `IS_LO
 
 Running `devbox shellenv` on every bash command corrupts the container filesystem in privileged k3d pods — specifically, `/usr/bin` disappears after the first or second invocation. The exact mechanism involves Nix store operations interacting badly with overlayfs in privileged containers.
 
-**Solution**: The sandbox server captures `devbox shellenv --init-hook` output once when `/devbox-ready` is signaled, caches it in memory, and inlines the cached exports into each bash command's preamble. See `packages/k8s-sandbox/src/services/devbox-env.ts`.
+**Solution**: The sandbox server captures `devbox shellenv --init-hook` output once when `/devbox-ready` is signaled, caches it in memory, and inlines the cached exports into each bash command's preamble. See `packages/sandbox-server/src/services/devbox-env.ts`.
 
 This doesn't occur on a sysbox-backed cluster, which provides proper filesystem isolation.
 
@@ -172,7 +172,7 @@ FICUS_K8S_RUNTIME_CLASS=
 
 CLI-only changes do not require `k3d:import`: build the CLI with `bun run build:cli`, then recreate sandbox pods if they need the refreshed `/usr/local/bin/ficus` mount.
 
-After changing code in `packages/k8s-sandbox/`:
+After changing code in `packages/sandbox-server/`:
 
 ```bash
 # Build and import in one step
@@ -260,7 +260,7 @@ k3d caches images. If `bun run k3d:import` doesn't seem to pick up changes:
 
 ```bash
 # Force no-cache rebuild
-docker build --no-cache -t tau-sandbox:latest -f packages/k8s-sandbox/Dockerfile .
+docker build --no-cache -t tau-sandbox:latest -f packages/sandbox-server/Dockerfile .
 bun run k3d:import
 bun run k3d:kill
 ```

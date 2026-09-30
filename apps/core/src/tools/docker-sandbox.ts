@@ -1,5 +1,5 @@
 import { consultantSandboxSquadId } from '../services/sandbox/consultant-sandbox'
-import { resolveAgentBashCwd } from './k8s-sandbox'
+import { resolveAgentBashCwd } from './sandbox-tools'
 /**
  * Docker Sandbox Tools
  *
@@ -15,7 +15,7 @@ import { resolveWorkspaceLayout } from '../services/sandbox/workspace-layout'
 import type { SandboxedToolWithKey } from '../services/sandbox/types'
 import { getSandboxManager } from '../services/sandbox'
 import type { DockerSandboxManager } from '../services/sandbox/docker/manager'
-import { createK8sSandboxedBashTool, enforceAbsolutePaths } from './k8s-sandbox'
+import { createK8sSandboxedBashTool, enforceAbsolutePaths } from './sandbox-tools'
 import { writeDockerFile } from './docker-tool-boundary'
 import { detectReadImageMimeType, IMAGE_SNIFF_BYTES } from './read-image-mime'
 

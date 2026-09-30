@@ -16,7 +16,7 @@ import type {
   BrowserOpenResult,
   BrowserReadResult,
   BrowserScreenshotResult,
-} from './k8s/http-client'
+} from './client/http-client'
 
 export interface BrowserBackend {
   browserOpen(runId: string, url: string): Promise<BrowserOpenResult>

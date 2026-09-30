@@ -1,5 +1,5 @@
 {
-  "name": "@ficus/k8s-sandbox",
+  "name": "@ficus/sandbox-server",
   "version": "0.2.0",
   "license": "AGPL-3.0-only",
   "type": "module",

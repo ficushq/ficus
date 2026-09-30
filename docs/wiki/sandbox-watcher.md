@@ -133,7 +133,7 @@ Triggers a full re-scan and reconcile without restarting the chokidar watcher. U
 
 | File                                                           | Role                                                              |
 | -------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `packages/k8s-sandbox/src/services/watcher.ts`                 | `WorkspaceWatcher` class — scanning, watching, sending            |
+| `packages/sandbox-server/src/services/watcher.ts`              | `WorkspaceWatcher` class — scanning, watching, sending            |
 | `apps/core/src/services/sandbox/ensure.ts`                     | Calls `POST /watch` during sandbox setup (host: `configureWatch`) |
 | `apps/core/src/routes/memory.ts`                               | Core endpoint receiving file content from the sandbox             |
 | `apps/core/src/services/memory/workspace-files.ts`             | Shared ingest service (HTTP route + host watcher sink)            |

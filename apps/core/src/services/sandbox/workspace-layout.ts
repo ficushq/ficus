@@ -66,7 +66,7 @@ export function containerWorkspaceLayout(ctx: WorkspaceLayoutContext = {}): Work
  *   `~/memory`.
  * - Neither id known: the box home cannot be derived; falls back to the
  *   container literals (which the box sandbox-server rebases onto the box
- *   HOME for file ops — see packages/k8s-sandbox/src/paths.ts). Call sites
+ *   HOME for file ops — see packages/sandbox-server/src/paths.ts). Call sites
  *   should pass ids so agent-visible paths are box-native.
  */
 export function vmWorkspaceLayout(ctx: WorkspaceLayoutContext = {}): WorkspaceLayout {

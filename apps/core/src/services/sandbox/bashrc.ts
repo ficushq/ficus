@@ -8,7 +8,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import vmDevboxRouting from '../../../../../packages/k8s-sandbox/src/services/devbox-routing.sh' with { type: 'text' }
+import vmDevboxRouting from '../../../../../packages/sandbox-server/src/services/devbox-routing.sh' with { type: 'text' }
 
 /**
  * Generate .tau/.bashrc content for sandbox terminal sessions.

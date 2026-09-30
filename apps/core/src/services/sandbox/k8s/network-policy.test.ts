@@ -29,7 +29,7 @@ describe('K8s sandbox GitHub SSH egress', () => {
   })
 
   test('sandbox images configure github.com SSH remotes to use GitHub SSH over port 443', () => {
-    const configPath = join(repoRoot, 'packages/k8s-sandbox/sandbox/ssh_config.d/99-github-ssh-over-443.conf')
+    const configPath = join(repoRoot, 'packages/sandbox-server/sandbox/ssh_config.d/99-github-ssh-over-443.conf')
     const config = readFileSync(configPath, 'utf8')
 
     expect(config).toContain('Host github.com')
@@ -39,7 +39,7 @@ describe('K8s sandbox GitHub SSH egress', () => {
 
     // The ssh config is COPYed in the shared `base` stage of the multi-stage
     // Dockerfile, which both the agent and squad targets inherit via FROM base.
-    const k8sDockerfile = readFileSync(join(repoRoot, 'packages/k8s-sandbox/Dockerfile'), 'utf8')
+    const k8sDockerfile = readFileSync(join(repoRoot, 'packages/sandbox-server/Dockerfile'), 'utf8')
     expect(k8sDockerfile).toContain('99-github-ssh-over-443.conf')
 
     const dockerSandboxConfig = readFileSync(
@@ -53,7 +53,7 @@ describe('K8s sandbox GitHub SSH egress', () => {
   })
 
   test('sandbox image does not bundle ficus cli', () => {
-    const dockerfile = readFileSync(join(repoRoot, 'packages/k8s-sandbox/Dockerfile'), 'utf8')
+    const dockerfile = readFileSync(join(repoRoot, 'packages/sandbox-server/Dockerfile'), 'utf8')
 
     expect(dockerfile).not.toContain('/opt/tau-cli')
     expect(dockerfile).not.toContain('apps/cli/src')

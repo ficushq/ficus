@@ -14,7 +14,7 @@ import {
   type SandboxRuntime,
   type ManagedToolchainRequest,
 } from '../types'
-import { SandboxClient, type BashResponse } from './http-client'
+import { SandboxClient, type BashResponse } from '../client/http-client'
 import { HttpPtyWrapper } from './pty-wrapper'
 import { K8sPodManager } from './pod-manager'
 import { reconcilableSpecHash, resolveSandboxApiUrl, type SquadSandboxConfig } from './pod-spec'

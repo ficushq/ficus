@@ -10,7 +10,7 @@ import {
   createK8sSandboxedReadTool,
   resolveAgentBashCwd,
   resolveSquadFileRoute,
-} from './k8s-sandbox'
+} from './sandbox-tools'
 import { CONFIG_DIR, AGENT_DIR, SKILLS_DIR } from '../lib/paths'
 import { MATERIALIZED_SKILLS_DIR, getSandboxSkillsDir } from '../services/agent/skill-materializer'
 import { join } from 'path'
@@ -25,7 +25,7 @@ import {
   SandboxHttpError,
   type BashResponse,
   type ClientReadableStream,
-} from '../services/sandbox/k8s/http-client'
+} from '../services/sandbox/client/http-client'
 import { boxUnixUser } from '../services/machines/box-paths'
 import {
   COMMAND_REFUSED_FOR_RESTART,
@@ -562,7 +562,7 @@ describe('complete remote read', () => {
 // SandboxClient. The tools address k8s LOGICAL container roots (/workspace/<squadId>,
 // /private, /memory) — never box-native paths — so a box on a shared machine only
 // works because the sandbox-server REBASES those logical roots onto the box HOME
-// (packages/k8s-sandbox resolvePath + bash cwd; proven in that package's
+// (packages/sandbox-server resolvePath + bash cwd; proven in that package's
 // paths.test.ts). These tests lock the vm-side half of that contract: the tools
 // send the logical path through UNCHANGED (Read/Bash below; Write is symmetric —
 // createHttpWriteOperations forwards the same absolute path to client.write, see
@@ -2064,7 +2064,7 @@ describe('verified edit HTTP commit', () => {
 
 describe('VM idempotent file transport recovery', () => {
   test('read retries on the recovered client while deterministic write resends identical bytes', async () => {
-    const reset = new (await import('../services/sandbox/k8s/http-client')).SandboxTransportError(
+    const reset = new (await import('../services/sandbox/client/http-client')).SandboxTransportError(
       'connection_reset',
       'connect',
       new Error('reset')

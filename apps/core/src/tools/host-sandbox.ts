@@ -22,7 +22,7 @@ import type { SandboxedToolWithKey } from '../services/sandbox/types'
 import { resolveContainerWorkRoot } from '../services/sandbox/workspace-layout'
 import { agentIdFromSandboxId, buildHostCommandEnv, buildHostPreamble } from '../services/sandbox/host/env'
 import { createVerifiedEditTool, type VerifiedEditOperations } from './verified-edit'
-import { enforceAbsolutePaths, resolveAgentBashCwd } from './k8s-sandbox'
+import { enforceAbsolutePaths, resolveAgentBashCwd } from './sandbox-tools'
 import {
   BASH_DEFAULT_TIMEOUT_SECONDS,
   BASH_MAX_TIMEOUT_SECONDS,

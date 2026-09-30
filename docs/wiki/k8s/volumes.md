@@ -74,7 +74,7 @@ volumes:
 
 - **Workspace**: read-write, contains code, devbox.json, .tau/ directory
 - **Memory**: read-only, agent memory files (map.md, context.md)
-- **SSH source**: shared mount of the host SSH key dir; the entrypoint mirrors it into a container-private `/root/.ssh` with strict perms (see `packages/k8s-sandbox/sandbox/entrypoint.sh`)
+- **SSH source**: shared mount of the host SSH key dir; the entrypoint mirrors it into a container-private `/root/.ssh` with strict perms (see `packages/sandbox-server/sandbox/entrypoint.sh`)
 
 ## Key Decisions
 
@@ -88,6 +88,6 @@ volumes:
 
 - `ops/src/tau/client.ts` — Pulumi: access point, PVs, PVCs
 - `ops/src/tau/efs.ts` — Pulumi: EFS filesystem, security group, CSI driver
-- `apps/core/src/services/k8s-sandbox/pod-manager.ts` — sandbox pod spec with volume mounts
+- `apps/core/src/services/sandbox/k8s/pod-manager.ts` — sandbox pod spec with volume mounts
 - `apps/core/src/lib/utils/home.ts` — `HOME_DIR` resolution
 - `ops/src/tau/k8s/core-deployment.yaml` — core pod volume mounts

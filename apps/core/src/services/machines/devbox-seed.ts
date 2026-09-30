@@ -5,13 +5,13 @@
  * into the box:
  *  - the `agent` stage installed a LIGHT set (node/python + ripgrep/fd/tree/less/
  *    gh/tmux/procps) into the GLOBAL nix profile, on PATH the instant the pod
- *    started (see packages/k8s-sandbox/Dockerfile `agent` stage);
+ *    started (see packages/sandbox-server/Dockerfile `agent` stage);
  *  - the `squad` stage baked a HEAVIER devbox toolchain (adds bun/jq/gnumake/gcc/
- *    diffutils/patch/perl) from packages/k8s-sandbox/sandbox/devbox.json.
+ *    diffutils/patch/perl) from packages/sandbox-server/sandbox/devbox.json.
  *
  * A VM box runs on bare Ubuntu with no such image, so its shells lack the comfort
  * set until we seed one. This module materializes a per-user `devbox` at the
- * box's `FICUS_DEVBOX_DIR` (`~/.tau/devbox`, see packages/k8s-sandbox/src/paths.ts)
+ * box's `FICUS_DEVBOX_DIR` (`~/.tau/devbox`, see packages/sandbox-server/src/paths.ts)
  * and runs `devbox install` — AS THE BOX USER, because the sandbox-server executes
  * every `/write` and `/bash` as that user (never root), and the box user owns
  * `~/.tau`.
@@ -60,7 +60,7 @@
  */
 
 import { createHash } from 'crypto'
-import { SandboxHttpError, type BashResponse, type SandboxClient } from '../sandbox/k8s/http-client'
+import { SandboxHttpError, type BashResponse, type SandboxClient } from '../sandbox/client/http-client'
 import { DevboxLockCache } from '../../entities/DevboxLockCache'
 import { createLogger } from '../../lib/infra/logger'
 import { boxUnixUser } from './box-manager'
@@ -71,16 +71,16 @@ const log = createLogger('devbox-seed')
 /** Role of a box, mirroring `EnsureBoxOpts['role']` / pod-spec's `sandboxType`. */
 export type SeedBoxRole = 'squad' | 'agent' | 'system-manager'
 
-/** devbox.json schema pin, matching the k8s-sandbox baked templates. */
+/** devbox.json schema pin, matching the sandbox-server baked templates. */
 const DEVBOX_SCHEMA = 'https://raw.githubusercontent.com/jetify-com/devbox/0.14.0/.schema/devbox.schema.json'
 
 /**
  * gh is pinned directly to Nixpkgs (2.100.0) because the Jetify version index
  * lags the 2.99.0 minimum for native attachments. Keep the ref in sync with
- * packages/k8s-sandbox/Dockerfile and sandbox/devbox.json.
+ * packages/sandbox-server/Dockerfile and sandbox/devbox.json.
  *
  * LIGHT comfort set — mirrors the k8s `agent` stage's global nix profile install
- * (packages/k8s-sandbox/Dockerfile). Kept in lockstep with that stage; if the
+ * (packages/sandbox-server/Dockerfile). Kept in lockstep with that stage; if the
  * Dockerfile's agent comfort set changes, update this list (and the test).
  */
 export const AGENT_COMFORT_PACKAGES: readonly string[] = [
@@ -104,7 +104,7 @@ export const AGENT_COMFORT_PACKAGES: readonly string[] = [
 const BUN_PACKAGE = 'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun'
 
 /**
- * HEAVIER comfort set — mirrors packages/k8s-sandbox/sandbox/devbox.json (the
+ * HEAVIER comfort set — mirrors packages/sandbox-server/sandbox/devbox.json (the
  * `squad` stage's baked toolchain). squad AND system-manager boxes run the heavy
  * runtime, so both get this set (agent boxes get the light one above).
  */
@@ -378,7 +378,7 @@ const REALIZE_MARKER = 'Installing the following packages to the nix store'
  * sends an explicit exit code on every path (including timeout/spawn-failure),
  * so a missing code means the stream was truncated or the server regressed —
  * defaulting it to 0 would silently mark a failed install as done. See
- * packages/k8s-sandbox/src/services/bash.ts.
+ * packages/sandbox-server/src/services/bash.ts.
  */
 function runDevboxInstall(
   client: SandboxClient,

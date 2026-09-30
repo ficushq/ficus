@@ -50,7 +50,7 @@ import {
   SandboxTransportError,
   classifySandboxTransportError,
   type BashResponse,
-} from '../k8s/http-client'
+} from '../client/http-client'
 import { HttpPtyWrapper } from '../k8s/pty-wrapper'
 import { DEFAULT_IDLE_TIMEOUT_MS } from '../k8s/constants'
 import { vmBoxAlwaysOnDefault } from './idle'
