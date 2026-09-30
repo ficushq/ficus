@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+import { LEGACY_HOME_DIR_NAME, LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
 import { launchdDefinition, launchdNames, launchdSupervisor, nativeLogPath } from './launchd'
 import type { SupervisorContext } from './supervisor'
 
@@ -26,21 +26,34 @@ describe('launchdDefinition', () => {
   it('renders safe worker arguments, environment, lifecycle, ownership, and one private log target', () => {
     const names = launchdNames(context, 'worker')
     expect(names).toEqual({
-      process: 'tau-smoke-worker',
-      label: 'ai.hiretau.tau-smoke-worker',
-      plist: '/Users/me/Library/LaunchAgents/ai.hiretau.tau-smoke-worker.plist',
-      log: '/Users/me/.ficus/logs/tau-smoke-worker.log',
+      process: 'ficus-smoke-worker',
+      label: 'sh.ficus.ficus-smoke-worker',
+      plist: '/Users/me/Library/LaunchAgents/sh.ficus.ficus-smoke-worker.plist',
+      log: '/Users/me/.ficus/logs/ficus-smoke-worker.log',
     })
     const xml = launchdDefinition(context, 'worker')
-    expect(xml).toContain('<string>ai.hiretau.tau-smoke-worker</string>')
+    expect(xml).toContain('<string>sh.ficus.ficus-smoke-worker</string>')
     expect(xml).toContain('<string>/Users/me/My Bun/bin/bun</string>')
     expect(xml).toContain('<string>apps/core/dist/worker.js</string>')
     expect(xml).toContain('/tmp/Ficus &amp; &lt;repo&gt; “one”')
     expect(xml).toContain('/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib')
-    expect(xml.match(/\/Users\/me\/\.ficus\/logs\/tau-smoke-worker\.log/g)?.length).toBe(2)
+    expect(xml.match(/\/Users\/me\/\.ficus\/logs\/ficus-smoke-worker\.log/g)?.length).toBe(2)
     for (const key of ['RunAtLoad', 'KeepAlive', 'ThrottleInterval', 'ProcessType', 'Umask'])
       expect(xml).toContain(`<key>${key}</key>`)
     expect(xml).not.toContain('FORCE_COLOR')
+  })
+
+  it('keeps the pre-rename label and process names for an identity-1 instance', () => {
+    const L = LEGACY_LOCAL_INSTANCE
+    expect(launchdNames({ ...context, identity: 1 }, 'api')).toEqual({
+      process: `${L}-smoke-api`,
+      label: `${LEGACY_LAUNCHD_PREFIX}.${L}-smoke-api`,
+      plist: `/Users/me/Library/LaunchAgents/${LEGACY_LAUNCHD_PREFIX}.${L}-smoke-api.plist`,
+      log: `/Users/me/.ficus/logs/${L}-smoke-api.log`,
+    })
+    expect(launchdNames({ ...context, label: L, identity: 1 }, 'worker').label).toBe(
+      `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.worker}`
+    )
   })
 
   it('rejects control characters in rendered fields', () => {
@@ -86,8 +99,8 @@ describe('launchd lifecycle', () => {
     try {
       await launchdSupervisor.start(ctx)
       const bootstraps = calls.filter((call) => call.includes('launchctl bootstrap'))
-      expect(bootstraps[0]).toEndWith('ai.hiretau.tau-smoke-worker.plist')
-      expect(bootstraps[1]).toEndWith('ai.hiretau.tau-smoke-api.plist')
+      expect(bootstraps[0]).toEndWith('sh.ficus.ficus-smoke-worker.plist')
+      expect(bootstraps[1]).toEndWith('sh.ficus.ficus-smoke-api.plist')
       expect(calls.filter((call) => call.startsWith('plutil -lint'))).toHaveLength(2)
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -240,6 +253,35 @@ describe('launchd loaded-job provenance', () => {
 
     await launchdSupervisor.restart(ctx)
     expect(calls.filter((call) => call.includes('kickstart'))).toHaveLength(2)
+  })
+
+  it('verifies a job loaded before the CLI home moved: its log path reaches the same file through the link', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-launchd-moved-')))
+    mkdirSync(join(home, '.ficus', 'logs'), { recursive: true })
+    symlinkSync('.ficus', join(home, LEGACY_HOME_DIR_NAME))
+    const calls: string[] = []
+    const ctx: SupervisorContext = {
+      ...context,
+      home,
+      runner: async (command) => {
+        calls.push(command.join(' '))
+        if (command[0] === 'launchctl' && command[1] === 'print' && command[2] === 'gui/501')
+          return { code: 0, stdout: '', stderr: '' }
+        if (command[0] === 'launchctl' && command[1] === 'print') {
+          const component = command[2]?.endsWith('-worker') ? 'worker' : 'api'
+          const log = join(home, LEGACY_HOME_DIR_NAME, 'logs', launchdNames(ctx, component).process + '.log')
+          return { code: 0, stdout: printOf(ctx.bunPath, log), stderr: '' }
+        }
+        return { code: 0, stdout: '', stderr: '' }
+      },
+    }
+    try {
+      expect(launchdNames(ctx, 'api').log).toBe(join(home, '.ficus', 'logs', 'ficus-smoke-api.log'))
+      await launchdSupervisor.restart(ctx)
+      expect(calls.filter((call) => call.includes('kickstart'))).toHaveLength(2)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it.each(['start', 'stop', 'restart', 'uninstall'] as const)(

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
 import type { SupervisorContext } from './supervisor'
 import { systemdUnit, systemdUserNames } from './systemd-user'
 
@@ -21,16 +22,17 @@ const context: SupervisorContext = {
 describe('systemdUnit', () => {
   it('renders a safe user unit with file logs and no service user or dependencies', () => {
     expect(systemdUserNames(context, 'api')).toEqual({
-      process: 'tau-smoke-api',
-      unit: 'tau-smoke-api.service',
-      path: '/home/me/.config/systemd/user/tau-smoke-api.service',
-      log: '/home/me/.ficus/logs/tau-smoke-api.log',
+      process: 'ficus-smoke-api',
+      unit: 'ficus-smoke-api.service',
+      path: '/home/me/.config/systemd/user/ficus-smoke-api.service',
+      log: '/home/me/.ficus/logs/ficus-smoke-api.log',
     })
+    expect(systemdUserNames({ ...context, identity: 1 }, 'api').unit).toBe(`${LEGACY_LOCAL_INSTANCE}-smoke-api.service`)
     const unit = systemdUnit(context, 'api')
     expect(unit).toContain('WorkingDirectory=/home/me/Ficus\\x20repo%%\\x20“x”')
     expect(unit).toContain('ExecStart="/home/me/bin/bun" "run" "apps/core/dist/index.js"')
     expect(unit).toContain('Environment="PATH=/home/me/a\\"b:/usr/bin"')
-    expect(unit).toContain('StandardOutput=append:"/home/me/.ficus/logs/tau-smoke-api.log"')
+    expect(unit).toContain('StandardOutput=append:"/home/me/.ficus/logs/ficus-smoke-api.log"')
     expect(unit).toContain('UMask=0077')
     expect(unit).not.toMatch(/^User=/m)
     expect(unit).not.toContain('network-online.target')
@@ -189,7 +191,7 @@ describe('systemd staging filenames', () => {
 describe('native status vocabulary', () => {
   it('reports online for an active running unit and preserves other states verbatim', async () => {
     const show =
-      'LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=42\nFragmentPath=/home/me/.config/systemd/user/tau-smoke-api.service\n'
+      'LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=42\nFragmentPath=/home/me/.config/systemd/user/ficus-smoke-api.service\n'
     const calls: { cmd: string; stdout: string }[] = []
     const ctx: SupervisorContext = {
       ...context,
@@ -199,7 +201,7 @@ describe('native status vocabulary', () => {
       },
     }
     const rows = await systemdUserSupervisor.status(ctx)
-    expect(rows.find((row) => row.name === 'tau-smoke-api')?.status).toBe('online')
+    expect(rows.find((row) => row.name === 'ficus-smoke-api')?.status).toBe('online')
     expect(rows.every((row) => row.pid === 42 || row.status === 'not registered')).toBe(true)
   })
 

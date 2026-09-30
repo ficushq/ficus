@@ -67,6 +67,7 @@ function make(
     prompter: { select: async () => 'host', confirm: async () => true },
     sleep: async () => {},
     which: (cmd) => (['git', 'bun'].includes(cmd) ? `/usr/bin/${cmd}` : null),
+    renameJournalPath: join(root, 'rename-identity.journal'),
     ...depsOverrides,
   }
   async function run(args: string[]) {
@@ -763,6 +764,88 @@ describe('ficus server', () => {
     }
     await run(['server', 'setup', '--root', root, '--instance', 'smoke', '--runtime', 'host', '--no-start', '--yes'])
     expect(seen[0]).toMatchObject({ instance: 'smoke' })
+  })
+})
+
+describe('ficus server and the ficus identity', () => {
+  it('an identity-2 entry is addressed by the ficus names', async () => {
+    writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/ficus\n')
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        version: 3,
+        default: 'ficus',
+        instances: {
+          ficus: { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
+        },
+      })
+    )
+    const { run, calls } = make({ 'docker inspect': { stdout: 'true\n' } })
+    await run(['server', 'start'])
+    await run(['server', 'stop'])
+    expect(joined(calls)).toEqual([
+      'docker inspect -f {{.State.Running}} postgres-ficus',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'bunx pm2 start ecosystem.config.js --only ficus-api,ficus-worker --update-env',
+      'bunx pm2 stop ficus-api ficus-worker',
+    ])
+    // `use` and friends rewrite the registry without dropping the marker.
+    await run(['server', 'use', 'ficus'])
+    expect(JSON.parse(readFileSync(statePath, 'utf8')).instances.ficus.identity).toBe(2)
+  })
+
+  it('start, restart and update refuse while a rename-identity run is unfinished', async () => {
+    const { run, calls, deps } = make()
+    writeFileSync(
+      deps.renameJournalPath!,
+      JSON.stringify({ op: 'begin', root, supervisor: 'pm2', from: 'x', to: 'y', port: 3000, home: root }) + '\n'
+    )
+    for (const command of ['start', 'restart', 'update']) {
+      ;(outputError as ReturnType<typeof mock>).mockClear()
+      await run(['server', command])
+      const error = (outputError as ReturnType<typeof mock>).mock.calls[0]?.[0] as Error
+      expect(error.message).toContain(`ficus server rename-identity --root ${root}`)
+    }
+    expect(calls).toEqual([])
+  })
+
+  it('rename-identity --dry-run prints the plan for the registered checkout and changes nothing', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-rename-home-')))
+    try {
+      writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://app:pw@db.example.com:5432/app\n')
+      const before = readFileSync(statePath, 'utf8')
+      const { run, calls } = make({}, { env: { HOME: home } })
+      await run(['server', 'rename-identity', '--root', root, '--dry-run'])
+      expect(outputError).not.toHaveBeenCalled()
+      expect(output).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'dry-run', from: expect.objectContaining({ label: 'tau' }) }),
+        expect.stringContaining('ficus')
+      )
+      expect(readFileSync(statePath, 'utf8')).toBe(before)
+      expect(calls).toEqual([])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('names the ficus identity in its help', () => {
+    const program = new Command()
+    registerServerCommands(program, make().deps)
+    const server = program.commands.find((c) => c.name() === 'server')!
+    const sub = (name: string) => server.commands.find((c) => c.name() === name)!
+    expect(sub('start').description()).toBe('Start ficus-api and ficus-worker under the recorded supervisor')
+    expect(sub('stop').description()).toBe('Stop ficus-api and ficus-worker')
+    expect(sub('restart').description()).toBe('Restart ficus-api and ficus-worker')
+    expect(sub('setup').helpInformation()).toContain('(default ficus)')
+    let help = ''
+    sub('install').configureOutput({ writeOut: (chunk) => (help += chunk) })
+    sub('install').outputHelp()
+    expect(help).toContain('ficus-lab-api/ficus-lab-worker')
+    expect(help).toContain('postgres-ficus-lab')
+    expect(help).toContain('~/.ficus-lab')
+    expect(sub('rename-identity').helpInformation()).toContain('--undo')
   })
 })
 

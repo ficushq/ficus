@@ -1,0 +1,610 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'fs'
+import { tmpdir } from 'os'
+import { basename, join } from 'path'
+import { LEGACY_HOME_DIR_NAME, LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
+import { cliHome } from './home-move'
+import { launchdDefinition, launchdNames as launchdNamesOf } from './launchd'
+import type { Runner, RunResult } from './runner'
+import type { LocalServerRegistry } from './state'
+import type { SupervisorContext } from './supervisor'
+import {
+  installSupervisor,
+  RENAME_JOURNAL,
+  readRenameJournal,
+  relabelInstance,
+  removeSupervisorDefinitions,
+  renameIdentity,
+  stopSupervisor,
+  supervisorIdentity,
+  type RenameDeps,
+  type PostgresOps,
+} from './supervisor-rename'
+import { systemdUserNames, systemdUnit } from './systemd-user'
+import type { LocalSupervisor } from './types'
+
+const L = LEGACY_LOCAL_INSTANCE
+const EXAMPLE = readFileSync(join(__dirname, '../../../../ecosystem.config.example.js'), 'utf8')
+/** The ecosystem file a pre-rename setup generated: the example with the legacy app names. */
+const LEGACY_ECOSYSTEM = EXAMPLE.replaceAll('ficus-api', LEGACY_UNITS.api).replaceAll(
+  'ficus-worker',
+  LEGACY_UNITS.worker
+)
+const UID = 501
+const BUN = '/usr/bin/bun'
+
+let tmp: string
+beforeEach(() => {
+  tmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-rename-identity-')))
+})
+afterEach(() => {
+  rmSync(tmp, { recursive: true, force: true })
+})
+
+interface World {
+  home: string
+  root: string
+  statePath: string
+  envText: string
+  registryText: string
+  calls: string[][]
+  /** Commands the fake answers with a failure while `fail(joined)` says so. */
+  fail: { match?: (joined: string) => boolean }
+  pm2: Set<string>
+  loaded: Set<string>
+  deps: RenameDeps
+  journal(): string
+  printed: string[]
+}
+
+/**
+ * A legacy-identity install of the default instance: `~/<legacy>` a real CLI home holding the
+ * registry and logs, a checkout whose .env and ecosystem file name the legacy apps, and fakes
+ * for launchctl, systemctl --user, pm2 and the rebase-home program that keep state.
+ */
+function world(
+  supervisor: LocalSupervisor,
+  opts: {
+    label?: string
+    envExtra?: string
+    postgres?: Partial<PostgresOps>
+    fetch?: typeof fetch
+  } = {}
+): World {
+  const label = opts.label ?? L
+  const home = join(tmp, 'home')
+  const root = join(tmp, 'checkout')
+  const legacyHome = join(home, LEGACY_HOME_DIR_NAME)
+  mkdirSync(join(legacyHome, 'cli'), { recursive: true })
+  mkdirSync(join(legacyHome, 'logs'), { recursive: true })
+  mkdirSync(join(legacyHome, 'sessions'), { recursive: true })
+  mkdirSync(join(root, '.git'), { recursive: true })
+  mkdirSync(join(root, 'apps/core/dist'), { recursive: true })
+  mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
+  writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib'), '')
+  writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so'), '')
+  writeFileSync(join(root, 'apps/core/dist/rebase-home.js'), '')
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
+  writeFileSync(join(root, 'ecosystem.config.example.js'), EXAMPLE)
+  const legacyNames = label === L ? { ...LEGACY_UNITS } : { api: `${L}-${label}-api`, worker: `${L}-${label}-worker` }
+  if (supervisor === 'pm2') writeFileSync(join(root, 'ecosystem.config.js'), LEGACY_ECOSYSTEM)
+  const envText =
+    `PORT=3900\n` +
+    `DATABASE_URL=postgres://app:secret@db.example.com:5432/app\n` +
+    `FICUS_INSTANCE=${label}\n` +
+    (supervisor === 'pm2'
+      ? `FICUS_SYSTEM_LOG_PROVIDER=pm2\nFICUS_PM2_API_NAME=${legacyNames.api}\nFICUS_PM2_WORKER_NAME=${legacyNames.worker}\n`
+      : `FICUS_SYSTEM_LOG_PROVIDER=file\nFICUS_LOG_FILE_API=${join(legacyHome, 'logs', legacyNames.api + '.log')}\nFICUS_LOG_FILE_WORKER=${join(legacyHome, 'logs', legacyNames.worker + '.log')}\n`) +
+    (opts.envExtra ?? '')
+  writeFileSync(join(root, '.env'), envText)
+  const statePath = join(legacyHome, 'cli', 'local-server.json')
+  const registry = {
+    version: 3,
+    default: label,
+    instances: { [label]: { root, port: 3900, supervisor, createdAt: 'c', updatedAt: 'u' } },
+  }
+  const registryText = JSON.stringify(registry, null, 2) + '\n'
+  writeFileSync(statePath, registryText)
+
+  const calls: string[][] = []
+  const fail: World['fail'] = {}
+  const pm2 = new Set<string>(supervisor === 'pm2' ? [legacyNames.api, legacyNames.worker] : [])
+  const loaded = new Set<string>()
+  const printed: string[] = []
+  const contexts: SupervisorContext[] = []
+  const ok = (stdout = ''): RunResult => ({ code: 0, stdout, stderr: '' })
+  const runner: Runner = async (command) => {
+    calls.push(command)
+    const joined = command.join(' ')
+    if (fail.match?.(joined)) return { code: 1, stdout: '', stderr: 'injected failure' }
+    if (command[0] === 'bunx' && command[1] === 'pm2') {
+      const [verb, ...rest] = command.slice(2)
+      if (verb === 'jlist')
+        return ok(
+          JSON.stringify([...pm2].map((name) => ({ name, pid: 1, pm2_env: { status: 'online', pm_cwd: root } })))
+        )
+      if (verb === 'delete') {
+        for (const name of rest) {
+          if (!pm2.has(name)) return { code: 1, stdout: '', stderr: `Process or Namespace ${name} not found` }
+          pm2.delete(name)
+        }
+        return ok()
+      }
+      if (verb === 'start') {
+        const only = rest[rest.indexOf('--only') + 1].split(',')
+        const eco = readFileSync(join(root, 'ecosystem.config.js'), 'utf8')
+        for (const name of only) {
+          if (!eco.includes(`name: '${name}',`)) return { code: 1, stdout: '', stderr: `no app ${name}` }
+          pm2.add(name)
+        }
+        return ok()
+      }
+      return ok()
+    }
+    if (command[0] === 'launchctl') {
+      const [verb, target, plist] = command.slice(1)
+      if (verb === 'print' && target === `gui/${UID}`) return ok()
+      if (verb === 'print') {
+        const label = target.split('/')[2]
+        if (!loaded.has(label)) return { code: 113, stdout: '', stderr: 'not found' }
+        const ctx = contexts.find((c) => launchdLabelOf(c, label))
+        const log = ctx ? launchdLog(ctx, label) : ''
+        return ok(`program = ${BUN}\n\tworking directory = ${root}\n\tstderr path = ${log}\n\tstate = running\n`)
+      }
+      if (verb === 'bootout') {
+        loaded.delete(target.split('/')[2])
+        return ok()
+      }
+      if (verb === 'bootstrap') {
+        loaded.add(basename(plist).replace(/\.plist$/, ''))
+        return ok()
+      }
+      return ok()
+    }
+    if (command[0] === 'bun' && command[1]?.endsWith('rebase-home.js')) return ok('REBASE_HOME sessions.cwd=3\n')
+    return ok()
+  }
+  // The loaded-job provenance the fake launchctl prints must match what the adapter derives.
+  const launchdLabelOf = (ctx: SupervisorContext, label: string) =>
+    ['api', 'worker'].some((c) => launchdNamesOf(ctx, c as 'api' | 'worker').label === label)
+  const launchdLog = (ctx: SupervisorContext, label: string) =>
+    (['api', 'worker'] as const).map((c) => launchdNamesOf(ctx, c)).find((n) => n.label === label)!.log
+  const deps: RenameDeps = {
+    runner,
+    statePath,
+    journalPath: () => join(cliHome({ homedir: home }), RENAME_JOURNAL),
+    home,
+    fetch: opts.fetch ?? (async () => new Response('ok', { status: 200 })),
+    sleep: async () => {},
+    now: () => new Date('2026-09-30T12:00:00Z'),
+    log: (line) => printed.push(line),
+    postgres: opts.postgres,
+    supervisorContext: (id, dir) => {
+      const ctx: SupervisorContext = {
+        supervisor: id.supervisor,
+        root: dir,
+        label: id.label,
+        identity: id.identity,
+        home,
+        bunPath: BUN,
+        pathEnv: '/usr/bin',
+        platform: supervisor === 'systemd-user' ? 'linux' : 'darwin',
+        arch: 'arm64',
+        uid: UID,
+        username: 'me',
+        runner,
+        which: () => null,
+        log: () => {},
+      }
+      contexts.push(ctx)
+      return ctx
+    },
+  }
+  return {
+    home,
+    root,
+    statePath,
+    envText,
+    registryText,
+    calls,
+    fail,
+    pm2,
+    loaded,
+    deps,
+    printed,
+    journal: () => join(cliHome({ homedir: home }), RENAME_JOURNAL),
+  }
+}
+
+const joined = (calls: string[][]) => calls.map((c) => c.join(' '))
+
+/** Old plists as the pre-rename CLI wrote them, and their jobs loaded. */
+function installLegacyLaunchd(w: World) {
+  const ctx = w.deps.supervisorContext(supervisorIdentity('launchd', L, 1), w.root)
+  const agents = join(w.home, 'Library', 'LaunchAgents')
+  mkdirSync(agents, { recursive: true })
+  for (const component of ['api', 'worker'] as const) {
+    const names = launchdNamesOf(ctx, component)
+    writeFileSync(names.plist, launchdDefinition(ctx, component))
+    w.loaded.add(names.label)
+  }
+  return agents
+}
+
+describe('relabelInstance', () => {
+  const e = { root: '/r', port: 3000, supervisor: 'pm2' as const, createdAt: 'c', updatedAt: 'u' }
+  it('moves the entry and the default, keeping root, port and supervisor', () => {
+    const registry: LocalServerRegistry = { version: 3, default: L, instances: { [L]: e } }
+    expect(relabelInstance(registry, L, 'ficus')).toEqual({ version: 3, default: 'ficus', instances: { ficus: e } })
+    // The input is not mutated.
+    expect(registry.instances[L]).toEqual(e)
+  })
+  it('leaves another default alone and refuses a label that is taken', () => {
+    const registry: LocalServerRegistry = { version: 3, default: 'lab', instances: { [L]: e, lab: e } }
+    expect(relabelInstance(registry, L, 'ficus').default).toBe('lab')
+    expect(() => relabelInstance(registry, L, 'lab')).toThrow(/lab/)
+    expect(() => relabelInstance(registry, 'missing', 'ficus')).toThrow(/missing/)
+  })
+})
+
+describe('renameIdentity (pm2)', () => {
+  it('moves the default instance to the ficus names, home and registry', async () => {
+    const w = world('pm2')
+    const report = await renameIdentity({ root: w.root }, w.deps)
+
+    // Supervisor: the legacy apps deleted, the ficus apps started from the regenerated file, saved.
+    const pm2Calls = joined(w.calls).filter((c) => c.startsWith('bunx pm2') && !c.endsWith('jlist'))
+    expect(pm2Calls).toEqual([
+      `bunx pm2 delete ${LEGACY_UNITS.api} ${LEGACY_UNITS.worker}`,
+      'bunx pm2 start ecosystem.config.js --only ficus-api,ficus-worker --update-env',
+      'bunx pm2 save',
+    ])
+    expect([...w.pm2].sort()).toEqual(['ficus-api', 'ficus-worker'])
+    expect(readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')).toBe(EXAMPLE)
+
+    // Registry: relabelled, identity 2, version still 3.
+    const written = JSON.parse(readFileSync(w.statePath, 'utf8'))
+    expect(written.version).toBe(3)
+    expect(written.default).toBe('ficus')
+    expect(Object.keys(written.instances)).toEqual(['ficus'])
+    expect(written.instances.ficus).toEqual({
+      root: w.root,
+      port: 3900,
+      supervisor: 'pm2',
+      createdAt: 'c',
+      updatedAt: 'u',
+      identity: 2,
+    })
+
+    // The CLI home moved, with the link left behind, and the stored paths rebased.
+    const legacyHome = join(w.home, LEGACY_HOME_DIR_NAME)
+    expect(lstatSync(join(w.home, '.ficus')).isDirectory()).toBe(true)
+    expect(readlinkSync(legacyHome)).toBe('.ficus')
+    const rebase = w.calls.find((c) => c[0] === 'bun' && c[1].endsWith('rebase-home.js'))
+    expect(rebase).toEqual([
+      'bun',
+      join(w.root, 'apps/core/dist/rebase-home.js'),
+      '--from',
+      legacyHome,
+      '--to',
+      join(w.home, '.ficus'),
+    ])
+
+    // .env: explicit HOME_DIR, the ficus label and app names; everything else untouched; a backup.
+    const env = readFileSync(join(w.root, '.env'), 'utf8')
+    expect(env).toBe(
+      w.envText
+        .replace(`FICUS_INSTANCE=${L}\n`, 'FICUS_INSTANCE=ficus\n')
+        .replace(`FICUS_PM2_API_NAME=${LEGACY_UNITS.api}\n`, 'FICUS_PM2_API_NAME=ficus-api\n')
+        .replace(`FICUS_PM2_WORKER_NAME=${LEGACY_UNITS.worker}\n`, 'FICUS_PM2_WORKER_NAME=ficus-worker\n') +
+        'HOME_DIR=~/.ficus\n'
+    )
+    const backups = readdirSync(w.root).filter((f) => f.startsWith('.env.pre-ficus-rename-'))
+    expect(backups).toEqual(['.env.pre-ficus-rename-20260930T120000Z'])
+    expect(readFileSync(join(w.root, backups[0]), 'utf8')).toBe(w.envText)
+
+    // The run is complete: no active journal (server start is free again), the completed one kept for --undo.
+    expect(existsSync(w.journal())).toBe(false)
+    expect(readRenameJournal(w.journal())).toBeUndefined()
+    expect(existsSync(join(w.home, '.ficus', 'rename-identity.ficus.journal'))).toBe(true)
+    expect(report).toMatchObject({ root: w.root, status: 'renamed', from: { label: L }, to: { label: 'ficus' } })
+  })
+
+  it('dry-run prints the plan and changes nothing', async () => {
+    const w = world('pm2')
+    const eco = readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')
+    const report = await renameIdentity({ root: w.root, dryRun: true }, w.deps)
+    expect(report.status).toBe('dry-run')
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+    expect(readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')).toBe(eco)
+    expect(lstatSync(join(w.home, LEGACY_HOME_DIR_NAME)).isDirectory()).toBe(true)
+    expect(existsSync(join(w.home, '.ficus'))).toBe(false)
+    expect(readdirSync(w.root).some((f) => f.includes('pre-ficus-rename'))).toBe(false)
+    expect(existsSync(w.journal())).toBe(false)
+    // Only reads reached the supervisor; the rebase program never ran.
+    for (const call of joined(w.calls)) expect(call).toMatch(/^bunx pm2 jlist$/)
+    const text = w.printed.join('\n')
+    expect(text).toContain(`pm2 delete ${LEGACY_UNITS.api} ${LEGACY_UNITS.worker}`)
+    expect(text).toContain('ficus-api')
+    expect(text).toContain('Postgres: external')
+    expect(text).toContain('Dry run')
+  })
+
+  it('reports an already renamed instance and changes nothing', async () => {
+    const w = world('pm2')
+    await renameIdentity({ root: w.root }, w.deps)
+    const registry = readFileSync(w.statePath, 'utf8')
+    const env = readFileSync(join(w.root, '.env'), 'utf8')
+    w.calls.length = 0
+    const report = await renameIdentity({ root: w.root }, w.deps)
+    expect(report.status).toBe('already')
+    expect(readFileSync(w.statePath, 'utf8')).toBe(registry)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(env)
+    expect(w.calls).toEqual([])
+  })
+
+  it('--undo after a completed run restores the old names, home, registry and .env', async () => {
+    const w = world('pm2')
+    await renameIdentity({ root: w.root }, w.deps)
+    w.calls.length = 0
+    const report = await renameIdentity({ root: w.root, undo: true }, w.deps)
+    expect(report.status).toBe('undone')
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+    expect(readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')).toBe(LEGACY_ECOSYSTEM)
+    expect(lstatSync(join(w.home, LEGACY_HOME_DIR_NAME)).isDirectory()).toBe(true)
+    expect(existsSync(join(w.home, '.ficus'))).toBe(false)
+    expect([...w.pm2].sort()).toEqual([LEGACY_UNITS.api, LEGACY_UNITS.worker].sort())
+    const pm2Calls = joined(w.calls).filter((c) => c.startsWith('bunx pm2') && !c.endsWith('jlist'))
+    expect(pm2Calls).toEqual([
+      'bunx pm2 delete ficus-api ficus-worker',
+      'bunx pm2 save',
+      `bunx pm2 start ecosystem.config.js --only ${LEGACY_UNITS.api},${LEGACY_UNITS.worker} --update-env`,
+      'bunx pm2 save',
+    ])
+    const rebase = w.calls.find((c) => c[0] === 'bun' && c[1].endsWith('rebase-home.js'))
+    expect(rebase?.slice(2)).toEqual(['--from', join(w.home, '.ficus'), '--to', join(w.home, LEGACY_HOME_DIR_NAME)])
+    expect(existsSync(w.journal())).toBe(false)
+    expect(existsSync(join(w.home, LEGACY_HOME_DIR_NAME, 'rename-identity.ficus.journal'))).toBe(false)
+  })
+
+  it('a failed health check undoes everything and restarts the old apps', async () => {
+    const w = world('pm2', { fetch: async () => new Response('down', { status: 502 }) })
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/health/)
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+    expect(readFileSync(join(w.root, 'ecosystem.config.js'), 'utf8')).toBe(LEGACY_ECOSYSTEM)
+    expect(lstatSync(join(w.home, LEGACY_HOME_DIR_NAME)).isDirectory()).toBe(true)
+    expect([...w.pm2].sort()).toEqual([LEGACY_UNITS.api, LEGACY_UNITS.worker].sort())
+    expect(existsSync(w.journal())).toBe(false)
+  })
+})
+
+describe('renameIdentity (launchd)', () => {
+  it('boots out the legacy jobs, bootstraps the sh.ficus jobs and removes the old plists', async () => {
+    const w = world('launchd')
+    const agents = installLegacyLaunchd(w)
+    const oldPlists = readdirSync(agents)
+    await renameIdentity({ root: w.root }, w.deps)
+    const lines = joined(w.calls)
+    const bootoutApi = lines.indexOf(`launchctl bootout gui/${UID}/${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}`)
+    const bootoutWorker = lines.indexOf(`launchctl bootout gui/${UID}/${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.worker}`)
+    const bootstrapApi = lines.indexOf(`launchctl bootstrap gui/${UID} ${join(agents, 'sh.ficus.ficus-api.plist')}`)
+    expect(bootoutApi).toBeGreaterThan(-1)
+    expect(bootoutWorker).toBeGreaterThan(bootoutApi)
+    expect(bootstrapApi).toBeGreaterThan(bootoutWorker)
+    for (const plist of oldPlists) expect(existsSync(join(agents, plist))).toBe(false)
+    expect(readdirSync(agents).sort()).toEqual(['sh.ficus.ficus-api.plist', 'sh.ficus.ficus-worker.plist'])
+    expect([...w.loaded].sort()).toEqual(['sh.ficus.ficus-api', 'sh.ficus.ficus-worker'])
+    // The new plists log under the moved home; .env's file-log targets follow them.
+    const plist = readFileSync(join(agents, 'sh.ficus.ficus-api.plist'), 'utf8')
+    expect(plist).toContain(join(w.home, '.ficus', 'logs', 'ficus-api.log'))
+    const env = readFileSync(join(w.root, '.env'), 'utf8')
+    expect(env).toContain(`FICUS_LOG_FILE_API=${join(w.home, '.ficus', 'logs', 'ficus-api.log')}\n`)
+    expect(env).toContain(`FICUS_LOG_FILE_WORKER=${join(w.home, '.ficus', 'logs', 'ficus-worker.log')}\n`)
+    expect(JSON.parse(readFileSync(w.statePath, 'utf8')).instances.ficus.identity).toBe(2)
+  })
+
+  it('a failure at step 9 restores the old plists, the .env and the registry, and restarts the old labels', async () => {
+    const w = world('launchd')
+    const agents = installLegacyLaunchd(w)
+    const oldPlists = Object.fromEntries(readdirSync(agents).map((f) => [f, readFileSync(join(agents, f), 'utf8')]))
+    w.fail.match = (line) => line.startsWith('launchctl bootstrap') && line.endsWith('sh.ficus.ficus-api.plist')
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/undone/)
+    // Old plists are back, byte for byte; the new ones are gone.
+    expect(readdirSync(agents).sort()).toEqual(Object.keys(oldPlists).sort())
+    for (const [file, text] of Object.entries(oldPlists)) expect(readFileSync(join(agents, file), 'utf8')).toBe(text)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+    expect(lstatSync(join(w.home, LEGACY_HOME_DIR_NAME)).isDirectory()).toBe(true)
+    expect(existsSync(join(w.home, '.ficus'))).toBe(false)
+    // Restarted under the old labels, after the failure.
+    const lines = joined(w.calls)
+    const failed = lines.findIndex((l) => l.endsWith('sh.ficus.ficus-api.plist') && l.includes('bootstrap'))
+    const restarted = lines.findIndex(
+      (l, i) =>
+        i > failed &&
+        l === `launchctl bootstrap gui/${UID} ${join(agents, `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}.plist`)}`
+    )
+    expect(restarted).toBeGreaterThan(failed)
+    expect([...w.loaded].sort()).toEqual(
+      [`${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}`, `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.worker}`].sort()
+    )
+    // The rebase was reversed, and the journal is gone.
+    const rebases = w.calls.filter((c) => c[0] === 'bun' && c[1].endsWith('rebase-home.js')).map((c) => c.slice(2))
+    expect(rebases.at(-1)).toEqual(['--from', join(w.home, '.ficus'), '--to', join(w.home, LEGACY_HOME_DIR_NAME)])
+    expect(existsSync(w.journal())).toBe(false)
+  })
+
+  it('keeps the journal when the undo itself fails, and the next run finishes the undo first', async () => {
+    const w = world('launchd')
+    const agents = installLegacyLaunchd(w)
+    const legacyApiPlist = join(agents, `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}.plist`)
+    // Step 9 fails, and so does the first attempt to bring the old job back.
+    w.fail.match = (line) => line.startsWith('launchctl bootstrap')
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/journal/)
+    expect(readRenameJournal(w.journal())?.root).toBe(w.root)
+    // While it exists, an interrupted run blocks another rename of this root until it is resolved.
+    w.fail.match = undefined
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/interrupted.*undone/)
+    expect(existsSync(w.journal())).toBe(false)
+    expect(existsSync(legacyApiPlist)).toBe(true)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+    expect(w.loaded.has(`${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}`)).toBe(true)
+  })
+
+  it('undoes a run that crashed after moving the home before doing anything else', async () => {
+    const w = world('launchd')
+    installLegacyLaunchd(w)
+    // What a run killed right after step 3 leaves behind: the old jobs stopped, the home moved.
+    const legacyHome = join(w.home, LEGACY_HOME_DIR_NAME)
+    const ficusHome = join(w.home, '.ficus')
+    const { renameSync, symlinkSync } = await import('fs')
+    renameSync(legacyHome, ficusHome)
+    symlinkSync('.ficus', legacyHome)
+    for (const label of [...w.loaded]) w.loaded.delete(label)
+    writeFileSync(
+      join(ficusHome, RENAME_JOURNAL),
+      [
+        { op: 'begin', root: w.root, supervisor: 'launchd', from: L, to: 'ficus', port: 3900, home: w.home },
+        { op: 'stopped' },
+        { op: 'home-move', home: w.home },
+      ]
+        .map((e) => JSON.stringify(e))
+        .join('\n') + '\n'
+    )
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/interrupted.*undone/)
+    expect(lstatSync(legacyHome).isDirectory()).toBe(true)
+    expect(existsSync(ficusHome)).toBe(false)
+    expect(existsSync(join(legacyHome, RENAME_JOURNAL))).toBe(false)
+    expect(w.loaded.has(`${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}`)).toBe(true)
+    expect(readFileSync(w.statePath, 'utf8')).toBe(w.registryText)
+  })
+})
+
+describe('renameIdentity and the local Postgres', () => {
+  function stubPostgres() {
+    const calls: { fn: string; args: unknown }[] = []
+    const ops: Partial<PostgresOps> = {
+      plan: async (move) => {
+        calls.push({ fn: 'plan', args: move })
+        return {
+          action: 'rename',
+          from: { container: move.legacy.container, volume: move.legacy.volume, running: true },
+          to: { container: move.ficus.container, volume: move.ficus.volume },
+          port: 5432,
+          image: 'sha256:img',
+          dataDir: '/var/lib/postgresql',
+          database: { from: move.legacy.database, to: move.ficus.database },
+        }
+      },
+      rename: async (_move, _root, _deps, opts) => {
+        calls.push({ fn: 'rename', args: opts })
+        return 'renamed'
+      },
+      undo: async (_move, _root, _deps, opts) => {
+        calls.push({ fn: 'undo', args: opts })
+        return { keptVolume: opts.appStarted ? 'ficus_postgres-data' : undefined }
+      },
+      finalize: async () => {
+        calls.push({ fn: 'finalize', args: null })
+        return 'unless-stopped'
+      },
+    }
+    return { ops, calls }
+  }
+
+  it('journals the run id before the move and finalizes after the health check', async () => {
+    const pg = stubPostgres()
+    const w = world('pm2', { postgres: pg.ops })
+    await renameIdentity({ root: w.root }, w.deps)
+    expect(pg.calls.map((c) => c.fn)).toEqual(['plan', 'rename', 'finalize'])
+    const runId = (pg.calls[1].args as { runId: string }).runId
+    expect(runId).toMatch(/^[A-Za-z0-9]/)
+    const completed = readFileSync(join(w.home, '.ficus', 'rename-identity.ficus.journal'), 'utf8')
+    expect(completed).toContain(`"runId":"${runId}"`)
+    expect(completed.indexOf('"op":"postgres"')).toBeLessThan(completed.indexOf('"op":"new-identity"'))
+  })
+
+  it('a failure before the new identity starts undoes the move with appStarted false', async () => {
+    const pg = stubPostgres()
+    const w = world('pm2', { postgres: pg.ops })
+    // Step 7 cannot regenerate the ecosystem file from an example that lacks the app lines.
+    writeFileSync(join(w.root, 'ecosystem.config.example.js'), 'module.exports = {}\n')
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/undone/)
+    const undo = pg.calls.find((c) => c.fn === 'undo')
+    expect(undo?.args).toEqual({ appStarted: false, runId: (pg.calls[1].args as { runId: string }).runId })
+    expect(pg.calls.some((c) => c.fn === 'finalize')).toBe(false)
+  })
+
+  it('a failure once the new identity may be running undoes with appStarted true and reports the kept volume', async () => {
+    const pg = stubPostgres()
+    const w = world('pm2', { postgres: pg.ops })
+    w.fail.match = (line) => line.startsWith('bunx pm2 start') && line.includes('ficus-api')
+    const error = await renameIdentity({ root: w.root }, w.deps).catch((e: Error) => e)
+    expect(error).toBeInstanceOf(Error)
+    expect(pg.calls.find((c) => c.fn === 'undo')?.args).toMatchObject({ appStarted: true })
+    expect((error as Error).message).toContain('ficus_postgres-data')
+  })
+
+  it('a rename that throws has already rolled itself back: no undo call for it', async () => {
+    const pg = stubPostgres()
+    pg.ops.rename = async () => {
+      pg.calls.push({ fn: 'rename', args: null })
+      throw new Error('ALTER failed')
+    }
+    const w = world('pm2', { postgres: pg.ops })
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/ALTER failed/)
+    expect(pg.calls.some((c) => c.fn === 'undo')).toBe(false)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+    expect([...w.pm2].sort()).toEqual([LEGACY_UNITS.api, LEGACY_UNITS.worker].sort())
+  })
+
+  it('dry-run prints the Postgres plan', async () => {
+    const pg = stubPostgres()
+    const w = world('pm2', { postgres: pg.ops })
+    await renameIdentity({ root: w.root, dryRun: true }, w.deps)
+    expect(pg.calls.map((c) => c.fn)).toEqual(['plan'])
+    expect(w.printed.join('\n')).toContain(`postgres-${L} → postgres-ficus`)
+  })
+})
+
+describe('supervisor identity switch (systemd-user)', () => {
+  it('disables the old units, enables the new ones and removes the old unit files', async () => {
+    const w = world('systemd-user')
+    const old = supervisorIdentity('systemd-user', L, 1)
+    const next = supervisorIdentity('systemd-user', 'ficus', 2)
+    const oldCtx = w.deps.supervisorContext(old, w.root)
+    const unitDir = join(w.home, '.config', 'systemd', 'user')
+    mkdirSync(unitDir, { recursive: true })
+    for (const c of ['api', 'worker'] as const) writeFileSync(systemdUserNames(oldCtx, c).path, systemdUnit(oldCtx, c))
+    const deps = { root: w.root, context: w.deps.supervisorContext }
+    await stopSupervisor(old, deps)
+    await installSupervisor(next, w.root, deps)
+    await removeSupervisorDefinitions(old, w.root, deps)
+    const lines = joined(w.calls)
+    expect(lines).toContain(`systemctl --user disable --now ${LEGACY_UNITS.api}.service`)
+    expect(lines).toContain(`systemctl --user disable --now ${LEGACY_UNITS.worker}.service`)
+    expect(lines.indexOf('systemctl --user enable --now ficus-api.service')).toBeGreaterThan(
+      lines.indexOf(`systemctl --user disable --now ${LEGACY_UNITS.worker}.service`)
+    )
+    expect(
+      readdirSync(unitDir)
+        .filter((f) => f.endsWith('.service'))
+        .sort()
+    ).toEqual(['ficus-api.service', 'ficus-worker.service'])
+  })
+})

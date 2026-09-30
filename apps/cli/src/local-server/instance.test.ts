@@ -11,28 +11,50 @@ import {
   readInstanceLabel,
 } from './instance'
 import { SetupOptionsError } from './options'
+import { LEGACY_HOME_DIR_NAME, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
 
 const EXAMPLE = readFileSync(join(__dirname, '../../../../ecosystem.config.example.js'), 'utf8')
 
 describe('instanceNames', () => {
-  it('leaves every name unchanged for the default label', () => {
+  it('names the default instance ficus', () => {
+    expect(DEFAULT_INSTANCE).toBe('ficus')
     expect(instanceNames(DEFAULT_INSTANCE)).toEqual({
-      label: 'tau',
-      api: 'tau-api',
-      worker: 'tau-worker',
-      container: 'postgres-tau',
-      volume: 'tau_postgres-data',
+      label: 'ficus',
+      api: 'ficus-api',
+      worker: 'ficus-worker',
+      container: 'postgres-ficus',
+      volume: 'ficus_postgres-data',
       homeDir: undefined,
     })
   })
-  it('inserts the label after tau for every resource of a second instance', () => {
+  it('inserts the label after ficus for every resource of a second instance', () => {
+    expect(instanceNames('lab').container).toBe('postgres-ficus-lab')
     expect(instanceNames('smoke')).toEqual({
       label: 'smoke',
-      api: 'tau-smoke-api',
-      worker: 'tau-smoke-worker',
-      container: 'postgres-tau-smoke',
-      volume: 'tau-smoke_postgres-data',
-      homeDir: '~/.tau-smoke',
+      api: 'ficus-smoke-api',
+      worker: 'ficus-smoke-worker',
+      container: 'postgres-ficus-smoke',
+      volume: 'ficus-smoke_postgres-data',
+      homeDir: '~/.ficus-smoke',
+    })
+  })
+  it('keeps the pre-rename names for an instance whose registry entry is not yet identity 2', () => {
+    const L = LEGACY_LOCAL_INSTANCE
+    expect(instanceNames(L, 1)).toEqual({
+      label: L,
+      api: LEGACY_UNITS.api,
+      worker: LEGACY_UNITS.worker,
+      container: `postgres-${L}`,
+      volume: `${L}_postgres-data`,
+      homeDir: undefined,
+    })
+    expect(instanceNames('smoke', 1)).toEqual({
+      label: 'smoke',
+      api: `${L}-smoke-api`,
+      worker: `${L}-smoke-worker`,
+      container: `postgres-${L}-smoke`,
+      volume: `${L}-smoke_postgres-data`,
+      homeDir: `~/${LEGACY_HOME_DIR_NAME}-smoke`,
     })
   })
 })
@@ -65,14 +87,14 @@ describe('derivePorts', () => {
 })
 
 describe('readInstanceLabel', () => {
-  it('reads FICUS_INSTANCE from the checkout .env and defaults to tau', () => {
+  it('reads FICUS_INSTANCE from the checkout .env and defaults to ficus', () => {
     const root = mkdtempSync(join(tmpdir(), 'ficus-instance-'))
     try {
-      expect(readInstanceLabel(root)).toBe('tau')
+      expect(readInstanceLabel(root)).toBe('ficus')
       writeFileSync(join(root, '.env'), 'PORT=3100\nFICUS_INSTANCE=smoke\n')
       expect(readInstanceLabel(root)).toBe('smoke')
       writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=\n')
-      expect(readInstanceLabel(root)).toBe('tau')
+      expect(readInstanceLabel(root)).toBe('ficus')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -82,21 +104,23 @@ describe('readInstanceLabel', () => {
 describe('generateEcosystem', () => {
   it('substitutes exactly the four app-name strings and leaves the rest byte-identical', () => {
     const out = generateEcosystem(EXAMPLE, instanceNames('smoke'))
-    expect(out).toContain("name: 'tau-smoke-api',")
-    expect(out).toContain("name: 'tau-smoke-worker',")
-    expect(out).toContain("FICUS_PM2_API_NAME: 'tau-smoke-api',")
-    expect(out).toContain("FICUS_PM2_WORKER_NAME: 'tau-smoke-worker',")
-    expect(out).not.toContain("'tau-api'")
-    expect(out).not.toContain("'tau-worker'")
+    expect(out).toContain("name: 'ficus-smoke-api',")
+    expect(out).toContain("name: 'ficus-smoke-worker',")
+    expect(out).toContain("FICUS_PM2_API_NAME: 'ficus-smoke-api',")
+    expect(out).toContain("FICUS_PM2_WORKER_NAME: 'ficus-smoke-worker',")
+    expect(out).not.toContain("'ficus-api'")
+    expect(out).not.toContain("'ficus-worker'")
     // Nothing else moved: undoing the four substitutions restores the file byte for byte.
-    expect(out.replaceAll('tau-smoke-api', 'tau-api').replaceAll('tau-smoke-worker', 'tau-worker')).toBe(EXAMPLE)
+    expect(out.replaceAll('ficus-smoke-api', 'ficus-api').replaceAll('ficus-smoke-worker', 'ficus-worker')).toBe(
+      EXAMPLE
+    )
   })
   it('is a no-op for the default label', () => {
-    expect(generateEcosystem(EXAMPLE, instanceNames('tau'))).toBe(EXAMPLE)
+    expect(generateEcosystem(EXAMPLE, instanceNames('ficus'))).toBe(EXAMPLE)
   })
   it('throws when a substitution target is missing', () => {
-    expect(() => generateEcosystem('module.exports = {}\n', instanceNames('smoke'))).toThrow(/tau-api/)
-    const missingWorker = EXAMPLE.replace("FICUS_PM2_WORKER_NAME: 'tau-worker',", '')
+    expect(() => generateEcosystem('module.exports = {}\n', instanceNames('smoke'))).toThrow(/ficus-api/)
+    const missingWorker = EXAMPLE.replace("FICUS_PM2_WORKER_NAME: 'ficus-worker',", '')
     expect(() => generateEcosystem(missingWorker, instanceNames('smoke'))).toThrow(/FICUS_PM2_WORKER_NAME/)
   })
 })

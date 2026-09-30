@@ -126,9 +126,9 @@ describe('resolveSetupOptions', () => {
     expect(seen.length).toBe(1)
     expect(opts.runtime).toBe('docker-socket')
   })
-  it('defaults the instance to tau and takes the label from the flag over the env', async () => {
+  it('defaults the instance to ficus and takes the label from the flag over the env', async () => {
     const bare = await resolveSetupOptions({ runtime: 'host' }, {}, noPrompt, false)
-    expect(bare.instance).toBe('tau')
+    expect(bare.instance).toBe('ficus')
     expect(bare.explicit.has('instance')).toBe(false)
     expect(bare.dbPort).toBeUndefined()
     expect(bare.makeDefault).toBe(false)

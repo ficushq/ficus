@@ -4,8 +4,8 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { checkCliOnPath, cliPathHintLines, detectShell, safeRealpath } from './cli-path'
 import { parseEnvFile } from './env-file'
-import { assertEnvFileNaming, checkoutPackageName } from '@ficus/shared/node'
-import { DEFAULT_INSTANCE, instanceNames } from './instance'
+import { assertEnvFileNaming, checkoutPackageName, LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
+import { CURRENT_IDENTITY, DEFAULT_INSTANCE, instanceNames, recordIdentity } from './instance'
 import { composeDatabaseUrl } from './options'
 import {
   DB_NAME_RE,
@@ -101,6 +101,13 @@ export function handoffLines(opts: SetupOptions, password?: string, cliHint: str
   ]
 }
 
+/** The FICUS_INSTANCE this checkout's .env names, if any. */
+function persistedLabel(root: string): string | undefined {
+  const path = join(root, '.env')
+  if (!existsSync(path)) return undefined
+  return parseEnvFile(readFileSync(path, 'utf8')).FICUS_INSTANCE?.trim() || undefined
+}
+
 /** The DATABASE_URL this checkout already carries, if it has one. */
 function persistedDatabaseUrl(root: string): string | undefined {
   const path = join(root, '.env')
@@ -193,6 +200,19 @@ export async function runSetup(
   const canonicalOptions = { ...options, root }
   const rootOwner = Object.entries(registry.instances).find(([, record]) => canonicalRoot(record.root) === root)
   const labelOwner = registry.instances[options.instance]
+  // Setup writes the ficus names. An instance installed before the rename keeps its old ones
+  // (processes, container, data) until `ficus server rename-identity` moves it: set up again
+  // now, it would come up beside itself under the new names.
+  if (rootOwner && recordIdentity(rootOwner[1]) !== CURRENT_IDENTITY) {
+    throw new SetupFailure(
+      `this checkout is instance "${rootOwner[0]}" under its pre-rename names; run \`ficus server rename-identity --root ${root}\` first, then re-run setup`
+    )
+  }
+  if (!rootOwner && persistedLabel(root) === LEGACY_LOCAL_INSTANCE) {
+    throw new SetupFailure(
+      `this checkout's .env names the pre-rename default instance "${LEGACY_LOCAL_INSTANCE}" (FICUS_INSTANCE), whose container and data keep their old names, and it is not registered, so \`ficus server rename-identity\` cannot move it: register it again with the CLI it was installed with, then run \`ficus server rename-identity --root ${root}\` — or set up a fresh checkout`
+    )
+  }
   if (rootOwner && (rootOwner[0] !== options.instance || rootOwner[1].supervisor !== options.supervisor)) {
     throw new SetupFailure(
       `this checkout is registered as instance "${rootOwner[0]}" with ${rootOwner[1].supervisor}; run ficus server uninstall --root ${options.root}, then rerun setup with --supervisor ${options.supervisor}`
@@ -260,6 +280,8 @@ export async function runSetup(
         createdAt:
           existing && canonicalRoot(existing.root) === root && existing.createdAt ? existing.createdAt : deps.now(),
         updatedAt: deps.now(),
+        // Setup names everything the ficus way (see instanceNames).
+        identity: CURRENT_IDENTITY,
       },
       // The first install is what a bare `ficus server` command means; a later
       // one only takes that over when the operator asks (--default).

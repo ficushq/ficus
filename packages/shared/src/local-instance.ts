@@ -1,6 +1,7 @@
 /** Safe labels accepted for local Ficus instances and supervisor targets. */
 export const LOCAL_INSTANCE_LABEL_RE = /^[a-z0-9]([a-z0-9-]{0,29}[a-z0-9])?$/
-export const DEFAULT_LOCAL_INSTANCE = 'tau'
+/** The label of the default local instance (`ficus-api`/`ficus-worker`, `postgres-ficus`). */
+export const DEFAULT_INSTANCE_LABEL = 'ficus'
 
 export interface LaunchdJobIdentity {
   program?: string
@@ -33,10 +34,15 @@ export function normalizeLocalInstanceLabel(raw: string): string {
   return label
 }
 
-/** Derive the only process names allowed for a local instance. */
+/**
+ * Derive the only process names allowed for a local instance: `ficus-api`/`ficus-worker` for the
+ * default instance, `ficus-<label>-api`/`ficus-<label>-worker` for any other. An instance the CLI
+ * has not yet moved with `ficus server rename-identity` still runs under its pre-rename names
+ * (`legacyLocalProcessNames` in `@ficus/shared/node`).
+ */
 export function localProcessNames(raw: string): { label: string; api: string; worker: string } {
   const label = normalizeLocalInstanceLabel(raw)
-  return label === DEFAULT_LOCAL_INSTANCE
-    ? { label, api: 'tau-api', worker: 'tau-worker' }
-    : { label, api: `tau-${label}-api`, worker: `tau-${label}-worker` }
+  return label === DEFAULT_INSTANCE_LABEL
+    ? { label, api: 'ficus-api', worker: 'ficus-worker' }
+    : { label, api: `ficus-${label}-api`, worker: `ficus-${label}-worker` }
 }

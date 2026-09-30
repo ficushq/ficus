@@ -216,7 +216,7 @@ the example's web app entry is commented out, and normal installed setup
 serves the built web app through Core.
 
 The pm2 scripts (`start:core`, `stop:core`, `reload:api`, `reload:worker`) do not
-hard-code `tau-api` / `tau-worker`: they resolve this checkout's app names with
+hard-code `ficus-api` / `ficus-worker`: they resolve this checkout's app names with
 `$(bun scripts/pm2-name.ts api|worker)`, which reads `FICUS_PM2_API_NAME` /
 `FICUS_PM2_WORKER_NAME` from the checkout's `.env`, so they address the right
 instance when several are installed

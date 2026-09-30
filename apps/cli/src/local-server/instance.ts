@@ -2,15 +2,36 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { parseEnvFile } from './env-file'
 import {
-  DEFAULT_LOCAL_INSTANCE,
+  DEFAULT_INSTANCE_LABEL,
   LOCAL_INSTANCE_LABEL_RE,
   localProcessNames,
   normalizeLocalInstanceLabel,
 } from '@ficus/shared'
+import {
+  FICUS_HOME_DIR_NAME,
+  LEGACY_HOME_DIR_NAME,
+  LEGACY_LOCAL_INSTANCE,
+  legacyLocalProcessNames,
+} from '@ficus/shared/node'
+import { localPostgresNames } from './postgres-rename'
 import { SetupOptionsError } from './types'
 
-/** The label of the instance every existing checkout already is: its names are today's names. */
-export const DEFAULT_INSTANCE = DEFAULT_LOCAL_INSTANCE
+/** The label of the default instance: `ficus-api`/`ficus-worker`, `postgres-ficus`, `~/.ficus`. */
+export const DEFAULT_INSTANCE = DEFAULT_INSTANCE_LABEL
+
+/**
+ * Which names a registered instance runs under. 2: the ficus names (`ficus-*`, `sh.ficus.*`),
+ * what setup registers and `ficus server rename-identity` moves an instance to — its registry
+ * entry says `identity: 2`. 1: the names from before the rename (an entry without the field),
+ * which every command keeps using until rename-identity moves the instance.
+ */
+export type InstanceIdentity = 1 | 2
+export const CURRENT_IDENTITY = 2
+
+/** A registry entry's identity: `identity: 2`, or 1 for an entry written before the rename. */
+export function recordIdentity(record: { identity?: number }): InstanceIdentity {
+  return record.identity === CURRENT_IDENTITY ? CURRENT_IDENTITY : 1
+}
 
 export interface InstanceNames {
   label: string
@@ -20,7 +41,7 @@ export interface InstanceNames {
   /** docker container and volume of the installer-managed PostgreSQL. */
   container: string
   volume: string
-  /** HOME_DIR default; undefined for the default instance, which uses the core's own ~/.tau. */
+  /** HOME_DIR default; undefined for the default instance, which uses the core's own default home. */
   homeDir: string | undefined
 }
 
@@ -35,30 +56,24 @@ export function normalizeLabel(raw: string): string {
 }
 
 /**
- * Every per-instance resource name, derived from one label by inserting
- * `-<label>` after `tau`. The default label yields the names this repo has
- * always used, so an existing install keeps its pm2 apps, container and data.
+ * Every per-instance resource name, derived from one label by inserting `-<label>` after the
+ * name stem: `ficus-<label>-api`, `postgres-ficus-<label>`, `~/.ficus-<label>`; the default label
+ * gets the bare names. An identity-1 instance (not yet moved by `ficus server rename-identity`)
+ * keeps the names it was installed under, so every command still finds its processes,
+ * container and data.
  */
-export function instanceNames(raw: string): InstanceNames {
-  const { label, api, worker } = localProcessNames(raw)
-  if (label === DEFAULT_INSTANCE) {
-    return {
-      label,
-      api,
-      worker,
-      container: 'postgres-tau',
-      // What docker compose named it for a checkout in a directory called `tau`.
-      volume: 'tau_postgres-data',
-      homeDir: undefined,
-    }
-  }
+export function instanceNames(raw: string, identity: InstanceIdentity = CURRENT_IDENTITY): InstanceNames {
+  const legacy = identity !== CURRENT_IDENTITY
+  const { label, api, worker } = legacy ? legacyLocalProcessNames(raw) : localProcessNames(raw)
+  const isDefault = label === (legacy ? LEGACY_LOCAL_INSTANCE : DEFAULT_INSTANCE)
+  const postgres = localPostgresNames(legacy ? LEGACY_LOCAL_INSTANCE : DEFAULT_INSTANCE, label, isDefault)
   return {
     label,
     api,
     worker,
-    container: `postgres-tau-${label}`,
-    volume: `tau-${label}_postgres-data`,
-    homeDir: `~/.tau-${label}`,
+    container: postgres.container,
+    volume: postgres.volume,
+    homeDir: isDefault ? undefined : `~/${legacy ? LEGACY_HOME_DIR_NAME : FICUS_HOME_DIR_NAME}-${label}`,
   }
 }
 
@@ -80,10 +95,10 @@ export function readInstanceLabel(root: string): string {
 }
 
 const SUBSTITUTIONS = [
-  { line: "name: 'tau-api',", of: (n: InstanceNames) => `name: '${n.api}',` },
-  { line: "name: 'tau-worker',", of: (n: InstanceNames) => `name: '${n.worker}',` },
-  { line: "FICUS_PM2_API_NAME: 'tau-api',", of: (n: InstanceNames) => `FICUS_PM2_API_NAME: '${n.api}',` },
-  { line: "FICUS_PM2_WORKER_NAME: 'tau-worker',", of: (n: InstanceNames) => `FICUS_PM2_WORKER_NAME: '${n.worker}',` },
+  { line: "name: 'ficus-api',", of: (n: InstanceNames) => `name: '${n.api}',` },
+  { line: "name: 'ficus-worker',", of: (n: InstanceNames) => `name: '${n.worker}',` },
+  { line: "FICUS_PM2_API_NAME: 'ficus-api',", of: (n: InstanceNames) => `FICUS_PM2_API_NAME: '${n.api}',` },
+  { line: "FICUS_PM2_WORKER_NAME: 'ficus-worker',", of: (n: InstanceNames) => `FICUS_PM2_WORKER_NAME: '${n.worker}',` },
 ]
 
 /**

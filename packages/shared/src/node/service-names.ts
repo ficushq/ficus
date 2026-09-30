@@ -1,6 +1,7 @@
 import { existsSync, lstatSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { DEFAULT_INSTANCE_LABEL, normalizeLocalInstanceLabel } from '../local-instance'
 
 /**
  * Ficus → tau bridge (Phase 5, U0): these are the fixed old-name pair every
@@ -27,7 +28,8 @@ export const LEGACY_HOME_DIR_NAME = '.tau' // ficus-p5-bridge
  */
 export const LEGACY_LOCAL_INSTANCE = 'tau' // ficus-p5-bridge
 
-const NEW_LAUNCHD_PREFIX = 'sh.ficus'
+/** The launchd label prefix of a local process (`sh.ficus.<process>`). */
+export const FICUS_LAUNCHD_PREFIX = 'sh.ficus'
 /** The home directory name after the rename (`~/.ficus`). */
 export const FICUS_HOME_DIR_NAME = '.ficus'
 const FICUS_SANDBOX_PASSWORD = '/etc/ficus/password'
@@ -47,16 +49,25 @@ export function hostSystemdUnits(opts?: { unitDir?: string }): { api: string; wo
 }
 
 /**
- * Maps a legacy local-instance process name (the shape `localProcessNames()` still
- * produces, see `LEGACY_UNITS` above for the default pair) to the name it becomes once
- * P5-T19 renames the default local instance from the legacy label to `ficus`: the same
- * string with its leading legacy prefix replaced by `ficus-`. Exists so `launchdLabel()`
- * below can compute a legacy/new pair from a single `localProcessNames()` result before
- * P5-T19 ships; P5-T19 must reuse this mapping (or supersede every caller with its own
- * renamed `localProcessNames()`) rather than re-deriving it separately.
+ * A local instance's process names before `ficus server rename-identity` moved it: the legacy
+ * pair (see `LEGACY_UNITS` above) for the legacy default label (`LEGACY_LOCAL_INSTANCE`), and
+ * `<legacy>-<label>-api`/`-worker` for any other label. The CLI derives the names of a registry
+ * entry that lacks `identity: 2` from this; Core uses it to find a supervisor definition that
+ * has not been re-registered yet.
  */
-export function ficusProcessName(legacyName: string): string {
-  return legacyName.replace(/^tau-/, 'ficus-') // ficus-p5-bridge
+export function legacyLocalProcessNames(raw: string): { label: string; api: string; worker: string } {
+  const label = normalizeLocalInstanceLabel(raw)
+  return label === LEGACY_LOCAL_INSTANCE
+    ? { label, ...LEGACY_UNITS }
+    : { label, api: `${LEGACY_LOCAL_INSTANCE}-${label}-api`, worker: `${LEGACY_LOCAL_INSTANCE}-${label}-worker` }
+}
+
+/**
+ * The label an instance has after `ficus server rename-identity`: the legacy default label
+ * becomes the ficus default, every other label is kept.
+ */
+export function renamedLocalInstanceLabel(label: string): string {
+  return label === LEGACY_LOCAL_INSTANCE ? DEFAULT_INSTANCE_LABEL : label
 }
 
 /**
@@ -64,13 +75,26 @@ export function ficusProcessName(legacyName: string): string {
  * prefix (see `LEGACY_LAUNCHD_PREFIX` above) joined with the legacy name only when that
  * plist is the one actually installed — a host that has not yet re-registered its
  * LaunchAgents. Takes the legacy and new process names separately (see
- * `ficusProcessName()`): a launchd label is not a straight prefix swap on one shared name,
- * because the process name itself changes shape too, per era.
+ * `legacyLocalProcessNames()`): a launchd label is not a straight prefix swap on one shared
+ * name, because the process name itself changes shape too, per era.
  */
 export function launchdLabel(names: { legacy: string; new: string }, opts?: { launchAgentsDir?: string }): string {
   const launchAgentsDir = opts?.launchAgentsDir ?? join(homedir(), 'Library/LaunchAgents')
   const legacyLabel = `${LEGACY_LAUNCHD_PREFIX}.${names.legacy}` // ficus-p5-bridge
-  return existsSync(join(launchAgentsDir, `${legacyLabel}.plist`)) ? legacyLabel : `${NEW_LAUNCHD_PREFIX}.${names.new}`
+  return existsSync(join(launchAgentsDir, `${legacyLabel}.plist`))
+    ? legacyLabel
+    : `${FICUS_LAUNCHD_PREFIX}.${names.new}`
+}
+
+/**
+ * systemd user unit for a local process, `<new name>.service`, unless only the legacy unit
+ * file is installed in the user unit directory (`$XDG_CONFIG_HOME/systemd/user`, default
+ * `~/.config/systemd/user`) — an install that has not run `ficus server rename-identity`.
+ */
+export function systemdUserUnit(names: { legacy: string; new: string }, opts?: { unitDir?: string }): string {
+  const unitDir = opts?.unitDir ?? join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'systemd', 'user')
+  const legacyUnit = `${names.legacy}.service`
+  return existsSync(join(unitDir, legacyUnit)) ? legacyUnit : `${names.new}.service`
 }
 
 /**

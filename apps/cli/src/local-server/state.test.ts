@@ -168,6 +168,28 @@ describe('registry', () => {
     // …and the migration is read-only: nothing is rewritten until an upsert.
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ root: '/r', port: 3000, createdAt: 'c', updatedAt: 'u' })
   })
+  it('keeps the identity field through every read → mutate → write, and refuses an unknown identity', () => {
+    const path = join(tmp, 'identity.json')
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 3,
+        default: 'ficus',
+        instances: { ficus: { ...record('/a'), identity: 2 }, smoke: record('/b', 3100) },
+      })
+    )
+    expect(readRegistryStrict(path).instances.ficus.identity).toBe(2)
+    expect(readRegistryStrict(path).instances.smoke.identity).toBeUndefined()
+    // Other commands' writes (upsert of another instance, remove, use-style default change) keep it.
+    upsertInstance('lab', record('/c', 3200), {}, path)
+    removeInstance('smoke', path)
+    const written = JSON.parse(readFileSync(path, 'utf8'))
+    expect(written.version).toBe(3)
+    expect(written.instances.ficus.identity).toBe(2)
+    expect(written.instances.lab.identity).toBeUndefined()
+    writeFileSync(path, JSON.stringify({ version: 3, instances: { ficus: { ...record('/a'), identity: 3 } } }))
+    expect(() => readRegistryStrict(path)).toThrow(/invalid record/)
+  })
   it('reads an empty registry for a missing or malformed file', () => {
     expect(readRegistry(join(tmp, 'missing.json'))).toEqual({ version: 3, instances: {} })
     const bad = join(tmp, 'bad.json')

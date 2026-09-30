@@ -7,7 +7,7 @@ import { isTransportError, runOfflineUpdate, type OfflineUpdateArgs } from './of
 import { defaultRunner, recordingRunner, type Runner } from './runner'
 import { makeSupervisorContext, type SupervisorContext } from './supervisor'
 
-const context = (root: string, runner: Runner, label = 'tau') =>
+const context = (root: string, runner: Runner, label = 'ficus') =>
   makeSupervisorContext({
     supervisor: 'pm2',
     root,
@@ -70,8 +70,8 @@ describe('runOfflineUpdate', () => {
       'git rev-parse --abbrev-ref HEAD',
       'git pull --ff-only --no-tags',
       'bun run update:offline -- --from ' + 'a'.repeat(40),
-      'bunx pm2 restart tau-worker --update-env',
-      'bunx pm2 restart tau-api --update-env',
+      'bunx pm2 restart ficus-worker --update-env',
+      'bunx pm2 restart ficus-api --update-env',
     ])
     expect(result.before).toBe('a'.repeat(40))
     expect(result.after).toBe('b'.repeat(40))
@@ -88,7 +88,7 @@ describe('runOfflineUpdate', () => {
         log: () => {},
         context: context(root, rec.runner, 'smoke'),
       })
-      expect(rec.calls.at(-1)?.command.join(' ')).toBe('bunx pm2 restart tau-smoke-api --update-env')
+      expect(rec.calls.at(-1)?.command.join(' ')).toBe('bunx pm2 restart ficus-smoke-api --update-env')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

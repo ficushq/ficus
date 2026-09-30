@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
-import { cliHome, finalizeCliHome, LEGACY_CLI_HOME_LINK, moveCliHome } from './home-move'
+import { cliHome, finalizeCliHome, LEGACY_CLI_HOME_LINK, moveCliHome, unmoveCliHome } from './home-move'
 
 let home: string
 let ficus: string
@@ -141,6 +141,32 @@ describe('moveCliHome', () => {
     mkdirSync(join(home, 'elsewhere'))
     symlinkSync('elsewhere', legacy)
     await expect(moveCliHome({ homedir: home, running: notRunning })).rejects.toThrow(/symlink/)
+  })
+})
+
+describe('unmoveCliHome', () => {
+  it('puts a moved home back: the link goes and the directory returns to the legacy name', async () => {
+    mkdirSync(join(legacy, 'cli'), { recursive: true })
+    writeFileSync(join(legacy, 'cli', 'auth.json'), '{}')
+    await moveCliHome({ homedir: home, running: notRunning })
+    expect(unmoveCliHome({ homedir: home })).toBe('moved-back')
+    expect(lstatSync(legacy).isDirectory()).toBe(true)
+    expect(readFileSync(join(legacy, 'cli', 'auth.json'), 'utf8')).toBe('{}')
+    expect(existsSync(ficus)).toBe(false)
+    // Idempotent: a home that is already back is left alone.
+    expect(unmoveCliHome({ homedir: home })).toBe('none')
+  })
+  it('finishes an inverse cut short after the link was removed', () => {
+    mkdirSync(ficus)
+    expect(unmoveCliHome({ homedir: home })).toBe('moved-back')
+    expect(lstatSync(legacy).isDirectory()).toBe(true)
+  })
+  it('refuses any other shape and changes nothing', () => {
+    mkdirSync(legacy)
+    mkdirSync(ficus)
+    expect(() => unmoveCliHome({ homedir: home })).toThrow(/by hand/)
+    expect(lstatSync(legacy).isDirectory()).toBe(true)
+    expect(lstatSync(ficus).isDirectory()).toBe(true)
   })
 })
 

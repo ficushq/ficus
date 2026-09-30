@@ -17,7 +17,13 @@ import {
   parseDatabaseUrl,
   waitForPostgres,
 } from '../local-server/postgres'
-import { instanceNames, normalizeLabel } from '../local-server/instance'
+import { instanceNames, normalizeLabel, recordIdentity, type InstanceIdentity } from '../local-server/instance'
+import {
+  assertNoRenameInFlight,
+  RENAME_JOURNAL,
+  renameIdentity,
+  type RenameReport,
+} from '../local-server/supervisor-rename'
 import {
   logsSupervisor,
   makeSupervisorContext,
@@ -62,7 +68,14 @@ export interface ServerDeps {
   runSetup?(opts: SetupOptions, deps: SetupDeps): Promise<{ handoff: string[]; cliOnPath: boolean }>
   which(cmd: string): string | null
   sysboxHost?: SysboxHostDeps
-  supervisorContext?(root: string, label: string, supervisor: LocalSupervisor): SupervisorContext
+  supervisorContext?(
+    root: string,
+    label: string,
+    supervisor: LocalSupervisor,
+    identity?: InstanceIdentity
+  ): SupervisorContext
+  /** `<cliHome>/rename-identity.journal`; tests point it elsewhere. */
+  renameJournalPath?: string
 }
 
 export function defaultServerDeps(): ServerDeps {
@@ -143,19 +156,27 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
     // the canonical registry-owned root so aliases cannot break ownership
     // markers or make subprocess cwd drift from setup's persisted identity.
     const dir = canonicalRoot(registered.record.root)
+    // An entry rename-identity has not moved yet keeps the names it was installed under.
+    const identity = recordIdentity(registered.record)
     const context =
-      deps.supervisorContext?.(dir, registered.label, registered.record.supervisor) ??
+      deps.supervisorContext?.(dir, registered.label, registered.record.supervisor, identity) ??
       makeSupervisorContext({
         supervisor: registered.record.supervisor,
         root: dir,
         label: registered.label,
+        identity,
         runner: deps.runner,
         log: narrate,
         env: deps.env,
         which: deps.which,
       })
-    return { dir, registered, context, names: instanceNames(registered.label) }
+    return { dir, registered, context, names: instanceNames(registered.label, identity) }
   }
+  const home = () => deps.env.HOME ?? homedir()
+  // Resolved on every call: rename-identity moves the CLI home while it runs.
+  const renameJournal = () => deps.renameJournalPath ?? join(cliHome({ homedir: home() }), RENAME_JOURNAL)
+  /** Starting anything while a rename-identity run is unfinished would start the half-moved instance. */
+  const assertNoRename = () => assertNoRenameInFlight(renameJournal())
   /** The registry record behind an --instance label whose checkout is gone, or undefined when it resolves normally. */
   const staleRegistration = (instance: string) => {
     const label = normalizeLabel(instance)
@@ -196,8 +217,8 @@ Examples:
     $ ficus server install --runtime host --yes
 
   Install a SECOND instance that cannot collide with the first. --instance
-  names every per-instance resource — services tau-lab-api/tau-lab-worker, the
-  postgres container postgres-tau-lab, and data under ~/.tau-lab — so both run
+  names every per-instance resource — services ficus-lab-api/ficus-lab-worker, the
+  postgres container postgres-ficus-lab, and data under ~/.ficus-lab — so both run
   side by side. --root must come before the forwarded setup flags:
     $ ficus server install --root ~/.ficus/instances/lab --instance lab --runtime host --yes
 
@@ -231,7 +252,7 @@ Examples:
     )
     .option('--runtime <runtime>', 'host | docker-socket | docker-sysbox | k3d')
     .option('--supervisor <supervisor>', 'pm2 | launchd | systemd-user')
-    .option('--instance <label>', 'Instance label — names every per-instance resource (default tau)')
+    .option('--instance <label>', 'Instance label — names every per-instance resource (default ficus)')
     .option('--home-dir <path>', 'HOME_DIR for Ficus data (default ~/.ficus)')
     .option('--port <n>', 'API/web port (default 3000)')
     .option('--app-url <origin>', 'Browser origin (default http://localhost:<port>)')
@@ -338,13 +359,15 @@ Examples:
         }[] = []
         for (const [label, record] of entries) {
           let processes
+          const identity = recordIdentity(record)
           try {
             const context =
-              deps.supervisorContext?.(record.root, label, record.supervisor) ??
+              deps.supervisorContext?.(record.root, label, record.supervisor, identity) ??
               makeSupervisorContext({
                 supervisor: record.supervisor,
                 root: record.root,
                 label,
+                identity,
                 runner: deps.runner,
                 log: narrate,
                 env: deps.env,
@@ -352,7 +375,7 @@ Examples:
               })
             processes = await statusSupervisor(context)
           } catch {
-            const names = instanceNames(label)
+            const names = instanceNames(label, identity)
             processes = [names.api, names.worker].map((name) => ({
               name,
               status: 'unavailable',
@@ -379,7 +402,7 @@ Examples:
             ? '(none) — run `ficus server setup` inside a checkout to install one'
             : rows
                 .map((r) => {
-                  const names = instanceNames(r.label)
+                  const names = instanceNames(r.label, recordIdentity(registry.instances[r.label]))
                   const state = (name: string) => r.processes.find((p) => p.name === name)?.status ?? 'not registered'
                   const procs = `api: ${state(names.api)}  worker: ${state(names.worker)}`
                   return `${r.default ? '*' : ' '} ${r.label.padEnd(labelW)}  ${r.supervisor}  ${r.root.padEnd(rootW)}  ${r.url.padEnd(urlW)}  ${procs}`
@@ -389,8 +412,11 @@ Examples:
       })
     )
 
-  withRoot(server.command('start').description('Start tau-api and tau-worker under the recorded supervisor')).action(
+  withRoot(
+    server.command('start').description('Start ficus-api and ficus-worker under the recorded supervisor')
+  ).action(
     guarded(async (opts) => {
+      assertNoRename()
       const { dir, names, context, registered } = managed(opts as { root?: string; instance?: string })
       assertInstallEnvNaming(dir)
       const url = rootEnv(dir).DATABASE_URL
@@ -420,7 +446,7 @@ Examples:
       )
     })
   )
-  withRoot(server.command('stop').description('Stop tau-api and tau-worker')).action(
+  withRoot(server.command('stop').description('Stop ficus-api and ficus-worker')).action(
     guarded(async (opts) => {
       const { dir, names, context, registered } = managed(opts as { root?: string; instance?: string })
       await stopSupervisor(context)
@@ -430,8 +456,9 @@ Examples:
       )
     })
   )
-  withRoot(server.command('restart').description('Restart tau-api and tau-worker')).action(
+  withRoot(server.command('restart').description('Restart ficus-api and ficus-worker')).action(
     guarded(async (opts) => {
+      assertNoRename()
       const { dir, names, context, registered } = managed(opts as { root?: string; instance?: string })
       assertInstallEnvNaming(dir)
       await restartSupervisor(context)
@@ -488,6 +515,7 @@ Examples:
     .option('--ref <ref>', 'Check out this branch, tag, or commit instead of fast-forwarding')
     .action(
       guarded(async (opts) => {
+        assertNoRename()
         const { dir, registered, context } = managed(opts as { root?: string; instance?: string })
         const port = registered.record.port
         const updateDeps: UpdateDeps = {
@@ -499,6 +527,56 @@ Examples:
           log: narrate,
         }
         await applyUpdate({ offline: true, ref: (opts as { ref?: string }).ref }, updateDeps)
+      })
+    )
+
+  withRoot(
+    server
+      .command('rename-identity')
+      .description(
+        'Move an instance installed before the Ficus rename to the ficus names: supervisor labels and processes, ~/.ficus, its Postgres, .env and the registry'
+      )
+  )
+    .option('--dry-run', 'Print the plan and change nothing')
+    .option('--undo', 'Undo a completed rename of this instance (back to the old names)')
+    .action(
+      guarded(async (opts) => {
+        const o = opts as { root?: string; instance?: string; dryRun?: boolean; undo?: boolean }
+        const dir = root(o)
+        const result: RenameReport = await renameIdentity(
+          { root: dir, dryRun: o.dryRun === true, undo: o.undo === true },
+          {
+            runner: deps.runner,
+            statePath: deps.statePath,
+            journalPath: renameJournal,
+            home: home(),
+            fetch: deps.fetch,
+            sleep: deps.sleep,
+            now: () => new Date(),
+            log: isJsonMode() ? () => {} : narrate,
+            supervisorContext: (id, checkout) =>
+              deps.supervisorContext?.(checkout, id.label, id.supervisor, id.identity) ??
+              makeSupervisorContext({
+                supervisor: id.supervisor,
+                root: checkout,
+                label: id.label,
+                identity: id.identity,
+                runner: deps.runner,
+                log: narrate,
+                env: deps.env,
+                which: deps.which,
+              }),
+          }
+        )
+        const summary =
+          result.status === 'dry-run'
+            ? `Dry run complete: "${result.from.label}" would become "${result.to.label}" (${result.to.api}, ${result.to.worker})`
+            : result.status === 'already'
+              ? `Instance "${result.from.label}" already runs under the ficus names`
+              : result.status === 'undone'
+                ? `Instance "${result.from.label}" runs under its old names again (${result.from.api}, ${result.from.worker})`
+                : `Instance "${result.from.label}" is now "${result.to.label}" (${result.to.api}, ${result.to.worker})`
+        output(result, summary)
       })
     )
 
@@ -564,18 +642,20 @@ Examples:
             ))
           )
             return
-          const names = instanceNames(label)
+          const identity = recordIdentity(record)
+          const names = instanceNames(label, identity)
           // Best effort: the supervisor may still hold the processes/units, but
           // the checkout they ran from is gone, so run from the current directory
           // and never let a failure here keep the dead registration alive.
           let cleanup = `${record.supervisor} registrations removed`
           try {
             const context =
-              deps.supervisorContext?.(deps.cwd, label, record.supervisor) ??
+              deps.supervisorContext?.(deps.cwd, label, record.supervisor, identity) ??
               makeSupervisorContext({
                 supervisor: record.supervisor,
                 root: deps.cwd,
                 label,
+                identity,
                 runner: deps.runner,
                 log: narrate,
                 env: deps.env,

@@ -2,8 +2,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { homedir } from 'os'
 import { dirname, isAbsolute, join, resolve } from 'path'
 import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared/identity'
-import { expandTilde } from '@ficus/shared/node'
-import { DEFAULT_INSTANCE, normalizeLabel } from './instance'
+import { expandTilde, LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
+import { CURRENT_IDENTITY, normalizeLabel } from './instance'
 import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
 import { cliHome } from './home-move'
 
@@ -14,12 +14,18 @@ export interface InstanceRecord {
   supervisor: LocalSupervisor
   createdAt: string
   updatedAt: string
+  /**
+   * `2`: the instance runs under the ficus names (setup registers it so, `ficus server
+   * rename-identity` moves an older one). Absent: it still has the names it was installed under.
+   * Every read → write keeps it; the registry `version` stays 3 either way.
+   */
+  identity?: typeof CURRENT_IDENTITY
 }
 
 /**
  * Every instance installed on this machine, plus the one `ficus server`
  * commands act on when nothing else says which. Version 1 was a single
- * bare record ({ root, port, … }) — it reads as the `tau` instance.
+ * bare record ({ root, port, … }) — it reads as the legacy default instance.
  */
 export interface LocalServerRegistry {
   version: 3
@@ -101,12 +107,15 @@ function toRecord(value: unknown, legacy: boolean): InstanceRecord | null {
   const supervisor = legacy ? 'pm2' : v.supervisor
   if (!supervisor || !(LOCAL_SUPERVISORS as readonly string[]).includes(supervisor)) return null
   if (!legacy && (typeof v.createdAt !== 'string' || typeof v.updatedAt !== 'string')) return null
+  // An identity this code does not know is a registry from a newer CLI: refuse it, never drop it.
+  if (v.identity !== undefined && v.identity !== CURRENT_IDENTITY) return null
   return {
     root: v.root,
     port: v.port as number,
     supervisor,
     createdAt: typeof v.createdAt === 'string' ? v.createdAt : '',
     updatedAt: typeof v.updatedAt === 'string' ? v.updatedAt : '',
+    ...(v.identity === CURRENT_IDENTITY ? { identity: CURRENT_IDENTITY } : {}),
   }
 }
 
@@ -152,16 +161,17 @@ function parseRegistryFile(path: string): { registry: LocalServerRegistry; stric
   if (!isPlainObject(parsed)) return { registry: emptyRegistry(), strictError: 'registry is unreadable (wrong shape)' }
   const object = parsed as { version?: unknown; default?: unknown; instances?: unknown }
 
-  // v1: one bare record without an explicit registry version. A literally
-  // empty object carries no claim at all, so it stays an empty registry.
+  // v1: one bare record without an explicit registry version, written before
+  // labels existed: the legacy default instance, under its legacy names. A
+  // literally empty object carries no claim at all, so it stays an empty registry.
   if (object.version === undefined) {
     const v1 = toRecord(parsed, true)
     if (v1)
       return {
         registry: {
           version: REGISTRY_VERSION,
-          default: DEFAULT_INSTANCE,
-          instances: { [DEFAULT_INSTANCE]: v1 },
+          default: LEGACY_LOCAL_INSTANCE,
+          instances: { [LEGACY_LOCAL_INSTANCE]: v1 },
         },
       }
     if (Object.keys(object).length === 0) return { registry: emptyRegistry() }

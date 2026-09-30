@@ -22,7 +22,7 @@ function opts(partial: Partial<SetupOptions> = {}): SetupOptions {
     databaseMode: 'compose',
     databaseUrl: 'postgres://postgres:postgres@localhost:5432/tau',
     dbName: 'tau',
-    instance: 'tau',
+    instance: 'ficus',
     makeDefault: false,
     start: true,
     dryRun: false,
@@ -139,11 +139,11 @@ describe('computeEnvUpdates (instances)', () => {
   it('derives the worker ports and leaves HOME_DIR unset for the default instance', () => {
     const byKey = Object.fromEntries(computeEnvUpdates(opts(), secrets).map((u) => [u.key, u]))
     // Not explicit: a re-run without --instance must never relabel a checkout.
-    expect(byKey.FICUS_INSTANCE).toEqual({ key: 'FICUS_INSTANCE', value: 'tau', explicit: false })
+    expect(byKey.FICUS_INSTANCE).toEqual({ key: 'FICUS_INSTANCE', value: 'ficus', explicit: false })
     expect(byKey.WORKER_PORT.value).toBe('3002')
     expect(byKey.FICUS_WORKER_EVENT_PORT.value).toBe('3003')
-    expect(byKey.FICUS_PM2_API_NAME.value).toBe('tau-api')
-    expect(byKey.FICUS_PM2_WORKER_NAME.value).toBe('tau-worker')
+    expect(byKey.FICUS_PM2_API_NAME.value).toBe('ficus-api')
+    expect(byKey.FICUS_PM2_WORKER_NAME.value).toBe('ficus-worker')
     expect(byKey.HOME_DIR).toBeUndefined()
     expect(byKey.DATABASE_URL.value).toBe('postgres://postgres:postgres@localhost:5432/tau')
   })
@@ -166,22 +166,22 @@ describe('computeEnvUpdates (instances)', () => {
     expect(byKey.PORT.value).toBe('3100')
     expect(byKey.WORKER_PORT).toEqual({ key: 'WORKER_PORT', value: '3102', explicit: true })
     expect(byKey.FICUS_WORKER_EVENT_PORT).toEqual({ key: 'FICUS_WORKER_EVENT_PORT', value: '3103', explicit: true })
-    expect(byKey.FICUS_PM2_API_NAME).toEqual({ key: 'FICUS_PM2_API_NAME', value: 'tau-smoke-api', explicit: true })
+    expect(byKey.FICUS_PM2_API_NAME).toEqual({ key: 'FICUS_PM2_API_NAME', value: 'ficus-smoke-api', explicit: true })
     expect(byKey.FICUS_PM2_WORKER_NAME).toEqual({
       key: 'FICUS_PM2_WORKER_NAME',
-      value: 'tau-smoke-worker',
+      value: 'ficus-smoke-worker',
       explicit: true,
     })
-    expect(byKey.HOME_DIR.value).toBe('~/.tau-smoke')
+    expect(byKey.HOME_DIR.value).toBe('~/.ficus-smoke')
     expect(byKey.DATABASE_URL.value).toBe('postgres://postgres:postgres@localhost:5433/tau')
   })
   it('leaves an existing label alone when the operator did not pass --instance', () => {
     const merged = mergeEnvFile(
-      'FICUS_INSTANCE=smoke\nFICUS_PM2_API_NAME=tau-smoke-api\n',
+      'FICUS_INSTANCE=smoke\nFICUS_PM2_API_NAME=ficus-smoke-api\n',
       computeEnvUpdates(opts(), secrets)
     )
     expect(parseEnvFile(merged).FICUS_INSTANCE).toBe('smoke')
-    expect(parseEnvFile(merged).FICUS_PM2_API_NAME).toBe('tau-api')
+    expect(parseEnvFile(merged).FICUS_PM2_API_NAME).toBe('ficus-api')
   })
   it('keeps an explicit --home-dir over the label default', () => {
     const byKey = Object.fromEntries(
@@ -230,9 +230,9 @@ describe('the config-files step', () => {
     try {
       await stepOf(opts({ root, instance: 'smoke', explicit: new Set(['instance']) }), deps).run()
       const generated = readFileSync(join(root, 'ecosystem.config.js'), 'utf8')
-      expect(generated).toContain("name: 'tau-smoke-api',")
-      expect(generated).toContain("FICUS_PM2_WORKER_NAME: 'tau-smoke-worker',")
-      expect(generated).not.toContain("'tau-api'")
+      expect(generated).toContain("name: 'ficus-smoke-api',")
+      expect(generated).toContain("FICUS_PM2_WORKER_NAME: 'ficus-smoke-worker',")
+      expect(generated).not.toContain("'ficus-api'")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -273,9 +273,9 @@ describe('the config-files step', () => {
       writeFileSync(join(root, 'ecosystem.config.js'), exampleText())
       await stepOf(opts({ root, instance: 'smoke', explicit: new Set(['instance']) }), deps).run()
       const generated = readFileSync(join(root, 'ecosystem.config.js'), 'utf8')
-      expect(generated).toContain("name: 'tau-smoke-api',")
-      expect(generated).toContain("FICUS_PM2_WORKER_NAME: 'tau-smoke-worker',")
-      expect(generated).not.toContain("'tau-api'")
+      expect(generated).toContain("name: 'ficus-smoke-api',")
+      expect(generated).toContain("FICUS_PM2_WORKER_NAME: 'ficus-smoke-worker',")
+      expect(generated).not.toContain("'ficus-api'")
       expect(logs).toContain(
         'warning: regenerated ecosystem.config.js for instance "smoke" (hand edits were discarded)'
       )
@@ -310,7 +310,7 @@ describe('the env step', () => {
       writeFileSync(join(root, 'ecosystem.config.js'), readFileSync(join(REPO_ROOT, 'ecosystem.config.example.js')))
       await stepOf(opts({ root, instance: 'smoke', explicit: new Set(['instance']) }), deps).run()
       expect(logs).toContain(
-        'warning: HOME_DIR now points at ~/.tau-smoke; DATABASE_URL is unchanged (postgres://postgres:postgres@localhost:5432/tau)'
+        'warning: HOME_DIR now points at ~/.ficus-smoke; DATABASE_URL is unchanged (postgres://postgres:postgres@localhost:5432/tau)'
       )
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -327,13 +327,13 @@ describe('the env step', () => {
           root,
           instance: 'smoke',
           dbPort: 5433,
-          databaseUrl: 'postgres://postgres:postgres@localhost:5433/tau',
+          databaseUrl: 'postgres://postgres:postgres@localhost:5433/ficus',
           explicit: new Set(['instance', 'dbPort']),
         }),
         deps
       ).run()
       expect(logs).toContain(
-        'warning: HOME_DIR now points at ~/.tau-smoke; DATABASE_URL now points at postgres://postgres:postgres@localhost:5433/tau'
+        'warning: HOME_DIR now points at ~/.ficus-smoke; DATABASE_URL now points at postgres://postgres:postgres@localhost:5433/ficus'
       )
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -416,8 +416,8 @@ describe('native supervisor config', () => {
         explicit: true,
       })
       expect(byKey.FICUS_SYSTEM_LOG_PROVIDER.value).toBe('file')
-      expect(byKey.FICUS_LOG_FILE_API.value).toEndWith('/.tau/logs/tau-smoke-api.log')
-      expect(byKey.FICUS_LOG_FILE_WORKER.value).toEndWith('/.tau/logs/tau-smoke-worker.log')
+      expect(byKey.FICUS_LOG_FILE_API.value).toEndWith('/logs/ficus-smoke-api.log')
+      expect(byKey.FICUS_LOG_FILE_WORKER.value).toEndWith('/logs/ficus-smoke-worker.log')
       expect(byKey.FICUS_PM2_API_NAME.value).toBe('')
     }
   })

@@ -97,6 +97,32 @@ export async function moveCliHome(opts: {
 }
 
 /**
+ * The inverse of `moveCliHome`, for `ficus server rename-identity`'s undo: when ~/<legacy> is the
+ * link the move left and ~/.ficus the directory, removes the link and renames the directory back.
+ * Also finishes an inverse cut short between the two (no ~/<legacy>, ~/.ficus a directory).
+ * 'none' when the home is already a real ~/<legacy> and there is no ~/.ficus. Throws, changing
+ * nothing, on any other shape.
+ */
+export function unmoveCliHome(opts: { homedir: string }): 'moved-back' | 'none' {
+  const ficus = join(opts.homedir, FICUS_HOME_DIR_NAME)
+  const legacy = join(opts.homedir, LEGACY_HOME_DIR_NAME)
+  const legacyStat = lstatOrNull(legacy)
+  const ficusStat = lstatOrNull(ficus)
+  const ficusIsDir = ficusStat !== null && !ficusStat.isSymbolicLink() && ficusStat.isDirectory()
+  if (legacyStat?.isSymbolicLink() && readlinkSync(legacy) === FICUS_HOME_DIR_NAME && ficusIsDir) {
+    unlinkSync(legacy)
+    renameSync(ficus, legacy)
+    return 'moved-back'
+  }
+  if (!legacyStat && ficusIsDir) {
+    renameSync(ficus, legacy)
+    return 'moved-back'
+  }
+  if (legacyStat?.isDirectory() && !legacyStat.isSymbolicLink() && !ficusStat) return 'none'
+  throw new Error(`cannot move ${ficus} back to ${legacy}: neither is what the move left — move it by hand`)
+}
+
+/**
  * Apple-step finalize: removes ~/<legacy> only when it is exactly that symlink AND
  * <homedir>/.ficus/bin is on PATH (so nothing the operator types still depends on it).
  * Throws, removing nothing, when ~/<legacy> is anything but the link `moveCliHome` leaves.
