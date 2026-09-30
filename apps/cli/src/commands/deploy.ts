@@ -248,9 +248,10 @@ function registerLocalCommands(deploy: Command): void {
     )
     .requiredOption(
       '--command <command>',
-      'Command to start the local app. The app is served under a PATH PREFIX, not a domain root, so build it ' +
-        'with that prefix as its base ($FICUS_APP_BASE_PATH is exported to the process): Vite `base`, Next ' +
-        '`basePath`, CRA `PUBLIC_URL`. A default build emitting /assets/... will 404 against the Ficus origin.'
+      'Command to start the local app. Build it with $FICUS_APP_BASE_PATH as its base (exported to the process): ' +
+        'it is / on hosted instances, where each app gets its own origin, and the /api/app/<id>/ path prefix ' +
+        'otherwise. Vite `base`, Next `basePath`, CRA `PUBLIC_URL`. A build with the wrong base renders a blank ' +
+        'page with 404s for /assets/....'
     )
     .option('--cwd <cwd>', 'Working directory inside the sandbox')
     .option('--env-secret-ref <key>', 'Secret Store key to expose to the process', collect, [])
