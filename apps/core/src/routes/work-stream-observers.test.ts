@@ -129,6 +129,7 @@ it('creation shorthand registers before dispatch, even for immediate cancellatio
   const dispatch = spyOn(flowExecution, 'ensureFlowDispatch').mockImplementation(async (id) => {
     expect(await db.select().from(workStreamObservers).where(eq(workStreamObservers.workStreamId, id))).toHaveLength(1)
     await (await WorkStream.mustFind(id)).cancel()
+    return false // No participant was dispatched: the stream was canceled immediately.
   })
   try {
     const result = await request('', 'POST', {
