@@ -456,6 +456,9 @@ describe('renameIdentity (launchd)', () => {
     expect(env).toContain(`FICUS_LOG_FILE_API=${join(w.home, '.ficus', 'logs', 'ficus-api.log')}\n`)
     expect(env).toContain(`FICUS_LOG_FILE_WORKER=${join(w.home, '.ficus', 'logs', 'ficus-worker.log')}\n`)
     expect(JSON.parse(readFileSync(w.statePath, 'utf8')).instances.ficus.identity).toBe(2)
+    // The old plists are gone, so their labels are enabled again: no override is left behind
+    // for a later manual bootstrap of the old plists (the rollback fallback) to trip over.
+    expect([...w.disabled]).toEqual([])
   })
 
   it('a failure at step 9 restores the old plists, the .env and the registry, and restarts the old labels', async () => {
@@ -804,6 +807,9 @@ describe('nothing comes back by itself mid-run', () => {
     // The fake launchd refuses to bootstrap a disabled label: the restart shows it was enabled first.
     expect(w.disabled.has(oldApi)).toBe(false)
     expect(w.loaded.has(oldApi)).toBe(true)
+    // The undo stopped (disabled) and removed the new jobs, then enabled their labels again,
+    // so a later setup of the `ficus` instance can bootstrap sh.ficus.* at all.
+    expect([...w.disabled]).toEqual([])
   })
 
   it('pm2: after a reboot resurrected the old apps, recovery deletes them before reversing anything', async () => {
@@ -931,14 +937,62 @@ describe('readiness, finishing and refusing', () => {
     expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(text)
   })
 
-  it('one run at a time: a live lock refuses, a stale one is taken over', async () => {
+  it('one run at a time: a live lock refuses and names itself; a dead or reused pid is taken over', async () => {
     const w = world('pm2')
     const lock = `${w.journal()}.lock`
-    writeFileSync(lock, String(process.pid))
-    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/another .* is running/)
+    const started = Bun.spawnSync(['ps', '-o', 'lstart=', '-p', String(process.pid)])
+      .stdout.toString()
+      .trim()
+    writeFileSync(lock, JSON.stringify({ pid: process.pid, started }))
+    const error = await renameIdentity({ root: w.root }, w.deps).catch((e: Error) => e)
+    expect((error as Error).message).toContain(`another \`ficus server rename-identity\` (pid ${process.pid}`)
+    expect((error as Error).message).toContain(lock)
+    expect((error as Error).message).toContain(`ps -o lstart=,command= -p ${process.pid}`)
     expect(w.calls).toEqual([])
-    writeFileSync(lock, '2147483646')
-    await renameIdentity({ root: w.root }, w.deps)
+    // The same pid, but a process started at another time: the pid was reused (a reboot).
+    writeFileSync(lock, JSON.stringify({ pid: process.pid, started: 'Thu Jan  1 00:00:00 1970' }))
+    await renameIdentity({ root: w.root, dryRun: false }, w.deps)
     expect(existsSync(join(w.home, '.ficus', `${RENAME_JOURNAL}.lock`))).toBe(false)
+  })
+
+  it('a lock whose process is gone is taken over', async () => {
+    const w = world('pm2')
+    writeFileSync(`${w.journal()}.lock`, JSON.stringify({ pid: 2147483646, started: 'x' }))
+    await renameIdentity({ root: w.root }, w.deps)
+    expect(JSON.parse(readFileSync(w.statePath, 'utf8')).instances.ficus.identity).toBe(2)
+  })
+
+  it('every /ready request has its own timeout, so a wedged API cannot stretch the budget', async () => {
+    const signals: (AbortSignal | undefined)[] = []
+    const w = world('pm2', {
+      fetch: (async (_url: string, init?: RequestInit) => {
+        signals.push(init?.signal ?? undefined)
+        return new Response('ok', { status: 200 })
+      }) as typeof fetch,
+    })
+    await renameIdentity({ root: w.root }, w.deps)
+    expect(signals.length).toBeGreaterThan(0)
+    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('keeps a missing final newline when step 4 had nothing to change', async () => {
+    // HOME_DIR already names a custom home: step 4 edits nothing, step 6 renames the label.
+    const w = world('pm2', { fetch: async () => new Response('down', { status: 502 }), envExtra: 'HOME_DIR=/srv/data' })
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/ready/)
+    expect(readFileSync(join(w.root, '.env'), 'utf8')).toBe(w.envText)
+  })
+
+  it('keeps a complete last journal line that lacks its newline', async () => {
+    const w = world('pm2')
+    const journal = join(w.home, LEGACY_HOME_DIR_NAME, RENAME_JOURNAL)
+    const begin = { op: 'begin', root: w.root, supervisor: 'pm2', from: L, to: 'ficus', port: 3900, home: w.home }
+    // A hand edit (or a write torn exactly before its newline): the last entry is whole.
+    const lines = [begin, { op: 'stopped' }, { op: 'env', edits: [] }].map((e) => JSON.stringify(e)).join('\n')
+    writeFileSync(journal, lines)
+    w.fail.match = (line) => line.startsWith('bunx pm2 start')
+    await expect(renameIdentity({ root: w.root }, w.deps)).rejects.toThrow(/journal .* is kept/)
+    const kept = readFileSync(journal, 'utf8')
+    expect(kept.startsWith(`${lines}\n`)).toBe(true)
+    expect(kept).toContain('"op":"undone","index":2')
   })
 })

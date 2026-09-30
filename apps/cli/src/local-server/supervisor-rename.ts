@@ -172,16 +172,26 @@ export async function removeSupervisorDefinitions(
   deps: SupervisorDeps
 ): Promise<void> {
   const ctx = deps.context(id, root)
-  if (id.supervisor === 'launchd') return launchdSupervisor.uninstall(ctx)
+  if (id.supervisor === 'launchd') return uninstallLaunchd(ctx)
   if (id.supervisor === 'systemd-user') {
     if (systemdUnitsPresent(ctx).length > 0) await systemdUserSupervisor.uninstall(ctx)
   }
 }
 
+/**
+ * Removes an identity's plists, then enables its labels again: a `disable` override only matters
+ * while a plist exists, and one left behind makes a later bootstrap of that label fail (a new
+ * setup under the same label, or the old plists restored by hand).
+ */
+async function uninstallLaunchd(ctx: SupervisorContext): Promise<void> {
+  await launchdSupervisor.uninstall(ctx)
+  await launchdOverride(ctx, 'enable')
+}
+
 /** Stops `id` and removes its definitions, whatever of it exists (the undo of a started identity). */
 async function removeSupervisor(id: SupervisorIdentity, root: string, deps: SupervisorDeps): Promise<void> {
   const ctx = deps.context(id, root)
-  if (id.supervisor === 'launchd') return launchdSupervisor.uninstall(ctx)
+  if (id.supervisor === 'launchd') return uninstallLaunchd(ctx)
   if (id.supervisor === 'systemd-user') {
     const present = systemdUnitsPresent(ctx)
     for (const names of present) await must(ctx, ['systemctl', '--user', 'disable', '--now', names.unit])
@@ -331,18 +341,32 @@ type Begin = Extract<JournalEntry, { op: 'begin' }>
 
 function appendJournal(path: string, entry: JournalEntry): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  // A torn last line (a crash mid-append) is cut off first, so it never ends up mid-file.
+  // A last line without its newline: a whole entry (the reader counts it) gets its newline; a
+  // torn one (a crash mid-append, which the reader skips) is cut off, so it never ends up mid-file.
+  let lead = ''
   if (existsSync(path)) {
     const text = readFileSync(path, 'utf8')
-    if (text.length > 0 && !text.endsWith('\n'))
-      truncateSync(path, Buffer.byteLength(text.slice(0, text.lastIndexOf('\n') + 1)))
+    if (text.length > 0 && !text.endsWith('\n')) {
+      const start = text.lastIndexOf('\n') + 1
+      if (parsesAsJson(text.slice(start))) lead = '\n'
+      else truncateSync(path, Buffer.byteLength(text.slice(0, start)))
+    }
   }
   const fd = openSync(path, 'a', 0o600)
   try {
-    writeSync(fd, JSON.stringify(entry) + '\n')
+    writeSync(fd, lead + JSON.stringify(entry) + '\n')
     fsyncSync(fd)
   } finally {
     closeSync(fd)
+  }
+}
+
+function parsesAsJson(text: string): boolean {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -542,6 +566,7 @@ async function rebaseHome(
 /** How long `/ready` gets after a start: a cold boot waits for the database and runs migrations. */
 const READY_ATTEMPTS = 61
 const READY_INTERVAL_MS = 2000
+const READY_REQUEST_TIMEOUT_MS = 5000
 
 /**
  * Waits for `GET /ready` to answer 200. Unlike `/health` (served before boot finishes), `/ready`
@@ -554,7 +579,9 @@ async function waitReady(port: number, deps: RenameDeps): Promise<void> {
   const url = `http://localhost:${port}/ready`
   for (let i = 0; i < READY_ATTEMPTS; i++) {
     try {
-      if ((await deps.fetch(url)).status === 200) return
+      // Each request is bounded too: an API that accepts but never answers must not hold one
+      // attempt for the fetch default of minutes.
+      if ((await deps.fetch(url, { signal: AbortSignal.timeout(READY_REQUEST_TIMEOUT_MS) })).status === 200) return
     } catch {
       /* not up yet */
     }
@@ -780,22 +807,60 @@ function processAlive(pid: number): boolean {
   }
 }
 
+/** When process `pid` started (`ps -o lstart=`), or undefined when that cannot be told. */
+function processStart(pid: number): string | undefined {
+  try {
+    const result = Bun.spawnSync(['ps', '-o', 'lstart=', '-p', String(pid)])
+    const started = result.stdout.toString().trim()
+    return result.exitCode === 0 && started ? started : undefined
+  } catch {
+    return undefined
+  }
+}
+
+interface LockOwner {
+  pid: number
+  /** The owner's start time: a pid alive but started at another time was reused (a reboot). */
+  started?: string
+}
+
+function readLockOwner(path: string): LockOwner | undefined {
+  try {
+    const owner = JSON.parse(readFileSync(path, 'utf8')) as LockOwner
+    return Number.isInteger(owner.pid) && owner.pid > 0 ? owner : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The lock's owner is still running: its pid is alive and (when both are known) started when it says. */
+function ownerRunning(owner: LockOwner): boolean {
+  if (!processAlive(owner.pid)) return false
+  const started = processStart(owner.pid)
+  return owner.started === undefined || started === undefined || started === owner.started
+}
+
 /**
- * One rename-identity at a time: `<journal>.lock` holds the running invocation's pid, and a lock
- * whose process is gone is taken over. It lives beside the journal, so it moves with the CLI home.
+ * One rename-identity at a time: `<journal>.lock` holds the running invocation's pid and start
+ * time. A lock whose process is gone, or whose pid now belongs to a process started at another
+ * time (reused after a reboot), is taken over. It lives beside the journal, so it moves with the
+ * CLI home.
  */
 async function withLock<T>(deps: RenameDeps, fn: () => Promise<T>): Promise<T> {
   const path = `${deps.journalPath()}.lock`
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  const me: LockOwner = { pid: process.pid, started: processStart(process.pid) }
   for (let attempt = 0; ; attempt++) {
     try {
-      writeFileSync(path, String(process.pid), { flag: 'wx', mode: 0o600 })
+      writeFileSync(path, JSON.stringify(me), { flag: 'wx', mode: 0o600 })
       break
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt > 0) throw error
-      const pid = Number(readFileSync(path, 'utf8').trim())
-      if (Number.isInteger(pid) && pid > 0 && processAlive(pid))
-        throw new Error(`another \`ficus server rename-identity\` (pid ${pid}) is running — wait for it to finish`)
+      const owner = readLockOwner(path)
+      if (owner && ownerRunning(owner))
+        throw new Error(
+          `another \`ficus server rename-identity\` (pid ${owner.pid}${owner.started ? `, started ${owner.started}` : ''}) holds ${path} — wait for it to finish. If \`ps -o lstart=,command= -p ${owner.pid}\` shows no rename-identity started then, the lock is stale: delete ${path} and run again`
+        )
       rmSync(path, { force: true })
     }
   }
@@ -985,7 +1050,7 @@ async function renameOrResolve(
       const text = readFileSync(ctx.envPath, 'utf8')
       const edits = planEnvEdits(text, identityEnvValues(plan, parseEnvFile(text), deps))
       if (edits.length > 0) {
-        journal({ op: 'env', edits })
+        journal({ op: 'env', edits, ...(text.length > 0 && !text.endsWith('\n') ? { noFinalNewline: true } : {}) })
         writeFileAtomic(ctx.envPath, applyEnvEdits(text, edits))
       }
     }
