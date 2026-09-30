@@ -485,9 +485,26 @@ authRouter.post('/register/token/verify', async (c) => {
   // (wrong authenticator, expired challenge) must leave the invite usable.
   // verifyRegResponse throws on a missing/expired challenge — that's a failed
   // ceremony, not a server fault, so it answers 401 like any other bad response.
-  const verification = await verifyRegResponse(user, response).catch(() => null)
+  // The reason is logged (it names no secret): "Verification failed" alone left
+  // a failed invite undiagnosable.
+  let failure: string | null = null
+  const verification = await verifyRegResponse(user, response).catch((error: Error) => {
+    failure = error.message
+    return null
+  })
   if (!verification?.verified || !verification.registrationInfo) {
-    return c.json({ error: 'Verification failed' }, 401)
+    console.warn(
+      `[auth] Passkey registration by link failed for user ${user.id}: ${failure ?? 'response not verified'}`
+    )
+    return c.json(
+      {
+        error:
+          failure && /challenge expired or not found/i.test(failure)
+            ? 'The passkey prompt timed out. Try again.'
+            : 'Verification failed',
+      },
+      401
+    )
   }
 
   // Atomic single-use consume. Only now is the token spent, and the purpose we
