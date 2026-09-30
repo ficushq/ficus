@@ -4,6 +4,8 @@ export type Selection =
   | { kind: 'plot'; streamId: string }
   | { kind: 'robot'; agentId: string }
   | { kind: 'yard'; squadId: string }
+  /** A squad's field log: what its robots have been doing, live (opened from its sign). */
+  | { kind: 'fieldLog'; squadId: string }
   | { kind: 'hut'; squadId: string }
   | { kind: 'stand'; squadId: string }
   /** A squad's server rack: its apps to open. */
@@ -26,6 +28,8 @@ export function selectionKey(s: Selection | null): string | null {
       return `robot:${s.agentId}`
     case 'yard':
       return `yard:${s.squadId}`
+    case 'fieldLog':
+      return `fieldLog:${s.squadId}`
     case 'hut':
       return `hut:${s.squadId}`
     case 'stand':

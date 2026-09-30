@@ -168,6 +168,10 @@ Presence and farm chat are sent by the API process itself, per recipient, and
 never travel the event bus (the WebSocket bridge ignores them; see
 [event-emitter](event-emitter.md)).
 
+## Field log
+
+A squad's sign card has **Watch the field**, which opens its field log (`FieldLogCard`): what the squad's robots have been doing, newest first, the same activity as the web app's squad Activity tab (`GET /api/squads/:id/activity`), a page at a time with **Load earlier**. Chips filter by kind: All, Chat (`message`), Work (`workstream`, `handoff`, `execution`, `subagent`), Waits (`wait`) and Code (`pr`, `issue`). An entry opens what it's about: the robot's chat, the plant if it's still on the farm, or the pull request or issue. While the card is open the farm's socket watches the squad's `squadActivity:<id>` topic (`watchTopic` in `live/LiveUpdates.tsx`), and a new entry refreshes the log; a 30-second refetch covers a dropped socket.
+
 ## Server racks
 
 A squad with apps to open gets a server rack just off its yard's back-left
