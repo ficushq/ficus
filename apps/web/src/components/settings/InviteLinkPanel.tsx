@@ -72,7 +72,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
           </p>
         </div>
       )}
-      <button onClick={onDone} className="ficus-button text-xs text-muted hover:text-primary">
+      <button onClick={onDone} className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs rounded font-medium">
         Done
       </button>
     </div>

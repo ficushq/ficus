@@ -94,7 +94,11 @@ export function ClaudeCodeAccountSetup({
             {check.isPending ? 'Checking…' : 'Check again'}
           </button>
         )}
-        <button type="button" onClick={onCancel} className="ficus-button text-sm text-muted hover:text-primary">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ficus-button ficus-button-secondary rounded-lg px-4 py-2 text-sm font-medium"
+        >
           Cancel
         </button>
       </div>

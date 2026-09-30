@@ -134,7 +134,11 @@ export function InviteUserForm({
           >
             Invite another teammate
           </button>
-          <button type="button" className="ficus-button text-sm text-muted" onClick={onCancel}>
+          <button
+            type="button"
+            className="ficus-button ficus-button-secondary rounded-lg px-4 py-2 text-sm font-medium"
+            onClick={onCancel}
+          >
             Done
           </button>
         </div>

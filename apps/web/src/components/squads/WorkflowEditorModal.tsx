@@ -69,7 +69,11 @@ export function WorkflowEditorModal({
           </p>
         )}
         <div className="flex items-center justify-end gap-2">
-          <button type="button" className="ficus-button text-sm text-secondary" onClick={onClose}>
+          <button
+            type="button"
+            className="ficus-button ficus-button-secondary rounded-lg px-4 py-2 text-sm font-medium"
+            onClick={onClose}
+          >
             Cancel
           </button>
           <button
