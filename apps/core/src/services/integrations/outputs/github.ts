@@ -40,6 +40,43 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
   shouldNotify(fact, configuration) {
     return !isGitHubSelfComment(fact, String(record(configuration)?.login ?? ''))
   },
+  notificationBody(fact) {
+    // Feedback and CI already describe the event itself, not the parent resource.
+    // Keep their text intact (including edited comments and review-thread links).
+    if (
+      ![
+        'issue.assigned',
+        'issue.unassigned',
+        'issue.updated',
+        'pull_request.review_requested',
+        'pull_request.updated',
+        'pull_request.closed',
+        'pull_request.merged',
+      ].includes(fact.output)
+    )
+      return fact.body
+    const resource = githubOutputAdapter.trackedResource?.(fact)
+    if (!resource?.url) return fact.body
+    const data = fact.data
+    // An initial assignment/request can start work without any earlier context.
+    if (['issue.assigned', 'pull_request.review_requested'].includes(fact.output) || data.action === 'opened')
+      return fact.body.includes(resource.url) ? fact.body : `${fact.body}\n${resource.url}`
+
+    // Stateless presentation also compacts facts retained before this policy existed.
+    // Never parse/truncate the canonical body: it remains evidence for rules/audit.
+    const state = data.pullRequestState ?? data.state
+    const detail = [...new Set([data.action, state].filter(Boolean))].join('; ')
+    const head = record(data.pullRequest)?.headSha
+    return [
+      `${outputTitles[fact.output]}${data.actor ? ` by ${data.actor}` : ''}${detail ? ` (${detail})` : ''}.`,
+      data.action === 'edited' ? 'Details edited; view the current title and description at the resource link.' : '',
+      head ? `Head: ${head}` : '',
+      data.mergeConflict ? 'Merge conflicts need resolution.' : '',
+      resource.url,
+    ]
+      .filter(Boolean)
+      .join('\n')
+  },
   normalize(event) {
     const payload = record(event.payload)
     const repository = payload?.repository?.full_name

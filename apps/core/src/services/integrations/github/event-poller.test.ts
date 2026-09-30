@@ -1394,3 +1394,65 @@ test('an unavailable aggregate cannot renew a dynamic merge state from an unchan
   expect(next.events).toEqual([])
   expect(next.nextCursor.deliveryPresentation).toBeUndefined()
 })
+
+test('emitted polling updates and feedback share compact webhook presentation without stripping snapshots', async () => {
+  const { githubOutputAdapter } = await import('../outputs/github')
+  const { integrationOutputRegistry } = await import('../outputs/registry')
+  const description = 'Unchanged parent description.\n'.repeat(100)
+  const pr = { ...pullRequest, body: description, updated_at: '2026-08-26T01:00:00Z' }
+  const issueSnapshot = { ...issue, body: description }
+  const review = { id: 201, state: 'APPROVED', body: 'Review feedback', submitted_at: '2026-08-26T01:00:00Z' }
+  let phase = 0
+  const poller = new GitHubPrEventPoller({
+    resolveCredential: async () => 'token',
+    fetch: async (input) => {
+      const path = new URL(input).pathname
+      if (path.endsWith('/pulls/7'))
+        return response({ ...pr, head: { sha: ['abc', 'def', 'ghi'][phase] } }, `"pr-${phase}"`)
+      if (path.endsWith('/issues/7')) return response(issueSnapshot, `"issue-${phase}"`)
+      if (path.endsWith('/reviews')) return response(phase ? [review] : [], `"reviews-${phase}"`)
+      const feedback = {
+        ...comment,
+        body: phase === 1 ? 'New feedback' : 'Edited feedback',
+        updated_at: `2026-08-26T0${phase}:00:00Z`,
+      }
+      return response(
+        phase
+          ? [{ ...feedback, ...(path.endsWith('/pulls/7/comments') ? { path: 'src/main.ts', line: 12 } : {}) }]
+          : [],
+        `"comments-${phase}"`
+      )
+    },
+  })
+  let cursor = (await poller.poll(connection(), null)).nextCursor
+  for (phase = 1; phase <= 2; phase++) {
+    const polled = await poller.poll(connection(), cursor)
+    cursor = polled.nextCursor
+    expect(polled.events.map((event) => event.type)).toEqual(
+      phase === 1
+        ? ['pull_request', 'issue_comment', 'pull_request_review', 'pull_request_review_comment']
+        : ['pull_request', 'issue_comment', 'pull_request_review_comment']
+    )
+    for (const event of polled.events) {
+      const payload = event.payload as Record<string, any>
+      expect((payload.pull_request ?? payload.issue).body).toBe(description)
+      const [fact] = githubOutputAdapter.normalize(event)
+      const [webhookFact] = githubOutputAdapter.normalize({ type: event.type, payload })
+      expect(fact).toEqual(webhookFact)
+      const body = integrationOutputRegistry.notificationBody('github', fact!)
+      expect(body).toBe(integrationOutputRegistry.notificationBody('github', webhookFact!))
+      expect(body).not.toContain(description)
+      if (event.type === 'pull_request') {
+        expect(body).toContain(`Head: ${phase === 1 ? 'def' : 'ghi'}`)
+        expect(fact!.body).toContain(description)
+      } else if (event.type === 'pull_request_review') {
+        expect(body).toContain('Review feedback')
+        expect(body).toContain('approved')
+      } else {
+        expect(payload.action).toBe(phase === 1 ? 'created' : 'edited')
+        expect(body).toContain(phase === 1 ? 'New feedback' : 'Edited feedback')
+        if (event.type === 'pull_request_review_comment') expect(body).toContain('src/main.ts:12')
+      }
+    }
+  }
+})

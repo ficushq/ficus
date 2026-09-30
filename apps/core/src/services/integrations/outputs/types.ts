@@ -25,6 +25,8 @@ export interface IntegrationOutputAdapter {
   trackedIdentity?(fact: IntegrationOutputFact): { integration: string; externalId: string } | null
   /** Suppress notification echoes without discarding the recorded provider fact. */
   shouldNotify?(fact: IntegrationOutputFact, connectionConfiguration: unknown): boolean
+  /** Agent-facing presentation only; never used for matching, canonical facts, or delivery identity. */
+  notificationBody?(fact: IntegrationOutputFact): string
   normalize(event: VerifiedIngressEvent): IntegrationOutputFact[]
 }
 /** Supplied by the authenticated ingress, never by event payload or stream metadata. */

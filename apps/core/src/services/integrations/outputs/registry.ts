@@ -24,6 +24,9 @@ export class IntegrationOutputRegistry {
   adapter(integration: string) {
     return this.adapters.find((adapter) => adapter.integration === integration)
   }
+  notificationBody(integration: string, fact: IntegrationOutputFact): string {
+    return this.adapter(integration)?.notificationBody?.(fact) ?? fact.body
+  }
   descriptor(source: IntegrationSubscription['source']) {
     return this.catalog().find(
       (item) =>
