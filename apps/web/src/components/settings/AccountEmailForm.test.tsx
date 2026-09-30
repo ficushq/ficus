@@ -2,11 +2,11 @@ import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { AuthUser } from '@ficus/client-core'
 import { acquireDomHarness } from '../../test/domHarness'
-import { AddEmailForm } from './AddEmailForm'
+import { AccountEmailForm } from './AccountEmailForm'
 
 const saved = { id: 'u1', email: 'me@example.com', displayName: null } as unknown as AuthUser
 
-async function setup(api: Parameters<typeof AddEmailForm>[0]['api']) {
+async function setup(api: Parameters<typeof AccountEmailForm>[0]['api'], hasEmail = false) {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const { root, container } = dom.createRoot()
   const onAdded = mock((_user: AuthUser) => {})
@@ -14,7 +14,7 @@ async function setup(api: Parameters<typeof AddEmailForm>[0]['api']) {
   await dom.act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <AddEmailForm onAdded={onAdded} api={api} />
+        <AccountEmailForm hasEmail={hasEmail} onSaved={onAdded} api={api} />
       </QueryClientProvider>
     )
   )
@@ -31,7 +31,7 @@ async function setup(api: Parameters<typeof AddEmailForm>[0]['api']) {
   return { dom, container, onAdded, button, type, click }
 }
 
-describe('AddEmailForm', () => {
+describe('AccountEmailForm', () => {
   test('without a mail provider the address is saved directly', async () => {
     const addEmail = mock(async () => ({ verificationRequired: false, user: saved }))
     const verifyAddedEmail = mock(async () => ({ user: saved }))
@@ -64,6 +64,26 @@ describe('AddEmailForm', () => {
       await type('#account-add-email-code', '123456')
       await click('Verify and save')
       expect(verifyAddedEmail).toHaveBeenCalledWith('me@example.com', '123456')
+      expect(onAdded).toHaveBeenCalledWith(saved)
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('an account with an email offers to change it, through the same steps', async () => {
+    const addEmail = mock(async () => ({ verificationRequired: true }))
+    const verifyAddedEmail = mock(async () => ({ user: saved }))
+    const { dom, container, onAdded, type, click, button } = await setup({ addEmail, verifyAddedEmail }, true)
+    try {
+      expect(button('Add email')).toBeUndefined()
+      expect(container.textContent).toContain('Used for account recovery and email notifications.')
+      await click('Change email')
+      expect(container.querySelector('label[for="account-add-email"]')?.textContent).toBe('New email')
+      await type('#account-add-email', 'new@example.com')
+      await click('Save email')
+      await type('#account-add-email-code', '654321')
+      await click('Verify and save')
+      expect(verifyAddedEmail).toHaveBeenCalledWith('new@example.com', '654321')
       expect(onAdded).toHaveBeenCalledWith(saved)
     } finally {
       await dom.cleanup()
