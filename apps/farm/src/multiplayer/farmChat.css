@@ -541,16 +541,13 @@
 
 /* ---- Mentions, farm chips, links, suggestions, the bell ---- */
 
+/* @mentions are plain bold text; yours is in the accent colour. */
 .g-farmchat-mention {
-  padding: 0 3px;
-  border-radius: var(--g-radius-xs);
-  background: var(--g-row-hover);
   font-weight: 700;
 }
 
 .g-farmchat-mention-me {
-  background: var(--g-accent-fill);
-  color: var(--g-on-accent);
+  color: var(--g-accent);
 }
 
 .g-farmchat-link {
@@ -560,27 +557,9 @@
   overflow-wrap: anywhere;
 }
 
+/* Things on the farm, inline like links: bold and underlined (a work stream: a sprout and its number). */
 .g-farmchat-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  margin: 1px 1px;
-  padding: 1px 8px 1px 6px;
-  border: var(--g-border-hair) solid var(--g-outline);
-  border-radius: var(--g-radius-pill);
-  background: var(--g-card);
-  color: var(--g-text);
-  font: 600 13px/1.5 var(--g-font-body);
-  text-decoration: none;
-  vertical-align: baseline;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-/* A work stream, inline like a link: a small sprout and its number, bold and underlined. */
-.g-farmchat-chip.g-farmchat-ref {
-  gap: 2px;
+  display: inline;
   margin: 0;
   padding: 0;
   border: 0;
@@ -588,33 +567,40 @@
   color: var(--g-good-text);
   font: inherit;
   font-weight: 700;
-  vertical-align: baseline;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.g-farmchat-ref .g-farmchat-chip-text {
+.g-farmchat-chip-text {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
 
-.g-farmchat-ref:hover {
-  background: none;
-}
-
-.g-farmchat-ref:hover .g-farmchat-chip-text,
-.g-farmchat-ref:focus-visible .g-farmchat-chip-text {
+.g-farmchat-chip:hover .g-farmchat-chip-text,
+.g-farmchat-chip:focus-visible .g-farmchat-chip-text {
   text-decoration-thickness: 2px;
 }
 
-.g-farmchat-chip-sprout {
-  display: block;
-  width: 0.9em;
-  height: 0.9em;
-  color: var(--g-good-text);
+/* A number is short: a little room after it, before the punctuation. */
+.g-farmchat-chip-stream {
+  padding-right: 0.15em;
 }
 
-.g-farmchat-chip:hover {
-  background: var(--g-row-hover);
+/* On your own (green) bubble, the bubble's link colour. */
+.g-farmchat-mine .g-farmchat-text .g-farmchat-chip,
+.g-farmchat-mine .g-farmchat-text .g-farmchat-mention-me,
+.g-chat-human .g-farmchat-chip {
+  color: var(--g-bubble-human-link);
+}
+
+.g-farmchat-chip-sprout {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 0.12em;
+  vertical-align: -0.08em;
 }
 
 .g-farmchat-chip-away {
@@ -704,4 +690,40 @@ a.g-farmchat-chip-away {
   margin: 8px 2px 0;
   color: var(--g-text-soft);
   font: 400 13px var(--g-font-body);
+}
+
+/* A work stream reference's preview (StreamPreview.tsx): a small card under it on hover or focus. */
+.g-stream-preview {
+  position: fixed;
+  z-index: 90;
+  width: min(260px, calc(100vw - 16px));
+  padding: 10px 12px;
+  pointer-events: none;
+}
+
+.g-stream-preview .g-eyebrow {
+  margin-right: 0;
+}
+
+.g-stream-preview .g-crew-meta {
+  margin: 0;
+}
+
+.g-stream-preview-title {
+  display: -webkit-box;
+  margin: 2px 0 4px;
+  overflow: hidden;
+  font: 700 14px/1.3 var(--g-font-body);
+  color: var(--g-text);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.g-stream-preview-tender {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font: 600 12.5px var(--g-font-body);
+  color: var(--g-text);
 }
