@@ -21,6 +21,8 @@ export const validateAuth = client.auth.validateAuth
 export const fetchWsTicket = client.auth.fetchWsTicket
 export const getCurrentUser = client.auth.getCurrentUser
 export const updateCurrentUser = client.auth.updateCurrentUser
+export const addEmail = client.auth.addEmail
+export const verifyAddedEmail = client.auth.verifyAddedEmail
 export const getMyPermissions = client.auth.getMyPermissions
 
 // ── Web-only WebAuthn ceremonies ────────────────────────────────────────────

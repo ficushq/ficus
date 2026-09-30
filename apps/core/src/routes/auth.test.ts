@@ -1536,6 +1536,77 @@ describe('PATCH /api/auth/me', () => {
   })
 })
 
+describe('POST /api/auth/me/email (adding an email to a no-email account)', () => {
+  const priorFrom = process.env.SES_FROM_ADDRESS
+  const removals: Array<() => Promise<void>> = []
+  afterEach(async () => {
+    if (priorFrom === undefined) delete process.env.SES_FROM_ADDRESS
+    else process.env.SES_FROM_ADDRESS = priorFrom
+    for (const remove of removals.splice(0)) await remove()
+  })
+
+  const placeholderOwner = async (prefix: string) => {
+    const { createTestUser } = await import('../test-utils/rbac')
+    const { User } = await import('../entities/User')
+    const owner = await createTestUser({ prefix, email: PLACEHOLDER_OWNER_EMAIL })
+    removals.push(async () => {
+      await (await User.findById(owner.id))?.delete()
+      await db.delete(emailVerifications).where(eq(emailVerifications.email, `${prefix}@example.com`))
+    })
+    return owner
+  }
+  const post = (path: string, token: string, body: Record<string, unknown>) =>
+    buildApp().request(`/api/auth/me/email${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...bearerHeader(token) },
+      body: JSON.stringify(body),
+    })
+
+  it('without a mail provider, saves the address directly', async () => {
+    delete process.env.SES_FROM_ADDRESS
+    const owner = await placeholderOwner('add-email-direct')
+    const res = await post('', owner.token, { email: 'add-email-direct@example.com' })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.verificationRequired).toBe(false)
+    expect(body.user.email).toBe('add-email-direct@example.com')
+  })
+
+  it('with a mail provider, saves the address only after its code is verified', async () => {
+    process.env.SES_FROM_ADDRESS = 'noreply@example.com'
+    const email = 'add-email-verified@example.com'
+    const owner = await placeholderOwner('add-email-verified')
+    // Stand in for the mailed code (SES isn't reachable in tests): the route's send is exercised
+    // by the no-provider path and by /register/email; here the code row is what matters.
+    const code = '246810'
+    await db.insert(emailVerifications).values({
+      email,
+      code: createHash('sha256').update(code).digest('hex'),
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    })
+    const wrong = await post('/verify', owner.token, { email, code: '000000' })
+    expect(wrong.status).toBe(401)
+    const res = await post('/verify', owner.token, { email, code })
+    expect(res.status).toBe(200)
+    expect((await res.json()).user.email).toBe(email)
+  })
+
+  it('refuses accounts that already have an email, addresses in use, and the placeholder itself', async () => {
+    delete process.env.SES_FROM_ADDRESS
+    const { createTestUser, cleanupTestRbac } = await import('../test-utils/rbac')
+    const withEmail = await createTestUser({ prefix: 'add-email-has' })
+    removals.push(() => cleanupTestRbac('add-email-has'))
+    expect((await post('', withEmail.token, { email: 'add-email-has-new@example.com' })).status).toBe(409)
+
+    const owner = await placeholderOwner('add-email-taken')
+    const taken = await post('', owner.token, { email: withEmail.email.toUpperCase() })
+    expect(taken.status).toBe(409)
+    expect((await taken.json()).error).toBe('Another account already uses this email')
+    expect((await post('', owner.token, { email: PLACEHOLDER_OWNER_EMAIL })).status).toBe(400)
+    expect((await post('', owner.token, { email: 'not-an-email' })).status).toBe(400)
+  })
+})
+
 // ── Credential Management (security-path coverage) ────────────────────────────
 
 describe('GET /api/auth/me/credentials', () => {
