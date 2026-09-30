@@ -27,6 +27,11 @@ import {
   type ClientReadableStream,
 } from '../services/sandbox/k8s/http-client'
 import { boxUnixUser } from '../services/machines/box-paths'
+import {
+  COMMAND_REFUSED_FOR_RESTART,
+  drainCommands,
+  resetCommandDrainForTests,
+} from '../services/sandbox/command-drain'
 import * as workspaceLayoutModule from '../services/sandbox/workspace-layout'
 import { sandboxRecoveryWatch } from '../services/sandbox/recovery-watch'
 
@@ -1434,6 +1439,65 @@ describe('createHttpBashOperations', () => {
     })
     expect(typeof fields.elapsedMs).toBe('number')
     expect(line).not.toContain('SECRET_COMMAND_TEXT')
+  })
+
+  test('a stopping worker refuses new commands and cancels running ones with a restart message', async () => {
+    try {
+      const stream = createMockStream()
+      const manager = createMockManager(stream)
+      const running = createHttpBashOperations(manager, 'test-sandbox').exec('sleep 60', '/workspace', {
+        onData: () => {},
+      })
+      const drained = drainCommands(5)
+      expect(await drained).toEqual({ finished: 0, canceled: 1 })
+      expect(stream.cancelAndWait).toHaveBeenCalledWith('worker-stop')
+      const error = (await running.catch((caught: unknown) => caught)) as Error
+      expect(error.message).toContain('Command canceled: the Ficus worker is restarting')
+      expect(error.message).toContain('run it again')
+
+      const bash = (manager.getClientForSandbox as ReturnType<typeof mock>).mock.results[0].value.bash
+      const calls = bash.mock.calls.length
+      await expect(
+        createHttpBashOperations(manager, 'test-sandbox').exec('echo later', '/workspace', { onData: () => {} })
+      ).rejects.toThrow(COMMAND_REFUSED_FOR_RESTART)
+      expect(bash.mock.calls.length).toBe(calls)
+    } finally {
+      resetCommandDrainForTests()
+    }
+  })
+
+  test('a restart cancel whose cleanup fails says it may still be running', async () => {
+    try {
+      const stream = createMockStream()
+      stream.cancelAndWait = mock(async () => {
+        throw new Error('cancel timed out')
+      })
+      const running = createHttpBashOperations(createMockManager(stream), 'test-sandbox').exec('sleep 60', '/w', {
+        onData: () => {},
+      })
+      await drainCommands(5)
+      const error = (await running.catch((caught: unknown) => caught)) as Error
+      expect(error.message).toContain('could not confirm it stopped (cancel timed out)')
+    } finally {
+      resetCommandDrainForTests()
+    }
+  })
+
+  test('a command that finishes during the drain is not canceled', async () => {
+    try {
+      const stream = createMockStream()
+      const running = createHttpBashOperations(createMockManager(stream), 'test-sandbox').exec('echo hi', '/w', {
+        onData: () => {},
+      })
+      const drained = drainCommands(60_000)
+      stream.emitData({ exitCode: 0 })
+      stream.emitEnd()
+      expect(await running).toEqual({ exitCode: 0 })
+      expect(await drained).toEqual({ finished: 1, canceled: 0 })
+      expect(stream.cancelAndWait).not.toHaveBeenCalled()
+    } finally {
+      resetCommandDrainForTests()
+    }
   })
 
   test('handles pre-aborted signal', async () => {
