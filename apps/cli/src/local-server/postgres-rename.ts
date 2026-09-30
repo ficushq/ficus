@@ -1,4 +1,17 @@
-import { chmodSync, existsSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'fs'
+import { randomUUID } from 'crypto'
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeSync,
+} from 'fs'
 import { basename, dirname, join } from 'path'
 import { LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
 import { parseEnvFile } from './env-file'
@@ -21,6 +34,22 @@ const FICUS_STEM = 'ficus'
  * from. It is how a later run tells its own container from one that merely has the name.
  */
 export const RENAMED_FROM_LABEL = 'sh.ficus.renamed-from'
+/**
+ * Label the rename puts on the volume (and container) it creates; the value is the caller's
+ * run id. Volume labels cannot change, so a volume some other run created can never carry
+ * this run's id: `undoLocalPostgresRename` removes a volume only when it does.
+ */
+export const RENAME_RUN_LABEL = 'sh.ficus.rename-run'
+const RUN_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
+
+/** A fresh run id for `renameLocalPostgres`; the caller journals it BEFORE the rename. */
+export function newRenameRunId(): string {
+  return randomUUID()
+}
+
+function assertRunId(runId: string): void {
+  if (!RUN_ID_RE.test(runId)) throw new Error(`rename run id "${runId}" must match ${RUN_ID_RE.source}`)
+}
 /** Seconds `docker stop` gives PostgreSQL to shut down cleanly before it is killed. */
 const STOP_TIMEOUT_S = '60'
 
@@ -103,18 +132,39 @@ function rewriteEnvDatabase(text: string, from: string, to: string): string {
     .join('\n')
 }
 
-/** Replaces a file in one rename (a sibling temp file with the same mode), so a crash never leaves it half written. */
+/**
+ * Replaces a file in one rename: a sibling temp file with the same mode, flushed to disk before
+ * the rename (and the directory after it, where the platform allows), so neither a crash nor a
+ * power loss leaves it half written or empty.
+ */
 function writeFileAtomic(path: string, text: string): void {
   const target = realpathSync(path)
   const mode = statSync(target).mode & 0o7777
-  const temp = join(dirname(target), `.${basename(target)}.ficus-rename-${process.pid}.tmp`)
+  const dir = dirname(target)
+  const temp = join(dir, `.${basename(target)}.ficus-rename-${process.pid}.tmp`)
   try {
-    writeFileSync(temp, text, { mode })
+    const fd = openSync(temp, 'w', mode)
+    try {
+      writeSync(fd, text)
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
     chmodSync(temp, mode)
     renameSync(temp, target)
   } catch (error) {
     rmSync(temp, { force: true })
     throw error
+  }
+  try {
+    const dirFd = openSync(dir, 'r')
+    try {
+      fsyncSync(dirFd)
+    } finally {
+      closeSync(dirFd)
+    }
+  } catch {
+    // Best effort: not every platform can fsync a directory; the file itself is already durable.
   }
 }
 
@@ -151,12 +201,27 @@ async function inspectOrAbsent(runner: Runner, container: string): Promise<Conta
   }
 }
 
-/** Whether a volume exists: false only when docker says there is no such volume. */
-async function volumeExists(runner: Runner, volume: string): Promise<boolean> {
+interface VolumeInfo {
+  Labels?: Record<string, string> | null
+}
+
+/** `docker volume inspect`: undefined only when docker says there is no such volume. */
+async function inspectVolume(runner: Runner, volume: string): Promise<VolumeInfo | undefined> {
   const r = await runner(['docker', 'volume', 'inspect', volume])
-  if (r.code === 0) return true
-  if (/no such volume/i.test(r.stderr)) return false
-  throw new Error(`docker volume inspect ${volume} failed:\n${r.stderr || r.stdout}`)
+  if (r.code !== 0) {
+    if (/no such volume/i.test(r.stderr)) return undefined
+    throw new Error(`docker volume inspect ${volume} failed:\n${r.stderr || r.stdout}`)
+  }
+  try {
+    const [info] = JSON.parse(r.stdout) as VolumeInfo[]
+    return info ?? {}
+  } catch {
+    throw new Error(`docker volume inspect ${volume} printed something that is not JSON`)
+  }
+}
+
+async function volumeExists(runner: Runner, volume: string): Promise<boolean> {
+  return (await inspectVolume(runner, volume)) !== undefined
 }
 
 function assertSafeNames({ legacy, ficus }: LocalPostgresMove): void {
@@ -302,13 +367,21 @@ export async function planLocalPostgresRename(
  *   legacy database, or a container of the new name exists and no legacy container does.
  * - Throws, touching nothing, on any refusal `planLocalPostgresRename` makes (each message says
  *   what it found and how to go back). A failure after the first change undoes this run's
- *   changes and throws, so a throw never leaves a half-made rename behind.
+ *   changes and throws, so a throw never leaves a half-made rename behind and needs no undo.
+ *
+ * `runId` (see `newRenameRunId`) labels the new volume and container (`RENAME_RUN_LABEL`).
+ * Required call order for a caller that journals (T19): `planLocalPostgresRename` and require
+ * `action === 'rename'` → journal "Postgres move started" WITH the run id → this function →
+ * journal "done" on 'renamed'. The run id is what lets `undoLocalPostgresRename` tell the volume
+ * this run created from one that was already there.
  */
 export async function renameLocalPostgres(
   move: LocalPostgresMove,
   root: string,
-  deps: DockerDeps
+  deps: DockerDeps,
+  opts: { runId: string }
 ): Promise<'renamed' | 'external' | 'already'> {
+  assertRunId(opts.runId)
   const plan = await planLocalPostgresRename(move, root, deps)
   if (plan.action !== 'rename') return plan.action
   const { runner } = deps
@@ -317,7 +390,7 @@ export async function renameLocalPostgres(
   try {
     await must(runner, ['docker', 'stop', '-t', STOP_TIMEOUT_S, from.container])
     if (from.running) undo.push(() => must(runner, ['docker', 'start', from.container]))
-    await must(runner, ['docker', 'volume', 'create', to.volume])
+    await must(runner, ['docker', 'volume', 'create', '--label', `${RENAME_RUN_LABEL}=${opts.runId}`, to.volume])
     // Only ever this run's own volume: the plan refused one that already existed.
     undo.push(() => removeIfPresent(runner, ['docker', 'volume', 'rm', to.volume]))
     await must(runner, [
@@ -342,7 +415,7 @@ export async function renameLocalPostgres(
       database: move.ficus.database,
       image: plan.image,
       dataDir: plan.dataDir,
-      labels: { [RENAMED_FROM_LABEL]: from.container },
+      labels: { [RENAMED_FROM_LABEL]: from.container, [RENAME_RUN_LABEL]: opts.runId },
     })
     await waitForPostgres(runner, to.container, { sleep: deps.sleep })
     if (plan.database) {
@@ -385,18 +458,23 @@ export async function renameLocalPostgres(
 }
 
 /**
- * Reverses `renameLocalPostgres`, completed or cut short by a crash: checks the old container
- * and its volume are still there (else throws, touching nothing — the new ones may hold the
- * only copy), stops and removes the new container, starts the old one and confirms it runs,
- * points DATABASE_URL back at the legacy database, and only then deals with the new volume.
+ * Reverses `renameLocalPostgres`, completed or cut short by a crash. Before changing anything it
+ * checks that the old container and its volume are still there, and that a container with the
+ * new name is the rename's own (`RENAMED_FROM_LABEL`); otherwise it throws, touching nothing.
+ * Then it stops and removes the new container, starts the old one and confirms it runs, points
+ * DATABASE_URL back at the legacy database, and only then deals with the new volume.
  *
- * `appStarted` says whether any process of the new identity ever ran against the new database:
- * - false (a failure BEFORE the app was started on it — T19 steps 5–9, or a step 5 that a crash
- *   cut short, which T19's journal proves by recording "step 5 started" first): the new volume
- *   is only this rename's copy and is removed, so a retry copies afresh.
- * - true (a failure from T19 step 10 on, or `--undo` after a completed run): the new volume
- *   holds everything the app wrote since the rename and is KEPT; the result names it, and the
- *   caller must report it — the restored database is the pre-rename snapshot.
+ * `appStarted` says whether any process of the new identity may have run against the new
+ * database. It must be true from the moment the caller starts installing or starting the new
+ * identity (T19 step 9, `installSupervisor`, which starts the processes) — T19 journals "new
+ * identity may be running" right before step 9 and derives `appStarted` from that entry:
+ * - false (a failure in T19 steps 5–8, or a step 5 that a crash cut short): the new volume is
+ *   removed — but ONLY when it carries `RENAME_RUN_LABEL=<runId>`, i.e. this run created it, so
+ *   a retry copies afresh. A volume without that label (from an earlier run, kept by an undo
+ *   with `appStarted: true`, or made by something else) is kept, and `keptBecause` says why.
+ * - true (a failure from T19 step 9 on, or `--undo` after a completed run): the new volume holds
+ *   everything the app wrote since the rename and is KEPT; the result names it, and the caller
+ *   must report it — the restored database is the pre-rename snapshot.
  * A volume the old container itself mounts is never removed.
  *
  * DATABASE_URL goes back only when it names `ficus`. An install whose chosen `--db-name` was
@@ -407,9 +485,10 @@ export async function undoLocalPostgresRename(
   move: LocalPostgresMove,
   root: string,
   deps: DockerDeps,
-  opts: { appStarted: boolean }
-): Promise<{ keptVolume: string | undefined }> {
+  opts: { appStarted: boolean; runId: string }
+): Promise<{ keptVolume: string | undefined; keptBecause?: string }> {
   assertSafeNames(move)
+  assertRunId(opts.runId)
   const { legacy, ficus } = move
   const { runner } = deps
   const legacyInfo = await inspectOrAbsent(runner, legacy.container)
@@ -420,17 +499,41 @@ export async function undoLocalPostgresRename(
         `${ficus.container} and ${ficus.volume} may hold the only copy of the data — left untouched`
     )
   }
-  await removeIfPresent(runner, ['docker', 'stop', '-t', STOP_TIMEOUT_S, ficus.container])
-  await removeIfPresent(runner, ['docker', 'rm', '-f', ficus.container])
+  const ficusInfo = await inspectOrAbsent(runner, ficus.container)
+  if (ficusInfo && ficusInfo.Config?.Labels?.[RENAMED_FROM_LABEL] !== legacy.container) {
+    throw new Error(
+      `cannot undo the move to ${ficus.container}: a container of that name exists (${stateOf(ficusInfo)}, ` +
+        `data volume ${postgresDataMount(ficusInfo.Mounts)?.Name ?? 'none'}) but no rename from ${legacy.container} ` +
+        `created it (no ${RENAMED_FROM_LABEL}=${legacy.container} label) — left untouched, ${legacy.container} (${stateOf(legacyInfo)}) too`
+    )
+  }
+  if (ficusInfo) {
+    await removeIfPresent(runner, ['docker', 'stop', '-t', STOP_TIMEOUT_S, ficus.container])
+    await removeIfPresent(runner, ['docker', 'rm', '-f', ficus.container])
+  }
   await must(runner, ['docker', 'start', legacy.container])
   if (!(await inspectOrAbsent(runner, legacy.container))?.State?.Running) {
     throw new Error(`${legacy.container} did not stay running after docker start; ${ficus.volume} is kept`)
   }
   const envPath = join(root, '.env')
   if (existsSync(envPath)) pointEnvAt(envPath, ficus.database, legacy.database)
-  if (!opts.appStarted && legacyVolume !== ficus.volume) {
-    await removeIfPresent(runner, ['docker', 'volume', 'rm', ficus.volume])
-    return { keptVolume: undefined }
+  const volume = await inspectVolume(runner, ficus.volume)
+  if (!volume) return { keptVolume: undefined }
+  if (opts.appStarted) {
+    return { keptVolume: ficus.volume, keptBecause: 'the app may have written to it since the rename' }
   }
-  return { keptVolume: (await volumeExists(runner, ficus.volume)) ? ficus.volume : undefined }
+  if (legacyVolume === ficus.volume) {
+    return { keptVolume: ficus.volume, keptBecause: `${legacy.container} keeps its own data in it` }
+  }
+  const owner = volume.Labels?.[RENAME_RUN_LABEL]
+  if (owner !== opts.runId) {
+    return {
+      keptVolume: ficus.volume,
+      keptBecause: owner
+        ? `it was created by another rename run (${owner}), not this one (${opts.runId})`
+        : `it has no ${RENAME_RUN_LABEL} label, so this run did not create it`,
+    }
+  }
+  await removeIfPresent(runner, ['docker', 'volume', 'rm', ficus.volume])
+  return { keptVolume: undefined }
 }

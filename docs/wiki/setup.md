@@ -614,9 +614,9 @@ differently, or debug a step that failed:
    `docker run -d --name postgres-ficus --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ficus -p 127.0.0.1:5432:5432 -v ficus_postgres-data:/var/lib/postgresql paradedb/paradedb:latest`
    (`docker start postgres-ficus` if that container already exists — one created
    by `docker compose` counts). Wait until
-   `docker exec postgres-tau psql -U postgres -tAc 'SELECT 1'` succeeds
+   `docker exec postgres-ficus psql -U postgres -tAc 'SELECT 1'` succeeds
    repeatedly (ParadeDB restarts once during first init), and create the
-   database if it is not named `tau`. A labelled instance uses
+   database if it is not named `ficus`. A labelled instance uses
    `postgres-tau-<label>`, the volume `tau-<label>_postgres-data` and its own
    host port. Managed PostgreSQL works too — point `DATABASE_URL` at it and skip
    the container. pgvector, which memory search needs, is created by the
