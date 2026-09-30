@@ -141,7 +141,39 @@ describe('token deep-link registration + passkey recovery UI', () => {
       form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    expect(getTokenRegistrationOptions).toHaveBeenCalledTimes(1)
+    expect(startRegistration).toHaveBeenCalledTimes(1)
+    // One lookup on page load, one fresh challenge for the attempt.
+    expect(getTokenRegistrationOptions).toHaveBeenCalledTimes(2)
+  })
+
+  test('every attempt gets a fresh challenge, so a slow or failed first try can be retried', async () => {
+    await renderAt('/register?token=abc123')
+    const challenges = ['fresh-1', 'fresh-2']
+    for (const challenge of challenges)
+      getTokenRegistrationOptions.mockResolvedValueOnce({
+        options: { challenge },
+        email: 'invitee@example.com',
+        displayName: null,
+        purpose: 'register',
+      })
+    verifyTokenRegistration.mockRejectedValueOnce(new Error('Verification failed'))
+    const submit = async () =>
+      dom.act(async () => {
+        container
+          .querySelector('form')!
+          .dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+    await submit()
+    expect(container.textContent).toContain('Verification failed')
+    await submit()
+    expect(
+      (startRegistration.mock.calls as unknown as Array<[{ optionsJSON: { challenge: string } }]>).map(
+        ([args]) => args.optionsJSON.challenge
+      )
+    ).toEqual(challenges)
+    expect(verifyTokenRegistration).toHaveBeenCalledTimes(2)
   })
 
   // Recovery re-registers a key on an account that already exists, so re-asking

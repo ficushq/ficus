@@ -216,6 +216,19 @@ describe('POST /api/auth/register/token/verify', () => {
     expect(await peekVerificationToken(token)).not.toBeNull()
   })
 
+  it('a retry on a used-up or expired challenge says the prompt timed out, and keeps the invite', async () => {
+    const { token } = await issueEmailChallenge(subject.email)
+    await post('/api/auth/register/token/options', { token })
+    const first = await post('/api/auth/register/token/verify', { token, response: { id: 'bogus' } })
+    expect(first.status).toBe(401)
+    expect(((await first.json()) as { error: string }).error).toBe('Verification failed')
+    // The first attempt spent the challenge; asking again without fresh options is a timed-out prompt.
+    const retry = await post('/api/auth/register/token/verify', { token, response: { id: 'bogus' } })
+    expect(retry.status).toBe(401)
+    expect(((await retry.json()) as { error: string }).error).toBe('The passkey prompt timed out. Try again.')
+    expect(await peekVerificationToken(token)).not.toBeNull()
+  })
+
   it('a spent token cannot be replayed even with a response in hand', async () => {
     const { token } = await issueEmailChallenge(subject.email)
     await consumeVerificationToken(token)

@@ -30,8 +30,9 @@ export function TokenRegisterPage({ onSuccess }: Props) {
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
 
-  // Open the ceremony on mount so the page can name the account it is about to
-  // set up. This call does NOT consume the token.
+  // Look the link up on mount so the page can name the account it is about to
+  // set up. This call does NOT consume the token. Its challenge isn't used:
+  // Register fetches a fresh one (see handleRegister).
   useEffect(() => {
     let cancelled = false
     if (!token) {
@@ -76,7 +77,11 @@ export function TokenRegisterPage({ onSuccess }: Props) {
     setError(null)
     setLoading(true)
     try {
-      const response = await startRegistration({ optionsJSON: context.options })
+      // A fresh challenge for every attempt: the server keeps one for 5 minutes
+      // and spends it on the first try, so the one from page load fails once
+      // someone lingers on the form, and on every retry after a failed attempt.
+      const fresh = await getTokenRegistrationOptions(token)
+      const response = await startRegistration({ optionsJSON: fresh.options })
       // Recovery never carries a display name: the account already exists, so the
       // form doesn't ask and there is nothing to send (the server ignores it too).
       const result = await verifyTokenRegistration(
