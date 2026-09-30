@@ -1933,6 +1933,22 @@ export const workStreamSubscriptions = pgTable(
   (table) => [primaryKey({ columns: [table.workStreamId, table.userId] })]
 )
 
+// One-shot agent observation is independent of human attention and workflow membership.
+export const workStreamObservers = pgTable(
+  'work_stream_observers',
+  {
+    id: uuid('id').notNull().defaultRandom(),
+    workStreamId: uuid('work_stream_id')
+      .notNull()
+      .references(() => workStreams.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.workStreamId, table.agentId] })]
+)
+
 // Async agent questions. Managers/consultants/system-managers ask structured questions without
 // halting (status stays open; the agent keeps working). Chat/history visibility follows canonical
 // agents:read on the agent; Action Center/push attention routes to durable direct recipients plus

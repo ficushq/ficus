@@ -1919,6 +1919,10 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       if (authoritativeAgent.status === 'dormant' && metadata?.wakeEligible === false) {
         throw new AgentTargetUnavailableError(this.id)
       }
+      if (metadata?.inboxMessageIds?.length) {
+        const { assertObserverInboxAcceptance } = await import('../services/work-streams/observers')
+        await assertObserverInboxAcceptance(tx, this.id, metadata.inboxMessageIds)
+      }
       let admission: Awaited<ReturnType<typeof loadCurrentAdmission>> = await loadCurrentAdmission(tx, this.id)
       const activeRows = await tx
         .select()

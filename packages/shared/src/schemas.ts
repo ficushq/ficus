@@ -289,6 +289,7 @@ export const workStreamPromptSchema = z.object({
 
 export const createWorkStreamSchema = z
   .object({
+    observe: z.literal('terminal').optional(),
     workflow: workflowSourceSchema.optional(),
     autoCleanupWorktree: z.boolean().optional(),
     squadId: z.string().min(1),

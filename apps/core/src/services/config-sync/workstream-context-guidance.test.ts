@@ -111,3 +111,33 @@ test('workflow guidance prefers inline content and stdin rather than mandatory t
     expect(text).not.toContain('--flow source.yaml')
   }
 })
+
+test('consultants opt into terminal observation for reporting, never management', async () => {
+  const prompt = (await readRepoFile('config/agent-types/consultant.yaml')).replace(/\s+/g, ' ')
+  for (const syntax of [
+    '--observe terminal',
+    'ficus workstream observe <id>',
+    'ficus workstream unobserve <id>',
+    'ficus workstream observation <id>',
+  ])
+    expect(prompt).toContain(syntax)
+  expect(prompt).toContain('one-shot')
+  expect(prompt).toContain('already terminal')
+  expect(await readRepoFile('docs/wiki/consultant.md')).toContain('USER subscribe/unsubscribe')
+  expect(prompt).toContain('not management instructions')
+  expect(prompt).toContain('Assistant task reporting')
+  expect(prompt).toContain('do not poll')
+})
+
+test('consultant observation guidance distinguishes observers from owners without implementation details', async () => {
+  const prompt = (await readRepoFile('config/agent-types/consultant.yaml')).replace(/\s+/g, ' ')
+  const observation = prompt.split('## Observing delegated results (opt-in)')[1]!.split('## Editing directly')[0]!
+  expect(observation).toContain('The work stream owner retains responsibility')
+  expect(observation).toContain('If you remain the owner')
+  expect(observation).toContain('already receive owner updates and do not need to observe')
+  expect(observation).not.toContain('The manager retains')
+  expect(observation).not.toContain('atomic')
+  expect(observation).not.toContain('fast completion')
+  expect(observation).not.toContain('These commands authenticate')
+  expect(observation).not.toContain('USER subscribe/unsubscribe')
+})

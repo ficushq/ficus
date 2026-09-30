@@ -778,3 +778,37 @@ ficus ws handoff ws-feature --to agent-reviewer -m "Feature complete, ready for 
 ## Pause and resume
 
 `ficus workstream pause ID --reason "Hold for review"` stops current/queued work and suppresses automatic continuation until `ficus workstream resume ID`. Pause retains the slot unless separately parked or auto-parked. Parking a paused stream does not resume it. See [the workflow guide](../workflows.md#pause-park-and-resume).
+
+## Agent terminal observation
+
+Agent observation is separate from **user** `subscribe` / `unsubscribe` and does not
+change the owner, participants, access, or workflow authority. Only the authenticated
+calling agent can register itself, for a stream in its own squad with read access.
+
+```bash
+ficus workstream create "Deliver result" --squad <squad-id> --observe terminal
+ficus workstream observe <id>                     # defaults to terminal
+ficus workstream observe <id> --events terminal
+ficus workstream observation <id>                 # caller's observing state
+ficus workstream unobserve <id>
+```
+
+Creation registers atomically before dispatch. Repeated registration and removal
+are idempotent; owner handoff does not change an observation. `get` also reports
+`observing` for agent callers. No arbitrary recipient or other event set is supported.
+
+The registration is consumed on the first **delivered done** or **cancellation**,
+not a finished step, PR, passed CI, completion-ready, pause, or transient failure.
+Observing an already terminal stream returns a conflict and creates no watch or
+retrospective notice. Reopening does not restore a consumed watch; register again
+after reopening. Removal cannot recall a terminal notice already persisted.
+
+Updates are informational inbox messages with the outcome, owner and available
+result link/notes. They are context for reporting back, **not assignments or
+management instructions**. The owner continues execution, blocker handling,
+reconciliation and delivery. No polling or parallel orchestration is needed.
+Observers who are also owners get the existing owner notice rather than a duplicate.
+A watch expires even when its recipient is unavailable: deleted, dormant, stopped,
+error-halted or access-revoked conversations are not revived. Eligible idle
+conversations may report back. Inbox receipts provide deduplication and delivery
+retries without blocking completion on a delivery failure.

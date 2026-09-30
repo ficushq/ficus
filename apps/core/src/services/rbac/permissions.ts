@@ -62,7 +62,11 @@ type AgentAuthority = {
 }
 
 /** Resolves an agent to its live root authority, failing closed on corrupt chains. */
-async function resolveAgentAuthority(agentId: string, allowInactive = false): Promise<AgentAuthority | null> {
+async function resolveAgentAuthority(
+  agentId: string,
+  allowInactive = false,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<AgentAuthority | null> {
   const seen = new Set<string>()
   let currentId: string | null = agentId
   let descendantSquadId: string | null | undefined
@@ -70,7 +74,7 @@ async function resolveAgentAuthority(agentId: string, allowInactive = false): Pr
   while (currentId) {
     if (seen.has(currentId)) return null
     seen.add(currentId)
-    const [row] = await db
+    const [row] = await executor
       .select({
         id: agents.id,
         agentTypeId: agents.agentTypeId,
@@ -217,23 +221,27 @@ async function resolveUserPermissions(
   )
 }
 
-async function resolveAgentPermissions(identity: AgentIdentity, squadId?: string): Promise<string[]> {
-  const authority = await resolveAgentAuthority(identity.agentId)
+async function resolveAgentPermissions(
+  identity: AgentIdentity,
+  squadId?: string,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<string[]> {
+  const authority = await resolveAgentAuthority(identity.agentId, false, executor)
   if (!authority || authority.squadId !== identity.squadId) return []
 
   // A user-owned root resolves via the owning user's live roles. Child tokens
   // retain child authorship but cannot change this authority.
-  if (authority.ownerUserId) return resolveUserPermissions(authority.ownerUserId, squadId)
+  if (authority.ownerUserId) return resolveUserPermissions(authority.ownerUserId, squadId, executor)
 
   const roleSlug = roleSlugForAgentType(authority.agentTypeId)
-  const agentRole = await db.select().from(roles).where(eq(roles.slug, roleSlug)).limit(1)
+  const agentRole = await executor.select().from(roles).where(eq(roles.slug, roleSlug)).limit(1)
   const rolePermissions = agentRole.length > 0 ? (agentRole[0].permissions as string[]) : []
 
   // Opt-in extra scopes declared on the agent type (e.g. amtp:send). Looked
   // up here, but unioned only AFTER the squad-accessibility gate below.
   let extraScopes: string[] = []
   if (authority.agentTypeId) {
-    const [typeRow] = await db
+    const [typeRow] = await executor
       .select({ extraScopes: agentTypes.extraScopes })
       .from(agentTypes)
       .where(eq(agentTypes.id, authority.agentTypeId))
@@ -243,7 +251,7 @@ async function resolveAgentPermissions(identity: AgentIdentity, squadId?: string
 
   // Per-agent granted extra scopes (agent_extra_scopes rows), unioned alongside
   // the agent-type extra scopes below.
-  const grantedRows = await db
+  const grantedRows = await executor
     .select({ permission: agentExtraScopes.permission })
     .from(agentExtraScopes)
     .where(eq(agentExtraScopes.agentId, authority.agentId))
@@ -261,11 +269,14 @@ async function resolveAgentPermissions(identity: AgentIdentity, squadId?: string
   // squad.
   const effectiveSquadId = squadId ?? authority.squadId
   if (!effectiveSquadId) return [] // squad-less non-system-manager agent: fail closed
-  const accessible = await getAccessibleSquadIds({
-    type: 'agent',
-    agentId: authority.agentId,
-    squadId: authority.squadId,
-  })
+  const accessible = await getAccessibleSquadIds(
+    {
+      type: 'agent',
+      agentId: authority.agentId,
+      squadId: authority.squadId,
+    },
+    executor
+  )
   if (accessible !== 'all' && !accessible.includes(effectiveSquadId)) {
     return []
   }
@@ -481,6 +492,18 @@ export async function hasUserPermissionWithExecutor(
   return permissions.some((held) => permissionMatches(held, permission))
 }
 
+/** Transactional notification persistence must not hold a connection while borrowing
+ * another for authorization. This uses the ordinary agent rules, without cached state. */
+export async function hasAgentPermissionWithExecutor(
+  executor: Pick<typeof db, 'select'>,
+  identity: AgentIdentity,
+  permission: string,
+  squadId?: string
+): Promise<boolean> {
+  const permissions = await resolveAgentPermissions(identity, squadId, executor)
+  return permissions.some((held) => permissionMatches(held, permission))
+}
+
 export async function hasPermission(identity: Identity, permission: string, squadId?: string): Promise<boolean> {
   const permissions = await resolvePermissions(identity, squadId)
   return permissions.some((held) => permissionMatches(held, permission))
@@ -586,16 +609,19 @@ export async function getUserIdsWithPermission(permission: string, squadId?: str
   return holders.sort()
 }
 
-export async function getAccessibleSquadIds(identity: Identity): Promise<string[] | 'all'> {
+export async function getAccessibleSquadIds(
+  identity: Identity,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<string[] | 'all'> {
   // Legacy + system tokens are global automation identities; per-action scopes still gate via hasPermission.
   if (identity.type === 'legacy' || identity.type === 'system') return 'all'
 
   if (identity.type === 'agent') {
-    const authority = await resolveAgentAuthority(identity.agentId)
+    const authority = await resolveAgentAuthority(identity.agentId, false, executor)
     if (!authority || authority.squadId !== identity.squadId) return []
     // User-backed roots preserve the owning user's RBAC scope.
     if (authority.ownerUserId) {
-      return getAccessibleSquadIds({ type: 'user', userId: authority.ownerUserId })
+      return getAccessibleSquadIds({ type: 'user', userId: authority.ownerUserId }, executor)
     }
 
     // Relationships authorize manager messaging, not resource visibility.
@@ -607,7 +633,7 @@ export async function getAccessibleSquadIds(identity: Identity): Promise<string[
 
   // A system-scoped role applies to every squad (as in permissionsFromAssignments), so one that can
   // read squads sees them all — not only a literal '*' (admin); operator and viewer included.
-  const systemAssignments = await db
+  const systemAssignments = await executor
     .select({ permissions: roles.permissions })
     .from(roleAssignments)
     .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
@@ -624,7 +650,7 @@ export async function getAccessibleSquadIds(identity: Identity): Promise<string[
   }
 
   // Check for squad_default assignments — if any exist, return 'all'
-  const squadDefaultAssignments = await db
+  const squadDefaultAssignments = await executor
     .select({ id: roleAssignments.id })
     .from(roleAssignments)
     .where(
@@ -639,7 +665,7 @@ export async function getAccessibleSquadIds(identity: Identity): Promise<string[
   if (squadDefaultAssignments.length > 0) return 'all'
 
   // Collect specific squad IDs from squad-scoped assignments
-  const squadAssignments = await db
+  const squadAssignments = await executor
     .select({ squadId: roleAssignments.squadId })
     .from(roleAssignments)
     .where(

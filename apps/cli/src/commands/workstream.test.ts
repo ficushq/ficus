@@ -50,6 +50,19 @@ describe('workstream CLI commands', () => {
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
 
+  it('supports agent-only terminal observation without using user subscriptions', async () => {
+    await run(['workstream', 'create', 'Observe result', '--squad', 'squad-1', '--observe', 'terminal'])
+    expect(apiPost).toHaveBeenLastCalledWith('/api/workstreams', expect.objectContaining({ observe: 'terminal' }))
+    await run(['workstream', 'observe', '#356'])
+    expect(apiPost).toHaveBeenLastCalledWith('/api/workstreams/%23356/observe', { events: 'terminal' })
+    await run(['workstream', 'observe', '#356', '--events', 'terminal'])
+    expect(apiPost).toHaveBeenLastCalledWith('/api/workstreams/%23356/observe', { events: 'terminal' })
+    await run(['workstream', 'observation', '#356'])
+    expect(apiGet).toHaveBeenLastCalledWith('/api/workstreams/%23356/observation')
+    await run(['workstream', 'unobserve', '#356'])
+    expect(apiDelete).toHaveBeenLastCalledWith('/api/workstreams/%23356/observe')
+  })
+
   it('inspects cleanup ownership and retains through the guarded lifecycle API', async () => {
     const inspection = {
       workStreamId: 'stream-1',
