@@ -1,7 +1,7 @@
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
-import { useState, useRef, useEffect, useCallback, useMemo, useContext } from 'react'
+import { Fragment, useState, useRef, useEffect, useCallback, useMemo, useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { flushSync } from 'react-dom'
 import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@ficus/shared'
@@ -50,6 +50,15 @@ import { useFileMention, FileMentionAutocomplete } from './FileMentionAutocomple
 import { useImageSrcs } from '../hooks/useImageSrcs'
 import { usePermissions } from '../hooks/usePermissions'
 import { useStableRef } from '../hooks/useStableRef'
+import {
+  dayLabel,
+  earliestMessageDate,
+  fullTimestamp,
+  localDayKey,
+  messageTimeLabel,
+  startsGroup,
+  type TimestampGroupEntry,
+} from '../lib/chatTimestamps'
 
 type ImageUploadStatus = 'pending' | 'uploading' | 'done' | 'error'
 
@@ -167,10 +176,27 @@ interface ChatViewProps {
 // Row components
 // ---------------------------------------------------------------------------
 
+/** Group-head clock time as a semantic `<time>` element. */
+function MessageTime({ at }: { at: Date }) {
+  return <time dateTime={at.toISOString()}>{messageTimeLabel(at)}</time>
+}
+
+/** Centered day divider, shown before the first message of each local calendar day. */
+function DayDivider({ label }: { label: string }) {
+  return (
+    <div data-testid="day-divider" className="flex items-center gap-3 py-1">
+      <span aria-hidden="true" className="flex-1 border-t border-th-border" />
+      <span className="text-[11px] text-muted">{label}</span>
+      <span aria-hidden="true" className="flex-1 border-t border-th-border" />
+    </div>
+  )
+}
+
 function HumanMessageRow({
   message,
   viewingUserId,
   showSenderLabel,
+  time,
   showRaw,
   agentId,
 }: {
@@ -178,14 +204,23 @@ function HumanMessageRow({
   message: { id: string; role: string; content: string; metadata?: MessageMetadata | null }
   viewingUserId?: string
   showSenderLabel?: boolean
+  /** Set on a group head only: shown in the meta line above the bubble. */
+  time?: Date | null
   showRaw?: boolean
 }) {
   void viewingUserId // used by caller to compute showSenderLabel
   const auto = automatedSource(message)
   const sender = message.metadata?.sender
+  const senderName = showSenderLabel && sender ? sender.name : null
   return (
     <div className="flex flex-col">
-      {showSenderLabel && sender && <span className="text-[11px] text-muted self-end mr-1 mb-0.5">{sender.name}</span>}
+      {(senderName || time) && (
+        <span data-testid="message-meta" className="text-[11px] text-muted self-end mr-1 mb-0.5">
+          {senderName && <span data-testid="message-sender">{senderName}</span>}
+          {senderName && time && ' · '}
+          {time && <MessageTime at={time} />}
+        </span>
+      )}
       <div className={clsx('flex', 'justify-end')}>
         <div
           className={clsx(
@@ -212,6 +247,7 @@ function AssistantMessageRow({
   tts,
   agentId,
   onToolInlineAction,
+  time,
 }: {
   agentId?: string
   onToolInlineAction?: (action: ToolInlineAction) => void
@@ -219,6 +255,8 @@ function AssistantMessageRow({
   blocks: ContentBlock[]
   showRaw?: boolean
   tts?: ChatViewProps['tts']
+  /** Set on a group head only: shown in the meta line above the reply. */
+  time?: Date | null
 }) {
   // If we have pre-merged blocks, inject them as metadata.content so AssistantMessageContent uses them
   const effectiveMetadata: MessageMetadata | null =
@@ -227,6 +265,11 @@ function AssistantMessageRow({
   return (
     // No bubble — agent text flows on the page (mobile vibe). Only human messages are bubbled.
     <div className="text-primary overflow-hidden pr-2 md:pr-10">
+      {time && (
+        <div data-testid="message-meta" className="text-[11px] text-muted mb-0.5">
+          <MessageTime at={time} />
+        </div>
+      )}
       <div>
         <AssistantMessageContent
           content={message.content}
@@ -1488,6 +1531,18 @@ export function ChatView({
           // re-appears whenever their message follows a non-user message — not
           // just above the very first user message on the page.
           let prevSenderUserId: string | undefined
+          // Timestamps: a human or agent message shows its clock time only when it
+          // starts a group (see startsGroup); system rows, automated deliveries and
+          // optimistic/streaming items reset grouping. A divider precedes the first
+          // rendered message of each local calendar day.
+          let prevGroupEntry: TimestampGroupEntry | null = null
+          let prevDayKey: string | null = null
+          const now = new Date()
+          const groupHeadTime = (entry: TimestampGroupEntry): Date | null => {
+            const head = startsGroup(prevGroupEntry, entry)
+            prevGroupEntry = entry
+            return head ? entry.at : null
+          }
           return items.map((item) => {
             if (
               hideInboxMessages &&
@@ -1504,21 +1559,33 @@ export function ChatView({
               // `~=` attribute selector.
               const messageIds = [item.id, ...(item.mergedFrom?.map((merged) => merged.id) ?? [])]
               const isFocusHighlighted = highlightedMessageId != null && messageIds.includes(highlightedMessageId)
+              // A reply merged from several rows is timed by its earliest row.
+              const at = earliestMessageDate([
+                m.createdAt,
+                ...(item.mergedFrom?.map((merged) => merged.createdAt) ?? []),
+              ])
+              const dayKey = at ? localDayKey(at) : null
+              const dayDivider = at && dayKey !== prevDayKey ? <DayDivider label={dayLabel(at, now)} /> : null
+              if (dayKey) prevDayKey = dayKey
               const wrap = (node: React.ReactNode) => (
-                <div
-                  key={item.id}
-                  data-message-id={messageIds.join(' ')}
-                  className={clsx(
-                    'rounded-lg transition-shadow duration-1000',
-                    isFocusHighlighted && 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
-                  )}
-                >
-                  {node}
-                  {renderMessageFooter?.(item)}
-                </div>
+                <Fragment key={item.id}>
+                  {dayDivider}
+                  <div
+                    data-message-id={messageIds.join(' ')}
+                    title={at ? fullTimestamp(at) : undefined}
+                    className={clsx(
+                      'rounded-lg transition-shadow duration-1000',
+                      isFocusHighlighted && 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
+                    )}
+                  >
+                    {node}
+                    {renderMessageFooter?.(item)}
+                  </div>
+                </Fragment>
               )
               if (m.content.startsWith('[System]')) {
                 prevSenderUserId = undefined
+                prevGroupEntry = null
                 return wrap(<SystemMessageRow content={m.content} />)
               }
               if (m.role === 'human') {
@@ -1526,11 +1593,15 @@ export function ChatView({
                 const showSenderLabel =
                   !!sender && sender.userId !== viewingUserId && sender.userId !== prevSenderUserId
                 prevSenderUserId = sender?.userId
+                let time: Date | null = null
+                if (automatedSource(m)) prevGroupEntry = null
+                else time = groupHeadTime({ kind: 'human', senderKey: sender?.userId ?? null, at })
                 return wrap(
                   <HumanMessageRow
                     message={m}
                     viewingUserId={viewingUserId}
                     showSenderLabel={showSenderLabel}
+                    time={time}
                     showRaw={showRawText}
                     agentId={agentId}
                   />
@@ -1545,12 +1616,14 @@ export function ChatView({
                   tts={tts}
                   agentId={agentId}
                   onToolInlineAction={setSelectedToolAction}
+                  time={groupHeadTime({ kind: 'agent', senderKey: null, at })}
                 />
               )
             }
 
             if (item.kind === 'system') {
               prevSenderUserId = undefined
+              prevGroupEntry = null
               return <SystemMessageRow key={item.id} content={item.text} />
             }
 
@@ -1582,6 +1655,8 @@ export function ChatView({
             }
 
             if (item.kind === 'streaming') {
+              // Not persisted yet: no time, and the persisted reply that follows starts a group.
+              prevGroupEntry = null
               return (
                 <div key={item.id} className="text-primary overflow-hidden space-y-2 pr-2 md:pr-10">
                   <StreamingBlocksRenderer
@@ -1597,7 +1672,8 @@ export function ChatView({
               )
             }
 
-            // pending
+            // pending: optimistic, no persisted time
+            prevGroupEntry = null
             return (
               <PendingMessageRow
                 key={item.id}
