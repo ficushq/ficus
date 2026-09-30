@@ -176,6 +176,14 @@ A missed nudge does not lose the row. Settlement makes bounded requeue attempts 
 2. **Continue:** a later normal message creates a fresh queued execution on the same agent/session.
 3. The agent remains available for future work.
 
+### Worker restart
+
+A deploy or restart stops the worker in this order:
+
+1. **Drain.** The worker starts no new turns: queued executions stay queued for its successor. It also refuses new sandbox commands ("Command not started: the Ficus worker is restarting…").
+2. **Grace window.** Running sandbox commands get up to 10 seconds to finish. Whatever is still running is then stopped. Its tool call fails with "Command canceled: the Ficus worker is restarting…", which tells the agent to check what the command changed and run it again. If Ficus could not confirm the command stopped, the message says so.
+3. **Handoff.** Active sessions are aborted and their executions requeued with "Agent paused for a worker restart; it will resume automatically." The next worker resumes them.
+
 ### Failure
 
 Before a model prompt is dispatched, recognized transient database connection failures

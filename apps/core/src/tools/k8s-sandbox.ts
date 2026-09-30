@@ -44,6 +44,12 @@ import { BashOutcomeUnknownError, SandboxHttpError, type SandboxClient } from '.
 import { createVerifiedEditTool, type VerifiedEditOperations } from './verified-edit'
 import { withSharedWorkspaceHint } from './private-bash-hint'
 import { createLogger } from '../lib/infra/logger'
+import {
+  COMMAND_REFUSED_FOR_RESTART,
+  commandCanceledForRestartError,
+  isCommandDrainActive,
+  trackCommand,
+} from '../services/sandbox/command-drain'
 import { resolveSandboxApiUrl } from '../services/sandbox/k8s/pod-spec'
 import { isVmRuntime } from '../services/sandbox/runtime'
 import {
@@ -574,6 +580,8 @@ export function createHttpBashOperations(
         env?: NodeJS.ProcessEnv
       }
     ): Promise<{ exitCode: number | null }> => {
+      // A stopping worker starts nothing new; the agent retries after the restart.
+      if (isCommandDrainActive()) throw new Error(COMMAND_REFUSED_FOR_RESTART)
       const client = manager.getClientForSandbox(sandboxId)
       if (!client) {
         throw await mapFailure(new Error(`No K8s sandbox client found for ${sandboxId}`))
@@ -581,7 +589,8 @@ export function createHttpBashOperations(
 
       const timeout = normalizeBashTimeoutSeconds(options.timeout)
 
-      return new Promise((resolve, reject) => {
+      let cancelForRestart: () => Promise<void> = async () => {}
+      const running = new Promise<{ exitCode: number | null }>((resolve, reject) => {
         const stream = client.bash({
           command,
           cwd,
@@ -621,6 +630,17 @@ export function createHttpBashOperations(
             settled = true
             fn()
           }
+        }
+
+        // The worker is shutting down and this command outlived the drain window.
+        cancelForRestart = async () => {
+          if (settled) return
+          settled = true
+          let cleanupError: Error | undefined
+          await stream.cancelAndWait('worker-stop').catch((error: Error) => {
+            cleanupError = error
+          })
+          reject(commandCanceledForRestartError(cleanupError))
         }
 
         stream.on('data', (response) => {
@@ -746,6 +766,8 @@ export function createHttpBashOperations(
           })
         }
       })
+      trackCommand({ settled: running, cancelForRestart: () => cancelForRestart() })
+      return running
     },
   }
 }

@@ -21,7 +21,13 @@ import {
   shutdownActiveSessions,
   concurrencyLimiter,
 } from './services/execution'
-import { attemptPickup, pickupQueuedExecutions, getMaxConcurrentAgents } from './services/execution/pickup'
+import {
+  attemptPickup,
+  pickupQueuedExecutions,
+  getMaxConcurrentAgents,
+  stopExecutionPickup,
+} from './services/execution/pickup'
+import { drainCommands } from './services/sandbox/command-drain'
 import { scheduler, scheduleHealthNotifier } from './services/scheduling'
 import { reconcileSchedulesOnStartup } from './services/scheduling/reconciliation'
 import { streamManager } from './services/streaming/buffer'
@@ -1164,6 +1170,14 @@ async function startup(): Promise<void> {
 async function shutdownWorker(reason: string): Promise<void> {
   readiness.markStopping()
   log.info(`Received ${reason}, shutting down...`)
+
+  // Drain before aborting: start no new turns or commands, give running sandbox commands a
+  // short window to finish, then cancel the rest with a message telling the agent the worker
+  // restarted, so it re-runs them when it resumes instead of guessing at a lost connection.
+  stopExecutionPickup()
+  const drained = await drainCommands()
+  if (drained.finished || drained.canceled)
+    log.info(`Drained sandbox commands: ${drained.finished} finished, ${drained.canceled} canceled for the restart`)
 
   // Abort all active sessions — saves partial messages to DB via agent_end
   const executionIds = await shutdownActiveSessions()

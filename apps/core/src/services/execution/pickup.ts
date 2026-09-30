@@ -51,6 +51,18 @@ export type PickupResult =
   | 'box-migrating'
   | 'instance-paused'
   | 'work-stream-paused'
+  | 'worker-stopping'
+
+let pickupStopped = false
+
+/** The worker is shutting down: start no new turns, and leave queued executions for its successor. */
+export function stopExecutionPickup(): void {
+  pickupStopped = true
+}
+
+export function resetExecutionPickupForTests(): void {
+  pickupStopped = false
+}
 
 /**
  * The migration-fence check the claim transaction runs — injectable for tests
@@ -139,6 +151,7 @@ export async function attemptPickup(execution: Execution): Promise<PickupResult>
 
 async function doAttemptPickup(execution: Execution): Promise<PickupResult> {
   if (execution.status !== 'queued') return 'not-queued'
+  if (pickupStopped) return 'worker-stopping'
   const { pausedWorkStreamForAgent } = await import('../work-streams/pause')
   if (await pausedWorkStreamForAgent(execution.agentId)) return 'work-stream-paused'
   // The claim CAS also enforces this against the database clock. This fast
