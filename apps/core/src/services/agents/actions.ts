@@ -60,7 +60,13 @@ async function listDeliveryGateActions(): Promise<PendingAction[]> {
     .from(workStreamFlowRuns)
     .innerJoin(workStreams, eq(workStreams.id, workStreamFlowRuns.workStreamId))
     .innerJoin(squads, eq(squads.id, workStreams.squadId))
-    .where(and(eq(workStreamFlowRuns.activated, true), inArray(workStreams.status, ['active', 'queued'])))
+    .where(
+      and(
+        eq(workStreamFlowRuns.activated, true),
+        sql`${workStreamFlowRuns.state}->>'status' = 'completion-ready'`,
+        inArray(workStreams.status, ['active', 'queued'])
+      )
+    )
   const candidates = rows.filter(
     ({ ws, state }) =>
       !ws.pause &&
@@ -112,7 +118,16 @@ async function listDeliveryGateActions(): Promise<PendingAction[]> {
  * - Squad agents waiting for human input (questions)
  * - Work streams in review or blocked status with prompts
  */
-export async function listPendingActions(): Promise<PendingAction[]> {
+export interface PendingActionListOptions {
+  /**
+   * Include view-only `workstream-delivery` actions. Opt-in: shipped clients
+   * that switch exhaustively over action types must never receive a type they
+   * cannot render, so the default response keeps the historical types only.
+   */
+  includeDeliveryGates?: boolean
+}
+
+export async function listPendingActions(options: PendingActionListOptions = {}): Promise<PendingAction[]> {
   const pendingActions: PendingAction[] = []
 
   // 1. Get squad-bound agents waiting for input (context has squadId)
@@ -302,7 +317,7 @@ export async function listPendingActions(): Promise<PendingAction[]> {
   }
 
   // 3. Code-host delivery gates that need a person on the code host (no wait exists).
-  pendingActions.push(...(await listDeliveryGateActions()))
+  if (options.includeDeliveryGates) pendingActions.push(...(await listDeliveryGateActions()))
 
   // Sort by priority (ascending) then by createdAt (descending - most recent first)
   pendingActions.sort((a, b) => {
@@ -371,12 +386,15 @@ export async function listPendingActions(): Promise<PendingAction[]> {
   return pendingActions
 }
 
-export async function listPendingActionsForIdentity(identity: Identity): Promise<PendingAction[]> {
+export async function listPendingActionsForIdentity(
+  identity: Identity,
+  options: PendingActionListOptions = {}
+): Promise<PendingAction[]> {
   identity = (await resolveActingUser(identity)) ?? identity
   const userId = identity.type === 'user' ? identity.userId : null
   // One attention load per request; every action below resolves precedence against it in memory.
   const attention = userId ? await loadUserAttention(userId) : EMPTY_USER_ATTENTION
-  const actions = await listPendingActions()
+  const actions = await listPendingActions(options)
   // With no work-stream rows every origin resolves to its squad's level, so the policy never asks
   // for origins and loading them would be pure cost.
   const questionOrigins =

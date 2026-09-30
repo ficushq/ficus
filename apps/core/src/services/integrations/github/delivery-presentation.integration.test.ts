@@ -256,7 +256,9 @@ test('actual poll -> durable cursor -> serialized attention supports baseline an
     expect(json.delivery).toEqual({ kind: 'review' })
     expect(workStreamNeedsHumanAttention(json)).toBe(true)
     expect(buildWorkInterestSnapshot([json]).liveActivity.top[0]?.bucket).toBe('needsYou')
-    const gate = (await listPendingActions()).find((action) => action.id === `workstream-delivery:${row!.id}:review`)
+    const gate = (await listPendingActions({ includeDeliveryGates: true })).find(
+      (action) => action.id === `workstream-delivery:${row!.id}:review`
+    )
     expect(gate).toMatchObject({
       type: 'workstream-delivery',
       squadId,

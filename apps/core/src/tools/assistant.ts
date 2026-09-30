@@ -362,7 +362,7 @@ export function createAssistantTools(agentId: string, executionId: string, conve
     ),
     tool(
       'read_inbox',
-      'Read what is waiting for the user. view=actions: the Needs you list — agent questions awaiting an answer, blocked or in-review work streams, agent errors, and Assistant tasks needing input, each with its IDs; this is the tool for "what needs me". view=notifications: the user’s own inbox messages (task and agent updates, work-stream events); unread is independent of whether a task update has been summarized.',
+      'Read what is waiting for the user. view=actions: the Needs you list — agent questions awaiting an answer, blocked or in-review work streams, pull requests awaiting a human review or merge, agent errors, and Assistant tasks needing input, each with its IDs; this is the tool for "what needs me". view=notifications: the user’s own inbox messages (task and agent updates, work-stream events); unread is independent of whether a task update has been summarized.',
       Type.Object({
         view: Type.Union([Type.Literal('actions'), Type.Literal('notifications')]),
         limit,
@@ -371,7 +371,7 @@ export function createAssistantTools(agentId: string, executionId: string, conve
       async (input) => {
         const { user } = await access()
         if (input.view === 'actions') {
-          const actions = await listPendingActionsForIdentity(user)
+          const actions = await listPendingActionsForIdentity(user, { includeDeliveryGates: true })
           return { actions: actions.slice(0, input.limit ?? 50), total: actions.length }
         }
         return db
