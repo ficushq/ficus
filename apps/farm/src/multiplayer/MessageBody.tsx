@@ -1,22 +1,33 @@
-import { useContext, useMemo } from 'react'
+import { useContext, useMemo, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { FarmPerson } from '@ficus/shared'
 import { agentLabel } from '../farm/agentLabels'
 import { FarmCardContext, type FarmCardEnv } from '../farm/cards/context'
+import { SproutIcon } from '../icons'
 import type { Selection } from '../farm/selection'
 import { tokenize, type FarmRef } from './messageTokens'
 
-/** What a reference is called on this farm, and where on it it is (null: not on the farm). */
-function resolve(ref: FarmRef, env: FarmCardEnv | null): { icon: string; label: string; goTo: Selection | null } {
+/**
+ * What a reference is called on this farm (`label`), what its chip shows
+ * (`text`, when shorter than the label) and where on the farm it is (null:
+ * not on the farm).
+ */
+function resolve(
+  ref: FarmRef,
+  env: FarmCardEnv | null
+): { icon: ReactNode; label: string; text?: string; goTo: Selection | null } {
   switch (ref.kind) {
     case 'ws': {
       const matches = (stream: { id: string; number?: number }) =>
         stream.id === ref.id || String(stream.number ?? '') === ref.id
       const plot = env?.layout.yards.flatMap((y) => y.plots).find((p) => matches(p.stream))
       const stream = plot?.stream ?? env?.input.streams.find(matches)
+      // Just a sprout and the number: a title inline makes the chip long and wrap (it's the tooltip instead).
+      const number = stream?.number != null ? String(stream.number) : /^\d+$/.test(ref.id) ? ref.id : undefined
       return {
-        icon: '🌱',
-        label: stream?.title ?? (/^\d+$/.test(ref.id) ? `Work stream ${ref.id}` : 'A work stream'),
+        icon: <SproutIcon className="g-farmchat-chip-sprout" />,
+        label: stream?.title ?? (number ? `Work stream ${number}` : 'A work stream'),
+        text: number ?? '',
         goTo: plot ? { kind: 'plot', streamId: plot.stream.id } : null,
       }
     }
@@ -46,25 +57,46 @@ function resolve(ref: FarmRef, env: FarmCardEnv | null): { icon: string; label: 
  */
 export function FarmRefChip({ farmRef, href }: { farmRef: FarmRef; href?: string }) {
   const env = useContext(FarmCardContext)
-  const { icon, label, goTo } = resolve(farmRef, env)
+  const { icon, label, text = label, goTo } = resolve(farmRef, env)
+  // A short chip says what it is in full to screen readers.
+  const named = text !== label ? { 'aria-label': label } : undefined
+  const content = (
+    <>
+      <span aria-hidden="true">{icon}</span>
+      {text && <span aria-hidden={named ? true : undefined}>{text}</span>}
+    </>
+  )
   if (goTo && env)
     return (
       <button
         type="button"
         className="g-farmchat-chip"
         title={`Show ${label} on the farm`}
+        {...named}
         onClick={() => env.flyTo(goTo)}
       >
-        <span aria-hidden="true">{icon}</span> {label}
+        {content}
       </button>
     )
   return href ? (
-    <a className="g-farmchat-chip g-farmchat-chip-away" href={href} target="_blank" rel="noopener noreferrer">
-      <span aria-hidden="true">{icon}</span> {label}
+    <a
+      className="g-farmchat-chip g-farmchat-chip-away"
+      href={href}
+      title={label}
+      {...named}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {content}
     </a>
   ) : (
-    <span className="g-farmchat-chip g-farmchat-chip-away" title="Not on the farm right now">
-      <span aria-hidden="true">{icon}</span> {label}
+    <span
+      className="g-farmchat-chip g-farmchat-chip-away"
+      title={`${label}: not on the farm right now`}
+      role={named ? 'img' : undefined}
+      {...named}
+    >
+      {content}
     </span>
   )
 }

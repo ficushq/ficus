@@ -168,10 +168,16 @@ describe('MessageBody', () => {
     )
     mounted.push(view.unmount)
     expect(view.container.querySelector('.g-farmchat-mention-me')?.textContent).toBe('@You')
-    const chip = byText(view.container, 'button.g-farmchat-chip', /Retry flaky webhook deliveries/)
+    // A sprout and the number, the title said in full (and shown as its tooltip).
+    const chip = view.container.querySelector<HTMLButtonElement>('button.g-farmchat-chip')!
+    expect(chip.textContent).toBe('2')
+    expect(chip.querySelector('svg.g-farmchat-chip-sprout')).not.toBeNull()
+    expect(chip.getAttribute('aria-label')).toBe('Retry flaky webhook deliveries')
     await click(chip)
     expect(flyTo).toHaveBeenCalledWith({ kind: 'plot', streamId: 'ws-2' })
-    expect(byText(view.container, 'span.g-farmchat-chip', /Work stream 999/)).toBeDefined()
+    const away = view.container.querySelector('span.g-farmchat-chip')!
+    expect(away.textContent).toBe('999')
+    expect(away.getAttribute('aria-label')).toBe('Work stream 999')
   })
 
   it('turns work stream links in markdown (agents write them in questions and chat) into chips', async () => {
@@ -191,7 +197,7 @@ describe('MessageBody', () => {
       await fakeMultiplayer()
     )
     mounted.push(view.unmount)
-    await click(byText(view.container, 'button.g-farmchat-chip', /Retry flaky webhook deliveries/))
+    await click(view.container.querySelector('button.g-farmchat-chip[aria-label="Retry flaky webhook deliveries"]'))
     expect(flyTo).toHaveBeenCalledWith({ kind: 'plot', streamId: 'ws-2' })
     expect(view.container.querySelector('a[href="https://example.com"]')).not.toBeNull()
   })

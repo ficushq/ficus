@@ -574,7 +574,16 @@
   font: 600 13px/1.5 var(--g-font-body);
   text-decoration: none;
   vertical-align: baseline;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+/* A work stream's chip: a small sprout and its number. */
+.g-farmchat-chip-sprout {
+  display: block;
+  width: 12px;
+  height: 12px;
+  color: var(--g-good-text);
 }
 
 .g-farmchat-chip:hover {
