@@ -7,7 +7,9 @@ import { AmtpMailboxSection } from './AmtpMailboxSection'
 import { ExternalExportControl } from './ExternalExportControl'
 import { usePermissions } from '../hooks/usePermissions'
 import { useQuery } from '@tanstack/react-query'
-import { integrationQueries, modelCatalogQuery } from '../queryOptions'
+import { integrationQueries, modelCatalogQuery, queries } from '../queryOptions'
+import { formatTokens } from '../lib/format'
+import { isCodexModelSpec } from '../lib/modelSpec'
 import {
   parseDisplayModelPriorityList,
   parseDisplayModelSpec,
@@ -77,6 +79,10 @@ export function AgentInfoPanel({ agent, agentType }: AgentInfoPanelProps) {
   })
   const bigbrainConnection = canReadIntegrations && selection?.assignment?.enabled ? selection.assignment : undefined
   const display = getAgentModelDisplay(agent, agentType)
+  // The chat keeps the agent's detail live; read it here too so usage is current.
+  const { data: detail } = useQuery({ ...queries.agents.detail(agent.id) })
+  const usage = (detail ?? agent).sessionUsage
+  const showCost = !isCodexModelSpec(agentType?.model)
 
   return (
     <div className="h-full overflow-y-auto bg-surface p-5">
@@ -131,6 +137,35 @@ export function AgentInfoPanel({ agent, agentType }: AgentInfoPanelProps) {
             </details>
           )}
         </section>
+        {usage && (
+          <section className="border-t border-panel-border pt-5 space-y-3" aria-label="Session usage">
+            <h4 className="text-sm font-semibold text-primary">Session</h4>
+            <dl className="grid grid-cols-[7rem_1fr] gap-x-6 gap-y-2 text-sm">
+              {usage.context && (
+                <>
+                  <dt className="text-xs text-muted pt-0.5">Context used</dt>
+                  <dd className="text-primary tabular-nums">
+                    {Math.round(usage.context.percent)}%
+                    <span className="text-muted">
+                      {' '}
+                      · {formatTokens(usage.context.tokens)} of {formatTokens(usage.context.contextWindow)}
+                    </span>
+                  </dd>
+                </>
+              )}
+              <dt className="text-xs text-muted pt-0.5">Tokens</dt>
+              <dd className="text-primary tabular-nums">{formatTokens(usage.stats.tokens.total)}</dd>
+              <dt className="text-xs text-muted pt-0.5">Messages</dt>
+              <dd className="text-primary tabular-nums">{usage.stats.totalMessages}</dd>
+              {showCost && (
+                <>
+                  <dt className="text-xs text-muted pt-0.5">Cost</dt>
+                  <dd className="text-primary tabular-nums">${usage.stats.cost.toFixed(2)}</dd>
+                </>
+              )}
+            </dl>
+          </section>
+        )}
         {/* Conversation export is a per-connection consent surface — with no
             enabled Bigbrain connection on this squad there is nothing to
             consent TO, and rendering the section on an instance that never
