@@ -44,7 +44,10 @@
 #     artifact sync; every entrypoint adopts the layout its reconcile left
 #     before it reads a path; --reverse-host-layout moves it back; a non-root
 #     git-mode run is refused before its checkout moves; setup-host.sh moves a
-#     layout-1 host on a re-run and sets a fresh one up on layout 2.
+#     layout-1 host on a re-run and sets a fresh one up on layout 2;
+#   * a restore on a fresh (layout-2) host of a backup taken on layout 1
+#     rebases its stored HOME paths after the migration and before the flip,
+#     and links the legacy HOME; one taken on layout 2 is left as it is (EHL15).
 #
 # Every path the toolkit writes is pointed at the scratch directory through
 # its seams (FICUS_HOST_ROOT, FICUS_SYSTEMD_UNIT_DIR, FICUS_MANAGED_ENV_PATH,
@@ -177,6 +180,10 @@ rm -rf "${TK_NOTMPL}/systemd"
 #  16  the manual reverse stops the units before it journals (I2) → EHL14
 #  17  apply-artifacts.sh without --config applies over a journaled
 #      migration                                                 → EHL5
+#  18  setup-host.sh does not rebase a restored backup's stored
+#      HOME paths (Ruling 84)                                    → EHL15
+#  19  setup-host.sh does not link the legacy HOME after restoring
+#      a layout-1 backup on layout 2 (Ruling 84)                 → EHL15
 # (Where each entrypoint adopts the layout relative to its first path read is
 # also pinned line by line in lib.test.sh.)
 mutate_toolkit() { # TOOLKIT_DIR
@@ -204,9 +211,11 @@ edits = {
     "17": ("apply-artifacts.sh", "  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||\n    die \"not applying artifacts: a host migration is journaled in", "  true ||\n    die \"not applying artifacts: a host migration is journaled in"),
     "16": ("lib.sh", "  log_warn \"host_layout: reversing the committed migration journaled in ${set}\"\n",
            "  log_warn \"host_layout: reversing the committed migration journaled in ${set}\"\n  as_root systemctl stop \"${_HLN_API}\" \"${_HLN_WORKER}\" || die stop\n"),
+    "18": ("setup-host.sh", "    ARTIFACT_PREFLIP_HOOK=restore_rebase_stored_home\n", ""),
+    "19": ("setup-host.sh", '    restore_link_legacy_home "${RESTORE_HOME_FROM}" "${target_home}" "${run_home:-${target_home%/*}}"\n', ""),
 }
 if which not in edits:
-    sys.exit("E2E_MUTATE=%s: no such mutation (1-17)" % which)
+    sys.exit("E2E_MUTATE=%s: no such mutation (1-19)" % which)
 name, old, new = edits[which]
 path = tk + "/" + name
 src = open(path).read()
@@ -435,6 +444,14 @@ publish() { # NAME SHA [MARKER...]
   # PUB_REBASE: the release's rebase-home program, a stub that records its argv.
   if [[ -n ${PUB_REBASE:-} ]]; then
     printf '%s\n' "require('node:fs').appendFileSync(process.env.E2E_REBASE_PROOF, process.argv.slice(2).join(' ') + '\\n')" \
+      >"${tree}/apps/core/dist/rebase-home.js"
+  fi
+  # PUB_ORDER: the migration records itself in the same proof, and the rebase
+  # stub records whether the install root's `current` existed when it ran.
+  if [[ -n ${PUB_ORDER:-} ]]; then
+    printf '%s\n' "require('node:fs').appendFileSync(process.env.E2E_REBASE_PROOF, 'migrate\\n')" \
+      >"${tree}/apps/core/dist/migrate.js"
+    printf '%s\n' "const fs = require('node:fs'); fs.appendFileSync(process.env.E2E_REBASE_PROOF, process.argv.slice(2).join(' ') + ' current=' + fs.existsSync('../../../../current') + '\\n')" \
       >"${tree}/apps/core/dist/rebase-home.js"
   fi
   python3 "${SCRATCH}/manifest.py" "${tree}" "${sha}" "${BUN_VERSION}" ${PUB_HOST_LAYOUT:+"${PUB_HOST_LAYOUT}"} >"${work}/dist/artifact.json"
@@ -1028,6 +1045,9 @@ ART_L2="${SCRATCH}/l2.artifact.env"
 ART_PLAIN="${SCRATCH}/plain.artifact.env"
 PUB_HOST_LAYOUT=2 PUB_REBASE=1 publish l2 "${SHA_L2}" >"${ART_L2}"
 PUB_REBASE=1 publish plain "${SHA_PLAIN}" >"${ART_PLAIN}"
+SHA_RST='4444444444444444444444444444444444444444'
+ART_RST="${SCRATCH}/rst.artifact.env"
+PUB_HOST_LAYOUT=2 PUB_ORDER=1 publish rst "${SHA_RST}" >"${ART_RST}"
 
 # Render a toolkit-owned file for this host as lib.sh renders it on LAYOUT.
 l1_render() { # LAYOUT FUNCTION ARGS...
@@ -1523,6 +1543,78 @@ YAMLEOF
   expect_eq 'EHL12: nothing at the legacy install root or setup dir, no legacy unit file' \
     "$([[ -e ${DEST} || -e ${R}${HL_LEGACY_SETUP_DIR} || -f ${U}/${L_API}.service && ! -L ${U}/${L_API}.service ]] && echo legacy || echo none)" 'none'
   expect_match 'EHL12: the release trailer' "${OUT}" "FICUS_RELEASE_AFTER=${SHA_L2}-"
+
+  # ============ EHL15. setup-host.sh on a FRESH host (layout 2) restoring a
+  # backup: the rows of one taken on a layout-1 host name its legacy HOME, so
+  # they are rebased to the Ficus HOME its tree now lives in — after the
+  # candidate's migration, before the flip — and the legacy HOME becomes the
+  # compat link a moved host has. One taken on layout 2 is left as it is.
+  # restore_host NAME ENV_LINES WORKSPACE_DIR_NAME — a fresh host, the archive
+  # (db.dump, .env, a workspace dir with sessions/), the run. Sets RC and OUT.
+  restore_host() {
+    H="${SCRATCH}/host-$1"
+    R="${H}/root"
+    U="${R}/etc/systemd/system"
+    DEST="${R}${HL_LEGACY_DEST}"
+    NEW_DEST="${R}${HL_NEW_DEST}"
+    mkdir -p "${U}" "${R}/root" "${R}/usr/local/bin" "${H}/sysbin" "${H}/keys" "${H}/arc/$3/sessions/s1"
+    printf 'ca\n' >"${H}/keys/database-ca.crt"
+    printf 'dump\n' >"${H}/arc/db.dump"
+    printf '%s\n' "$2" >"${H}/arc/.env"
+    printf 'transcript\n' >"${H}/arc/$3/sessions/s1/log"
+    tar -C "${H}/arc" -czf "${H}/backup.tar.gz" db.dump .env "$3"
+    openssl enc -aes-256-cbc -pbkdf2 -salt -pass pass:restore-pp -in "${H}/backup.tar.gz" -out "${H}/backup.tar.gz.enc"
+    CONFIG="${H}/ficus-setup.yaml"
+    cat >"${CONFIG}" <<YAMLEOF
+source:
+  mode: artifact
+  repo: https://example.invalid/core.git
+  dest: ${NEW_DEST}
+core:
+  origin: https://acme.ficus.sh
+  port: 3999
+  run_user: root
+database:
+  mode: external
+  ca_path: ${H}/keys/database-ca.crt
+runtime:
+  sandbox: host
+backup:
+  enabled: false
+YAMLEOF
+    printf '%s' "${NEW_DEST}" >"${CTL}/dest"
+    printf '%s-*\n' "${SHA_RST}" >"${CTL}/healthy"
+    : >"${CALLS}"
+    rm -f "${CTL}"/block-* "${CTL}"/fail-* "${CTL}/blocked.pid"
+    HOST_KIND=layout1
+    EXTRA_ENV=(
+      "FICUS_SETUP_DATABASE_DSN=postgresql://tenant_x:pw@localhost/x"
+      "FICUS_SETUP_RESTORE_URL=file://${H}/backup.tar.gz.enc"
+      FICUS_SETUP_RESTORE_PASSPHRASE=restore-pp
+    )
+    run_script "${ART_RST}" setup-host.sh --config "${CONFIG}"
+    EXTRA_ENV=()
+    [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
+  }
+  R_HOME_L1="${SCRATCH}/host-ehl15r/root/root/${HL_LEGACY_HOME_NAME}"
+  R_HOME_L2="${SCRATCH}/host-ehl15r/root/root/${HL_NEW_HOME_NAME}"
+  restore_host ehl15r 'FICUS_ENCRYPTION_KEY=archived-key' "${HL_LEGACY_HOME_NAME}"
+  expect_eq 'EHL15 a layout-1 backup on a fresh host: exits 0, the host is on layout 2' "${RC}:$(l_detect)" '0:2'
+  expect_eq 'EHL15: its tree is in the Ficus HOME, which the .env names' \
+    "$(cat "${R_HOME_L2}/sessions/s1/log" 2>/dev/null):$(grep '^HOME_DIR=' "${NEW_DEST}/.env")" "transcript:HOME_DIR=${R_HOME_L2}"
+  expect_eq 'EHL15: the stored paths are rebased from the legacy HOME to the Ficus one, once, after the migration and before the flip' \
+    "$(cat "${H}/rebase-proof" 2>/dev/null)" "$(printf 'migrate\n--from %s --to %s current=false' "${R_HOME_L1}" "${R_HOME_L2}")"
+  expect_eq 'EHL15: the legacy HOME is the compat link to the Ficus one' "$(readlink "${R_HOME_L1}")" "${R_HOME_L2}"
+  expect_match 'EHL15: a clear log line' "${OUT}" "restore: the backup was taken with HOME ${R_HOME_L1}, this host's is ${R_HOME_L2} — rebasing"
+  expect_match 'EHL15: current names the release' "$(readlink "${NEW_DEST}/current")" "^${NEW_DEST}/releases/${SHA_RST}-"
+
+  R_HOME_L2="${SCRATCH}/host-ehl15s/root/root/${HL_NEW_HOME_NAME}"
+  restore_host ehl15s "$(printf 'FICUS_ENCRYPTION_KEY=archived-key\nHOME_DIR=%s' "${R_HOME_L2}")" "${HL_NEW_HOME_NAME}"
+  expect_eq 'EHL15 a layout-2 backup on a fresh host: exits 0, the tree is in the Ficus HOME' \
+    "${RC}:$(cat "${R_HOME_L2}/sessions/s1/log" 2>/dev/null)" '0:transcript'
+  expect_eq 'EHL15: ...no stored path is rebased (only the migration ran), nothing at the legacy HOME' \
+    "$(cat "${H}/rebase-proof" 2>/dev/null):$([[ -e ${R_HOME_L2%/*}/${HL_LEGACY_HOME_NAME} || -L ${R_HOME_L2%/*}/${HL_LEGACY_HOME_NAME} ]] && echo legacy || echo none)" 'migrate:none'
+  expect_match 'EHL15: ...and says so' "${OUT}" 'restore: the backup was taken with this host'"'"'s HOME'
 fi
 
 summary

@@ -261,6 +261,15 @@ logged as `host_layout S<n>: …`. The last trailer line of `upgrade-host.sh` is
   rewrites it to `/etc/ficus` when it renames the tenant database) gets the
   same compat link a migrated host has (legacy `/etc` dir → `/etc/ficus`), so
   the DSN resolves until it is rewritten.
+- A restore (`FICUS_SETUP_RESTORE_URL`) of a backup taken with another
+  `HOME_DIR` than this host's — a layout-1 backup on a host set up fresh on
+  layout 2, or the reverse — rebases the restored database's stored paths
+  from the backup's `HOME_DIR` (its `.env`'s, else its workspace directory's
+  name under the run user's home) to this host's, with the release's
+  `dist/rebase-home.js` once the database is migrated and before anything
+  starts on it. It refuses the same way (`FICUS_REBASE_HOME_FORCE=1` rewrites
+  anyway). On layout 2, a legacy `HOME_DIR` becomes the same compat link a
+  migrated host has.
 - An older toolkit that writes over the bridges (a regular legacy unit file
   where the `Alias=` link was) is repaired by the next run of this one.
 

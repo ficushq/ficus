@@ -2512,18 +2512,19 @@ expect_match 'restore_unpack_archive: missing-db.dump message says not a ficus e
 # unpacking, so an archive from before the Ficus naming is refused with the
 # database and the workspace tree untouched; a FICUS archive restores and
 # carries its key forward.
-pr_archive() { # NAME ENV_LINE
-  mkdir -p "${RESTORE_TMP}/$1-src/.tau"
+pr_archive() { # NAME ENV_LINE [WORKSPACE_DIR_NAME]
+  local ws=${3:-${HL_LEGACY_HOME_NAME}}
+  mkdir -p "${RESTORE_TMP}/$1-src/${ws}"
   printf 'PGDUMPDATA' >"${RESTORE_TMP}/$1-src/db.dump"
   printf '%s\n' "$2" >"${RESTORE_TMP}/$1-src/.env"
-  printf 'x\n' >"${RESTORE_TMP}/$1-src/.tau/a.txt"
-  tar -czf "${RESTORE_TMP}/$1.tar.gz" -C "${RESTORE_TMP}/$1-src" db.dump .tau .env
+  printf 'x\n' >"${RESTORE_TMP}/$1-src/${ws}/a.txt"
+  tar -czf "${RESTORE_TMP}/$1.tar.gz" -C "${RESTORE_TMP}/$1-src" db.dump "${ws}" .env
   openssl enc -aes-256-cbc -pbkdf2 -salt -pass "file:${RESTORE_PASSFILE}" \
     -in "${RESTORE_TMP}/$1.tar.gz" -out "${RESTORE_TMP}/$1.tar.gz.enc"
 }
 pr_run() { # NAME — prints the output, then `rc=N enc=<FICUS_ENC_VALUE>`
   local rc=0
-  rm -rf "${RESTORE_TMP}/pr-home" "${RESTORE_TMP}/pr.log"
+  rm -rf "${RESTORE_TMP}/pr-home" "${RESTORE_TMP}/pr.log" "${RESTORE_TMP}/pr-runhome"
   (
     eval "$(sed -n '/^phase_restore() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")"
     phase_step() { :; }
@@ -2535,10 +2536,14 @@ pr_run() { # NAME — prints the output, then `rc=N enc=<FICUS_ENC_VALUE>`
     }
     pg_restore() { echo pg_restore >>"${RESTORE_TMP}/pr.log"; }
     FICUS_SETUP_RESTORE_PASSPHRASE=${RESTORE_PASS} DB_PASSWORD=pw DB_MODE=external
-    BACKUP_HOME_DIR="${RESTORE_TMP}/pr-home" RESTORE_URL='https://s3.invalid/a' RESTORE_STRIP_CREDENTIALS=0
-    RUN_USER=$(id -un) FICUS_ENC_VALUE=''
+    BACKUP_HOME_DIR=${PR_TARGET:-"${RESTORE_TMP}/pr-home"} RESTORE_URL='https://s3.invalid/a' RESTORE_STRIP_CREDENTIALS=0
+    RUN_USER=$(id -un) FICUS_ENC_VALUE='' RESTORE_HOME_FROM=''
+    RUN_USER_HOME="${RESTORE_TMP}/pr-runhome" CORE_ENV_HOME_DIR='' LAYOUT_HOME_DIR=''
+    HL_LAYOUT=${PR_LAYOUT:-${HL_LAYOUT:-2}}
+    mkdir -p "${RUN_USER_HOME}"
     PR_NAME=$1 phase_restore
     echo "enc=${FICUS_ENC_VALUE}"
+    echo "from=${RESTORE_HOME_FROM}"
   ) 2>&1 || rc=$?
   echo "rc=${rc}"
 }
@@ -2555,9 +2560,153 @@ expect_match 'phase_restore: a FICUS archive restores' "${pr_out}" 'rc=0$'
 expect_match 'phase_restore: ...carries its key forward' "${pr_out}" 'enc=archived-ficus-key'
 expect_eq 'phase_restore: ...after pg_restore and the workspace copy' \
   "$(cat "${RESTORE_TMP}/pr.log" 2>/dev/null):$(cat "${RESTORE_TMP}/pr-home/a.txt" 2>/dev/null)" 'pg_restore:x'
+
+# Ruling 84: the HOME a restored backup was taken with. phase_restore records
+# it (the archived .env's HOME_DIR, else the workspace dir's name under the run
+# user's home, else the legacy default), and on layout 2 a legacy one becomes
+# the compat link to the Ficus HOME the tree was restored into.
+PR_RH="${RESTORE_TMP}/pr-runhome"
+PR_TARGET="${PR_RH}/${HL_NEW_HOME_NAME}"
+PR_LAYOUT=2
+pr_out=$(pr_run ficus)
+expect_match 'phase_restore (Ruling 84): a layout-1 backup on layout 2 restores' "${pr_out}" 'rc=0$'
+expect_match '...its HOME is the legacy one under the run user (no HOME_DIR in its .env)' "${pr_out}" "from=${PR_RH}/${HL_LEGACY_HOME_NAME}"$'\n'
+expect_eq '...its tree is in the Ficus HOME; the legacy HOME is the compat link to it' \
+  "$(cat "${PR_RH}/${HL_NEW_HOME_NAME}/a.txt" 2>/dev/null):$(readlink "${PR_RH}/${HL_LEGACY_HOME_NAME}")" "x:${PR_RH}/${HL_NEW_HOME_NAME}"
+expect_match '...and says its stored paths are rebased after the migrations' "${pr_out}" \
+  "the backup was taken with HOME ${PR_RH}/${HL_LEGACY_HOME_NAME}, this host's is ${PR_RH}/${HL_NEW_HOME_NAME} — its stored paths are rebased after the migrations"
+pr_archive ficus-l2 "$(printf 'FICUS_ENCRYPTION_KEY=k2\nHOME_DIR=%s' "${PR_RH}/${HL_NEW_HOME_NAME}")" "${HL_NEW_HOME_NAME}"
+PR_TARGET="${PR_RH}/${HL_NEW_HOME_NAME}"
+PR_LAYOUT=2
+pr_out=$(pr_run ficus-l2)
+expect_match 'phase_restore (Ruling 84): a layout-2 backup on layout 2: its HOME is this host'"'"'s' "${pr_out}" \
+  "from=${PR_RH}/${HL_NEW_HOME_NAME}"$'\n'
+expect_eq '...nothing at the legacy HOME' \
+  "$(cat "${PR_RH}/${HL_NEW_HOME_NAME}/a.txt" 2>/dev/null):$([[ -e ${PR_RH}/${HL_LEGACY_HOME_NAME} || -L ${PR_RH}/${HL_LEGACY_HOME_NAME} ]] && echo legacy || echo none)" 'x:none'
+expect_match '...and says its stored paths stay' "${pr_out}" 'as this host'"'"'s — its stored paths stay as they are'
+PR_TARGET="${PR_RH}/${HL_LEGACY_HOME_NAME}"
+PR_LAYOUT=1
+pr_out=$(pr_run ficus-l2)
+expect_match 'phase_restore (Ruling 84): a layout-2 backup on a layout-1 host restores' "${pr_out}" 'rc=0$'
+expect_eq '...into the legacy HOME (a real dir), with no link at the Ficus one' \
+  "$([[ -d ${PR_RH}/${HL_LEGACY_HOME_NAME} && ! -L ${PR_RH}/${HL_LEGACY_HOME_NAME} ]] && echo real):$([[ -e ${PR_RH}/${HL_NEW_HOME_NAME} || -L ${PR_RH}/${HL_NEW_HOME_NAME} ]] && echo ficus || echo none)" 'real:none'
+unset PR_RH PR_TARGET PR_LAYOUT
 unset -f pr_archive pr_run
 
 rm -rf "${RESTORE_TMP}"
+
+# --- restore_archived_home / restore_rebase_home / restore_link_legacy_home --
+# (Ruling 84) The HOME a restored backup was taken with, the rebase of its
+# stored paths to this host's HOME, and the legacy-HOME compat link.
+RH_TMP=$(mktemp -d)
+mkdir -p "${RH_TMP}/a1" "${RH_TMP}/a2/${HL_LEGACY_HOME_NAME}" "${RH_TMP}/a3/${HL_NEW_HOME_NAME}" "${RH_TMP}/a4" "${RH_TMP}/a5/${HL_LEGACY_HOME_NAME}"
+printf 'FICUS_ENCRYPTION_KEY=k\nHOME_DIR=/srv/agents//home/\n' >"${RH_TMP}/a1/.env"
+printf 'FICUS_ENCRYPTION_KEY=k\n' >"${RH_TMP}/a2/.env"
+printf 'FICUS_ENCRYPTION_KEY=k\n' >"${RH_TMP}/a3/.env"
+printf 'FICUS_ENCRYPTION_KEY=k\n' >"${RH_TMP}/a4/.env"
+printf 'FICUS_ENCRYPTION_KEY=k\nHOME_DIR=%s\n' "'/home/me/${HL_NEW_HOME_NAME}'" >"${RH_TMP}/a5/.env"
+expect_eq 'restore_archived_home: the archived .env'"'"'s HOME_DIR, normalized' "$(restore_archived_home "${RH_TMP}/a1" /root)" '/srv/agents/home'
+expect_eq 'restore_archived_home: ...quoted, and over the workspace dir'"'"'s name' "$(restore_archived_home "${RH_TMP}/a5" /root)" "/home/me/${HL_NEW_HOME_NAME}"
+expect_eq 'restore_archived_home: no HOME_DIR — the workspace dir'"'"'s name under the run user'"'"'s home (legacy)' \
+  "$(restore_archived_home "${RH_TMP}/a2" /root)" "/root/${HL_LEGACY_HOME_NAME}"
+expect_eq 'restore_archived_home: ...(Ficus)' "$(restore_archived_home "${RH_TMP}/a3" /home/u)" "/home/u/${HL_NEW_HOME_NAME}"
+expect_eq 'restore_archived_home: no HOME_DIR and no workspace dir — the legacy default' \
+  "$(restore_archived_home "${RH_TMP}/a4" /root)" "/root/${HL_LEGACY_HOME_NAME}"
+
+# restore_rebase_home, with the program run stubbed (_hl_rebase_home runs the
+# release's rebase-home.js; host-layout.test.sh and the e2e cover that).
+rr_run() { # RC ARGS... — prints the output, the program's argv, then `rc=N`
+  local rc=0 stub_rc=$1
+  shift
+  rm -f "${RH_TMP}/rr.log"
+  (
+    _hl_rebase_home() {
+      printf '%s\n' "$*" >>"${RH_TMP}/rr.log"
+      return "${RR_STUB_RC}"
+    }
+    RR_STUB_RC=${stub_rc} restore_rebase_home "$@"
+  ) 2>&1 || rc=$?
+  echo "argv=$(cat "${RH_TMP}/rr.log" 2>/dev/null)"
+  echo "rc=${rc}"
+}
+rr_out=$(rr_run 0 /d/.env /rel "/root/${HL_NEW_HOME_NAME}" "/root/${HL_NEW_HOME_NAME}")
+expect_match 'restore_rebase_home: the same HOME — nothing runs' "${rr_out}" $'argv=\nrc=0$'
+expect_match '...and it says so' "${rr_out}" "the backup was taken with this host's HOME \\(/root/${HL_NEW_HOME_NAME}\\) — no stored path to rebase"
+rr_out=$(rr_run 0 /d/.env /rel "/root/${HL_LEGACY_HOME_NAME}" "/root/${HL_NEW_HOME_NAME}")
+expect_match 'restore_rebase_home: legacy → Ficus: the release'"'"'s program, from the archived HOME to this host'"'"'s' "${rr_out}" \
+  "argv=/d/.env /rel /root/${HL_LEGACY_HOME_NAME} /root/${HL_NEW_HOME_NAME}"$'\nrc=0$'
+expect_match '...with a clear log line' "${rr_out}" "restore: the backup was taken with HOME /root/${HL_LEGACY_HOME_NAME}, this host's is /root/${HL_NEW_HOME_NAME} — rebasing the restored database's stored HOME paths"
+rr_out=$(rr_run 0 /d/.env /rel "/root/${HL_NEW_HOME_NAME}" "/root/${HL_LEGACY_HOME_NAME}")
+expect_match 'restore_rebase_home: Ficus → legacy (a layout-2 backup on a layout-1 host): the other way' "${rr_out}" \
+  "argv=/d/.env /rel /root/${HL_NEW_HOME_NAME} /root/${HL_LEGACY_HOME_NAME}"$'\nrc=0$'
+rr_out=$(FICUS_REBASE_HOME_FORCE=1 rr_run 0 /d/.env /rel "/root/${HL_LEGACY_HOME_NAME}" "/root/${HL_NEW_HOME_NAME}")
+expect_match 'restore_rebase_home: FICUS_REBASE_HOME_FORCE=1 passes --force' "${rr_out}" \
+  "argv=/d/.env /rel /root/${HL_LEGACY_HOME_NAME} /root/${HL_NEW_HOME_NAME} --force"$'\nrc=0$'
+rr_out=$(rr_run 3 /d/.env /rel "/root/${HL_LEGACY_HOME_NAME}" "/root/${HL_NEW_HOME_NAME}")
+expect_match 'restore_rebase_home: the program refuses (rows under both) — the restore fails' "${rr_out}" 'rc=1$'
+expect_match '...naming both HOMEs and the override' "${rr_out}" \
+  "already holds paths under /root/${HL_NEW_HOME_NAME} next to the ones under /root/${HL_LEGACY_HOME_NAME}.*FICUS_REBASE_HOME_FORCE=1"
+rr_out=$(rr_run 5 /d/.env /rel "/root/${HL_LEGACY_HOME_NAME}" "/root/${HL_NEW_HOME_NAME}")
+expect_match 'restore_rebase_home: any other failure fails the restore' "${rr_out}" "HOME paths from /root/${HL_LEGACY_HOME_NAME} to /root/${HL_NEW_HOME_NAME} failed \\(5\\)"
+unset -f rr_run
+
+# restore_link_legacy_home: only on layout 2, only legacy → Ficus under the
+# run user's home, never over something already there.
+rl_run() { # LAYOUT ARCHIVED CURRENT RUN_HOME — prints the output, then `rc=N`
+  local rc=0
+  (HL_LAYOUT=$1 restore_link_legacy_home "$2" "$3" "$4") 2>&1 || rc=$?
+  echo "rc=${rc}"
+}
+RL="${RH_TMP}/rl"
+rl_legacy="${RL}/${HL_LEGACY_HOME_NAME}" rl_ficus="${RL}/${HL_NEW_HOME_NAME}"
+mkdir -p "${rl_ficus}"
+rl_out=$(rl_run 2 "${rl_legacy}" "${rl_ficus}" "${RL}")
+expect_eq 'restore_link_legacy_home: layout 2, legacy → Ficus: the legacy HOME links to the Ficus one' \
+  "$(readlink "${rl_legacy}"):${rl_out##*$'\n'}" "${rl_ficus}:rc=0"
+rl_out=$(rl_run 2 "${rl_legacy}" "${rl_ficus}" "${RL}")
+expect_eq 'restore_link_legacy_home: ...again: kept as it is, quietly' "$(readlink "${rl_legacy}"):${rl_out}" "${rl_ficus}:rc=0"
+rm -f "${rl_legacy}"
+mkdir -p "${rl_legacy}/sessions"
+rl_out=$(rl_run 2 "${rl_legacy}" "${rl_ficus}" "${RL}")
+expect_eq 'restore_link_legacy_home: a real legacy dir is left as it is' \
+  "$([[ -d ${rl_legacy}/sessions && ! -L ${rl_legacy} ]] && echo real):${rl_out##*$'\n'}" 'real:rc=0'
+expect_match '...with a warning' "${rl_out}" "${rl_legacy} already exists and is not the compat link"
+rm -rf "${rl_legacy}"
+rl_out=$(rl_run 1 "${rl_legacy}" "${rl_ficus}" "${RL}")
+expect_eq 'restore_link_legacy_home: layout 1 — nothing is linked' \
+  "$([[ -e ${rl_legacy} || -L ${rl_legacy} ]] && echo linked || echo none):${rl_out}" 'none:rc=0'
+rl_out=$(rl_run 2 "${rl_ficus}" "${rl_legacy}" "${RL}")
+expect_eq 'restore_link_legacy_home: Ficus → legacy — nothing is linked' \
+  "$([[ -L ${rl_ficus} || -L ${rl_legacy} ]] && echo linked || echo none):${rl_out}" 'none:rc=0'
+rl_out=$(rl_run 2 /srv/other "${rl_ficus}" "${RL}")
+expect_eq 'restore_link_legacy_home: a custom archived HOME — nothing is linked' \
+  "$([[ -e ${rl_legacy} || -L ${rl_legacy} ]] && echo linked || echo none):${rl_out}" 'none:rc=0'
+unset -f rl_run
+unset RL rl_legacy rl_ficus rl_out rr_out
+
+# setup-host.sh's git mode: the rebase runs right after the migrations, from
+# the HOME the restore recorded to the one the .env names now; nothing without
+# a restore. (Artifact mode: the pre-flip hook — host-migrate-e2e.test.sh EHL15.)
+# shellcheck disable=SC2030,SC2034,SC2329 # the stubs and globals are for the eval'd functions
+rs_run() { # RESTORE_HOME_FROM — prints the calls
+  (
+    eval "$(sed -n '/^restore_rebase_stored_home() {/,/^}/p;/^phase_migrate() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")"
+    phase_step() { :; }
+    run_db_migrations() { echo "migrate $1"; }
+    restore_rebase_home() { echo "rebase $*"; }
+    SRC_MODE=git SRC_DEST=/opt/x ENV_FILE=/opt/x/.env RESTORE_HOME_FROM=$1
+    CORE_ENV_HOME_DIR='' LAYOUT_HOME_DIR="/root/${HL_NEW_HOME_NAME}"
+    phase_migrate
+  ) 2>&1
+}
+expect_eq 'setup-host.sh git mode: after a restore, the migrations, then the rebase from the archived HOME' \
+  "$(rs_run "/root/${HL_LEGACY_HOME_NAME}")" \
+  "$(printf 'migrate /opt/x\nrebase /opt/x/.env /opt/x /root/%s /root/%s' "${HL_LEGACY_HOME_NAME}" "${HL_NEW_HOME_NAME}")"
+expect_eq 'setup-host.sh git mode: no restore — the migrations only' "$(rs_run '')" 'migrate /opt/x'
+expect_eq 'setup-host.sh artifact mode: the pre-flip hook is the restore rebase' \
+  "$(grep -c '^    ARTIFACT_PREFLIP_HOOK=restore_rebase_stored_home$' "${SCRIPT_DIR}/setup-host.sh")" '1'
+unset -f rs_run
+rm -rf "${RH_TMP}"
 
 # --- install_rendered --------------------------------------------------------
 # The staged render → verify → install path. A live tenant provision once
@@ -3167,9 +3316,9 @@ expect_eq 'setup-host.sh: reconcile → traps → host_layout_adopt → resolve_
   "$(hla_sorted "$(hla_order setup-host.sh '  host_migrate_reconcile || reconcile_rc=$?' '  host_migrate_install_traps' '  host_layout_adopt' '  resolve_layout_globals' 'require_host_env_ready')")" 'yes'
 expect_eq 'setup-host.sh: resolve_layout_globals follows its host_migrate' \
   "$(grep -A1 -F 'host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"' "${SCRIPT_DIR}/setup-host.sh" | tail -n 1)" 'resolve_layout_globals'
-expect_eq 'the hooks: the host layout wrappers in upgrade-host.sh and setup-host.sh' \
+expect_eq 'the hooks: the host layout wrappers in upgrade-host.sh and setup-host.sh (whose pre-flip hook is the restore rebase)' \
   "$(grep -hoE 'ARTIFACT_(PREFLIP|ROLLBACK)_HOOK=[a-z_]+' "${SCRIPT_DIR}/upgrade-host.sh" "${SCRIPT_DIR}/setup-host.sh" | tr '\n' ' ')" \
-  'ARTIFACT_PREFLIP_HOOK=host_layout_preflip ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook '
+  'ARTIFACT_PREFLIP_HOOK=host_layout_preflip ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook ARTIFACT_PREFLIP_HOOK=restore_rebase_stored_home '
 # setup-host.sh's resolve_layout_globals, lifted out of the file: every
 # layout-derived global follows the layout resolved last.
 hla_globals() { # LAYOUT

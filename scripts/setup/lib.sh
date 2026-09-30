@@ -1821,6 +1821,74 @@ restore_home_subdir() { # OUT_DIR
   find "$1" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -n 1
 }
 
+# The HOME_DIR the backup unpacked in OUT_DIR was taken with — the absolute
+# prefix of every path its database stores: the archived .env's HOME_DIR when
+# it names one (a layout-2 host always does); else the archive's workspace
+# directory under RUN_HOME (the nightly backup tars HOME_DIR by its basename,
+# and a host without HOME_DIR used the default under its run user's home);
+# else the legacy default under RUN_HOME. Printed without a trailing slash or
+# doubled slashes.
+restore_archived_home() { # OUT_DIR RUN_HOME
+  local home='' sub
+  home=$(envfile_get "$1/.env" HOME_DIR) || home=''
+  home=${home#[\"\']} home=${home%[\"\']}
+  if [[ ${home} != /* ]]; then
+    sub=$(restore_home_subdir "$1")
+    if [[ -n ${sub} ]]; then
+      home="$2/${sub##*/}"
+    else
+      home="$2/${HL_LEGACY_HOME_NAME}"
+    fi
+  fi
+  home=$(printf '%s' "${home}" | tr -s '/')
+  [[ ${home} == / ]] || home=${home%/}
+  printf '%s\n' "${home}"
+}
+
+# After a restore, and once the restored database is on this release's schema
+# (rebase-home.js rewrites the columns the schema declares): when the backup was
+# taken with another HOME (ARCHIVED) than the one its tree now lives in on this
+# host (CURRENT) — a layout-1 backup on a layout-2 host, or the reverse, or a
+# custom HOME_DIR on either side — rebase the stored paths from ARCHIVED to
+# CURRENT with RELEASE's dist/rebase-home.js, as the host layout move does. It
+# refuses (and so does the provision) when the database already holds paths
+# under CURRENT too; FICUS_REBASE_HOME_FORCE=1 rewrites anyway. A no-op when
+# the two are the same.
+restore_rebase_home() { # ENV_FILE RELEASE ARCHIVED CURRENT
+  local from=$3 to=$4 rc=0 force=()
+  if [[ ${from} == "${to}" ]]; then
+    log_info "restore: the backup was taken with this host's HOME (${to}) — no stored path to rebase"
+    return 0
+  fi
+  log_info "restore: the backup was taken with HOME ${from}, this host's is ${to} — rebasing the restored database's stored HOME paths (${2}/apps/core/dist/rebase-home.js)"
+  [[ ${FICUS_REBASE_HOME_FORCE:-0} != 1 ]] || force=(--force)
+  _hl_rebase_home "$1" "$2" "${from}" "${to}" ${force[@]+"${force[@]}"} || rc=$?
+  ((rc != 3)) ||
+    die "restore: the restored database already holds paths under ${to} next to the ones under ${from} (see REBASE_HOME_TARGET above) — rewriting would merge them; inspect them (rebase-home.js --dry-run), then re-run with FICUS_REBASE_HOME_FORCE=1 to rewrite anyway"
+  ((rc == 0)) || die "restore: rebasing the restored database's HOME paths from ${from} to ${to} failed (${rc})"
+  log_info "restore: the stored HOME paths now name ${to}"
+}
+
+# After a restore onto a layout-2 host of a backup taken with the legacy HOME
+# under RUN_HOME, into the Ficus one: the legacy HOME becomes the compat link
+# to the Ficus one, exactly as a host the host layout moved has it (paths the
+# rebase does not own — a git worktree's gitdir file, a path in free text —
+# still resolve). Nothing else is ever linked: never on layout 1 (a link to
+# the Ficus HOME there would make Core pick it), never over anything already
+# at the legacy path (it is left, with a warning when it is not that link).
+restore_link_legacy_home() { # ARCHIVED CURRENT RUN_HOME
+  local legacy="$3/${HL_LEGACY_HOME_NAME}" ficus="$3/${HL_NEW_HOME_NAME}"
+  [[ ${HL_LAYOUT:-} == 2 && $1 == "${legacy}" && $2 == "${ficus}" ]] || return 0
+  if [[ -L ${legacy} && $(readlink -f -- "${legacy}") == "$(readlink -f -- "${ficus}")" ]]; then
+    return 0
+  elif [[ -e ${legacy} || -L ${legacy} ]]; then
+    log_warn "restore: ${legacy} already exists and is not the compat link to ${ficus} — left as it is; the restored HOME is ${ficus}"
+    return 0
+  fi
+  ln -s -- "${ficus}" "${legacy}" || die "restore: could not link ${legacy} -> ${ficus}"
+  log_info "restore: linked ${legacy} -> ${ficus} (the compat link a host moved to the Ficus layout has)"
+}
+
 # Render a single-origin Caddyfile vhost for HOST, proxying to core on PORT and
 # serving the supplied origin certificate. No ACME, no global options block —
 # see the doctrine comment above.
