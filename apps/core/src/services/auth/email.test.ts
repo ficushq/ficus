@@ -416,3 +416,50 @@ describe('email copy names Ficus', () => {
     expect(message.Body.Html.Data).toContain('This code is for the Ficus instance at https://demo.example.com.')
   })
 })
+
+describe('email-change notice', () => {
+  it('masks the new address to its first letter and domain', async () => {
+    const { maskEmail } = await import('./email')
+    expect(maskEmail('jane@example.com')).toBe('j***@example.com')
+    expect(maskEmail('@example.com')).toBe('***')
+  })
+
+  it('tells the previous address what changed, without a link', async () => {
+    const { buildEmailChangedMessage } = await import('./email')
+    const message = buildEmailChangedMessage('jane@example.com', {
+      host: 'noah.ficus.sh',
+      url: 'https://noah.ficus.sh',
+    } as never)
+    expect(message.Subject.Data).toBe('Your Ficus email at noah.ficus.sh was changed')
+    expect(message.Body.Text.Data).toContain('was changed to j***@example.com')
+    expect(message.Body.Text.Data).not.toContain('jane@example.com')
+    expect(message.Body.Html.Data).not.toContain('href')
+  })
+
+  it('with a mail provider, mails the notice to the previous address', async () => {
+    const { sendEmailChangedNotice } = await import('./email')
+    const prior = process.env.SES_FROM_ADDRESS
+    process.env.SES_FROM_ADDRESS = 'noreply@example.com'
+    mockSend.mockClear()
+    try {
+      await sendEmailChangedNotice('old@example.com', 'new@example.com')
+      expect(mockSend).toHaveBeenCalledTimes(1)
+      const command = (mockSend.mock.calls[0] as unknown as [{ input: { Destination: { ToAddresses: string[] } } }])[0]
+      expect(command.input.Destination.ToAddresses).toEqual(['old@example.com'])
+    } finally {
+      if (prior === undefined) delete process.env.SES_FROM_ADDRESS
+      else process.env.SES_FROM_ADDRESS = prior
+    }
+  })
+
+  it('sends nothing without a mail provider', async () => {
+    const { sendEmailChangedNotice } = await import('./email')
+    const prior = process.env.SES_FROM_ADDRESS
+    delete process.env.SES_FROM_ADDRESS
+    try {
+      await expect(sendEmailChangedNotice('old@example.com', 'new@example.com')).resolves.toBeUndefined()
+    } finally {
+      if (prior !== undefined) process.env.SES_FROM_ADDRESS = prior
+    }
+  })
+})

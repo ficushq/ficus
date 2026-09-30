@@ -11,15 +11,18 @@ const secondaryClasses =
   'ficus-button ficus-button-secondary px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0'
 
 /**
- * For an account created without an email (the first admin on a self-hosted or desktop
- * instance): add one for account recovery and email notifications. Where the instance can
- * mail, the address is confirmed with a code; otherwise it is saved directly.
+ * Add an email to an account created without one (the first admin on a self-hosted or desktop
+ * instance), or change the current one. Where the instance can mail, the new address is
+ * confirmed with a code; otherwise it is saved directly.
  */
-export function AddEmailForm({
-  onAdded,
+export function AccountEmailForm({
+  hasEmail,
+  onSaved,
   api = { addEmail, verifyAddedEmail },
 }: {
-  onAdded: (user: AuthUser) => void
+  /** Whether the account already has a real address (vs the no-email placeholder). */
+  hasEmail: boolean
+  onSaved: (user: AuthUser) => void
   api?: { addEmail: typeof addEmail; verifyAddedEmail: typeof verifyAddedEmail }
 }) {
   const [open, setOpen] = useState(false)
@@ -42,16 +45,16 @@ export function AddEmailForm({
       setError(null)
       if (result.verificationRequired) setAwaitingCode(true)
       else if (result.user) {
-        onAdded(result.user)
+        onSaved(result.user)
         reset()
       }
     },
-    onError: (err: Error) => setError(err.message || 'Failed to add email'),
+    onError: (err: Error) => setError(err.message || 'Failed to save email'),
   })
   const verify = useMutation({
     mutationFn: () => api.verifyAddedEmail(email.trim(), code.trim()),
     onSuccess: ({ user }) => {
-      onAdded(user)
+      onSaved(user)
       reset()
     },
     onError: (err: Error) => setError(err.message || 'Failed to verify email'),
@@ -60,9 +63,13 @@ export function AddEmailForm({
   if (!open) {
     return (
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-muted">Add an email for account recovery and email notifications.</p>
+        <p className="text-xs text-muted">
+          {hasEmail
+            ? 'Used for account recovery and email notifications.'
+            : 'Add an email for account recovery and email notifications.'}
+        </p>
         <button type="button" onClick={() => setOpen(true)} className={secondaryClasses}>
-          Add email
+          {hasEmail ? 'Change email' : 'Add email'}
         </button>
       </div>
     )
@@ -81,7 +88,7 @@ export function AddEmailForm({
       }}
     >
       <label htmlFor="account-add-email" className="block text-sm text-muted">
-        Email
+        {hasEmail ? 'New email' : 'Email'}
       </label>
       <input
         id="account-add-email"

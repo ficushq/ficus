@@ -545,6 +545,43 @@ export async function sendInviteEmail(email: string, opts: { ttlMs?: number } = 
  * NOT return anything from this to the requester — see routes/auth.ts, where the
  * recovery endpoint answers identically whether or not the address exists.
  */
+/** `jane@example.com` → `j***@example.com`: enough for the owner to recognise, not a full address. */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@')
+  if (at <= 0) return '***'
+  return `${email[0]}***${email.slice(at)}`
+}
+
+/**
+ * Sent to an account's PREVIOUS address after its email changes, so the owner hears about it
+ * even if someone else changed it from a signed-in session. No link: it only informs.
+ */
+export function buildEmailChangedMessage(newEmail: string, instance: InstanceIdentity | null) {
+  const subject = instance ? `Your Ficus email at ${instance.host} was changed` : 'Ficus — Your email was changed'
+  const where = instance ? `your account on the Ficus instance at ${instance.url}` : 'your Ficus account'
+  const masked = maskEmail(newEmail)
+  const text = [
+    `The email address for ${where} was changed to ${masked}.`,
+    '',
+    'If you made this change, you can ignore this email.',
+    'If you did not, sign in with your passkey and change it back, and tell your Ficus administrator.',
+  ].join('\n')
+  const html =
+    `<div style="font-family:sans-serif;max-width:400px;margin:0 auto;"><h2>Your Ficus email was changed</h2>` +
+    `<p>The email address for ${escapeHtml(where)} was changed to <strong>${escapeHtml(masked)}</strong>.</p>` +
+    `<p style="color:#6b7280;font-size:14px;">If you made this change, you can ignore this email. If you did not, sign in with your passkey and change it back, and tell your Ficus administrator.</p></div>`
+  return {
+    Subject: { Data: subject },
+    Body: { Text: { Data: text }, Html: { Data: html } },
+  }
+}
+
+/** Tell the previous address about an email change. Best effort; does nothing without a mail provider. */
+export async function sendEmailChangedNotice(previousEmail: string, newEmail: string): Promise<void> {
+  if (!isEmailConfigured()) return
+  await sendMail(previousEmail, buildEmailChangedMessage(newEmail, instanceIdentity()))
+}
+
 export async function sendPasskeyRecoveryEmail(email: string, opts: { ttlMs?: number } = {}): Promise<void> {
   const ttlMs = opts.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS
   const issued = await issueEmailChallenge(email, { ttlMs, purpose: 'recovery' })

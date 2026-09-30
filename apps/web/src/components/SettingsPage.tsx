@@ -59,7 +59,7 @@ import { MachinesSection } from './settings/MachinesSection'
 import { RemoteHostsSection } from './settings/RemoteHostsSection'
 import { SettingsNavigation } from './settings/SettingsNavigation'
 import { accountEmailLabel, isPlaceholderEmail } from '@ficus/shared'
-import { AddEmailForm } from './settings/AddEmailForm'
+import { AccountEmailForm } from './settings/AccountEmailForm'
 import { ViewportDebugSection } from './settings/ViewportDebugSection'
 
 interface SettingsPageDependencies {
@@ -639,14 +639,13 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               <span className="text-sm text-muted">Email</span>
               <span className="text-sm font-medium text-primary">{accountEmailLabel(user.email)}</span>
             </div>
-            {isPlaceholderEmail(user.email) && (
-              <AddEmailForm
-                onAdded={(updatedUser) => {
-                  queryClient.setQueryData(queryKeys.auth.me(), updatedUser)
-                  queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() })
-                }}
-              />
-            )}
+            <AccountEmailForm
+              hasEmail={!isPlaceholderEmail(user.email)}
+              onSaved={(updatedUser) => {
+                queryClient.setQueryData(queryKeys.auth.me(), updatedUser)
+                queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() })
+              }}
+            />
             <form onSubmit={handleSaveProfile} className="space-y-2">
               <label
                 data-setting-target="user-display-name"

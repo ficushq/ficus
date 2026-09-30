@@ -1536,7 +1536,7 @@ describe('PATCH /api/auth/me', () => {
   })
 })
 
-describe('POST /api/auth/me/email (adding an email to a no-email account)', () => {
+describe('POST /api/auth/me/email (adding or changing the account email)', () => {
   const priorFrom = process.env.SES_FROM_ADDRESS
   const removals: Array<() => Promise<void>> = []
   afterEach(async () => {
@@ -1591,19 +1591,26 @@ describe('POST /api/auth/me/email (adding an email to a no-email account)', () =
     expect((await res.json()).user.email).toBe(email)
   })
 
-  it('refuses accounts that already have an email, addresses in use, and the placeholder itself', async () => {
+  it('changes an existing email, and refuses the same address, addresses in use, and the placeholder', async () => {
     delete process.env.SES_FROM_ADDRESS
     const { createTestUser, cleanupTestRbac } = await import('../test-utils/rbac')
-    const withEmail = await createTestUser({ prefix: 'add-email-has' })
-    removals.push(() => cleanupTestRbac('add-email-has'))
-    expect((await post('', withEmail.token, { email: 'add-email-has-new@example.com' })).status).toBe(409)
+    const other = await createTestUser({ prefix: 'change-email-other' })
+    removals.push(() => cleanupTestRbac('change-email-other'))
+    const me = await createTestUser({ prefix: 'change-email-me' })
+    removals.push(() => cleanupTestRbac('change-email-me'))
 
-    const owner = await placeholderOwner('add-email-taken')
-    const taken = await post('', owner.token, { email: withEmail.email.toUpperCase() })
+    const same = await post('', me.token, { email: me.email.toUpperCase() })
+    expect(same.status).toBe(400)
+    expect((await same.json()).error).toBe('That is already your email')
+    const taken = await post('', me.token, { email: other.email.toUpperCase() })
     expect(taken.status).toBe(409)
     expect((await taken.json()).error).toBe('Another account already uses this email')
-    expect((await post('', owner.token, { email: PLACEHOLDER_OWNER_EMAIL })).status).toBe(400)
-    expect((await post('', owner.token, { email: 'not-an-email' })).status).toBe(400)
+    expect((await post('', me.token, { email: PLACEHOLDER_OWNER_EMAIL })).status).toBe(400)
+    expect((await post('', me.token, { email: 'not-an-email' })).status).toBe(400)
+
+    const changed = await post('', me.token, { email: 'change-email-me-new@example.com' })
+    expect(changed.status).toBe(200)
+    expect((await changed.json()).user.email).toBe('change-email-me-new@example.com')
   })
 })
 
