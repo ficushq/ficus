@@ -113,6 +113,13 @@
   text-transform: var(--g-display-transform);
   letter-spacing: var(--g-display-tracking);
   white-space: nowrap;
+  color: var(--g-ink);
+  cursor: pointer;
+}
+
+.g-counter:active {
+  translate: var(--g-press-sm);
+  box-shadow: var(--g-lift-pressed);
 }
 
 .g-counter small {
@@ -313,12 +320,16 @@
   color: var(--g-text);
 }
 
-/* A squad's field log (FieldLogCard): filter chips, then entries newest first. */
+/* A squad's field log (cards/FieldLog, a window): filter chips, then entries newest first. */
 .g-log-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin: 10px 0 12px;
+}
+
+.g-chat-scroll.g-log-scroll {
+  padding: 4px 14px 16px;
+  background: var(--g-chat-paper);
 }
 
 .g-log-filter {
@@ -723,26 +734,80 @@ button.g-log-row:focus-visible {
   box-shadow: var(--g-lift-pressed);
 }
 
-.g-farm-list {
-  position: absolute;
-  top: 72px;
-  left: 14px;
-  bottom: 96px;
-  width: min(380px, calc(100% - 28px));
-  overflow: auto;
-  padding: 16px;
-  outline: none;
-}
-
-.g-list-yard + .g-list-yard {
-  margin-top: 6px;
-  padding-top: 6px;
+/* The whole farm (cards/OverviewCard): a section per plot, its plants, then its robots' faces. */
+.g-overview-plot {
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: var(--g-border-thin) var(--g-rule-style) var(--g-rule);
 }
 
-.g-list-needs {
-  font: 700 12px var(--g-font-body);
-  color: var(--g-warn-text);
+.g-overview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: var(--g-border-thin) solid transparent;
+  border-radius: var(--g-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.g-overview-head:hover,
+.g-overview-head:focus-visible {
+  border-color: var(--g-outline);
+  background: var(--g-paper);
+  outline: none;
+}
+
+.g-overview-name {
+  font: var(--g-display-weight-soft) 15px var(--g-font-display);
+  text-transform: var(--g-display-transform);
+  letter-spacing: var(--g-display-tracking);
+  color: var(--g-ink);
+}
+
+.g-overview-head .g-crew-meta {
+  flex: none;
+}
+
+.g-overview-empty {
+  margin: 0 8px 4px;
+  font-size: 12.5px;
+  color: var(--g-ink-soft);
+}
+
+.g-overview-robots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0 4px;
+  list-style: none;
+}
+
+.g-overview-robot {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: var(--g-border-thin) solid transparent;
+  border-radius: var(--g-radius-round);
+  background: none;
+  cursor: pointer;
+}
+
+.g-overview-robot:hover,
+.g-overview-robot:focus-visible {
+  border-color: var(--g-outline);
+  background: var(--g-paper);
+  outline: none;
 }
 
 .g-list-row {
@@ -773,10 +838,6 @@ button.g-log-row:focus-visible {
 .g-crew-meta[data-needs='yes'] {
   color: var(--g-warn-text);
   font-weight: 700;
-}
-
-.g-list-robots {
-  margin: 6px 8px 0;
 }
 
 .g-empty-farm {
@@ -810,7 +871,6 @@ button.g-log-row:focus-visible {
 
 :root[data-desktop-shell='inset'] .g-hud > *,
 :root[data-desktop-shell='inset'] .g-farm-card,
-:root[data-desktop-shell='inset'] .g-farm-list,
 :root[data-desktop-shell='inset'] .g-chat {
   -webkit-app-region: no-drag;
 }

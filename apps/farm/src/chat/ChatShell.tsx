@@ -14,6 +14,7 @@ export function ChatShell({
   subtitle,
   header,
   leading,
+  closeLabel = 'Close chat',
   onClose,
   children,
 }: {
@@ -22,6 +23,7 @@ export function ChatShell({
   header?: ReactNode
   /** Shown left of the title, e.g. the robot's portrait that opens its card. */
   leading?: ReactNode
+  closeLabel?: string
   onClose: () => void
   children: ReactNode
 }) {
@@ -65,7 +67,7 @@ export function ChatShell({
           </h2>
         </div>
         {controls && <div className="g-chat-controls">{controls}</div>}
-        <button type="button" className="g-card-close g-chat-close" aria-label="Close chat" onClick={onClose}>
+        <button type="button" className="g-card-close g-chat-close" aria-label={closeLabel} onClick={onClose}>
           <CloseIcon />
         </button>
       </header>

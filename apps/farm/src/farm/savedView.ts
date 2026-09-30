@@ -37,12 +37,11 @@ const BY_ID: Record<string, 'streamId' | 'agentId' | 'squadId'> = {
   plot: 'streamId',
   robot: 'agentId',
   yard: 'squadId',
-  fieldLog: 'squadId',
   hut: 'squadId',
   stand: 'squadId',
   rack: 'squadId',
 }
-const PLAIN = new Set(['assistant', 'mailbox', 'farmhouse', 'seedShed', 'crates', 'compost'])
+const PLAIN = new Set(['assistant', 'overview', 'mailbox', 'farmhouse', 'seedShed', 'crates', 'compost'])
 
 function readSelection(value: unknown): Selection | null {
   if (!isObject(value) || typeof value.kind !== 'string') return null
@@ -56,6 +55,7 @@ function readTarget(value: unknown): ChatTarget | null {
   if (!isObject(value)) return null
   if (value.kind === 'agent' && isString(value.agentId)) return { kind: 'agent', agentId: value.agentId }
   if (value.kind === 'consultant' && isString(value.squadId)) return { kind: 'consultant', squadId: value.squadId }
+  if (value.kind === 'fieldLog' && isString(value.squadId)) return { kind: 'fieldLog', squadId: value.squadId }
   // An Assistant conversation (a given one, or your latest); a fresh one that was never started has nothing to reopen.
   if (value.kind === 'assistant' && !value.fresh)
     return isString(value.conversationId)

@@ -14,6 +14,8 @@ export interface FarmCardEnv {
   select: (selection: Selection) => void
   openChat: (agentId: string) => void
   startConsultant: (squadId: string) => void
+  /** Opens a squad's field log in its own window. */
+  openFieldLog: (squadId: string) => void
   openAssistant: (conversationId?: string) => void
   /** A brand-new Assistant conversation. */
   startAssistant: () => void

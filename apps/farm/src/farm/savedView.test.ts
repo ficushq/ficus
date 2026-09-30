@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { ChatWindowState } from './chatWindowState'
 import { readView, viewKey, writeView } from './savedView'
 
 function memory() {
@@ -94,14 +95,19 @@ describe('saved view', () => {
     ])
   })
 
-  it("reopens a squad's field log", () => {
+  it("reopens a squad's field log window", () => {
     const storage = memory()
-    writeView(
-      KEY,
-      { camera: { x: 0, y: 0, zoom: 1 }, selection: { kind: 'fieldLog', squadId: 'sq-1' }, chats: [] },
-      storage
-    )
-    expect(readView(KEY, storage).selection).toEqual({ kind: 'fieldLog', squadId: 'sq-1' })
+    const log: ChatWindowState = {
+      key: 'fieldLog:sq-1',
+      target: { kind: 'fieldLog', squadId: 'sq-1' },
+      x: 1,
+      y: 2,
+      w: 3,
+      h: 4,
+      z: 1,
+    }
+    writeView(KEY, { camera: null, selection: null, chats: [log] }, storage)
+    expect(readView(KEY, storage).chats).toEqual([log])
   })
 
   it('keeps the demo farm apart from the real one', () => {

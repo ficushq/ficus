@@ -8,7 +8,7 @@ import { useFarmCard } from './cards/context'
 import { PlotCard } from './cards/PlotCard'
 import { RobotCard } from './cards/RobotCard'
 import { YardCard } from './cards/YardCard'
-import { FieldLogCard } from './cards/FieldLogCard'
+import { OverviewCard } from './cards/OverviewCard'
 import { HutCard } from './cards/HutCard'
 import { RackCard } from './cards/RackCard'
 import { StandCard } from './cards/StandCard'
@@ -36,9 +36,7 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
       const stand = layout.yards.find((y) => y.stand.ids?.includes(s.agentId))
       return stand ? iso(stand.stand.i, stand.stand.j) : null
     }
-    case 'yard':
-    case 'fieldLog': {
-      // The field log opens from the squad's sign, and stays there.
+    case 'yard': {
       const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
       return y ? iso(y.sign.i, y.sign.j) : null
     }
@@ -55,7 +53,8 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
       return y?.rack ? iso(y.rack.i, y.rack.j) : null
     }
     case 'assistant':
-      // Opens from the toolbar, not a spot on the farm (FarmScreen places it).
+    case 'overview':
+      // Open from the toolbar or the counters, not a spot on the farm (FarmScreen places them).
       return null
     case 'mailbox':
       return iso(layout.mailbox.i, layout.mailbox.j)
@@ -80,8 +79,8 @@ interface FarmCardProps {
   selection: Selection
   screen: readonly [number, number]
   viewport: { width: number; height: number }
-  /** Open beside the toolbar instead of next to something on the farm. */
-  dock?: 'tools'
+  /** Open beside the toolbar, or under the counters, instead of next to something on the farm. */
+  dock?: 'tools' | 'counters'
   onClose: () => void
 }
 
@@ -104,11 +103,13 @@ export function FarmCard({ selection, screen, viewport, onClose, dock }: FarmCar
     ? undefined
     : dock === 'tools'
       ? { right: 14, bottom: 104, maxHeight: viewport.height - 104 - 72 }
-      : {
-          left: right ? screen[0] + 44 : Math.max(16, screen[0] - 44 - CARD_W),
-          top,
-          maxHeight: viewport.height - top - 16,
-        }
+      : dock === 'counters'
+        ? { right: 14, top: 72, maxHeight: viewport.height - 72 - 104 }
+        : {
+            left: right ? screen[0] + 44 : Math.max(16, screen[0] - 44 - CARD_W),
+            top,
+            maxHeight: viewport.height - top - 16,
+          }
 
   return (
     <section
@@ -135,7 +136,7 @@ export function FarmCard({ selection, screen, viewport, onClose, dock }: FarmCar
 }
 
 function CardBody({ selection }: { selection: Selection }) {
-  const { layout, input } = useFarmCard()
+  const { layout, input, select } = useFarmCard()
   switch (selection.kind) {
     case 'plot':
       return <PlotCard streamId={selection.streamId} />
@@ -143,8 +144,6 @@ function CardBody({ selection }: { selection: Selection }) {
       return <RobotCard agentId={selection.agentId} />
     case 'yard':
       return <YardCard squadId={selection.squadId} />
-    case 'fieldLog':
-      return <FieldLogCard squadId={selection.squadId} />
     case 'hut':
       return <HutCard squadId={selection.squadId} />
     case 'stand':
@@ -159,15 +158,25 @@ function CardBody({ selection }: { selection: Selection }) {
       return <MailboxCard />
     case 'person':
       return <PersonCard userId={selection.userId} />
+    case 'overview':
+      return <OverviewCard />
     case 'farmhouse':
       return (
         <>
           <p className="g-eyebrow">Farmhouse</p>
-          <h2 className="g-card-title">Settings and everything else</h2>
-          <p className="g-card-text">Settings, integrations and schedules live in the regular Ficus app.</p>
-          <a className="g-button g-button-primary g-card-wide" href={webAppUrl('/')}>
-            Open Ficus
-          </a>
+          <h2 className="g-card-title">Home base</h2>
+          <p className="g-card-text">
+            Everything growing on the farm, plot by plot. Settings, integrations and schedules live in the regular Ficus
+            app.
+          </p>
+          <div className="g-card-actions">
+            <button type="button" className="g-button g-button-primary" onClick={() => select({ kind: 'overview' })}>
+              See everything growing
+            </button>
+            <a className="g-button" href={webAppUrl('/')}>
+              Open Ficus
+            </a>
+          </div>
         </>
       )
     case 'crates':

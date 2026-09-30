@@ -5,7 +5,7 @@ import { fakeMultiplayer, renderWith } from '../../multiplayer/testing'
 import { layoutFarm, type FarmInput } from '../layout'
 import { at, makeAgent, makeSquad, makeStream } from '../testFixtures'
 import { FarmCardContext, type FarmCardEnv } from './context'
-import { FieldLogCard } from './FieldLogCard'
+import { FieldLog } from './FieldLog'
 
 const originalFetch = globalThis.fetch
 const mounted: Array<() => void> = []
@@ -62,21 +62,26 @@ async function openLog(pages: Record<string, SquadActivityPage>) {
     select: mock(() => {}),
     openChat: mock(() => {}),
   } as unknown as FarmCardEnv
+  const onClose = mock(() => {})
   const view = await renderWith(
     <FarmCardContext.Provider value={env}>
-      <FieldLogCard squadId="sq" />
+      <FieldLog squadId="sq" onClose={onClose} />
     </FarmCardContext.Provider>,
     await fakeMultiplayer()
   )
   mounted.push(view.unmount)
   const settle = () => act(async () => void (await new Promise((resolve) => setTimeout(resolve, 20))))
   await settle()
-  return { container: view.container, env, requests, settle }
+  return { container: view.container, env, onClose, requests, settle }
 }
 
 const rows = (root: ParentNode) => [...root.querySelectorAll('.g-log-row')]
+const chip = (root: ParentNode, label: string) =>
+  [...root.querySelectorAll<HTMLButtonElement>('.g-log-filter')].find((b) => b.textContent === label)!
+const pressed = (root: ParentNode) =>
+  [...root.querySelectorAll('.g-log-filter[aria-pressed="true"]')].map((b) => b.textContent)
 
-describe('FieldLogCard', () => {
+describe('FieldLog', () => {
   it('lists what the squad robots did, newest first, with who and when', async () => {
     const { container, requests } = await openLog({
       first: {
@@ -89,7 +94,8 @@ describe('FieldLogCard', () => {
       },
     })
     expect(requests[0]).toContain('/api/squads/sq/activity')
-    expect(container.textContent).toContain('Garden · field log')
+    expect(container.querySelector('.g-chat-title')?.textContent).toBe('Field log')
+    expect(container.querySelector('.g-chat-subtitle')?.textContent).toBe('Garden')
     const [first, second] = rows(container)
     expect(first!.textContent).toContain('Wren')
     expect(first!.textContent).toContain('5m ago')
@@ -118,18 +124,42 @@ describe('FieldLogCard', () => {
     expect(env.select).toHaveBeenLastCalledWith({ kind: 'plot', streamId: 'ws-1' })
   })
 
-  it('filters by kind, asking the server for just those kinds', async () => {
+  it('filters by any mix of kinds, asking the server for just those; All is none of them', async () => {
     const { container, requests, settle } = await openLog({
       first: { items: [item('a', {})], hasMore: false, nextCursor: null },
     })
-    const work = [...container.querySelectorAll<HTMLButtonElement>('.g-log-filter')].find(
-      (b) => b.textContent === 'Work'
-    )!
-    await act(async () => work.click())
+    const kinds = () => new URL(requests.at(-1)!).searchParams.getAll('kind')
+    expect(pressed(container)).toEqual(['All'])
+
+    await act(async () => chip(container, 'Work').click())
     await settle()
-    expect(work.getAttribute('aria-pressed')).toBe('true')
-    const last = new URL(requests.at(-1)!)
-    expect(last.searchParams.getAll('kind')).toEqual(['execution', 'handoff', 'subagent', 'workstream'])
+    expect(pressed(container)).toEqual(['Work'])
+    expect(kinds()).toEqual(['execution', 'handoff', 'subagent', 'workstream'])
+
+    await act(async () => chip(container, 'Code').click())
+    await settle()
+    expect(pressed(container)).toEqual(['Work', 'Code'])
+    expect(kinds()).toEqual(['execution', 'handoff', 'issue', 'pr', 'subagent', 'workstream'])
+
+    // Turning the last one off is back to everything.
+    await act(async () => chip(container, 'Work').click())
+    await act(async () => chip(container, 'Code').click())
+    await settle()
+    expect(pressed(container)).toEqual(['All'])
+    expect(kinds()).toEqual([])
+
+    await act(async () => chip(container, 'Chat').click())
+    await act(async () => chip(container, 'Waits').click())
+    await act(async () => chip(container, 'All').click())
+    await settle()
+    expect(pressed(container)).toEqual(['All'])
+    expect(kinds()).toEqual([])
+  })
+
+  it('closes like a chat window', async () => {
+    const { container, onClose } = await openLog({ first: { items: [], hasMore: false, nextCursor: null } })
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close field log"]')!.click())
+    expect(onClose).toHaveBeenCalled()
   })
 
   it('loads earlier entries a page at a time', async () => {

@@ -1,5 +1,5 @@
 import type { SquadActivityItem, SquadActivityKind, SquadActivityPage } from '@ficus/shared'
-import { FIELD_LOG_FILTERS } from '../farm/cards/FieldLogCard'
+import { FIELD_LOG_FILTERS, fieldLogKinds } from '../farm/cards/FieldLog'
 
 type Entry = [
   minutesAgo: number,
@@ -89,19 +89,29 @@ function items(squadId: string, now: number): SquadActivityItem[] {
   }))
 }
 
-/** Every filter's first (and only) page of each squad's demo log, keyed like farmQueries.fieldLog. */
+/** Every mix of filters (none on is everything). */
+const filterMixes = (): Array<Set<string>> =>
+  FIELD_LOG_FILTERS.reduce<Array<Set<string>>>(
+    (mixes, { id }) => mixes.flatMap((mix) => [mix, new Set([...mix, id])]),
+    [new Set()]
+  )
+
+/** Every filter mix's first (and only) page of each squad's demo log, keyed like farmQueries.fieldLog. */
 export function sampleFieldLogs(
   now = Date.now()
 ): Array<{ squadId: string; kinds: SquadActivityKind[]; page: SquadActivityPage }> {
   return Object.keys(ENTRIES).flatMap((squadId) =>
-    FIELD_LOG_FILTERS.map(({ kinds }) => ({
-      squadId,
-      kinds,
-      page: {
-        items: items(squadId, now).filter((item) => kinds.length === 0 || kinds.includes(item.kind)),
-        hasMore: false,
-        nextCursor: null,
-      },
-    }))
+    filterMixes().map((mix) => {
+      const kinds = fieldLogKinds(mix)
+      return {
+        squadId,
+        kinds,
+        page: {
+          items: items(squadId, now).filter((item) => kinds.length === 0 || kinds.includes(item.kind)),
+          hasMore: false,
+          nextCursor: null,
+        },
+      }
+    })
   )
 }
