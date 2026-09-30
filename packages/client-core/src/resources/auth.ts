@@ -9,6 +9,8 @@ export interface AuthStatus {
   hasUsers: boolean
   hasAdminUser: boolean
   emailConfigured: boolean
+  /** Whether the first admin must give an email (managed cloud only); elsewhere it is optional. */
+  firstAdminEmailRequired?: boolean
   /** The /demo reviewer access page is served on this instance (FICUS_DEMO_REVIEWER_ACCESS). */
   demoReviewerAccess?: boolean
   /**

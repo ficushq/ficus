@@ -7,7 +7,8 @@ import { zValidator } from '@hono/zod-validator'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { createHash, timingSafeEqual } from 'crypto'
 import { eq, sql } from 'drizzle-orm'
-import { getSecretStore } from '../services/secrets'
+import { getSecretStore, isPlatformManaged } from '../services/secrets'
+import { PLACEHOLDER_OWNER_EMAIL, isPlaceholderEmail } from '@ficus/shared'
 import { User } from '../entities/User'
 import { createSelfRegisteredUser } from '../services/auth/signup'
 import { Role, isUserAssignable } from '../entities/Role'
@@ -143,6 +144,11 @@ function normalizeDisplayName(displayName: string | undefined): string | undefin
   return trimmed ? trimmed : undefined
 }
 
+/** Managed cloud instances keep a verified owner email (billing, recovery); others may skip it. */
+function firstAdminEmailRequired(): boolean {
+  return isPlatformManaged()
+}
+
 export const authRouter = new Hono()
 
 // ── GET /status ──────────────────────────────────────────────────────────────
@@ -164,6 +170,9 @@ authRouter.get('/status', async (c) => {
     hasUsers: userCount > 0,
     hasAdminUser: hasAdmin,
     emailConfigured: isEmailConfigured(),
+    // Whether the first admin must give (and verify) an email. Only managed cloud instances require
+    // one; everywhere else the owner may skip it and gets the no-email placeholder address.
+    firstAdminEmailRequired: firstAdminEmailRequired(),
     // Whether POST /register/email could succeed for SOME address a stranger types.
     // This is the ONLY signup-policy signal exposed anonymously: the login page needs
     // it to decide whether to offer "Create account", and the allowed-domain list
@@ -220,7 +229,7 @@ authRouter.post('/login', async (c) => {
 
 authRouter.post('/register/email', async (c) => {
   const { email } = await c.req.json<{ email: string }>()
-  if (!email || !email.includes('@')) {
+  if (!email || !email.includes('@') || isPlaceholderEmail(email)) {
     return c.json({ error: 'Valid email required' }, 400)
   }
 
@@ -278,10 +287,9 @@ authRouter.post('/register/email', async (c) => {
 // ── POST /register/options ──────────────────────────────────────────────────
 
 authRouter.post('/register/options', async (c) => {
-  const { email, code, displayName } = await c.req.json<{ email: string; code: string; displayName?: string }>()
-  if (!email || !email.includes('@')) {
-    return c.json({ error: 'Valid email required' }, 400)
-  }
+  const body = await c.req.json<{ email?: string; code?: string; displayName?: string }>()
+  const { code, displayName } = body
+  let email = body.email?.trim() ?? ''
 
   const userCount = await User.count()
   const isFirstUser = userCount === 0
@@ -291,15 +299,32 @@ authRouter.post('/register/options', async (c) => {
     // session may complete first-admin creation, even with a mailed/logged code.
     const gate = await requireBootstrapAuthForFirstUser(c)
     if (gate) return gate
+    // Outside managed cloud the owner may skip the email entirely.
+    if (!email && !firstAdminEmailRequired()) email = PLACEHOLDER_OWNER_EMAIL
+  } else if (isPlaceholderEmail(email)) {
+    // Only the first admin can hold the placeholder; nobody registers as it later.
+    return c.json({ error: 'Valid email required' }, 400)
+  }
+  if (!email || !email.includes('@')) {
+    return c.json({ error: 'Valid email required' }, 400)
   }
 
-  // All users must verify their email code
-  if (!code) {
-    return c.json({ error: 'Verification code required' }, 400)
-  }
-  const valid = await verifyEmailCode(email, code)
-  if (!valid) {
-    return c.json({ error: 'Invalid or expired verification code' }, 401)
+  // A code proves the caller reads that mailbox. The first admin on an unmanaged instance is
+  // already authenticated by the setup password (or owns a bare local install), and without a mail
+  // provider the code was only ever shown on the page, so it proves nothing there.
+  const codeRequired = !(
+    isFirstUser &&
+    !firstAdminEmailRequired() &&
+    (isPlaceholderEmail(email) || !isEmailConfigured())
+  )
+  if (codeRequired) {
+    if (!code) {
+      return c.json({ error: 'Verification code required' }, 400)
+    }
+    const valid = await verifyEmailCode(email, code)
+    if (!valid) {
+      return c.json({ error: 'Invalid or expired verification code' }, 401)
+    }
   }
 
   // Find or create user
@@ -323,7 +348,8 @@ authRouter.post('/register/options', async (c) => {
   }
 
   const options = await generateRegOptions(user)
-  return c.json({ options })
+  // The address the account was registered under (the placeholder when none was given), for /register/verify.
+  return c.json({ options, email: user.email })
 })
 
 // ── POST /register/verify ───────────────────────────────────────────────────

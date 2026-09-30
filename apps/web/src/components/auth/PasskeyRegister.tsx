@@ -8,9 +8,14 @@ interface Props {
   /** Called after a failed registration attempt, once the error is on screen. */
   onFailure?: () => void
   isBootstrap?: boolean
+  /**
+   * First admin outside managed cloud: the email is optional. Everything is asked on one screen,
+   * and a code is only requested when an email is given AND the instance can mail it.
+   */
+  emailOptional?: boolean
 }
 
-export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: Props) {
+export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false, emailOptional = false }: Props) {
   const { getRegistrationOptions, sendVerificationEmail, verifyRegistration } = useAuthApi()
   const [step, setStep] = useState<'email' | 'verify' | 'passkey'>('email')
   const [email, setEmail] = useState('')
@@ -55,15 +60,49 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
     }
   }
 
+  const register = async (withEmail: string, withCode: string) => {
+    const { options, email: registeredEmail } = await getRegistrationOptions(withEmail, withCode, displayName)
+    const response = await startRegistration({ optionsJSON: options })
+    // Without an email the server registers the account under its placeholder address.
+    const result = await verifyRegistration(
+      registeredEmail ?? withEmail,
+      response,
+      displayName,
+      credentialName || undefined
+    )
+    if (result.ok) onSuccess(result.firstAdmin ?? isBootstrap)
+  }
+
   const handleVerifyAndRegister = async () => {
     setError(null)
     setLoading(true)
     try {
-      const { options } = await getRegistrationOptions(email, code, displayName)
-      const response = await startRegistration({ optionsJSON: options })
-      const result = await verifyRegistration(email, response, displayName, credentialName || undefined)
-      if (result.ok) {
-        onSuccess(result.firstAdmin ?? isBootstrap)
+      await register(email, code)
+    } catch (err) {
+      setError((err as Error).message)
+      onFailure?.()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /** First admin with an optional email: skip the code unless one was actually mailed. */
+  const handleCreateAdmin = async () => {
+    setError(null)
+    setLoading(true)
+    try {
+      if (email.trim()) {
+        const res = await sendVerificationEmail(email.trim())
+        setEmailConfigured(res.emailConfigured ?? true)
+        if (res.emailConfigured !== false) {
+          // Mailed: ask for the code, keeping the names already entered.
+          setStep('verify')
+          return
+        }
+        if (res.code) setCode(res.code)
+        await register(email.trim(), res.code ?? '')
+      } else {
+        await register('', '')
       }
     } catch (err) {
       setError((err as Error).message)
@@ -96,6 +135,10 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (loading) return
+    if (step === 'email' && emailOptional) {
+      void handleCreateAdmin()
+      return
+    }
     if (step === 'email') {
       if (!email) return
       void handleSendCode()
@@ -113,14 +156,35 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
       <input
         id="passkey-register-email"
         type="email"
-        placeholder="Email"
+        placeholder={emailOptional ? 'Email (optional)' : 'Email'}
         autoComplete="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         className={clsx('ficus-field', inputClasses)}
         disabled={step !== 'email'}
       />
-      {step === 'email' && (
+      {step === 'email' && emailOptional && (
+        <>
+          <p className="text-xs text-secondary">
+            For account recovery and email notifications. You can skip it and use a passkey only.
+          </p>
+          <NameFields
+            displayName={displayName}
+            onDisplayName={setDisplayName}
+            credentialName={credentialName}
+            onCredentialName={setCredentialName}
+            inputClasses={inputClasses}
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+          >
+            {loading ? 'Creating...' : 'Create admin account'}
+          </button>
+        </>
+      )}
+      {step === 'email' && !emailOptional && (
         <button
           type="submit"
           disabled={!email || loading}
@@ -164,36 +228,13 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
       )}
       {step === 'verify' && (
         <>
-          <label htmlFor="passkey-register-display-name" className="sr-only">
-            User display name (optional)
-          </label>
-          <input
-            id="passkey-register-display-name"
-            type="text"
-            placeholder="User display name (optional)"
-            autoComplete="name"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className={clsx('ficus-field', inputClasses)}
+          <NameFields
+            displayName={displayName}
+            onDisplayName={setDisplayName}
+            credentialName={credentialName}
+            onCredentialName={setCredentialName}
+            inputClasses={inputClasses}
           />
-          {/* No helper line here: the placeholder already says "User display
-              name", and the passkey-name field immediately below carries its
-              own description, which is what actually needed disambiguating. */}
-          <label htmlFor="passkey-register-passkey-name" className="sr-only">
-            Passkey name (optional)
-          </label>
-          <input
-            id="passkey-register-passkey-name"
-            type="text"
-            placeholder="Passkey name (optional)"
-            value={credentialName}
-            onChange={(e) => setCredentialName(e.target.value)}
-            className={clsx('ficus-field', inputClasses)}
-          />
-          <p className="text-xs text-secondary">
-            Names this passkey — for example “MacBook Touch ID” or “YubiKey”. Left blank, it is named after the device
-            you are using.
-          </p>
           <button
             type="submit"
             disabled={!code || !email || loading}
@@ -209,5 +250,55 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
         </p>
       )}
     </form>
+  )
+}
+
+/** The user's display name and the passkey's own name, both optional. */
+function NameFields({
+  displayName,
+  onDisplayName,
+  credentialName,
+  onCredentialName,
+  inputClasses,
+}: {
+  displayName: string
+  onDisplayName: (value: string) => void
+  credentialName: string
+  onCredentialName: (value: string) => void
+  inputClasses: string
+}) {
+  return (
+    <>
+      <label htmlFor="passkey-register-display-name" className="sr-only">
+        User display name (optional)
+      </label>
+      <input
+        id="passkey-register-display-name"
+        type="text"
+        placeholder="User display name (optional)"
+        autoComplete="name"
+        value={displayName}
+        onChange={(e) => onDisplayName(e.target.value)}
+        className={clsx('ficus-field', inputClasses)}
+      />
+      {/* No helper line here: the placeholder already says "User display
+          name", and the passkey-name field immediately below carries its
+          own description, which is what actually needed disambiguating. */}
+      <label htmlFor="passkey-register-passkey-name" className="sr-only">
+        Passkey name (optional)
+      </label>
+      <input
+        id="passkey-register-passkey-name"
+        type="text"
+        placeholder="Passkey name (optional)"
+        value={credentialName}
+        onChange={(e) => onCredentialName(e.target.value)}
+        className={clsx('ficus-field', inputClasses)}
+      />
+      <p className="text-xs text-secondary">
+        Names this passkey — for example “MacBook Touch ID” or “YubiKey”. Left blank, it is named after the device you
+        are using.
+      </p>
+    </>
   )
 }

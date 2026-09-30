@@ -21,6 +21,7 @@ import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonRows } from 
 import { InviteUserForm } from './InviteUserForm'
 import { RoleAssignmentPicker, type RoleAssignmentInput } from './RoleAssignmentPicker'
 import { InviteLinkPanel, type IssuedInviteLink } from './InviteLinkPanel'
+import { accountEmailLabel } from '@ficus/shared'
 
 export function UsersSection() {
   const queryClient = useQueryClient()
@@ -110,7 +111,7 @@ export function UsersSection() {
                 isExpanded={expandedUser === user.id}
                 onToggleExpand={() => setExpandedUser(expandedUser === user.id ? null : user.id)}
                 onDelete={() => {
-                  if (confirm(`Delete user ${user.email}?`)) {
+                  if (confirm(`Delete user ${user.displayName || accountEmailLabel(user.email)}?`)) {
                     deleteMutation.mutate(user.id)
                   }
                 }}
@@ -123,7 +124,11 @@ export function UsersSection() {
                   if (user.disabledAt) {
                     enableMutation.mutate(user.id)
                   } else {
-                    if (confirm(`Disable user ${user.email}? They will not be able to log in.`)) {
+                    if (
+                      confirm(
+                        `Disable user ${user.displayName || accountEmailLabel(user.email)}? They will not be able to log in.`
+                      )
+                    ) {
                       disableMutation.mutate(user.id)
                     }
                   }
@@ -226,7 +231,9 @@ export function UserRow({
               instead, since it is the one element that can be arbitrarily
               long. */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-sm font-medium text-primary truncate max-w-full">{user.email}</span>
+            <span className="text-sm font-medium text-primary truncate max-w-full">
+              {accountEmailLabel(user.email)}
+            </span>
             {user.displayName && <span className="text-sm text-muted truncate">({user.displayName})</span>}
             {isDisabled && (
               <span className="text-xs px-1.5 py-0.5 rounded-full bg-status-danger-100 text-status-danger-700 dark:bg-status-danger-900/30 dark:text-status-danger-400 font-medium whitespace-nowrap shrink-0">

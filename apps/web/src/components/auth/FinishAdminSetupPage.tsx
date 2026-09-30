@@ -4,6 +4,7 @@ import { startRegistration as browserStartRegistration } from '@simplewebauthn/b
 import type { PendingAdminAccount } from '../../api/auth'
 import { createInviteLink as apiCreateInviteLink } from '../../api/users'
 import { useAuthApi } from './authApi'
+import { accountEmailLabel } from '@ficus/shared'
 
 export interface FinishAdminSetupDependencies {
   createInviteLink: (userId: string) => Promise<{ inviteUrl?: string }>
@@ -125,7 +126,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
         <form className="space-y-4" onSubmit={handleSubmit}>
           {accounts.length === 1 ? (
             <p className="text-sm text-secondary">
-              Account: <span className="font-medium text-primary break-all">{account.email}</span>
+              Account: <span className="font-medium text-primary break-all">{accountEmailLabel(account.email)}</span>
             </p>
           ) : (
             <fieldset className="space-y-2">
@@ -140,7 +141,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
                     onChange={() => chooseAccount(candidate)}
                     disabled={loading}
                   />
-                  <span className="break-all">{candidate.email}</span>
+                  <span className="break-all">{accountEmailLabel(candidate.email)}</span>
                 </label>
               ))}
             </fieldset>

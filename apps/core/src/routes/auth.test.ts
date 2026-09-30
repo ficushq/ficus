@@ -28,6 +28,7 @@ import {
 } from '../test-utils/rbac'
 import { updateAuthSettings } from '../services/auth/email'
 import * as webauthn from '../services/auth/webauthn'
+import { PLACEHOLDER_OWNER_EMAIL } from '@ficus/shared'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -950,6 +951,99 @@ describe('invite-only registration', () => {
     expect(res.status).toBe(200)
     const user = await User.findByEmail(email)
     expect(user?.displayName).toBe('Admin User')
+  })
+
+  describe('first admin email is optional outside managed cloud', () => {
+    const withEnv = async (env: Record<string, string | undefined>, run: () => Promise<void>) => {
+      const prior = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]))
+      for (const [key, value] of Object.entries(env)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+      try {
+        await run()
+      } finally {
+        for (const [key, value] of Object.entries(prior)) {
+          if (value === undefined) delete process.env[key]
+          else process.env[key] = value
+        }
+      }
+    }
+    const options = (body: Record<string, unknown>) =>
+      buildApp().request('/api/auth/register/options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    const removeUser = (email: string) => async () => {
+      const { User } = await import('../entities/User')
+      await (await User.findByEmail(email))?.delete()
+    }
+
+    it('status says whether the first admin needs an email', async () => {
+      await withEnv({ FICUS_MANAGED: undefined }, async () => {
+        const res = await buildApp().request('/api/auth/status')
+        expect((await res.json()).firstAdminEmailRequired).toBe(false)
+      })
+      await withEnv({ FICUS_MANAGED: '1' }, async () => {
+        const res = await buildApp().request('/api/auth/status')
+        expect((await res.json()).firstAdminEmailRequired).toBe(true)
+      })
+    })
+
+    it('with no email, the first admin registers under the placeholder with no code', async () => {
+      cleanup = removeUser(PLACEHOLDER_OWNER_EMAIL)
+      await withEnv({ FICUS_MANAGED: undefined, SES_FROM_ADDRESS: 'noreply@example.com' }, async () => {
+        const res = await options({ displayName: 'Owner' })
+        expect(res.status).toBe(200)
+        const body = await res.json()
+        expect(body.email).toBe(PLACEHOLDER_OWNER_EMAIL)
+        expect(body.options.user.name).toBe(PLACEHOLDER_OWNER_EMAIL)
+      })
+    })
+
+    it('with an email but no mail provider, the first admin needs no code', async () => {
+      cleanup = removeUser('owner-nomail@example.com')
+      await withEnv({ FICUS_MANAGED: undefined, SES_FROM_ADDRESS: undefined }, async () => {
+        const res = await options({ email: 'owner-nomail@example.com' })
+        expect(res.status).toBe(200)
+        expect((await res.json()).email).toBe('owner-nomail@example.com')
+      })
+    })
+
+    it('with an email an instance can mail, the first admin still verifies it', async () => {
+      cleanup = removeUser('owner-mailed@example.com')
+      await withEnv({ FICUS_MANAGED: undefined, SES_FROM_ADDRESS: 'noreply@example.com' }, async () => {
+        const res = await options({ email: 'owner-mailed@example.com' })
+        expect(res.status).toBe(400)
+        expect((await res.json()).error).toBe('Verification code required')
+      })
+    })
+
+    it('managed cloud keeps requiring a verified email for the first admin', async () => {
+      await withEnv({ FICUS_MANAGED: '1', SES_FROM_ADDRESS: undefined }, async () => {
+        const blank = await options({})
+        expect(blank.status).toBe(400)
+        expect((await blank.json()).error).toBe('Valid email required')
+        const unverified = await options({ email: 'managed-owner@example.com' })
+        expect(unverified.status).toBe(400)
+        expect((await unverified.json()).error).toBe('Verification code required')
+      })
+    })
+
+    it('nobody can register as, or be sent a code for, the placeholder later', async () => {
+      const { createTestUser, cleanupTestRbac } = await import('../test-utils/rbac')
+      await createTestUser({ prefix: 'placeholder-blocker' })
+      cleanup = () => cleanupTestRbac('placeholder-blocker')
+      const res = await options({ email: PLACEHOLDER_OWNER_EMAIL, code: '123456' })
+      expect(res.status).toBe(400)
+      const mail = await buildApp().request('/api/auth/register/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: PLACEHOLDER_OWNER_EMAIL }),
+      })
+      expect(mail.status).toBe(400)
+    })
   })
 
   it('non-invited user gets 403 on register/email', async () => {
