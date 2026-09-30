@@ -403,7 +403,10 @@ commented there. Ground rules:
 - **The client address is verified at Caddy.** The rendered Caddyfile trusts
   `CF-Connecting-IP` only from Cloudflare's published ranges
   (`CLOUDFLARE_PROXY_RANGES` in `lib.sh`) plus `ingress.trusted_proxies`, and
-  sends Core a single `X-Forwarded-For: <visitor>`. `X-Forwarded-For` is never
+  sends Core a single `X-Forwarded-For: <visitor>`, with `X-Forwarded-Host`
+  and `X-Forwarded-Proto` pinned to the request's own host and scheme (a
+  trusted peer's values would otherwise pass through, and Cloudflare forwards
+  a client-sent `X-Forwarded-Host`). `X-Forwarded-For` is never
   read: Cloudflare appends to a client-written one, and a Cloudflare-range
   address it appends (a Worker's egress) would expose the client's entry. A
   client that reaches the origin directly gets its own socket address,

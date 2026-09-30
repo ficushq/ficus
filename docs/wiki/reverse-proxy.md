@@ -243,9 +243,17 @@ and send Caddy's verified address:
 ficus.example.com {
   reverse_proxy 127.0.0.1:3000 {
     header_up X-Forwarded-For {client_ip}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
   }
 }
 ```
+
+Keep the `X-Forwarded-Host` and `X-Forwarded-Proto` lines whenever you set
+`trusted_proxies`. A trusted peer's values for those two are otherwise passed
+through, and Cloudflare forwards a client-sent `X-Forwarded-Host` unchanged, so
+any visitor could choose the host Core builds its public URLs from and local
+apps build redirects from.
 
 Read `CF-Connecting-IP`, not `X-Forwarded-For`. Cloudflare sets
 `CF-Connecting-IP` to exactly one address the client cannot choose. It only

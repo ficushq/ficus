@@ -654,6 +654,8 @@ ficus.example.com {
     tls /etc/caddy/tls/origin.crt /etc/caddy/tls/origin.key
     reverse_proxy 127.0.0.1:3000 {
         header_up X-Forwarded-For {client_ip}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
     }
 }"
 expect_match 'render_caddyfile trusts extra proxies after the Cloudflare ranges' \
@@ -668,6 +670,12 @@ caddy_rendered=$(render_caddyfile 'ficus.example.com' 3000 '/etc/caddy/tls/origi
 # the client cannot set.
 expect_eq 'render_caddyfile reads the client address from CF-Connecting-IP only' \
   "$(grep -c 'client_ip_headers' <<<"${caddy_rendered}")|$(grep -c 'client_ip_headers CF-Connecting-IP$' <<<"${caddy_rendered}")" '1|1'
+# trusted_proxies makes reverse_proxy keep a trusted peer's X-Forwarded-Host
+# and -Proto, and Cloudflare passes a client-sent X-Forwarded-Host through, so
+# both are pinned to this request's own values (a visitor's 'evil.example'
+# otherwise reached Core under real Caddy 2.10.2).
+expect_eq 'render_caddyfile pins X-Forwarded-Host and X-Forwarded-Proto to the request itself' \
+  "$(grep -cxF '        header_up X-Forwarded-Host {host}' <<<"${caddy_rendered}")|$(grep -cxF '        header_up X-Forwarded-Proto {scheme}' <<<"${caddy_rendered}")" '1|1'
 expect_eq 'render_caddyfile emits no ACME email / issuer' \
   "$([[ ${caddy_rendered} == *email* || ${caddy_rendered} == *acme* || ${caddy_rendered} == *issuer* ]] && echo present || echo gone)" 'gone'
 

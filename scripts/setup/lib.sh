@@ -1991,12 +1991,19 @@ ingress_trusted_proxies_from_config() {
 # that sends a CF-Connecting-IP inside a trusted range, or none at all, is
 # recorded as itself. Extra TRUSTED_PROXY peers (the control plane's bridge)
 # must therefore SET CF-Connecting-IP to the address they verified.
+#
+# X-Forwarded-Host and X-Forwarded-Proto are pinned to this request's own Host
+# and scheme. trusted_proxies also makes reverse_proxy KEEP those two from a
+# trusted peer, and Cloudflare forwards a client-sent X-Forwarded-Host as is:
+# without the pins any visitor could choose the host Core writes into
+# index.html (lib/web-serve.ts) and webhook URLs (routes/schedules.ts), and
+# that local apps build redirects from. Never trust proxies without them.
 render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
   local host=$1 port=$2 cert=$3 key=$4
   shift 4
   printf '{\n    servers {\n        trusted_proxies static %s\n        trusted_proxies_strict\n        client_ip_headers CF-Connecting-IP\n    }\n}\n\n' \
     "${CLOUDFLARE_PROXY_RANGES[*]}${*:+ $*}"
-  printf '%s {\n    tls %s %s\n    reverse_proxy 127.0.0.1:%s {\n        header_up X-Forwarded-For {client_ip}\n    }\n}\n' \
+  printf '%s {\n    tls %s %s\n    reverse_proxy 127.0.0.1:%s {\n        header_up X-Forwarded-For {client_ip}\n        header_up X-Forwarded-Host {host}\n        header_up X-Forwarded-Proto {scheme}\n    }\n}\n' \
     "${host}" "${cert}" "${key}" "${port}"
 }
 
