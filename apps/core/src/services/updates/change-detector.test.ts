@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { LEGACY_UNITS } from '@ficus/shared/node'
+import { LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS, legacyLocalProcessNames } from '@ficus/shared/node'
 
 import type { DeploymentFlavor } from './deployment-flavor'
 import {
@@ -80,9 +80,9 @@ describe('flavor-aware planning', () => {
   it('uses validated labeled targets for native user supervisors', () => {
     const { unitDir, launchAgentsDir } = emptyHostDirs()
     try {
-      expect(restartCommandsFor('systemd-user', { instance: 'Smoke' })).toEqual([
-        ['systemctl', '--user', 'restart', 'tau-smoke-worker.service'],
-        ['systemctl', '--user', '--no-block', 'restart', 'tau-smoke-api.service'],
+      expect(restartCommandsFor('systemd-user', { instance: 'Smoke', userUnitDir: unitDir })).toEqual([
+        ['systemctl', '--user', 'restart', 'ficus-smoke-worker.service'],
+        ['systemctl', '--user', '--no-block', 'restart', 'ficus-smoke-api.service'],
       ])
       // No legacy plist installed for either processName, so the new label wins for both.
       expect(restartCommandsFor('launchd', { instance: 'smoke', uid: 501, launchAgentsDir })).toEqual([
@@ -109,6 +109,39 @@ describe('flavor-aware planning', () => {
         ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-api'],
       ])
     } finally {
+      rmSync(launchAgentsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('maps the legacy default label to the ficus default, and to its old targets while they are installed', () => {
+    const { unitDir, launchAgentsDir } = emptyHostDirs()
+    try {
+      const legacy = legacyLocalProcessNames(LEGACY_LOCAL_INSTANCE)
+      for (const instance of [LEGACY_LOCAL_INSTANCE, 'ficus']) {
+        expect(restartCommandsFor('launchd', { instance, uid: 501, launchAgentsDir })).toEqual([
+          ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-worker'],
+          ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-api'],
+        ])
+        expect(restartCommandsFor('systemd-user', { instance, userUnitDir: unitDir })).toEqual([
+          ['systemctl', '--user', 'restart', 'ficus-worker.service'],
+          ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'],
+        ])
+      }
+      // An install that has not run rename-identity keeps its registered targets.
+      writeFileSync(join(launchAgentsDir, `${LEGACY_LAUNCHD_PREFIX}.${legacy.worker}.plist`), '')
+      writeFileSync(join(unitDir, `${legacy.api}.service`), '')
+      expect(restartCommandsFor('launchd', { instance: LEGACY_LOCAL_INSTANCE, uid: 501, launchAgentsDir })[0]).toEqual([
+        'launchctl',
+        'kickstart',
+        '-k',
+        `gui/501/${LEGACY_LAUNCHD_PREFIX}.${legacy.worker}`,
+      ])
+      expect(restartCommandsFor('systemd-user', { instance: LEGACY_LOCAL_INSTANCE, userUnitDir: unitDir })).toEqual([
+        ['systemctl', '--user', 'restart', 'ficus-worker.service'],
+        ['systemctl', '--user', '--no-block', 'restart', `${legacy.api}.service`],
+      ])
+    } finally {
+      rmSync(unitDir, { recursive: true, force: true })
       rmSync(launchAgentsDir, { recursive: true, force: true })
     }
   })

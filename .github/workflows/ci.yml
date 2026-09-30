@@ -1032,7 +1032,7 @@ jobs:
           [ "$code" = 200 ] || [ "$code" = 401 ] || { echo "health=$code"; exit 1; }
 
           bun apps/cli/src/index.ts server status --json | tee /tmp/status.json
-          node -e "const s=require('/tmp/status.json'); if (s.health!=='ok' || s.supervisor!=='systemd-user') { console.error(JSON.stringify(s)); process.exit(1) } for (const n of ['tau-api','tau-worker']) if (!s.processes.find(p=>p.name===n&&p.status==='online')) { console.error('not online: '+n); process.exit(1) }"
+          node -e "const s=require('/tmp/status.json'); if (s.health!=='ok' || s.supervisor!=='systemd-user') { console.error(JSON.stringify(s)); process.exit(1) } for (const n of ['ficus-api','ficus-worker']) if (!s.processes.find(p=>p.name===n&&p.status==='online')) { console.error('not online: '+n); process.exit(1) }"
 
           PW=$(grep '^FICUS_PASSWORD=' .env | cut -d= -f2-)
 
@@ -1167,7 +1167,7 @@ jobs:
 
       # An instance is a CHECKOUT: .env and ecosystem.config.js belong to one
       # label, and setup refuses to relabel a checkout that already carries
-      # another (FICUS_INSTANCE=tau is in the .env the step above wrote). So the
+      # another (FICUS_INSTANCE=ficus is in the .env the step above wrote). So the
       # second instance gets its own clone. --shared points the clone at the
       # workspace's object store, and --no-checkout + an explicit detach is the
       # only order that works for every event: on pull_request the commit under
@@ -1185,9 +1185,9 @@ jobs:
           # apply is a real fast-forward, and ci2 must still test the PR head.
           git -C /tmp/tau-ci2 checkout --detach "$GITHUB_SHA"
 
-      # Every per-instance name follows the label: tau-ci2-api /
-      # tau-ci2-worker, PORT 3300 (worker 3302, events 3303), HOME_DIR
-      # ~/.tau-ci2. The database is passed in, so this instance manages no
+      # Every per-instance name follows the label: ficus-ci2-api /
+      # ficus-ci2-worker, PORT 3300 (worker 3302, events 3303), HOME_DIR
+      # ~/.ficus-ci2. The database is passed in, so this instance manages no
       # container of its own — postgres-test above is CI's.
       - name: Setup the second instance (ci2)
         shell: bash
@@ -1208,8 +1208,8 @@ jobs:
             const list = require('/tmp/list.json');
             const byLabel = Object.fromEntries(list.instances.map((i) => [i.label, i]));
             for (const [label, api, worker] of [
-              ['tau', 'tau-api', 'tau-worker'],
-              ['ci2', 'tau-ci2-api', 'tau-ci2-worker'],
+              ['ficus', 'ficus-api', 'ficus-worker'],
+              ['ci2', 'ficus-ci2-api', 'ficus-ci2-worker'],
             ]) {
               const instance = byLabel[label];
               if (!instance) { console.error('instance missing from list: ' + label); process.exit(1); }
@@ -1238,33 +1238,33 @@ jobs:
       - name: Offline update path and shutdown
         shell: bash
         run: |
-          bun apps/cli/src/index.ts server status --instance tau --json | tee /tmp/status-before-offline.json
+          bun apps/cli/src/index.ts server status --instance ficus --json | tee /tmp/status-before-offline.json
           # PR/merge-group checkouts are detached HEAD; --ref pins the offline
           # updater to the exact commit under test instead of trying (and
           # failing) to resolve a branch to fast-forward.
           bun apps/cli/src/index.ts update apply --offline --ref "$(git rev-parse HEAD)" 2>&1 | tee /tmp/offline.log
           grep -q 'Already at' /tmp/offline.log
-          bun apps/cli/src/index.ts server status --instance tau --json | tee /tmp/status-after-offline.json
+          bun apps/cli/src/index.ts server status --instance ficus --json | tee /tmp/status-after-offline.json
           node -e "
             const before = require('/tmp/status-before-offline.json');
             const after = require('/tmp/status-after-offline.json');
-            for (const name of ['tau-api', 'tau-worker']) {
+            for (const name of ['ficus-api', 'ficus-worker']) {
               const b = before.processes.find((p) => p.name === name);
               const a = after.processes.find((p) => p.name === name);
               if (!b || !a) { console.error('process not found in status: ' + name); process.exit(1); }
               if (b.pid === a.pid) { console.error(name + ' pid unchanged across offline apply (recorded supervisor did not restart it): ' + b.pid); process.exit(1); }
             }
           "
-          bun apps/cli/src/index.ts server stop --instance tau
-          bun apps/cli/src/index.ts server status --instance tau --json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const s=JSON.parse(d); if (s.health!=='unreachable') { console.error('expected unreachable, got: '+s.health); process.exit(1) }})"
+          bun apps/cli/src/index.ts server stop --instance ficus
+          bun apps/cli/src/index.ts server status --instance ficus --json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const s=JSON.parse(d); if (s.health!=='unreachable') { console.error('expected unreachable, got: '+s.health); process.exit(1) }})"
 
       - name: Show logs on failure
         if: failure()
         run: |
-          bun apps/cli/src/index.ts server logs --instance tau --lines 200 || true
+          bun apps/cli/src/index.ts server logs --instance ficus --lines 200 || true
           bun apps/cli/src/index.ts server logs --instance ci2 --lines 200 || true
-          systemctl --user status tau-api.service tau-worker.service tau-ci2-api.service tau-ci2-worker.service --no-pager || true
-          tail -n 200 ~/.tau/logs/tau-api.log ~/.tau/logs/tau-worker.log ~/.tau/logs/tau-ci2-api.log ~/.tau/logs/tau-ci2-worker.log 2>/dev/null || true
+          systemctl --user status ficus-api.service ficus-worker.service ficus-ci2-api.service ficus-ci2-worker.service --no-pager || true
+          tail -n 200 ~/.ficus/logs/ficus-api.log ~/.ficus/logs/ficus-worker.log ~/.ficus/logs/ficus-ci2-api.log ~/.ficus/logs/ficus-ci2-worker.log 2>/dev/null || true
 
   # Manual-only incident evidence. All three revisions run sequentially on the
   # same worker image with a clean dependency install and the production heap

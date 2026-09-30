@@ -1,17 +1,18 @@
 import { realpathSync } from 'fs'
 import { join } from 'path'
 import { expandTilde } from '@ficus/shared/node'
+import { cliHome } from './home-move'
 
 const BIN_NAME = 'ficus'
 
 /**
  * Mirrors scripts/install.sh's INSTALL_DIR: `$FICUS_INSTALL_DIR`, else
- * `$HOME/.tau/bin`. This is the one other place the CLI's own install
+ * `<cli home>/bin` (`~/.ficus/bin`). This is the one other place the CLI's own install
  * location is decided — keep it in sync with the installer rather than
  * re-deriving it.
  */
 export function cliInstallDir(env: Record<string, string | undefined>, home: string): string {
-  return env.FICUS_INSTALL_DIR ? expandTilde(env.FICUS_INSTALL_DIR, home) : join(home, '.tau', 'bin')
+  return env.FICUS_INSTALL_DIR ? expandTilde(env.FICUS_INSTALL_DIR, home) : join(cliHome({ homedir: home }), 'bin')
 }
 
 /** Best-effort realpath: a path that cannot be resolved (missing, EPERM, ...) resolves to itself. */
@@ -42,7 +43,7 @@ export interface CliPathStatus {
 }
 
 /**
- * Whether the CLI's own installed binary (~/.tau/bin/ficus, the install.sh
+ * Whether the CLI's own installed binary (~/.ficus/bin/ficus, the install.sh
  * default) is what `ficus` on the current PATH actually resolves to. A
  * `ficus` on PATH that resolves elsewhere (a stale install, an unrelated
  * shim) does not count — the operator needs to know about *this* one.

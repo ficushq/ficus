@@ -1,7 +1,14 @@
 import type { DeploymentFlavor, ProcessSupervisor } from './deployment-flavor'
 import type { PlannedCommand, UpdateTask } from './types'
 import { localProcessNames } from '@ficus/shared'
-import { ficusProcessName, hostSystemdUnits, launchdLabel } from '@ficus/shared/node'
+import {
+  hostSystemdUnits,
+  launchdLabel,
+  LEGACY_LOCAL_INSTANCE,
+  legacyLocalProcessNames,
+  renamedLocalInstanceLabel,
+  systemdUserUnit,
+} from '@ficus/shared/node'
 import { DEPENDENCY_INSTALL_COMMAND, DEPENDENCY_PATHS } from './dependency-install'
 
 type PathMatcher = {
@@ -114,6 +121,8 @@ export function restartCommandsFor(
     unitDir?: string
     /** Injectable for tests; production reads the real ~/Library/LaunchAgents. */
     launchAgentsDir?: string
+    /** Injectable for tests; production reads the real systemd user unit directory. */
+    userUnitDir?: string
   } = {}
 ): string[][] {
   const isRoot = options.isRoot ?? (typeof process.getuid === 'function' && process.getuid() === 0)
@@ -131,11 +140,17 @@ export function restartCommandsFor(
       [...prefix, 'systemctl', 'restart', units.api],
     ]
   }
-  const names = localProcessNames(options.instance ?? process.env.FICUS_INSTANCE ?? 'tau')
+  // An install without FICUS_INSTANCE predates labels: it is the legacy default instance. Its
+  // targets are the pre-rename ones until `ficus server rename-identity` re-registers them.
+  const label = options.instance ?? process.env.FICUS_INSTANCE ?? LEGACY_LOCAL_INSTANCE
+  const legacy = legacyLocalProcessNames(label)
+  const names = localProcessNames(renamedLocalInstanceLabel(legacy.label))
   if (supervisor === 'systemd-user') {
+    const unit = (component: 'api' | 'worker') =>
+      systemdUserUnit({ legacy: legacy[component], new: names[component] }, { unitDir: options.userUnitDir })
     return [
-      ['systemctl', '--user', 'restart', `${names.worker}.service`],
-      ['systemctl', '--user', '--no-block', 'restart', `${names.api}.service`],
+      ['systemctl', '--user', 'restart', unit('worker')],
+      ['systemctl', '--user', '--no-block', 'restart', unit('api')],
     ]
   }
   if (supervisor === 'launchd') {
@@ -147,7 +162,7 @@ export function restartCommandsFor(
         'kickstart',
         '-k',
         `gui/${uid}/${launchdLabel(
-          { legacy: names.worker, new: ficusProcessName(names.worker) },
+          { legacy: legacy.worker, new: names.worker },
           { launchAgentsDir: options.launchAgentsDir }
         )}`,
       ],
@@ -156,7 +171,7 @@ export function restartCommandsFor(
         'kickstart',
         '-k',
         `gui/${uid}/${launchdLabel(
-          { legacy: names.api, new: ficusProcessName(names.api) },
+          { legacy: legacy.api, new: names.api },
           { launchAgentsDir: options.launchAgentsDir }
         )}`,
       ],

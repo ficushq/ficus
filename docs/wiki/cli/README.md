@@ -15,7 +15,7 @@ The `ficus` CLI is the primary interface for interacting with the Ficus API. It 
 | `FICUS_API_URL`    | URL of the Ficus API server                                                                       | `http://localhost:3000` |
 | `FICUS_TOKEN`      | Scoped agent token or other explicitly supplied token                                             | —                       |
 | `FICUS_PASSWORD`   | Explicit human credential; legacy `/etc/tau/password` fallback applies only outside agent context | —                       |
-| `FICUS_AUTH_STORE` | Override path for labeled CLI backends                                                            | `~/.tau/cli/auth.json`  |
+| `FICUS_AUTH_STORE` | Override path for labeled CLI backends (default `~/.ficus/cli/auth.json`)                         | —                       |
 | `FICUS_SQUAD_ID`   | Default squad context for squad-scoped commands                                                   | —                       |
 
 Outside agent context, the CLI can use labeled backends saved by `ficus auth login`, explicit environment credentials, and legacy `.env` or mounted-password fallbacks. See `ficus auth status` and [Core authentication](../core-auth.md) for the current login model.

@@ -10,6 +10,10 @@ import { config } from '../config'
 import { output, outputError } from '../output'
 import { narrate } from '../local-server/log'
 import { makeSupervisorContext } from '../local-server/supervisor'
+import { recordIdentity } from '../local-server/instance'
+import { cliHome } from '../local-server/home-move'
+import { assertNoRenameInFlight, RENAME_JOURNAL } from '../local-server/supervisor-rename'
+import { ficusOrLegacyDir } from '@ficus/shared/node'
 
 export interface UpdateDeps {
   resolveRoot(): string
@@ -40,6 +44,8 @@ export function defaultUpdateDeps(): UpdateDeps {
       return Number.isInteger(port) && port > 0 ? port : undefined
     },
     offlineUpdate: (args) => {
+      // Same refusal as `ficus server update`: restarting a half-renamed instance starts it.
+      assertNoRenameInFlight(join(cliHome(), RENAME_JOURNAL))
       const registered = findInstanceByRoot(args.root, getStatePath())
       if (!registered)
         throw new Error(`checkout ${args.root} is not registered; run ficus server setup --root ${args.root}`)
@@ -47,6 +53,8 @@ export function defaultUpdateDeps(): UpdateDeps {
         supervisor: registered.record.supervisor,
         root: args.root,
         label: registered.label,
+        // An instance rename-identity has not moved yet restarts under its old names.
+        identity: recordIdentity(registered.record),
         runner: defaultRunner,
         log: args.log,
       })
@@ -152,7 +160,8 @@ export function registerUpdateCommands(program: Command, deps: UpdateDeps = defa
             deps.log('API unreachable — reading the local status file')
           }
         }
-        const path = join(deps.resolveRoot(), '.tau', 'local-update-status.json')
+        // <root>/.ficus, or the pre-rename status dir while the checkout has only that one (Core agrees).
+        const path = join(ficusOrLegacyDir(deps.resolveRoot()), 'local-update-status.json')
         const latest = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null
         output(
           { active: false, latest, source: path },

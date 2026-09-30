@@ -57,7 +57,18 @@ export function parseJlist(stdout: string, names: Pm2Names): Pm2Process[] {
   return []
 }
 
-/** All pm2 invocations run the ROOT's pm2 (`bunx pm2`) with cwd = root. */
-export function runPm2(runner: Runner, root: string, args: string[], inherit = false): Promise<RunResult> {
-  return runner(['bunx', 'pm2', ...args], { cwd: root, inherit })
+/**
+ * All pm2 invocations run the ROOT's pm2 (`bunx pm2`) with cwd = root. `env` is laid over this
+ * process's environment: pm2 builds a started app's environment from its client's (see
+ * `Common.prepareAppConf`: process.env, then the ecosystem's `env`), so a start that must not
+ * carry this process's stale values passes them here.
+ */
+export function runPm2(
+  runner: Runner,
+  root: string,
+  args: string[],
+  inherit = false,
+  env?: Record<string, string | undefined>
+): Promise<RunResult> {
+  return runner(['bunx', 'pm2', ...args], { cwd: root, inherit, ...(env ? { env } : {}) })
 }

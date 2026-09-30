@@ -1,8 +1,9 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { generateKeyPairSync, verify } from 'crypto'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import {
   readIdentityPrivateKeyPem,
   signAgentSig,
@@ -69,7 +70,13 @@ describe('portable identity paths', () => {
     delete process.env.FICUS_IDENTITY_CACHE
     process.env.FICUS_PRIVATE_DIR = '/sandbox-private'
     expect(identityPemPath()).toBe('/sandbox-private/identity.pem')
-    expect(identityCachePath()).toBe('/sandbox-private/.tau/identity.json')
+    expect(identityCachePath()).toBe('/sandbox-private/.ficus/identity.json')
+  })
+  test('keeps the identity cache in a legacy private dir that already holds it', async () => {
+    delete process.env.FICUS_IDENTITY_CACHE
+    process.env.FICUS_PRIVATE_DIR = dir
+    await mkdir(join(dir, LEGACY_HOME_DIR_NAME))
+    expect(identityCachePath()).toBe(join(dir, LEGACY_HOME_DIR_NAME, 'identity.json'))
   })
 })
 
@@ -118,6 +125,6 @@ describe('identity path expansion', () => {
     delete process.env.FICUS_IDENTITY_CACHE
     process.env.FICUS_PRIVATE_DIR = '~/agent-private'
     expect(identityPemPath()).toBe(join(homedir(), 'agent-private/identity.pem'))
-    expect(identityCachePath()).toBe(join(homedir(), 'agent-private/.tau/identity.json'))
+    expect(identityCachePath()).toBe(join(homedir(), 'agent-private/.ficus/identity.json'))
   })
 })

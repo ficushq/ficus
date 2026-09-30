@@ -29,7 +29,8 @@ export function parseEnvFile(text: string): Record<string, string> {
   return out
 }
 
-function renderValue(value: string): string {
+/** A value as a `.env` line spells it: quoted when it holds whitespace or `#`. */
+export function renderValue(value: string): string {
   return /[\s#]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value
 }
 

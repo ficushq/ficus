@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import { bootstrap, defaultInstallDir, type BootstrapDeps } from './bootstrap'
 import { SetupOptionsError } from './options'
 import { recordingRunner } from './runner'
+import { upsertInstance } from './state'
 
 let tmp: string
 beforeEach(() => {
@@ -28,8 +30,20 @@ function deps(overrides: Partial<BootstrapDeps> = {}) {
 const joined = (calls: { command: string[] }[]) => calls.map((c) => c.command.join(' '))
 
 describe('bootstrap', () => {
-  it('defaults the install dir to ~/.tau/tau', () => {
-    expect(defaultInstallDir('/home/x')).toBe('/home/x/.tau/tau')
+  it('defaults the install dir to ~/.ficus/ficus when no instance is registered', () => {
+    expect(defaultInstallDir(tmp, join(tmp, 'no-registry.json'))).toBe(join(tmp, '.ficus', 'ficus'))
+  })
+  it('puts the checkout in a legacy CLI home that has not moved yet', () => {
+    mkdirSync(join(tmp, LEGACY_HOME_DIR_NAME))
+    expect(defaultInstallDir(tmp, join(tmp, 'no-registry.json'))).toBe(join(tmp, LEGACY_HOME_DIR_NAME, 'ficus'))
+  })
+  it("reuses the registered default instance's root, whatever its directory is called", () => {
+    const statePath = join(tmp, 'state.json')
+    const existing = join(tmp, 'some', 'checkout')
+    const record = (root: string) => ({ root, port: 3000, supervisor: 'pm2' as const, createdAt: 't', updatedAt: 't' })
+    upsertInstance('lab', record(join(tmp, 'lab')), {}, statePath)
+    upsertInstance('main', record(existing), { makeDefault: true }, statePath)
+    expect(defaultInstallDir(tmp, statePath)).toBe(existing)
   })
   it('clones, installs and execs the checkout setup with pass-through args', async () => {
     const root = join(tmp, 'ficus')

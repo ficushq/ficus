@@ -3,14 +3,19 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { localProcessNames } from '../local-instance'
 import {
-  ficusProcessName,
+  FICUS_LAUNCHD_PREFIX,
   hostSystemdUnits,
   launchdLabel,
   LEGACY_LAUNCHD_PREFIX,
+  LEGACY_LOCAL_INSTANCE,
   LEGACY_SANDBOX_PASSWORD,
   LEGACY_UNITS,
+  legacyLocalProcessNames,
+  renamedLocalInstanceLabel,
   sandboxPasswordPath,
+  systemdUserUnit,
 } from './service-names'
 
 let dir: string
@@ -56,22 +61,24 @@ describe('launchdLabel', () => {
     }
   })
 
-  // A labeled local instance's legacy and new names differ by more than the prefix
-  // (tau-smoke-worker -> ficus-smoke-worker), so the two must be threaded through
-  // separately rather than assumed to be the same string under both prefixes.
+  // A labeled local instance's legacy and new names differ by more than the prefix, so the
+  // two must be threaded through separately rather than assumed to be the same string under
+  // both prefixes.
   test('falls back from a missing new plist to the legacy one, using the two different names', () => {
-    const legacy = 'tau-smoke-worker' // ficus-p5-bridge — a per-instance legacy name, not LEGACY_UNITS
-    const updated = ficusProcessName(legacy)
+    const legacy = legacyLocalProcessNames('smoke').worker
+    const updated = localProcessNames(renamedLocalInstanceLabel('smoke')).worker
     expect(updated).toBe('ficus-smoke-worker')
 
     const agents = mkdtempSync(join(tmpdir(), 'service-names-test-agents-'))
     try {
       // No legacy plist installed under this name yet: the new label wins.
-      expect(launchdLabel({ legacy, new: updated }, { launchAgentsDir: agents })).toBe('sh.ficus.ficus-smoke-worker')
-
-      writeFileSync(join(agents, `${LEGACY_LAUNCHD_PREFIX}.${legacy}.plist`), '') // ficus-p5-bridge
       expect(launchdLabel({ legacy, new: updated }, { launchAgentsDir: agents })).toBe(
-        `${LEGACY_LAUNCHD_PREFIX}.${legacy}` // ficus-p5-bridge
+        `${FICUS_LAUNCHD_PREFIX}.ficus-smoke-worker`
+      )
+
+      writeFileSync(join(agents, `${LEGACY_LAUNCHD_PREFIX}.${legacy}.plist`), '')
+      expect(launchdLabel({ legacy, new: updated }, { launchAgentsDir: agents })).toBe(
+        `${LEGACY_LAUNCHD_PREFIX}.${legacy}`
       )
     } finally {
       rmSync(agents, { recursive: true, force: true })
@@ -79,11 +86,31 @@ describe('launchdLabel', () => {
   })
 })
 
-describe('ficusProcessName', () => {
-  test('replaces only the leading legacy prefix', () => {
-    expect(ficusProcessName(LEGACY_UNITS.api)).toBe('ficus-api')
-    expect(ficusProcessName(LEGACY_UNITS.worker)).toBe('ficus-worker')
-    expect(ficusProcessName('tau-smoke-worker')).toBe('ficus-smoke-worker') // ficus-p5-bridge
+describe('legacyLocalProcessNames', () => {
+  test('the legacy default label keeps the legacy pair; any other label is <legacy>-<label>-*', () => {
+    expect(legacyLocalProcessNames(LEGACY_LOCAL_INSTANCE)).toEqual({ label: LEGACY_LOCAL_INSTANCE, ...LEGACY_UNITS })
+    expect(legacyLocalProcessNames(' Smoke ')).toEqual({
+      label: 'smoke',
+      api: `${LEGACY_LOCAL_INSTANCE}-smoke-api`,
+      worker: `${LEGACY_LOCAL_INSTANCE}-smoke-worker`,
+    })
+  })
+})
+
+describe('renamedLocalInstanceLabel', () => {
+  test('the legacy default label becomes ficus; every other label is kept', () => {
+    expect(renamedLocalInstanceLabel(LEGACY_LOCAL_INSTANCE)).toBe('ficus')
+    expect(renamedLocalInstanceLabel('smoke')).toBe('smoke')
+    expect(renamedLocalInstanceLabel('ficus')).toBe('ficus')
+  })
+})
+
+describe('systemdUserUnit', () => {
+  test('the new unit unless only the legacy unit file is installed', () => {
+    const names = { legacy: LEGACY_UNITS.worker, new: 'ficus-worker' }
+    expect(systemdUserUnit(names, { unitDir: dir })).toBe('ficus-worker.service')
+    writeFileSync(join(dir, `${LEGACY_UNITS.worker}.service`), '')
+    expect(systemdUserUnit(names, { unitDir: dir })).toBe(`${LEGACY_UNITS.worker}.service`)
   })
 })
 

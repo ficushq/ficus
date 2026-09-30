@@ -2,10 +2,22 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, resolve } from 'path'
 import { SetupOptionsError } from './options'
 import type { Runner } from './runner'
-import { isCheckout } from './state'
+import { defaultLabel, isCheckout, readRegistry } from './state'
+import { cliHome } from './home-move'
 
 export const DEFAULT_REPO = 'https://github.com/ficushq/tau.git'
-export const defaultInstallDir = (home: string) => join(home, '.tau', 'tau')
+/**
+ * Where `ficus server install` puts the checkout without --root: the root of the registered
+ * default instance when there is one (so re-running the installer reuses that checkout, whatever
+ * its directory is called, instead of cloning a second copy that collides with it), else
+ * `<cli home>/ficus` (`~/.ficus/ficus`).
+ */
+export function defaultInstallDir(home: string, statePath: string): string {
+  const registry = readRegistry(statePath)
+  const label = defaultLabel(registry)
+  const registered = label ? registry.instances[label]?.root : undefined
+  return registered ?? join(cliHome({ homedir: home }), 'ficus')
+}
 
 export interface BootstrapDeps {
   runner: Runner

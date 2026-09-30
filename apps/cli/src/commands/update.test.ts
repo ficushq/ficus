@@ -3,6 +3,7 @@ import { Command } from 'commander'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import { apiGet, apiPatch, apiPost } from '../client'
 import { output, outputError, setOutputOptions } from '../output'
 import { upsertInstance } from '../local-server/state'
@@ -125,24 +126,33 @@ describe('update apply offline fallback', () => {
     const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
     expect(error.message).toBe('--ref only applies to the offline path — pass --offline')
   })
-  it('status --offline reads the persisted run file', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ficus-upd-'))
-    mkdirSync(join(dir, '.tau'))
-    writeFileSync(
-      join(dir, '.tau', 'local-update-status.json'),
-      JSON.stringify({ id: 'r1', status: 'succeeded', mode: 'offline' })
-    )
-    await runWith(
-      localDeps(async () => ({ before: '', after: '' }), { resolveRoot: () => dir }),
-      ['update', 'status', '--offline']
-    )
-    expect(apiGet).not.toHaveBeenCalled()
-    expect(output).toHaveBeenCalledWith(
-      expect.objectContaining({ latest: expect.objectContaining({ id: 'r1' }) }),
-      expect.any(String)
-    )
-    rmSync(dir, { recursive: true, force: true })
-  })
+  // <root>/.ficus/local-update-status.json, or the pre-rename dir while a checkout still has only that one.
+  for (const [where, dirName] of [
+    ['.ficus', '.ficus'],
+    ['the legacy dir', LEGACY_HOME_DIR_NAME],
+  ] as const) {
+    it(`status --offline reads the persisted run file from ${where}`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'ficus-upd-'))
+      mkdirSync(join(dir, dirName))
+      writeFileSync(
+        join(dir, dirName, 'local-update-status.json'),
+        JSON.stringify({ id: 'r1', status: 'succeeded', mode: 'offline' })
+      )
+      await runWith(
+        localDeps(async () => ({ before: '', after: '' }), { resolveRoot: () => dir }),
+        ['update', 'status', '--offline']
+      )
+      expect(apiGet).not.toHaveBeenCalled()
+      expect(output).toHaveBeenCalledWith(
+        expect.objectContaining({
+          latest: expect.objectContaining({ id: 'r1' }),
+          source: join(dir, dirName, 'local-update-status.json'),
+        }),
+        expect.any(String)
+      )
+      rmSync(dir, { recursive: true, force: true })
+    })
+  }
 })
 
 describe('defaultUpdateDeps localPort', () => {

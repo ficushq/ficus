@@ -36,7 +36,7 @@ After changing server environment settings, restart the local installation with 
 | Setting                      | Meaning                                                                                                                                 |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`               | PostgreSQL connection for this instance. Setup writes the connection for its managed container, or uses your explicit `--database-url`. |
-| `HOME_DIR`                   | Root for Ficus's local data. Normally `~/.tau`; named installs default to `~/.tau-<label>`. Prefer an absolute path.                    |
+| `HOME_DIR`                   | Root for Ficus's local data. Normally `~/.ficus`; named installs default to `~/.ficus-<label>`. Prefer an absolute path.                |
 | `FICUS_SANDBOX_RUNTIME`      | Required: `host`, `docker-socket`, `docker-sysbox`, `vm` or `k8s`. No implicit default.                                                 |
 | `FICUS_ENCRYPTION_KEY`       | A 32-byte hex key used to encrypt credentials in the database. Setup generates it only when missing. Preserve it with backups.          |
 | `FICUS_INTERNAL_EVENT_TOKEN` | Shared authentication for communication between the API and worker. Setup writes a matching value for the instance.                     |

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'f
 import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { expandTilde } from '@ficus/shared/node'
+import { cliHome } from './local-server/home-move'
 
 export interface AuthBackend {
   apiUrl: string
@@ -15,7 +16,7 @@ export interface AuthStore {
 }
 
 function getDefaultAuthStorePath(): string {
-  return join(homedir(), '.tau', 'cli', 'auth.json')
+  return join(cliHome({ homedir: process.env.HOME || homedir() }), 'cli', 'auth.json')
 }
 
 export function getAuthStorePath(): string {

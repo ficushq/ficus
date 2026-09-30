@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
-import { isAbsolute, join } from 'path'
-import { localProcessNames } from '@ficus/shared'
+import { dirname, isAbsolute, join } from 'path'
 import { bunPtyLibrary, nativeLogPath, type NativeComponent } from './launchd'
+import { instanceNames } from './instance'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
 
 const WORKER_FIRST: NativeComponent[] = ['worker', 'api']
@@ -22,11 +22,12 @@ function marker(root: string): string {
   return `tau-generated-root:${Buffer.from(root).toString('base64url')}`
 }
 
+/** `<process>.service`, with the process named in the era the instance runs under. */
 export function systemdUserNames(
-  context: Pick<SupervisorContext, 'home' | 'label' | 'xdgConfigHome'>,
+  context: Pick<SupervisorContext, 'home' | 'label' | 'identity' | 'xdgConfigHome'>,
   component: NativeComponent
 ) {
-  const processName = localProcessNames(context.label)[component]
+  const processName = instanceNames(context.label, context.identity)[component]
   const unit = `${processName}.service`
   const config = context.xdgConfigHome || join(context.home, '.config')
   if (!isAbsolute(config)) throw new Error(`Supervisor config path must be absolute: ${config}`)
@@ -48,7 +49,7 @@ export function systemdUnit(context: SupervisorContext, component: NativeCompone
   }
   return `# ${marker(context.root)}
 [Unit]
-Description=Ficus local ${component} (${escaped(localProcessNames(context.label).label)})
+Description=Ficus local ${component} (${escaped(instanceNames(context.label, context.identity).label)})
 StartLimitIntervalSec=0
 
 [Service]
@@ -78,7 +79,8 @@ function assertOwned(path: string, root: string): void {
     throw new Error(`Refusing to replace supervisor definition not owned by this checkout: ${path}`)
 }
 function prepareLogs(context: SupervisorContext): void {
-  const dir = join(context.home, '.tau', 'logs')
+  // The directory of the log files themselves, so the two can never disagree.
+  const dir = dirname(nativeLogPath(context, 'api'))
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   chmodSync(dir, 0o700)
   for (const component of WORKER_FIRST) {
@@ -157,7 +159,7 @@ function parseShow(context: SupervisorContext, component: NativeComponent, text:
           ? 'stopped'
           : `${props.ActiveState ?? 'unknown'} (${props.SubState ?? 'unknown'})`
   return {
-    name: localProcessNames(context.label)[component],
+    name: instanceNames(context.label, context.identity)[component],
     status,
     pid: Number(props.MainPID ?? 0),
     cwd: context.root,

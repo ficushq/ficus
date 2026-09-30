@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { homedir } from 'os'
 import { createPrivateKey, createPublicKey, sign } from 'crypto'
-import { expandTilde } from '@ficus/shared/node'
+import { expandTilde, ficusOrLegacyDir } from '@ficus/shared/node'
 
 function privateRoot(): string {
   const configured = process.env.FICUS_PRIVATE_DIR
@@ -19,7 +19,7 @@ export function identityPemPath(): string {
 /** Path to the small JSON cache holding the registered handle + full amtp:// address. */
 export function identityCachePath(): string {
   const configured = process.env.FICUS_IDENTITY_CACHE
-  return configured ? expandTilde(configured) : join(privateRoot(), '.tau', 'identity.json')
+  return configured ? expandTilde(configured) : join(ficusOrLegacyDir(privateRoot()), 'identity.json')
 }
 
 export function readIdentityPrivateKeyPem(): string {

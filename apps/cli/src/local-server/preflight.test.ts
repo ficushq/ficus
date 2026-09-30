@@ -17,7 +17,7 @@ function opts(partial: Partial<SetupOptions>): SetupOptions {
     databaseMode: 'compose',
     databaseUrl: 'postgres://postgres:postgres@localhost:5432/tau',
     dbName: 'tau',
-    instance: 'tau',
+    instance: 'ficus',
     makeDefault: false,
     start: true,
     dryRun: false,
@@ -155,7 +155,7 @@ describe('runPreflight', () => {
       /k3d runtime shares ~\/\.tau with the cluster.*only available on the default instance.*host\/docker-socket for "smoke"/s
     )
     // The default label is what k3d:setup's cluster and bind mount assume.
-    expect((await runPreflight(opts({ runtime: 'k3d', instance: 'tau' }), d)).failures).toEqual([])
+    expect((await runPreflight(opts({ runtime: 'k3d', instance: 'ficus' }), d)).failures).toEqual([])
   })
   it('warns (not fails) on host without tmux or a browser', async () => {
     const { d } = deps({ which: (c) => (c === 'tmux' ? null : `/usr/bin/${c}`), browserPaths: () => [] })

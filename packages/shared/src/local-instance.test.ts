@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'bun:test'
-import { localProcessNames, normalizeLocalInstanceLabel, parseLaunchdJobIdentity } from './local-instance'
+import {
+  DEFAULT_INSTANCE_LABEL,
+  localProcessNames,
+  normalizeLocalInstanceLabel,
+  parseLaunchdJobIdentity,
+} from './local-instance'
 
 describe('localProcessNames', () => {
-  it('keeps the established default process names', () => {
-    expect(localProcessNames('tau')).toEqual({ label: 'tau', api: 'tau-api', worker: 'tau-worker' })
+  it('names the default instance ficus', () => {
+    expect(DEFAULT_INSTANCE_LABEL).toBe('ficus')
+    expect(localProcessNames('ficus')).toEqual({ label: 'ficus', api: 'ficus-api', worker: 'ficus-worker' })
   })
 
   it('normalizes a labeled instance and derives both process names', () => {
     expect(localProcessNames(' Smoke ')).toEqual({
       label: 'smoke',
-      api: 'tau-smoke-api',
-      worker: 'tau-smoke-worker',
+      api: 'ficus-smoke-api',
+      worker: 'ficus-smoke-worker',
     })
   })
 })

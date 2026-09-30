@@ -77,12 +77,12 @@ resumes exactly.
 
 ```bash
 ficus watch --json --follow | while IFS= read -r line; do
-  printf '%s' "$line" | jq -r .cursor > ~/.tau/reviewer.cursor
+  printf '%s' "$line" | jq -r .cursor > ~/.ficus/reviewer.cursor
   printf '%s' "$line" | jq -c '.events[]'
 done
 ```
 
-Restart with `--cursor "$(cat ~/.tau/reviewer.cursor)"` after a crash.
+Restart with `--cursor "$(cat ~/.ficus/reviewer.cursor)"` after a crash.
 
 ## GitHub sidecar
 

@@ -1,7 +1,10 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
-import { isAbsolute, join } from 'path'
-import { localProcessNames, parseLaunchdJobIdentity } from '@ficus/shared'
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { basename, dirname, isAbsolute, join } from 'path'
+import { parseLaunchdJobIdentity } from '@ficus/shared'
+import { FICUS_LAUNCHD_PREFIX, LEGACY_LAUNCHD_PREFIX } from '@ficus/shared/node'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
+import { cliHome } from './home-move'
+import { CURRENT_IDENTITY, instanceNames } from './instance'
 
 export type NativeComponent = 'api' | 'worker'
 const COMPONENTS_WORKER_FIRST: NativeComponent[] = ['worker', 'api']
@@ -39,13 +42,23 @@ export function bunPtyLibrary(context: Pick<SupervisorContext, 'root' | 'platfor
   return join(context.root, 'node_modules', 'bun-pty', 'rust-pty', 'target', 'release', ext)
 }
 
-export function nativeLogPath(context: Pick<SupervisorContext, 'home' | 'label'>, component: NativeComponent): string {
-  return join(context.home, '.tau', 'logs', localProcessNames(context.label)[component] + '.log')
+type NamedContext = Pick<SupervisorContext, 'home' | 'label' | 'identity'>
+
+/** A process's name in the era its instance runs under (see `InstanceIdentity`). */
+function processName(context: Pick<SupervisorContext, 'label' | 'identity'>, component: NativeComponent): string {
+  return instanceNames(context.label, context.identity)[component]
 }
 
-export function launchdNames(context: Pick<SupervisorContext, 'home' | 'label'>, component: NativeComponent) {
-  const process = localProcessNames(context.label)[component]
-  const label = `ai.hiretau.${process}`
+export function nativeLogPath(context: NamedContext, component: NativeComponent): string {
+  return join(cliHome({ homedir: context.home }), 'logs', processName(context, component) + '.log')
+}
+
+/** `sh.ficus.<process>`; an identity-1 instance keeps the prefix its jobs were registered under. */
+export function launchdNames(context: NamedContext, component: NativeComponent) {
+  const process = processName(context, component)
+  const prefix =
+    (context.identity ?? CURRENT_IDENTITY) === CURRENT_IDENTITY ? FICUS_LAUNCHD_PREFIX : LEGACY_LAUNCHD_PREFIX
+  const label = `${prefix}.${process}`
   return {
     process,
     label,
@@ -100,7 +113,8 @@ function assertOwned(path: string, root: string): void {
 }
 
 function prepareLogs(context: SupervisorContext): void {
-  const dir = join(context.home, '.tau', 'logs')
+  // The directory of the log files themselves, so the two can never disagree.
+  const dir = dirname(nativeLogPath(context, 'api'))
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   chmodSync(dir, 0o700)
   for (const component of COMPONENTS_WORKER_FIRST) {
@@ -172,12 +186,27 @@ function cleanupDefinitions(prepared: PreparedDefinitions): void {
 }
 
 function parseStatus(context: SupervisorContext, component: NativeComponent, stdout: string): SupervisorProcess {
-  const name = localProcessNames(context.label)[component]
+  const name = processName(context, component)
   const rawState = stdout.match(/\bstate\s*=\s*([^\s]+)/)?.[1] ?? 'unknown'
   // Same shared vocabulary as pm2/systemd adapters: consumers compare on it.
   const state = rawState === 'running' ? 'online' : rawState
   const pid = Number(stdout.match(/\bpid\s*=\s*(\d+)/)?.[1] ?? 0)
   return { name, status: state, pid, cwd: context.root }
+}
+
+/**
+ * The same log file: equal paths, or the same name in directories that resolve to one place — a
+ * job loaded before `ficus server rename-identity` moved the CLI home still names its log
+ * through the legacy home, which is now a link to the moved one.
+ */
+function sameLogFile(a: string, b: string): boolean {
+  if (a === b) return true
+  if (basename(a) !== basename(b)) return false
+  try {
+    return realpathSync(dirname(a)) === realpathSync(dirname(b))
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -195,7 +224,8 @@ function assertLoadedJobOwned(context: SupervisorContext, component: NativeCompo
   if (
     identity.program !== context.bunPath ||
     identity.workingDirectory !== context.root ||
-    identity.stderrPath !== names.log
+    identity.stderrPath === undefined ||
+    !sameLogFile(identity.stderrPath, names.log)
   ) {
     const reason =
       identity.program === undefined || identity.workingDirectory === undefined || identity.stderrPath === undefined
@@ -286,7 +316,7 @@ export const launchdSupervisor: SupervisorAdapter = {
       rows.push(
         state.loaded
           ? parseStatus(context, component, state.stdout)
-          : { name: localProcessNames(context.label)[component], status: 'not registered', pid: 0, cwd: context.root }
+          : { name: processName(context, component), status: 'not registered', pid: 0, cwd: context.root }
       )
     }
     return rows

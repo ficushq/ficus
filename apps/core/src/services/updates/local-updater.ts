@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
-import { assertEnvFileNaming } from '@ficus/shared/node'
+import { assertEnvFileNaming, ficusOrLegacyDir } from '@ficus/shared/node'
 import { InboxMessage } from '../../entities/InboxMessage'
 import { requireSandboxRuntime } from '../sandbox/runtime'
 import { CommandRunner, isKilledByOwnRestart } from './command-runner'
@@ -148,7 +148,8 @@ export class LocalUpdateManager {
     this.ghRunner = options.gh
     this.commandRunner =
       options.commandRunner ?? new CommandRunner({ cwd: this.repoRoot, onUpdate: () => this.persistActiveRun() })
-    this.statusPath = options.statusPath ?? join(this.repoRoot, '.tau', 'local-update-status.json')
+    // <root>/.ficus, or the pre-rename status dir while the checkout has only that one (update:offline agrees).
+    this.statusPath = options.statusPath ?? join(ficusOrLegacyDir(this.repoRoot), 'local-update-status.json')
     this.latest = this.readPersistedLatest()
     this.flavor = options.flavor ?? (() => detectDeploymentFlavor({ repoRoot: this.repoRoot }))
     this.acquireRunLock = options.runLock ?? acquireUpdateRunLock

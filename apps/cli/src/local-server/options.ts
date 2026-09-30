@@ -1,5 +1,5 @@
 import { DEFAULT_INSTANCE, normalizeLabel } from './instance'
-import { DB_NAME_RE } from './postgres'
+import { DB_NAME_RE, DEFAULT_DB_NAME } from './postgres'
 import {
   LOCAL_RUNTIMES,
   LOCAL_SUPERVISORS,
@@ -179,7 +179,7 @@ export async function resolveSetupOptions(
   if (dbUrlPick.explicit && dbNamePick.explicit) {
     throw new SetupOptionsError('--database-url and --db-name are mutually exclusive')
   }
-  const dbName = dbNamePick.value ?? 'tau'
+  const dbName = dbNamePick.value ?? DEFAULT_DB_NAME
   if (!DB_NAME_RE.test(dbName)) {
     throw new SetupOptionsError(`--db-name must match ${DB_NAME_RE.source} (got "${dbName}")`)
   }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import { OfflineUpdateBlockedError, STALE_RUN_MS, planOfflineUpdate, runOfflineUpdate } from './update-offline'
 import { migrationListFingerprint } from '../db/migration-journal'
 import type { DeploymentFlavor } from '../services/updates/deployment-flavor'
@@ -68,7 +69,7 @@ describe('runOfflineUpdate', () => {
     expect(run.beforeSha).toBe('a'.repeat(40))
     expect(run.afterSha).toBe('b'.repeat(40))
     expect(run.flavor?.supervisor).toBe('unknown')
-    const persisted = JSON.parse(readFileSync(join(root, '.tau', 'local-update-status.json'), 'utf8'))
+    const persisted = JSON.parse(readFileSync(join(root, '.ficus', 'local-update-status.json'), 'utf8'))
     expect(persisted.id).toBe(run.id)
     expect(persisted.status).toBe('succeeded')
   })
@@ -131,9 +132,44 @@ describe('runOfflineUpdate', () => {
       runProcess: async () => ({ exitCode: 2, output: 'boom' }),
     }).catch((e) => e)
     expect(run).toBeInstanceOf(Error)
-    const persisted = JSON.parse(readFileSync(join(root, '.tau', 'local-update-status.json'), 'utf8'))
+    const persisted = JSON.parse(readFileSync(join(root, '.ficus', 'local-update-status.json'), 'utf8'))
     expect(persisted.status).toBe('failed')
     expect(persisted.commands[0].status).toBe('failed')
+  })
+  it('keeps the status file in a pre-rename status dir while the checkout has only that one', async () => {
+    mkdirSync(join(root, LEGACY_HOME_DIR_NAME))
+    const run = await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: 'a'.repeat(40),
+      env: { FICUS_SANDBOX_RUNTIME: 'host' },
+      git: async (args) => (args[0] === 'diff' ? 'apps/core/src/x.ts\n' : 'b'.repeat(40)),
+      runProcess: async () => ({ exitCode: 0, output: '' }),
+    })
+    const persisted = JSON.parse(readFileSync(join(root, LEGACY_HOME_DIR_NAME, 'local-update-status.json'), 'utf8'))
+    expect(persisted.id).toBe(run.id)
+  })
+  it('reads the .ficus status file first when both status dirs exist', async () => {
+    mkdirSync(join(root, LEGACY_HOME_DIR_NAME))
+    mkdirSync(join(root, '.ficus'))
+    const running = {
+      id: 'x',
+      status: 'running',
+      mode: 'manual',
+      startedAt: 't',
+      changedFiles: [],
+      selectedTasks: [],
+      commands: [],
+    }
+    writeFileSync(join(root, '.ficus', 'local-update-status.json'), JSON.stringify(running))
+    await expect(
+      runOfflineUpdate({
+        repoRoot: root,
+        fromSha: 'a'.repeat(40),
+        env: {},
+        git: async () => '',
+        runProcess: async () => ({ exitCode: 0, output: '' }),
+      })
+    ).rejects.toThrow(OfflineUpdateBlockedError)
   })
   it('refuses to run while a persisted run is still running', async () => {
     mkdirSync(join(root, '.tau'))

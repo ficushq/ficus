@@ -83,7 +83,8 @@ describe('resolveSetupOptions', () => {
     const opts = await resolveSetupOptions({ runtime: 'host', port: '3100' }, {}, noPrompt, false)
     expect(opts.apiUrl).toBe('http://localhost:3100')
     expect(opts.appUrl).toBe('http://localhost:3100')
-    expect(opts.databaseUrl).toBe('postgres://postgres:postgres@localhost:5432/tau')
+    expect(opts.databaseUrl).toBe('postgres://postgres:postgres@localhost:5432/ficus')
+    expect(opts.dbName).toBe('ficus')
     expect(opts.databaseMode).toBe('compose')
   })
   it('accepts an external database url and disables compose', async () => {
@@ -125,9 +126,9 @@ describe('resolveSetupOptions', () => {
     expect(seen.length).toBe(1)
     expect(opts.runtime).toBe('docker-socket')
   })
-  it('defaults the instance to tau and takes the label from the flag over the env', async () => {
+  it('defaults the instance to ficus and takes the label from the flag over the env', async () => {
     const bare = await resolveSetupOptions({ runtime: 'host' }, {}, noPrompt, false)
-    expect(bare.instance).toBe('tau')
+    expect(bare.instance).toBe('ficus')
     expect(bare.explicit.has('instance')).toBe(false)
     expect(bare.dbPort).toBeUndefined()
     expect(bare.makeDefault).toBe(false)
@@ -163,7 +164,7 @@ describe('resolveSetupOptions', () => {
     )
     expect(opts.dbPort).toBe(5433)
     expect(opts.explicit.has('dbPort')).toBe(true)
-    expect(opts.databaseUrl).toBe('postgres://postgres:postgres@localhost:5433/tau')
+    expect(opts.databaseUrl).toBe('postgres://postgres:postgres@localhost:5433/ficus')
 
     const fromEnv = await resolveSetupOptions({ runtime: 'host' }, { FICUS_SETUP_DB_PORT: '5599' }, noPrompt, false)
     expect(fromEnv.dbPort).toBe(5599)

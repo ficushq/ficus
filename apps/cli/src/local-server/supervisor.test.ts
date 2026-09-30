@@ -31,8 +31,8 @@ describe('pm2Supervisor', () => {
     }
     await pm2Supervisor.restart(ctx)
     expect(calls).toEqual([
-      ['bunx', 'pm2', 'restart', 'tau-smoke-worker', '--update-env'],
-      ['bunx', 'pm2', 'restart', 'tau-smoke-api', '--update-env'],
+      ['bunx', 'pm2', 'restart', 'ficus-smoke-worker', '--update-env'],
+      ['bunx', 'pm2', 'restart', 'ficus-smoke-api', '--update-env'],
     ])
   })
 
@@ -41,9 +41,11 @@ describe('pm2Supervisor', () => {
     ctx.runner = async () => ({
       code: 0,
       stderr: '',
-      stdout: JSON.stringify([{ name: 'tau-smoke-api', pid: 9, pm2_env: { status: 'online', pm_cwd: '/repo' } }]),
+      stdout: JSON.stringify([{ name: 'ficus-smoke-api', pid: 9, pm2_env: { status: 'online', pm_cwd: '/repo' } }]),
     })
-    expect(await pm2Supervisor.status(ctx)).toEqual([{ name: 'tau-smoke-api', status: 'online', pid: 9, cwd: '/repo' }])
+    expect(await pm2Supervisor.status(ctx)).toEqual([
+      { name: 'ficus-smoke-api', status: 'online', pid: 9, cwd: '/repo' },
+    ])
   })
 })
 

@@ -10,12 +10,12 @@ Install the latest released Ficus CLI:
 curl -fsSL https://ficus.sh/cli/install.sh | bash
 ```
 
-The installer writes the CLI to `~/.tau/bin/ficus` and bundled CLI assets to `~/.tau/share`. To reinstall or upgrade later, run `ficus install`.
+The installer writes the CLI to `~/.ficus/bin/ficus` and bundled CLI assets to `~/.ficus/share`. To reinstall or upgrade later, run `ficus install`.
 
 Add Ficus to your `PATH` if needed:
 
 ```bash
-export PATH="$HOME/.tau/bin:$PATH"
+export PATH="$HOME/.ficus/bin:$PATH"
 ```
 
 Verify the install:

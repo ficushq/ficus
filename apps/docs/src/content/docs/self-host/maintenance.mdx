@@ -105,7 +105,7 @@ For the default installer-managed PostgreSQL container and default database, a d
 
 ```sh
 umask 077
-docker exec postgres-tau pg_dump -U postgres -Fc tau > tau-database.dump
+docker exec postgres-ficus pg_dump -U postgres -Fc ficus > ficus-database.dump
 ```
 
 Run it in a protected backup directory. For a named instance, an external database or a custom database name, use that installation's actual connection and container details instead. This command does not copy `.env` or workspace files.

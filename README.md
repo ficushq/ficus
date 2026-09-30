@@ -50,7 +50,7 @@ bun run setup
 curl -fsSL https://ficus.sh/cli/install.sh | bash
 ```
 
-The CLI is installed to `~/.tau/bin`. See [CLI setup](docs/wiki/cli/README.md)
+The CLI is installed to `~/.ficus/bin`. See [CLI setup](docs/wiki/cli/README.md)
 for authentication and usage.
 
 **Operate Ficus from an AI coding agent:** the CLI bundles the

@@ -43,11 +43,11 @@ describe('scripts/pm2-name.ts', () => {
     })
   })
   it('falls back to the default instance names when nothing is set', async () => {
-    expect(await run('api')).toMatchObject({ stdout: 'tau-api', code: 0 })
-    expect(await run('worker')).toMatchObject({ stdout: 'tau-worker', code: 0 })
+    expect(await run('api')).toMatchObject({ stdout: 'ficus-api', code: 0 })
+    expect(await run('worker')).toMatchObject({ stdout: 'ficus-worker', code: 0 })
   })
   it('ignores the other component name', async () => {
-    expect((await run('api', { FICUS_PM2_WORKER_NAME: 'tau-smoke-worker' })).stdout).toBe('tau-api')
+    expect((await run('api', { FICUS_PM2_WORKER_NAME: 'ficus-smoke-worker' })).stdout).toBe('ficus-api')
   })
   it('exits 2 on a bad argument so a script cannot silently target nothing', async () => {
     const bad = await run('web')

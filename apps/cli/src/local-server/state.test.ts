@@ -12,6 +12,7 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import {
   NoRootError,
   UnknownInstanceError,
@@ -20,6 +21,7 @@ import {
   getStatePath,
   isCheckout,
   readRegistry,
+  readRegistryListing,
   readRegistryStrict,
   removeInstance,
   resolveRoot,
@@ -59,9 +61,13 @@ describe('canonicalRoot', () => {
 })
 
 describe('state file', () => {
-  it('defaults to ~/.tau/cli/local-server.json and honours FICUS_LOCAL_SERVER_STATE', () => {
-    expect(getStatePath({})).toMatch(/\/\.tau\/cli\/local-server\.json$/)
+  it('defaults to <cli home>/cli/local-server.json and honours FICUS_LOCAL_SERVER_STATE', () => {
+    expect(getStatePath({ HOME: tmp })).toBe(join(tmp, '.ficus', 'cli', 'local-server.json'))
     expect(getStatePath({ FICUS_LOCAL_SERVER_STATE: '/x/y.json' })).toBe('/x/y.json')
+  })
+  it('keeps reading the registry from a legacy CLI home that has not moved yet', () => {
+    mkdirSync(join(tmp, LEGACY_HOME_DIR_NAME))
+    expect(getStatePath({ HOME: tmp })).toBe(join(tmp, LEGACY_HOME_DIR_NAME, 'cli', 'local-server.json'))
   })
   it('round-trips an instance through a directory it has to create, and removes it', () => {
     const path = join(tmp, 'nested', 'state.json')
@@ -162,6 +168,47 @@ describe('registry', () => {
     })
     // …and the migration is read-only: nothing is rewritten until an upsert.
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ root: '/r', port: 3000, createdAt: 'c', updatedAt: 'u' })
+  })
+  it('keeps the identity field through every read → mutate → write, and refuses an unknown identity', () => {
+    const path = join(tmp, 'identity.json')
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 3,
+        default: 'ficus',
+        instances: { ficus: { ...record('/a'), identity: 2 }, smoke: record('/b', 3100) },
+      })
+    )
+    expect(readRegistryStrict(path).instances.ficus.identity).toBe(2)
+    expect(readRegistryStrict(path).instances.smoke.identity).toBeUndefined()
+    // Other commands' writes (upsert of another instance, remove, use-style default change) keep it.
+    upsertInstance('lab', record('/c', 3200), {}, path)
+    removeInstance('smoke', path)
+    const written = JSON.parse(readFileSync(path, 'utf8'))
+    expect(written.version).toBe(3)
+    expect(written.instances.ficus.identity).toBe(2)
+    expect(written.instances.lab.identity).toBeUndefined()
+    writeFileSync(path, JSON.stringify({ version: 3, instances: { ficus: { ...record('/a'), identity: 3 } } }))
+    expect(() => readRegistryStrict(path)).toThrow(/newer CLI/)
+  })
+  it('keeps an entry with an identity it does not know in the lenient read (for list), never drops it', () => {
+    const path = join(tmp, 'newer.json')
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 3,
+        default: 'ficus',
+        instances: { ficus: { ...record('/a'), identity: 3 }, smoke: record('/b', 3100) },
+      })
+    )
+    expect(readRegistry(path).instances.ficus).toEqual({ ...record('/a'), identity: 3 })
+    expect(readRegistry(path).default).toBe('ficus')
+    const listing = readRegistryListing(path)
+    expect([...listing.unsupported]).toEqual(['ficus'])
+    expect(Object.keys(listing.registry.instances).sort()).toEqual(['ficus', 'smoke'])
+    // Any other damage still fails the listing, as before.
+    writeFileSync(path, JSON.stringify({ version: 3, instances: { ficus: { root: 5 } } }))
+    expect(() => readRegistryListing(path)).toThrow(/invalid record/)
   })
   it('reads an empty registry for a missing or malformed file', () => {
     expect(readRegistry(join(tmp, 'missing.json'))).toEqual({ version: 3, instances: {} })

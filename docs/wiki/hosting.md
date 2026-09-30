@@ -34,7 +34,7 @@ start without one of these five values.
 1. **`docker-sysbox` / `docker-socket`** — one container per sandbox
    (`tau-sandbox-*`) under sysbox-runc or with the host Docker socket mounted
    in (`docker-sysbox` never falls back to socket mode), manifest-driven bind mounts,
-   shared nix base (`~/.tau/nix/.base`) with per-sandbox hardlink/CoW clones
+   shared nix base (`<HOME_DIR>/nix/.base`) with per-sandbox hardlink/CoW clones
    and terminal-lifecycle reclaim. Containers carry a `tau.spec-hash` label, so
    mount-changing upgrades recreate them lazily on next use (see
    `docs/wiki/machines/upgrading.md`).

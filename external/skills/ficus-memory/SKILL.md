@@ -127,4 +127,4 @@ Memory writes are not immediately searchable through hybrid/vector search. `writ
 
 This skill assumes Ficus CLI or HTTP access is already configured. Do not turn normal memory tasks into installation work unless the human explicitly asks for setup help. To install the skill into a project, use `ficus skill install ficus-memory --agent <pi|claude-code|codex>` from the project root.
 
-Never print, commit, or write `FICUS_PASSWORD` or `$HOME/.tau/cli/auth.json` contents into memory.
+Never print, commit, or write `FICUS_PASSWORD` or `$HOME/.ficus/cli/auth.json` contents into memory.

@@ -10,7 +10,7 @@
 | `k8s`     | `FICUS_SYSTEM_LOG_K8S_NAMESPACE`; optional selector/container mappings                  | Requires the dedicated core-namespace `pods:list` and `pods/log:get` role. Matching replicas are snapshotted; reconnect to include later replicas.         |
 | `file`    | Absolute `FICUS_LOG_FILE_API`, `FICUS_LOG_FILE_WORKER`                                  | Requires readable files; `tail -F` follows rotation. Missing paths fail rather than falling back.                                                          |
 
-Native local launchd and systemd-user installs intentionally set `FICUS_SYSTEM_LOG_PROVIDER=file` and point both component targets at `~/.tau/logs/tau[-<label>]-api.log` and `~/.tau/logs/tau[-<label>]-worker.log`; each supervisor sends stdout and stderr to the same private component file. Hosted systemd installs remain journal-backed.
+Native local launchd and systemd-user installs intentionally set `FICUS_SYSTEM_LOG_PROVIDER=file` and point both component targets at `~/.ficus/logs/ficus[-<label>]-api.log` and `~/.ficus/logs/ficus[-<label>]-worker.log`; each supervisor sends stdout and stderr to the same private component file. Hosted systemd installs remain journal-backed.
 
 There is no auto-detection beyond the pm2 fallback: a systemd install shows "unavailable" until `FICUS_SYSTEM_LOG_PROVIDER=systemd` is present in the service environment. The setup toolkit writes it into the generated `.env`; installs created before that line existed add it to `<dest>/.env` manually and restart `tau-api`/`tau-worker`.
 

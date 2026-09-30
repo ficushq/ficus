@@ -5,6 +5,11 @@ import { SetupFailure } from './types'
 /** The image the installer runs: postgres + ParadeDB's search/analytics extensions. */
 export const POSTGRES_IMAGE = 'paradedb/paradedb:latest'
 
+/** The database a new install creates (`--db-name` overrides it). */
+export const DEFAULT_DB_NAME = 'ficus'
+/** Where the image keeps its data: the mount point of the instance's volume. */
+const DEFAULT_DATA_DIR = '/var/lib/postgresql'
+
 /** PostgreSQL identifier we are willing to interpolate into SQL / a createdb argv. */
 export const DB_NAME_RE = /^[a-z_][a-z0-9_]*$/
 const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]']
@@ -49,11 +54,53 @@ export function isManagedShapedUrl(url: string): boolean {
 interface PortBinding {
   HostPort?: string
 }
-interface ContainerInfo {
+export interface ContainerMount {
+  Type?: string
+  Name?: string
+  Destination?: string
+}
+/** The parts of `docker inspect -f '{{json .}}'` the installer reads. */
+export interface ContainerInfo {
+  /** The image ID the container runs (not the tag, which may have moved since). */
+  Image?: string
+  State?: { Running?: boolean }
+  Config?: { Labels?: Record<string, string> | null }
+  Mounts?: ContainerMount[]
   /** Live mappings — present only while the container RUNS ({} when stopped). */
   NetworkSettings?: { Ports?: Record<string, PortBinding[] | null> }
   /** The mapping it was created with — what `docker start` will restore. */
-  HostConfig?: { PortBindings?: Record<string, PortBinding[] | null> }
+  HostConfig?: {
+    PortBindings?: Record<string, PortBinding[] | null>
+    RestartPolicy?: { Name?: string; MaximumRetryCount?: number }
+  }
+}
+
+/** `docker inspect` of a container, or undefined when there is none (or docker cannot say). */
+async function inspectContainer(runner: Runner, container: string): Promise<ContainerInfo | undefined> {
+  const r = await runner(['docker', 'inspect', '-f', '{{json .}}', container])
+  if (r.code !== 0) return undefined
+  try {
+    return JSON.parse(r.stdout) as ContainerInfo
+  } catch {
+    return undefined
+  }
+}
+
+/** The host port a container publishes postgres on, live or as created (see `publishedPort`). */
+export function containerHostPort(info: ContainerInfo | undefined): number | undefined {
+  const bound =
+    info?.NetworkSettings?.Ports?.['5432/tcp']?.[0]?.HostPort ??
+    info?.HostConfig?.PortBindings?.['5432/tcp']?.[0]?.HostPort
+  const port = Number(bound)
+  return Number.isInteger(port) && port > 0 ? port : undefined
+}
+
+/** The named volume mounted at the postgres data dir (either layout the image has used). */
+export function postgresDataMount(mounts: ContainerMount[] | undefined): ContainerMount | undefined {
+  return mounts?.find(
+    (m) =>
+      m.Type === 'volume' && (m.Destination === '/var/lib/postgresql' || m.Destination === '/var/lib/postgresql/data')
+  )
 }
 
 /**
@@ -65,19 +112,7 @@ interface ContainerInfo {
  * an empty NetworkSettings.Ports and only HostConfig.PortBindings.
  */
 export async function publishedPort(runner: Runner, container: string): Promise<number | undefined> {
-  const r = await runner(['docker', 'inspect', '-f', '{{json .}}', container])
-  if (r.code !== 0) return undefined
-  let info: ContainerInfo
-  try {
-    info = JSON.parse(r.stdout) as ContainerInfo
-  } catch {
-    return undefined
-  }
-  const bound =
-    info?.NetworkSettings?.Ports?.['5432/tcp']?.[0]?.HostPort ??
-    info?.HostConfig?.PortBindings?.['5432/tcp']?.[0]?.HostPort
-  const port = Number(bound)
-  return Number.isInteger(port) && port > 0 ? port : undefined
+  return containerHostPort(await inspectContainer(runner, container))
 }
 
 /**
@@ -91,12 +126,7 @@ export async function containerVolumeName(runner: Runner, container: string, fal
   const r = await runner(['docker', 'inspect', '-f', '{{json .Mounts}}', container])
   if (r.code !== 0) return fallback
   try {
-    const mounts = JSON.parse(r.stdout) as { Type?: string; Name?: string; Destination?: string }[]
-    const data = mounts.find(
-      (m) =>
-        m.Type === 'volume' && (m.Destination === '/var/lib/postgresql' || m.Destination === '/var/lib/postgresql/data')
-    )
-    return data?.Name || fallback
+    return postgresDataMount(JSON.parse(r.stdout) as ContainerMount[])?.Name || fallback
   } catch {
     return fallback
   }
@@ -109,6 +139,16 @@ export interface PostgresContainer {
   volume: string
   /** Host port published on loopback only. */
   port: number
+  /** POSTGRES_DB: the database a first boot (an empty volume) creates. Default DEFAULT_DB_NAME. */
+  database?: string
+  /** Image to run. Default POSTGRES_IMAGE; the rename passes the old container's image ID. */
+  image?: string
+  /** Mount point of the volume. Default /var/lib/postgresql. */
+  dataDir?: string
+  /** Docker labels for a new container. */
+  labels?: Record<string, string>
+  /** Restart policy for a new container. Default unless-stopped. */
+  restart?: string
 }
 
 /**
@@ -118,7 +158,16 @@ export interface PostgresContainer {
  */
 export async function ensurePostgresContainer(
   runner: Runner,
-  { container, volume, port }: PostgresContainer,
+  {
+    container,
+    volume,
+    port,
+    database = DEFAULT_DB_NAME,
+    image = POSTGRES_IMAGE,
+    dataDir = DEFAULT_DATA_DIR,
+    labels = {},
+    restart = 'unless-stopped',
+  }: PostgresContainer,
   // `inherit` is for the run/start calls only — docker's pull progress is worth
   // watching. Inheriting the inspect below would leave its stdout empty, and
   // this function branches on that.
@@ -141,18 +190,19 @@ export async function ensurePostgresContainer(
       '--name',
       container,
       '--restart',
-      'unless-stopped',
+      restart,
+      ...Object.entries(labels).flatMap(([key, value]) => ['--label', `${key}=${value}`]),
       '-e',
       'POSTGRES_USER=postgres',
       '-e',
       'POSTGRES_PASSWORD=postgres',
       '-e',
-      'POSTGRES_DB=tau',
+      `POSTGRES_DB=${database}`,
       '-p',
       `127.0.0.1:${port}:5432`,
       '-v',
-      `${volume}:/var/lib/postgresql`,
-      POSTGRES_IMAGE,
+      `${volume}:${dataDir}`,
+      image,
     ],
     { inherit }
   )

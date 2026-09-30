@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 
 const script = join(import.meta.dir, 'setup.sh')
 // Resolved once against the *test runner's* PATH (unaffected by the
@@ -37,7 +38,7 @@ beforeEach(() => {
   const installer = join(tmp, 'installer.sh')
   writeFileSync(
     installer,
-    `#!/bin/sh\nmkdir -p "$HOME/.tau/bin"\ncat > "$HOME/.tau/bin/ficus" <<'FICUSEOF'\n#!/bin/sh\necho "ficus $*" >> ${log}\nFICUSEOF\nchmod +x "$HOME/.tau/bin/ficus"\n`
+    `#!/bin/sh\nD="\${FICUS_INSTALL_DIR:-$HOME/.ficus/bin}"\n[ -z "\${FICUS_INSTALL_DIR:-}" ] && [ ! -e "$HOME/.ficus" ] && [ -e "$HOME/${LEGACY_HOME_DIR_NAME}" ] && D="$HOME/${LEGACY_HOME_DIR_NAME}/bin"\nmkdir -p "$D"\ncat > "$D/ficus" <<'FICUSEOF'\n#!/bin/sh\necho "ficus $*" >> ${log}\nFICUSEOF\nchmod +x "$D/ficus"\n`
   )
   // stub curl: record argv, then hand the installer body to the `| sh` pipe
   // FICUS_INSTALL_AUTH is logged too: setup.sh must install the CLI without the
@@ -93,18 +94,30 @@ describe('scripts/setup.sh', () => {
     expect(r.exitCode).toBe(0)
     expect(readFileSync(log, 'utf8').trim().split('\n')[1]).toBe('ficus server install')
   })
-  it('skips the CLI install when the binary exists and FICUS_SETUP_SKIP_CLI_INSTALL=1', () => {
-    mkdirSync(join(tmp, '.tau', 'bin'), { recursive: true })
-    writeFileSync(join(tmp, '.tau', 'bin', 'ficus'), `#!/bin/sh\necho "ficus $*" >> "${log}"\n`)
-    chmodSync(join(tmp, '.tau', 'bin', 'ficus'), 0o755)
-    const r = run(['--dry-run'], { FICUS_SETUP_SKIP_CLI_INSTALL: '1' })
+  // ~/.ficus/bin, or the bin of a legacy CLI home that has not moved yet (the installer's own rule).
+  for (const [where, home] of [
+    ['~/.ficus', '.ficus'],
+    ['a legacy CLI home', LEGACY_HOME_DIR_NAME],
+  ] as const) {
+    it(`skips the CLI install when the binary exists in ${where} and FICUS_SETUP_SKIP_CLI_INSTALL=1`, () => {
+      mkdirSync(join(tmp, home, 'bin'), { recursive: true })
+      writeFileSync(join(tmp, home, 'bin', 'ficus'), `#!/bin/sh\necho "ficus $*" >> "${log}"\n`)
+      chmodSync(join(tmp, home, 'bin', 'ficus'), 0o755)
+      const r = run(['--dry-run'], { FICUS_SETUP_SKIP_CLI_INSTALL: '1' })
+      expect(r.exitCode).toBe(0)
+      expect(readFileSync(log, 'utf8').trim()).toBe('ficus server install --dry-run')
+    })
+  }
+  it('installs into and runs from a legacy CLI home that has not moved yet', () => {
+    mkdirSync(join(tmp, LEGACY_HOME_DIR_NAME))
+    const r = run(['--yes'])
     expect(r.exitCode).toBe(0)
-    expect(readFileSync(log, 'utf8').trim()).toBe('ficus server install --dry-run')
+    expect(readFileSync(log, 'utf8').trim().split('\n')[1]).toBe('ficus server install --yes')
   })
   it('ignores OLD_SETUP_SKIP_CLI_INSTALL given alone: the CLI is (re)installed', () => {
-    mkdirSync(join(tmp, '.tau', 'bin'), { recursive: true })
-    writeFileSync(join(tmp, '.tau', 'bin', 'ficus'), `#!/bin/sh\necho "ficus $*" >> "${log}"\n`)
-    chmodSync(join(tmp, '.tau', 'bin', 'ficus'), 0o755)
+    mkdirSync(join(tmp, '.ficus', 'bin'), { recursive: true })
+    writeFileSync(join(tmp, '.ficus', 'bin', 'ficus'), `#!/bin/sh\necho "ficus $*" >> "${log}"\n`)
+    chmodSync(join(tmp, '.ficus', 'bin', 'ficus'), 0o755)
     const r = run(['--dry-run'], { OLD_SETUP_SKIP_CLI_INSTALL: '1' })
     expect(r.exitCode).toBe(0)
     expect(readFileSync(log, 'utf8')).toContain('curl -fsSL https://ficus.sh/cli/install.sh')
@@ -113,7 +126,7 @@ describe('scripts/setup.sh', () => {
     writeFileSync(join(tmp, 'installer.sh'), '#!/bin/sh\nexit 0\n')
     const r = run([])
     expect(r.exitCode).not.toBe(0)
-    expect(new TextDecoder().decode(r.stderr)).toContain('.tau/bin/ficus')
+    expect(new TextDecoder().decode(r.stderr)).toContain(join(tmp, '.ficus', 'bin', 'ficus'))
   })
   it('fails clearly without git', () => {
     rmSync(join(tmp, 'bin', 'git'))
