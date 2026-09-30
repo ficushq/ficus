@@ -168,10 +168,13 @@ function writeFileAtomic(path: string, text: string): void {
   }
 }
 
-function pointEnvAt(envPath: string, from: string, to: string): void {
+/** Rewrites `.env` in place; false when no DATABASE_URL line named database `from`. */
+function pointEnvAt(envPath: string, from: string, to: string): boolean {
   const before = readFileSync(envPath, 'utf8')
   const after = rewriteEnvDatabase(before, from, to)
-  if (after !== before) writeFileAtomic(envPath, after)
+  if (after === before) return false
+  writeFileAtomic(envPath, after)
+  return true
 }
 
 async function must(runner: Runner, command: string[]): Promise<void> {
@@ -303,7 +306,10 @@ export async function planLocalPostgresRename(
     }
     const intact = legacyInfo && legacyMount?.Name && legacyMount.Name !== ficus.volume
     const back = intact
-      ? ` ${legacy.container} and its volume ${legacyMount?.Name} are intact, so going back is safe:\n` +
+      ? ` ${legacy.container} and its volume ${legacyMount?.Name} are intact. These commands go back to them: they ` +
+        `remove ${ficus.container} and ${ficus.volume} — the copy this rename made, plus anything written to ` +
+        `${ficus.container} since (check first if anything may have run against it) — and do not touch ` +
+        `${legacy.container} or ${legacyMount?.Name}:\n` +
         `  docker rm -f ${ficus.container}\n  docker volume rm ${ficus.volume}\n  docker start ${legacy.container}\n` +
         `then run again.`
       : ` ${legacy.container} is ${legacyInfo ? 'not on a named volume' : 'gone'}, so ${ficus.container} and ${ficus.volume} ` +
@@ -369,6 +375,10 @@ export async function planLocalPostgresRename(
  *   what it found and how to go back). A failure after the first change undoes this run's
  *   changes and throws, so a throw never leaves a half-made rename behind and needs no undo.
  *
+ * The new container is created with `--restart no`, so an interrupted move never brings it up
+ * by itself (at login, or when docker restarts) for the old identity to write into; the caller
+ * calls `finalizeLocalPostgresRename` once the app is healthy on it.
+ *
  * `runId` (see `newRenameRunId`) labels the new volume and container (`RENAME_RUN_LABEL`).
  * Required call order for a caller that journals (T19): `planLocalPostgresRename` and require
  * `action === 'rename'` → journal "Postgres move started" WITH the run id → this function →
@@ -416,6 +426,8 @@ export async function renameLocalPostgres(
       image: plan.image,
       dataDir: plan.dataDir,
       labels: { [RENAMED_FROM_LABEL]: from.container, [RENAME_RUN_LABEL]: opts.runId },
+      // No auto-start until the caller has seen the app healthy on it: see finalizeLocalPostgresRename.
+      restart: 'no',
     })
     await waitForPostgres(runner, to.container, { sleep: deps.sleep })
     if (plan.database) {
@@ -435,7 +447,13 @@ export async function renameLocalPostgres(
         '-c',
         `ALTER DATABASE "${plan.database.from}" RENAME TO "${plan.database.to}"`,
       ])
-      pointEnvAt(join(root, '.env'), plan.database.from, plan.database.to)
+      const envPath = join(root, '.env')
+      if (!pointEnvAt(envPath, plan.database.from, plan.database.to)) {
+        // The database is renamed but the app would still ask for the old name: undo the whole move.
+        throw new Error(
+          `no DATABASE_URL line in ${envPath} names database "${plan.database.from}" any more (was .env edited during the move?)`
+        )
+      }
     }
   } catch (error) {
     const failures: string[] = []
@@ -455,6 +473,34 @@ export async function renameLocalPostgres(
     )
   }
   return 'renamed'
+}
+
+/**
+ * The last step of a move, once the app has come up healthy on the new database (T19: after the
+ * step-10 health check): gives the new container the old container's restart policy (unless-stopped
+ * when docker reports none, or the old container is gone), so from now on it starts the way the old
+ * one did. Until then it has `--restart no`.
+ * Refuses a new-name container the rename did not create. Returns the policy applied.
+ */
+export async function finalizeLocalPostgresRename(
+  move: LocalPostgresMove,
+  deps: Pick<DockerDeps, 'runner'>
+): Promise<string> {
+  const { legacy, ficus } = move
+  const { runner } = deps
+  const ficusInfo = await inspectOrAbsent(runner, ficus.container)
+  if (!ficusInfo) throw new Error(`no container ${ficus.container} to finalize`)
+  if (ficusInfo.Config?.Labels?.[RENAMED_FROM_LABEL] !== legacy.container) {
+    throw new Error(
+      `container ${ficus.container} was not created by a rename from ${legacy.container} (no ${RENAMED_FROM_LABEL} label) — not changing it`
+    )
+  }
+  const policy = (await inspectOrAbsent(runner, legacy.container))?.HostConfig?.RestartPolicy
+  const name = policy?.Name || 'unless-stopped'
+  const restart =
+    name === 'on-failure' && (policy?.MaximumRetryCount ?? 0) > 0 ? `${name}:${policy?.MaximumRetryCount}` : name
+  await must(runner, ['docker', 'update', '--restart', restart, ficus.container])
+  return restart
 }
 
 /**

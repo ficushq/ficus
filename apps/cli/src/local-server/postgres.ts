@@ -69,7 +69,10 @@ export interface ContainerInfo {
   /** Live mappings — present only while the container RUNS ({} when stopped). */
   NetworkSettings?: { Ports?: Record<string, PortBinding[] | null> }
   /** The mapping it was created with — what `docker start` will restore. */
-  HostConfig?: { PortBindings?: Record<string, PortBinding[] | null> }
+  HostConfig?: {
+    PortBindings?: Record<string, PortBinding[] | null>
+    RestartPolicy?: { Name?: string; MaximumRetryCount?: number }
+  }
 }
 
 /** `docker inspect` of a container, or undefined when there is none (or docker cannot say). */
@@ -144,6 +147,8 @@ export interface PostgresContainer {
   dataDir?: string
   /** Docker labels for a new container. */
   labels?: Record<string, string>
+  /** Restart policy for a new container. Default unless-stopped. */
+  restart?: string
 }
 
 /**
@@ -161,6 +166,7 @@ export async function ensurePostgresContainer(
     image = POSTGRES_IMAGE,
     dataDir = DEFAULT_DATA_DIR,
     labels = {},
+    restart = 'unless-stopped',
   }: PostgresContainer,
   // `inherit` is for the run/start calls only — docker's pull progress is worth
   // watching. Inheriting the inspect below would leave its stdout empty, and
@@ -184,7 +190,7 @@ export async function ensurePostgresContainer(
       '--name',
       container,
       '--restart',
-      'unless-stopped',
+      restart,
       ...Object.entries(labels).flatMap(([key, value]) => ['--label', `${key}=${value}`]),
       '-e',
       'POSTGRES_USER=postgres',
