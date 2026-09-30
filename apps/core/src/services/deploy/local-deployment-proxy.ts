@@ -61,6 +61,26 @@ function appCookieHeader(cookieHeader: string | null, localDeploymentId: string)
 }
 
 /**
+ * The app's Set-Cookie headers as they may reach the browser from its own
+ * origin. The apps domain is not a public suffix, so a `Domain=<apps domain>`
+ * cookie from one app would be sent to every app of every tenant: the Domain
+ * attribute is removed, making every app cookie host-only (a cookie for the
+ * app's own host means the same thing without it). A cookie under a Ficus
+ * cookie name is dropped: it would shadow Ficus's own and never reach the app.
+ */
+function hostOnlyAppSetCookies(setCookies: string[], localDeploymentId: string): string[] {
+  const ficusNames = ficusCookieNames(localDeploymentId)
+  const kept: string[] = []
+  for (const setCookie of setCookies) {
+    const [pair = '', ...attributes] = setCookie.split(';')
+    if (ficusNames.has(pair.split('=', 1)[0]!.trim())) continue
+    const hostOnly = attributes.filter((attribute) => attribute.split('=', 1)[0]!.trim().toLowerCase() !== 'domain')
+    kept.push([pair, ...hostOnly].join(';'))
+  }
+  return kept
+}
+
+/**
  * The app's own public host when this request arrived through its per-app
  * origin (`<tenant>--<id>.<apps domain>`), else null (the path mount).
  *
@@ -165,7 +185,8 @@ export async function proxyLocalDeploymentRequest(
   setClientAddressHeaders(headers, getClientAddress(request))
   // Cookies and host, by mount:
   //   - per-app origin: the app owns its origin, so its cookies go to it (minus
-  //     Ficus's own) and it sees its own public host;
+  //     Ficus's own), the ones it sets reach the browser host-only (no Domain),
+  //     and it sees its own public host;
   //   - path mount (/api/app/<id>/ on the Ficus host): the origin is shared with
   //     Ficus and every other app, so no cookie reaches the app (it would get
   //     the Ficus session and other apps' cookies) and none it sets reaches the
@@ -200,7 +221,9 @@ export async function proxyLocalDeploymentRequest(
 
   const responseHeaders = new Headers(upstream.headers)
   keepOutOfSharedCaches(responseHeaders)
-  if (!publicHost) responseHeaders.delete('set-cookie')
+  const appSetCookies = publicHost ? hostOnlyAppSetCookies(upstream.headers.getSetCookie(), localDeployment.id) : []
+  responseHeaders.delete('set-cookie')
+  for (const setCookie of appSetCookies) responseHeaders.append('set-cookie', setCookie)
   // Only the URL-token request needs to mint the cookie; a request already carrying it re-sends nothing.
   // The per-app origin needs none: the Platform bridge holds that credential in its own cookie.
   if (presented.fromQuery && !publicHost) {

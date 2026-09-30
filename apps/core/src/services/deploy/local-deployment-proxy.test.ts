@@ -3,7 +3,9 @@ import { like } from 'drizzle-orm'
 import { brotliCompressSync, brotliDecompressSync, deflateSync, gunzipSync, gzipSync, inflateSync } from 'node:zlib'
 import { db, squads } from '../../db'
 import { Squad } from '../../entities/Squad'
+import { Hono } from 'hono'
 import { attachPeerAddress } from '../../lib/client-address'
+import { identityMiddleware } from '../../middleware/identity'
 import {
   createLocalDeployment,
   stopLocalDeploymentRecord,
@@ -503,6 +505,47 @@ describe('localDeployment proxy', () => {
       expect(forwarded.get('host')).toBe(appHost(id))
     })
 
+    it("makes the app's cookies host-only and drops ones under a Ficus name on the per-app origin", async () => {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const id = localDeployment.id
+      configureLocalDeploymentProxyDependencies({
+        resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: 5173 }),
+        fetch: mock(async () => {
+          const headers = new Headers()
+          // Domain=<apps domain> would reach every app of every tenant: it is not a public suffix.
+          headers.append(
+            'set-cookie',
+            '__Secure-better-auth.session_token=fixed; Domain=ficus.garden; Path=/api; Secure'
+          )
+          headers.append('set-cookie', 'b=2; Path=/; domain=.FICUS.garden; HttpOnly')
+          headers.append('set-cookie', `c=3;  DOMAIN = ${appHost(id)} ;SameSite=Lax`)
+          headers.append('set-cookie', 'ficus_session=planted; Path=/')
+          headers.append('set-cookie', '__Host-ficus_app=planted; Path=/; Secure')
+          headers.append('set-cookie', `ficus_app_${id}=planted; Path=/`)
+          headers.append('set-cookie', 'ficus_session_theme=dark; Path=/')
+          headers.append('set-cookie', 'domain_hint=ficus.garden; Path=/')
+          return new Response('ok', { headers })
+        }) as unknown as typeof fetch,
+      })
+      enableHostedApps()
+      const request = new Request(`${TENANT_ORIGIN}/api/app/${id}/?_ficus_token=${browserToken(localDeployment)}`, {
+        headers: { host: 'noah.ficus.sh', 'x-forwarded-host': appHost(id) },
+      })
+      attachPeerAddress(request, '127.0.0.1')
+
+      const response = await proxyLocalDeploymentRequest(id, request, '')
+
+      expect(response.headers.getSetCookie()).toEqual([
+        '__Secure-better-auth.session_token=fixed; Path=/api; Secure',
+        'b=2; Path=/; HttpOnly',
+        'c=3;SameSite=Lax',
+        'ficus_session_theme=dark; Path=/',
+        'domain_hint=ficus.garden; Path=/',
+      ])
+    })
+
     it('treats the path mount as the shared Ficus origin: no cookie either way, the Ficus host', async () => {
       const { id, response, forwarded } = await proxied({
         headers: { cookie: 'ficus_session=session-secret; app-plain=p1', 'x-forwarded-host': 'noah.ficus.sh' },
@@ -591,12 +634,16 @@ describe('localDeployment proxy', () => {
           return new Response('ok', { headers })
         },
       })
+      // Core's own chain for this route: identity first, then the proxy.
+      const routes = new Hono()
+      routes.use('*', identityMiddleware)
+      routes.all('/api/app/:id/*', (c) => proxyLocalDeploymentRequest(id, c.req.raw, 'probe'))
       const core = Bun.serve({
         port: 0,
         hostname: '127.0.0.1',
         fetch(req, server) {
           attachPeerAddress(req, server.requestIP(req)?.address)
-          return proxyLocalDeploymentRequest(id, req, 'probe')
+          return routes.fetch(req)
         },
       })
       configureLocalDeploymentProxyDependencies({
@@ -610,12 +657,15 @@ describe('localDeployment proxy', () => {
             headers: {
               host: 'noah.ficus.sh',
               'x-forwarded-host': appHost(id),
-              cookie: `__Host-ficus_app=bridge-secret; __Secure-chlea-probe=1; chlea-probe-plain=1`,
+              // A ficus_session on the app origin (the app's own, or planted on the
+              // apps domain) is not a Ficus login: no 401, and it never reaches the app.
+              cookie: `ficus_session=garbage; __Host-ficus_app=bridge-secret; __Secure-chlea-probe=1; chlea-probe-plain=1`,
             },
           }
         )
         await response.arrayBuffer()
 
+        expect(response.status).toBe(200)
         expect(response.headers.getSetCookie()).toEqual([
           '__Secure-chlea-probe=1; Secure; HttpOnly; SameSite=Lax; Path=/',
           'chlea-probe-plain=1; Path=/',

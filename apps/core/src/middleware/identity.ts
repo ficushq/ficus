@@ -26,6 +26,31 @@ export const identityMiddleware = createMiddleware(async (c, next) => {
     return next()
   }
 
+  // Local-deployment browser proxy: /api/app/:id authenticates ONLY by the
+  // deployment's browser credential, the URL token or the path-scoped cookie it
+  // set (without the cookie arm, a deployed app's own asset requests carry no
+  // credential and are rejected). Ficus credentials are never consulted here,
+  // and the proxy strips them: on an app's own origin the browser's cookies
+  // belong to the app, so a `ficus_session` cookie there (the app's own, or one
+  // planted on the apps domain) must not turn every request into a Ficus 401.
+  // The route sets no identity and reads none.
+  const appMatch = c.req.path.match(/^\/api\/app\/([^/]+)(?:\/|$)/)
+  if (appMatch) {
+    try {
+      const resolvedLocalDeploymentId = await authenticateLocalDeploymentBrowserRequest(c.req.raw, appMatch[1])
+      if (resolvedLocalDeploymentId) {
+        c.set('resolvedLocalDeploymentId', resolvedLocalDeploymentId)
+        return next()
+      }
+    } catch (error) {
+      if (error instanceof AmbiguousPrefixError) {
+        return localDeploymentProxyJsonError(AMBIGUOUS_LOCAL_DEPLOYMENT_LINK_ERROR, 409)
+      }
+      throw error
+    }
+    return localDeploymentProxyJsonError('Authentication required', 401)
+  }
+
   // Token from the Authorization / X-Auth-Token header (CLI, agents, legacy) or,
   // for the browser, the HttpOnly session cookie.
   const token = extractSessionToken(c)
@@ -34,27 +59,7 @@ export const identityMiddleware = createMiddleware(async (c, next) => {
     // Signed-public bypasses (no identity is set — these routes carry no
     // permission guards and remain public):
     //
-    // 1. Local-deployment browser proxy: /api/app/:id with a valid _ficus_token.
-    // Either the URL token or the path-scoped cookie it set. Without the cookie
-    // arm, a deployed app's own asset requests carry no credential and are
-    // rejected here, before the proxy route ever runs.
-    const match = c.req.path.match(/^\/api\/app\/([^/]+)(?:\/|$)/)
-    if (match) {
-      try {
-        const resolvedLocalDeploymentId = await authenticateLocalDeploymentBrowserRequest(c.req.raw, match[1])
-        if (resolvedLocalDeploymentId) {
-          c.set('resolvedLocalDeploymentId', resolvedLocalDeploymentId)
-          return next()
-        }
-      } catch (error) {
-        if (error instanceof AmbiguousPrefixError) {
-          return localDeploymentProxyJsonError(AMBIGUOUS_LOCAL_DEPLOYMENT_LINK_ERROR, 409)
-        }
-        throw error
-      }
-      return localDeploymentProxyJsonError('Authentication required', 401)
-    }
-
+    // (1. the local-app proxy, handled above for every request.)
     // 2. Signed image URLs: GET /api/images/:id with valid exp + sig.
     const imageMatch = c.req.path.match(/^\/api\/images\/([^/]+)$/)
     if (
