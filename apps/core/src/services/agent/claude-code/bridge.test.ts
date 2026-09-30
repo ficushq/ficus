@@ -14,7 +14,8 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
-import { createClaudeCodeStream } from './bridge'
+import { CLAUDE_CODE_EXITED, CLAUDE_CODE_SESSION_CLOSED, createClaudeCodeStream } from './bridge'
+import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
 
@@ -167,6 +168,8 @@ afterEach(() => {
 function harness(stateDir = mkdtempSync(join(tmpdir(), 'claude-code-bridge-'))) {
   dirs.push(stateDir)
   const processes: FakeClaude[] = []
+  // The idle-close clock: tests fire pending closes themselves.
+  const timers = new Set<() => void>()
   const stream = createClaudeCodeStream({
     executable: () => '/usr/local/bin/claude',
     stateDir: () => stateDir,
@@ -175,8 +178,17 @@ function harness(stateDir = mkdtempSync(join(tmpdir(), 'claude-code-bridge-'))) 
       processes.push(fake)
       return fake as any
     },
+    schedule: (fn) => {
+      timers.add(fn)
+      return () => timers.delete(fn)
+    },
   })
-  return { stream, processes, stateDir }
+  const fireIdleTimers = () => {
+    const due = [...timers]
+    timers.clear()
+    for (const fn of due) fn()
+  }
+  return { stream, processes, stateDir, fireIdleTimers, timers }
 }
 
 test('runs Claude Code with no built-in tools, only the agent tools pre-approved, and Ficus’s own prompt', async () => {
@@ -336,3 +348,66 @@ for (const shape of ['assistant', 'result']) {
     })
   })
 }
+
+test('a late result from the previous turn never closes the session under the next one', async () => {
+  const { stream, processes, fireIdleTimers } = harness()
+  const first = stream(model, context([user('hi')]), { sessionId: 's8' })
+  const claude = processes[0]!
+  await claude.nextPrompt(1)
+  const [result, ...events] = textResponse('msg_1', 'hello').reverse()
+  claude.emit(...events.reverse())
+  const reply = (await first.result()) as AssistantMessage
+
+  // pi starts the next turn before Claude Code's `result` for the first one arrives.
+  const second = stream(model, context([user('hi'), reply, user('long task')]), { sessionId: 's8' })
+  await claude.nextPrompt(2)
+  claude.emit(result)
+  await Bun.sleep(0)
+  // Whatever idle close that late result armed must not end the turn in flight.
+  fireIdleTimers()
+  claude.emit(...textResponse('msg_2', 'done'))
+  const message = await second.result()
+  expect(message.stopReason).toBe('stop')
+  expect(claude.closed).toBe(false)
+
+  // Once the session is idle, it still closes.
+  await Bun.sleep(0)
+  fireIdleTimers()
+  expect(claude.closed).toBe(true)
+})
+
+test('a session that closes under a live turn fails it retryably, and the retry gets a new session', async () => {
+  for (const text of [CLAUDE_CODE_SESSION_CLOSED, CLAUDE_CODE_EXITED]) {
+    expect(isRetryableAssistantError({ stopReason: 'error', errorMessage: text } as AssistantMessage)).toBe(true)
+  }
+
+  const { stream, processes } = harness()
+  const live = stream(model, context([user('long task')]), { sessionId: 's9' })
+  await processes[0]!.nextPrompt(1)
+  // Something else closes the session mid-response (here: a history this process never saw).
+  const other = stream(model, context([user('something else')]), { sessionId: 's9' })
+  const failed = await live.result()
+  expect(failed.stopReason).toBe('error')
+  expect(failed.errorMessage).toBe(CLAUDE_CODE_SESSION_CLOSED)
+  expect(isRetryableAssistantError(failed)).toBe(true)
+  processes[1]!.emit(...textResponse('msg_2', 'ok'))
+  expect((await other.result()).stopReason).toBe('stop')
+
+  // pi's retry of the failed turn starts over in a fresh Claude Code process.
+  const retry = stream(model, context([user('long task')]), { sessionId: 's9' })
+  const claude = processes.at(-1)!
+  expect(processes).toHaveLength(3)
+  await claude.nextPrompt(1)
+  claude.emit(...textResponse('msg_3', 'finished'))
+  expect((await retry.result()).stopReason).toBe('stop')
+})
+
+test('a Claude Code process that exits mid-turn fails it retryably', async () => {
+  const { stream, processes } = harness()
+  const out = stream(model, context([user('hi')]), { sessionId: 's10' })
+  await processes[0]!.nextPrompt(1)
+  processes[0]!.end()
+  const message = await out.result()
+  expect(message.errorMessage).toBe(CLAUDE_CODE_EXITED)
+  expect(isRetryableAssistantError(message)).toBe(true)
+})

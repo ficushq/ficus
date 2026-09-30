@@ -53,6 +53,24 @@ const MCP_TOOL_TIMEOUT_MS = String(24 * 60 * 60_000)
 
 type QueryFn = (params: { prompt: AsyncIterable<any>; options: Options }) => Query
 
+/** Runs `fn` after `ms`; returns a cancel. Injectable so tests own the clock. */
+type Schedule = (fn: () => void, ms: number) => () => void
+
+const scheduleTimeout: Schedule = (fn, ms) => {
+  const timer = setTimeout(fn, ms)
+  timer.unref?.()
+  return () => clearTimeout(timer)
+}
+
+/**
+ * Why a live turn ends when its Claude Code session closes under it. Nothing is lost that a new
+ * session cannot rebuild (the next turn resumes or re-seeds one), so the wording matches pi's
+ * transient-failure retry ("connection lost") and pi retries the turn instead of failing the run.
+ */
+export const CLAUDE_CODE_SESSION_CLOSED = 'Claude Code session closed mid-response (connection lost)'
+/** The same for a Claude Code process that exits mid-turn (crashed or killed). */
+export const CLAUDE_CODE_EXITED = 'Claude Code exited mid-response (connection lost)'
+
 type CallToolResult = ReturnType<typeof mcpToolResult>
 
 /** A pushable async iterable of Claude Code user messages (its streaming input). */
@@ -110,7 +128,7 @@ class Bridge {
   readonly executable: string | undefined
   private readonly waiting = new Map<string, (result: CallToolResult) => void>()
   private readonly ready = new Map<string, CallToolResult>()
-  private idleTimer: ReturnType<typeof setTimeout> | undefined
+  private cancelIdle: (() => void) | undefined
 
   constructor(
     readonly key: string,
@@ -118,7 +136,8 @@ class Bridge {
     tools: Tool[],
     options: Options,
     runQuery: QueryFn,
-    private readonly onSession: (bridge: Bridge) => void
+    private readonly onSession: (bridge: Bridge) => void,
+    private readonly schedule: Schedule = scheduleTimeout
   ) {
     this.executable = options.pathToClaudeCodeExecutable
     this.query = runQuery({
@@ -195,7 +214,7 @@ class Bridge {
     if (this.closed) return
     this.closed = true
     this.clearIdle()
-    this.turn?.fail('error', 'Claude Code session closed')
+    this.turn?.fail('error', CLAUDE_CODE_SESSION_CLOSED)
     this.interrupt()
     this.input.close()
     try {
@@ -206,20 +225,31 @@ class Bridge {
   }
 
   private clearIdle() {
-    if (this.idleTimer) clearTimeout(this.idleTimer)
-    this.idleTimer = undefined
+    this.cancelIdle?.()
+    this.cancelIdle = undefined
   }
 
+  /**
+   * Close the process once it has sat idle. Never under a live turn: a previous turn's `result`
+   * can arrive after pi has started the next one, and closing then would fail that turn.
+   */
   private scheduleIdleClose() {
     this.clearIdle()
-    this.idleTimer = setTimeout(() => this.close(), IDLE_CLOSE_MS)
-    this.idleTimer.unref?.()
+    if (this.inTurn()) return
+    this.cancelIdle = this.schedule(() => {
+      this.cancelIdle = undefined
+      if (!this.inTurn()) this.close()
+    }, IDLE_CLOSE_MS)
+  }
+
+  private inTurn(): boolean {
+    return this.turn !== undefined && !this.turn.done
   }
 
   private async pump() {
     try {
       for await (const message of this.query) this.handle(message)
-      this.turn?.fail('error', 'Claude Code exited')
+      this.turn?.fail('error', CLAUDE_CODE_EXITED)
     } catch (error) {
       log.warn(`Claude Code session ${this.key} failed`, error)
       this.turn?.fail('error', `Claude Code failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -322,6 +352,8 @@ export interface ClaudeCodeBridgeDeps {
   query?: QueryFn
   executable?: () => string | undefined
   stateDir?: () => string
+  /** Schedules idle closes; tests pass their own clock. */
+  schedule?: Schedule
 }
 
 /** The pi stream function for the `claude-code` provider. */
@@ -407,7 +439,8 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
           tools,
           canResume ? { ...baseOptions, resume: saved!.claudeSessionId } : baseOptions,
           runQuery,
-          onSession
+          onSession,
+          deps.schedule
         )
         bridges.set(key, bridge)
         bridge.begin(turn)
