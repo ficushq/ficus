@@ -26,11 +26,11 @@ export default [
       'config/agent/extensions',
       // Artifact-builder output: generated machine-host bundles (gitignored).
       'machine/**',
-      // Vendored pristine Pi source overlays (patches/pi-coding-agent-0.87.1-source/**):
+      // Vendored pristine Pi source overlays (patches/pi-coding-agent-0.99.1-source/**):
       // byte-identical upstream source that the regeneration gate rebuilds the
       // committed patch from. Reformatting to Ficus style would break the byte-match
       // the no-drift check depends on.
-      'patches/pi-coding-agent-0.87.1-source/**',
+      'patches/pi-coding-agent-0.99.1-source/**',
     ],
   },
   js.configs.recommended,

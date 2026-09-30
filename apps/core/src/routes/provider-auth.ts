@@ -109,6 +109,18 @@ async function createOAuthLoginRuntime(source: ModelRuntime): Promise<ModelRunti
 }
 
 /**
+ * OAuth logins the Pi runtime has but Ficus does not offer. Pi 0.99 added "Sign in with
+ * ChatGPT" to the `openai` provider; its flow needs a stable per-installation device ID that
+ * Core does not supply, so every attempt would fail. Hidden until Core supports it.
+ */
+const HIDDEN_OAUTH_PROVIDERS: ReadonlySet<string> = new Set(['openai'])
+
+/** Whether Ficus offers an OAuth login for this runtime provider. */
+export function offersOAuthLogin(provider: { id: string; auth: { oauth?: unknown } }): boolean {
+  return !!provider.auth.oauth && !HIDDEN_OAUTH_PROVIDERS.has(provider.id)
+}
+
+/**
  * Whether any form of auth (stored key, OAuth token, or environment variable)
  * is available for a provider. Uses the same ModelRuntime the model-selection
  * chokepoint uses, so the UI's `configured` flag stays consistent with which
@@ -403,7 +415,7 @@ app.put('/claude-code/enabled', requirePermission('provider-auth:write'), async 
 
 app.get('/oauth/providers', requirePermission('provider-auth:read'), async (c) => {
   const runtime = await getModelRuntime()
-  const oauthProviders = runtime.getProviders().filter((p) => p.auth.oauth)
+  const oauthProviders = runtime.getProviders().filter(offersOAuthLogin)
   const providers = oauthProviders.map((p) => ({
     id: p.id,
     name: p.auth.oauth!.name,
@@ -417,7 +429,7 @@ app.get('/catalog', requirePermission('provider-auth:read'), async (c) => {
   const oauthIds = new Set(
     runtime
       .getProviders()
-      .filter((p) => p.auth.oauth)
+      .filter(offersOAuthLogin)
       .map((p) => p.id)
   )
   const providers = runtime.getProviders().map((p) => ({
@@ -754,7 +766,7 @@ app.post('/:provider/oauth/start', requirePermission('provider-auth:write'), asy
   const body = await parseOptionalJsonObjectBody<{ accountId?: string }>(c, {})
   const accountId = typeof body.accountId === 'string' && body.accountId.length > 0 ? body.accountId : undefined
 
-  if (!(await getModelRuntime()).getProviders().some((p) => p.id === provider && p.auth.oauth))
+  if (!(await getModelRuntime()).getProviders().some((p) => p.id === provider && offersOAuthLogin(p)))
     return c.json(
       provider === 'anthropic'
         ? {

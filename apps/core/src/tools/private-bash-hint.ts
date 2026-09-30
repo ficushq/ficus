@@ -49,8 +49,9 @@ function appendHint(text: string, hint: string): string {
 
 /**
  * Wrap a private bash tool so a denied touch of a shared squad path comes back
- * with the `squad_bash` hint, on both the success path (e.g. `... || true`)
- * and the thrown non-zero-exit path pi's bash tool uses.
+ * with the `squad_bash` hint, whether pi's bash tool returns the result (a zero
+ * exit such as `... || true`, or a non-zero exit, which pi reports as an
+ * `isError` result) or throws (timeouts, aborts, missing exit codes).
  */
 export function withSharedWorkspaceHint<T extends AgentTool<any>>(tool: T, options: SharedWorkspaceHintOptions): T {
   const hint = buildSharedWorkspaceHint(options.workspaceMount)

@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /**
  * Guards the Ficus patch to the Pi SDK
- * (patches/@earendil-works%2Fpi-ai@0.87.1.patch) that keeps hard plan-window
+ * (patches/@earendil-works%2Fpi-ai@0.99.1.patch) that keeps hard plan-window
  * limits (e.g. z.ai "429 Weekly/Monthly Limit Exhausted. Your limit will reset
  * at ...") NON-retryable. Without it a turn that hits an exhausted provider
  * matches the leading "429" against the SDK's retryable regex and burns all

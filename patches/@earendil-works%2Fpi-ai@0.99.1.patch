@@ -1,8 +1,8 @@
 diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
-index 5dd85f19db51b73dcd0c5c4cd8c28ad99e09ee6f..14dea88db99c9efeb1d2eeeb1184e4d5256b3116 100644
+index 501971b2a57af4332783fa18457b8821e23b7570..a61bbc18fad1042ecfa009e76da7fc95a595bdbd 100644
 --- a/dist/api/anthropic-messages.js
 +++ b/dist/api/anthropic-messages.js
-@@ -692,8 +692,10 @@ export const streamSimple = (model, context, options) => {
+@@ -698,8 +698,10 @@ export const streamSimple = (model, context, options) => {
          thinkingBudgetTokens: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
      });
  };
@@ -16,7 +16,7 @@ index 5dd85f19db51b73dcd0c5c4cd8c28ad99e09ee6f..14dea88db99c9efeb1d2eeeb1184e4d5
  function createClient(model, apiKey, optionsHeaders, fetch, dynamicHeaders, sessionId) {
      // Copilot: Bearer auth.
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index dfdb6ec3651febbba6b8788f16118ecbf4b38fa8..f7da469d3cd621ef95bf1197cbaf67083fcf4e5d 100644
+index 40014b3b7eacb3a8e5e43daac2cec6446e8810c2..2ed67a6294f22a638581c30c7cc8839a98cb5ddd 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
 @@ -50,7 +50,7 @@ function assertSuccessfulOutput(output) {
@@ -29,7 +29,7 @@ index dfdb6ec3651febbba6b8788f16118ecbf4b38fa8..f7da469d3cd621ef95bf1197cbaf6708
  function isRetryableError(status, errorText) {
      if (status === 429 && isTerminalRateLimitError(errorText)) {
 diff --git a/dist/env-api-keys.js b/dist/env-api-keys.js
-index 2e9484a7d764ff17b5ced8bf25bb4f6525b333d4..b31517e453c1e2d2648e57681283c7d0584d45f2 100644
+index e1b12358cb5a90820db8da0a2fb931c3fb1ebe27..26ba56ded14c261794ebd12db611bbe7dc30cd98 100644
 --- a/dist/env-api-keys.js
 +++ b/dist/env-api-keys.js
 @@ -67,7 +67,8 @@ function getApiKeyEnvVars(provider) {
@@ -101,13 +101,13 @@ index 88cf6d040c1806c2760e119826355a4f6ce5f5e5..e5970bb9e00bec47d9beee9dd1dd1693
          models: Object.values(ANTHROPIC_MODELS),
          api: anthropicMessagesApi(),
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 6538c63c99f75a4f232ebd413adf80571a0f39b4..3884086ab1659a6ebaec29f4d47b7d67708c619c 100644
+index 38781fbb440d41ad5f53bc216c27422c2be01074..eeac8c9227f1ea96c9a70e8ed2473512bd9b236a 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
-@@ -16,6 +16,15 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
-     "out of budget",
-     "quota exceeded",
-     "billing",
+@@ -19,6 +19,15 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
+     // Sign in with ChatGPT: the subscription's shared usage limit, which resets
+     // after hours rather than seconds.
+     "subscription_sharing_usage_limit_exceeded",
 +    // Tau: exhausted plan windows must fail over without transient retries.
 +    "limit exhausted",
 +    "limit will reset",

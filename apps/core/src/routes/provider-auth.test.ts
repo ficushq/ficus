@@ -443,6 +443,8 @@ describe('provider-auth routes', () => {
     const data = await res.json()
     expect(data.find((p: any) => p.id === 'openai-codex').oauthAvailable).toBe(true)
     expect(data.find((p: any) => p.id === 'anthropic').oauthAvailable).toBe(false)
+    // Pi's "Sign in with ChatGPT" needs a device ID Core does not supply; OpenAI takes an API key only.
+    expect(data.find((p: any) => p.id === 'openai').oauthAvailable).toBe(false)
   })
 
   test('OpenRouter routing switch defaults off and reports valid derived tier positions', async () => {
@@ -548,6 +550,7 @@ describe('provider-auth routes', () => {
     const ids = data.map((p: any) => p.id)
     expect(ids).toContain('openai-codex')
     expect(ids).not.toContain('anthropic')
+    expect(ids).not.toContain('openai')
     // Each provider has id and name
     for (const p of data) {
       expect(p.id).toBeDefined()
@@ -651,6 +654,16 @@ describe('provider-auth routes', () => {
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain('Anthropic API key')
     expect((await (await app.request('/anthropic/oauth/status', jsonReq())).json()).status).toBe('none')
+  })
+
+  test('Pi offers Sign in with ChatGPT on openai, but Ficus hides it and refuses to start it', async () => {
+    const runtime = await getModelRuntime()
+    // Guards the premise: if Pi drops this login, the hide (and this test) can go.
+    expect(runtime.getProviders().find((p) => p.id === 'openai')?.auth.oauth).toBeDefined()
+    const res = await app.request('/openai/oauth/start', jsonReq('POST'))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain('has no OAuth login')
+    expect((await (await app.request('/openai/oauth/status', jsonReq())).json()).status).toBe('none')
   })
 
   test('a Claude subscription token is refused wherever an API key is accepted', async () => {

@@ -300,7 +300,7 @@ jobs:
       - name: Verify deterministic Pi patch regeneration has no drift
         run: |
           git clone --quiet https://github.com/earendil-works/pi.git "$RUNNER_TEMP/pi-mono"
-          git -C "$RUNNER_TEMP/pi-mono" checkout --quiet --detach f07218c4d4bbc12bef056a7058c3dd49dfe41abe
+          git -C "$RUNNER_TEMP/pi-mono" checkout --quiet --detach d86654abb8862e201933517d6f1fce9f88dd117f
           PI_MONO_DIR="$RUNNER_TEMP/pi-mono" bash scripts/regenerate-pi-coding-agent-patch.sh
 
       - name: Validate macOS portability gate

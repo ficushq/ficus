@@ -134,7 +134,7 @@
   },
   "patchedDependencies": {
     "amtp-node@0.1.2": "patches/amtp-node@0.1.2.patch",
-    "@earendil-works/pi-coding-agent@0.87.1": "patches/@earendil-works%2Fpi-coding-agent@0.87.1.patch",
-    "@earendil-works/pi-ai@0.87.1": "patches/@earendil-works%2Fpi-ai@0.87.1.patch"
+    "@earendil-works/pi-coding-agent@0.99.1": "patches/@earendil-works%2Fpi-coding-agent@0.99.1.patch",
+    "@earendil-works/pi-ai@0.99.1": "patches/@earendil-works%2Fpi-ai@0.99.1.patch"
   }
 }

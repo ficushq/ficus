@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
 
-// Pins the pi-ai patch (patches/@earendil-works%2Fpi-ai@0.87.1.patch): Anthropic does not permit
+// Pins the pi-ai patch (patches/@earendil-works%2Fpi-ai@0.99.1.patch): Anthropic does not permit
 // third-party products to use Claude subscription credentials, so the Anthropic provider offers no
 // Claude Pro/Max login and never resolves a subscription token. A pi upgrade that drops the patch
 // fails here.
