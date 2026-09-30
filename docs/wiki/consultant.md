@@ -140,7 +140,9 @@ A consultant can opt into a one-shot terminal update with
 `ficus workstream create ... --observe terminal`, or later with
 `ficus workstream observe <id>`. Inspect with `ficus workstream observation <id>`
 and remove with `ficus workstream unobserve <id>`. This is agent observation,
-not USER subscribe/unsubscribe; the manager remains the owner and orchestrator.
+not USER subscribe/unsubscribe; the designated owner remains responsible for
+managing the work. A consultant that retains ownership already receives owner
+updates and does not need to observe.
 
 Only delivered done or cancellation consumes the watch. Already-terminal streams
 reject registration; reopening requires a new watch. Observer updates are context

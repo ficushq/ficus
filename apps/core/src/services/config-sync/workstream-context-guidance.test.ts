@@ -128,3 +128,14 @@ test('consultants opt into terminal observation for reporting, never management'
   expect(prompt).toContain('Assistant task reporting')
   expect(prompt).toContain('do not poll')
 })
+
+test('consultant observation guidance distinguishes observers from owners without implementation details', async () => {
+  const prompt = (await readRepoFile('config/agent-types/consultant.yaml')).replace(/\s+/g, ' ')
+  const observation = prompt.split('## Observing delegated results (opt-in)')[1]!.split('## Editing directly')[0]!
+  expect(observation).toContain('The work stream owner retains responsibility')
+  expect(observation).toContain('If you remain the owner')
+  expect(observation).toContain('already receive owner updates and do not need to observe')
+  expect(observation).not.toContain('The manager retains')
+  expect(observation).not.toContain('atomic')
+  expect(observation).not.toContain('fast completion')
+})
