@@ -3108,6 +3108,7 @@ EOF
   expect_match 'setup-host --dry-run (fresh host): the container is ficus-postgres on ficus-pgdata, database ficus' \
     "${hld_out}" "docker run -d --name ficus-postgres .* -v ficus-pgdata:/var/lib/postgresql .*ensure database 'ficus' exists"
   expect_match "setup-host --dry-run (fresh host): the DSN names the database ficus" "${hld_out}" 'DATABASE_URL=postgres://postgres:<redacted>@127\.0\.0\.1:5432/ficus'
+  expect_match 'setup-host --dry-run (fresh host): the .env names HOME_DIR explicitly (layout 2)' "${hld_out}" "\\| HOME_DIR=[^ ]*/${HL_NEW_HOME_NAME//./\\.}"
   expect_match 'setup-host --dry-run (fresh host): the backup HOME_DIR is .ficus, the unit ficus-backup' \
     "${hld_out}" "HOME_DIR resolved to: [^ ]*/\\.ficus.*install ficus-backup\\.service \\+ ficus-backup\\.timer"
   expect_eq 'setup-host --dry-run (fresh host): no legacy install root, etc dir or unit name anywhere' \
@@ -3120,6 +3121,7 @@ EOF
   expect_match 'setup-host --dry-run (layout-1 host): keeps the legacy install root, units and container' \
     "${hld_out}" "→ ${HL_LEGACY_DEST} .*docker run -d --name ${HL_LEGACY_DB_CONTAINER} .* -v ${HL_LEGACY_DB_VOLUME}:.*enable ${HL_LEGACY_UNIT_PREFIX}-api ${HL_LEGACY_UNIT_PREFIX}-worker"
   expect_eq 'setup-host --dry-run (layout-1 host): its units carry no Alias=' "$([[ ${hld_out} == *'Alias='* ]] && echo alias || echo none)" 'none'
+  expect_eq 'setup-host --dry-run (layout-1 host): the .env leaves HOME_DIR to the default' "$([[ ${hld_out} == *'| HOME_DIR='* ]] && echo explicit || echo default)" 'default'
 
   # A fresh host, external DSN naming the CA under the legacy etc dir (URL-encoded).
   hld_dsn="postgresql://tenant_x:pw@db.example:25060/x?sslmode=verify-full&sslrootcert=$(printf '%s/database-ca.crt' "${HL_LEGACY_ETC}" | sed 's:/:%2F:g')"
@@ -3174,7 +3176,7 @@ hla_globals() { # LAYOUT
   (
     host_layout_resolve "$1"
     # shellcheck disable=SC2034 # read by the lifted resolve_layout_globals
-    CFG_FILE=${HLA_CFG} BACKUP_ENABLE=true BACKUP_HOME_EXPLICIT='' BACKUP_RUN_USER_HOME=/home/svc
+    CFG_FILE=${HLA_CFG} BACKUP_ENABLE=true CORE_ENV_HOME_DIR='' RUN_USER_HOME=${HLA_HOME}
     eval "$(sed -n '/^resolve_layout_globals() {$/,/^}$/p' "${SCRIPT_DIR}/setup-host.sh")"
     resolve_layout_globals
     printf '%s|%s|%s|%s|%s|%s|%s' "${SRC_DEST}" "${ENV_FILE}" "${DB_CONTAINER}" "${DB_VOLUME}" "${DB_NAME}" "${UPDATE_SUDOERS_FILE#"${FICUS_HOST_ROOT:-}"}" "${BACKUP_HOME_DIR}"
@@ -3183,10 +3185,13 @@ hla_globals() { # LAYOUT
 if yq_is_mikefarah; then
   HLA_CFG=$(mktemp)
   printf 'source:\n  mode: artifact\n' >"${HLA_CFG}"
-  expect_eq "setup-host.sh resolve_layout_globals on layout 2: the Ficus names" "$(hla_globals 2)" \
-    "${HL_NEW_DEST}|${HL_NEW_DEST}/.env|${HL_NEW_DB_CONTAINER}|${HL_NEW_DB_VOLUME}|${HL_NEW_DB_NAME}|${HL_NEW_SUDOERS}|/home/svc/${HL_NEW_HOME_NAME}"
-  expect_eq "setup-host.sh resolve_layout_globals on layout 1: the legacy names" "$(hla_globals 1)" \
-    "${HL_LEGACY_DEST}|${HL_LEGACY_DEST}/.env|${HL_LEGACY_DB_CONTAINER}|${HL_LEGACY_DB_VOLUME}|${HL_LEGACY_DB_NAME}|${HL_LEGACY_SUDOERS}|/home/svc/${HL_LEGACY_HOME_NAME}"
+  HLA_HOME=$(mktemp -d) # the run user's home: a fresh one first
+  expect_eq "setup-host.sh resolve_layout_globals on layout 2 (fresh home): the Ficus names" "$(hla_globals 2)" \
+    "${HL_NEW_DEST}|${HL_NEW_DEST}/.env|${HL_NEW_DB_CONTAINER}|${HL_NEW_DB_VOLUME}|${HL_NEW_DB_NAME}|${HL_NEW_SUDOERS}|${HLA_HOME}/${HL_NEW_HOME_NAME}"
+  mkdir -p "${HLA_HOME}/${HL_LEGACY_HOME_NAME}/sessions" # Core's data in the legacy home
+  expect_eq "setup-host.sh resolve_layout_globals on layout 1 (Core data in the legacy home): the legacy names" "$(hla_globals 1)" \
+    "${HL_LEGACY_DEST}|${HL_LEGACY_DEST}/.env|${HL_LEGACY_DB_CONTAINER}|${HL_LEGACY_DB_VOLUME}|${HL_LEGACY_DB_NAME}|${HL_LEGACY_SUDOERS}|${HLA_HOME}/${HL_LEGACY_HOME_NAME}"
+  rm -rf "${HLA_HOME}"
   rm -f "${HLA_CFG}"
 fi
 # The update sudoers rule: the layout's units — plus the legacy spellings on

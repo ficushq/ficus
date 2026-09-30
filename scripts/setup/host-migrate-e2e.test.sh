@@ -171,6 +171,12 @@ rm -rf "${TK_NOTMPL}/systemd"
 #      its host_migrate                                         → EHL11
 #  13  setup-host.sh does not link the legacy etc dir for a DSN
 #      that names the CA there                                  → EHL12
+#  14  the manual reverse does not compare the files with their
+#      state at the commit (Ruling 82 I1)                        → EHL6
+#  15  upgrade-host.sh's reverse block installs no traps (I2)    → EHL13
+#  16  the manual reverse stops the units before it journals (I2) → EHL14
+#  17  apply-artifacts.sh without --config applies over a journaled
+#      migration                                                 → EHL5
 # (Where each entrypoint adopts the layout relative to its first path read is
 # also pinned line by line in lib.test.sh.)
 mutate_toolkit() { # TOOLKIT_DIR
@@ -186,16 +192,21 @@ edits = {
     "4": ("lib.sh", '    if ! (\n      install_core_units "${SCRIPT_DIR}/systemd"\n', "    if ! (\n      true\n"),
     "5": ("lib.sh", "host_migrate_restore_pending() {\n  host_migrate_settle_pending\n}\n", "host_migrate_restore_pending() {\n  return 0\n}\n"),
     "6": ("upgrade-host.sh", "host_layout_adopt\nSRC_DEST=$(cfg_source_dest)\n", ""),
-    "7": ("apply-artifacts.sh", "  host_layout_adopt\n", ""),
+    "7": ("apply-artifacts.sh", "  # The layout as the reconcile left it, before any path below is used.\n  host_layout_adopt\n", ""),
     "8": ("upgrade-host.sh", "ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook\n", "ARTIFACT_ROLLBACK_HOOK=host_migrate_restore_pending\n"),
     "9": ("upgrade-host.sh", "ARTIFACT_PREFLIP_HOOK=host_layout_preflip\n", "ARTIFACT_PREFLIP_HOOK=host_migrate_for\n"),
     "10": ("upgrade-host.sh", '  if ! _hm_is_root && [[ $(git_rev_host_layout "${SRC_DEST}" "$1") == 2 && $(host_layout_detect) == 1 ]]; then\n', "  if false; then\n"),
     "11": ("upgrade-host.sh", "printf 'FICUS_HOST_LAYOUT=%s\\n' \"${HL_LAYOUT}\"\n}\n", "}\n"),
     "12": ("setup-host.sh", 'host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"\nresolve_layout_globals\n', 'host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"\n'),
     "13": ("setup-host.sh", '    host_layout_link_legacy_ca_dir "${DB_DSN_CFG}"\n', ""),
+    "14": ("lib.sh", "  drifted=$(_hl_drifted_files \"${set}\") || drifted=''\n", "  drifted=''\n"),
+    "15": ("upgrade-host.sh", "  # half way (a kill still leaves its journal for the next run).\n  host_migrate_install_traps\n", "  # half way (a kill still leaves its journal for the next run).\n"),
+    "17": ("apply-artifacts.sh", "  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||\n    die \"not applying artifacts: a host migration is journaled in", "  true ||\n    die \"not applying artifacts: a host migration is journaled in"),
+    "16": ("lib.sh", "  log_warn \"host_layout: reversing the committed migration journaled in ${set}\"\n",
+           "  log_warn \"host_layout: reversing the committed migration journaled in ${set}\"\n  as_root systemctl stop \"${_HLN_API}\" \"${_HLN_WORKER}\" || die stop\n"),
 }
 if which not in edits:
-    sys.exit("E2E_MUTATE=%s: no such mutation (1-13)" % which)
+    sys.exit("E2E_MUTATE=%s: no such mutation (1-17)" % which)
 name, old, new = edits[which]
 path = tk + "/" + name
 src = open(path).read()
@@ -265,7 +276,7 @@ if [[ -f ${CTL}/block-\${verb} ]]; then
     rm -f "${CTL}/block-\${verb}"
     printf '%s' "\$\$" >"${CTL}/blocked.pid"
     read -r _ <"${CTL}/fifo" || true
-    exit 1
+    exit "\$(cat "${CTL}/block-rc" 2>/dev/null || echo 1)"
   fi
 fi
 [[ -f ${CTL}/fail-\${verb} ]] && exit 1
@@ -1036,7 +1047,7 @@ new_l1_host() { # NAME
   OLD_REL="${DEST}/releases/${SHA_OLD}-000000000000"
   local rel
   mkdir -p "${U}/multi-user.target.wants" "${U}/timers.target.wants" "${R}${HL_LEGACY_ETC}/artifacts" \
-    "${R}${HL_LEGACY_SETUP_DIR}" "${R}/root/${HL_LEGACY_HOME_NAME}/inbox-attachments" "${R}/usr/local/bin" \
+    "${R}${HL_LEGACY_SETUP_DIR}" "${R}/root/${HL_LEGACY_HOME_NAME}/inbox-attachments" "${R}/root/${HL_LEGACY_HOME_NAME}/sessions" "${R}/usr/local/bin" \
     "${H}/sysbin" "${H}/stage"
   for rel in "${SHA_OLD}-000000000000" prev-0000 older-3 older-2 older-1; do
     mkdir -p "${DEST}/releases/${rel}"
@@ -1194,16 +1205,28 @@ expect_eq 'EHL3: layout 2 is kept, committed (no journal)' "$(l_detect):$(pendin
 e3_set=$(hl_set)
 
 # ============ EHL6. --reverse-host-layout (after EHL3: the old release serves on layout 2)
+# The artifact sync after the migration changed managed.env: the reverse refuses
+# to put its pre-migration bytes back unless --accept-file-revert says so.
+printf 'SES=3\n' >"${H}/stage/managed.env"
+run_script --tk "${TK_NOTMPL}" '' apply-artifacts.sh --config "${NEW_CONFIG}" "${H}/stage"
+expect_eq 'EHL6 (fixture): the artifact sync after the migration' "${RC}:$(cat "${R}${HL_NEW_ETC}/managed.env")" '0:SES=3'
+snapshot_before=$(snap_root)
+: >"${CALLS}"
+run_script '' upgrade-host.sh --config "${NEW_CONFIG}" --reverse-host-layout "${e3_set}"
+expect_eq 'EHL6: --reverse-host-layout with a file changed since the migration: refused (exit 1)' "${RC}" '1'
+expect_match 'EHL6: ...naming the file and --accept-file-revert' "${OUT}" "changed since the migration committed.*managed\.env.*--accept-file-revert"
+expect_eq 'EHL6: ...changing nothing (layout 2, no journal, no service stopped)' \
+  "$([[ $(snap_root) == "${snapshot_before}" ]] && echo same):$(l_detect):$(pending):$(grep -c '^systemctl stop' "${CALLS}" || true)" 'same:2:none:0'
 : >"${CALLS}"
 : >"${H}/rebase-proof"
-run_script '' upgrade-host.sh --config "${NEW_CONFIG}" --reverse-host-layout "${e3_set}"
+run_script '' upgrade-host.sh --config "${NEW_CONFIG}" --reverse-host-layout "${e3_set}" --accept-file-revert
 expect_eq 'EHL6 --reverse-host-layout: exits 0, the host is on layout 1 again' "${RC}:$(l_detect)" '0:1'
 [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
 expect_eq 'EHL6: current names the old release at the LEGACY absolute path' "$(readlink "${DEST}/current")" "${OLD_REL}"
-expect_eq 'EHL6: the host is byte-identical to before the upgrade (outside releases/)' \
+expect_eq 'EHL6: the host is byte-identical to before the upgrade (outside releases/; managed.env back at its pre-move bytes)' \
   "$([[ $(snap_root) == "$(cat "${H}/pristine.snap")" ]] && echo same || diff <(cat "${H}/pristine.snap") <(snap_root) | head -n 20)" 'same'
 expect_match 'EHL6: the legacy units are started' "$(calls_line)" "\\|start ${L_API} ${L_WORKER}\\|"
-expect_eq 'EHL6: the stored HOME paths were rebased back' "$(cat "${H}/rebase-proof")" \
+expect_eq 'EHL6: the stored HOME paths were rebased back (after a dry run of the same)' "$(grep -v -- '--dry-run' "${H}/rebase-proof")" \
   "--from ${R}/root/${HL_NEW_HOME_NAME} --to ${R}/root/${HL_LEGACY_HOME_NAME}"
 expect_eq 'EHL6: no journal, the set marked reversed; the trailer says FICUS_HOST_LAYOUT=1' \
   "$(pending):$([[ -f ${e3_set}/hl/REVERSED ]] && echo reversed):$(trailer)" 'none:reversed:FICUS_HOST_LAYOUT=1|'
@@ -1239,6 +1262,10 @@ wait_bg
 expect_eq 'EHL5 SIGKILL after the flip: journaled, layout 2, committed past DONE' \
   "$(pending):$(l_detect):$([[ -f $(hl_set)/hl/DONE ]] && echo 'done')" 'pending:2:done'
 printf 'SES=2\n' >"${H}/stage/managed.env"
+run_script --tk "${TK_NOTMPL}" '' apply-artifacts.sh "${H}/stage"
+expect_eq 'EHL5: apply-artifacts.sh WITHOUT --config refuses the journaled migration (exit 1), installing nothing' \
+  "${RC}:$(pending):$(cat "${R}${HL_NEW_ETC}/managed.env" 2>/dev/null)" '1:pending:SES=1'
+expect_match '...and says to pass --config' "${OUT}" 'pass --config'
 run_script --tk "${TK_NOTMPL}" '' apply-artifacts.sh --config "${NEW_CONFIG}" "${H}/stage"
 expect_eq 'EHL5: apply-artifacts.sh --config <new yaml> from the template-less toolkit exits 0' "${RC}" '0'
 [[ ${RC} -eq 0 ]] || printf '%s\n' "${OUT}" >&2
@@ -1294,6 +1321,61 @@ expect_eq 'EHL10: the upgrade across the boundary exits 0, no new set' "${RC}:$(
 expect_match 'EHL10: both units were stopped while the OLD release was still current (before the flip)' \
   "$(tr '\n' '|' <"${CTL}/trace")" "(^|\\|)stop env=plain cur=${SHA_OLD}-000000000000\\|"
 expect_match 'EHL10: ...the pre-flip stop names the ficus units' "$(calls_line)" "(^|\\|)stop ${N_API} ${N_WORKER}\\|([^|]*\\|)*restart ${N_API} ${N_WORKER}\\|"
+
+# ============ EHL13. the reverse survives a dropped control connection (SIGPIPE)
+# Its output goes to a reader that is killed while the reverse is blocked in
+# its first stop: the next log write must not end it half way.
+l2_rolled_back_host() { # NAME — layout 2, the old release serving (EHL3's state)
+  new_l1_host "$1"
+  upgrade "${ART_L2}"
+  expect_eq "$1 (fixture): rolled back onto layout 2" "$(l_detect):$(pending):$(readlink "${NEW_DEST}/current")" \
+    "2:none:${NEW_DEST}/releases/${SHA_OLD}-000000000000"
+  : >"${CALLS}"
+}
+l2_rolled_back_host ehl13
+ehl13_set=$(hl_set)
+: >"${CTL}/block-stop"
+printf '0' >"${CTL}/block-rc" # the stop succeeds once released
+ehl13_envs=()
+mapfile -t ehl13_envs < <(host_env)
+mkfifo "${H}/out.fifo"
+(
+  rc=0
+  setsid "${SCRATCH}/sigdefault" env "${ehl13_envs[@]}" bash "${TK}/upgrade-host.sh" --config "${NEW_CONFIG}" \
+    --reverse-host-layout "${ehl13_set}" >"${H}/out.fifo" 2>&1 || rc=$?
+  printf '%s' "${rc}" >"${H}/rc"
+) &
+BG_PID=$!
+BG_PIDS+=("${BG_PID}")
+cat "${H}/out.fifo" >"${H}/seen.log" &
+ehl13_reader=$!
+wait_blocked || true
+kill -KILL "${ehl13_reader}" 2>/dev/null || true
+{ wait "${ehl13_reader}" || true; } 2>/dev/null
+release_block
+for _try in $(seq 1 600); do
+  [[ -s ${H}/rc ]] && break
+  "${REAL_SLEEP}" 0.1
+done
+expect_eq 'EHL13 reader gone mid-reverse: the reverse was not killed by SIGPIPE and finished (rc 0)' "$(cat "${H}/rc" 2>/dev/null || echo none)" '0'
+expect_eq 'EHL13: ...layout 1, no journal, the set reversed' \
+  "$(l_detect):$(pending):$([[ -f ${ehl13_set}/hl/REVERSED ]] && echo reversed)" '1:none:reversed'
+
+# ============ EHL14. SIGKILL in the reverse's first stop: already journaled, the next run finishes it
+l2_rolled_back_host ehl14
+ehl14_set=$(hl_set)
+: >"${CTL}/block-stop"
+start_bg '' upgrade-host.sh --config "${NEW_CONFIG}" --reverse-host-layout "${ehl14_set}"
+wait_blocked || true
+kill_bg
+wait_bg
+expect_eq 'EHL14 SIGKILL in the reverse'"'"'s first stop: PENDING names the set, REVERSING journaled' \
+  "$(cut -f1 "${H}/bk/PENDING" 2>/dev/null):$([[ -e ${ehl14_set}/hl/REVERSING ]] && echo reversing)" "${ehl14_set}:reversing"
+run_script --tk "${TK_NOTMPL}" '' apply-artifacts.sh --config "${NEW_CONFIG}" "${H}/stage"
+expect_eq 'EHL14: the next toolkit run (the artifact sync) finishes the reverse: rc 0, layout 1, no journal' \
+  "${RC}:$(l_detect):$(pending)" '0:1:none'
+expect_match 'EHL14: ...its reconcile restored the set' "${OUT}" 'reconcile: restored'
+expect_match 'EHL14: ...and started the legacy units' "$(calls_line)" "\\|start ${L_API} ${L_WORKER}\\|"
 
 # ============ EHL8. a non-root git-mode run: a revision that declares layout 2 is refused before the checkout moves
 ehl8_user=nobody
@@ -1377,6 +1459,7 @@ if [[ -z ${e6_skip} ]]; then
     "$([[ -f ${NEW_DEST}/.env && ! -L ${NEW_DEST}/.env && -L ${DEST} ]] && echo new)" 'new'
   expect_match 'EHL11: current names the new release at the new path' "$(readlink "${NEW_DEST}/current")" "^${NEW_DEST}/releases/${SHA_L2}-"
   expect_match 'EHL11: every phase after the move names the new install root (its .env phase)' "${OUT}" "phase 4/8: render ${NEW_DEST}/\.env"
+  expect_eq 'EHL11: the .env it renders names HOME_DIR explicitly (layout 2)' "$(grep '^HOME_DIR=' "${NEW_DEST}/.env")" "HOME_DIR=${R}/root/${HL_NEW_HOME_NAME}"
 
   # ============ EHL12. setup-host.sh on a FRESH host: set up on layout 2 throughout —
   # install root, etc dir, units, backup units and script, HOME — and the compat

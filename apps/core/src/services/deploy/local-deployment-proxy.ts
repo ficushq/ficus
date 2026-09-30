@@ -5,6 +5,9 @@ import { resolveLocalDeploymentTarget } from './local-deployment-target'
 import { localDeploymentCookieHeader, presentedLocalDeploymentToken } from './local-deployment-auth'
 import { localDeploymentProxyError, stripLocalDeploymentProxyErrorMarker } from './local-deployment-proxy-response'
 
+/** The app-proxy token's query name before the Ficus rename (stripped, never accepted). */
+const LEGACY_TOKEN_QUERY_PARAM = '_tau_token' // ficus-p5-bridge
+
 const HOP_BY_HOP = new Set([
   'connection',
   'keep-alive',
@@ -76,6 +79,9 @@ export async function proxyLocalDeploymentRequest(
   const normalizedPath = path.replace(/^\/+/, '')
   const targetUrl = new URL(`http://${target.host}:${target.port}/${normalizedPath}`)
   sourceUrl.searchParams.delete('_ficus_token')
+  // The name before the Ficus rename: while the Platform bridge forwards the credential under both
+  // names, it must never reach the app either.
+  sourceUrl.searchParams.delete(LEGACY_TOKEN_QUERY_PARAM)
   targetUrl.search = sourceUrl.search
 
   const headers = new Headers(request.headers)

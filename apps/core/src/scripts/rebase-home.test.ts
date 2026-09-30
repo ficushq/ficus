@@ -2,7 +2,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import type postgres from 'postgres'
 import { createPostgresConnection, getConnectionString } from '../db/connection'
 import { HOME_PATH_COLUMNS, homePathColumnKey } from '../db/home-path-columns'
-import { parseRebaseHomeArgs, rebaseHomePaths, RebaseHomeUsageError, validateRebasePaths } from './rebase-home'
+import {
+  parseRebaseHomeArgs,
+  rebaseHomePaths as rebaseWithTargets,
+  RebaseHomeTargetPresentError,
+  RebaseHomeUsageError,
+  validateRebasePaths,
+  type RebaseHomeOptions,
+} from './rebase-home'
+
+/** The rows changed per column (the shape most cases compare). */
+const rebaseHomePaths = async (db: postgres.Sql, from: string, to: string, opts?: RebaseHomeOptions) =>
+  (await rebaseWithTargets(db, from, to, opts)).counts
 
 // Neutral fixture HOMEs under a per-run root, so nothing else in the shared test database matches.
 // The old HOME has a dot in it (like the real one), which the free-text pattern must treat literally.
@@ -276,6 +287,9 @@ describe('rebaseHomePaths', () => {
 
   it('runs in one transaction: a failure part way leaves every column as it was', async () => {
     const before = await snapshot()
+    // The lock, the timeout, two counts per column, then one statement per column: fail after
+    // several columns were rewritten.
+    const FAIL_AT = 2 + 2 * HOME_PATH_COLUMNS.length + 8
     let statements = 0
     const failing = {
       begin: (callback: (tx: postgres.TransactionSql) => Promise<unknown>) =>
@@ -285,8 +299,7 @@ describe('rebaseHomePaths', () => {
               get(target, property) {
                 if (property !== 'unsafe') return Reflect.get(target, property)
                 return (...args: Parameters<postgres.TransactionSql['unsafe']>) => {
-                  // The lock, then one statement per column: fail after several columns were rewritten.
-                  if (++statements === 10) throw new Error('injected failure')
+                  if (++statements === FAIL_AT) throw new Error('injected failure')
                   return target.unsafe(...args)
                 }
               },
@@ -295,19 +308,98 @@ describe('rebaseHomePaths', () => {
         ),
     } as unknown as postgres.Sql
     await expect(rebaseHomePaths(failing, OLD, NEW)).rejects.toThrow('injected failure')
-    expect(statements).toBe(10)
+    expect(statements).toBe(FAIL_AT)
     expect(await snapshot()).toEqual(before)
+  })
+})
+
+describe('rebaseHomePaths when the data already holds paths under the target', () => {
+  beforeEach(seed)
+
+  /** One more message whose metadata mentions the TARGET — the M1 case: both names in one row. */
+  async function addTargetMention(): Promise<void> {
+    const [row] = await sql`
+      INSERT INTO messages (agent_id, role, content, metadata)
+      VALUES (${ids.agent}, 'assistant', 'fixture',
+        ${sql.json({ content: [{ type: 'text', text: `mv ${OLD} ${NEW}` }], keyed: { [`${OLD}/x`]: 1, [`${NEW}/x`]: 2 } })})
+      RETURNING id`
+    ids.messages.push(row!.id)
+  }
+
+  it('refuses before writing anything, naming the columns, unless forced', async () => {
+    await addTargetMention()
+    const before = await snapshot()
+    const error = await rebaseWithTargets(sql, OLD, NEW).then(
+      () => null,
+      (caught: unknown) => caught
+    )
+    expect(error).toBeInstanceOf(RebaseHomeTargetPresentError)
+    expect((error as RebaseHomeTargetPresentError).targetCounts['messages.metadata']).toBe(1)
+    expect((error as Error).message).toContain('messages.metadata=1')
+    expect(await snapshot()).toEqual(before)
+
+    // --dry-run reports the collision count and does not refuse
+    const dry = await rebaseWithTargets(sql, OLD, NEW, { dryRun: true })
+    expect(dry.targetCounts['messages.metadata']).toBe(1)
+    expect(dry.counts).toEqual({ ...expectedCounts(), 'messages.metadata': 4 })
+    expect(await snapshot()).toEqual(before)
+
+    // --force rewrites anyway (the two names merge: the reason it refuses by default)
+    const forced = await rebaseWithTargets(sql, OLD, NEW, { force: true })
+    expect(forced.counts['messages.metadata']).toBe(4)
+  })
+
+  it('does not refuse when there is nothing to move (the inverse of a refused or rolled-back forward)', async () => {
+    // Going back while nothing moved: the data is all under OLD (this direction's target), none under NEW.
+    const before = await snapshot()
+    const result = await rebaseWithTargets(sql, NEW, OLD)
+    expect(Object.values(result.counts).every((count) => count === 0)).toBe(true)
+    expect(result.targetCounts['inbox_attachments.storage_path']).toBeGreaterThan(0)
+    expect(await snapshot()).toEqual(before)
+  })
+
+  it('reports its progress and bounds every statement with a timeout', async () => {
+    const progress: string[] = []
+    const statements: string[] = []
+    const recording = {
+      begin: (callback: (tx: postgres.TransactionSql) => Promise<unknown>) =>
+        sql.begin((tx) =>
+          callback(
+            new Proxy(tx, {
+              get(target, property) {
+                if (property !== 'unsafe') return Reflect.get(target, property)
+                return (...args: Parameters<postgres.TransactionSql['unsafe']>) => {
+                  statements.push(String(args[0]))
+                  return target.unsafe(...args)
+                }
+              },
+            })
+          )
+        ),
+    } as unknown as postgres.Sql
+    await rebaseWithTargets(recording, OLD, NEW, { batchSize: 1, onProgress: (line) => progress.push(line) })
+    expect(statements[1]).toBe('SET LOCAL statement_timeout = 600000')
+    expect(progress[0]).toMatch(/row\(s\) hold paths under .* under /)
+    expect(progress.some((line) => line.startsWith('messages.metadata: 3 row(s) in '))).toBe(true)
+    await expect(rebaseWithTargets(sql, OLD, NEW, { statementTimeoutMs: -1 })).rejects.toThrow(RebaseHomeUsageError)
   })
 })
 
 describe('rebase-home arguments', () => {
   it('accepts two different absolute, normalized paths', () => {
-    expect(parseRebaseHomeArgs(['--from', OLD, '--to', NEW])).toEqual({ from: OLD, to: NEW, dryRun: false })
+    expect(parseRebaseHomeArgs(['--from', OLD, '--to', NEW])).toEqual({
+      from: OLD,
+      to: NEW,
+      dryRun: false,
+      force: false,
+    })
     expect(parseRebaseHomeArgs([`--from=${OLD}`, `--to=${NEW}`, '--dry-run'])).toEqual({
       from: OLD,
       to: NEW,
       dryRun: true,
+      force: false,
     })
+    expect(parseRebaseHomeArgs(['--from', OLD, '--to', NEW, '--force']).force).toBe(true)
   })
 
   it('refuses anything else', () => {
@@ -325,7 +417,7 @@ describe('rebase-home arguments', () => {
     refused(['--from', `${NEW}/nested`, '--to', NEW])
     refused(['--from', `${ROOT}/h/"q`, '--to', NEW])
     refused(['--from', `${ROOT}/h/back\\slash`, '--to', NEW])
-    refused(['--from', OLD, '--to', NEW, '--force'])
+    refused(['--from', OLD, '--to', NEW, '--force=yes'])
     expect(() => validateRebasePaths(OLD, `${ROOT}/h/.new\n`)).toThrow(RebaseHomeUsageError)
   })
 })

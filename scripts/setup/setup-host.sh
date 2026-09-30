@@ -243,7 +243,32 @@ BACKUP_S3_ACCESS_KEY_ENV=$(cfg_get '.backup.s3_access_key_env' 'FICUS_BACKUP_S3_
 BACKUP_S3_SECRET_KEY_ENV=$(cfg_get '.backup.s3_secret_key_env' 'FICUS_BACKUP_S3_SECRET_KEY')
 BACKUP_PASSPHRASE_ENV=$(cfg_get '.backup.passphrase_env' 'FICUS_BACKUP_PASSPHRASE')
 BACKUP_SCHEDULE=$(cfg_get '.backup.schedule' '03:15')
-BACKUP_ONCALENDAR='' BACKUP_HOME_DIR='' BACKUP_HOME_EXPLICIT='' BACKUP_RUN_USER_HOME=''
+BACKUP_ONCALENDAR='' BACKUP_HOME_DIR=''
+
+# HOME_DIR — MUST match what apps/core itself resolves: process.env.HOME_DIR,
+# else the host layout's home dir name under os.homedir() (see
+# apps/core/src/lib/utils/home.ts). core.env can pass an explicit HOME_DIR
+# through to <dest>/.env (it's not one of the built-ins core.env is forbidden
+# from overriding), so that override wins; otherwise it is derived
+# deterministically from core.run_user's actual home directory (NOT the
+# setup-invoking user's — the services run as RUN_USER, and that is whose
+# os.homedir() the app process sees) the way Core decides it (lib.sh
+# home_dir_default: by where Core's data is). On layout 2 the .env names it
+# explicitly, so the app, the nightly backup and a restore agree without
+# relying on the app's default.
+CORE_ENV_HOME_DIR='' RUN_USER_HOME='' LAYOUT_HOME_DIR=''
+while IFS= read -r _core_env_line; do
+  [[ ${_core_env_line} == HOME_DIR=* ]] && CORE_ENV_HOME_DIR=${_core_env_line#HOME_DIR=}
+done <<<"${CORE_ENV_PAIRS}"
+unset _core_env_line
+if [[ -z ${CORE_ENV_HOME_DIR} ]]; then
+  if have getent; then
+    RUN_USER_HOME=$(getent passwd "${RUN_USER}" 2>/dev/null | cut -d: -f6)
+  fi
+  if [[ -z ${RUN_USER_HOME} && ${RUN_USER} == "$(id -un)" ]]; then
+    RUN_USER_HOME=${HOME}
+  fi
+fi
 if [[ ${BACKUP_ENABLE} == true ]]; then
   [[ -n ${BACKUP_S3_ENDPOINT} ]] || die "config: backup.enabled requires backup.s3_endpoint"
   [[ -n ${BACKUP_S3_REGION} ]] || die "config: backup.enabled requires backup.s3_region"
@@ -254,35 +279,8 @@ if [[ ${BACKUP_ENABLE} == true ]]; then
   # unrelated object that happens to match the <YYYY-MM-DD>.tar.gz.enc shape.
   [[ -n ${BACKUP_S3_PREFIX} ]] || die "config: backup.enabled requires a non-empty backup.s3_prefix (an empty prefix would scope retention deletes to the whole bucket)"
   BACKUP_ONCALENDAR=$(backup_oncalendar_from_schedule "${BACKUP_SCHEDULE}")
-
-  # HOME_DIR resolution — MUST match what apps/core itself resolves
-  # (process.env.HOME_DIR, else the host layout's home dir name under
-  # os.homedir(), see apps/core/src/lib/utils/home.ts; resolve_layout_globals
-  # below adds that name). core.env can pass an explicit HOME_DIR
-  # through to <dest>/.env (it's not one of the built-ins core.env is
-  # forbidden from overriding), so honor that override first; otherwise
-  # derive it deterministically from core.run_user's actual home directory
-  # (NOT the setup-invoking user's — the services run as RUN_USER, and that
-  # is whose os.homedir() the app process sees).
-  _backup_core_env_home_dir=''
-  while IFS= read -r _backup_env_line; do
-    [[ ${_backup_env_line} == HOME_DIR=* ]] && _backup_core_env_home_dir=${_backup_env_line#HOME_DIR=}
-  done <<<"${CORE_ENV_PAIRS}"
-  if [[ -n ${_backup_core_env_home_dir} ]]; then
-    BACKUP_HOME_EXPLICIT=${_backup_core_env_home_dir}
-  else
-    _backup_run_user_home=''
-    if have getent; then
-      _backup_run_user_home=$(getent passwd "${RUN_USER}" 2>/dev/null | cut -d: -f6)
-    fi
-    if [[ -z ${_backup_run_user_home} && ${RUN_USER} == "$(id -un)" ]]; then
-      _backup_run_user_home=${HOME}
-    fi
-    [[ -n ${_backup_run_user_home} ]] ||
-      die "config: backup.enabled could not resolve core.run_user '${RUN_USER}''s home directory to derive HOME_DIR — set it explicitly via core.env.HOME_DIR"
-    BACKUP_RUN_USER_HOME=${_backup_run_user_home}
-  fi
-  unset _backup_core_env_home_dir _backup_env_line _backup_run_user_home
+  [[ -n ${CORE_ENV_HOME_DIR} || -n ${RUN_USER_HOME} ]] ||
+    die "config: backup.enabled could not resolve core.run_user '${RUN_USER}''s home directory to derive HOME_DIR — set it explicitly via core.env.HOME_DIR"
 fi
 
 # Optional restore-from-backup (cloud control plane only). When
@@ -403,8 +401,12 @@ resolve_layout_globals() {
   DB_VOLUME=${HL_DB_VOLUME}
   DB_NAME=${HL_DB_NAME}
   UPDATE_SUDOERS_FILE=${HL_SUDOERS}
+  LAYOUT_HOME_DIR=''
+  # Where Core itself looks (lib.sh home_dir_default: by where its data is).
+  [[ -n ${CORE_ENV_HOME_DIR} || -z ${RUN_USER_HOME} ]] || LAYOUT_HOME_DIR=$(home_dir_default "${RUN_USER_HOME}")
+  BACKUP_HOME_DIR=''
   if [[ ${BACKUP_ENABLE} == true ]]; then
-    BACKUP_HOME_DIR=${BACKUP_HOME_EXPLICIT:-${BACKUP_RUN_USER_HOME}/${HL_HOME_NAME}}
+    BACKUP_HOME_DIR=${CORE_ENV_HOME_DIR:-${LAYOUT_HOME_DIR}}
   fi
 }
 resolve_layout_globals
@@ -647,6 +649,11 @@ FICUS_SANDBOX_RUNTIME=${SANDBOX_RUNTIME_ENV}
 FICUS_SYSTEM_LOG_PROVIDER=systemd
 FICUS_SERVE_WEB=${CORE_SERVE_WEB}
 EOF
+  if [[ ${HL_LAYOUT} == 2 && -z ${CORE_ENV_HOME_DIR} ]]; then
+    [[ -n ${LAYOUT_HOME_DIR} ]] ||
+      die "could not resolve core.run_user '${RUN_USER}''s home directory to write HOME_DIR — set it explicitly via core.env.HOME_DIR"
+    printf '# The Ficus home (the host layout'"'"'s name under the run user'"'"'s home), explicit.\nHOME_DIR=%s\n' "${LAYOUT_HOME_DIR}"
+  fi
   if [[ ${RT_SANDBOX} == vm ]]; then
     printf 'FICUS_EXE_MACHINE_IMAGE=%s\n' "${EXE_IMAGE}"
   fi

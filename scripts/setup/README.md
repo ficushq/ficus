@@ -237,7 +237,10 @@ layout 2 through the `host_layout` host migration, right before the flip
 stops the backup timer and both units, moves the install root, `/etc` dir,
 setup dir and `HOME_DIR` (leaving a compat symlink at each legacy path),
 rebases the database rows that store absolute `HOME_DIR` paths (the release's
-`dist/rebase-home.js`), renames the units (each keeps its legacy name as an
+`dist/rebase-home.js`, which refuses — and the move with it — when the
+database already holds paths under the new `HOME_DIR` too, since rewriting
+would merge the two; `FICUS_REBASE_HOME_FORCE=1` rewrites anyway), renames the
+units (each keeps its legacy name as an
 `Alias=`), the backup script (a compat link), the update sudoers rule and, in
 container mode, the database container, volume and name. Every step is
 journaled in the framework's backup set (`<set>/hl/`), intent first, and
@@ -266,21 +269,34 @@ point, once the release serving is from before the move again (roll back
 first):
 
 ```bash
-sudo grep -l "$(printf '^#requires-reverse\thost_layout')" /var/backups/ficus-host-migrate/*/MANIFEST
+# the set: the newest one taken for host_layout that committed and was not reversed
+sudo bash -c 'for s in /var/backups/ficus-host-migrate/*/; do
+  [ -f "$s/hl/DONE" ] && [ ! -e "$s/hl/REVERSED" ] && echo "$s"; done | tail -n 1'
 sudo bash scripts/setup/upgrade-host.sh --config /root/ficus-setup/ficus-setup.yaml \
   --reverse-host-layout /var/backups/ficus-host-migrate/<set>
 ```
 
 It takes only the latest set that reached its commit point and was not
-reversed since (`hl/DONE` without `hl/REVERSED`), refuses while another
-run's journal is pending, and is root-only. It moves everything back, rebases
-the stored `HOME_DIR` paths back, then restores the set's files byte for byte
-— **which reverts any change made to them since the move** (re-run the
-artifact sync afterwards). On a container database it also returns to the
-legacy volume as it was at the move, losing every write since, and needs
-`--accept-database-revert`. It is journaled: a reverse that is killed half way
-is finished by the next toolkit run, or by running it again. A set marked
-`#requires-reverse` is never byte-restored by `--restore-host-backup`.
+reversed since (`hl/DONE` without `hl/REVERSED`), and it is root-only. It
+refuses:
+
+- while another run's journal is pending;
+- while a newer set of another migration is still in effect (reversing would
+  overwrite what that migration changed);
+- when any file the set restores changed since the move committed (a synced
+  `managed.env`, a rotated key, a rewritten DSN — the move journals their
+  state in `hl/LIVE_SHAS`) — it names them, and `--accept-file-revert` goes
+  ahead: those files get their pre-move bytes back, so re-apply the changes
+  afterwards (re-run the artifact sync);
+- on a container database, without `--accept-database-revert`: it returns to
+  the legacy volume as it was at the move, losing every write since.
+
+It moves everything back and rebases the stored `HOME_DIR` paths back, then
+restores the set's files byte for byte. It runs under the toolkit's traps (a
+dropped SSH session does not end it) and is journaled before it stops the
+services: a reverse that is killed half way is finished by the next toolkit
+run, or by running it again. A set marked `#requires-reverse` is never
+byte-restored by `--restore-host-backup`.
 
 ### What you end up with (the contract)
 

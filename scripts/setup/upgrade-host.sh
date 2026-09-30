@@ -72,7 +72,8 @@ usage() {
   cat <<'EOF'
 Usage: upgrade-host.sh --config ficus-setup.yaml [--ref REF]
        upgrade-host.sh [--config ficus-setup.yaml] --restore-host-backup SET
-       upgrade-host.sh [--config ficus-setup.yaml] --reverse-host-layout SET [--accept-database-revert]
+       upgrade-host.sh [--config ficus-setup.yaml] --reverse-host-layout SET
+                       [--accept-file-revert] [--accept-database-revert]
 
 Upgrades the Ficus instance ON THIS HOST to a source ref: source sync → build
 (core AND web) → migrations → service restart + health wait.
@@ -99,9 +100,15 @@ Options:
                   the release serving is from before that migration again
                   (roll back first). It puts back the directories, links,
                   units, HOME and the stored HOME paths, then the set's files
-                  byte for byte — which reverts any change made to them since
-                  the migration (re-run the artifact sync afterwards).
-                  Root-only; refused while another run's journal is pending.
+                  byte for byte. Refused when any of those files changed
+                  since the migration (unless --accept-file-revert), when a
+                  newer migration of another kind is still in effect, and
+                  while another run's journal is pending. Root-only.
+  --accept-file-revert
+                  with --reverse-host-layout: accept that the files changed
+                  since the migration (a synced managed.env, a rotated key, a
+                  rewritten DSN) go back to their pre-migration bytes — re-apply
+                  those changes afterwards.
   --accept-database-revert
                   with --reverse-host-layout on a host with a container
                   database: accept that the database goes back to the copy
@@ -119,7 +126,7 @@ artifact names its own commit). Any missing input = git mode.
 EOF
 }
 
-CONFIG='' REF_OVERRIDE='' RESTORE_HOST_SET='' REVERSE_LAYOUT_SET='' ACCEPT_DB_REVERT=0
+CONFIG='' REF_OVERRIDE='' RESTORE_HOST_SET='' REVERSE_LAYOUT_SET='' ACCEPT_DB_REVERT=0 ACCEPT_FILE_REVERT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
@@ -142,6 +149,10 @@ while [[ $# -gt 0 ]]; do
       ACCEPT_DB_REVERT=1
       shift
       ;;
+    --accept-file-revert)
+      ACCEPT_FILE_REVERT=1
+      shift
+      ;;
     -h | --help)
       usage
       exit 0
@@ -152,8 +163,8 @@ done
 
 [[ -z ${RESTORE_HOST_SET} || -z ${REVERSE_LAYOUT_SET} ]] ||
   die "--restore-host-backup and --reverse-host-layout are separate actions — pass one"
-[[ ${ACCEPT_DB_REVERT} -eq 0 || -n ${REVERSE_LAYOUT_SET} ]] ||
-  die "--accept-database-revert goes with --reverse-host-layout"
+[[ ${ACCEPT_DB_REVERT}${ACCEPT_FILE_REVERT} == 00 || -n ${REVERSE_LAYOUT_SET} ]] ||
+  die "--accept-database-revert and --accept-file-revert go with --reverse-host-layout"
 
 # ====================================================== --restore-host-backup
 #
@@ -217,11 +228,17 @@ if [[ -n ${REVERSE_LAYOUT_SET} ]]; then
     BUN_BIN=/usr/local/bin/bun
   fi
   host_migrate_lock
+  # The toolkit's traps, `trap '' PIPE` above all: the reverse stops the
+  # services and runs for a while, and a dropped SSH session must not end it
+  # half way (a kill still leaves its journal for the next run).
+  host_migrate_install_traps
   # shellcheck disable=SC2034 # read by lib.sh's host_layout_reverse_committed
-  HL_REVERSE_ACCEPT_DB_REVERT=${ACCEPT_DB_REVERT}
+  HL_REVERSE_ACCEPT_DB_REVERT=${ACCEPT_DB_REVERT} HL_REVERSE_ACCEPT_FILE_REVERT=${ACCEPT_FILE_REVERT}
   host_layout_reverse_committed "${REVERSE_LAYOUT_SET}"
-  log_info "this host is back on its legacy host layout (${HL_DEST}, ${HL_UNIT_API}/${HL_UNIT_WORKER}); re-run the artifact sync — the set's files replaced any change made since the migration"
-  printf 'FICUS_HOST_LAYOUT=%s\n' "${HL_LAYOUT}"
+  log_info "this host is back on its legacy host layout (${HL_DEST}, ${HL_UNIT_API}/${HL_UNIT_WORKER})"
+  # `|| true`: with SIGPIPE ignored, a write to a dropped session fails — the
+  # reverse is done, and that must not turn into a non-zero exit.
+  printf 'FICUS_HOST_LAYOUT=%s\n' "${HL_LAYOUT}" || true
   exit 0
 fi
 

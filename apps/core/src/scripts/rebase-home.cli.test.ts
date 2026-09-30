@@ -115,9 +115,10 @@ describeSubprocess('dist/rebase-home.js', () => {
 
     const dry = await run(['--from', OLD, '--to', NEW, '--dry-run'], getConnectionString())
     expect(dry.exitCode, dry.stderr).toBe(0)
-    expect(dry.stdout.trim().split('\n')).toEqual(
-      keys.map((key) => line(key, key === 'inbox_attachments.storage_path' ? 1 : 0))
-    )
+    expect(dry.stdout.trim().split('\n')).toEqual([
+      ...keys.map((key) => line(key, key === 'inbox_attachments.storage_path' ? 1 : 0)),
+      ...keys.map((key) => `REBASE_HOME_TARGET ${key}=0`),
+    ])
     expect(dry.stderr).toContain('nothing was written')
     const [unchanged] = await sql`SELECT storage_path FROM inbox_attachments WHERE message_id = ${messageId}`
     expect(unchanged!.storage_path).toBe(`${OLD}/inbox-attachments/m1/a1`)
@@ -135,5 +136,24 @@ describeSubprocess('dist/rebase-home.js', () => {
     expect(second.exitCode, second.stderr).toBe(0)
     expect(second.stdout.trim().split('\n')).toEqual(keys.map((key) => line(key, 0)))
     expect(existsSync(bundle)).toBe(true)
+  })
+
+  test('exits 3, writing nothing, when the data already holds paths under --to; --force rewrites', async () => {
+    await sql`UPDATE inbox_attachments SET storage_path = ${`${OLD}/inbox-attachments/m1/a1`} WHERE message_id = ${messageId}`
+    await sql`
+      INSERT INTO inbox_attachments (message_id, filename, content_type, byte_size, sha256, storage_path)
+      VALUES (${messageId}, 'b.txt', 'text/plain', 1, ${'1'.repeat(64)}, ${`${NEW}/inbox-attachments/m1/b1`})`
+    const refused = await run(['--from', OLD, '--to', NEW], getConnectionString())
+    expect(refused.exitCode, refused.stderr).toBe(3)
+    expect(refused.stdout).toContain('REBASE_HOME_TARGET inbox_attachments.storage_path=1')
+    expect(refused.stderr).toContain('--force')
+    const rows = await sql`SELECT storage_path FROM inbox_attachments WHERE message_id = ${messageId} ORDER BY filename`
+    expect(rows.map((row) => row.storage_path)).toEqual([
+      `${OLD}/inbox-attachments/m1/a1`,
+      `${NEW}/inbox-attachments/m1/b1`,
+    ])
+    const forced = await run(['--from', OLD, '--to', NEW, '--force'], getConnectionString())
+    expect(forced.exitCode, forced.stderr).toBe(0)
+    expect(forced.stdout).toContain('REBASE_HOME inbox_attachments.storage_path=1')
   })
 })

@@ -11,11 +11,12 @@ const tables = Object.values(schema as Record<string, unknown>)
 const columnsByKey = new Map<string, PgColumn>(
   tables.flatMap((table) => table.columns.map((column) => [`${table.name}.${column.name}`, column] as const))
 )
-const TEXTUAL = new Set(['PgText', 'PgVarchar', 'PgJsonb'])
+const TEXTUAL = new Set(['PgText', 'PgVarchar', 'PgJsonb', 'PgJson', 'PgArray'])
 
 describe('HOME path column registry', () => {
-  it('classifies every path-like text/varchar/jsonb column exactly once', () => {
-    // A new column whose name ends in path/dir/cwd/worktree/file fails here until it is added to
+  it('classifies every path-like text/varchar/json/jsonb/array column exactly once', () => {
+    // A new column whose name ends in path/dir/cwd/worktree/file (or their plurals) fails here until
+    // it is added to
     // HOME_PATH_COLUMNS (rebase-home rewrites it when HOME moves) or NON_HOME_PATH_COLUMNS (reviewed
     // as never holding a path under HOME_DIR).
     const home = new Set(HOME_PATH_COLUMNS.map((entry) => `${entry.table}.${entry.column}`))
@@ -33,6 +34,11 @@ describe('HOME path column registry', () => {
     expect(home.has('inbox_attachments.storage_path')).toBe(true)
     expect(columnsByKey.get('inbox_attachments.storage_path')?.columnType).toBe('PgText')
     expect(columnsByKey.get('monitors.cwd')?.columnType).toBe('PgVarchar')
+    // Plurals are path-like too: the hand-registered work_streams.files is now guarded.
+    expect(
+      PATH_LIKE_COLUMN.test('files') && PATH_LIKE_COLUMN.test('mount_dirs') && PATH_LIKE_COLUMN.test('paths')
+    ).toBe(true)
+    expect(PATH_LIKE_COLUMN.test('profile_name')).toBe(false)
   })
 
   it('names only real columns, of a type matching their kind', () => {

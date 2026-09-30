@@ -304,6 +304,25 @@ expect_eq 'templates: a layout-1 backup service has an empty [Install] (nothing 
 )
 read -r PASS FAIL <"$SCRATCH/sub.counts"
 
+# --- home_dir_default: where Core's data is, the same rule as apps/core's resolveHomeDir ---
+hd=$(mktemp -d)
+hd_new="$hd/$HL_NEW_HOME_NAME" hd_old="$hd/$HL_LEGACY_HOME_NAME"
+expect_eq 'home_dir_default: no data anywhere (a fresh host) → the Ficus dir' "$(home_dir_default "$hd")" "$hd_new"
+mkdir -p "$hd_old/sessions"
+expect_eq 'home_dir_default: data only in the legacy dir → the legacy dir' "$(home_dir_default "$hd")" "$hd_old"
+mkdir -p "$hd_new"
+expect_eq 'home_dir_default: legacy data plus a stray, empty Ficus dir → still the legacy dir' "$(home_dir_default "$hd")" "$hd_old"
+rm -rf "$hd_old" "$hd_new"
+mkdir -p "$hd_new/sessions" "$hd_old/cli"
+expect_eq 'home_dir_default: Ficus data plus a CLI-only legacy dir → still the Ficus dir' "$(home_dir_default "$hd")" "$hd_new"
+rm -rf "$hd_old"
+ln -s "$hd_new" "$hd_old"
+expect_eq 'home_dir_default: the legacy dir a link to the Ficus one (migrated) → the Ficus dir' "$(home_dir_default "$hd")" "$hd_new"
+rm -f "$hd_old"
+mkdir -p "$hd_old/sessions"
+expect_match 'home_dir_default: both hold data → the Ficus dir, with a warning' "$(home_dir_default "$hd" 2>&1)" "both .* hold Core data.*$hd_new"
+rm -rf "$hd"
+
 # --- the DSN's CA path, and the compat link a fresh layout-2 host gets for it ---
 hl_legacy_dsn="postgresql://t:p@db.example:25060/x?sslmode=verify-full&sslrootcert=$(printf '%s/database-ca.crt' "${HL_LEGACY_ETC}" | sed 's:/:%2F:g')&connect_timeout=5"
 expect_eq 'dsn_sslrootcert: the path a DSN names, percent-decoded' "$(dsn_sslrootcert "${hl_legacy_dsn}")" "${HL_LEGACY_ETC}/database-ca.crt"
@@ -383,6 +402,8 @@ U=${FICUS_SYSTEMD_UNIT_DIR}
 norm() { case $1 in *.service | *.timer | *.target) printf '%s' "$1" ;; *) printf '%s.service' "$1" ;; esac; }
 cmd=$1
 shift
+# STUB_KILL_ON_STOP: the first `stop` SIGKILLs the shell that called it.
+if [[ ${cmd} == stop && -n ${STUB_KILL_ON_STOP:-} ]]; then kill -KILL "${PPID}"; exit 1; fi
 case ${cmd} in
   enable | disable)
     for a in "$@"; do
@@ -475,6 +496,10 @@ STUBEOF
   cat >"${STUB}/bun" <<'STUBEOF'
 #!/usr/bin/env bash
 printf 'bun %s (cwd=%s FICUS_ROOT=%s HOME_DIR=%s)\n' "$*" "${PWD}" "${FICUS_ROOT:-}" "${HOME_DIR:-}" >>"${FICUS_HOST_ROOT}/calls.log"
+# rebase-home: STUB_BUN_DRY_OUT is what a --dry-run prints; STUB_BUN_RC its exit
+# status otherwise (3: it refused, the target already present).
+if [[ " $* " == *' --dry-run '* ]]; then printf '%s\n' "${STUB_BUN_DRY_OUT:-}"; exit 0; fi
+[[ -z ${STUB_BUN_RC:-} ]] || exit "${STUB_BUN_RC}"
 [[ -z ${STUB_BUN_FAILS:-} ]]
 STUBEOF
   cat >"${STUB}/visudo" <<'STUBEOF'
@@ -559,7 +584,8 @@ STUBEOF
       mkdir -p "$home_dir/inbox-attachments"
       : >"$home_dir/inbox-attachments/a.txt"
     else
-      mkdir -p "$R/root/$HL_LEGACY_HOME_NAME/inbox-attachments"
+      # Core's data marker (sessions/) is what makes the legacy dir its home.
+      mkdir -p "$R/root/$HL_LEGACY_HOME_NAME/inbox-attachments" "$R/root/$HL_LEGACY_HOME_NAME/sessions"
       printf 'att\n' >"$R/root/$HL_LEGACY_HOME_NAME/inbox-attachments/a.txt"
     fi
     chmod 0600 "$d/.env"
@@ -832,7 +858,8 @@ YAMLEOF
     "$(snap_outside_releases)" "$pristine"
   expect_eq 'manual reverse → byte-identical to layout 1 everywhere (the release markers S12 added are gone too)' \
     "$(snapshot)" "$pristine_full"
-  expect_eq 'manual reverse: both ficus units stopped first' "$(head -n1 "$R/calls.log")" 'systemctl stop ficus-api ficus-worker'
+  expect_eq 'manual reverse: the backup timer, then both ficus units, stopped before anything moves' \
+    "$(grep '^systemctl ' "$R/calls.log" | grep -vE '^systemctl is-(active|enabled) ' | head -n 2 | tr '\n' '|')" 'systemctl stop ficus-backup.timer|systemctl stop ficus-api ficus-worker|'
   expect_eq 'manual reverse: the globals follow the host back' "$SRC_DEST:$CFG_FILE:$HL_UNIT_API" \
     "$R$HL_LEGACY_DEST:$R$HL_LEGACY_SETUP_DIR/$HL_LEGACY_SETUP_YAML:$LEG_API"
   expect_eq 'manual reverse: refused a second time (not on layout 2)' \
@@ -1068,6 +1095,7 @@ YAMLEOF
   (HL_FAIL_AT=12 host_migrate "$REL") 2>/dev/null || true
   S=$(hl_pending_set)
   host_migrate_reconcile 2>/dev/null
+  expect_eq 'a restored set is marked RESTORED (no longer in effect: it never blocks a later reverse)' "$(test -e "$S/RESTORED" && echo restored)" 'restored'
   expect_eq 'M5: after the reconcile restored the set, no reverse record is left' \
     "${_HM_REVERSE_SET:-unset}:${_HM_REVERSE_DONE:-unset}" 'unset:unset'
   expect_eq 'M5: ...so a later _HM_REVERSED=1 restore of the same set in this process is refused' \
@@ -1115,6 +1143,106 @@ YAMLEOF
   expect_eq '...changing nothing' "$([[ $(snapshot) == "${before}" ]] && echo same):$(host_layout_detect)" 'same:2'
   (HL_REVERSE_ACCEPT_DB_REVERT=1 host_layout_reverse_committed "$(hl_last_set)") 2>/dev/null || fail 'the accepted container-mode reverse died'
   expect_eq 'manual reverse (container mode) with the acceptance: layout 1 again' "$(host_layout_detect):$(pending_state)" '1:n'
+
+  # --- Ruling 82 I1: the manual reverse never silently reverts a file changed since the commit --
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  S=$(hl_last_set)
+  expect_eq 'I1: the commit journals the live state of every file the set holds' \
+    "$(wc -l <"$S/hl/LIVE_SHAS" | tr -d ' '):$(grep -Ec "^[0-9a-f]{64}	$R$HL_LEGACY_ETC/managed.env\$" "$S/hl/LIVE_SHAS")" \
+    "$(grep -vc '^#' "$S/MANIFEST"):1"
+  ln -sfn "$R/opt/ficus-core/releases/c0-legacy" "$R/opt/ficus-core/current"
+  printf 'SES=synced-after-the-move\n' >"$R/etc/ficus/managed.env" # the artifact sync, after the commit
+  before=$(snapshot)
+  : >"$R/calls.log"
+  i1_out=$( (host_layout_reverse_committed "$S") 2>&1 && echo ran) || true
+  expect_match 'I1: a drifted managed.env → refused, naming it and --accept-file-revert' "$i1_out" \
+    "changed since the migration committed.*$R$HL_LEGACY_ETC/managed.env.*--accept-file-revert"
+  expect_eq 'I1: ...changing nothing (no journal, units untouched, still layout 2)' \
+    "$([[ $(snapshot) == "$before" ]] && echo same):$(pending_state):$(grep -c 'systemctl stop' "$R/calls.log" || true):$(host_layout_detect)" 'same:n:0:2'
+  (HL_REVERSE_ACCEPT_FILE_REVERT=1 host_layout_reverse_committed "$S") 2>"$SCRATCH/hl-i1.log" || fail 'I1: the accepted reverse died'
+  expect_eq 'I1: with --accept-file-revert: reversed, the file back at its pre-move bytes' \
+    "$(host_layout_detect):$(pending_state):$(cat "$R$HL_LEGACY_ETC/managed.env")" '1:n:SES=1'
+  expect_match 'I1: ...and the reverted file is named in the log' "$(cat "$SCRATCH/hl-i1.log")" "reverting files changed since the migration \\(accepted\\): $R$HL_LEGACY_ETC/managed.env"
+  # a newer set of ANOTHER migration still in effect blocks the reverse outright
+  host_migration_hlnext_needed() { [[ -f $1/NEEDS_HLNEXT ]] && ! grep -qx 'HLNEXT=1' "${SRC_DEST}/.env"; }
+  host_migration_hlnext_apply() { printf 'HLNEXT=1\n' >>"${SRC_DEST}/.env"; }
+  HOST_MIGRATIONS=(host_layout hlnext)
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  S=$(hl_last_set)
+  : >"$REL/NEEDS_HLNEXT"
+  sleep 1 # a later set (the set dir name carries the second)
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  ln -sfn "$R/opt/ficus-core/releases/c0-legacy" "$R/opt/ficus-core/current"
+  before=$(snapshot)
+  i1_out=$( (HL_REVERSE_ACCEPT_FILE_REVERT=1 host_layout_reverse_committed "$S") 2>&1 && echo ran) || true
+  expect_match 'I1: a newer committed set of another migration → refused, naming it (even with --accept-file-revert)' "$i1_out" \
+    'a newer host migration is still in effect over .*\(hlnext\)'
+  expect_eq 'I1: ...changing nothing' "$([[ $(snapshot) == "$before" ]] && echo same):$(pending_state):$(host_layout_detect)" 'same:n:2'
+  # once that newer set was restored (no longer in effect), it no longer blocks
+  : >"$(hl_last_set)/RESTORED"
+  (HL_REVERSE_ACCEPT_FILE_REVERT=1 host_layout_reverse_committed "$S") 2>/dev/null || fail 'I1: the reverse past a restored newer set died'
+  expect_eq 'I1: a restored newer set does not block' "$(host_layout_detect)" '1'
+  HOST_MIGRATIONS=(host_layout)
+  unset -f host_migration_hlnext_needed host_migration_hlnext_apply
+
+  # --- Ruling 82 I2: the reverse is journaled BEFORE the services stop -----------------------
+  hl_reset
+  make_legacy_host
+  host_migrate "$REL" 2>/dev/null
+  host_migrate_commit
+  S=$(hl_last_set)
+  ln -sfn "$R/opt/ficus-core/releases/c0-legacy" "$R/opt/ficus-core/current"
+  : >"$R/calls.log"
+  (STUB_KILL_ON_STOP=1 host_layout_reverse_committed "$S") 2>/dev/null && fail 'I2: the SIGKILL at the first stop did not kill it'
+  expect_eq 'I2: killed at its first stop: already journaled (PENDING, REVERSING)' \
+    "$(hl_pending_set):$(test -e "$S/hl/REVERSING" && echo reversing)" "$S:reversing"
+  (host_migrate_reconcile) 2>/dev/null || fail 'I2: the reconcile after the kill died'
+  expect_eq 'I2: ...the next run finishes it: layout 1, no journal, the legacy units started' \
+    "$(host_layout_detect):$(pending_state):$(grep -c "systemctl start ${LEG_API} ${LEG_WORKER}" "$R/calls.log")" '1:n:1'
+
+  # --- T9 review M1: rebase-home refused (the target already in the data) — its inverse never runs --
+  hl_reset
+  make_legacy_host
+  before=$(snapshot)
+  (STUB_BUN_RC=3 host_migrate "$REL") 2>"$SCRATCH/hl-m1.log" && fail 'M1: a refused rebase did not fail the migration'
+  expect_match 'M1: S7b says why and how to force it' "$(cat "$SCRATCH/hl-m1.log")" 'already holds paths under .*FICUS_REBASE_HOME_FORCE=1'
+  expect_eq 'M1: the refusal is journaled' "$(test -e "$(hl_pending_set)/hl/REBASE_REFUSED" && echo refused)" 'refused'
+  : >"$R/calls.log"
+  (host_migrate_reconcile) 2>/dev/null || fail 'M1: the reconcile died'
+  expect_eq 'M1: reversed byte-identical, and S7b⁻¹ did not rebase anything back' \
+    "$([[ $(snapshot) == "$before" ]] && echo same):$(grep -c 'rebase-home.js' "$R/calls.log" || true):$(pending_state)" 'same:0:n'
+  hl_reset
+  make_legacy_host
+  (FICUS_REBASE_HOME_FORCE=1 host_migrate "$REL") 2>/dev/null || fail 'M1: the forced migration died'
+  expect_match 'M1: FICUS_REBASE_HOME_FORCE=1 passes --force' "$(grep rebase-home "$R/calls.log")" "rebase-home.js --from .* --to .* --force"
+  host_migrate_commit
+  # the manual reverse checks the way back first (a dry run) and refuses when it would merge
+  ln -sfn "$R/opt/ficus-core/releases/c0-legacy" "$R/opt/ficus-core/current"
+  before=$(snapshot)
+  m1_out=$( (STUB_BUN_DRY_OUT=$'REBASE_HOME messages.metadata=2\nREBASE_HOME_TARGET messages.metadata=1' \
+    host_layout_reverse_committed "$(hl_last_set)") 2>&1 && echo ran) || true
+  expect_match 'M1: the manual reverse refuses when rebasing back would merge (dry run)' "$m1_out" 'paths under both .*FICUS_REBASE_HOME_FORCE=1.*nothing was changed'
+  expect_eq 'M1: ...changing nothing' "$([[ $(snapshot) == "$before" ]] && echo same):$(pending_state):$(host_layout_detect)" 'same:n:2'
+
+  # --- Ruling 82: S12 and its inverse keep the release dirs' mtimes (artifact_retention ranks by them) --
+  hl_reset
+  make_legacy_host
+  touch -m -d '2026-01-01 00:00:05' "$R$HL_LEGACY_DEST/releases/b0-older"
+  touch -m -d '2026-01-01 00:00:09' "$R$HL_LEGACY_DEST/releases/c0-legacy"
+  mt_before=$(stat -c %Y "$R$HL_LEGACY_DEST/releases/b0-older" "$R$HL_LEGACY_DEST/releases/c0-legacy" | tr '\n' ' ')
+  (HL_FAIL_AT=13 host_migrate "$REL") 2>/dev/null || true
+  expect_eq 'S12 keeps the release dir mtimes' \
+    "$(stat -c %Y "$R/opt/ficus-core/releases/b0-older" "$R/opt/ficus-core/releases/c0-legacy" | tr '\n' ' ')" "$mt_before"
+  (host_migrate_reconcile) 2>/dev/null || fail 'S12 mtime: the reconcile died'
+  expect_eq 'S12⁻¹ keeps them too' \
+    "$(stat -c %Y "$R$HL_LEGACY_DEST/releases/b0-older" "$R$HL_LEGACY_DEST/releases/c0-legacy" | tr '\n' ' ')" "$mt_before"
 fi
 
 printf '%s passed, %s failed\n' "$PASS" "$FAIL"

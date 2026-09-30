@@ -3,7 +3,8 @@
  * the host layout migration moves HOME (`/root/<legacy>` → `/root/.ficus`), every stored path under
  * the old HOME is rewritten to the new one in the same run, and back when the migration is reversed.
  *
- * Every text/varchar/jsonb column whose name looks like a path (see PATH_LIKE_COLUMN) must be listed
+ * Every text/varchar/json/jsonb column (or array of text) whose name looks like a path, singular or
+ * plural (see PATH_LIKE_COLUMN), must be listed
  * in exactly one of HOME_PATH_COLUMNS or NON_HOME_PATH_COLUMNS: home-path-columns.test.ts walks the
  * schema and fails on a new path column until someone classifies it. Columns with other names are
  * listed here when a review (or the P5-T0 audit of the live fleet) found HOME paths in them.
@@ -26,7 +27,7 @@ export interface HomePathColumn {
 }
 
 /** The column names the classification guard covers. */
-export const PATH_LIKE_COLUMN = /(path|dir|cwd|worktree|file)$/i
+export const PATH_LIKE_COLUMN = /(path|dir|cwd|worktree|file)s?$/i
 
 /** The absolute paths a squad worktree's ownership record keeps (`WorktreeOwnership`). */
 const WORKTREE_OWNERSHIP_PATHS = ['workspace', 'repository', 'commonDirectory', 'gitDirectory', 'worktree'] as const
@@ -78,6 +79,8 @@ export const HOME_PATH_COLUMNS: readonly HomePathColumn[] = [
 export const NON_HOME_PATH_COLUMNS: readonly string[] = [
   // The memory path an access was audited for: the virtual `/memory/…` namespace, never a host path.
   'memory_access_audit.resource_path',
+  // A skill's support files: names relative to the skill's own directory, never absolute.
+  'skills.support_files',
 ]
 
 /** The name rebase-home prints and returns a column's count under. */

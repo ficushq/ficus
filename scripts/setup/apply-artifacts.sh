@@ -9,7 +9,8 @@
 #
 # With --config (the file the host was set up with; the sync executor passes
 # the one the upgrade job already uses), it first reconciles a host migration
-# an interrupted upgrade left journaled, and refuses — installing NOTHING — a
+# an interrupted upgrade left journaled (without it, a journaled migration is
+# refused), and refuses — installing NOTHING — a
 # host whose settings predate the Ficus naming (lib.sh's
 # require_host_env_ready). The reconcile may finish (or reverse) the host
 # layout migration, so the layout is resolved again right after it
@@ -83,6 +84,14 @@ if [[ -n ${CONFIG} ]]; then
   [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
     die "not applying artifacts: a host migration is still journaled in $(host_migrate_backup_root)/PENDING — run the tenant upgrade"
   require_host_env_ready
+else
+  # Without the config there is nothing to reconcile with: refuse a journaled
+  # migration (the sync executor always passes --config), and still resolve
+  # the layout as the host is now — never as lib.sh guessed when sourced.
+  host_migrate_lock
+  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
+    die "not applying artifacts: a host migration is journaled in $(host_migrate_backup_root)/PENDING — pass --config <the host's setup config> so it is reconciled first, or run the tenant upgrade"
+  host_layout_adopt
 fi
 
 # Detect BEFORE installing (the install overwrites the file being compared).

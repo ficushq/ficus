@@ -9,6 +9,8 @@ import {
 } from './local-deployment-service'
 import { configureLocalDeploymentProxyDependencies, proxyLocalDeploymentRequest } from './local-deployment-proxy'
 
+const LEGACY_TOKEN_QUERY_PARAM = '_tau_token' // ficus-p5-bridge
+
 describe('localDeployment proxy', () => {
   let testPrefix: string
   const fetchCalls: Array<{ url: string; init: RequestInit }> = []
@@ -143,11 +145,14 @@ describe('localDeployment proxy', () => {
 
     const response = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(localDeploymentUrl(localDeployment, 'api/items', 'filter=all'), {
-        method: 'POST',
-        body: 'hello',
-        headers: { 'content-type': 'text/plain' },
-      }),
+      new Request(
+        localDeploymentUrl(localDeployment, 'api/items', `filter=all&${LEGACY_TOKEN_QUERY_PARAM}=forwarded-by-bridge`),
+        {
+          method: 'POST',
+          body: 'hello',
+          headers: { 'content-type': 'text/plain' },
+        }
+      ),
       'api/items'
     )
 
@@ -155,6 +160,8 @@ describe('localDeployment proxy', () => {
     expect(fetchCalls).toHaveLength(1)
     expect(fetchCalls[0].url).toBe('http://127.0.0.1:5173/api/items?filter=all')
     expect(fetchCalls[0].url).not.toContain('_ficus_token')
+    // The Platform bridge may forward the credential under its old name too: never to the app.
+    expect(fetchCalls[0].url).not.toContain(LEGACY_TOKEN_QUERY_PARAM)
     expect(fetchCalls[0].init.method).toBe('POST')
     expect(await new Response(fetchCalls[0].init.body as BodyInit).text()).toBe('hello')
   })
