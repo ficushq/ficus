@@ -8,7 +8,11 @@ import {
   stopLocalDeploymentRecord,
   updateLocalDeploymentRecord,
 } from './local-deployment-service'
-import { configureLocalDeploymentProxyDependencies, proxyLocalDeploymentRequest } from './local-deployment-proxy'
+import {
+  configureLocalDeploymentProxyDependencies,
+  keepOutOfSharedCaches,
+  proxyLocalDeploymentRequest,
+} from './local-deployment-proxy'
 
 const LEGACY_TOKEN_QUERY_PARAM = '_tau_token' // ficus-p5-bridge
 
@@ -207,6 +211,36 @@ describe('localDeployment proxy', () => {
     expect(response.status).toBe(201)
     expect(response.headers.get('content-type')).toBe('text/plain')
     expect(await response.text()).toBe('proxied')
+  })
+
+  it("keeps an app's immutable assets out of the CDN, still cacheable in the browser", async () => {
+    const squad = await createTestSquad()
+    const localDeployment = await createLocalDeployment(squad, { name: 'web', mode: 'attached' })
+    await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+    configureLocalDeploymentProxyDependencies({
+      resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: 5173 }),
+      fetch: mock(
+        async () =>
+          new Response('chunk', {
+            status: 200,
+            headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=31536000, immutable' },
+          })
+      ) as unknown as typeof fetch,
+    })
+
+    // Both ways in: the shared URL (which mints the cookie) and the cookie alone (every asset after it).
+    for (const request of [
+      new Request(localDeploymentUrl(localDeployment, '_next/static/chunks/app.js')),
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/_next/static/chunks/app.js`, {
+        headers: { cookie: `ficus_app_${localDeployment.id}=${browserToken(localDeployment)}` },
+      }),
+    ]) {
+      const res = await proxyLocalDeploymentRequest(localDeployment.id, request, '_next/static/chunks/app.js')
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
+      expect(res.headers.get('cdn-cache-control')).toBe('no-store')
+      expect(await res.text()).toBe('chunk')
+    }
   })
 
   it("sets a path-scoped cookie so the app's own asset requests authenticate", async () => {
@@ -526,5 +560,34 @@ describe('localDeployment proxy', () => {
       expect(response.headers.get('content-type')).toBe('text/css')
       expect(new TextDecoder().decode(bytes)).toBe(asset)
     })
+  })
+})
+
+describe('keepOutOfSharedCaches', () => {
+  const cacheControl = (value: string | null) => {
+    const headers = new Headers(value === null ? {} : { 'cache-control': value })
+    keepOutOfSharedCaches(headers)
+    return [headers.get('cache-control'), headers.get('cdn-cache-control')]
+  }
+
+  it('turns public into private and drops what only shared caches read', () => {
+    expect(cacheControl('public, max-age=31536000, immutable')).toEqual([
+      'private, max-age=31536000, immutable',
+      'no-store',
+    ])
+    expect(cacheControl('s-maxage=31536000, stale-while-revalidate')).toEqual([
+      'private, stale-while-revalidate',
+      'no-store',
+    ])
+    expect(cacheControl('Public, S-MaxAge=60, proxy-revalidate, max-age=0')).toEqual(['private, max-age=0', 'no-store'])
+  })
+
+  it('marks a response with no caching headers private (a CDN would otherwise cache .js and .css by default)', () => {
+    expect(cacheControl(null)).toEqual(['private', 'no-store'])
+  })
+
+  it('leaves no-store alone, already private', () => {
+    expect(cacheControl('no-store')).toEqual(['no-store', 'no-store'])
+    expect(cacheControl('private, no-cache')).toEqual(['private, no-cache', 'no-store'])
   })
 })

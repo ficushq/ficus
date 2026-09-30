@@ -102,21 +102,50 @@ export async function proxyLocalDeploymentRequest(
     })
   )
 
-  // Only the URL-token request needs to mint the cookie; a request already
-  // carrying it re-sends nothing, so the response passes through untouched.
-  if (!presented.fromQuery) return upstream
+  const responseHeaders = new Headers(upstream.headers)
+  keepOutOfSharedCaches(responseHeaders)
+  // Only the URL-token request needs to mint the cookie; a request already carrying it re-sends nothing.
+  if (presented.fromQuery) {
+    // append: the app may set cookies of its own, and they must survive.
+    responseHeaders.append(
+      'set-cookie',
+      localDeploymentCookieHeader({
+        localDeploymentId: localDeployment.id,
+        token: presented.token!,
+        requestUrl: request.url,
+      })
+    )
+  }
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: responseHeaders,
+  })
+}
 
-  const withCookie = new Headers(upstream.headers)
-  // append: the app may set cookies of its own, and they must survive.
-  withCookie.append(
-    'set-cookie',
-    localDeploymentCookieHeader({
-      localDeploymentId: localDeployment.id,
-      token: presented.token!,
-      requestUrl: request.url,
-    })
+/** Cache-Control directives that only speak to shared caches (a CDN or proxy), dropped with `public`. */
+const SHARED_CACHE_DIRECTIVES = new Set(['public', 's-maxage', 'proxy-revalidate'])
+
+/**
+ * A deployed app is private: every response needs the deployment's token, so a
+ * shared cache must never keep one. An app marks its hashed assets `public,
+ * max-age=31536000, immutable` (Next.js, Vite), and the CDN in front of the
+ * instance (Cloudflare) then served them to anyone with the URL, token or not,
+ * and kept serving whatever it had stored for a year, broken bodies included.
+ * The browser's own caching is kept (`private` plus the app's max-age), and
+ * CDN-Cache-Control tells the CDN outright not to store it.
+ */
+export function keepOutOfSharedCaches(headers: Headers): void {
+  const directives = (headers.get('cache-control') ?? '')
+    .split(',')
+    .map((directive) => directive.trim())
+    .filter((directive) => directive && !SHARED_CACHE_DIRECTIVES.has(directive.split('=')[0]!.trim().toLowerCase()))
+  const has = (name: string) => directives.some((directive) => directive.toLowerCase() === name)
+  headers.set(
+    'cache-control',
+    has('no-store') || has('private') ? directives.join(', ') : ['private', ...directives].join(', ')
   )
-  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: withCookie })
+  headers.set('cdn-cache-control', 'no-store')
 }
 
 function stripUnsafeProxyHeaders(headers: Headers): void {
