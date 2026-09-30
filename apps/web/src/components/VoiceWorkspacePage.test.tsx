@@ -187,7 +187,7 @@ describe('VoiceWorkspacePage artifacts', () => {
 
     expect(html).toContain('Automatic')
     expect(html).toContain('Hold to speak')
-    expect(html).toContain('aria-pressed="true"')
+    expect(html).toContain('aria-checked="true"')
     expect(lastVoiceOptions).toEqual({ autoConnect: true, autoReconnect: true, inputMode: 'automatic' })
   })
 

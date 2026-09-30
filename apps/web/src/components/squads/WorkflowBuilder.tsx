@@ -15,6 +15,7 @@ import {
 import { usePermissions } from '../../hooks/usePermissions'
 import { PageEditorAssistant } from '../PageEditorAssistant'
 import { WorkflowGraph } from '../WorkflowGraph'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import {
   CloseIcon,
   AgentIcon,
@@ -37,6 +38,13 @@ import {
   workflowHistoryKey,
   isWorkflowTextTarget,
 } from '../../lib/workflowEditing'
+
+type StepKind = WorkflowDefinition['steps'][number]['kind']
+
+const stepKindOptions: SegmentedControlOption<StepKind>[] = [
+  { value: 'agent', label: 'Agent work' },
+  { value: 'human-approval', label: 'Human approval' },
+]
 
 const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
 const button =
@@ -247,6 +255,41 @@ export function WorkflowBuilder({
     setConnectionOutcome(undefined)
     setTab('step')
     canvas.current?.focus()
+  }
+  const changeStepKind = (kind: StepKind) => {
+    if (!selectedStep || selectedStep.kind === kind) return
+    if (selectedStep.kind === 'agent') previousParticipants.current[selectedStep.id] = selectedStep.participant
+    edit((draft) => {
+      const { id, name, instructions, output, outcomes } = selectedStep
+      if (kind === 'human-approval')
+        draft.steps[selectedIndex] = {
+          id,
+          name,
+          instructions,
+          output,
+          outcomes,
+          kind,
+          approver: 'assigned-reviewers',
+        }
+      else {
+        const previous = previousParticipants.current[id]
+        const participant =
+          previous && draft.participants[previous] ? previous : (Object.keys(draft.participants)[0] ?? 'worker')
+        draft.participants[participant] ??= {
+          agentTypeId: 'general',
+          session: 'reuse-within-stream',
+        }
+        draft.steps[selectedIndex] = {
+          id,
+          name,
+          instructions,
+          output,
+          outcomes,
+          kind,
+          participant,
+        }
+      }
+    })
   }
   return (
     <div className="flex min-w-0 shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1">
@@ -528,64 +571,12 @@ export function WorkflowBuilder({
                   <div className="workflow-inspector-form min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
                     {selectedStep ? (
                       <>
-                        <div
-                          role="tablist"
-                          aria-label="Step kind"
-                          className="flex rounded-md border border-th-border p-1"
-                        >
-                          {(['agent', 'human-approval'] as const).map((kind) => (
-                            <button
-                              key={kind}
-                              type="button"
-                              role="tab"
-                              aria-selected={selectedStep.kind === kind}
-                              className={clsx(
-                                'ficus-button flex-1 rounded px-2 py-1.5 text-sm',
-                                selectedStep.kind === kind && 'bg-surface-hover text-accent-light'
-                              )}
-                              onClick={() => {
-                                if (selectedStep.kind === kind) return
-                                if (selectedStep.kind === 'agent')
-                                  previousParticipants.current[selectedStep.id] = selectedStep.participant
-                                edit((draft) => {
-                                  const { id, name, instructions, output, outcomes } = selectedStep
-                                  if (kind === 'human-approval')
-                                    draft.steps[selectedIndex] = {
-                                      id,
-                                      name,
-                                      instructions,
-                                      output,
-                                      outcomes,
-                                      kind,
-                                      approver: 'assigned-reviewers',
-                                    }
-                                  else {
-                                    const previous = previousParticipants.current[id]
-                                    const participant =
-                                      previous && draft.participants[previous]
-                                        ? previous
-                                        : (Object.keys(draft.participants)[0] ?? 'worker')
-                                    draft.participants[participant] ??= {
-                                      agentTypeId: 'general',
-                                      session: 'reuse-within-stream',
-                                    }
-                                    draft.steps[selectedIndex] = {
-                                      id,
-                                      name,
-                                      instructions,
-                                      output,
-                                      outcomes,
-                                      kind,
-                                      participant,
-                                    }
-                                  }
-                                })
-                              }}
-                            >
-                              {kind === 'agent' ? 'Agent work' : 'Human approval'}
-                            </button>
-                          ))}
-                        </div>
+                        <SegmentedControl
+                          ariaLabel="Step kind"
+                          options={stepKindOptions}
+                          value={selectedStep.kind}
+                          onChange={changeStepKind}
+                        />
                         <label className="block text-sm">
                           Step name
                           <input

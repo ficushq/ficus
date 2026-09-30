@@ -471,7 +471,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                     Chats
                   </BackLink>
                 </div>
-                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-th-border shrink-0">
+                <div className="flex items-center justify-between gap-4 px-3 py-2 border-b border-th-border shrink-0">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-sm font-medium text-primary truncate">{chatTitle}</span>
                     {chatSubtitle && <span className="text-xs text-secondary shrink-0">({chatSubtitle})</span>}

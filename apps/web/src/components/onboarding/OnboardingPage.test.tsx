@@ -665,9 +665,16 @@ describe('OnboardingPage — appearance control', () => {
   }
 
   const option = (label: string) =>
-    [...container.querySelectorAll<HTMLInputElement>('[role="radiogroup"][aria-label="Appearance"] input')].find(
-      (input) => input.parentElement?.textContent === label
-    )!
+    [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[role="radiogroup"][aria-label="Appearance"] button[role="radio"]'
+      ),
+    ].find((button) => button.textContent === label)!
+  // The one checked option's label (a radio group checks exactly one).
+  const checked = () =>
+    [...container.querySelectorAll('[role="radiogroup"][aria-label="Appearance"] [aria-checked="true"]')].map(
+      (button) => button.textContent
+    )
 
   test('switching to Dark applies and remembers the theme; System follows the OS', async () => {
     Object.defineProperty(window, 'matchMedia', {
@@ -676,11 +683,11 @@ describe('OnboardingPage — appearance control', () => {
     })
     await render()
     // A browser with no stored choice keeps the light default.
-    expect(option('Light').checked).toBe(true)
+    expect(checked()).toEqual(['Light'])
     expect(document.documentElement.classList.contains('dark')).toBe(false)
 
     await dom.act(async () => fireEvent.click(option('Dark')))
-    expect(option('Dark').checked).toBe(true)
+    expect(checked()).toEqual(['Dark'])
     expect(document.documentElement.classList.contains('dark')).toBe(true)
     expect(localStorage.getItem('ficus-appearance')).toBe('dark')
 
@@ -704,7 +711,7 @@ describe('OnboardingPage — appearance control', () => {
     }
     await render()
 
-    expect(option('System').checked).toBe(true)
+    expect(checked()).toEqual(['System'])
     expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 })

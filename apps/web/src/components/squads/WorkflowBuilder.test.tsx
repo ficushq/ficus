@@ -59,7 +59,7 @@ test('graph edits share undo/redo and selecting a node opens only its inspector'
     await dom.act(async () => panel('Flow settings').click())
     expect(panel('Flow settings').getAttribute('aria-pressed')).toBe('true')
     await click('completed')
-    expect(document.querySelector('[role=tablist]')).toBeNull()
+    expect(document.querySelector('[aria-label="Step kind"]')).toBeNull()
     expect(document.body.textContent).toContain('Handoff details')
     expect(panel('Flow settings').getAttribute('aria-pressed')).toBe('false')
     expect(panel('Inspector').getAttribute('aria-pressed')).toBe('true')
@@ -580,7 +580,7 @@ test('arrows select and delete individual connections, preserve positions, and u
     expect(document.querySelector('[aria-label="Flow inspector"]')).toBeNull()
     expect(document.querySelector('[data-flow-edge][data-selected="true"]')).toBeNull()
     await selectArrow('build:completed · branch 1')
-    expect(document.querySelector('[role="tablist"]')).toBeNull()
+    expect(document.querySelector('[aria-label="Step kind"]')).toBeNull()
     expect(document.body.textContent).toContain('Handoff details')
     expect(document.querySelector('[aria-label="Step instructions"]')).toBeNull()
     for (const [previous, next] of [

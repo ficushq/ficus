@@ -42,9 +42,11 @@ test('opening a search result navigates and closes the assistant in one URL upda
         </QueryClientProvider>
       )
     )
-    const voiceTab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-      (tab) => tab.textContent === 'Voice'
-    )!
+    const voiceTab = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[role="radiogroup"][aria-label="Assistant modes"] [role="radio"]'
+      ),
+    ].find((tab) => tab.textContent === 'Voice')!
     expect(voiceTab.disabled).toBe(true)
     expect(voiceTab.title).toContain('permission')
     await dom.act(async () => {
@@ -151,11 +153,11 @@ test('assistant history, starter messages, and live voice use the shared panel',
     await click('Connect fixture')
     expect(container.querySelector('[data-testid="voice-fixture"]')?.getAttribute('data-compact')).toBe('true')
     expect(panel.className).toContain('w-64')
-    expect(container.querySelector('[role="tablist"]')).toBeNull()
+    expect(container.querySelector('[role="radiogroup"][aria-label="Assistant modes"]')).toBeNull()
     await dom.act(async () => container.querySelector<HTMLButtonElement>('[title="Expand assistant"]')!.click())
     expect(container.querySelector('[role="dialog"]')).toBe(panel)
     expect(container.querySelector('[data-testid="voice-fixture"]')?.getAttribute('data-compact')).toBe('false')
-    expect(container.querySelector('[role="tablist"]')).not.toBeNull()
+    expect(container.querySelector('[role="radiogroup"][aria-label="Assistant modes"]')).not.toBeNull()
     expect(container.querySelector('[title="Collapse assistant"]')).not.toBeNull()
     expect(container.querySelector('[title="Close (Esc)"]')).toBeNull()
   } finally {

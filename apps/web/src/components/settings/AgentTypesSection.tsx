@@ -23,6 +23,7 @@ import {
   type ModelTierConfig,
   deleteModelTier,
 } from '../../api/config'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { SharedPromptPicker } from './SharedPromptPicker'
 import { SharedPromptsTab } from './SharedPromptsTab'
 import { TemplateDiffDialog } from './TemplateDiffDialog'
@@ -1356,8 +1357,16 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
   )
 }
 
+type AgentTypesView = 'types' | 'tiers' | 'includes'
+
+const AGENT_TYPES_VIEW_OPTIONS: readonly SegmentedControlOption<AgentTypesView>[] = [
+  { value: 'types', label: 'Types' },
+  { value: 'tiers', label: 'Model tiers' },
+  { value: 'includes', label: 'Shared prompts' },
+]
+
 export function AgentTypesSection() {
-  const [tab, setTab] = useState<'types' | 'tiers' | 'includes'>('types')
+  const [tab, setTab] = useState<AgentTypesView>('types')
   const [tierFilter, setTierFilter] = useState<string | undefined>()
   return (
     <div className="space-y-5">
@@ -1366,44 +1375,17 @@ export function AgentTypesSection() {
         <p className="mt-1 text-sm text-muted">
           Define agent roles, choose the models they use, and edit the shared prompt blocks they include.
         </p>
-        <div className="mt-3 flex gap-2" role="tablist">
-          <button
-            role="tab"
-            aria-selected={tab === 'types'}
-            onClick={() => {
-              setTierFilter(undefined)
-              setTab('types')
-            }}
-            className={clsx(
-              'ficus-nav-item rounded-full px-4 py-2 text-sm',
-              tab === 'types' ? 'bg-accent/10 text-accent-light' : 'text-muted hover:bg-surface-secondary'
-            )}
-          >
-            Types
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === 'tiers'}
-            onClick={() => setTab('tiers')}
-            className={clsx(
-              'ficus-nav-item rounded-full px-4 py-2 text-sm',
-              tab === 'tiers' ? 'bg-accent/10 text-accent-light' : 'text-muted hover:bg-surface-secondary'
-            )}
-          >
-            Model tiers
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === 'includes'}
-            onClick={() => setTab('includes')}
-            className={clsx(
-              'ficus-nav-item rounded-full px-4 py-2 text-sm',
-              tab === 'includes' ? 'bg-accent/10 text-accent-light' : 'text-muted hover:bg-surface-secondary'
-            )}
-          >
-            Shared prompts
-          </button>
-        </div>
+        <SegmentedControl
+          size="compact"
+          ariaLabel="Agent types view"
+          options={AGENT_TYPES_VIEW_OPTIONS}
+          value={tab}
+          onChange={(next) => {
+            if (next === 'types') setTierFilter(undefined)
+            setTab(next)
+          }}
+          className="mt-3"
+        />
       </div>
       {tab === 'types' && <AgentTypesTab tierFilter={tierFilter} onClearTierFilter={() => setTierFilter(undefined)} />}
       {tab === 'tiers' && (

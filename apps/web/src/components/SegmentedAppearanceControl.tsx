@@ -11,13 +11,9 @@ const APPEARANCE_OPTIONS: readonly SegmentedControlOption<AppearanceSetting>[] =
 /**
  * Light/Dark/System tab-picker, shared by ThemeQuickPicker's flyout and the
  * Settings Theme section so both explain and control appearance identically.
- * Deliberately NOT reused by the onboarding `ThemePreferenceControl`: that
- * control is a differently-styled bordered pill using native
- * `<input type="radio">` elements (its own regression test asserts on
- * `.checked`), has no icons, a different option order, and never needs the
- * disabled/hint state a unified theme requires here — unifying it would only
- * be a cosmetic change bought at the cost of rewriting a passing,
- * behavior-level test for no functional gain.
+ * The onboarding `ThemePreferenceControl` is the same `SegmentedControl`
+ * (compact) but keeps its own System-first order, no icons, and no
+ * disabled/hint state, so it doesn't reuse this wrapper.
  */
 export function SegmentedAppearanceControl({
   value,

@@ -1,10 +1,10 @@
 import { useGraphModulesReady } from './useGraphModulesReady'
 import { squadGraphColor, relationshipGraphColor, graphColor } from '../../theme/graph'
 import { useThemeColors } from '../../theme/useThemeColors'
-import clsx from 'clsx'
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CanvasSkeleton } from '../loading/Skeleton'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
 import type { Squad, SquadRelationship } from '@ficus/shared'
 
@@ -23,6 +23,11 @@ const spriteTextReady = Promise.all([
     ThreeGroup = mod.Group
   }),
 ])
+
+const GRAPH_VIEW_OPTIONS: SegmentedControlOption<'2d' | '3d'>[] = [
+  { value: '2d', label: '2D' },
+  { value: '3d', label: '3D' },
+]
 
 interface Props {
   squads: Squad[]
@@ -191,26 +196,14 @@ export function OrgGraph({ squads, relationships }: Props) {
   return (
     <div className="relative">
       {/* 2D/3D Toggle */}
-      <div className="absolute top-2 right-2 z-10 flex gap-1 bg-surface border border-th-border rounded-lg p-1">
-        <button
-          onClick={() => setIs3D(false)}
-          className={clsx(
-            'ficus-button',
-            `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
-          )}
-        >
-          2D
-        </button>
-        <button
-          onClick={() => setIs3D(true)}
-          className={clsx(
-            'ficus-button',
-            `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
-          )}
-        >
-          3D
-        </button>
-      </div>
+      <SegmentedControl
+        ariaLabel="Graph view"
+        size="compact"
+        className="absolute top-2 right-2 z-10"
+        options={GRAPH_VIEW_OPTIONS}
+        value={is3D ? '3d' : '2d'}
+        onChange={(view) => setIs3D(view === '3d')}
+      />
 
       {/* Legend */}
       <div className="absolute bottom-2 left-2 z-10 flex gap-4 bg-surface/90 border border-th-border rounded-lg p-2 text-xs">

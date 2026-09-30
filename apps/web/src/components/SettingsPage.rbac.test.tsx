@@ -399,7 +399,9 @@ describe('SettingsPage global integration RBAC', () => {
           container.querySelector(`#integration-card-${provider} button[aria-expanded]`)?.getAttribute('aria-expanded')
         ).toBe('true')
       })
-      expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('Administration')
+      expect(container.querySelector('[aria-label="Settings areas"] [aria-checked="true"]')?.textContent).toBe(
+        'Administration'
+      )
       const other = provider === 'github' ? 'notion' : 'github'
       expect(
         container.querySelector(`#integration-card-${other} button[aria-expanded]`)?.getAttribute('aria-expanded')

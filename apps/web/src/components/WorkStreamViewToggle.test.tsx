@@ -20,7 +20,7 @@ const HOME_MODES = ['list', 'graph'] as const
 const WORK_MODES = ['list', 'kanban', 'graph'] as const
 
 function graphButtons() {
-  return [...container.querySelectorAll<HTMLButtonElement>('button')].filter((button) => button.textContent === 'graph')
+  return [...container.querySelectorAll<HTMLButtonElement>('button')].filter((button) => button.textContent === 'Graph')
 }
 
 describe('WorkStreamViewToggle', () => {
@@ -36,7 +36,7 @@ describe('WorkStreamViewToggle', () => {
     await domHarness!.act(async () => graphButtons()[0].click())
 
     expect(window.localStorage.getItem(workStreamViewStorageKey('one', 'home'))).toBe('graph')
-    expect(graphButtons().map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'true'])
+    expect(graphButtons().map((button) => button.getAttribute('aria-checked'))).toEqual(['true', 'true'])
   })
 
   test('isolates preferences by squad', async () => {
@@ -50,7 +50,7 @@ describe('WorkStreamViewToggle', () => {
       )
     )
 
-    expect(graphButtons().map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+    expect(graphButtons().map((button) => button.getAttribute('aria-checked'))).toEqual(['true', 'false'])
   })
 
   test('honors the specified persisted work-tab key', async () => {
@@ -60,9 +60,9 @@ describe('WorkStreamViewToggle', () => {
     )
 
     const kanban = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
-      (button) => button.textContent === 'kanban'
+      (button) => button.textContent === 'Kanban'
     )
-    expect(kanban?.getAttribute('aria-pressed')).toBe('true')
+    expect(kanban?.getAttribute('aria-checked')).toBe('true')
   })
 
   test('reads the previously shipped surface-qualified work key as a migration fallback', async () => {
@@ -71,7 +71,7 @@ describe('WorkStreamViewToggle', () => {
       root.render(<WorkStreamViewToggle squadId="one" surface="work" modes={WORK_MODES} />)
     )
 
-    expect(graphButtons()[0].getAttribute('aria-pressed')).toBe('true')
+    expect(graphButtons()[0].getAttribute('aria-checked')).toBe('true')
   })
 
   test('does not leak a work-tab Kanban preference into home', async () => {
@@ -81,7 +81,7 @@ describe('WorkStreamViewToggle', () => {
     )
 
     expect(container.textContent).not.toContain('kanban')
-    expect(container.querySelector<HTMLButtonElement>('button')?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector<HTMLButtonElement>('button')?.getAttribute('aria-checked')).toBe('true')
   })
 
   test('falls back to list for invalid persisted values', async () => {
@@ -90,8 +90,8 @@ describe('WorkStreamViewToggle', () => {
       root.render(<WorkStreamViewToggle squadId="one" surface="home" modes={HOME_MODES} />)
     )
 
-    expect(container.querySelector<HTMLButtonElement>('button')?.getAttribute('aria-pressed')).toBe('true')
-    expect(graphButtons()[0].getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelector<HTMLButtonElement>('button')?.getAttribute('aria-checked')).toBe('true')
+    expect(graphButtons()[0].getAttribute('aria-checked')).toBe('false')
   })
 
   test('falls back to list when storage is unavailable', async () => {
@@ -105,7 +105,7 @@ describe('WorkStreamViewToggle', () => {
       root.render(<WorkStreamViewToggle squadId="one" surface="home" modes={HOME_MODES} />)
     )
 
-    expect(container.querySelector<HTMLButtonElement>('button')?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector<HTMLButtonElement>('button')?.getAttribute('aria-checked')).toBe('true')
   })
 
   test('server rendering safely defaults to list', () => {
@@ -113,8 +113,7 @@ describe('WorkStreamViewToggle', () => {
     delete (globalThis as Record<string, unknown>).window
     try {
       const html = renderToStaticMarkup(<WorkStreamViewToggle squadId="one" surface="work" modes={WORK_MODES} />)
-      expect(html).toContain('aria-pressed="true"')
-      expect(html).toContain('>list</button>')
+      expect(html).toMatch(/aria-checked="true"[^>]*>List<\/button>/)
     } finally {
       globalThis.window = savedWindow
     }
