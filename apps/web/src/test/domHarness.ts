@@ -38,6 +38,7 @@ export const DOM_GLOBAL_NAMES = [
   'clearTimeout',
   'setInterval',
   'clearInterval',
+  'getComputedStyle',
   'requestAnimationFrame',
   'cancelAnimationFrame',
 ] as const
@@ -198,6 +199,7 @@ export function installDomHarness({
     clearTimeout: window.clearTimeout.bind(window),
     setInterval: window.setInterval.bind(window),
     clearInterval: window.clearInterval.bind(window),
+    getComputedStyle: window.getComputedStyle.bind(window),
     requestAnimationFrame: window.requestAnimationFrame.bind(window),
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   }

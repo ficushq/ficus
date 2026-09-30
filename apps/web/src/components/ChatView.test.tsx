@@ -1179,7 +1179,7 @@ describe('ChatView sandbox recovery composer behavior', () => {
     )
 
     expect(window.document.querySelector('button[type="submit"][aria-label="Interrupt"]')).not.toBeNull()
-    expect(window.document.querySelector('select[aria-label="Message delivery"]')).not.toBeNull()
+    expect(window.document.querySelector('button[aria-label="Message delivery"]')).not.toBeNull()
   })
 })
 
@@ -1283,16 +1283,19 @@ describe('ChatView mobile options overlay', () => {
         onDeliveryModeChange={onDeliveryModeChange}
       />
     )
-    const select = window.document.querySelector('select[aria-label="Message delivery"]') as HTMLSelectElement
-    expect(select.value).toBe('steer')
-    await dom.act(async () => fireEvent.change(select, { target: { value: 'follow-up' } }))
+    const trigger = window.document.querySelector<HTMLButtonElement>('button[aria-label="Message delivery"]')!
+    await dom.act(async () => trigger.click())
+    const option = [...window.document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes('Follow up')
+    )!
+    await dom.act(async () => option.click())
     expect(onDeliveryModeChange).toHaveBeenCalledWith('follow-up')
     expect(onSend).not.toHaveBeenCalled()
   })
 
   test('delivery is one split button: the send half names the mode, the chevron explains each choice', async () => {
     const onDeliveryModeChange = mock(() => {})
-    const { window } = await renderChatView(
+    const { dom, window } = await renderChatView(
       <ChatView
         items={[]}
         onSend={() => {}}
@@ -1303,15 +1306,16 @@ describe('ChatView mobile options overlay', () => {
     )
     const group = window.document.querySelector('.chat-composer-delivery') as HTMLElement
     const submit = group.querySelector('button[type="submit"]') as HTMLButtonElement
-    const select = group.querySelector('select[aria-label="Message delivery"]') as HTMLSelectElement
+    const trigger = group.querySelector<HTMLButtonElement>('button[aria-label="Message delivery"]')!
     // Both halves live in one container that owns the shape and colour.
     expect(group.className).toContain('rounded-md')
     expect(group.className).toContain('bg-accent')
     expect(submit.textContent).toBe('Interrupt')
-    expect([...select.options].map((option) => option.textContent)).toEqual([
-      'Interrupt: send now',
-      'Follow up: send after this turn',
-    ])
+    await dom.act(async () => trigger.click())
+    expect(
+      [...window.document.querySelectorAll('[role="option"]')].map((option) => option.getAttribute('aria-label'))
+    ).toEqual(['Interrupt', 'Follow up'])
+    expect(window.document.querySelector('[role="listbox"]')?.textContent).toContain('next delivery point')
     // No separate icon-only toggle remains.
     expect(window.document.querySelector('[title^="Interrupt: click"]')).toBeNull()
   })
@@ -2174,5 +2178,54 @@ describe('ChatView composer bottom anchoring', () => {
 
     await harness.flushFrames()
     expect(metrics.scrollTop).toBe(500)
+  })
+})
+
+describe('agent delivery popup', () => {
+  test('arrow focus does not commit; Enter changes mode exactly once without sending', async () => {
+    const sends = mock(() => {})
+    const changes = mock(() => {})
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[]}
+        onSend={sends}
+        executionStatus="running"
+        deliveryMode="steer"
+        onDeliveryModeChange={changes}
+      />
+    )
+    const trigger = window.document.querySelector<HTMLButtonElement>('button[aria-label="Message delivery"]')!
+    expect(trigger).not.toBeNull()
+    await dom.act(async () => trigger.click())
+    await dom.act(flushReact)
+    expect(window.document.activeElement?.getAttribute('aria-selected')).toBe('true')
+    await dom.act(async () =>
+      window.document.activeElement!.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+      )
+    )
+    expect(changes).not.toHaveBeenCalled()
+    expect(window.document.activeElement?.textContent).toContain('Follow up')
+    await dom.act(async () =>
+      window.document.activeElement!.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+      )
+    )
+    expect(changes).toHaveBeenCalledTimes(1)
+    expect(changes).toHaveBeenCalledWith('follow-up')
+    expect(sends).not.toHaveBeenCalled()
+    expect(window.document.activeElement).toBe(trigger)
+  })
+  test('idle and separate user-assistant composers do not gain delivery modes', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[]}
+        onSend={() => {}}
+        deliveryMode="steer"
+        onDeliveryModeChange={() => {}}
+        executionStatus="completed"
+      />
+    )
+    expect(window.document.querySelector('[aria-label="Message delivery"]')).toBeNull()
   })
 })

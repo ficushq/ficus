@@ -30,6 +30,9 @@ test('secondary tools remain reachable and Escape restores focus without changin
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="More squad tools"]')!
   expect(trigger.textContent).toBe('memory')
   await dom.act(async () => trigger.click())
+  await dom.act(async () => {
+    await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
+  })
   expect(dom.window.document.activeElement?.textContent).toBe('memory')
   await dom.act(async () =>
     dom!.window.document.dispatchEvent(new dom!.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -37,7 +40,10 @@ test('secondary tools remain reachable and Escape restores focus without changin
   expect(dom.window.document.activeElement).toBe(trigger)
   expect(changes).toEqual([])
   await dom.act(async () => trigger.click())
-  const settings = [...container.querySelectorAll<HTMLButtonElement>('[data-squad-menu-item]')].find(
+  await dom.act(async () => {
+    await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
+  })
+  const settings = [...dom.window.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
     (button) => button.textContent === 'settings'
   )!
   await dom.act(async () => settings.click())
@@ -55,7 +61,10 @@ test('touch selection survives a blur without a new focus target', async () => {
   )
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="More squad tools"]')!
   await dom.act(async () => trigger.click())
-  const settings = container.querySelectorAll<HTMLButtonElement>('[data-squad-menu-item]')[1]!
+  await dom.act(async () => {
+    await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
+  })
+  const settings = dom.window.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[1]!
   // Touch browsers may blur the focused item before click without focusing the tapped button.
   await dom.act(async () => {
     settings.dispatchEvent(new dom!.window.Event('pointerdown', { bubbles: true }))
@@ -64,7 +73,7 @@ test('touch selection survives a blur without a new focus target', async () => {
     )
   })
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
-  expect(settings.closest('[data-state]')?.getAttribute('data-state')).toBe('open')
+  expect(settings.closest('[role="menu"]')).not.toBeNull()
   await dom.act(async () => settings.click())
   expect(changes).toEqual(['settings'])
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
@@ -84,9 +93,53 @@ test('outside taps and keyboard focus leaving the menu still dismiss it', async 
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="More squad tools"]')!
   const outside = container.querySelector<HTMLButtonElement>('[data-outside]')!
   await dom.act(async () => trigger.click())
+  await dom.act(async () => {
+    await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
+  })
   await dom.act(async () => outside.focus())
+  await dom.act(async () => {
+    await Bun.sleep(0)
+  })
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
   await dom.act(async () => trigger.click())
+  await dom.act(async () => {
+    await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
+  })
   await dom.act(async () => outside.dispatchEvent(new dom!.window.Event('pointerdown', { bubbles: true })))
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
+})
+
+test('later active tool gets initial focus and arrows do not navigate until Enter', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost/squads/test' })
+  const { container, root } = dom.createRoot()
+  const changes: string[] = []
+  await dom.act(async () =>
+    root.render(
+      <SquadNavigation
+        tabs={['memory', 'settings', 'skills'].map((path) => ({ path, label: path }))}
+        activeTab="settings"
+        onChange={(tab) => changes.push(tab)}
+      />
+    )
+  )
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-expanded]')!
+  await dom.act(async () => trigger.click())
+  await dom.act(async () => {
+    await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
+  })
+  expect(dom.window.document.activeElement?.textContent).toBe('settings')
+  await dom.act(async () =>
+    dom!.window.document.activeElement!.dispatchEvent(
+      new dom!.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+    )
+  )
+  expect(dom.window.document.activeElement?.textContent).toBe('skills')
+  expect(changes).toEqual([])
+  await dom.act(async () =>
+    dom!.window.document.activeElement!.dispatchEvent(
+      new dom!.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    )
+  )
+  expect(changes).toEqual(['skills'])
+  expect(dom.window.document.activeElement).toBe(trigger)
 })

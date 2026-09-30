@@ -60,3 +60,21 @@ if (hasWebLocalReact) {
   mock.module(`${ROOT}/react-dom/index.js`, () => webReactDom)
   mock.module(`${ROOT}/react-dom/server.js`, () => webReactDomServer)
 }
+
+// Floating UI chooses its browser layout-effect implementation at import time.
+// Tests install/restore real DOM owners per case (and SSR cases deliberately have
+// no document), so initialize the dependency under a temporary DOM once. No
+// dependency functions are mocked and no global DOM leaks into SSR tests.
+if (typeof document === 'undefined') {
+  const { Window } = await import('happy-dom')
+  const bootstrapWindow = new Window()
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: bootstrapWindow.document })
+  try {
+    await import('@floating-ui/react')
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'document', descriptor)
+    else Reflect.deleteProperty(globalThis, 'document')
+    await bootstrapWindow.happyDOM.close()
+  }
+}
