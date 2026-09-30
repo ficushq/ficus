@@ -4,11 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PI_MONO_DIR="${PI_MONO_DIR:-$ROOT_DIR/../../pi-mono}"
 PACKAGE="@earendil-works/pi-coding-agent"
-EXPECTED_REF="f07218c4d4bbc12bef056a7058c3dd49dfe41abe"
-EXPECTED_AI_TARBALL_SHA1="7d1f174120d5e6d33f301503677ec3281f217e2a"
-EXPECTED_CODING_AGENT_TARBALL_SHA1="5708b9310325177d5c1b487b5c99627ffa733324"
-SOURCE_ROOT="$ROOT_DIR/patches/pi-coding-agent-0.87.1-source"
-PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-coding-agent@0.87.1.patch"
+EXPECTED_REF="d86654abb8862e201933517d6f1fce9f88dd117f"
+EXPECTED_AI_TARBALL_SHA1="2945bf014fbb314bd37b919e83317560e0a8fa1d"
+EXPECTED_CODING_AGENT_TARBALL_SHA1="00e7e6c668d67d0825fc8814d80097eb07ec44e0"
+SOURCE_ROOT="$ROOT_DIR/patches/pi-coding-agent-0.99.1-source"
+PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-coding-agent@0.99.1.patch"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 ORIGINAL_PATCH="$TEMP_DIR/original.patch"
@@ -72,7 +72,7 @@ test -f "$PATCH_ARTIFACT" || { echo "Missing committed patch artifact" >&2; exit
 cp "$PATCH_ARTIFACT" "$ORIGINAL_PATCH"
 
 FICUS_VERSION="$(node -p "require('./apps/core/package.json').dependencies['$PACKAGE']")"
-test "$FICUS_VERSION" = 0.87.1 || { echo "Expected Ficus dependency 0.87.1" >&2; exit 1; }
+test "$FICUS_VERSION" = 0.99.1 || { echo "Expected Ficus dependency 0.99.1" >&2; exit 1; }
 
 manifest_outputs() {
   local root="$1"
@@ -135,7 +135,7 @@ function update(dir) {
 update(root);
 NODE
   mkdir -p "$pack/ai" "$pack/coding"
-  local ai_tarball="$pack/ai/earendil-works-pi-ai-0.87.1.tgz"
+  local ai_tarball="$pack/ai/earendil-works-pi-ai-0.99.1.tgz"
   curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-$FICUS_VERSION.tgz" --output "$ai_tarball"
   test "$(sha1sum "$ai_tarball" | cut -d' ' -f1)" = "$EXPECTED_AI_TARBALL_SHA1"
   tar -xzf "$ai_tarball" -C "$pack/ai"
@@ -143,7 +143,7 @@ NODE
   cp "$pack/ai/package/dist/providers/data/"*.json "$dir/packages/ai/src/providers/data/"
   cp "$pack/ai/package/dist/providers/data/.manifest.json" "$dir/packages/ai/src/providers/data/"
 
-  local coding_tarball="$pack/coding/earendil-works-pi-coding-agent-0.87.1.tgz"
+  local coding_tarball="$pack/coding/earendil-works-pi-coding-agent-0.99.1.tgz"
   curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-$FICUS_VERSION.tgz" --output "$coding_tarball"
   test "$(sha1sum "$coding_tarball" | cut -d' ' -f1)" = "$EXPECTED_CODING_AGENT_TARBALL_SHA1"
   tar -xzf "$coding_tarball" -C "$pack/coding"
