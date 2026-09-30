@@ -59,6 +59,7 @@ import {
   attachSecondaryFailure,
   createManagerOutageDeps,
   mapSandboxExecFailure,
+  SandboxOutageError,
 } from '../services/sandbox/outage'
 
 /**
@@ -612,6 +613,8 @@ export function createHttpBashOperations(
 
         let finalExitCode: number | null = null
         let settled = false
+        // What reached us before a lost outcome, for the diagnostic log below.
+        const trace = { startedAt: Date.now(), lastFrameAt: 0, frames: 0, outputBytes: 0, started: false }
 
         const settle = (fn: () => void) => {
           if (!settled) {
@@ -621,12 +624,19 @@ export function createHttpBashOperations(
         }
 
         stream.on('data', (response) => {
+          trace.frames++
+          trace.lastFrameAt = Date.now()
+          if (response.invocation) trace.started = true
           if (settled) return
           if (response.stdout) {
-            options.onData(processCarriageReturns(Buffer.from(response.stdout, 'base64')))
+            const chunk = Buffer.from(response.stdout, 'base64')
+            trace.outputBytes += chunk.length
+            options.onData(processCarriageReturns(chunk))
           }
           if (response.stderr) {
-            options.onData(processCarriageReturns(Buffer.from(response.stderr, 'base64')))
+            const chunk = Buffer.from(response.stderr, 'base64')
+            trace.outputBytes += chunk.length
+            options.onData(processCarriageReturns(chunk))
           }
           if (response.error) {
             settle(() => reject(new Error(response.error)))
@@ -642,11 +652,14 @@ export function createHttpBashOperations(
           // invocation fence remains nonterminal and prevents a replay.
           if (settled) return
           settled = true
+          const lostAt = Date.now()
+          let recoveredTransport = false
           const proveCleanup = async () => {
             try {
               await stream.cancelAndWait('transport-loss')
             } catch (firstCleanupError) {
               if (!manager.recoverClient) throw firstCleanupError
+              recoveredTransport = true
               const recovered = await manager.recoverClient(sandboxId, client, err)
               await recovered.cancelBashInvocation(stream.invocationId, 'transport-loss')
             }
@@ -659,6 +672,28 @@ export function createHttpBashOperations(
               cleanupError = error as Error
             }
             const mapped = await mapFailure(err).catch(() => err)
+            if (err instanceof BashOutcomeUnknownError) log.warn(lostOutcomeLogLine(err, mapped, cleanupError))
+            function lostOutcomeLogLine(outcome: BashOutcomeUnknownError, surfaced: Error, cleanup?: Error) {
+              // One grep-able line per lost outcome (journalctl | grep 'Bash command lost its outcome'):
+              // enough to tell a dropped transport from a box that ended the stream, without command text.
+              return `Bash command lost its outcome ${JSON.stringify({
+                sandboxId,
+                agentId: opts?.agentId ?? null,
+                invocationId: outcome.invocationId,
+                failureClass: outcome.failureClass,
+                cause: outcome.cause instanceof Error ? outcome.cause.message.slice(0, 200) : null,
+                started: trace.started,
+                frames: trace.frames,
+                outputBytes: trace.outputBytes,
+                elapsedMs: lostAt - trace.startedAt,
+                sinceLastFrameMs: trace.lastFrameAt ? lostAt - trace.lastFrameAt : null,
+                timeoutSeconds: timeout ?? null,
+                cleanup: cleanup ? 'unconfirmed' : 'confirmed',
+                cleanupError: cleanup?.message.slice(0, 200) ?? null,
+                recoveredTransport,
+                boxOutage: surfaced instanceof SandboxOutageError,
+              })}`
+            }
             // A healthy box leaves the transport error unmapped: explain the lost outcome instead.
             if (mapped instanceof BashOutcomeUnknownError) reject(lostCommandOutcomeError(mapped, cleanupError))
             else reject(cleanupError ? attachSecondaryFailure(mapped, cleanupError) : mapped)
