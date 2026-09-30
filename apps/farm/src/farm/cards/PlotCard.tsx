@@ -4,6 +4,7 @@ import { deliveryNote } from '../delivery'
 import { findPlot } from '../find'
 import { Crew, statusTone } from './Crew'
 import { useFarmCard } from './context'
+import { ExpandableText } from './ExpandableText'
 import { PlotActions } from './slots'
 import { workStreamPullRequests } from '../pullRequests'
 import { PullRequestIcon } from '../../icons'
@@ -72,6 +73,7 @@ export function PlotCard({ streamId }: { streamId: string }) {
             squad={squad}
             halted={env.halted}
             onOpenAgent={openAgent}
+            onTalk={env.openChat}
           />
         ) : (
           <p className="g-card-text">Nobody yet.</p>
@@ -94,7 +96,6 @@ export function PlotCard({ streamId }: { streamId: string }) {
           )}
         </p>
       )}
-      {stream.description && <p className="g-card-text g-clamp">{stream.description}</p>}
       <button
         type="button"
         className="g-link g-share"
@@ -114,7 +115,15 @@ export function PlotCard({ streamId }: { streamId: string }) {
             squad={squad}
             halted={env.halted}
             onOpenAgent={openAgent}
+            onTalk={env.openChat}
           />
+        </>
+      )}
+      {/* Last, so a long description can open up without pushing the crew and actions out of view. */}
+      {stream.description && (
+        <>
+          <h3 className="g-card-subtitle">Description</h3>
+          <ExpandableText text={stream.description} label="description" />
         </>
       )}
     </>

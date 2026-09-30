@@ -114,7 +114,7 @@ describe('QuestionForm · agent question', () => {
     expect(api.answerAgentQuestion).toHaveBeenCalledWith('q-1', 'dawn')
   })
 
-  it('answers then opens the robot with "Answer & visit"', async () => {
+  it('answers then opens the robot chat with "Answer & open chat"', async () => {
     const api = fakeApi({ answerAgentQuestion: () => Promise.resolve({} as AgentQuestion) })
     const onOpenAgent = mock((agentId: string) => agentId)
     const { container } = await render(
@@ -122,7 +122,7 @@ describe('QuestionForm · agent question', () => {
       api
     )
     await typeInto(byLabel(container, 'Which color?'), 'Green')
-    await click(button(container, 'Answer & visit'))
+    await click(button(container, 'Answer & open chat'))
     expect(api.answerAgentQuestion).toHaveBeenCalledWith('q-1', 'Green')
     expect(onOpenAgent).toHaveBeenCalledWith('agent-2')
   })
@@ -241,7 +241,7 @@ describe('QuestionForm · squad question', () => {
     })
     expect(queryClient.getQueryData<PendingAction[]>(queryKeys.actions.pending())).toEqual([])
     expect(hasKey(invalidated(), queryKeys.actions.pending())).toBe(true)
-    await click(button(container, 'Visit robot'))
+    await click(button(container, 'Open chat'))
     expect(onOpenAgent).toHaveBeenCalledWith('agent-1')
   })
 })

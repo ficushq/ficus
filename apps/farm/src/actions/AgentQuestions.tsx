@@ -110,7 +110,7 @@ export function StreamQuestionWait({
   if (!agentId || !wait.referenceId) return null
 
   const visit = onOpenAgent ? (
-    <VerbButton verb="Visit robot" help="Open the conversation" tone="quiet" onClick={() => onOpenAgent(agentId)} />
+    <VerbButton verb="Open chat" help="Open the robot's chat" tone="quiet" onClick={() => onOpenAgent(agentId)} />
   ) : null
 
   if (questions.isPending) return <p className="g-action-note">Fetching the question…</p>

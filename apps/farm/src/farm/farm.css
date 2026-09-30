@@ -417,11 +417,27 @@
   margin-bottom: 12px;
 }
 
-.g-clamp {
+/* Long card text (a work stream's description): folded to a few lines until Show more. */
+.g-person-talk {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.g-expandable-text {
+  margin-bottom: 4px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.g-expandable-text[data-folded='true'] {
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.g-expandable-toggle {
+  margin-bottom: 8px;
 }
 
 .g-delivery-note {

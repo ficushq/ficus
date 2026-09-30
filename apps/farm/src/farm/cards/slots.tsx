@@ -3,12 +3,14 @@ import { actionsForAgent, ActionView, AgentPendingQuestions, MailboxList, Stream
 import { agentLabel } from '../agentLabels'
 import { useFarmCard } from './context'
 
-/** The action forms each card hosts, bound to the farm's navigation. */
+/**
+ * The action forms each card hosts, bound to the farm's navigation. Their
+ * robot buttons ("Open chat", "Answer & open chat") open that robot's chat
+ * directly, not its card: one tap, not two.
+ */
 export function PlotActions({ stream }: { stream: WorkStream }) {
   const env = useFarmCard()
-  return (
-    <StreamActions stream={stream} showPauseControls onOpenAgent={(id) => env.select({ kind: 'robot', agentId: id })} />
-  )
+  return <StreamActions stream={stream} showPauseControls onOpenAgent={env.openChat} />
 }
 
 export function RobotActions({ agentId }: { agentId: string }) {
@@ -40,7 +42,7 @@ export function MailboxContents() {
       actions={env.input.pendingActions}
       onFocusStream={(id) => env.select({ kind: 'plot', streamId: id })}
       onOpenAssistant={(conversationId) => env.openAssistant(conversationId)}
-      onOpenAgent={(id) => env.select({ kind: 'robot', agentId: id })}
+      onOpenAgent={env.openChat}
     />
   )
 }
