@@ -43,6 +43,7 @@ import {
   removeSession,
   setSessionCompacting,
   isWorkerShuttingDown,
+  isWorkerStopping,
   markExecutionSettling,
   clearExecutionSettling,
 } from '../../services/execution/session-state'
@@ -408,6 +409,19 @@ export abstract class AgentRunner {
   }
   protected set currentSelectedSpec(value: string | undefined) {
     this.failover.currentSelectedSpec = value
+  }
+
+  /**
+   * A turn that fails while the worker is stopping failed because of the restart (its Claude Code
+   * child got the stop's SIGTERM, or shutdown aborted the session): leave the execution unsettled
+   * so the shutdown re-queue resumes it on the next worker, as a turn settling then already is.
+   */
+  private leaveForShutdownRequeue(errorMsg: string): boolean {
+    if (!isWorkerStopping()) return false
+    log.info(
+      `Execution ${this.execution.id} failed during worker shutdown (${errorMsg}) — skipping finalization, caller will re-queue`
+    )
+    return true
   }
 
   /** Runtime failover after an exhaustion error — see ModelFailoverCoordinator.attempt. */
@@ -1008,6 +1022,7 @@ export abstract class AgentRunner {
 
     if (this.collector.lastError || this.collector.settledWithAssistantError) {
       const errorMsg = this.collector.lastError ?? 'Provider request settled with an assistant error'
+      if (this.leaveForShutdownRequeue(errorMsg)) return
       log.error(`Execution ${this.execution.id} (agent ${this.agent.id}) ended with SDK error: ${errorMsg}`)
       // Attempt runtime failover before surfacing the error. If failover
       // succeeds (switched to a healthy candidate and re-dispatched), there's
@@ -1430,8 +1445,10 @@ export abstract class AgentRunner {
       for (const message of claimed) {
         await this.agent.resetPendingInterventionSessionDelivery(message.id)
       }
-      if (imageIds.length > 0) await Image.markManyFailed(imageIds)
       const errorMsg = err instanceof Error ? err.message : String(err)
+      // The re-queued run sends this prompt again, images included.
+      if (this.leaveForShutdownRequeue(errorMsg)) return
+      if (imageIds.length > 0) await Image.markManyFailed(imageIds)
       log.error(`session.prompt() failed for execution ${this.execution.id}:`, err)
       // Attempt runtime failover before surfacing the error. Wrap in try-catch
       // so a failover failure (e.g. setModel rejecting) falls through to the
