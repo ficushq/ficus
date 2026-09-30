@@ -51,10 +51,10 @@ Delivery `review` and `merge` gates have no wait, so Core can also list them in 
 
 Each manual wait records who must act (`WorkStreamWait.actor`, manual waits only). The column defaults to `human`, so existing rows and callers that omit it keep today's behavior; nothing infers an actor from message text. Consumers treat a missing or unknown actor as `human`.
 
-| Actor | Presentation state | Label | Semantic role | Human attention | Native bucket | Canonical order (active) |
-| ----- | ------------------ | ----- | ------------- | --------------- | ------------- | ------------------------ |
-| `human` | `blocked` | Blocked | danger | yes | needsYou | tier 0 (human-actionable) |
-| `owner` | `waiting_on_owner` | Waiting on Owner | externalWait | no | externalWait | tier 3 (with dependency/external waits) |
+| Actor   | Presentation state | Label            | Semantic role | Human attention | Native bucket | Canonical order (active)                |
+| ------- | ------------------ | ---------------- | ------------- | --------------- | ------------- | --------------------------------------- |
+| `human` | `blocked`          | Blocked          | danger        | yes             | needsYou      | tier 0 (human-actionable)               |
+| `owner` | `waiting_on_owner` | Waiting on Owner | externalWait  | no              | externalWait  | tier 3 (with dependency/external waits) |
 
 `owner` means the stream's owner agent, or the squad manager when the stream has none. Provider or third-party events also use `owner`, with the wait message naming what it waits on. When several manual waits are open, any human wait wins (human > owner). Wait-type precedence is unchanged: a question, review or dependency still outranks any manual wait, and the exact workflow-owned delivery-approval wait (`approvalWaitId`) is still presented as approval. Workflow human-approval gates keep the default `human` actor and cannot be relabeled.
 
