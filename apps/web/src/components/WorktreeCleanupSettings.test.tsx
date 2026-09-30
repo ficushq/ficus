@@ -15,7 +15,10 @@ for (const permission of [false, true]) {
       squadId: 'squad',
       autoCleanupWorktree: false,
       worktree: '/workspace/feature',
-      worktreeCleanup: { status: 'deferred', reason: 'Ignored evidence must be retained' },
+      worktreeCleanup: {
+        status: 'deferred',
+        reason: 'Uncommitted changes: modified, staged or untracked (not ignored) files',
+      },
     } as WorkStream
     cache.setQueryData(queryKeys.auth.permissions(stream.squadId), {
       permissions: permission ? ['workstreams:update'] : [],
@@ -33,7 +36,9 @@ for (const permission of [false, true]) {
       expect(checkbox).not.toBeNull()
       expect(checkbox!.checked).toBe(false)
       expect(checkbox!.disabled).toBe(!permission)
-      expect(dom.window.document.body.textContent).toContain('Ignored evidence must be retained')
+      expect(dom.window.document.body.textContent).toContain(
+        'Uncommitted changes: modified, staged or untracked (not ignored) files'
+      )
     } finally {
       await dom.cleanup()
       cache.clear()

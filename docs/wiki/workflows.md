@@ -113,7 +113,6 @@ Flow inspection exposes `activeOutcomes` (attempt ID, agent ID, binding version,
 
 Use `active: restart` only when a fresh context is intended: it cancels the selected attempt, creates a new snapshot/attempt, and starts a **fresh session even for reuse-within-stream**. Old attempt tokens fail, and superseded attempt-scoped waits are retired. Other kept branches retain their sessions (and receive any affected outcome changes). Restart behavior and explicit session policies are unchanged.
 
-
 ## Questions and scoped waits
 
 An ordinary agent question is nonblocking. With `blocking: true`, a question from a flow execution opens a wait on that exact attempt by default. An agent's manual `request-input` similarly targets its current attempt. A security reviewer waiting for a threat-model answer does not prevent QA from continuing, but the join remains held until security finishes.
@@ -313,19 +312,37 @@ without this runtime check.
 Only a newly platform-provisioned dedicated worktree qualifies. Metadata-only or
 manually created paths are not ownership evidence. Before removal, the platform
 revalidates canonical Git identity, authoritative delivered head, live merge
-status and remote recoverability (including squash merges). Primary checkouts,
-locks, changed paths/heads, dirty/untracked files, submodules, and **all ignored
-files** are retained. There is currently no repository-approved disposable
-artifact classifier; even ignored build/dependency outputs conservatively defer
-cleanup. Remove only known disposable outputs through normal project tooling if
-appropriate, or keep the retention setting disabled. Cleanup never deletes
-branches, remote refs, caches, Docker resources, or arbitrary directories. Worktree-local
-refs and in-progress Git state are retained; HEAD reflog and original-HEAD commits
-must remain reachable through surviving shared refs before removal. Unchanged
-commit-message scratch must exactly match a retained commit message. Ordinary
-fetch records must exactly match configured sources and surviving tracking/tag
-refs; edited drafts, unknown fetch records and private fetch-only recovery state
-are retained.
+status and remote recoverability (including squash merges).
+
+Only two kinds of data block removal:
+
+- **Uncommitted changes:** modified or staged tracked files, untracked files that
+  Git does not ignore, tracked files hidden by `assume-unchanged`/`skip-worktree`
+  index flags, and in-progress Git operations (merge, rebase, cherry-pick, revert,
+  bisect) or worktree-local refs and reflogs.
+- **Unpushed commits:** any commit reachable from the worktree's HEAD reflog,
+  `ORIG_HEAD` or a leftover `REBASE_HEAD` that no surviving local branch, tag or
+  remote-tracking ref contains.
+
+Files Git ignores (`node_modules`, `dist`, `*.tsbuildinfo`, `.test-db-port`, caches)
+never block cleanup; they are deleted with the worktree. Leftover Git scratch
+files (`COMMIT_EDITMSG`, `FETCH_HEAD`, `AUTO_MERGE`) are also discarded. Separate
+correctness guards still defer removal: a primary checkout, a changed directory
+identity or registration, a locked worktree or Git lock file, a changed delivered
+head or branch, and committed submodules.
+
+If the worktree's project-scoped test database is still running (the Compose
+project `tau-test-<hash of the worktree path>`, recorded by `.test-db-port`), cleanup
+stops it with `docker compose -p <project> down --volumes` right before removal.
+Only containers carrying both that project name and this worktree's
+`dev.ficus.test-db.repo-root` label are touched. If Docker cannot confirm the
+project state, the label belongs to another path, or the teardown fails, cleanup
+defers with that reason and retries. Cleanup never deletes branches, remote refs,
+caches, other Docker resources, or arbitrary directories.
+
+Deferred jobs retry automatically with capped backoff (at most hourly), so a
+worktree that was previously deferred only for ignored files becomes eligible on
+its next retry without manual action.
 
 `worktreeCleanup` exposes status, actionable reason, retry timing and operation
 ID, without private removal inputs. Exceptional blockers are deduplicated owner
@@ -366,7 +383,7 @@ For a historical duplicate-folder mismatch:
 3. Verify the response and inspect again. `retained` means automation is disabled,
    not that the folders are disposable. Keep automation disabled during manual work.
 4. An authorized operator may remove only exact unused paths after fresh checks for
-   live users, registered sharing, tracked/untracked/ignored data, and recoverable
+   live users, registered sharing, uncommitted changes, and unpushed
    commits. Retain active/open-PR working trees and branches. Keep any uncertain data.
 
 No ownership or delivery records need to be rewritten to stop automatic cleanup.

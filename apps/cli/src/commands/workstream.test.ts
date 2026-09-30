@@ -342,13 +342,18 @@ describe('workstream CLI commands', () => {
         dependsOn: [],
         agentIds: [],
         autoCleanupWorktree: false,
-        worktreeCleanup: { status: 'deferred', reason: 'Ignored evidence retained' },
+        worktreeCleanup: {
+          status: 'deferred',
+          reason: 'Uncommitted changes: modified, staged or untracked (not ignored) files',
+        },
       })
       try {
         await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
         const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
         expect(printed).toContain('Auto cleanup: disabled (retain worktree)')
-        expect(printed).toContain('Cleanup:     deferred — Ignored evidence retained')
+        expect(printed).toContain(
+          'Cleanup:     deferred — Uncommitted changes: modified, staged or untracked (not ignored) files'
+        )
       } finally {
         logSpy.mockRestore()
       }

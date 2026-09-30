@@ -216,7 +216,7 @@ original server-observed creation receipt) with `current` (metadata.git). A null
 `worktreeCleanup` means no cleanup job exists, not that no worktree is owned.
 Do not fix a mismatch by rewriting bindings or ownership. Retain first; after
 successful retention, an authorized operator can manually remove only confirmed
-unused trees after fresh live-use, dirty/ignored-file and commit-recovery checks.
+unused trees after fresh live-use, uncommitted-change and unpushed-commit checks.
 Keep open-PR working trees and recoverable branches. Disabling cleanup is not proof
 that any particular folder is disposable. No database edits are required to retain.
 Inspect effective configuration and `worktreeCleanup` with `ficus workstream get`.
