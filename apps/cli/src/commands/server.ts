@@ -236,7 +236,7 @@ Examples:
     .option('--port <n>', 'API/web port (default 3000)')
     .option('--app-url <origin>', 'Browser origin (default http://localhost:<port>)')
     .option('--database-url <dsn>', 'Use an existing PostgreSQL instead of the docker compose container')
-    .option('--db-name <name>', 'Database name in the compose container (default tau)')
+    .option('--db-name <name>', 'Database name in the compose container (default ficus)')
     .option('--db-port <n>', 'Host port for the managed PostgreSQL (default 5432, else the first free port)')
     .option('--default', 'Make this instance the one `ficus server` commands act on by default')
     .option('--no-start', 'Do not start the services')
@@ -403,9 +403,11 @@ Examples:
         // `--json` promises one machine-readable document on stdout; narration
         // would be noise in it.
         if (!isJsonMode()) narrate(startingPostgresLine(names.container))
+        // A container recreated here boots the database the checkout already names.
+        const { port, database } = parseDatabaseUrl(url)
         await ensurePostgresContainer(
           deps.runner,
-          { container: names.container, volume: names.volume, port: parseDatabaseUrl(url).port },
+          { container: names.container, volume: names.volume, port, database },
           { inherit: true }
         )
         await waitForPostgres(deps.runner, names.container, { sleep: deps.sleep })

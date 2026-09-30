@@ -175,7 +175,7 @@ describe('ensurePostgresContainer', () => {
       '-e',
       'POSTGRES_PASSWORD=postgres',
       '-e',
-      'POSTGRES_DB=tau',
+      'POSTGRES_DB=ficus',
       '-p',
       '127.0.0.1:5433:5432',
       '-v',
@@ -183,6 +183,19 @@ describe('ensurePostgresContainer', () => {
       POSTGRES_IMAGE,
     ])
     expect(POSTGRES_IMAGE).toBe('paradedb/paradedb:latest')
+  })
+  it('boots a new container with the database, image and data dir it is given', async () => {
+    const rec = recordingRunner({ 'docker inspect': { code: 1, stderr: 'no such object' } })
+    await ensurePostgresContainer(rec.runner, {
+      ...smoke,
+      database: 'appdb',
+      image: 'sha256:0123abcd',
+      dataDir: '/var/lib/postgresql/data',
+    })
+    const run = rec.calls.at(-1)?.command ?? []
+    expect(run).toContain('POSTGRES_DB=appdb')
+    expect(run).toContain(`${smoke.volume}:/var/lib/postgresql/data`)
+    expect(run.at(-1)).toBe('sha256:0123abcd')
   })
   it('inherits the terminal for the run/start calls only, so a first pull is visible', async () => {
     const created = recordingRunner({ 'docker inspect': { code: 1, stderr: 'no such object' } })

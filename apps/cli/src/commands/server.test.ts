@@ -130,6 +130,15 @@ describe('ficus server', () => {
     expect(calls.find((c) => c.command[1] === 'run')?.options.inherit).toBe(true)
     expect(calls.find((c) => c.command[1] === 'inspect')?.options.inherit).toBeFalsy()
   })
+  // A container recreated for an existing checkout must boot the database its
+  // DATABASE_URL names, not the installer's current default.
+  it('start creates a missing container with the database DATABASE_URL names', async () => {
+    writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/appdb\n')
+    const { run, calls } = make({ 'docker inspect': { code: 1, stderr: 'Error: No such object' } })
+    await run(['server', 'start'])
+    expect(outputError).not.toHaveBeenCalled()
+    expect(calls.find((c) => c.command[1] === 'run')?.command).toContain('POSTGRES_DB=appdb')
+  })
   it('narrates the container start, but not under --json', async () => {
     const capture = async (json: boolean) => {
       const { run } = make({ 'docker inspect': { stdout: 'true\n' } })

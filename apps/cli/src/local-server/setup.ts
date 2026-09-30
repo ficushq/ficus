@@ -165,7 +165,7 @@ export async function resolveDatabase(opts: SetupOptions, deps: SetupDeps): Prom
     ours?.port ??
     (opts.instance === DEFAULT_INSTANCE ? 5432 : await findFreePort(5433, deps.connect))
   // The database the checkout already points at is the one that holds its data:
-  // adopt its name too, or ensureDatabase would create `tau` while the app and
+  // adopt its name too, or ensureDatabase would create the default while the app and
   // the migration ran against the other one.
   const dbName = opts.explicit.has('dbName') ? opts.dbName : ours?.database || opts.dbName
   // Adopted from a DSN, so it has never been through --db-name's validation,

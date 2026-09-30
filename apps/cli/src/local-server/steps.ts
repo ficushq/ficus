@@ -236,7 +236,7 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
         deps.log(startingPostgresLine(names.container))
         await ensurePostgresContainer(
           deps.runner,
-          { container: names.container, volume: names.volume, port: dbPort },
+          { container: names.container, volume: names.volume, port: dbPort, database: opts.dbName },
           { inherit: true }
         )
         await waitForPostgres(deps.runner, names.container, { sleep: deps.sleep })

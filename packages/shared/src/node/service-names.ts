@@ -19,6 +19,13 @@ export const LEGACY_SANDBOX_PASSWORD = '/etc/tau/password' // ficus-p5-bridge
  * has its own `ficus-p5-apple` constant (`LEGACY_CLI_HOME_LINK`), so this line can go first.
  */
 export const LEGACY_HOME_DIR_NAME = '.tau' // ficus-p5-bridge
+/**
+ * The local instance's name before the rename: the default instance's label, and the stem of
+ * an installer-managed Postgres's names (container `postgres-<stem>[-<label>]`, volume
+ * `<stem>[-<label>]_postgres-data`, database `<stem>`). Only the CLI's rename bridge reads it,
+ * to find what it moves.
+ */
+export const LEGACY_LOCAL_INSTANCE = 'tau' // ficus-p5-bridge
 
 const NEW_LAUNCHD_PREFIX = 'sh.ficus'
 /** The home directory name after the rename (`~/.ficus`). */
