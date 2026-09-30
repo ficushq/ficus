@@ -272,9 +272,12 @@ describe('createK8sSandboxedCodingTools', () => {
         squadId,
         'exec-1'
       ).find((tool) => tool.key === 'bash')!
-      await expect(squadBash.execute('tc', { command: `cd ${workspaceMount}/repo && ls` } as any)).rejects.toThrow(
-        /Permission denied[\s\S]*is the SHARED squad workspace[\s\S]*`squad_bash`/
-      )
+      // Pi's bash tool returns a non-zero exit as an `isError` result rather than throwing.
+      const textOf = (result: { content: Array<{ type: string; text?: string }> }) =>
+        result.content.map((block) => (block.type === 'text' ? block.text : '')).join('\n')
+      const squadResult = await squadBash.execute('tc', { command: `cd ${workspaceMount}/repo && ls` } as any)
+      expect((squadResult as { isError?: boolean }).isError).toBe(true)
+      expect(textOf(squadResult)).toMatch(/Permission denied[\s\S]*is the SHARED squad workspace[\s\S]*`squad_bash`/)
 
       // Solo agents have no shared workspace, so the same denial stays bare.
       const soloBash = createK8sSandboxedCodingTools(
@@ -285,12 +288,10 @@ describe('createK8sSandboxedCodingTools', () => {
         undefined,
         'exec-1'
       ).find((tool) => tool.key === 'bash')!
-      await expect(soloBash.execute('tc', { command: `cd ${workspaceMount}/repo && ls` } as any)).rejects.toThrow(
-        /Permission denied[\s\S]*Command exited with code 1$/
-      )
-      await expect(soloBash.execute('tc', { command: `cd ${workspaceMount}/repo && ls` } as any)).rejects.not.toThrow(
-        /squad_bash/
-      )
+      const soloResult = await soloBash.execute('tc', { command: `cd ${workspaceMount}/repo && ls` } as any)
+      expect((soloResult as { isError?: boolean }).isError).toBe(true)
+      expect(textOf(soloResult)).toMatch(/Permission denied[\s\S]*Command exited with code 1$/)
+      expect(textOf(soloResult)).not.toMatch(/squad_bash/)
     } finally {
       if (prev === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
       else process.env.FICUS_SANDBOX_RUNTIME = prev

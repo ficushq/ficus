@@ -86,6 +86,10 @@ export class FicusResourceLoader implements ResourceLoader {
       if (this.extensions.errors.length > 0) {
         log.error(`Failed to load extensions:`, JSON.stringify(this.extensions.errors))
       }
+      // e.g. an extension package that lists host-provided pi modules in `dependencies`.
+      if (this.extensions.warnings?.length) {
+        log.warn(`Extension load warnings:`, JSON.stringify(this.extensions.warnings))
+      }
     }
   }
 
