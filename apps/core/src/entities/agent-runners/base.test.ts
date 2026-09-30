@@ -1551,6 +1551,33 @@ describe('AgentRunner (base class)', () => {
       expect(providerHealth.isProviderHealthy('anthropic')).toBe(false)
     })
 
+    it('leaves a turn that fails while the worker is stopping for the shutdown re-queue', async () => {
+      await runner.run()
+      // The stop's SIGTERM reached the Claude Code child during the command drain.
+      sessionState.markWorkerStopping()
+      try {
+        mockSession.pi.simulateErrorEnd('Claude Code failed: Claude Code process exited with code 143')
+        await new Promise((r) => setTimeout(r, 10))
+        expect(execution.status).not.toBe('failed')
+        expect(agent.status).not.toBe('idle')
+      } finally {
+        sessionState.resetWorkerShuttingDownForTests()
+      }
+    })
+
+    it('leaves a prompt aborted by shutdown for the re-queue, images intact', async () => {
+      sessionState.markWorkerStopping()
+      try {
+        mockSession.pi.promptError = new Error('The operation was aborted.')
+        await runner.run()
+        await new Promise((r) => setTimeout(r, 10))
+        expect(execution.status).not.toBe('failed')
+        expect(markImagesFailedSpy).not.toHaveBeenCalled()
+      } finally {
+        sessionState.resetWorkerShuttingDownForTests()
+      }
+    })
+
     it('ignores events when session is no longer active', async () => {
       await runner.run()
       isSessionActiveSpy.mockReturnValue(false)

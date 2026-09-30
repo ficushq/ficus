@@ -46,6 +46,8 @@ const transitionalOperations: Map<string, TransitionalOperation> = new Map()
 
 let onCreateStreamBuffer: ((id: string) => StreamBuffer) | null = null
 let isShuttingDown = false
+/** Set when the worker begins stopping (before the command drain); see markWorkerStopping. */
+let isStopping = false
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -180,8 +182,24 @@ export function isWorkerShuttingDown(): boolean {
   return isShuttingDown
 }
 
+/**
+ * The worker has begun stopping. Set before the command drain, which can take several seconds:
+ * the stop's SIGTERM reaches child processes (Claude Code) at once and shutdown aborts sessions
+ * after the drain, so turns fail with "process exited with code 143" or "The operation was
+ * aborted." throughout. Those failures are the restart, not the agent's: runners leave the
+ * execution for the shutdown re-queue instead of failing it.
+ */
+export function markWorkerStopping(): void {
+  isStopping = true
+}
+
+export function isWorkerStopping(): boolean {
+  return isStopping || isShuttingDown
+}
+
 export function resetWorkerShuttingDownForTests(): void {
   isShuttingDown = false
+  isStopping = false
 }
 
 /** Process-wide pre-compaction lifecycle sink. Logs every event and, for

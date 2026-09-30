@@ -54,7 +54,7 @@ import {
 import { beyondLoopback, workerBindHost } from './lib/infra/bind-host'
 import { claimPeriodicSandboxMaintenance } from './services/sandbox/factory'
 import { setPrecompactionLifecycleSink, registerPrecompactionEviction } from './services/agent/precompaction/registry'
-import { precompactionLifecycleSink } from './services/execution/session-state'
+import { markWorkerStopping, precompactionLifecycleSink } from './services/execution/session-state'
 import { Agent } from './entities/Agent'
 import { registerBuiltinHooks } from './services/turn-hooks'
 import {
@@ -1175,6 +1175,7 @@ async function startup(): Promise<void> {
  */
 async function shutdownWorker(reason: string): Promise<void> {
   readiness.markStopping()
+  markWorkerStopping()
   log.info(`Received ${reason}, shutting down...`)
 
   // Drain before aborting: start no new turns or commands, give running sandbox commands a
