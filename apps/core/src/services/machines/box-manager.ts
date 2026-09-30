@@ -441,7 +441,7 @@ function assertValidBoxEnv(env: BoxEnv): void {
  *    system-manager → ~/.private), mirroring workspace-layout.ts semantics
  *  - `FICUS_DEVBOX_DIR` — the box's own minimal devbox dir (~/.tau/devbox)
  *  - `FICUS_BOX_HOME` — the box user's HOME; the sandbox-server's path allow-list
- *    (packages/k8s-sandbox resolvePath) permits writes under this prefix so
+ *    (packages/sandbox-server resolvePath) permits writes under this prefix so
  *    file-sync can land agent assets in the box HOME (~/bin, ~/.tau/skills,
  *    ~/memory). k8s pods never set it, so it is a vm-only, per-box widening.
  *  - `DOCKER_HOST` — ONLY on boxes provisioned `--with-docker` (squad,

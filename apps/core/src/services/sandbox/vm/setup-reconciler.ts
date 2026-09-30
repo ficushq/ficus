@@ -3,7 +3,7 @@ import {
   SandboxTransportError,
   classifySandboxTransportError,
   type SandboxClient,
-} from '../k8s/http-client'
+} from '../client/http-client'
 import { createLogger } from '../../../lib/infra/logger'
 import { runIdempotentSandboxOperation } from './retry'
 import type { VmSetupReasonCode, VmSetupState } from './setup-state'

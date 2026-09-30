@@ -21,7 +21,7 @@ import { resolveWorkspaceLayout } from '../services/sandbox/workspace-layout'
 import type { SandboxedToolWithKey } from '../services/sandbox/types'
 import { createDockerSandboxedBashTool } from './docker-sandbox'
 import { createHostBashTool, HOST_BASH_DEFAULT_TIMEOUT_S, HOST_BASH_MAX_TIMEOUT_S } from './host-sandbox'
-import { createK8sSandboxedBashTool, type SandboxToolsManager } from './k8s-sandbox'
+import { createK8sSandboxedBashTool, type SandboxToolsManager } from './sandbox-tools'
 import { FOREGROUND_BASH_GUIDANCE } from '../lib/bash-contract'
 
 export const SQUAD_BASH_TOOL_KEY = 'squad_bash'

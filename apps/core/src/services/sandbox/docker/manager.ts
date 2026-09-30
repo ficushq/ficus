@@ -52,7 +52,7 @@ import {
   runWithPrimaryCleanup,
 } from './lifecycle-runtime'
 export { classifyDockerContainerOwnership, classifyDockerInspectStatus, SPEC_HASH_LABEL } from './lifecycle-contract'
-import { SandboxClient } from '../k8s/http-client'
+import { SandboxClient } from '../client/http-client'
 import { parseDockerCommandIdentity, resolveDockerCommandIdentity } from './command-identity'
 import { computeDockerSpecDigest, validateDockerHealthContract } from './runtime-contract'
 

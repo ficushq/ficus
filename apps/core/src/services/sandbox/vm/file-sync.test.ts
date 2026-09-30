@@ -13,7 +13,7 @@ import {
 import { boxUnixUser } from '../../machines/box-manager'
 import type { Machine, MachineBox } from '../../machines/queries'
 import type { SandboxOptions } from '../types'
-import { BashOutcomeUnknownError } from '../k8s/http-client'
+import { BashOutcomeUnknownError } from '../client/http-client'
 
 // ---------------------------------------------------------------------------
 // Fake SandboxClient — records /write and /bash calls in order.

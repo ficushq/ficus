@@ -1,5 +1,5 @@
 import type { ManagedToolchainRequest } from '../types'
-import { type BashResponse, SandboxClient, SandboxHttpError, SandboxTransportError } from '../k8s/http-client'
+import { type BashResponse, SandboxClient, SandboxHttpError, SandboxTransportError } from '../client/http-client'
 import { ToolchainAdapterError } from './provision'
 
 function quote(value: string): string {

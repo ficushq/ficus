@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { classifySandboxTransportError, SandboxTransportError } from '../k8s/http-client'
+import { classifySandboxTransportError, SandboxTransportError } from '../client/http-client'
 
 export type IdempotentSandboxOperation = 'read' | 'deterministic_overwrite' | 'health' | 'git_config' | 'cancel'
 

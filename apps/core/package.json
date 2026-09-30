@@ -42,7 +42,7 @@
     "@noble/hashes": "^2.0.1",
     "@simplewebauthn/server": "^13.3.0",
     "@sinclair/typebox": "^0.34.48",
-    "@ficus/k8s-sandbox": "workspace:*",
+    "@ficus/sandbox-server": "workspace:*",
     "@ficus/shared": "workspace:*",
     "archiver": "^7.0.1",
     "bun-pty": "^0.4.8",

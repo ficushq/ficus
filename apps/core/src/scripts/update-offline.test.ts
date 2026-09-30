@@ -16,8 +16,8 @@ describe('planOfflineUpdate', () => {
   })
   it('includes install and cli for dependency changes and k3d import only for k3d-local', () => {
     expect(planOfflineUpdate(['bun.lock'], flavor).tasks).toEqual(['install', 'cli', 'core', 'web'])
-    expect(planOfflineUpdate(['packages/k8s-sandbox/a'], flavor).tasks).toEqual(['core'])
-    expect(planOfflineUpdate(['packages/k8s-sandbox/a'], { ...flavor, sandboxRuntime: 'k3d-local' }).tasks).toEqual([
+    expect(planOfflineUpdate(['packages/sandbox-server/a'], flavor).tasks).toEqual(['core'])
+    expect(planOfflineUpdate(['packages/sandbox-server/a'], { ...flavor, sandboxRuntime: 'k3d-local' }).tasks).toEqual([
       'sandbox',
       'core',
     ])

@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import ts from 'typescript'
-import { SandboxClient, SandboxHttpError, type VerifiedWriteRequest } from '../services/sandbox/k8s/http-client'
-import { createK8sSandboxedCodingTools } from './k8s-sandbox'
+import { SandboxClient, SandboxHttpError, type VerifiedWriteRequest } from '../services/sandbox/client/http-client'
+import { createK8sSandboxedCodingTools } from './sandbox-tools'
 import {
   corpusGoldens,
   decodeUtf8Fatal,
@@ -14,13 +14,13 @@ import {
   type GeneratedCorpus,
 } from './test-support/real-edit-corpus'
 
-// This suite spawns a real k8s-sandbox server process and drives it over a
+// This suite spawns a real sandbox-server process and drives it over a
 // real HTTP client; bun's thin 5000ms default has flaked under CI scheduling
 // jitter even though every case has generous local headroom. Match
 // pickup.test.ts's setDefaultTimeout rationale.
 setDefaultTimeout(60_000)
 
-const SERVER_ENTRY = join(import.meta.dir, '../../../../packages/k8s-sandbox/src/server.ts')
+const SERVER_ENTRY = join(import.meta.dir, '../../../../packages/sandbox-server/src/server.ts')
 const EXPECTED_SUFFIX_MAX = 512
 const SERVER_TOKEN = 'real-edit-corpus-owned-token'
 
@@ -66,7 +66,7 @@ async function stopServer(): Promise<void> {
   serverProcess = undefined
 }
 
-// This file spawns a real k8s-sandbox server subprocess and drives real
+// This file spawns a real sandbox-server subprocess and drives real
 // verified-edit HTTP traffic against it — too jitter-prone for the shared CI
 // runner. It runs only in the dedicated `subprocess-tests` CI job (see
 // ci.yml); the main sweep sets FICUS_TEST_SKIP_SUBPROCESS=1 to skip it here.

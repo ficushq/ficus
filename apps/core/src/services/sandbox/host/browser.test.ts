@@ -12,7 +12,7 @@ import {
   type BrowserService,
   type HostBrowserEngine,
 } from './browser'
-import { SandboxHttpError } from '../k8s/http-client'
+import { SandboxHttpError } from '../client/http-client'
 import type { BrowserBackend } from '../browser-backend'
 import { HostSandboxManager } from './manager'
 

@@ -252,9 +252,9 @@ build_and_push_sandbox_image() {
   # One multi-stage Dockerfile, two targets. BuildKit builds and caches the
   # shared `base` stage once, reused across both --target builds.
   log "Building squad sandbox image (${build_platform})..."
-  docker build --platform "${build_platform}" --target squad -t "${REGISTRY_IMAGE}" -f "${REPO_ROOT}/packages/k8s-sandbox/Dockerfile" "${REPO_ROOT}"
+  docker build --platform "${build_platform}" --target squad -t "${REGISTRY_IMAGE}" -f "${REPO_ROOT}/packages/sandbox-server/Dockerfile" "${REPO_ROOT}"
   log "Building agent (light) sandbox image..."
-  docker build --platform "${build_platform}" --target agent -t "${AGENT_REGISTRY_IMAGE}" -f "${REPO_ROOT}/packages/k8s-sandbox/Dockerfile" "${REPO_ROOT}"
+  docker build --platform "${build_platform}" --target agent -t "${AGENT_REGISTRY_IMAGE}" -f "${REPO_ROOT}/packages/sandbox-server/Dockerfile" "${REPO_ROOT}"
 
   log "Pushing sandbox images to local registry (${SANDBOX_IMAGE}, ${AGENT_SANDBOX_IMAGE})..."
   docker push "${REGISTRY_IMAGE}"

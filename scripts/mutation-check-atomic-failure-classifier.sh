@@ -3,8 +3,8 @@ set -euo pipefail
 
 mode=${1:-}
 root=$(git rev-parse --show-toplevel)
-prod="$root/packages/k8s-sandbox/src/services/atomic-write.ts"
-testsrc="$root/packages/k8s-sandbox/src/services/atomic-write.test.ts"
+prod="$root/packages/sandbox-server/src/services/atomic-write.ts"
+testsrc="$root/packages/sandbox-server/src/services/atomic-write.test.ts"
 : "${DATABASE_URL:?DATABASE_URL must name the explicitly owned worktree test database}"
 : "${TEST_DB_PROJECT:?TEST_DB_PROJECT must name the explicitly owned tau-test-* project}"
 [[ $TEST_DB_PROJECT == tau-test-* ]] || { echo 'TEST_DB_PROJECT must start with tau-test-' >&2; exit 2; }
@@ -78,7 +78,7 @@ finally:
 PY
 
 set +e
-(cd "$root" && bun test --timeout 30000 packages/k8s-sandbox/src/services/atomic-write.test.ts -t 'stable atomic failure classification') >"$log" 2>&1
+(cd "$root" && bun test --timeout 30000 packages/sandbox-server/src/services/atomic-write.test.ts -t 'stable atomic failure classification') >"$log" 2>&1
 status=$?
 set -e
 cat "$log"

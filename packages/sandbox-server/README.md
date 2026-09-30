@@ -1,6 +1,6 @@
 # Tool Executor
 
-HTTP service that runs inside each K8s sandbox pod, providing command execution, file operations, and interactive shells for agents.
+HTTP service that runs inside each sandbox (Kubernetes pods, Docker containers and VM boxes), providing command execution, file operations, and interactive shells for agents.
 
 **Full documentation:** [docs/wiki/k8s/sandbox.md](../../docs/wiki/k8s/sandbox.md)
 
@@ -38,7 +38,7 @@ See [docs/wiki/k8s/sandbox.md](../../docs/wiki/k8s/sandbox.md#headless-browser-s
 
 ```bash
 # Run locally (outside K8s)
-WORKSPACE_PATH=/tmp/test-workspace bun run packages/k8s-sandbox/src/server.ts
+WORKSPACE_PATH=/tmp/test-workspace bun run packages/sandbox-server/src/server.ts
 ```
 
 ## Bash invocation process ownership

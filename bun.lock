@@ -52,7 +52,7 @@
         "@earendil-works/pi-ai": "0.87.1",
         "@earendil-works/pi-coding-agent": "0.87.1",
         "@earendil-works/pi-tui": "0.87.1",
-        "@ficus/k8s-sandbox": "workspace:*",
+        "@ficus/sandbox-server": "workspace:*",
         "@ficus/shared": "workspace:*",
         "@google-cloud/text-to-speech": "^6.4.0",
         "@hono/zod-validator": "^0.4.0",
@@ -233,8 +233,8 @@
         "react": ">=18",
       },
     },
-    "packages/k8s-sandbox": {
-      "name": "@ficus/k8s-sandbox",
+    "packages/sandbox-server": {
+      "name": "@ficus/sandbox-server",
       "version": "0.2.0",
       "dependencies": {
         "@ficus/shared": "workspace:*",
@@ -799,7 +799,7 @@
 
     "@ficus/docs": ["@ficus/docs@workspace:apps/docs"],
 
-    "@ficus/k8s-sandbox": ["@ficus/k8s-sandbox@workspace:packages/k8s-sandbox"],
+    "@ficus/sandbox-server": ["@ficus/sandbox-server@workspace:packages/sandbox-server"],
 
     "@ficus/shared": ["@ficus/shared@workspace:packages/shared"],
 

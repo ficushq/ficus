@@ -10,22 +10,22 @@ For setup, see [`docs/wiki/setup.md`](setup.md). For project conventions (Bun, m
 
 ## Monorepo Map
 
-| Path                    | Purpose                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `apps/core/`            | API server + background worker (Hono + Bun). DB schema, entities, services, tools, routes.                          |
-| `apps/web/`             | Frontend (Vite + React + Tailwind + React Query).                                                                   |
-| `apps/cli/`             | `ficus` CLI (Commander.js). Mirrors the REST API and is installed in sandboxes.                                     |
-| `packages/shared/`      | Shared TypeScript types between core, web, cli.                                                                     |
-| `packages/client-core/` | Transport-agnostic API client (resources, SSE/WS, query keys) shared by web + mobile.                               |
-| `packages/k8s-sandbox/` | The sandbox server, used by both the `k8s` runtime (in pods) and the `vm` runtime (in boxes).                       |
-| `config/`               | YAML configs synced into the DB on startup (agent types, squad presets, skills, channels, notifications, webhooks). |
-| `apps/docs/`            | Curated user documentation site (Astro Starlight), separate from repository reference material.                     |
-| `docs/wiki/`            | Maintained developer explanations and operating guidance (this directory).                                          |
-| `docs/backlog/`         | Deferred work, proposals and unresolved acceptance questions.                                                       |
-| `docs/history/`         | One-off plans, designs, specifications and delivery records.                                                        |
-| `scripts/`              | Build, test, and operational scripts.                                                                               |
-| `external/`             | External vendor code and references.                                                                                |
-| `docker/`, `k8s/`       | Deployment manifests.                                                                                               |
+| Path                       | Purpose                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `apps/core/`               | API server + background worker (Hono + Bun). DB schema, entities, services, tools, routes.                          |
+| `apps/web/`                | Frontend (Vite + React + Tailwind + React Query).                                                                   |
+| `apps/cli/`                | `ficus` CLI (Commander.js). Mirrors the REST API and is installed in sandboxes.                                     |
+| `packages/shared/`         | Shared TypeScript types between core, web, cli.                                                                     |
+| `packages/client-core/`    | Transport-agnostic API client (resources, SSE/WS, query keys) shared by web + mobile.                               |
+| `packages/sandbox-server/` | The sandbox server, used by both the `k8s` runtime (in pods) and the `vm` runtime (in boxes).                       |
+| `config/`                  | YAML configs synced into the DB on startup (agent types, squad presets, skills, channels, notifications, webhooks). |
+| `apps/docs/`               | Curated user documentation site (Astro Starlight), separate from repository reference material.                     |
+| `docs/wiki/`               | Maintained developer explanations and operating guidance (this directory).                                          |
+| `docs/backlog/`            | Deferred work, proposals and unresolved acceptance questions.                                                       |
+| `docs/history/`            | One-off plans, designs, specifications and delivery records.                                                        |
+| `scripts/`                 | Build, test, and operational scripts.                                                                               |
+| `external/`                | External vendor code and references.                                                                                |
+| `docker/`, `k8s/`          | Deployment manifests.                                                                                               |
 
 ## Core Primitives
 

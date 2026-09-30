@@ -60,7 +60,7 @@ if [[ "$SANDBOX" == "true" ]]; then
   echo "=== tau-sandbox (squad) ==="
   if [[ "${SKIP_BUILD:-}" != "1" ]]; then
     echo "Building..."
-    docker build --platform linux/amd64 --target squad -t "$IMAGE" -f packages/k8s-sandbox/Dockerfile .
+    docker build --platform linux/amd64 --target squad -t "$IMAGE" -f packages/sandbox-server/Dockerfile .
   fi
   echo "Pushing $IMAGE"
   docker push "$IMAGE"
@@ -70,7 +70,7 @@ if [[ "$SANDBOX" == "true" ]]; then
   echo "=== tau-sandbox-agent (light) ==="
   if [[ "${SKIP_BUILD:-}" != "1" ]]; then
     echo "Building..."
-    docker build --platform linux/amd64 --target agent -t "$AGENT_IMAGE" -f packages/k8s-sandbox/Dockerfile .
+    docker build --platform linux/amd64 --target agent -t "$AGENT_IMAGE" -f packages/sandbox-server/Dockerfile .
   fi
   echo "Pushing $AGENT_IMAGE"
   docker push "$AGENT_IMAGE"

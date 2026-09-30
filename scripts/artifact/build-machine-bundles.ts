@@ -42,7 +42,7 @@ export interface BuildMachineBundlesDeps {
  * `mkdtemp` dir as their explicit `prebuiltDir`: per those functions'
  * post-hardening contract, an explicit dir with a missing prebuilt file
  * returns null and falls back to a real source build (`bun build` against
- * `packages/k8s-sandbox/src/server.ts` / `apps/cli/src/index.ts`) — exactly
+ * `packages/sandbox-server/src/server.ts` / `apps/cli/src/index.ts`) — exactly
  * what the artifact builder needs, since it is producing the prebuilt files,
  * not consuming them. `buildCliBundle`'s `lock` is a pass-through (`(f) =>
  * f()`) so the CLI build's git-stamp critical section runs without a Postgres

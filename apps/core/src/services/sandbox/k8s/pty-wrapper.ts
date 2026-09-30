@@ -1,5 +1,5 @@
 import type { IPty, IDisposable, IExitEvent } from 'bun-pty'
-import type { ClientDuplexStream, ShellMessage, ShellOutput } from './http-client'
+import type { ClientDuplexStream, ShellMessage, ShellOutput } from '../client/http-client'
 import { createLogger } from '../../../lib/infra/logger'
 
 const log = createLogger('pty-wrapper')

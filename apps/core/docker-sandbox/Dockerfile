@@ -163,8 +163,8 @@ RUN wget -q "https://github.com/opencontainers/runc/releases/download/v1.1.15/ru
 
 # Bake the authenticated executor and its named command identity.
 COPY apps/core/docker-sandbox/command-identity.json /opt/tau/command-identity.json
-COPY packages/k8s-sandbox/package.json /opt/sandbox/package.json
-COPY packages/k8s-sandbox/src /opt/sandbox/src
+COPY packages/sandbox-server/package.json /opt/sandbox/package.json
+COPY packages/sandbox-server/src /opt/sandbox/src
 # The executor depends on @ficus/shared as `workspace:*`, which bun can only
 # resolve inside a workspace. Make /opt/sandbox that workspace: copy the member
 # in and declare it on the executor's own manifest, so server.ts keeps its

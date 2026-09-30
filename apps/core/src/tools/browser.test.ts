@@ -1,6 +1,6 @@
 import { describe, test, expect, mock, spyOn, afterEach } from 'bun:test'
 import { createBrowserTools as buildBrowserTools } from './browser'
-import { SandboxHttpError } from '../services/sandbox/k8s/http-client'
+import { SandboxHttpError } from '../services/sandbox/client/http-client'
 
 const RUN_ID = 'run-1'
 const SANDBOX_ID = 'agent_run-1'

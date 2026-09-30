@@ -14,23 +14,25 @@ describe('Docker sandbox image source contract', () => {
     expect(packageJson.scripts['sandbox:build:docker']).toEndWith('-f apps/core/docker-sandbox/Dockerfile .')
     expect(readFileSync(resolve(repoRoot, '.bun-version'), 'utf8').trim()).toBe('1.4.2')
     expect(dockerfile).toContain('ARG BUN_VERSION=1.4.2')
-    expect(dockerfile).toContain('packages/k8s-sandbox/src')
+    expect(dockerfile).toContain('packages/sandbox-server/src')
     expect(dockerfile).toContain('apps/core/docker-sandbox/command-identity.json')
   })
 
-  // packages/k8s-sandbox depends on @ficus/shared as `workspace:*`; a bare copy of
+  // packages/sandbox-server depends on @ficus/shared as `workspace:*`; a bare copy of
   // its package.json + src cannot `bun install` outside the monorepo. Both
   // executor images must vendor the member and declare the workspace first —
   // the docker-socket setup path broke silently when the dependency arrived.
   test('both executor images vendor @ficus/shared as a workspace member before installing', () => {
-    const k8sDockerfile = readFileSync(resolve(repoRoot, 'packages/k8s-sandbox/Dockerfile'), 'utf8')
-    const executorDeps = JSON.parse(readFileSync(resolve(repoRoot, 'packages/k8s-sandbox/package.json'), 'utf8')) as {
+    const k8sDockerfile = readFileSync(resolve(repoRoot, 'packages/sandbox-server/Dockerfile'), 'utf8')
+    const executorDeps = JSON.parse(
+      readFileSync(resolve(repoRoot, 'packages/sandbox-server/package.json'), 'utf8')
+    ) as {
       dependencies: Record<string, string>
     }
     expect(executorDeps.dependencies['@ficus/shared']).toBe('workspace:*')
     for (const [name, text] of [
       ['apps/core/docker-sandbox/Dockerfile', dockerfile],
-      ['packages/k8s-sandbox/Dockerfile', k8sDockerfile],
+      ['packages/sandbox-server/Dockerfile', k8sDockerfile],
     ] as const) {
       // The executor's own install, not the browser service's `bun install --cwd`.
       const install = text.indexOf('bun install --production')

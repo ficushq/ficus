@@ -35,14 +35,14 @@ const TASK_DEFINITIONS: readonly TaskDefinition[] = [
   },
   {
     task: 'sandbox',
-    paths: combinePaths(dependencyPaths(), sharedPaths(), { prefixes: ['packages/k8s-sandbox/'] }),
+    paths: combinePaths(dependencyPaths(), sharedPaths(), sandboxServerPaths()),
     commands: [['bun', 'run', 'k3d:import']],
   },
   {
     task: 'core',
-    paths: combinePaths(dependencyPaths(), sharedPaths(), {
+    paths: combinePaths(dependencyPaths(), sharedPaths(), sandboxServerPaths(), {
       exact: ['Dockerfile'],
-      prefixes: ['apps/core/', 'apps/cli/', 'packages/k8s-sandbox/', 'config/'],
+      prefixes: ['apps/core/', 'apps/cli/', 'config/'],
     }),
     commands: [['bun', 'run', 'build:core']],
   },
@@ -62,6 +62,15 @@ function dependencyPaths(): PathMatcher {
 
 function sharedPaths(): PathMatcher {
   return { prefixes: ['packages/shared/'] }
+}
+
+/**
+ * The box/pod command server package. `packages/k8s-sandbox/` is its former
+ * location: a diff that spans the rename (e.g. rolling back across it) still
+ * lists the old paths, so they keep selecting the same tasks.
+ */
+function sandboxServerPaths(): PathMatcher {
+  return { prefixes: ['packages/sandbox-server/', 'packages/k8s-sandbox/'] }
 }
 
 function clientPaths(): PathMatcher {

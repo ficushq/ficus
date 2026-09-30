@@ -87,7 +87,7 @@ bun run test:db:down && bun run --filter core test
   package scripts concurrently. Preserve that readiness dependency so suites
   cannot race container startup.
 - Run package suites with `bun run --filter <package> test` from the root (for
-  example, `core`, `cli`, or `@ficus/k8s-sandbox`). These
+  example, `core`, `cli`, or `@ficus/sandbox-server`). These
   entrypoints own isolation and completion checks. Use `bun test <file>` for
   focused diagnosis, not as a replacement for the package/CI contract. A zero
   exit alone is not proof: require the final summary, zero failures, and every

@@ -57,7 +57,13 @@ describe('detectUpdateTasks', () => {
   })
 
   it('imports sandbox for sandbox runtime changes', () => {
-    expect(detectUpdateTasks(['packages/k8s-sandbox/src/server.ts'], K3D_PM2)).toContain('sandbox')
+    expect(detectUpdateTasks(['packages/sandbox-server/src/server.ts'], K3D_PM2)).toContain('sandbox')
+  })
+
+  it('still maps the former packages/k8s-sandbox path to the sandbox and core tasks', () => {
+    const tasks = detectUpdateTasks(['packages/k8s-sandbox/src/server.ts'], K3D_PM2)
+    expect(tasks).toContain('sandbox')
+    expect(tasks).toContain('core')
   })
 
   it('maps shared client package changes to web without sandbox import', () => {
@@ -155,7 +161,7 @@ describe('flavor-aware planning', () => {
   })
 
   it('excludes the sandbox task for non-k3d runtimes', () => {
-    const files = ['packages/k8s-sandbox/src/x.ts']
+    const files = ['packages/sandbox-server/src/x.ts']
     expect(detectUpdateTasks(files, K3D_PM2)).toContain('sandbox')
     expect(detectUpdateTasks(files, SYSTEMD_DOCKER)).not.toContain('sandbox')
   })

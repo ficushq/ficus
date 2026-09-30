@@ -204,4 +204,4 @@ interface SquadMemoryConfig {
 | `apps/core/src/services/memory/sources/`                                | Source implementations                                    |
 | `apps/core/src/services/memory/sync/`                                   | Git and S3 sync adapters                                  |
 | `apps/core/src/services/memory/thread-indexer.ts`                       | Agent thread indexing                                     |
-| `packages/k8s-sandbox/src/services/watcher.ts`                          | Sandbox file watcher                                      |
+| `packages/sandbox-server/src/services/watcher.ts`                       | Sandbox file watcher                                      |

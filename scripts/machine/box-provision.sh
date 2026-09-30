@@ -347,7 +347,7 @@ SLICE_CPU_SHARE_PCT=50
 # 2026-09-01 on a test host: 39 idle bun servers held 1,672 MB — the whole
 # point of the socket layout. The gate that makes the exit safe (no live bash
 # invocation, no open shell, no active watcher) lives in the server itself;
-# see packages/k8s-sandbox/src/services/idle-exit.ts.
+# see packages/sandbox-server/src/services/idle-exit.ts.
 IDLE_EXIT_MS=600000
 
 host_nproc() {
@@ -1268,7 +1268,7 @@ ensure_dirs() {
 # VM-runtime marker for the fail-closed gate: because it is baked into the
 # unit itself, a unit activated before server.env lands still identifies as a
 # VM boot, sees no EXECUTOR_AUTH_TOKEN, and exits instead of serving
-# unauthenticated (packages/k8s-sandbox/src/server.ts). host.env is listed
+# unauthenticated (packages/sandbox-server/src/server.ts). host.env is listed
 # FIRST so anything Core pushes in server.env still wins.
 #
 # The service-cgroup ownership marker rides ExecStart, NOT Environment=:
@@ -1540,7 +1540,7 @@ provision_box() {
   # the first real activation; nothing in this script needs the unit running.
   # Belt-and-braces: the server itself refuses to start when FICUS_BOX_PORT (baked
   # into this unit below, so present even without server.env) or EXECUTOR_BIND
-  # is set without EXECUTOR_AUTH_TOKEN (packages/k8s-sandbox/src/server.ts), so
+  # is set without EXECUTOR_AUTH_TOKEN (packages/sandbox-server/src/server.ts), so
   # even a stray pre-env start fails closed instead of serving.
 
   # Per-box rootless docker (squad + system-manager); agent light boxes skip it.

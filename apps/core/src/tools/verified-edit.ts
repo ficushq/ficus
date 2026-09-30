@@ -6,7 +6,7 @@ import {
   generateUnifiedPatch,
   withFileMutationQueue,
 } from '@earendil-works/pi-coding-agent'
-import type { FileIdentity, VerifiedWriteResponse } from '../services/sandbox/k8s/http-client'
+import type { FileIdentity, VerifiedWriteResponse } from '../services/sandbox/client/http-client'
 
 export type ExactEdit = {
   oldText: string

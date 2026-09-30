@@ -39,7 +39,7 @@
  */
 
 import { createLogger } from '../../lib/infra/logger'
-import { SandboxClient } from '../sandbox/k8s/http-client'
+import { SandboxClient } from '../sandbox/client/http-client'
 import { ensureBox as ensureBoxReal, removeBox as removeBoxReal } from './box-manager'
 import { seedBoxDevbox as seedBoxDevboxReal, type SeedBoxRole } from './devbox-seed'
 import { getMachine as getMachineReal, type Machine } from './queries'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { BashCleanupUnprovenError, BashOutcomeUnknownError, type SandboxClient } from '../k8s/http-client'
+import { BashCleanupUnprovenError, BashOutcomeUnknownError, type SandboxClient } from '../client/http-client'
 import { reconcileVmSetup, type VmSetupReconcilerDeps } from './setup-reconciler'
 import type { VmSetupState } from './setup-state'
 

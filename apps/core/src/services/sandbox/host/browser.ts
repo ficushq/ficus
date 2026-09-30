@@ -44,7 +44,7 @@ import { boxUserHeaders } from '@ficus/shared/box-user'
 import { boxUnixUser } from '../../machines/box-paths'
 import { getHomeDir } from '../../../lib/utils/home'
 import { createLogger } from '../../../lib/infra/logger'
-import { SandboxHttpError } from '../k8s/http-client'
+import { SandboxHttpError } from '../client/http-client'
 import type { BrowserBackend } from '../browser-backend'
 
 const log = createLogger('host-browser')
