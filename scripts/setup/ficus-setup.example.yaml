@@ -119,6 +119,12 @@ ingress:
   # user. The key's contents are never logged, echoed, or printed by --dry-run.
   tls_cert_path: ''
   tls_key_path: ''
+  # The visitor's address. Caddy believes an incoming X-Forwarded-For only from
+  # Cloudflare's published ranges (built in) and the IPs/CIDRs listed here, and
+  # hands core exactly one address; from any other peer it is that peer. List a
+  # proxy that reaches this host WITHOUT going through Cloudflare, e.g. the
+  # control plane's app-host bridge. Never list anything a client can reach.
+  trusted_proxies: []
 
 # -----------------------------------------------------------------------------
 # Optional nightly encrypted backup (off by default). When enabled, setup

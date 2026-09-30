@@ -3,6 +3,7 @@ import { like } from 'drizzle-orm'
 import { brotliCompressSync, brotliDecompressSync, deflateSync, gunzipSync, gzipSync, inflateSync } from 'node:zlib'
 import { db, squads } from '../../db'
 import { Squad } from '../../entities/Squad'
+import { attachPeerAddress } from '../../lib/client-address'
 import {
   createLocalDeployment,
   stopLocalDeploymentRecord,
@@ -369,6 +370,154 @@ describe('localDeployment proxy', () => {
     expect(headers.has('keep-alive')).toBe(false)
     expect(headers.has('x-hop')).toBe(false)
     expect(headers.get('x-keep')).toBe('yes')
+  })
+
+  // What the app may rely on: exactly one X-Forwarded-For, the address Core
+  // resolved (an incoming X-Forwarded-For counts only from the same-host
+  // reverse proxy), and no other client-address header, forged or not.
+  describe('client address headers', () => {
+    const FORGED = '6.6.6.6'
+    const forgedHeaders = {
+      'cf-connecting-ip': FORGED,
+      'cf-connecting-ipv6': '2001:db8::666',
+      'cf-pseudo-ipv4': FORGED,
+      'true-client-ip': FORGED,
+      'x-real-ip': FORGED,
+      'x-client-ip': FORGED,
+      'x-cluster-client-ip': FORGED,
+      'fastly-client-ip': FORGED,
+      'x-original-forwarded-for': FORGED,
+      'x-envoy-external-address': FORGED,
+      forwarded: `for=${FORGED};proto=https`,
+    }
+    const dropped = Object.keys(forgedHeaders)
+
+    async function forwardedHeaders(
+      init: { url?: (deployment: { urlPathOrHost: string }) => string; headers: Record<string, string> },
+      peerAddress: string | undefined
+    ): Promise<Headers> {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const request = new Request((init.url ?? localDeploymentUrl)(localDeployment), { headers: init.headers })
+      attachPeerAddress(request, peerAddress)
+      const response = await proxyLocalDeploymentRequest(localDeployment.id, request, '')
+      expect(response.status).toBe(201)
+      return fetchCalls[0].init.headers as Headers
+    }
+
+    it('forwards the address the same-host proxy vouched for and drops every forged header', async () => {
+      // noah.ficus.sh/api/app/<id>/: Caddy (loopback peer) sets X-Forwarded-For to the visitor.
+      const headers = await forwardedHeaders(
+        { headers: { ...forgedHeaders, 'x-forwarded-for': '198.51.100.7', 'x-keep': 'yes' } },
+        '127.0.0.1'
+      )
+
+      expect(headers.get('x-forwarded-for')).toBe('198.51.100.7')
+      for (const name of dropped) expect(headers.has(name)).toBe(false)
+      expect(headers.get('x-keep')).toBe('yes')
+    })
+
+    it('forwards the same single address for a request the Platform bridged from an app host', async () => {
+      // <tenant>--<id>.ficus.garden: the Platform re-sends to the tenant origin, whose Caddy
+      // hands Core the same route with the tenant host and the bridge's headers.
+      const headers = await forwardedHeaders(
+        {
+          url: (deployment) =>
+            localDeploymentUrl(deployment).replace('http://ficus.test', 'https://noah.ficus.sh') +
+            `&${LEGACY_TOKEN_QUERY_PARAM}=bridged`,
+          headers: {
+            ...forgedHeaders,
+            host: 'noah.ficus.sh',
+            via: '2.0 Caddy, 1.1 Caddy',
+            'x-forwarded-host': 'noah.ficus.sh',
+            'x-forwarded-proto': 'https',
+            'x-forwarded-for': '198.51.100.7',
+          },
+        },
+        '127.0.0.1'
+      )
+
+      expect(headers.get('x-forwarded-for')).toBe('198.51.100.7')
+      for (const name of dropped) expect(headers.has(name)).toBe(false)
+    })
+
+    it('collapses a proxied chain to the nearest untrusted hop, one entry only', async () => {
+      const headers = await forwardedHeaders({ headers: { 'x-forwarded-for': `${FORGED}, 198.51.100.7` } }, '127.0.0.1')
+
+      expect(headers.get('x-forwarded-for')).toBe('198.51.100.7')
+    })
+
+    it('forwards the socket peer for a request that bypassed the proxy, ignoring its claims', async () => {
+      const headers = await forwardedHeaders(
+        { headers: { ...forgedHeaders, 'x-forwarded-for': FORGED } },
+        '203.0.113.20'
+      )
+
+      expect(headers.get('x-forwarded-for')).toBe('203.0.113.20')
+      for (const name of dropped) expect(headers.has(name)).toBe(false)
+    })
+
+    it('forwards IPv6 visitors and peers as bare addresses', async () => {
+      const viaProxy = await forwardedHeaders({ headers: { 'x-forwarded-for': '2001:DB8::7' } }, '::1')
+      expect(viaProxy.get('x-forwarded-for')).toBe('2001:db8::7')
+
+      fetchCalls.length = 0
+      const direct = await forwardedHeaders({ headers: { 'x-forwarded-for': FORGED } }, '2001:db8::20')
+      expect(direct.get('x-forwarded-for')).toBe('2001:db8::20')
+
+      fetchCalls.length = 0
+      const mapped = await forwardedHeaders({ headers: {} }, '::ffff:203.0.113.21')
+      expect(mapped.get('x-forwarded-for')).toBe('203.0.113.21')
+    })
+
+    it('sends no X-Forwarded-For when the client address is unknown', async () => {
+      const headers = await forwardedHeaders({ headers: { ...forgedHeaders, 'x-forwarded-for': FORGED } }, undefined)
+
+      expect(headers.has('x-forwarded-for')).toBe(false)
+      for (const name of dropped) expect(headers.has(name)).toBe(false)
+    })
+
+    it('delivers one X-Forwarded-For over real sockets, peer captured as Core captures it', async () => {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const seen: Array<Array<[string, string]>> = []
+      const app = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch(req) {
+          seen.push([...req.headers.entries()])
+          return new Response('ok')
+        },
+      })
+      // Core's own Bun.serve wrapper (index.ts): attach the socket peer, then route.
+      const core = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch(req, server) {
+          attachPeerAddress(req, server.requestIP(req)?.address)
+          return proxyLocalDeploymentRequest(localDeployment.id, req, '')
+        },
+      })
+      configureLocalDeploymentProxyDependencies({
+        resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: app.port! }),
+      })
+      try {
+        const url = new URL(localDeploymentUrl(localDeployment))
+        const response = await fetch(`http://127.0.0.1:${core.port}${url.pathname}${url.search}`, {
+          headers: { ...forgedHeaders, 'x-forwarded-for': `${FORGED}, 198.51.100.7` },
+        })
+        expect(response.status).toBe(200)
+        await response.arrayBuffer()
+
+        const clientAddressHeaders = seen[0]!.filter(([name]) => name === 'x-forwarded-for' || dropped.includes(name))
+        expect(clientAddressHeaders).toEqual([['x-forwarded-for', '198.51.100.7']])
+      } finally {
+        core.stop(true)
+        app.stop(true)
+      }
+    })
   })
 
   // Real sockets end to end: an app upstream that compresses, the proxy served

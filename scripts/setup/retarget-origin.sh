@@ -224,6 +224,11 @@ require_no_host_migrate_pending
 CORE_PORT=$(envfile_get "${ENV_FILE}" 'PORT') || CORE_PORT=''
 [[ -n ${CORE_PORT} ]] || CORE_PORT=$(cfg_get '.core.port' '3000')
 [[ ${CORE_PORT} =~ ^[0-9]+$ ]] || die "core port must be a number (got '${CORE_PORT}' from ${ENV_FILE} or config: core.port)"
+# Re-render with the same extra trusted proxies setup-host.sh used, or a
+# retarget would silently drop them (see render_caddyfile).
+CADDY_TRUSTED_PROXIES=()
+caddy_trusted_proxies=$(ingress_trusted_proxies_from_config) || exit 1
+[[ -z ${caddy_trusted_proxies} ]] || mapfile -t CADDY_TRUSTED_PROXIES <<<"${caddy_trusted_proxies}"
 
 # ============================================================== dry run
 
@@ -242,7 +247,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   printf '\ncaddy — host %s\n' "${CADDY_HOST}"
   plan "install ${TLS_CERT} -> ${CADDY_TLS_CERT_PATH} (0644 root) and ${TLS_KEY} -> ${CADDY_TLS_KEY_PATH} (0600 caddy-owned; contents never printed)"
   plan "write ${CADDYFILE_PATH} (idempotent: rewrite + reload, never restart, only on content change):"
-  render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}" | sed 's/^/  | /'
+  render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}" "${CADDY_TRUSTED_PROXIES[@]}" | sed 's/^/  | /'
   printf '\nunits\n'
   plan "systemctl restart ${HL_UNIT_API} ${HL_UNIT_WORKER}; wait for 127.0.0.1:${CORE_PORT}/health (bounded timeout)"
   exit 0
@@ -342,7 +347,7 @@ if ! (
 
   # ============================================================ 5. caddy
   log_step "5/6: re-render + reload caddy (host ${CADDY_HOST})"
-  caddy_write_and_reload "$(render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}")"
+  caddy_write_and_reload "$(render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}" "${CADDY_TRUSTED_PROXIES[@]}")"
 ); then
   log_error "steps 3-5 failed — restoring the previous origin certificate (if the failure was caddy_write_and_reload's own validate/reload check, it already restored its own prior Caddyfile bytes on that path, so the host keeps serving ITS OWN cert against ITS OWN prior config)"
   # Each restore is checked, and the final message says exactly which ones

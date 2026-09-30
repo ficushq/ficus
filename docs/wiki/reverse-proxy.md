@@ -216,6 +216,44 @@ avoids the base-path handling entirely. For a split web/API deployment, point
 Tailscale at the Vite dev server (`http://localhost:5173`) or at the Caddy/nginx
 front end from the sections above instead of at Core.
 
+## Client addresses
+
+Core resolves the visitor's address from the socket peer, and believes an
+incoming `X-Forwarded-For` only when that peer is loopback (a same-host proxy)
+or listed in `FICUS_TRUSTED_PROXY_ADDRESSES`. The proxy in front of Core must
+therefore send exactly one trustworthy `X-Forwarded-For`: the address it
+verified itself, never a client-supplied chain. Local apps receive that one
+address as their only `X-Forwarded-For`; Core strips every other
+client-address header (`CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`,
+`Forwarded`, and similar) before forwarding.
+
+Behind Cloudflare with Caddy, trust only Cloudflare's published ranges
+(<https://www.cloudflare.com/ips/>) and send Caddy's verified address:
+
+```caddyfile
+{
+  servers {
+    trusted_proxies static 173.245.48.0/20 2400:cb00::/32 # ...every published range
+    trusted_proxies_strict
+    client_ip_headers X-Forwarded-For
+  }
+}
+
+ficus.example.com {
+  reverse_proxy 127.0.0.1:3000 {
+    header_up X-Forwarded-For {client_ip}
+  }
+}
+```
+
+Without Cloudflare (or another proxy) in front, leave `trusted_proxies` out: Caddy
+then sends the connecting address. The hosted setup scripts render this
+(`render_caddyfile` in `scripts/setup/lib.sh`). With nginx, use
+`proxy_set_header X-Forwarded-For $remote_addr;` together with the realip module
+(`set_real_ip_from` for each trusted range, `real_ip_header X-Forwarded-For`,
+`real_ip_recursive on`) rather than `$proxy_add_x_forwarded_for`, which passes the
+client's own claims on.
+
 ## Streaming (SSE) and buffering
 
 Chat replies stream from `POST /api/chat` as Server-Sent Events. Core sets `X-Accel-Buffering: no` and `Cache-Control: no-transform` on the response so proxies forward tokens in real time instead of buffering the whole turn and releasing it in one burst.
