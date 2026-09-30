@@ -31,8 +31,9 @@ describe('delivery binding self-check', () => {
       `ficus workstream set-meta ${id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
     )
     expect(check).toContain("stream's branch work/x")
-    expect(check).toContain('never matches fork pull requests')
-    expect(check).toContain('only to override that resolution')
+    expect(check).toContain('binds automatically when the code host reports it')
+    expect(check).toContain('fork pull requests never match')
+    expect(check).toContain('only when the delivery pull request comes from a different branch')
   })
 
   test('a branchless stream is told the manual bind is required; legacy shapes get github.pr', () => {

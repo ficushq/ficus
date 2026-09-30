@@ -42,6 +42,21 @@ plus zero or more **flagged** delivery PRs — tracked pull requests with
 `delivery: true`. Together they are the pull requests whose merge state gates
 completion:
 
+**Binding the primary delivery PR when it is opened.** When a code-host event (webhook or
+polling) reports a pull request whose head branch is an active `pr-merge`/`pr-auto-merge`
+stream's `metadata.git.branch`, in the stream's `codeHost.repository` (or legacy `github.repo`),
+with the base equal to `metadata.git.baseBranch`, and the stream has no
+`codeHost.changeRequest`, the pull request is bound to `codeHost.changeRequest {number, url}`
+right away — opened, synchronize, review, and review-comment events all carry the head
+identity. The event that bound it is routed to the stream, and earlier events for the same pull
+request that arrived before the binding (for example a comment delivered ahead of the opened
+event) are routed then, so review feedback is not lost. The same policy as finish applies:
+fork heads, wrong bases, other repositories, and closed-unmerged pull requests never bind; an
+existing (including manual) binding is never overwritten; only streams the event's connection
+is authorized for are considered, so one squad never binds another squad's stream; and when
+more than one stream claims the branch nothing is bound and finish-time resolution decides.
+Issue comments and CI runs do not carry the head branch, so they cannot bind on their own.
+
 **Resolving the primary delivery PR at finish.** When `ficus workstream finish` runs for a
 `pr-merge`/`pr-auto-merge` stream whose `codeHost.changeRequest` is not set, it asks the code
 host which pull request the stream's branch (`metadata.git.branch`) carries — one
@@ -54,8 +69,9 @@ branch, or the candidates do not identify one pull request, finish fails with th
 shape-matching manual bind command — `ficus workstream set-meta <id> codeHost.changeRequest
 '{"number":N,"url":"<pr url>"}'` for canonical streams, `github.pr` for legacy
 `metadata.github` streams, and a full `codeHost` object for unconfigured ones. The manual bind
-is therefore an override for unusual cases, not a required step, and nothing depends on
-webhooks, event timing, or connection state for the binding to exist.
+is therefore needed only when the delivery PR comes from a different branch (or to replace a
+wrong binding), and finish does not depend on webhooks, event timing, or connection state for
+the binding to exist.
 
 - `POST /api/workstreams/:id/tracked` accepts `{ url, delivery: true }` or
   `{ resource, delivery: true }` (only valid when the resource is a pull

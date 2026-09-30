@@ -171,6 +171,10 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
           : {}),
         ...(typeof native?.head?.ref === 'string' ? { headBranch: native.head.ref } : {}),
         ...(typeof native?.base?.ref === 'string' ? { baseBranch: native.base.ref } : {}),
+        // Where the head ref lives: a fork reusing a stream's branch name reports its own repository.
+        ...(typeof native?.head?.repo?.full_name === 'string' && /^[\w.-]+\/[\w.-]+$/.test(native.head.repo.full_name)
+          ? { headRepository: native.head.repo.full_name.toLowerCase() }
+          : {}),
         ...(Array.isArray(native?.requested_reviewers) || Array.isArray(native?.requested_teams)
           ? {
               pendingHumanReview:

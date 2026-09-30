@@ -4,7 +4,7 @@ import { isDeliveryApprovalWait } from '../../workflows/wait-policy'
 import { codeHostingRegistry } from '../code-hosting'
 import { isDeliveryFeedbackSubscription } from '../code-hosting/registry'
 import { isIntegrationEnabled } from '../provider-state'
-import { and, eq, inArray, isNull, lte, desc, sql, or } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lte, ne, desc, sql, or } from 'drizzle-orm'
 import {
   integrationValueAt,
   activeWorkflowAttempts,
@@ -34,6 +34,7 @@ import type { IntegrationOutputAuthority } from './types'
 import type { VerifiedIngressEvent } from '../types'
 import { eventRuleTrigger, routeDefaultNotifications } from './default-routing'
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
+import { bindChangeRequestFromEvent } from './delivery-binding'
 import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
 import { createLogger } from '../../../lib/infra/logger'
 
@@ -262,12 +263,12 @@ export async function publishIntegrationOutput(
   } catch (error) {
     triggerError = error
   }
-  await matchOutputEvent(event)
+  const bound = await matchOutputEvent(event)
   const deliveries = await db
     .select({ id: integrationOutputDeliveries.workStreamId })
     .from(integrationOutputDeliveries)
     .where(eq(integrationOutputDeliveries.eventId, event.id))
-  for (const id of new Set(deliveries.map((row) => row.id))) await reconcileOutputDeliveries(id)
+  for (const id of new Set([...deliveries.map((row) => row.id), ...bound])) await reconcileOutputDeliveries(id)
   if (!triggerError) {
     try {
       await finalizeOutputRouting(event)
@@ -285,8 +286,45 @@ export async function publishIntegrationOutput(
   return event.id
 }
 
-async function matchOutputEvent(event: Event) {
-  if (event.matchedAt || !(await shouldNotifyEvent(db, event))) return
+/** Routes the event and returns the streams it bound as their delivery pull request. */
+async function matchOutputEvent(event: Event): Promise<string[]> {
+  if (event.matchedAt) return []
+  // Bind before matching so the event that reveals the delivery pull request is itself routed
+  // through the code-host subscriptions the binding activates. Self-authored feedback still binds.
+  const bound = await bindChangeRequestFromEvent(event.integration, event.fact, (squadId) =>
+    authorized(db, event.integration, event.authority, squadId)
+  )
+  if (await shouldNotifyEvent(db, event)) await routeOutputEvent(event)
+  // Feedback on the pull request that arrived before it was bound (for example a comment
+  // delivered ahead of the opened event) was not routed then; route it to the newly bound stream.
+  for (const id of bound) await routeEarlierResourceEvents(event, id)
+  return bound
+}
+
+async function routeEarlierResourceEvents(event: Event, workStreamId: string) {
+  const [run] = await db
+    .select({ createdAt: workStreamFlowRuns.createdAt })
+    .from(workStreamFlowRuns)
+    .where(eq(workStreamFlowRuns.workStreamId, workStreamId))
+  if (!run) return
+  const earlier = await db
+    .select()
+    .from(integrationOutputEvents)
+    .where(
+      and(
+        eq(integrationOutputEvents.integration, event.integration),
+        sql`${integrationOutputEvents.fact}->>'resourceKey' = ${event.fact.resourceKey}`,
+        ne(integrationOutputEvents.id, event.id),
+        gte(integrationOutputEvents.createdAt, run.createdAt),
+        lte(integrationOutputEvents.createdAt, event.createdAt)
+      )
+    )
+    .orderBy(integrationOutputEvents.createdAt)
+    .limit(100)
+  for (const prior of earlier) if (await shouldNotifyEvent(db, prior)) await routeOutputEvent(prior, [workStreamId])
+}
+
+async function routeOutputEvent(event: Event, only?: string[]) {
   const created = await db
     .select({ id: integrationOutputTriggerRuns.workStreamId })
     .from(integrationOutputTriggerRuns)
@@ -299,6 +337,7 @@ async function matchOutputEvent(event: Event) {
     .where(
       and(
         inArray(workStreams.status, ['active', 'queued']),
+        only ? inArray(workStreams.id, only) : undefined,
         or(
           sql`${workStreamFlowRuns.state}->'definition'->'subscriptions' @> ${JSON.stringify([{ source: { integration: event.integration, output: event.fact.output, version: event.fact.version } }])}::jsonb`,
           sql`${workStreamFlowRuns.state}->'definition'->'completion'->>'followChanges' = 'true'`
@@ -721,7 +760,7 @@ export async function reconcileUnmatchedOutputs() {
   for (const event of events) {
     try {
       await applyOutputTriggers(event)
-      await matchOutputEvent(event)
+      for (const id of await matchOutputEvent(event)) await reconcileOutputDeliveries(id)
       await finalizeOutputRouting(event)
     } catch {
       await db
