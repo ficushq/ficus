@@ -18,9 +18,9 @@ Prerequisites: `bash`, plus `tmux` on the machine if agents run local deployment
 
 ## Local service supervision
 
-Fresh `bun run setup` installs use launchd on macOS and systemd user services on Linux; PM2 is still available with `--supervisor pm2`. The explicit choice is stored in registry version 3 at `~/.tau/cli/local-server.json`, and every `ficus server start|stop|restart|status|logs|update|uninstall` command dispatches from that record rather than guessing from the host.
+Fresh `bun run setup` installs use launchd on macOS and systemd user services on Linux; PM2 is still available with `--supervisor pm2`. The explicit choice is stored in registry version 3 at `~/.ficus/cli/local-server.json`, and every `ficus server start|stop|restart|status|logs|update|uninstall` command dispatches from that record rather than guessing from the host.
 
-LaunchAgents live in `~/Library/LaunchAgents` and return at the next GUI login, but do not remain alive after logout. Linux units live in `${XDG_CONFIG_HOME:-~/.config}/systemd/user`; setup attempts unprivileged linger enablement and prints `sudo loginctl enable-linger <user>` guidance when required. Native stdout/stderr share private component logs at `~/.tau/logs/<process>.log`, selected through the existing file system-log provider.
+LaunchAgents live in `~/Library/LaunchAgents` and return at the next GUI login, but do not remain alive after logout. Linux units live in `${XDG_CONFIG_HOME:-~/.config}/systemd/user`; setup attempts unprivileged linger enablement and prints `sudo loginctl enable-linger <user>` guidance when required. Native stdout/stderr share private component logs at `~/.ficus/logs/<process>.log`, selected through the existing file system-log provider.
 
 Never change a registered checkout in place. Run `ficus server uninstall --root <checkout>` and then `bun run setup -- --supervisor <new>`; uninstall retains the checkout, logs, data, and PostgreSQL resources.
 
@@ -74,7 +74,7 @@ An agent shell is one the runtime gave a scoped token. Those shells get:
 
 Shells the runtime does NOT give a token — web terminals, `exec`, anything the
 sandbox manager spawns — are operator-driven and unchanged: they keep your
-`~/.tau/cli/auth.json` and your `ficus` behaves exactly as it does in any other
+`~/.ficus/cli/auth.json` and your `ficus` behaves exactly as it does in any other
 shell of yours.
 
 What is actually enforced for an agent shell:
@@ -105,7 +105,7 @@ What is actually enforced for an agent shell:
   `FICUS_API_URL` cannot reach `.tau/.env` either.
 - **A per-agent CLI auth store.** Host agents run as your unix user with your
   `$HOME`, so without `FICUS_AUTH_STORE` the `ficus` CLI falls back to
-  `~/.tau/cli/auth.json` — YOUR login, against whatever instance you last
+  `~/.ficus/cli/auth.json` — YOUR login, against whatever instance you last
   logged into. Each agent gets its own store path instead; the file is not
   created, and a missing store reads as empty. With `FICUS_AGENT_CONTEXT=1` the
   CLI resolves the API URL and credential from the env ONLY: no auth store, no
@@ -124,7 +124,7 @@ by mistake. It is not a security boundary, and host mode does not have one:
   specifically to defeat the preamble is still shell code running in the
   agent's own shell.
 - There is no isolation on host at all. An agent that deliberately reads
-  `~/.tau/cli/auth.json` (or the password file, or your gh token) can act as
+  `~/.ficus/cli/auth.json` (or the password file, or your gh token) can act as
   you no matter what the preamble does.
 
 Use docker/k8s/vm when the deliberate case must be covered too.

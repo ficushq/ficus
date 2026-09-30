@@ -89,7 +89,8 @@ describe('systemd linger', () => {
   })
 })
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { systemdUserSupervisor } from './systemd-user'
@@ -123,6 +124,35 @@ describe('systemd definition replacement', () => {
       await expect(systemdUserSupervisor.start(ctx)).rejects.toThrow(/systemd-analyze/i)
       expect(paths.map((path) => readFileSync(path, 'utf8'))).toEqual(before)
       expect(calls.some((call) => /systemctl --user (stop|enable)/.test(call))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('systemd log directory', () => {
+  it('creates the logs under ~/.ficus when it exists, and never creates a legacy home', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ficus-systemd-logs-'))
+    const home = join(root, 'home')
+    mkdirSync(join(home, '.ficus'), { recursive: true })
+    mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
+    writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty.so'), '')
+    const ctx: SupervisorContext = {
+      ...context,
+      root,
+      home,
+      pathEnv: '/bin',
+      which: (command) => (command === 'systemd-analyze' ? '/bin/systemd-analyze' : null),
+      runner: async (command) => ({ code: 0, stdout: command[0] === 'loginctl' ? 'yes\n' : '', stderr: '' }),
+    }
+    try {
+      await systemdUserSupervisor.start(ctx)
+      for (const component of ['worker', 'api'] as const) {
+        const log = systemdUserNames(ctx, component).log
+        expect(log.startsWith(join(home, '.ficus', 'logs') + '/')).toBe(true)
+        expect(existsSync(log)).toBe(true)
+      }
+      expect(existsSync(join(home, LEGACY_HOME_DIR_NAME))).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

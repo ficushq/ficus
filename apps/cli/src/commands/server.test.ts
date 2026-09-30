@@ -592,13 +592,23 @@ describe('ficus server', () => {
     ])
     rmSync(installTmp, { recursive: true, force: true })
   })
-  it('install without --root clones into the CLI home as ~/.ficus/ficus', async () => {
+  it('install without --root clones into the CLI home as ~/.ficus/ficus when nothing is registered', async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-home-')))
     const installRoot = join(home, '.ficus', 'ficus')
     const { runner, calls } = cloningRunner(installRoot)
-    const { run } = make({}, { env: { HOME: home }, runner })
+    const { run } = make({}, { env: { HOME: home }, runner, statePath: join(home, 'empty-registry.json') })
     await run(['server', 'install', '--repo', 'x', '--ref', 'main', '--runtime', 'host'])
     expect(joined(calls)[0]).toBe(`git clone --recurse-submodules --branch main x ${installRoot}`)
+    rmSync(home, { recursive: true, force: true })
+  })
+  it('install without --root reuses the registered default instance checkout instead of cloning another', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-home-')))
+    writeFileSync(join(root, '.bun-version'), '1.3.8\n')
+    const { runner, calls } = cloningRunner(join(home, '.ficus', 'ficus'))
+    const { run } = make({}, { env: { HOME: home }, runner })
+    await run(['server', 'install', '--repo', 'x', '--ref', 'main', '--runtime', 'host'])
+    expect(joined(calls).some((call) => call.startsWith('git clone'))).toBe(false)
+    expect(joined(calls).at(-1)).toBe(`bun run setup -- --root ${root} --runtime host`)
     rmSync(home, { recursive: true, force: true })
   })
   it('install refuses malformed registry state before clone or destination mutation', async () => {

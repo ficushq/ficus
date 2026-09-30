@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
-import { cliHome, finalizeCliHome, moveCliHome } from './home-move'
+import { cliHome, finalizeCliHome, LEGACY_CLI_HOME_LINK, moveCliHome } from './home-move'
 
 let home: string
 let ficus: string
@@ -97,6 +97,46 @@ describe('moveCliHome', () => {
     expect(await moveCliHome({ homedir: home, running: notRunning })).toBe('none')
     expect(existsSync(ficus)).toBe(false)
   })
+  it('refuses when ~/.ficus appears while the running check is answering', async () => {
+    mkdirSync(legacy)
+    const running = async () => {
+      mkdirSync(join(ficus, 'cli'), { recursive: true })
+      return false
+    }
+    await expect(moveCliHome({ homedir: home, running })).rejects.toThrow(/already exists/)
+    expect(lstatSync(legacy).isDirectory()).toBe(true)
+  })
+  it('refuses to move across filesystems, touching nothing', async () => {
+    mkdirSync(legacy)
+    const statDev = (p: string) => (p === legacy ? 1 : 2)
+    await expect(moveCliHome({ homedir: home, running: notRunning, statDev })).rejects.toThrow(/different filesystem/)
+    expect(lstatSync(legacy).isDirectory()).toBe(true)
+    expect(existsSync(ficus)).toBe(false)
+  })
+  it('moves the home back and rethrows when the link cannot be created', async () => {
+    mkdirSync(join(legacy, 'cli'), { recursive: true })
+    const symlink = () => {
+      throw new Error('link refused')
+    }
+    await expect(moveCliHome({ homedir: home, running: notRunning, symlink })).rejects.toThrow('link refused')
+    expect(lstatSync(legacy).isDirectory()).toBe(true)
+    expect(existsSync(join(legacy, 'cli'))).toBe(true)
+    expect(existsSync(ficus)).toBe(false)
+  })
+  it('names both paths when the link fails and the legacy home was recreated meanwhile', async () => {
+    mkdirSync(join(legacy, 'cli'), { recursive: true })
+    writeFileSync(join(legacy, 'cli', 'auth.json'), '{}')
+    const symlink = (_target: string, path: string) => {
+      // Another process recreates the legacy home (non-empty) between the rename and the link.
+      mkdirSync(join(path, 'cli'), { recursive: true })
+      throw new Error('link refused')
+    }
+    const error = (await moveCliHome({ homedir: home, running: notRunning, symlink }).catch((e) => e)) as Error
+    expect(error.message).toContain(`the data is in ${ficus}`)
+    expect(error.message).toContain(`${legacy} was recreated by another process`)
+    expect(error.message).toContain('link refused')
+    expect(readFileSync(join(ficus, 'cli', 'auth.json'), 'utf8')).toBe('{}')
+  })
   it('refuses a legacy link that points somewhere else', async () => {
     mkdirSync(join(home, 'elsewhere'))
     symlinkSync('elsewhere', legacy)
@@ -105,25 +145,32 @@ describe('moveCliHome', () => {
 })
 
 describe('finalizeCliHome', () => {
+  let link: string
+  beforeEach(() => {
+    link = join(home, LEGACY_CLI_HOME_LINK)
+  })
+  it('names the same legacy home as the bridge constant while both exist', () => {
+    expect(LEGACY_CLI_HOME_LINK).toBe(LEGACY_HOME_DIR_NAME)
+  })
   it('keeps the link while ~/.ficus/bin is not on PATH', async () => {
     mkdirSync(ficus)
-    symlinkSync('.ficus', legacy)
+    symlinkSync('.ficus', link)
     expect(await finalizeCliHome({ homedir: home, path: '/usr/bin:/bin' })).toBe('kept-not-on-path')
-    expect(lstatSync(legacy).isSymbolicLink()).toBe(true)
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
   })
   it('removes the link once ~/.ficus/bin is on PATH', async () => {
     mkdirSync(ficus)
-    symlinkSync('.ficus', legacy)
+    symlinkSync('.ficus', link)
     expect(await finalizeCliHome({ homedir: home, path: `/usr/bin:${join(ficus, 'bin')}/:/bin` })).toBe('removed')
-    expect(existsSync(legacy)).toBe(false)
+    expect(existsSync(link)).toBe(false)
     expect(lstatSync(ficus).isDirectory()).toBe(true)
   })
   it('reports absent when there is no legacy home', async () => {
     expect(await finalizeCliHome({ homedir: home, path: join(ficus, 'bin') })).toBe('absent')
   })
   it('never removes a legacy home that is not the link a move left', async () => {
-    mkdirSync(legacy)
+    mkdirSync(link)
     await expect(finalizeCliHome({ homedir: home, path: join(ficus, 'bin') })).rejects.toThrow(/not the link/)
-    expect(lstatSync(legacy).isDirectory()).toBe(true)
+    expect(lstatSync(link).isDirectory()).toBe(true)
   })
 })

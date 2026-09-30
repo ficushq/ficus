@@ -16,7 +16,7 @@ export interface AuthStore {
 }
 
 function getDefaultAuthStorePath(): string {
-  return join(cliHome({ homedir: homedir() }), 'cli', 'auth.json')
+  return join(cliHome({ homedir: process.env.HOME || homedir() }), 'cli', 'auth.json')
 }
 
 export function getAuthStorePath(): string {

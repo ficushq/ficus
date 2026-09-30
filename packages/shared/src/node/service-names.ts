@@ -14,6 +14,9 @@ export const LEGACY_SANDBOX_PASSWORD = '/etc/tau/password' // ficus-p5-bridge
 /**
  * The home directory name before the rename: the CLI home (`~/<legacy>`), Core's default
  * HOME_DIR, and the status dir in a checkout root. Used while it is a real directory.
+ * Every consumer is bridge code (read-both resolution, the CLI home move) and goes with the
+ * bridge sweep. The one consumer that outlives it — the CLI's Apple-step `finalizeCliHome` —
+ * has its own `ficus-p5-apple` constant (`LEGACY_CLI_HOME_LINK`), so this line can go first.
  */
 export const LEGACY_HOME_DIR_NAME = '.tau' // ficus-p5-bridge
 

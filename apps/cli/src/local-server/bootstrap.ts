@@ -2,21 +2,21 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, resolve } from 'path'
 import { SetupOptionsError } from './options'
 import type { Runner } from './runner'
-import { isCheckout } from './state'
+import { defaultLabel, isCheckout, readRegistry } from './state'
 import { cliHome } from './home-move'
 
 export const DEFAULT_REPO = 'https://github.com/ficushq/tau.git'
-/** The default checkout's directory name before the rename, kept by installs that already have one. */
-export const LEGACY_CHECKOUT_NAME = 'tau' // ficus-p5-bridge
-
 /**
- * `<cli home>/ficus` (`~/.ficus/ficus`). An existing checkout under its pre-rename name in the
- * CLI home is reused, so re-running the installer never clones a second copy beside it.
+ * Where `ficus server install` puts the checkout without --root: the root of the registered
+ * default instance when there is one (so re-running the installer reuses that checkout, whatever
+ * its directory is called, instead of cloning a second copy that collides with it), else
+ * `<cli home>/ficus` (`~/.ficus/ficus`).
  */
-export function defaultInstallDir(home: string): string {
-  const dir = cliHome({ homedir: home })
-  const legacyCheckout = join(dir, LEGACY_CHECKOUT_NAME)
-  return isCheckout(legacyCheckout) ? legacyCheckout : join(dir, 'ficus')
+export function defaultInstallDir(home: string, statePath: string): string {
+  const registry = readRegistry(statePath)
+  const label = defaultLabel(registry)
+  const registered = label ? registry.instances[label]?.root : undefined
+  return registered ?? join(cliHome({ homedir: home }), 'ficus')
 }
 
 export interface BootstrapDeps {

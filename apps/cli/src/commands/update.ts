@@ -10,7 +10,7 @@ import { config } from '../config'
 import { output, outputError } from '../output'
 import { narrate } from '../local-server/log'
 import { makeSupervisorContext } from '../local-server/supervisor'
-import { cliHome } from '../local-server/home-move'
+import { ficusOrLegacyDir } from '@ficus/shared/node'
 
 export interface UpdateDeps {
   resolveRoot(): string
@@ -154,7 +154,7 @@ export function registerUpdateCommands(program: Command, deps: UpdateDeps = defa
           }
         }
         // <root>/.ficus, or the pre-rename status dir while the checkout has only that one (Core agrees).
-        const path = join(cliHome({ homedir: deps.resolveRoot() }), 'local-update-status.json')
+        const path = join(ficusOrLegacyDir(deps.resolveRoot()), 'local-update-status.json')
         const latest = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null
         output(
           { active: false, latest, source: path },

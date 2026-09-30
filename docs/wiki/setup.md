@@ -44,16 +44,17 @@ forwards everything else verbatim to setup, so any other flag from the
 
 What the one-liner does, in order:
 
-1. Installs the `ficus` CLI into `~/.tau/bin` — `FICUS_INSTALL_DIR` overrides that
+1. Installs the `ficus` CLI into `~/.ficus/bin` — `FICUS_INSTALL_DIR` overrides that
    directory (both the one-liner and the CLI installer honour it). The install
-   is skipped when `~/.tau/bin/ficus` already exists **and**
+   is skipped when `~/.ficus/bin/ficus` already exists **and**
    `FICUS_SETUP_SKIP_CLI_INSTALL=1`; the installer URL comes from
    `FICUS_INSTALL_URL`, default `https://ficus.sh/cli/install.sh`.
 2. Runs `ficus server install`, which installs bun with the official installer if
    it is missing, then clones `https://github.com/ficushq/tau.git` into
-   `~/.tau/tau` (`--root <dir>` to clone elsewhere; an existing checkout there
-   is reused untouched, and a non-empty directory that is not a checkout is an
-   error).
+   `~/.ficus/ficus` (`--root <dir>` to clone elsewhere). Without `--root`, the
+   registered default instance's checkout is reused wherever it lives. An
+   existing checkout at the target is reused untouched, and a non-empty
+   directory that is not a checkout is an error.
 3. `bun install --frozen-lockfile` in the checkout.
 4. Hands off to the checkout's own `bun run setup` with your flags. The
    compiled CLI never runs installer logic of its own — setup always comes from
@@ -159,7 +160,7 @@ Three things, in the checkout and in your home directory:
   preserved; managed keys that are missing are appended under a single
   `# --- added by ficus setup ---` comment.
 - **Supervisor definition** — PM2 installs generate `ecosystem.config.js`. Native installs create paired definitions when started: `~/Library/LaunchAgents/ai.hiretau.<process>.plist` on macOS or `${XDG_CONFIG_HOME:-~/.config}/systemd/user/<process>.service` on Linux. Native setup leaves any existing ecosystem file untouched.
-- **`~/.tau/cli/local-server.json`** — the instance registry:
+- **`~/.ficus/cli/local-server.json`** — the instance registry:
   `{ "version": 3, "default": "<label>", "instances": { "<label>": { root, port, supervisor, createdAt, updatedAt } } }`,
   so `ficus server …` finds every install from anywhere. Version-1 and version-2 records migrate in memory to `supervisor: "pm2"`; malformed version-3 or future-version state fails closed. Setup adds its
   instance and takes the default when it is the first one or `--default` is
@@ -186,7 +187,7 @@ The managed `.env` keys:
 | `FICUS_UPDATE_SUPERVISOR`                                           | selected supervisor                                                                                                                                                                | always reconciled                          |
 | `FICUS_SYSTEM_LOG_PROVIDER`                                         | `pm2` for PM2; `file` for native supervisors                                                                                                                                       | always reconciled                          |
 | `FICUS_PM2_API_NAME`, `FICUS_PM2_WORKER_NAME`                       | derived app names for PM2; cleared for native supervisors                                                                                                                          | always reconciled                          |
-| `FICUS_LOG_FILE_API`, `FICUS_LOG_FILE_WORKER`                       | absolute `~/.tau/logs/<process>.log` paths for native supervisors; cleared for PM2                                                                                                 | always reconciled                          |
+| `FICUS_LOG_FILE_API`, `FICUS_LOG_FILE_WORKER`                       | absolute `~/.ficus/logs/<process>.log` paths for native supervisors; cleared for PM2                                                                                               | always reconciled                          |
 
 "Replaced when" is the whole rule: an existing non-empty value is kept unless
 you passed the flag (or env mirror) that owns it. One exception is baked in —
@@ -362,7 +363,7 @@ ficus server logs --instance smoke -f
 ficus server uninstall --instance smoke
 ```
 
-`ficus server list` reads `~/.tau/cli/local-server.json`, the registry setup
+`ficus server list` reads `~/.ficus/cli/local-server.json`, the registry setup
 writes an entry into (`{ root, port, createdAt, updatedAt }` per label). Which
 instance a command acts on is decided in this order: `--root` >
 `FICUS_SERVER_ROOT` > `--instance` (or `FICUS_INSTANCE`) > the checkout you are
@@ -417,9 +418,9 @@ with `--instance`.
 
 ### Notes
 
-- The default checkout `~/.tau/tau` lives inside `~/.tau`, which is also Ficus's
-  default data root (`HOME_DIR`). Source and data sit side by side; Ficus's
-  storage never writes into `~/.tau/tau`.
+- The default checkout `~/.ficus/ficus` lives inside `~/.ficus`, which is also
+  Ficus's default data root (`HOME_DIR`). Source and data sit side by side;
+  Ficus's storage never writes into `~/.ficus/ficus`.
 - The k3d runtime bind-mounts `~/.tau` into the cluster so pods and the host see
   the same workspace files. That mount includes the checkout at `~/.tau/tau` —
   harmless, but worth knowing before you point `--home-dir` somewhere exotic.
@@ -439,7 +440,7 @@ access logs.
    read it with:
 
    ```bash
-   grep '^FICUS_PASSWORD=' ~/.tau/tau/.env   # or .env in your own checkout
+   grep '^FICUS_PASSWORD=' ~/.ficus/ficus/.env   # or .env in your own checkout
    ```
 
 2. Create your account. The **first passkey becomes the system admin**.

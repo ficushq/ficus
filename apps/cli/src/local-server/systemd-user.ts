@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
-import { isAbsolute, join } from 'path'
+import { dirname, isAbsolute, join } from 'path'
 import { localProcessNames } from '@ficus/shared'
 import { bunPtyLibrary, nativeLogPath, type NativeComponent } from './launchd'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
@@ -78,7 +78,8 @@ function assertOwned(path: string, root: string): void {
     throw new Error(`Refusing to replace supervisor definition not owned by this checkout: ${path}`)
 }
 function prepareLogs(context: SupervisorContext): void {
-  const dir = join(context.home, '.tau', 'logs')
+  // The directory of the log files themselves, so the two can never disagree.
+  const dir = dirname(nativeLogPath(context, 'api'))
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   chmodSync(dir, 0o700)
   for (const component of WORKER_FIRST) {

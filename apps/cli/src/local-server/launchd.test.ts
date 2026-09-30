@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
-import { launchdDefinition, launchdNames, nativeLogPath } from './launchd'
+import { launchdDefinition, launchdNames, launchdSupervisor, nativeLogPath } from './launchd'
 import type { SupervisorContext } from './supervisor'
 
 const context: SupervisorContext = {
@@ -51,11 +51,6 @@ describe('launchdDefinition', () => {
   })
 })
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { launchdSupervisor } from './launchd'
-
 describe('nativeLogPath', () => {
   it('keeps logs in a legacy CLI home that has not moved yet', () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-launchd-home-')))
@@ -94,6 +89,35 @@ describe('launchd lifecycle', () => {
       expect(bootstraps[0]).toEndWith('ai.hiretau.tau-smoke-worker.plist')
       expect(bootstraps[1]).toEndWith('ai.hiretau.tau-smoke-api.plist')
       expect(calls.filter((call) => call.startsWith('plutil -lint'))).toHaveLength(2)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('creates the logs under ~/.ficus when it exists, and never creates a legacy home', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ficus-launchd-logs-'))
+    const home = join(root, 'home')
+    mkdirSync(join(home, '.ficus'), { recursive: true })
+    mkdirSync(join(root, 'node_modules/bun-pty/rust-pty/target/release'), { recursive: true })
+    writeFileSync(join(root, 'node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib'), '')
+    const ctx: SupervisorContext = {
+      ...context,
+      root,
+      home,
+      label: 'smoke',
+      runner: async (command) => {
+        const servicePrint = command[0] === 'launchctl' && command[1] === 'print' && command[2]?.split('/').length === 3
+        return { code: servicePrint ? 113 : 0, stdout: '', stderr: '' }
+      },
+    }
+    try {
+      await launchdSupervisor.start(ctx)
+      for (const component of ['worker', 'api'] as const) {
+        const log = nativeLogPath(ctx, component)
+        expect(log.startsWith(join(home, '.ficus', 'logs') + '/')).toBe(true)
+        expect(existsSync(log)).toBe(true)
+      }
+      expect(existsSync(join(home, LEGACY_HOME_DIR_NAME))).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

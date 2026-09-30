@@ -214,7 +214,7 @@ Examples:
         // setup runs, so corrupt/forward registry state must fail closed here.
         readRegistryStrict(deps.statePath)
         const home = deps.env.HOME ?? homedir()
-        const root = resolve(expandTilde((opts.root as string | undefined) ?? defaultInstallDir(home)))
+        const root = resolve(expandTilde((opts.root as string | undefined) ?? defaultInstallDir(home, deps.statePath)))
         await bootstrap(
           { root, repo: opts.repo as string, ref: opts.ref as string, setupArgs },
           { runner: deps.runner, which: deps.which, env: deps.env, home, log: narrate }

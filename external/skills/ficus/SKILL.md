@@ -23,12 +23,12 @@ stored auth backend for one command.
 
 ```bash
 curl -fsSL https://ficus.sh/cli/install.sh | bash
-export PATH="$HOME/.tau/bin:$PATH"   # add to the shell profile too
+export PATH="$HOME/.ficus/bin:$PATH" # add to the shell profile too
 ficus --version                      # verify
 ```
 
-The installer writes the binary to `~/.tau/bin/ficus` and bundled assets to
-`~/.tau/share`. Upgrade or reinstall later with `ficus install`. If `ficus` is
+The installer writes the binary to `~/.ficus/bin/ficus` and bundled assets to
+`~/.ficus/share`. Upgrade or reinstall later with `ficus install`. If `ficus` is
 on PATH but misbehaving after an instance upgrade, run `ficus install` before
 debugging further — version skew between CLI and server is a common cause.
 

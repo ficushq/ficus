@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
-import { isAbsolute, join } from 'path'
+import { dirname, isAbsolute, join } from 'path'
 import { localProcessNames, parseLaunchdJobIdentity } from '@ficus/shared'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
 import { cliHome } from './home-move'
@@ -101,7 +101,8 @@ function assertOwned(path: string, root: string): void {
 }
 
 function prepareLogs(context: SupervisorContext): void {
-  const dir = join(cliHome({ homedir: context.home }), 'logs')
+  // The directory of the log files themselves, so the two can never disagree.
+  const dir = dirname(nativeLogPath(context, 'api'))
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   chmodSync(dir, 0o700)
   for (const component of COMPONENTS_WORKER_FIRST) {
