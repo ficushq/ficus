@@ -6,7 +6,9 @@ import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Execution } from '../../entities/Execution'
 import * as runners from '../../entities/agent-runners'
-import { STARTUP_RETRY_DELAYS_MS, startupRetryCode } from './startup-retry'
+import { MACHINE_STARTUP_RETRY_DELAYS_MS, STARTUP_RETRY_DELAYS_MS, startupRetryCode } from './startup-retry'
+import { MachineUnavailableError } from '../machines/placement'
+import { MachineNotReadyError } from '../machines/queries'
 import { removeSession } from './session-state'
 import { AdmissionReservationStore, attachAdmissionLeaseToError } from '../maintenance/admission-reservation'
 
@@ -44,6 +46,30 @@ describe('startup retry classification', () => {
     const error = new Error('cycle')
     error.cause = error
     expect(startupRetryCode(error)).toBeNull()
+  })
+})
+
+describe('machine readiness startup retry classification', () => {
+  it.each(['registered', 'bootstrapping', 'unreachable'])(
+    'waits for a machine that is %s, through wrappers, from either placement or bind',
+    (status) => {
+      const placement = new MachineUnavailableError(`machine host-noah is not ready (status ${status})`, status)
+      expect(startupRetryCode(placement)).toBe(`machine_${status}`)
+      expect(startupRetryCode(new Error('ensure failed', { cause: placement }))).toBe(`machine_${status}`)
+      const bind = new MachineNotReadyError(`machine m1 is not ready (status ${status}); refusing to bind`, status)
+      expect(startupRetryCode(bind)).toBe(`machine_${status}`)
+    }
+  )
+
+  it.each(['parked', 'reaping', 'terminated'])('fails at once for a machine that is %s', (status) => {
+    expect(
+      startupRetryCode(new MachineUnavailableError(`machine m1 is not ready (status ${status})`, status))
+    ).toBeNull()
+  })
+
+  it('does not infer a machine status from prose or a missing status', () => {
+    expect(startupRetryCode(new Error('machine host-noah is not ready (status bootstrapping)'))).toBeNull()
+    expect(startupRetryCode(new MachineUnavailableError('no ready shared machine registered'))).toBeNull()
   })
 })
 
@@ -103,6 +129,44 @@ describe('durable startup retry', () => {
       expect(failed.startupRetryCount).toBe(3)
       expect(failed.error).toContain('too many connections')
       expect(runner).toHaveBeenCalledTimes(4)
+    } finally {
+      runner.mockRestore()
+    }
+  })
+
+  it('waits out a machine that is still bootstrapping on its own longer schedule, then fails', async () => {
+    const bootstrapping = () =>
+      new MachineUnavailableError('machine host-noah is not ready (status bootstrapping)', 'bootstrapping')
+    const runner = spyOn(runners, 'createRunner').mockImplementation(async () => {
+      throw bootstrapping()
+    })
+    try {
+      let execution = await agent.queueExecution({ message: 'Keep this request' })
+      const id = execution.id
+      for (const [index, delay] of MACHINE_STARTUP_RETRY_DELAYS_MS.entries()) {
+        expect(await execution.start()).toBe(true)
+        const [before] = await db.execute<{ now: Date }>(sql`select clock_timestamp() as now`)
+        await execution.run()
+        execution = await Execution.mustFind(id)
+        expect(execution.status).toBe('queued')
+        expect(execution.startupRetryCount).toBe(index + 1)
+        expect(execution.message).toBe('Keep this request')
+        expect(execution.failureClass).toBeNull()
+        expect(execution.startupRetryAt!.getTime()).toBeGreaterThanOrEqual(new Date(before.now).getTime() + delay)
+        await db
+          .update(executions)
+          .set({ startupRetryAt: new Date(0) })
+          .where(eq(executions.id, id))
+      }
+      // The machine schedule outlasts the database one, and still ends.
+      expect(MACHINE_STARTUP_RETRY_DELAYS_MS.length).toBeGreaterThan(STARTUP_RETRY_DELAYS_MS.length)
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      const failed = await Execution.mustFind(id)
+      expect(failed.status).toBe('failed')
+      expect(failed.startupRetryCount).toBe(MACHINE_STARTUP_RETRY_DELAYS_MS.length)
+      expect(failed.error).toContain('status bootstrapping')
+      expect(runner).toHaveBeenCalledTimes(MACHINE_STARTUP_RETRY_DELAYS_MS.length + 1)
     } finally {
       runner.mockRestore()
     }

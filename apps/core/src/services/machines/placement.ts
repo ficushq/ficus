@@ -90,7 +90,11 @@ const provisionInflight = new InflightDeduper<Machine>()
  *  explicit machine is missing or not yet ready). Thrown by the BYO/explicit
  *  paths; re-exported from box-manager for backward compatibility. */
 export class MachineUnavailableError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** The machine's status when it exists but isn't ready (startup retry waits out transient ones). */
+    readonly machineStatus?: string
+  ) {
     super(message)
     this.name = 'MachineUnavailableError'
   }
@@ -606,7 +610,10 @@ export async function resolvePlacement(req: PlacementRequest, deps: PlacementDep
     const machine = await getMachine(req.explicitMachineId)
     if (!machine) throw new MachineUnavailableError(`machine not found: ${req.explicitMachineId}`)
     if (machine.status !== 'ready') {
-      throw new MachineUnavailableError(`machine ${machine.name} is not ready (status ${machine.status})`)
+      throw new MachineUnavailableError(
+        `machine ${machine.name} is not ready (status ${machine.status})`,
+        machine.status
+      )
     }
     return machine
   }

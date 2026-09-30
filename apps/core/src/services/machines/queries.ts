@@ -29,7 +29,11 @@ const FIRST_BOX_PORT = 50100
  * non-ready machine) rather than an agent-visible failure.
  */
 export class MachineNotReadyError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** The machine's status at the rejected bind (startup retry waits out transient ones). */
+    readonly machineStatus?: string
+  ) {
     super(message)
     this.name = 'MachineNotReadyError'
   }
@@ -303,7 +307,10 @@ export async function bindMachineBox(values: {
     // claimed ('reaping') — or any other non-ready machine — must never gain a
     // box. See MachineNotReadyError for the bind-vs-reap serialization story.
     if (machine.status !== 'ready') {
-      throw new MachineNotReadyError(`machine ${machineId} is not ready (status ${machine.status}); refusing to bind`)
+      throw new MachineNotReadyError(
+        `machine ${machineId} is not ready (status ${machine.status}); refusing to bind`,
+        machine.status
+      )
     }
 
     // CAS precondition: lock the box row and verify the caller's snapshot still
