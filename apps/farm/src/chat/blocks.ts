@@ -1,4 +1,5 @@
 import type { StreamingContentBlock } from '@ficus/client-react'
+import type { SystemNoticeBlock } from '@ficus/client-core'
 import type { ContentBlock } from '@ficus/shared'
 
 /**
@@ -6,7 +7,8 @@ import type { ContentBlock } from '@ficus/shared'
  * MessageContent / tool-renderers: consecutive thinking + tool blocks collapse
  * into one group, each tool call gets a one-line summary of its arguments.
  */
-export type AnyBlock = ContentBlock | StreamingContentBlock
+/** A content block (pinned system notices are split out first, see MessageBlocks). */
+export type AnyBlock = ContentBlock | Exclude<StreamingContentBlock, SystemNoticeBlock>
 
 export type BlockGroup<B extends AnyBlock = AnyBlock> =
   | { type: 'single'; block: B; index: number }

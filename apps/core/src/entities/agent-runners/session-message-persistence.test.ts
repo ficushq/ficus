@@ -54,6 +54,26 @@ describe('SessionMessagePersistence stream groups and turn rows', () => {
     p.recordTurnRowId('c')
     expect(p.currentTurnRowIds()).toEqual(['c'])
   })
+
+  it('defers a post-compaction rotation to the next assistant output, once', () => {
+    const p = new TestPersistence(makeDeps())
+    p.rotateStreamGroupBeforeNextOutput()
+    expect(p.currentStreamGroupId.endsWith(':1')).toBe(true)
+
+    p.beginAssistantOutput()
+    expect(p.currentStreamGroupId.endsWith(':2')).toBe(true)
+    p.beginAssistantOutput()
+    expect(p.currentStreamGroupId.endsWith(':2')).toBe(true)
+  })
+
+  it('drops a deferred rotation when a user message already started a new group', () => {
+    const p = new TestPersistence(makeDeps())
+    p.rotateStreamGroupBeforeNextOutput()
+    // A queued user message rotates on persist; the reply must stay in its group.
+    p.rotateStreamGroup()
+    p.beginAssistantOutput()
+    expect(p.currentStreamGroupId.endsWith(':2')).toBe(true)
+  })
 })
 
 describe('SessionMessagePersistence chain', () => {

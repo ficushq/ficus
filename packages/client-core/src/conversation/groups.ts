@@ -1,6 +1,6 @@
 import type { StreamEvent } from '@ficus/shared'
 import { createStreamingBlockState, reduceStreamingBlocks, type StreamingBlockState } from './blocks'
-import type { CompactionState, StreamGroupSnapshot, SystemMessageItem } from './types'
+import type { CompactionState, SettledNotices, StreamGroupSnapshot, SystemMessageItem } from './types'
 
 interface MutableGroup {
   streamGroupId: string
@@ -27,6 +27,9 @@ function includesLocalProgress(replayed: StreamingBlockState, local: StreamingBl
     if (candidate.type !== block.type) return false
     if (block.type === 'text' || block.type === 'thinking') {
       return candidate.type === block.type && candidate.content.startsWith(block.content)
+    }
+    if (block.type === 'system_notice') {
+      return candidate.type === 'system_notice' && candidate.text === block.text
     }
     return (
       candidate.type === 'tool_use' &&
@@ -58,6 +61,8 @@ export class StreamGroupStore {
   /** The streamGroupId of the most recent delta — flush_agent targets it. */
   private lastActive: string | null = null
   private systemMsgs: SystemMessageItem[] = []
+  /** Blocks of cleared groups that held pinned notices, so the saved turn can keep them in place. */
+  private settled = new Map<string, SettledNotices>()
   private compaction: CompactionState = null
   private systemMsgCounter = 0
 
@@ -102,6 +107,14 @@ export class StreamGroupStore {
       return
     }
     if (event.type === 'system_message') {
+      // A notice during a response is pinned inside it, where it arrived (the
+      // response renders as one item sorted at its start, so a notice sorted at
+      // its own arrival would sit below everything the response streams next).
+      const live = this.liveGroup()
+      if (live && this.compaction === null) {
+        live.state = reduceStreamingBlocks(live.state, event, now)
+        return
+      }
       // While compacting, the banner (compactionState) represents status — don't also add inline.
       if (this.compaction === null) {
         this.systemMsgCounter += 1
@@ -117,6 +130,14 @@ export class StreamGroupStore {
 
     if (event.type === 'system_message_clear') {
       this.systemMsgs = this.systemMsgs.filter((m) => m.transientId !== event.transientId)
+      for (const g of this.groups.values()) g.state = reduceStreamingBlocks(g.state, event, now)
+      for (const [id, entry] of this.settled) {
+        const blocks = entry.blocks.filter(
+          (block) => !(block.type === 'system_notice' && block.transientId === event.transientId)
+        )
+        if (!blocks.some((block) => block.type === 'system_notice')) this.settled.delete(id)
+        else if (blocks.length !== entry.blocks.length) this.settled.set(id, { ...entry, blocks })
+      }
       return
     }
 
@@ -179,17 +200,36 @@ export class StreamGroupStore {
     for (let i = 0; i < this.systemMsgs.length && i < prevSysAt.length; i++) {
       this.systemMsgs[i].at = prevSysAt[i]
     }
+    // A partial batch starts with no live group, so it can route a notice to the
+    // timeline that live routing pinned inside a response. The pinned one wins.
+    const pinned = [...this.groups.values()]
+      .map((g) => g.state.blocks)
+      .concat([...this.settled.values()].map((e) => e.blocks))
+    this.systemMsgs = this.systemMsgs.filter(
+      (message) =>
+        !pinned.some((blocks) =>
+          blocks.some(
+            (block) =>
+              block.type === 'system_notice' && block.text === message.text && block.transientId === message.transientId
+          )
+        )
+    )
   }
 
   /** Remove one group by id, or all groups when called with no argument (does not clear agentId — use reset() for full teardown). */
   clear(streamGroupId?: string): void {
     if (streamGroupId === undefined) {
-      for (const id of this.groups.keys()) this.retired.add(id)
+      for (const [id, g] of this.groups) {
+        this.retired.add(id)
+        this.settle(g)
+      }
       this.groups.clear()
       this.lastActive = null
       return
     }
     this.retired.add(streamGroupId)
+    const g = this.groups.get(streamGroupId)
+    if (g) this.settle(g)
     this.groups.delete(streamGroupId)
     if (this.lastActive === streamGroupId) this.lastActive = null
   }
@@ -201,12 +241,30 @@ export class StreamGroupStore {
     this.executionId = undefined
     this.lastActive = null
     this.systemMsgs = []
+    this.settled.clear()
     this.compaction = null
     this.systemMsgCounter = 0
   }
 
   systemMessages(): SystemMessageItem[] {
     return this.systemMsgs
+  }
+
+  /** Cleared groups' blocks, for groups that held pinned notices (see {@link combine}). */
+  settledNotices(): SettledNotices[] {
+    return [...this.settled.values()]
+  }
+
+  /** The group a response is streaming into right now, if any. */
+  private liveGroup(): MutableGroup | undefined {
+    const g = this.lastActive ? this.groups.get(this.lastActive) : undefined
+    return g && !g.done && !g.flushed && !g.errored ? g : undefined
+  }
+
+  private settle(g: MutableGroup): void {
+    if (g.state.blocks.some((block) => block.type === 'system_notice')) {
+      this.settled.set(g.streamGroupId, { streamGroupId: g.streamGroupId, blocks: g.state.blocks })
+    }
   }
 
   compactionState(): CompactionState {

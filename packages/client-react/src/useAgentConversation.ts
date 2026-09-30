@@ -1380,7 +1380,10 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     [groups, createdBarriers]
   )
   const items = useMemo(
-    () => (identityReady ? combine(history, visibleGroups, pending, session, store.systemMessages()) : []),
+    () =>
+      identityReady
+        ? combine(history, visibleGroups, pending, session, store.systemMessages(), store.settledNotices())
+        : [],
     [identityReady, history, visibleGroups, pending, session]
   )
 

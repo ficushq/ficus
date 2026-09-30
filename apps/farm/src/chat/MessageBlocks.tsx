@@ -4,6 +4,7 @@ import { ChevronIcon } from '../icons'
 import type { MessageToolCall } from '@ficus/shared'
 import { groupBlocks, groupSummary, prettyArgs, resultText, thinkingLabel, toolSummary, type AnyBlock } from './blocks'
 import { Markdown } from './Markdown'
+import { lastBlocksSegmentIndex, segmentAtNotices, type SystemNoticeBlock } from '@ficus/client-core'
 
 function Disclosure({
   expanded,
@@ -147,10 +148,35 @@ function BlockGroupRow({ blocks, streaming }: { blocks: AnyBlock[]; streaming: b
 }
 
 /**
- * An assistant turn's ordered blocks. While `streaming`, the tail text shows a
- * caret and the tail thinking block its live timer.
+ * An assistant turn's ordered blocks, with any system notice pinned where it
+ * arrived during the live response drawn between the runs of content it split.
  */
-export function MessageBlocks({ blocks, streaming = false }: { blocks: AnyBlock[]; streaming?: boolean }) {
+export function MessageBlocks({
+  blocks,
+  streaming = false,
+}: {
+  blocks: ReadonlyArray<AnyBlock | SystemNoticeBlock>
+  streaming?: boolean
+}) {
+  const segments = useMemo(() => segmentAtNotices<AnyBlock>(blocks), [blocks])
+  const live = lastBlocksSegmentIndex(segments)
+  return (
+    <>
+      {segments.map((segment, index) =>
+        segment.type === 'notice' ? (
+          <p key={segment.notice.id} className="g-chat-system">
+            {segment.notice.text}
+          </p>
+        ) : (
+          <BlockRun key={segment.key} blocks={segment.blocks} streaming={streaming && index === live} />
+        )
+      )}
+    </>
+  )
+}
+
+/** One run of content between notices. While `streaming`, the tail text shows a caret and the tail thinking block its live timer. */
+function BlockRun({ blocks, streaming }: { blocks: AnyBlock[]; streaming: boolean }) {
   const groups = useMemo(() => groupBlocks(blocks), [blocks])
   const last = blocks.length - 1
   return (

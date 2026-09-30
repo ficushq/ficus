@@ -40,6 +40,7 @@ import { ToolInlineActions } from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
+import { lastBlocksSegmentIndex, segmentAtNotices, type RenderedContentBlock } from '@ficus/client-core'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
 import { useVoiceEnabled } from '../hooks/useVoiceEnabled'
 import { useVoiceKeyboardShortcuts } from '../hooks/useVoiceKeyboardShortcuts'
@@ -253,15 +254,18 @@ function AssistantMessageRow({
   agentId?: string
   onToolInlineAction?: (action: ToolInlineAction) => void
   message: { id: string; role: string; content: string; metadata?: MessageMetadata | null }
-  blocks: ContentBlock[]
+  /** Saved blocks, plus any system notices pinned where they arrived in the live response. */
+  blocks: RenderedContentBlock[]
   showRaw?: boolean
   tts?: ChatViewProps['tts']
   /** Set on a group head only: shown in the meta line above the reply. */
   time?: Date | null
 }) {
+  const segments = segmentAtNotices<ContentBlock>(blocks)
+  const contentBlocks = segments.flatMap((segment) => (segment.type === 'blocks' ? segment.blocks : []))
   // If we have pre-merged blocks, inject them as metadata.content so AssistantMessageContent uses them
   const effectiveMetadata: MessageMetadata | null =
-    blocks.length > 0 ? { ...(message.metadata ?? {}), content: blocks } : (message.metadata ?? null)
+    contentBlocks.length > 0 ? { ...(message.metadata ?? {}), content: contentBlocks } : (message.metadata ?? null)
 
   return (
     // No bubble — agent text flows on the page (mobile vibe). Only human messages are bubbled.
@@ -272,13 +276,30 @@ function AssistantMessageRow({
         </div>
       )}
       <div>
-        <AssistantMessageContent
-          content={message.content}
-          metadata={effectiveMetadata}
-          showRaw={showRaw}
-          agentId={agentId}
-          onToolInlineAction={onToolInlineAction}
-        />
+        {segments.some((segment) => segment.type === 'notice') ? (
+          segments.map((segment) =>
+            segment.type === 'notice' ? (
+              <SystemMessageRow key={segment.notice.id} content={segment.notice.text} />
+            ) : (
+              <AssistantMessageContent
+                key={segment.key}
+                content={message.content}
+                metadata={{ ...(message.metadata ?? {}), content: segment.blocks }}
+                showRaw={showRaw}
+                agentId={agentId}
+                onToolInlineAction={onToolInlineAction}
+              />
+            )
+          )
+        ) : (
+          <AssistantMessageContent
+            content={message.content}
+            metadata={effectiveMetadata}
+            showRaw={showRaw}
+            agentId={agentId}
+            onToolInlineAction={onToolInlineAction}
+          />
+        )}
         <NavigateButtons navigations={extractNavigationToolCalls(effectiveMetadata?.content)} />
         {tts && tts.playingMessageId === message.id && (
           <div className="flex items-center mt-2 pt-1.5 border-t border-th-border">
@@ -1658,16 +1679,26 @@ export function ChatView({
             if (item.kind === 'streaming') {
               // Not persisted yet: no time, and the persisted reply that follows starts a group.
               prevGroupEntry = null
+              // Notices that arrived mid-response sit between the runs of content they split.
+              const segments = segmentAtNotices<StreamingContentBlock>(item.blocks)
+              const liveSegment = lastBlocksSegmentIndex(segments)
               return (
                 <div key={item.id} className="text-primary overflow-hidden space-y-2 pr-2 md:pr-10">
-                  <StreamingBlocksRenderer
-                    blocks={item.blocks}
-                    isStreaming={item.status === 'streaming'}
-                    onAbortTool={onAbortTool}
-                    showRaw={showRawText}
-                    agentId={agentId}
-                    onToolInlineAction={setSelectedToolAction}
-                  />
+                  {segments.map((segment, index) =>
+                    segment.type === 'notice' ? (
+                      <SystemMessageRow key={segment.notice.id} content={segment.notice.text} />
+                    ) : (
+                      <StreamingBlocksRenderer
+                        key={segment.key}
+                        blocks={segment.blocks}
+                        isStreaming={item.status === 'streaming' && index === liveSegment}
+                        onAbortTool={onAbortTool}
+                        showRaw={showRawText}
+                        agentId={agentId}
+                        onToolInlineAction={setSelectedToolAction}
+                      />
+                    )
+                  )}
                   <NavigateButtons navigations={extractNavigationToolCalls(item.blocks)} />
                 </div>
               )

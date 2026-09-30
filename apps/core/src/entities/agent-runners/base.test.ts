@@ -2516,6 +2516,77 @@ describe('AgentRunner (base class)', () => {
       )
       expect(saved).toBeTruthy()
     })
+
+    it('starts a new stream group for output that continues after a threshold compaction', async () => {
+      const buffer = new StreamBuffer()
+      const events: any[] = []
+      buffer.subscribe((event) => events.push(event))
+      createBufferSpy.mockReturnValue(buffer)
+      await runner.run()
+
+      mockSession.pi.emit({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: 'before compaction' },
+      } as any)
+      persistAssistant(mockSession, 'before compaction')
+      await new Promise((r) => setTimeout(r, 50))
+      mockSession.pi.emit({ type: 'turn_end' } as any)
+      mockSession.pi.emit({ type: 'agent_end', messages: [assistantMessage('before compaction')] } as any)
+      mockSession.pi.emit({ type: 'compaction_start', reason: 'threshold' } as any)
+      // Threshold compaction without a retry, then pi continues the run (a
+      // queued or pre-settle message) instead of settling.
+      mockSession.pi.emit({
+        type: 'compaction_end',
+        reason: 'threshold',
+        willRetry: false,
+        aborted: false,
+        result: 'compacted summary',
+      } as any)
+      mockSession.pi.emit({ type: 'message_start', message: { role: 'assistant', content: [] } } as any)
+      mockSession.pi.emit({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: 'after compaction' },
+      } as any)
+      persistAssistant(mockSession, 'after compaction')
+      await new Promise((r) => setTimeout(r, 50))
+
+      const groupOf = (content: string) =>
+        recordMessageSpy.mock.calls.find((c: any) => c[0].role === 'assistant' && c[0].content === content)![0].metadata
+          .streamGroupId
+      expect(groupOf('after compaction')).not.toBe(groupOf('before compaction'))
+
+      // The live notice comes before the first delta of the new group, so the
+      // chat places it between the two halves rather than below the second.
+      const noticeIndex = events.findIndex(
+        (event) => event.type === 'system_message' && event.text === 'Context compacted — continuing...'
+      )
+      const afterIndex = events.findIndex((event) => event.type === 'text' && event.text === 'after compaction')
+      expect(noticeIndex).toBeGreaterThan(-1)
+      expect(noticeIndex).toBeLessThan(afterIndex)
+      expect(events[afterIndex].streamGroupId).toBe(groupOf('after compaction'))
+    })
+
+    it('keeps the run on its stream group when a threshold compaction ends the run', async () => {
+      await runner.run()
+
+      mockSession.pi.emit({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: 'finished response' },
+      } as any)
+      persistAssistant(mockSession, 'finished response')
+      mockSession.pi.emit({ type: 'turn_end' } as any)
+      mockSession.pi.emit({ type: 'agent_end', messages: [assistantMessage('finished response')] } as any)
+      mockSession.pi.emit({ type: 'compaction_start', reason: 'threshold' } as any)
+      mockSession.pi.simulateCompactionSuccess(false)
+      await waitForCondition(async () => runner.completeCalls.length === 1)
+
+      // The run's `done` names the current group; nothing followed the
+      // compaction, so it must still be the group the response was saved in.
+      const saved = recordMessageSpy.mock.calls.find(
+        (c: any) => c[0].role === 'assistant' && c[0].content === 'finished response'
+      )![0]
+      expect((runner as any).persistence.currentStreamGroupId).toBe(saved.metadata.streamGroupId)
+    })
   })
 
   // ---------------------------------------------------------------------------

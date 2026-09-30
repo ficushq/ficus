@@ -906,6 +906,10 @@ export abstract class AgentRunner {
           // and would misorder the compaction system notice.
           this.persistence.rotateStreamGroup()
           this.persistence.enqueueCompactionNotice()
+        } else if (compactionEvent.result && !compactionEvent.aborted) {
+          // Threshold compaction runs between turns and may be followed by more
+          // output in this run (queued or pre-settle messages).
+          this.persistence.rotateStreamGroupBeforeNextOutput()
         } else if (compactionEvent.aborted) {
           // Compaction was aborted (likely by session.abort() from stop).
           // Check if we're in a transitional state and need to finalize.
@@ -921,6 +925,13 @@ export abstract class AgentRunner {
           // session ended. Log it so it survives for post-hoc diagnosis.
           log.warn(`Compaction failed for agent ${this.agent.id}: ${compactionEvent.errorMessage}`)
         }
+      }
+
+      if (
+        event.type === 'message_update' ||
+        (event.type === 'message_start' && (event as { message?: { role?: string } }).message?.role === 'assistant')
+      ) {
+        this.persistence.beginAssistantOutput()
       }
 
       this.collector.handleEvent(event)
