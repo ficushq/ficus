@@ -144,6 +144,35 @@ describe('identityMiddleware', () => {
     expect(await wildcard.json()).toEqual({ error: 'Authentication required' })
   })
 
+  test('authenticates /api/app/* by the app credential alone, never a Ficus session or bearer', async () => {
+    const [row] = await db
+      .insert(squads)
+      .values({ name: `${PREFIX}-app-credential-${crypto.randomUUID()}`, purpose: 'App credential auth test' })
+      .returning()
+    const localDeployment = await createLocalDeployment(new Squad(row), { name: 'web', port: 5173, mode: 'attached' })
+    const token = new URL(localDeployment.urlPathOrHost, 'http://ficus.test').searchParams.get('_ficus_token')!
+    const app = new Hono()
+    app.use('*', identityMiddleware)
+    app.get('/api/app/:id/*', (c) =>
+      c.json({ resolvedId: c.get('resolvedLocalDeploymentId'), identity: c.get('identity') ?? null })
+    )
+    const url = `/api/app/${localDeployment.id}/?_ficus_token=${encodeURIComponent(token)}`
+
+    // Cookies on an app's own origin belong to the app: a garbage ficus_session there is no Ficus login.
+    const garbageSession = await app.request(url, { headers: { cookie: 'ficus_session=garbage; app=1' } })
+    expect(garbageSession.status).toBe(200)
+    expect(await garbageSession.json()).toEqual({ resolvedId: localDeployment.id, identity: null })
+
+    const garbageBearer = await app.request(url, { headers: { authorization: 'Bearer app-own-jwt' } })
+    expect(garbageBearer.status).toBe(200)
+
+    // A valid Ficus session never stands in for the app credential either.
+    const admin = await createTestAdmin({ prefix: PREFIX })
+    const sessionOnly = await app.request(`/api/app/${localDeployment.id}/`, { headers: authHeaders(admin.token) })
+    expect(sessionOnly.status).toBe(401)
+    expect(sessionOnly.headers.get('x-ficus-app-proxy')).toBe('error')
+  })
+
   test('rejects requests without token', async () => {
     const app = createTestApp()
     const res = await app.request('/whoami')

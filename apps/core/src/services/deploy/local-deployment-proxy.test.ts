@@ -3,7 +3,9 @@ import { like } from 'drizzle-orm'
 import { brotliCompressSync, brotliDecompressSync, deflateSync, gunzipSync, gzipSync, inflateSync } from 'node:zlib'
 import { db, squads } from '../../db'
 import { Squad } from '../../entities/Squad'
+import { Hono } from 'hono'
 import { attachPeerAddress } from '../../lib/client-address'
+import { identityMiddleware } from '../../middleware/identity'
 import {
   createLocalDeployment,
   stopLocalDeploymentRecord,
@@ -370,6 +372,312 @@ describe('localDeployment proxy', () => {
     expect(headers.has('keep-alive')).toBe(false)
     expect(headers.has('x-hop')).toBe(false)
     expect(headers.get('x-keep')).toBe('yes')
+  })
+
+  // A per-app origin (<tenant>--<id>.<apps domain>) is the app's own origin: its
+  // cookies go to it and come back, minus Ficus's own, and it sees its own host.
+  // The path mount shares the Ficus origin, so no cookie crosses in either direction.
+  describe('cookies and host by mount', () => {
+    const APPS_DOMAIN = 'ficus.garden'
+    const TENANT_ORIGIN = 'https://noah.ficus.sh'
+    let previousEnv: { appsDomain?: string; appUrl?: string }
+
+    beforeEach(() => {
+      previousEnv = { appsDomain: process.env.FICUS_APPS_DOMAIN, appUrl: process.env.APP_URL }
+      configureLocalDeploymentProxyDependencies({
+        resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: 5173 }),
+        fetch: mock(async (url: string | URL | Request, init?: RequestInit) => {
+          fetchCalls.push({ url: url.toString(), init: init ?? {} })
+          const headers = new Headers({ 'content-type': 'text/plain' })
+          headers.append('set-cookie', '__Secure-better-auth.session_token=s1; Secure; HttpOnly; SameSite=Lax; Path=/')
+          headers.append('set-cookie', 'app-plain=p1; Path=/')
+          return new Response('proxied', { status: 201, headers })
+        }) as unknown as typeof fetch,
+      })
+    })
+
+    afterEach(() => {
+      for (const [name, value] of [
+        ['FICUS_APPS_DOMAIN', previousEnv.appsDomain],
+        ['APP_URL', previousEnv.appUrl],
+      ] as const) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    })
+
+    function enableHostedApps(): void {
+      process.env.FICUS_APPS_DOMAIN = APPS_DOMAIN
+      process.env.APP_URL = TENANT_ORIGIN
+    }
+
+    function appHost(id: string): string {
+      return `noah--${id.replaceAll('-', '').slice(0, 12)}.${APPS_DOMAIN}`
+    }
+
+    /**
+     * The request Core gets for either mount: the tenant host's /api/app/<id>/
+     * route with the credential in the query (the Platform bridge always sends
+     * it there), from `peer`.
+     */
+    async function proxied(input: { headers: Record<string, string>; peer?: string; hosted?: boolean }) {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const token = browserToken(localDeployment)
+      if (input.hosted ?? true) enableHostedApps()
+      const request = new Request(`${TENANT_ORIGIN}/api/app/${localDeployment.id}/dashboard?_ficus_token=${token}`, {
+        headers: { host: 'noah.ficus.sh', 'x-forwarded-proto': 'https', ...input.headers },
+      })
+      attachPeerAddress(request, input.peer ?? '127.0.0.1')
+      const response = await proxyLocalDeploymentRequest(localDeployment.id, request, 'dashboard')
+      expect(response.status).toBe(201)
+      return { id: localDeployment.id, response, forwarded: fetchCalls[0].init.headers as Headers }
+    }
+
+    const FICUS_COOKIES = (id: string) => [
+      `ficus_session=session-secret`,
+      `tau_session=legacy-session-secret`,
+      `ficus_app_${id}=access-secret`,
+      `tau_app_${id}=legacy-access-secret`,
+      `ficus_app=legacy-app-secret`,
+      `__Host-ficus_app=bridge-secret`,
+      `__Host-tau_app=legacy-bridge-secret`,
+    ]
+    // Look-alikes an app may legitimately own: exact-name stripping must keep every one.
+    const APP_COOKIES = [
+      '__Secure-better-auth.session_token=app-session',
+      'chlea-probe-plain=1',
+      'ficus_session_theme=dark',
+      'my_ficus_app=1',
+      '__Host-ficus_app_prefs=2',
+    ]
+
+    it('forwards app cookies and strips every Ficus cookie by exact name on the per-app origin', async () => {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const id = localDeployment.id
+      const token = browserToken(localDeployment)
+      enableHostedApps()
+      const request = new Request(`${TENANT_ORIGIN}/api/app/${id}/dashboard?_ficus_token=${token}`, {
+        headers: {
+          host: 'noah.ficus.sh',
+          'x-forwarded-host': appHost(id),
+          'x-forwarded-proto': 'https',
+          cookie: [APP_COOKIES[0], ...FICUS_COOKIES(id), ...APP_COOKIES.slice(1)].join('; '),
+        },
+      })
+      attachPeerAddress(request, '127.0.0.1')
+
+      const response = await proxyLocalDeploymentRequest(id, request, 'dashboard')
+
+      expect(response.status).toBe(201)
+      const forwarded = fetchCalls[0].init.headers as Headers
+      expect(forwarded.get('cookie')).toBe(APP_COOKIES.join('; '))
+      expect(forwarded.get('cookie')).not.toContain('secret')
+      expect(forwarded.get('host')).toBe(appHost(id))
+      expect(forwarded.get('x-forwarded-host')).toBe(appHost(id))
+      expect(forwarded.get('x-forwarded-proto')).toBe('https')
+      expect(fetchCalls[0].url).toBe('http://127.0.0.1:5173/dashboard')
+      // The app's cookies reach the browser unchanged; Core mints none of its own there.
+      expect(response.headers.getSetCookie()).toEqual([
+        '__Secure-better-auth.session_token=s1; Secure; HttpOnly; SameSite=Lax; Path=/',
+        'app-plain=p1; Path=/',
+      ])
+    })
+
+    it('sends no Cookie at all when the browser held only Ficus cookies', async () => {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const id = localDeployment.id
+      enableHostedApps()
+      const request = new Request(`${TENANT_ORIGIN}/api/app/${id}/?_ficus_token=${browserToken(localDeployment)}`, {
+        headers: { 'x-forwarded-host': appHost(id).toUpperCase(), cookie: FICUS_COOKIES(id).join('; ') },
+      })
+      attachPeerAddress(request, '127.0.0.1')
+
+      await proxyLocalDeploymentRequest(id, request, '')
+
+      const forwarded = fetchCalls[0].init.headers as Headers
+      expect(forwarded.has('cookie')).toBe(false)
+      expect(forwarded.get('host')).toBe(appHost(id))
+    })
+
+    it("makes the app's cookies host-only and drops ones under a Ficus name on the per-app origin", async () => {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const id = localDeployment.id
+      configureLocalDeploymentProxyDependencies({
+        resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: 5173 }),
+        fetch: mock(async () => {
+          const headers = new Headers()
+          // Domain=<apps domain> would reach every app of every tenant: it is not a public suffix.
+          headers.append(
+            'set-cookie',
+            '__Secure-better-auth.session_token=fixed; Domain=ficus.garden; Path=/api; Secure'
+          )
+          headers.append('set-cookie', 'b=2; Path=/; domain=.FICUS.garden; HttpOnly')
+          headers.append('set-cookie', `c=3;  DOMAIN = ${appHost(id)} ;SameSite=Lax`)
+          headers.append('set-cookie', 'ficus_session=planted; Path=/')
+          headers.append('set-cookie', '__Host-ficus_app=planted; Path=/; Secure')
+          headers.append('set-cookie', `ficus_app_${id}=planted; Path=/`)
+          headers.append('set-cookie', 'ficus_session_theme=dark; Path=/')
+          headers.append('set-cookie', 'domain_hint=ficus.garden; Path=/')
+          return new Response('ok', { headers })
+        }) as unknown as typeof fetch,
+      })
+      enableHostedApps()
+      const request = new Request(`${TENANT_ORIGIN}/api/app/${id}/?_ficus_token=${browserToken(localDeployment)}`, {
+        headers: { host: 'noah.ficus.sh', 'x-forwarded-host': appHost(id) },
+      })
+      attachPeerAddress(request, '127.0.0.1')
+
+      const response = await proxyLocalDeploymentRequest(id, request, '')
+
+      expect(response.headers.getSetCookie()).toEqual([
+        '__Secure-better-auth.session_token=fixed; Path=/api; Secure',
+        'b=2; Path=/; HttpOnly',
+        'c=3;SameSite=Lax',
+        'ficus_session_theme=dark; Path=/',
+        'domain_hint=ficus.garden; Path=/',
+      ])
+    })
+
+    it('treats the path mount as the shared Ficus origin: no cookie either way, the Ficus host', async () => {
+      const { id, response, forwarded } = await proxied({
+        headers: { cookie: 'ficus_session=session-secret; app-plain=p1', 'x-forwarded-host': 'noah.ficus.sh' },
+      })
+
+      expect(forwarded.has('cookie')).toBe(false)
+      expect(forwarded.get('host')).toBe('noah.ficus.sh')
+      expect(forwarded.get('x-forwarded-host')).toBe('noah.ficus.sh')
+      // Only Core's own path-scoped access cookie: the app cannot set a cookie on the Ficus origin.
+      const cookies = response.headers.getSetCookie()
+      expect(cookies).toHaveLength(1)
+      expect(cookies[0]).toStartWith(`ficus_app_${id}=`)
+      expect(cookies[0]).toContain(`Path=/api/app/${id}/`)
+    })
+
+    it('opens no per-app origin for any other host the trusted proxy names', async () => {
+      const { forwarded, response } = await proxied({
+        headers: { cookie: 'ficus_session=session-secret; app-plain=p1', 'x-forwarded-host': 'ficus.example.com' },
+      })
+
+      expect(forwarded.has('cookie')).toBe(false)
+      expect(forwarded.get('host')).toBe('noah.ficus.sh')
+      // The same-host proxy's own X-Forwarded-Host (a self-host's nginx sends its public host) is kept.
+      expect(forwarded.get('x-forwarded-host')).toBe('ficus.example.com')
+      expect(response.headers.getSetCookie().some((cookie) => cookie.startsWith('app-plain='))).toBe(false)
+    })
+
+    it("replaces an untrusted peer's X-Forwarded-Host with the request's own Host on the path mount", async () => {
+      const { forwarded } = await proxied({ peer: '203.0.113.20', headers: { 'x-forwarded-host': 'evil.example' } })
+
+      expect(forwarded.get('x-forwarded-host')).toBe('noah.ficus.sh')
+    })
+
+    it("ignores another deployment's app host", async () => {
+      const { forwarded } = await proxied({
+        headers: { cookie: 'app-plain=p1', 'x-forwarded-host': appHost('00000000-0000-0000-0000-000000000000') },
+      })
+
+      expect(forwarded.has('cookie')).toBe(false)
+      expect(forwarded.get('host')).toBe('noah.ficus.sh')
+    })
+
+    it('ignores the right app host from a peer that is not a trusted proxy', async () => {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const id = localDeployment.id
+      enableHostedApps()
+      const request = new Request(`${TENANT_ORIGIN}/api/app/${id}/?_ficus_token=${browserToken(localDeployment)}`, {
+        headers: { host: 'noah.ficus.sh', 'x-forwarded-host': appHost(id), cookie: 'app-plain=p1' },
+      })
+      attachPeerAddress(request, '203.0.113.20')
+
+      await proxyLocalDeploymentRequest(id, request, '')
+
+      const forwarded = fetchCalls[0].init.headers as Headers
+      expect(forwarded.has('cookie')).toBe(false)
+      expect(forwarded.get('host')).toBe('noah.ficus.sh')
+      expect(forwarded.get('x-forwarded-host')).toBe('noah.ficus.sh')
+    })
+
+    it('has no per-app origin to honor when hosted app URLs are off', async () => {
+      const { forwarded } = await proxied({
+        hosted: false,
+        headers: { cookie: 'app-plain=p1', 'x-forwarded-host': 'noah--000000000000.ficus.garden' },
+      })
+
+      expect(forwarded.has('cookie')).toBe(false)
+      expect(forwarded.get('host')).toBe('noah.ficus.sh')
+    })
+
+    it('round-trips app cookies and the app host over real sockets', async () => {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const id = localDeployment.id
+      const seen: Array<Record<string, string | null>> = []
+      const app = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch(req) {
+          seen.push(Object.fromEntries(['host', 'x-forwarded-host', 'cookie'].map((h) => [h, req.headers.get(h)])))
+          const headers = new Headers()
+          headers.append('set-cookie', '__Secure-chlea-probe=1; Secure; HttpOnly; SameSite=Lax; Path=/')
+          headers.append('set-cookie', 'chlea-probe-plain=1; Path=/')
+          return new Response('ok', { headers })
+        },
+      })
+      // Core's own chain for this route: identity first, then the proxy.
+      const routes = new Hono()
+      routes.use('*', identityMiddleware)
+      routes.all('/api/app/:id/*', (c) => proxyLocalDeploymentRequest(id, c.req.raw, 'probe'))
+      const core = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch(req, server) {
+          attachPeerAddress(req, server.requestIP(req)?.address)
+          return routes.fetch(req)
+        },
+      })
+      configureLocalDeploymentProxyDependencies({
+        resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: app.port! }),
+      })
+      enableHostedApps()
+      try {
+        const response = await fetch(
+          `http://127.0.0.1:${core.port}/api/app/${id}/probe?_ficus_token=${browserToken(localDeployment)}`,
+          {
+            headers: {
+              host: 'noah.ficus.sh',
+              'x-forwarded-host': appHost(id),
+              // A ficus_session on the app origin (the app's own, or planted on the
+              // apps domain) is not a Ficus login: no 401, and it never reaches the app.
+              cookie: `ficus_session=garbage; __Host-ficus_app=bridge-secret; __Secure-chlea-probe=1; chlea-probe-plain=1`,
+            },
+          }
+        )
+        await response.arrayBuffer()
+
+        expect(response.status).toBe(200)
+        expect(response.headers.getSetCookie()).toEqual([
+          '__Secure-chlea-probe=1; Secure; HttpOnly; SameSite=Lax; Path=/',
+          'chlea-probe-plain=1; Path=/',
+        ])
+        expect(seen).toEqual([
+          { host: appHost(id), 'x-forwarded-host': appHost(id), cookie: '__Secure-chlea-probe=1; chlea-probe-plain=1' },
+        ])
+      } finally {
+        core.stop(true)
+        app.stop(true)
+      }
+    })
   })
 
   // What the app may rely on: exactly one X-Forwarded-For, the address Core

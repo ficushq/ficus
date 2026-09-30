@@ -676,6 +676,31 @@ expect_eq 'render_caddyfile reads the client address from CF-Connecting-IP only'
 # otherwise reached Core under real Caddy 2.10.2).
 expect_eq 'render_caddyfile pins X-Forwarded-Host and X-Forwarded-Proto to the request itself' \
   "$(grep -cxF '        header_up X-Forwarded-Host {host}' <<<"${caddy_rendered}")|$(grep -cxF '        header_up X-Forwarded-Proto {scheme}' <<<"${caddy_rendered}")" '1|1'
+expect_eq 'render_caddyfile has no local-app bridge route without extra trusted proxies' \
+  "$(grep -c 'app_bridge' <<<"${caddy_rendered}" || true)" '0'
+# The control plane's bridge names a local app's own origin in X-Forwarded-Host;
+# only it (the immediate peer, never Cloudflare) and only on /api/app/* keeps
+# that header. Under real Caddy 2.11.4: the bridge's app host reached Core on
+# /api/app/*, while a visitor's forged one and the bridge's on /api/me or
+# /api/apps were pinned to the tenant host.
+expect_eq 'render_caddyfile keeps X-Forwarded-Host only for the bridge peer on the local-app mount' \
+  "$(render_caddyfile 'ficus.example.com' 3000 '/c.crt' '/c.key' 203.0.113.40 2001:db8::/64 | sed -n '/^ficus.example.com {$/,$p')" \
+  "ficus.example.com {
+    tls /c.crt /c.key
+    @app_bridge {
+        remote_ip 203.0.113.40 2001:db8::/64
+        path /api/app/*
+    }
+    reverse_proxy @app_bridge 127.0.0.1:3000 {
+        header_up X-Forwarded-For {client_ip}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    reverse_proxy 127.0.0.1:3000 {
+        header_up X-Forwarded-For {client_ip}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}"
 expect_eq 'render_caddyfile emits no ACME email / issuer' \
   "$([[ ${caddy_rendered} == *email* || ${caddy_rendered} == *acme* || ${caddy_rendered} == *issuer* ]] && echo present || echo gone)" 'gone'
 

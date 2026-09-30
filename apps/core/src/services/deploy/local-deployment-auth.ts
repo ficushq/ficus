@@ -15,8 +15,9 @@
  *     and never to another deployment's prefix;
  *   - deployment ids are fixed-length uuids, so one prefix can never be a path
  *     prefix of another (a cookie path matches only on a `/` boundary);
- *   - the proxy strips inbound `cookie` before forwarding, so this never
- *     reaches the deployed app itself.
+ *   - the proxy never forwards it to the deployed app itself: the path mount
+ *     forwards no cookies at all, and a per-app origin drops this one (and
+ *     every other Ficus cookie) by exact name.
  */
 import { getLocalDeployment, isValidLocalDeploymentBrowserToken } from './local-deployment-service'
 

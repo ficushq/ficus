@@ -73,10 +73,64 @@ The first tokenized request redirects to the validated HTTPS host, removes
 `_ficus_token` from the browser URL, and sets `__Host-ficus_app` as a host-only,
 Secure, HttpOnly, SameSite=Lax cookie. Platform forwards its credential to Core;
 setting that cookie is not token validation. Core validates the deployment token
-and deployment state. Platform removes unrelated cookies, authorization headers,
-client-supplied `x-ficus-*` headers, and hop-by-hop headers before forwarding. Its
-transport is HTTP streaming: `Upgrade` is stripped, so this route does not provide
-WebSocket tunneling.
+and deployment state. Platform removes authorization headers, client-supplied
+`x-ficus-*` headers, and hop-by-hop headers before forwarding. Its transport is
+HTTP streaming: `Upgrade` is stripped, so this route does not provide WebSocket
+tunneling.
+
+### Cookies and host on the app origin
+
+The app origin belongs to the app, so its cookies make the round trip and it
+sees its own host. The apps domain is not a public suffix, so the browser
+would let one app set a cookie with `Domain=<apps domain>` that every other
+app, of every tenant, then receives. Both proxies therefore make app cookies
+host-only. Ficus cookie names are:
+
+- `ficus_session` and `tau_session`
+- `ficus_app` and `ficus_app_<uuid>` (plus `tau_app_<uuid>`)
+- `__Host-ficus_app` and `__Host-tau_app`
+
+None of them exists legitimately on the apps domain. Each hop has a job:
+
+- **Platform bridge**, request: forward the browser's `Cookie` header minus
+  every Ficus cookie name, removed by exact name (the `_<uuid>` forms match a
+  lowercase UUID exactly), never by a looser pattern. The credential goes to
+  Core only as the `_ficus_token` (or legacy `_tau_token`) query parameter it
+  already sets, never as a cookie. If no cookie is left, send no `Cookie`
+  header. Set `X-Forwarded-Host` to the validated app host
+  (`<tenant>--<deploy12>.<apps-domain>`, lowercase, no port), never a
+  client-supplied value. Keep `Host` as the tenant hostname (the tenant Caddy
+  routes on it) and `X-Forwarded-Proto: https`.
+- **Platform bridge**, response: for every app `Set-Cookie`, drop it if its
+  name is a Ficus cookie name. Otherwise remove every `Domain` attribute
+  (case-insensitive name, any spacing) and pass the rest through unchanged.
+  The bridge is the one chokepoint for every tenant, including tenants on an
+  older Core, so it must do this itself.
+- **Tenant Caddy** (`render_caddyfile` in `scripts/setup/lib.sh`): keeps an
+  incoming `X-Forwarded-Host` only on `/api/app/*` and only when the
+  immediate peer is one of the extra `ingress.trusted_proxies` (the bridge).
+  Everywhere else, including traffic through Cloudflare, it is pinned to the
+  tenant host.
+- **Core** (`middleware/identity.ts`, `services/deploy/local-deployment-proxy.ts`):
+  `/api/app/*` authenticates only by the deployment's browser credential. A
+  Ficus session cookie or bearer token there is neither required nor
+  consulted, so a stray `ficus_session` on the app origin cannot turn the app
+  into a 401. A request counts as coming from the app origin only when the
+  socket peer is a trusted proxy (loopback or `FICUS_TRUSTED_PROXY_ADDRESSES`,
+  the chain used for `X-Forwarded-For`) and `X-Forwarded-Host` is exactly this
+  deployment's app host. Core then forwards the cookies minus the Ficus names,
+  sets `Host` and `X-Forwarded-Host` to the app host and `X-Forwarded-Proto`
+  to `https`, and returns the app's `Set-Cookie` host-only (Ficus names
+  dropped, `Domain` removed), the same as the bridge. Any other forwarded host
+  is ignored.
+
+The path mount (`<tenant host>/api/app/<id>/`) shares the Ficus origin with
+Ficus and every other app. No cookie reaches the app there, because it would
+carry the Ficus session and other apps' cookies. None of the app's
+`Set-Cookie` reaches the browser either, because it could overwrite Ficus's or
+another app's cookies. Core sets only its path-scoped `ficus_app_<id>` access
+cookie. The app sees the Ficus host in `Host` and `X-Forwarded-Host`. Apps
+that need sessions must use the app origin.
 
 Resource bounds are 100 MiB in each direction, a 15-second connect timeout,
 30-second idle timeout, and 64 concurrent requests per tenant per Platform
