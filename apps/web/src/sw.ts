@@ -51,7 +51,7 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   if (url.origin !== self.location.origin) return
   if (url.pathname.startsWith(p('/ws'))) return
-  // Docs and the farm have their own HTML routes; never replace them with the cached app shell.
+  // Docs, the farm and squads' deployed apps (/api/app/) are their own: no app shell, no API cache.
   if (bypassesServiceWorker(url.pathname, BASE_PATH)) return
 
   if (url.pathname.startsWith(p('/api/'))) {

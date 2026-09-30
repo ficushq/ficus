@@ -46,6 +46,18 @@ describe('service-worker routes', () => {
     }
   })
 
+  test("squads' deployed apps bypass the service worker: their pages, assets and failures are their own", () => {
+    for (const base of ['/', '/ficus/']) {
+      const at = (path: string) => base.replace(/\/$/, '') + path
+      for (const path of ['/api/app/e691/', '/api/app/e691/_next/static/chunks/app.js', '/api/app/e691/sign-in']) {
+        expect(bypassesServiceWorker(at(path), base)).toBe(true)
+      }
+      for (const path of ['/api/apps', '/api/application', '/api/squads/1/apps']) {
+        expect(bypassesServiceWorker(at(path), base)).toBe(false)
+      }
+    }
+  })
+
   test("never caches the farm's chat or settings APIs", () => {
     for (const base of ['/', '/ficus/']) {
       const at = (path: string) => base.replace(/\/$/, '') + path
