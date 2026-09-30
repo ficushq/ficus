@@ -1,6 +1,6 @@
-# tau-setup.yaml — configuration contract for the Ficus setup toolkit.
+# ficus-setup.yaml — configuration contract for the Ficus setup toolkit.
 #
-# Copy to tau-setup.yaml and edit, or generate one interactively:
+# Copy to ficus-setup.yaml and edit, or generate one interactively:
 #   scripts/setup/setup-host.sh --wizard
 #
 # This file is the non-interactive source of truth for both:
@@ -34,10 +34,11 @@ source:
   # Branch, tag, or full/abbreviated commit sha. Recorded metadata even in
   # artifact mode (there is no checkout to move, but the ref is still logged).
   ref: main
-  # Where the source is cloned on the target host. Must NOT be /opt/tau: the
-  # prebaked ficus-machine image (the default core VM image) owns /opt/tau for its
-  # own tooling. Keep the app in a separate path.
-  dest: /opt/tau-core
+  # Where the source is cloned on the target host. Must NOT be the prebaked
+  # ficus-machine image's own root (the default core VM image owns that for its
+  # own tooling). Keep the app in a separate path. Leave it out to get the host
+  # layout's install root (/opt/ficus-core on a fresh host).
+  dest: /opt/ficus-core
   # git-ssh only: path to the SSH deploy key ON THE MACHINE RUNNING setup-host.sh.
   # (provision.sh pushes this file to the VM and rewrites the path for you.)
   # Prompted if empty and running interactively.
@@ -142,7 +143,7 @@ backup:
   s3_prefix: ''
   # Env vars holding the S3 credentials + encryption passphrase — NEVER the
   # values themselves. Same *_env indirection convention as secrets.* above.
-  # Rendered into a 0600 root-owned /etc/tau/backup.env; never written into
+  # Rendered into a 0600 root-owned /etc/ficus/backup.env; never written into
   # <dest>/.env (the file the backup itself archives).
   s3_access_key_env: FICUS_BACKUP_S3_ACCESS_KEY
   s3_secret_key_env: FICUS_BACKUP_S3_SECRET_KEY
@@ -158,14 +159,14 @@ database:
   #            target host, with a generated password. Recommended default.
   # external   use an existing postgres via `dsn`.
   mode: container
-  # Required when mode=external, e.g. postgres://user:pass@host:5432/tau
+  # Required when mode=external, e.g. postgres://user:pass@host:5432/ficus
   # (a DSN embeds a password, so prefer supplying it via the
   #  FICUS_SETUP_DATABASE_DSN environment variable instead of writing it here).
   dsn: ''
   # Path to the CA certificate that signed the external database server's
   # certificate — ON THE MACHINE RUNNING THIS SCRIPT. provision.sh scp's it to
   # the target and rewrites this value; setup-host.sh installs it at
-  # /etc/tau/database-ca.crt, 0644.
+  # /etc/ficus/database-ca.crt, 0644.
   #
   # A CA certificate is PUBLIC, so this is not a secret and the path appears in
   # the config verbatim (same as ingress.tls_cert_path).

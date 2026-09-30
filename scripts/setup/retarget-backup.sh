@@ -4,8 +4,8 @@
 # Points an ALREADY SET UP Ficus host's nightly encrypted backup at a new
 # S3-compatible bucket (e.g. old-backups -> ficus-backups) with a new scoped
 # key, without re-running setup-host.sh. setup-host.sh's phase_backup bakes
-# the endpoint/region/bucket into /usr/local/bin/tau-backup.sh and the S3 key
-# into /etc/tau/backup.env at provision time, and nothing re-reads them
+# the endpoint/region/bucket into the installed backup script and the S3 key
+# into backup.env (under the layout etc dir) at provision time, and nothing re-reads them
 # later (upgrade-host.sh never touches backups), so a bucket move needs this
 # narrow re-render. A full setup-host.sh re-run is not an option on a hosted
 # tenant: it needs secrets that are deleted from the box after provisioning.
@@ -13,7 +13,7 @@
 # First, unconditionally (in both --dry-run and real execution) and before
 # anything is changed: validate the flags and the pushed secrets file, read
 # the live backup.env (for the passphrase, which is carried over unchanged)
-# and the live tau-backup.sh (for its non-S3 values: DEST, HOME_DIR, DB_MODE,
+# and the live backup script (for its non-S3 values: DEST, HOME_DIR, DB_MODE,
 # DB_CONTAINER, S3_PREFIX, BACKUP_ENV_FILE), and render both replacements in
 # memory. Then, for a real run only:
 #
@@ -23,9 +23,9 @@
 #      NOTHING changed (so a bad key or a missing bucket can never leave the
 #      host's backups pointed somewhere they cannot write).
 #   2. back up (timestamped copies next to the originals) whichever of
-#      tau-backup.sh, backup.env and the yaml are about to change
+#      the backup script, backup.env and the yaml are about to change
 #   3. stage each changed file next to its original (same directory, the
-#      original's mode and owner:group), then swap tau-backup.sh and then
+#      original's mode and owner:group), then swap the backup script and then
 #      backup.env into place with an atomic rename each
 #   4. rewrite backup.s3_endpoint / s3_region / s3_bucket in the on-VM yaml
 #      (the non-secret keys only — never the credential env names, the
@@ -36,9 +36,9 @@
 # Untouched, by design: the backup passphrase (FICUS_BACKUP_PASSPHRASE is read
 # from the live backup.env and written back with the same value — a changed
 # passphrase would make every existing backup unrestorable with the new
-# config), tau-backup.timer/.service (the schedule), backup.s3_prefix, and
+# config), the backup .timer/.service (the schedule), backup.s3_prefix, and
 # every object in either bucket (copying old backups across is an ops step).
-# tau-backup.sh is re-rendered from the tau-backup.sh.tmpl shipped next to
+# The backup script is re-rendered from the ficus-backup.sh.tmpl shipped next to
 # this script, so its logic becomes that template's — exactly what a fresh
 # provision would install; --dry-run prints the diff.
 #
@@ -50,7 +50,7 @@
 # and the staging (steps 2-3 up to the first rename) change nothing live: any
 # failure there leaves both files and the yaml byte-identical and removes
 # every staged file. The two renames in step 3 are the only non-atomic pair:
-# if tau-backup.sh was swapped and backup.env's swap then fails, tau-backup.sh
+# if the backup script was swapped and backup.env's swap then fails, the script
 # is put back (staged + renamed again, from the exact bytes read in
 # validation) before exiting; if THAT fails, the message says so and names
 # the step-2 backup to copy back by hand. A step-4 (yaml) failure happens
@@ -77,13 +77,13 @@
 #
 # Run as root on the tenant VM (EUID 0; sudo is not supported), from the
 # directory holding the copied toolkit: this script, lib.sh and
-# tau-backup.sh.tmpl side by side.
+# ficus-backup.sh.tmpl side by side.
 set -euo pipefail
 # Never trace: an inherited `bash -x` / SHELLOPTS=xtrace would print every
 # assignment below, secret key and passphrase included.
 set +x
 # Byte semantics for everything this script parses and compares (backup.env,
-# the secrets file, the live tau-backup.sh): whatever locale root's session
+# the secrets file, the live backup script): whatever locale root's session
 # carries, a non-ASCII passphrase byte is a byte, never a (possibly invalid)
 # multibyte character. Exported so the render (sed) and yq see the same.
 export LC_ALL=C
@@ -96,7 +96,7 @@ EXIT_NOT_APPLICABLE=3
 
 usage() {
   cat <<'EOF'
-Usage: retarget-backup.sh --config tau-setup.yaml --secrets FILE \
+Usage: retarget-backup.sh --config ficus-setup.yaml --secrets FILE \
                           --bucket NAME --endpoint https://HOST [--region REGION] [--dry-run]
 
 Points this host's nightly encrypted backup at a new S3-compatible bucket
@@ -104,7 +104,7 @@ with a new key. See the header comment in this file for the full behavior.
 
 Options:
   --config FILE      the on-VM config this host was set up with (see
-                      tau-setup.example.yaml) — backup.s3_endpoint/region/
+                      ficus-setup.example.yaml) — backup.s3_endpoint/region/
                       bucket are rewritten in place
   --secrets FILE     the new key, as sourced-style KEY=VALUE lines (values
                       bare or single-quoted); must be mode 0600 (no group/
@@ -115,7 +115,7 @@ Options:
   --bucket NAME      the new bucket (S3 naming rules: 3-63 of a-z 0-9 . -)
   --endpoint URL     the new endpoint: https://host[:port], nothing else
   --region REGION    the new SigV4 region (default: the region currently
-                      in this host's tau-backup.sh)
+                      in this host's backup script)
   --dry-run          validate and print the plan without contacting S3 or
                       changing anything
   -h, --help         show this help
@@ -223,7 +223,7 @@ else
 fi
 cfg_load "${CONFIG}"
 
-# This script reads and writes FICUS_* names only (backup.env, tau-backup.sh).
+# This script reads and writes FICUS_* names only (backup.env, the backup script).
 # A host whose settings predate the Ficus naming is refused before any live
 # file is read or written.
 SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
@@ -243,10 +243,10 @@ if [[ ${BACKUP_ENABLED} != true ]]; then
   exit "${EXIT_NOT_APPLICABLE}"
 fi
 
-TEMPLATE="${SCRIPT_DIR}/tau-backup.sh.tmpl"
-[[ -f ${TEMPLATE} ]] || die "tau-backup.sh.tmpl not found next to this script (${TEMPLATE}) — push it with retarget-backup.sh and lib.sh"
+TEMPLATE="${SCRIPT_DIR}/ficus-backup.sh.tmpl"
+[[ -f ${TEMPLATE} ]] || die "ficus-backup.sh.tmpl not found next to this script (${TEMPLATE}) — push it with retarget-backup.sh and lib.sh"
 
-# The live tau-backup.sh: the non-S3 values it was rendered with are carried
+# The live backup script: the non-S3 values it was rendered with are carried
 # over verbatim (re-deriving them would need setup-host.sh's whole config,
 # secrets included) — lib.sh's backup_script_read_values, shared with the
 # env rename's re-render.
@@ -258,11 +258,11 @@ backup_script_read_values "${BACKUP_SCRIPT_PATH}"
 
 [[ -n ${REGION} ]] || REGION=${LIVE_S3_REGION}
 [[ ${REGION} =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] ||
-  die "no usable region: pass --region (the current tau-backup.sh has '${REGION}')"
+  die "no usable region: pass --region (the current ${BACKUP_SCRIPT_PATH} has '${REGION}')"
 
 YAML_PREFIX=$(cfg_get '.backup.s3_prefix' '') || die "could not read backup.s3_prefix from ${CONFIG}"
 [[ ${YAML_PREFIX} == "${LIVE_S3_PREFIX}" ]] ||
-  log_warn "backup.s3_prefix in ${CONFIG} ('${YAML_PREFIX}') differs from the prefix tau-backup.sh actually uses ('${LIVE_S3_PREFIX}') — keeping the live one"
+  log_warn "backup.s3_prefix in ${CONFIG} ('${YAML_PREFIX}') differs from the prefix ${BACKUP_SCRIPT_PATH} actually uses ('${LIVE_S3_PREFIX}') — keeping the live one"
 
 # The live backup.env: only the passphrase is carried over. Parsed, never
 # sourced; any line this script would silently drop on re-render is refused.
@@ -337,7 +337,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   plan "backup.s3_region: ${REGION} (was ${YAML_REGION:-<unset>})"
   plan "backup.s3_bucket: ${BUCKET} (was ${YAML_BUCKET:-<unset>})"
   printf '\nuntouched\n'
-  plan "tau-backup.timer / tau-backup.service (schedule), FICUS_BACKUP_PASSPHRASE, backup.s3_prefix, backup credential env names, every bucket object"
+  plan "${HL_UNIT_BACKUP}.timer / ${HL_UNIT_BACKUP}.service (schedule), FICUS_BACKUP_PASSPHRASE, backup.s3_prefix, backup credential env names, every bucket object"
   emit_result dry-run
   exit 0
 fi
@@ -395,7 +395,7 @@ fi
 
 # From the first rename to the end of the rollback, a dropped SSH session
 # (SIGHUP) must not kill this script between the two renames — that would
-# leave the new tau-backup.sh with the old key. The previous HUP disposition
+# leave the new backup script with the old key. The previous HUP disposition
 # (if any) is put back right after.
 PREV_HUP_TRAP=$(trap -p HUP)
 trap '' HUP
@@ -408,7 +408,7 @@ if [[ ${ENV_CHANGED} -eq 1 ]] && ! mv -f -- "${STAGED_ENV}" "${BACKUP_ENV_TARGET
   if [[ ${SCRIPT_CHANGED} -eq 0 ]]; then
     die "could not install the new ${BACKUP_ENV_TARGET} — nothing was changed"
   fi
-  # tau-backup.sh is already the new one: put the old bytes back the same
+  # the backup script is already the new one: put the old bytes back the same
   # atomic way, so the host keeps a consistent (old) script + key pair.
   if stage_file_replacement "${BACKUP_SCRIPT_PATH}" "${LIVE_SCRIPT}" RESTORE_STAGED &&
     mv -f -- "${RESTORE_STAGED}" "${BACKUP_SCRIPT_PATH}"; then

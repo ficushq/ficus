@@ -5,18 +5,22 @@
 # The control plane copies this script, lib.sh, and a complete artifact staging
 # directory to a running managed instance, then runs as root:
 #
-#     bash apply-artifacts.sh [--config <tau-setup.yaml>] <staging-dir>
+#     bash apply-artifacts.sh [--config <ficus-setup.yaml>] <staging-dir>
 #
 # With --config (the file the host was set up with; the sync executor passes
 # the one the upgrade job already uses), it first reconciles a host migration
-# an interrupted upgrade left journaled, and refuses — installing NOTHING — a
+# an interrupted upgrade left journaled (without it, a journaled migration is
+# refused), and refuses — installing NOTHING — a
 # host whose settings predate the Ficus naming (lib.sh's
-# require_host_env_ready). The staged managed.env is installed byte for byte.
+# require_host_env_ready). The reconcile may finish (or reverse) the host
+# layout migration, so the layout is resolved again right after it
+# (host_layout_adopt): the artifacts land under the etc dir of the layout the
+# host is actually on. The staged managed.env is installed byte for byte.
 #
 # The staging dir is the FULL current artifact set (not a delta) and this
 # script RECONCILES the host against it: managed.env is installed whole,
-# every manifest-listed file is installed, and anything under
-# /etc/tau/artifacts/ the manifest no longer lists is PRUNED (lib.sh's
+# every manifest-listed file is installed, and anything under the layout's
+# artifacts dir (FICUS_ARTIFACTS_DIR) the manifest no longer lists is PRUNED (lib.sh's
 # prune_artifacts — that is how an artifact DELETED from the platform registry
 # leaves the fleet). It also ensures the core units actually load managed.env
 # (ensure_managed_env_dropins — hosts provisioned before the unit templates
@@ -43,15 +47,15 @@ while [[ $# -gt 0 ]]; do
       CONFIG=${2:?--config needs a value}
       shift 2
       ;;
-    -*) die "usage: apply-artifacts.sh [--config <tau-setup.yaml>] <staging-dir>" ;;
+    -*) die "usage: apply-artifacts.sh [--config <ficus-setup.yaml>] <staging-dir>" ;;
     *)
-      [[ -z ${STAGE_DIR} ]] || die "usage: apply-artifacts.sh [--config <tau-setup.yaml>] <staging-dir>"
+      [[ -z ${STAGE_DIR} ]] || die "usage: apply-artifacts.sh [--config <ficus-setup.yaml>] <staging-dir>"
       STAGE_DIR=$1
       shift
       ;;
   esac
 done
-[[ -n ${STAGE_DIR} ]] || die "usage: apply-artifacts.sh [--config <tau-setup.yaml>] <staging-dir>"
+[[ -n ${STAGE_DIR} ]] || die "usage: apply-artifacts.sh [--config <ficus-setup.yaml>] <staging-dir>"
 [[ -d ${STAGE_DIR} ]] || die "apply-artifacts.sh: staging directory not found: ${STAGE_DIR}"
 
 if [[ -n ${CONFIG} ]]; then
@@ -74,9 +78,20 @@ if [[ -n ${CONFIG} ]]; then
   host_migrate_reconcile || reconcile_rc=$?
   [[ ${reconcile_rc} -eq 0 ]] ||
     die "not applying artifacts: a journaled host migration could not be reconciled (${reconcile_rc}) — run the tenant upgrade"
+  # The layout as the reconcile left it, before any path below is used.
+  host_layout_adopt
+  SRC_DEST=$(cfg_source_dest)
   [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
     die "not applying artifacts: a host migration is still journaled in $(host_migrate_backup_root)/PENDING — run the tenant upgrade"
   require_host_env_ready
+else
+  # Without the config there is nothing to reconcile with: refuse a journaled
+  # migration (the sync executor always passes --config), and still resolve
+  # the layout as the host is now — never as lib.sh guessed when sourced.
+  host_migrate_lock
+  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
+    die "not applying artifacts: a host migration is journaled in $(host_migrate_backup_root)/PENDING — pass --config <the host's setup config> so it is reconciled first, or run the tenant upgrade"
+  host_layout_adopt
 fi
 
 # Detect BEFORE installing (the install overwrites the file being compared).

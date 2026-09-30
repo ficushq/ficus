@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Operator box control, bundled as `dist/box-control.js` so it exists on an
- * artifact install. Run on the tenant Core VM from `/opt/tau-core`, where Bun
+ * artifact install. Run on the tenant Core VM from `/opt/ficus-core`, where Bun
  * loads Core's `.env` (database and secret store):
  *
  *   FICUS_BC_SANDBOX_ID=<sandboxId> FICUS_BC_ACTION=<status|stop|start|restart|processes|kill> \

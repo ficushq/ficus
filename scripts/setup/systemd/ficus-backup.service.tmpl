@@ -1,6 +1,6 @@
 # Rendered by scripts/setup/setup-host.sh — do not edit the installed copy by
 # hand; re-run setup-host.sh (or edit this template) instead. Triggered by
-# tau-backup.timer; not enabled directly (no [Install] target needed).
+# @UNIT_BACKUP@.timer; not enabled directly (no [Install] target needed).
 [Unit]
 Description=Ficus nightly encrypted backup (pg dump + HOME_DIR -> S3)
 After=network-online.target@DB_AFTER@
@@ -11,6 +11,7 @@ Type=oneshot
 ExecStart=@SCRIPT_PATH@
 # Secrets (S3 keys, encryption passphrase) live only in this 0600 root-owned
 # file — never in this unit, never in argv.
-# Logs: journalctl -u tau-backup
+# Logs: journalctl -u @UNIT_BACKUP@
 StandardOutput=journal
 StandardError=journal
+@INSTALL_ALIAS@

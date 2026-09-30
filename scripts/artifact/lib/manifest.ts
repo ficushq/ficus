@@ -33,6 +33,15 @@ export interface CoreArtifactManifest {
    * readers of older manifests stay valid.
    */
   envPrefix?: 'FICUS'
+  /**
+   * The host layout this release needs (`2`: the Ficus install root, /etc
+   * dir, setup dir, unit names, HOME and container database). The host
+   * toolkit moves a layout-1 host there right before activating a release
+   * that declares it (lib.sh's host_layout migration, read by
+   * core_release_host_layout); a manifest without it reads as layout 1.
+   * Optional so readers of older manifests stay valid.
+   */
+  hostLayout?: 2
   /** relpath (POSIX `/` separators, relative to the artifact root) -> `sha256:<hex>` of the file's bytes. */
   files: Record<string, string>
   digest: string
@@ -110,6 +119,7 @@ export async function buildManifest(opts: {
     platform: opts.platform ?? artifactPlatform(),
     builder: opts.builder,
     envPrefix: 'FICUS',
+    hostLayout: 2,
     files,
     digest: computeDigest(files),
   }

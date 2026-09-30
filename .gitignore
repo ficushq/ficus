@@ -28,6 +28,7 @@ google-cloud-tts-service-account.json
 .test-db-port
 .tau/
 .tau-build-stamp
+.ficus-build-stamp
 config/agent/auth.json
 config/agent/extensions/**/bun.lock
 config/channels/*.yaml

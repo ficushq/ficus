@@ -120,6 +120,8 @@ const LAYOUT: { path: string; kind: 'file' | 'dir' | 'generated'; contents?: str
   { path: 'apps/core/dist/box-control.js', kind: 'file' },
   // Root-only platform-orchestrator token re-issue (the control plane's reissue_system_token job runs it).
   { path: 'apps/core/dist/system-token-control.js', kind: 'file' },
+  // Stored HOME path rebase (the host layout migration runs it from the target release).
+  { path: 'apps/core/dist/rebase-home.js', kind: 'file' },
   { path: 'apps/core/drizzle', kind: 'dir' },
   { path: 'apps/core/docker-sandbox/devbox.json', kind: 'file' },
   { path: 'apps/core/docker-sandbox/git-credential-github-token', kind: 'file' },

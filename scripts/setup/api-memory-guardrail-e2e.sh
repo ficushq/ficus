@@ -34,7 +34,7 @@ mkdir -p "${runtime_dir}" "${dropin_dir}"
 sed -e 's|@DB_AFTER@||g' -e 's|@RUN_USER@|root|g' \
   -e "s|@DEST@|${runtime_dir}|g" -e "s|@RUN_ROOT@|${runtime_dir}|g" -e 's|@BUN_DIR@|/usr/bin|g' \
   -e 's|@BUN_BIN@|/usr/bin/false|g' \
-  "${SCRIPT_DIR}/systemd/tau-api.service.tmpl" >"${unit_file}"
+  "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl" >"${unit_file}"
 cat >"${runtime_dir}/runner.py" <<'PY'
 import http.server, os
 state, port = os.environ['STATE_FILE'], int(os.environ['TEST_PORT'])

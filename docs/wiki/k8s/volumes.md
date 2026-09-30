@@ -23,7 +23,7 @@ Two static PVs reference the same access point (with unique `volumeHandle` suffi
 
 ## Directory Layout
 
-Everything lives under `HOME_DIR` (`/data` on K8s, `~/.tau` locally):
+Everything lives under `HOME_DIR` (`/data` on K8s, `~/.ficus` locally):
 
 ```
 /data/

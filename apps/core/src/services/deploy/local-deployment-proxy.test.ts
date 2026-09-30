@@ -9,6 +9,8 @@ import {
 } from './local-deployment-service'
 import { configureLocalDeploymentProxyDependencies, proxyLocalDeploymentRequest } from './local-deployment-proxy'
 
+const LEGACY_TOKEN_QUERY_PARAM = '_tau_token' // ficus-p5-bridge
+
 describe('localDeployment proxy', () => {
   let testPrefix: string
   const fetchCalls: Array<{ url: string; init: RequestInit }> = []
@@ -41,7 +43,7 @@ describe('localDeployment proxy', () => {
 
   /** The token is not on the DTO; it rides the URL Ficus hands the browser. */
   function browserToken(localDeployment: { urlPathOrHost: string }): string {
-    return new URL(`http://ficus.test${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token') ?? ''
+    return new URL(`http://ficus.test${localDeployment.urlPathOrHost}`).searchParams.get('_ficus_token') ?? ''
   }
 
   async function createTestSquad(): Promise<Squad> {
@@ -92,7 +94,7 @@ describe('localDeployment proxy', () => {
     )
     const invalid = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_tau_token=wrong`),
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_ficus_token=wrong`),
       ''
     )
 
@@ -143,18 +145,23 @@ describe('localDeployment proxy', () => {
 
     const response = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(localDeploymentUrl(localDeployment, 'api/items', 'filter=all'), {
-        method: 'POST',
-        body: 'hello',
-        headers: { 'content-type': 'text/plain' },
-      }),
+      new Request(
+        localDeploymentUrl(localDeployment, 'api/items', `filter=all&${LEGACY_TOKEN_QUERY_PARAM}=forwarded-by-bridge`),
+        {
+          method: 'POST',
+          body: 'hello',
+          headers: { 'content-type': 'text/plain' },
+        }
+      ),
       'api/items'
     )
 
     expect(response.status).toBe(201)
     expect(fetchCalls).toHaveLength(1)
     expect(fetchCalls[0].url).toBe('http://127.0.0.1:5173/api/items?filter=all')
-    expect(fetchCalls[0].url).not.toContain('_tau_token')
+    expect(fetchCalls[0].url).not.toContain('_ficus_token')
+    // The Platform bridge may forward the credential under its old name too: never to the app.
+    expect(fetchCalls[0].url).not.toContain(LEGACY_TOKEN_QUERY_PARAM)
     expect(fetchCalls[0].init.method).toBe('POST')
     expect(await new Response(fetchCalls[0].init.body as BodyInit).text()).toBe('hello')
   })
@@ -260,7 +267,7 @@ describe('localDeployment proxy', () => {
 
     await proxyLocalDeploymentRequest(
       localDeployment.id,
-      // Use the valid signed URL (carries _tau_token) so the request authenticates,
+      // Use the valid signed URL (carries _ficus_token) so the request authenticates,
       // then assert the Ficus auth credentials are not forwarded upstream.
       new Request(localDeploymentUrl(localDeployment), {
         headers: {
@@ -285,7 +292,7 @@ describe('localDeployment proxy', () => {
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
     await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
 
-    // Ficus auth header but NO _tau_token: previously a Ficus auth header
+    // Ficus auth header but NO _ficus_token: previously a Ficus auth header
     // short-circuited the token check and proxied (201). Must now be 401.
     const noToken = await proxyLocalDeploymentRequest(
       localDeployment.id,
@@ -299,7 +306,7 @@ describe('localDeployment proxy', () => {
     // Wrong token, also rejected — never reaches the upstream fetch.
     const wrongToken = await proxyLocalDeploymentRequest(
       localDeployment.id,
-      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_tau_token=wrong`, {
+      new Request(`http://ficus.test/api/app/${localDeployment.id}/?_ficus_token=wrong`, {
         headers: { authorization: 'Bearer ficus-session' },
       }),
       ''

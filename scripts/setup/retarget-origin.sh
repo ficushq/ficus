@@ -21,7 +21,7 @@
 #   4. rewrite APP_URL / FICUS_WEB_ORIGIN (and FICUS_PLATFORM_INGEST_URL, if
 #      given) in <dest>/.env, preserving every other line
 #   5. re-render + reload the Caddyfile for the new host
-#   6. restart tau-api/tau-worker and wait for the API to come back healthy
+#   6. restart the api and worker units and wait for the API to come back healthy
 #
 # Out of scope, by design: DNS records (a Platform job does those via the
 # Cloudflare API), fleet artifacts (sync-artifacts), secrets, source/
@@ -53,7 +53,7 @@
 # exactly where in that span the failure landed; the timestamped backups
 # from step 1 are there if an operator needs to revert either by hand.
 # Step 6 (restart + health wait) failing after a successful caddy reload
-# means the new origin/cert/Caddyfile are live but tau-api/tau-worker are
+# means the new origin/cert/Caddyfile are live but the api/worker units are
 # not confirmed healthy — rerun this script (idempotent) or investigate the
 # units directly; nothing rolls the cert back at that point since the new
 # Caddyfile is already the one Caddy is serving.
@@ -69,7 +69,7 @@ source "${SCRIPT_DIR}/lib.sh"
 
 usage() {
   cat <<'EOF'
-Usage: retarget-origin.sh --config tau-setup.yaml --origin https://<sub>.<domain> \
+Usage: retarget-origin.sh --config ficus-setup.yaml --origin https://<sub>.<domain> \
                            --tls-cert PATH --tls-key PATH \
                            [--dns-zone DOMAIN] [--ingest-url https://URL] [--dry-run]
 
@@ -78,7 +78,7 @@ comment in this file for the full behavior.
 
 Options:
   --config FILE     the on-VM config this host was set up with (see
-                     tau-setup.example.yaml) — rewritten in place
+                     ficus-setup.example.yaml) — rewritten in place
   --origin URL      the new browser-facing origin: scheme://host, https,
                      no port, no path
   --tls-cert PATH   the new origin certificate (already pushed to this VM)
@@ -244,7 +244,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   plan "write ${CADDYFILE_PATH} (idempotent: rewrite + reload, never restart, only on content change):"
   render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}" | sed 's/^/  | /'
   printf '\nunits\n'
-  plan "systemctl restart tau-api tau-worker; wait for 127.0.0.1:${CORE_PORT}/health (bounded timeout)"
+  plan "systemctl restart ${HL_UNIT_API} ${HL_UNIT_WORKER}; wait for 127.0.0.1:${CORE_PORT}/health (bounded timeout)"
   exit 0
 fi
 
@@ -253,7 +253,7 @@ fi
 # flow): either the invoking process already IS root, or it dies here,
 # before touching anything.
 [[ ${EUID} -eq 0 ]] ||
-  die "retarget-origin.sh must run as root (EUID=${EUID}) — it rewrites root-owned Caddy TLS material and restarts the tau-api/tau-worker systemd units; run it as root directly (sudo is not supported here)"
+  die "retarget-origin.sh must run as root (EUID=${EUID}) — it rewrites root-owned Caddy TLS material and restarts the ${HL_UNIT_API}/${HL_UNIT_WORKER} systemd units; run it as root directly (sudo is not supported here)"
 
 # ============================================================ 1. back up
 
@@ -369,7 +369,7 @@ if ! (
   else
     cert_restore='no previous origin certificate/key existed to restore, so whatever step 3 installed (if anything) is still in place'
   fi
-  die "retarget-origin.sh: steps 3-5 failed — ${cert_restore}. The yaml (step 2) rewrite is still in place (see ${CONFIG}.bak-* from step 1 to revert it by hand); the .env rewrite (step 4) may be partial or complete depending on where this failed (see ${ENV_FILE}.bak-*); tau-api/tau-worker were NOT restarted."
+  die "retarget-origin.sh: steps 3-5 failed — ${cert_restore}. The yaml (step 2) rewrite is still in place (see ${CONFIG}.bak-* from step 1 to revert it by hand); the .env rewrite (step 4) may be partial or complete depending on where this failed (see ${ENV_FILE}.bak-*); ${HL_UNIT_API}/${HL_UNIT_WORKER} were NOT restarted."
 fi
 
 # ============================================================ 6. restart

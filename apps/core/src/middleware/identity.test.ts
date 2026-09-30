@@ -58,19 +58,43 @@ describe('identityMiddleware', () => {
       .values({ name: `${PREFIX}-compact-${crypto.randomUUID()}`, purpose: 'Compact app auth test' })
       .returning()
     const localDeployment = await createLocalDeployment(new Squad(row), { name: 'web', port: 5173, mode: 'attached' })
-    const token = new URL(localDeployment.urlPathOrHost, 'http://ficus.test').searchParams.get('_tau_token')!
+    const token = new URL(localDeployment.urlPathOrHost, 'http://ficus.test').searchParams.get('_ficus_token')!
     const prefix = localDeployment.id.slice(0, 13)
     const app = new Hono()
     app.use('*', identityMiddleware)
     app.get('/api/app/:id/*', (c) => c.json({ resolvedId: c.get('resolvedLocalDeploymentId') }))
 
-    const wrong = await app.request(`/api/app/${prefix}/?_tau_token=wrong`)
+    const wrong = await app.request(`/api/app/${prefix}/?_ficus_token=wrong`)
     expect(wrong.status).toBe(401)
     expect(wrong.headers.get('x-ficus-app-proxy')).toBe('error')
 
-    const response = await app.request(`/api/app/${prefix}/?_tau_token=${encodeURIComponent(token)}`)
+    const response = await app.request(`/api/app/${prefix}/?_ficus_token=${encodeURIComponent(token)}`)
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ resolvedId: localDeployment.id })
+  })
+
+  test('does not accept the pre-rename token query parameter (hard rename, no read bridge)', async () => {
+    const LEGACY_TOKEN_QUERY_PARAM = '_tau_token' // ficus-p5-bridge
+    const [row] = await db
+      .insert(squads)
+      .values({ name: `${PREFIX}-legacy-param-${crypto.randomUUID()}`, purpose: 'Legacy token param test' })
+      .returning()
+    const localDeployment = await createLocalDeployment(new Squad(row), { name: 'web', port: 5173, mode: 'attached' })
+    const token = new URL(localDeployment.urlPathOrHost, 'http://ficus.test').searchParams.get('_ficus_token')!
+    expect(token).toBeTruthy()
+    const app = new Hono()
+    app.use('*', identityMiddleware)
+    app.get('/api/app/:id/*', (c) => c.json({ resolvedId: c.get('resolvedLocalDeploymentId') }))
+
+    const legacy = await app.request(
+      `/api/app/${localDeployment.id}/?${LEGACY_TOKEN_QUERY_PARAM}=${encodeURIComponent(token)}`
+    )
+    expect(legacy.status).toBe(401)
+    expect(legacy.headers.get('set-cookie')).toBeNull()
+
+    const current = await app.request(`/api/app/${localDeployment.id}/?_ficus_token=${encodeURIComponent(token)}`)
+    expect(current.status).toBe(200)
+    expect(await current.json()).toEqual({ resolvedId: localDeployment.id })
   })
 
   test('maps a real ambiguous local-deployment prefix to fresh-link guidance', async () => {
@@ -109,13 +133,13 @@ describe('identityMiddleware', () => {
     app.use('*', identityMiddleware)
     app.get('/api/app/:id/*', () => new Response('must not run'))
 
-    const response = await app.request(`/api/app/${prefix}/?_tau_token=irrelevant`)
+    const response = await app.request(`/api/app/${prefix}/?_ficus_token=irrelevant`)
 
     expect(response.status).toBe(409)
     expect(response.headers.get('x-ficus-app-proxy')).toBe('error')
     expect(await response.json()).toEqual({ error: 'This app link is no longer unique — get a fresh URL.' })
 
-    const wildcard = await app.request('/api/app/_/?_tau_token=irrelevant')
+    const wildcard = await app.request('/api/app/_/?_ficus_token=irrelevant')
     expect(wildcard.status).toBe(401)
     expect(await wildcard.json()).toEqual({ error: 'Authentication required' })
   })

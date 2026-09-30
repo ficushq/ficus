@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Optional local deployment hook for bare-metal/Caddy setups.
-# Set WEB_DIST_SYNC_DIR=/var/www/tau in .env to sync apps/web/dist after build:web.
+# Set WEB_DIST_SYNC_DIR=/var/www/ficus in .env to sync apps/web/dist after build:web.
 # Leave unset to make build:web only build the Vite app.
 
 if [[ -f .env ]]; then

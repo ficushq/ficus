@@ -296,6 +296,46 @@ jobs:
           }
           if (( status != 0 )); then exit $(( status )); fi
 
+      # lib.sh's host layout section (the Ficus host migration's names,
+      # detection and resolution) and the toolkit sites that follow it. As
+      # root, like the host-migration cases in lib.test.sh: the suite builds
+      # whole hosts under a scratch FICUS_HOST_ROOT and keeps the framework's
+      # backup root out of /var/backups (HOST_MIGRATE_BACKUP_ROOT).
+      - name: Run host layout suite (root)
+        run: |
+          set -o pipefail
+          status=0
+          out=$(sudo env "PATH=$PATH" bash scripts/setup/host-layout.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::host-layout.test.sh (root) ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
+      # lib.sh's host-migration framework end to end: upgrade-host.sh,
+      # apply-artifacts.sh and setup-host.sh run as subprocesses against a fake
+      # host, with two test-only migrations appended to a scratch copy of the
+      # toolkit (signals, SIGKILL + reconcile, SIGPIPE, the conversion restore,
+      # the rollback order, the settle/reverse hooks). Real root with no sudo
+      # fallback, so the suite self-skips otherwise — hence the same summary
+      # and marker gating as the other root suites.
+      - name: Run host-migration e2e suite (root)
+        run: |
+          set -o pipefail
+          status=0
+          out=$(sudo env "PATH=$PATH" bash scripts/setup/host-migrate-e2e.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::host-migrate-e2e.test.sh (root) ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          grep -Fq 'FICUS host-migration e2e section: ENABLED' <<<"${out}" || {
+            echo '::error::host-migrate-e2e.test.sh (root) skipped its cases (no "FICUS host-migration e2e section: ENABLED" marker) — this step exists to execute them.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
       # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
       - name: Verify deterministic Pi patch regeneration has no drift
         run: |
@@ -808,6 +848,7 @@ jobs:
           src/services/machines/cli-bundle.test.ts
           src/db/model-tiers-migration.test.ts
           src/db/migrate-bundle.test.ts
+          src/scripts/rebase-home.cli.test.ts
           src/db/load-root-env.test.ts
           src/tools/sandbox-tools.real-edit.test.ts
           src/index.test.ts

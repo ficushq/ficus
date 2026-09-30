@@ -50,7 +50,7 @@ describe('localDeployment service', () => {
 
       expect(url.origin).toBe(`https://team--blue--${compactId}.ficus.app`)
       expect(url.pathname).toBe('/')
-      expect(url.searchParams.get('_tau_token')).toBeTruthy()
+      expect(url.searchParams.get('_ficus_token')).toBeTruthy()
       expect(url.hostname).not.toContain(localDeployment.id.replaceAll('-', ''))
     } finally {
       if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
@@ -67,10 +67,10 @@ describe('localDeployment service', () => {
     try {
       const squad = await createTestSquad('path-fallback')
       const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
-      const token = new URL(`http://ficus${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token')
+      const token = new URL(`http://ficus${localDeployment.urlPathOrHost}`).searchParams.get('_ficus_token')
 
       expect(localDeployment.urlPathOrHost).toBe(
-        `/api/app/${localDeployment.id}/?_tau_token=${encodeURIComponent(token!)}`
+        `/api/app/${localDeployment.id}/?_ficus_token=${encodeURIComponent(token!)}`
       )
     } finally {
       if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
@@ -87,13 +87,13 @@ describe('localDeployment service', () => {
     try {
       const squad = await createTestSquad('invalid-hosted-read')
       const created = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
-      const token = new URL(`http://ficus${created.urlPathOrHost}`).searchParams.get('_tau_token')!
+      const token = new URL(`http://ficus${created.urlPathOrHost}`).searchParams.get('_ficus_token')!
       process.env.FICUS_APPS_DOMAIN = 'ficus.app'
       process.env.APP_URL = `https://${'a'.repeat(50)}.ficus.sh`
 
       const found = await getLocalDeployment(created.id)
       const listed = await listLocalDeployments(squad.id)
-      const expected = `/api/app/${created.id}/?_tau_token=${encodeURIComponent(token)}`
+      const expected = `/api/app/${created.id}/?_ficus_token=${encodeURIComponent(token)}`
       expect(found?.urlPathOrHost).toBe(expected)
       expect(listed[0]?.urlPathOrHost).toBe(expected)
       expect(warn.mock.calls.flat().join(' ').toLowerCase()).toContain('hosted app url config is invalid')
@@ -144,7 +144,7 @@ describe('localDeployment service', () => {
   it('validates browser tokens in constant time without throwing on length mismatch', async () => {
     const squad = await createTestSquad('token')
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
-    const rawToken = new URL(`http://t${localDeployment.urlPathOrHost}`).searchParams.get('_tau_token')
+    const rawToken = new URL(`http://t${localDeployment.urlPathOrHost}`).searchParams.get('_ficus_token')
     expect(rawToken).toBeTruthy()
 
     expect(await isValidLocalDeploymentBrowserToken(localDeployment.id, rawToken)).toBe(true)
@@ -168,7 +168,7 @@ describe('localDeployment service', () => {
     expect(localDeployment.status).toBe('starting')
     expect(localDeployment.keepSandboxAlive).toBe(true)
     expect(localDeployment.restartPolicy).toBe('always')
-    expect(localDeployment.urlPathOrHost).toMatch(new RegExp(`^/api/app/${localDeployment.id}/\\?_tau_token=.+$`))
+    expect(localDeployment.urlPathOrHost).toMatch(new RegExp(`^/api/app/${localDeployment.id}/\\?_ficus_token=.+$`))
   })
 
   it('createLocalDeployment persists a normalized attached logPath', async () => {

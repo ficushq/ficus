@@ -91,7 +91,7 @@ function buildBrowserLocalDeploymentUrl(row: Pick<LocalDeploymentRow, 'id' | 'br
     base = buildLocalDeploymentProxyPath(row.id)
   }
   if (!row.browserAccessToken) return base
-  return `${base}?_tau_token=${encodeURIComponent(row.browserAccessToken)}`
+  return `${base}?_ficus_token=${encodeURIComponent(row.browserAccessToken)}`
 }
 
 export function toLocalDeployment(row: LocalDeploymentRow): LocalDeployment {

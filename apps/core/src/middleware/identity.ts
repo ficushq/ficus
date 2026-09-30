@@ -34,7 +34,7 @@ export const identityMiddleware = createMiddleware(async (c, next) => {
     // Signed-public bypasses (no identity is set — these routes carry no
     // permission guards and remain public):
     //
-    // 1. Local-deployment browser proxy: /api/app/:id with a valid _tau_token.
+    // 1. Local-deployment browser proxy: /api/app/:id with a valid _ficus_token.
     // Either the URL token or the path-scoped cookie it set. Without the cookie
     // arm, a deployed app's own asset requests carry no credential and are
     // rejected here, before the proxy route ever runs.

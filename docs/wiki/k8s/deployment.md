@@ -237,7 +237,7 @@ kubectl -n tau-sandboxes logs -l app=tau-sandbox       # Sandbox logs
 | `FICUS_WORKER_EVENT_PORT`    | `3003`                                | Port for the worker's api↔worker event listener (see the note below)                                                                            |
 | `FICUS_INTERNAL_EVENT_TOKEN` | (derived from `FICUS_ENCRYPTION_KEY`) | Shared secret authenticating api↔worker events; must resolve identically in both                                                                |
 | `MAX_CONCURRENT_AGENTS`      | `10`                                  | Max concurrent agent runs per worker                                                                                                            |
-| `HOME_DIR`                   | `/data` (K8s), `~/.tau` (local)       | Root directory for all persistent data                                                                                                          |
+| `HOME_DIR`                   | `/data` (K8s), `~/.ficus` (local)     | Root directory for all persistent data                                                                                                          |
 
 > **Cross-process events.** The seven channels documented in
 > [`event-emitter.md`](../event-emitter.md#local-events-channels) travel over an

@@ -1,6 +1,6 @@
 import { createPostgresConnection, getConnectionString } from '../../db/connection'
 
-export const ADMISSION_LIVENESS_LOCK_VERSION = 'tau:admission-owner:v1:'
+export const ADMISSION_LIVENESS_LOCK_VERSION = 'ficus:admission-owner:v1:'
 export const ADMISSION_LIVENESS_HASH_SEED = 7_401_983_522
 
 export const admissionProcessIncarnation = crypto.randomUUID()

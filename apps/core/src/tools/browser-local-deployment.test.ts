@@ -122,12 +122,12 @@ describe('browser_open local deployment handoff', () => {
     const result = await execute({ localDeploymentId: deploymentId })
     expect(calls).toEqual([{ runId: agentId, url: new URL(deployment!.urlPathOrHost, process.env.APP_URL).href }])
     expect(
-      await isValidLocalDeploymentBrowserToken(deploymentId, new URL(calls[0].url).searchParams.get('_tau_token'))
+      await isValidLocalDeploymentBrowserToken(deploymentId, new URL(calls[0].url).searchParams.get('_ficus_token'))
     ).toBe(true)
     expect(result.details).not.toHaveProperty('error')
     expect(result.content).toContainEqual({ type: 'image', data: 'SYNTHETIC_IMAGE', mimeType: 'image/png' })
     expect(JSON.stringify(result)).not.toContain(token)
-    expect(JSON.stringify(result)).not.toContain('_tau_token')
+    expect(JSON.stringify(result)).not.toContain('_ficus_token')
   })
 
   test('uses the issued hosted app origin rather than concatenating APP_URL', async () => {
@@ -137,7 +137,7 @@ describe('browser_open local deployment handoff', () => {
     const url = new URL(calls[0].url)
     expect(url.origin).toBe(`https://tenant--${deploymentId.replaceAll('-', '').slice(0, 12)}.apps.example.test`)
     expect(url.pathname).toBe('/')
-    expect(url.searchParams.get('_tau_token')).toBe(token)
+    expect(url.searchParams.get('_ficus_token')).toBe(token)
   })
 
   test('does not pass caller-supplied identity or origin overrides to privileged resolution', async () => {
@@ -255,6 +255,6 @@ describe('browser_open local deployment handoff', () => {
     expect(calls[0].url).toContain(token)
     expect(result.details).toHaveProperty('error')
     expect(JSON.stringify(result)).not.toContain(token)
-    expect(JSON.stringify(result)).not.toContain('_tau_token')
+    expect(JSON.stringify(result)).not.toContain('_ficus_token')
   })
 })

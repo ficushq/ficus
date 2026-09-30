@@ -297,7 +297,7 @@ Trusted provider-transport failures have a separate budget of up to three jitter
 ## Session persistence
 
 Chat and agent conversations use file-based Pi SDK sessions stored under
-`<HOME_DIR>/sessions/<agentId>/` (`~/.tau/sessions/…` by default). Session files
+`<HOME_DIR>/sessions/<agentId>/` (`~/.ficus/sessions/…` by default). Session files
 are the canonical conversation state (what the LLM sees), while database
 messages serve as a read cache for the web UI. The Pi SDK handles context
 window management and auto-compaction automatically.

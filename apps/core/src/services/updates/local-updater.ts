@@ -62,7 +62,7 @@ function envFileValue(path: string, key: string): string | null {
 }
 
 /**
- * Decides whether it is safe to RESTART tau-api/tau-worker at the end of an
+ * Decides whether it is safe to RESTART ficus-api/ficus-worker at the end of an
  * update, or returns the operator-facing reason it is not.
  *
  * An update rewrites no environment: it merges, builds, and restarts. Since
@@ -75,7 +75,7 @@ function envFileValue(path: string, key: string): string | null {
  * EnvironmentFile in both systemd units, and the file bun auto-loads for a dev
  * checkout). When it does not declare the key, the RUNNING process's
  * environment is the fallback — that is the resolved product of the same unit,
- * the same drop-ins and /etc/tau/managed.env that the restarted services will
+ * the same drop-ins and /etc/ficus/managed.env that the restarted services will
  * read, and this process is a service started from exactly that stack.
  *
  * Deliberately does NOT repair anything: choosing between docker-sysbox and
@@ -94,7 +94,7 @@ export function sandboxRuntimeRestartBlocker(
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     return (
-      `${reason} Refusing to update: restarting tau-api and tau-worker with this configuration would bring them ` +
+      `${reason} Refusing to update: restarting ficus-api and ficus-worker with this configuration would bring them ` +
       `back down. Set FICUS_SANDBOX_RUNTIME in ${envFilePath} and retry.`
     )
   }

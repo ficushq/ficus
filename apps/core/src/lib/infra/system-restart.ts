@@ -12,7 +12,7 @@ import type { LocalEventHandler } from './local-events'
  * brought back by its own supervisor.
  *
  * Exit code doctrine (PR #1051): both units run `Restart=on-failure` under
- * systemd (scripts/setup/systemd/tau-{api,worker}.service.tmpl), which
+ * systemd (scripts/setup/systemd/ficus-{api,worker}.service.tmpl), which
  * restarts ONLY on a non-zero exit — a clean exit(0) is treated as an
  * intentional success and the unit stays DOWN. So a RESTART must exit
  * non-zero, while a `systemctl stop` (SIGTERM) keeps exiting 0. K8s
