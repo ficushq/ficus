@@ -265,6 +265,30 @@ function replayBaselineDelivery(
   return delivery
 }
 
+/**
+ * Never let a weaker or missing observation erase what the provider last proved.
+ * REST cannot see GitHub's required-review decision, so a REST fallback keeps
+ * the previous same-head aggregate decision instead of an invented `unknown`.
+ * With no new observation at all, the previous snapshot is kept unchanged: its
+ * original observation time lets consumers age its readiness facts.
+ */
+export function retainDeliveryEvidence(
+  previous: GitHubDeliverySnapshot | undefined,
+  next: GitHubDeliverySnapshot | undefined
+): GitHubDeliverySnapshot | undefined {
+  if (!next) return previous
+  if (
+    next.source === 'rest' &&
+    previous &&
+    previous.headSha === next.headSha &&
+    previous.connectionId === next.connectionId &&
+    previous.repository === next.repository &&
+    previous.number === next.number
+  )
+    return { ...next, reviewDecision: previous.reviewDecision }
+  return next
+}
+
 function overlapTimestamp(value: string): string {
   const timestamp = Date.parse(value)
   return Number.isFinite(timestamp) ? new Date(timestamp - 1_000).toISOString() : value
@@ -358,7 +382,10 @@ export class GitHubPrEventPoller implements EventPollingCapability<GitHubPrPolli
       requestsConsumed++
       // Read the policy/check aggregate after REST context. It can observe a
       // newer head than an in-progress activity scan and remains independent.
-      deliveryPresentation = (await this.#deliveryPresentation(connection, credential, signal)) ?? deliveryPresentation
+      deliveryPresentation = retainDeliveryEvidence(
+        cursor?.deliveryPresentation,
+        (await this.#deliveryPresentation(connection, credential, signal)) ?? deliveryPresentation
+      )
     }
 
     const issueCommentQuery = new URLSearchParams({ per_page: '100' })

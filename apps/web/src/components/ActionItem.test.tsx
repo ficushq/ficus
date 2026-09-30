@@ -792,3 +792,54 @@ describe('assistant task questions', () => {
     }
   })
 })
+
+describe('ActionItem code-host delivery gate', () => {
+  const deliveryAction = {
+    id: 'workstream-delivery:ws-2:review',
+    type: 'workstream-delivery',
+    priority: 2,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    canRespond: false,
+    squadId: 'squad-1',
+    squadName: 'Ficus',
+    data: {
+      workStreamId: 'ws-2',
+      workStreamNumber: 362,
+      workStreamTitle: 'Use accurate Waiting label',
+      squadId: 'squad-1',
+      squadName: 'Ficus',
+      deliveryKind: 'review',
+      pullRequests: [
+        { repository: 'ficushq/tau-mobile', number: 42, url: 'https://github.com/ficushq/tau-mobile/pull/42' },
+      ],
+      focus: { kind: 'workstream', workStreamId: 'ws-2' },
+    },
+  } as PendingAction
+
+  test('lists a PR awaiting human review with a link to the pull request, not a permission notice', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionCenterContent actions={[deliveryAction, action]} isLoading={false} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect(document.body.textContent).toContain('Work stream reviews')
+      expect(document.body.textContent).toContain('Use accurate Waiting label')
+      expect(document.body.textContent).toContain('Ficus · Review pull request')
+      const expand = [...document.querySelectorAll('button[aria-label="Expand"]')] as HTMLButtonElement[]
+      await dom.act(async () => expand[0]!.click())
+      expect(document.body.textContent).toContain('needs an approving human review')
+      expect(document.body.textContent).not.toContain('do not have permission to respond')
+      const link = document.querySelector('a[href="https://github.com/ficushq/tau-mobile/pull/42"]')
+      expect(link?.textContent).toBe('Review ficushq/tau-mobile#42')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})

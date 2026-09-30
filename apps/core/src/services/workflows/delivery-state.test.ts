@@ -1,6 +1,7 @@
-import { expect, test } from 'bun:test'
-import { classifyDeliveryPresentation, type DeliveryEvent } from './delivery-state'
+import { describe, expect, test } from 'bun:test'
+import { classifyDeliveryPresentation, deliverySnapshotEvent, type DeliveryEvent } from './delivery-state'
 import type { WorkStreamDeliveryGateFacts, WorkflowRun } from '@ficus/shared'
+import { workBucket, workStreamNeedsHumanAttention } from '@ficus/shared'
 
 const metadata = { codeHost: { integration: 'github', repository: 'acme/repo', changeRequest: { number: 42 } } }
 const run = (mode = 'pr-merge', followChanges = true) =>
@@ -488,4 +489,170 @@ test('specific human gates and failures stay lean without explanation payload', 
   expect(
     classifyDeliveryPresentation(run(), metadata, [event('pull_request.ci_completed', { state: 'failure' })])
   ).toEqual({ kind: 'failure' })
+})
+
+describe('a known required human review survives stale or superseding non-review evidence', () => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+  const observed = (fact: DeliveryEvent, minutes: number): DeliveryEvent => ({
+    ...fact,
+    occurredAt: minutesAgo(minutes),
+    observedAt: minutesAgo(minutes),
+  })
+  // Ficus #362 / tau-mobile#42: auto-merge enabled, ruleset requires one approval,
+  // no explicit reviewer request, required CI pending and then green.
+  const autoMergeEnabled = observed(
+    event('pull_request.updated', { action: 'auto_merge_enabled', mergeState: 'blocked', pendingHumanReview: false }),
+    30
+  )
+  const aggregate = (data: Record<string, unknown>, minutes: number, head = 'a'.repeat(40)) =>
+    observed(
+      event(
+        'pull_request.snapshot',
+        { pullRequestState: 'open', draft: false, pendingHumanReview: false, ...data },
+        head
+      ),
+      minutes
+    )
+  const requiredWhilePending = aggregate(
+    { mergeState: 'blocked', reviewDecision: 'required', checksState: 'pending' },
+    20
+  )
+  const ciGreen = observed(event('pull_request.ci_completed', { state: 'success', ci: { workflowId: '7' } }), 10)
+  const classify = (events: DeliveryEvent[]) =>
+    classifyDeliveryPresentation(run('pr-auto-merge'), metadata, events, { allowAutoMerge: true })
+
+  test('the #362 facts classify as a human PR review while CI is pending and after it settles', () => {
+    expect(
+      classify([
+        autoMergeEnabled,
+        aggregate({ mergeState: 'blocked', reviewDecision: 'required', checksState: 'pending' }, 1),
+      ])
+    ).toEqual({
+      kind: 'review',
+    })
+    // The aggregate observation expired (polling fell behind) and only CI evidence is newer.
+    expect(classify([autoMergeEnabled, requiredWhilePending, ciGreen])).toEqual({ kind: 'review' })
+    const presentation = {
+      status: 'active' as const,
+      openWaits: [],
+      delivery: classify([requiredWhilePending, ciGreen]),
+    }
+    expect(workStreamNeedsHumanAttention(presentation)).toBe(true)
+    expect(workBucket(presentation)).toBe('needsYou')
+  })
+
+  test('approval, merge, close, a new head, or a newer aggregate without the requirement clear it', () => {
+    const approval = observed(event('pull_request.reviewed', { state: 'approved', reviewedHeadSha: 'a'.repeat(40) }), 5)
+    expect(classify([requiredWhilePending, ciGreen, approval])).toEqual({
+      kind: 'external',
+      explanation: { pullRequests: [{ number: 42, state: 'open' }] },
+    })
+    // An approval of an older commit does not satisfy the current head.
+    const oldApproval = observed(
+      event('pull_request.reviewed', { state: 'approved', reviewedHeadSha: 'b'.repeat(40) }),
+      5
+    )
+    expect(classify([requiredWhilePending, oldApproval])).toEqual({ kind: 'review' })
+    expect(classify([requiredWhilePending, observed(event('pull_request.merged'), 5)])).toEqual({
+      kind: 'external',
+      explanation: { pullRequests: [{ number: 42, state: 'merged' }] },
+    })
+    expect(classify([requiredWhilePending, observed(event('pull_request.closed'), 5)])).toEqual({ kind: 'failure' })
+    expect(
+      classify([
+        requiredWhilePending,
+        observed(event('pull_request.updated', { action: 'synchronize' }, 'b'.repeat(40)), 5),
+      ])
+    ).toEqual({ kind: 'external', explanation: { pullRequests: [{ number: 42, state: 'open' }] } })
+    expect(
+      classify([
+        requiredWhilePending,
+        aggregate({ mergeState: 'blocked', reviewDecision: 'approved', checksState: 'success' }, 1),
+      ])
+    ).toEqual({
+      kind: 'external',
+      explanation: {
+        pullRequests: [{ number: 42, state: 'open' }],
+        gates: { mergeState: 'blocked', checksState: 'success', reviewDecision: 'approved' },
+      },
+    })
+  })
+
+  test('only CI, merge queue or auto-merge with review satisfied stays external; no evidence invents nothing', () => {
+    expect(classify([autoMergeEnabled, ciGreen])).toEqual({
+      kind: 'external',
+      explanation: { pullRequests: [{ number: 42, state: 'open' }] },
+    })
+    expect(
+      classify([aggregate({ mergeState: 'blocked', reviewDecision: 'approved', checksState: 'pending' }, 1)])
+    ).toEqual({
+      kind: 'external',
+      explanation: {
+        pullRequests: [{ number: 42, state: 'open' }],
+        gates: { mergeState: 'blocked', checksState: 'pending', reviewDecision: 'approved' },
+      },
+    })
+    expect(classify([aggregate({ mergeState: 'blocked', reviewDecision: 'required', draft: true }, 1)])).toMatchObject({
+      kind: 'external',
+    })
+    expect(
+      classify([requiredWhilePending, observed(event('pull_request.ci_completed', { state: 'failure' }), 5)])
+    ).toEqual({
+      kind: 'failure',
+    })
+  })
+
+  test('a requested human reviewer stays a review after the observation ages and unrelated comments arrive', () => {
+    const request = observed(
+      event('pull_request.review_requested', {
+        requestedReviewer: 'human',
+        requestedReviewerType: 'User',
+        pendingHumanReview: true,
+      }),
+      30
+    )
+    const comment = observed(event('pull_request.comment', {}), 10)
+    expect(classify([request, comment, ciGreen])).toEqual({ kind: 'review' })
+    const removed = observed(
+      event('pull_request.updated', { action: 'review_request_removed', pendingHumanReview: false }),
+      5
+    )
+    expect(classify([request, comment, removed])).toEqual({
+      kind: 'external',
+      explanation: { pullRequests: [{ number: 42, state: 'open' }] },
+    })
+  })
+})
+
+test('an expired cached snapshot keeps its review requirement but not its merge or check readiness', () => {
+  const now = Date.parse('2026-01-01T08:00:00Z')
+  const snapshot = {
+    version: 1 as const,
+    squadId: 'squad',
+    connectionId: 'connection',
+    repository: 'acme/repo',
+    number: 42,
+    observedAt: '2026-01-01T07:40:00Z',
+    source: 'graphql' as const,
+    headSha: 'a'.repeat(40),
+    state: 'open' as const,
+    draft: false,
+    mergeState: 'clean',
+    reviewDecision: 'required' as const,
+    checksState: 'failure' as const,
+    pendingHumanReview: false,
+  }
+  const stale = deliverySnapshotEvent(snapshot, now)
+  expect(stale.data).not.toHaveProperty('mergeState')
+  expect(stale.data).not.toHaveProperty('checksState')
+  expect(stale.data).toMatchObject({ reviewDecision: 'required', pullRequestState: 'open', draft: false })
+  // No alarm from an expired failure rollup; the standing requirement still decides.
+  expect(classifyDeliveryPresentation(run(), metadata, [stale])).toEqual({ kind: 'review' })
+  const approved = deliverySnapshotEvent({ ...snapshot, reviewDecision: 'approved' }, now)
+  expect(classifyDeliveryPresentation(run(), metadata, [approved])).toEqual({
+    kind: 'external',
+    explanation: { pullRequests: [{ number: 42, state: 'open' }] },
+  })
+  const current = deliverySnapshotEvent(snapshot, Date.parse('2026-01-01T07:41:00Z'))
+  expect(current.data).toMatchObject({ mergeState: 'clean', checksState: 'failure' })
 })

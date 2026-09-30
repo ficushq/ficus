@@ -73,6 +73,7 @@ export function isValidQueuePosition(value: unknown): value is number {
 // 1. Running work (in_progress).
 // 2. A review gate the delivery pipeline settles itself (annotated
 //    `automatedReviewGate`): CI / auto-merge pending, no human input needed.
+//    A human delivery gate (PR review/merge) stays in tier 0 regardless.
 // 3. Everything else: dependency waits (they wait on another stream, not a
 //    person), other external delivery waits, delivery setup/failure, idle,
 //    and failed executions.
@@ -81,8 +82,12 @@ function activeUrgency(item: CanonicalWorkStreamOrderInput): number {
     ...item,
     openWaits: item.openWaits?.filter((wait) => wait.closedAt === null),
   })
-  if (['in_review', 'delivery_approval', 'delivery_review', 'delivery_merge'].includes(state))
-    return item.automatedReviewGate === true ? 2 : 0
+  if (['in_review', 'delivery_approval', 'delivery_review', 'delivery_merge'].includes(state)) {
+    // A pull request that needs a human review or merge is never automated,
+    // whatever the annotation claims (auto-merge waits on that same human).
+    const humanDelivery = ['approval', 'review', 'merge'].includes(String(item.delivery?.kind))
+    return item.automatedReviewGate === true && !humanDelivery ? 2 : 0
+  }
   if (state === 'waiting_on_answer' || state === 'blocked') return 0
   if (state === 'in_progress') return 1
   return 3

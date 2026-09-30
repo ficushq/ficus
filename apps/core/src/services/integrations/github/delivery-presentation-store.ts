@@ -13,6 +13,10 @@ export async function notifyDeliverySnapshotChanged(
   next: unknown
 ): Promise<void> {
   if (watch.providerKey !== 'github') return
+  // A retained observation (no new provider evidence this poll) changes nothing.
+  const previousValue = (previous as { deliveryPresentation?: unknown } | null)?.deliveryPresentation
+  const nextValue = (next as { deliveryPresentation?: unknown } | null)?.deliveryPresentation
+  if (previousValue !== undefined && JSON.stringify(previousValue) === JSON.stringify(nextValue)) return
   const current = readGitHubDeliverySnapshot(next)
   // A cleared/unavailable observation must also invalidate a previous human gate.
   // Stale identity is used only for invalidation, never to classify readiness.

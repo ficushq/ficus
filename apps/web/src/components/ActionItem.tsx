@@ -23,6 +23,7 @@ import type {
   AgentErrorActionData,
   AssistantTaskActionData,
   WorkStreamActionData,
+  WorkStreamDeliveryActionData,
 } from '@ficus/shared'
 import type { StatusRole } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
@@ -35,6 +36,7 @@ const actionIcons: Record<string, string> = {
   'assistant-needs-input': '?',
   'workstream-review': '◎',
   'workstream-blocked': '⊘',
+  'workstream-delivery': '◎',
 }
 
 const actionRoles: Record<PendingAction['type'], StatusRole> = {
@@ -44,6 +46,7 @@ const actionRoles: Record<PendingAction['type'], StatusRole> = {
   'assistant-needs-input': 'humanWait',
   'workstream-review': 'review',
   'workstream-blocked': 'danger',
+  'workstream-delivery': 'review',
 }
 
 /** Opens the saved Assistant conversation on the current page; the navigation reader picks it up. */
@@ -94,6 +97,7 @@ export function ActionItem({
   const { closeActionCenter } = useActionCenter()
 
   const isWorkStreamAction = action.type === 'workstream-review' || action.type === 'workstream-blocked'
+  const deliveryGate = action.type === 'workstream-delivery' ? (action.data as WorkStreamDeliveryActionData) : null
 
   // Remove the successful action immediately, then refetch only authoritative affected domains.
   const completeAction = async () => {
@@ -146,11 +150,13 @@ export function ActionItem({
       : `/squads/${action.squadId}`
   const title = isWorkStreamAction
     ? wsData!.workStreamTitle
-    : assistantTask
-      ? assistantTask.taskLabel
-      : agentItem
-        ? agentItem.agentName || agentItem.agentTypeId
-        : action.squadName
+    : deliveryGate
+      ? deliveryGate.workStreamTitle
+      : assistantTask
+        ? assistantTask.taskLabel
+        : agentItem
+          ? agentItem.agentName || agentItem.agentTypeId
+          : action.squadName
 
   return (
     <>
@@ -186,7 +192,7 @@ export function ActionItem({
           <div className="flex-1 min-w-0">
             {embedded ? (
               <h3 className="font-medium text-sm text-primary">{title}</h3>
-            ) : isWorkStreamAction ? (
+            ) : isWorkStreamAction || deliveryGate ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -231,9 +237,11 @@ export function ActionItem({
         {expanded && (
           <div className={clsx('pb-4 space-y-4', !embedded && 'px-4 sm:pl-11')}>
             {/* Action controls */}
-            {action.canRespond ||
-            (action.type === 'agent-question' &&
-              (action.data as AgentQuestionActionData).answerDelivery?.status === 'failed') ? (
+            {deliveryGate ? (
+              <DeliveryGateActionContent data={deliveryGate} hideWorkStreamLink={embedded} />
+            ) : action.canRespond ||
+              (action.type === 'agent-question' &&
+                (action.data as AgentQuestionActionData).answerDelivery?.status === 'failed') ? (
               <ActionContent
                 action={action}
                 onComplete={completeAction}
@@ -248,6 +256,15 @@ export function ActionItem({
       </div>
 
       {/* Work stream detail modal (from title click) */}
+      {showWsModal && deliveryGate && (
+        <WorkStreamViewModal
+          workStreamId={deliveryGate.workStreamId}
+          squadId={deliveryGate.squadId}
+          squadName={deliveryGate.squadName}
+          actionCanRespond={false}
+          onClose={() => setShowWsModal(false)}
+        />
+      )}
       {showWsModal && wsData && (
         <WorkStreamViewModal
           workStreamId={wsData.workStreamId}
@@ -316,9 +333,78 @@ function ActionSubtitle({ action }: { action: PendingAction }) {
         </p>
       )
     }
+    case 'workstream-delivery': {
+      const data = action.data as WorkStreamDeliveryActionData
+      return (
+        <p className="text-xs text-muted truncate">
+          {data.squadName} · {deliveryGateLabel(data)}
+        </p>
+      )
+    }
     default:
       return null
   }
+}
+
+function deliveryGateLabel(data: WorkStreamDeliveryActionData): string {
+  return data.deliveryKind === 'merge' ? 'Merge pull request' : 'Review pull request'
+}
+
+/**
+ * A pull request needs a person on the code host. Ficus cannot approve or merge
+ * it here, so this links out to the pull request and to the work stream.
+ */
+function DeliveryGateActionContent({
+  data,
+  hideWorkStreamLink,
+}: {
+  data: WorkStreamDeliveryActionData
+  hideWorkStreamLink: boolean
+}) {
+  const [showWsModal, setShowWsModal] = useState(false)
+  const verb = data.deliveryKind === 'merge' ? 'merged' : 'approved'
+  return (
+    <div className="space-y-3">
+      <p className="text-sm leading-relaxed text-secondary">
+        {data.deliveryKind === 'merge'
+          ? 'The pull request is ready and waits for a person to merge it.'
+          : 'The pull request needs an approving human review before it can merge.'}{' '}
+        Delivery completes on its own once it is {verb} on the code host.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        {data.pullRequests
+          .filter((pullRequest) => pullRequest.url)
+          .map((pullRequest) => (
+            <a
+              key={`${pullRequest.repository}#${pullRequest.number}`}
+              href={pullRequest.url}
+              target="_blank"
+              rel="noreferrer"
+              className="ficus-button ficus-button-primary inline-flex min-h-10 items-center px-3 py-2 text-sm"
+            >
+              {data.deliveryKind === 'merge' ? 'Merge' : 'Review'} {pullRequest.repository}#{pullRequest.number}
+            </a>
+          ))}
+        {!hideWorkStreamLink && (
+          <button
+            onClick={() => setShowWsModal(true)}
+            className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+          >
+            View
+          </button>
+        )}
+      </div>
+      {showWsModal && (
+        <WorkStreamViewModal
+          workStreamId={data.workStreamId}
+          squadId={data.squadId}
+          squadName={data.squadName}
+          actionCanRespond={false}
+          onClose={() => setShowWsModal(false)}
+        />
+      )}
+    </div>
+  )
 }
 
 function ActionContent({

@@ -24,6 +24,7 @@ import { WorkStream } from '../../../entities/WorkStream'
 import { computeDerivedStates } from '../../work-streams/derived-state'
 import { DbEventPollingCursorStore } from '../db-event-polling-cursor-store'
 import { GitHubPrEventPoller } from './event-poller'
+import { listPendingActions } from '../../agents/actions'
 
 const squadId = crypto.randomUUID()
 const connectionId = crypto.randomUUID()
@@ -233,6 +234,40 @@ test('actual poll -> durable cursor -> serialized attention supports baseline an
         explanation: { pullRequests: [{ number: 7, state: 'open' }] },
       })
     }
+    // An expired observation that last proved a required human review keeps the
+    // stream in Needs you (and the web pending actions) until newer evidence clears it.
+    await db
+      .update(integrationEventPollingCursors)
+      .set({
+        cursor: {
+          ...current,
+          deliveryPresentation: {
+            ...current.deliveryPresentation,
+            observedAt: new Date(Date.now() - 600_000).toISOString(),
+            reviewDecision: 'required',
+            mergeState: 'blocked',
+            checksState: 'pending',
+          },
+        },
+      })
+      .where(eq(integrationEventPollingCursors.resourceKey, key))
+    const stream = await WorkStream.mustFind(row!.id)
+    const json = { ...stream.toJson(), ...(await computeDerivedStates([stream])).get(stream.id) }
+    expect(json.delivery).toEqual({ kind: 'review' })
+    expect(workStreamNeedsHumanAttention(json)).toBe(true)
+    expect(buildWorkInterestSnapshot([json]).liveActivity.top[0]?.bucket).toBe('needsYou')
+    const gate = (await listPendingActions()).find((action) => action.id === `workstream-delivery:${row!.id}:review`)
+    expect(gate).toMatchObject({
+      type: 'workstream-delivery',
+      squadId,
+      canRespond: false,
+      data: {
+        workStreamId: row!.id,
+        deliveryKind: 'review',
+        pullRequests: [{ repository: 'acme/widgets', number: 7 }],
+        focus: { kind: 'workstream', workStreamId: row!.id },
+      },
+    })
   } finally {
     stop()
   }
