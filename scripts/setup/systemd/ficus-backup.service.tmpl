@@ -1,7 +1,6 @@
 # Rendered by scripts/setup/setup-host.sh — do not edit the installed copy by
 # hand; re-run setup-host.sh (or edit this template) instead. Triggered by
-# @UNIT_BACKUP@.timer; never enabled directly: its [Install] section holds at
-# most an Alias= (the unit's name before the host layout migration).
+# @UNIT_BACKUP@.timer; not enabled directly (no [Install] target needed).
 [Unit]
 Description=Ficus nightly encrypted backup (pg dump + HOME_DIR -> S3)
 After=network-online.target@DB_AFTER@
@@ -15,6 +14,4 @@ ExecStart=@SCRIPT_PATH@
 # Logs: journalctl -u @UNIT_BACKUP@
 StandardOutput=journal
 StandardError=journal
-
-[Install]
-@ALIAS@
+@INSTALL_ALIAS@

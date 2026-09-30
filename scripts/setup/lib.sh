@@ -467,10 +467,12 @@ _hl_alias_sed() { # TEMPLATE
   name=${name%.tmpl}
   name=${name#"${HL_NEW_UNIT_PREFIX}"-}
   alias=$(hl_bridge_alias "${name}")
+  # @INSTALL_ALIAS@: a whole [Install] section holding only the Alias= (a unit
+  # enabled for its alias alone), or nothing at all.
   if [[ -n ${alias} ]]; then
-    printf 's|^@ALIAS@$|%s|' "${alias}"
+    printf 's|^@ALIAS@$|%s|\ns|^@INSTALL_ALIAS@$|[Install]\\\n%s|' "${alias}" "${alias}"
   else
-    printf '/^@ALIAS@$/d'
+    printf '/^@ALIAS@$/d\n/^@INSTALL_ALIAS@$/d'
   fi
 }
 
@@ -4966,6 +4968,11 @@ _hl_unmove() { # FROM TO
   fi
   if [[ ! -e ${from} && ! -L ${from} ]] && [[ -d ${to} || -L ${to} ]]; then
     _hl_do "moving ${to} back to ${from}" mv -T -- "${to}" "${from}" || return 1
+  elif [[ -e ${from} && ! -L ${from} ]] && [[ -e ${to} || -L ${to} ]]; then
+    # Both are real: something recreated FROM after the move. Moving either
+    # over the other could lose data — an operator decides.
+    log_error "host_layout: both ${from} and ${to} exist (not a compat link) — cannot move ${to} back; leaving both for an operator"
+    return 1
   fi
 }
 
@@ -5279,7 +5286,16 @@ _hl_plan() { # RELEASE_DIR
     run_home=$(managed_user_home "${_HLJ_RUN_USER}") ||
       die "host_layout: could not resolve ${_HLJ_RUN_USER}'s home directory (for HOME_DIR) — nothing was changed"
     case ${home_dir} in
-      '') home_dir=$(home_dir_default "${run_home}") ;; # where Core itself would look
+      '')
+        # The HOME the release being migrated uses: a pre-Ficus-layout Core takes
+        # the legacy dir unconditionally, so a real legacy dir IS the home to move,
+        # whatever it holds. Only without one does the data rule decide.
+        if [[ -d ${run_home}/${HL_LEGACY_HOME_NAME} && ! -L ${run_home}/${HL_LEGACY_HOME_NAME} ]]; then
+          home_dir="${run_home}/${HL_LEGACY_HOME_NAME}"
+        else
+          home_dir=$(home_dir_default "${run_home}")
+        fi
+        ;;
       '~') home_dir=${run_home} ;;
       *) home_dir="${run_home}/${home_dir#'~/'}" ;; # Core expands ~ for the service user
     esac

@@ -293,9 +293,18 @@ done
 expect_eq 'templates: the backup service [Install] holds only the Alias= (so `enable` creates just the alias)' \
   "$(tmpl_render 2 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | sed -n '/^\[Install\]/,$p' | tr '\n' '|')" \
   "[Install]|Alias=${HL_LEGACY_UNIT_PREFIX}-backup.service|"
-expect_eq 'templates: a layout-1 backup service has an empty [Install] (nothing to enable)' \
-  "$(tmpl_render 1 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | sed -n '/^\[Install\]/,$p' | tr '\n' '|')" \
-  '[Install]|'
+expect_eq 'templates: a layout-1 backup service has no [Install] section at all (the unit it always had)' \
+  "$(tmpl_render 1 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | grep -c '^\[Install\]' || true):$(tmpl_render 1 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | tail -n 1)" \
+  '0:StandardError=journal'
+
+# --- _hl_unmove refuses when both sides are real (never a silent no-op) ---------
+um=$(mktemp -d)
+mkdir -p "$um/from" "$um/to"
+: >"$um/from/a" && : >"$um/to/b"
+expect_match '_hl_unmove: FROM and TO both real → refused, loudly, both left' \
+  "$( (_hl_unmove "$um/from" "$um/to") 2>&1; echo "rc=$?"):$(ls "$um/from" "$um/to" | tr '\n' ' ')" \
+  'both .*from and .*to exist .*leaving both for an operator.*rc=1:.*a .*b'
+rm -rf "$um"
 (
   HL_BRIDGE_ALIASES=0
   expect_eq 'templates: with the bridge off (finalize), layout 2 carries no Alias=' \
@@ -948,6 +957,20 @@ YAMLEOF
   host_migrate "$REL" 2>/dev/null
   expect_eq 'a ~/ HOME_DIR moves and is written back absolute' \
     "$(stat -c %F "$R/root/.ficus"):$(grep '^HOME_DIR=' "$R/opt/ficus-core/.env")" "directory:HOME_DIR=$R/root/.ficus"
+  host_migrate_commit
+
+  # --- final review I1: a real legacy HOME is THE home to move, with or without sessions/ --
+  hl_reset
+  make_legacy_host
+  rm -rf "$R/root/$HL_LEGACY_HOME_NAME/sessions"
+  mkdir -p "$R/root/$HL_LEGACY_HOME_NAME/memory" && printf 'm\n' >"$R/root/$HL_LEGACY_HOME_NAME/memory/notes.md"
+  host_migrate "$REL" 2>/dev/null
+  expect_eq 'I1: a legacy HOME without sessions/ (memory/ only) is moved, not orphaned' \
+    "$(stat -c %F "$R/root/.ficus"):$(readlink "$R/root/$HL_LEGACY_HOME_NAME"):$(cat "$R/root/.ficus/memory/notes.md")" \
+    "directory:$R/root/.ficus:m"
+  expect_eq 'I1: ...HOME_DIR written as the moved home, and the stored paths rebased' \
+    "$(grep '^HOME_DIR=' "$R/opt/ficus-core/.env"):$(grep -c "rebase-home.js --from $R/root/$HL_LEGACY_HOME_NAME --to $R/root/.ficus" "$R/calls.log")" \
+    "HOME_DIR=$R/root/.ficus:1"
   host_migrate_commit
 
   # --- a custom HOME_DIR is neither moved nor rebased ---------------------------------
