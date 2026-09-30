@@ -269,14 +269,10 @@ export function WorkStreamList({
     const visibleViewMode = compact && inFullscreen ? 'graph' : viewMode
     return (
       <div className="flex flex-col h-full">
-        {!compact && !inFullscreen && (
-          <div className="flex justify-end mb-2">
-            <CreateFlowWorkStream squadId={squadId} />
-          </div>
-        )}
         {visibleViewMode !== 'list' && !isInitialLoading && !inFullscreen && (
-          <div className="mb-2 flex shrink-0 items-center justify-end gap-1">
+          <div className="mb-2 flex shrink-0 items-center justify-end gap-3">
             {renderExplorerActions(showExpand, inFullscreen)}
+            {!compact && <CreateFlowWorkStream squadId={squadId} />}
           </div>
         )}
 
@@ -330,6 +326,7 @@ export function WorkStreamList({
                   agentMap={agentMap}
                   showSquadFilter={false}
                   hideFilters={compact}
+                  filterActions={!compact && !inFullscreen ? <CreateFlowWorkStream squadId={squadId} /> : undefined}
                   activeOnly={activeOnly}
                   activeCollapsible={activeCollapsible}
                   activeHeaderActions={renderExplorerActions(showExpand, inFullscreen)}

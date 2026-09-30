@@ -12,15 +12,28 @@ import { ChatIcon, InboxIcon, WorkStreamIcon, MemoryIcon } from '../icons'
 import type { Agent } from '@ficus/shared'
 import { getAgentName, getAgentPurpose } from '../../lib/agentDisplay'
 
-export function getAgentHeaderTitleParts(agent: Agent): { title: string; suffix: string } {
-  const stableName = getAgentName(agent)
-  if (agent.agentTypeId === 'manager') return { title: 'Manager', suffix: `(${stableName})` }
-  const purpose = getAgentPurpose(agent)
-  const type = agent.agentTypeId
+const titleCase = (id: string) =>
+  id
     .replace(/[-_]+/g, ' ')
     .toLowerCase()
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
-  return { title: purpose ?? type, suffix: purpose ? `(${type} • ${stableName})` : `(${stableName})` }
+
+/** A workflow agent is named `<participant> · <stream title>`: show the participant id title-cased. */
+function displayName(name: string): string {
+  const match = /^([a-z0-9]+(?:[-_][a-z0-9]+)*) · (.+)$/.exec(name)
+  return match ? `${titleCase(match[1]!)} · ${match[2]}` : name
+}
+
+/**
+ * The agent chat header: its purpose (else its type) as the title, then its
+ * name. The type isn't repeated beside the name: the agent list already groups
+ * agents by type, and a workflow agent's name leads with its participant.
+ */
+export function getAgentHeaderTitleParts(agent: Agent): { title: string; suffix: string } {
+  const stableName = displayName(getAgentName(agent))
+  if (agent.agentTypeId === 'manager') return { title: 'Manager', suffix: `(${stableName})` }
+  const purpose = getAgentPurpose(agent)
+  return { title: purpose ?? titleCase(agent.agentTypeId), suffix: `(${stableName})` }
 }
 
 /** Keep the full desktop title and a compact two-line identity on phones. */
