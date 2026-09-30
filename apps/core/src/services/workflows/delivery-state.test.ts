@@ -543,9 +543,10 @@ describe('a known required human review survives stale or superseding non-review
 
   test('approval, merge, close, a new head, or a newer aggregate without the requirement clear it', () => {
     const approval = observed(event('pull_request.reviewed', { state: 'approved', reviewedHeadSha: 'a'.repeat(40) }), 5)
+    // Approved: back to the code host (the fixture's rollup still reports its pending checks).
     expect(classify([requiredWhilePending, ciGreen, approval])).toEqual({
       kind: 'external',
-      explanation: { pullRequests: [{ number: 42, state: 'open' }] },
+      explanation: { pullRequests: [{ number: 42, state: 'open' }], gates: { checksState: 'pending' } },
     })
     // An approval of an older commit does not satisfy the current head.
     const oldApproval = observed(
