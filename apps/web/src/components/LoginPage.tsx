@@ -20,6 +20,7 @@ type LoginPageDependencies = {
     onSuccess: (firstAdmin: boolean) => void
     onFailure?: () => void
     isBootstrap?: boolean
+    emailOptional?: boolean
   }>
 }
 
@@ -260,6 +261,9 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                 onSuccess={loginWithToken}
                 onFailure={refreshSession ? () => void refreshSession() : undefined}
                 isBootstrap
+                // Only managed cloud requires the first admin's email; an older server that
+                // doesn't say still requires it.
+                emailOptional={authStatus?.firstAdminEmailRequired === false}
               />
             </>
           )}

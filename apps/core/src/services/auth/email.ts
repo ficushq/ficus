@@ -1,3 +1,4 @@
+import { isPlaceholderEmail } from '@ficus/shared'
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses'
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'crypto'
 import { eq, and, gt, isNull, desc, sql } from 'drizzle-orm'
@@ -159,6 +160,8 @@ export function buildVerificationMessage(code: string, instance: InstanceIdentit
 }
 
 export async function sendVerificationEmail(email: string, opts: { ttlMs?: number } = {}): Promise<string> {
+  // The no-email owner's placeholder can never receive mail; a code for it would verify nothing.
+  if (isPlaceholderEmail(email)) throw new Error('This account has no email address')
   const code = String(randomInt(100000, 999999))
   const codeHash = hashCode(code)
   const ttlMs = opts.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS
@@ -501,6 +504,10 @@ export function buildPasskeyRecoveryMessage(link: string, instance: InstanceIden
 }
 
 async function sendMail(email: string, message: ReturnType<typeof buildInviteMessage>): Promise<void> {
+  if (isPlaceholderEmail(email)) {
+    log.warn('Skipping mail to an account with no email address')
+    return
+  }
   const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@ficus.sh'
   await ses.send(
     new SendEmailCommand({

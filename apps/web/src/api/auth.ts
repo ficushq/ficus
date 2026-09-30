@@ -35,7 +35,7 @@ export async function getRegistrationOptions(
   email: string,
   code: string,
   displayName?: string
-): Promise<{ options: PublicKeyCredentialCreationOptionsJSON }> {
+): Promise<{ options: PublicKeyCredentialCreationOptionsJSON; email?: string }> {
   return apiFetch('/auth/register/options', {
     method: 'POST',
     body: JSON.stringify({ email, code, displayName }),

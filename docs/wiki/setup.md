@@ -443,9 +443,10 @@ access logs.
    ```
 
 2. Create your account. The **first passkey becomes the system admin**.
-3. Registration wants an email verification code. With no email provider
-   configured, that first admin's code is shown in the page instead of being
-   mailed.
+3. The email is optional for this first admin (managed cloud instances
+   excepted). Without one, the account has no email address and signs in with
+   its passkey only. An email you do enter is verified with a code only when the
+   instance has an email provider to mail it.
 4. Once that admin holds a passkey, `FICUS_PASSWORD` stops being accepted as a
    login — human sign-in is passkeys only from then on.
 

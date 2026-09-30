@@ -1,5 +1,6 @@
 export * from './types'
 export * from './message-time'
+export * from './account-email'
 export * from './schemas'
 export * from './magic-strings'
 export * from './events'

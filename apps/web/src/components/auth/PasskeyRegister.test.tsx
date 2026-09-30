@@ -192,6 +192,76 @@ describe('PasskeyRegister', () => {
     })
   }
 
+  describe('first admin with an optional email', () => {
+    const renderOptional = async (onSuccess: (firstAdmin: boolean) => void = () => {}) => {
+      await dom.act(async () => {
+        root.render(
+          <AuthApiProvider api={authApi}>
+            <PasskeyRegister onSuccess={onSuccess} isBootstrap emailOptional />
+          </AuthApiProvider>
+        )
+      })
+    }
+    const typeInto = async (placeholder: string, value: string) => {
+      const input = findInputByPlaceholder(placeholder)!
+      await dom.act(async () => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+        input.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+      })
+    }
+    const create = () =>
+      dom.act(async () => {
+        getButton('Create admin account').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      })
+
+    beforeEach(() => {
+      getRegistrationOptions.mockClear()
+      verifyRegistration.mockClear()
+    })
+
+    test('asks for everything on one screen, and with no email registers under the placeholder', async () => {
+      const onSuccess = mock((_firstAdmin: boolean) => {})
+      getRegistrationOptions.mockImplementationOnce(
+        async () => ({ options: {}, email: 'owner@local.ficus.invalid' }) as never
+      )
+      verifyRegistration.mockImplementationOnce(async () => ({ ok: true, firstAdmin: true }) as never)
+      await renderOptional(onSuccess)
+      expect(findInputByPlaceholder('Email (optional)')).not.toBeNull()
+      expect(findInputByPlaceholder('User display name (optional)')).not.toBeNull()
+      expect(findInputByPlaceholder('Passkey name (optional)')).not.toBeNull()
+      await typeInto('User display name (optional)', 'Noah')
+      await create()
+      expect(sendVerificationEmail).not.toHaveBeenCalled()
+      expect(getRegistrationOptions).toHaveBeenCalledWith('', '', 'Noah')
+      expect((verifyRegistration.mock.calls[0] as unknown[])[0]).toBe('owner@local.ficus.invalid')
+      expect(onSuccess).toHaveBeenCalledWith(true)
+    })
+
+    test('with an email but no mail provider, it registers straight away without a code step', async () => {
+      sendVerificationEmail.mockImplementationOnce(
+        async () => ({ ok: true, emailConfigured: false, code: '123456' }) as never
+      )
+      getRegistrationOptions.mockImplementationOnce(async () => ({ options: {}, email: 'me@example.com' }) as never)
+      verifyRegistration.mockImplementationOnce(async () => ({ ok: true, firstAdmin: true }) as never)
+      await renderOptional()
+      await typeInto('Email (optional)', 'me@example.com')
+      await create()
+      expect(sendVerificationEmail).toHaveBeenCalledWith('me@example.com')
+      expect(getRegistrationOptions).toHaveBeenCalledWith('me@example.com', '123456', '')
+      expect(container.textContent).not.toContain('Check your email')
+    })
+
+    test('with an email the instance can mail, it asks for the code', async () => {
+      sendVerificationEmail.mockImplementationOnce(async () => ({ ok: true, emailConfigured: true }) as never)
+      await renderOptional()
+      await typeInto('Email (optional)', 'me@example.com')
+      await create()
+      expect(getRegistrationOptions).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('Check your email for a 6-digit code.')
+      expect(findInputByPlaceholder('Verification Code')).not.toBeNull()
+    })
+  })
+
   test('invite link: the code is hidden and the invite wording shows', async () => {
     dom.window.history.replaceState(null, '', '/?invite=new%40example.com&code=654321')
     await dom.act(async () => {
