@@ -460,7 +460,8 @@ describe('GET /api/squads/:id/activity', () => {
       `31:${inboxRows[2].id}`,
       ...orderedWorkStreams,
       `20:${inboxRows[0].id}`,
-      `10:${message.id}`,
+      // A chat row is keyed by its execution.
+      `10:${execution.id}`,
     ])
     expect(new Set(seen).size).toBe(seen.length)
     expect(seen).not.toContain(`30:${newer.id}`)

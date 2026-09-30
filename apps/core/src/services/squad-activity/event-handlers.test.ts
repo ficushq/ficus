@@ -55,7 +55,8 @@ describe('Activity after-commit handlers', () => {
       const rows = await db
         .select({ rowId: squadActivity.rowId })
         .from(squadActivity)
-        .where(and(eq(squadActivity.squadId, squad.id), eq(squadActivity.rowId, message.id)))
+        // A chat row is keyed by its execution (it shows the execution's latest message).
+        .where(and(eq(squadActivity.squadId, squad.id), eq(squadActivity.rowId, execution.id)))
       projected = rows.length === 1
     }
     unsubscribe()

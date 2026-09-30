@@ -48,44 +48,49 @@ export interface ChatExecutionSnapshot {
 }
 
 export function extractChatExecution(snapshot: ChatExecutionSnapshot): ExtractedSquadActivity[] {
-  // Only the FIRST substantive assistant message per execution becomes a row
-  // (operator decision 2026-08-27, with the Verbose toggle retired): later
-  // messages were never shown anywhere, so they are not extracted at all —
-  // the desired-state diff deletes historical non-first rows on the next
-  // repair sweep, and live materialization of later messages is a no-op.
-  return [...snapshot.messages]
+  // One row per execution, showing its LATEST substantive assistant message:
+  // the most recent step is the most useful sign of progress. The row is keyed
+  // by the execution, so each new message updates it in place (text, time and
+  // deep link) instead of adding rows; rows keyed by message from before this
+  // are deleted by the desired-state diff on the next materialization or
+  // repair sweep. (Until 2026-09-30 it was the execution's FIRST message; the
+  // later ones were never shown, per the 2026-08-27 decision retiring Verbose.)
+  const latest = [...snapshot.messages]
     .filter((message) => message.role === 'assistant' && /\S/.test(message.content))
     .sort((left, right) =>
       at(left.createdAt) === at(right.createdAt)
         ? left.id.localeCompare(right.id)
         : at(left.createdAt).localeCompare(at(right.createdAt))
     )
-    .slice(0, 1)
-    .map((message, index) => ({
-      id: `10:${message.id}`,
+    .at(-1)
+  if (!latest) return []
+  return [
+    {
+      id: `10:${snapshot.executionId}`,
       lane: 10,
-      rowId: message.id,
+      rowId: snapshot.executionId,
       squadId: snapshot.squadId,
-      at: at(message.createdAt),
+      at: at(latest.createdAt),
       agentId: snapshot.agentId,
       agentTypeId: snapshot.agentTypeId,
       kind: 'message',
-      ...activityPreview(message.content),
+      ...activityPreview(latest.content),
       ref: {
         type: 'agent',
         agentId: snapshot.agentId,
         view: 'chat',
-        messageId: message.id,
+        messageId: latest.id,
         executionId: snapshot.executionId,
       },
       sourceFamily: 'chat',
       sourceGroupId: snapshot.executionId,
       workStreamId: null,
-      quietEligible: index === 0,
+      quietEligible: true,
       accessScope: 'agents',
       inboxRecipientId: null,
       agentTypeRequiresAgentsRead: false,
-    }))
+    },
+  ]
 }
 
 export interface ExecutionSnapshot {
