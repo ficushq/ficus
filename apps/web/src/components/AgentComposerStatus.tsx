@@ -15,7 +15,7 @@ const STATUS_LABEL: Partial<Record<ExecutionStatus | 'compacting' | 'resetting',
   resetting: 'Resetting…',
 }
 
-/** How full the context is, as a ring: blue, then amber past half, red past 80%. */
+/** How full the context is, as a ring: the theme's primary color, then amber past half, red past 80%. */
 export function ContextRing({ percent, className }: { percent: number; className?: string }) {
   const clamped = Math.max(0, Math.min(percent, 100))
   const radius = 6
@@ -26,7 +26,7 @@ export function ContextRing({ percent, className }: { percent: number; className
       aria-hidden="true"
       className={clsx(
         'h-4 w-4 shrink-0 -rotate-90',
-        clamped > 80 ? 'text-status-danger-400' : clamped > 50 ? 'text-status-review-400' : 'text-status-progress-400',
+        clamped > 80 ? 'text-status-danger-400' : clamped > 50 ? 'text-status-review-400' : 'text-accent',
         className
       )}
     >

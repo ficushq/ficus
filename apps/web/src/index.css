@@ -1390,16 +1390,78 @@
 }
 
 /* Staggered three-dot "agent is working" pulse (see TypingIndicator). */
-@keyframes typing-dot {
+/* The working indicator (TypingIndicator): the Ficus mark's leaves dance. Each
+   leaf group pivots at its base, the pot's rim. */
+.ficus-dance-left,
+.ficus-dance-right,
+.ficus-dance-center {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  animation: ficus-sway-left 1.4s ease-in-out infinite;
+}
+
+.ficus-dance-right {
+  animation-name: ficus-sway-right;
+  animation-delay: -0.35s;
+}
+
+.ficus-dance-center {
+  animation-name: ficus-bob;
+  animation-delay: -0.7s;
+}
+
+.ficus-dance {
+  animation: ficus-hop 1.4s ease-in-out infinite;
+}
+
+@keyframes ficus-sway-left {
   0%,
-  80%,
   100% {
-    opacity: 0.3;
-    transform: scale(0.7);
+    transform: rotate(6deg);
   }
-  40% {
-    opacity: 1;
-    transform: scale(1);
+  50% {
+    transform: rotate(-16deg);
+  }
+}
+
+@keyframes ficus-sway-right {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
+}
+
+@keyframes ficus-bob {
+  0%,
+  100% {
+    transform: rotate(-7deg) scale(1, 0.96);
+  }
+  50% {
+    transform: rotate(7deg) scale(1, 1.06);
+  }
+}
+
+@keyframes ficus-hop {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0);
+  }
+  25%,
+  75% {
+    transform: translateY(-1.5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ficus-dance,
+  .ficus-dance-left,
+  .ficus-dance-right,
+  .ficus-dance-center {
+    animation: none;
   }
 }
 
