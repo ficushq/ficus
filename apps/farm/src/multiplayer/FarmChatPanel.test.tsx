@@ -5,6 +5,7 @@ import { byText, click, keyDown, typeInto, waitFor } from '../chat/testing'
 import { sampleFarm } from '../dev/sampleFarm'
 import { FarmCardContext, type FarmCardEnv } from '../farm/cards/context'
 import { layoutFarm } from '../farm/layout'
+import { makeAgent, makeSquad } from '../farm/testFixtures'
 import { FarmChatPanel } from './FarmChatPanel'
 import { MessageBody } from './MessageBody'
 import { Markdown } from '../chat/Markdown'
@@ -168,10 +169,80 @@ describe('MessageBody', () => {
     )
     mounted.push(view.unmount)
     expect(view.container.querySelector('.g-farmchat-mention-me')?.textContent).toBe('@You')
-    const chip = byText(view.container, 'button.g-farmchat-chip', /Retry flaky webhook deliveries/)
+    // A sprout and the number, the title said in full (and shown as its tooltip).
+    const chip = view.container.querySelector<HTMLButtonElement>('button.g-farmchat-chip')!
+    expect(chip.textContent).toBe('2')
+    expect(chip.querySelector('svg.g-farmchat-chip-sprout')).not.toBeNull()
+    expect(chip.getAttribute('aria-label')).toBe('Retry flaky webhook deliveries')
     await click(chip)
     expect(flyTo).toHaveBeenCalledWith({ kind: 'plot', streamId: 'ws-2' })
-    expect(byText(view.container, 'span.g-farmchat-chip', /Work stream 999/)).toBeDefined()
+    const away = view.container.querySelector('span.g-farmchat-chip')!
+    expect(away.textContent).toBe('999')
+    expect(away.getAttribute('aria-label')).toBe('Work stream 999')
+  })
+
+  it('previews a work stream on focus: its title, how it is doing, its plot and who tends it', async () => {
+    const input = sampleFarm()
+    const env = {
+      layout: layoutFarm(input),
+      input,
+      agentsById: new Map<string, Agent>(input.agents.map((a) => [a.id, a])),
+      squadsById: new Map(input.squads.map((s) => [s.id, s])),
+      halted: new Set<string>(),
+      flyTo: mock(() => {}),
+    } as unknown as FarmCardEnv
+    const view = await renderWith(
+      <FarmCardContext.Provider value={env}>
+        <div className="g-farm">
+          <MessageBody body="see ficus:ws:2" people={[]} meId={null} />
+        </div>
+      </FarmCardContext.Provider>,
+      await fakeMultiplayer()
+    )
+    mounted.push(view.unmount)
+    const chip = view.container.querySelector<HTMLButtonElement>('button.g-farmchat-chip')!
+    await act(async () => chip.focus())
+    await waitFor(() => expect(view.container.querySelector('[role="tooltip"]')).not.toBeNull())
+    const preview = view.container.querySelector('[role="tooltip"]')!
+    expect(chip.getAttribute('aria-describedby')).toBe(preview.id)
+    expect(preview.querySelector('.g-eyebrow')?.textContent).toBe('Platform · Work stream 2')
+    expect(preview.querySelector('.g-stream-preview-title')?.textContent).toBe('Retry flaky webhook deliveries')
+    expect(preview.textContent).toContain('Growing')
+    expect(preview.querySelector('.g-stream-preview-tender')?.textContent).toContain('Bo')
+    await act(async () => chip.blur())
+    expect(view.container.querySelector('[role="tooltip"]')).toBeNull()
+  })
+
+  it('draws robots and plots by name, inline', async () => {
+    const squad = makeSquad({ id: '11111111-1111-4111-8111-111111111111', name: 'Garden' })
+    const agent = makeAgent({
+      id: '22222222-2222-4222-8222-222222222222',
+      squadId: squad.id,
+      metadata: { name: 'Wren' },
+    })
+    const env = {
+      agentsById: new Map([[agent.id, agent]]),
+      squadsById: new Map([[squad.id, squad]]),
+      flyTo: mock(() => {}),
+    } as unknown as FarmCardEnv
+    const view = await renderWith(
+      <FarmCardContext.Provider value={env}>
+        <p>
+          <MessageBody
+            body={`Ask ficus:agent:${agent.id} in https://ficus.example/squads/${squad.id}`}
+            people={[]}
+            meId={null}
+          />
+        </p>
+      </FarmCardContext.Provider>,
+      await fakeMultiplayer()
+    )
+    mounted.push(view.unmount)
+    expect([...view.container.querySelectorAll('.g-farmchat-chip')].map((c) => c.textContent)).toEqual([
+      'Wren',
+      'Garden',
+    ])
+    expect(view.container.querySelector('.g-farmchat-chip svg')).toBeNull()
   })
 
   it('turns work stream links in markdown (agents write them in questions and chat) into chips', async () => {
@@ -191,7 +262,7 @@ describe('MessageBody', () => {
       await fakeMultiplayer()
     )
     mounted.push(view.unmount)
-    await click(byText(view.container, 'button.g-farmchat-chip', /Retry flaky webhook deliveries/))
+    await click(view.container.querySelector('button.g-farmchat-chip[aria-label="Retry flaky webhook deliveries"]'))
     expect(flyTo).toHaveBeenCalledWith({ kind: 'plot', streamId: 'ws-2' })
     expect(view.container.querySelector('a[href="https://example.com"]')).not.toBeNull()
   })
