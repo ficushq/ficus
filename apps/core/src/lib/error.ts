@@ -186,7 +186,7 @@ export function classifyCaughtProviderError(
   // Generic turn auth failures intentionally remain outside routing health.
   if (status === 401 || status === 403) return null
 
-  const legacy = text ? classifyProviderError(text) : null
+  const legacy = text ? classifyProviderError(text, { now }) : null
   const kind: ProviderHealthKind | undefined =
     legacy?.reason ??
     (status === 429 ? 'rate-limit' : status != null && status >= 500 && status < 600 ? 'capacity' : undefined)
@@ -446,10 +446,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * AgentSession.retry-patch.test.ts), so they settle on attempt 1 and fail over
  * immediately instead of burning all five retries.
  */
-export function classifyProviderError(error: string): ProviderErrorClassification | null {
+export function classifyProviderError(error: string, opts: { now?: number } = {}): ProviderErrorClassification | null {
   // A Ficus-internal failure is never provider exhaustion, whatever words it shares.
   if (isInternalExecutionError(error)) return null
   const lower = error.toLowerCase()
+  // Claude Code's subscription-window refusal contains neither "rate limit"
+  // nor "usage limit". It is account exhaustion even without an HTTP status.
+  if (/\byou['’]ve hit your session limit\b/i.test(error)) {
+    return {
+      exhausted: true,
+      reason: 'plan-credit',
+      cooldownMs: PLAN_CREDIT_COOLDOWN_MS,
+      retryAt: parseClaudeSessionReset(error, opts.now ?? Date.now()),
+    }
+  }
   const codex = classifyCodexUsageLimit(error, lower)
   if (codex) return codex
   for (const rule of EXHAUSTION_RULES) {
@@ -463,6 +473,19 @@ export function classifyProviderError(error: string): ProviderErrorClassificatio
     }
   }
   return null
+}
+
+/** A clock-only UTC reset means its next occurrence; never guess an absent/local timezone. */
+function parseClaudeSessionReset(error: string, now: number): number | undefined {
+  const match = error.match(/\bresets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(UTC\)/i)
+  if (!match) return undefined
+  const hour = Number(match[1])
+  const minute = Number(match[2] ?? 0)
+  if (hour < 1 || hour > 12 || minute > 59) return undefined
+  const reset = new Date(now)
+  reset.setUTCHours((hour % 12) + (match[3]!.toLowerCase() === 'pm' ? 12 : 0), minute, 0, 0)
+  if (reset.getTime() <= now) reset.setUTCDate(reset.getUTCDate() + 1)
+  return reset.getTime()
 }
 
 /**

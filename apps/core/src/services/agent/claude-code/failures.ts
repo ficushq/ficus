@@ -15,5 +15,7 @@ export function describeClaudeCodeFailure(text: string, code?: string, executabl
   if (TOO_OLD.test(text)) return `${CLAUDE_CODE_TOO_OLD}${ran}: ${text} Update it with \`claude update\`.`
   if (code === 'authentication_failed' || SIGN_IN.test(text))
     return `${CLAUDE_CODE_SIGN_IN_FAILED}${ran}: ${text} Sign in again with \`claude auth login\`.`
+  // Keep the structured upstream code when its prose alone is not recognizable.
+  if (code === 'rate_limit') return `Claude Code rate limit: ${text}`
   return text
 }

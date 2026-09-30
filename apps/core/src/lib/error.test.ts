@@ -642,3 +642,50 @@ describe('codex in-stream usage-limit error event (CodexApiError)', () => {
     expect(classifyCaughtProviderError(error)).toBeNull()
   })
 })
+
+describe('Claude Code session window exhaustion', () => {
+  const now = Date.parse('2026-09-29T01:00:00Z')
+  const text = "You've hit your session limit · resets 2:20am (UTC)"
+  test('classifies the raw refusal and Error with its actual UTC reset', () => {
+    for (const error of [text, new Error(text)]) {
+      expect(classifyCaughtProviderError(error, { now })).toEqual({
+        kind: 'plan-credit',
+        retryAt: Date.parse('2026-09-29T02:20:00Z'),
+      })
+    }
+    expect(classifyProviderError(text, { now })).toMatchObject({
+      exhausted: true,
+      reason: 'plan-credit',
+      retryAt: Date.parse('2026-09-29T02:20:00Z'),
+    })
+  })
+  test('handles tomorrow, midnight, noon, and typographic apostrophes', () => {
+    expect(classifyCaughtProviderError(text, { now: Date.parse('2026-09-29T23:00:00Z') })?.retryAt).toBe(
+      Date.parse('2026-09-30T02:20:00Z')
+    )
+    for (const [clock, iso] of [
+      ['12am', '2026-09-30T00:00:00Z'],
+      ['12pm', '2026-09-29T12:00:00Z'],
+    ]) {
+      expect(
+        classifyCaughtProviderError(`You’ve hit your session limit · resets ${clock} (UTC)`, { now })?.retryAt
+      ).toBe(Date.parse(iso!))
+    }
+  })
+  test('keeps a bounded default cooldown when the clock is missing, invalid or ambiguous', () => {
+    for (const suffix of [
+      '',
+      'resets 13:20am (UTC)',
+      'resets 2:60am (UTC)',
+      'resets 2:20am',
+      'resets 2:20am (America/New_York)',
+    ]) {
+      expect(classifyProviderError(`You've hit your session limit · ${suffix}`, { now })).toMatchObject({
+        reason: 'plan-credit',
+        cooldownMs: 30 * 60_000,
+        retryAt: undefined,
+      })
+    }
+    expect(classifyCaughtProviderError('Session limit configuration is invalid')).toBeNull()
+  })
+})
