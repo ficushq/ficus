@@ -33,3 +33,14 @@ describe('live invalidation', () => {
     ])
   })
 })
+
+describe('field log events', () => {
+  it("refresh that squad's field log", () => {
+    expect(
+      keysForEvent({ type: 'event', topic: 'squadActivity:sq-1', event: 'squadActivity.projected', data: {} })
+    ).toEqual([['farm', 'fieldLog', 'sq-1']])
+    expect(
+      keysForEvent({ type: 'event', topic: 'squadActivity:sq-1', event: 'squadActivity.accessRevoked', data: {} })
+    ).toEqual([['farm', 'fieldLog', 'sq-1']])
+  })
+})

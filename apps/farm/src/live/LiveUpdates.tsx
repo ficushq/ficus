@@ -7,6 +7,33 @@ import { dedupeKeys, FARM_TOPICS, isLiveEvent, keysForEvent } from './invalidati
 
 export type LiveStatus = 'connecting' | 'live' | 'offline'
 
+// Topics a card watches only while it's open (a squad's field log), on top of FARM_TOPICS.
+const watched = new Map<string, number>()
+let liveSocket: WsClient | null = null
+
+/** Subscribe to `topic` for as long as the returned function isn't called. Counted, so two watchers share it. */
+export function watchTopic(topic: string): () => void {
+  const count = watched.get(topic) ?? 0
+  watched.set(topic, count + 1)
+  if (count === 0) liveSocket?.subscribe(topic)
+  let done = false
+  return () => {
+    if (done) return
+    done = true
+    const left = (watched.get(topic) ?? 1) - 1
+    if (left > 0) watched.set(topic, left)
+    else {
+      watched.delete(topic)
+      liveSocket?.unsubscribe(topic)
+    }
+  }
+}
+
+/** Watch a live topic while the calling component is mounted. */
+export function useLiveTopic(topic: string | null) {
+  useEffect(() => (topic ? watchTopic(topic) : undefined), [topic])
+}
+
 const FLUSH_MS = 150
 const MAX_BACKOFF_MS = 30_000
 
@@ -46,7 +73,8 @@ export function useLiveUpdates(enabled: boolean): LiveStatus {
         if (disposed) return
         socket = createWsClient({
           url: client.transport.wsUrl('/ws', { ticket }),
-          topics: [...FARM_TOPICS],
+          // A reconnect subscribes whatever open cards are watching too.
+          topics: [...FARM_TOPICS, ...watched.keys()],
           reconnect: false,
           onOpen: () => {
             attempt = 0
@@ -62,10 +90,12 @@ export function useLiveUpdates(enabled: boolean): LiveStatus {
             if (letter) sendLetter(letter)
           },
           onClose: () => {
+            if (liveSocket === socket) liveSocket = null
             socket = null
             if (!disposed) reconnectLater()
           },
         })
+        liveSocket = socket
       } catch {
         if (!disposed) reconnectLater()
       }
@@ -81,6 +111,7 @@ export function useLiveUpdates(enabled: boolean): LiveStatus {
     void connect()
     return () => {
       disposed = true
+      if (liveSocket === socket) liveSocket = null
       socket?.close()
       if (retry) clearTimeout(retry)
       if (flush) clearTimeout(flush)

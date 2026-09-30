@@ -94,6 +94,16 @@ describe('saved view', () => {
     ])
   })
 
+  it("reopens a squad's field log", () => {
+    const storage = memory()
+    writeView(
+      KEY,
+      { camera: { x: 0, y: 0, zoom: 1 }, selection: { kind: 'fieldLog', squadId: 'sq-1' }, chats: [] },
+      storage
+    )
+    expect(readView(KEY, storage).selection).toEqual({ kind: 'fieldLog', squadId: 'sq-1' })
+  })
+
   it('keeps the demo farm apart from the real one', () => {
     expect(viewKey(true)).not.toBe(viewKey(false))
     expect(viewKey(false)).toStartWith('ficus-farm:')

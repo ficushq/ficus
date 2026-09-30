@@ -26,6 +26,7 @@ export function focusFor(selection: Selection | null, frontChat: ChatTarget | un
     case 'stand':
       return { kind: 'squad', squadId: selection.squadId, at: 'stand' }
     case 'yard':
+    case 'fieldLog':
     case 'hut':
     case 'rack':
       return { kind: 'squad', squadId: selection.squadId }

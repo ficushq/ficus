@@ -8,6 +8,7 @@ import { useFarmCard } from './cards/context'
 import { PlotCard } from './cards/PlotCard'
 import { RobotCard } from './cards/RobotCard'
 import { YardCard } from './cards/YardCard'
+import { FieldLogCard } from './cards/FieldLogCard'
 import { HutCard } from './cards/HutCard'
 import { RackCard } from './cards/RackCard'
 import { StandCard } from './cards/StandCard'
@@ -35,7 +36,9 @@ export function selectionAnchor(layout: FarmLayout, s: Selection): readonly [num
       const stand = layout.yards.find((y) => y.stand.ids?.includes(s.agentId))
       return stand ? iso(stand.stand.i, stand.stand.j) : null
     }
-    case 'yard': {
+    case 'yard':
+    case 'fieldLog': {
+      // The field log opens from the squad's sign, and stays there.
       const y = layout.yards.find((yard) => yard.squad.id === s.squadId)
       return y ? iso(y.sign.i, y.sign.j) : null
     }
@@ -140,6 +143,8 @@ function CardBody({ selection }: { selection: Selection }) {
       return <RobotCard agentId={selection.agentId} />
     case 'yard':
       return <YardCard squadId={selection.squadId} />
+    case 'fieldLog':
+      return <FieldLogCard squadId={selection.squadId} />
     case 'hut':
       return <HutCard squadId={selection.squadId} />
     case 'stand':

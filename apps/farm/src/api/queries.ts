@@ -1,9 +1,11 @@
 import { queryKeys } from '@ficus/client-core'
-import { queryOptions } from '@tanstack/react-query'
-import type { Agent, LocalDeployment, WorkStreamStatus } from '@ficus/shared'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
+import type { Agent, LocalDeployment, SquadActivityKind, WorkStreamStatus } from '@ficus/shared'
 import { squadApps as squadAppsOf, type RemoteDeployment } from '../farm/apps'
 import { client } from './client'
 import { assistantApi } from './assistant'
+import { fieldLogKey } from '../live/invalidation'
+import { isDemo } from '../app/demo'
 
 /**
  * The farm's query layer: thin options over client-core request functions,
@@ -13,7 +15,22 @@ import { assistantApi } from './assistant'
  */
 const LIVE_STATUSES: WorkStreamStatus[] = ['queued', 'active']
 
+/** How many field log entries a page brings. */
+export const FIELD_LOG_PAGE = 30
+
 export const farmQueries = {
+  /** A squad's activity, newest first, a page at a time (the web's squad Activity tab). */
+  fieldLog: (squadId: string, kinds: readonly SquadActivityKind[]) =>
+    infiniteQueryOptions({
+      queryKey: [...fieldLogKey(squadId), [...kinds].sort()],
+      queryFn: ({ pageParam }) =>
+        client.squads.listSquadActivity(squadId, { kinds: [...kinds], limit: FIELD_LOG_PAGE, cursor: pageParam }),
+      initialPageParam: null as string | null,
+      getNextPageParam: (page) => (page.hasMore ? (page.nextCursor ?? undefined) : undefined),
+      // Live events do the work; this is the fallback when the socket is away. The demo has no server.
+      refetchInterval: isDemo ? false : 30_000,
+      staleTime: isDemo ? Infinity : 0,
+    }),
   session: () =>
     queryOptions({
       queryKey: queryKeys.auth.me(),

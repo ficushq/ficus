@@ -4,6 +4,10 @@ import type { QueryKey } from '@tanstack/react-query'
 /** The collection topics the farm subscribes to (see @ficus/shared ws-topics). */
 export const FARM_TOPICS = ['actions', 'agents', 'squads', 'workstreams', 'inbox'] as const
 
+/** A squad's field log (cards/FieldLogCard): its topic, watched only while the card is open, and its query key. */
+export const fieldLogTopic = (squadId: string) => `squadActivity:${squadId}`
+export const fieldLogKey = (squadId: string) => ['farm', 'fieldLog', squadId] as const
+
 export interface LiveEvent {
   type: 'event'
   topic: string
@@ -51,6 +55,11 @@ export function keysForEvent(event: LiveEvent): QueryKey[] {
     }
     case 'inbox':
       return event.event === 'assistant.activityChanged' ? [['farm', 'assistant']] : []
+    case 'squadActivity': {
+      // A new or changed entry (or access withdrawn): that squad's field log refetches.
+      const squadId = event.topic.slice('squadActivity:'.length)
+      return squadId ? [fieldLogKey(squadId)] : []
+    }
     default:
       return []
   }

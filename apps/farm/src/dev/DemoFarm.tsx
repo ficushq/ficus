@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { farmQueries } from '../api/queries'
 import { FarmScreen } from '../farm/FarmScreen'
 import { ActionsApiProvider, type ActionsApi } from '../actions'
 import { sendLetter } from '../farm/letters'
 import { makeStream } from '../farm/testFixtures'
 import { SAMPLE_FARMER_QUESTION, SAMPLE_QUESTION, sampleFarm } from './sampleFarm'
+import { sampleFieldLogs } from './sampleActivity'
 
 /** Actions in the demo succeed without a server and log what they would have sent. */
 function demoActionsApi(): ActionsApi {
@@ -44,6 +47,13 @@ const PLANTERS = [
 
 export default function DemoFarm() {
   const mode = new URLSearchParams(window.location.search).get('demo')
+  // Each squad's field log, ready in the cache (there's no server to read it from).
+  const queryClient = useQueryClient()
+  useState(() => {
+    for (const { squadId, kinds, page } of sampleFieldLogs())
+      queryClient.setQueryData(farmQueries.fieldLog(squadId, kinds).queryKey, { pages: [page], pageParams: [null] })
+    return true
+  })
   const base = useMemo(() => {
     const farm = sampleFarm()
     // ?demo=empty shows a brand-new instance with no squads yet.

@@ -37,6 +37,7 @@ const BY_ID: Record<string, 'streamId' | 'agentId' | 'squadId'> = {
   plot: 'streamId',
   robot: 'agentId',
   yard: 'squadId',
+  fieldLog: 'squadId',
   hut: 'squadId',
   stand: 'squadId',
   rack: 'squadId',

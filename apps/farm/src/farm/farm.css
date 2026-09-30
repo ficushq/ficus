@@ -313,6 +313,98 @@
   color: var(--g-text);
 }
 
+/* A squad's field log (FieldLogCard): filter chips, then entries newest first. */
+.g-log-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0 12px;
+}
+
+.g-log-filter {
+  padding: 3px 9px;
+  border: var(--g-border-thin) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-card-alt);
+  font: 700 12px var(--g-font-body);
+  color: var(--g-ink-soft);
+  cursor: pointer;
+}
+
+.g-log-filter[aria-pressed='true'] {
+  background: var(--g-good-tint);
+  color: var(--g-good-text);
+}
+
+.g-log {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.g-log-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: var(--g-border-thin) var(--g-rule-style) var(--g-divider);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+button.g-log-row {
+  cursor: pointer;
+}
+
+button.g-log-row:hover,
+button.g-log-row:focus-visible {
+  background: var(--g-card-alt);
+}
+
+.g-log-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 10px 10px 0;
+  border-radius: 50%;
+  background: var(--g-divider);
+}
+
+.g-log-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.g-log-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--g-ink-soft);
+}
+
+.g-log-who {
+  font-weight: 700;
+  color: var(--g-text);
+}
+
+.g-log-what {
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--g-text);
+  overflow-wrap: anywhere;
+}
+
+.g-log-what code {
+  font-family: var(--g-font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+
 .g-state-tag {
   display: inline-block;
   margin: 0;

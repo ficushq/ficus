@@ -32,6 +32,9 @@ export function YardCard({ squadId }: { squadId: string }) {
         <button type="button" className="g-button" onClick={() => env.startConsultant(squadId)}>
           Plant a seed
         </button>
+        <button type="button" className="g-button" onClick={() => env.select({ kind: 'fieldLog', squadId })}>
+          Watch the field
+        </button>
       </div>
 
       <h3 className="g-card-subtitle">Work streams</h3>
