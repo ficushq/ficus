@@ -31,6 +31,7 @@ import { isActiveExecutionStatus } from '../services/execution/status'
 import {
   STARTUP_RETRY_DELAYS_MS,
   startupRetryCode,
+  startupRetryDelays,
   isExecutionStartupFailure,
 } from '../services/execution/startup-retry'
 import { restoreQueueOwnedAdmission } from '../services/execution/agent-admission'
@@ -136,7 +137,7 @@ export type TransitionOutcome =
   | { kind: 'stopped' }
   | { kind: 'force-stopped'; reason?: string }
   | { kind: 'superseded' }
-  | { kind: 'requeued'; imageIds?: string[] | null; startupRetryDelayMs?: number }
+  | { kind: 'requeued'; imageIds?: string[] | null; startupRetryDelayMs?: number; startupRetryMax?: number }
 
 /**
  * The drizzle transaction handle `db.transaction` passes to its callback —
@@ -753,7 +754,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
               executionPredicates.push(
                 eq(executions.status, 'running'),
                 eq(executions.executionVersion, this.executionVersion),
-                sql`${executions.startupRetryCount} < ${STARTUP_RETRY_DELAYS_MS.length}`
+                sql`${executions.startupRetryCount} < ${outcome.startupRetryMax ?? STARTUP_RETRY_DELAYS_MS.length}`
               )
             }
             if (options?.admissionLease) {
@@ -1008,18 +1009,28 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   /** Only called before runner startup has dispatched a model prompt. */
   async retryStartupFailure(error: unknown, admissionLease?: AdmissionLease): Promise<boolean> {
     const code = startupRetryCode(error)
-    const delayMs = STARTUP_RETRY_DELAYS_MS[this.startupRetryCount]
-    if (!code || delayMs === undefined) return false
-    const requeued = await this.transitionTo({ kind: 'requeued', startupRetryDelayMs: delayMs }, { admissionLease })
+    if (!code) return false
+    const delays = startupRetryDelays(code)
+    const delayMs = delays[this.startupRetryCount]
+    if (delayMs === undefined) return false
+    const requeued = await this.transitionTo(
+      { kind: 'requeued', startupRetryDelayMs: delayMs, startupRetryMax: delays.length },
+      { admissionLease }
+    )
     if (!requeued) return false
-    log.warn('Retrying execution startup after a transient database failure', {
-      executionId: this.id,
-      agentId: this.agentId,
-      code,
-      attempt: this.startupRetryCount,
-      maxRetries: STARTUP_RETRY_DELAYS_MS.length,
-      retryAt: this.startupRetryAt?.toISOString(),
-    })
+    log.warn(
+      code.startsWith('machine_')
+        ? "Retrying execution startup: the box's machine is not ready yet"
+        : 'Retrying execution startup after a transient database failure',
+      {
+        executionId: this.id,
+        agentId: this.agentId,
+        code,
+        attempt: this.startupRetryCount,
+        maxRetries: delays.length,
+        retryAt: this.startupRetryAt?.toISOString(),
+      }
+    )
     return true
   }
 
@@ -1310,7 +1321,9 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           const buffer = streamManager.get(this.id)
           buffer?.push({
             type: 'system_message',
-            text: 'Execution startup hit a temporary database connection failure and has been queued for retry.',
+            text: startupRetryCode(err)?.startsWith('machine_')
+              ? 'The sandbox machine is still starting up; this will start automatically once it is ready.'
+              : 'Execution startup hit a temporary database connection failure and has been queued for retry.',
           })
           buffer?.close()
           return
