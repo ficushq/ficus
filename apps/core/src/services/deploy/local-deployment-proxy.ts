@@ -1,9 +1,18 @@
 import { Squad } from '../../entities/Squad'
-import { getClientAddress } from '../../lib/client-address'
+import { getClientAddress, isTrustedProxyPeer } from '../../lib/client-address'
+import { SESSION_COOKIE_NAME } from '../auth/session-cookie'
 import { ensureSquadSandbox } from '../sandbox/ensure'
-import { getLocalDeployment, isValidLocalDeploymentBrowserToken } from './local-deployment-service'
+import {
+  getLocalDeployment,
+  getLocalDeploymentPublicHost,
+  isValidLocalDeploymentBrowserToken,
+} from './local-deployment-service'
 import { resolveLocalDeploymentTarget } from './local-deployment-target'
-import { localDeploymentCookieHeader, presentedLocalDeploymentToken } from './local-deployment-auth'
+import {
+  localDeploymentCookieHeader,
+  localDeploymentCookieName,
+  presentedLocalDeploymentToken,
+} from './local-deployment-auth'
 import { localDeploymentProxyError, stripLocalDeploymentProxyErrorMarker } from './local-deployment-proxy-response'
 
 /** The app-proxy token's query name before the Ficus rename (stripped, never accepted). */
@@ -21,6 +30,52 @@ const HOP_BY_HOP = new Set([
 ])
 
 const SENSITIVE_AUTH_HEADERS = ['authorization', 'x-auth-token', 'cookie']
+
+/**
+ * Ficus's own cookies, by exact name, that never reach an app even on its own
+ * origin: the Core session, the per-deployment access cookie, and the Platform
+ * bridge's credential cookie (plus their pre-Ficus names). Exact names only: a
+ * pattern could eat an app cookie that happens to look similar.
+ */
+function ficusCookieNames(localDeploymentId: string): Set<string> {
+  return new Set([
+    SESSION_COOKIE_NAME,
+    'tau_session', // ficus-p5-bridge
+    localDeploymentCookieName(localDeploymentId),
+    `tau_app_${localDeploymentId}`, // ficus-p5-bridge
+    'ficus_app',
+    '__Host-ficus_app',
+    '__Host-tau_app', // ficus-p5-bridge
+  ])
+}
+
+/** The browser's Cookie header minus Ficus's own cookies, or null when nothing is left. */
+function appCookieHeader(cookieHeader: string | null, localDeploymentId: string): string | null {
+  if (!cookieHeader) return null
+  const ficusNames = ficusCookieNames(localDeploymentId)
+  const kept = cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part && !ficusNames.has(part.split('=', 1)[0]!.trim()))
+  return kept.length > 0 ? kept.join('; ') : null
+}
+
+/**
+ * The app's own public host when this request arrived through its per-app
+ * origin (`<tenant>--<id>.<apps domain>`), else null (the path mount).
+ *
+ * The Platform bridge re-sends a per-app-origin request to the tenant host and
+ * names the app host in X-Forwarded-Host; the tenant Caddy keeps that header
+ * only from the bridge (scripts/setup/lib.sh render_caddyfile) and pins it to
+ * the tenant host for everyone else. Core believes it only from a trusted peer
+ * (the caller checks) and only when it is exactly this deployment's host, so a
+ * forged value can at most name the host the app already has.
+ */
+function perAppOriginHost(request: Request, localDeploymentId: string): string | null {
+  const expected = getLocalDeploymentPublicHost(localDeploymentId)
+  const forwarded = request.headers.get('x-forwarded-host')?.trim().toLowerCase()
+  return expected && forwarded === expected ? expected : null
+}
 
 /**
  * Headers that claim to name the visitor's address. Any of them can be written
@@ -108,6 +163,25 @@ export async function proxyLocalDeploymentRequest(
   const headers = new Headers(request.headers)
   stripUnsafeProxyHeaders(headers)
   setClientAddressHeaders(headers, getClientAddress(request))
+  // Cookies and host, by mount:
+  //   - per-app origin: the app owns its origin, so its cookies go to it (minus
+  //     Ficus's own) and it sees its own public host;
+  //   - path mount (/api/app/<id>/ on the Ficus host): the origin is shared with
+  //     Ficus and every other app, so no cookie reaches the app (it would get
+  //     the Ficus session and other apps' cookies) and none it sets reaches the
+  //     browser (it could overwrite Ficus's or another app's). Host stays the
+  //     Ficus host; X-Forwarded-Host is the trusted proxy's, else that Host.
+  const trustedPeer = isTrustedProxyPeer(request)
+  const publicHost = trustedPeer ? perAppOriginHost(request, localDeployment.id) : null
+  if (publicHost) {
+    const cookie = appCookieHeader(request.headers.get('cookie'), localDeployment.id)
+    if (cookie) headers.set('cookie', cookie)
+    headers.set('host', publicHost)
+    headers.set('x-forwarded-host', publicHost)
+    headers.set('x-forwarded-proto', 'https')
+  } else if (!trustedPeer || !headers.has('x-forwarded-host')) {
+    headers.set('x-forwarded-host', request.headers.get('host') ?? sourceUrl.host)
+  }
 
   const upstream = stripLocalDeploymentProxyErrorMarker(
     await deps.fetch(targetUrl, {
@@ -126,9 +200,10 @@ export async function proxyLocalDeploymentRequest(
 
   const responseHeaders = new Headers(upstream.headers)
   keepOutOfSharedCaches(responseHeaders)
+  if (!publicHost) responseHeaders.delete('set-cookie')
   // Only the URL-token request needs to mint the cookie; a request already carrying it re-sends nothing.
-  if (presented.fromQuery) {
-    // append: the app may set cookies of its own, and they must survive.
+  // The per-app origin needs none: the Platform bridge holds that credential in its own cookie.
+  if (presented.fromQuery && !publicHost) {
     responseHeaders.append(
       'set-cookie',
       localDeploymentCookieHeader({

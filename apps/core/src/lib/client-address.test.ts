@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test'
-import { resolveClientAddress } from './client-address'
+import { afterEach, describe, expect, it } from 'bun:test'
+import { attachPeerAddress, isTrustedProxyPeer, resolveClientAddress } from './client-address'
 
 describe('resolveClientAddress', () => {
   it('uses and normalizes the direct peer address', () => {
@@ -59,5 +59,39 @@ describe('resolveClientAddress', () => {
     expect(resolveClientAddress({ peerAddress: '203.0.113.5', forwardedFor: '198.51.100.10, 127.0.0.1' })).toBe(
       '203.0.113.5'
     )
+  })
+})
+
+describe('isTrustedProxyPeer', () => {
+  const previous = process.env.FICUS_TRUSTED_PROXY_ADDRESSES
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env.FICUS_TRUSTED_PROXY_ADDRESSES
+    else process.env.FICUS_TRUSTED_PROXY_ADDRESSES = previous
+  })
+
+  function fromPeer(peer: string | undefined): Request {
+    const request = new Request('http://ficus.test/', { headers: { 'x-forwarded-for': '127.0.0.1' } })
+    attachPeerAddress(request, peer)
+    return request
+  }
+
+  it('trusts the same-host proxy (a loopback peer)', () => {
+    delete process.env.FICUS_TRUSTED_PROXY_ADDRESSES
+    expect(isTrustedProxyPeer(fromPeer('127.0.0.1'))).toBe(true)
+    expect(isTrustedProxyPeer(fromPeer('::1'))).toBe(true)
+    expect(isTrustedProxyPeer(fromPeer('::ffff:127.0.0.1'))).toBe(true)
+  })
+
+  it('trusts an exact configured proxy address only', () => {
+    process.env.FICUS_TRUSTED_PROXY_ADDRESSES = '10.0.0.2, 10.0.0.0/8'
+    expect(isTrustedProxyPeer(fromPeer('10.0.0.2'))).toBe(true)
+    expect(isTrustedProxyPeer(fromPeer('10.0.0.3'))).toBe(false)
+  })
+
+  it('never trusts a remote peer, whatever its headers claim, or an unknown one', () => {
+    delete process.env.FICUS_TRUSTED_PROXY_ADDRESSES
+    expect(isTrustedProxyPeer(fromPeer('203.0.113.20'))).toBe(false)
+    expect(isTrustedProxyPeer(fromPeer(undefined))).toBe(false)
   })
 })

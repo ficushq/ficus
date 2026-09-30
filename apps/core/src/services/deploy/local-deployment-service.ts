@@ -75,21 +75,29 @@ function validateHostedAppsConfig(): void {
   if (getHostedAppsDomain()) getHostedTenantLabel()
 }
 
-function buildBrowserLocalDeploymentUrl(row: Pick<LocalDeploymentRow, 'id' | 'browserAccessToken'>): string {
-  let base: string
+/**
+ * The app's own public host on a hosted instance, `<tenant>--<first 12 hex of
+ * the id>.<apps domain>` (lowercase, no port), or null when hosted app URLs are
+ * off or misconfigured (the app is then reachable only on the path mount).
+ */
+export function getLocalDeploymentPublicHost(localDeploymentId: string): string | null {
   try {
     const appsDomain = getHostedAppsDomain()
-    base = appsDomain
-      ? `https://${getHostedTenantLabel()}--${row.id.replaceAll('-', '').slice(0, 12).toLowerCase()}.${appsDomain}/`
-      : buildLocalDeploymentProxyPath(row.id)
+    if (!appsDomain) return null
+    return `${getHostedTenantLabel()}--${localDeploymentId.replaceAll('-', '').slice(0, 12).toLowerCase()}.${appsDomain}`
   } catch (error) {
     if (!(error instanceof HostedAppsConfigError)) throw error
     if (!warnedHostedConfigErrors.has(error.message)) {
       warnedHostedConfigErrors.add(error.message)
       log.warn('Hosted app URL config is invalid; using path fallback for existing deployments', error.message)
     }
-    base = buildLocalDeploymentProxyPath(row.id)
+    return null
   }
+}
+
+function buildBrowserLocalDeploymentUrl(row: Pick<LocalDeploymentRow, 'id' | 'browserAccessToken'>): string {
+  const publicHost = getLocalDeploymentPublicHost(row.id)
+  const base = publicHost ? `https://${publicHost}/` : buildLocalDeploymentProxyPath(row.id)
   if (!row.browserAccessToken) return base
   return `${base}?_ficus_token=${encodeURIComponent(row.browserAccessToken)}`
 }

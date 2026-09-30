@@ -1998,13 +1998,28 @@ ingress_trusted_proxies_from_config() {
 # without the pins any visitor could choose the host Core writes into
 # index.html (lib/web-serve.ts) and webhook URLs (routes/schedules.ts), and
 # that local apps build redirects from. Never trust proxies without them.
+#
+# One exception, only with extra TRUSTED_PROXY peers: a local-app request
+# (/api/app/*) whose immediate peer (remote_ip, never a forwarded address) is
+# one of them keeps that peer's X-Forwarded-Host. That is the control plane's
+# bridge naming the app's own origin (<tenant>--<id>.<apps domain>); Core
+# believes it only from this loopback hop and only when it is exactly that
+# deployment's host (services/deploy/local-deployment-proxy.ts), and then
+# forwards the app its cookies. Cloudflare's ranges are not in the matcher,
+# so a visitor's X-Forwarded-Host is still pinned.
 render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
   local host=$1 port=$2 cert=$3 key=$4
   shift 4
   printf '{\n    servers {\n        trusted_proxies static %s\n        trusted_proxies_strict\n        client_ip_headers CF-Connecting-IP\n    }\n}\n\n' \
     "${CLOUDFLARE_PROXY_RANGES[*]}${*:+ $*}"
-  printf '%s {\n    tls %s %s\n    reverse_proxy 127.0.0.1:%s {\n        header_up X-Forwarded-For {client_ip}\n        header_up X-Forwarded-Host {host}\n        header_up X-Forwarded-Proto {scheme}\n    }\n}\n' \
-    "${host}" "${cert}" "${key}" "${port}"
+  printf '%s {\n    tls %s %s\n' "${host}" "${cert}" "${key}"
+  if (($# > 0)); then
+    printf '    @app_bridge {\n        remote_ip %s\n        path /api/app/*\n    }\n' "$*"
+    printf '    reverse_proxy @app_bridge 127.0.0.1:%s {\n        header_up X-Forwarded-For {client_ip}\n        header_up X-Forwarded-Proto {scheme}\n    }\n' \
+      "${port}"
+  fi
+  printf '    reverse_proxy 127.0.0.1:%s {\n        header_up X-Forwarded-For {client_ip}\n        header_up X-Forwarded-Host {host}\n        header_up X-Forwarded-Proto {scheme}\n    }\n}\n' \
+    "${port}"
 }
 
 # Overridable via env (default unchanged) for the same reason as

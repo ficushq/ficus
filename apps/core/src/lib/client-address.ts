@@ -27,6 +27,17 @@ function isLoopback(address: string): boolean {
   return address === '::1' || address.startsWith('127.')
 }
 
+function trustedProxySet(peerAddress: string, trustedProxies: string[] | undefined): Set<string | null> {
+  const trusted = new Set((trustedProxies ?? []).map(normalizeAddress).filter(Boolean))
+  // Core never terminates TLS, so every HTTPS deployment fronts it with caddy/nginx bound to
+  // the same host — the peer is always 127.0.0.1 and no deployment sets FICUS_TRUSTED_PROXY_ADDRESSES.
+  // Without this, every caller on the instance shares one rate-limit bucket. The trust is gated on
+  // the PEER being loopback (something only a same-host process can be), never on a header, so a
+  // remote caller still cannot forge its way into the chain.
+  if (isLoopback(peerAddress)) trusted.add(peerAddress)
+  return trusted
+}
+
 export function resolveClientAddress(input: {
   peerAddress?: string | null
   forwardedFor?: string | null
@@ -34,13 +45,7 @@ export function resolveClientAddress(input: {
 }): string {
   const peerAddress = normalizeAddress(input.peerAddress)
   if (!peerAddress) return 'unknown'
-  const trusted = new Set((input.trustedProxies ?? []).map(normalizeAddress).filter(Boolean))
-  // Core never terminates TLS, so every HTTPS deployment fronts it with caddy/nginx bound to
-  // the same host — the peer is always 127.0.0.1 and no deployment sets FICUS_TRUSTED_PROXY_ADDRESSES.
-  // Without this, every caller on the instance shares one rate-limit bucket. The trust is gated on
-  // the PEER being loopback (something only a same-host process can be), never on a header, so a
-  // remote caller still cannot forge its way into the chain.
-  if (isLoopback(peerAddress)) trusted.add(peerAddress)
+  const trusted = trustedProxySet(peerAddress, input.trustedProxies)
   if (!trusted.has(peerAddress)) return peerAddress
 
   const forwarded = (input.forwardedFor ?? '')
@@ -56,6 +61,16 @@ export function resolveClientAddress(input: {
 export function attachPeerAddress(request: Request, peerAddress: string | undefined): void {
   const normalized = normalizeAddress(peerAddress)
   if (normalized) peerAddresses.set(request, normalized)
+}
+
+/**
+ * Whether this request's socket peer is a proxy Core trusts: loopback (the
+ * same-host Caddy/nginx) or an exact FICUS_TRUSTED_PROXY_ADDRESSES entry. The
+ * same chain X-Forwarded-For is believed from, for any other forwarded header.
+ */
+export function isTrustedProxyPeer(request: Request): boolean {
+  const peerAddress = peerAddresses.get(request)
+  return !!peerAddress && trustedProxySet(peerAddress, configuredTrustedProxies()).has(peerAddress)
 }
 
 /** Resolve a rate-limit key, honoring X-Forwarded-For only from configured trusted peers. */

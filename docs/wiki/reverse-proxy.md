@@ -255,6 +255,14 @@ through, and Cloudflare forwards a client-sent `X-Forwarded-Host` unchanged, so
 any visitor could choose the host Core builds its public URLs from and local
 apps build redirects from.
 
+The hosted setup renders one exception. When extra trusted proxies are
+configured, an `@app_bridge` route (immediate peer `remote_ip` in those
+proxies, path `/api/app/*`) keeps that peer's `X-Forwarded-Host`. This is
+how the control plane's app bridge tells Core a request came from an app's own
+origin. Core accepts it only when it is exactly that deployment's app host (see
+[integration contracts](integration-contracts.md#cookies-and-host-on-the-app-origin)).
+Cloudflare's ranges are not in that matcher.
+
 Read `CF-Connecting-IP`, not `X-Forwarded-For`. Cloudflare sets
 `CF-Connecting-IP` to exactly one address the client cannot choose. It only
 appends to `X-Forwarded-For`, so when the appended address is itself inside a

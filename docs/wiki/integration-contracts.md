@@ -73,10 +73,50 @@ The first tokenized request redirects to the validated HTTPS host, removes
 `_ficus_token` from the browser URL, and sets `__Host-ficus_app` as a host-only,
 Secure, HttpOnly, SameSite=Lax cookie. Platform forwards its credential to Core;
 setting that cookie is not token validation. Core validates the deployment token
-and deployment state. Platform removes unrelated cookies, authorization headers,
-client-supplied `x-ficus-*` headers, and hop-by-hop headers before forwarding. Its
-transport is HTTP streaming: `Upgrade` is stripped, so this route does not provide
-WebSocket tunneling.
+and deployment state. Platform removes authorization headers, client-supplied
+`x-ficus-*` headers, and hop-by-hop headers before forwarding. Its transport is
+HTTP streaming: `Upgrade` is stripped, so this route does not provide WebSocket
+tunneling.
+
+### Cookies and host on the app origin
+
+The app origin belongs to the app, so its cookies make the round trip and it
+sees its own host. Each hop has a job:
+
+- **Platform bridge**, request: forward the browser's `Cookie` header minus its
+  own credential cookies, removed by exact name (`__Host-ficus_app` and the
+  legacy `__Host-tau_app`), never by pattern. The credential goes to Core only
+  as the `_ficus_token` (or legacy `_tau_token`) query parameter it already
+  sets, never as a cookie. If no cookie is left, send no `Cookie` header. Set
+  `X-Forwarded-Host` to the validated app host
+  (`<tenant>--<deploy12>.<apps-domain>`, lowercase, no port), never a
+  client-supplied value. Keep `Host` as the tenant hostname (the tenant Caddy
+  routes on it) and `X-Forwarded-Proto: https`.
+- **Platform bridge**, response: pass the app's `Set-Cookie` headers through
+  unchanged. Drop only Core's `ficus_app_<uuid>` and the bridge's own
+  credential names, as it does now.
+- **Tenant Caddy** (`render_caddyfile` in `scripts/setup/lib.sh`): keeps an
+  incoming `X-Forwarded-Host` only on `/api/app/*` and only when the
+  immediate peer is one of the extra `ingress.trusted_proxies` (the bridge).
+  Everywhere else, including traffic through Cloudflare, it is pinned to the
+  tenant host.
+- **Core** (`services/deploy/local-deployment-proxy.ts`): a request counts as
+  coming from the app origin only when the socket peer is a trusted proxy
+  (loopback or `FICUS_TRUSTED_PROXY_ADDRESSES`, the chain used for
+  `X-Forwarded-For`) and `X-Forwarded-Host` is exactly this deployment's app
+  host. Core then forwards the cookies minus Ficus's own, removed by exact name:
+  `ficus_session`, `ficus_app_<id>`, `ficus_app`, `__Host-ficus_app` and their
+  pre-Ficus names. It sets `Host` and `X-Forwarded-Host` to the app host and
+  `X-Forwarded-Proto` to `https`, and passes the app's `Set-Cookie` through.
+  Any other forwarded host is ignored.
+
+The path mount (`<tenant host>/api/app/<id>/`) shares the Ficus origin with
+Ficus and every other app. No cookie reaches the app there, because it would
+carry the Ficus session and other apps' cookies. None of the app's
+`Set-Cookie` reaches the browser either, because it could overwrite Ficus's or
+another app's cookies. Core sets only its path-scoped `ficus_app_<id>` access
+cookie. The app sees the Ficus host in `Host` and `X-Forwarded-Host`. Apps
+that need sessions must use the app origin.
 
 Resource bounds are 100 MiB in each direction, a 15-second connect timeout,
 30-second idle timeout, and 64 concurrent requests per tenant per Platform
