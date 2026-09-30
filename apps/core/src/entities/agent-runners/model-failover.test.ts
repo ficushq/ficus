@@ -192,3 +192,52 @@ it('moves a Claude Code session-limit failure to the next Codex model and cools 
     resetProviderHealthForTests()
   }
 })
+
+it('moves a revoked ChatGPT sign-in to the next model and parks only that account until re-authorized', async () => {
+  resetProviderHealthForTests()
+  const next = 'anthropic:claude-opus-5-5'
+  const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnv').mockReturnValue({
+    selected: next,
+    candidates: [],
+  })
+  const read = spyOn(accountStore, 'readAccountStore').mockReturnValue({ version: 1, accounts: {} })
+  const mutate = spyOn(accountStore, 'mutateAccountStore').mockResolvedValue(undefined)
+  const selectAccount = spyOn(accountSelection, 'selectAccount').mockReturnValue(null)
+  const events: any[] = []
+  let resent = 0
+  const session = {
+    accountId: 'acc_chatgpt',
+    authBackend: { selectAccount: () => {} },
+    pi: { getContextUsage: () => undefined, setModel: async () => {}, setThinkingLevel: () => {} },
+  }
+  const coordinator = new ModelFailoverCoordinator(
+    makeDeps({
+      getSession: () => session as never,
+      getBuffer: () => ({ push: (event: unknown) => events.push(event) }) as never,
+      getCollector: () => ({ reset: () => {} }) as never,
+      resendPrompt: async () => {
+        resent++
+      },
+    })
+  )
+  try {
+    await coordinator.beginTurn(`openai-codex:gpt-6-astra,${next}`, 'openai-codex:gpt-6-astra')
+    expect(
+      await coordinator.attempt('Your authentication token has been invalidated. Please try signing in again.')
+    ).toBe(true)
+    expect(coordinator.currentSelectedSpec).toBe(next)
+    expect(resent).toBe(1)
+    expect(providerHealth.getRecord('openai-codex', 'acc_chatgpt')?.kind).toBe('expired-oauth')
+    expect(providerHealth.getRecord('openai-codex')).toBeUndefined()
+    const notice = events.find((event) => event.type === 'system_message')?.text
+    expect(notice).toBe(
+      `openai-codex sign-in expired or was revoked — failed over to ${next}. Re-authorize it in Settings → AI Providers.`
+    )
+  } finally {
+    selection.mockRestore()
+    read.mockRestore()
+    mutate.mockRestore()
+    selectAccount.mockRestore()
+    resetProviderHealthForTests()
+  }
+})

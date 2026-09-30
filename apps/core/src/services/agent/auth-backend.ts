@@ -22,9 +22,10 @@ import { registerBunOAuthFlows } from '@earendil-works/pi-ai/bun-oauth'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
 import { createLogger } from '../../lib/infra/logger'
 import {
-  mutateAccountStoreAsync,
+  mutateAccountStore,
   purgeClaudeSubscriptionCredentials,
   readAccountStore,
+  readAccountStoreFresh,
   type AccountStoreV1,
 } from './account-store'
 
@@ -110,7 +111,10 @@ export class SecretStoreCredentialStore implements CredentialStore {
     fn: (current: Credential | undefined) => Promise<Credential | undefined>
   ): Promise<Credential | undefined> {
     return credentialModifyQueue.run(providerId, async () => {
-      const observed = readProviderCredential(providerId)
+      // Observe the DB, not this process's cache (see readAccountStoreFresh):
+      // refreshing with a refresh token the other process already rotated gets
+      // the sign-in revoked for reuse.
+      const observed = firstProviderCredential((await readAccountStoreFresh()).accounts[providerId] ?? [])
       const next = await fn(observed)
 
       if (next === undefined) {
@@ -121,7 +125,7 @@ export class SecretStoreCredentialStore implements CredentialStore {
       }
 
       let resolved: Credential | undefined
-      await mutateAccountStoreAsync(async (store) => {
+      await mutateAccountStore((store) => {
         const accounts = store.accounts[providerId] ?? []
         // Re-read the same TYPE we handed fn: on a mixed api_key + oauth
         // provider a type-blind re-read can return the other account's
@@ -152,7 +156,7 @@ export class SecretStoreCredentialStore implements CredentialStore {
 
   async delete(providerId: string): Promise<void> {
     await credentialModifyQueue.run(providerId, async () => {
-      await mutateAccountStoreAsync(async (store) => {
+      await mutateAccountStore((store) => {
         if (!store.accounts[providerId]) return false
         delete store.accounts[providerId]
         return true

@@ -26,6 +26,23 @@ const AUTH_ERROR_MARKERS = [
   'no api key',
   '/login',
 ]
+/**
+ * An OAuth sign-in the provider has revoked or can no longer refresh. Unlike a
+ * generic 401 (which says nothing certain about the account), these are
+ * account-level and stay broken until someone signs in again, so they park the
+ * account and fail over. Matched on normalized text (`_`/`-` → space) because
+ * pi-ai surfaces both as bare messages without a status:
+ * - the codex backend's response: "Your authentication token has been invalidated. Please try signing in again."
+ * - a failed token refresh: "OpenAI Codex token refresh failed (401): {…"refresh_token_reused"…}"
+ */
+const REVOKED_OAUTH_MARKERS = [
+  'authentication token has been invalidated',
+  'refresh token reused',
+  'refresh token has already been used',
+  'refresh token expired',
+  'refresh token invalidated',
+  'refresh token was revoked',
+]
 const AUTH_ERROR_SYSTEM_MESSAGE =
   '[System] Authentication failed for this model provider. Re-authorize it in Settings → AI Providers, or run `ficus provider-auth login <provider>`. Execution stopped.'
 
@@ -181,6 +198,7 @@ export function classifyCaughtProviderError(
   // Claude Code failures the user must fix on their machine: park that account and fail over.
   if (text?.includes(CLAUDE_CODE_SIGN_IN_FAILED)) return { kind: 'expired-oauth' }
   if (text?.includes(CLAUDE_CODE_TOO_OLD)) return { kind: 'invalid-credential' }
+  if (text && isRevokedOAuthErrorText(text)) return { kind: 'expired-oauth' }
 
   const status = findFiniteNumber(error, ['status', 'statusCode']) ?? parseGenericHttpStatus(text)
   // Generic turn auth failures intentionally remain outside routing health.
@@ -216,6 +234,14 @@ function normalizedErrorText(message: string): string {
 function isAuthenticationErrorText(message: string): boolean {
   const normalized = normalizedErrorText(message)
   return AUTH_ERROR_MARKERS.some((marker) => normalized.includes(marker))
+}
+
+function isRevokedOAuthErrorText(message: string): boolean {
+  const normalized = normalizedErrorText(message)
+  return (
+    REVOKED_OAUTH_MARKERS.some((marker) => normalized.includes(marker)) ||
+    (normalized.includes('token refresh failed') && normalized.includes('invalid grant'))
+  )
 }
 
 function isTextualCancellationError(message: string): boolean {

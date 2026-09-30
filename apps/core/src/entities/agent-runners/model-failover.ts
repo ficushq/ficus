@@ -42,6 +42,13 @@ export interface ModelFailoverDeps {
  * A snapshot write here would race (and clobber) concurrent credential
  * merge-backs from the auth storage.
  */
+const REAUTHORIZE_HINT = 'Re-authorize it in Settings → AI Providers.'
+
+/** A credential the user must fix (revoked sign-in, bad key): no cooldown will bring it back. */
+function isCredentialFailure(classification: CaughtProviderErrorClassification): boolean {
+  return classification.kind === 'expired-oauth' || classification.kind === 'invalid-credential'
+}
+
 function stampAccountLastUsed(provider: string, accountId: string): void {
   accountStore
     .mutateAccountStore((store) => {
@@ -207,7 +214,9 @@ export class ModelFailoverCoordinator {
             text:
               classification.kind === 'network'
                 ? `Provider connection failed for ${provider} — rotated to ${nextAccount.label ?? 'next account'}.`
-                : `Account exhausted for ${provider} — rotated to ${nextAccount.label ?? 'next account'}.`,
+                : isCredentialFailure(classification)
+                  ? `${provider} sign-in expired or was revoked — rotated to ${nextAccount.label ?? 'next account'}. ${REAUTHORIZE_HINT}`
+                  : `Account exhausted for ${provider} — rotated to ${nextAccount.label ?? 'next account'}.`,
           })
           log.info('Provider request switched accounts', {
             strategy: 'account-failover',
@@ -298,7 +307,9 @@ export class ModelFailoverCoordinator {
         text:
           classification.kind === 'network'
             ? `Provider connection failed for ${provider} — failed over to ${next}. (retry in ~${mins}m)`
-            : `Provider ${provider} exhausted — failed over to ${next}. (retry in ~${mins}m)`,
+            : isCredentialFailure(classification)
+              ? `${provider} sign-in expired or was revoked — failed over to ${next}. ${REAUTHORIZE_HINT}`
+              : `Provider ${provider} exhausted — failed over to ${next}. (retry in ~${mins}m)`,
       })
     }
     log.info('Provider request switched models', {

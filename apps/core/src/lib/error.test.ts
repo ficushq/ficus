@@ -101,6 +101,22 @@ describe('classifyCaughtProviderError', () => {
   test('does not classify Ficus internal or generic credential errors', () => {
     expect(classifyCaughtProviderError(new Error('Execution session capacity reservation was refused'))).toBeNull()
     expect(classifyCaughtProviderError({ status: 401, message: 'invalid api key' })).toBeNull()
+    expect(classifyCaughtProviderError('OpenAI Codex token refresh failed (500): upstream error')).toBeNull()
+  })
+
+  test('parks a revoked OAuth sign-in so its account fails over instead of halting every agent on it', () => {
+    for (const error of [
+      // The codex backend's response once the ChatGPT sign-in is revoked (a bare message, no status).
+      'Your authentication token has been invalidated. Please try signing in again.',
+      new Error('Your authentication token has been invalidated. Please try signing in again.'),
+      { status: 401, message: 'Your authentication token has been invalidated. Please try signing in again.' },
+      // A refresh with a spent or revoked refresh token.
+      'OpenAI Codex token refresh failed (401): {"error":{"code":"refresh_token_reused"}}',
+      'OpenAI Codex token refresh failed (400): {"error":"invalid_grant"}',
+      'OpenAI Codex token refresh failed (401): {"error":{"code":"refresh_token_expired"}}',
+    ]) {
+      expect(classifyCaughtProviderError(error)).toEqual({ kind: 'expired-oauth' })
+    }
   })
 
   test('keeps transport resets out of the shared provider classifier', () => {

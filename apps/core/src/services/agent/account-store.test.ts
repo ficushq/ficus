@@ -8,7 +8,6 @@ import {
   readAccountStore,
   writeAccountStore,
   mutateAccountStore,
-  mutateAccountStoreAsync,
   migrateLegacyAuthData,
   listAccounts,
   addAccount,
@@ -23,6 +22,7 @@ import {
   type AccountStoreV1,
 } from './account-store'
 import type { Credential } from '@earendil-works/pi-ai'
+import { AccountScopedCredentialStore } from './account-auth-backend'
 
 describe('account-store', () => {
   const testKey = randomBytes(32).toString('hex')
@@ -316,6 +316,74 @@ describe('account-store', () => {
       expect(readAccountStore().accounts['openai-codex']).toHaveLength(2)
     })
 
+    /** Another process (the API, over the same DB) rotates the codex token; this process's cache misses it. */
+    async function rotateInOtherProcess(next: { refresh: string; access: string }): Promise<void> {
+      const apiStore = new SecretStore()
+      await apiStore.initialize()
+      const apiView = JSON.parse(apiStore.get(PROVIDER_AUTH_DATA_KEY)!) as AccountStoreV1
+      apiView.accounts['openai-codex'][0].credential = { type: 'oauth', ...next, expires: 2 } as never
+      apiView.accounts['openai-codex'].push({
+        id: 'acc_second',
+        enabled: true,
+        credential: { type: 'api_key', key: 'k2' },
+      })
+      await apiStore.set(PROVIDER_AUTH_DATA_KEY, JSON.stringify(apiView), 'admin')
+    }
+
+    async function seedCodexOAuth(): Promise<void> {
+      await writeAccountStore(
+        {
+          version: 1,
+          accounts: {
+            'openai-codex': [
+              {
+                id: 'acc_oauth',
+                enabled: true,
+                credential: { type: 'oauth', refresh: 'rt-1', access: 'at-1', expires: 1 } as never,
+              },
+            ],
+          },
+        },
+        'admin'
+      )
+    }
+
+    test("a token refresh sees another process's rotated token, not this process's stale cache (revoked sign-in regression)", async () => {
+      await seedCodexOAuth()
+      await rotateInOtherProcess({ refresh: 'rt-2', access: 'at-2' })
+      expect((readAccountStore().accounts['openai-codex'][0].credential as { refresh: string }).refresh).toBe('rt-1')
+
+      const credentials = new AccountScopedCredentialStore()
+      credentials.selectAccount('openai-codex', 'acc_oauth')
+      const seen: Array<Credential | undefined> = []
+      // Refreshing with rt-1 now would spend a refresh token the other process
+      // already rotated, and OpenAI revokes the whole sign-in for the reuse.
+      await credentials.modify('openai-codex', async (current) => {
+        seen.push(current)
+        return undefined
+      })
+
+      expect((seen[0] as { refresh: string }).refresh).toBe('rt-2')
+    })
+
+    test("a refresh write-back never reverts another process's newer write", async () => {
+      await seedCodexOAuth()
+      const credentials = new AccountScopedCredentialStore()
+      credentials.selectAccount('openai-codex', 'acc_oauth')
+
+      const result = await credentials.modify('openai-codex', async (current) => {
+        // The other process writes while this refresh is on the network.
+        await rotateInOtherProcess({ refresh: 'rt-2', access: 'at-2' })
+        return { ...(current as object), refresh: 'rt-stale', access: 'at-stale' } as Credential
+      })
+
+      const final = await readFinalDbStore()
+      const codex = final.accounts['openai-codex']
+      expect((getAccount(final, 'openai-codex', 'acc_oauth')!.credential as { refresh: string }).refresh).toBe('rt-2')
+      expect(codex.map((a) => a.id).sort()).toEqual(['acc_oauth', 'acc_second'])
+      expect((result as { refresh: string }).refresh).toBe('rt-2')
+    })
+
     test('mutate returning false writes nothing', async () => {
       await writeAccountStore(
         {
@@ -413,26 +481,6 @@ describe('account-store', () => {
       expect(spy).not.toHaveBeenCalled()
       spy.mockRestore()
     })
-
-    test('mutateAccountStoreAsync notifies onboarding after a real write (OAuth round-trip path)', async () => {
-      const spy = spyOn(onboardingEvents, 'notifyOnboardingChanged')
-
-      await mutateAccountStoreAsync(async (s) => {
-        addAccount(s, 'anthropic', { type: 'oauth', refresh: 'r', access: 'a', expires: 0 } as never)
-      }, 'admin')
-
-      expect(spy).toHaveBeenCalledTimes(1)
-      spy.mockRestore()
-    })
-
-    test('mutateAccountStoreAsync does NOT notify onboarding when mutate returns false (no-op write)', async () => {
-      const spy = spyOn(onboardingEvents, 'notifyOnboardingChanged')
-
-      await mutateAccountStoreAsync(async () => false, 'system')
-
-      expect(spy).not.toHaveBeenCalled()
-      spy.mockRestore()
-    })
   })
 
   describe('onboarding notification is fingerprint-gated (does not fire on signal-inert writes)', () => {
@@ -507,34 +555,6 @@ describe('account-store', () => {
       }, 'admin')
 
       expect(spy).not.toHaveBeenCalled()
-      spy.mockRestore()
-    })
-
-    test('mutateAccountStoreAsync does NOT notify when only lastUsedAt is stamped', async () => {
-      await mutateAccountStoreAsync(async (s) => {
-        addAccount(s, 'anthropic', { type: 'api_key', key: 'sk-1' } as never)
-      }, 'admin')
-      const [account] = listAccounts(readAccountStore(), 'anthropic')
-
-      const spy = spyOn(onboardingEvents, 'notifyOnboardingChanged')
-      await mutateAccountStoreAsync(async (s) => {
-        const a = getAccount(s, 'anthropic', account.id)
-        if (!a) return false
-        a.lastUsedAt = Date.now()
-      }, 'system')
-
-      expect(spy).not.toHaveBeenCalled()
-      spy.mockRestore()
-    })
-
-    test('mutateAccountStoreAsync DOES notify when an account is added', async () => {
-      const spy = spyOn(onboardingEvents, 'notifyOnboardingChanged')
-
-      await mutateAccountStoreAsync(async (s) => {
-        addAccount(s, 'anthropic', { type: 'oauth', refresh: 'r', access: 'a', expires: 0 } as never)
-      }, 'admin')
-
-      expect(spy).toHaveBeenCalledTimes(1)
       spy.mockRestore()
     })
   })
