@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, realpath, rm, writeFile, readFile, rename, symlink } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { testDbProjectName } from '@ficus/shared/testDbPort'
@@ -597,4 +598,25 @@ describe('rewritten or abandoned history', () => {
     })
     expect(await archiveRefs()).toEqual([])
   })
+})
+
+test('archives under a stable hashed scope when the worktree name is not a valid refname component', async () => {
+  await prepareRepository(
+    exec,
+    root,
+    { repository: repo, branch: 'odd', baseBranch: 'main', worktree: 'worktrees/fix..thing' },
+    'odd',
+    {},
+    (value) => {
+      ownership = value
+    }
+  )
+  expect(basename(ownership.worktree)).toBe('fix..thing')
+  const abandoned = await commit('abandoned')
+  await exec(['git', '-C', ownership.worktree, 'reset', '--hard', head])
+  const scope = createHash('sha256').update(ownership.worktree).digest('hex').slice(0, 16)
+  const ref = `refs/ficus-archive/${scope}/${abandoned}`
+  expect(await remove()).toMatchObject({ status: 'succeeded', archivedRefs: [ref] })
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
+  expect(await archiveRefs()).toEqual([`${ref} ${abandoned}`])
 })

@@ -329,6 +329,7 @@ squash-merged branch whose remote was deleted) exists only in that reflog, which
 removal destroys. Instead of blocking cleanup forever, the runner first archives
 the independent tips of that history as shared, content-addressed refs
 `refs/ficus-archive/<worktree directory name>/<commit>` in the main repository
+(a stable hash of the worktree path replaces a directory name Git rejects in refs)
 (outside `refs/heads`, so branch lists stay clean). All tips are created in one
 atomic `git update-ref` transaction, verified, and the reachability check is then
 repeated with the archive included; removal proceeds only if it passes. Retries

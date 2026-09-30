@@ -141,9 +141,14 @@ try {
   // outside refs/heads, then require the reachability check to pass with the
   // archive included. Names equal their values, so retries never duplicate or
   // clobber a ref; any write or verification failure keeps the worktree.
+  // Name the scope after the worktree directory (the work stream id for
+  // platform worktrees) when Git accepts it as a refname component; otherwise
+  // use a stable hash so an odd directory name can never block archiving.
   const scopeName = path.basename(o.worktree);
-  const scope = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(scopeName) && !scopeName.endsWith('.lock')
-    ? scopeName : crypto.createHash('sha256').update(o.worktree).digest('hex').slice(0, 16);
+  const validScope = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(scopeName) && Bun.spawnSync(
+    ['git', 'check-ref-format', 'refs/ficus-archive/' + scopeName + '/' + '0'.repeat(40)],
+    { env, stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
+  const scope = validScope ? scopeName : crypto.createHash('sha256').update(o.worktree).digest('hex').slice(0, 16);
   const archivePrefix = 'refs/ficus-archive/' + scope + '/';
   // Every unreachable commit descends from some root, so unreachable roots cover it.
   const unpublished = unreachable(published);
