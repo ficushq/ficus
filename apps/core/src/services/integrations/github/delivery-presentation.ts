@@ -17,6 +17,12 @@ export interface GitHubDeliverySnapshot {
   reviewDecision: 'required' | 'approved' | 'changes_requested' | 'unknown'
   checksState: 'success' | 'failure' | 'pending' | 'unknown'
   pendingHumanReview: boolean
+  /**
+   * Which GitHub API observed it. REST cannot see the required-review decision,
+   * so a `rest` snapshot's decision is carried from the previous same-head
+   * aggregate. Absent on snapshots written before this field existed.
+   */
+  source?: 'graphql' | 'rest'
 }
 
 export const DELIVERY_SNAPSHOT_MAX_AGE_MS = 5 * 60_000
@@ -38,6 +44,7 @@ export function githubDeliverySnapshot(
     repository: `${connection.configuration.owner}/${connection.configuration.repo}`.toLowerCase(),
     number: connection.configuration.number,
     observedAt,
+    source: graphql ? 'graphql' : 'rest',
     headSha,
     ...(typeof (graphql ? pr.headRefName : pr.head?.ref) === 'string'
       ? { headBranch: graphql ? pr.headRefName : pr.head.ref }
@@ -106,6 +113,7 @@ export function readGitHubDeliverySnapshot(
     !['success', 'failure', 'pending', 'unknown'].includes(value.checksState) ||
     (value.headBranch !== undefined && typeof value.headBranch !== 'string') ||
     (value.baseBranch !== undefined && typeof value.baseBranch !== 'string') ||
+    (value.source !== undefined && value.source !== 'graphql' && value.source !== 'rest') ||
     typeof value.headSha !== 'string' ||
     !/^[a-f0-9]{40}$/.test(value.headSha)
   )

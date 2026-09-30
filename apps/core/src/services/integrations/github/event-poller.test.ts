@@ -1392,7 +1392,67 @@ test('an unavailable aggregate cannot renew a dynamic merge state from an unchan
   baseline = false
   const next = await poller.poll(watch, initial.nextCursor)
   expect(next.events).toEqual([])
-  expect(next.nextCursor.deliveryPresentation).toBeUndefined()
+  // Retained unchanged: its original observation time lets readers age its readiness.
+  expect(next.nextCursor.deliveryPresentation).toEqual(initial.nextCursor.deliveryPresentation)
+})
+
+test('a REST-only fallback keeps the last same-head required-review decision instead of erasing it', async () => {
+  let aggregate = true
+  let head = 'a'.repeat(40)
+  const poller = new GitHubPrEventPoller({
+    resolveCredential: async () => 'token',
+    fetch: async (input) => {
+      const path = new URL(input).pathname
+      if (path === '/graphql')
+        return aggregate
+          ? response(
+              {
+                data: {
+                  repository: {
+                    pullRequest: {
+                      headRefOid: head,
+                      state: 'OPEN',
+                      isDraft: false,
+                      mergeStateStatus: 'BLOCKED',
+                      reviewDecision: 'REVIEW_REQUIRED',
+                      reviewRequests: { nodes: [] },
+                      commits: { nodes: [{ commit: { statusCheckRollup: { state: 'PENDING' } } }] },
+                    },
+                  },
+                },
+              },
+              'graph'
+            )
+          : response({ errors: [{ message: 'Resource not accessible by integration' }] }, 'graph')
+      if (path.endsWith('/pulls/7'))
+        return response(
+          { ...pullRequest, head: { sha: head }, mergeable_state: 'blocked', requested_reviewers: [] },
+          'pr'
+        )
+      if (path.endsWith('/issues/7')) return response(issue, 'issue')
+      return response([], 'empty')
+    },
+  })
+  const watch = { ...connection(), configuration: { ...connection().configuration, deliveryPresentation: true } }
+  const initial = await poller.poll(watch, null)
+  expect(initial.nextCursor.deliveryPresentation).toMatchObject({ source: 'graphql', reviewDecision: 'required' })
+  aggregate = false
+  const fallback = await poller.poll(watch, initial.nextCursor)
+  expect(fallback.nextCursor.deliveryPresentation).toMatchObject({
+    source: 'rest',
+    headSha: head,
+    mergeState: 'blocked',
+    checksState: 'unknown',
+    reviewDecision: 'required',
+  })
+  // A new head is a new review question: REST cannot answer it, so nothing is carried.
+  head = 'b'.repeat(40)
+  const pushed = await poller.poll(watch, fallback.nextCursor)
+  expect(pushed.nextCursor.deliveryPresentation).toMatchObject({
+    source: 'rest',
+    headSha: head,
+    reviewDecision: 'unknown',
+  })
 })
 
 test('emitted polling updates and feedback share compact webhook presentation without stripping snapshots', async () => {

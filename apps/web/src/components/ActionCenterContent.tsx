@@ -39,7 +39,7 @@ export function ActionCenterContent({
     (action) =>
       action.type === 'agent-question' || action.type === 'squad-question' || action.type === 'assistant-needs-input'
   )
-  const workstreamReviews = actions.filter((a) => a.type === 'workstream-review')
+  const workstreamReviews = actions.filter((a) => a.type === 'workstream-review' || a.type === 'workstream-delivery')
   const workstreamBlocked = actions.filter((a) => a.type === 'workstream-blocked')
 
   const errorMessage = error instanceof Error ? error.message : 'Action Center is unavailable.'

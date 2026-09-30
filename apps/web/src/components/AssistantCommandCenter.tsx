@@ -532,8 +532,8 @@ function CommandActionPreview({
   onPush: (destination: CommandDestination) => void
 }) {
   const work =
-    action.type === 'workstream-review' || action.type === 'workstream-blocked'
-      ? (action.data as WorkStreamActionData)
+    action.type === 'workstream-review' || action.type === 'workstream-blocked' || action.type === 'workstream-delivery'
+      ? (action.data as Pick<WorkStreamActionData, 'workStreamId' | 'squadId' | 'workStreamTitle'>)
       : null
   return (
     <>

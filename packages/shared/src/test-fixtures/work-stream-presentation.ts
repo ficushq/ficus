@@ -105,6 +105,26 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     label: 'Review Pull Request',
   },
   {
+    // The #362 wire shape: pr-auto-merge, GitHub requires an approval, no waits,
+    // and the legacy derived vocabulary still says waiting_on_dependency.
+    name: 'required human PR review under auto-merge',
+    facts: { ...active, derivedState: 'waiting_on_dependency', delivery: { kind: 'review' } },
+    state: 'delivery_review',
+    role: 'review',
+    attention: true,
+    bucket: 'needsYou',
+    label: 'Review Pull Request',
+  },
+  {
+    name: 'required human PR review for payloads omitting waits',
+    facts: { status: 'active', derivedState: 'waiting_on_dependency', delivery: { kind: 'review' } },
+    state: 'delivery_review',
+    role: 'review',
+    attention: true,
+    bucket: 'needsYou',
+    label: 'Review Pull Request',
+  },
+  {
     name: 'human PR merge',
     facts: { ...active, delivery: { kind: 'merge' } },
     state: 'delivery_merge',

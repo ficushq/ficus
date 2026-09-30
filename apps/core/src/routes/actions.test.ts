@@ -3,7 +3,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db } from '../db'
-import { agentQuestions, agents, agentTypes, squads, workStreams } from '../db/schema'
+import {
+  agentQuestions,
+  agents,
+  agentTypes,
+  integrationEventPollingCursors,
+  squads,
+  workStreamFlowRuns,
+  workStreams,
+} from '../db/schema'
 import { Agent } from '../entities/Agent'
 import { AgentType } from '../entities/AgentType'
 import { Squad } from '../entities/Squad'
@@ -12,7 +20,7 @@ import { subscribeToSquad } from '../services/squad/subscriptions'
 import { parkWorkStream } from '../services/work-streams/admission'
 import { openWait } from '../services/work-streams/waits'
 import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
-import type { WorkStreamActionData } from '@ficus/shared'
+import { createBlankWorkflow, createWorkflowRun, type WorkStreamActionData } from '@ficus/shared'
 import { actionsRouter } from './actions'
 
 const app = new Hono()
@@ -243,5 +251,81 @@ describe('GET /api/actions/pending policy matrix', () => {
     expect(actions.map((action) => action.type)).toEqual(['agent-error', 'agent-question'])
     expect(actions.every((action) => action.squadId === undefined)).toBe(true)
     expect(actions.every((action) => action.canRespond)).toBe(true)
+  })
+})
+
+describe('GET /api/actions/pending delivery gates', () => {
+  test('lists a PR awaiting human review only for clients that opt into workstream-delivery', async () => {
+    const stream = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} pr review gate` })
+    const resourceKey = `${prefix}:delivery-gate`
+    await db
+      .update(workStreams)
+      .set({
+        metadata: {
+          codeHost: { integration: 'github', repository: 'acme/widgets', changeRequest: { number: 7 } },
+        },
+      })
+      .where(eq(workStreams.id, stream.id))
+    const definition = createBlankWorkflow()
+    definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: stream.id,
+      activated: true,
+      state: { ...createWorkflowRun(definition), status: 'completion-ready' },
+      source: { schemaVersion: 1, source: { kind: 'inline' }, definition },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'fixture',
+      createdBy: 'test',
+    })
+    await db.insert(integrationEventPollingCursors).values({
+      providerKey: 'github',
+      resourceKey,
+      cursor: {
+        deliveryPresentation: {
+          version: 1,
+          squadId: squad.id,
+          connectionId: crypto.randomUUID(),
+          repository: 'acme/widgets',
+          number: 7,
+          observedAt: new Date().toISOString(),
+          source: 'graphql',
+          headSha: 'a'.repeat(40),
+          state: 'open',
+          draft: false,
+          mergeState: 'blocked',
+          reviewDecision: 'required',
+          checksState: 'pending',
+          pendingHumanReview: false,
+        },
+      },
+    })
+    try {
+      const legacy = (await (
+        await app.request('/api/actions/pending', { headers: authHeaders(responder.token) })
+      ).json()) as Array<{ type: string }>
+      expect(legacy.some((action) => action.type === 'workstream-delivery')).toBe(false)
+
+      const response = await app.request('/api/actions/pending?include=workstream-delivery', {
+        headers: authHeaders(responder.token),
+      })
+      expect(response.status).toBe(200)
+      const actions = (await response.json()) as Array<{ id: string; type: string; canRespond: boolean; data: unknown }>
+      expect(actions.find((action) => action.type === 'workstream-delivery')).toMatchObject({
+        id: `workstream-delivery:${stream.id}:review`,
+        canRespond: false,
+        data: {
+          workStreamId: stream.id,
+          deliveryKind: 'review',
+          pullRequests: [{ repository: 'acme/widgets', number: 7 }],
+        },
+      })
+      // A reader without actions:read never sees it.
+      const hidden = (await (
+        await app.request('/api/actions/pending?include=workstream-delivery', { headers: authHeaders(ownerOnly.token) })
+      ).json()) as Array<{ type: string }>
+      expect(hidden.some((action) => action.type === 'workstream-delivery')).toBe(false)
+    } finally {
+      await db.delete(integrationEventPollingCursors).where(eq(integrationEventPollingCursors.resourceKey, resourceKey))
+    }
   })
 })

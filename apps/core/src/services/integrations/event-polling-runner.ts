@@ -1,5 +1,9 @@
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
-import { consumeEventPollingBudget, createEventPollingBudget } from './event-polling-budget'
+import {
+  consumeEventPollingBudget,
+  createEventPollingBudget,
+  EventPollingBudgetExceededError,
+} from './event-polling-budget'
 import type { EventPollingCapability, EventPollingSignal, RuntimeConnection, VerifiedIngressEvent } from './types'
 
 export interface EventPollingWatch {
@@ -133,6 +137,9 @@ export class EventPollingRunner {
           }
         }
       } catch (error) {
+        // The tick ran out of shared budget mid-poll: the watch was released
+        // unchanged and stays due for the next tick instead of backing off.
+        if (error instanceof EventPollingBudgetExceededError) break
         polled++
         // Providers that fail before reserving a request still consume one unit.
         if (unitBudget.consumed === consumedBefore && unitBudget.remaining > 0) {
@@ -207,6 +214,12 @@ export class EventPollingRunner {
         await deadline(this.#options.onCursorSaved(watch, claimed.cursor, result.nextCursor))
       return result.budgetUnitsConsumed ?? 1
     } catch (error) {
+      if (error instanceof EventPollingBudgetExceededError && error !== timeoutError) {
+        // Budget exhaustion is capacity, not a provider failure. Nothing was
+        // dispatched or saved, so the unchanged cursor is simply retried.
+        await this.#options.cursorStore.release(watch.providerKey, watch.resourceKey, claimed.leaseToken)
+        throw error
+      }
       const failureDelayMs = this.#failureInterval()
       const failedAt = this.#options.now?.() ?? new Date()
       const retryAt = new Date(failedAt.getTime() + failureDelayMs)

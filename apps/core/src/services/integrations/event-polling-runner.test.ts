@@ -1104,6 +1104,34 @@ describe('EventPollingRunner', () => {
     expect(releases).toBe(1)
   })
 
+  test('a poll that runs out of shared tick budget is released for the next tick, not backed off', async () => {
+    const store = new MemoryCursorStore()
+    const errors: unknown[] = []
+    let polls = 0
+    const runner = new EventPollingRunner({
+      listWatches: async () => [watch, { ...watch, resourceKey: 'repo#2' }],
+      cursorStore: store,
+      resolveCapability: () => ({
+        poll: async (_connection, _cursor, signal) => {
+          polls++
+          signal!.reserveRequest()
+          signal!.reserveRequest()
+          return { events: [], nextCursor: {}, suggestedIntervalMs: 60_000 }
+        },
+      }),
+      dispatch: async () => {},
+      onError: (error) => errors.push(error),
+      maxBudgetUnitsPerTick: 1,
+    })
+
+    await runner.runOnce()
+    expect(polls).toBe(1)
+    expect(store.releases).toBe(1)
+    expect(store.failures).toBe(0)
+    expect(store.saves).toBe(0)
+    expect(errors).toEqual([])
+  })
+
   test('respects a global per-tick request budget', async () => {
     const store = new MemoryCursorStore()
     let polls = 0

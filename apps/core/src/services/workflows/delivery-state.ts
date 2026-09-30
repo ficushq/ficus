@@ -254,20 +254,34 @@ function classifyPrimaryDeliveryPresentation(
     const gates = gateFacts()
     return { kind: 'external', explanation: { ...observedPullRequest(), ...(gates ? { gates } : {}) } }
   }
+  // A human review requirement is a standing fact of the current head, not a
+  // readiness proof: it persists after its observation ages until newer
+  // same-head evidence speaks against it. Merge, close and a new head are
+  // handled above; this never invents a requirement without evidence.
   const reviewSnapshot = current.find((event) => typeof event.data.reviewDecision === 'string')
-  if (fresh(reviewSnapshot) && reviewSnapshot?.data.reviewDecision === 'required')
+  const approvedSince = (evidence: DeliveryEvent) =>
+    current.some(
+      (event) =>
+        event.output === 'pull_request.reviewed' &&
+        event.data.state === 'approved' &&
+        (!event.data.reviewedHeadSha || event.data.reviewedHeadSha === currentHead) &&
+        time(event) > snapshotTime(evidence)
+    )
+  if (reviewSnapshot?.data.reviewDecision === 'required' && !approvedSince(reviewSnapshot))
     return { kind: 'review', explanation: observedPullRequest() }
-  if (
-    fresh(snapshot) &&
-    (snapshot?.data.pendingHumanReview === true ||
-      (snapshot?.data.pendingHumanReview === undefined &&
-        snapshot?.output === 'pull_request.review_requested' &&
-        ((snapshot.data.requestedReviewerType === 'User' &&
-          typeof snapshot.data.requestedReviewer === 'string' &&
-          snapshot.data.requestedReviewer.length > 0) ||
-          (typeof snapshot.data.requestedTeam === 'string' && snapshot.data.requestedTeam.length > 0))))
-  )
-    return { kind: 'review', explanation: observedPullRequest() }
+  const requestsHumanReview = (event: DeliveryEvent): boolean | undefined =>
+    typeof event.data.pendingHumanReview === 'boolean'
+      ? event.data.pendingHumanReview
+      : event.output === 'pull_request.review_requested' &&
+          ((event.data.requestedReviewerType === 'User' &&
+            typeof event.data.requestedReviewer === 'string' &&
+            event.data.requestedReviewer.length > 0) ||
+            (typeof event.data.requestedTeam === 'string' && event.data.requestedTeam.length > 0))
+        ? true
+        : undefined
+  // Sparse events (comments, CI) omit reviewer facts and cannot clear a request.
+  const reviewRequest = current.find((event) => requestsHumanReview(event) !== undefined)
+  if (reviewRequest && requestsHumanReview(reviewRequest)) return { kind: 'review', explanation: observedPullRequest() }
   const pending =
     checks.some((event) => ['pending', 'queued', 'in_progress', 'requested'].includes(String(event.data.state))) ||
     checkRollup?.data.checksState === 'pending'
@@ -412,14 +426,19 @@ export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) 
         ])
       )
     )
+  const now = Date.now()
   const snapshots = cached.flatMap(({ cursor }) => {
-    const snapshot = readGitHubDeliverySnapshot(cursor)
+    // Expired observations still carry the head, lifecycle and review facts;
+    // deliverySnapshotEvent withholds their readiness facts.
+    const snapshot = readGitHubDeliverySnapshot(cursor, now, true)
     return snapshot ? [snapshot] : []
   })
   for (const run of candidates) {
     const evidence = [
       ...(byStream.get(run.id) ?? []),
-      ...snapshots.filter((snapshot) => snapshot.squadId === run.squadId).map(deliverySnapshotEvent),
+      ...snapshots
+        .filter((snapshot) => snapshot.squadId === run.squadId)
+        .map((snapshot) => deliverySnapshotEvent(snapshot, now)),
     ]
     const presentation = classifyDeliveryPresentation(run.state, run.metadata, evidence, {
       allowAutoMerge:
@@ -430,8 +449,15 @@ export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) 
   return result
 }
 
-/** In-memory evidence only: never published as activity or delivered to an agent. */
-function deliverySnapshotEvent(snapshot: GitHubDeliverySnapshot): DeliveryEvent {
+/**
+ * In-memory evidence only: never published as activity or delivered to an agent.
+ * An expired observation keeps its head, lifecycle, draft and review facts, the
+ * last word on a standing review requirement, but no longer vouches for merge
+ * or check readiness, so it cannot claim, or alarm with, a gate that may have moved.
+ */
+export function deliverySnapshotEvent(snapshot: GitHubDeliverySnapshot, now = Date.now()): DeliveryEvent {
+  const age = now - Date.parse(snapshot.observedAt)
+  const current = Number.isFinite(age) && age <= DELIVERY_SNAPSHOT_MAX_AGE_MS
   return {
     integration: 'github',
     connectionId: snapshot.connectionId,
@@ -450,9 +476,8 @@ function deliverySnapshotEvent(snapshot: GitHubDeliverySnapshot): DeliveryEvent 
       baseBranch: snapshot.baseBranch,
       pullRequestState: snapshot.state,
       draft: snapshot.draft,
-      mergeState: snapshot.mergeState,
+      ...(current ? { mergeState: snapshot.mergeState, checksState: snapshot.checksState } : {}),
       reviewDecision: snapshot.reviewDecision,
-      checksState: snapshot.checksState,
       pendingHumanReview: snapshot.pendingHumanReview,
     },
   }

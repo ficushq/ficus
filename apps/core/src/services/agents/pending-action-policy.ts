@@ -1,4 +1,4 @@
-import type { PendingAction, WorkStreamActionData } from '@ficus/shared'
+import type { PendingAction, WorkStreamActionData, WorkStreamDeliveryActionData } from '@ficus/shared'
 import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestionRecipients, agentQuestionWorkStreamOrigins, agents } from '../../db/schema'
@@ -174,6 +174,17 @@ export async function evaluatePendingAction(
     return {
       visible: currentCanRead && currentUnmuted,
       canRespond: await hasPermission(identity, 'agents:run', currentSquadId),
+    }
+  }
+
+  if (action.type === 'workstream-delivery') {
+    // Settled on the code host (review or merge there), so nothing to respond to in Ficus.
+    const { workStreamId } = action.data as WorkStreamDeliveryActionData
+    return {
+      visible:
+        canRead &&
+        (identity.type !== 'user' || context.attention.forWorkStream(workStreamId, squadId).decisions !== 'mute'),
+      canRespond: false,
     }
   }
 

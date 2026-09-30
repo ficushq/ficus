@@ -699,6 +699,7 @@ export type PendingActionType =
   | 'workstream-review'
   | 'workstream-blocked'
   | 'assistant-needs-input'
+  | 'workstream-delivery'
 
 // An async agent question (status stays open; the agent keeps working). Visible in the conversation
 // view (pending, near the input) and the context tab (answered history) to anyone with canonical
@@ -831,12 +832,31 @@ export interface AssistantTaskActionData {
   updateCreatedAt: string | null
 }
 
+/**
+ * A code-host delivery gate a person must act on outside Ficus: the pull request
+ * needs a human review or merge. It has no wait; the provider settles it, so the
+ * action carries no response controls. Clients that do not recognize the type ignore it.
+ */
+export interface WorkStreamDeliveryActionData {
+  workStreamId: string
+  workStreamNumber?: number
+  workStreamTitle: string
+  squadId: string
+  squadName: string
+  /** The server-classified human delivery gate (`WorkStream.delivery.kind`). */
+  deliveryKind: 'review' | 'merge'
+  /** Designated delivery pull requests, primary first. */
+  pullRequests: Array<{ repository: string; number: number; url?: string }>
+  focus: { kind: 'workstream'; workStreamId: string }
+}
+
 export type PendingActionData =
   | SquadQuestionActionData
   | AgentQuestionActionData
   | AgentErrorActionData
   | WorkStreamActionData
   | AssistantTaskActionData
+  | WorkStreamDeliveryActionData
 
 export interface PendingAction {
   id: string

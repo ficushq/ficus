@@ -222,3 +222,20 @@ test('delivery review ranks with review and paused waits do not acquire urgency'
     ])
   ).toEqual(['d-merge', 'b-running', 'a-paused', 'c-external'])
 })
+
+test('a PR awaiting required human review sorts in the human-actionable tier, even under auto-merge', () => {
+  expect(
+    ids([
+      ws('a-external', { delivery: { kind: 'external' }, openWaits: [] }),
+      ws('b-running', { derivedState: 'in_progress', openWaits: [] }),
+      ws('c-auto-gate', { openWaits: [openWait('review')], delivery: { kind: 'external' }, automatedReviewGate: true }),
+      ws('d-pr-review', { delivery: { kind: 'review' }, openWaits: [] }),
+      // A stale or inconsistent annotation cannot demote a human delivery gate.
+      ws('e-pr-review-annotated', {
+        openWaits: [openWait('review')],
+        delivery: { kind: 'review' },
+        automatedReviewGate: true,
+      }),
+    ])
+  ).toEqual(['d-pr-review', 'e-pr-review-annotated', 'b-running', 'c-auto-gate', 'a-external'])
+})

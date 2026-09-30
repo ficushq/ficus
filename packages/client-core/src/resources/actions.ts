@@ -3,6 +3,11 @@ import type { Transport } from '../transport'
 
 export function actionsResource(t: Transport) {
   return {
-    listPendingActions: (): Promise<PendingAction[]> => t.request('/actions/pending'),
+    /**
+     * `include: ['workstream-delivery']` opts into view-only code-host delivery
+     * gates; only request it from a client that renders that action type.
+     */
+    listPendingActions: (options: { include?: Array<'workstream-delivery'> } = {}): Promise<PendingAction[]> =>
+      t.request(options.include?.length ? `/actions/pending?include=${options.include.join(',')}` : '/actions/pending'),
   }
 }

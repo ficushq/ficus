@@ -1,4 +1,4 @@
-import { workStreamTitle } from '@ficus/shared'
+import { selectWorkStreamPresentationState, workStreamTitle } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
 import {
@@ -21,6 +21,7 @@ import type {
   AgentQuestionActionData,
   AgentErrorActionData,
   WorkStreamActionData,
+  WorkStreamDeliveryActionData,
   WorkStreamPrompt,
   QuestionData,
 } from '@ficus/shared'
@@ -30,7 +31,9 @@ import { WorkStream } from '../../entities/WorkStream'
 import type { Identity } from '../rbac'
 import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
 import { evaluatePendingAction, loadQuestionWorkStreamOrigins } from './pending-action-policy'
-import { toWaitJson } from '../work-streams/waits'
+import { listOpenWaitsForStreams, toWaitJson } from '../work-streams/waits'
+import { loadDeliveryPresentations } from '../workflows/delivery-state'
+import { deliveryView } from '../work-streams/delivery-pull-requests'
 import { agentQuestionDeliveryAcknowledgements } from '../../db/schema'
 
 // Priority: lower number = higher priority
@@ -40,7 +43,72 @@ const PRIORITY: Record<PendingActionType, number> = {
   'agent-question': 1,
   'assistant-needs-input': 1,
   'workstream-review': 2,
+  'workstream-delivery': 2,
   'workstream-blocked': 3,
+}
+
+/**
+ * Code-host delivery gates a person must act on: the server-classified delivery
+ * is a human PR review or merge, and neither a pause nor an open wait (which
+ * has its own action) takes display precedence. These
+ * have no wait, so they are listed from the same batch classification the work
+ * stream feed uses, never from provider calls.
+ */
+async function listDeliveryGateActions(): Promise<PendingAction[]> {
+  const rows = await db
+    .select({ ws: workStreams, squad: squads, state: workStreamFlowRuns.state })
+    .from(workStreamFlowRuns)
+    .innerJoin(workStreams, eq(workStreams.id, workStreamFlowRuns.workStreamId))
+    .innerJoin(squads, eq(squads.id, workStreams.squadId))
+    .where(
+      and(
+        eq(workStreamFlowRuns.activated, true),
+        sql`${workStreamFlowRuns.state}->>'status' = 'completion-ready'`,
+        inArray(workStreams.status, ['active', 'queued'])
+      )
+    )
+  const candidates = rows.filter(
+    ({ ws, state }) =>
+      !ws.pause &&
+      state.status === 'completion-ready' &&
+      ['pr-merge', 'pr-auto-merge'].includes(state.definition.completion.mode)
+  )
+  if (candidates.length === 0) return []
+  const ids = candidates.map(({ ws }) => ws.id)
+  const [deliveries, waits] = await Promise.all([loadDeliveryPresentations(db, ids), listOpenWaitsForStreams(ids)])
+  const actions: PendingAction[] = []
+  for (const { ws, squad } of candidates) {
+    const delivery = deliveries.get(ws.id)
+    const state = selectWorkStreamPresentationState({
+      status: ws.status,
+      openWaits: (waits.get(ws.id) ?? []).map(toWaitJson),
+      delivery,
+    })
+    if (state !== 'delivery_review' && state !== 'delivery_merge') continue
+    const data: WorkStreamDeliveryActionData = {
+      workStreamId: ws.id,
+      workStreamNumber: ws.number,
+      workStreamTitle: workStreamTitle(ws),
+      squadId: squad.id,
+      squadName: squad.name,
+      deliveryKind: state === 'delivery_review' ? 'review' : 'merge',
+      pullRequests: deliveryView(ws.metadata)
+        .pullRequests.filter((pullRequest) => pullRequest.state === 'open')
+        .map(({ repository, number, url }) => ({ repository, number, ...(url ? { url } : {}) })),
+      focus: { kind: 'workstream', workStreamId: ws.id },
+    }
+    actions.push({
+      id: `workstream-delivery:${ws.id}:${data.deliveryKind}`,
+      type: 'workstream-delivery',
+      priority: PRIORITY['workstream-delivery'],
+      createdAt: ws.updatedAt.toISOString(),
+      canRespond: false,
+      squadId: squad.id,
+      squadName: squad.name,
+      data,
+    })
+  }
+  return actions
 }
 
 /**
@@ -50,7 +118,16 @@ const PRIORITY: Record<PendingActionType, number> = {
  * - Squad agents waiting for human input (questions)
  * - Work streams in review or blocked status with prompts
  */
-export async function listPendingActions(): Promise<PendingAction[]> {
+export interface PendingActionListOptions {
+  /**
+   * Include view-only `workstream-delivery` actions. Opt-in: shipped clients
+   * that switch exhaustively over action types must never receive a type they
+   * cannot render, so the default response keeps the historical types only.
+   */
+  includeDeliveryGates?: boolean
+}
+
+export async function listPendingActions(options: PendingActionListOptions = {}): Promise<PendingAction[]> {
   const pendingActions: PendingAction[] = []
 
   // 1. Get squad-bound agents waiting for input (context has squadId)
@@ -239,6 +316,9 @@ export async function listPendingActions(): Promise<PendingAction[]> {
     })
   }
 
+  // 3. Code-host delivery gates that need a person on the code host (no wait exists).
+  if (options.includeDeliveryGates) pendingActions.push(...(await listDeliveryGateActions()))
+
   // Sort by priority (ascending) then by createdAt (descending - most recent first)
   pendingActions.sort((a, b) => {
     if (a.priority !== b.priority) {
@@ -306,12 +386,15 @@ export async function listPendingActions(): Promise<PendingAction[]> {
   return pendingActions
 }
 
-export async function listPendingActionsForIdentity(identity: Identity): Promise<PendingAction[]> {
+export async function listPendingActionsForIdentity(
+  identity: Identity,
+  options: PendingActionListOptions = {}
+): Promise<PendingAction[]> {
   identity = (await resolveActingUser(identity)) ?? identity
   const userId = identity.type === 'user' ? identity.userId : null
   // One attention load per request; every action below resolves precedence against it in memory.
   const attention = userId ? await loadUserAttention(userId) : EMPTY_USER_ATTENTION
-  const actions = await listPendingActions()
+  const actions = await listPendingActions(options)
   // With no work-stream rows every origin resolves to its squad's level, so the policy never asks
   // for origins and loading them would be pure cost.
   const questionOrigins =
