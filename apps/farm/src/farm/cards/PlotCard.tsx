@@ -51,7 +51,10 @@ export function PlotCard({ streamId }: { streamId: string }) {
   const openAgent = (id: string) => env.select({ kind: 'robot', agentId: id })
   return (
     <>
-      <p className="g-eyebrow">{plot.squadName}</p>
+      <p className="g-eyebrow">
+        {plot.squadName}
+        {stream.number != null && ` · Work stream ${stream.number}`}
+      </p>
       <h2 className="g-card-title">{stream.title}</h2>
       <p className="g-state-tag" data-state={plot.state}>
         {plantStateLabel(plot.state)}

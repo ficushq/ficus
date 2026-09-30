@@ -29,6 +29,7 @@ async function openPlot(assignee: 'w1' | null, halted: string[] = [], descriptio
     streams: [
       makeStream({
         id: 'ws',
+        number: 42,
         squadId: 'sq',
         title: TITLE,
         assigneeAgentId: assignee,
@@ -68,6 +69,11 @@ const pills = (root: ParentNode) =>
   [...root.querySelectorAll('.g-status-pill')].map((pill) => [pill.textContent, pill.getAttribute('data-tone')])
 
 describe('PlotCard crew', () => {
+  it('says which plot and work stream number it is', async () => {
+    const card = await openPlot('w1')
+    expect(card.querySelector('.g-eyebrow')?.textContent).toBe('Garden · Work stream 42')
+  })
+
   it('leads with who is working on it, then the rest of the crew, each with a status pill', async () => {
     const card = await openPlot('w1')
     const lead = card.querySelector('[aria-label="Who’s on it"], [aria-label="Who\'s on it"]')!
