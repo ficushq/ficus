@@ -123,7 +123,7 @@ export function PlotCard({ streamId }: { streamId: string }) {
       {stream.description && (
         <>
           <h3 className="g-card-subtitle">Description</h3>
-          <ExpandableText text={stream.description} label="description" />
+          <ExpandableText text={stream.description} label="description" markdown />
         </>
       )}
     </>

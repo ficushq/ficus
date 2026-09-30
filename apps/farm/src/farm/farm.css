@@ -532,6 +532,47 @@ button.g-log-row:focus-visible {
   margin-bottom: 8px;
 }
 
+/* Markdown in a card reads at card-text size, not chat size (chat.css loads later, hence .g-md). */
+.g-md.g-card-md {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--g-text);
+  overflow-wrap: anywhere;
+}
+
+.g-md.g-card-md p,
+.g-md.g-card-md ul,
+.g-md.g-card-md ol,
+.g-md.g-card-md pre,
+.g-md.g-card-md blockquote {
+  margin: 6px 0;
+}
+
+.g-md.g-card-md h1,
+.g-md.g-card-md h2,
+.g-md.g-card-md h3,
+.g-md.g-card-md h4 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+
+.g-md.g-card-md > :first-child {
+  margin-top: 0;
+}
+
+.g-md.g-card-md > :last-child {
+  margin-bottom: 0;
+}
+
+/* A line clamp can't fold across headings and lists: fold by height (about seven lines), fading out. */
+.g-expandable-md[data-folded='true'] {
+  max-height: calc(13.5px * 1.45 * 7);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent);
+  mask-image: linear-gradient(to bottom, black 55%, transparent);
+}
+
 .g-delivery-note {
   font-weight: 600;
   color: var(--g-good-text);
@@ -1037,7 +1078,7 @@ a.g-pr-link:focus-visible {
 .g-link.g-share {
   display: block;
   min-height: 0;
-  margin: 8px 0 2px;
+  margin: 8px 0 10px;
   font-size: 13px;
 }
 

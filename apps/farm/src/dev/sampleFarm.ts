@@ -87,7 +87,7 @@ export function sampleFarm(): FarmInput {
       agentIds: ['w-ada', 'w-bo'],
       assigneeAgentId: 'w-ada',
       description:
-        'The sidebar resolves every squad slug on each render, which shows up as a visible stall on instances with many squads.\n\nCache the slug → id map per session, invalidate it when a squad is renamed or deleted, and keep the first paint identical to today. Measure before and after on a 40-squad fixture, and note the numbers in the pull request.\n\nOut of scope: the squad switcher, which already has its own cache.',
+        'The sidebar resolves every squad slug on each render, which shows up as a visible stall on instances with many squads.\n\n## Goal\n1. Cache the slug → id map per session.\n2. Invalidate it when a squad is **renamed or deleted**, and keep the first paint identical to today.\n\n## Done when\n- Before/after timings on a 40-squad fixture are in the pull request.\n- `SquadSidebar` makes no slug lookups on re-render.\n\nOut of scope: the squad switcher, which already has its own cache.',
     }),
     stream('sq-platform', 'Retry flaky webhook deliveries', { agentIds: ['w-bo'] }),
     stream('sq-platform', 'Squad settings: show the model tier', { ...review('ws-3'), agentIds: ['w-cy'] }),
