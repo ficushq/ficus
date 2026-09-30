@@ -74,7 +74,7 @@ describe('branch change-request resolution', () => {
   test('ambiguous branches are reported, never guessed', () => {
     expect(
       resolveBranchChangeRequest({ ...input, candidates: [candidate({ number: 1 }), candidate({ number: 2 })] })
-    ).toEqual({ status: 'unclear', candidates: ['#1', '#2'] })
+    ).toEqual({ status: 'unclear', candidates: ['PR #1', 'PR #2'] })
     expect(
       resolveBranchChangeRequest({
         ...input,
@@ -83,7 +83,7 @@ describe('branch change-request resolution', () => {
           candidate({ number: 4, merged: true, state: 'closed' }),
         ],
       })
-    ).toEqual({ status: 'unclear', candidates: ['#3', '#4'] })
+    ).toEqual({ status: 'unclear', candidates: ['PR #3', 'PR #4'] })
   })
 
   test('unknown base on the candidate or absent constraint does not exclude', () => {

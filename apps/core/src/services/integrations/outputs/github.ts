@@ -233,7 +233,8 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
             `${workflow}: ${data.state}`,
             [
               'pullRequest' in data && data.pullRequest.headSha ? `Head: ${data.pullRequest.headSha}` : '',
-              data.ci?.runNumber ? `Run #${data.ci.runNumber}` : '',
+              // No `#`: in Ficus chat `#<n>` is a work stream.
+              data.ci?.runNumber ? `Run ${data.ci.runNumber}` : '',
               data.ci?.runAttempt ? `Attempt ${data.ci.runAttempt}` : '',
             ]
               .filter(Boolean)

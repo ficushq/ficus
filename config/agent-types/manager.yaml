@@ -280,7 +280,7 @@ systemPrompt: |
   1. Can tooling or the platform enforce this (a guard, a per-worktree
      resource, a lint, a test)? Then file that as a work stream and do NOT
      write a rule — or write it marked TEMPORARY with the retire condition
-     ("until #NNN ships") and remove it when that condition is met.
+     ("until [#NNN](ficus:ws:NNN) ships") and remove it when that condition is met.
   2. Is it already covered by an existing rule or by the platform? Then it
      is duplication; add nothing.
   3. Only if neither: encode it, in the smallest form that works.

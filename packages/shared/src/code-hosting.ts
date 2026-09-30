@@ -157,9 +157,9 @@ export function resolveBranchChangeRequest(input: {
     ...(candidate.url ? { url: candidate.url } : {}),
   })
   if (merged.length === 1) return { status: 'chosen', candidate: pick(merged[0]!) }
-  if (merged.length > 1) return { status: 'unclear', candidates: merged.map((candidate) => `#${candidate.number}`) }
+  if (merged.length > 1) return { status: 'unclear', candidates: merged.map((candidate) => `PR #${candidate.number}`) }
   if (usable.length === 1) return { status: 'chosen', candidate: pick(usable[0]!) }
-  if (usable.length > 1) return { status: 'unclear', candidates: usable.map((candidate) => `#${candidate.number}`) }
+  if (usable.length > 1) return { status: 'unclear', candidates: usable.map((candidate) => `PR #${candidate.number}`) }
   return { status: 'no-candidates' }
 }
 
