@@ -570,37 +570,84 @@
   font-size: 13px;
 }
 
-.g-chat-dots {
-  display: inline-flex;
-  gap: 4px;
+.g-chat-ficus {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: -3px 0 -3px -4px;
 }
 
-.g-chat-dots i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--g-accent);
-  animation: g-chat-bob 1.1s ease-in-out infinite;
+/* Each leaf pivots at its base, the pot's rim. */
+.g-chat-ficus-left,
+.g-chat-ficus-right,
+.g-chat-ficus-center {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  animation: g-chat-sway-left 1.4s ease-in-out infinite;
 }
 
-.g-chat-dots i:nth-child(2) {
-  animation-delay: 0.15s;
+.g-chat-ficus-right {
+  animation-name: g-chat-sway-right;
+  animation-delay: -0.35s;
 }
 
-.g-chat-dots i:nth-child(3) {
-  animation-delay: 0.3s;
+.g-chat-ficus-center {
+  animation-name: g-chat-bob;
+  animation-delay: -0.7s;
+}
+
+.g-chat-ficus-hop {
+  animation: g-chat-hop 1.4s ease-in-out infinite;
+}
+
+@keyframes g-chat-sway-left {
+  0%,
+  100% {
+    transform: rotate(6deg);
+  }
+  50% {
+    transform: rotate(-16deg);
+  }
+}
+
+@keyframes g-chat-sway-right {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
 }
 
 @keyframes g-chat-bob {
   0%,
-  80%,
   100% {
-    translate: 0 0;
-    opacity: 0.5;
+    transform: rotate(-7deg) scale(1, 0.96);
   }
-  40% {
-    translate: 0 -4px;
-    opacity: 1;
+  50% {
+    transform: rotate(7deg) scale(1, 1.06);
+  }
+}
+
+@keyframes g-chat-hop {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0);
+  }
+  25%,
+  75% {
+    transform: translateY(-1.5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-chat-ficus-hop,
+  .g-chat-ficus-left,
+  .g-chat-ficus-right,
+  .g-chat-ficus-center {
+    animation: none;
   }
 }
 

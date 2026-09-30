@@ -5,6 +5,7 @@ import type { RenderItem } from '@ficus/client-react'
 import { extractInboxBodies, type DeliveryMode, type Message, type MessageMetadata } from '@ficus/shared'
 import { MessageBlocks } from './MessageBlocks'
 import { Markdown } from './Markdown'
+import { DancingFicus } from './DancingFicus'
 
 const LONG_HUMAN_MESSAGE_LIMIT = 1600
 /** A few lines: inbox bodies and Assistant task updates collapse past this. */
@@ -178,11 +179,7 @@ function PendingRow({
 function Working({ label }: { label: string }) {
   return (
     <div className="g-chat-working" role="status">
-      <span className="g-chat-dots" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </span>
+      <DancingFicus />
       <span>{label}</span>
     </div>
   )
