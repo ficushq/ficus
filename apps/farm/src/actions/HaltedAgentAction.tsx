@@ -54,8 +54,8 @@ export function HaltedAgentAction({
         />
         {onOpenAgent && (
           <VerbButton
-            verb="Visit robot"
-            help="Open its conversation"
+            verb="Open chat"
+            help="Open the robot's chat"
             tone="quiet"
             onClick={() => onOpenAgent(data.agentId)}
           />

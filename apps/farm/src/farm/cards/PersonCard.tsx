@@ -11,13 +11,18 @@ import { useFarmCard } from './context'
 function describe(
   focus: PresenceFocus | null,
   env: ReturnType<typeof useFarmCard>
-): { before: string; name?: string; after?: string; goTo: Selection | null } {
+): { before: string; name?: string; after?: string; goTo: Selection | null; talkTo?: string } {
   if (!focus) return { before: 'Around the farm', goTo: null }
   switch (focus.kind) {
     case 'agent': {
       const agent = env.agentsById.get(focus.agentId)
       return agent
-        ? { before: 'Talking to ', name: agentLabel(agent).primary, goTo: { kind: 'robot', agentId: focus.agentId } }
+        ? {
+            before: 'Talking to ',
+            name: agentLabel(agent).primary,
+            goTo: { kind: 'robot', agentId: focus.agentId },
+            talkTo: focus.agentId,
+          }
         : { before: 'Talking to a robot', goTo: null }
     }
     case 'workstream': {
@@ -70,6 +75,12 @@ export function PersonCard({ userId }: { userId: string }) {
                 doing.name
               ))}
             {doing.after}
+            {/* Talk to the same robot yourself, straight to its chat. */}
+            {doing.talkTo && (
+              <button type="button" className="g-crew-talk g-person-talk" onClick={() => env.openChat(doing.talkTo!)}>
+                Talk
+              </button>
+            )}
           </>
         ) : (
           'Just left the farm'

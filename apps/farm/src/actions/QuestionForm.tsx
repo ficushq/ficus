@@ -50,7 +50,7 @@ export interface QuestionFormProps {
   onAnswering?: (answer: string) => void
   /** An optimistic agent-question answer failed. */
   onAnswerError?: () => void
-  /** Offers "Answer & visit robot" (agent questions) or "Visit robot" (squad questions). */
+  /** Offers "Answer & open chat" (agent questions) or "Open chat" (squad questions): the robot's chat. */
   onOpenAgent?: (agentId: string) => void
 }
 
@@ -143,7 +143,7 @@ function AgentQuestionForm({
         secondary={
           onOpenAgent
             ? {
-                verb: 'Answer & visit',
+                verb: 'Answer & open chat',
                 help: "Send, then open the robot's chat",
                 onSubmit: (value) => {
                   onAnswering?.(value)
@@ -189,7 +189,7 @@ function SquadQuestionForm({
       />
       {onOpenAgent && (
         <VerbButton
-          verb="Visit robot"
+          verb="Open chat"
           help="Open the conversation"
           tone="quiet"
           onClick={() => onOpenAgent(source.agentId)}

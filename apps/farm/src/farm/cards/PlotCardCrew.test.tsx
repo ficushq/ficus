@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { act } from 'react'
 import { fakeMultiplayer, renderWith } from '../../multiplayer/testing'
 import { layoutFarm, type FarmInput } from '../layout'
 import { at, makeAgent, makeSquad, makeStream } from '../testFixtures'
@@ -12,7 +13,10 @@ afterEach(() => {
 
 const TITLE = 'Rename the product'
 
-async function openPlot(assignee: 'w1' | null, halted: string[] = []) {
+const openChat = mock((_agentId: string) => {})
+
+async function openPlot(assignee: 'w1' | null, halted: string[] = [], description?: string) {
+  openChat.mockClear()
   const squad = makeSquad({ id: 'sq', name: 'Garden', managerAgentId: 'boss' })
   const agents = [
     makeAgent({ id: 'boss', squadId: 'sq', agentTypeId: 'manager', status: 'active' }),
@@ -30,6 +34,7 @@ async function openPlot(assignee: 'w1' | null, halted: string[] = []) {
         assigneeAgentId: assignee,
         agentIds: ['w1', 'w2'],
         creatorAgentId: 'c1',
+        ...(description ? { description } : {}),
       }),
     ],
     doneCount: 0,
@@ -47,6 +52,7 @@ async function openPlot(assignee: 'w1' | null, halted: string[] = []) {
     halted: new Set(halted),
     select: mock(() => {}),
     shareInChat: mock(() => {}),
+    openChat,
   } as unknown as FarmCardEnv
   const view = await renderWith(
     <FarmCardContext.Provider value={env}>
@@ -79,6 +85,44 @@ describe('PlotCard crew', () => {
     // The stream's own title isn't repeated in the names listed on it.
     expect(lead.querySelector('.g-crew-name')?.textContent).toBe('architect')
     expect(lead.textContent).not.toContain(TITLE)
+  })
+
+  it('puts a Talk button beside the lead and each crew member, opening their chat in one tap', async () => {
+    const card = await openPlot('w1')
+    const lead = card.querySelector('.g-plot-lead')!
+    const leadTalk = lead.querySelector<HTMLButtonElement>('.g-crew-talk')!
+    expect(leadTalk).not.toBeNull()
+    await act(async () => leadTalk.click())
+    expect(openChat).toHaveBeenLastCalledWith('w1')
+
+    const crewTalks = [
+      ...[...card.querySelectorAll('.g-crew')].at(-1)!.querySelectorAll<HTMLButtonElement>('.g-crew-talk'),
+    ]
+    expect(crewTalks).toHaveLength(2)
+    await act(async () => crewTalks[0]!.click())
+    expect(openChat).toHaveBeenLastCalledWith('w2')
+  })
+
+  it('shows the description last, folded when long, with Show more', async () => {
+    const long = `${'The checklist should explain every step. '.repeat(12)}\nAnd a closing line.`
+    const card = await openPlot('w1', [], long)
+    const headings = [...card.querySelectorAll('h3')].map((h) => h.textContent)
+    expect(headings.at(-1)).toBe('Description')
+    const text = card.querySelector('.g-expandable-text')!
+    expect(text.textContent).toContain('And a closing line.')
+    expect(text.getAttribute('data-folded')).toBe('true')
+    const toggle = card.querySelector<HTMLButtonElement>('.g-expandable-toggle')!
+    expect(toggle.textContent).toBe('Show more')
+    await act(async () => toggle.click())
+    expect(text.getAttribute('data-folded')).toBeNull()
+    expect(toggle.textContent).toBe('Show less')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('shows a short description whole, with no toggle', async () => {
+    const card = await openPlot('w1', [], 'Rename it everywhere.')
+    expect(card.querySelector('.g-expandable-text')?.getAttribute('data-folded')).toBeNull()
+    expect(card.querySelector('.g-expandable-toggle')).toBeNull()
   })
 
   it('says who it is assigned to when they are not at work, and halted ones stand out', async () => {
