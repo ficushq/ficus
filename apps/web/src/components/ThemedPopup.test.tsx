@@ -129,3 +129,34 @@ for (const target of ['null', 'body'] as const) {
     expect(values).toEqual(['two'])
   })
 }
+
+test('the initially focused later row is scrolled into view after the popup gets its scroll height', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost' })
+  const { root, container } = dom.createRoot()
+  const calls: Array<{ row: string | null; maxHeight: string }> = []
+  dom.window.HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+    calls.push({ row: this.textContent, maxHeight: this.closest<HTMLElement>('[role="menu"]')?.style.maxHeight ?? '' })
+  }
+  const items = Array.from({ length: 12 }, (_, index) => ({
+    id: `${index}`,
+    label: `Tool ${index}`,
+    active: index === 10,
+    onSelect() {},
+  }))
+  await dom.act(async () =>
+    root.render(
+      <ActionPopup label="Tools" className="" items={items}>
+        Tools
+      </ActionPopup>
+    )
+  )
+  await dom.act(async () => container.querySelector('button')!.click())
+  expect(dom.window.document.activeElement?.textContent).toBe('Tool 10')
+  const last = calls.findLast((call) => call.row === 'Tool 10')
+  expect(last?.maxHeight).toMatch(/px$/)
+  // A reopening with an identical placement still reveals the row.
+  await dom.act(async () => container.querySelector('button')!.click())
+  calls.length = 0
+  await dom.act(async () => container.querySelector('button')!.click())
+  expect(calls.findLast((call) => call.row === 'Tool 10')?.maxHeight).toMatch(/px$/)
+})

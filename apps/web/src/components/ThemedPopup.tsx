@@ -113,6 +113,9 @@ function Popup({
     row.focus({ preventScroll: true })
     row.scrollIntoView?.({ block: 'nearest' })
   }
+  // The first placement of each opening sets the scroll height; only then can
+  // the initially focused (possibly late) row be scrolled into view.
+  const revealInitialRow = useRef(false)
 
   const openPopup = () => {
     // Stay inside an aria-modal dialog so assistive technology keeps the popup
@@ -124,8 +127,13 @@ function Popup({
 
   // Initial focus: the selected/active enabled row, else the first enabled row.
   useLayoutEffect(() => {
-    if (open) focusRow(initialIndex >= 0 ? initialIndex : enabled[0])
-    else setActiveIndex(-1)
+    if (open) {
+      revealInitialRow.current = true
+      focusRow(initialIndex >= 0 ? initialIndex : enabled[0])
+    } else {
+      setActiveIndex(-1)
+      setPlacement(undefined)
+    }
     // Only on opening; later value changes must not steal focus.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, container])
@@ -140,12 +148,21 @@ function Popup({
       if (!trigger || !popup) return
       // Responsive triggers can disappear while their portal is still mounted.
       if (!trigger.getClientRects().length) return setOpen(false)
-      setPlacement(
-        placePopup(
-          trigger.getBoundingClientRect(),
-          { width, height: popup.scrollHeight + popup.offsetHeight - popup.clientHeight } /* border-box */,
-          visualViewportBox()
-        )
+      const next = placePopup(
+        trigger.getBoundingClientRect(),
+        { width, height: popup.scrollHeight + popup.offsetHeight - popup.clientHeight } /* border-box */,
+        visualViewportBox()
+      )
+      // Skip unchanged placements so scrolling does not re-render the popup.
+      setPlacement((current) =>
+        current &&
+        current.left === next.left &&
+        current.top === next.top &&
+        current.width === next.width &&
+        current.maxHeight === next.maxHeight &&
+        current.side === next.side
+          ? current
+          : next
       )
     }
     update()
@@ -180,6 +197,14 @@ function Popup({
       viewport?.removeEventListener('scroll', update)
     }
   }, [open, container, width, items.length])
+
+  useLayoutEffect(() => {
+    if (!open || !placement || !revealInitialRow.current) return
+    revealInitialRow.current = false
+    rowRefs.current[activeIndex]?.scrollIntoView?.({ block: 'nearest' })
+    // Runs once per opening, after the placement (and maxHeight) is in the DOM.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, placement])
 
   // Escape (topmost popup only) and outside pointer dismissal.
   useEffect(() => {
