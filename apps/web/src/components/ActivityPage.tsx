@@ -9,6 +9,7 @@ import type {
 } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
+import { useGlobalActivityLive } from '../hooks/useGlobalActivityLive'
 import { ActivityFeedView } from './squads/ActivityFeedView'
 import { AgentViewModal } from './squads/AgentViewModal'
 import { activityAgentLabel, globalActivityItemHref } from './squads/squadActivityView'
@@ -52,9 +53,9 @@ export interface ActivityPageProps {
  * from the global endpoint and resolving click-through targets per-row
  * (each row carries its own squadId, unlike the per-squad wire shape).
  *
- * The feed has no live WebSocket overlay yet — a modest 30s poll
- * (queries.activity.global) keeps it reasonably fresh. A global
- * `squadActivity` WS topic would let this match the per-squad tab's live feel.
+ * It stays live like the per-squad tab: each visible squad's `squadActivity`
+ * topic refreshes the feed moments after a row changes (useGlobalActivityLive),
+ * with the 30s poll (queries.activity.global) as the fallback.
  */
 export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   const AgentConversationBody = dependencies?.AgentConversationComponent ?? AgentConversation
@@ -66,6 +67,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
     [kinds]
   )
   const query = useInfiniteQuery(queries.activity.global(filters))
+  useGlobalActivityLive()
   const { data: presence = EMPTY_PRESENCE, isPending: presenceLoading } = useQuery(queries.activity.presence())
   const { slugFor } = useSquadSlugs()
   const workingAgentIds = useMemo(() => new Set(presence.workingAgentIds), [presence.workingAgentIds])

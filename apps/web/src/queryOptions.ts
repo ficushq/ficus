@@ -537,8 +537,8 @@ export const queries = {
         initialPageParam: null as string | null,
         getNextPageParam: (last) => (last.hasMore ? (last.nextCursor ?? undefined) : undefined),
         placeholderData: keepPreviousData,
-        // No live-overlay WS subscription for the global feed (v1) — a modest
-        // poll keeps it reasonably fresh. Follow-up: a global WS topic.
+        // Live through each squad's squadActivity topic (useGlobalActivityLive);
+        // this poll is the fallback for a missed event or a dropped socket.
         refetchInterval: 30_000,
       }),
   },
