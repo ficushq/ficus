@@ -413,6 +413,11 @@ describe('localDeployment proxy', () => {
           const encoded = encoders[encoding ?? 'gzip'](asset)
           const headers: Record<string, string> = { 'content-type': 'text/css', 'content-encoding': encoding ?? 'gzip' }
           if (url.pathname === '/_next/static/marked.css') headers['x-ficus-app-proxy'] = 'error'
+          if (url.pathname === '/_next/static/cdn-cached.css') {
+            headers['cache-control'] = 'public, max-age=31536000, immutable'
+            headers['cloudflare-cdn-cache-control'] = 'max-age=31536000'
+            headers['surrogate-control'] = 'max-age=31536000'
+          }
           if (url.pathname === '/_next/static/streamed.css') {
             const middle = Math.floor(encoded.length / 2)
             return new Response(
@@ -550,6 +555,20 @@ describe('localDeployment proxy', () => {
       expect(empty.bytes.length).toBe(0)
     })
 
+    it('strips Cloudflare-CDN-Cache-Control and Surrogate-Control from an encoded asset, body intact', async () => {
+      const localDeployment = await runningDeployment()
+
+      const { response, bytes } = await browserFetch(localDeployment, '_next/static/cdn-cached.css')
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('cloudflare-cdn-cache-control')).toBeNull()
+      expect(response.headers.get('surrogate-control')).toBeNull()
+      expect(response.headers.get('cdn-cache-control')).toBe('no-store')
+      expect(response.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
+      expect(response.headers.get('content-encoding')).toBe('gzip')
+      expect(decoders.gzip(bytes)).toBe(asset)
+    })
+
     it('leaves an uncompressed response unchanged', async () => {
       const localDeployment = await runningDeployment()
 
@@ -584,6 +603,23 @@ describe('keepOutOfSharedCaches', () => {
 
   it('marks a response with no caching headers private (a CDN would otherwise cache .js and .css by default)', () => {
     expect(cacheControl(null)).toEqual(['private', 'no-store'])
+  })
+
+  it('strips the CDN headers Cloudflare honors over Cache-Control and CDN-Cache-Control', () => {
+    const headers = new Headers({
+      'cache-control': 'public, max-age=31536000, immutable',
+      'cloudflare-cdn-cache-control': 'max-age=31536000',
+      'surrogate-control': 'max-age=31536000',
+      'content-type': 'text/css',
+      etag: '"v1"',
+    })
+    keepOutOfSharedCaches(headers)
+    expect(headers.get('cloudflare-cdn-cache-control')).toBeNull()
+    expect(headers.get('surrogate-control')).toBeNull()
+    expect(headers.get('cdn-cache-control')).toBe('no-store')
+    expect(headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
+    expect(headers.get('content-type')).toBe('text/css')
+    expect(headers.get('etag')).toBe('"v1"')
   })
 
   it('leaves no-store alone, already private', () => {
