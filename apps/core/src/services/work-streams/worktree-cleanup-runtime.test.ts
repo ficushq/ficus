@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, realpath, rm, writeFile, readFile, rename, symlink } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { testDbProjectName } from '@ficus/shared/testDbPort'
 import { prepareRepository, type WorktreeOwnership } from './repository-setup'
 import * as runtime from './worktree-cleanup-runtime'
@@ -64,6 +65,34 @@ afterEach(async () => {
 async function remove(operationId = crypto.randomUUID()) {
   expect(runtime.removeOwnedWorktree).toBeDefined()
   return runtime.removeOwnedWorktree(exec, { ownership, head, operationId })
+}
+
+const archiveRef = (oid: string) => `refs/ficus-archive/${basename(ownership.worktree)}/${oid}`
+const archiveRefs = async () =>
+  (await exec(['git', '-C', repo, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/ficus-archive/']))
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+
+/** The commit outlives the worktree, its reflog and an aggressive prune, and no branch was added. */
+async function expectPreserved(...oids: string[]) {
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
+  await exec(['git', '-C', repo, 'reflog', 'expire', '--expire=now', '--all'])
+  await exec(['git', '-C', repo, 'gc', '--prune=now', '--quiet'])
+  const archived = await archiveRefs()
+  for (const oid of oids) {
+    expect(
+      archived.some((line) => {
+        const [ref] = line.split(' ')
+        return Bun.spawnSync(['git', '-C', repo, 'merge-base', '--is-ancestor', oid, ref!]).exitCode === 0
+      })
+    ).toBe(true)
+    expect((await exec(['git', '-C', repo, 'cat-file', '-t', oid])).trim()).toBe('commit')
+  }
+  expect((await exec(['git', '-C', repo, 'branch', '--format=%(refname:short)'])).trim().split('\n').sort()).toEqual([
+    'feature',
+    'main',
+  ])
 }
 
 test('removes only the clean owned directory and preserves the branch and source checkout', async () => {
@@ -246,7 +275,7 @@ test('retains Git index locks and committed submodule registrations', async () =
   expect(await remove()).toMatchObject({ status: 'retained', reason: 'Submodule worktrees require manual retention' })
 })
 
-test('preserves an unpublished detached commit protected only by this worktree HEAD reflog', async () => {
+test('archives an unpublished detached commit protected only by this worktree HEAD reflog, then removes', async () => {
   await exec(['git', '-C', ownership.worktree, 'checkout', '--detach', head])
   await writeFile(join(ownership.worktree, 'README'), 'unpublished detached work')
   await exec(['git', '-C', ownership.worktree, 'add', 'README'])
@@ -265,12 +294,8 @@ test('preserves an unpublished detached commit protected only by this worktree H
   const unpublished = (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
   await exec(['git', '-C', ownership.worktree, 'checkout', 'feature'])
   expect(await exec(['git', '-C', ownership.worktree, 'status', '--porcelain'])).toBe('')
-  expect(await remove()).toMatchObject({
-    status: 'retained',
-    reason: expect.stringContaining('Unpushed commits'),
-  })
-  expect(await readFile(join(ownership.gitDirectory, 'logs/HEAD'), 'utf8')).toContain(unpublished)
-  expect(await exec(['git', '-C', repo, 'fsck', '--unreachable'])).not.toContain(unpublished)
+  expect(await remove()).toMatchObject({ status: 'succeeded', archivedRefs: [archiveRef(unpublished)] })
+  await expectPreserved(unpublished)
 })
 
 for (const state of ['local-ref', 'in-progress']) {
@@ -348,20 +373,22 @@ async function commit(message: string) {
   return (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
 }
 
-test('retains an unpushed commit discarded from the branch and kept only by ORIG_HEAD and the reflog', async () => {
-  await commit('unpushed')
+test('archives an unpushed commit discarded from the branch and kept only by ORIG_HEAD and the reflog', async () => {
+  const unpushed = await commit('unpushed')
   await exec(['git', '-C', ownership.worktree, 'reset', '--hard', head])
   expect(await exec(['git', '-C', ownership.worktree, 'status', '--porcelain'])).toBe('')
-  expect(await remove()).toMatchObject({ status: 'retained', reason: expect.stringContaining('Unpushed commits') })
+  expect(await remove()).toMatchObject({ status: 'succeeded', archivedRefs: [archiveRef(unpushed)] })
+  await expectPreserved(unpushed)
 })
 
-test('retains an unpushed commit recorded only by a leftover REBASE_HEAD', async () => {
+test('archives an unpushed commit recorded only by a leftover REBASE_HEAD', async () => {
   const unpushed = await commit('rebased away')
   await exec(['git', '-C', ownership.worktree, 'reset', '--hard', head])
   await rm(join(ownership.gitDirectory, 'ORIG_HEAD'), { force: true })
   await writeFile(join(ownership.gitDirectory, 'logs/HEAD'), '')
   await writeFile(join(ownership.gitDirectory, 'REBASE_HEAD'), `${unpushed}\n`)
-  expect(await remove()).toMatchObject({ status: 'retained', reason: expect.stringContaining('Unpushed commits') })
+  expect(await remove()).toMatchObject({ status: 'succeeded', archivedRefs: [archiveRef(unpushed)] })
+  await expectPreserved(unpushed)
 })
 
 for (const via of ['pushed', 'merged'] as const) {
@@ -462,4 +489,134 @@ test('accepts the empty private refs directory created by newer Git without disc
   const refs = join(ownership.gitDirectory, 'refs')
   await mkdir(refs, { recursive: true })
   expect(await remove()).toMatchObject({ status: 'succeeded' })
+})
+
+describe('rewritten or abandoned history', () => {
+  let remote: string
+  let rewritten: string[]
+  // A delivered branch that was pushed, rebased onto a moved main, force-pushed,
+  // squash-merged and then deleted on the remote: the pre-rebase commits now
+  // live only in this worktree's HEAD reflog and ORIG_HEAD.
+  beforeEach(async () => {
+    remote = join(root, 'remote.git')
+    await exec(['git', 'init', '--bare', '-b', 'main', remote])
+    await exec(['git', '-C', repo, 'remote', 'set-url', 'origin', remote])
+    await exec(['git', '-C', repo, 'push', 'origin', 'main'])
+    rewritten = [await commit('first draft'), await commit('second draft')]
+    await exec(['git', '-C', ownership.worktree, 'push', '-u', 'origin', 'feature'])
+    await writeFile(join(repo, 'OTHER'), 'moved main\n')
+    await exec(['git', '-C', repo, 'add', 'OTHER'])
+    await exec([
+      'git',
+      '-C',
+      repo,
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.com',
+      'commit',
+      '-m',
+      'main moved',
+    ])
+    await exec(['git', '-C', repo, 'push', 'origin', 'main'])
+    await exec(['git', '-C', ownership.worktree, 'fetch', 'origin'])
+    await exec(['git', '-C', ownership.worktree, 'reset', '--hard', 'origin/main'])
+    head = await commit('rebased feature')
+    await exec(['git', '-C', ownership.worktree, 'push', '--force', 'origin', 'feature'])
+    await exec(['git', '-C', repo, 'merge', '--squash', 'feature'])
+    await exec([
+      'git',
+      '-C',
+      repo,
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.com',
+      'commit',
+      '-m',
+      'squash',
+    ])
+    await exec(['git', '-C', repo, 'push', 'origin', 'main', ':feature'])
+    await exec(['git', '-C', repo, 'fetch', '--prune', 'origin'])
+    expect(await exec(['git', '-C', ownership.worktree, 'status', '--porcelain'])).toBe('')
+  })
+
+  test('archives reflog-only pre-rebase commits under one shared ref, removes, and keeps them reachable', async () => {
+    const receipt = await remove()
+    expect(receipt).toMatchObject({
+      status: 'succeeded',
+      reason: expect.stringContaining(`archived under refs/ficus-archive/${basename(ownership.worktree)}/`),
+      archivedRefs: [archiveRef(rewritten[1]!)],
+    })
+    await expectPreserved(...rewritten)
+    expect(await archiveRefs()).toEqual([`${archiveRef(rewritten[1]!)} ${rewritten[1]}`])
+    expect((await exec(['git', '-C', repo, 'rev-parse', 'feature'])).trim()).toBe(head)
+  })
+
+  test('a repeated cleanup reuses matching archive refs without duplicating them', async () => {
+    await exec(['git', '-C', repo, 'update-ref', archiveRef(rewritten[1]!), rewritten[1]!])
+    const before = await archiveRefs()
+    expect(await remove()).toMatchObject({ status: 'succeeded', archivedRefs: [archiveRef(rewritten[1]!)] })
+    expect(await archiveRefs()).toEqual(before)
+  })
+
+  test('never clobbers an archive ref that points elsewhere', async () => {
+    await exec(['git', '-C', repo, 'update-ref', archiveRef(rewritten[1]!), head])
+    expect(await remove()).toMatchObject({ status: 'retained', reason: expect.stringContaining('does not match') })
+    expect(await archiveRefs()).toEqual([`${archiveRef(rewritten[1]!)} ${head}`])
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+  })
+
+  test('keeps today’s deferral when the archive ref cannot be written', async () => {
+    const bin = join(root, 'bin')
+    await mkdir(bin)
+    const git = Bun.which('git')!
+    await writeFile(
+      join(bin, 'git'),
+      `#!/bin/sh\ncase " $* " in\n  *" update-ref "*) exit 1 ;;\n  *) exec "${git}" "$@" ;;\nesac\n`,
+      { mode: 0o755 }
+    )
+    const failingWrites = (args: string[]) => exec(['env', `PATH=${bin}:${process.env.PATH}`, ...args])
+    expect(
+      await runtime.removeOwnedWorktree(failingWrites, { ownership, head, operationId: crypto.randomUUID() })
+    ).toMatchObject({ status: 'retained', reason: expect.stringContaining('could not archive') })
+    expect(await archiveRefs()).toEqual([])
+    expect(await readFile(join(ownership.gitDirectory, 'logs/HEAD'), 'utf8')).toContain(rewritten[1]!)
+  })
+
+  test('keeps today’s deferral when a conflicting ref blocks the archive namespace', async () => {
+    await exec(['git', '-C', repo, 'update-ref', `refs/ficus-archive/${basename(ownership.worktree)}`, head])
+    expect(await remove()).toMatchObject({ status: 'retained', reason: expect.stringContaining('could not archive') })
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+  })
+
+  test('a dirty tree still defers and writes no archive ref', async () => {
+    await writeFile(join(ownership.worktree, 'notes'), 'uncommitted')
+    expect(await remove()).toMatchObject({
+      status: 'retained',
+      reason: 'Uncommitted changes: modified, staged or untracked (not ignored) files',
+    })
+    expect(await archiveRefs()).toEqual([])
+  })
+})
+
+test('archives under a stable hashed scope when the worktree name is not a valid refname component', async () => {
+  await prepareRepository(
+    exec,
+    root,
+    { repository: repo, branch: 'odd', baseBranch: 'main', worktree: 'worktrees/fix..thing' },
+    'odd',
+    {},
+    (value) => {
+      ownership = value
+    }
+  )
+  expect(basename(ownership.worktree)).toBe('fix..thing')
+  const abandoned = await commit('abandoned')
+  await exec(['git', '-C', ownership.worktree, 'reset', '--hard', head])
+  const scope = createHash('sha256').update(ownership.worktree).digest('hex').slice(0, 16)
+  const ref = `refs/ficus-archive/${scope}/${abandoned}`
+  expect(await remove()).toMatchObject({ status: 'succeeded', archivedRefs: [ref] })
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
+  expect(await archiveRefs()).toEqual([`${ref} ${abandoned}`])
 })

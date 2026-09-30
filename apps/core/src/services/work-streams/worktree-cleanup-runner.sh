@@ -129,10 +129,53 @@ try {
   }
   // These shared refs survive worktree removal. Do not rely on this or
   // another worktree's private HEAD/reflog as permanent recovery storage.
-  const surviving = git(o.repository, 'for-each-ref', '--format=%(objectname)', 'refs/heads/', 'refs/tags/', 'refs/remotes/').trim().split('\n').filter(Boolean);
-  const revisions = [...roots, ...surviving.map((oid) => '^' + oid)].join('\n') + '\n';
-  if (roots.size && runGit(o.repository, ['rev-list', '--stdin'], revisions).trim())
-    fail('Unpushed commits: worktree history has commits no surviving branch, tag or remote ref contains');
+  const unreachable = (namespaces) => {
+    const surviving = git(o.repository, 'for-each-ref', '--format=%(objectname)', ...namespaces).trim().split('\n').filter(Boolean);
+    const revisions = [...roots, ...surviving.map((oid) => '^' + oid)].join('\n') + '\n';
+    return new Set(roots.size ? runGit(o.repository, ['rev-list', '--stdin'], revisions).trim().split('\n').filter(Boolean) : []);
+  };
+  const published = ['refs/heads/', 'refs/tags/', 'refs/remotes/'];
+  // Rebased, force-pushed or abandoned history lives only in this worktree's
+  // HEAD reflog and pseudo-refs, which removal destroys. Preserve it under a
+  // shared, content-addressed archive ref (refs/ficus-archive/<scope>/<oid>)
+  // outside refs/heads, then require the reachability check to pass with the
+  // archive included. Names equal their values, so retries never duplicate or
+  // clobber a ref; any write or verification failure keeps the worktree.
+  // Name the scope after the worktree directory (the work stream id for
+  // platform worktrees) when Git accepts it as a refname component; otherwise
+  // use a stable hash so an odd directory name can never block archiving.
+  const scopeName = path.basename(o.worktree);
+  const validScope = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(scopeName) && Bun.spawnSync(
+    ['git', 'check-ref-format', 'refs/ficus-archive/' + scopeName + '/' + '0'.repeat(40)],
+    { env, stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
+  const scope = validScope ? scopeName : crypto.createHash('sha256').update(o.worktree).digest('hex').slice(0, 16);
+  const archivePrefix = 'refs/ficus-archive/' + scope + '/';
+  // Every unreachable commit descends from some root, so unreachable roots cover it.
+  const unpublished = unreachable(published);
+  const lost = [...roots].filter((oid) => unpublished.has(oid));
+  const archivedRefs = [];
+  if (lost.length) {
+    // Archive only the independent tips; their ancestors stay reachable.
+    const tips = git(o.repository, 'merge-base', '--independent', ...lost).trim().split('\n').filter(Boolean).sort();
+    const existing = new Map(git(o.repository, 'for-each-ref', '--format=%(refname) %(objectname)', archivePrefix)
+      .trim().split('\n').filter(Boolean).map((line) => line.split(' ')));
+    const creates = [];
+    for (const oid of tips) {
+      if (!/^[0-9a-f]{40}$/.test(oid)) fail('Unrecognized archive commit; retain for inspection');
+      const ref = archivePrefix + oid;
+      if (!existing.has(ref)) creates.push('create ' + ref + ' ' + oid);
+      else if (existing.get(ref) !== oid) fail('Archive ref ' + ref + ' does not match its commit; retain for inspection');
+      archivedRefs.push(ref);
+    }
+    try {
+      if (creates.length) runGit(o.repository, ['update-ref', '--stdin'], ['start', ...creates, 'prepare', 'commit'].join('\n') + '\n');
+      for (const ref of archivedRefs)
+        if (git(o.repository, 'rev-parse', '--verify', '--end-of-options', ref + '^{commit}').trim() !== ref.slice(archivePrefix.length))
+          fail('mismatch');
+    } catch { fail('Unpushed commits: could not archive worktree history under ' + archivePrefix + '; retain for inspection'); }
+  }
+  if (unreachable([...published, 'refs/ficus-archive/']).size)
+    fail('Unpushed commits: worktree history has commits no surviving branch, tag, remote or archive ref contains');
   // The worktree's project-scoped test database (packages/shared/src/testDbPort.ts)
   // would be orphaned by removal. Only containers labelled with this exact
   // Compose project AND this worktree's repo root are ever touched.
@@ -167,7 +210,9 @@ try {
   removalStarted = true;
   git(o.repository, 'worktree', 'remove', '--', o.worktree);
   if (exists(o.worktree) || exists(o.gitDirectory)) fail('Removal left an owned residual; inspect before reuse');
-  outcome = { status: 'succeeded', reason: 'Owned worktree removed; branch retained' };
+  outcome = archivedRefs.length
+    ? { status: 'succeeded', reason: 'Owned worktree removed; branch retained; ' + archivedRefs.length + ' rewritten or unpublished history tip(s) archived under ' + archivePrefix, archivedRefs }
+    : { status: 'succeeded', reason: 'Owned worktree removed; branch retained' };
 } catch (error) {
   outcome = { status: removalStarted ? 'failed' : 'retained', reason: String(error.message).slice(0, 500) };
 }

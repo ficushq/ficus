@@ -320,9 +320,24 @@ Only two kinds of data block removal:
   Git does not ignore, tracked files hidden by `assume-unchanged`/`skip-worktree`
   index flags, and in-progress Git operations (merge, rebase, cherry-pick, revert,
   bisect) or worktree-local refs and reflogs.
-- **Unpushed commits:** any commit reachable from the worktree's HEAD reflog,
-  `ORIG_HEAD` or a leftover `REBASE_HEAD` that no surviving local branch, tag or
-  remote-tracking ref contains.
+- **Unpushed commits that cannot be archived:** any commit reachable from the
+  worktree's HEAD reflog, `ORIG_HEAD` or a leftover `REBASE_HEAD` that no surviving
+  local branch, tag, remote-tracking or archive ref contains.
+
+Rebased, force-pushed or abandoned history (for example pre-rebase commits of a
+squash-merged branch whose remote was deleted) exists only in that reflog, which
+removal destroys. Instead of blocking cleanup forever, the runner first archives
+the independent tips of that history as shared, content-addressed refs
+`refs/ficus-archive/<worktree directory name>/<commit>` in the main repository
+(a stable hash of the worktree path replaces a directory name Git rejects in refs)
+(outside `refs/heads`, so branch lists stay clean). All tips are created in one
+atomic `git update-ref` transaction, verified, and the reachability check is then
+repeated with the archive included; removal proceeds only if it passes. Retries
+reuse a matching archive ref and never overwrite a different one. Any write or
+verification failure keeps the worktree, as before. The success reason recorded
+in `ficus workstream cleanup inspect` names the archive prefix. List archived
+commits with `git for-each-ref refs/ficus-archive/`; delete one with
+`git update-ref -d <ref>` once it is no longer needed.
 
 Files Git ignores (`node_modules`, `dist`, `*.tsbuildinfo`, `.test-db-port`, caches)
 never block cleanup; they are deleted with the worktree. Leftover Git scratch

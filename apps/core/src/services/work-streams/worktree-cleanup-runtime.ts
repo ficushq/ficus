@@ -10,6 +10,8 @@ export interface WorktreeRemovalInput {
 export interface WorktreeRemovalReceipt {
   status: 'succeeded' | 'retained' | 'failed'
   reason: string
+  /** Shared refs (refs/ficus-archive/<scope>/<oid>) preserving reflog-only history removed with the worktree. */
+  archivedRefs?: string[]
   operationId: string
   digest: string
 }
@@ -49,7 +51,9 @@ async function invoke(
     receipt.operationId !== input.operationId ||
     receipt.digest !== createHash('sha256').update(serialized).digest('hex') ||
     !['succeeded', 'retained', 'failed'].includes(receipt.status) ||
-    typeof receipt.reason !== 'string'
+    typeof receipt.reason !== 'string' ||
+    (receipt.archivedRefs !== undefined &&
+      (!Array.isArray(receipt.archivedRefs) || receipt.archivedRefs.some((ref) => typeof ref !== 'string')))
   ) {
     throw new Error('Worktree cleanup outcome is unproven; keep the reuse fence')
   }
