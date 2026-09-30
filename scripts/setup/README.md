@@ -401,15 +401,21 @@ commented there. Ground rules:
   logged, echoed, or printed by `--dry-run`.
 
 - **The client address is verified at Caddy.** The rendered Caddyfile trusts
-  an incoming `X-Forwarded-For` only from Cloudflare's published ranges
-  (`CLOUDFLARE_PROXY_RANGES` in `lib.sh`) plus `ingress.trusted_proxies`,
-  reads it right to left past trusted hops (`trusted_proxies_strict`), and
-  sends Core a single `X-Forwarded-For: <visitor>`. A client that reaches the
-  origin directly gets its own socket address, whatever it claims. Core then
-  trusts that loopback hop and forwards the same single address to local
-  apps, stripping every other client-address header. List the control
-  plane's app-host bridge in `ingress.trusted_proxies`, since it dials the
-  origin directly rather than through Cloudflare.
+  `CF-Connecting-IP` only from Cloudflare's published ranges
+  (`CLOUDFLARE_PROXY_RANGES` in `lib.sh`) plus `ingress.trusted_proxies`, and
+  sends Core a single `X-Forwarded-For: <visitor>`. `X-Forwarded-For` is never
+  read: Cloudflare appends to a client-written one, and a Cloudflare-range
+  address it appends (a Worker's egress) would expose the client's entry. A
+  client that reaches the origin directly gets its own socket address,
+  whatever it claims. Core then trusts that loopback hop and forwards the same
+  single address to local apps, stripping every other client-address header.
+  List the control plane's app-host bridge in `ingress.trusted_proxies` (real
+  IPs or CIDRs, IPv4 /8-/32, IPv6 /16-/128; catch-alls are refused), since it
+  dials the origin directly; the bridge must set `CF-Connecting-IP` to the
+  visitor it verified. `upgrade-host.sh` re-renders the Caddyfile on every
+  upgrade (validated before Core moves, reloaded only when it changed), so a
+  change here, including a new Cloudflare range, reaches hosts through an
+  ordinary upgrade.
 
 - **An external database is verified, not merely encrypted.**
   `database.ca_path` points at the CA that signed the database server's

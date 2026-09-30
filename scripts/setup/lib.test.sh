@@ -646,7 +646,7 @@ expect_eq 'render_caddyfile serves the supplied origin certificate and one verif
     servers {
         trusted_proxies static ${cf_ranges}
         trusted_proxies_strict
-        client_ip_headers X-Forwarded-For
+        client_ip_headers CF-Connecting-IP
     }
 }
 
@@ -660,6 +660,14 @@ expect_match 'render_caddyfile trusts extra proxies after the Cloudflare ranges'
   "$(render_caddyfile 'ficus.example.com' 3000 '/c.crt' '/c.key' 203.0.113.40 2001:db8::/64)" \
   "trusted_proxies static ${cf_ranges//./\\.} 203\\.0\\.113\\.40 2001:db8::/64"
 caddy_rendered=$(render_caddyfile 'ficus.example.com' 3000 '/etc/caddy/tls/origin.crt' '/etc/caddy/tls/origin.key')
+# Never read the client address from X-Forwarded-For: Cloudflare APPENDS to a
+# client-written one, and when the appended address is inside a Cloudflare
+# range (a Worker's egress, 2a06:98c0::/29) a right-to-left walk over trusted
+# hops returns the entry the client wrote ('6.6.6.6, 2a06:98c0:3600::103'
+# became 6.6.6.6 under real Caddy 2.10.2). CF-Connecting-IP is one address
+# the client cannot set.
+expect_eq 'render_caddyfile reads the client address from CF-Connecting-IP only' \
+  "$(grep -c 'client_ip_headers' <<<"${caddy_rendered}")|$(grep -c 'client_ip_headers CF-Connecting-IP$' <<<"${caddy_rendered}")" '1|1'
 expect_eq 'render_caddyfile emits no ACME email / issuer' \
   "$([[ ${caddy_rendered} == *email* || ${caddy_rendered} == *acme* || ${caddy_rendered} == *issuer* ]] && echo present || echo gone)" 'gone'
 
@@ -670,12 +678,20 @@ if yq_is_mikefarah; then
   cfg_load "${trusted_cfg}"
   expect_eq 'ingress_trusted_proxies_from_config: absent list trusts nothing extra' \
     "$(ingress_trusted_proxies_from_config)" ''
-  printf 'ingress:\n  trusted_proxies: [203.0.113.40, 10.0.0.0/8, "2001:db8::1"]\n' >"${trusted_cfg}"
+  printf 'ingress:\n  trusted_proxies: [203.0.113.40, 10.0.0.0/8, "2001:db8::1", "2001:db8::/64"]\n' >"${trusted_cfg}"
   expect_eq 'ingress_trusted_proxies_from_config: IPs and CIDRs, one per line' \
     "$(ingress_trusted_proxies_from_config)" '203.0.113.40
 10.0.0.0/8
-2001:db8::1'
-  for bad in 'private_ranges' '0.0.0.0/0 }' 'example.com' '12'; do
+2001:db8::1
+2001:db8::/64'
+  # Real addresses with in-range prefixes only; catch-alls (/0) and anything
+  # broader than IPv4 /8 or IPv6 /16 are refused (see the function's comment).
+  printf 'ingress:\n  trusted_proxies: ["64.225.53.136/32", "0.0.0.0/8", "2001:db8::/16", "::1/128", "fe80::1:2"]\n' >"${trusted_cfg}"
+  expect_eq 'ingress_trusted_proxies_from_config: boundary prefixes are accepted' \
+    "$(ingress_trusted_proxies_from_config | tr '\n' ' ')" '64.225.53.136/32 0.0.0.0/8 2001:db8::/16 ::1/128 fe80::1:2 '
+  for bad in 'private_ranges' '0.0.0.0/0 }' 'example.com' '12' '0.0.0.0/0' '::/0' '10.0.0.0/7' '2000::/3' \
+    '2001:db8::/15' '10.0.0.0/33' '2001:db8::/129' '10.0.0.0/08' '10.0.0.0/' '256.1.1.1' '01.2.3.4' '1.2.3' \
+    '1:2:3:4:5:6:7' '1::2::3' ':1::2' '::ffff:1.2.3.4' '12345::1'; do
     printf 'ingress:\n  trusted_proxies: ["%s"]\n' "${bad}" >"${trusted_cfg}"
     trusted_rc=0
     (ingress_trusted_proxies_from_config) >/dev/null 2>&1 || trusted_rc=$?
@@ -683,6 +699,117 @@ if yq_is_mikefarah; then
       "$([[ ${trusted_rc} -ne 0 ]] && echo rejected || echo accepted)" 'rejected'
   done
   rm -f "${trusted_cfg}"
+fi
+
+# --- upgrade_caddy_prepare / upgrade_caddy_apply (upgrade-host.sh) ----------
+# Hosted tenants only ever get a new Caddyfile through upgrade-host.sh (a full
+# setup-host.sh re-run needs secrets deleted after provisioning), so the
+# upgrade re-renders it. caddy/systemctl are shims that log their calls; the
+# CADDY_FAIL_VALIDATE / CADDY_FAIL_RELOAD switches inject failures.
+if yq_is_mikefarah; then
+  uc_tmp=$(mktemp -d)
+  uc_log="${uc_tmp}/calls.log"
+  printf 'cert' >"${uc_tmp}/origin.crt"
+  printf 'key' >"${uc_tmp}/origin.key"
+  printf 'PORT=4100\n' >"${uc_tmp}/.env"
+  uc_old='example.com {
+    reverse_proxy 127.0.0.1:3000
+}'
+  uc_write_cfg() { # CADDY_ENABLED TRUSTED_YAML
+    printf 'core:\n  origin: https://acme.ficus.sh\n  port: 3000\ningress:\n  caddy: %s\n  trusted_proxies: %s\n' "$1" "$2" >"${uc_tmp}/cfg.yaml"
+  }
+  uc_run() { # prepare+apply in a subshell with shims; prints the exit code
+    local rc=0
+    (
+      CADDYFILE_PATH="${uc_tmp}/Caddyfile"
+      CADDY_TLS_CERT_PATH="${uc_tmp}/origin.crt"
+      CADDY_TLS_KEY_PATH="${uc_tmp}/origin.key"
+      as_root() { "$@"; }
+      caddy() {
+        printf 'caddy %s\n' "$1" >>"${uc_log}"
+        [[ $1 != validate || -z ${CADDY_FAIL_VALIDATE:-} ]]
+      }
+      systemctl() {
+        printf 'systemctl %s\n' "$*" >>"${uc_log}"
+        [[ $1 != reload || -z ${CADDY_FAIL_RELOAD:-} ]]
+      }
+      install() {
+        local a=()
+        while [[ $# -gt 0 ]]; do
+          case $1 in
+            -o | -g) shift 2 ;;
+            *)
+              a+=("$1")
+              shift
+              ;;
+          esac
+        done
+        command install "${a[@]}"
+      }
+      cfg_load "${uc_tmp}/cfg.yaml"
+      upgrade_caddy_prepare "${uc_tmp}/.env"
+      upgrade_caddy_apply
+    ) >/dev/null 2>&1 || rc=$?
+    printf '%s' "${rc}"
+  }
+  uc_expected=$(render_caddyfile 'acme.ficus.sh' 4100 "${uc_tmp}/origin.crt" "${uc_tmp}/origin.key" 64.225.53.136)
+
+  # A Caddy host re-renders: Cloudflare ranges + ingress.trusted_proxies, the
+  # .env's PORT (not core.port), the canonical certificate pair; one reload.
+  printf '%s\n' "${uc_old}" >"${uc_tmp}/Caddyfile"
+  uc_write_cfg true '[64.225.53.136]'
+  : >"${uc_log}"
+  expect_eq 'upgrade caddy: a Caddy host re-renders successfully' "$(uc_run)" '0'
+  expect_eq 'upgrade caddy: the live Caddyfile is render_caddyfile with the configured trusted proxies' \
+    "$(cat "${uc_tmp}/Caddyfile")" "${uc_expected}"
+  expect_match 'upgrade caddy: the trust is Cloudflare then the bridge' \
+    "$(cat "${uc_tmp}/Caddyfile")" 'trusted_proxies static 173\.245\.48\.0/20 .* 2c0f:f248::/32 64\.225\.53\.136[[:space:]]'
+  expect_eq 'upgrade caddy: validated, then reloaded once' \
+    "$(grep -c '^caddy validate' "${uc_log}")|$(grep -c '^systemctl reload caddy' "${uc_log}")" '2|1'
+
+  # Unchanged: a no-op, no reload.
+  : >"${uc_log}"
+  expect_eq 'upgrade caddy: a re-run succeeds' "$(uc_run)" '0'
+  expect_eq 'upgrade caddy: an unchanged Caddyfile is not reloaded' "$(grep -c 'reload' "${uc_log}" || true)" '0'
+  expect_eq 'upgrade caddy: an unchanged Caddyfile keeps its bytes' "$(cat "${uc_tmp}/Caddyfile")" "${uc_expected}"
+
+  # No ingress.caddy: skipped, nothing called, nothing written.
+  printf '%s\n' "${uc_old}" >"${uc_tmp}/Caddyfile"
+  uc_write_cfg false '[64.225.53.136]'
+  : >"${uc_log}"
+  expect_eq 'upgrade caddy: a host without caddy ingress is skipped' "$(uc_run)" '0'
+  expect_eq 'upgrade caddy: skipped means no caddy or systemctl call' "$(wc -l <"${uc_log}" | tr -d ' ')" '0'
+  expect_eq 'upgrade caddy: skipped means the Caddyfile is untouched' "$(cat "${uc_tmp}/Caddyfile")" "${uc_old}"
+  printf 'core:\n  origin: https://acme.ficus.sh\n' >"${uc_tmp}/cfg.yaml"
+  expect_eq 'upgrade caddy: an absent ingress section is skipped too' "$(uc_run)" '0'
+
+  # An invalid trusted_proxies entry fails in prepare: nothing validated or written.
+  uc_write_cfg true '["0.0.0.0/0"]'
+  : >"${uc_log}"
+  expect_eq 'upgrade caddy: an invalid trusted_proxies entry fails the upgrade' "$(uc_run)" '1'
+  expect_eq 'upgrade caddy: ... before caddy is even asked' "$(wc -l <"${uc_log}" | tr -d ' ')" '0'
+  expect_eq 'upgrade caddy: ... leaving the Caddyfile untouched' "$(cat "${uc_tmp}/Caddyfile")" "${uc_old}"
+
+  # caddy rejects the render: fails before the swap.
+  uc_write_cfg true '[64.225.53.136]'
+  : >"${uc_log}"
+  expect_eq 'upgrade caddy: a failed validation fails the upgrade' "$(CADDY_FAIL_VALIDATE=1 uc_run)" '1'
+  expect_eq 'upgrade caddy: a failed validation never reloads' "$(grep -c 'reload' "${uc_log}" || true)" '0'
+  expect_eq 'upgrade caddy: a failed validation leaves the Caddyfile untouched' "$(cat "${uc_tmp}/Caddyfile")" "${uc_old}"
+
+  # A failed reload: the prior file is back and the upgrade fails.
+  : >"${uc_log}"
+  expect_eq 'upgrade caddy: a failed reload fails the upgrade' "$(CADDY_FAIL_RELOAD=1 uc_run)" '1'
+  expect_eq 'upgrade caddy: a failed reload restores the previous Caddyfile' "$(cat "${uc_tmp}/Caddyfile")" "${uc_old}"
+  expect_eq 'upgrade caddy: no staged file is left next to the live one' \
+    "$(compgen -G "${uc_tmp}/Caddyfile.ficus-new.*" >/dev/null && echo left || echo none)" 'none'
+
+  # A missing origin certificate fails before anything changes.
+  rm -f "${uc_tmp}/origin.key"
+  : >"${uc_log}"
+  expect_eq 'upgrade caddy: a missing origin key fails the upgrade' "$(uc_run)" '1'
+  expect_eq 'upgrade caddy: ... leaving the Caddyfile untouched' "$(cat "${uc_tmp}/Caddyfile")" "${uc_old}"
+  rm -rf "${uc_tmp}"
 fi
 
 # --- TLS source preflight + install (source pair -> canonical pair) ----------
@@ -3369,6 +3496,10 @@ hla_sorted() { # "a<b<c" → yes when strictly ascending and every one found
 }
 expect_eq 'upgrade-host.sh: reconcile → traps → host_layout_adopt → SRC_DEST again → require_host_env_ready' \
   "$(hla_sorted "$(hla_order upgrade-host.sh 'host_migrate_reconcile || reconcile_rc=$?' 'host_migrate_install_traps' 'host_layout_adopt' 'require_host_env_ready')")" 'yes'
+# The Caddyfile is validated and swapped after the host checks and BEFORE
+# either mode moves Core, so a failure leaves Core and the Caddyfile as they were.
+expect_eq 'upgrade-host.sh: require_host_env_ready → caddy prepare → caddy apply → artifact/git modes' \
+  "$(hla_sorted "$(hla_order upgrade-host.sh 'require_host_env_ready' 'upgrade_caddy_prepare "${SRC_DEST}/.env"' 'upgrade_caddy_apply' 'artifact_upgrade() {' 'if [[ ${ARTIFACT_MODE} -eq 1 ]]; then')")" 'yes'
 expect_eq 'upgrade-host.sh: SRC_DEST is read again right after the adopt' \
   "$(grep -A1 -x 'host_layout_adopt' "${SCRIPT_DIR}/upgrade-host.sh" | tail -n 1)" 'SRC_DEST=$(cfg_source_dest)'
 expect_eq 'apply-artifacts.sh: reconcile → host_layout_adopt → the PENDING refusal → require_host_env_ready' \

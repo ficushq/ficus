@@ -228,14 +228,15 @@ client-address header (`CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`,
 `Forwarded`, and similar) before forwarding.
 
 Behind Cloudflare with Caddy, trust only Cloudflare's published ranges
-(<https://www.cloudflare.com/ips/>) and send Caddy's verified address:
+(<https://www.cloudflare.com/ips/>), read the visitor from `CF-Connecting-IP`,
+and send Caddy's verified address:
 
 ```caddyfile
 {
   servers {
     trusted_proxies static 173.245.48.0/20 2400:cb00::/32 # ...every published range
     trusted_proxies_strict
-    client_ip_headers X-Forwarded-For
+    client_ip_headers CF-Connecting-IP
   }
 }
 
@@ -246,13 +247,21 @@ ficus.example.com {
 }
 ```
 
-Without Cloudflare (or another proxy) in front, leave `trusted_proxies` out: Caddy
-then sends the connecting address. The hosted setup scripts render this
-(`render_caddyfile` in `scripts/setup/lib.sh`). With nginx, use
-`proxy_set_header X-Forwarded-For $remote_addr;` together with the realip module
-(`set_real_ip_from` for each trusted range, `real_ip_header X-Forwarded-For`,
-`real_ip_recursive on`) rather than `$proxy_add_x_forwarded_for`, which passes the
-client's own claims on.
+Read `CF-Connecting-IP`, not `X-Forwarded-For`. Cloudflare sets
+`CF-Connecting-IP` to exactly one address the client cannot choose. It only
+appends to `X-Forwarded-For`, so when the appended address is itself inside a
+Cloudflare range (a Worker's egress, for example), walking the list right to
+left skips it and lands on an entry the client wrote. A trusted peer that sends
+no usable `CF-Connecting-IP` is recorded as itself. Any other proxy you add to
+`trusted_proxies` must set `CF-Connecting-IP` to the address it verified.
+
+Without Cloudflare (or another proxy) in front, leave `trusted_proxies` out:
+Caddy then sends the connecting address. The hosted setup scripts render this
+(`render_caddyfile` in `scripts/setup/lib.sh`). With nginx, use the realip
+module: `set_real_ip_from` for each Cloudflare range,
+`real_ip_header CF-Connecting-IP;`, and
+`proxy_set_header X-Forwarded-For $remote_addr;` (not
+`$proxy_add_x_forwarded_for`, which passes the client's own claims on).
 
 ## Streaming (SSE) and buffering
 

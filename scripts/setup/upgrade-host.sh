@@ -4,7 +4,8 @@
 #
 # Moves an ALREADY SET UP Ficus host to a different source ref: fetch + checkout
 # → dependencies + core build + web build → database migrations → restart
-# the api and worker units and wait for both to actually serve.
+# the api and worker units and wait for both to actually serve. With
+# ingress.caddy, it first re-renders the Caddyfile (see the caddy ingress step).
 #
 # Why this exists as its own entrypoint rather than "just re-run setup-host.sh":
 # a re-run of setup-host.sh re-resolves the FULL config, including every secret
@@ -24,8 +25,8 @@
 # defense is that there is one shared definition of the build rather than two
 # that can drift.
 #
-# Reads the SAME config file setup-host.sh was given (for source.* and core.*
-# only — it never touches the secrets sections), so the ref/repo/dest/port a
+# Reads the SAME config file setup-host.sh was given (for source.*, core.* and
+# ingress.* only — it never touches the secrets sections), so the ref/repo/dest/port a
 # host was set up with stay authoritative.
 #
 # Idempotent: re-running against the ref the host already has re-syncs,
@@ -80,7 +81,8 @@ Upgrades the Ficus instance ON THIS HOST to a source ref: source sync → build
 
 Options:
   --config FILE   the config this host was set up with (see
-                  ficus-setup.example.yaml). Only source.* and core.* are read.
+                  ficus-setup.example.yaml). Only source.*, core.* and
+                  ingress.* are read (ingress.* to re-render the Caddyfile).
   --ref REF       branch, tag or commit sha to move to. Defaults to the
                   config's source.ref.
   --restore-host-backup SET
@@ -346,6 +348,19 @@ SRC_DEST=$(cfg_source_dest)
 # A host whose settings predate the Ficus naming stops HERE, before either
 # mode's preflight, conversion, download, staging or candidate migration.
 require_host_env_ready
+
+# ============================================================== caddy ingress
+#
+# Re-render the ingress Caddyfile (lib.sh's upgrade_caddy_prepare/apply), the
+# only way a render_caddyfile change reaches a hosted tenant. Validated and
+# swapped HERE, before either mode moves anything: a bad
+# ingress.trusted_proxies entry, a Caddyfile caddy rejects or a failed reload
+# fails the upgrade with Core untouched, and the host keeps serving its
+# previous Caddyfile (caddy_write_and_reload restores it). An unchanged file
+# is left alone and caddy is not reloaded. A host without ingress.caddy skips.
+log_step 'caddy ingress: re-render the Caddyfile'
+upgrade_caddy_prepare "${SRC_DEST}/.env"
+upgrade_caddy_apply
 
 # ============================================================== artifact mode
 

@@ -119,11 +119,14 @@ ingress:
   # user. The key's contents are never logged, echoed, or printed by --dry-run.
   tls_cert_path: ''
   tls_key_path: ''
-  # The visitor's address. Caddy believes an incoming X-Forwarded-For only from
-  # Cloudflare's published ranges (built in) and the IPs/CIDRs listed here, and
-  # hands core exactly one address; from any other peer it is that peer. List a
-  # proxy that reaches this host WITHOUT going through Cloudflare, e.g. the
-  # control plane's app-host bridge. Never list anything a client can reach.
+  # The visitor's address. Caddy believes CF-Connecting-IP only from
+  # Cloudflare's published ranges (built in) and the IPs/CIDRs listed here
+  # (IPv4 /8-/32, IPv6 /16-/128; catch-alls are refused), and hands core
+  # exactly one address; from any other peer it is that peer. List a proxy
+  # that reaches this host WITHOUT going through Cloudflare, e.g. the control
+  # plane's app-host bridge, which must set CF-Connecting-IP to the visitor it
+  # verified. Never list anything a client can reach. upgrade-host.sh
+  # re-renders the Caddyfile, so a change here takes effect on the next upgrade.
   trusted_proxies: []
 
 # -----------------------------------------------------------------------------
