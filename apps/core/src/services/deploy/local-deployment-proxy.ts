@@ -93,6 +93,12 @@ export async function proxyLocalDeploymentRequest(
       headers,
       body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
       redirect: 'manual',
+      // Byte-transparent: the browser's Accept-Encoding is forwarded, so the app
+      // may answer gzip/br/deflate/zstd. Bun's fetch would decode that body yet
+      // keep the upstream Content-Encoding/Content-Length, and the browser would
+      // then fail to decode plain bytes (ERR_CONTENT_DECODING_FAILED). Passing
+      // the encoded bytes through keeps body and headers consistent.
+      decompress: false,
     })
   )
 
