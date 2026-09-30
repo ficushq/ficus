@@ -124,11 +124,18 @@ fi
 mkdir -p "${HOME_DIR}"
 
 log_info "archiving HOME_DIR (${HOME_DIR}) + ${DEST}/.env + db dump"
+# GNU tar exits 1 when a file changed while it was read (a busy instance's
+# sessions/), and the archive is still complete; only 2+ is a failed archive.
+tar_rc=0
 tar -czf "${TAR_FILE}" \
   -C "$(dirname "${DUMP_FILE}")" "$(basename "${DUMP_FILE}")" \
   -C "$(dirname "${HOME_DIR}")" "$(basename "${HOME_DIR}")" \
-  -C "${DEST}" '.env' ||
-  die "tar archive failed"
+  -C "${DEST}" '.env' || tar_rc=$?
+if ((tar_rc == 1)); then
+  log_info "tar: some files changed while they were archived — kept the archive"
+elif ((tar_rc != 0)); then
+  die "tar archive failed (${tar_rc})"
+fi
 
 # ------------------------------------------------------------------- encrypt
 log_info "encrypting archive"

@@ -128,6 +128,23 @@ expect_eq 'HOME_DIR file round-trips (context.md)' \
 expect_eq 'HOME_DIR nested file round-trips (workspace/agent-1/notes.md)' \
   "$(cat "${DECRYPT_DIR}/.ficus/workspace/agent-1/notes.md" 2>/dev/null || echo MISSING)" 'agent memory contents'
 
+# --- tar exit 1 ("file changed as we read it" on a busy instance) keeps the
+# archive; 2+ still fails. An exported tar function archives for real, then
+# reports STUB_TAR_RC (the rendered script's bash process inherits it).
+tar_run() { # RC WORKDIR — the rendered script's exit code; stderr in WORKDIR.log
+  (
+    tar() { command tar "$@" || return; return "${STUB_TAR_RC}"; }
+    export -f tar
+    STUB_TAR_RC=$1 FICUS_BACKUP_DRY_RUN=1 FICUS_BACKUP_PG_DUMP_CMD="${FAKE_PG_DUMP}" FICUS_BACKUP_WORKDIR="$2" \
+      "${RENDERED}" 2>"$2.log"
+  ) && echo 0 || echo $?
+}
+expect_eq 'tar exit 1 (a file changed while read) keeps the backup' "$(tar_run 1 "${SCRATCH}/work-tar1")" '0'
+expect_file_exists 'tar exit 1 still leaves the encrypted artifact' "${SCRATCH}/work-tar1/${TODAY}.tar.gz.enc"
+expect_eq 'tar exit 1 is logged' "$(grep -c 'changed while they were archived' "${SCRATCH}/work-tar1.log")" '1'
+expect_eq 'tar exit 2 fails the backup' "$([[ $(tar_run 2 "${SCRATCH}/work-tar2") -ne 0 ]] && echo yes || echo no)" 'yes'
+expect_eq 'tar exit 2 names the failure' "$(grep -c 'tar archive failed (2)' "${SCRATCH}/work-tar2.log")" '1'
+
 # --- a wrong passphrase must NOT decrypt (encryption is doing something) ----
 wrong_rc=0
 openssl enc -d -aes-256-cbc -pbkdf2 -pass 'pass:wrong-passphrase' -in "${ENC_FILE}" -out "${SCRATCH}/should-fail.tar.gz" >/dev/null 2>&1 || wrong_rc=$?
