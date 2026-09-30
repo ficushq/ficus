@@ -430,6 +430,7 @@ ingress:
   caddy: true
   tls_cert_path: /pushed/old/origin.crt
   tls_key_path: /pushed/old/origin.key
+  trusted_proxies: [203.0.113.40, 2001:db8::40/128]
 dns:
   zone: old.example
 EOF
@@ -492,12 +493,14 @@ FICUS_PLATFORM_INGEST_URL=https://ficus.sh'
     expect_eq "${label}: the new cert bytes were installed" "$(cat "${CADDY_TLS_DIR}/origin.crt")" "${NEW_CERT_BYTES}"
     expect_eq "${label}: the new key bytes were installed" "$(cat "${CADDY_TLS_DIR}/origin.key")" "${NEW_KEY_BYTES}"
 
+    # ingress.trusted_proxies survives the retarget: dropping it would leave the
+    # control plane's bridged requests attributed to the bridge, not the visitor.
     expect_eq "${label}: Caddyfile content is exactly render_caddyfile's output" \
       "$(cat "${CADDYFILE_PATH}")" \
-      "acme.ficus.sh {
-    tls ${CADDY_TLS_DIR}/origin.crt ${CADDY_TLS_DIR}/origin.key
-    reverse_proxy 127.0.0.1:4100
-}"
+      "$(bash -c 'source "$0"; render_caddyfile "$@"' "${SCRIPT_DIR}/lib.sh" \
+        acme.ficus.sh 4100 "${CADDY_TLS_DIR}/origin.crt" "${CADDY_TLS_DIR}/origin.key" 203.0.113.40 2001:db8::40/128)"
+    expect_match "${label}: Caddyfile trusts the configured bridge after Cloudflare's ranges" \
+      "$(cat "${CADDYFILE_PATH}")" 'trusted_proxies static 173\.245\.48\.0/20 .* 2c0f:f248::/32 203\.0\.113\.40 2001:db8::40/128'
 
     expect_match "${label}: restart was invoked (systemctl restart ${CORE_UNITS})" \
       "$(cat "${SHIM_LOG}")" "systemctl restart ${CORE_UNITS}"

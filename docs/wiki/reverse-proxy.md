@@ -216,6 +216,61 @@ avoids the base-path handling entirely. For a split web/API deployment, point
 Tailscale at the Vite dev server (`http://localhost:5173`) or at the Caddy/nginx
 front end from the sections above instead of at Core.
 
+## Client addresses
+
+Core resolves the visitor's address from the socket peer, and believes an
+incoming `X-Forwarded-For` only when that peer is loopback (a same-host proxy)
+or listed in `FICUS_TRUSTED_PROXY_ADDRESSES`. The proxy in front of Core must
+therefore send exactly one trustworthy `X-Forwarded-For`: the address it
+verified itself, never a client-supplied chain. Local apps receive that one
+address as their only `X-Forwarded-For`; Core strips every other
+client-address header (`CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`,
+`Forwarded`, and similar) before forwarding.
+
+Behind Cloudflare with Caddy, trust only Cloudflare's published ranges
+(<https://www.cloudflare.com/ips/>), read the visitor from `CF-Connecting-IP`,
+and send Caddy's verified address:
+
+```caddyfile
+{
+  servers {
+    trusted_proxies static 173.245.48.0/20 2400:cb00::/32 # ...every published range
+    trusted_proxies_strict
+    client_ip_headers CF-Connecting-IP
+  }
+}
+
+ficus.example.com {
+  reverse_proxy 127.0.0.1:3000 {
+    header_up X-Forwarded-For {client_ip}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+```
+
+Keep the `X-Forwarded-Host` and `X-Forwarded-Proto` lines whenever you set
+`trusted_proxies`. A trusted peer's values for those two are otherwise passed
+through, and Cloudflare forwards a client-sent `X-Forwarded-Host` unchanged, so
+any visitor could choose the host Core builds its public URLs from and local
+apps build redirects from.
+
+Read `CF-Connecting-IP`, not `X-Forwarded-For`. Cloudflare sets
+`CF-Connecting-IP` to exactly one address the client cannot choose. It only
+appends to `X-Forwarded-For`, so when the appended address is itself inside a
+Cloudflare range (a Worker's egress, for example), walking the list right to
+left skips it and lands on an entry the client wrote. A trusted peer that sends
+no usable `CF-Connecting-IP` is recorded as itself. Any other proxy you add to
+`trusted_proxies` must set `CF-Connecting-IP` to the address it verified.
+
+Without Cloudflare (or another proxy) in front, leave `trusted_proxies` out:
+Caddy then sends the connecting address. The hosted setup scripts render this
+(`render_caddyfile` in `scripts/setup/lib.sh`). With nginx, use the realip
+module: `set_real_ip_from` for each Cloudflare range,
+`real_ip_header CF-Connecting-IP;`, and
+`proxy_set_header X-Forwarded-For $remote_addr;` (not
+`$proxy_add_x_forwarded_for`, which passes the client's own claims on).
+
 ## Streaming (SSE) and buffering
 
 Chat replies stream from `POST /api/chat` as Server-Sent Events. Core sets `X-Accel-Buffering: no` and `Cache-Control: no-transform` on the response so proxies forward tokens in real time instead of buffering the whole turn and releasing it in one burst.

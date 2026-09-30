@@ -1889,12 +1889,122 @@ restore_link_legacy_home() { # ARCHIVED CURRENT RUN_HOME
   log_info "restore: linked ${legacy} -> ${ficus} (the compat link a host moved to the Ficus layout has)"
 }
 
+# Cloudflare's published edge ranges (https://www.cloudflare.com/ips-v4 and
+# /ips-v6, fetched 2026-09-30). The ingress host is always proxied by
+# Cloudflare (see the origin TLS doctrine above), so these are the peers whose
+# CF-Connecting-IP Caddy may believe. Cloudflare changes this list rarely; when
+# it does, update it here and re-run setup so the rendered Caddyfile follows.
+CLOUDFLARE_PROXY_RANGES=(
+  173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22
+  141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20
+  197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13
+  104.24.0.0/14 172.64.0.0/13 131.0.72.0/22
+  2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32
+  2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+)
+
+# True iff ADDR is a dotted-quad IPv4 address (four 0-255 octets, no
+# leading zeros that some parsers read as octal).
+_is_ipv4_address() { # ADDR
+  local IFS=. octet
+  local -a octets
+  [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  read -ra octets <<<"$1"
+  for octet in "${octets[@]}"; do
+    [[ ${octet} == 0 || ${octet} != 0* ]] && ((10#${octet} <= 255)) || return 1
+  done
+}
+
+# True iff ADDR is an IPv6 address in RFC 4291 text form: hex groups of 1-4
+# digits, eight of them, or fewer with exactly one '::' (no embedded IPv4, no
+# zone: neither names a proxy's source address in a Caddyfile).
+_is_ipv6_address() { # ADDR
+  local addr=$1 head tail group n=0
+  [[ ${addr} =~ ^[0-9A-Fa-f:]+$ && ${addr} != *:::* ]] || return 1
+  if [[ ${addr} == *::* ]]; then
+    head=${addr%%::*} tail=${addr#*::}
+    [[ ${tail} != *::* ]] || return 1
+  else
+    head=${addr} tail=''
+  fi
+  for group in ${head//:/ } ${tail//:/ }; do
+    [[ ${group} =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1
+    n=$((n + 1))
+  done
+  # Every ':' must separate two groups (no leading/trailing single colon).
+  [[ -z ${head} || (${head} != :* && ${head} != *:) ]] || return 1
+  [[ -z ${tail} || (${tail} != :* && ${tail} != *:) ]] || return 1
+  if [[ ${addr} == *::* ]]; then ((n <= 7)); else ((n == 8)); fi
+}
+
+# The extra proxies ingress.trusted_proxies names (for example the control
+# plane's app-host bridge, which dials this host directly rather than through
+# Cloudflare), one per line after validation. Each must be a real IPv4/IPv6
+# address or CIDR with an in-range prefix (IPv4 /8-/32, IPv6 /16-/128):
+# anything else would either break the Caddyfile or widen the trust silently.
+#
+# The minimum prefix: a trusted proxy's CF-Connecting-IP is believed as-is, so
+# a range that takes in hosts other than the proxy operator's own lets THEM set
+# the visitor address. /0 trusts every peer on the internet. Nothing legitimate
+# needs more than /8 in IPv4 (the largest block ever assigned to one
+# organization) or /16 in IPv6 (Cloudflare's own widest is /29); anything
+# broader is a typo or a catch-all, and is refused.
+ingress_trusted_proxies_from_config() {
+  local entries entry addr prefix
+  entries=$(cfg_get '(.ingress.trusted_proxies // []) | .[]' '')
+  while IFS= read -r entry; do
+    [[ -n ${entry} ]] || continue
+    addr=${entry%/*} prefix=''
+    [[ ${entry} == */* ]] && prefix=${entry#*/}
+    [[ ${entry} != */* || ${prefix} =~ ^(0|[1-9][0-9]{0,2})$ ]] ||
+      die "config: ingress.trusted_proxies entry '${entry}' has an invalid prefix length"
+    if _is_ipv4_address "${addr}"; then
+      [[ -z ${prefix} ]] || ((prefix >= 8 && prefix <= 32)) ||
+        die "config: ingress.trusted_proxies entry '${entry}': an IPv4 prefix must be /8 to /32 (a broader range trusts hosts that are not the proxy)"
+    elif _is_ipv6_address "${addr}"; then
+      [[ -z ${prefix} ]] || ((prefix >= 16 && prefix <= 128)) ||
+        die "config: ingress.trusted_proxies entry '${entry}': an IPv6 prefix must be /16 to /128 (a broader range trusts hosts that are not the proxy)"
+    else
+      die "config: ingress.trusted_proxies entries must be IPv4/IPv6 addresses or CIDR ranges — got '${entry}'"
+    fi
+    printf '%s\n' "${entry}"
+  done <<<"${entries}"
+}
+
 # Render a single-origin Caddyfile vhost for HOST, proxying to core on PORT and
-# serving the supplied origin certificate. No ACME, no global options block —
-# see the doctrine comment above.
-render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH
+# serving the supplied origin certificate. No ACME and no email — see the
+# doctrine comment above.
+#
+# The global block exists only for the client address. Caddy believes an
+# incoming CF-Connecting-IP only from Cloudflare's ranges and the extra
+# TRUSTED_PROXY arguments, and hands Core exactly one address in
+# X-Forwarded-For: the visitor. From any other peer (a client that bypassed
+# Cloudflare) it is that peer. Core trusts the loopback peer's header
+# (apps/core/src/lib/client-address.ts) and passes that one address on to
+# local apps, so no client-written value gets through either hop.
+#
+# CF-Connecting-IP, not X-Forwarded-For: Cloudflare sets CF-Connecting-IP to
+# exactly one address the client cannot choose, but APPENDS to a client's
+# X-Forwarded-For. When the appended address is itself inside a Cloudflare
+# range (a Worker's egress, 2a06:98c0::/29), a right-to-left walk skips it
+# as a trusted hop and lands on the entry the client wrote. A trusted peer
+# that sends a CF-Connecting-IP inside a trusted range, or none at all, is
+# recorded as itself. Extra TRUSTED_PROXY peers (the control plane's bridge)
+# must therefore SET CF-Connecting-IP to the address they verified.
+#
+# X-Forwarded-Host and X-Forwarded-Proto are pinned to this request's own Host
+# and scheme. trusted_proxies also makes reverse_proxy KEEP those two from a
+# trusted peer, and Cloudflare forwards a client-sent X-Forwarded-Host as is:
+# without the pins any visitor could choose the host Core writes into
+# index.html (lib/web-serve.ts) and webhook URLs (routes/schedules.ts), and
+# that local apps build redirects from. Never trust proxies without them.
+render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
   local host=$1 port=$2 cert=$3 key=$4
-  printf '%s {\n    tls %s %s\n    reverse_proxy 127.0.0.1:%s\n}\n' "${host}" "${cert}" "${key}" "${port}"
+  shift 4
+  printf '{\n    servers {\n        trusted_proxies static %s\n        trusted_proxies_strict\n        client_ip_headers CF-Connecting-IP\n    }\n}\n\n' \
+    "${CLOUDFLARE_PROXY_RANGES[*]}${*:+ $*}"
+  printf '%s {\n    tls %s %s\n    reverse_proxy 127.0.0.1:%s {\n        header_up X-Forwarded-For {client_ip}\n        header_up X-Forwarded-Host {host}\n        header_up X-Forwarded-Proto {scheme}\n    }\n}\n' \
+    "${host}" "${cert}" "${key}" "${port}"
 }
 
 # Overridable via env (default unchanged) for the same reason as
@@ -2008,6 +2118,54 @@ caddy_write_and_reload() { # CONTENT
     log_info "Caddyfile unchanged — no reload needed"
   fi
   rm -f "${staged}" "${backup}"
+}
+
+# ------------------------------------------------------------------ upgrade: caddy ingress
+#
+# upgrade-host.sh re-renders the ingress Caddyfile on every upgrade, so a
+# change to render_caddyfile (the client-address trust, a new Cloudflare range
+# in CLOUDFLARE_PROXY_RANGES) reaches hosted tenants through an ordinary
+# upgrade: a full setup-host.sh re-run is impossible there (its secrets are
+# gone after provisioning). Same inputs as setup-host.sh/retarget-origin.sh:
+# the host from core.origin, the port core ACTUALLY listens on (PORT in the
+# .env, else core.port, as in retarget-origin.sh), the canonical origin
+# certificate pair setup installed, and ingress.trusted_proxies.
+#
+# Two halves, so nothing changes until everything checked out:
+#   upgrade_caddy_prepare  render + validate (dies on a bad trusted_proxies
+#                          entry, a missing caddy/certificate, or a Caddyfile
+#                          caddy rejects); the live Caddyfile is untouched.
+#   upgrade_caddy_apply    caddy_write_and_reload: a no-op when the bytes are
+#                          unchanged; otherwise atomic swap + reload, and on a
+#                          failed reload the prior file is restored and it dies.
+UPGRADE_CADDYFILE=''
+
+upgrade_caddy_prepare() { # ENV_FILE
+  local env_file=$1 origin host port trusted_raw
+  local -a trusted=()
+  UPGRADE_CADDYFILE=''
+  if [[ $(cfg_bool '.ingress.caddy' 'false') != true ]]; then
+    log_info "caddy ingress: ingress.caddy is not enabled — Caddyfile re-render skipped"
+    return 0
+  fi
+  origin=$(cfg_require '.core.origin' 'public origin') || exit 1
+  host=$(caddy_host_from_origin "${origin}") || exit 1
+  port=$(envfile_get "${env_file}" 'PORT') || port=''
+  [[ -n ${port} ]] || port=$(cfg_get '.core.port' '3000')
+  [[ ${port} =~ ^[0-9]+$ ]] || die "caddy ingress: core port must be a number (got '${port}' from ${env_file} or config: core.port)"
+  trusted_raw=$(ingress_trusted_proxies_from_config) || exit 1
+  [[ -z ${trusted_raw} ]] || mapfile -t trusted <<<"${trusted_raw}"
+  have caddy || die "caddy ingress: ingress.caddy is enabled but caddy is not installed — refusing to upgrade a host whose ingress cannot be re-rendered"
+  as_root test -f "${CADDY_TLS_CERT_PATH}" && as_root test -f "${CADDY_TLS_KEY_PATH}" ||
+    die "caddy ingress: the origin certificate pair ${CADDY_TLS_CERT_PATH} / ${CADDY_TLS_KEY_PATH} is missing — nothing was changed"
+  UPGRADE_CADDYFILE=$(render_caddyfile "${host}" "${port}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}" "${trusted[@]}")
+  caddy_validate_rendered "${UPGRADE_CADDYFILE}"
+  log_info "caddy ingress: Caddyfile for ${host} (core on ${port}, ${#trusted[@]} extra trusted proxies) rendered and validated"
+}
+
+upgrade_caddy_apply() {
+  [[ -n ${UPGRADE_CADDYFILE} ]] || return 0
+  caddy_write_and_reload "${UPGRADE_CADDYFILE}"
 }
 
 install_caddy() {

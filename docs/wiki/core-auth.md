@@ -76,7 +76,7 @@ The raw token is returned exactly once, stored in the CLI auth store with mode `
 
 The verification URI a user is told to open is built from `FICUS_WEB_ORIGIN` (via `primaryWebOrigin()`), never from the request. Core never terminates TLS — every HTTPS deployment fronts it with caddy/nginx on plain `127.0.0.1` — so deriving the origin from the request would see `http:` and reject its own CLI; and a caller-supplied `Origin` must never be echoed into a URL a human is asked to trust. If `FICUS_WEB_ORIGIN` is missing or is not a secure origin, `/device/start` answers `400`.
 
-Device-start rate limiting keys direct connections by Bun's socket peer address. A **loopback** peer is trusted as a proxy hop implicitly, because a same-host reverse proxy is the standard deployment and without it every caller on the instance shares one bucket. `FICUS_TRUSTED_PROXY_ADDRESSES` (comma-separated exact IPs) additionally trusts non-loopback proxies. `X-Forwarded-For` is honored **only** when the peer itself is trusted, so a remote caller cannot forge its way into the chain.
+Device-start rate limiting keys direct connections by Bun's socket peer address. A **loopback** peer is trusted as a proxy hop implicitly, because a same-host reverse proxy is the standard deployment and without it every caller on the instance shares one bucket. `FICUS_TRUSTED_PROXY_ADDRESSES` (comma-separated exact IPs; a CIDR range such as `0.0.0.0/0` is ignored and trusts nobody) additionally trusts non-loopback proxies. `X-Forwarded-For` is honored **only** when the peer itself is trusted, so a remote caller cannot forge its way into the chain.
 
 ### Live-connection revocation
 

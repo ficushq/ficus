@@ -11,6 +11,10 @@ function normalizeAddress(value: string | undefined | null): string | null {
   return isIP(address) ? address.toLowerCase() : null
 }
 
+/**
+ * Exact proxy addresses only: a CIDR entry (including a catch-all such as
+ * 0.0.0.0/0) is not an address, so it is dropped and trusts nobody.
+ */
 function configuredTrustedProxies(): string[] {
   return (process.env.FICUS_TRUSTED_PROXY_ADDRESSES ?? '')
     .split(',')

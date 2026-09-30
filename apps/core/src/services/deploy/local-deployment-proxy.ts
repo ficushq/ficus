@@ -1,4 +1,5 @@
 import { Squad } from '../../entities/Squad'
+import { getClientAddress } from '../../lib/client-address'
 import { ensureSquadSandbox } from '../sandbox/ensure'
 import { getLocalDeployment, isValidLocalDeploymentBrowserToken } from './local-deployment-service'
 import { resolveLocalDeploymentTarget } from './local-deployment-target'
@@ -20,6 +21,26 @@ const HOP_BY_HOP = new Set([
 ])
 
 const SENSITIVE_AUTH_HEADERS = ['authorization', 'x-auth-token', 'cookie']
+
+/**
+ * Headers that claim to name the visitor's address. Any of them can be written
+ * by a client that reaches the origin without going through Cloudflare, so none
+ * is passed on; the app gets one X-Forwarded-For that Core computed itself.
+ */
+const CLIENT_ADDRESS_HEADERS = [
+  'x-forwarded-for',
+  'forwarded',
+  'x-real-ip',
+  'x-client-ip',
+  'x-cluster-client-ip',
+  'x-original-forwarded-for',
+  'x-envoy-external-address',
+  'true-client-ip',
+  'fastly-client-ip',
+  'cf-connecting-ip',
+  'cf-connecting-ipv6',
+  'cf-pseudo-ipv4',
+]
 
 interface LocalDeploymentProxyDependencies {
   ensureSquadSandbox: typeof ensureSquadSandbox
@@ -86,6 +107,7 @@ export async function proxyLocalDeploymentRequest(
 
   const headers = new Headers(request.headers)
   stripUnsafeProxyHeaders(headers)
+  setClientAddressHeaders(headers, getClientAddress(request))
 
   const upstream = stripLocalDeploymentProxyErrorMarker(
     await deps.fetch(targetUrl, {
@@ -154,6 +176,17 @@ export function keepOutOfSharedCaches(headers: Headers): void {
   // is ignored. An app sending either could still have its private responses
   // stored at the edge and served without a token.
   for (const name of CDN_OVERRIDE_HEADERS) headers.delete(name)
+}
+
+/**
+ * Replace every client-address header with a single X-Forwarded-For naming
+ * the address Core resolved for this request. That address honors an incoming
+ * X-Forwarded-For only from a trusted peer (the same-host reverse proxy), so the
+ * app can trust its one entry. An unknown address sends no header at all.
+ */
+function setClientAddressHeaders(headers: Headers, clientAddress: string): void {
+  for (const name of CLIENT_ADDRESS_HEADERS) headers.delete(name)
+  if (clientAddress !== 'unknown') headers.set('x-forwarded-for', clientAddress)
 }
 
 function stripUnsafeProxyHeaders(headers: Headers): void {

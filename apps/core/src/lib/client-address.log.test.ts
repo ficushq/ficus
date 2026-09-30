@@ -39,6 +39,40 @@ describe('http log client identity', () => {
     expect(getClientAddress(request)).toBe('10.1.2.3')
   })
 
+  // FICUS_TRUSTED_PROXY_ADDRESSES takes exact addresses only. A range, including
+  // a catch-all, must trust nobody rather than every peer.
+  test('a CIDR or catch-all in FICUS_TRUSTED_PROXY_ADDRESSES trusts no peer', () => {
+    const previous = process.env.FICUS_TRUSTED_PROXY_ADDRESSES
+    process.env.FICUS_TRUSTED_PROXY_ADDRESSES = '0.0.0.0/0, ::/0, 10.0.0.0/8, 2001:db8::/32, not-an-ip'
+    try {
+      for (const peer of ['10.1.2.3', '2001:db8::5', '203.0.113.20']) {
+        const request = new Request('http://ficus.test/api/agents', {
+          headers: { 'x-forwarded-for': '6.6.6.6' },
+        })
+        attachPeerAddress(request, peer)
+        expect(getClientAddress(request)).toBe(peer)
+      }
+    } finally {
+      if (previous === undefined) delete process.env.FICUS_TRUSTED_PROXY_ADDRESSES
+      else process.env.FICUS_TRUSTED_PROXY_ADDRESSES = previous
+    }
+  })
+
+  test('an exact FICUS_TRUSTED_PROXY_ADDRESSES entry is still honored', () => {
+    const previous = process.env.FICUS_TRUSTED_PROXY_ADDRESSES
+    process.env.FICUS_TRUSTED_PROXY_ADDRESSES = '0.0.0.0/0, 10.1.2.3'
+    try {
+      const request = new Request('http://ficus.test/api/agents', {
+        headers: { 'x-forwarded-for': '203.0.113.9' },
+      })
+      attachPeerAddress(request, '10.1.2.3')
+      expect(getClientAddress(request)).toBe('203.0.113.9')
+    } finally {
+      if (previous === undefined) delete process.env.FICUS_TRUSTED_PROXY_ADDRESSES
+      else process.env.FICUS_TRUSTED_PROXY_ADDRESSES = previous
+    }
+  })
+
   test('an unknown peer degrades to a named value rather than throwing', () => {
     expect(getClientAddress(new Request('http://ficus.test/api/agents'))).toBe('unknown')
   })

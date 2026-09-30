@@ -229,6 +229,13 @@ if [[ ${CADDY_ENABLE} == true ]]; then
   [[ -n ${CADDY_KEY_PATH} ]] ||
     die "config: ingress.caddy requires ingress.tls_key_path (the origin certificate's private key)"
 fi
+# Proxies besides Cloudflare whose X-Forwarded-For caddy may believe (see
+# render_caddyfile): the control plane's app-host bridge, for one.
+CADDY_TRUSTED_PROXIES=()
+if [[ ${CADDY_ENABLE} == true ]]; then
+  caddy_trusted_proxies=$(ingress_trusted_proxies_from_config) || exit 1
+  [[ -z ${caddy_trusted_proxies} ]] || mapfile -t CADDY_TRUSTED_PROXIES <<<"${caddy_trusted_proxies}"
+fi
 
 # Optional nightly encrypted backup (pg dump + HOME_DIR → S3-compatible
 # storage) — off by default; a future cloud control plane turns this on so
@@ -843,7 +850,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     plan "install ${CADDY_CERT_PATH} → ${CADDY_TLS_CERT_PATH} (0644 root) and ${CADDY_KEY_PATH} → ${CADDY_TLS_KEY_PATH} (0600 caddy-owned; contents never printed)"
     plan "no ACME, no port 80: TLS is the supplied Cloudflare Origin CA certificate (requires a PROXIED DNS record)"
     plan "write ${CADDYFILE_PATH} (idempotent: rewrite + reload, never restart, only on content change):"
-    render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}" | sed 's/^/  | /'
+    render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}" "${CADDY_TRUSTED_PROXIES[@]}" | sed 's/^/  | /'
     plan "systemctl enable --now caddy"
   fi
   if [[ ${BACKUP_ENABLE} == true ]]; then
@@ -1413,7 +1420,7 @@ phase_caddy() {
   # very same certificate on the control-plane host.
   install_caddy
   install_origin_cert "${CADDY_CERT_PATH}" "${CADDY_KEY_PATH}"
-  caddy_write_and_reload "$(render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}")"
+  caddy_write_and_reload "$(render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}" "${CADDY_TRUSTED_PROXIES[@]}")"
 }
 
 phase_backup() {
