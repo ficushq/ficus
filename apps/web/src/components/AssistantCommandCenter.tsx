@@ -292,8 +292,8 @@ export function AssistantCommandCenter({
             setSelected(0)
           }}
           onKeyDown={(event) => {
-            // Shift+Enter: go to the result's own page (the squad, not its nested Assistant view).
-            if (event.key === 'Enter' && event.shiftKey && selectedPage) {
+            // Shift+Enter or ⌘/Ctrl+Enter: go to the result's own page (the squad, not its nested Assistant view).
+            if (event.key === 'Enter' && (event.shiftKey || event.metaKey || event.ctrlKey) && selectedPage) {
               event.preventDefault()
               openPage(selectedPage)
               return
@@ -528,7 +528,7 @@ export function AssistantCommandCenter({
                 : squadScope
                   ? 'Enter to start'
                   : 'Enter to ask'}
-            {selectedPage && visible[index]?.destination && ' · Shift+Enter for its page'}
+            {selectedPage && visible[index]?.destination && ' · Shift/⌘+Enter for its page'}
             {' · ↑ ↓ select · Esc back'}
           </span>
           {!squadScope && (
