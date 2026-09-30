@@ -578,11 +578,38 @@
   cursor: pointer;
 }
 
-/* A work stream's chip: a small sprout and its number. */
+/* A work stream, inline like a link: a small sprout and its number, bold and underlined. */
+.g-farmchat-chip.g-farmchat-ref {
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--g-good-text);
+  font: inherit;
+  font-weight: 700;
+  vertical-align: baseline;
+}
+
+.g-farmchat-ref .g-farmchat-chip-text {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.g-farmchat-ref:hover {
+  background: none;
+}
+
+.g-farmchat-ref:hover .g-farmchat-chip-text,
+.g-farmchat-ref:focus-visible .g-farmchat-chip-text {
+  text-decoration-thickness: 2px;
+}
+
 .g-farmchat-chip-sprout {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 0.9em;
+  height: 0.9em;
   color: var(--g-good-text);
 }
 
