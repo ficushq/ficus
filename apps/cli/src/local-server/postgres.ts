@@ -64,6 +64,7 @@ export interface ContainerInfo {
   /** The image ID the container runs (not the tag, which may have moved since). */
   Image?: string
   State?: { Running?: boolean }
+  Config?: { Labels?: Record<string, string> | null }
   Mounts?: ContainerMount[]
   /** Live mappings — present only while the container RUNS ({} when stopped). */
   NetworkSettings?: { Ports?: Record<string, PortBinding[] | null> }
@@ -72,7 +73,7 @@ export interface ContainerInfo {
 }
 
 /** `docker inspect` of a container, or undefined when there is none (or docker cannot say). */
-export async function inspectContainer(runner: Runner, container: string): Promise<ContainerInfo | undefined> {
+async function inspectContainer(runner: Runner, container: string): Promise<ContainerInfo | undefined> {
   const r = await runner(['docker', 'inspect', '-f', '{{json .}}', container])
   if (r.code !== 0) return undefined
   try {
@@ -141,6 +142,8 @@ export interface PostgresContainer {
   image?: string
   /** Mount point of the volume. Default /var/lib/postgresql. */
   dataDir?: string
+  /** Docker labels for a new container. */
+  labels?: Record<string, string>
 }
 
 /**
@@ -157,6 +160,7 @@ export async function ensurePostgresContainer(
     database = DEFAULT_DB_NAME,
     image = POSTGRES_IMAGE,
     dataDir = DEFAULT_DATA_DIR,
+    labels = {},
   }: PostgresContainer,
   // `inherit` is for the run/start calls only — docker's pull progress is worth
   // watching. Inheriting the inspect below would leave its stdout empty, and
@@ -181,6 +185,7 @@ export async function ensurePostgresContainer(
       container,
       '--restart',
       'unless-stopped',
+      ...Object.entries(labels).flatMap(([key, value]) => ['--label', `${key}=${value}`]),
       '-e',
       'POSTGRES_USER=postgres',
       '-e',

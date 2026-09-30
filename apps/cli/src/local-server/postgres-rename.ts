@@ -1,21 +1,28 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { chmodSync, existsSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'fs'
+import { basename, dirname, join } from 'path'
 import { LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
 import { parseEnvFile } from './env-file'
 import {
   DB_NAME_RE,
   containerHostPort,
   ensurePostgresContainer,
-  inspectContainer,
   isManagedShapedUrl,
   parseDatabaseUrl,
   postgresDataMount,
   waitForPostgres,
+  type ContainerInfo,
 } from './postgres'
 import type { Runner } from './runner'
 
 /** The stem of every name after the rename (the legacy stem is `LEGACY_LOCAL_INSTANCE`). */
 const FICUS_STEM = 'ficus'
+/**
+ * Label the rename puts on the container it creates; the value is the container it moved
+ * from. It is how a later run tells its own container from one that merely has the name.
+ */
+export const RENAMED_FROM_LABEL = 'sh.ficus.renamed-from'
+/** Seconds `docker stop` gives PostgreSQL to shut down cleanly before it is killed. */
+const STOP_TIMEOUT_S = '60'
 
 export interface LocalPostgresNames {
   /** Docker container of the installer-managed PostgreSQL. */
@@ -48,15 +55,18 @@ export interface LocalPostgresMove {
 }
 
 /**
- * Both identities of one local instance, from its label BEFORE any relabel: the legacy default
- * label (`LEGACY_LOCAL_INSTANCE`) is the default instance on both sides; any other label keeps
- * its label.
+ * Both identities of one local instance. `preRelabelLabel` is the instance's registry label
+ * BEFORE any relabel: the legacy default label (`LEGACY_LOCAL_INSTANCE`) is the default
+ * instance on both sides, any other label keeps its label. Passing a label that was already
+ * relabelled is wrong: `'ficus'` is then read as a labelled instance (`postgres-<legacy>-ficus`),
+ * so a caller skips the Postgres move for an instance whose rename is already recorded.
  */
-export function localPostgresMove(legacyLabel: string): LocalPostgresMove {
-  const isDefault = legacyLabel === LEGACY_LOCAL_INSTANCE
+export function localPostgresMove(instance: { preRelabelLabel: string }): LocalPostgresMove {
+  const label = instance.preRelabelLabel
+  const isDefault = label === LEGACY_LOCAL_INSTANCE
   return {
-    legacy: localPostgresNames(LEGACY_LOCAL_INSTANCE, legacyLabel, isDefault),
-    ficus: localPostgresNames(FICUS_STEM, legacyLabel, isDefault),
+    legacy: localPostgresNames(LEGACY_LOCAL_INSTANCE, label, isDefault),
+    ficus: localPostgresNames(FICUS_STEM, label, isDefault),
   }
 }
 
@@ -93,10 +103,25 @@ function rewriteEnvDatabase(text: string, from: string, to: string): string {
     .join('\n')
 }
 
+/** Replaces a file in one rename (a sibling temp file with the same mode), so a crash never leaves it half written. */
+function writeFileAtomic(path: string, text: string): void {
+  const target = realpathSync(path)
+  const mode = statSync(target).mode & 0o7777
+  const temp = join(dirname(target), `.${basename(target)}.ficus-rename-${process.pid}.tmp`)
+  try {
+    writeFileSync(temp, text, { mode })
+    chmodSync(temp, mode)
+    renameSync(temp, target)
+  } catch (error) {
+    rmSync(temp, { force: true })
+    throw error
+  }
+}
+
 function pointEnvAt(envPath: string, from: string, to: string): void {
   const before = readFileSync(envPath, 'utf8')
   const after = rewriteEnvDatabase(before, from, to)
-  if (after !== before) writeFileSync(envPath, after)
+  if (after !== before) writeFileAtomic(envPath, after)
 }
 
 async function must(runner: Runner, command: string[]): Promise<void> {
@@ -112,111 +137,219 @@ async function removeIfPresent(runner: Runner, command: string[]): Promise<void>
   }
 }
 
+/** `docker inspect` of a container: undefined only when docker says there is no such container. */
+async function inspectOrAbsent(runner: Runner, container: string): Promise<ContainerInfo | undefined> {
+  const r = await runner(['docker', 'inspect', '-f', '{{json .}}', container])
+  if (r.code !== 0) {
+    if (/no such (object|container)/i.test(r.stderr)) return undefined
+    throw new Error(`docker inspect ${container} failed:\n${r.stderr || r.stdout}`)
+  }
+  try {
+    return JSON.parse(r.stdout) as ContainerInfo
+  } catch {
+    throw new Error(`docker inspect ${container} printed something that is not JSON`)
+  }
+}
+
+/** Whether a volume exists: false only when docker says there is no such volume. */
+async function volumeExists(runner: Runner, volume: string): Promise<boolean> {
+  const r = await runner(['docker', 'volume', 'inspect', volume])
+  if (r.code === 0) return true
+  if (/no such volume/i.test(r.stderr)) return false
+  throw new Error(`docker volume inspect ${volume} failed:\n${r.stderr || r.stdout}`)
+}
+
 function assertSafeNames({ legacy, ficus }: LocalPostgresMove): void {
   for (const name of [legacy.database, ficus.database]) {
     if (!DB_NAME_RE.test(name)) throw new Error(`database name "${name}" is not a safe identifier`)
   }
 }
 
-/** The DATABASE_URL in `<root>/.env` when it is one the installer wrote (loopback, container credentials). */
+/** The DATABASE_URL in `.env` when it is one the installer wrote (loopback, container credentials). */
 function managedDatabaseUrl(envPath: string): string | undefined {
   if (!existsSync(envPath)) return undefined
   const url = parseEnvFile(readFileSync(envPath, 'utf8')).DATABASE_URL
   return url && isManagedShapedUrl(url) ? url : undefined
 }
 
+function stateOf(info: ContainerInfo | undefined): string {
+  if (!info) return 'missing'
+  return info.State?.Running ? 'running' : 'stopped'
+}
+
+/** What `renameLocalPostgres` would do, found without changing anything. */
+export type LocalPostgresPlan =
+  | { action: 'external' }
+  | { action: 'already'; container: string }
+  | {
+      action: 'rename'
+      from: { container: string; volume: string; running: boolean }
+      to: { container: string; volume: string }
+      /** Host port, the same on both sides. */
+      port: number
+      /** The old container's image ID, which the copy and the new container run. */
+      image: string
+      /** Where the image keeps its data: the mount point on both sides. */
+      dataDir: string
+      /** The database rename, or undefined for a name the operator chose (kept). */
+      database: { from: string; to: string } | undefined
+    }
+
+/**
+ * The read-only half of `renameLocalPostgres`: reads `<root>/.env` and inspects docker, and
+ * returns the plan (what a dry run prints), or throws the refusal the rename would throw.
+ */
+export async function planLocalPostgresRename(
+  move: LocalPostgresMove,
+  root: string,
+  deps: Pick<DockerDeps, 'runner'>
+): Promise<LocalPostgresPlan> {
+  assertSafeNames(move)
+  const { legacy, ficus } = move
+  const { runner } = deps
+  const envPath = join(root, '.env')
+  const url = managedDatabaseUrl(envPath)
+  if (!url) return { action: 'external' }
+  const database = parseDatabaseUrl(url).database
+  if (!DB_NAME_RE.test(database)) {
+    // e.g. an inline `# comment` after the URL, which the URL parser folds into the path.
+    throw new Error(
+      `DATABASE_URL in ${envPath} does not end in a plain database name (an inline comment on that line?) — fix the line and run again`
+    )
+  }
+  const renameDb = database === legacy.database
+  const legacyInfo = await inspectOrAbsent(runner, legacy.container)
+  const ficusInfo = await inspectOrAbsent(runner, ficus.container)
+  const legacyMount = postgresDataMount(legacyInfo?.Mounts)
+
+  if (ficusInfo) {
+    const ours = ficusInfo.Config?.Labels?.[RENAMED_FROM_LABEL] === legacy.container
+    if (ours && !renameDb) return { action: 'already', container: ficus.container }
+    if (!ours && !legacyInfo) return { action: 'already', container: ficus.container }
+    const found = `found: ${ficus.container} (${stateOf(ficusInfo)}), ${legacy.container} (${stateOf(legacyInfo)})`
+    const legacyStopped = legacyInfo && !legacyInfo.State?.Running
+    const downNote = legacyStopped ? ` While ${legacy.container} is stopped the app cannot reach its database.` : ''
+    if (!ours) {
+      throw new Error(
+        `a container named ${ficus.container} exists that no rename created (it has no ${RENAMED_FROM_LABEL} label); ${found}. ` +
+          `This instance's data is still in ${legacy.container}.${downNote} ` +
+          `If ${ficus.container} is not something you need, remove it and run again; this command will not touch it.`
+      )
+    }
+    const intact = legacyInfo && legacyMount?.Name && legacyMount.Name !== ficus.volume
+    const back = intact
+      ? ` ${legacy.container} and its volume ${legacyMount?.Name} are intact, so going back is safe:\n` +
+        `  docker rm -f ${ficus.container}\n  docker volume rm ${ficus.volume}\n  docker start ${legacy.container}\n` +
+        `then run again.`
+      : ` ${legacy.container} is ${legacyInfo ? 'not on a named volume' : 'gone'}, so ${ficus.container} and ${ficus.volume} ` +
+        `may hold the only copy of the data: do not remove them — move this instance by hand.`
+    throw new Error(
+      `an earlier rename from ${legacy.container} to ${ficus.container} did not finish; ${found}; ` +
+        `DATABASE_URL in ${envPath} still names database "${legacy.database}".${downNote}${back}`
+    )
+  }
+
+  if (!legacyInfo) throw new Error(`no container ${legacy.container} to move to ${ficus.container}`)
+  const port = containerHostPort(legacyInfo)
+  if (port === undefined) throw new Error(`container ${legacy.container} publishes no port for postgres`)
+  if (!legacyMount?.Name || !legacyMount.Destination) {
+    throw new Error(`container ${legacy.container} keeps its data outside a named docker volume — move it by hand`)
+  }
+  if (legacyMount.Name === ficus.volume) {
+    throw new Error(
+      `${legacy.container} already keeps its data in volume ${ficus.volume}, the name the rename would copy into. ` +
+        `That volume holds this instance's only data — do not remove it. Move this instance by hand.`
+    )
+  }
+  // The image ID, not its tag: the tag may point at a newer postgres since, one that cannot open this data dir.
+  const image = legacyInfo.Image
+  if (!image) throw new Error(`cannot tell which image container ${legacy.container} runs`)
+  if (await volumeExists(runner, ficus.volume)) {
+    const start = legacyInfo.State?.Running
+      ? ''
+      : ` (docker start ${legacy.container} brings the database back meanwhile)`
+    throw new Error(
+      `volume ${ficus.volume} already exists but container ${ficus.container} does not. It may be left by an interrupted ` +
+        `rename, be the copy an undone rename kept (holding writes made after that rename), or belong to something else. ` +
+        `${legacy.container} (${stateOf(legacyInfo)}) and its volume ${legacyMount.Name} still hold this instance's data${start}. ` +
+        `Check what ${ficus.volume} holds; if it is nothing you need, docker volume rm ${ficus.volume} and run again.`
+    )
+  }
+  return {
+    action: 'rename',
+    from: { container: legacy.container, volume: legacyMount.Name, running: legacyInfo.State?.Running === true },
+    to: { container: ficus.container, volume: ficus.volume },
+    port,
+    image,
+    dataDir: legacyMount.Destination,
+    database: renameDb ? { from: legacy.database, to: ficus.database } : undefined,
+  }
+}
+
 /**
  * Installer-managed Postgres only. Stops the legacy container, creates the new volume, copies
  * the data (`docker run --rm -v <old>:/from:ro -v <new>:/to <same image> sh -c 'cp -a /from/. /to/'`),
- * starts the new container on the SAME host port, renames the legacy default database to
- * `ficus`, and rewrites DATABASE_URL's path in `<root>/.env`. A database name the operator chose
- * (`--db-name`) is kept. The old container is left STOPPED and the old volume untouched (the
- * rollback copy; P5-T26 prints their removal).
+ * starts the new container (labelled `RENAMED_FROM_LABEL`) on the SAME host port, renames the
+ * legacy default database to `ficus`, and rewrites DATABASE_URL's path in `<root>/.env`. A
+ * database name the operator chose (`--db-name`) is kept. The old container is left STOPPED and
+ * the old volume untouched (the rollback copy; P5-T26 prints their removal).
  *
  * The app must be stopped: ALTER DATABASE … RENAME fails while anything is connected to the
  * database. The new container has just been started from the copy, so nothing is.
  *
  * - 'external': DATABASE_URL is not one the installer wrote; no docker call is made.
- * - 'already': the new container exists and .env no longer names the legacy database.
- * - Throws, touching nothing, when the new container exists but .env still names the legacy
- *   database (an interrupted run), when the new volume already exists, or when there is no
- *   legacy container to move. A failure after the first change undoes this run's changes and
- *   throws.
+ * - 'already': the new container is this rename's (by its label) and .env no longer names the
+ *   legacy database, or a container of the new name exists and no legacy container does.
+ * - Throws, touching nothing, on any refusal `planLocalPostgresRename` makes (each message says
+ *   what it found and how to go back). A failure after the first change undoes this run's
+ *   changes and throws, so a throw never leaves a half-made rename behind.
  */
 export async function renameLocalPostgres(
   move: LocalPostgresMove,
   root: string,
   deps: DockerDeps
 ): Promise<'renamed' | 'external' | 'already'> {
-  assertSafeNames(move)
-  const { legacy, ficus } = move
+  const plan = await planLocalPostgresRename(move, root, deps)
+  if (plan.action !== 'rename') return plan.action
   const { runner } = deps
-  const envPath = join(root, '.env')
-  const url = managedDatabaseUrl(envPath)
-  if (!url) return 'external'
-  const renameDb = parseDatabaseUrl(url).database === legacy.database
-
-  if (await inspectContainer(runner, ficus.container)) {
-    if (renameDb) {
-      throw new Error(
-        `container ${ficus.container} exists but DATABASE_URL in ${envPath} still names database "${legacy.database}" — ` +
-          `an earlier rename was interrupted; undo it (or remove ${ficus.container}) and run again`
-      )
-    }
-    return 'already'
-  }
-  const info = await inspectContainer(runner, legacy.container)
-  if (!info) throw new Error(`no container ${legacy.container} to move to ${ficus.container}`)
-  const port = containerHostPort(info)
-  const mount = postgresDataMount(info.Mounts)
-  if (port === undefined) throw new Error(`container ${legacy.container} publishes no port for postgres`)
-  if (!mount?.Name || !mount.Destination) {
-    throw new Error(`container ${legacy.container} keeps its data outside a named docker volume — move it by hand`)
-  }
-  // The image ID, not its tag: the tag may point at a newer postgres since, one that cannot open this data dir.
-  const image = info.Image
-  if (!image) throw new Error(`cannot tell which image container ${legacy.container} runs`)
-  if ((await runner(['docker', 'volume', 'inspect', ficus.volume])).code === 0) {
-    throw new Error(
-      `volume ${ficus.volume} already exists and may hold data — inspect it, remove it (docker volume rm ${ficus.volume}) and run again`
-    )
-  }
-
+  const { from, to } = plan
   const undo: (() => Promise<void>)[] = []
   try {
-    await must(runner, ['docker', 'stop', legacy.container])
-    if (info.State?.Running) undo.push(() => must(runner, ['docker', 'start', legacy.container]))
-    await must(runner, ['docker', 'volume', 'create', ficus.volume])
-    undo.push(() => removeIfPresent(runner, ['docker', 'volume', 'rm', ficus.volume]))
+    await must(runner, ['docker', 'stop', '-t', STOP_TIMEOUT_S, from.container])
+    if (from.running) undo.push(() => must(runner, ['docker', 'start', from.container]))
+    await must(runner, ['docker', 'volume', 'create', to.volume])
+    // Only ever this run's own volume: the plan refused one that already existed.
+    undo.push(() => removeIfPresent(runner, ['docker', 'volume', 'rm', to.volume]))
     await must(runner, [
       'docker',
       'run',
       '--rm',
       '-v',
-      `${mount.Name}:/from:ro`,
+      `${from.volume}:/from:ro`,
       '-v',
-      `${ficus.volume}:/to`,
-      image,
+      `${to.volume}:/to`,
+      plan.image,
       'sh',
       '-c',
       'cp -a /from/. /to/',
     ])
     // Registered before the run: a run that fails to start can still leave a created container.
-    undo.push(() => removeIfPresent(runner, ['docker', 'rm', '-f', ficus.container]))
+    undo.push(() => removeIfPresent(runner, ['docker', 'rm', '-f', to.container]))
     await ensurePostgresContainer(runner, {
-      container: ficus.container,
-      volume: ficus.volume,
-      port,
-      database: ficus.database,
-      image,
-      dataDir: mount.Destination,
+      container: to.container,
+      volume: to.volume,
+      port: plan.port,
+      database: move.ficus.database,
+      image: plan.image,
+      dataDir: plan.dataDir,
+      labels: { [RENAMED_FROM_LABEL]: from.container },
     })
-    await waitForPostgres(runner, ficus.container, { sleep: deps.sleep })
-    if (renameDb) {
+    await waitForPostgres(runner, to.container, { sleep: deps.sleep })
+    if (plan.database) {
       await must(runner, [
         'docker',
         'exec',
-        ficus.container,
+        to.container,
         'psql',
         '-h',
         '127.0.0.1',
@@ -227,9 +360,9 @@ export async function renameLocalPostgres(
         '-v',
         'ON_ERROR_STOP=1',
         '-c',
-        `ALTER DATABASE "${legacy.database}" RENAME TO "${ficus.database}"`,
+        `ALTER DATABASE "${plan.database.from}" RENAME TO "${plan.database.to}"`,
       ])
-      pointEnvAt(envPath, legacy.database, ficus.database)
+      pointEnvAt(join(root, '.env'), plan.database.from, plan.database.to)
     }
   } catch (error) {
     const failures: string[] = []
@@ -243,8 +376,8 @@ export async function renameLocalPostgres(
     const message = (error as Error).message
     throw new Error(
       failures.length === 0
-        ? `moving ${legacy.container} to ${ficus.container} failed, and was undone: ${message}`
-        : `moving ${legacy.container} to ${ficus.container} failed (${message}), and undoing it failed too: ${failures.join('; ')}`,
+        ? `moving ${from.container} to ${to.container} failed, and was undone: ${message}`
+        : `moving ${from.container} to ${to.container} failed (${message}), and undoing it failed too: ${failures.join('; ')}`,
       { cause: error }
     )
   }
@@ -252,23 +385,52 @@ export async function renameLocalPostgres(
 }
 
 /**
- * Reverses a completed `renameLocalPostgres`: removes the new container, starts the old one,
- * and points DATABASE_URL back at the legacy database. The new volume is kept unless
- * `removeVolume` (it holds whatever the app wrote after the rename); pass it when the new
- * database never served the app, so a later rename can copy afresh.
+ * Reverses `renameLocalPostgres`, completed or cut short by a crash: checks the old container
+ * and its volume are still there (else throws, touching nothing — the new ones may hold the
+ * only copy), stops and removes the new container, starts the old one and confirms it runs,
+ * points DATABASE_URL back at the legacy database, and only then deals with the new volume.
+ *
+ * `appStarted` says whether any process of the new identity ever ran against the new database:
+ * - false (a failure BEFORE the app was started on it — T19 steps 5–9, or a step 5 that a crash
+ *   cut short, which T19's journal proves by recording "step 5 started" first): the new volume
+ *   is only this rename's copy and is removed, so a retry copies afresh.
+ * - true (a failure from T19 step 10 on, or `--undo` after a completed run): the new volume
+ *   holds everything the app wrote since the rename and is KEPT; the result names it, and the
+ *   caller must report it — the restored database is the pre-rename snapshot.
+ * A volume the old container itself mounts is never removed.
+ *
+ * DATABASE_URL goes back only when it names `ficus`. An install whose chosen `--db-name` was
+ * literally `ficus` would be pointed at the legacy name; T19 restores `.env` from its step-4
+ * backup, which covers that.
  */
 export async function undoLocalPostgresRename(
   move: LocalPostgresMove,
   root: string,
   deps: DockerDeps,
-  opts: { removeVolume?: boolean } = {}
-): Promise<void> {
+  opts: { appStarted: boolean }
+): Promise<{ keptVolume: string | undefined }> {
   assertSafeNames(move)
   const { legacy, ficus } = move
   const { runner } = deps
+  const legacyInfo = await inspectOrAbsent(runner, legacy.container)
+  const legacyVolume = postgresDataMount(legacyInfo?.Mounts)?.Name
+  if (!legacyInfo || !legacyVolume || !(await volumeExists(runner, legacyVolume))) {
+    throw new Error(
+      `cannot undo the move to ${ficus.container}: ${legacy.container} or its data volume is gone, so ` +
+        `${ficus.container} and ${ficus.volume} may hold the only copy of the data — left untouched`
+    )
+  }
+  await removeIfPresent(runner, ['docker', 'stop', '-t', STOP_TIMEOUT_S, ficus.container])
   await removeIfPresent(runner, ['docker', 'rm', '-f', ficus.container])
-  if (opts.removeVolume) await removeIfPresent(runner, ['docker', 'volume', 'rm', ficus.volume])
   await must(runner, ['docker', 'start', legacy.container])
+  if (!(await inspectOrAbsent(runner, legacy.container))?.State?.Running) {
+    throw new Error(`${legacy.container} did not stay running after docker start; ${ficus.volume} is kept`)
+  }
   const envPath = join(root, '.env')
   if (existsSync(envPath)) pointEnvAt(envPath, ficus.database, legacy.database)
+  if (!opts.appStarted && legacyVolume !== ficus.volume) {
+    await removeIfPresent(runner, ['docker', 'volume', 'rm', ficus.volume])
+    return { keptVolume: undefined }
+  }
+  return { keptVolume: (await volumeExists(runner, ficus.volume)) ? ficus.volume : undefined }
 }

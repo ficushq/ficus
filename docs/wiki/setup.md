@@ -205,7 +205,7 @@ cluster is left alone (`--rebuild-image` forces the image), builds are
 incremental, and starting an already-running pair is a restart.
 
 The PostgreSQL step never calls `docker compose`. It runs the container itself —
-`docker run -d --name postgres-tau --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5432:5432 -v tau_postgres-data:/var/lib/postgresql paradedb/paradedb:latest`
+`docker run -d --name postgres-ficus --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ficus -p 127.0.0.1:5432:5432 -v ficus_postgres-data:/var/lib/postgresql paradedb/paradedb:latest`
 (the name, volume and port come from the instance; a first run pulls the image,
 which takes minutes) — or, when a container of that name already exists,
 **starts** it and adopts the port it publishes. A container `docker compose`
@@ -611,8 +611,8 @@ differently, or debug a step that failed:
    `FICUS_PM2_WORKER_NAME` and `HOME_DIR`. See
    [the managed-keys table](#what-it-writes) for the values setup picks.
 4. **PostgreSQL.**
-   `docker run -d --name postgres-tau --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5432:5432 -v tau_postgres-data:/var/lib/postgresql paradedb/paradedb:latest`
-   (`docker start postgres-tau` if that container already exists — one created
+   `docker run -d --name postgres-ficus --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ficus -p 127.0.0.1:5432:5432 -v ficus_postgres-data:/var/lib/postgresql paradedb/paradedb:latest`
+   (`docker start postgres-ficus` if that container already exists — one created
    by `docker compose` counts). Wait until
    `docker exec postgres-tau psql -U postgres -tAc 'SELECT 1'` succeeds
    repeatedly (ParadeDB restarts once during first init), and create the
