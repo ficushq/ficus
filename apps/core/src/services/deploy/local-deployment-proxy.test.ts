@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { like } from 'drizzle-orm'
+import { brotliCompressSync, brotliDecompressSync, deflateSync, gunzipSync, gzipSync, inflateSync } from 'node:zlib'
 import { db, squads } from '../../db'
 import { Squad } from '../../entities/Squad'
 import {
@@ -334,5 +335,196 @@ describe('localDeployment proxy', () => {
     expect(headers.has('keep-alive')).toBe(false)
     expect(headers.has('x-hop')).toBe(false)
     expect(headers.get('x-keep')).toBe('yes')
+  })
+
+  // Real sockets end to end: an app upstream that compresses, the proxy served
+  // by Bun.serve as Core serves it, and a client that reads the raw wire bytes
+  // (decompress: false) and decodes them per the Content-Encoding it received,
+  // as a browser does. Bun's default fetch decodes the body but kept the
+  // upstream Content-Encoding, which browsers reject as
+  // ERR_CONTENT_DECODING_FAILED.
+  describe('compressed upstream responses', () => {
+    const asset = 'body{color:red}\n'.repeat(400)
+    const encoders: Record<string, (input: string) => Uint8Array<ArrayBuffer>> = {
+      gzip: (input) => new Uint8Array(gzipSync(input)),
+      br: (input) => new Uint8Array(brotliCompressSync(input)),
+      deflate: (input) => new Uint8Array(deflateSync(input)),
+      zstd: (input) => new Uint8Array(Bun.zstdCompressSync(input)),
+    }
+    const decoders: Record<string, (input: Uint8Array) => string> = {
+      gzip: (input) => gunzipSync(input).toString(),
+      br: (input) => brotliDecompressSync(input).toString(),
+      deflate: (input) => inflateSync(input).toString(),
+      zstd: (input) => new TextDecoder().decode(Bun.zstdDecompressSync(input)),
+    }
+
+    let upstream: ReturnType<typeof Bun.serve>
+    let front: ReturnType<typeof Bun.serve>
+    let upstreamAcceptEncodings: Array<string | null>
+
+    beforeEach(() => {
+      upstreamAcceptEncodings = []
+      upstream = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch(req) {
+          upstreamAcceptEncodings.push(req.headers.get('accept-encoding'))
+          const url = new URL(req.url)
+          const encoding = url.searchParams.get('encoding')
+          if (url.pathname === '/_next/static/not-modified.css')
+            return new Response(null, { status: 304, headers: { etag: '"v1"', 'content-encoding': 'gzip' } })
+          if (url.pathname === '/_next/static/empty') return new Response(null, { status: 204 })
+          if (url.pathname === '/_next/static/plain.css')
+            return new Response(asset, { headers: { 'content-type': 'text/css' } })
+          const encoded = encoders[encoding ?? 'gzip'](asset)
+          const headers: Record<string, string> = { 'content-type': 'text/css', 'content-encoding': encoding ?? 'gzip' }
+          if (url.pathname === '/_next/static/marked.css') headers['x-ficus-app-proxy'] = 'error'
+          if (url.pathname === '/_next/static/streamed.css') {
+            const middle = Math.floor(encoded.length / 2)
+            return new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.enqueue(encoded.subarray(0, middle))
+                  controller.enqueue(encoded.subarray(middle))
+                  controller.close()
+                },
+              }),
+              { headers }
+            )
+          }
+          return new Response(encoded, { headers })
+        },
+      })
+      configureLocalDeploymentProxyDependencies({
+        resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: upstream.port! }),
+        fetch,
+      })
+    })
+
+    afterEach(() => {
+      upstream.stop(true)
+      front?.stop(true)
+    })
+
+    async function runningDeployment() {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      front = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch(req) {
+          const path = new URL(req.url).pathname.replace(`/api/app/${localDeployment.id}/`, '')
+          return proxyLocalDeploymentRequest(localDeployment.id, req, path)
+        },
+      })
+      return localDeployment
+    }
+
+    /** A browser-like request to the proxy, keeping the raw bytes on the wire. */
+    async function browserFetch(
+      localDeployment: { id: string; urlPathOrHost: string },
+      path: string,
+      { query = '', method = 'GET', withCookie = true } = {}
+    ) {
+      const url = new URL(localDeploymentUrl(localDeployment, path, query))
+      const token = url.searchParams.get('_ficus_token')
+      if (withCookie) url.searchParams.delete('_ficus_token')
+      const response = await fetch(`http://127.0.0.1:${front.port}${url.pathname}${url.search}`, {
+        method,
+        headers: {
+          'accept-encoding': 'gzip, deflate, br, zstd',
+          ...(withCookie ? { cookie: `ficus_app_${localDeployment.id}=${token}` } : {}),
+        },
+        decompress: false,
+      })
+      return { response, bytes: new Uint8Array(await response.arrayBuffer()) }
+    }
+
+    it.each(Object.keys(encoders))(
+      'passes a %s-encoded asset through byte for byte with its Content-Encoding',
+      async (encoding) => {
+        const localDeployment = await runningDeployment()
+
+        const { response, bytes } = await browserFetch(localDeployment, '_next/static/app.css', {
+          query: `encoding=${encoding}`,
+        })
+
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-encoding')).toBe(encoding)
+        expect(bytes).toEqual(encoders[encoding](asset))
+        const contentLength = response.headers.get('content-length')
+        if (contentLength !== null) expect(Number(contentLength)).toBe(bytes.length)
+        expect(decoders[encoding](bytes)).toBe(asset)
+        // The browser's Accept-Encoding still reaches the app.
+        expect(upstreamAcceptEncodings[0]).toBe('gzip, deflate, br, zstd')
+      }
+    )
+
+    it('passes a streamed gzip body through intact', async () => {
+      const localDeployment = await runningDeployment()
+
+      const { response, bytes } = await browserFetch(localDeployment, '_next/static/streamed.css')
+
+      expect(response.headers.get('content-encoding')).toBe('gzip')
+      expect(decoders.gzip(bytes)).toBe(asset)
+    })
+
+    it('keeps the encoded body intact on the cookie-minting (URL token) request', async () => {
+      const localDeployment = await runningDeployment()
+
+      const { response, bytes } = await browserFetch(localDeployment, '_next/static/app.css', {
+        query: 'encoding=br',
+        withCookie: false,
+      })
+
+      expect(response.headers.get('set-cookie')).toContain(`ficus_app_${localDeployment.id}=`)
+      expect(response.headers.get('content-encoding')).toBe('br')
+      expect(decoders.br(bytes)).toBe(asset)
+    })
+
+    it('strips an app-forged error marker from an encoded response without touching the body', async () => {
+      const localDeployment = await runningDeployment()
+
+      const { response, bytes } = await browserFetch(localDeployment, '_next/static/marked.css')
+
+      expect(response.headers.get('x-ficus-app-proxy')).toBeNull()
+      expect(response.headers.get('content-encoding')).toBe('gzip')
+      expect(decoders.gzip(bytes)).toBe(asset)
+    })
+
+    it('answers HEAD with the encoded headers and no body', async () => {
+      const localDeployment = await runningDeployment()
+
+      const { response, bytes } = await browserFetch(localDeployment, '_next/static/app.css', { method: 'HEAD' })
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-encoding')).toBe('gzip')
+      expect(bytes.length).toBe(0)
+    })
+
+    it('passes 304 and 204 through without a body', async () => {
+      const localDeployment = await runningDeployment()
+
+      const notModified = await browserFetch(localDeployment, '_next/static/not-modified.css')
+      const empty = await browserFetch(localDeployment, '_next/static/empty')
+
+      expect(notModified.response.status).toBe(304)
+      expect(notModified.response.headers.get('etag')).toBe('"v1"')
+      expect(notModified.bytes.length).toBe(0)
+      expect(empty.response.status).toBe(204)
+      expect(empty.bytes.length).toBe(0)
+    })
+
+    it('leaves an uncompressed response unchanged', async () => {
+      const localDeployment = await runningDeployment()
+
+      const { response, bytes } = await browserFetch(localDeployment, '_next/static/plain.css')
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-encoding')).toBeNull()
+      expect(response.headers.get('content-type')).toBe('text/css')
+      expect(new TextDecoder().decode(bytes)).toBe(asset)
+    })
   })
 })
