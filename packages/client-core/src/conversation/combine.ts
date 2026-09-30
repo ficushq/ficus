@@ -1,7 +1,9 @@
 import type { ContentBlock, DeliveryMode, Message } from '@ficus/shared'
+import { isSystemNoticeBlock, type RenderedContentBlock, type SystemNoticeBlock } from './blocks'
 import { compareByKey, messageSortAt, ms } from './ordering'
 import type {
   CombineSession,
+  SettledNotices,
   PendingItem,
   PersistedTurn,
   RenderItem,
@@ -110,6 +112,7 @@ function persistedTurnIncludesStreamedBlocks(
 ): boolean {
   let persistedIndex = 0
   for (const streamedBlock of group.blocks) {
+    if (isSystemNoticeBlock(streamedBlock)) continue // render-only, never saved
     let found = false
     while (persistedIndex < turn.blocks.length) {
       if (blockContentMatches(streamedBlock, turn.blocks[persistedIndex], authoritativeCompletion)) {
@@ -145,6 +148,51 @@ function persistedTurnComplete(
     turn,
     session.authoritativeCompletedGroupIds?.has(group.streamGroupId) ?? false
   )
+}
+
+/** Is this saved block the one a streamed block became? Identity only: position, not a completeness check. */
+function isSavedFormOf(streamed: StreamGroupSnapshot['blocks'][number], saved: ContentBlock): boolean {
+  if (streamed.type === 'tool_use') {
+    return saved.type === 'tool_use' && saved.toolCall.toolCallId === streamed.toolCall.toolCallId
+  }
+  if (streamed.type === 'text' || streamed.type === 'thinking') {
+    return saved.type === streamed.type && saved.content.startsWith(streamed.content)
+  }
+  return false
+}
+
+/**
+ * Keep a response's pinned system notices where they were once it renders
+ * from its saved rows: each goes right after the saved block that the streamed
+ * block before it became (or first, if none came before it). Deterministic:
+ * the streamed order decides, and an unmatched streamed block leaves the next
+ * notice after the last matched one.
+ */
+export function pinNoticesInSavedBlocks(
+  saved: ContentBlock[],
+  streamed: StreamGroupSnapshot['blocks']
+): RenderedContentBlock[] {
+  if (!streamed.some(isSystemNoticeBlock)) return saved
+  const before = new Map<number, SystemNoticeBlock[]>()
+  let next = 0
+  for (const block of streamed) {
+    if (isSystemNoticeBlock(block)) {
+      before.set(next, [...(before.get(next) ?? []), block])
+      continue
+    }
+    for (let i = next; i < saved.length; i++) {
+      if (isSavedFormOf(block, saved[i])) {
+        next = i + 1
+        break
+      }
+    }
+  }
+  const out: RenderedContentBlock[] = []
+  for (let i = 0; i <= saved.length; i++) {
+    out.push(...(before.get(i) ?? []))
+    if (i < saved.length) out.push(saved[i])
+  }
+  return out
 }
 
 /** Decide whether a stream group should still render (vs. having swapped to persisted). */
@@ -195,9 +243,15 @@ export function combine(
   groups: StreamGroupSnapshot[],
   pending: PendingItem[],
   session: CombineSession,
-  systemMessages: SystemMessageItem[] = []
+  systemMessages: SystemMessageItem[] = [],
+  settledNotices: SettledNotices[] = []
 ): RenderItem[] {
   const turnBySgId = new Map(history.filter((t) => t.streamGroupId).map((t) => [t.streamGroupId!, t]))
+  // Streamed blocks per group, including cleared groups that held pinned notices.
+  const streamedBySgId = new Map<string, StreamGroupSnapshot['blocks']>(
+    settledNotices.map((entry) => [entry.streamGroupId, entry.blocks])
+  )
+  for (const group of groups) streamedBySgId.set(group.streamGroupId, group.blocks)
 
   // 1. Streaming items + the set of streamGroupIds whose persisted turn is suppressed.
   const suppressedSgIds = new Set<string>()
@@ -235,7 +289,15 @@ export function combine(
     persistedItems.push({
       sortAt: turn.sortAt,
       id: turn.id,
-      item: { kind: 'persisted', id: turn.id, message: turn.message, mergedFrom: turn.mergedFrom, blocks: turn.blocks },
+      item: {
+        kind: 'persisted',
+        id: turn.id,
+        message: turn.message,
+        mergedFrom: turn.mergedFrom,
+        blocks: turn.streamGroupId
+          ? pinNoticesInSavedBlocks(turn.blocks, streamedBySgId.get(turn.streamGroupId) ?? [])
+          : turn.blocks,
+      },
     })
   }
 

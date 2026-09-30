@@ -676,7 +676,7 @@ describe('incomplete durable handoff', () => {
       expect(completedGroupIds(partial, [group], session)).toEqual([])
       expect(combine(partial, [group], [], session)[0]).toMatchObject({ kind: 'streaming', blocks: group.blocks })
       const full = groupPersisted([
-        msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: group.blocks } }),
+        msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: group.blocks as ContentBlock[] } }),
       ])
       expect(completedGroupIds(full, [group], session)).toEqual(['S'])
       expect(combine(full, [group], [], session)[0].kind).toBe('persisted')
@@ -689,7 +689,7 @@ describe('incomplete durable handoff', () => {
 test('transport end while execution is busy cannot retire an open group even if current prefix is saved', () => {
   const group = streamGroup({ streamGroupId: 'S', blocks: [textBlock('b', 'prefix')] })
   const history = groupPersisted([
-    msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: group.blocks } }),
+    msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: group.blocks as ContentBlock[] } }),
   ])
   expect(
     completedGroupIds(history, [group], { agentId: 'a', streamStatus: 'ended', executionStatus: 'running' })

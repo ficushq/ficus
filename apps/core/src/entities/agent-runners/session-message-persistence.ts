@@ -57,6 +57,8 @@ export class SessionMessagePersistence {
     | { response: string; metadata: MessageMetadata | undefined; messageId: string | undefined }
     | undefined
   private activeToolMessage: { messageId: string; pendingToolCallIds: Set<string> } | undefined
+  /** Set by a compaction that did not end the group: the next output starts a new one. */
+  private rotateBeforeNextOutput = false
 
   constructor(private readonly deps: SessionMessagePersistenceDeps) {}
 
@@ -70,6 +72,25 @@ export class SessionMessagePersistence {
 
   rotateStreamGroup(): void {
     this.streamGroupCounter += 1
+    this.rotateBeforeNextOutput = false
+  }
+
+  /**
+   * Start a new stream group when the next assistant output begins, not now: a
+   * compaction between turns may be the end of the run, and the run's `done`
+   * must still name the group its rows belong to. If more output follows (pi
+   * continues for queued or pre-settle messages), it must not extend the
+   * pre-compaction group, which the chat renders as one item sorted at its
+   * start — above the compaction notice, which would then sit pinned below
+   * everything the agent does next.
+   */
+  rotateStreamGroupBeforeNextOutput(): void {
+    this.rotateBeforeNextOutput = true
+  }
+
+  /** An assistant message is starting: apply a rotation deferred by {@link rotateStreamGroupBeforeNextOutput}. */
+  beginAssistantOutput(): void {
+    if (this.rotateBeforeNextOutput) this.rotateStreamGroup()
   }
 
   recordTurnRowId(messageId: string): void {

@@ -1,5 +1,5 @@
 import type { ContentBlock, DeliveryMode, ExecutionStatus, Message, MessageMetadata } from '@ficus/shared'
-import type { StreamingContentBlock } from './blocks'
+import type { RenderedContentBlock, StreamingContentBlock } from './blocks'
 
 /** Connection state of the agent SSE stream, surfaced by the hook to the combiner. */
 export type StreamStatus = 'live' | 'reconnecting' | 'ended'
@@ -40,7 +40,8 @@ export type RenderItem =
       id: string // first row id of the (possibly merged) turn
       message: Message
       mergedFrom?: Message[]
-      blocks: ContentBlock[]
+      /** Saved content, plus any system notices that were pinned inside the live response. */
+      blocks: RenderedContentBlock[]
     }
   | {
       kind: 'pending'
@@ -119,6 +120,12 @@ export interface SystemMessageItem {
   transientId?: string
   /** Client clock (ms) at arrival — orders the item in Region A. */
   at: number
+}
+
+/** A cleared stream group's blocks, kept because it held pinned system notices. */
+export interface SettledNotices {
+  streamGroupId: string
+  blocks: StreamingContentBlock[]
 }
 
 /** Session-level compaction status, surfaced by the hook for a banner. Null when not compacting. */
