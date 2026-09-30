@@ -201,3 +201,32 @@ describe('WorkStreamDetailModal exact action authority', () => {
     }
   })
 })
+
+describe('WorkStreamDetailModal manual wait actors', () => {
+  test('labels each manual wait by who must act and keeps the resolve control', async () => {
+    permissions = new Set(['workstreams:update'])
+    permissionsLoading = false
+    const expectations = [
+      [undefined, 'Needs you', null],
+      ['human', 'Needs you', null],
+      ['owner', 'Waiting on Owner', "The stream's owner agent clears this wait"],
+      ['manager', 'Needs you', null],
+    ] as const
+    for (const [actor, label, note] of expectations) {
+      const stream = reviewWorkStream()
+      const baseWait = stream.openWaits![0]!
+      stream.derivedState = 'blocked'
+      stream.openWaits = [{ ...baseWait, id: 'manual-1', type: 'manual', message: 'Hold', ...(actor ? { actor } : {}) }]
+      await renderModal({ workStream: stream }, (dom) => {
+        const text = dom.window.document.body.textContent ?? ''
+        expect({ actor, hasLabel: text.includes(label) }).toEqual({ actor, hasLabel: true })
+        if (note) expect(text).toContain(note)
+        else expect(text).not.toContain('no action is needed from you')
+        const respond = [...dom.window.document.querySelectorAll('button')].find(
+          (item) => item.textContent === 'Respond'
+        ) as HTMLButtonElement | undefined
+        expect({ actor, respond: respond?.disabled }).toEqual({ actor, respond: false })
+      })
+    }
+  })
+})

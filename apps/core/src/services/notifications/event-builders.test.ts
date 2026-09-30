@@ -170,6 +170,32 @@ describe('notification event builders', () => {
     })
   })
 
+  test('builds no human channel notification for owner-actor manual waits', async () => {
+    track(spyOn(WorkStream, 'find').mockResolvedValue({ id: 'ws1', squadId: 's1', title: 'Held stream' } as any))
+    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
+    const listOpenWaits = track(spyOn(waitsModule, 'listOpenWaits'))
+    for (const actor of ['owner']) {
+      listOpenWaits.mockResolvedValue([
+        { id: 'target', workStreamId: 'ws1', type: 'manual', actor, message: 'Held for #353' } as any,
+      ])
+      // Exact target known.
+      expect(
+        await buildNotificationEvent('workStream.blocked', { workStreamId: 'ws1', squadId: 's1', waitId: 'target' })
+      ).toBeNull()
+      // Legacy payload without a wait id: no human-actor manual wait is open.
+      expect(await buildNotificationEvent('workStream.blocked', { workStreamId: 'ws1', squadId: 's1' })).toBeNull()
+    }
+    // A human wait alongside keeps the legacy (no wait id) notification and names the human wait.
+    listOpenWaits.mockResolvedValue([
+      { id: 'hold', workStreamId: 'ws1', type: 'manual', actor: 'owner', message: 'Held for #353' } as any,
+      { id: 'key', workStreamId: 'ws1', type: 'manual', actor: 'human', message: 'Need the API key' } as any,
+    ])
+    expect(await buildNotificationEvent('workStream.blocked', { workStreamId: 'ws1', squadId: 's1' })).toMatchObject({
+      type: 'workStream.blocked',
+      body: 'Need the API key',
+    })
+  })
+
   test('adds the agent id to execution notification events', async () => {
     const { Agent } = await import('../../entities/Agent')
     const { Execution } = await import('../../entities/Execution')

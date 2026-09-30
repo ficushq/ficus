@@ -1,4 +1,5 @@
 import {
+  workStreamWaitActor,
   assistantConversationPath,
   parseAssistantInboxConversationId,
   parseInboxPushPresentation,
@@ -16,12 +17,17 @@ import { listOpenWaits } from '../work-streams/waits'
 
 type EventData = Record<string, unknown>
 
-/** Best-effort: the newest open manual wait's message (why the stream is blocked). */
-async function manualWaitMessage(workStreamId: string): Promise<string | null> {
+/**
+ * Best-effort: the newest open human-actor manual wait's message (why the stream is blocked).
+ * `humanActionable` is false when manual waits are open but none needs a human.
+ */
+async function manualWaitFacts(workStreamId: string): Promise<{ message: string | null; humanActionable: boolean }> {
   try {
-    return (await listOpenWaits(db, workStreamId)).find((w) => w.type === 'manual')?.message ?? null
+    const manual = (await listOpenWaits(db, workStreamId)).filter((w) => w.type === 'manual')
+    const human = manual.find((w) => workStreamWaitActor(w) === 'human')
+    return { message: human?.message ?? null, humanActionable: manual.length === 0 || human !== undefined }
   } catch {
-    return null
+    return { message: null, humanActionable: true }
   }
 }
 
@@ -29,7 +35,7 @@ async function exactWaitTarget(
   data: EventData,
   workStreamId: string,
   waitType: 'manual' | 'review'
-): Promise<{ waitId: string; actionId: string; message: string | null } | null> {
+): Promise<{ waitId: string; actionId: string; message: string | null; actor: string } | null> {
   const waitId = data.waitId
   if (typeof waitId !== 'string' || !waitId) return null
   try {
@@ -38,7 +44,7 @@ async function exactWaitTarget(
     )
     if (!wait) return null
     const actionType = waitType === 'review' ? 'workstream-review' : 'workstream-blocked'
-    return { waitId, actionId: `${actionType}:${workStreamId}:${waitId}`, message: wait.message }
+    return { waitId, actionId: `${actionType}:${workStreamId}:${waitId}`, message: wait.message, actor: wait.actor }
   } catch {
     return null
   }
@@ -118,6 +124,11 @@ export const eventBuilders: Record<string, EventBuilder> = {
     if (!squad) return null
 
     const target = await exactWaitTarget(data, ws.id, 'manual')
+    // Human channels (push, Discord, Slack, ...) only hear about waits a human must clear. An
+    // owner-actor wait still wakes the owning agent through its inbox.
+    if (target && workStreamWaitActor(target) !== 'human') return null
+    const fallback = target ? null : await manualWaitFacts(ws.id)
+    if (fallback && !fallback.humanActionable) return null
     return {
       type: 'workStream.blocked',
       squadId: squad.id,
@@ -126,7 +137,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamNumber: ws.number,
       ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
       title: `🚫 Blocked: ${workStreamTitle(ws)}`,
-      body: (target ? target.message : await manualWaitMessage(ws.id)) || 'Agent needs input to continue',
+      body: (target ? target.message : fallback?.message) || 'Agent needs input to continue',
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }

@@ -58,11 +58,28 @@ and arrives in your inbox as your next instruction. Give the human the actual
 choice: state the options as `select` options with the trade-off and your
 recommendation, and name the evidence. Never substitute a manual wait or an
 inbox message for a question — `ficus workstream request-input` is for waits on
-an external action that is not a question (a credential grant, a provider-side
-fix, a resource someone must provision); messaging a user directly is never
-the path (see Notifying Humans). Ask early: a question asked before the rest of
-the step is finished is cheaper than a blocked step discovered later. Use
-`ask_human` without `blocking` for questions whose answer can wait.
+an action that is not a question; messaging a user directly is never the path
+(see Notifying Humans). Ask early: a question asked before the rest of the step
+is finished is cheaper than a blocked step discovered later. Use `ask_human`
+without `blocking` for questions whose answer can wait.
+
+Pick the wait by who must act:
+
+- A decision or answer from a human: `ask_human` (not a manual wait).
+- Another work stream's deliverable: a `dependsOn` dependency.
+- A human action that is not a question (a credential grant, a resource only
+  they can provision): `request-input --actor human` (the default).
+- A condition the stream owner clears (a stream it must update, a worktree it
+  must configure): `request-input --actor owner`.
+- Provider or third-party events: `request-input --actor owner`, with the
+  message saying what it waits on.
+
+Only `human` manual waits are shown to users as actions they need to take;
+every actor blocks the stream the same way.
+When you own a stream, open your own holds with `--actor owner` so users are
+not asked to act. Correct a mis-attributed wait with `ficus workstream
+wait-actor <id> <actor> --wait <waitId> -m "<why>"` (stream owners and the
+squad manager only; the wait stays open).
 
 Blocking questions and `ficus workstream request-input <id> -m "..."` default to
 the current flow attempt. Sibling branches can continue; their join waits for
@@ -170,7 +187,7 @@ metadata, **do not implement on `main`** — request input on the work stream so
 the manager can configure it before you continue:
 
 ```
-ficus workstream request-input <workstream-id> -m "No git.worktree/git.branch configured. Please set up the worktree and reassign."
+ficus workstream request-input <workstream-id> --actor owner -m "No git.worktree/git.branch configured. Please set up the worktree and reassign."
 ```
 
 **Intentional no-worktree case:** In rare cases the manager may indicate (in

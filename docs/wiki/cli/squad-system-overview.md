@@ -148,11 +148,14 @@ OPEN WAITS on an `active`/`queued` stream plus a derived display.
 When an agent needs human input:
 
 ```bash
-# Agent requests input (opens a manual wait)
-ficus ws request-input ws-123 -m "Which approach should I use: A or B?"
+# Agent requests a human action (opens a manual wait; decisions use ask_human)
+ficus ws request-input ws-123 -m "Need the API key for X"
 
 # Human resolves it (the note is delivered to the agent)
-ficus ws unblock ws-123 -m "Approach A"
+ficus ws unblock ws-123 -m "Added as X_API_KEY"
+
+# A hold only the stream's owner agent clears (not shown as Needs you)
+ficus ws request-input ws-123 --actor owner -m "Hold until #353 passes review"
 ```
 
 ### Agent Collaboration

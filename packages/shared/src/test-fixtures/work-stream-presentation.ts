@@ -1,6 +1,9 @@
 import type { WorkStreamPresentationFacts, WorkStreamPresentationState, StatusRole } from '../status-presentation'
 import type { WorkBucket } from '../live-activity'
 
+/** The actor's pre-rename name; nothing shipped with it, so it is an unknown value (human). */
+const PRE_RENAME_ACTOR = 'manager'
+
 /** One contract consumed by shared, Core serialization and web badge tests. */
 export interface PresentationCase {
   name: string
@@ -76,6 +79,66 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     attention: true,
     bucket: 'needsYou',
     label: 'Blocked',
+  },
+  {
+    name: 'human-actor manual blocker',
+    facts: { ...active, openWaits: [{ type: 'manual', actor: 'human' }] },
+    state: 'blocked',
+    role: 'danger',
+    attention: true,
+    bucket: 'needsYou',
+    label: 'Blocked',
+  },
+  {
+    name: 'owner-actor manual wait',
+    facts: { ...active, openWaits: [{ type: 'manual', actor: 'owner' }] },
+    state: 'waiting_on_owner',
+    role: 'externalWait',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'Waiting on Owner',
+  },
+  {
+    name: 'unknown actor (including manager) is human',
+    facts: { ...active, openWaits: [{ type: 'manual', actor: PRE_RENAME_ACTOR }] },
+    state: 'blocked',
+    role: 'danger',
+    attention: true,
+    bucket: 'needsYou',
+    label: 'Blocked',
+  },
+  {
+    name: 'human manual wait outranks owner manual wait',
+    facts: {
+      ...active,
+      openWaits: [
+        { type: 'manual', actor: 'owner' },
+        { type: 'manual', actor: 'human' },
+      ],
+    },
+    state: 'blocked',
+    role: 'danger',
+    attention: true,
+    bucket: 'needsYou',
+    label: 'Blocked',
+  },
+  {
+    name: 'question outranks owner manual wait',
+    facts: { ...active, openWaits: [{ type: 'manual', actor: 'owner' }, { type: 'question' }] },
+    state: 'waiting_on_answer',
+    role: 'humanWait',
+    attention: true,
+    bucket: 'needsYou',
+    label: 'Waiting on Answer',
+  },
+  {
+    name: 'owner manual wait beats delivery',
+    facts: { ...active, openWaits: [{ type: 'manual', actor: 'owner' }], delivery: { kind: 'merge' } },
+    state: 'waiting_on_owner',
+    role: 'externalWait',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'Waiting on Owner',
   },
   {
     name: 'dependency',

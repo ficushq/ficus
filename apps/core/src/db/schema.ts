@@ -37,6 +37,8 @@ import type {
   WorkflowCommand,
   IntegrationOutputFact,
   IntegrationSubscription,
+  WorkStreamWaitActor,
+  WorkStreamWaitActorChange,
 } from '@ficus/shared'
 import type { GitHubIssueDispatchFact } from '../services/squad-activity/github-issue-fact'
 import type { GitHubPrDispatchFact } from '../services/squad-activity/github-pr-fact'
@@ -1432,6 +1434,12 @@ export const workStreamWaits = pgTable(
     // Null blocks the stream; otherwise blocks only this durable flow attempt.
     flowAttemptId: integer('flow_attempt_id'),
     message: text('message'),
+    // Manual waits: who must act — 'human' | 'owner'. Text (not
+    // an enum) so a future actor needs no enum migration; serializers treat an
+    // unknown value as 'human'. Existing and unspecified waits are human.
+    actor: text('actor').$type<WorkStreamWaitActor>().notNull().default('human'),
+    // Append-only audit of actor corrections on an open manual wait (who, when, from/to, note).
+    actorChanges: jsonb('actor_changes').$type<WorkStreamWaitActorChange[]>(),
     createdBy: workStreamWaitCreatedByEnum('created_by').notNull().default('system'),
     createdByAgentId: uuid('created_by_agent_id').references(() => agents.id, { onDelete: 'set null' }),
     createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),

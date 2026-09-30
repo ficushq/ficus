@@ -11,6 +11,7 @@ import { AgentType } from '../../entities/AgentType'
 import { Squad } from '../../entities/Squad'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
 import { subscribeToWorkStream } from '../work-streams/subscriptions'
+import { openWait } from '../work-streams/waits'
 import { subscribeToSquad } from './subscriptions'
 import {
   findExistingWorkStreamInbox,
@@ -643,6 +644,67 @@ describe('work-stream notifications', () => {
     })
     // The owning agent still gets its own copy.
     expect(await countLifecycleInbox(workStream.id, 'blocked', 'agent', agentId)).toBe(1)
+  })
+
+  it('routes a blocked notice by wait actor: only human waits reach watchers, the owner agent always hears', async () => {
+    const expectations = [
+      [undefined, 1, 'is blocked and needs attention'],
+      ['human', 1, 'is blocked and needs attention'],
+      ['owner', 0, 'waiting on owner action'],
+      // The pre-rename value is unknown, so it is a human wait.
+      ['manager', 1, 'is blocked and needs attention'],
+    ] as const
+    for (const [actor, watcherCount, ownerCopy] of expectations) {
+      const workStream = await storedLegacyWorkStream({
+        squadId,
+        title: `${typeId} actor ${actor ?? 'legacy'}`,
+        ownerAgentId: agentId,
+      })
+      await subscribeToWorkStream(workStream.id, streamWatcher.id)
+      await subscribeToSquad(squadId, squadWatcher.id)
+
+      await notifyWorkStreamBlocked(workStream, undefined, undefined, { actor, message: 'Hold for #353 review' })
+
+      for (const watcher of [streamWatcher, squadWatcher]) {
+        expect({ actor, count: await countLifecycleInbox(workStream.id, 'blocked', 'user', watcher.id) }).toEqual({
+          actor,
+          count: watcherCount,
+        })
+      }
+      const ownerNotices = await db
+        .select({ content: inbox.content })
+        .from(inbox)
+        .where(
+          and(
+            eq(inbox.recipientId, agentId),
+            sql`${inbox.metadata}->>'workStreamId' = ${workStream.id}`,
+            sql`${inbox.metadata}->>'event' = 'blocked'`
+          )
+        )
+      expect(ownerNotices).toHaveLength(1)
+      expect(ownerNotices[0]!.content).toContain(ownerCopy)
+      if (actor === 'owner') expect(ownerNotices[0]!.content).toContain('Hold for #353 review')
+    }
+  })
+
+  it('reads the actor from the wait row when an event fallback only knows the wait id', async () => {
+    const workStream = await storedLegacyWorkStream({ squadId, title: `${typeId} fallback actor` })
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+    const { wait } = await openWait(db, {
+      workStreamId: workStream.id,
+      type: 'manual',
+      actor: 'owner',
+      message: 'Owner hold',
+    })
+
+    await notifyWorkStreamBlocked(workStream, {
+      waitId: wait.id,
+      actionId: `workstream-blocked:${workStream.id}:${wait.id}`,
+    })
+
+    expect(await countLifecycleInbox(workStream.id, 'blocked', 'user', streamWatcher.id)).toBe(0)
+    // No explicit owner: the squad manager is woken.
+    expect(await countLifecycleInbox(workStream.id, 'blocked', 'agent', managerId)).toBe(1)
   })
 
   it('routes review and blocked by decisions and done by progress', async () => {

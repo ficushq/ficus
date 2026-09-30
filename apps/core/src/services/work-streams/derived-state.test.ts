@@ -118,7 +118,13 @@ describe('work-stream derived state', () => {
     for (const row of WORK_STREAM_PRESENTATION_CASES.filter((row) => row.facts.openWaits !== undefined)) {
       const ws = await createStream(row.name)
       for (const wait of row.facts.openWaits ?? [])
-        await db.insert(workStreamWaits).values({ workStreamId: ws.id, type: wait.type, createdBy: 'system' })
+        await db.insert(workStreamWaits).values({
+          workStreamId: ws.id,
+          type: wait.type,
+          createdBy: 'system',
+          // Unknown actors are stored as-is and must serialize as human.
+          ...(wait.actor ? { actor: wait.actor as 'human' } : {}),
+        })
       const input = { ...ws.toJson(), ...row.facts, agentIds: ['matrix-agent'], assigneeAgentId: null }
       const derived = (
         await computeDerivedStates([input], {

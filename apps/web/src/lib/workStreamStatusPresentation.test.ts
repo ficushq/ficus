@@ -5,9 +5,14 @@ import {
   WS_STATUS_LABELS,
   externalDeliveryLabel,
   getWsDisplayState,
+  isWorkStreamParked,
   workStreamStatusLabel,
+  workStreamWaitBadge,
 } from './workStreamStatusPresentation'
 import { BADGE_COLORS } from '../components/Badge'
+
+/** The actor's pre-rename name; nothing shipped with it, so it is an unknown value (human). */
+const PRE_RENAME_ACTOR = 'manager'
 
 describe('work-stream role token resolution', () => {
   test('every stored and derived state retains its shared semantic role', () => {
@@ -128,5 +133,34 @@ describe('delivery-external label derivation', () => {
       'Delivery Setup Required'
     )
     expect(workStreamStatusLabel({ status: 'active', openWaits: [{ type: 'review' }] })).toBe('In Review')
+  })
+})
+
+describe('workStreamWaitBadge', () => {
+  test('labels manual waits by actor and keeps other wait types by type', () => {
+    expect(workStreamWaitBadge({ type: 'manual' })).toEqual({ label: 'Needs you', color: 'danger' })
+    expect(workStreamWaitBadge({ type: 'manual', actor: 'human' })).toEqual({ label: 'Needs you', color: 'danger' })
+    expect(workStreamWaitBadge({ type: 'manual', actor: 'owner' })).toEqual({
+      label: 'Waiting on Owner',
+      color: 'externalWait',
+    })
+    // Unknown actors (including the pre-rename 'manager') fall back to the human treatment.
+    expect(workStreamWaitBadge({ type: 'manual', actor: 'robot' })).toEqual({ label: 'Needs you', color: 'danger' })
+    expect(workStreamWaitBadge({ type: 'manual', actor: PRE_RENAME_ACTOR })).toEqual({
+      label: 'Needs you',
+      color: 'danger',
+    })
+    expect(workStreamWaitBadge({ type: 'dependency' })).toEqual({ label: 'Dependency', color: 'externalWait' })
+    // Resolved waits keep their type label and name a non-human actor.
+    expect(workStreamWaitBadge({ type: 'manual' }, { history: true }).label).toBe('Manual')
+    expect(workStreamWaitBadge({ type: 'manual', actor: 'owner' }, { history: true }).label).toBe('Manual · Owner')
+    // A workflow approval gate is a review, whatever actor it carries.
+    expect(
+      workStreamWaitBadge({ type: 'manual', resolutionHandler: 'workflow', flowAttemptId: 1, actor: 'owner' })
+    ).toEqual({ label: 'Review', color: 'review' })
+  })
+
+  test('owner waits are parked like other retained waits when queued', () => {
+    expect(isWorkStreamParked({ status: 'queued', openWaits: [{ type: 'manual', actor: 'owner' }] })).toBe(true)
   })
 })

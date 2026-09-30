@@ -5,8 +5,10 @@ import type {
   SandboxToolchainStatus,
   WorkStreamDerivedState,
   WorkStreamStatus,
+  WorkStreamWaitActor,
   WorkStreamWaitType,
 } from './types'
+import { workStreamWaitActor } from './types'
 
 /** Platform-neutral meanings used by web, mobile, and native adapters. */
 export type StatusRole =
@@ -68,9 +70,17 @@ export interface WorkStreamDeliveryPresentation {
   explanation?: WorkStreamDeliveryExplanation
 }
 
+/**
+ * Presentation-only states for a manual wait another party must clear. Core
+ * keeps the stored/derived vocabulary (`blocked`) for older consumers; these
+ * are selected only from explicit wait facts carrying an actor.
+ */
+export type ManualWaitPresentationState = 'waiting_on_owner'
+
 export type WorkStreamPresentationState =
   | WorkStreamStatus
   | WorkStreamDerivedState
+  | ManualWaitPresentationState
   | `delivery_${DeliveryPresentationKind}`
 export type SubagentPresentationState = 'queued' | 'running' | 'idle' | 'stopped' | 'done' | 'failed'
 export type SandboxPresentationState = SandboxRuntimeState | 'installing_packages' | 'running_setup' | 'degraded'
@@ -100,6 +110,7 @@ export const WORK_STREAM_STATUS_ROLE = {
   in_review: 'review',
   waiting_on_answer: 'humanWait',
   waiting_on_dependency: 'externalWait',
+  waiting_on_owner: 'externalWait',
   blocked: 'danger',
   idle: 'danger',
   execution_failed: 'danger',
@@ -159,7 +170,19 @@ export interface WorkStreamWaitDisplayFacts {
   type: WorkStreamWaitType
   resolutionHandler?: 'workflow'
   flowAttemptId?: number | null
+  /** Manual waits only; missing or unknown means `human`. */
+  actor?: WorkStreamWaitActor | string | null
 }
+
+/**
+ * The state a manual wait presents, by who must act. Human (and legacy
+ * actor-less) waits stay `blocked` and need the user; owner waits are
+ * non-alarming waits on the stream's owning agent.
+ */
+export const MANUAL_WAIT_ACTOR_STATE = {
+  human: 'blocked',
+  owner: 'waiting_on_owner',
+} as const satisfies Record<WorkStreamWaitActor, WorkStreamPresentationState>
 
 /**
  * The wait type a stream presents. A workflow human-approval gate is stored as
@@ -210,6 +233,16 @@ export function selectWorkStreamPresentationState(
           )
       )
     )
+    if (waitType === 'manual') {
+      // Anything a human must clear wins over an owner-only hold.
+      const humanActionable = workStream.openWaits.some(
+        (wait) =>
+          workStreamWaitDisplayType(wait) === 'manual' &&
+          !(deliveryState === 'delivery_approval' && wait.id && wait.id === workStream.delivery?.approvalWaitId) &&
+          workStreamWaitActor(wait) === 'human'
+      )
+      return MANUAL_WAIT_ACTOR_STATE[humanActionable ? 'human' : 'owner']
+    }
     if (waitType) return WORK_STREAM_WAIT_STATE[waitType]
     if (workStream.derivedState === 'execution_failed') return 'execution_failed'
     if (deliveryState) return deliveryState
@@ -229,16 +262,11 @@ export function selectWorkStreamPresentationState(
 export function workStreamNeedsHumanAttention(workStream: WorkStreamPresentationFacts): boolean {
   const state = selectWorkStreamPresentationState(workStream)
   if (state === 'delivery_approval' || state === 'delivery_review' || state === 'delivery_merge') return true
-  if (state === 'in_review' || state === 'waiting_on_answer') return true
-  if (state !== 'blocked') return false
-
-  // Explicit wait facts distinguish a manual wait from dependency blocking.
-  // Older payloads omitted waits, so their historical `blocked` fallback is
-  // retained until all producers provide the authoritative list.
-  return (
-    workStream.openWaits === undefined ||
-    workStream.openWaits.some((wait) => workStreamWaitDisplayType(wait) === 'manual')
-  )
+  // `blocked` is selected only for a manual wait a human must clear (a missing
+  // or unknown actor is human), or from an older payload that omitted waits,
+  // whose historical `blocked` fallback is retained. Owner manual waits
+  // present as waiting_on_owner instead.
+  return state === 'in_review' || state === 'waiting_on_answer' || state === 'blocked'
 }
 
 export interface SandboxPresentationFacts {

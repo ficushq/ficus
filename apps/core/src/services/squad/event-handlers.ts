@@ -31,6 +31,8 @@ export function initSquadEventHandlers(): void {
   // suppressed — dedupe would not catch it, because nothing was sent first.
   eventEmitter.on('workStream.blocked', async ({ workStreamId, waitId, actorAgentId }) => {
     const workStream = await WorkStream.find(workStreamId)
+    // The wait's actor is re-read from its row by id, so an older emitter's
+    // payload without `waitActor` cannot route an owner wait to humans.
     if (workStream)
       await notifyWorkStreamBlocked(
         workStream,

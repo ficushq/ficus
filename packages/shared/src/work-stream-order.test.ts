@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { sortCanonicalWorkStreams, type CanonicalWorkStreamOrderInput } from './work-stream-order'
+import {
+  canonicalWorkStreamSortKey,
+  sortCanonicalWorkStreams,
+  type CanonicalWorkStreamOrderInput,
+} from './work-stream-order'
+import { WORK_STREAM_PRESENTATION_CASES } from './test-fixtures/work-stream-presentation'
 
 const at = (day: number) => new Date(`2026-01-${String(day).padStart(2, '0')}T00:00:00Z`)
 
@@ -238,4 +243,90 @@ test('a PR awaiting required human review sorts in the human-actionable tier, ev
       }),
     ])
   ).toEqual(['d-pr-review', 'e-pr-review-annotated', 'b-running', 'c-auto-gate', 'a-external'])
+})
+
+describe('manual wait actors', () => {
+  const manual = (actor?: string) => ({ type: 'manual' as const, closedAt: null, ...(actor ? { actor } : {}) })
+
+  test('human and legacy actor-less manual waits stay human-actionable ahead of running work', () => {
+    expect(
+      ids([
+        ws('c-progress', { derivedState: 'in_progress', openWaits: [] }),
+        ws('b-legacy', { openWaits: [manual()] }),
+        ws('a-human', { openWaits: [manual('human')] }),
+        ws('d-legacy-derived', { derivedState: 'blocked' }),
+      ])
+    ).toEqual(['a-human', 'b-legacy', 'd-legacy-derived', 'c-progress'])
+  })
+
+  test('an owner-actor wait never outranks human-actionable or running work; it sorts with dependency waits', () => {
+    expect(
+      ids([
+        ws('a-owner', { openWaits: [manual('owner')] }),
+        ws('b-dependency', { openWaits: [{ type: 'dependency', closedAt: null }] }),
+        ws('c-progress', { derivedState: 'in_progress', openWaits: [] }),
+        ws('d-question', { openWaits: [{ type: 'question', closedAt: null }] }),
+        ws('e-human', { openWaits: [manual('human')] }),
+      ])
+    ).toEqual(['d-question', 'e-human', 'c-progress', 'a-owner', 'b-dependency'])
+  })
+
+  test('an owner-actor wait sorts with external delivery waits', () => {
+    expect(
+      ids([
+        ws('a-owner-wait', { openWaits: [manual('owner')] }),
+        ws('b-external-delivery', { delivery: { kind: 'external' }, openWaits: [] }),
+        ws('c-progress', { derivedState: 'in_progress', openWaits: [] }),
+        ws('d-merge', { delivery: { kind: 'merge' }, openWaits: [] }),
+      ])
+    ).toEqual(['d-merge', 'c-progress', 'a-owner-wait', 'b-external-delivery'])
+  })
+
+  test('an unknown future actor is treated as human', () => {
+    expect(
+      ids([
+        ws('a-progress', { derivedState: 'in_progress', openWaits: [] }),
+        ws('b-unknown', { openWaits: [manual('manager')] }),
+      ])
+    ).toEqual(['b-unknown', 'a-progress'])
+  })
+
+  test('a human manual wait lifts a stream that also has an owner wait', () => {
+    expect(canonicalWorkStreamSortKey(ws('mixed', { openWaits: [manual('owner'), manual('human')] }))).toMatchObject({
+      activeUrgency: 0,
+    })
+  })
+
+  test('queued streams with a manual wait of any actor still lose their queue position', () => {
+    for (const actor of [undefined, 'human', 'owner']) {
+      expect(
+        canonicalWorkStreamSortKey(
+          ws(`queued-${actor}`, { status: 'queued', queuePosition: 1, openWaits: [manual(actor)] })
+        )
+      ).toMatchObject({ group: 2, queuePosition: Number.POSITIVE_INFINITY })
+    }
+    // A closed wait does not hold the stream out of its position.
+    expect(
+      canonicalWorkStreamSortKey(
+        ws('queued-closed', {
+          status: 'queued',
+          queuePosition: 1,
+          openWaits: [{ type: 'manual', actor: 'owner', closedAt: '2026-01-02T00:00:00Z' }],
+        })
+      )
+    ).toMatchObject({ group: 1, queuePosition: 1 })
+  })
+
+  test('active ordering agrees with the native bucket for every shared presentation case', () => {
+    for (const row of WORK_STREAM_PRESENTATION_CASES.filter((row) => row.facts.status === 'active')) {
+      const urgency = canonicalWorkStreamSortKey(
+        ws(row.name, {
+          ...row.facts,
+          openWaits: row.facts.openWaits?.map((wait) => ({ ...wait, closedAt: null })),
+        } as Partial<CanonicalWorkStreamOrderInput>)
+      ).activeUrgency
+      const expected = row.bucket === 'needsYou' ? 0 : row.bucket === 'running' ? 1 : 3
+      expect({ name: row.name, urgency }).toEqual({ name: row.name, urgency: expected })
+    }
+  })
 })

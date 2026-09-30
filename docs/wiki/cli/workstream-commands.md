@@ -285,7 +285,7 @@ ficus ws update ws-123 --title "New title" --description "Updated description"
 
 ### request-input
 
-Open a manual wait: the work stream needs input/action from the owner/operator.
+Open a manual wait: the work stream cannot proceed until the named actor acts.
 
 ```bash
 ficus workstream request-input [options] <id>
@@ -299,18 +299,52 @@ ficus workstream request-input [options] <id>
 **Options:**
 | Option | Description |
 |--------|-------------|
-| `-m, --message <msg>` | What input/action is needed (required; the wait message) |
+| `-m, --message <msg>` | What input/action is needed, and from whom (required; the wait message) |
+| `--actor <actor>` | Who must act: `human` (default) or `owner` |
 | `-f, --file <path>` | File to include for context (can be repeated) |
 
 **Examples:**
 
 ```bash
 ficus workstream request-input ws-123 -m "Need the API key for X"
+ficus workstream request-input ws-123 --actor owner -m "Hold launch until #353 passes review and the owner updates the launch source"
+ficus workstream request-input ws-123 --actor owner -m "Waiting for the provider to restore the sandbox quota"
 ```
+
+The actor decides who is asked to act, never whether the stream is blocked:
+
+| Actor   | Who must act                                     | Presented as     | Needs you / human notices           |
+| ------- | ------------------------------------------------ | ---------------- | ----------------------------------- |
+| `human` | The user/operator                                | Blocked          | Yes (Action Center, push, watchers) |
+| `owner` | The stream's owner agent (squad manager if none) | Waiting on Owner | No; the owner agent is woken        |
+
+Questions for a human use `ask_human`; waiting on another work stream's deliverable uses a `dependsOn` dependency, not a manual wait. Provider or third-party events use `owner`, with the message saying what the wait is for. Older servers ignore `--actor` and open a human wait.
 
 For flow agents, this defaults to their active attempt. `--scope stream` blocks the whole stream; `--scope attempt --attempt ID` selects an active attempt explicitly. Human/operator requests default to the whole stream. Sibling attempts may continue while one is waiting.
 
 The request is resolved with `unblock`; the resolution note goes to the current attempt that requested it, or to the legacy assignee for non-flow streams. A resolution is input, not step approval.
+
+---
+
+### wait-actor
+
+Correct who must act on an open manual wait. The wait stays open and keeps blocking; nothing is closed, reopened or re-dispatched.
+
+```bash
+ficus workstream wait-actor [options] <id> <actor>
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--wait <waitId>` | Manual wait to relabel (required when several manual waits are open) |
+| `-m, --message <note>` | Why the actor changed |
+
+```bash
+ficus workstream wait-actor ws-123 owner --wait 1a2b3c4d -m "Held for the owner, not the user"
+```
+
+Only users with `workstreams:update` on the squad, the stream's owner agent or the squad manager may relabel; assigned workers cannot. Workflow-owned approval waits are not relabelable. Every change is appended to the wait's `actorChanges` audit trail (from, to, who, when, note). Relabeling to `human` sends the normal blocked notice.
 
 ---
 

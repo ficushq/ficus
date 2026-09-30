@@ -206,6 +206,8 @@ export async function computeDerivedStates(
       delivery_external: 'waiting_on_dependency',
       delivery_setup: 'blocked',
       delivery_failure: 'blocked',
+      // Actor-aware manual waits are presentation-only; the derived vocabulary stays `blocked`.
+      waiting_on_owner: 'blocked',
     } as const
     derivedState =
       presentation in deliveryStates

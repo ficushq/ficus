@@ -1,6 +1,12 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
-import type { WorkStreamWait, WorkStreamWaitResolution, WorkStreamWaitType } from '@ficus/shared'
+import {
+  workStreamWaitActor,
+  type WorkStreamWait,
+  type WorkStreamWaitActor,
+  type WorkStreamWaitResolution,
+  type WorkStreamWaitType,
+} from '@ficus/shared'
 import { db } from '../../db'
 import { workStreams, workStreamWaits } from '../../db/schema'
 
@@ -17,6 +23,9 @@ export function toWaitJson(row: WorkStreamWaitRow): WorkStreamWait {
     flowAttemptId: row.flowAttemptId ?? null,
     workStreamId: row.workStreamId,
     type: row.type,
+    // Manual waits only; an unknown stored value reads as human.
+    ...(row.type === 'manual' ? { actor: workStreamWaitActor(row) } : {}),
+    ...(row.type === 'manual' && row.actorChanges?.length ? { actorChanges: row.actorChanges } : {}),
     referenceId: row.referenceId,
     ...(row.resolutionHandler ? { resolutionHandler: row.resolutionHandler } : {}),
     message: row.message,
@@ -39,6 +48,8 @@ export interface OpenWaitInput {
   type: WorkStreamWaitType
   referenceId?: string | null
   message?: string | null
+  /** Manual waits: who must act. Defaults to human. */
+  actor?: WorkStreamWaitActor
   createdBy?: 'system' | 'agent' | 'manager' | 'operator'
   createdByAgentId?: string | null
   createdByUserId?: string | null
@@ -87,6 +98,7 @@ export async function openWait(
       referenceId: input.referenceId ?? null,
       resolutionHandler: input.resolutionHandler ?? null,
       message: safeMessage,
+      actor: input.actor ?? 'human',
       createdBy: input.createdBy ?? 'system',
       createdByAgentId: input.createdByAgentId ?? null,
       createdByUserId: input.createdByUserId ?? null,

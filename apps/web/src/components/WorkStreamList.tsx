@@ -29,7 +29,7 @@ import {
   SkeletonRows,
 } from './loading/Skeleton'
 import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@ficus/shared'
-import type { WorkStream, WorkStreamStatus, WorkStreamDerivedState, Squad, Agent } from '@ficus/shared'
+import type { WorkStream, WorkStreamStatus, Squad, Agent } from '@ficus/shared'
 
 // --- Status constants ---
 
@@ -50,7 +50,12 @@ function focusVisibleSquadAgentPanel() {
 }
 
 // Derived display states considered "waiting" for filtering/grouping purposes.
-const WS_WAITING_DERIVED_STATES: WorkStreamDerivedState[] = ['waiting_on_answer', 'waiting_on_dependency', 'blocked']
+const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
+  'waiting_on_answer',
+  'waiting_on_dependency',
+  'waiting_on_owner',
+  'blocked',
+]
 
 // Keep metadata links above the feed row's stretched work-stream button.
 // inline-flex + items-center keep the link text on the row's centerline: the mobile touch-target
@@ -71,6 +76,7 @@ const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
   in_review: '◎',
   waiting_on_answer: '?',
   waiting_on_dependency: '⧗',
+  waiting_on_owner: '⧗',
   blocked: '⊘',
   idle: '○',
   execution_failed: '✖',
@@ -849,7 +855,7 @@ export function WorkStreamList({
           if (statusFilter === 'in_review') return WORK_STREAM_STATUS_ROLE[wsFilterState(ws)] === 'review'
           if (statusFilter === 'waiting')
             return (
-              WS_WAITING_DERIVED_STATES.includes(wsFilterState(ws) as WorkStreamDerivedState) ||
+              WS_WAITING_DERIVED_STATES.includes(wsFilterState(ws)) ||
               ['delivery_external', 'delivery_setup', 'delivery_failure'].includes(wsFilterState(ws))
             )
           return wsFilterState(ws) === statusFilter

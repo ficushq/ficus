@@ -1,6 +1,12 @@
 import {
+  MANUAL_WAIT_ACTOR_STATE,
   selectWorkStreamPresentationState,
+  workStreamWaitActor,
+  workStreamWaitDisplayType,
   WORK_STREAM_STATUS_ROLE,
+  type WorkStreamWaitActor,
+  type WorkStreamWaitDisplayFacts,
+  type WorkStreamWaitType,
   type WorkStreamDeliveryExplanation,
   type WorkStreamPresentationFacts,
   type WorkStreamPresentationState,
@@ -28,6 +34,8 @@ export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
   in_review: 'In Review',
   waiting_on_answer: 'Waiting on Answer',
   waiting_on_dependency: 'Waiting on Dependency',
+  // Manual waits by actor: `blocked` is the human one (Needs you).
+  waiting_on_owner: 'Waiting on Owner',
   blocked: 'Blocked',
   idle: 'Idle',
   execution_failed: 'Execution Failed',
@@ -49,6 +57,7 @@ export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, StatusR
   in_review: webStatus(WORK_STREAM_STATUS_ROLE.in_review).badgeColor,
   waiting_on_answer: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_answer).badgeColor,
   waiting_on_dependency: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_dependency).badgeColor,
+  waiting_on_owner: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_owner).badgeColor,
   blocked: webStatus(WORK_STREAM_STATUS_ROLE.blocked).badgeColor,
   idle: webStatus(WORK_STREAM_STATUS_ROLE.idle).badgeColor,
   execution_failed: webStatus(WORK_STREAM_STATUS_ROLE.execution_failed).badgeColor,
@@ -95,10 +104,58 @@ export function workStreamStatusLabel(workStream: WorkStreamPresentationFacts): 
   return WS_STATUS_LABELS[state]
 }
 
+/**
+ * Badge text/color for one wait: open manual waits are labeled by who must act.
+ * A resolved wait (`history`) keeps its type label, naming a non-human actor.
+ */
+export function workStreamWaitBadge(
+  wait: WorkStreamWaitDisplayFacts,
+  opts: { history?: boolean } = {}
+): { label: string; color: StatusRole } {
+  const type = workStreamWaitDisplayType(wait)
+  if (type === 'manual') {
+    const actor = workStreamWaitActor(wait)
+    const label = opts.history
+      ? `${WAIT_TYPE_LABELS.manual}${actor === 'human' ? '' : ` · ${MANUAL_WAIT_ACTOR_NAMES[actor]}`}`
+      : MANUAL_WAIT_ACTOR_LABELS[actor]
+    return { label, color: MANUAL_WAIT_ACTOR_BADGE_COLORS[actor] }
+  }
+  return { label: WAIT_TYPE_LABELS[type], color: WAIT_TYPE_BADGE_COLORS[type] }
+}
+
+const MANUAL_WAIT_ACTOR_NAMES: Record<WorkStreamWaitActor, string> = {
+  human: 'Human',
+  owner: 'Owner',
+}
+
+const WAIT_TYPE_LABELS: Record<WorkStreamWaitType, string> = {
+  dependency: 'Dependency',
+  question: 'Question',
+  review: 'Review',
+  manual: 'Manual',
+}
+
+const WAIT_TYPE_BADGE_COLORS: Record<WorkStreamWaitType, StatusRole> = {
+  dependency: 'externalWait',
+  question: 'humanWait',
+  review: 'review',
+  manual: 'danger',
+}
+
+export const MANUAL_WAIT_ACTOR_LABELS: Record<WorkStreamWaitActor, string> = {
+  human: 'Needs you',
+  owner: WS_STATUS_LABELS[MANUAL_WAIT_ACTOR_STATE.owner],
+}
+
+const MANUAL_WAIT_ACTOR_BADGE_COLORS: Record<WorkStreamWaitActor, StatusRole> = {
+  human: WS_STATUS_BADGE_COLORS[MANUAL_WAIT_ACTOR_STATE.human],
+  owner: WS_STATUS_BADGE_COLORS[MANUAL_WAIT_ACTOR_STATE.owner],
+}
+
 /** Queued work with a retained wait or pause has released its admission slot. */
 export function isWorkStreamParked(workStream: WorkStreamPresentationFacts): boolean {
   if (workStream.status !== 'queued') return false
-  return ['in_review', 'waiting_on_answer', 'waiting_on_dependency', 'blocked', 'paused'].includes(
+  return ['in_review', 'waiting_on_answer', 'waiting_on_dependency', 'waiting_on_owner', 'blocked', 'paused'].includes(
     // Admission state follows retained waits/pause, independently of delivery's primary label.
     getWsDisplayState({ ...workStream, delivery: undefined })
   )

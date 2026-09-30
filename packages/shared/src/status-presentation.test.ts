@@ -9,6 +9,7 @@ import type {
 } from './types'
 import {
   AGENT_STATUS_ROLE,
+  MANUAL_WAIT_ACTOR_STATE,
   EXECUTION_STATUS_ROLE,
   SANDBOX_STATUS_ROLE,
   SUBAGENT_STATUS_ROLE,
@@ -71,6 +72,7 @@ describe('status role mappings', () => {
       ['delivery_review', 'review'],
       ['delivery_merge', 'review'],
       ['delivery_external', 'externalWait'],
+      ['waiting_on_owner', 'externalWait'],
       ['delivery_setup', 'danger'],
       ['delivery_failure', 'danger'],
       ['paused', 'neutral'],
@@ -250,5 +252,67 @@ describe('selectSandboxPresentationState', () => {
     expect(selectSandboxPresentationState({ status: 'running', readiness: 'ready_degraded' })).toBe('degraded')
     expect(selectSandboxPresentationState({ status: 'running', toolchain: { status: 'failed' } })).toBe('failed')
     expect(selectSandboxPresentationState({ status: 'running', devboxReady: true })).toBe('running')
+  })
+})
+
+describe('manual wait actors', () => {
+  const manual = (actor?: string, extra: Partial<WorkStreamWait> = {}) => ({
+    type: 'manual' as const,
+    ...(actor ? { actor } : {}),
+    ...extra,
+  })
+
+  test('each actor selects its own state; only human needs attention', () => {
+    expect(MANUAL_WAIT_ACTOR_STATE).toEqual({
+      human: 'blocked',
+      owner: 'waiting_on_owner',
+    })
+    for (const [actor, state, attention] of [
+      [undefined, 'blocked', true],
+      ['human', 'blocked', true],
+      ['owner', 'waiting_on_owner', false],
+      // Unknown values, including the pre-rename 'manager', are human.
+      ['manager', 'blocked', true],
+      ['robot', 'blocked', true],
+    ] as const) {
+      const facts = { status: 'active' as const, openWaits: [manual(actor)] }
+      expect({ actor, state: selectWorkStreamPresentationState(facts) }).toEqual({ actor, state })
+      expect({ actor, attention: workStreamNeedsHumanAttention(facts) }).toEqual({ actor, attention })
+    }
+  })
+
+  test('wait-type precedence is unchanged: a dependency still outranks an owner or human manual wait', () => {
+    for (const actor of ['human', 'owner']) {
+      expect(
+        selectWorkStreamPresentationState({ status: 'active', openWaits: [manual(actor), { type: 'dependency' }] })
+      ).toBe('waiting_on_dependency')
+    }
+  })
+
+  test('a workflow human-approval gate is review whatever its actor', () => {
+    const gate = manual('owner', { resolutionHandler: 'workflow', flowAttemptId: 3 })
+    expect(selectWorkStreamPresentationState({ status: 'active', openWaits: [gate] })).toBe('in_review')
+    expect(workStreamNeedsHumanAttention({ status: 'active', openWaits: [gate] })).toBe(true)
+  })
+
+  test('the delivery approval wait is still excluded before the remaining manual waits pick an actor', () => {
+    const facts = {
+      status: 'active' as const,
+      delivery: { kind: 'approval' as const, approvalWaitId: 'approval' },
+      openWaits: [
+        { ...manual(undefined, { resolutionHandler: 'workflow' }), id: 'approval' },
+        { ...manual('owner'), id: 'hold' },
+      ],
+    }
+    expect(selectWorkStreamPresentationState(facts)).toBe('waiting_on_owner')
+    expect(workStreamNeedsHumanAttention(facts)).toBe(false)
+    // Only the approval wait: approval presentation, still human attention.
+    const approvalOnly = { ...facts, openWaits: [facts.openWaits[0]!] }
+    expect(selectWorkStreamPresentationState(approvalOnly)).toBe('delivery_approval')
+    expect(workStreamNeedsHumanAttention(approvalOnly)).toBe(true)
+  })
+
+  test('legacy payloads without waits keep the historical blocked attention fallback', () => {
+    expect(workStreamNeedsHumanAttention({ status: 'active', derivedState: 'blocked' })).toBe(true)
   })
 })
