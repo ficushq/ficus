@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { assistantNavigationPath } from '../lib/assistantNavigationPath'
 
@@ -19,20 +19,30 @@ function closesAssistant(state: unknown): boolean {
  * changes while it was open, carry its parameters onto the new page with the
  * same rule the Assistant's own navigation uses (assistantNavigationPath).
  * Changes within one page — including closing the Assistant — are left alone.
+ * Return the carried parameters during render: repairing the URL in a layout
+ * effect alone still commits a closed panel and an empty conversation stack.
  */
-export function useKeepAssistantAcrossPages(): void {
+export function useKeepAssistantAcrossPages(): URLSearchParams {
   const location = useLocation()
   const navigate = useNavigate()
-  const previous = useRef<string | null>(null)
+  const here = `${location.pathname}${location.search}${location.hash}`
+  const [snapshot, setSnapshot] = useState({ location, path: here })
+  let current = snapshot
+  if (snapshot.location !== location) {
+    const changedPage = snapshot.location.pathname !== location.pathname
+    current = {
+      location,
+      path: changedPage && !closesAssistant(location.state) ? assistantNavigationPath(here, snapshot.path) : here,
+    }
+    // Adjust only when the router location changes. React retries this render
+    // before committing children; unrelated renders retain the carried path
+    // even if the router's replacement has not committed yet.
+    setSnapshot(current)
+  }
+  const carried = current.path
   useLayoutEffect(() => {
-    const here = `${location.pathname}${location.search}${location.hash}`
-    const last = previous.current
-    previous.current = here
-    if (last === null || closesAssistant(location.state)) return
-    if (new URL(last, 'https://ficus.invalid').pathname === location.pathname) return
-    const carried = assistantNavigationPath(here, last)
     if (carried === here) return
-    previous.current = carried
     navigate(carried, { replace: true, state: location.state })
-  }, [location, navigate])
+  }, [carried, here, location.state, navigate])
+  return new URL(carried, 'https://ficus.invalid').searchParams
 }

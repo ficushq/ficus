@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useStableRef } from './useStableRef'
+import { useKeepAssistantAcrossPages } from './useKeepAssistantAcrossPages'
 import type { CommandDestination } from '../lib/commandCenterSearch'
 
 export type AssistantDestination =
@@ -82,7 +83,20 @@ export function readAssistantNavigation(params: URLSearchParams): AssistantDesti
 }
 
 export function useAssistantNavigation() {
-  const [params, setParams] = useSearchParams()
+  const params = useKeepAssistantAcrossPages()
+  const [, setParams] = useSearchParams()
+  const paramsRef = useStableRef(params)
+  const rawState = params.get('chat')
+  const state = rawState === 'open' || rawState === 'expanded' ? rawState : 'closed'
+  const setState = useCallback(
+    (value: 'open' | 'expanded' | 'closed') => {
+      const next = new URLSearchParams(paramsRef.current)
+      if (value === 'closed') next.delete('chat')
+      else next.set('chat', value)
+      setParams(next, { replace: true })
+    },
+    [paramsRef, setParams]
+  )
   const ephemeral = useRef(new Map<string, CommandDestination>())
   const serialized = params.get('commandStack')
   const legacyId = params.get('assistantConversation')
@@ -146,5 +160,5 @@ export function useAssistantNavigation() {
       { replace: true }
     )
   }, [current, setParams])
-  return { entries, query, setQuery, push, back, reset, replace, close, chatCreated }
+  return { params, state, setState, entries, query, setQuery, push, back, reset, replace, close, chatCreated }
 }
