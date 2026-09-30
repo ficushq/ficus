@@ -16,13 +16,13 @@ let _agentStatus = 'idle'
 let _agentSquadId: string | undefined
 let _slotWaits: Array<{ waiterId: string; poolKey: string; queuedAt: string }> = []
 
-// Control the live sandbox-wait signal AgentChat's useAgentConversation would supply to the header
+// Control the live sandbox-wait signal AgentChat's useAgentConversation would supply to the composer status
 let _waitingForSandbox = false
 
 // Mock @tanstack/react-query hooks to avoid dual-React hook issues in renderToStaticMarkup.
 // AgentConversationBody calls useQueryClient/useQuery/useMutation for header chrome.
 // We preserve queryOptions (used by queryOptions.ts) by re-exporting it.
-// useQuery call order in AgentConversationBody: 1=agent, 2=activeExecution, 3=agentType.
+// useQuery call order: 1=agent, 2=activeExecution (AgentConversationBody), 3=slot waits (AgentSlotWaitStatus).
 let _useQueryCallCount = 0
 import { ReactQueryHooksProvider } from '../reactQueryHooks'
 
@@ -37,7 +37,7 @@ const reactQueryOverrides = {
     if (call === 1 && _activeExecution !== undefined) {
       return { data: { id: 'a1', status: _agentStatus, terminatedAt: null, squadId: _agentSquadId } }
     }
-    if (call === 4) return { data: _slotWaits }
+    if (call === 3) return { data: _slotWaits }
     return { data: undefined }
   },
   useMutation: () => ({ mutate: () => undefined, isPending: false }),
@@ -60,7 +60,7 @@ const TestAgentChat = ({
   isReview,
   inputDisabled,
   viewingUserId,
-  header,
+  composerStatus,
   showRawText,
   onToggleRawText,
 }: {
@@ -70,7 +70,7 @@ const TestAgentChat = ({
   isReview?: boolean
   inputDisabled?: boolean
   viewingUserId?: string
-  header?: ReactNode | ((state: { waitingForSandbox: boolean }) => ReactNode)
+  composerStatus?: ReactNode | ((state: { waitingForSandbox: boolean }) => ReactNode)
   showRawText?: boolean
   onToggleRawText?: () => void
 }) => (
@@ -85,9 +85,11 @@ const TestAgentChat = ({
     data-show-raw-text={String(showRawText)}
     data-has-raw-text-toggle={String(typeof onToggleRawText === 'function')}
   >
-    {header && (
-      <div data-testid="agent-chat-header">
-        {typeof header === 'function' ? header({ waitingForSandbox: _waitingForSandbox }) : header}
+    {composerStatus && (
+      <div data-testid="agent-chat-composer-status">
+        {typeof composerStatus === 'function'
+          ? composerStatus({ waitingForSandbox: _waitingForSandbox })
+          : composerStatus}
       </div>
     )}
   </div>
@@ -126,7 +128,7 @@ function render(props: Parameters<typeof AgentConversation>[0]) {
 // ---------------------------------------------------------------------------
 
 describe('AgentConversation wraps AgentChat', () => {
-  test('includes queued slot context in the current conversation header alongside execution status', () => {
+  test("includes queued slot context in the composer's status, with no separate header row", () => {
     _agentSquadId = 'squad-a'
     _permissions = new Set(['slots:use'])
     _activeExecution = { active: true, status: 'running' }
@@ -135,7 +137,9 @@ describe('AgentConversation wraps AgentChat', () => {
       const html = render({ agentId: 'a1' })
       expect(html).toContain('Queued for slots:')
       expect(html).toContain('shared-box-intensive')
-      expect(html).toContain('running')
+      // Plain "running" is the composer's Stop and the transcript's working row, not a label.
+      expect(html).not.toContain('>running<')
+      expect(html).not.toContain('agent-chat-header')
     } finally {
       _agentSquadId = undefined
       _permissions = new Set()
@@ -192,48 +196,31 @@ describe('AgentConversation RBAC gating (agents:run)', () => {
     expect(html).toContain('data-input-disabled="false"')
   })
 
-  test('Stop button is disabled when agents:run permission is absent', () => {
-    _permissions = new Set()
-    _activeExecution = { active: true, status: 'running' }
-    try {
-      const html = render({ agentId: 'a1' })
-      // canRunAgent=false → ConfirmButton disabled=true → <button disabled="">Stop</button>
-      // The Stop button label is present (canStopExecution=true because status='running')
-      expect(html).toContain('Stop')
-      expect(html).toContain('disabled=""')
-    } finally {
-      _activeExecution = undefined
-    }
-  })
-
-  test('Stop button is enabled when agents:run permission is granted', () => {
-    _permissions = new Set(['agents:run'])
-    _activeExecution = { active: true, status: 'running' }
-    try {
-      const html = render({ agentId: 'a1' })
-      // canRunAgent=true → ConfirmButton disabled=false → <button> (no disabled="" HTML attr)
-      expect(html).toContain('Stop')
-      // Button should NOT have the disabled HTML attribute (distinct from the disabled: Tailwind class)
-      // Extract the Stop button opening tag only
-      const stopIdx = html.indexOf('Stop')
-      const buttonStart = html.lastIndexOf('<button', stopIdx)
-      const buttonTag = html.slice(buttonStart, html.indexOf('>', buttonStart) + 1)
-      expect(buttonTag).not.toContain('disabled=""')
-    } finally {
-      _activeExecution = undefined
+  test("the status has no Stop of its own: the composer's Stop is gated by inputDisabled", () => {
+    for (const permissions of [new Set<string>(), new Set(['agents:run'])]) {
+      _permissions = permissions
+      _activeExecution = { active: true, status: 'running' }
+      try {
+        const html = render({ agentId: 'a1' })
+        expect(html).not.toContain('>Stop<')
+        expect(html).toContain(`data-input-disabled="${permissions.size === 0}"`)
+      } finally {
+        _activeExecution = undefined
+      }
     }
   })
 })
 
 describe('AgentConversation status badge', () => {
-  test('uses shared attention styling for compacting and resetting', () => {
+  test('says when the session is compacting or resetting', () => {
     _activeExecution = { active: false }
-    for (const status of ['compacting', 'resetting']) {
-      _agentStatus = status
+    for (const [status, label] of [
+      ['compacting', 'Compacting…'],
+      ['resetting', 'Resetting…'],
+    ]) {
+      _agentStatus = status!
       const html = render({ agentId: 'a1' })
-      expect(html).toContain('text-status-attention-fg')
-      expect(html).not.toContain('text-blue-600')
-      expect(html).not.toContain('text-orange-600')
+      expect(html).toContain(`>${label}<`)
     }
     _agentStatus = 'idle'
     _activeExecution = undefined
@@ -257,13 +244,12 @@ describe('AgentConversation execution badge (sandbox wait)', () => {
     }
   })
 
-  test('labels the execution "running" again once sandbox_ready clears the live signal', () => {
+  test('drops the sandbox label once sandbox_ready clears the live signal', () => {
     _permissions = new Set(['agents:run'])
     _activeExecution = { active: true, status: 'running' }
     _waitingForSandbox = false
     try {
       const html = render({ agentId: 'a1' })
-      expect(html).toContain('>running<')
       expect(html).not.toContain('Waiting for sandbox')
     } finally {
       _activeExecution = undefined

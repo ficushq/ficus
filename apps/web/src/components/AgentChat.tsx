@@ -66,6 +66,8 @@ interface AgentChatProps {
   }
   showRawText?: boolean
   onToggleRawText?: () => void
+  /** Small live status beside the composer's controls (context used, sandbox and slot waits…). */
+  composerStatus?: React.ReactNode | ((state: AgentChatHeaderState) => React.ReactNode)
   inputPrefix?: React.ReactNode
   focusTrigger?: number
   keyboardShortcutsEnabled?: boolean
@@ -108,6 +110,7 @@ export function AgentChat({
   tts,
   showRawText,
   onToggleRawText,
+  composerStatus,
   inputPrefix,
   focusTrigger,
   keyboardShortcutsEnabled,
@@ -367,6 +370,11 @@ export function AgentChat({
       tts={tts}
       showRawText={showRawText}
       onToggleRawText={onToggleRawText}
+      composerStatus={
+        typeof composerStatus === 'function'
+          ? composerStatus({ waitingForSandbox: conv.waitingForSandbox })
+          : composerStatus
+      }
       inputPrefix={inputPrefix}
       deliveryMode={deliveryMode}
       onDeliveryModeChange={setDeliveryMode}
