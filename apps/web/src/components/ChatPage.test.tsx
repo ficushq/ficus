@@ -396,7 +396,7 @@ describe('ChatPage conversation header', () => {
 
     expect(html).toContain('class="md:hidden shrink-0 px-3 py-2 border-b border-th-border"')
     expect(html).toMatch(
-      /<div class="md:hidden shrink-0 px-3 py-2 border-b border-th-border">.*Chats.*<\/div><div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-th-border shrink-0">.*Agent Alpha.*Chat.*Inbox.*Context.*Info/s
+      /<div class="md:hidden shrink-0 px-3 py-2 border-b border-th-border">.*Chats.*<\/div><div class="flex items-center justify-between gap-4 px-3 py-2 border-b border-th-border shrink-0">.*Agent Alpha.*Chat.*Inbox.*Context.*Info/s
     )
   })
 
@@ -473,7 +473,7 @@ describe('ChatPage conversation header', () => {
 
     const html = renderChatPage('system-manager', '&view=work')
 
-    expect(html).toMatch(/aria-pressed="true"[^>]*>.*Chat/s)
+    expect(html).toMatch(/aria-checked="true"[^>]*>.*Chat/s)
     expect(html).not.toContain('Agent work streams')
     expect(html).not.toMatch(/>Work<\/button>/)
   })

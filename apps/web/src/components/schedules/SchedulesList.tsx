@@ -12,6 +12,7 @@ import { useURLBooleanState, useURLStringState } from '../../hooks/useURLState'
 import type { Schedule, ScheduleAction, Agent, Squad } from '@ficus/shared'
 import { MarkdownContent } from '../MarkdownContent'
 import { Modal } from '../Modal'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { Badge, type BadgeColor } from '../Badge'
 import { schedulesApi } from '../../api/schedules'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -97,6 +98,17 @@ function formatRelativeTime(date: Date | string): string {
 }
 
 type EditScheduleType = 'interval' | 'cron' | 'runAt' | 'webhookOnly'
+
+const SCHEDULE_TYPE_OPTIONS: SegmentedControlOption<EditScheduleType>[] = [
+  { value: 'interval', label: 'Interval' },
+  { value: 'cron', label: 'Cron' },
+  { value: 'runAt', label: 'Run At' },
+]
+const WEBHOOK_ONLY_OPTION: SegmentedControlOption<EditScheduleType> = { value: 'webhookOnly', label: 'Webhook Only' }
+const INBOX_TARGET_OPTIONS: SegmentedControlOption<ScheduleEditState['inboxTarget']>[] = [
+  { value: 'agent', label: 'Specific Agent' },
+  { value: 'squad_manager', label: 'Squad Manager' },
+]
 
 export interface ScheduleEditState {
   originalAction: ScheduleAction
@@ -820,58 +832,15 @@ function ScheduleDetailModal({
           <DetailRow label="Schedule">
             {isEditing ? (
               <div className="space-y-2">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setEditState((prev) => ({ ...prev, scheduleType: 'interval' }))}
-                    className={clsx(
-                      'ficus-button',
-                      'px-2 py-0.5 text-xs rounded',
-                      editState.scheduleType === 'interval'
-                        ? 'bg-accent text-on-accent'
-                        : 'bg-surface-secondary text-muted hover:text-primary'
-                    )}
-                  >
-                    Interval
-                  </button>
-                  <button
-                    onClick={() => setEditState((prev) => ({ ...prev, scheduleType: 'cron' }))}
-                    className={clsx(
-                      'ficus-button',
-                      'px-2 py-0.5 text-xs rounded',
-                      editState.scheduleType === 'cron'
-                        ? 'bg-accent text-on-accent'
-                        : 'bg-surface-secondary text-muted hover:text-primary'
-                    )}
-                  >
-                    Cron
-                  </button>
-                  <button
-                    onClick={() => setEditState((prev) => ({ ...prev, scheduleType: 'runAt' }))}
-                    className={clsx(
-                      'ficus-button',
-                      'px-2 py-0.5 text-xs rounded',
-                      editState.scheduleType === 'runAt'
-                        ? 'bg-accent text-on-accent'
-                        : 'bg-surface-secondary text-muted hover:text-primary'
-                    )}
-                  >
-                    Run At
-                  </button>
-                  {schedule.webhookEnabled && (
-                    <button
-                      onClick={() => setEditState((prev) => ({ ...prev, scheduleType: 'webhookOnly' }))}
-                      className={clsx(
-                        'ficus-button',
-                        'px-2 py-0.5 text-xs rounded',
-                        editState.scheduleType === 'webhookOnly'
-                          ? 'bg-accent text-on-accent'
-                          : 'bg-surface-secondary text-muted hover:text-primary'
-                      )}
-                    >
-                      Webhook Only
-                    </button>
-                  )}
-                </div>
+                <SegmentedControl
+                  ariaLabel="Schedule type"
+                  size="compact"
+                  options={
+                    schedule.webhookEnabled ? [...SCHEDULE_TYPE_OPTIONS, WEBHOOK_ONLY_OPTION] : SCHEDULE_TYPE_OPTIONS
+                  }
+                  value={editState.scheduleType}
+                  onChange={(scheduleType) => setEditState((prev) => ({ ...prev, scheduleType }))}
+                />
                 {editState.scheduleType === 'webhookOnly' && (
                   <p className="text-xs text-muted">No time-based triggers. Only triggered via webhook.</p>
                 )}
@@ -1299,32 +1268,13 @@ function EditActionFields({
         <div className="space-y-2">
           <p className="text-xs text-muted">Required: target and content</p>
           {scopeType === 'squad' && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => setEditState((prev) => ({ ...prev, inboxTarget: 'agent' }))}
-                className={clsx(
-                  'ficus-button',
-                  'px-2 py-0.5 text-xs rounded',
-                  editState.inboxTarget === 'agent'
-                    ? 'bg-accent text-on-accent'
-                    : 'bg-surface-secondary text-muted hover:text-primary'
-                )}
-              >
-                Specific Agent
-              </button>
-              <button
-                onClick={() => setEditState((prev) => ({ ...prev, inboxTarget: 'squad_manager' }))}
-                className={clsx(
-                  'ficus-button',
-                  'px-2 py-0.5 text-xs rounded',
-                  editState.inboxTarget === 'squad_manager'
-                    ? 'bg-accent text-on-accent'
-                    : 'bg-surface-secondary text-muted hover:text-primary'
-                )}
-              >
-                Squad Manager
-              </button>
-            </div>
+            <SegmentedControl
+              ariaLabel="Inbox target"
+              size="compact"
+              options={INBOX_TARGET_OPTIONS}
+              value={editState.inboxTarget}
+              onChange={(inboxTarget) => setEditState((prev) => ({ ...prev, inboxTarget }))}
+            />
           )}
           {editState.inboxTarget === 'agent' && (
             <select

@@ -1,7 +1,6 @@
 import { useGraphModulesReady } from './useGraphModulesReady'
 import { agentGraphColor, graphColor } from '../../theme/graph'
 import { useThemeColors } from '../../theme/useThemeColors'
-import clsx from 'clsx'
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AgentInboxPanel } from './AgentInboxPanel'
@@ -10,6 +9,7 @@ import { AGENT_STATUS_ROLE, type Agent } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 import { CanvasSkeleton } from '../loading/Skeleton'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 
 // Lazy load force graph components
 const ForceGraph2DLazy = lazy(() => import('react-force-graph-2d'))
@@ -26,6 +26,11 @@ const spriteTextReady = Promise.all([
     ThreeGroup = mod.Group
   }),
 ])
+
+const GRAPH_VIEW_OPTIONS: SegmentedControlOption<'2d' | '3d'>[] = [
+  { value: '2d', label: '2D' },
+  { value: '3d', label: '3D' },
+]
 
 interface Props {
   agents: Agent[]
@@ -224,26 +229,14 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
       <div className="flex-1 min-w-0">
         <div className="relative">
           {/* 2D/3D Toggle */}
-          <div className="ficus-panel ficus-glass absolute top-2 right-2 z-10 flex gap-1 p-1">
-            <button
-              onClick={() => setIs3D(false)}
-              className={clsx(
-                'ficus-button',
-                `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
-              )}
-            >
-              2D
-            </button>
-            <button
-              onClick={() => setIs3D(true)}
-              className={clsx(
-                'ficus-button',
-                `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
-              )}
-            >
-              3D
-            </button>
-          </div>
+          <SegmentedControl
+            ariaLabel="Graph view"
+            size="compact"
+            className="absolute top-2 right-2 z-10"
+            options={GRAPH_VIEW_OPTIONS}
+            value={is3D ? '3d' : '2d'}
+            onChange={(view) => setIs3D(view === '3d')}
+          />
 
           {/* Graph */}
           <div

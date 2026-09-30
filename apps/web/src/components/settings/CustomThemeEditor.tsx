@@ -56,6 +56,11 @@ const STATUS_MODE_OPTIONS: readonly SegmentedControlOption<'static' | 'harmonize
  * which one paints later). */
 type VariantTab = 'light' | 'dark' | 'constant'
 
+const EDITING_VARIANT_OPTIONS: readonly SegmentedControlOption<'light' | 'dark'>[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
+
 function emptyThemeDocument(baseId: string): CustomThemeDocument {
   const base = findWebTheme(baseId)
   return {
@@ -751,23 +756,14 @@ export function CustomThemeEditor({
             <div className="mt-3 flex flex-col gap-3">
               <div className="flex flex-wrap gap-3">
                 {base.kind === 'dual' && (
-                  <div role="radiogroup" aria-label="Editing variant" className="flex items-end gap-1">
-                    {(['light', 'dark'] as const).map((variant) => (
-                      <button
-                        key={variant}
-                        type="button"
-                        role="radio"
-                        aria-checked={tab === variant}
-                        className={clsx(
-                          'ficus-button min-h-[44px] px-3 py-2',
-                          tab === variant ? 'ficus-button-primary' : 'ficus-button-secondary'
-                        )}
-                        onClick={() => setTab(variant)}
-                      >
-                        {variant === 'light' ? 'Light' : 'Dark'}
-                      </button>
-                    ))}
-                  </div>
+                  <SegmentedControl
+                    size="compact"
+                    ariaLabel="Editing variant"
+                    options={EDITING_VARIANT_OPTIONS}
+                    // Only dual themes show this; switching to one resets `tab` to a variant.
+                    value={tab === 'dark' ? 'dark' : 'light'}
+                    onChange={setTab}
+                  />
                 )}
               </div>
               <label className="flex flex-col gap-1">

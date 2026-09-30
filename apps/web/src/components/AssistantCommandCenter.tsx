@@ -13,6 +13,7 @@ import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { formatAssistantUpdateTime, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
 import { AgentActivityDot } from './AgentActivityDot'
 import { Badge } from './Badge'
+import { SegmentedControl } from './SegmentedControl'
 import { LoadingSurface, SkeletonBlock, SkeletonLine } from './loading/Skeleton'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import {
@@ -660,22 +661,16 @@ function SquadPreview({
         </button>
         {completed.expanded && (
           <div id="command-completed-work" className="space-y-2">
-            <div role="group" aria-label="Completed work period" className="flex items-center gap-1">
-              {([7, 30] as const).map((days) => (
-                <button
-                  key={days}
-                  type="button"
-                  aria-pressed={completed.days === days}
-                  onClick={() => onCompletedChange({ ...completed, days })}
-                  className={clsx(
-                    'rounded-lg px-3 py-1.5 text-xs',
-                    completed.days === days ? 'bg-selection text-accent-light' : 'text-muted hover:bg-surface-hover'
-                  )}
-                >
-                  {days} days
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              size="compact"
+              ariaLabel="Completed work period"
+              value={String(completed.days) as '7' | '30'}
+              onChange={(days) => onCompletedChange({ ...completed, days: days === '30' ? 30 : 7 })}
+              options={[
+                { value: '7', label: '7 days' },
+                { value: '30', label: '30 days' },
+              ]}
+            />
             {completedWork.map((work) => (
               <PreviewRow
                 key={work.id}

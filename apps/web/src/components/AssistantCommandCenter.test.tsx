@@ -481,7 +481,7 @@ test('squad completed work starts collapsed and preserves its period after openi
       'true'
     )
     expect(
-      f.container.querySelector('[aria-label="Completed work period"] button:last-child')?.getAttribute('aria-pressed')
+      f.container.querySelector('[aria-label="Completed work period"] button:last-child')?.getAttribute('aria-checked')
     ).toBe('true')
     expect(f.container.querySelector('#command-completed-work')?.textContent).toContain('Finished deployment')
   } finally {

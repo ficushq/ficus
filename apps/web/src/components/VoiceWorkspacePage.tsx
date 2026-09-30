@@ -11,6 +11,7 @@ import { VoiceTranscriptInspector } from '../voice/VoiceTranscriptInspector'
 import { useRealtimeVoiceAssistant, type VoiceInputMode } from '../voice/useRealtimeVoiceAssistant'
 import { useStableRef } from '../hooks/useStableRef'
 import { ArtifactRenderer } from './artifacts/ArtifactRenderer'
+import { SegmentedControl } from './SegmentedControl'
 import {
   getStoredVoiceInputMode,
   handleManualHoldKeyDown,
@@ -195,30 +196,18 @@ function VoiceInputModeControl({
   onInputModeChange: (mode: VoiceInputMode) => void
 }) {
   return (
-    <div
-      role="group"
-      aria-label="Voice input mode"
-      className="fixed left-1/2 top-4 z-20 flex -translate-x-1/2 rounded-full border border-th-border bg-surface/80 p-1 text-xs shadow-lg backdrop-blur-md"
-    >
-      {(['automatic', 'manual'] as const).map((mode) => (
-        <button
-          key={mode}
-          type="button"
-          aria-pressed={inputMode === mode}
-          onClick={(event) => {
-            onInputModeChange(mode)
-            event.currentTarget.blur()
-          }}
-          className={clsx(
-            'ficus-button',
-            'rounded-full px-3 py-1.5 font-medium',
-            inputMode === mode ? 'bg-accent text-on-accent' : 'text-secondary hover:bg-surface-hover'
-          )}
-        >
-          {mode === 'automatic' ? 'Automatic' : 'Hold to speak'}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      size="compact"
+      ariaLabel="Voice input mode"
+      className="fixed left-1/2 top-4 z-20 -translate-x-1/2 shadow-lg"
+      blurOnChange
+      value={inputMode}
+      onChange={onInputModeChange}
+      options={[
+        { value: 'automatic', label: 'Automatic' },
+        { value: 'manual', label: 'Hold to speak' },
+      ]}
+    />
   )
 }
 

@@ -16,6 +16,7 @@ import { queries } from '../queryOptions'
 import { SparklesIcon, CloseIcon, MoreIcon } from './icons'
 import { Chat } from './Chat'
 import { ConfirmButton } from './ConfirmButton'
+import { SegmentedControl } from './SegmentedControl'
 import { defaultChatApi, useChatApi } from '../api/ChatApiProvider'
 import { formatTokens } from '../lib/format'
 import { useChatSession } from '../hooks/useChatSession'
@@ -444,28 +445,24 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
           </div>
 
           {isOpen && !compactVoice && (
-            <div className="flex items-center gap-1 px-3 pt-3 pb-1" role="tablist" aria-label="Assistant modes">
-              <button
-                role="tab"
-                aria-selected={mode === 'text'}
-                className="ficus-nav-item px-3 py-1.5 text-sm text-muted"
-                onClick={() => setMode('text')}
-              >
-                Text
-              </button>
-              <button
-                role="tab"
-                aria-selected={mode === 'voice'}
-                disabled={Boolean(voiceUnavailableReason)}
-                title={
-                  voiceUnavailableReason ??
-                  'Live tools for navigation, status, and messaging. A separate conversation from Text.'
-                }
-                className="ficus-nav-item px-3 py-1.5 text-sm text-muted disabled:opacity-40"
-                onClick={() => setMode('voice')}
-              >
-                Voice{voiceActive ? ' · Live' : ''}
-              </button>
+            <div className="flex items-center gap-1 px-3 pt-3 pb-1">
+              <SegmentedControl
+                size="compact"
+                ariaLabel="Assistant modes"
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: 'text', label: 'Text' },
+                  {
+                    value: 'voice',
+                    label: voiceActive ? 'Voice · Live' : 'Voice',
+                    disabled: Boolean(voiceUnavailableReason),
+                    title:
+                      voiceUnavailableReason ??
+                      'Live tools for navigation, status, and messaging. A separate conversation from Text.',
+                  },
+                ]}
+              />
               {conversation && mode === 'text' && (
                 <button
                   onClick={backToAssistant}

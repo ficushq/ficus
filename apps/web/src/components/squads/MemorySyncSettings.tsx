@@ -14,6 +14,12 @@ import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
+
+const PROVIDER_TYPE_OPTIONS: SegmentedControlOption<'git' | 's3'>[] = [
+  { value: 'git', label: 'Git' },
+  { value: 's3', label: 'S3' },
+]
 
 interface Props {
   squadId: string
@@ -345,32 +351,13 @@ export function MemorySyncSettings({ squadId }: Props) {
 
           {/* Provider Type Tabs (only when adding) */}
           {editingIndex === null && (
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setProviderType('git')}
-                className={clsx(
-                  'ficus-button',
-                  'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
-                  providerType === 'git'
-                    ? 'bg-accent text-on-accent'
-                    : 'bg-surface text-secondary hover:bg-surface-hover'
-                )}
-              >
-                Git
-              </button>
-              <button
-                onClick={() => setProviderType('s3')}
-                className={clsx(
-                  'ficus-button',
-                  'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
-                  providerType === 's3'
-                    ? 'bg-accent text-on-accent'
-                    : 'bg-surface text-secondary hover:bg-surface-hover'
-                )}
-              >
-                S3
-              </button>
-            </div>
+            <SegmentedControl
+              ariaLabel="Provider type"
+              className="mb-4"
+              options={PROVIDER_TYPE_OPTIONS}
+              value={providerType}
+              onChange={setProviderType}
+            />
           )}
 
           {providerType === 'git' ? (

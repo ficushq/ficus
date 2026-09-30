@@ -1,4 +1,5 @@
 import { Presence } from '../Presence'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { matchesSetting, settingMatchRank, SETTINGS_PAGE_KEYWORDS, SETTINGS_SEARCH_ENTRIES } from './settingsSearch'
 import clsx from 'clsx'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
@@ -93,6 +94,10 @@ export function SettingsNavigation({
     .map((group) => ({ ...group, items: group.items.filter((section) => !PERSONAL_SECTIONS.has(section.id)) }))
     .filter((group) => group.items.length)
   const hasAdministration = administration.length > 0 || showOnboardingLink
+  const areaOptions: SegmentedControlOption<'personal' | 'administration'>[] = [
+    { value: 'personal', label: 'Personal' },
+    ...(hasAdministration ? [{ value: 'administration' as const, label: 'Administration' }] : []),
+  ]
   const areaGroups = scopeTitle || search.trim() ? groups : inAdministration ? administration : [{ items: personal }]
   const matchingGroups = areaGroups
     .map((group) => ({
@@ -165,34 +170,16 @@ export function SettingsNavigation({
       }}
     >
       {!scopeTitle && (
-        <div className="mb-4 flex items-center gap-1 rounded-lg bg-surface-secondary p-1" aria-label="Settings areas">
-          <button
-            type="button"
-            aria-pressed={!inAdministration}
-            onClick={() => selectArea(personal[0]?.id ?? 'account')}
-            className={clsx(
-              'ficus-button flex-1 rounded-md px-2 py-2 text-xs',
-              !inAdministration ? 'bg-surface text-primary' : 'text-secondary hover:text-primary'
-            )}
-          >
-            Personal
-          </button>
-          {hasAdministration && (
-            <button
-              type="button"
-              aria-pressed={inAdministration}
-              onClick={() => {
-                if (administration[0]?.items[0]) selectArea(administration[0].items[0].id)
-              }}
-              className={clsx(
-                'ficus-button flex-1 rounded-md px-2 py-2 text-xs',
-                inAdministration ? 'bg-surface text-primary' : 'text-secondary hover:text-primary'
-              )}
-            >
-              Administration
-            </button>
-          )}
-        </div>
+        <SegmentedControl
+          ariaLabel="Settings areas"
+          options={areaOptions}
+          value={inAdministration ? 'administration' : 'personal'}
+          onChange={(area) => {
+            if (area === 'personal') selectArea(personal[0]?.id ?? 'account')
+            else if (administration[0]?.items[0]) selectArea(administration[0].items[0].id)
+          }}
+          className="mb-4"
+        />
       )}
       <input
         type="search"

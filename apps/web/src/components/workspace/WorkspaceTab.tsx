@@ -17,6 +17,7 @@ import { FileTree } from './FileTree'
 import { FileViewer } from './FileViewer'
 import { TerminalTabs } from './TerminalTabs'
 import { useURLState } from '../../hooks/useURLState'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 
 export interface WorkspaceTabProps {
   squadId: string
@@ -28,6 +29,11 @@ const MAX_TERMINAL_HEIGHT = 800
 const DEFAULT_TERMINAL_HEIGHT = 320
 
 type MobilePane = 'files' | 'terminal'
+
+const MOBILE_PANE_OPTIONS: SegmentedControlOption<MobilePane>[] = [
+  { value: 'files', label: 'Files' },
+  { value: 'terminal', label: 'Terminal' },
+]
 
 export function WorkspaceTab({ squadId, isTaskTerminal = false }: WorkspaceTabProps) {
   const [mobilePane, setMobilePane] = useState<MobilePane>('files')
@@ -87,32 +93,13 @@ export function WorkspaceTab({ squadId, isTaskTerminal = false }: WorkspaceTabPr
   return (
     <div ref={containerRef} className="h-full min-h-0 flex flex-col">
       {/* Mobile pane switcher */}
-      <div className="md:hidden shrink-0 flex gap-1 pb-2">
-        <button
-          onClick={() => setMobilePane('files')}
-          className={clsx(
-            'ficus-button',
-            'flex-1 px-4 py-2 text-sm font-medium transition-colors',
-            mobilePane === 'files'
-              ? 'bg-selection text-accent-light'
-              : 'text-muted hover:bg-surface-hover hover:text-secondary'
-          )}
-        >
-          Files
-        </button>
-        <button
-          onClick={() => setMobilePane('terminal')}
-          className={clsx(
-            'ficus-button',
-            'flex-1 px-4 py-2 text-sm font-medium transition-colors',
-            mobilePane === 'terminal'
-              ? 'bg-selection text-accent-light'
-              : 'text-muted hover:bg-surface-hover hover:text-secondary'
-          )}
-        >
-          Terminal
-        </button>
-      </div>
+      <SegmentedControl
+        ariaLabel="Workspace pane"
+        className="md:hidden shrink-0 mb-2"
+        options={MOBILE_PANE_OPTIONS}
+        value={mobilePane}
+        onChange={setMobilePane}
+      />
 
       {/* Mobile: Files pane */}
       <div className={clsx('flex-1 min-h-0 flex flex-col md:hidden', mobilePane !== 'files' && 'hidden')}>

@@ -2,6 +2,7 @@ import { ActionPopup, SelectionPopup } from './ThemedPopup'
 import clsx from 'clsx'
 import { type ComponentType } from 'react'
 import { ChevronDownIcon, MoreIcon } from './icons'
+import { SegmentedControl } from './SegmentedControl'
 
 export interface AgentViewTabItem<T extends string> {
   value: T
@@ -31,47 +32,6 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
     ariaLabel: viewLabel(tab),
   }))
 
-  const renderTabButton = (tab: AgentViewTabItem<T>, index: number) => {
-    const Icon = tab.icon
-    const isActive = activeTab === tab.value
-    const activeCount = tab.activeCount ?? 0
-    const activeLabel =
-      activeCount > 0 ? `${tab.label}, ${activeCount} active subagent${activeCount === 1 ? '' : 's'}` : tab.label
-
-    return (
-      <button
-        key={tab.value}
-        onClick={() => onChange(tab.value)}
-        aria-label={activeLabel}
-        aria-pressed={isActive}
-        className={clsx(
-          'ficus-button',
-          'flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors',
-          index > 0 && 'border-l border-th-border',
-          isActive ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary hover:bg-surface-hover'
-        )}
-      >
-        <Icon className="w-3.5 h-3.5" />
-        {tab.label}
-        {activeCount > 0 && (
-          <span aria-hidden="true" className="shrink-0 inline-flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-status-progress-500 animate-pulse" />
-            <span
-              className={clsx(
-                'min-w-[16px] h-[16px] flex items-center justify-center text-[10px] font-bold rounded-full px-1 tabular-nums',
-                isActive
-                  ? 'bg-on-accent/20 text-on-accent'
-                  : 'bg-status-progress-50 text-status-progress-700 dark:bg-status-progress-900/20 dark:text-status-progress-400'
-              )}
-            >
-              {activeCount}
-            </span>
-          </span>
-        )}
-      </button>
-    )
-  }
-
   return (
     <div className="ml-auto">
       <div className="md:hidden">
@@ -100,9 +60,40 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
           <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted" />
         </SelectionPopup>
       </div>
-      <div className="hidden lg:flex border border-th-border rounded-md overflow-hidden">
-        {tabs.map(renderTabButton)}
-      </div>
+      <SegmentedControl
+        size="compact"
+        ariaLabel="Agent view"
+        className="hidden lg:inline-flex"
+        value={activeTab}
+        onChange={onChange}
+        options={tabs.map((tab) => {
+          const activeCount = tab.activeCount ?? 0
+          return {
+            value: tab.value,
+            label: tab.label,
+            Icon: tab.icon,
+            ariaLabel: viewLabel(tab),
+            badge:
+              activeCount > 0
+                ? (selected: boolean) => (
+                    <span aria-hidden="true" className="shrink-0 inline-flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-status-progress-500 animate-pulse" />
+                      <span
+                        className={clsx(
+                          'min-w-[16px] h-[16px] flex items-center justify-center text-[10px] font-bold rounded-full px-1 tabular-nums',
+                          selected
+                            ? 'bg-on-accent/20 text-on-accent'
+                            : 'bg-status-progress-50 text-status-progress-700 dark:bg-status-progress-900/20 dark:text-status-progress-400'
+                        )}
+                      >
+                        {activeCount}
+                      </span>
+                    </span>
+                  )
+                : undefined,
+          }
+        })}
+      />
     </div>
   )
 }

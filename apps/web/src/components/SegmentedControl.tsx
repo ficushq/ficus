@@ -54,7 +54,7 @@ export function SegmentedControl<T extends string>({
       aria-label={ariaLabel}
       className={clsx(
         'rounded-lg bg-surface-secondary',
-        compact ? 'inline-flex gap-0.5 p-0.5' : 'flex gap-1 p-1',
+        compact ? 'inline-flex shrink-0 gap-0.5 p-0.5' : 'flex gap-1 p-1',
         className
       )}
     >
