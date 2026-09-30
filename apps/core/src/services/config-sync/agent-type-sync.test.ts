@@ -135,11 +135,28 @@ describe('AgentTypeSync', () => {
     expect(reviewer).toBeTruthy()
 
     const managerPrompt = manager!.systemPrompt
+    const normalizedManagerPrompt = managerPrompt.replace(/\s+/g, ' ')
     expect(managerPrompt).toContain('## Scope Adjustments')
     expect(managerPrompt).toContain('ALWAYS update the work stream description FIRST')
-    expect(managerPrompt.replace(/\s+/g, ' ')).toContain('notify the necessary agent(s) via steering inbox message')
-    expect(managerPrompt).toContain('Notify all relevant active')
+    expect(normalizedManagerPrompt).toContain('notify the necessary agent(s) via steering inbox message')
+    expect(normalizedManagerPrompt).toContain(
+      'steer every affected active agent with the new version and truthful outcomes'
+    )
     expect(managerPrompt).toContain('authorized flow revision')
+    expect(normalizedManagerPrompt).toContain('Use active=keep for live outcome additions, changes, or removals')
+    expect(normalizedManagerPrompt).toContain('without resetting their initial brief, participant, or session')
+    expect(normalizedManagerPrompt).toContain(
+      'Inspect outcomeUpdates in the revision response (activeOutcomes in flow inspection)'
+    )
+    expect(normalizedManagerPrompt).toContain(
+      'Revised instructions/outputs apply to future attempts, not the preserved brief'
+    )
+    expect(normalizedManagerPrompt).toContain(
+      'Use active=restart only when cancellation and a new attempt with fresh context are intended, even for reuse-within-stream participants'
+    )
+    expect(normalizedManagerPrompt).toContain(
+      'do not instantiate future participants or fabricate an approval to fit an old outcome'
+    )
 
     const reviewerPrompt = reviewer!.systemPrompt
     expect(reviewerPrompt).toContain('## Scope Checking')
