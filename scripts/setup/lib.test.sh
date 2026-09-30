@@ -2706,6 +2706,29 @@ expect_eq 'setup-host.sh git mode: no restore — the migrations only' "$(rs_run
 expect_eq 'setup-host.sh artifact mode: the pre-flip hook is the restore rebase' \
   "$(grep -c '^    ARTIFACT_PREFLIP_HOOK=restore_rebase_stored_home$' "${SCRIPT_DIR}/setup-host.sh")" '1'
 unset -f rs_run
+# (Re-review M1) A restore is refused before anything changes when the same run
+# would also move this host's layout; any other run is not.
+# shellcheck disable=SC2030,SC2034,SC2329 # the stubs and globals are for the eval'd function
+rt_run() { # RESTORE_URL NEEDED — prints the output, then `rc=N`
+  local rc=0
+  (
+    eval "$(sed -n '/^require_ficus_target_release() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")"
+    core_release_is_ficus() { return 0; }
+    host_migrate_require_privilege() { :; }
+    host_migrate_needed() { printf '%s' "${RT_NEEDED}"; }
+    ARTIFACT_RELEASE_DIR=/rel SRC_DEST=/opt/x RESTORE_URL=$1 RT_NEEDED=$2
+    require_ficus_target_release
+    echo passed
+  ) 2>&1 || rc=$?
+  echo "rc=${rc}"
+}
+rt_out=$(rt_run 'https://s3.invalid/a' 'e2emark,host_layout')
+expect_match 'setup-host.sh: a restore on a host the same run moves to layout 2 is refused' "${rt_out}" 'rc=1$'
+expect_match '...saying how to get there' "${rt_out}" 'this run would also move this host to the Ficus host layout — restore onto a fresh host, or upgrade this host first'
+expect_eq 'setup-host.sh: a restore with no layout move goes ahead' "$(rt_run 'https://s3.invalid/a' 'e2emark')" "$(printf 'passed\nrc=0')"
+expect_eq 'setup-host.sh: a layout move without a restore goes ahead' "$(rt_run '' 'host_layout')" "$(printf 'passed\nrc=0')"
+unset -f rt_run
+unset rt_out
 rm -rf "${RH_TMP}"
 
 # --- install_rendered --------------------------------------------------------

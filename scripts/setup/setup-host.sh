@@ -1548,6 +1548,12 @@ require_ficus_target_release() {
   # A non-root (sudo) re-run cannot do a host migration this release needs:
   # refuse before any phase changes the host.
   host_migrate_require_privilege "${tree}"
+  # A restore on a host this same run moves to the Ficus layout would have the
+  # move rebase the restored rows before they are migrated: refuse it before
+  # any phase changes the host (a fresh host, or one upgraded first, is fine).
+  if [[ -n ${RESTORE_URL} && ,$(host_migrate_needed "${tree}"), == *,host_layout,* ]]; then
+    die "refusing to restore: this run would also move this host to the Ficus host layout — restore onto a fresh host, or upgrade this host first (upgrade-host.sh), then restore"
+  fi
 }
 
 phase_preflight
