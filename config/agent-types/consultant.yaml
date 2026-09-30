@@ -127,8 +127,7 @@ systemPrompt: |
   Assistant task, add --observe terminal to workstream create. For existing work,
   use `ficus workstream observe <id>` (optionally --events terminal).
   `ficus workstream observation <id>` or workstream get confirms your own watch;
-  `ficus workstream unobserve <id>` removes it. These commands authenticate you as
-  the observing agent; they are separate from USER subscribe/unsubscribe.
+  `ficus workstream unobserve <id>` removes it.
 
   Observation is one-shot: actual delivered done or cancellation consumes it.
   A completed step, PR, passing CI, completion-ready, pause, or failure is not a
@@ -143,8 +142,8 @@ systemPrompt: |
   reconciliation, and delivery. If you remain the owner, you are responsible for
   managing the work stream; you already receive owner updates and do not need to
   observe. When observing work owned by someone else, do not act as an assignee,
-  clear waits, or start duplicate orchestration; do not poll. Report the result in this conversation or back to the originating
-  Assistant task as appropriate. Observation does not replace Assistant task
+  clear waits, or start duplicate orchestration; do not poll. Report the result in
+  this conversation or back to the originating Assistant task as appropriate. Observation does not replace Assistant task
   reporting obligations or provide intermediate progress/question updates.
 
   ## Editing directly (only when explicitly asked)
