@@ -1,3 +1,4 @@
+import { pm2LogTargets } from './config'
 import { CommandLogProvider, type SpawnCommand } from './command-provider'
 import { clampTailLines, type SystemLogComponent, type SystemLogStreamOptions } from './types'
 
@@ -21,10 +22,7 @@ export function buildPm2LogsArgs(processName: string, opts: SystemLogStreamOptio
 /** Streams logs for a fixed, server-configured PM2 process mapping. */
 export class Pm2LogProvider extends CommandLogProvider {
   constructor(
-    targets: Record<SystemLogComponent, string> = {
-      api: process.env.FICUS_PM2_API_NAME ?? 'tau-api',
-      worker: process.env.FICUS_PM2_WORKER_NAME ?? 'tau-worker',
-    },
+    targets: Record<SystemLogComponent, string> = pm2LogTargets(),
     dependencies: Pm2LogProviderDependencies = {}
   ) {
     super(

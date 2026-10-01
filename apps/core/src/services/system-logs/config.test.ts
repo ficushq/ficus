@@ -55,13 +55,13 @@ describe('loadExplicitSystemLogConfig — file provider paths', () => {
   it('still leaves absolute paths untouched', () => {
     const config = loadExplicitSystemLogConfig({
       FICUS_SYSTEM_LOG_PROVIDER: 'file',
-      FICUS_LOG_FILE_API: '/var/log/tau/api.log',
-      FICUS_LOG_FILE_WORKER: '/var/log/tau/worker.log',
+      FICUS_LOG_FILE_API: '/srv/logs/api.log',
+      FICUS_LOG_FILE_WORKER: '/srv/logs/worker.log',
     } as NodeJS.ProcessEnv)
 
     expect(config).toEqual({
       provider: 'file',
-      targets: { api: '/var/log/tau/api.log', worker: '/var/log/tau/worker.log' },
+      targets: { api: '/srv/logs/api.log', worker: '/srv/logs/worker.log' },
     })
   })
 
@@ -70,7 +70,7 @@ describe('loadExplicitSystemLogConfig — file provider paths', () => {
       loadExplicitSystemLogConfig({
         FICUS_SYSTEM_LOG_PROVIDER: 'file',
         FICUS_LOG_FILE_API: 'logs/api.log',
-        FICUS_LOG_FILE_WORKER: '/var/log/tau/worker.log',
+        FICUS_LOG_FILE_WORKER: '/srv/logs/worker.log',
       } as NodeJS.ProcessEnv)
     ).toThrow(SystemLogProviderError)
   })
@@ -80,8 +80,39 @@ describe('loadExplicitSystemLogConfig — file provider paths', () => {
       loadExplicitSystemLogConfig({
         FICUS_SYSTEM_LOG_PROVIDER: 'file',
         FICUS_LOG_FILE_API: '~someoneelse/logs/api.log',
-        FICUS_LOG_FILE_WORKER: '/var/log/tau/worker.log',
+        FICUS_LOG_FILE_WORKER: '/srv/logs/worker.log',
       } as NodeJS.ProcessEnv)
     ).toThrow(SystemLogProviderError)
+  })
+})
+
+describe('loadExplicitSystemLogConfig — PM2 supervisor targets', () => {
+  it('defaults to the renamed Ficus processes', () => {
+    expect(loadExplicitSystemLogConfig({ FICUS_SYSTEM_LOG_PROVIDER: 'pm2' })).toEqual({
+      provider: 'pm2',
+      targets: { api: 'ficus-api', worker: 'ficus-worker' },
+    })
+  })
+
+  it('reads the labelled process names emitted by CLI setup', () => {
+    expect(
+      loadExplicitSystemLogConfig({
+        FICUS_SYSTEM_LOG_PROVIDER: 'pm2',
+        FICUS_PM2_API_NAME: 'ficus-demo-api',
+        FICUS_PM2_WORKER_NAME: 'ficus-demo-worker',
+      })
+    ).toEqual({ provider: 'pm2', targets: { api: 'ficus-demo-api', worker: 'ficus-demo-worker' } })
+  })
+
+  it('preserves explicit log-target overrides', () => {
+    expect(
+      loadExplicitSystemLogConfig({
+        FICUS_SYSTEM_LOG_PROVIDER: 'pm2',
+        FICUS_PM2_API_NAME: 'ficus-demo-api',
+        FICUS_PM2_WORKER_NAME: 'ficus-demo-worker',
+        FICUS_PM2_API: 'custom-api',
+        FICUS_PM2_WORKER: 'custom-worker',
+      })
+    ).toEqual({ provider: 'pm2', targets: { api: 'custom-api', worker: 'custom-worker' } })
   })
 })
