@@ -286,9 +286,9 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
       </span>
       <span className="px-2 py-0.5 rounded-md bg-surface-secondary text-xs text-secondary">
         <LoadingContent loading={agentsLoading} fallback={<SkeletonText className="inline-block w-8" />}>
-          {activeAgents}/{countableAgents.length}
+          {activeAgents}
         </LoadingContent>{' '}
-        active agents
+        active {activeAgents === 1 ? 'agent' : 'agents'}
       </span>
       {/* No wrapper: the indicator owns its own pill so the header keeps no
           empty padded box when it renders nothing (host runtime). */}
