@@ -9,7 +9,7 @@ import { join } from 'path'
 /** Deterministic docker-compose project name for a given monorepo root. */
 export function testDbProjectName(repoRoot: string): string {
   const dirHash = createHash('sha256').update(repoRoot).digest('hex').slice(0, 8)
-  return `tau-test-${dirHash}`
+  return `ficus-test-${dirHash}`
 }
 
 /** Absolute path to the port-cache file this worktree's test-db writes/reads. */

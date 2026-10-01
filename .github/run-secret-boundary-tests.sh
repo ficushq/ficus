@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 : "${DATABASE_URL:?DATABASE_URL is required for the sterile security test boundary}"
-if [[ "${SECRET_BOUNDARY_REQUIRE_ISOLATED_DB:-0}" == "1" && "$DATABASE_URL" != */tau_secret_boundary_test ]]; then
+if [[ "${SECRET_BOUNDARY_REQUIRE_ISOLATED_DB:-0}" == "1" && "$DATABASE_URL" != */ficus_secret_boundary_test ]]; then
   echo "Sterile secret-boundary CI requires its isolated database" >&2
   exit 1
 fi

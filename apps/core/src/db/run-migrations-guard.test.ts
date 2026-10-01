@@ -6,7 +6,7 @@ import { checkMigrationSafety, normalizeDatabaseUrl, runGuardedMigration } from 
 
 const CREDENTIAL_SENTINEL = 'migration-credential-sentinel-9f2a'
 const ROOT_URL = `postgres://root:${CREDENTIAL_SENTINEL}@db.example.com:5432/tau`
-const TEST_URL = 'postgres://test:scratch-credential@127.0.0.1:5433/tau_test'
+const TEST_URL = 'postgres://test:scratch-credential@127.0.0.1:5433/ficus_test'
 
 function check(
   overrides: Partial<Parameters<typeof checkMigrationSafety>[0]> = {}

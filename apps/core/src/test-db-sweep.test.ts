@@ -29,13 +29,13 @@ describe('findOrphanProjects', () => {
     const orphans = findOrphanProjects({
       containers: [
         { project: projectNameForPath(WT_A), repoRoot: '' },
-        { project: 'tau-test-deadbeef', repoRoot: '' },
+        { project: 'ficus-test-deadbeef', repoRoot: '' },
       ],
       liveWorktreePaths: [ROOT, WT_A],
       currentProject: projectNameForPath(ROOT),
       pathExists: () => true,
     })
-    expect(orphans).toEqual(['tau-test-deadbeef'])
+    expect(orphans).toEqual(['ficus-test-deadbeef'])
   })
 
   test('the current project is never an orphan, even unlabeled with no worktree match', () => {
@@ -49,7 +49,7 @@ describe('findOrphanProjects', () => {
     expect(orphans).toEqual([])
   })
 
-  test('non tau-test projects are ignored', () => {
+  test('non ficus-test projects are ignored', () => {
     const orphans = findOrphanProjects({
       containers: [{ project: 'ficus-management_postgres', repoRoot: '' }],
       liveWorktreePaths: [ROOT],
@@ -64,15 +64,15 @@ describe('docker/git output parsing', () => {
   test('listTestDbContainers parses project + label, dedupes, drops non-matching', () => {
     const exec = () =>
       [
-        `tau-test-aaaaaaaa\t${WT_A}`,
-        'tau-test-aaaaaaaa\t' + WT_A, // duplicate service container
-        'tau-test-bbbbbbbb\t', // legacy: no label
+        `ficus-test-aaaaaaaa\t${WT_A}`,
+        'ficus-test-aaaaaaaa\t' + WT_A, // duplicate service container
+        'ficus-test-bbbbbbbb\t', // legacy: no label
         'unrelated-project\t/x',
         '',
       ].join('\n')
     expect(listTestDbContainers(exec)).toEqual([
-      { project: 'tau-test-aaaaaaaa', repoRoot: WT_A },
-      { project: 'tau-test-bbbbbbbb', repoRoot: '' },
+      { project: 'ficus-test-aaaaaaaa', repoRoot: WT_A },
+      { project: 'ficus-test-bbbbbbbb', repoRoot: '' },
     ])
   })
 

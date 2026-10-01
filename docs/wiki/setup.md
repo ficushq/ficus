@@ -485,6 +485,18 @@ completed run keeps its journal as `rename-identity.<label>.journal` for
 an undo keeps that volume and says so: the restored database is the snapshot
 from before the rename.
 
+A checkout managed by `docker compose` directly (`bun run start` / `reload` /
+`docker:up`, rather than `ficus server setup`) has no CLI identity for
+`rename-identity` to act on. Installs created before this release keep their
+database name inside the volume. Rename it once with
+`docker compose exec postgres psql -U postgres -c 'ALTER DATABASE "<old name>" RENAME TO ficus'`
+with the app stopped, then update `DATABASE_URL`. A fresh `docker compose up`
+on an unused volume needs no such step: the container's first boot already
+creates `ficus` directly, and (per [What it writes](#what-it-writes) above)
+`ficus server setup` adopts the same `postgres-ficus` container and
+`ficus_postgres-data` volume for the default instance either way, so a dev
+checkout and a `ficus server`-managed one never fork the same data.
+
 ### Notes
 
 - The default checkout `~/.ficus/ficus` lives inside `~/.ficus`, which is also

@@ -181,7 +181,7 @@ try {
   // Compose project AND this worktree's repo root are ever touched.
   const docker = Bun.which('docker');
   if (docker) {
-    const project = 'tau-test-' + crypto.createHash('sha256').update(o.worktree).digest('hex').slice(0, 8);
+    const project = 'ficus-test-' + crypto.createHash('sha256').update(o.worktree).digest('hex').slice(0, 8);
     const recorded = exists(path.join(o.worktree, '.test-db-port'));
     // Name the project explicitly; never let Compose discover a file or project.
     const dockerEnv = { ...process.env };

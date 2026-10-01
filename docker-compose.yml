@@ -12,11 +12,11 @@ services:
 
   postgres:
     image: paradedb/paradedb:latest
-    container_name: postgres-tau
+    container_name: postgres-ficus
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: tau
+      POSTGRES_DB: ficus
     ports:
       - '5432:5432'
     volumes:
@@ -25,7 +25,17 @@ services:
 
 volumes:
   registry-data:
+  # Explicit, not project-derived: this is the SAME default-instance Postgres
+  # `ficus server setup`'s installer manages directly (apps/cli/src/local-server/postgres.ts's
+  # `localPostgresNames('ficus', label, true)`), which always names it
+  # `ficus_postgres-data` regardless of this checkout's directory name. Compose's
+  # default `<project>_<volume>` naming would instead derive the project from the
+  # checkout's basename — matching only by coincidence — so a container `docker
+  # compose` creates here would mount a DIFFERENT volume than one `ficus server`
+  # creates/adopts, silently forking the same instance's data. Keep this pinned
+  # so the two paths always agree.
   postgres-data:
+    name: ficus_postgres-data
 
 networks:
   tau-dev:

@@ -565,9 +565,9 @@ jobs:
             --name postgres-test \
             -e POSTGRES_USER=postgres \
             -e POSTGRES_PASSWORD=postgres \
-            -e POSTGRES_DB=tau_test \
+            -e POSTGRES_DB=ficus_test \
             -p 5433:5432 \
-            --health-cmd "pg_isready -U postgres -d tau_test" \
+            --health-cmd "pg_isready -U postgres -d ficus_test" \
             --health-interval 2s \
             --health-timeout 5s \
             --health-retries 10 \
@@ -576,8 +576,8 @@ jobs:
       - name: Wait for PostgreSQL
         run: |
           for i in {1..60}; do
-            if docker exec postgres-test pg_isready -U postgres -d tau_test && \
-               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d tau_test -c "SELECT 1;" >/dev/null 2>&1; then
+            if docker exec postgres-test pg_isready -U postgres -d ficus_test && \
+               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d ficus_test -c "SELECT 1;" >/dev/null 2>&1; then
               echo "PostgreSQL is ready"
               exit 0
             fi
@@ -595,8 +595,8 @@ jobs:
       - name: Create database extensions
         run: |
           for i in {1..10}; do
-            if docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
-               docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
+            if docker exec postgres-test psql -U postgres -d ficus_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
+               docker exec postgres-test psql -U postgres -d ficus_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
               exit 0
             fi
             echo "Extension creation failed; retrying ($i/10)"
@@ -639,18 +639,18 @@ jobs:
           }
         working-directory: apps/core
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_test
           FICUS_TEST_SKIP_SUBPROCESS: '1'
 
       - name: Create isolated sterile secret-boundary database
         run: |
-          docker exec postgres-test psql -v ON_ERROR_STOP=1 -U postgres -c "CREATE DATABASE tau_secret_boundary_test;"
-          docker exec postgres-test psql -v ON_ERROR_STOP=1 -U postgres -d tau_secret_boundary_test -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_search;"
+          docker exec postgres-test psql -v ON_ERROR_STOP=1 -U postgres -c "CREATE DATABASE ficus_secret_boundary_test;"
+          docker exec postgres-test psql -v ON_ERROR_STOP=1 -U postgres -d ficus_secret_boundary_test -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_search;"
 
       - name: Run sterile secret-boundary tests
         run: bash .github/run-secret-boundary-tests.sh
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_secret_boundary_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_secret_boundary_test
           SECRET_BOUNDARY_REQUIRE_ISOLATED_DB: '1'
 
       - name: Run Core persistent restart test
@@ -791,9 +791,9 @@ jobs:
             --name postgres-test \
             -e POSTGRES_USER=postgres \
             -e POSTGRES_PASSWORD=postgres \
-            -e POSTGRES_DB=tau_test \
+            -e POSTGRES_DB=ficus_test \
             -p 5433:5432 \
-            --health-cmd "pg_isready -U postgres -d tau_test" \
+            --health-cmd "pg_isready -U postgres -d ficus_test" \
             --health-interval 2s \
             --health-timeout 5s \
             --health-retries 10 \
@@ -802,8 +802,8 @@ jobs:
       - name: Wait for PostgreSQL
         run: |
           for i in {1..60}; do
-            if docker exec postgres-test pg_isready -U postgres -d tau_test && \
-               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d tau_test -c "SELECT 1;" >/dev/null 2>&1; then
+            if docker exec postgres-test pg_isready -U postgres -d ficus_test && \
+               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d ficus_test -c "SELECT 1;" >/dev/null 2>&1; then
               echo "PostgreSQL is ready"
               exit 0
             fi
@@ -821,8 +821,8 @@ jobs:
       - name: Create database extensions
         run: |
           for i in {1..10}; do
-            if docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
-               docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
+            if docker exec postgres-test psql -U postgres -d ficus_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
+               docker exec postgres-test psql -U postgres -d ficus_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
               exit 0
             fi
             echo "Extension creation failed; retrying ($i/10)"
@@ -875,7 +875,7 @@ jobs:
           src/scripts/update-offline-bootstrap.test.ts
         working-directory: apps/core
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_test
 
   # End-to-end proof that `bun run setup` produces a running, self-updatable
   # local install (docs/history/superpowers/specs/2026-09-02-local-setup-installer-design.md §9).
@@ -926,9 +926,9 @@ jobs:
             --name postgres-test \
             -e POSTGRES_USER=postgres \
             -e POSTGRES_PASSWORD=postgres \
-            -e POSTGRES_DB=tau_test \
+            -e POSTGRES_DB=ficus_test \
             -p 5433:5432 \
-            --health-cmd "pg_isready -U postgres -d tau_test" \
+            --health-cmd "pg_isready -U postgres -d ficus_test" \
             --health-interval 2s \
             --health-timeout 5s \
             --health-retries 10 \
@@ -937,8 +937,8 @@ jobs:
       - name: Wait for PostgreSQL
         run: |
           for i in {1..60}; do
-            if docker exec postgres-test pg_isready -U postgres -d tau_test && \
-               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d tau_test -c "SELECT 1;" >/dev/null 2>&1; then
+            if docker exec postgres-test pg_isready -U postgres -d ficus_test && \
+               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d ficus_test -c "SELECT 1;" >/dev/null 2>&1; then
               echo "PostgreSQL is ready"
               exit 0
             fi
@@ -953,8 +953,8 @@ jobs:
       - name: Create database extensions
         run: |
           for i in {1..10}; do
-            if docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
-               docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
+            if docker exec postgres-test psql -U postgres -d ficus_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
+               docker exec postgres-test psql -U postgres -d ficus_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
               exit 0
             fi
             echo "Extension creation failed; retrying ($i/10)"
@@ -981,9 +981,9 @@ jobs:
         shell: bash
         # The root-level `bun test` loads apps/core's preload, which spins up a
         # docker compose test database unless DATABASE_URL already points at a
-        # reachable `tau_test` — the Postgres service above is exactly that.
+        # reachable `ficus_test` — the Postgres service above is exactly that.
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_test
         run: |
           (cd apps/cli && bun test src/local-server src/commands/server.test.ts src/commands/update.test.ts src/docs-links.test.ts)
           bun test scripts/setup.test.ts scripts/pm2-name.test.ts
@@ -998,18 +998,18 @@ jobs:
       # Non-default port (3100): proves the .env PORT is honoured by the
       # recorded supervisor, not just a value matching a process default.
       - name: Create a fresh database for setup
-        # The unit-suite step's core preload pushes the schema into tau_test
+        # The unit-suite step's core preload pushes the schema into ficus_test
         # (drizzle push, no migrations table), so `db:migrate` there fails with
         # "type already exists". Setup gets its own empty database.
         run: |
-          docker exec postgres-test psql -U postgres -c "CREATE DATABASE tau_local_setup;"
-          docker exec postgres-test psql -U postgres -d tau_local_setup -c "CREATE EXTENSION IF NOT EXISTS vector;"
-          docker exec postgres-test psql -U postgres -d tau_local_setup -c "CREATE EXTENSION IF NOT EXISTS pg_search;"
+          docker exec postgres-test psql -U postgres -c "CREATE DATABASE ficus_local_setup;"
+          docker exec postgres-test psql -U postgres -d ficus_local_setup -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          docker exec postgres-test psql -U postgres -d ficus_local_setup -c "CREATE EXTENSION IF NOT EXISTS pg_search;"
 
       - name: Setup (host runtime) against the CI database
         shell: bash
         run: |
-          bun run setup -- --runtime host --database-url postgres://postgres:postgres@localhost:5433/tau_local_setup --port 3100 --yes 2>&1 | tee /tmp/setup.log
+          bun run setup -- --runtime host --database-url postgres://postgres:postgres@localhost:5433/ficus_local_setup --port 3100 --yes 2>&1 | tee /tmp/setup.log
           grep -q 'Ficus is running at http://localhost:3100' /tmp/setup.log
           grep -q 'FICUS_SANDBOX_RUNTIME=host' .env
           grep -Eq '^FICUS_ENCRYPTION_KEY=[0-9a-f]{64}$' .env
@@ -1019,7 +1019,7 @@ jobs:
       # OAuth is covered separately. Never restore host gh-auth fallback here.
       - name: Seed GitHub integration for the in-app updater
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_local_setup
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_local_setup
         run: bun apps/core/src/scripts/seed-local-setup-github.ts
 
       - name: Health, status, and API-native updater support
@@ -1176,14 +1176,14 @@ jobs:
       - name: Second checkout and database for instance ci2
         shell: bash
         run: |
-          docker exec postgres-test psql -U postgres -c "CREATE DATABASE tau_local_setup2;"
-          docker exec postgres-test psql -U postgres -d tau_local_setup2 -c "CREATE EXTENSION IF NOT EXISTS vector;"
-          docker exec postgres-test psql -U postgres -d tau_local_setup2 -c "CREATE EXTENSION IF NOT EXISTS pg_search;"
-          git clone --shared --no-checkout "$GITHUB_WORKSPACE" /tmp/tau-ci2
+          docker exec postgres-test psql -U postgres -c "CREATE DATABASE ficus_local_setup2;"
+          docker exec postgres-test psql -U postgres -d ficus_local_setup2 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          docker exec postgres-test psql -U postgres -d ficus_local_setup2 -c "CREATE EXTENSION IF NOT EXISTS pg_search;"
+          git clone --shared --no-checkout "$GITHUB_WORKSPACE" /tmp/ficus-ci2
           # The event's sha, not the workspace HEAD: on pull_request runs the
           # health step rewound the workspace to the merge base so the updater
           # apply is a real fast-forward, and ci2 must still test the PR head.
-          git -C /tmp/tau-ci2 checkout --detach "$GITHUB_SHA"
+          git -C /tmp/ficus-ci2 checkout --detach "$GITHUB_SHA"
 
       # Every per-instance name follows the label: ficus-ci2-api /
       # ficus-ci2-worker, PORT 3300 (worker 3302, events 3303), HOME_DIR
@@ -1191,10 +1191,10 @@ jobs:
       # container of its own — postgres-test above is CI's.
       - name: Setup the second instance (ci2)
         shell: bash
-        working-directory: /tmp/tau-ci2
+        working-directory: /tmp/ficus-ci2
         run: |
           bun install --frozen-lockfile
-          bun run setup -- --instance ci2 --runtime host --port 3300 --database-url postgres://postgres:postgres@localhost:5433/tau_local_setup2 --yes 2>&1 | tee /tmp/setup-ci2.log
+          bun run setup -- --instance ci2 --runtime host --port 3300 --database-url postgres://postgres:postgres@localhost:5433/ficus_local_setup2 --yes 2>&1 | tee /tmp/setup-ci2.log
           grep -q 'Ficus is running at http://localhost:3300' /tmp/setup-ci2.log
 
       - name: Two instances coexist

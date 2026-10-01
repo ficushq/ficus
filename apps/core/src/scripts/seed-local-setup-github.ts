@@ -6,7 +6,7 @@ export function assertLocalSetupFixtureEnvironment(env: Record<string, string | 
   if (
     env.CI !== 'true' ||
     env.GITHUB_ACTIONS !== 'true' ||
-    env.DATABASE_URL !== 'postgres://postgres:postgres@localhost:5433/tau_local_setup' ||
+    env.DATABASE_URL !== 'postgres://postgres:postgres@localhost:5433/ficus_local_setup' ||
     !env.GH_TOKEN ||
     !env.FICUS_PASSWORD ||
     !/^[0-9a-f]{64}$/i.test(env.FICUS_ENCRYPTION_KEY ?? '')

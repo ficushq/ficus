@@ -210,7 +210,7 @@ describe('ficus server', () => {
   it('start and restart warn when the built web bundle was made for a different base path', async () => {
     writeFileSync(
       join(root, '.env'),
-      'PORT=3000\nDATABASE_URL=postgres://user:pw@db.example.com:5432/tau\nAPP_BASE_PATH=/tau\n'
+      'PORT=3000\nDATABASE_URL=postgres://user:pw@db.example.com:5432/tau\nAPP_BASE_PATH=/ficus\n'
     )
     mkdirSync(join(root, 'apps', 'web', 'dist'), { recursive: true })
     writeFileSync(
@@ -236,7 +236,7 @@ describe('ficus server', () => {
       const { printed, data } = await capture(['server', verb], false)
       const line = printed.find((l) => l.includes('warning:'))
       expect(line).toContain('built for base "/"')
-      expect(line).toContain('APP_BASE_PATH=/tau')
+      expect(line).toContain('APP_BASE_PATH=/ficus')
       expect(line).toContain('bun run build:web')
       expect(data.warnings).toEqual([expect.stringContaining('built for base "/"')])
     }
@@ -246,11 +246,11 @@ describe('ficus server', () => {
     expect(data.warnings).toEqual([expect.stringContaining('built for base "/"')])
   })
   it('start and restart stay quiet when the bundle matches the base path', async () => {
-    writeFileSync(join(root, '.env'), 'PORT=3000\nAPP_BASE_PATH=/tau\n')
+    writeFileSync(join(root, '.env'), 'PORT=3000\nAPP_BASE_PATH=/ficus\n')
     mkdirSync(join(root, 'apps', 'web', 'dist'), { recursive: true })
     writeFileSync(
       join(root, 'apps', 'web', 'dist', 'index.html'),
-      '<script type="module" crossorigin src="/tau/assets/index-abc.js"></script>'
+      '<script type="module" crossorigin src="/ficus/assets/index-abc.js"></script>'
     )
     const { run } = make()
     await run(['server', 'restart'])

@@ -380,7 +380,7 @@ describe('Bun TLS-upgrade leak guard (createBunTlsSafeSocketFactory)', () => {
   test('failed connects release their pool slots, so later queries fail fast instead of hanging', async () => {
     const { default: postgresClient } = await import('postgres')
     // Port 1 on loopback: nothing listens there, so every connect is refused.
-    const sql = postgresClient('postgres://postgres:postgres@127.0.0.1:1/tau_test', {
+    const sql = postgresClient('postgres://postgres:postgres@127.0.0.1:1/ficus_test', {
       max: 2,
       connect_timeout: 2,
       socket: createBunTlsSafeSocketFactory(),

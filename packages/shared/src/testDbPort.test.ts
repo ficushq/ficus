@@ -13,8 +13,8 @@ describe('testDbProjectName', () => {
     expect(a).not.toBe(b)
   })
 
-  test('is prefixed tau-test- so it is recognizable as a test-db project', () => {
-    expect(testDbProjectName('/repo/main')).toMatch(/^tau-test-[0-9a-f]{8}$/)
+  test('is prefixed ficus-test- so it is recognizable as a test-db project', () => {
+    expect(testDbProjectName('/repo/main')).toMatch(/^ficus-test-[0-9a-f]{8}$/)
   })
 })
 

@@ -24,7 +24,7 @@ const POLL_MS = 200
 /** Deterministic lockfile path shared by all callers using the same repository root. */
 export function testDbLockPath(repoRoot: string): string {
   const dirHash = createHash('sha256').update(repoRoot).digest('hex').slice(0, 8)
-  return join(tmpdir(), `tau-test-db-${dirHash}.lock`)
+  return join(tmpdir(), `ficus-test-db-${dirHash}.lock`)
 }
 
 export interface TestDbLockHandle {

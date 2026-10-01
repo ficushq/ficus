@@ -2,7 +2,7 @@
  * Orphaned test-DB sweeper.
  *
  * Every checkout (repo root or worktree) that runs `bun test` gets its own
- * compose project named `tau-test-<sha256(repoRoot)[0:8]>` whose postgres is
+ * compose project named `ficus-test-<sha256(repoRoot)[0:8]>` whose postgres is
  * deliberately left running between runs for reuse speed. Nothing tears the
  * project down when a worktree is deleted, and OrbStack resurrects running
  * containers on VM boot — so orphans used to run forever (RAM via tmpfs +
@@ -23,10 +23,10 @@ import { existsSync } from 'fs'
 
 export const TEST_DB_LABEL = 'dev.ficus.test-db'
 export const TEST_DB_REPO_ROOT_LABEL = 'dev.ficus.test-db.repo-root'
-const PROJECT_PREFIX = 'tau-test-'
+const PROJECT_PREFIX = 'ficus-test-'
 
 export interface TestDbContainer {
-  /** compose project name, e.g. tau-test-2ff43b29 */
+  /** compose project name, e.g. ficus-test-2ff43b29 */
   project: string
   /** value of dev.ficus.test-db.repo-root, '' when unlabeled (legacy) */
   repoRoot: string
@@ -85,7 +85,7 @@ export function defaultExec(cmd: string[], opts?: { timeoutMs?: number }): strin
   }
 }
 
-/** List all tau-test containers (any state) with their repo-root labels. */
+/** List all ficus-test containers (any state) with their repo-root labels. */
 export function listTestDbContainers(exec: SweepDeps['exec']): TestDbContainer[] {
   const out = exec([
     'docker',
