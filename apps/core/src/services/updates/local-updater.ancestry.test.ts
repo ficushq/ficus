@@ -67,10 +67,11 @@ beforeEach(async () => {
   await git(scratch, ['init', '-b', 'main', 'remote'])
   await commit(remote, 'base.txt', 'base')
   await git(scratch, ['clone', remote, 'checkout'])
-  // The updater persists its run state to <repoRoot>/.tau, which the real repo
+  // The updater persists its run state to <repoRoot>/.ficus (or the
+  // pre-rename .tau while only that exists), both of which the real repo
   // gitignores. Without this the checkout reads dirty and every apply below
   // would skip before it ever fetched — a fixture artefact, not a behaviour.
-  writeFileSync(join(checkout, '.git', 'info', 'exclude'), '.tau/\n')
+  writeFileSync(join(checkout, '.git', 'info', 'exclude'), '.ficus/\n.tau/\n')
 })
 
 afterEach(() => rmSync(scratch, { recursive: true, force: true }))

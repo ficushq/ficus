@@ -1,0 +1,41 @@
+name: Cloudflare ranges watch
+
+# Weekly (and on demand): compare the Cloudflare edge ranges pinned in
+# scripts/setup/lib.sh with the ones Cloudflare publishes, so a change there is
+# noticed instead of silently recording a new edge as the visitor. On drift it
+# opens (or comments on) an issue naming what changed; update the list, and
+# hosts follow when their Caddyfile is next rendered (upgrade-host.sh re-renders
+# it on every upgrade). Never triggered by pull requests: it can write issues.
+on:
+  schedule:
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare the pinned list with Cloudflare's
+        id: compare
+        env:
+          DRIFT_REPORT: ${{ runner.temp }}/drift.md
+        run: scripts/ci/check-cloudflare-ranges.sh
+
+      - name: Open or update the drift issue
+        if: failure() && steps.compare.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title='Pinned Cloudflare proxy ranges are out of date'
+          number=$(gh issue list --state open --search "in:title \"${title}\"" --json number --jq '.[0].number // empty')
+          if [[ -n ${number} ]]; then
+            gh issue comment "${number}" --body-file "${RUNNER_TEMP}/drift.md"
+          else
+            gh issue create --title "${title}" --body-file "${RUNNER_TEMP}/drift.md"
+          fi
