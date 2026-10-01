@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { describeClaudeCodeFailure } from './failures'
+import { routeFailure } from '../../execution/failure-routing'
 
 test('an expired Claude Code sign-in fails the account over as an expired login', () => {
   const text = describeClaudeCodeFailure('Failed to authenticate: OAuth session expired and could not be refreshed')
@@ -39,4 +40,14 @@ test('a structured rate limit still fails over when its prose is unfamiliar', ()
   expect(classifyCaughtProviderError(describeClaudeCodeFailure('Try later', 'rate_limit'))).toMatchObject({
     kind: 'rate-limit',
   })
+})
+
+test('a hard Claude Code window keeps the no-fallback waiting-input route', () => {
+  for (const window of ['session', 'weekly']) {
+    const error = describeClaudeCodeFailure(`You've hit your ${window} limit · resets Oct 6, 6am (UTC)`, 'rate_limit')
+    expect(routeFailure(error)).toMatchObject({
+      systemMessage: '[System] Rate limit or plan credit exhaustion. Execution stopped.',
+      disposition: { status: 'waiting-input', questionData: { questions: [{ id: 'rate_limit' }] } },
+    })
+  }
 })

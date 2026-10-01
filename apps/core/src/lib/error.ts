@@ -1,6 +1,10 @@
 import type { ProviderHealthKind } from '@ficus/shared/provider-health'
 import type { ExhaustionReason } from '../services/provider-health/registry'
-import { CLAUDE_CODE_SIGN_IN_FAILED, CLAUDE_CODE_TOO_OLD } from '../services/agent/claude-code/failures'
+import {
+  CLAUDE_CODE_SIGN_IN_FAILED,
+  CLAUDE_CODE_TOO_OLD,
+  isClaudeCodePlanLimit,
+} from '../services/agent/claude-code/failures'
 
 export interface CaughtProviderErrorClassification {
   kind: ProviderHealthKind
@@ -478,12 +482,12 @@ export function classifyProviderError(error: string, opts: { now?: number } = {}
   const lower = error.toLowerCase()
   // Claude Code's subscription-window refusal contains neither "rate limit"
   // nor "usage limit". It is account exhaustion even without an HTTP status.
-  if (/\byou['’]ve hit your session limit\b/i.test(error)) {
+  if (isClaudeCodePlanLimit(error)) {
     return {
       exhausted: true,
       reason: 'plan-credit',
       cooldownMs: PLAN_CREDIT_COOLDOWN_MS,
-      retryAt: parseClaudeSessionReset(error, opts.now ?? Date.now()),
+      retryAt: parseClaudePlanReset(error, opts.now ?? Date.now()),
     }
   }
   const codex = classifyCodexUsageLimit(error, lower)
@@ -501,16 +505,31 @@ export function classifyProviderError(error: string, opts: { now?: number } = {}
   return null
 }
 
-/** A clock-only UTC reset means its next occurrence; never guess an absent/local timezone. */
-function parseClaudeSessionReset(error: string, now: number): number | undefined {
-  const match = error.match(/\bresets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(UTC\)/i)
+/** Parse Claude's UTC clock/date; never guess an absent or local timezone. */
+function parseClaudePlanReset(error: string, now: number): number | undefined {
+  const match = error.match(
+    /\bresets\s+(?:(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(UTC\)/i
+  )
   if (!match) return undefined
-  const hour = Number(match[1])
-  const minute = Number(match[2] ?? 0)
+  const hour = Number(match[3])
+  const minute = Number(match[4] ?? 0)
   if (hour < 1 || hour > 12 || minute > 59) return undefined
   const reset = new Date(now)
-  reset.setUTCHours((hour % 12) + (match[3]!.toLowerCase() === 'pm' ? 12 : 0), minute, 0, 0)
-  if (reset.getTime() <= now) reset.setUTCDate(reset.getUTCDate() + 1)
+  reset.setUTCHours((hour % 12) + (match[5]!.toLowerCase() === 'pm' ? 12 : 0), minute, 0, 0)
+  if (match[1]) {
+    const month = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(
+      match[1].toLowerCase()
+    )
+    const day = Number(match[2])
+    // The CLI omits the year. Allow a December → January window, but don't turn
+    // an expired date into a year-long cooldown. Reject normalized invalid dates.
+    const year = reset.getUTCFullYear() + (reset.getUTCMonth() === 11 && month === 0 ? 1 : 0)
+    reset.setUTCFullYear(year, month, day)
+    if (reset.getUTCMonth() !== month || reset.getUTCDate() !== day || reset.getTime() <= now) return undefined
+  } else if (reset.getTime() <= now) {
+    // A clock-only session reset means its next occurrence.
+    reset.setUTCDate(reset.getUTCDate() + 1)
+  }
   return reset.getTime()
 }
 

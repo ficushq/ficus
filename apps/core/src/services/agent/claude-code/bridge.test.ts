@@ -319,6 +319,7 @@ test('an API error from Claude Code ends the turn with its message', async () =>
   const message = await out.result()
   expect(message.stopReason).toBe('error')
   expect(message.errorMessage).toBe('Claude Code rate limit: API Error: usage limit reached')
+  expect(isRetryableAssistantError(message)).toBe(true)
 })
 
 test('no claude executable fails the turn with a clear error', async () => {
@@ -347,12 +348,80 @@ for (const shape of ['assistant', 'result']) {
     )
     const message = await out.result()
     expect(message.stopReason).toBe('error')
+    expect(isRetryableAssistantError(message)).toBe(false)
     expect(classifyCaughtProviderError(message.errorMessage, { now: Date.parse('2026-09-29T01:00:00Z') })).toEqual({
       kind: 'plan-credit',
       retryAt: Date.parse('2026-09-29T02:20:00Z'),
     })
   })
 }
+
+const weeklyLimit = "You've hit your weekly limit · resets Oct 6, 6am (UTC)"
+
+for (const shape of ['assistant', 'result']) {
+  test(`Claude Code ${shape} weekly exhaustion settles without Pi retries and retains its reset`, async () => {
+    const { stream, processes } = harness()
+    const out = stream(model, context([user('hi')]), { sessionId: `weekly-${shape}` })
+    await processes[0]!.nextPrompt(1)
+    processes[0]!.emit(
+      shape === 'assistant'
+        ? {
+            type: 'assistant',
+            error: 'rate_limit',
+            parent_tool_use_id: null,
+            message: { content: [{ type: 'text', text: weeklyLimit }] },
+            session_id: 'cc-1',
+          }
+        : {
+            type: 'result',
+            subtype: 'error_during_execution',
+            errors: [weeklyLimit],
+            is_error: true,
+            session_id: 'cc-1',
+          }
+    )
+    const message = await out.result()
+    expect(message.stopReason).toBe('error')
+    expect(message.errorMessage).toContain(weeklyLimit)
+    expect(isRetryableAssistantError(message)).toBe(false)
+    expect(classifyCaughtProviderError(message.errorMessage, { now: Date.parse('2026-10-01T18:00:00Z') })).toEqual({
+      kind: 'plan-credit',
+      retryAt: Date.parse('2026-10-06T06:00:00Z'),
+    })
+  })
+}
+
+test('quoted quota text in normal output and nested tool errors is not a turn failure', async () => {
+  const { stream, processes } = harness()
+  const out = stream(model, context([user(weeklyLimit)]), { sessionId: 'quoted-limit' })
+  await processes[0]!.nextPrompt(1)
+  processes[0]!.emit(
+    {
+      type: 'assistant',
+      error: 'rate_limit',
+      parent_tool_use_id: 'nested-tool',
+      message: { content: [{ type: 'text', text: weeklyLimit }] },
+      session_id: 'cc-1',
+    },
+    ...textResponse('quoted-response', weeklyLimit)
+  )
+  const message = await out.result()
+  expect(message.stopReason).toBe('stop')
+  expect(message.errorMessage).toBeUndefined()
+  expect(isRetryableAssistantError(message)).toBe(false)
+})
+
+test('cancellation wins over a late weekly quota error', async () => {
+  const { stream, processes } = harness()
+  const controller = new AbortController()
+  const out = stream(model, context([user('hi')]), { sessionId: 'abort-limit', signal: controller.signal })
+  await processes[0]!.nextPrompt(1)
+  controller.abort()
+  processes[0]!.emit({ type: 'result', subtype: 'error_during_execution', errors: [weeklyLimit] })
+  const message = await out.result()
+  expect(message.stopReason).toBe('aborted')
+  expect(isRetryableAssistantError(message)).toBe(false)
+})
 
 test('a late result from the previous turn never closes the session under the next one', async () => {
   const { stream, processes, fireIdleTimers } = harness()
