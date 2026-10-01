@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { isWorkspaceVoiceRecipient, type Squad } from '@ficus/shared'
@@ -13,7 +13,7 @@ interface MessageRowProps {
   message: InboxMessageResponse
   onMarkAsRead?: () => void
   squads?: Squad[]
-  /** Compact mode for popup - shorter preview, smaller padding */
+  /** Compact mode for popup - shorter preview and inline metadata. */
   compact?: boolean
 }
 
@@ -29,14 +29,8 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
   const preview = getMessagePreview(message.content, compact ? 80 : 120)
 
   return (
-    // In the popup each row is its own rounded card; on the Inbox page rows sit flush in a divided list.
-    <div
-      className={clsx(
-        'hover:bg-surface-hover/50 transition-colors',
-        compact && 'rounded-lg',
-        isUnread && 'bg-accent/5'
-      )}
-    >
+    // Both inbox surfaces use the same card geometry, independent of preview density.
+    <div className={clsx('rounded-lg hover:bg-surface-hover/50 transition-colors', isUnread && 'bg-accent/5')}>
       {/* Header row - always visible */}
       <div
         className="relative flex items-start gap-3 cursor-pointer min-w-0 py-3.5 pl-6 pr-3"
@@ -192,6 +186,11 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
   )
 }
 
+/** Shared card spacing for the page and popup, including read messages. */
+export function MessageList({ children }: { children: ReactNode }) {
+  return <div className="space-y-1">{children}</div>
+}
+
 // --- Section Header ---
 
 interface SectionHeaderProps {
@@ -221,14 +220,17 @@ export function SectionHeader({ title, count, collapsible, collapsed, onToggle }
       <button
         onClick={onToggle}
         aria-expanded={!collapsed}
-        className={clsx('ficus-button', 'w-full px-3 py-2 hover:bg-surface-hover text-left')}
+        className={clsx(
+          'ficus-button',
+          'w-full rounded-lg pl-6 pr-3 py-2 hover:bg-surface-hover text-left focus-visible:outline-offset-[-2px]'
+        )}
       >
         {content}
       </button>
     )
   }
 
-  return <div className="px-3 py-2">{content}</div>
+  return <div className="pl-6 pr-3 py-2">{content}</div>
 }
 
 // --- Helper functions ---
