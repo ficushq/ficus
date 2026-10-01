@@ -317,6 +317,8 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
       // ── Squad events ──────────────────────────────────────────────
       subscribe('squads', ({ event, data }) => {
         if (event === 'slots.updated') {
+          // Stream slot context changes without a stored work-stream mutation.
+          slotCoalescer.queue(queryKeys.squads.all)
           slotCoalescer.queue(agentSlotWaitQueryKeys.squad(data.squadId))
           return
         }
@@ -454,6 +456,7 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
     const coalescer = coalescerRef.current
     if (!coalescer) return
     slotCoalescerRef.current?.queue(agentSlotWaitQueryKeys.all)
+    slotCoalescerRef.current?.queue(queryKeys.squads.all)
     // A reconnect may have missed activity events; badges must not stay stale until the fallback
     // interval. This rides the independent repair coalescer so it never delays the Action Center.
     slotCoalescerRef.current?.queue(assistantQueryKeys.activityPrefix)

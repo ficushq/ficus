@@ -80,6 +80,7 @@ export type ManualWaitPresentationState = 'waiting_on_owner'
 export type WorkStreamPresentationState =
   | WorkStreamStatus
   | WorkStreamDerivedState
+  | 'waiting_for_slot'
   | ManualWaitPresentationState
   | `delivery_${DeliveryPresentationKind}`
 export type SubagentPresentationState = 'queued' | 'running' | 'idle' | 'stopped' | 'done' | 'failed'
@@ -101,7 +102,7 @@ export const WORK_STREAM_STATUS_ROLE = {
   delivery_review: 'review',
   delivery_merge: 'review',
   delivery_external: 'externalWait',
-  delivery_setup: 'danger',
+  delivery_setup: 'attention',
   delivery_failure: 'danger',
   paused: 'neutral',
   queued: 'queue',
@@ -111,8 +112,9 @@ export const WORK_STREAM_STATUS_ROLE = {
   waiting_on_answer: 'humanWait',
   waiting_on_dependency: 'externalWait',
   waiting_on_owner: 'externalWait',
-  blocked: 'danger',
-  idle: 'danger',
+  blocked: 'attention',
+  idle: 'neutral',
+  waiting_for_slot: 'queue',
   execution_failed: 'danger',
   done: 'success',
   canceled: 'neutral',
@@ -197,6 +199,8 @@ export function workStreamWaitDisplayType(wait: WorkStreamWaitDisplayFacts): Wor
 }
 
 export interface WorkStreamPresentationFacts {
+  /** Read-only server projection; absent/false never implies a live resource wait. */
+  hasActiveSlotWait?: boolean
   delivery?: WorkStreamDeliveryPresentation
   pause?: unknown
   status: WorkStreamStatus
@@ -251,11 +255,12 @@ export function selectWorkStreamPresentationState(
     // list cannot speak against a live execution or a failed execution, but a
     // STALE wait-derived state (in_review/…) must still collapse to idle.
     if (workStream.derivedState === 'in_progress') return 'in_progress'
-    return 'idle'
+    return workStream.hasActiveSlotWait === true ? 'waiting_for_slot' : 'idle'
   }
 
   if (workStream.derivedState === 'execution_failed') return 'execution_failed'
-  return deliveryState ?? workStream.derivedState ?? workStream.status
+  const state = deliveryState ?? workStream.derivedState ?? workStream.status
+  return state === 'idle' && workStream.hasActiveSlotWait === true ? 'waiting_for_slot' : state
 }
 
 /** Whether a stream contributes to a user-attention aggregate. */

@@ -60,6 +60,7 @@ const PLANT_FOR_STATE: Record<WorkStreamPresentationState, PlantRule> = {
   canceled: null,
   queued: (stream) => (stream.waitingOnDependencies ? 'waiting' : 'queued'),
   waiting_on_dependency: 'waiting',
+  waiting_for_slot: 'waiting',
   // A manual wait the stream's owner agent must clear: nobody here has to act.
   waiting_on_owner: 'waiting',
   paused: 'paused',

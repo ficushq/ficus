@@ -1215,7 +1215,8 @@ export interface WorkStreamWait {
  * serializers, never stored). Open waits win over a running execution, by
  * type precedence review > question > dependency > manual; `in_progress`
  * requires a RUNNING execution for one of the stream's agents; `idle` is
- * active with no execution and no wait — the only alarming display.
+ * active with no execution and no wait. Resource-wait context is a separate
+ * presentation fact; ordinary idle is neutral.
  */
 export type WorkStreamDerivedState =
   | 'paused'
@@ -1394,6 +1395,8 @@ export interface WorkStream {
   /** Work streams in this squad that depend on this stream. Computed server-side; never stored. */
   dependedOnBy: string[]
   /** Display state derived from executions + open waits. Populated by list/detail endpoints. */
+  /** Server-owned, current-flow resource wait context; no pool or participant details. */
+  hasActiveSlotWait?: boolean
   derivedState?: WorkStreamDerivedState
   /** Open (unresolved) wait records, newest first. Populated by list/detail endpoints. */
   openWaits?: WorkStreamWait[]

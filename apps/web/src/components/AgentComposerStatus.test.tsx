@@ -12,7 +12,6 @@ afterEach(async () => {
 test('a small ring with the percentage; no cost, and no words for a plain running turn', () => {
   const html = renderToStaticMarkup(
     <AgentComposerStatus
-      agentId="a1"
       status="running"
       context={{ percent: 25.4, tokens: 7_000_000 }}
       canManageSession={false}
@@ -35,7 +34,6 @@ test('the ring opens the numbers and the session actions, offered only when the 
     dom!.act(async () =>
       root.render(
         <AgentComposerStatus
-          agentId="a1"
           context={{ percent: 62, tokens: 1_200_000 }}
           canManageSession={canManageSession}
           onCompact={onCompact}

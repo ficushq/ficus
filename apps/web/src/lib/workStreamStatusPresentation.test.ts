@@ -138,17 +138,17 @@ describe('delivery-external label derivation', () => {
 
 describe('workStreamWaitBadge', () => {
   test('labels manual waits by actor and keeps other wait types by type', () => {
-    expect(workStreamWaitBadge({ type: 'manual' })).toEqual({ label: 'Needs you', color: 'danger' })
-    expect(workStreamWaitBadge({ type: 'manual', actor: 'human' })).toEqual({ label: 'Needs you', color: 'danger' })
+    expect(workStreamWaitBadge({ type: 'manual' })).toEqual({ label: 'Needs you', color: 'attention' })
+    expect(workStreamWaitBadge({ type: 'manual', actor: 'human' })).toEqual({ label: 'Needs you', color: 'attention' })
     expect(workStreamWaitBadge({ type: 'manual', actor: 'owner' })).toEqual({
       label: 'Waiting on Owner',
       color: 'externalWait',
     })
     // Unknown actors (including the pre-rename 'manager') fall back to the human treatment.
-    expect(workStreamWaitBadge({ type: 'manual', actor: 'robot' })).toEqual({ label: 'Needs you', color: 'danger' })
+    expect(workStreamWaitBadge({ type: 'manual', actor: 'robot' })).toEqual({ label: 'Needs you', color: 'attention' })
     expect(workStreamWaitBadge({ type: 'manual', actor: PRE_RENAME_ACTOR })).toEqual({
       label: 'Needs you',
-      color: 'danger',
+      color: 'attention',
     })
     expect(workStreamWaitBadge({ type: 'dependency' })).toEqual({ label: 'Dependency', color: 'externalWait' })
     // Resolved waits keep their type label and name a non-human actor.

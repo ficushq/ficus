@@ -128,6 +128,7 @@ describe('work-stream derived state', () => {
       const input = { ...ws.toJson(), ...row.facts, agentIds: ['matrix-agent'], assigneeAgentId: null }
       const derived = (
         await computeDerivedStates([input], {
+          loadSlotWaitingStreams: async () => new Set(row.facts.hasActiveSlotWait ? [ws.id] : []),
           loadDelivery: async () => new Map(row.facts.delivery ? [[ws.id, row.facts.delivery]] : []),
           loadBusyAgentIds: async () => new Set(row.facts.derivedState === 'in_progress' ? ['matrix-agent'] : []),
           loadSurfacedFailures: async () =>
@@ -148,6 +149,7 @@ describe('work-stream derived state', () => {
             ),
         })
       ).get(ws.id)!
+      expect(derived.derivedState).not.toBe('waiting_for_slot') // presentation-only, even with annotated input
       const json = JSON.parse(JSON.stringify({ ...input, ...derived }))
       expect(selectWorkStreamPresentationState(json)).toBe(row.state)
       expect(workStreamNeedsHumanAttention(json)).toBe(row.attention)
@@ -158,6 +160,125 @@ describe('work-stream derived state', () => {
     }
   })
 
+  it('projects only queued waits enqueued in a current flow attempt, never historical or unrelated agents', async () => {
+    const { slotPools, slotWaiters, workStreamFlowRuns } = await import('../../db/schema')
+    const { attachFlow } = await import('../workflows/execution')
+    const { workflowPresetSchema } = await import('@ficus/shared')
+    const definition = workflowPresetSchema.parse(
+      Bun.YAML.parse(
+        await Bun.file(new URL('../../../../../config/workflows/builder-reviewer.yaml', import.meta.url)).text()
+      )
+    ).definition
+    for (const participant of Object.values(definition.participants)) participant.agentTypeId = testAgentTypeId
+    const agent = await createAgent()
+    const other = await createAgent()
+    const ws = await createStream('slot context', { assigneeAgentId: agent.id, agentIds: [agent.id, other.id] })
+    await db.delete(executions).where(inArray(executions.agentId, [agent.id, other.id]))
+    await db.transaction(async (tx) => {
+      const [stored] = await tx.select().from(workStreams).where(eq(workStreams.id, ws.id))
+      const flow = await attachFlow(tx, stored!, { kind: 'inline', definition })
+      await tx
+        .update(workStreamFlowRuns)
+        .set({ activated: true, attemptAgents: { '1': agent.id }, state: flow.state })
+        .where(eq(workStreamFlowRuns.workStreamId, ws.id))
+    })
+    const [pool] = await db
+      .insert(slotPools)
+      .values({ squadId: squad.id, key: 'test-wait', capacity: 1, createdBy: 'system' })
+      .returning()
+    const queuedAt = new Date()
+    const [execution] = await db
+      .insert(executions)
+      .values({
+        agentId: agent.id,
+        status: 'completed',
+        startedAt: new Date(queuedAt.getTime() - 1000),
+        endedAt: new Date(queuedAt.getTime() + 1000),
+        flowContext: { workStreamId: ws.id, attemptId: 1, stepId: 'build' },
+      })
+      .returning()
+    const [waiter] = await db
+      .insert(slotWaiters)
+      .values({ poolId: pool!.id, ownerAgentId: agent.id, queuedAt })
+      .returning()
+    try {
+      expect((await derived(ws)).hasActiveSlotWait).toBe(true)
+      expect((await derived(ws)).derivedState).toBe('idle') // old client contract unchanged
+      await db.update(executions).set({ status: 'running', endedAt: null }).where(eq(executions.id, execution!.id))
+      expect((await derived(ws)).derivedState).toBe('in_progress')
+      await db
+        .update(executions)
+        .set({ status: 'completed', endedAt: new Date(queuedAt.getTime() + 1000) })
+        .where(eq(executions.id, execution!.id))
+      for (const status of ['granted', 'canceled'] as const) {
+        await db.update(slotWaiters).set({ status, endedAt: new Date() }).where(eq(slotWaiters.id, waiter!.id))
+        expect((await derived(ws)).hasActiveSlotWait).toBe(false)
+      }
+      await db.update(slotWaiters).set({ status: 'queued', endedAt: null }).where(eq(slotWaiters.id, waiter!.id))
+      await db
+        .update(executions)
+        .set({ startedAt: new Date(queuedAt.getTime() + 1) })
+        .where(eq(executions.id, execution!.id))
+      expect((await derived(ws)).hasActiveSlotWait).toBe(false)
+      await db
+        .update(executions)
+        .set({ startedAt: new Date(queuedAt.getTime() - 1000) })
+        .where(eq(executions.id, execution!.id))
+      await db
+        .update(executions)
+        .set({ flowContext: { workStreamId: ws.id, attemptId: 99, stepId: 'old' } })
+        .where(eq(executions.id, execution!.id))
+      expect((await derived(ws)).hasActiveSlotWait).toBe(false)
+      await db.update(slotWaiters).set({ ownerAgentId: other.id }).where(eq(slotWaiters.id, waiter!.id))
+      expect((await derived(ws)).hasActiveSlotWait).toBe(false)
+      // A second pool and current parallel participant keep the projection true
+      // until the final relevant subscription ends, independently of the assignee.
+      const [flow] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, ws.id))
+      const parallel = { ...flow!.state, attempts: [...flow!.state.attempts, { ...flow!.state.attempts[0]!, id: 2 }] }
+      await db
+        .update(workStreamFlowRuns)
+        .set({ state: parallel, attemptAgents: { '1': agent.id, '2': other.id } })
+        .where(eq(workStreamFlowRuns.workStreamId, ws.id))
+      await db.insert(executions).values({
+        agentId: other.id,
+        status: 'completed',
+        startedAt: new Date(queuedAt.getTime() - 1000),
+        endedAt: new Date(queuedAt.getTime() + 1000),
+        flowContext: { workStreamId: ws.id, attemptId: 2, stepId: 'build' },
+      })
+      expect((await derived(ws)).hasActiveSlotWait).toBe(true)
+      const [secondPool] = await db
+        .insert(slotPools)
+        .values({ squadId: squad.id, key: 'second-pool', capacity: 1, createdBy: 'system' })
+        .returning()
+      try {
+        await db.insert(slotWaiters).values({ poolId: secondPool!.id, ownerAgentId: other.id, queuedAt })
+        await db
+          .update(slotWaiters)
+          .set({ status: 'canceled', endedAt: new Date() })
+          .where(eq(slotWaiters.id, waiter!.id))
+        expect((await derived(ws)).hasActiveSlotWait).toBe(true)
+        await db
+          .update(workStreamFlowRuns)
+          .set({
+            state: { ...parallel, attempts: parallel.attempts.map((a) => ({ ...a, status: 'completed' as const })) },
+          })
+          .where(eq(workStreamFlowRuns.workStreamId, ws.id))
+        expect((await derived(ws)).hasActiveSlotWait).toBe(false)
+        await db.update(workStreamFlowRuns).set({ state: parallel }).where(eq(workStreamFlowRuns.workStreamId, ws.id))
+        expect((await derived(ws)).hasActiveSlotWait).toBe(true)
+        await db.delete(slotWaiters).where(eq(slotWaiters.poolId, secondPool!.id))
+        expect((await derived(ws)).hasActiveSlotWait).toBe(false)
+      } finally {
+        await db.delete(slotWaiters).where(eq(slotWaiters.poolId, secondPool!.id))
+        await db.delete(slotPools).where(eq(slotPools.id, secondPool!.id))
+      }
+    } finally {
+      await db.delete(slotWaiters).where(eq(slotWaiters.poolId, pool!.id))
+      await db.delete(slotPools).where(eq(slotPools.id, pool!.id))
+    }
+  })
+
   it('in_progress requires a RUNNING execution for an assigned agent — assignee presence alone is NOT enough', async () => {
     const agent = await createAgent()
     const ws = await createStream('exec-check', { assigneeAgentId: agent.id, agentIds: [agent.id] })
@@ -165,7 +286,7 @@ describe('work-stream derived state', () => {
     // no-execution baseline is real.
     await db.delete(executions).where(eq(executions.agentId, agent.id))
 
-    // Assigned but no execution: idle, the alarming display.
+    // Assigned but no execution: ordinary neutral idle.
     expect((await derived(ws)).derivedState).toBe('idle')
 
     // A live execution flips it to in_progress.

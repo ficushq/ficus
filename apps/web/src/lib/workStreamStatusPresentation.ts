@@ -38,6 +38,7 @@ export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
   waiting_on_owner: 'Waiting on Owner',
   blocked: 'Blocked',
   idle: 'Idle',
+  waiting_for_slot: 'Waiting for slot',
   execution_failed: 'Execution Failed',
   paused: 'Paused',
 }
@@ -59,6 +60,7 @@ export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, StatusR
   waiting_on_dependency: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_dependency).badgeColor,
   waiting_on_owner: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_owner).badgeColor,
   blocked: webStatus(WORK_STREAM_STATUS_ROLE.blocked).badgeColor,
+  waiting_for_slot: webStatus(WORK_STREAM_STATUS_ROLE.waiting_for_slot).badgeColor,
   idle: webStatus(WORK_STREAM_STATUS_ROLE.idle).badgeColor,
   execution_failed: webStatus(WORK_STREAM_STATUS_ROLE.execution_failed).badgeColor,
   paused: webStatus(WORK_STREAM_STATUS_ROLE.paused).badgeColor,
@@ -139,7 +141,7 @@ const WAIT_TYPE_BADGE_COLORS: Record<WorkStreamWaitType, StatusRole> = {
   dependency: 'externalWait',
   question: 'humanWait',
   review: 'review',
-  manual: 'danger',
+  manual: 'attention',
 }
 
 export const MANUAL_WAIT_ACTOR_LABELS: Record<WorkStreamWaitActor, string> = {

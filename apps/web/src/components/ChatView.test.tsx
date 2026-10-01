@@ -2229,3 +2229,32 @@ describe('agent delivery popup', () => {
     expect(window.document.querySelector('[aria-label="Message delivery"]')).toBeNull()
   })
 })
+
+for (const embedded of [false, true]) {
+  test(`header status stays above messages and outside composer (embedded=${embedded})`, async () => {
+    const { dom, window } = await renderChatView(
+      <ChatView
+        agentId="a1"
+        items={[]}
+        onSend={() => {}}
+        embedded={embedded}
+        enableFullscreen
+        header={<span data-testid="title">Agent</span>}
+        headerStatus={<div data-testid="slot-row">Waiting for slot</div>}
+      />
+    )
+    const row = window.document.querySelector('[data-testid="slot-row"]')!
+    const title = window.document.querySelector('[data-testid="title"]')!
+    expect(row).not.toBeNull()
+    expect(title.compareDocumentPosition(row) & 4).toBe(4)
+    expect(row.closest('form')).toBeNull()
+    expect(row.parentElement?.className).not.toMatch(/absolute|fixed/)
+    await dom.act(async () => {
+      fireEvent.click(window.document.querySelector('[aria-label="Fullscreen"]')!)
+    })
+    const expandedRow = window.document.querySelector('[data-testid="slot-row"]')!
+    expect(expandedRow.closest('[role="dialog"]')).not.toBeNull()
+    expect(expandedRow.closest('form')).toBeNull()
+    expect(expandedRow.parentElement?.className).not.toMatch(/absolute|fixed/)
+  })
+}

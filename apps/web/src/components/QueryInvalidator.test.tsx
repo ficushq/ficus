@@ -168,18 +168,18 @@ describe('QueryInvalidator', () => {
     await dom.act(async () => render(false))
     expect(fakeQueryClient.invalidateQueries).not.toHaveBeenCalled()
 
-    // Each open repairs slot waits, Assistant activity, actions, questions, and both storage views exactly once.
+    // Each open repairs slot waits, stream presentations, Assistant activity, actions, questions, and both storage views exactly once.
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(6)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(7)
 
     await dom.act(async () => render(true))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(6)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(7)
 
     await dom.act(async () => render(false))
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(12)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(14)
     for (const key of [
       agentSlotWaitQueryKeys.all,
       assistantQueryKeys.activityPrefix,
@@ -406,6 +406,19 @@ describe('QueryInvalidator', () => {
     agentsCallback({ event: 'execution.updated', data: { agentId: 'agent-1' } })
     await Promise.resolve()
     expect(fakeQueryClient.invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  test('slot lifecycle refreshes stream presentation as well as agent details', async () => {
+    await dom.act(async () => {
+      root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe }} />)
+    })
+    await dom.act(async () => {
+      captured.get('squads')!({ event: 'slots.updated', data: { squadId: 'squad-1' } })
+    })
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledWith(
+      { queryKey: queryKeys.squads.all },
+      { cancelRefetch: false }
+    )
   })
 
   test('workStream.updated invalidates the squad query prefix used by home and work graphs', async () => {

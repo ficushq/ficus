@@ -11,7 +11,7 @@ const cases = [
   ['review', 'delivery_review', 'review', true, 'needsYou'],
   ['merge', 'delivery_merge', 'review', true, 'needsYou'],
   ['external', 'delivery_external', 'externalWait', false, 'externalWait'],
-  ['setup', 'delivery_setup', 'danger', false, 'blocked'],
+  ['setup', 'delivery_setup', 'attention', false, 'blocked'],
 ] as const
 for (const [kind, state, role, attention, bucket] of cases) {
   test(`authoritative delivery ${kind} survives explicit empty waits`, () => {

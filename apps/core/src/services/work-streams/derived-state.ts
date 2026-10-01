@@ -16,6 +16,7 @@ import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
 import { collectWorkStreamAgentIds } from './agent-ids'
 import { listOpenWaitsForStreams, toWaitJson } from './waits'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
+import { loadSlotWaitingStreams } from './slot-waits'
 import { flowWaitReference } from '../workflows/wait-policy'
 
 /**
@@ -30,12 +31,13 @@ import { flowWaitReference } from '../workflows/wait-policy'
  *    that needs attention -> execution_failed (platform admission refusal,
  *    unclassified/legacy failure, or a provider failure; transport is
  *    excluded because the continuation watchdog auto-continues it)
- * 5. active, nothing else -> idle (the only alarming display)
+ * 5. active, nothing else -> idle (neutral; resource waits are additional presentation facts)
  * 6. queued -> queued (clients render position / parked wait from
  *    queuePosition + openWaits)
  */
 
 export interface DerivedStreamInfo {
+  hasActiveSlotWait: boolean
   delivery?: WorkStreamDeliveryPresentation
   derivedState: WorkStreamDerivedState
   /** Open waits, display precedence first (then newest first within a type). */
@@ -68,6 +70,7 @@ interface StreamShape {
 }
 
 export interface DerivedStateDeps {
+  loadSlotWaitingStreams?: (ids: string[]) => Promise<Set<string>>
   loadDelivery?: (ids: string[]) => Promise<Map<string, WorkStreamDeliveryPresentation>>
   /** Agent ids that currently have a live (active-status) execution. */
   loadBusyAgentIds?: (agentIds: string[]) => Promise<Set<string>>
@@ -141,9 +144,12 @@ export async function computeDerivedStates(
   if (streams.length === 0) return result
 
   const ids = streams.map((s) => s.id)
-  const [waitsByStream, deliveryByStream] = await Promise.all([
+  const [waitsByStream, deliveryByStream, slotWaitingStreams] = await Promise.all([
     listOpenWaitsForStreams(ids),
     (deps.loadDelivery ?? ((ids) => loadDeliveryPresentations(db, ids)))(ids),
+    (deps.loadSlotWaitingStreams ?? loadSlotWaitingStreams)(
+      streams.filter((s) => s.status === 'active' && !s.pause).map((s) => s.id)
+    ),
   ])
 
   const executionCandidates = streams.filter(
@@ -196,7 +202,15 @@ export async function computeDerivedStates(
       derivedState = 'queued'
     }
 
-    const presentation = selectWorkStreamPresentationState({ ...stream, derivedState, openWaits, delivery })
+    // Do not feed previously annotated presentation facts back into the legacy
+    // derived vocabulary. Resource context is returned independently below.
+    const presentation = selectWorkStreamPresentationState({
+      status: stream.status,
+      pause: stream.pause,
+      derivedState,
+      openWaits,
+      delivery,
+    })
     // Keep the existing derived vocabulary for older consumers. New consumers
     // retain the typed delivery fact even with an explicit empty wait list.
     const deliveryStates = {
@@ -214,6 +228,7 @@ export async function computeDerivedStates(
         ? deliveryStates[presentation as keyof typeof deliveryStates]
         : (presentation as WorkStreamDerivedState)
     result.set(stream.id, {
+      hasActiveSlotWait: slotWaitingStreams.has(stream.id),
       derivedState,
       openWaits,
       ...(delivery ? { delivery } : {}),

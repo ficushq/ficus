@@ -1,3 +1,4 @@
+import { WORK_STREAM_PRESENTATION_CASES } from './test-fixtures/work-stream-presentation'
 import { describe, expect, test } from 'bun:test'
 import type {
   AgentStatus,
@@ -65,15 +66,16 @@ describe('status role mappings', () => {
       ['in_review', 'review'],
       ['waiting_on_answer', 'humanWait'],
       ['waiting_on_dependency', 'externalWait'],
-      ['blocked', 'danger'],
-      ['idle', 'danger'],
+      ['blocked', 'attention'],
+      ['idle', 'neutral'],
       ['execution_failed', 'danger'],
       ['delivery_approval', 'review'],
       ['delivery_review', 'review'],
       ['delivery_merge', 'review'],
       ['delivery_external', 'externalWait'],
       ['waiting_on_owner', 'externalWait'],
-      ['delivery_setup', 'danger'],
+      ['waiting_for_slot', 'queue'],
+      ['delivery_setup', 'attention'],
       ['delivery_failure', 'danger'],
       ['paused', 'neutral'],
       ['done', 'success'],
@@ -315,4 +317,35 @@ describe('manual wait actors', () => {
   test('legacy payloads without waits keep the historical blocked attention fallback', () => {
     expect(workStreamNeedsHumanAttention({ status: 'active', derivedState: 'blocked' })).toBe(true)
   })
+})
+
+describe('slot wait presentation', () => {
+  test('only replaces otherwise idle, with an explicit live server fact', () => {
+    const idle = { status: 'active' as const, derivedState: 'idle' as const, openWaits: [] }
+    expect(selectWorkStreamPresentationState({ ...idle, hasActiveSlotWait: true })).toBe('waiting_for_slot')
+    for (const value of [undefined, false])
+      expect(selectWorkStreamPresentationState({ ...idle, hasActiveSlotWait: value })).toBe('idle')
+    for (const derivedState of ['in_progress', 'execution_failed'] as const)
+      expect(selectWorkStreamPresentationState({ ...idle, derivedState, hasActiveSlotWait: true })).toBe(derivedState)
+    for (const status of ['queued', 'done', 'canceled'] as const)
+      expect(selectWorkStreamPresentationState({ ...idle, status, hasActiveSlotWait: true })).toBe(status)
+    expect(selectWorkStreamPresentationState({ ...idle, pause: {}, hasActiveSlotWait: true })).toBe('paused')
+    expect(
+      selectWorkStreamPresentationState({ ...idle, delivery: { kind: 'external' }, hasActiveSlotWait: true })
+    ).toBe('delivery_external')
+    expect(
+      selectWorkStreamPresentationState({ ...idle, openWaits: [{ type: 'manual' }], hasActiveSlotWait: true })
+    ).toBe('blocked')
+    expect(selectWorkStreamPresentationState({ status: 'active', derivedState: 'idle', hasActiveSlotWait: true })).toBe(
+      'waiting_for_slot'
+    )
+  })
+})
+
+test('slot context cannot mask any existing non-idle state in the shared matrix', () => {
+  for (const row of WORK_STREAM_PRESENTATION_CASES) {
+    expect(selectWorkStreamPresentationState({ ...row.facts, hasActiveSlotWait: true })).toBe(
+      row.state === 'idle' ? 'waiting_for_slot' : row.state
+    )
+  }
 })

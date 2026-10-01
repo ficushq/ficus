@@ -3,7 +3,6 @@ import clsx from 'clsx'
 import type { ExecutionStatus } from '@ficus/shared'
 import { ActionPopup } from './ThemedPopup'
 import { Modal } from './Modal'
-import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
 import { formatTokens } from '../lib/format'
 
 /** A turn's state worth saying in words; plain "running" is already the Stop button and the working row. */
@@ -49,21 +48,17 @@ export function ContextRing({ percent, className }: { percent: number; className
 /**
  * What the agent is up to, small, beside the chat composer's controls: a word
  * for the in-between states (queued, waiting for a sandbox, compacting…),
- * slot waits, and a ring showing how much context is used. The ring opens the
+ * and a ring showing how much context is used. The ring opens the
  * numbers and the session actions (Compact, Reset); cost and the rest live in
  * the Info tab.
  */
 export function AgentComposerStatus({
-  agentId,
-  squadId,
   status,
   context,
   canManageSession,
   onCompact,
   onReset,
 }: {
-  agentId: string
-  squadId?: string | null
   /** The execution's (or the agent's compacting/resetting) state, if any. */
   status?: ExecutionStatus | 'compacting' | 'resetting'
   context?: { percent: number; tokens: number }
@@ -83,7 +78,6 @@ export function AgentComposerStatus({
           {label}
         </span>
       )}
-      {squadId && <AgentSlotWaitStatus agentId={agentId} squadId={squadId} />}
       {context && (
         <ActionPopup
           label={`Context ${percent}% used`}

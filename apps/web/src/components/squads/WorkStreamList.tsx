@@ -88,6 +88,7 @@ const KANBAN_COLUMNS: WorkStreamPresentationState[] = [
   'waiting_on_answer',
   'waiting_on_dependency',
   'waiting_on_owner',
+  'waiting_for_slot',
   'blocked',
   'execution_failed',
   'done',

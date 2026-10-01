@@ -18,7 +18,12 @@ export function workBucket(stream: WorkBucketFacts): WorkBucket {
   // Owner-actor manual waits are waits on someone other than
   // the user: the existing non-alarming bucket, never Needs you. No new bucket
   // value is introduced, so older native binaries keep rendering them.
-  if (state === 'waiting_on_dependency' || state === 'delivery_external' || state === 'waiting_on_owner')
+  if (
+    state === 'waiting_for_slot' ||
+    state === 'waiting_on_dependency' ||
+    state === 'delivery_external' ||
+    state === 'waiting_on_owner'
+  )
     return 'externalWait'
   if (workStreamNeedsHumanAttention(stream)) return 'needsYou'
   if (['blocked', 'idle', 'execution_failed', 'delivery_setup', 'delivery_failure'].includes(state)) return 'blocked'
@@ -56,6 +61,8 @@ export interface WidgetWorkStreamSummary {
   status: WorkStreamStatus
   pause?: boolean
   delivery?: WorkStream['delivery']
+  /** Detailed row presentation only; never exposes slot pool details. */
+  hasActiveSlotWait?: boolean
   derivedState?: WorkStreamDerivedState
   assigneeAgentId?: string
   /** An explicit empty array is authoritative and must survive serialization. */
@@ -84,6 +91,7 @@ type SnapshotSource = Pick<
   | 'title'
   | 'status'
   | 'derivedState'
+  | 'hasActiveSlotWait'
   | 'assigneeAgentId'
   | 'openWaits'
   | 'updatedAt'
@@ -125,6 +133,7 @@ function toWidgetSummary(stream: SnapshotSource): WidgetWorkStreamSummary {
     openWaitTypes: stream.openWaits?.map(({ type }) => type) ?? [],
     updatedAt: new Date(stream.updatedAt).toISOString(),
   }
+  if (stream.hasActiveSlotWait !== undefined) row.hasActiveSlotWait = stream.hasActiveSlotWait
   if (stream.pause) row.pause = true
   if (stream.delivery) row.delivery = stream.delivery
   if (stream.derivedState) row.derivedState = stream.derivedState
