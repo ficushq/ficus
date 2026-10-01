@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { GitHubPollingProvider } from './provider'
+import type { EventPollingCapability } from '../types'
 
 describe('GitHubPollingProvider', () => {
   test('exposes event polling with an injected credential resolver', async () => {
@@ -82,7 +83,9 @@ test('the GitHub plugin/parser retains repository issue polling and emits new as
       adapterVersion: 1,
       configuration: { kind: 'issue-events', owner: 'acme', repo: 'widgets' },
     }
-    const poll = plugin.runtime.provider.capabilities.event_polling!
+    // Runner watches carry resource configs, not account configs; exercise the
+    // real plugin/parser through its provider-neutral polling capability.
+    const poll = plugin.runtime.provider.capabilities.event_polling! as EventPollingCapability
     const baseline = await poll.poll(connection, null)
     expect(baseline.events).toEqual([])
     events = [item(2), item(1)]

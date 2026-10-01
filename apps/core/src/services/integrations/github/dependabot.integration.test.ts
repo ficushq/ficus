@@ -429,7 +429,10 @@ test('no-event runtime ticks and restarts leave retired cursors/dispatches inert
     queued: true,
     status: 'queued',
   })
-  const request = spyOn(globalThis, 'fetch').mockImplementation((async () => Response.json([])) as typeof fetch)
+  // Only fetch calls are intercepted; Bun's attached preconnect method is not
+  // part of this fixture, matching the existing delivery-presentation boundary.
+  const request = spyOn(globalThis, 'fetch').mockImplementation((async () =>
+    Response.json([])) as unknown as typeof fetch)
   let restorePoll: (() => void) | undefined
   try {
     const one = await fixture()

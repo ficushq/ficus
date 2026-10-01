@@ -6,6 +6,7 @@ import {
   trackedResourceUrl,
 } from '@ficus/shared'
 import { GitHubPollingProvider } from './provider'
+import type { EventPollingCapability } from '../types'
 import { githubOutputAdapter } from '../outputs/github'
 import { integrationOutputRegistry } from '../outputs/registry'
 import { githubTrackedResourceAdapter } from './code-hosting'
@@ -166,19 +167,18 @@ test('retired Dependabot configurations are rejected before credential or API ac
       return 'token'
     }
   )
+  // Runner watches carry resource configs, not account configs; keep the real
+  // plugin's runtime parser under test at the provider-neutral polling boundary.
+  const poller = plugin.runtime.provider.capabilities.event_polling! as EventPollingCapability
   const provider = new GitHubPollingProvider(async () => undefined)
   for (const configuration of [
     connection.configuration,
     { ...connection.configuration, number: 7, deliveryPresentation: true },
   ]) {
     expect(() => provider.parseConfig(configuration)).toThrow('Invalid GitHub polling configuration')
-    expect(() =>
-      plugin.runtime.provider.capabilities.event_polling!.poll(
-        { ...connection, configuration },
-        { after: 'old-page', repository },
-        undefined
-      )
-    ).toThrow('Invalid GitHub polling configuration')
+    expect(() => poller.poll({ ...connection, configuration }, { after: 'old-page', repository }, undefined)).toThrow(
+      'Invalid GitHub polling configuration'
+    )
   }
   expect(credentials).toBe(0)
 })
