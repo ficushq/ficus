@@ -10,6 +10,7 @@
  * and sign-in happens in Claude Code's own `claude auth login` flow.
  */
 import { realpathSync } from 'node:fs'
+import { userInfo } from 'node:os'
 import { createLogger } from '../../../lib/infra/logger'
 import { claudeCodeAccount } from './account'
 
@@ -138,7 +139,22 @@ export function claudeChildEnv(
   const keep = ['HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'TMPDIR', 'TERM', 'CLAUDE_CONFIG_DIR']
   const child: Record<string, string> = { PATH: claudeSearchPath(env) }
   for (const name of keep) if (env[name]) child[name] = env[name]!
+  // On macOS Claude Code finds its sign-in in the Keychain under $USER; without it, a signed-in
+  // `claude` reports signed out. Ficus Desktop starts Core without USER, so take it from the OS.
+  const user = child.USER ?? child.LOGNAME ?? currentUser()
+  if (user) {
+    child.USER ??= user
+    child.LOGNAME ??= user
+  }
   return { ...child, ...extra }
+}
+
+function currentUser(): string | undefined {
+  try {
+    return userInfo().username || undefined
+  } catch {
+    return undefined
+  }
 }
 
 let cached: { at: number; status: ClaudeCodeStatus } | undefined
