@@ -44,6 +44,7 @@ import { canPrompt, terminalPrompter } from '../local-server/prompt'
 import { defaultRunner, type Runner } from '../local-server/runner'
 import { defaultSetupDeps, runSetup, type SetupDeps } from '../local-server/setup'
 import {
+  assertDefaultRegistryReady,
   canonicalRoot,
   defaultLabel,
   findInstanceByRoot,
@@ -152,7 +153,7 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
   // are in, never the one that happens to be installed. See resolveSetupRoot.
   const setupRoot = (opts: { root?: string }) => resolveSetupRoot({ flag: opts.root, env: deps.env, cwd: deps.cwd })
   // The default instance's data dir when neither the checkout's .env nor its label names one:
-  // the CLI home (`~/.ficus`, or a legacy home that has not moved yet), shown with a `~`.
+  // the canonical CLI home (`~/.ficus`), shown with a `~`.
   const defaultDataDir = () => join('~', basename(cliHome({ homedir: deps.env.HOME ?? homedir() })))
   const managed = (opts: { root?: string; instance?: string }) => {
     const selected = root(opts)
@@ -190,7 +191,7 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
     const record = readRegistryStrict(deps.statePath).instances[label]
     return record && !isCheckout(record.root) ? { label, record } : undefined
   }
-  const guarded =
+  const caught =
     (fn: (...args: unknown[]) => Promise<void>) =>
     async (...args: unknown[]) => {
       try {
@@ -203,6 +204,12 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
         outputError(error as Error, exitCode)
       }
     }
+
+  const guarded = (fn: (...args: unknown[]) => Promise<void>) =>
+    caught(async (...args: unknown[]) => {
+      assertDefaultRegistryReady(deps.env, deps.statePath)
+      await fn(...args)
+    })
 
   server
     .command('install')
@@ -568,7 +575,7 @@ Examples:
     .option('--dry-run', 'Print the plan and change nothing')
     .option('--undo', 'Undo a completed rename of this instance (back to the old names)')
     .action(
-      guarded(async (opts) => {
+      caught(async (opts) => {
         const o = opts as { root?: string; instance?: string; dryRun?: boolean; undo?: boolean }
         const recoveryStatePath =
           !deps.env.FICUS_LOCAL_SERVER_STATE && deps.statePath === getStatePath(deps.env)

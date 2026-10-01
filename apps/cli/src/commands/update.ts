@@ -4,7 +4,7 @@ import { join } from 'path'
 import { apiGet, apiPatch, apiPost } from '../client'
 import { isTransportError, runOfflineUpdate as defaultOfflineUpdate } from '../local-server/offline-update'
 import { defaultRunner } from '../local-server/runner'
-import { findInstanceByRoot, getStatePath, resolveRoot } from '../local-server/state'
+import { assertDefaultRegistryReady, findInstanceByRoot, getStatePath, resolveRoot } from '../local-server/state'
 import { parseEnvFile } from '../local-server/env-file'
 import { config } from '../config'
 import { output, outputError } from '../output'
@@ -31,7 +31,10 @@ export interface UpdateDeps {
 
 export function defaultUpdateDeps(): UpdateDeps {
   return {
-    resolveRoot: () => resolveRoot({ env: process.env, statePath: getStatePath(), cwd: process.cwd() }),
+    resolveRoot: () => {
+      assertDefaultRegistryReady()
+      return resolveRoot({ env: process.env, statePath: getStatePath(), cwd: process.cwd() })
+    },
     apiUrl: () => config.apiUrl,
     localPort: (root) => {
       // Whichever instance owns this checkout — the default instance is a
@@ -44,6 +47,7 @@ export function defaultUpdateDeps(): UpdateDeps {
       return Number.isInteger(port) && port > 0 ? port : undefined
     },
     offlineUpdate: (args) => {
+      assertDefaultRegistryReady()
       // Same refusal as `ficus server update`: restarting a half-renamed instance starts it.
       assertNoRenameInFlight(join(cliHome(), RENAME_JOURNAL))
       const registered = findInstanceByRoot(args.root, getStatePath())
@@ -161,7 +165,7 @@ export function registerUpdateCommands(program: Command, deps: UpdateDeps = defa
             deps.log('API unreachable — reading the local status file')
           }
         }
-        // <root>/.ficus, or the pre-rename status dir while the checkout has only that one (Core agrees).
+        // Read the canonical checkout status directory, matching Core.
         const path = join(ficusOrLegacyDir(deps.resolveRoot()), 'local-update-status.json')
         const latest = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null
         output(

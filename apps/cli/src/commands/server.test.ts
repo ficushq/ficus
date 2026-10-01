@@ -1245,3 +1245,34 @@ describe('finalized CLI identity gate additional paths', () => {
     expect((output as ReturnType<typeof mock>).mock.calls[0]?.[1]).toContain('ficus-host-layout-bridge')
   })
 })
+
+describe('unmigrated home-only registry', () => {
+  for (const args of [
+    ['install', '--root', 'ROOT'],
+    ['setup', '--root', 'ROOT', '--runtime', 'host', '--yes'],
+    ['start', '--root', 'ROOT'],
+    ['update', '--root', 'ROOT'],
+  ]) {
+    it(`refuses ${args[0]} before treating the canonical home as a fresh install`, async () => {
+      const home = join(root, 'home')
+      const oldState = join(home, LEGACY_HOME_DIR_NAME, 'cli', 'local-server.json')
+      mkdirSync(join(oldState, '..'), { recursive: true })
+      const before = JSON.stringify({
+        version: 3,
+        default: LEGACY_LOCAL_INSTANCE,
+        instances: {
+          [LEGACY_LOCAL_INSTANCE]: { root, port: 3000, supervisor: 'pm2', identity: 1, createdAt: 't', updatedAt: 't' },
+        },
+      })
+      writeFileSync(oldState, before)
+      const setup = mock(async () => ({ handoff: [], cliOnPath: true }))
+      const { run, calls } = make({}, { env: { HOME: home }, statePath: getStatePath({ HOME: home }), runSetup: setup })
+      await run(['server', ...args.map((arg) => (arg === 'ROOT' ? root : arg))])
+      expect(calls).toEqual([])
+      expect(setup).not.toHaveBeenCalled()
+      expect((outputError as ReturnType<typeof mock>).mock.calls[0]?.[0]?.message).toContain('ficus-host-layout-bridge')
+      expect(readFileSync(oldState, 'utf8')).toBe(before)
+      expect(existsSync(join(home, '.ficus'))).toBe(false)
+    })
+  }
+})

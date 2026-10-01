@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { posix } from 'path'
 
 export const MIGRATION_MANIFEST_SCHEMA = 'ficus-box-migration/v1' as const
-/** Bridge (phase 5, U4): the kind manifests carried before the rename. Still read, never written. */
+/** The canonical schema accepted by migration readers and writers. */
 export type MigrationManifestSchema = typeof MIGRATION_MANIFEST_SCHEMA
 export type DurableRootName = 'workspace' | '.private'
 export type ManifestEntryV1 =

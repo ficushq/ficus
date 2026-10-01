@@ -188,3 +188,24 @@ describe('defaultUpdateDeps localPort', () => {
     }
   })
 })
+
+it('refuses standalone offline update when only the old home registry exists', () => {
+  const home = mkdtempSync(join(tmpdir(), 'ficus-update-old-home-'))
+  const oldDir = join(home, LEGACY_HOME_DIR_NAME, 'cli')
+  mkdirSync(oldDir, { recursive: true })
+  writeFileSync(join(oldDir, 'local-server.json'), JSON.stringify({ version: 3, instances: {} }))
+  const savedHome = process.env.HOME
+  const savedState = process.env.FICUS_LOCAL_SERVER_STATE
+  try {
+    process.env.HOME = home
+    delete process.env.FICUS_LOCAL_SERVER_STATE
+    expect(() => defaultUpdateDeps().resolveRoot()).toThrow('ficus-host-layout-bridge')
+    expect(() => defaultUpdateDeps().offlineUpdate({ root: home, log: () => {} })).toThrow('ficus-host-layout-bridge')
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME
+    else process.env.HOME = savedHome
+    if (savedState === undefined) delete process.env.FICUS_LOCAL_SERVER_STATE
+    else process.env.FICUS_LOCAL_SERVER_STATE = savedState
+    rmSync(home, { recursive: true, force: true })
+  }
+})
