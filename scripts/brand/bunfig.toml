@@ -1,0 +1,4 @@
+[test]
+# Trusted SVG/PNG fixtures only; no application or database preloads.
+preload = ["../check-bun-test-runtime.ts"]
+timeout = 5000

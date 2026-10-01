@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -52,29 +52,55 @@ async function measureRadialDiameterFraction(
   return (2 * Math.sqrt(maxRadiusSq)) / info.width
 }
 
+let tmpRoot: string
 let tmpDir: string
 
-beforeEach(() => {
-  tmpDir = mkdtempSync(join(tmpdir(), 'ficus-brand-generate-'))
+beforeAll(async () => {
+  tmpRoot = mkdtempSync(join(tmpdir(), 'ficus-brand-generate-'))
+  tmpDir = join(tmpRoot, 'first')
+  await generate(tmpDir)
 })
 
-afterEach(() => {
-  rmSync(tmpDir, { recursive: true, force: true })
+afterAll(() => {
+  rmSync(tmpRoot, { recursive: true, force: true })
 })
 
 describe('brand icon generator', () => {
-  it('is byte-for-byte deterministic against the committed brand/generated/ output', async () => {
-    await generate(tmpDir)
+  it('is byte-for-byte deterministic across fresh renders', async () => {
+    const secondDir = join(tmpRoot, 'second')
+    await generate(secondDir)
 
+    const firstFiles = listFiles(tmpDir).map((f) => relative(tmpDir, f))
+    expect(listFiles(secondDir).map((f) => relative(secondDir, f))).toEqual(firstFiles)
+    for (const rel of firstFiles) {
+      expect(readFileSync(join(secondDir, rel)).equals(readFileSync(join(tmpDir, rel)))).toBe(true)
+    }
+  })
+
+  it('preserves every committed pixel and SVG without depending on PNG compression versions', async () => {
     const committedFiles = listFiles(OUT_DIR).map((f) => relative(OUT_DIR, f))
-    const freshFiles = listFiles(tmpDir).map((f) => relative(tmpDir, f))
-    expect(freshFiles).toEqual(committedFiles)
+    expect(listFiles(tmpDir).map((f) => relative(tmpDir, f))).toEqual(committedFiles)
 
+    // PNG encoders can produce different bytes for identical pixels after a
+    // native-library upgrade. Keep the goldens, compare every decoded channel
+    // exactly (no tolerance), and separately enforce same-runtime byte determinism.
     for (const rel of committedFiles) {
-      const committed = readFileSync(join(OUT_DIR, rel))
-      const fresh = readFileSync(join(tmpDir, rel))
-      if (!fresh.equals(committed)) {
-        throw new Error(`${rel} differs between the committed output and a fresh render`)
+      const committed = join(OUT_DIR, rel)
+      const fresh = join(tmpDir, rel)
+      if (rel.endsWith('.png')) {
+        const decode = (path: string) => sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+        const [expected, actual] = await Promise.all([decode(committed), decode(fresh)])
+        expect(actual.info).toEqual(expected.info)
+        if (!actual.data.equals(expected.data)) throw new Error(`${rel} has changed pixels`)
+        const [expectedMetadata, actualMetadata] = await Promise.all([
+          sharp(committed).metadata(),
+          sharp(fresh).metadata(),
+        ])
+        // Preserve dimensions, alpha, palette, depth and color interpretation too.
+        expect(actualMetadata).toEqual(expectedMetadata)
+        expect(actualMetadata.isPalette).toBe(true)
+      } else {
+        expect(readFileSync(fresh).equals(readFileSync(committed))).toBe(true)
       }
     }
   })
@@ -112,7 +138,7 @@ describe('brand icon generator', () => {
 
     for (const [rel, width, height] of cases) {
       it(`${rel} is ${width}x${height}`, async () => {
-        const meta = await sharp(join(OUT_DIR, rel)).metadata()
+        const meta = await sharp(join(tmpDir, rel)).metadata()
         expect(meta.width).toBe(width)
         expect(meta.height).toBe(height)
       })
@@ -120,27 +146,27 @@ describe('brand icon generator', () => {
   })
 
   it('web/favicon.svg and docs/favicon.svg match the ficus-favicon-16 source', () => {
-    const webFavicon = readFileSync(join(OUT_DIR, 'web', 'favicon.svg'), 'utf8')
-    const docsFavicon = readFileSync(join(OUT_DIR, 'docs', 'favicon.svg'), 'utf8')
+    const webFavicon = readFileSync(join(tmpDir, 'web', 'favicon.svg'), 'utf8')
+    const docsFavicon = readFileSync(join(tmpDir, 'docs', 'favicon.svg'), 'utf8')
     expect(docsFavicon).toBe(webFavicon)
     expect(webFavicon).toContain('viewBox="0 0 64 64"')
   })
 
   it('mobile/icon.png (iOS) has no alpha channel', async () => {
-    const meta = await sharp(join(OUT_DIR, 'mobile', 'icon.png')).metadata()
+    const meta = await sharp(join(tmpDir, 'mobile', 'icon.png')).metadata()
     expect(meta.hasAlpha).toBe(false)
     expect(meta.channels).toBe(3)
   })
 
   it('web/apple-touch-icon.png has no alpha channel (no transparency)', async () => {
-    const meta = await sharp(join(OUT_DIR, 'web', 'apple-touch-icon.png')).metadata()
+    const meta = await sharp(join(tmpDir, 'web', 'apple-touch-icon.png')).metadata()
     expect(meta.hasAlpha).toBe(false)
   })
 
   it('desktop/icon-1024.png keeps transparency outside the rounded tile', async () => {
-    const meta = await sharp(join(OUT_DIR, 'desktop', 'icon-1024.png')).metadata()
+    const meta = await sharp(join(tmpDir, 'desktop', 'icon-1024.png')).metadata()
     expect(meta.hasAlpha).toBe(true)
-    const { data, info } = await sharp(join(OUT_DIR, 'desktop', 'icon-1024.png'))
+    const { data, info } = await sharp(join(tmpDir, 'desktop', 'icon-1024.png'))
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true })
@@ -151,7 +177,7 @@ describe('brand icon generator', () => {
   })
 
   it('mobile/notification-icon.png contains only pure white or fully-transparent pixels', async () => {
-    const { data, info } = await sharp(join(OUT_DIR, 'mobile', 'notification-icon.png'))
+    const { data, info } = await sharp(join(tmpDir, 'mobile', 'notification-icon.png'))
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true })
@@ -170,7 +196,7 @@ describe('brand icon generator', () => {
   describe('circular safe zones: content stays within the platform circle, measured radially from rendered pixels', () => {
     it("mobile/adaptive-icon.png (Android foreground) stays under Android's 66.67% (72dp/108dp) safe-zone diameter", async () => {
       const fraction = await measureRadialDiameterFraction(
-        join(OUT_DIR, 'mobile', 'adaptive-icon.png'),
+        join(tmpDir, 'mobile', 'adaptive-icon.png'),
         (_r, _g, _b, a) => a > 0
       )
       const pixelMargin = 2 / 1024 // a couple of px of antialiasing bleed beyond the exact vector edge
@@ -192,7 +218,7 @@ describe('brand icon generator', () => {
         const [br, bg, bb] = hex(background)
         const threshold = 6
         const fraction = await measureRadialDiameterFraction(
-          join(OUT_DIR, rel),
+          join(tmpDir, rel),
           (r, g, b) =>
             !(Math.abs(r - br) <= threshold && Math.abs(g - bg) <= threshold && Math.abs(b - bb) <= threshold)
         )

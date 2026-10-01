@@ -1,4 +1,5 @@
 import { observeWorkStreamInTransaction, persistTerminalObservers } from '../services/work-streams/observers'
+import { isValidMetadataPath } from '../services/work-streams/metadata-path'
 import { worktreeAttachmentPaths } from '../services/work-streams/worktree-cleanup-attachments'
 import {
   assertWorktreeCleanupMutable,
@@ -940,26 +941,37 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
   /**
    * Find work streams whose metadata matches all given key-value pairs.
-   * Keys support dot notation for nested paths (e.g. "github.pr.number").
+   * Keys support dot notation for non-empty nested object keys (e.g. "github.pr.number").
+   * Every key and value is bound, including quotes and SQL-looking literal data.
+   * Omitted squadIds is trusted/unscoped (e.g. schedules); an empty list permits nothing.
+   * API callers must supply their authorized squad scope before fetching any rows.
    */
   static async findByMetadata(
     matches: Record<string, string>,
-    options?: { status?: WorkStreamStatus }
+    options?: { status?: WorkStreamStatus; squadIds?: string[] }
   ): Promise<WorkStream[]> {
-    const conditions = Object.entries(matches).map(([path, value]) => {
-      // Convert dot notation to Postgres jsonb path: "github.pr.number" -> metadata->'github'->'pr'->>'number'
+    const entries = Object.entries(matches)
+    if (entries.length === 0) throw new Error('At least one metadata match required')
+    const conditions = entries.map(([path, value]) => {
+      if (!isValidMetadataPath(path))
+        throw new Error('Invalid metadata path: expected non-empty dot-separated keys without NUL')
+      if (value.includes('\0')) throw new Error('Invalid metadata value: NUL is not supported')
       const parts = path.split('.')
       const lastPart = parts.pop()!
-      let accessor = 'metadata'
+      let accessor: SQL = sql`${workStreams.metadata}`
       for (const part of parts) {
-        accessor += `->'${part}'`
+        accessor = sql`${accessor}->${part}::text`
       }
-      accessor += `->>'${lastPart}'`
-      return sql.raw(`${accessor} = '${value.replace(/'/g, "''")}'`)
+      // Explicit text casts preserve object-key semantics, including numeric-looking keys.
+      return sql`${accessor}->>${lastPart}::text = ${value}`
     })
 
     if (options?.status) {
       conditions.push(eq(workStreams.status, options.status))
+    }
+    if (options?.squadIds !== undefined) {
+      if (options.squadIds.length === 0) return []
+      conditions.push(inArray(workStreams.squadId, options.squadIds))
     }
 
     const results = await db
