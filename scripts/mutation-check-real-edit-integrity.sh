@@ -6,8 +6,8 @@ root=$(git rev-parse --show-toplevel)
 factory="$root/apps/core/src/tools/sandbox-tools.ts"
 executor="$root/apps/core/src/tools/verified-edit.ts"
 : "${DATABASE_URL:?DATABASE_URL must name the explicitly owned worktree test database}"
-: "${TEST_DB_PROJECT:?TEST_DB_PROJECT must name the explicitly owned tau-test-* project}"
-[[ $TEST_DB_PROJECT == tau-test-* ]] || { echo 'TEST_DB_PROJECT must start with tau-test-' >&2; exit 2; }
+: "${TEST_DB_PROJECT:?TEST_DB_PROJECT must name the explicitly owned ficus-test-* project}"
+[[ $TEST_DB_PROJECT == ficus-test-* ]] || { echo 'TEST_DB_PROJECT must start with ficus-test-' >&2; exit 2; }
 [[ $(bun --version) == "$(cat "$root/.bun-version")" ]]
 
 case "$mode" in

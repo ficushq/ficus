@@ -138,7 +138,7 @@ The test preload (`apps/core/src/test-setup.ts`) handles everything automaticall
 1. **Port allocation** — finds a free port (never uses `5432` to avoid hitting a production database).
 2. **Container management** — starts a uniquely-named Docker container per worktree (name derived from directory hash).
 3. **Schema push** — runs `drizzle-kit push` against the test database before any tests execute.
-4. **CI support** — if a `DATABASE_URL` pointing to a `tau_test` database is already set (e.g., GitHub Actions service container), it uses that instead of spinning up Docker.
+4. **CI support** — if a `DATABASE_URL` pointing to a `ficus_test` database is already set (e.g., GitHub Actions service container), it uses that instead of spinning up Docker.
 5. **No-Docker fallback** — for a direct local `bun test`, if the container cannot be started (Docker stopped or broken), the preload prints why and continues: database-free test files run normally, and every database use fails immediately with `Core test database unavailable (...)`. CI and the package runner (`bun run --filter core test`, which sets `FICUS_TEST_REQUIRE_DB=1`) still exit on an unavailable database.
 
 Multiple worktrees can run tests in parallel — each gets its own isolated container and port.

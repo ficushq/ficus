@@ -13,10 +13,10 @@ export function validateDatabaseConnection(connectionString: string, context: st
 
   if (process.env.FICUS_TEST_MODE === '1') {
     const isIsolatedSecretBoundaryDb =
-      process.env.SECRET_BOUNDARY_REQUIRE_ISOLATED_DB === '1' && dbName === 'tau_secret_boundary_test'
-    if (dbName !== 'tau_test' && !isIsolatedSecretBoundaryDb) {
+      process.env.SECRET_BOUNDARY_REQUIRE_ISOLATED_DB === '1' && dbName === 'ficus_secret_boundary_test'
+    if (dbName !== 'ficus_test' && !isIsolatedSecretBoundaryDb) {
       throw new Error(
-        `TEST SAFETY VIOLATION in ${context}: Test mode but database is "${dbName}" instead of "tau_test". ` +
+        `TEST SAFETY VIOLATION in ${context}: Test mode but database is "${dbName}" instead of "ficus_test". ` +
           `DATABASE_URL=${connectionString}`
       )
     }
@@ -29,7 +29,7 @@ export function validateDatabaseConnection(connectionString: string, context: st
   }
 
   // Warn if connecting to test DB outside test mode
-  if (dbName === 'tau_test' && process.env.FICUS_TEST_MODE !== '1') {
-    log.warn(`WARNING in ${context}: Connecting to tau_test database outside of test mode.`)
+  if (dbName === 'ficus_test' && process.env.FICUS_TEST_MODE !== '1') {
+    log.warn(`WARNING in ${context}: Connecting to ficus_test database outside of test mode.`)
   }
 }

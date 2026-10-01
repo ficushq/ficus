@@ -17,9 +17,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: tau
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tau}
-      POSTGRES_DB: tau
+      POSTGRES_USER: ficus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ficus}
+      POSTGRES_DB: ficus
     volumes: [postgres-data:/var/lib/postgresql/data]
   tau-api:
     build: .
@@ -27,7 +27,7 @@ services:
     command: bun run apps/core/dist/index.js
     ports: ['3000:3000']
     environment:
-      DATABASE_URL: postgres://tau:${POSTGRES_PASSWORD:-tau}@postgres:5432/tau
+      DATABASE_URL: postgres://ficus:${POSTGRES_PASSWORD:-ficus}@postgres:5432/ficus
       WORKER_URL: http://tau-worker:3002
       FICUS_SYSTEM_LOG_PROVIDER: docker
       FICUS_DOCKER_API_CONTAINER: tau-api
@@ -51,7 +51,7 @@ services:
     container_name: tau-worker
     command: bun run apps/core/dist/worker.js
     environment:
-      DATABASE_URL: postgres://tau:${POSTGRES_PASSWORD:-tau}@postgres:5432/tau
+      DATABASE_URL: postgres://ficus:${POSTGRES_PASSWORD:-ficus}@postgres:5432/ficus
       FICUS_PASSWORD: ${FICUS_PASSWORD:?set FICUS_PASSWORD}
       FICUS_ENCRYPTION_KEY: ${FICUS_ENCRYPTION_KEY:?set FICUS_ENCRYPTION_KEY}
       # The worker's stream server binds loopback by default (#1348); the api

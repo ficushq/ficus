@@ -37,7 +37,7 @@ export function canExecuteQuery(port: number, dbName: string, opts?: { timeoutMs
 }
 
 export interface ComposePostgresReadyOptions {
-  /** docker-compose project name owning the container, e.g. `tau-test-<hash>`. */
+  /** docker-compose project name owning the container, e.g. `ficus-test-<hash>`. */
   projectName: string
   /** Absolute path to docker-compose.test.yml. */
   composeFile: string
@@ -48,7 +48,7 @@ export interface ComposePostgresReadyOptions {
 }
 
 export interface ComposeBoundPortOptions {
-  /** docker-compose project name owning the container, e.g. `tau-test-<hash>`. */
+  /** docker-compose project name owning the container, e.g. `ficus-test-<hash>`. */
   projectName: string
   /** Absolute path to docker-compose.test.yml. */
   composeFile: string
@@ -89,10 +89,10 @@ export function getComposeBoundPort(opts: ComposeBoundPortOptions): number | nul
 
 /**
  * Is the named compose project's postgres container up AND actually
- * answering queries on `port`? Checks against the `tau_test` database
+ * answering queries on `port`? Checks against the `ficus_test` database
  * specifically — the container's own bootstrap database (`POSTGRES_DB` in
  * docker-compose.test.yml), guaranteed to exist as soon as the container's
- * initdb has run, regardless of which app-specific database (such as `tau_test`) the caller ultimately wants to use. That makes
+ * initdb has run, regardless of which app-specific database (such as `ficus_test`) the caller ultimately wants to use. That makes
  * this check meaningful before an application-specific database is created.
  *
  * THREE checks, all required — dropping any one reopens a real cross-worktree
@@ -130,7 +130,7 @@ export function isComposePostgresReady(port: number, opts: ComposePostgresReadyO
         '-U',
         'postgres',
         '-d',
-        'tau_test',
+        'ficus_test',
       ],
       spawnOpts
     )
@@ -140,7 +140,7 @@ export function isComposePostgresReady(port: number, opts: ComposePostgresReadyO
       // trusting a query against localhost:<port> to be this project's DB.
       const boundPort = getComposeBoundPort({ projectName: opts.projectName, composeFile: opts.composeFile, timeoutMs })
       if (boundPort !== port) return false
-      return canExecuteQuery(port, 'tau_test', { timeoutMs, cwd: opts.cwd })
+      return canExecuteQuery(port, 'ficus_test', { timeoutMs, cwd: opts.cwd })
     }
   } catch {
     // docker not available or timed out (e.g. container down)

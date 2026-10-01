@@ -109,7 +109,7 @@ export function postgresFatalResponse(message: string): Buffer {
 
 /**
  * Start a loopback server that answers every Postgres connection with
- * {@link postgresFatalResponse}, and return a tau_test URL for it.
+ * {@link postgresFatalResponse}, and return a ficus_test URL for it.
  *
  * Why a refusing server rather than an unresolvable or closed address: every
  * client (postgres.js, psql, pg_dump) then fails with this one message naming
@@ -138,7 +138,7 @@ export async function startUnavailableTestDb(message: string): Promise<{ url: st
     })
     // Bun's Worker supports unref(); Core's DOM Worker typing does not declare it.
     ;(worker as unknown as { unref(): void }).unref()
-    return { url: `postgres://postgres:postgres@127.0.0.1:${port}/tau_test`, stop: () => worker.terminate() }
+    return { url: `postgres://postgres:postgres@127.0.0.1:${port}/ficus_test`, stop: () => worker.terminate() }
   } catch (error) {
     worker.terminate()
     throw error

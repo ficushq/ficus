@@ -30,7 +30,7 @@ describe('squad-workspace', () => {
   describe('getSquadsBasePath', () => {
     it('uses the process-scoped test home', () => {
       expect(process.env.FICUS_TEST_MODE).toBe('1')
-      expect(process.env.HOME_DIR).toContain('tau-core-test-')
+      expect(process.env.HOME_DIR).toContain('ficus-core-test-')
     })
 
     it('returns a path ending with workspaces/squads', () => {

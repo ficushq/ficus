@@ -19,7 +19,7 @@ setDefaultTimeout(120_000)
 // bug this guards against is a live, unconditional `TRUNCATE ... CASCADE`
 // against a neighboring worktree's in-flight test data — worth the wall
 // time. Uses ad hoc project names so it never touches another worktree's or
-// developer's real `tau-test-<hash>` containers, and tears both down in
+// developer's real `ficus-test-<hash>` containers, and tears both down in
 // afterAll.
 
 const composeFile = join(__dirname, '../../../docker-compose.test.yml')
@@ -58,7 +58,7 @@ function composeDown(projectName: string): void {
 function waitUntilQueryable(port: number, timeoutMs = 60_000): void {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    if (canExecuteQuery(port, 'tau_test', { timeoutMs: 3000, cwd: queryCwd })) return
+    if (canExecuteQuery(port, 'ficus_test', { timeoutMs: 3000, cwd: queryCwd })) return
     Bun.sleepSync(500)
   }
   throw new Error(`postgres on port ${port} never became queryable within ${timeoutMs}ms`)
@@ -66,11 +66,11 @@ function waitUntilQueryable(port: number, timeoutMs = 60_000): void {
 
 describe('cross-project port ownership (Core #795 follow-up)', () => {
   const suffix = `${Date.now()}-${process.pid}`
-  const projectA = `tau-test-ownercheck-a-${suffix}`
-  const projectB = `tau-test-ownercheck-b-${suffix}`
+  const projectA = `ficus-test-ownercheck-a-${suffix}`
+  const projectB = `ficus-test-ownercheck-b-${suffix}`
   const portA = freePort()
   const portB = freePort()
-  const scratchRoot = mkdtempSync(join(tmpdir(), 'tau-test-db-ready-test-'))
+  const scratchRoot = mkdtempSync(join(tmpdir(), 'ficus-test-db-ready-test-'))
 
   beforeAll(() => {
     composeUp(projectA, portA, scratchRoot)

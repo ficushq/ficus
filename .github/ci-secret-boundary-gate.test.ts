@@ -11,11 +11,11 @@ const validateConnection = readFileSync(resolve(root, 'apps/core/src/db/validate
 
 test('CI runs the explicit sterile secret-boundary wrapper without ambient credentials', () => {
   expect(workflow).toContain('name: Create isolated sterile secret-boundary database')
-  expect(workflow).toContain('CREATE DATABASE tau_secret_boundary_test;')
+  expect(workflow).toContain('CREATE DATABASE ficus_secret_boundary_test;')
   expect(workflow).toContain('psql -v ON_ERROR_STOP=1')
   expect(workflow).toContain('name: Run sterile secret-boundary tests')
   expect(workflow).toContain('run: bash .github/run-secret-boundary-tests.sh')
-  expect(workflow).toContain('DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_secret_boundary_test')
+  expect(workflow).toContain('DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_secret_boundary_test')
   expect(workflow).toContain("SECRET_BOUNDARY_REQUIRE_ISOLATED_DB: '1'")
   expect(workflow.indexOf('name: Create isolated sterile secret-boundary database')).toBeLessThan(
     workflow.indexOf('name: Run sterile secret-boundary tests')
@@ -27,10 +27,10 @@ test('CI runs the explicit sterile secret-boundary wrapper without ambient crede
   expect(wrapper).toContain('FICUS_TEST_SCHEMA_PUSH_NO_FORCE=1')
   expect(wrapper).toContain('psql "$DATABASE_URL" -v ON_ERROR_STOP=1')
   expect(wrapper).toContain('timeout --foreground 30s bun test')
-  expect(wrapper).toContain('DATABASE_URL" != */tau_secret_boundary_test')
-  expect(testSetup).toContain("['tau_test', 'tau_secret_boundary_test'].includes(databaseName)")
+  expect(wrapper).toContain('DATABASE_URL" != */ficus_secret_boundary_test')
+  expect(testSetup).toContain("['ficus_test', 'ficus_secret_boundary_test'].includes(databaseName)")
   expect(testSetup).toContain("process.env.FICUS_TEST_SCHEMA_PUSH_NO_FORCE === '1'")
-  expect(validateConnection).toContain("dbName === 'tau_secret_boundary_test'")
+  expect(validateConnection).toContain("dbName === 'ficus_secret_boundary_test'")
   expect(validateConnection).toContain("process.env.SECRET_BOUNDARY_REQUIRE_ISOLATED_DB === '1'")
   for (const path of [
     'apps/core/src/services/security/content-safety-registry.test.ts',
@@ -51,7 +51,7 @@ test('CI runs the explicit sterile secret-boundary wrapper without ambient crede
     env: {
       HOME: process.env.HOME ?? '/tmp',
       PATH: process.env.PATH ?? '',
-      DATABASE_URL: 'postgres://postgres:postgres@localhost:5433/tau_test',
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5433/ficus_test',
       SECRET_BOUNDARY_REQUIRE_ISOLATED_DB: '1',
     },
     stdout: 'pipe',
@@ -64,7 +64,7 @@ test('CI runs the explicit sterile secret-boundary wrapper without ambient crede
     env: {
       HOME: process.env.HOME ?? '/tmp',
       PATH: process.env.PATH ?? '',
-      DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:1/tau_secret_boundary_test',
+      DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:1/ficus_secret_boundary_test',
       SECRET_BOUNDARY_REQUIRE_ISOLATED_DB: '1',
     },
     stdout: 'pipe',

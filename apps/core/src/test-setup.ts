@@ -28,7 +28,7 @@ import {
 // ("Failed to listen at ...sock" aborting whole test files). /tmp (a symlink to
 // /private/tmp) keeps the socket paths comfortably under the limit.
 const tmpBase = process.platform === 'darwin' ? '/tmp' : tmpdir()
-const testHomeDir = mkdtempSync(join(tmpBase, 'tau-core-test-'))
+const testHomeDir = mkdtempSync(join(tmpBase, 'ficus-core-test-'))
 process.env.HOME_DIR = testHomeDir
 
 // Tear down on process exit — deliberately NOT afterAll. A preload-registered
@@ -134,7 +134,8 @@ if (ciDatabaseUrl) {
   try {
     const url = new URL(ciDatabaseUrl)
     const databaseName = url.pathname.slice(1)
-    if (!['tau_test', 'tau_secret_boundary_test'].includes(databaseName)) throw new Error('unrecognized test database')
+    if (!['ficus_test', 'ficus_secret_boundary_test'].includes(databaseName))
+      throw new Error('unrecognized test database')
     const port = parseInt(url.port || '5432', 10)
     const result = Bun.spawnSync(
       ['pg_isready', '-h', url.hostname, '-p', String(port), '-U', url.username || 'postgres', '-d', databaseName],
@@ -179,7 +180,7 @@ function tearDownTestDb(): void {
 }
 
 /**
- * Truncate every table in tau_test's public schema (structure, extensions
+ * Truncate every table in ficus_test's public schema (structure, extensions
  * and constraints untouched) so the DB is empty by the time `drizzle-kit
  * push` runs, regardless of whether this run tore the container down or is
  * reusing one left up by a previous run. See the call site's comment for why
@@ -232,11 +233,11 @@ function resetTestData(url: string): void {
  * That is a progressive, silent corruption rather than a one-off, because the
  * suite creates the index itself (analyzer-index.test.ts and
  * schema-indexes.test.ts both create it; neither drops it). A developer's
- * tau_test therefore works, permanently acquires the index on its first run,
+ * ficus_test therefore works, permanently acquires the index on its first run,
  * and from then on every run silently skips the schema push and executes
  * against whatever schema happened to already be there — surfacing much later
  * as baffling missing-table/column failures in unrelated code. CI cannot catch
- * it: it builds tau_test fresh and pushes before any test can create the index.
+ * it: it builds ficus_test fresh and pushes before any test can create the index.
  *
  * Dropping these before the push costs nothing, because `push` does not create
  * them in the first place — it silently skips partial and expression indexes
@@ -509,11 +510,11 @@ function isPostgresReady(port: number): boolean {
   // Try direct pg_isready if available on host
   try {
     const direct = Bun.spawnSync(
-      ['pg_isready', '-h', 'localhost', '-p', String(port), '-U', 'postgres', '-d', 'tau_test'],
+      ['pg_isready', '-h', 'localhost', '-p', String(port), '-U', 'postgres', '-d', 'ficus_test'],
       opts
     )
     if (direct.exitCode === 0) {
-      return canExecuteQuery(port, 'tau_test', { timeoutMs: POSTGRES_READY_TIMEOUT_MS, cwd: appCwd })
+      return canExecuteQuery(port, 'ficus_test', { timeoutMs: POSTGRES_READY_TIMEOUT_MS, cwd: appCwd })
     }
   } catch {
     // pg_isready not installed or timed out, fall through
@@ -530,7 +531,7 @@ function isPostgresReady(port: number): boolean {
       { stdout: 'ignore', stderr: 'ignore', timeout: POSTGRES_READY_TIMEOUT_MS }
     )
     if (tcp.exitCode === 0) {
-      return canExecuteQuery(port, 'tau_test', { timeoutMs: POSTGRES_READY_TIMEOUT_MS, cwd: appCwd })
+      return canExecuteQuery(port, 'ficus_test', { timeoutMs: POSTGRES_READY_TIMEOUT_MS, cwd: appCwd })
     }
   } catch {
     // fall through
@@ -553,7 +554,7 @@ if (useExternalDb) {
   // Explicit maintenance may reap test DBs orphaned by deleted worktrees (throttled: at most once per
   // hour across all invocations — the marker lives in the OS tmpdir).
   try {
-    const sweepMarker = join(tmpdir(), 'tau-test-db-sweep.last')
+    const sweepMarker = join(tmpdir(), 'ficus-test-db-sweep.last')
     const last = existsSync(sweepMarker) ? statSync(sweepMarker).mtimeMs : 0
     if (process.env.FICUS_TEST_SWEEP_ORPHANS === '1' && Date.now() - last > 60 * 60 * 1000) {
       writeFileSync(sweepMarker, '')
@@ -578,7 +579,7 @@ if (useExternalDb) {
   // below only tears down when its own readiness probe actually fails.
   TEST_DATABASE_URL = withTestDbLockSync(repoRoot, () => {
     const port = resolveTestPort()
-    const url = `postgres://postgres:postgres@localhost:${port}/tau_test`
+    const url = `postgres://postgres:postgres@localhost:${port}/ficus_test`
     process.env.DATABASE_URL = url
 
     const startup = startTestDb({
@@ -618,7 +619,7 @@ if (useExternalDb) {
     }
 
     // Reusing a live container (the whole point of item 1's fix above) means
-    // rows from a PREVIOUS run's tests can still be sitting in tau_test —
+    // rows from a PREVIOUS run's tests can still be sitting in ficus_test —
     // unlike the old unconditional-teardown behavior, which always started
     // every run from a genuinely empty container. Leftover rows are not just
     // a cross-run isolation smell: `drizzle-kit push` below inspects row

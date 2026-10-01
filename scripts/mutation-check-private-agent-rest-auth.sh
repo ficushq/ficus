@@ -11,8 +11,8 @@ MONITORS="$CORE/src/routes/monitors.ts"
 FILES=("$POLICY" "$ENTITY" "$AGENTS" "$INBOX" "$MONITORS")
 TMP=$(mktemp -d)
 
-[[ -n ${DATABASE_URL:-} && "$DATABASE_URL" == */tau_test && "$DATABASE_URL" != *:5432/* ]] || {
-  echo 'DATABASE_URL must name an owned /tau_test database on a non-5432 port' >&2
+[[ -n ${DATABASE_URL:-} && "$DATABASE_URL" == */ficus_test && "$DATABASE_URL" != *:5432/* ]] || {
+  echo 'DATABASE_URL must name an owned /ficus_test database on a non-5432 port' >&2
   exit 2
 }
 

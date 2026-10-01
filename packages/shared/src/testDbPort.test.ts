@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from './testDbPort'
+import { findFreeTestDbPort, legacyTestDbProjectName, testDbPortFile, testDbProjectName } from './testDbPort'
 
 describe('testDbProjectName', () => {
   test('is deterministic for the same repoRoot', () => {
@@ -13,8 +13,21 @@ describe('testDbProjectName', () => {
     expect(a).not.toBe(b)
   })
 
-  test('is prefixed tau-test- so it is recognizable as a test-db project', () => {
-    expect(testDbProjectName('/repo/main')).toMatch(/^tau-test-[0-9a-f]{8}$/)
+  test('is prefixed ficus-test- so it is recognizable as a test-db project', () => {
+    expect(testDbProjectName('/repo/main')).toMatch(/^ficus-test-[0-9a-f]{8}$/)
+  })
+})
+
+describe('legacyTestDbProjectName', () => {
+  test('is prefixed tau-test- so a pre-rename container for this worktree is still found', () => {
+    expect(legacyTestDbProjectName('/repo/main')).toMatch(/^tau-test-[0-9a-f]{8}$/)
+  })
+
+  test('shares the same hash suffix as testDbProjectName for the same repoRoot', () => {
+    const root = '/repo/main'
+    const newName = testDbProjectName(root).replace(/^ficus-test-/, '')
+    const legacyName = legacyTestDbProjectName(root).replace(/^tau-test-/, '')
+    expect(legacyName).toBe(newName)
   })
 })
 

@@ -498,10 +498,10 @@ describe('worker requires an explicit FICUS_SANDBOX_RUNTIME at boot', () => {
   async function bootWorker(runtime: string | null): Promise<{ exitCode: number; stderr: string }> {
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
-      // Unreachable (port 1) but named tau_test, because the child inherits
+      // Unreachable (port 1) but named ficus_test, because the child inherits
       // FICUS_TEST_MODE=1 from this suite and db/index.ts refuses to load in test
       // mode against any other database name.
-      DATABASE_URL: 'postgres://x:x@127.0.0.1:1/tau_test',
+      DATABASE_URL: 'postgres://x:x@127.0.0.1:1/ficus_test',
       WORKER_PORT: '39911',
       FICUS_WORKER_EVENT_PORT: '39912',
     }

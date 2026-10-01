@@ -10,9 +10,9 @@ describe('database safeguards', () => {
     expect(process.env.FICUS_TEST_MODE).toBe('1')
   })
 
-  it('should be connected to tau_test database', () => {
+  it('should be connected to ficus_test database', () => {
     const url = new URL(process.env.DATABASE_URL!)
-    expect(url.pathname).toBe('/tau_test')
+    expect(url.pathname).toBe('/ficus_test')
   })
 
   it('should not use port 5432', () => {
@@ -23,7 +23,7 @@ describe('database safeguards', () => {
 })
 
 describe('validateDatabaseConnection', () => {
-  it('should throw when test mode uses non-tau_test database', () => {
+  it('should throw when test mode uses non-ficus_test database', () => {
     const originalTestMode = process.env.FICUS_TEST_MODE
     process.env.FICUS_TEST_MODE = '1'
     try {
@@ -40,7 +40,7 @@ describe('validateDatabaseConnection', () => {
     const originalTestMode = process.env.FICUS_TEST_MODE
     process.env.FICUS_TEST_MODE = '1'
     try {
-      expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5432/tau_test', 'test')).toThrow(
+      expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5432/ficus_test', 'test')).toThrow(
         /TEST SAFETY VIOLATION.*port is 5432/
       )
     } finally {
@@ -53,7 +53,7 @@ describe('validateDatabaseConnection', () => {
     const originalTestMode = process.env.FICUS_TEST_MODE
     process.env.FICUS_TEST_MODE = '1'
     try {
-      expect(() => validateDatabaseConnection('postgres://user:pass@localhost/tau_test', 'test')).toThrow(
+      expect(() => validateDatabaseConnection('postgres://user:pass@localhost/ficus_test', 'test')).toThrow(
         /TEST SAFETY VIOLATION.*port is 5432/
       )
     } finally {
@@ -62,11 +62,11 @@ describe('validateDatabaseConnection', () => {
     }
   })
 
-  it('should pass when test mode uses tau_test on non-5432 port', () => {
+  it('should pass when test mode uses ficus_test on non-5432 port', () => {
     const originalTestMode = process.env.FICUS_TEST_MODE
     process.env.FICUS_TEST_MODE = '1'
     try {
-      expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5433/tau_test', 'test')).not.toThrow()
+      expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5433/ficus_test', 'test')).not.toThrow()
     } finally {
       if (originalTestMode === undefined) delete process.env.FICUS_TEST_MODE
       else process.env.FICUS_TEST_MODE = originalTestMode

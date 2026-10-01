@@ -347,7 +347,7 @@ identity or registration, a locked worktree or Git lock file, a changed delivere
 head or branch, and committed submodules.
 
 If the worktree's project-scoped test database is still running (the Compose
-project `tau-test-<hash of the worktree path>`, recorded by `.test-db-port`), cleanup
+project `ficus-test-<hash of the worktree path>`, recorded by `.test-db-port`), cleanup
 stops it with `docker compose -p <project> down --volumes` right before removal.
 Only containers carrying both that project name and this worktree's
 `dev.ficus.test-db.repo-root` label are touched. If Docker cannot confirm the
