@@ -44,10 +44,37 @@ export function ClaudeCodeAccountSetup({
           {status.subscriptionType ? ` with a Claude ${status.subscriptionType} plan` : ''}. It becomes the first
           Anthropic account, so Claude models use your plan before any API key.
         </p>
+      ) : status.installed && status.detail ? (
+        <div role="alert" className="space-y-2">
+          <p>
+            {status.reason ?? 'Could not read Claude Code’s sign-in status'}
+            {status.path ? (
+              <>
+                {' '}
+                from <code className="font-mono text-primary">{status.path}</code>
+              </>
+            ) : null}
+            :
+          </p>
+          <pre className="whitespace-pre-wrap break-words rounded-md bg-surface-secondary px-3 py-2 font-mono text-xs text-primary">
+            {status.detail}
+          </pre>
+          {status.candidates && status.candidates.length > 1 && (
+            <p className="text-xs text-muted">
+              Also found: {status.candidates.filter((c) => c !== status.path).join(', ')}. Ficus runs the newest.
+            </p>
+          )}
+        </div>
       ) : status.installed ? (
         <p>
           Sign in with Claude Code’s own login in a terminal:{' '}
           <code className="font-mono text-primary">claude auth login</code>. Then check again.
+          {status.path ? (
+            <>
+              {' '}
+              Ficus checked <code className="font-mono text-primary">{status.path}</code>.
+            </>
+          ) : null}
         </p>
       ) : (
         <p>

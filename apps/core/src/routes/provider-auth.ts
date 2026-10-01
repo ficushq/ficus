@@ -383,6 +383,8 @@ function claudeCodeStatusJson(status: ClaudeCodeStatus) {
     ...(status.authMethod ? { authMethod: status.authMethod } : {}),
     ...(status.subscriptionType ? { subscriptionType: status.subscriptionType } : {}),
     ...(status.reason ? { reason: status.reason } : {}),
+    ...(status.detail ? { detail: status.detail } : {}),
+    ...(status.candidates?.length ? { candidates: status.candidates } : {}),
   }
 }
 
