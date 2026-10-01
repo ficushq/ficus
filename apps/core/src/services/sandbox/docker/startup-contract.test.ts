@@ -65,6 +65,14 @@ describe('Docker startup contract', () => {
     expect(startup).not.toMatch(/no-sandbox/)
   })
 
+  test('runs the browser unprivileged while preserving the executor authentication identity', () => {
+    expect(startup).toContain(
+      'exec su-exec ficus env HOME=/home/ficus FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service"'
+    )
+    expect(startup).toContain('chown ficus:ficus "$tokens_dir" "$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token"')
+    expect(startup).toContain('cd /opt/ficus/browser || exit 1')
+  })
+
   test('R-B17: seeds the digest at the proxy-sent user and exports FICUS_BROWSER_DEV_ALLOW_USER', () => {
     // The box server is not su-exec'd, so browser-proxy sends
     // x-ficus-box-user:<this script's OS user>. The service's prod box_<hex> gate

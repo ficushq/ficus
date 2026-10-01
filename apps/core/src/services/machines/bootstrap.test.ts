@@ -930,7 +930,7 @@ describe('browser tools Phase 1 — Playwright pin lockstep + wiring', () => {
       ['ficus-browser-chromium.apparmor', apparmor],
     ] as const) {
       expect(src, `${name} AppArmor path must glob chrome-linux*`).toContain(
-        'chromium*/chrome-linux*/{chrome,headless_shell}'
+        'chromium-*/chrome-linux*/chrome,chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell'
       )
       expect(src, `${name} must not pin the stale bare chrome-linux dir`).not.toMatch(/chrome-linux\/\{chrome/)
     }
@@ -1095,6 +1095,16 @@ describe('browser tools Phase 1 — softened sandbox gate (never fails bootstrap
     // Both are fail-open internally; `|| true` is the belt-and-braces guarantee.
     expect(bootstrapSh).toContain('install_browser || true')
     expect(bootstrapSh).toContain('verify_browser || true')
+  })
+
+  it('refreshes sandbox assets on prebaked hosts before loading the profile or launching the verifier', () => {
+    const body = funcBody('verify_browser')
+    const stop = body.indexOf('systemctl stop ficus-browser.service')
+    const refresh = body.indexOf('write_browser_service || ! write_browser_verify || ! write_browser_apparmor')
+    expect(stop).toBeGreaterThan(-1)
+    expect(refresh).toBeGreaterThan(stop)
+    expect(body.indexOf('apparmor_parser -r -W')).toBeGreaterThan(refresh)
+    expect(body.indexOf('FICUS_BROWSER_VERIFY_JS')).toBeGreaterThan(refresh)
   })
 
   it('verify_browser preserves an install-time reason rather than overwriting it', () => {

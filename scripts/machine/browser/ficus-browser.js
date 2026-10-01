@@ -167,6 +167,15 @@ async function routeHandler(route, blockedHost = isBlockedHost) {
   }
 }
 
+// Playwright defaults chromiumSandbox to false. Use full Chromium's new
+// headless mode so the verifier and service share the same sandbox-capable
+// binary and chrome://sandbox diagnostics (headless-shell omits that WebUI).
+export const CHROMIUM_LAUNCH_OPTIONS = Object.freeze({
+  headless: true,
+  channel: 'chromium',
+  chromiumSandbox: true,
+})
+
 export function createService(deps = {}) {
   const launch =
     deps.launch ||
@@ -176,7 +185,7 @@ export function createService(deps = {}) {
       // test suite has zero load-time dependency on the `playwright` package
       // being installed (Phase 3 drops it from apps/core entirely).
       const { chromium } = await import('playwright')
-      return chromium.launch({ headless: true })
+      return chromium.launch(CHROMIUM_LAUNCH_OPTIONS)
     })
   const now = deps.now || Date.now
   const tokensDir = deps.tokensDir || process.env.FICUS_BROWSER_TOKENS_DIR || DEFAULT_TOKENS_DIR

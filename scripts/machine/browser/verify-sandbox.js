@@ -1,34 +1,46 @@
-// One-shot Chromium sandbox verification — PHASE 1 hard gate (spec §4.1/§5).
-// Launches headless Chromium WITHOUT --no-sandbox and confirms a renderer works
-// under the unprivileged ficus-browser user (a missing user-namespace grant
-// crashes the zygote here) and that chrome://sandbox does not report an
-// unsandboxed process. Exit 0 = sandbox active; non-zero = FAIL (bootstrap
-// aborts, browsing disabled on this host — never downgraded to --no-sandbox).
+// One-shot Linux Chromium sandbox gate. Missing or unreadable diagnostics are
+// failures; a working renderer alone does not prove Chromium enabled isolation.
+// Bootstrap leaves browsing unavailable when this program fails.
 //
-// SINGLE SOURCE OF TRUTH: packages/machine-image/Dockerfile COPYs this file, and
-// scripts/machine/bootstrap.sh (write_browser_verify) embeds it verbatim.
-// bootstrap.test.ts asserts the two copies stay byte-identical.
-const { chromium } = require('playwright')
+// SINGLE SOURCE OF TRUTH: the image COPYs this file and bootstrap.sh embeds it
+// verbatim. Both launchers use the service's exact pinned launch options.
+import { CHROMIUM_LAUNCH_OPTIONS } from './ficus-browser.js'
 
-async function main() {
-  const browser = await chromium.launch({ headless: true })
-  try {
-    const page = await browser.newPage()
-    // A renderer that loads a page proves the user-namespace sandbox could be
-    // entered; without the AppArmor userns grant this throws.
-    await page.goto('about:blank', { timeout: 15000 })
-    await page.goto('chrome://sandbox', { timeout: 15000 }).catch(() => {})
-    const text = (await page.innerText('body').catch(() => '')) || ''
-    if (/not sandboxed/i.test(text)) {
-      throw new Error('chrome://sandbox reports an unsandboxed process: ' + text.slice(0, 200))
+export function assertSandboxStatus(text) {
+  // Chromium's sandboxGood requires a layer-one namespace sandbox (including
+  // PID and network namespaces) plus the layer-two seccomp-BPF sandbox.
+  if (!/(?:^|\n)Layer 1 Sandbox\s+Namespace(?:\s|$)/i.test(text)) {
+    throw new Error('Chromium sandbox status did not confirm the namespace sandbox')
+  }
+  for (const label of ['PID namespaces', 'Network namespaces', 'Seccomp-BPF sandbox']) {
+    if (!new RegExp(`(?:^|\\n)${label}\\s+Yes(?:\\s|$)`, 'i').test(text)) {
+      throw new Error(`Chromium sandbox status did not confirm ${label}`)
     }
-    console.error('ficus-browser: sandbox verification passed')
-  } finally {
-    await browser.close().catch(() => {})
+  }
+  if (!/(?:^|\n)You are adequately sandboxed\.(?:\s|$)/i.test(text)) {
+    throw new Error('Chromium did not report adequate sandboxing')
   }
 }
 
-main().catch((err) => {
-  console.error('ficus-browser: sandbox verification FAILED —', err && err.message ? err.message : err)
-  process.exit(1)
-})
+export async function verifySandbox(chromium) {
+  const browser = await chromium.launch(CHROMIUM_LAUNCH_OPTIONS)
+  try {
+    const page = await browser.newPage()
+    await page.goto('chrome://sandbox', { timeout: 15000 })
+    const text = await page.innerText('body', { timeout: 15000 })
+    assertSandboxStatus(text)
+  } finally {
+    await browser.close()
+  }
+}
+
+if (import.meta.main) {
+  try {
+    const { chromium } = await import('playwright')
+    await verifySandbox(chromium)
+    console.error('ficus-browser: sandbox verification passed (namespace, PID, network, seccomp-BPF)')
+  } catch (err) {
+    console.error('ficus-browser: sandbox verification FAILED —', err && err.message ? err.message : err)
+    process.exitCode = 1
+  }
+}

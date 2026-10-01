@@ -9,7 +9,7 @@
 abi <abi/4.0>,
 include <tunables/global>
 
-profile ficus-browser-chromium /opt/ficus/browser/ms-playwright/chromium*/chrome-linux*/{chrome,headless_shell} flags=(unconfined) {
+profile ficus-browser-chromium /opt/ficus/browser/ms-playwright/{chromium-*/chrome-linux*/chrome,chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell} flags=(unconfined) {
   userns,
 
   include if exists <local/ficus-browser-chromium>

@@ -164,7 +164,14 @@ start_browser_service() {
   # Seed under the user browser-proxy actually sends (FICUS_BROWSER_DEV_ALLOW_USER),
   # NOT the command user — the two differ (root vs ficus) and the header wins.
   ( umask 077; printf '%s' "$digest" >"$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token" )
-  FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service" >/var/log/ficus-browser.log 2>&1 &
+  # Chromium refuses its namespace sandbox as root. Reuse the container's
+  # unprivileged command account; the proxy still authenticates as the root
+  # executor, so the token key above deliberately remains unchanged.
+  chown ficus:ficus "$tokens_dir" "$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token" "$(dirname "$FICUS_BROWSER_SOCK")" || return 1
+  (
+    cd /opt/ficus/browser || exit 1
+    exec su-exec ficus env HOME=/home/ficus FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service"
+  ) >/var/log/ficus-browser.log 2>&1 &
   echo "[ficus-sandbox] ficus-browser service started (pid $!, sock $FICUS_BROWSER_SOCK, dev-user $FICUS_BROWSER_DEV_ALLOW_USER)" >&2
 }
 start_browser_service || echo '[ficus-sandbox] ficus-browser service failed to start (non-fatal, dev parity)' >&2

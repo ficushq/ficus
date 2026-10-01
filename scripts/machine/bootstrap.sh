@@ -568,6 +568,15 @@ async function routeHandler(route, blockedHost = isBlockedHost) {
   }
 }
 
+// Playwright defaults chromiumSandbox to false. Use full Chromium's new
+// headless mode so the verifier and service share the same sandbox-capable
+// binary and chrome://sandbox diagnostics (headless-shell omits that WebUI).
+export const CHROMIUM_LAUNCH_OPTIONS = Object.freeze({
+  headless: true,
+  channel: 'chromium',
+  chromiumSandbox: true,
+})
+
 export function createService(deps = {}) {
   const launch =
     deps.launch ||
@@ -577,7 +586,7 @@ export function createService(deps = {}) {
       // test suite has zero load-time dependency on the `playwright` package
       // being installed (Phase 3 drops it from apps/core entirely).
       const { chromium } = await import('playwright')
-      return chromium.launch({ headless: true })
+      return chromium.launch(CHROMIUM_LAUNCH_OPTIONS)
     })
   const now = deps.now || Date.now
   const tokensDir = deps.tokensDir || process.env.FICUS_BROWSER_TOKENS_DIR || DEFAULT_TOKENS_DIR
@@ -1074,43 +1083,55 @@ BROWSER_SERVICE_JS
 
 # Write the one-shot Chromium sandbox verification program (the hard gate, run by
 # verify_browser). Launches headless Chromium WITHOUT --no-sandbox and confirms a
-# renderer works and chrome://sandbox does not report an unsandboxed process.
+# chrome://sandbox positively confirms namespace and seccomp-BPF isolation.
 write_browser_verify() {
   "${SUDO[@]}" tee "${FICUS_BROWSER_VERIFY_JS}" >/dev/null <<'BROWSER_VERIFY_JS'
-// One-shot Chromium sandbox verification — PHASE 1 hard gate (spec §4.1/§5).
-// Launches headless Chromium WITHOUT --no-sandbox and confirms a renderer works
-// under the unprivileged ficus-browser user (a missing user-namespace grant
-// crashes the zygote here) and that chrome://sandbox does not report an
-// unsandboxed process. Exit 0 = sandbox active; non-zero = FAIL (bootstrap
-// aborts, browsing disabled on this host — never downgraded to --no-sandbox).
+// One-shot Linux Chromium sandbox gate. Missing or unreadable diagnostics are
+// failures; a working renderer alone does not prove Chromium enabled isolation.
+// Bootstrap leaves browsing unavailable when this program fails.
 //
-// SINGLE SOURCE OF TRUTH: packages/machine-image/Dockerfile COPYs this file, and
-// scripts/machine/bootstrap.sh (write_browser_verify) embeds it verbatim.
-// bootstrap.test.ts asserts the two copies stay byte-identical.
-const { chromium } = require('playwright')
+// SINGLE SOURCE OF TRUTH: the image COPYs this file and bootstrap.sh embeds it
+// verbatim. Both launchers use the service's exact pinned launch options.
+import { CHROMIUM_LAUNCH_OPTIONS } from './ficus-browser.js'
 
-async function main() {
-  const browser = await chromium.launch({ headless: true })
-  try {
-    const page = await browser.newPage()
-    // A renderer that loads a page proves the user-namespace sandbox could be
-    // entered; without the AppArmor userns grant this throws.
-    await page.goto('about:blank', { timeout: 15000 })
-    await page.goto('chrome://sandbox', { timeout: 15000 }).catch(() => {})
-    const text = (await page.innerText('body').catch(() => '')) || ''
-    if (/not sandboxed/i.test(text)) {
-      throw new Error('chrome://sandbox reports an unsandboxed process: ' + text.slice(0, 200))
+export function assertSandboxStatus(text) {
+  // Chromium's sandboxGood requires a layer-one namespace sandbox (including
+  // PID and network namespaces) plus the layer-two seccomp-BPF sandbox.
+  if (!/(?:^|\n)Layer 1 Sandbox\s+Namespace(?:\s|$)/i.test(text)) {
+    throw new Error('Chromium sandbox status did not confirm the namespace sandbox')
+  }
+  for (const label of ['PID namespaces', 'Network namespaces', 'Seccomp-BPF sandbox']) {
+    if (!new RegExp(`(?:^|\\n)${label}\\s+Yes(?:\\s|$)`, 'i').test(text)) {
+      throw new Error(`Chromium sandbox status did not confirm ${label}`)
     }
-    console.error('ficus-browser: sandbox verification passed')
-  } finally {
-    await browser.close().catch(() => {})
+  }
+  if (!/(?:^|\n)You are adequately sandboxed\.(?:\s|$)/i.test(text)) {
+    throw new Error('Chromium did not report adequate sandboxing')
   }
 }
 
-main().catch((err) => {
-  console.error('ficus-browser: sandbox verification FAILED —', err && err.message ? err.message : err)
-  process.exit(1)
-})
+export async function verifySandbox(chromium) {
+  const browser = await chromium.launch(CHROMIUM_LAUNCH_OPTIONS)
+  try {
+    const page = await browser.newPage()
+    await page.goto('chrome://sandbox', { timeout: 15000 })
+    const text = await page.innerText('body', { timeout: 15000 })
+    assertSandboxStatus(text)
+  } finally {
+    await browser.close()
+  }
+}
+
+if (import.meta.main) {
+  try {
+    const { chromium } = await import('playwright')
+    await verifySandbox(chromium)
+    console.error('ficus-browser: sandbox verification passed (namespace, PID, network, seccomp-BPF)')
+  } catch (err) {
+    console.error('ficus-browser: sandbox verification FAILED —', err && err.message ? err.message : err)
+    process.exitCode = 1
+  }
+}
 BROWSER_VERIFY_JS
 }
 
@@ -1118,7 +1139,7 @@ BROWSER_VERIFY_JS
 # the pinned Chromium binaries. Ubuntu 24.04 restricts unprivileged userns via
 # AppArmor by default — the same mechanism gates its own browser packages — so
 # Chromium's sandbox cannot enter a namespace without this grant. The glob
-# attachment matches both the full `chrome` and the `headless_shell` binary
+# attachment matches full Chromium and Playwright's separate headless-shell tree
 # across Playwright build directories, so it is version-independent.
 write_browser_apparmor() {
   "${SUDO[@]}" tee "${FICUS_BROWSER_APPARMOR}" >/dev/null <<'BROWSER_APPARMOR'
@@ -1133,7 +1154,7 @@ write_browser_apparmor() {
 abi <abi/4.0>,
 include <tunables/global>
 
-profile ficus-browser-chromium /opt/ficus/browser/ms-playwright/chromium*/chrome-linux*/{chrome,headless_shell} flags=(unconfined) {
+profile ficus-browser-chromium /opt/ficus/browser/ms-playwright/{chromium-*/chrome-linux*/chrome,chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell} flags=(unconfined) {
   userns,
 
   include if exists <local/ficus-browser-chromium>
@@ -1364,6 +1385,17 @@ verify_browser() {
   #    sandbox check on a half-installed browser would only overwrite it with a
   #    less useful token. Nothing to verify; the caps/marker already reflect it.
   if [ "${BROWSER_STATUS}" = "unavailable" ] && [ "${BROWSER_REASON}" != "not_verified" ]; then
+    return 0
+  fi
+
+  # Refresh the embedded assets on prebaked/already-migrated hosts too. Stop
+  # the previous process first so a stale launcher cannot keep serving pages.
+  if ! "${SUDO[@]}" systemctl stop ficus-browser.service; then
+    browser_mark_unavailable service_start_failed "could not stop the previous browser before verification"
+    return 0
+  fi
+  if ! write_browser_service || ! write_browser_verify || ! write_browser_apparmor; then
+    browser_mark_unavailable setup_failed "could not refresh the browser sandbox assets"
     return 0
   fi
 
