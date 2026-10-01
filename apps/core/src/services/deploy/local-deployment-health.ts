@@ -1,4 +1,6 @@
-import net from 'node:net'
+import http from 'node:http'
+import { sql } from 'drizzle-orm'
+import { withDedicatedDbTransaction } from '../../db'
 import type { LocalDeployment } from '@ficus/shared'
 import { createLogger } from '../../lib/infra/logger'
 import {
@@ -16,9 +18,12 @@ import { resolveLocalDeploymentTarget } from './local-deployment-target'
 const log = createLogger('local-deployment-health')
 
 interface LocalDeploymentHealthDependencies {
-  canConnect: (host: string, port: number, timeoutMs?: number) => Promise<boolean>
+  probeLocalDeploymentHttp: (host: string, port: number, timeoutMs?: number) => Promise<boolean>
   ensureSquadSandbox: typeof ensureSquadSandbox
-  supervisor: Pick<LocalDeploymentProcessSupervisor, 'hasSession' | 'startManagedLocalDeployment'>
+  supervisor: Pick<
+    LocalDeploymentProcessSupervisor,
+    'hasSession' | 'startManagedLocalDeployment' | 'stopLocalDeployment'
+  >
   resolveLocalDeploymentTarget: typeof resolveLocalDeploymentTarget
   /** Reads the box's migration fence (`machine_boxes.migrating`) — the SAME
    *  fence box-migrate.ts's fenceBoxForMigration sets. Consulted by
@@ -31,7 +36,7 @@ let dependencyOverrides: Partial<LocalDeploymentHealthDependencies> = {}
 
 function getDependencies(): LocalDeploymentHealthDependencies {
   return {
-    canConnect: dependencyOverrides.canConnect ?? canConnect,
+    probeLocalDeploymentHttp: dependencyOverrides.probeLocalDeploymentHttp ?? probeLocalDeploymentHttp,
     ensureSquadSandbox: dependencyOverrides.ensureSquadSandbox ?? ensureSquadSandbox,
     supervisor: dependencyOverrides.supervisor ?? new LocalDeploymentProcessSupervisor(),
     resolveLocalDeploymentTarget: dependencyOverrides.resolveLocalDeploymentTarget ?? resolveLocalDeploymentTarget,
@@ -45,61 +50,78 @@ export function configureLocalDeploymentHealthDependencies(
   dependencyOverrides = overrides
 }
 
-export async function canConnect(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
+/**
+ * TCP accept is NOT readiness: an SSH -L listener accepts before opening its
+ * remote channel. Require an HTTP response from the app, without redirects or
+ * reading an unbounded body. Auth/route errors prove a web server is ready;
+ * server errors, EOF, malformed responses and timeouts do not.
+ */
+export async function probeLocalDeploymentHttp(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port })
     let settled = false
+    const request = http.request({ host, port, path: '/', method: 'GET', agent: false })
+    const deadline = setTimeout(() => finish(false), timeoutMs)
 
     function finish(result: boolean): void {
       if (settled) return
       settled = true
-      socket.destroy()
+      clearTimeout(deadline)
+      request.destroy()
       resolve(result)
     }
 
-    socket.setTimeout(timeoutMs)
-    socket.once('connect', () => finish(true))
-    socket.once('timeout', () => finish(false))
-    socket.once('error', () => finish(false))
+    request.once('response', (response) => {
+      const status = response.statusCode ?? 0
+      response.destroy()
+      finish(status >= 200 && status < 500)
+    })
+    request.once('error', () => finish(false))
+    request.end()
   })
 }
 
 /**
- * Probe a deployment and write back the resulting health status.
- *
- * Accepts either an id (read it here) or an already-loaded row. The health
- * poller lists every live deployment once per tick and then hands the rows
- * straight back in, which removes one `SELECT` per deployment per tick; the
- * row is milliseconds old and every decision below is re-committed through
- * `updateLocalDeploymentRecord`, so nothing depends on a fresher read.
+ * Reconcile a snapshot using a compare-and-set write. A stop/archive or newer
+ * restart observed during I/O must win over this older health result.
+ * Transport failure means unverified/unhealthy, never proof of a crash; throw
+ * after recording it so the poller does not restart on that uncertain result.
  */
 export async function refreshLocalDeploymentHealth(target: string | LocalDeployment): Promise<LocalDeployment> {
   const localDeployment = typeof target === 'string' ? await requireLocalDeployment(target) : target
-  if (localDeployment.status === 'stopped') return localDeployment
+  if (localDeployment.status === 'stopped' || localDeployment.archivedAt) return localDeployment
 
-  const { canConnect, ensureSquadSandbox, supervisor, resolveLocalDeploymentTarget } = getDependencies()
-  await ensureSquadSandbox(localDeployment.squadId, { restartManagedLocalDeployments: false })
-  let healthy = false
+  const { probeLocalDeploymentHttp, ensureSquadSandbox, supervisor, resolveLocalDeploymentTarget } = getDependencies()
+  const update = (input: Parameters<typeof updateLocalDeploymentRecord>[1]) =>
+    updateLocalDeploymentRecord(localDeployment.id, input, { expectedRecord: localDeployment, onlyLive: true })
+  let healthy: boolean
   try {
-    const target = await resolveLocalDeploymentTarget(localDeployment.sandboxId, localDeployment.port)
-    healthy = await canConnect(target.host, target.port)
-  } catch {
-    healthy = false
-  }
-  if (healthy) {
-    return updateLocalDeploymentRecord(localDeployment.id, { status: 'running', keepSandboxAlive: true })
-  }
-
-  if (localDeployment.mode === 'managed') {
-    const hasSession = localDeployment.processId
-      ? await supervisor.hasSession(localDeployment.sandboxId, localDeployment.processId)
-      : false
-    if (!hasSession) {
-      return updateLocalDeploymentRecord(localDeployment.id, { status: 'crashed', keepSandboxAlive: false })
+    await ensureSquadSandbox(localDeployment.squadId, { restartManagedLocalDeployments: false })
+    // Check the deployment's own session BEFORE readiness, including when a
+    // tunnel/unrelated service happens to accept the reserved port.
+    if (localDeployment.mode === 'managed') {
+      const hasSession = localDeployment.processId
+        ? await supervisor.hasSession(localDeployment.sandboxId, localDeployment.processId)
+        : false
+      if (!hasSession) {
+        if (localDeployment.status !== 'crashed')
+          log.warn(
+            `Managed localDeployment ${localDeployment.id}: process session missing; reconcile will retry recovery`
+          )
+        return update({ status: 'crashed', keepSandboxAlive: false })
+      }
     }
+    const resolved = await resolveLocalDeploymentTarget(localDeployment.sandboxId, localDeployment.port)
+    healthy = await probeLocalDeploymentHttp(resolved.host, resolved.port)
+  } catch {
+    await update({ status: 'unhealthy' })
+    throw new Error(
+      'Sandbox unavailable; app health is unverified. Reconciliation will retry when the box is available.'
+    )
   }
-
-  return updateLocalDeploymentRecord(localDeployment.id, { status: 'unhealthy' })
+  if (healthy) return update({ status: 'running', keepSandboxAlive: true })
+  if (localDeployment.status !== 'unhealthy')
+    log.warn(`LocalDeployment ${localDeployment.id}: no ready HTTP response; check app startup logs`)
+  return update({ status: 'unhealthy' })
 }
 
 async function waitForLocalDeploymentHealthy(
@@ -139,6 +161,8 @@ export interface RestartLocalDeploymentOptions {
    * knows it is the migration and chooses not to be gated by its own fence.
    */
   skipIfMigrating?: boolean
+  /** Only an explicit operator restart may start a stopped deployment. */
+  allowStopped?: boolean
 }
 
 /**
@@ -169,6 +193,7 @@ async function restartManagedLocalDeploymentOnce(
   opts: RestartLocalDeploymentOptions
 ): Promise<LocalDeployment> {
   const localDeployment = await requireLocalDeployment(localDeploymentId)
+  if (localDeployment.archivedAt || (localDeployment.status === 'stopped' && !opts.allowStopped)) return localDeployment
   if (localDeployment.mode !== 'managed') {
     return localDeployment
   }
@@ -186,25 +211,80 @@ async function restartManagedLocalDeploymentOnce(
     )
     return localDeployment
   }
-  await ensureSquadSandbox(localDeployment.squadId, { restartManagedLocalDeployments: false })
-  const { processId } = await supervisor.startManagedLocalDeployment({
-    localDeploymentId: localDeployment.id,
-    sandboxId: localDeployment.sandboxId,
-    command: localDeployment.command,
-    cwd: localDeployment.cwd,
-    port: localDeployment.port,
+  try {
+    await ensureSquadSandbox(localDeployment.squadId, { restartManagedLocalDeployments: false })
+  } catch {
+    await updateLocalDeploymentRecord(
+      localDeployment.id,
+      { status: 'unhealthy' },
+      {
+        expectedRecord: localDeployment,
+      }
+    )
+    throw new Error('Sandbox unavailable; managed app recovery will retry when the box is available.')
+  }
+  // API and worker have separate in-memory maps. Fence the short launch/write
+  // phase across Core processes too, using a bounded try-lock on a dedicated
+  // connection (never hold a shared pool slot while calling other DB helpers).
+  // The lock is automatically released on commit, failure or Core loss. A
+  // losing caller leaves recovery to the owner or a subsequent poller tick.
+  return withDedicatedDbTransaction(async (tx) => {
+    const [lock] = await tx.execute<{ acquired: boolean }>(
+      sql`select pg_try_advisory_xact_lock(hashtextextended(${`local-deployment-restart:${localDeployment.id}`}, 0)) as acquired`
+    )
+    if (!lock.acquired) return requireLocalDeployment(localDeployment.id)
+    const current = await requireLocalDeployment(localDeployment.id)
+    // A second Core process may have completed recovery while we ensured the
+    // box. Its new generation wins; do not immediately kill/restart it again.
+    if (current.restartCount !== localDeployment.restartCount || current.restartPolicy !== 'always') return current
+    const explicitlyRestartingStopped = opts.allowStopped && localDeployment.status === 'stopped'
+    if (
+      current.archivedAt ||
+      (current.status === 'stopped' &&
+        (!explicitlyRestartingStopped || current.updatedAt !== localDeployment.updatedAt))
+    )
+      return current
+
+    let processId: string
+    try {
+      ;({ processId } = await supervisor.startManagedLocalDeployment({
+        localDeploymentId: current.id,
+        sandboxId: current.sandboxId,
+        command: current.command!,
+        cwd: current.cwd,
+        port: current.port,
+      }))
+    } catch {
+      await updateLocalDeploymentRecord(
+        current.id,
+        { status: 'crashed', keepSandboxAlive: false },
+        {
+          expectedRecord: current,
+        }
+      )
+      throw new Error('Managed app launch failed; check startup logs. Automatic recovery will retry after cooldown.')
+    }
+
+    const restarted = await updateLocalDeploymentRecord(
+      current.id,
+      {
+        status: 'restarting',
+        keepSandboxAlive: true,
+        processId,
+        restartCount: current.restartCount + 1,
+      },
+      explicitlyRestartingStopped ? { expectedRecord: current } : { onlyLive: true }
+    )
+
+    // A stop/archive that won during launch is authoritative. The session name
+    // is stable; explicitly reap the process the losing restart just created.
+    if (restarted.status === 'stopped' || restarted.archivedAt) {
+      await supervisor.stopLocalDeployment(current.sandboxId, processId)
+      return restarted
+    }
+    waitForLocalDeploymentHealthy(current.id).catch(() => {})
+    return restarted
   })
-
-  const restarted = await updateLocalDeploymentRecord(localDeployment.id, {
-    status: 'restarting',
-    keepSandboxAlive: true,
-    processId,
-    restartCount: localDeployment.restartCount + 1,
-  })
-
-  waitForLocalDeploymentHealthy(localDeployment.id).catch(() => {})
-
-  return restarted
 }
 
 export async function ensureSandboxesForLiveManagedLocalDeployments(): Promise<void> {

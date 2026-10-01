@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { like } from 'drizzle-orm'
+import { like, sql } from 'drizzle-orm'
+import net from 'node:net'
+import http from 'node:http'
 import type { LocalDeployment } from '@ficus/shared'
-import { db, squads } from '../../db'
+import { db, squads, withDedicatedDbTransaction } from '../../db'
 import { Squad } from '../../entities/Squad'
-import { createLocalDeployment, getLocalDeployment, updateLocalDeploymentRecord } from './local-deployment-service'
 import {
+  archiveLocalDeploymentRecord,
+  createLocalDeployment,
+  getLocalDeployment,
+  updateLocalDeploymentRecord,
+} from './local-deployment-service'
+import {
+  probeLocalDeploymentHttp,
   configureLocalDeploymentHealthDependencies,
   refreshLocalDeploymentHealth,
   restartManagedLocalDeployment,
@@ -28,6 +36,12 @@ class FakeSupervisor {
   }
 
   failStartsFor = new Set<string>()
+
+  stops: string[] = []
+
+  async stopLocalDeployment(_sandboxId: string, processId: string): Promise<void> {
+    this.stops.push(processId)
+  }
 
   async startManagedLocalDeployment(args: {
     localDeploymentId: string
@@ -54,7 +68,7 @@ describe('localDeployment health', () => {
     connectResult = false
     connectCalls.length = 0
     configureLocalDeploymentHealthDependencies({
-      canConnect: async (host, port) => {
+      probeLocalDeploymentHttp: async (host, port) => {
         connectCalls.push({ host, port })
         return connectResult
       },
@@ -77,7 +91,7 @@ describe('localDeployment health', () => {
     return new Squad(row)
   }
 
-  it('marks a healthy attached localDeployment running when TCP connect succeeds', async () => {
+  it('marks a healthy attached localDeployment running when HTTP readiness succeeds', async () => {
     connectResult = true
     const squad = await createTestSquad('attached')
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
@@ -89,19 +103,18 @@ describe('localDeployment health', () => {
     expect(connectCalls).toEqual([{ host: 'localhost', port: 45173 }])
   })
 
-  it('uses an already-loaded localDeployment row instead of re-reading it', async () => {
+  it('does not resurrect a stopped row from an older health snapshot', async () => {
     connectResult = true
     const squad = await createTestSquad('prefetched')
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
 
-    // Diverge the DB row from the in-hand row. A re-read would see 'stopped'
-    // and return early without probing; using the passed row must probe.
+    // A poller snapshot can race an explicit stop. A late probe must not undo it.
     await updateLocalDeploymentRecord(localDeployment.id, { status: 'stopped' })
 
     const refreshed = await refreshLocalDeploymentHealth(localDeployment)
 
     expect(connectCalls).toEqual([{ host: 'localhost', port: 45173 }])
-    expect(refreshed.status).toBe('running')
+    expect(refreshed.status).toBe('stopped')
   })
 
   it('marks a managed localDeployment crashed when tmux session is gone and health fails', async () => {
@@ -118,6 +131,168 @@ describe('localDeployment health', () => {
 
     expect(refreshed.status).toBe('crashed')
     expect(refreshed.keepSandboxAlive).toBe(false)
+  })
+
+  it('does not treat an accepting forward with no upstream as app readiness', async () => {
+    // Models SSH -L: the local accept happens before opening the remote channel.
+    const sockets = new Set<net.Socket>()
+    const forward = net.createServer((socket) => {
+      sockets.add(socket)
+      socket.once('close', () => sockets.delete(socket))
+      socket.end()
+    })
+    await new Promise<void>((resolve) => forward.listen(0, '127.0.0.1', resolve))
+    try {
+      const port = (forward.address() as net.AddressInfo).port
+      expect(await probeLocalDeploymentHttp('127.0.0.1', port)).toBe(false)
+    } finally {
+      for (const socket of sockets) socket.destroy()
+      await new Promise<void>((resolve) => forward.close(() => resolve()))
+    }
+  })
+
+  it('requires an HTTP response, accepts auth/route responses, and rejects server failures', async () => {
+    let status = 200
+    const app = http.createServer((_req, res) => {
+      res.writeHead(status)
+      res.end('fixture')
+    })
+    await new Promise<void>((resolve) => app.listen(0, '127.0.0.1', resolve))
+    try {
+      const port = (app.address() as net.AddressInfo).port
+      for (const code of [200, 401, 404]) {
+        status = code
+        expect(await probeLocalDeploymentHttp('127.0.0.1', port)).toBe(true)
+      }
+      status = 503
+      expect(await probeLocalDeploymentHttp('127.0.0.1', port)).toBe(false)
+    } finally {
+      app.closeAllConnections()
+      await new Promise<void>((resolve) => app.close(() => resolve()))
+    }
+  })
+
+  it('detects process loss even when a tunnel or unrelated app accepts the port', async () => {
+    connectResult = true
+    const squad = await createTestSquad('false-ready')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'gone' })
+    const refreshed = await refreshLocalDeploymentHealth(deployment.id)
+    expect(refreshed.status).toBe('crashed')
+    expect(connectCalls).toHaveLength(0)
+  })
+
+  it('corrects stale running on box transport loss without claiming the app crashed', async () => {
+    const squad = await createTestSquad('box-lost')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'old-session' })
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => {
+        throw new Error('secret transport diagnostic')
+      },
+    })
+    await expect(refreshLocalDeploymentHealth(deployment.id)).rejects.toThrow('Sandbox unavailable')
+    expect((await getLocalDeployment(deployment.id))?.status).toBe('unhealthy')
+    expect(supervisor.starts).toHaveLength(0)
+  })
+
+  it('does not restart a stopped app after a stale poller decision', async () => {
+    const squad = await createTestSquad('stopped')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'stopped', keepSandboxAlive: false })
+    expect((await restartManagedLocalDeployment(deployment.id)).status).toBe('stopped')
+    expect(supervisor.starts).toHaveLength(0)
+  })
+
+  it('rechecks stop intent after awaiting sandbox recovery', async () => {
+    const squad = await createTestSquad('stop-during-ensure')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    configureLocalDeploymentHealthDependencies({
+      supervisor: supervisor as any,
+      ensureSquadSandbox: async () => {
+        await updateLocalDeploymentRecord(deployment.id, { status: 'stopped', keepSandboxAlive: false })
+        return '/workspace'
+      },
+    })
+    expect((await restartManagedLocalDeployment(deployment.id)).status).toBe('stopped')
+    expect(supervisor.starts).toHaveLength(0)
+  })
+
+  it('cleans up a newly launched session if a stop wins during launch', async () => {
+    const squad = await createTestSquad('stop-during-start')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    const start = supervisor.startManagedLocalDeployment.bind(supervisor)
+    supervisor.startManagedLocalDeployment = async (args) => {
+      const result = await start(args)
+      await updateLocalDeploymentRecord(deployment.id, { status: 'stopped', keepSandboxAlive: false })
+      return result
+    }
+    expect((await restartManagedLocalDeployment(deployment.id)).status).toBe('stopped')
+    expect(supervisor.stops).toHaveLength(1)
+  })
+
+  it('only resurrects a stopped app for an explicit operator restart', async () => {
+    const squad = await createTestSquad('explicit-restart')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'stopped' })
+    expect((await restartManagedLocalDeployment(deployment.id, { allowStopped: true })).status).toBe('restarting')
+    expect(supervisor.starts).toHaveLength(1)
+  })
+
+  it('never resurrects archived apps, even for an explicit restart', async () => {
+    const squad = await createTestSquad('archived')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await archiveLocalDeploymentRecord(deployment.id)
+    expect((await restartManagedLocalDeployment(deployment.id, { allowStopped: true })).status).toBe('stopped')
+    expect(supervisor.starts).toHaveLength(0)
+  })
+
+  it('records a failed launch rather than leaving a stale running row', async () => {
+    const squad = await createTestSquad('failed-launch')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'running' })
+    supervisor.failStartsFor.add(deployment.id)
+    await expect(restartManagedLocalDeployment(deployment.id)).rejects.toThrow('Managed app launch failed')
+    expect((await getLocalDeployment(deployment.id))?.status).toBe('crashed')
+  })
+
+  it('does not write an older probe over a newer restart generation', async () => {
+    const squad = await createTestSquad('stale-probe')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 45173 }),
+      probeLocalDeploymentHttp: async () => {
+        await updateLocalDeploymentRecord(deployment.id, { status: 'restarting', processId: 'new-session' })
+        return true
+      },
+    })
+    expect((await refreshLocalDeploymentHealth(deployment)).status).toBe('restarting')
+  })
+
+  it('does not classify an executor transport error as a missing session', async () => {
+    const squad = await createTestSquad('session-transport-error')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'old-session' })
+    supervisor.hasSession = async () => {
+      throw new Error('transport credentials must not escape')
+    }
+    await expect(refreshLocalDeploymentHealth(deployment.id)).rejects.toThrow('Sandbox unavailable')
+    expect((await getLocalDeployment(deployment.id))?.status).toBe('unhealthy')
+  })
+
+  it('does not launch while another Core process owns the deployment restart lock', async () => {
+    const squad = await createTestSquad('cross-process-lock')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await withDedicatedDbTransaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`local-deployment-restart:${deployment.id}`}, 0))`
+      )
+      await restartManagedLocalDeployment(deployment.id)
+      expect(supervisor.starts).toHaveLength(0)
+    })
+    await restartManagedLocalDeployment(deployment.id)
+    expect(supervisor.starts).toHaveLength(1)
   })
 
   it('restarts managed localDeployments with restartPolicy always', async () => {
@@ -176,7 +351,7 @@ describe('localDeployment health', () => {
     const healthy = await createLocalDeployment(squad, { name: 'healthy', port: 5174, command: 'bun run dev' })
     supervisor.failStartsFor.add(failing.id)
 
-    await expect(restartManagedLocalDeploymentsForSandbox(squad.sandboxId)).rejects.toThrow('duplicate session')
+    await expect(restartManagedLocalDeploymentsForSandbox(squad.sandboxId)).rejects.toThrow('Managed app launch failed')
 
     expect(supervisor.starts.map((start) => start.localDeploymentId).sort()).toEqual([failing.id, healthy.id].sort())
     const restarted = (await getLocalDeployment(healthy.id)) as LocalDeployment

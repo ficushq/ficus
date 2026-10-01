@@ -461,7 +461,7 @@ export const deploymentsRouter = new Hono()
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
       try {
-        return c.json(await getDependencies().restartManagedLocalDeployment(localDeployment.id))
+        return c.json(await getDependencies().restartManagedLocalDeployment(localDeployment.id, { allowStopped: true }))
       } catch (err) {
         const provisioning = getSandboxProvisionErrorResponse(err)
         if (provisioning) {
@@ -479,6 +479,7 @@ export const deploymentsRouter = new Hono()
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
 
+      const archived = await archiveLocalDeploymentRecord(localDeployment.id)
       const deps = getDependencies()
       if (localDeployment.mode === 'managed' && localDeployment.processId) {
         try {
@@ -497,7 +498,7 @@ export const deploymentsRouter = new Hono()
         }
       }
 
-      return c.json(await archiveLocalDeploymentRecord(localDeployment.id))
+      return c.json(archived)
     }
   )
   .post(
@@ -507,13 +508,14 @@ export const deploymentsRouter = new Hono()
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
 
+      const stopped = await stopLocalDeploymentRecord(localDeployment.id)
       const deps = getDependencies()
       await deps.ensureSquadSandbox(localDeployment.squadId, { restartManagedLocalDeployments: false })
       if (localDeployment.mode === 'managed' && localDeployment.processId) {
         await deps.supervisor.stopLocalDeployment(localDeployment.sandboxId, localDeployment.processId)
       }
 
-      return c.json(await stopLocalDeploymentRecord(localDeployment.id))
+      return c.json(stopped)
     }
   )
 

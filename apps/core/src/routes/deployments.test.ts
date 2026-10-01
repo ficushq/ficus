@@ -794,6 +794,37 @@ describe('deployments routes', () => {
     expect(stopped.keepSandboxAlive).toBe(false)
     expect(supervisorStops).toEqual([{ sandboxId: squad.sandboxId, processId: localDeployment.processId }])
   })
+  for (const operation of ['stop', 'archive'] as const) {
+    it(`persists ${operation} intent before transport cleanup can race automatic recovery`, async () => {
+      const squad = await createTestSquad()
+      const createRes = await app.request(`/api/squads/${squad.id}/local-deployments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(adminUser.token) },
+        body: JSON.stringify({ name: 'web', port: 5173, command: 'bun run dev' }),
+      })
+      const deployment = await createRes.json()
+      let statusDuringCleanup: string | undefined
+      configureDeploymentsRouteDependencies({
+        ensureSquadSandbox: async () => '/workspace',
+        supervisor: {
+          ...getRouteSupervisor(),
+          stopLocalDeployment: async () => {
+            statusDuringCleanup = (await getLocalDeployment(deployment.id))?.status
+          },
+        } as any,
+      })
+      const response = await app.request(
+        `/api/local-deployments/${deployment.id}${operation === 'stop' ? '/stop' : ''}`,
+        {
+          method: operation === 'stop' ? 'POST' : 'DELETE',
+          headers: authHeaders(adminUser.token),
+        }
+      )
+      expect(response.status).toBe(200)
+      expect(statusDuringCleanup).toBe('stopped')
+    })
+  }
+
   // ── Attached logPath tests ──────────────────────────────────────────────────
 
   it('POST create with an attached logPath returns it normalized', async () => {

@@ -5,11 +5,12 @@ import { refreshLocalDeploymentHealth, restartManagedLocalDeployment } from './l
 
 const log = createLogger('local-deployment-health-poller')
 /**
- * 30s, not 10s. Each tick costs a TCP probe plus a status write per live
- * deployment, and every state this reconciler reacts to (crashed / unhealthy)
- * is a self-heal backstop rather than something a user waits on — a deployment
- * that just started is driven by its own `waitForLocalDeploymentHealthy` loop
- * (500ms) and by ensureSquadSandbox's restart, not by this timer.
+ * Default reconciliation cadence: 30s, plus each tick's bounded HTTP probes
+ * (2s each) and sandbox ensure/session I/O. Runs immediately on worker startup.
+ * Managed apps require their own live session AND an HTTP readiness response;
+ * an accepting SSH-forward listener alone must never keep a dead app running.
+ * Startup also has a short 500ms readiness loop. Recovery attempts remain
+ * limited to one per deployment per 30s cooldown, with single-flight launches.
  */
 const LOCAL_APP_HEALTH_POLL_INTERVAL_MS = Number(process.env.LOCAL_APP_HEALTH_POLL_INTERVAL_MS) || 30_000
 const LOCAL_APP_RESTART_COOLDOWN_MS = Number(process.env.LOCAL_APP_RESTART_COOLDOWN_MS) || 30_000
