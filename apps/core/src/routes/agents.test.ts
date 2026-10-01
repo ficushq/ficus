@@ -7,8 +7,9 @@ maintenanceAfterAll(() => releaseMaintenanceIsolation?.())
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, spyOn } from 'bun:test'
 import { createHash } from 'crypto'
-import { and, eq, gte, inArray } from 'drizzle-orm'
+import { and, eq, gte, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { setDatabaseQueryObserverForTest, withDedicatedDbTransaction } from '../db'
 import { agentsRouter } from './agents'
 import * as sandboxFactory from '../services/sandbox/factory'
 import { AgentType } from '../entities/AgentType'
@@ -324,6 +325,80 @@ describe('agent scopes endpoints', () => {
     })
 
     expect(res.status).toBe(400)
+  })
+
+  it('maps the real unique-insert race to a safe 409 after both scope prechecks pass', async () => {
+    // push omits some indexes; mirror the existing generated migration's unique fence.
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_scope ON agent_extra_scopes (agent_id, permission)`)
+    let unlock!: () => void
+    const unlocked = new Promise<void>((resolve) => {
+      unlock = resolve
+    })
+    let ready!: () => void
+    const locked = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    let inserts = 0
+    let bothInserts!: () => void
+    const attempted = new Promise<void>((resolve) => {
+      bothInserts = resolve
+    })
+    const rollback = new Error('release test insert lock')
+    const holder = withDedicatedDbTransaction(async (tx) => {
+      await tx.insert(agentExtraScopes).values({ agentId: agent.id, permission: 'sandbox:logs' })
+      ready()
+      await unlocked
+      throw rollback
+    }).catch((error) => {
+      if (error !== rollback) throw error
+    })
+    const requests: Promise<Response>[] = []
+    let readinessTimer: ReturnType<typeof setTimeout> | undefined
+    // Fail before Bun's test budget, so finally releases the owned row lock and drains requests.
+    const readinessDeadline = new Promise<never>((_resolve, reject) => {
+      readinessTimer = setTimeout(() => reject(new Error('scope insert readiness deadline exceeded')), 3_000)
+    })
+    try {
+      await Promise.race([
+        locked,
+        readinessDeadline,
+        holder.then(() => {
+          throw new Error('lock holder ended before readiness')
+        }),
+      ])
+      setDatabaseQueryObserverForTest((query) => {
+        if (query.startsWith('insert into "agent_extra_scopes"') && ++inserts === 2) bothInserts()
+      })
+      for (let i = 0; i < 2; i++)
+        requests.push(
+          app.request(`/api/agents/${agent.id}/scopes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+            body: JSON.stringify({ permission: 'sandbox:logs' }),
+          })
+        )
+      await Promise.race([
+        attempted,
+        readinessDeadline,
+        Promise.all(requests).then(() => {
+          throw new Error('scope requests ended before both inserts were attempted')
+        }),
+      ])
+      clearTimeout(readinessTimer)
+      unlock()
+      await holder
+      const responses = await Promise.all(requests)
+      expect(responses.map((res) => res.status).sort()).toEqual([201, 409])
+      const conflict = responses.find((res) => res.status === 409)!
+      expect(await conflict.json()).toEqual({ error: 'Scope already granted to this agent' })
+      expect(inserts).toBe(2)
+    } finally {
+      clearTimeout(readinessTimer)
+      unlock()
+      setDatabaseQueryObserverForTest(undefined)
+      await holder
+      await Promise.allSettled(requests)
+    }
   })
 
   it('returns conflict when granting a duplicate scope', async () => {

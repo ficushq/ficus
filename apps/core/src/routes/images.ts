@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { Image, type ImageContent } from '../entities/Image'
@@ -155,7 +156,7 @@ export const imagesRouter = new Hono()
 
       return c.json({ imageIds: images.map((img) => img.id) })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Upload failed'
+      const message = error instanceof Error ? publicErrorMessage(error) : 'Upload failed'
       return c.json({ error: message }, 400)
     }
   })

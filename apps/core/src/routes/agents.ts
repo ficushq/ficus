@@ -1,3 +1,4 @@
+import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { isUserAssistantAgentType } from '@ficus/shared'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { chatPagePathSchema } from '@ficus/shared'
@@ -351,8 +352,8 @@ export const agentsRouter = new Hono()
         .returning()
       wsManager.invalidateAccessCache()
       return c.json(row, 201)
-    } catch (err: any) {
-      if (err?.code === '23505') {
+    } catch (err) {
+      if (getPostgresError(err)?.code === '23505') {
         return c.json({ error: 'Scope already granted to this agent' }, 409)
       }
       throw err
@@ -436,7 +437,7 @@ export const agentsRouter = new Hono()
 
         return c.json(agent.toJson())
       } catch (error) {
-        return c.json({ error: (error as Error).message }, 400)
+        return c.json({ error: publicErrorMessage(error as Error) }, 400)
       }
     }
   )
@@ -713,7 +714,7 @@ export const agentsRouter = new Hono()
         if (error instanceof ChatIdempotencyConflictError) return c.json({ error: error.message }, 409)
         if (error instanceof AgentTargetUnavailableError) return c.json({ error: error.message, code: error.code }, 409)
         return c.json(
-          { error: `Failed to send message: ${error instanceof Error ? error.message : String(error)}` },
+          { error: `Failed to send message: ${error instanceof Error ? publicErrorMessage(error) : String(error)}` },
           500
         )
       }
@@ -895,7 +896,7 @@ export const agentsRouter = new Hono()
         await agent.startCompaction(body.instructions)
         return c.json({ success: true })
       } catch (error) {
-        return c.json({ error: (error as Error).message }, 400)
+        return c.json({ error: publicErrorMessage(error as Error) }, 400)
       }
     }
   )
@@ -913,7 +914,7 @@ export const agentsRouter = new Hono()
         await agent.startReset()
         return c.json({ success: true })
       } catch (error) {
-        return c.json({ error: (error as Error).message }, 400)
+        return c.json({ error: publicErrorMessage(error as Error) }, 400)
       }
     }
   )

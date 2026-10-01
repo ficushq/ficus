@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 /**
  * Memory API Routes
  *
@@ -172,7 +173,7 @@ export const memoryRouter = new Hono()
         return c.json(results)
       } catch (e) {
         const error = e as Error
-        return c.json({ error: error.message }, 500)
+        return c.json({ error: publicErrorMessage(error) }, 500)
       }
     }
   )
@@ -196,7 +197,7 @@ export const memoryRouter = new Hono()
         return c.json(results)
       } catch (e) {
         const error = e as Error
-        return c.json({ error: error.message }, 500)
+        return c.json({ error: publicErrorMessage(error) }, 500)
       }
     }
   )
@@ -471,7 +472,7 @@ export const memoryRouter = new Hono()
         return c.json({ success: true, ...results })
       } catch (e) {
         const error = e as Error
-        return c.json({ error: error.message }, 500)
+        return c.json({ error: publicErrorMessage(error) }, 500)
       }
     }
   )
@@ -497,7 +498,7 @@ export const memoryRouter = new Hono()
       })
     } catch (e) {
       const error = e as Error
-      return c.json({ error: error.message }, 500)
+      return c.json({ error: publicErrorMessage(error) }, 500)
     }
   })
 
@@ -520,7 +521,7 @@ export const memoryRouter = new Hono()
       })
     } catch (e) {
       const error = e as Error
-      return c.json({ error: error.message }, 500)
+      return c.json({ error: publicErrorMessage(error) }, 500)
     }
   })
 
@@ -537,7 +538,7 @@ export const memoryRouter = new Hono()
       return c.json(status)
     } catch (e) {
       const error = e as Error
-      return c.json({ error: error.message }, 500)
+      return c.json({ error: publicErrorMessage(error) }, 500)
     }
   })
 
@@ -563,7 +564,7 @@ export const memoryRouter = new Hono()
       return c.json(result)
     } catch (e) {
       const error = e as Error
-      return c.json({ error: error.message }, 500)
+      return c.json({ error: publicErrorMessage(error) }, 500)
     }
   })
 

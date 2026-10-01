@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -307,7 +308,7 @@ export const deploymentsRouter = new Hono()
     try {
       normalizeLocalDeploymentInput(input, { squadId: squad.id })
     } catch (err) {
-      return c.json({ error: (err as Error).message }, 400)
+      return c.json({ error: publicErrorMessage(err as Error) }, 400)
     }
 
     let localDeployment: LocalDeployment | null = null
@@ -338,7 +339,7 @@ export const deploymentsRouter = new Hono()
         if (provisioning.retryAfter) c.header('Retry-After', provisioning.retryAfter)
         return c.json(provisioning.body, provisioning.status)
       }
-      return c.json({ error: (err as Error).message }, 400)
+      return c.json({ error: publicErrorMessage(err as Error) }, 400)
     }
   })
   .get(
@@ -466,7 +467,7 @@ export const deploymentsRouter = new Hono()
           if (provisioning.retryAfter) c.header('Retry-After', provisioning.retryAfter)
           return c.json(provisioning.body, provisioning.status)
         }
-        return c.json({ error: (err as Error).message }, 400)
+        return c.json({ error: publicErrorMessage(err as Error) }, 400)
       }
     }
   )

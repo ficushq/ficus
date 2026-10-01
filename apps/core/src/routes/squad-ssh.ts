@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
@@ -62,7 +63,7 @@ export const squadSshRouter = new Hono()
         return c.json({ success: true, keyName: name }, 201)
       } catch (error) {
         if (error instanceof squadSsh.SshDirectoryPermissionError) throw error
-        const message = error instanceof Error ? error.message : 'Failed to add key'
+        const message = error instanceof Error ? publicErrorMessage(error) : 'Failed to add key'
         return c.json({ error: message }, 400)
       }
     }
@@ -93,7 +94,7 @@ export const squadSshRouter = new Hono()
       return c.json({ success: true })
     } catch (error) {
       if (error instanceof squadSsh.SshDirectoryPermissionError) throw error
-      const message = error instanceof Error ? error.message : 'Failed to remove key'
+      const message = error instanceof Error ? publicErrorMessage(error) : 'Failed to remove key'
       return c.json({ error: message }, 400)
     }
   })

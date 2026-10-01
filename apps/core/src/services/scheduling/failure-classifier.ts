@@ -1,3 +1,4 @@
+import { getPostgresError, hasErrorCode } from '../../db/errors'
 import type { ScheduleFailureClass } from '@ficus/shared'
 
 export const SCHEDULE_FAILURE_CODES = [
@@ -70,8 +71,8 @@ export function classifyScheduleFailure(error: unknown): ClassifiedScheduleFailu
   }
 
   const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : undefined
-  const code = record?.code
-  if (typeof code === 'string' && TRANSPORT_CODES.has(code)) {
+  const code = getPostgresError(error)?.code ?? record?.code
+  if (hasErrorCode(error, TRANSPORT_CODES)) {
     return {
       class: 'transient',
       code: 'transport_error',
