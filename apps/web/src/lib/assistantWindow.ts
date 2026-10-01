@@ -19,7 +19,7 @@ export interface ViewportSize {
   height: number
 }
 
-/** What the user chose: nothing (the default upper-center command center), a free rectangle, or a snap. */
+/** What the user chose: nothing (the default centered card), a free rectangle, or a snap. */
 export interface AssistantWindowPlacement {
   rect?: Rect
   /** Where it's snapped, if it is: it refits that place as the screen resizes, until it's dragged or resized. */
@@ -28,9 +28,9 @@ export interface AssistantWindowPlacement {
 
 export const ASSISTANT_MIN_W = 320
 export const ASSISTANT_MIN_H = 280
-/** The default window size (Tailwind w-[42rem] × h-[36rem]) when the command bar is dragged first. */
-export const ASSISTANT_DEFAULT_W = 672
-export const ASSISTANT_DEFAULT_H = 576
+/** The default card's size (Tailwind w-[44rem] × h-[40rem]), also when it's dragged first. */
+export const ASSISTANT_DEFAULT_W = 704
+export const ASSISTANT_DEFAULT_H = 640
 const MARGIN = 8
 /** Space between snapped regions, as between neighbouring farm windows. */
 const SNAP_GAP = 8
@@ -92,6 +92,16 @@ export const SNAP_INFO: Record<Snap, { label: string; code: string; key: string 
 }
 
 /** The snap a key press asks for: Ctrl+Option (Ctrl+Alt) and one of the keys above, nothing else held. */
+/** Ctrl+Option+C, as Rectangle's "Center": back to the default centered card. */
+export const DEFAULT_PLACEMENT_KEY = { code: 'KeyC', key: 'C' }
+
+/** Whether a key is the default-placement shortcut. */
+export function isDefaultPlacementKey(
+  e: Pick<KeyboardEvent, 'ctrlKey' | 'altKey' | 'metaKey' | 'shiftKey' | 'code'>
+): boolean {
+  return e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey && e.code === DEFAULT_PLACEMENT_KEY.code
+}
+
 export function snapForKey(
   e: Pick<KeyboardEvent, 'ctrlKey' | 'altKey' | 'metaKey' | 'shiftKey' | 'code'>
 ): Snap | null {

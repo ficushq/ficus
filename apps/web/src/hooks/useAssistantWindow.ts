@@ -5,6 +5,7 @@ import {
   ASSISTANT_DEFAULT_W,
   clampPosition,
   clampRect,
+  isDefaultPlacementKey,
   placedRect,
   readAssistantWindow,
   saveAssistantWindow,
@@ -94,8 +95,14 @@ export function useAssistantWindow(
         setStyle({ left: viewport.left + spot.x, top: viewport.top + spot.y, right: 'auto', bottom: 'auto' })
         return
       }
-      // The default: the upper-center command-center anchor, capped above the bottom edge (and keyboard).
-      const dock = dockAssistant('center', viewport, box.width, box.height)
+      // The default: a card centered on the screen (the compact voice bar keeps the upper-center anchor),
+      // capped above the bottom edge (and keyboard).
+      const dock = small
+        ? dockAssistant('center', viewport, box.width, box.height)
+        : {
+            left: viewport.left + Math.max(ASSISTANT_GUTTER, (viewport.width - box.width) / 2),
+            top: viewport.top + Math.max(ASSISTANT_GUTTER, (viewport.height - box.height) / 2),
+          }
       setStyle({
         ...dock,
         maxHeight: Math.max(0, viewport.top + viewport.height - dock.top - ASSISTANT_GUTTER),
@@ -127,6 +134,11 @@ export function useAssistantWindow(
   useEffect(() => {
     if (!visible || small) return
     const onKey = (event: globalThis.KeyboardEvent) => {
+      if (isDefaultPlacementKey(event)) {
+        event.preventDefault()
+        reset()
+        return
+      }
       const next = snapForKey(event)
       if (!next) return
       event.preventDefault()
@@ -134,7 +146,7 @@ export function useAssistantWindow(
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [visible, small, snap])
+  }, [visible, small, snap, reset])
 
   const begin = (kind: Gesture['kind'], event: PointerEvent<HTMLElement>) => {
     const start = currentRect()
