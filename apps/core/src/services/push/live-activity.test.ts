@@ -324,7 +324,7 @@ test('slot lifecycle uses scoped, coalesced snapshot refresh and unregisters cle
   const timers = fakeTimers()
   const snapshots: string[] = []
   const lookups: unknown[] = []
-  const sent: unknown[] = []
+  const sent: Array<{ token: string; payload: unknown }> = []
   let waiting = true
   const fanout = registerLiveActivityFanout(
     {
@@ -346,9 +346,7 @@ test('slot lifecycle uses scoped, coalesced snapshot refresh and unregisters cle
       },
       loadSnapshot: undefined,
       hasApnsConfig: () => true,
-      listTokens: (async (user) => [
-        { ...UPDATE_TOKEN, userId: user, apnsToken: user },
-      ]) as LiveActivityFanoutDeps['listTokens'],
+      listTokens: async (userIds) => userIds.map((userId) => ({ ...UPDATE_TOKEN, userId, apnsToken: userId })),
       send: (async (token, payload) => {
         sent.push({ token, payload })
         return { ok: true, status: 200 }
@@ -365,6 +363,7 @@ test('slot lifecycle uses scoped, coalesced snapshot refresh and unregisters cle
     expect(timers.size).toBe(2)
     await timers.run()
     expect(snapshots.sort()).toEqual(['direct-user', 'squad-user'])
+    expect(sent.map((entry) => entry.token).sort()).toEqual(['direct-user', 'squad-user'])
     expect(sent).toHaveLength(2)
     waiting = false
     listeners.get('slots.updated')!({ squadId: 'affected' })
