@@ -18,4 +18,3 @@ RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
-@ALIAS@

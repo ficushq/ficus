@@ -187,9 +187,6 @@ COPY scripts/machine/browser/ficus-browser.js /opt/ficus/browser/service/ficus-b
 COPY scripts/machine/browser/verify-sandbox.js /opt/ficus/browser/service/verify-sandbox.js
 COPY scripts/machine/browser/ficus-browser-chromium.apparmor /etc/apparmor.d/ficus-browser-chromium
 COPY scripts/machine/browser/ficus-browser.service /etc/systemd/system/ficus-browser.service
-# The unit's one token line, @ALIAS@, names the unit it replaces — filled the
-# same way bootstrap.sh's write_browser_unit fills it.
-RUN sed -i 's/^@ALIAS@$/Alias=tau-browser.service/' /etc/systemd/system/ficus-browser.service # ficus-p5-bridge
 
 # Root-owned + world-readable browser tree (box users read the binaries); the
 # service user's HOME stays private + writable.

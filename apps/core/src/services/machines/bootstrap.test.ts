@@ -27,7 +27,6 @@ import {
 } from './bootstrap'
 import { buildBoxProvisionArtifact } from './box-provision-artifact'
 import { tarCodecFlag } from './box-manager'
-import { LEGACY_BOX_UNIT_PREFIX, LEGACY_USER_UNIT_PREFIX } from './box-paths'
 import { devboxInstallCommand } from './devbox-seed'
 import type { SshResult, SshRunner } from './ssh'
 
@@ -2015,7 +2014,6 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         '[Install]',
         'WantedBy=multi-user.target',
         // While the bridge lasts each unit's pre-rename name is its alias.
-        `Alias=${LEGACY_BOX_UNIT_PREFIX}-box_abc123abc123.service`,
         '# path: /etc/systemd/system/ficus-box-box_abc123abc123.socket',
         '[Unit]',
         'Description=Ficus sandbox server socket',
@@ -2027,7 +2025,6 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         '',
         '[Install]',
         'WantedBy=sockets.target',
-        `Alias=${LEGACY_BOX_UNIT_PREFIX}-box_abc123abc123.socket`,
         '# path: /etc/systemd/system/ficus-box-box_abc123abc123-proxy.service',
         '[Unit]',
         'Description=Ficus sandbox server socket proxy',
@@ -2087,7 +2084,6 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         '',
         '[Install]',
         'WantedBy=default.target',
-        `Alias=${LEGACY_USER_UNIT_PREFIX}.service`,
         '# path: /home/box_abc123abc123/.config/systemd/user/ficus-sandbox-server.socket',
         '[Unit]',
         'Description=Ficus sandbox server socket',
@@ -2099,7 +2095,6 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         '',
         '[Install]',
         'WantedBy=sockets.target',
-        `Alias=${LEGACY_USER_UNIT_PREFIX}.socket`,
         '# path: /home/box_abc123abc123/.config/systemd/user/ficus-sandbox-server-proxy.service',
         '[Unit]',
         'Description=Ficus sandbox server socket proxy',
@@ -2293,6 +2288,7 @@ describe.skipIf(!GNU_MV)('bootstrap.sh migrate_machine_root (temp root)', () => 
   const shims: Record<string, string> = {
     sudo: 'exec "$@"',
     pgrep: 'exit 1',
+    rm: 'for path in "$@"; do [ "$path" != "${STUB_FAIL_REMOVE:-}" ] || exit 76; done; exec /usr/bin/rm "$@"',
     apparmor_parser: [
       'echo "apparmor_parser $*" >>"$STUB_R/calls.log"',
       'profiles="$STUB_R/sys/kernel/security/apparmor/profiles"',
@@ -2338,13 +2334,14 @@ describe.skipIf(!GNU_MV)('bootstrap.sh migrate_machine_root (temp root)', () => 
       '  reset-failed) touch "$STUB_R/.runtime/reset" ;;',
       '  start) [ "${STUB_REQUIRE_RESET:-}" != 1 ] || [ -f "$STUB_R/.runtime/reset" ] || exit 1; [ "${STUB_START_INACTIVE:-}" != 1 ] || exit 0; printf "%s\\n" "$units" >"$STUB_R/.runtime/active" ;;',
       '  stop) : >"$STUB_R/.runtime/active" ;;',
+      '  reenable) "$0" disable $units && "$0" enable $units ;;',
       '  enable) for u in $units; do [ -e "$dir/$u" ] || exit 1',
       '      for t in $(installs WantedBy "$u"); do mkdir -p "$dir/$t.wants"; ln -sfn "$dir/$u" "$dir/$t.wants/$u"; done',
       '      for al in $(installs Alias "$u"); do if [ -e "$dir/$al" ] && [ ! -L "$dir/$al" ]; then exit 1; fi; ln -sfn "$dir/$u" "$dir/$al"; done',
       '    done ;;',
       '  disable) for u in $units; do',
       '      for l in "$dir"/*.wants/"$u"; do [ -L "$l" ] && rm -f "$l"; done',
-      '      for al in $(installs Alias "$u"); do [ -L "$dir/$al" ] && rm -f "$dir/$al"; done',
+      '      for l in "$dir"/* "$dir"/*.wants/*; do [ -L "$l" ] || continue; target=$(readlink "$l"); if [ "$target" = "$dir/$u" ] || [ "$target" = "$u" ]; then rm "$l"; fi; done',
       '    done; exit 0 ;;',
       '  is-enabled) for u in $units; do for l in "$dir"/*.wants/"$u"; do [ -L "$l" ] && exit 0; done; done; exit 1 ;;',
       '  is-active) for u in $units; do case " $(cat "$STUB_R/.runtime/active") " in *" $u "*) echo active; exit 0 ;; esac; done; echo inactive; exit 3 ;;',
@@ -2464,6 +2461,81 @@ describe.skipIf(!GNU_MV)('bootstrap.sh migrate_machine_root (temp root)', () => 
     return existsSync(root) ? readdirSync(root).filter((n) => n.startsWith('machine-')) : []
   }
   const calls = (r: string) => readFileSync(join(r, 'calls.log'), 'utf8')
+
+  it('normal bootstrap refuses a legacy host before runtime or filesystem changes', async () => {
+    const r = makeLegacyMachine()
+    const before = snapshot(r)
+    const result = await bash(r, 'main')
+    expect(result.code).toBe(3)
+    expect(result.stderr).toContain('ficus-host-layout-bridge')
+    expect(snapshot(r)).toBe(before)
+    expect(calls(r)).not.toMatch(/systemctl (stop|start|restart|enable|disable)/)
+  })
+
+  it('finalizes exact machine/runtime bridges without changing accounts, data or activity', async () => {
+    const r = makeLegacyMachine()
+    expect((await bash(r, 'migrate_machine_root')).code).toBe(0)
+    const passwd = readFileSync(join(r, 'fakedb/passwd'), 'utf8')
+    const group = readFileSync(join(r, 'fakedb/group'), 'utf8')
+    const active = readFileSync(join(r, '.runtime/active'), 'utf8')
+    const result = await bash(r, 'finalize_machine_layout')
+    expect(result.code).toBe(0)
+    expect(existsSync(join(r, legacy.root))).toBe(false)
+    expect(existsSync(join(r, `run/${legacy.browser}`))).toBe(false)
+    expect(existsSync(join(r, 'etc/tmpfiles.d/ficus-browser-bridge.conf'))).toBe(false)
+    expect(existsSync(join(r, `etc/systemd/system/${legacy.browser}.service`))).toBe(false)
+    expect(readFileSync(join(r, 'etc/systemd/system/ficus-browser.service'), 'utf8')).not.toContain('Alias=')
+    expect(readFileSync(join(r, 'opt/ficus/server/server.js'), 'utf8')).toBe('old server\n')
+    expect(readFileSync(join(r, 'opt/ficus/browser-tokens/box_0123456789ab.token'), 'utf8')).toBe('digest\n')
+    expect(readFileSync(join(r, 'fakedb/passwd'), 'utf8')).toBe(passwd)
+    expect(readFileSync(join(r, 'fakedb/group'), 'utf8')).toBe(group)
+    expect(readFileSync(join(r, '.runtime/active'), 'utf8')).toBe(active)
+    const before = snapshot(r)
+    expect((await bash(r, 'finalize_machine_layout')).code).toBe(0)
+    expect(snapshot(r)).toBe(before)
+  })
+
+  it('preserves foreign and dangling compatibility targets and unknown tmpfiles contents', async () => {
+    const r = makeLegacyMachine()
+    expect((await bash(r, 'migrate_machine_root')).code).toBe(0)
+    rmSync(join(r, legacy.root))
+    symlinkSync('/srv/foreign-does-not-exist', join(r, legacy.root))
+    rmSync(join(r, `run/${legacy.browser}`))
+    symlinkSync('foreign-does-not-exist', join(r, `run/${legacy.browser}`))
+    put(r, 'etc/tmpfiles.d/ficus-browser-bridge.conf', '# operator-owned\n')
+    const result = await bash(r, 'finalize_machine_layout')
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain('foreign')
+    expect(readlinkSync(join(r, legacy.root))).toBe('/srv/foreign-does-not-exist')
+    expect(readlinkSync(join(r, `run/${legacy.browser}`))).toBe('foreign-does-not-exist')
+    expect(readFileSync(join(r, 'etc/tmpfiles.d/ficus-browser-bridge.conf'), 'utf8')).toBe('# operator-owned\n')
+  })
+
+  it('retries partial exact-link cleanup after an unlink failure without data or runtime loss', async () => {
+    const r = makeLegacyMachine()
+    expect((await bash(r, 'migrate_machine_root')).code).toBe(0)
+    const active = readFileSync(join(r, '.runtime/active'), 'utf8')
+    const result = await bash(r, 'finalize_machine_layout', { STUB_FAIL_REMOVE: join(r, legacy.root) })
+    expect(result.code).not.toBe(0)
+    expect(readlinkSync(join(r, legacy.root))).toBe('ficus')
+    expect(readFileSync(join(r, '.runtime/active'), 'utf8')).toBe(active)
+    expect((await bash(r, 'finalize_machine_layout')).code).toBe(0)
+    expect(existsSync(join(r, legacy.root))).toBe(false)
+    expect(readFileSync(join(r, 'opt/ficus/server/server.js'), 'utf8')).toBe('old server\n')
+    expect(readFileSync(join(r, '.runtime/active'), 'utf8')).toBe(active)
+  })
+
+  it('normal bootstrap refuses pending bridge recovery before effects', async () => {
+    const r = makeLegacyMachine()
+    expect((await bash(r, 'migrate_machine_root')).code).toBe(0)
+    put(r, 'var/backups/ficus-host-migrate/machine-pending/STEPS', 'S3\n')
+    const before = snapshot(r)
+    const result = await bash(r, 'main')
+    expect(result.code).toBe(3)
+    expect(result.stderr).toContain('ficus-host-layout-bridge')
+    expect(snapshot(r)).toBe(before)
+    expect(existsSync(join(r, 'var/backups/ficus-host-migrate/machine-pending/REVERSED'))).toBe(false)
+  })
 
   it('reads its old names from bridge constants', () => {
     expect(legacy.root).toMatch(/^\/opt\/[a-z]+$/)
@@ -2758,9 +2830,10 @@ describe.skipIf(!GNU_MV)('bootstrap.sh migrate_machine_root (temp root)', () => 
     )
   }
 
-  it('main runs the migration first, before the prebaked check reads the marker', () => {
+  it('main refuses old layouts before install and finalizes before stamping', () => {
     const main = bootstrapSh.slice(bootstrapSh.indexOf('\nmain() {'))
-    expect(main.indexOf('migrate_machine_root')).toBeGreaterThan(0)
-    expect(main.indexOf('migrate_machine_root')).toBeLessThan(main.indexOf('PREBAKED_MARKER}" ]'))
+    expect(main.indexOf('require_machine_layout_ready')).toBeGreaterThan(0)
+    expect(main.indexOf('require_machine_layout_ready')).toBeLessThan(main.indexOf('PREBAKED_MARKER}" ]'))
+    expect(main.indexOf('finalize_machine_layout')).toBeLessThan(main.indexOf('write_manifest'))
   })
 })

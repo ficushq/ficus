@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Machine } from './queries'
+import { LEGACY_BOX_UNIT_PREFIX, LEGACY_USER_UNIT_PREFIX, LEGACY_BOX_DOT_DIR } from './box-paths'
 import {
   LEGACY_BROWSER_NAME,
   LEGACY_MACHINE_ROOT,
+  MACHINE_LAYOUT_PREFLIGHT_PROGRAM,
   machineLayoutPreflightCommand,
   requiresMachineLayoutMigration,
 } from './machine-layout-preflight'
@@ -56,6 +58,14 @@ const ready = 'FICUS_MACHINE_LAYOUT=ready\n'
 const required = 'FICUS_MACHINE_LAYOUT=operator-required\n'
 
 describe('machine layout automatic-bootstrap preflight', () => {
+  it('keeps both standalone privileged guards byte-identical to the executed Core probe', () => {
+    for (const name of ['bootstrap.sh', 'box-provision.sh']) {
+      const script = readFileSync(join(import.meta.dir, '../../../../../scripts/machine', name), 'utf8')
+      const embedded = script.split("<<'FICUS_LAYOUT_PREFLIGHT'\n")[1]?.split('\nFICUS_LAYOUT_PREFLIGHT')[0]
+      expect(embedded).toBe(MACHINE_LAYOUT_PREFLIGHT_PROGRAM)
+    }
+  })
+
   it('allows a fresh host without creating any machine paths', async () => {
     const f = fixture()
     expect(await f.run()).toEqual({ exitCode: 0, stdout: ready, stderr: '' })
@@ -81,6 +91,9 @@ describe('machine layout automatic-bootstrap preflight', () => {
     ['old AppArmor profile', `etc/apparmor.d/${LEGACY_BROWSER_NAME}-chromium`],
     ['old program inside new root', `opt/ficus/browser/service/${LEGACY_BROWSER_NAME}.js`],
     ['interrupted journal', 'var/backups/ficus-host-migrate/machine-pending/STEPS'],
+    ['legacy system box unit', `etc/systemd/system/${LEGACY_BOX_UNIT_PREFIX}-box_0123456789ab.service`],
+    ['legacy user box unit', `home/box_0123456789ab/.config/systemd/user/${LEGACY_USER_UNIT_PREFIX}.service`],
+    ['real legacy box home', `home/box_0123456789ab/${LEGACY_BOX_DOT_DIR}/server.env`],
   ]) {
     it(`defers a host with ${name}`, async () => {
       const f = fixture()

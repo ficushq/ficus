@@ -142,7 +142,7 @@ else
     printf 'root:x:0:\nficus-browser:x:998:\n' >"${R}/fakedb/group"
     shim sudo 'if [ "$1" = -u ]; then shift 2; fi; exec "$@"'
     shim runuser 'shift 3; exec "$@"'
-    shim getent 'grep -m1 "^$2:" "$STUB_R/fakedb/$1"'
+    shim getent 'grep -m1 "^$2:" "$STUB_R/fakedb/$1" || exit 2'
     shim id '
 if [ "$1" = -nG ]; then
   printf "%s" "$2"
@@ -179,10 +179,10 @@ esac
 exit 0'
     shim systemctl '
 echo "systemctl $*" >>"$STUB_R/calls.log"
-dir="$STUB_R/etc/systemd/system"; verb=""; units=""
+dir="$STUB_R/etc/systemd/system"; verb=""; units=""; manager_args=()
 for a in "$@"; do
   case "$a" in
-    --machine=*) u=${a#--machine=}; u=${u%@.host}; dir="$(grep -m1 "^$u:" "$STUB_R/fakedb/passwd" | cut -d: -f6)/.config/systemd/user" ;;
+    --machine=*) u=${a#--machine=}; u=${u%@.host}; manager_args=("$a" --user); dir="$(grep -m1 "^$u:" "$STUB_R/fakedb/passwd" | cut -d: -f6)/.config/systemd/user" ;;
     -*) ;;
     *) if [ -z "$verb" ]; then verb=$a; else units="$units $a"; fi ;;
   esac
@@ -206,6 +206,7 @@ case "$verb" in
       [ ! -f "$STUB_R/fakedb/fail-manager-stop" ] || exit 89
       rm -f "$STUB_R/fakedb/manager-groups" ;;
     esac ;;
+  reenable) "$0" "${manager_args[@]}" disable $units || exit $?; "$0" "${manager_args[@]}" enable $units ;;
   enable) [ ! -f "$STUB_R/fakedb/fail-enable" ] || exit 87
     for u in $units; do [ -e "$dir/$u" ] || exit 1
       touch "$STUB_R/fakedb/active-$u"
@@ -215,7 +216,11 @@ case "$verb" in
   disable) [ ! -f "$STUB_R/fakedb/fail-disable" ] || exit 88
     for u in $units; do
       for l in "$dir"/*.wants/"$u"; do [ -L "$l" ] && rm -f "$l"; done
-      for al in $(installs Alias "$u"); do [ -L "$dir/$al" ] && rm -f "$dir/$al"; done
+      for l in "$dir"/* "$dir"/*.wants/*; do
+        [ -L "$l" ] || continue
+        target=$(readlink "$l")
+        if [ "$target" = "$dir/$u" ] || [ "$target" = "$u" ]; then rm "$l"; fi
+      done
     done ;;
 esac
 exit 0'
@@ -259,7 +264,38 @@ exit 0'
     fi
   }
 
+  make_bridge_box() { # Already migrated by U4, with compatibility links only.
+    make_legacy_box "$1"
+    local home="$R/home/$BOX" dir old new ext
+    mv "$home/$L_DOT" "$home/.ficus"
+    ln -s .ficus "$home/$L_DOT"
+    if [ "$1" = system ]; then
+      dir="$R/etc/systemd/system"; old="$L_SYS-$BOX"; new="ficus-box-$BOX"
+      rm -rf "$dir/$old.slice.d"
+    else
+      dir="$home/.config/systemd/user"; old="$L_USER"; new=ficus-sandbox-server
+    fi
+    for ext in service socket '-proxy.service'; do
+      case $ext in -*) mv "$dir/$old$ext" "$dir/$new$ext" ;; *) mv "$dir/$old.$ext" "$dir/$new.$ext" ;; esac
+    done
+    rm "$dir/sockets.target.wants/$old.socket"
+    ln -s "$dir/$new.socket" "$dir/sockets.target.wants/$new.socket"
+    for ext in service socket; do ln -s "$dir/$new.$ext" "$dir/$old.$ext"; done
+  }
+
   is_link_to() { [[ -L $1 && $(readlink "$1") == "$2" ]] && echo yes || echo no; }
+
+  # C-FIN must refuse any old machine/box layout before touching accounts or units.
+  for mode in system user; do
+    make_host
+    make_legacy_box "$mode"
+    before=$(host_snapshot)
+    provision --sandbox-id agent_x --unit-mode "$mode"
+    expect_eq "old $mode layout refuses before finalize" "$PROV_RC" '3'
+    expect_eq "old $mode layout refusal preserves all files" "$(host_snapshot)" "$before"
+    expect_eq "old $mode layout refusal names required bridge" "$(grep -c ficus-host-layout-bridge "$R/stderr.log" || true)" '1'
+    rm -rf "$R"
+  done
 
   # -- a fresh system-mode box ------------------------------------------------
   make_host
@@ -270,12 +306,12 @@ exit 0'
   expect_eq 'fresh system box: the uid is the only stdout line' "$(cat "${R}/stdout.log")" 'FICUS_BOX_UID=1001'
   expect_eq 'fresh system box: the socket is enabled under the Ficus name' \
     "$(is_link_to "${S}/sockets.target.wants/ficus-box-${BOX}.socket" "${S}/ficus-box-${BOX}.socket")" 'yes'
-  expect_eq 'fresh system box: the server unit carries its legacy name as an Alias' \
-    "$(grep -c "^Alias=${L_SYS}-${BOX}.service$" "${S}/ficus-box-${BOX}.service")" '1'
-  expect_eq 'fresh system box: the socket unit carries its legacy name as an Alias' \
-    "$(grep -c "^Alias=${L_SYS}-${BOX}.socket$" "${S}/ficus-box-${BOX}.socket")" '1'
-  expect_eq 'fresh system box: the enabled alias is a link, not a unit file' \
-    "$(is_link_to "${S}/${L_SYS}-${BOX}.socket" "${S}/ficus-box-${BOX}.socket")" 'yes'
+  expect_eq 'fresh system box: the server unit has no legacy Alias' \
+    "$(grep -c '^Alias=' "${S}/ficus-box-${BOX}.service" || true)" '0'
+  expect_eq 'fresh system box: the socket unit has no legacy Alias' \
+    "$(grep -c '^Alias=' "${S}/ficus-box-${BOX}.socket" || true)" '0'
+  expect_eq 'fresh system box: no enabled legacy alias remains' \
+    "$(is_link_to "${S}/${L_SYS}-${BOX}.socket" "${S}/ficus-box-${BOX}.socket")" 'no'
   expect_eq 'fresh system box: the unit runs from /opt/ficus with the .ficus env files' \
     "$(grep -c -e '^ExecStart=/opt/ficus/bin/bun /opt/ficus/server/server.js --service-cgroup$' \
       -e "^EnvironmentFile=-${H}/.ficus/server.env$" -e '^Environment=FICUS_BROWSER_SOCK=/run/ficus-browser/sock$' \
@@ -283,7 +319,7 @@ exit 0'
   expect_eq 'fresh system box: slice limits under the Ficus slice' \
     "$([[ -f ${S}/ficus-box-${BOX}.slice.d/50-ficus-box.conf ]] && echo yes || echo no)" 'yes'
   expect_eq 'fresh system box: host.env lands in ~/.ficus' "$([[ -f ${H}/.ficus/host.env ]] && echo yes || echo no)" 'yes'
-  expect_eq 'fresh system box: the legacy dot dir name links to .ficus' "$(is_link_to "${H}/${L_DOT}" .ficus)" 'yes'
+  expect_eq 'fresh system box: no home bridge is created' "$(is_link_to "${H}/${L_DOT}" .ficus)" 'no'
   before=$(host_snapshot)
   provision --sandbox-id agent_x --unit-mode system
   expect_eq 'fresh system box: a second run succeeds' "${PROV_RC}" '0'
@@ -324,7 +360,7 @@ exit 0'
 
   # -- a system-mode box the previous release provisioned ---------------------
   make_host
-  make_legacy_box system
+  make_bridge_box system
   provision --sandbox-id agent_x --unit-mode system
   S="${R}/etc/systemd/system"
   H="${R}/home/${BOX}"
@@ -333,8 +369,8 @@ exit 0'
     expect_eq "legacy system box: no ${u} unit file is left" \
       "$([[ -f ${S}/${u} && ! -L ${S}/${u} ]] && echo file || echo none)" 'none'
   done
-  expect_eq 'legacy system box: the legacy units were stopped, socket first' \
-    "$(grep -c "^systemctl stop ${L_SYS}-${BOX}.socket ${L_SYS}-${BOX}-proxy.service ${L_SYS}-${BOX}.service$" "${R}/calls.log")" '1'
+  expect_eq 'bridged system box: no legacy unit is stopped' \
+    "$(grep -c "^systemctl stop ${L_SYS}-${BOX}.socket ${L_SYS}-${BOX}-proxy.service ${L_SYS}-${BOX}.service$" "${R}/calls.log" || true)" '0'
   expect_eq 'legacy system box: the legacy enable link is gone' \
     "$([[ -e ${S}/sockets.target.wants/${L_SYS}-${BOX}.socket ]] && echo present || echo gone)" 'gone'
   expect_eq 'legacy system box: the legacy slice drop-in is gone' \
@@ -343,7 +379,7 @@ exit 0'
     "$(is_link_to "${S}/sockets.target.wants/ficus-box-${BOX}.socket" "${S}/ficus-box-${BOX}.socket")" 'yes'
   expect_eq 'legacy system box: server.env moved with the dot dir' "$(cat "${H}/.ficus/server.env")" 'EXECUTOR_AUTH_TOKEN=secret'
   expect_eq 'legacy system box: the devbox moved with it' "$([[ -f ${H}/.ficus/devbox/devbox.json ]] && echo yes || echo no)" 'yes'
-  expect_eq 'legacy system box: the legacy dot dir name is a relative link to .ficus' "$(is_link_to "${H}/${L_DOT}" .ficus)" 'yes'
+  expect_eq 'bridged system box: exact home bridge is removed' "$(is_link_to "${H}/${L_DOT}" .ficus)" 'no'
   before=$(host_snapshot)
   provision --sandbox-id agent_x --unit-mode system
   expect_eq 'legacy system box: a second run changes nothing' "$(host_snapshot)" "${before}"
@@ -358,9 +394,9 @@ exit 0'
   expect_eq 'fresh user box: ficus-sandbox-server.socket is enabled in the user manager' \
     "$(is_link_to "${U}/sockets.target.wants/ficus-sandbox-server.socket" "${U}/ficus-sandbox-server.socket")" 'yes'
   expect_eq 'fresh user box: the enable went to the box user manager' \
-    "$(grep -c "^systemctl --machine=${BOX}@.host --user enable --now ficus-sandbox-server.socket$" "${R}/calls.log")" '1'
-  expect_eq 'fresh user box: its legacy name is the alias link' \
-    "$(is_link_to "${U}/${L_USER}.socket" "${U}/ficus-sandbox-server.socket")" 'yes'
+    "$(grep -c "^systemctl --machine=${BOX}@.host --user reenable --now ficus-sandbox-server.socket$" "${R}/calls.log")" '1'
+  expect_eq 'fresh user box: no legacy alias remains' \
+    "$(is_link_to "${U}/${L_USER}.socket" "${U}/ficus-sandbox-server.socket")" 'no'
   expect_eq 'fresh user box: its first manager inherits browser membership' \
     "$(grep -c -w ficus-browser "${R}/fakedb/manager-groups" || true)" '1'
   expect_eq 'fresh user box: no existing manager needs stopping' \
@@ -368,7 +404,7 @@ exit 0'
   rm -rf "${R}"
 
   make_host
-  make_legacy_box user
+  make_bridge_box user
   provision --sandbox-id squad_x --unit-mode user
   H="${R}/home/${BOX}"
   U="${H}/.config/systemd/user"
@@ -399,7 +435,7 @@ exit 0'
 
   # A failed stop must not add membership and make the retry skip its refresh.
   make_host
-  make_legacy_box user
+  make_bridge_box user
   H="${R}/home/${BOX}"
   mkdir -p "${H}/workspace"
   printf 'keep workspace\n' >"${H}/workspace/keep"
@@ -418,29 +454,53 @@ exit 0'
   expect_eq 'manager refresh: server env survives' "$(cat "${H}/.ficus/server.env")" 'EXECUTOR_AUTH_TOKEN=secret'
   rm -rf "${R}"
 
-  # -- a HOME whose new box server already wrote .ficus beside the legacy dir ---
+  # Both real dot directories require explicit bridge recovery, never finalize.
   make_host
   make_legacy_box system
-  H="${R}/home/${BOX}"
-  mkdir -p "${H}/${L_DOT}/runtime" "${H}/.ficus/runtime"
-  printf 'old\n' >"${H}/${L_DOT}/runtime/record"
-  printf 'new\n' >"${H}/.ficus/runtime/record"
+  H="$R/home/$BOX"
+  mkdir -p "$H/$L_DOT/runtime" "$H/.ficus/runtime"
+  printf 'old\n' >"$H/$L_DOT/runtime/record"
+  printf 'new\n' >"$H/.ficus/runtime/record"
+  before=$(host_snapshot)
   provision --sandbox-id agent_x --unit-mode system
-  expect_eq 'both dot dirs: provision succeeds' "${PROV_RC}" '0'
-  expect_eq 'both dot dirs: entries only the legacy dir had move over' "$(cat "${H}/.ficus/server.env")" 'EXECUTOR_AUTH_TOKEN=secret'
-  expect_eq 'both dot dirs: the newer entry is kept' "$(cat "${H}/.ficus/runtime/record")" 'new'
-  expect_eq 'both dot dirs: the clashing legacy entry is kept aside, not deleted' \
-    "$(cat "${H}"/.ficus/.before-rename-*/runtime/record 2>/dev/null)" 'old'
-  expect_eq 'both dot dirs: the legacy name links to .ficus' "$(is_link_to "${H}/${L_DOT}" .ficus)" 'yes'
-  rm -rf "${R}"
+  expect_eq 'both real dot dirs: normal finalize refuses' "$PROV_RC" '3'
+  expect_eq 'both real dot dirs: refusal preserves data' "$(host_snapshot)" "$before"
+  # The old one-shot merge program is retained and can still recover this case.
+  program=$(python3 -c 'import sys; s=open(sys.argv[1]).read(); print(s.split("HOME_DOT_DIR_PROGRAM="+chr(39),1)[1].split(chr(39)+"\n\nmigrate_home_dot_dir",1)[0],end="")' "$TARGET")
+  bash -c "$program" recovery "$H" "$L_DOT" .ficus
+  expect_eq 'explicit recovery: keeps newer collision' "$(cat "$H/.ficus/runtime/record")" new
+  expect_eq 'explicit recovery: preserves older collision' "$(cat "$H"/.ficus/.before-rename-*/runtime/record)" old
+  rm -rf "$R"
+
+  # Exact global/home links are removed; custom and dangling foreign targets survive.
+  make_host
+  make_bridge_box system
+  ln -s ficus "$R$L_ROOT"
+  mkdir -p "$R/opt/ficus/server"
+  printf 'durable data\n' >"$R/opt/ficus/server/keep"
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'finalize: exact machine link removed' "$([[ -L $R$L_ROOT ]] && echo present || echo absent)" absent
+  expect_eq 'finalize: target data unchanged' "$(cat "$R/opt/ficus/server/keep")" 'durable data'
+  expect_eq 'finalize: old service alias removed' "$([[ -L $R/etc/systemd/system/$L_SYS-$BOX.service ]] && echo present || echo absent)" absent
+  expect_eq 'finalize: old socket alias removed' "$([[ -L $R/etc/systemd/system/$L_SYS-$BOX.socket ]] && echo present || echo absent)" absent
+  ln -s /srv/foreign-missing "$R$L_ROOT"
+  ln -s foreign-missing "$R/home/$BOX/$L_DOT"
+  ln -s /srv/foreign-unit "$R/etc/systemd/system/$L_SYS-$BOX.service"
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'foreign links: provisioning succeeds' "$PROV_RC" 0
+  expect_eq 'foreign links: machine target preserved' "$(readlink "$R$L_ROOT")" /srv/foreign-missing
+  expect_eq 'foreign links: box-home target preserved' "$(readlink "$R/home/$BOX/$L_DOT")" foreign-missing
+  expect_eq 'foreign links: unit target preserved' "$(readlink "$R/etc/systemd/system/$L_SYS-$BOX.service")" /srv/foreign-unit
+  expect_eq 'foreign links: warning emitted' "$(grep -c 'leaving foreign' "$R/stderr.log")" 2
+  rm -rf "$R"
 
   # -- a machine whose root has not been migrated yet ---------------------------
   make_host
   mkdir -p "${R}${L_ROOT}/bin"
   provision --sandbox-id agent_x --unit-mode system
   expect_eq 'unmigrated machine root: provisioning refuses' "${PROV_RC}" '3'
-  expect_eq 'unmigrated machine root: the refusal says to re-bootstrap' \
-    "$(grep -c 're-bootstrap' "${R}/stderr.log")" '1'
+  expect_eq 'unmigrated machine root: the refusal names the bridge release' \
+    "$(grep -c 'ficus-host-layout-bridge' "${R}/stderr.log")" '1'
   expect_eq 'unmigrated machine root: nothing was installed' \
     "$(find "${R}/etc/systemd/system" -name 'ficus-box-*' | wc -l | tr -d ' ')" '0'
   rm -rf "${R}"
