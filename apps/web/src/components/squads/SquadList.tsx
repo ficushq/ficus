@@ -248,12 +248,13 @@ function SquadCardContent({
         )}
       </div>
       <p className="text-sm text-secondary line-clamp-2 mb-3">{squad.purpose}</p>
-      <div className="flex items-center gap-3 text-xs text-muted">
+      {/* Pinned to the card's bottom, so a short description still lines it up across a row. */}
+      <div className="mt-auto flex items-center gap-3 text-xs text-muted">
         <span>
           {activeWorkStreams} active work {activeWorkStreams === 1 ? 'stream' : 'streams'}
         </span>
         <span>
-          {activeAgents}/{countableAgents.length} active agents
+          {activeAgents} active {activeAgents === 1 ? 'agent' : 'agents'}
         </span>
       </div>
     </>
@@ -295,7 +296,7 @@ function SortableSquadCard({
       >
         <DragHandleIcon className="w-4 h-4" />
       </button>
-      <Link to={`/squads/${slugFor(squad.id)}`} className="block p-5">
+      <Link to={`/squads/${slugFor(squad.id)}`} className="flex h-full flex-col p-5">
         <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} />
       </Link>
     </div>
@@ -305,7 +306,7 @@ function SortableSquadCard({
 function SquadCard({ squad, agents, workStreams }: { squad: Squad; agents: Agent[]; workStreams: WorkStream[] }) {
   const { slugFor } = useSquadSlugs()
   return (
-    <Link to={`/squads/${slugFor(squad.id)}`} className="ficus-panel ficus-interactive-card block p-5">
+    <Link to={`/squads/${slugFor(squad.id)}`} className="ficus-panel ficus-interactive-card flex flex-col p-5">
       <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} />
     </Link>
   )
