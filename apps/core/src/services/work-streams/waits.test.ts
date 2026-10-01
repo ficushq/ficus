@@ -1,3 +1,4 @@
+import { getPostgresError } from '../../db/errors'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { and, eq, isNull, like, sql } from 'drizzle-orm'
@@ -72,7 +73,10 @@ describe('work-stream waits service', () => {
     } catch (error) {
       violation = error
     }
-    expect(String(violation)).toContain('idx_work_stream_waits_one_open_review')
+    expect(getPostgresError(violation)).toEqual({
+      code: '23505',
+      constraint: 'idx_work_stream_waits_one_open_review',
+    })
     // Other types stack freely.
     await db.insert(workStreamWaits).values({ workStreamId: ws.id, type: 'manual' })
     await db.insert(workStreamWaits).values({ workStreamId: ws.id, type: 'manual' })

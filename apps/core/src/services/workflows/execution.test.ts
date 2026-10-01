@@ -1,3 +1,4 @@
+import { getPostgresError } from '../../db/errors'
 import { externalDeliveryStreamIds } from './delivery-state'
 import { listPendingActions } from '../agents/actions'
 import { EMPTY_USER_ATTENTION } from '../attention/resolver'
@@ -1230,8 +1231,10 @@ describe('attempt-scoped waits', () => {
     try {
       await locked.promise
       await expect(
-        db.transaction((tx) => tx.execute(sql`SELECT id FROM work_streams WHERE id = ${id} FOR UPDATE NOWAIT`))
-      ).rejects.toThrow('could not obtain lock')
+        db
+          .transaction((tx) => tx.execute(sql`SELECT id FROM work_streams WHERE id = ${id} FOR UPDATE NOWAIT`))
+          .catch(getPostgresError)
+      ).resolves.toEqual({ code: '55P03' })
     } finally {
       release.resolve()
       await question

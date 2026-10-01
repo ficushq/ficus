@@ -371,11 +371,13 @@ describe('agent scopes endpoints', () => {
       })
       for (let i = 0; i < 2; i++)
         requests.push(
-          app.request(`/api/agents/${agent.id}/scopes`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-            body: JSON.stringify({ permission: 'sandbox:logs' }),
-          })
+          Promise.resolve(
+            app.request(`/api/agents/${agent.id}/scopes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+              body: JSON.stringify({ permission: 'sandbox:logs' }),
+            })
+          )
         )
       await Promise.race([
         attempted,

@@ -1,3 +1,4 @@
+import { getPostgresError } from '../db/errors'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { db, setDatabaseQueryObserverForTest, withDedicatedDbTransaction } from '../db'
@@ -107,8 +108,8 @@ describe('Subagent.dispatch', () => {
       await expect(
         withDedicatedDbTransaction(async (tx) => {
           await tx.execute(sql`SELECT id FROM ${agents} WHERE id = ${parent.id} FOR NO KEY UPDATE NOWAIT`)
-        })
-      ).rejects.toMatchObject({ code: '55P03' })
+        }).catch(getPostgresError)
+      ).resolves.toEqual({ code: '55P03' })
       setDatabaseQueryObserverForTest((query, params) => {
         if (query.endsWith(' for update') && params.includes(parent.id)) terminating.resolve()
       })
