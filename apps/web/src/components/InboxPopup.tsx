@@ -175,7 +175,8 @@ export function InboxPopup() {
                 <div className="mt-2 border-t border-panel-border pt-2">
                   <button
                     onClick={() => setShowRead(!showRead)}
-                    className="ficus-button w-full rounded-lg py-2 pl-6 pr-3 flex items-center gap-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+                    // Its focus ring sits inside: outside, the scrolling list clips it and it spills past the popup's edge.
+                    className="ficus-button w-full rounded-lg py-2 pl-6 pr-3 flex items-center gap-2 text-sm text-muted hover:text-primary hover:bg-surface-hover focus-visible:outline-offset-[-2px]"
                   >
                     {showRead ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
                     <span>Read messages ({readMessages.length})</span>
