@@ -50,6 +50,27 @@ describe('workstream CLI commands', () => {
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
 
+  it('preserves metadata lookup encoding, multiple criteria and legacy status filters', async () => {
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce([])
+    ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
+    await run([
+      'workstream',
+      'find-by-meta',
+      '--match',
+      'github.pr.number=42',
+      '--match',
+      "owner's=O'Reilly:books=α",
+      '--status',
+      'in_progress',
+    ])
+    const requestPath = (apiGet as ReturnType<typeof mock>).mock.calls[0][0] as string
+    const url = new URL(requestPath, 'http://localhost')
+    expect(url.pathname).toBe('/api/workstreams/by-metadata')
+    expect(url.searchParams.getAll('match')).toEqual(['github.pr.number:42', "owner's:O'Reilly:books=α"])
+    expect(url.searchParams.get('status')).toBe('active')
+    expect(outputError).not.toHaveBeenCalled()
+  })
+
   it('supports agent-only terminal observation without using user subscriptions', async () => {
     await run(['workstream', 'create', 'Observe result', '--squad', 'squad-1', '--observe', 'terminal'])
     expect(apiPost).toHaveBeenLastCalledWith('/api/workstreams', expect.objectContaining({ observe: 'terminal' }))
