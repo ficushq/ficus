@@ -6,6 +6,25 @@ UUIDs remain internal keys and are still returned as `id`; API objects additiona
 
 Examples: `ficus workstream get 42`, `ficus workstream get '#42'`, and `GET /api/workstreams/42`. Existing UUID links remain valid. Agent chats can use `[#42](ficus:ws:42)`; bare work numbers in prose are also linked, while code and explicit PR/issue references are preserved.
 
+## Metadata lookup
+
+Use `ficus workstream find-by-meta --match github.pr.number=42 --match github.repo=org/repo`
+to match all criteria, optionally with `--status active`. The API equivalent is
+`GET /api/workstreams/by-metadata?match=github.pr.number:42&match=github.repo:org/repo`.
+The route requires the existing unscoped `workstreams:read` permission and limits the
+database lookup to the caller's accessible squads; it does not grant access to other squads.
+Privileged global identities retain their existing visibility and action-scope checks.
+
+Paths are dot-separated, non-empty JSON object keys, matched case-sensitively without
+trimming. Quotes, backslashes, whitespace, Unicode and SQL-looking text are literal key
+data, not SQL syntax. Empty paths, empty segments (such as `a..b`) and NUL in paths or
+values are rejected. Values may be empty or contain colons and equals signs. Numeric
+metadata values match their text representation; numeric path keys remain object keys,
+not array indexes. Dot notation cannot address keys containing literal dots, and the API's
+first-colon separator cannot address keys containing colons. Repeated criteria for the
+same path retain the last value. These lookups use bound query parameters for every path
+segment and value.
+
 ## Tracked issues and pull requests
 
 A work stream can track any number of GitHub issues and pull requests, and any
