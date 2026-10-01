@@ -314,6 +314,9 @@ export async function updateLocalDeploymentRecord(
   const conditions = [eq(localDeployments.id, id)]
   if (guard.expectedRecord) {
     const expected = guard.expectedRecord
+    // Null or omitted identity means no session, never a wildcard. Normalize
+    // before building SQL so an optional processId cannot reach eq as undefined.
+    const expectedProcessId = expected.processId ?? null
     const timestamp = new Date(expected.updatedAt)
     // PostgreSQL defaults retain microseconds, while the API Date retains only
     // milliseconds. Match that millisecond plus lifecycle fields, rather than
@@ -322,9 +325,9 @@ export async function updateLocalDeploymentRecord(
       gte(localDeployments.updatedAt, timestamp),
       lt(localDeployments.updatedAt, new Date(timestamp.getTime() + 1)),
       eq(localDeployments.status, expected.status),
-      expected.processId === null
+      expectedProcessId === null
         ? isNull(localDeployments.processId)
-        : eq(localDeployments.processId, expected.processId),
+        : eq(localDeployments.processId, expectedProcessId),
       eq(localDeployments.restartCount, expected.restartCount)
     )
   }
