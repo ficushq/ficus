@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { Machine, MachineBox } from './queries'
-import { boxUnixUser } from './box-paths'
+import { boxUnixUser, boxUnitMode } from './box-paths'
 import type { BoxEnv, InstallBoxOpts } from './box-manager'
 
 export type RuntimeState = {
@@ -46,7 +46,8 @@ function refuse(reason: string): never {
   throw new ReprovisionError(reason)
 }
 export function reprovisionRole(id: string): InstallBoxOpts['role'] {
-  if (/^agent_[A-Za-z0-9._:-]+$/.test(id)) return 'agent'
+  // Consultants use the VM agent role, but retain their user-mode units.
+  if (/^(agent|consultants)_[A-Za-z0-9._:-]+$/.test(id)) return 'agent'
   if (/^squad_[A-Za-z0-9._:-]+$/.test(id)) return 'squad'
   if (/^system_manager_[A-Za-z0-9._:-]+$/.test(id)) return 'system-manager'
   return refuse('unknown-box-role')
@@ -148,7 +149,7 @@ export async function runBoxReprovision(target: string, deps: ReprovisionDeps): 
       const runtime = saved && !saved.done ? saved.runtime : await deps.captureRuntime(machine, box)
       validateRuntime(runtime)
       if (
-        reprovisionRole(box.sandboxId) !== 'agent' &&
+        boxUnitMode(box.sandboxId) === 'user' &&
         (runtime.server || runtime.socket || runtime.proxy) &&
         !runtime.manager
       )
