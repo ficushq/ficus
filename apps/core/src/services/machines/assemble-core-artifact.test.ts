@@ -199,11 +199,11 @@ async function extract(tarballPath: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'assemble-extract-'))
   const res = await defaultRun(['tar', '-xzf', tarballPath, '-C', dir], {})
   expect(res.exitCode).toBe(0)
-  return join(dir, `tau-core-${COMMIT}`)
+  return join(dir, `ficus-core-${COMMIT}`)
 }
 
 describe('assembleCoreArtifact', () => {
-  it('stages exactly the spec layout, honouring exclusions, and tars it under tau-core-<sha>/', async () => {
+  it('stages exactly the spec layout, honouring exclusions, and tars it under ficus-core-<sha>/', async () => {
     const { result } = await assemble()
     const tree = await extract(result.tarballPath)
 
@@ -255,10 +255,13 @@ describe('assembleCoreArtifact', () => {
   it('names the tarball for the native build target and returns the trailer values', async () => {
     const { outDir, result } = await assemble()
     expect(result.sha).toBe(COMMIT)
-    expect(result.tarballPath).toBe(join(outDir, `tau-core-${COMMIT}-${artifactPlatform()}.tar.gz`))
+    expect(result.tarballPath).toBe(join(outDir, `ficus-core-${COMMIT}-${artifactPlatform()}.tar.gz`))
     expect((await stat(result.tarballPath)).size).toBeGreaterThan(0)
     expect(result.digest).toMatch(/^sha256:[0-9a-f]{64}$/)
-    expect((await readdir(outDir)).sort()).toEqual(['artifact.json', `tau-core-${COMMIT}-${artifactPlatform()}.tar.gz`])
+    expect((await readdir(outDir)).sort()).toEqual([
+      'artifact.json',
+      `ficus-core-${COMMIT}-${artifactPlatform()}.tar.gz`,
+    ])
   })
 
   it('writes an artifact.json whose digest matches a recomputation over the extracted tree', async () => {
