@@ -236,8 +236,15 @@ if [[ -n ${REVERSE_LAYOUT_SET} ]]; then
   host_migrate_install_traps
   # shellcheck disable=SC2034 # read by lib.sh's host_layout_reverse_committed
   HL_REVERSE_ACCEPT_DB_REVERT=${ACCEPT_DB_REVERT} HL_REVERSE_ACCEPT_FILE_REVERT=${ACCEPT_FILE_REVERT}
-  host_layout_reverse_committed "${REVERSE_LAYOUT_SET}"
-  log_info "this host is back on its legacy host layout (${HL_DEST}, ${HL_UNIT_API}/${HL_UNIT_WORKER})"
+  case $(_hm_set_reverse_names "${REVERSE_LAYOUT_SET}") in
+    host_layout) host_layout_reverse_committed "${REVERSE_LAYOUT_SET}" ;;
+    host_layout_fin)
+      HOST_MIGRATIONS+=(host_layout_fin)
+      host_layout_fin_reverse_committed "${REVERSE_LAYOUT_SET}"
+      ;;
+    *) die '--reverse-host-layout: the set is neither a host layout nor a finalize migration' ;;
+  esac
+  log_info "host layout reverse completed (${HL_DEST}, ${HL_UNIT_API}/${HL_UNIT_WORKER})"
   # `|| true`: with SIGPIPE ignored, a write to a dropped session fails — the
   # reverse is done, and that must not turn into a non-zero exit.
   printf 'FICUS_HOST_LAYOUT=%s\n' "${HL_LAYOUT}" || true

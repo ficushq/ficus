@@ -4549,7 +4549,7 @@ host_migrate_backup_restore() { # SETDIR
 # Keep the newest five backup sets; never remove the one PENDING journals, nor
 # the latest committed host_layout set (the manual reverse's way back).
 host_migrate_backup_prune() {
-  local root pending d name keep=''
+  local root pending d name keep='' keep_fin=''
   local -a sets=()
   root=$(host_migrate_backup_root)
   [[ -d ${root} ]] || return 0
@@ -4557,13 +4557,14 @@ host_migrate_backup_prune() {
   if declare -F host_layout_latest_committed_set >/dev/null; then
     keep=$(host_layout_latest_committed_set) || keep=''
   fi
+  keep_fin=$(host_layout_fin_latest_committed_set) || keep_fin=''
   for d in "${root}"/*; do
     name=${d##*/}
     [[ -d ${d} && ${name} =~ ^[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]{6}$ ]] && sets+=("${d}")
   done
   ((${#sets[@]} > 5)) || return 0
   for d in "${sets[@]:0:${#sets[@]}-5}"; do
-    [[ ${d} == "${pending}" || ${d} == "${keep}" ]] && continue
+    [[ ${d} == "${pending}" || ${d} == "${keep}" || ${d} == "${keep_fin}" ]] && continue
     rm -rf -- "${d}" || return 1
     log_info "pruned host backup set ${d}"
   done
@@ -4715,6 +4716,8 @@ _hm_release_is_active() { # RELEASE_DIR
 # RELEASE_DIR is serving, restore when it is not. Read-only.
 _hm_direction() { # SETDIR NAMES RELEASE_DIR
   local setdir=$1 names=$2 release=$3 m answer marked=''
+  # An explicit committed inverse must resume backwards even while its release serves.
+  if [[ -f ${setdir}/REVERSE_INTENT ]]; then printf 'restore\n'; return 0; fi
   local -a list=() extra=()
   IFS=, read -r -a list <<<"${names}"
   if marked=$(_hm_set_reverse_names "${setdir}"); then
@@ -5284,6 +5287,10 @@ _hl_backup_busy() { # [UNIT] (default: the legacy backup service)
 # The update sudoers rule on layout 2: the Ficus units, and — while the bridge
 # lasts — their legacy spellings (an older release restarts those).
 host_layout_sudoers_content() { # RUN_USER
+  if [[ ${HL_BRIDGE_ALIASES:-0} == 0 ]]; then
+    printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' "$1" "${HL_NEW_UNIT_PREFIX}-api" "${HL_NEW_UNIT_PREFIX}-worker"
+    return
+  fi
   printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' \
     "$1" "${HL_NEW_UNIT_PREFIX}-api" "${HL_NEW_UNIT_PREFIX}-worker" "${HL_LEGACY_UNIT_PREFIX}-api" "${HL_LEGACY_UNIT_PREFIX}-worker"
 }
@@ -6587,6 +6594,305 @@ host_layout_reverse_committed() { # SETDIR
   [[ ${rc} -eq 0 ]] ||
     die "host_layout: reversing ${set} failed — see the log above; the journal is kept, and the next toolkit run (or this command again) finishes the reverse"
   host_layout_adopt
+}
+
+# -------------------------------------- reversible host-layout finalization
+# Prepared separately from activation: C-FIN enables this registry entry and
+# the alias-free defaults only after all canonical readers ship together.
+
+# Flush after the rename too: the plan/commit marker must survive a power loss.
+_hfin_put() { _hl_put "$@" && _hm_sync "$1"; }
+
+require_host_layout_ready() { # [RELEASE_DIR] [DECLARED_LAYOUT]
+  local target=${2:-2}
+  [[ -z ${1:-} ]] || target=$(core_release_host_layout "$1")
+  [[ $(host_layout_detect) != 1 && ${target} == 2 ]] ||
+    die 'this host (or this release) predates the Ficus host layout — upgrade through the ficus-host-layout-bridge Core release first'
+}
+
+_hfin_links() { # exact link path<TAB>target pairs, children before parents
+  local home user_home
+  _hl_paths
+  printf '%s\t%s\n' "${_HLN_SETUP}/${HL_LEGACY_SETUP_YAML}" "${HL_NEW_SETUP_YAML}" \
+    "${_HLO_SETUP}" "${_HLN_SETUP}" "${_HLO_ETC}" "${_HLN_ETC}" \
+    "${_HLO_DEST}" "${_HLN_DEST}" "${_HLO_SCRIPT}" "${_HLN_SCRIPT##*/}"
+  home=$(envfile_get "${SRC_DEST}/.env" HOME_DIR) || home=''
+  if [[ -z ${home} || ${home} == '~' || ${home} == '~/'* ]]; then
+    user_home=$(managed_user_home "${RUN_USER:-root}") || return 1
+    case ${home} in
+      '') home="${user_home}/${HL_NEW_HOME_NAME}" ;;
+      '~') home=${user_home} ;;
+      *) home="${user_home}/${home#'~/'}" ;;
+    esac
+  fi
+  [[ ${home} == /?* ]] || return 1
+  home=${home%/}
+  # Keep fixture account lookup inside the isolated host, too.
+  if [[ -n ${FICUS_HOST_ROOT:-} && ${home} != "${FICUS_HOST_ROOT}"/* ]]; then home="${FICUS_HOST_ROOT}${home}"; fi
+  if [[ ${home} == /*/"${HL_NEW_HOME_NAME}" ]]; then
+    printf '%s\t%s\n' "${home%/*}/${HL_LEGACY_HOME_NAME}" "${home}"
+  fi
+}
+
+host_migration_host_layout_fin_needed() { # RELEASE_DIR (read-only)
+  [[ $(host_layout_detect) == 2 && $(core_release_host_layout "$1") == 2 ]] || return 1
+  local links from to unit
+  links=$(_hfin_links) || die 'host_layout_fin: could not inventory HOME_DIR compatibility links — nothing was changed'
+  while IFS=$'\t' read -r from to; do
+    [[ -L ${from} && $(readlink -- "${from}") == "${to}" ]] && return 0
+  done <<<"${links}"
+  for unit in "${HL_UNIT_API}.service" "${HL_UNIT_WORKER}.service" "${HL_UNIT_BACKUP}.service" "${HL_UNIT_BACKUP}.timer"; do
+    [[ ! -f ${FICUS_SYSTEMD_UNIT_DIR}/${unit} ]] ||
+      ! grep -q '^Alias=' "${FICUS_SYSTEMD_UNIT_DIR}/${unit}" || return 0
+  done
+  return 1
+}
+
+_hfin_seam() { # checkpoint (fixtures only)
+  [[ -n ${FICUS_HOST_ROOT:-} ]] || return 0
+  [[ ${HL_FIN_KILL_AT:-} != "$1" ]] || kill -KILL "${BASHPID}"
+  [[ ${HL_FIN_FAIL_AT:-} != "$1" ]] || return 1
+}
+
+_hfin_active() { # UNIT
+  local state
+  state=$(as_root systemctl show --property=ActiveState --value "$1") || return 1
+  case ${state} in active) printf '1\n' ;; inactive | failed) printf '0\n' ;; *) return 1 ;; esac
+}
+
+_hfin_stop() {
+  local unit state
+  if [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.timer ]]; then
+    as_root systemctl stop "${HL_UNIT_BACKUP}.timer" || return 1
+  fi
+  # Do not interrupt a backup or assume that a durable checkpoint means it
+  # stayed stopped over a reboot. Every forward/inverse entry probes again.
+  if [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.service ]]; then
+    [[ $(_hfin_active "${HL_UNIT_BACKUP}.service") == 0 ]] || return 1
+  fi
+  as_root systemctl stop "${HL_UNIT_API}" "${HL_UNIT_WORKER}" || return 1
+  for unit in "${HL_UNIT_API}.service" "${HL_UNIT_WORKER}.service" "${HL_UNIT_BACKUP}.timer"; do
+    [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${unit} ]] || continue
+    state=$(_hfin_active "${unit}") && [[ ${state} == 0 ]] || return 1
+  done
+}
+
+_hfin_runtime() { # FINDIR
+  local unit enabled active
+  while IFS=$'\t' read -r unit enabled active; do
+    # Reenable removes stale alias links even when Alias= was deleted. A
+    # formerly alias-only backup service becomes static, which is expected.
+    as_root systemctl reenable "${unit}" || return 1
+    if [[ ${enabled} == disabled ]]; then as_root systemctl disable "${unit}" || return 1; fi
+  done <"$1/UNITS"
+  _hm_sync "${FICUS_SYSTEMD_UNIT_DIR}"
+}
+
+_hfin_start() { # FINDIR
+  local unit enabled active
+  while IFS=$'\t' read -r unit enabled active; do
+    [[ ${active} == 1 ]] || continue
+    as_root systemctl reset-failed "${unit}" || return 1
+    as_root systemctl start "${unit}" || return 1
+    [[ $(_hfin_active "${unit}") == 1 ]] || return 1
+  done <"$1/UNITS"
+}
+
+_hfin_save_extra() { # FINDIR PATH (intent + verified private byte copy)
+  local fin=$1 path=$2 index sha mtime
+  [[ -f ${path} && ! -L ${path} ]] || return 1
+  index=$(wc -l <"${fin}/EXTRA/MANIFEST") || return 1
+  index=$((index + 1))
+  cp -p -- "${path}" "${fin}/EXTRA/${index}" || return 1
+  cmp -s -- "${path}" "${fin}/EXTRA/${index}" || return 1
+  sha=$(_hm_sha256 "${fin}/EXTRA/${index}") || return 1
+  _hl_append "${fin}/EXTRA" MANIFEST "${index}"$'\t'"${sha}"$'\t'"${path}" || return 1
+  mtime=$(stat -c %y -- "${path%/*}") || return 1
+  _hfin_put "${fin}/EXTRA" "${index}.parent-mtime" "${mtime}"
+}
+
+_hfin_plan() { # FINDIR RELEASE_DIR (no host mutations)
+  local fin=$1 release=$2 links from to unit enabled active marker
+  # Core rendering writes both units: never create an unjournaled missing unit.
+  for unit in "${HL_UNIT_API}.service" "${HL_UNIT_WORKER}.service"; do
+    [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${unit} && ! -L ${FICUS_SYSTEMD_UNIT_DIR}/${unit} ]] || return 1
+  done
+  mkdir -p -m 0700 "${fin}/EXTRA" && chmod 0700 "${fin}" || return 1
+  : >"${fin}/STEPS" && : >"${fin}/LINKS" && : >"${fin}/UNITS" && : >"${fin}/EXTRA/MANIFEST" || return 1
+  _hfin_put "${fin}" RELEASE "${release}" || return 1
+  links=$(_hfin_links) || return 1
+  while IFS=$'\t' read -r from to; do
+    if [[ -L ${from} && $(readlink -- "${from}") == "${to}" ]]; then
+      _hl_append "${fin}" LINKS "${from}"$'\t'"${to}" || return 1
+    elif [[ -e ${from} || -L ${from} ]]; then
+      log_warn "host_layout_fin: leaving ${from}: it is not the migration's exact compatibility link"
+    fi
+  done <<<"${links}"
+  for unit in "${HL_UNIT_API}.service" "${HL_UNIT_WORKER}.service" "${HL_UNIT_BACKUP}.service" "${HL_UNIT_BACKUP}.timer"; do
+    [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${unit} && ! -L ${FICUS_SYSTEMD_UNIT_DIR}/${unit} ]] || continue
+    enabled=$(as_root systemctl is-enabled "${unit}") || true
+    case ${enabled} in enabled | disabled | static | indirect) ;; *) return 1 ;; esac
+    active=$(_hfin_active "${unit}") || return 1
+    # Do not journal an in-flight backup as a service to restart on recovery.
+    [[ ${unit} != "${HL_UNIT_BACKUP}.service" || ${active} == 0 ]] || return 1
+    _hl_append "${fin}" UNITS "${unit}"$'\t'"${enabled}"$'\t'"${active}" || return 1
+  done
+  if [[ -e ${HL_SUDOERS} || -L ${HL_SUDOERS} ]]; then _hfin_save_extra "${fin}" "${HL_SUDOERS}" || return 1; fi
+  for marker in "${SRC_DEST}"/releases/*/"${HL_LEGACY_RELEASE_MARKER}"; do
+    [[ -f ${marker} && ! -L ${marker} ]] || continue
+    [[ -f ${marker%/*}/${HL_NEW_RELEASE_MARKER} ]] || return 1
+    _hfin_save_extra "${fin}" "${marker}" || return 1
+  done
+  _hfin_put "${fin}" PLANNED 1
+}
+
+_hfin_render() { # FINDIR
+  local fin=$1 unit enabled active calendar user tmp idx sha path sudoers_source=''
+  local HL_BRIDGE_ALIASES=0
+  while IFS=$'\t' read -r idx sha path; do
+    if [[ ${path} == "${HL_SUDOERS}" ]]; then
+      sudoers_source="${fin}/EXTRA/${idx}"
+      [[ $(_hm_sha256 "${sudoers_source}") == "${sha}" && -f ${HL_SUDOERS} && ! -L ${HL_SUDOERS} ]] || return 1
+    fi
+  done <"${fin}/EXTRA/MANIFEST"
+  # An unplanned sudoers file is also drift, never an unjournaled overwrite.
+  [[ -n ${sudoers_source} || ( ! -e ${HL_SUDOERS} && ! -L ${HL_SUDOERS} ) ]] || return 1
+  install_core_units "${SCRIPT_DIR}/systemd" || return 1
+  while IFS=$'\t' read -r unit enabled active; do
+    case ${unit} in
+      "${HL_UNIT_BACKUP}.service" | "${HL_UNIT_BACKUP}.timer")
+        calendar=$(sed -n 's/^OnCalendar=//p' "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.timer") || return 1
+        install_rendered --check-placeholders 0644 root root "${FICUS_SYSTEMD_UNIT_DIR}/${unit}" \
+          render_backup_unit_content "${SCRIPT_DIR}/systemd/ficus-backup.${unit##*.}.tmpl" "${BACKUP_SCRIPT_PATH}" "${calendar:-*-*-* 03:00:00}" "${DB_MODE}" || return 1
+        ;;
+    esac
+  done <"${fin}/UNITS"
+  if [[ -n ${sudoers_source} ]]; then
+    have visudo || return 1
+    user=$(awk '!/^[[:space:]]*(#|$)/ { print $1; exit }' "${sudoers_source}") || return 1
+    [[ ${user} =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || return 1
+    tmp=$(mktemp "${fin}/sudoers.XXXXXX") || return 1
+    host_layout_sudoers_content "${user}" >"${tmp}" && as_root visudo -cf "${tmp}" >/dev/null &&
+      as_root install -m 0440 -o root -g root "${tmp}" "${HL_SUDOERS}" || { rm -f -- "${tmp}"; return 1; }
+    rm -f -- "${tmp}" || return 1
+  fi
+  as_root systemctl daemon-reload && _hfin_runtime "${fin}"
+}
+
+_hfin_live_shas() { # SETDIR
+  local idx sha path now
+  _hl_live_shas "$1" || return 1
+  while IFS=$'\t' read -r idx sha path; do
+    now=absent
+    [[ ! -f ${path} ]] || now=$(_hm_sha256 "${path}") || return 1
+    printf '%s\t%s\n' "${now}" "${path}"
+  done <"$1/fin/EXTRA/MANIFEST"
+}
+
+host_migration_host_layout_fin_apply() { # RELEASE_DIR
+  local set=${HOST_MIGRATE_BACKUP_SET:-} fin from to idx sha path snapshot
+  _hm_is_root && [[ -n ${set} && -f ${set}/MANIFEST && $(_hm_pending_set) == "${set}" ]] || return 1
+  [[ ! -e ${set}/UNITS_EXCLUDED ]] || return 1
+  require_host_layout_ready "$1"
+  fin="${set}/fin"
+  [[ ! -e ${fin}/REVERSED && ! -e ${set}/REVERSE_INTENT ]] || return 1
+  if [[ ! -f ${fin}/PLANNED ]]; then
+    # No mutation precedes PLANNED; a killed partial plan can be rebuilt.
+    rm -rf -- "${fin}" || return 1
+    _hfin_plan "${fin}" "$1" || return 1
+  fi
+  _hfin_seam planned || return 1
+  _hfin_stop || return 1
+  _hl_append "${fin}" STEPS links || return 1
+  while IFS=$'\t' read -r from to; do
+    if [[ -L ${from} && $(readlink -- "${from}") == "${to}" ]]; then rm -- "${from}" || return 1
+    elif [[ -e ${from} || -L ${from} ]]; then return 1; fi
+    _hfin_seam links || return 1
+  done <"${fin}/LINKS"
+  _hl_append "${fin}" STEPS units || return 1
+  _hfin_render "${fin}" || return 1
+  _hfin_seam units || return 1
+  _hl_append "${fin}" STEPS markers || return 1
+  while IFS=$'\t' read -r idx sha path; do
+    [[ ${path##*/} == "${HL_LEGACY_RELEASE_MARKER}" ]] || continue
+    if [[ -e ${path} ]]; then
+      touch -r "${path%/*}" "${fin}/marker-mtime" || return 1
+      rm -- "${path}" && touch -r "${fin}/marker-mtime" "${path%/*}" || return 1
+    fi
+  done <"${fin}/EXTRA/MANIFEST"
+  _hfin_seam markers || return 1
+  snapshot=$(_hfin_live_shas "${set}") || return 1
+  _hfin_put "${fin}" LIVE_SHAS "${snapshot}" || return 1
+  _hfin_put "${fin}" DONE 1 || return 1
+  _hfin_seam done || return 1
+  _hfin_start "${fin}" || return 1
+  if as_root docker inspect "${HL_LEGACY_DB_CONTAINER}" >/dev/null 2>&1; then log_info "optional after verification: docker rm ${HL_LEGACY_DB_CONTAINER}"; fi
+  if as_root docker volume inspect "${HL_LEGACY_DB_VOLUME}" >/dev/null 2>&1; then log_info "optional after verification: docker volume rm ${HL_LEGACY_DB_VOLUME}"; fi
+}
+
+host_migration_host_layout_fin_reverse() { # SETDIR (framework only)
+  local set=$1 fin="$1/fin" from to idx sha path tmp mtime
+  [[ ${_HM_IN_REVERSE:-} == 1 && ${_HM_REVERSE_RUNNING:-} == host_layout_fin && ${_HM_REVERSE_SET:-} == "${set}" ]] || return 1
+  [[ -f ${fin}/PLANNED ]] || return 0
+  host_layout_resolve 2
+  _hfin_stop || return 1
+  # Restore only links that this plan actually removed; a foreign replacement
+  # is an operator conflict, never an overwrite. Parent links go back last.
+  while IFS=$'\t' read -r from to; do
+    if [[ -L ${from} && $(readlink -- "${from}") == "${to}" ]]; then continue; fi
+    [[ ! -e ${from} && ! -L ${from} ]] || return 1
+    ln -s -- "${to}" "${from}" || return 1
+    _hfin_seam reverse-links || return 1
+  done <"${fin}/LINKS"
+  while IFS=$'\t' read -r idx sha path; do
+    [[ $(_hm_sha256 "${fin}/EXTRA/${idx}") == "${sha}" && ! -L ${path} ]] || return 1
+    tmp=$(mktemp "${path}.fin-restore.XXXXXX") || return 1
+    cp -p -- "${fin}/EXTRA/${idx}" "${tmp}" && mv -Tf -- "${tmp}" "${path}" || { rm -f -- "${tmp}"; return 1; }
+    mtime=$(_hl_get "${fin}/EXTRA" "${idx}.parent-mtime") || return 1
+    touch -m -d "${mtime}" -- "${path%/*}" || return 1
+  done <"${fin}/EXTRA/MANIFEST"
+  _hfin_seam reverse-extra || return 1
+  _HM_REVERSED=1 host_migrate_backup_restore "${set}" || return 1
+  _hfin_seam reverse-files || return 1
+  as_root systemctl daemon-reload && _hfin_runtime "${fin}" && _hfin_start "${fin}" || return 1
+  _hfin_put "${fin}" REVERSED 1
+}
+
+host_layout_fin_latest_committed_set() {
+  local dir best=''
+  for dir in "$(host_migrate_backup_root)"/*/; do
+    dir=${dir%/}
+    [[ -f ${dir}/fin/DONE && ! -e ${dir}/fin/REVERSED && ! -e ${dir}/RESTORED ]] || continue
+    if [[ -z ${best} || ${dir}/fin/DONE -nt ${best}/fin/DONE ]] ||
+      { [[ ! ${dir}/fin/DONE -ot ${best}/fin/DONE ]] && [[ ${dir} > ${best} ]]; }; then best=${dir}; fi
+  done
+  [[ -n ${best} ]] && printf '%s\n' "${best}"
+}
+
+host_layout_fin_reverse_committed() { # SETDIR
+  local set=${1%/} root fin latest names pending want path now tmp
+  _hm_is_root || die 'host_layout_fin: committed reverse is root-only'
+  root=$(host_migrate_backup_root); fin="${set}/fin"
+  [[ ${set%/*} == "${root}" && -d ${set} && ! -L ${set} ]] || die 'host_layout_fin: backup set is outside the journal root'
+  names=$(_hm_set_reverse_names "${set}") && [[ ${names} == host_layout_fin ]] || die 'host_layout_fin: not a finalize backup set'
+  if [[ -e ${root}/PENDING ]]; then
+    pending=$(_hm_pending_set) || die 'host_layout_fin: unreadable pending journal'
+    [[ ${pending} == "${set}" && -f ${set}/REVERSE_INTENT ]] || die 'host_layout_fin: PENDING journals a run — reconcile it first'
+    host_migrate_reconcile
+    return
+  fi
+  latest=$(host_layout_fin_latest_committed_set) || latest=''
+  [[ ${latest} == "${set}" ]] || die 'host_layout_fin: only the latest unreversed finalize set can be reversed'
+  [[ -z $(_hl_newer_foreign_sets "${set}") ]] || die 'host_layout_fin: a newer host migration remains in effect'
+  while IFS=$'\t' read -r want path; do
+    now=absent; [[ ! -f ${path} ]] || now=$(_hm_sha256 "${path}") || return 1
+    [[ ${now} == "${want}" || ${HL_REVERSE_ACCEPT_FILE_REVERT:-0} == 1 ]] || die 'host_layout_fin: host files changed since finalize; inspect before --accept-file-revert'
+  done <"${fin}/LIVE_SHAS"
+  _hfin_put "${set}" REVERSE_INTENT 1 || return 1
+  tmp=$(mktemp "${root}/.PENDING.fin.XXXXXX") || return 1
+  printf '%s\t%s\t%s\n' "${set}" host_layout_fin "$(_hl_get "${fin}" RELEASE)" >"${tmp}" &&
+    _hm_sync "${tmp}" && mv -Tf -- "${tmp}" "${root}/PENDING" && _hm_sync "${root}/PENDING" || return 1
+  host_migrate_reconcile
 }
 
 # ------------------------------------------------------------------ CI publisher (tau-ci)
