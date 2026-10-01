@@ -487,15 +487,49 @@ from before the rename.
 
 A checkout managed by `docker compose` directly (`bun run start` / `reload` /
 `docker:up`, rather than `ficus server setup`) has no CLI identity for
-`rename-identity` to act on. Installs created before this release keep their
-database name inside the volume. Rename it once with
-`docker compose exec postgres psql -U postgres -c 'ALTER DATABASE "<old name>" RENAME TO ficus'`
-with the app stopped, then update `DATABASE_URL`. A fresh `docker compose up`
-on an unused volume needs no such step: the container's first boot already
-creates `ficus` directly, and (per [What it writes](#what-it-writes) above)
-`ficus server setup` adopts the same `postgres-ficus` container and
-`ficus_postgres-data` volume for the default instance either way, so a dev
-checkout and a `ficus server`-managed one never fork the same data.
+`rename-identity` to act on, but it names its Postgres container and volume
+the same way `ficus server setup` does for the default instance
+(`postgres-ficus`, `ficus_postgres-data`) — so the two never run as separate
+copies of the same instance: whichever side creates that container first owns
+the name, and the other either adopts the existing one (the CLI installer) or
+fails outright with a "name already in use" conflict (`docker compose up`)
+rather than silently starting a second Postgres on the same data.
+
+That container-name pin existed before this release; the **volume** name
+becoming an explicit, fixed `ficus_postgres-data` is new. An install that was
+already running under `docker compose` keeps its data in whatever volume it
+was using before (Compose derives a name from the checkout directory when
+none is pinned) — a _different_ name from the new fixed one. A plain
+`docker compose up` after upgrading will not find that old volume, so it
+creates `ficus_postgres-data` fresh and empty and the container boots an
+empty database, leaving the real data in the old volume, untouched and
+unreferenced. Converge the two by hand, once, with the app stopped:
+
+1. Find the old volume: `docker volume ls`, or if the old container is still
+   around, `docker inspect <old container> --format '{{json .Mounts}}'`.
+2. Stop the stack (`bun run stop`, or `docker compose down`).
+3. Copy its data into the new volume (creates `ficus_postgres-data` if it
+   does not already exist):
+   ```bash
+   docker run --rm -v <old volume>:/from:ro -v ficus_postgres-data:/to \
+     paradedb/paradedb:latest sh -c 'cp -a /from/. /to/'
+   ```
+4. Start Postgres only and rename the database inside the copy (the running
+   container is now `postgres-ficus`, on the copied data):
+   ```bash
+   docker compose up -d postgres
+   docker compose exec postgres psql -U postgres -c 'ALTER DATABASE "<old database name>" RENAME TO ficus'
+   ```
+5. Update `DATABASE_URL` in `.env` to name `ficus`, then start the rest
+   normally (`bun run start`). Nothing here deletes the old volume or
+   container — remove them yourself once you've confirmed the copy.
+
+A fresh `docker compose up` with no pre-existing install needs none of this:
+the container's first boot creates `ficus_postgres-data` and the `ficus`
+database directly, and (per [What it writes](#what-it-writes) above) `ficus
+server setup` adopts that same container and volume for the default instance
+either way, so a dev checkout and a `ficus server`-managed one never fork the
+same data from a clean start.
 
 ### Notes
 

@@ -12,6 +12,17 @@ export function testDbProjectName(repoRoot: string): string {
   return `ficus-test-${dirHash}`
 }
 
+/**
+ * The project name this same repoRoot hashed to under the pre-rename prefix.
+ * `test:db:down` tears this down alongside the current project too, so a
+ * container left running from before the prefix changed doesn't become
+ * invisible to this worktree's own cleanup.
+ */
+export function legacyTestDbProjectName(repoRoot: string): string {
+  const dirHash = createHash('sha256').update(repoRoot).digest('hex').slice(0, 8)
+  return `tau-test-${dirHash}` // ficus-p5-bridge
+}
+
 /** Absolute path to the port-cache file this worktree's test-db writes/reads. */
 export function testDbPortFile(repoRoot: string): string {
   return join(repoRoot, '.test-db-port')

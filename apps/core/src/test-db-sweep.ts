@@ -15,6 +15,12 @@
  *   the hash matches none of this repo's live worktree paths (`git worktree
  *   list` covers the main checkout and every linked worktree).
  *
+ * A container made under the pre-rename project-name prefix is still
+ * recognized by both checks (`RECOGNIZED_PROJECT_PREFIXES`), so one left
+ * running for a still-live worktree isn't reaped as foreign, and one left
+ * from a deleted worktree is still found and torn down rather than becoming
+ * permanently invisible.
+ *
  * Used by test-setup.ts (throttled, every `bun test` boot) and
  * scripts/docker-gc.ts (forced, periodic).
  */
@@ -24,6 +30,13 @@ import { existsSync } from 'fs'
 export const TEST_DB_LABEL = 'dev.ficus.test-db'
 export const TEST_DB_REPO_ROOT_LABEL = 'dev.ficus.test-db.repo-root'
 const PROJECT_PREFIX = 'ficus-test-'
+/**
+ * Still recognized so a container made before this prefix changed doesn't go
+ * invisible to the sweep and run forever — the exact disk-filling failure
+ * mode this module exists to prevent (see the module doc comment).
+ */
+const LEGACY_PROJECT_PREFIX = 'tau-test-' // ficus-p5-bridge
+const RECOGNIZED_PROJECT_PREFIXES = [PROJECT_PREFIX, LEGACY_PROJECT_PREFIX]
 
 export interface TestDbContainer {
   /** compose project name, e.g. ficus-test-2ff43b29 */
@@ -34,6 +47,16 @@ export interface TestDbContainer {
 
 export function projectNameForPath(repoRoot: string): string {
   return `${PROJECT_PREFIX}${createHash('sha256').update(repoRoot).digest('hex').slice(0, 8)}`
+}
+
+/**
+ * The project name this same path hashed to under the pre-rename prefix.
+ * Only used to recognize a legacy container as belonging to a still-live
+ * path (so it is kept, not reaped as a stranger) — a fresh project is always
+ * created under `projectNameForPath`'s current prefix, never this one.
+ */
+export function legacyProjectNameForPath(repoRoot: string): string {
+  return `${LEGACY_PROJECT_PREFIX}${createHash('sha256').update(repoRoot).digest('hex').slice(0, 8)}` // ficus-p5-bridge
 }
 
 /**
@@ -49,11 +72,13 @@ export function findOrphanProjects(args: {
   pathExists?: (p: string) => boolean
 }): string[] {
   const pathExists = args.pathExists ?? existsSync
-  const liveProjects = new Set(args.liveWorktreePaths.map(projectNameForPath))
+  const liveProjects = new Set(
+    args.liveWorktreePaths.flatMap((p) => [projectNameForPath(p), legacyProjectNameForPath(p)])
+  )
   const orphans = new Set<string>()
 
   for (const c of args.containers) {
-    if (!c.project.startsWith(PROJECT_PREFIX)) continue
+    if (!RECOGNIZED_PROJECT_PREFIXES.some((prefix) => c.project.startsWith(prefix))) continue
     if (c.project === args.currentProject) continue
     if (c.repoRoot) {
       if (!pathExists(c.repoRoot)) orphans.add(c.project)
@@ -85,21 +110,21 @@ export function defaultExec(cmd: string[], opts?: { timeoutMs?: number }): strin
   }
 }
 
-/** List all ficus-test containers (any state) with their repo-root labels. */
+/** List all ficus-test (and legacy tau-test) containers (any state) with their repo-root labels. */
 export function listTestDbContainers(exec: SweepDeps['exec']): TestDbContainer[] {
   const out = exec([
     'docker',
     'ps',
     '-a',
-    '--filter',
-    `name=${PROJECT_PREFIX}`,
+    // Multiple `--filter name=` values are OR'd by docker, not AND'd.
+    ...RECOGNIZED_PROJECT_PREFIXES.flatMap((prefix) => ['--filter', `name=${prefix}`]),
     '--format',
     `{{.Label "com.docker.compose.project"}}\t{{.Label "${TEST_DB_REPO_ROOT_LABEL}"}}`,
   ])
   const seen = new Map<string, TestDbContainer>()
   for (const line of out.split('\n')) {
     const [project, repoRoot = ''] = line.trim().split('\t')
-    if (project?.startsWith(PROJECT_PREFIX) && !seen.has(project)) {
+    if (project && RECOGNIZED_PROJECT_PREFIXES.some((prefix) => project.startsWith(prefix)) && !seen.has(project)) {
       seen.set(project, { project, repoRoot })
     }
   }
