@@ -174,36 +174,65 @@ Dev servers use it for hot reload (Next.js `/_next/webpack-hmr`, Vite).
 - **Tenant Caddy** needs no change: `reverse_proxy` passes upgrades, and the
   `@app_bridge` rule treats a handshake like any other `/api/app/*` request.
   A Caddy config reload closes open sockets, and HMR clients reconnect.
-- **Platform bridge** (per-app origin), still to implement:
-  1. Recognize the handshake the same way. Validate the host, tenant and
-     `__Host-ficus_app` credential exactly as for HTTP, and refuse with the
-     same fixed responses before dialing.
-  2. Dial the tenant exactly as for HTTP (registry IP, port 443, tenant SNI,
-     Origin CA verification) and send an HTTP/1.1 GET for the same rewritten
-     target: `/api/app/<deploy12>/<path>` with the browser query plus
-     `_ficus_token`. Apply the HTTP request-header rules above: `Cookie` minus
-     Ficus names, `Host` set to the tenant host, `X-Forwarded-Host` set to
-     the validated app host, `X-Forwarded-Proto: https`, the client-address
-     rules, and authorization and `x-ficus-*` stripped. Also keep
-     `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Key`,
+- **Platform Caddy** (`render_platform_caddyfile` in tau-platform
+  `scripts/setup/platform-lib.sh`): on the apps-domain site, the `@app_socket`
+  matcher (a `GET` whose `Upgrade` is `websocket` and whose `Connection`
+  names `upgrade`) sends handshakes to the app socket listener. Everything
+  else goes to the HTTP port as before. Both routes set the same
+  `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`. Caddy only
+  routes; the listener checks the handshake itself.
+- **Platform bridge** (per-app origin): `Bun.serve` cannot hand over a raw
+  socket, so handshakes have their own loopback `node:http` listener in the
+  Platform process (`apps/platform/src/routes/app-socket.ts`). It listens on
+  `PLATFORM_APP_SOCKET_PORT` (default `4101`, from `platform.app_socket_port`,
+  which must differ from `platform.port`) and starts only when the apps
+  domain is configured. If it cannot bind, Platform logs the error and keeps
+  serving HTTP. A request on this listener that is not a handshake gets a
+  fixed 400.
+  1. A handshake is authorized exactly like HTTP, by the same code: host,
+     tenant and `__Host-ficus_app` credential checks, with the same fixed
+     refusals before anything is dialed.
+  2. The bridge dials the tenant exactly as for HTTP (registry IP, port 443,
+     tenant SNI, Origin CA verification) and sends an HTTP/1.1 GET for the
+     same rewritten target, `/api/app/<deploy12>/<path>` with the browser
+     query plus `_ficus_token`. The HTTP request-header rules apply
+     unchanged: `Cookie` minus Ficus names, `Host` set to the tenant host,
+     `X-Forwarded-Host` set to the validated app host,
+     `X-Forwarded-Proto: https`, the same single client address, and
+     authorization and `x-ficus-*` stripped. `Upgrade: websocket`,
+     `Connection: Upgrade` and the browser's `Sec-WebSocket-Key`,
      `Sec-WebSocket-Version`, `Sec-WebSocket-Protocol` and
-     `Sec-WebSocket-Extensions` unchanged. Keep `Origin` unchanged, because
-     Core checks it against the app host.
-  3. On `101`, send the browser a 101 with Core's `Upgrade`, `Connection`,
-     `Sec-WebSocket-Accept`, `Sec-WebSocket-Protocol` and
-     `Sec-WebSocket-Extensions`, and apply the `Set-Cookie` response rule.
-     Then splice raw bytes in both directions without parsing frames. When
-     either side ends or errors, end the other. Any other status is an
-     ordinary HTTP response and goes through the existing error
-     normalization, so a marked 401/403/404/502 gets its fixed message.
-  4. A socket is long-lived. It must not hold one of the 64 request leases
-     for its lifetime, the 100 MiB and 30-second HTTP bounds do not apply, and
-     it needs its own per-tenant cap on open sockets. Use an idle timeout
-     well above two minutes, because Core's side pings idle sockets and
-     closes them after 120 seconds without traffic. Logs follow the HTTP
-     rule: no tokens or full URLs.
-- **Cloudflare**: WebSockets must stay enabled (the default) on the Ficus zone
-  and the apps-domain zone.
+     `Sec-WebSocket-Extensions` are added. `Origin` stays as the browser sent
+     it, because Core checks it against the app host. If Core refuses the
+     credential (its marked 401), the bridge retries once under the other
+     credential name, as for a bodiless HTTP request.
+  3. On `101`, the browser gets a 101 with only Core's `Upgrade`,
+     `Connection`, `Sec-WebSocket-Accept`, `Sec-WebSocket-Protocol` and
+     `Sec-WebSocket-Extensions`, plus any `Set-Cookie` under the response
+     rule above. The two streams are then spliced byte for byte; frames are
+     never parsed. When either side closes or errors, the other is closed.
+     Any other status is an ordinary HTTP response (read whole, up to 1 MiB)
+     and goes through the HTTP error normalization, so a marked
+     401/403/404/502 gets its fixed message. A failed dial gets the generic 502.
+  4. The handshake keeps the HTTP timeouts (15 seconds to connect, 30
+     seconds for Core's answer). An open socket never holds one of the 64
+     HTTP request leases, and the 100 MiB and 30-second HTTP bounds do not
+     apply to it. Each tenant may have 64
+     open sockets per Platform process; the next handshake gets the busy 503.
+     A socket closes after 10 minutes without traffic in either direction,
+     well above Core's 120-second ping timeout. Logs follow the HTTP rule: no
+     tokens or full URLs.
+
+  Rollout: after deploying a Platform release with the listener, rerun
+  tau-platform `scripts/setup/setup-platform.sh` on the control-plane host.
+  That renders `PLATFORM_APP_SOCKET_PORT` into the env file and the
+  `@app_socket` route into the apps-domain Caddy site. Until then, handshakes
+  reach the HTTP port and are not upgraded. A tenant also needs a Core release
+  that includes the Core side of this contract (tau PR #370), or Core will not
+  upgrade the socket.
+
+- **Cloudflare**: WebSockets must be enabled (the default) on both the Ficus
+  zone and the apps-domain zone.
 
 ## Hosted GitHub: subscription interest does not grant authority
 
