@@ -1,10 +1,16 @@
-import type { CodeHostingRegistry } from '../integrations/code-hosting/registry'
+import type { CodeHostingRegistry, RecoveryTarget } from '../integrations/code-hosting/registry'
 import { codeHostFromRemote, type RepositoryExec } from './repository-setup'
 
 export class WorktreeDeliveryUnprovenError extends Error {}
 
 /** Revalidate live delivery and recovery of the exact head captured at finish.
- * PR refs preserve squash-merged feature commits without requiring ancestry. */
+ * PR refs preserve squash-merged feature commits without requiring ancestry.
+ *
+ * The remote recovery reference is read through the code-hosting adapter with the squad's
+ * connection, not `git ls-remote`: cleanup's sandbox exec carries no git credential and has no
+ * environment channel, so private repositories could never be proven, and passing a token any
+ * other way would put it in argv or shared files. Local git is only used for the configured
+ * remote's identity, which must match the delivered code-host repository. */
 export async function verifyWorktreeCleanupDelivery(
   input: {
     metadata: Record<string, unknown>
@@ -44,20 +50,18 @@ export async function verifyWorktreeCleanupDelivery(
   const base = git?.baseBranch
   if (typeof base !== 'string' || !base || typeof git?.branch !== 'string')
     refuse('Delivery branch bindings are incomplete')
-  let ref: string
+  let target: RecoveryTarget
   if (input.mode === 'direct-merge') {
-    ref = `refs/heads/${base}`
+    target = { branch: base as string }
   } else {
     if (!reference.changeRequest) refuse('Delivery change request is missing')
     const change = await adapter.changeRequest(reference, input.squadId)
     if (!change?.merged || change.headSha !== head || change.headBranch !== git!.branch || change.baseBranch !== base)
       refuse('Merged change request no longer proves this exact delivered head')
-    ref = `refs/pull/${reference.changeRequest!.number}/head`
+    target = { changeRequest: reference.changeRequest!.number }
   }
-  const advertised = (await exec(['git', '-C', input.repository, 'ls-remote', '--', remote, ref])).trim().split('\n')
-  const [remoteHead, remoteRef] = advertised[0]!.split('\t')
-  if (advertised.length !== 1 || remoteRef !== ref || !remoteHead || !/^[a-f0-9]{40}$/.test(remoteHead))
-    refuse('Exact remote recovery reference is unavailable')
+  const remoteHead = await adapter.recoveryHead(reference, input.squadId, target)
+  if (!remoteHead || !/^[a-f0-9]{40}$/.test(remoteHead)) refuse('Exact remote recovery reference is unavailable')
   if (input.mode === 'direct-merge') {
     // Verify containment in the immutable advertised commit, not a moving base.
     if (!(await adapter.containsCommit(reference, input.squadId, remoteHead!, head!)))

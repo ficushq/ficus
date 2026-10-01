@@ -8,7 +8,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { claimWorktreeCleanup } from './worktree-cleanup-store'
 import { removeOwnedWorktree, type WorktreeRemovalInput } from './worktree-cleanup-runtime'
-import { verifyWorktreeCleanupDelivery } from './worktree-cleanup-delivery'
+import { verifyWorktreeCleanupDelivery, WorktreeDeliveryUnprovenError } from './worktree-cleanup-delivery'
 import type { RepositoryExec } from './repository-setup'
 
 const log = createLogger('worktree-cleanup')
@@ -155,7 +155,8 @@ export async function processWorktreeCleanup(
         )
       )
   } catch (error) {
-    // Never expose raw remote output, paths to secrets, or provider credentials.
+    // Never expose raw remote output, paths to secrets, or provider credentials. Delivery refusals
+    // carry only fixed, sanitized reasons, so those are surfaced; anything else stays generic.
     const [current] = await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, id))
     if (
       current &&
@@ -169,7 +170,9 @@ export async function processWorktreeCleanup(
         unknown ? 'removing' : 'deferred',
         unknown
           ? 'Removal has no proven terminal receipt. The same worktree remains fenced; cleanup will retry the exact operation only.'
-          : 'Delivery or runtime verification is unavailable. No removal was dispatched; cleanup will retry.'
+          : error instanceof WorktreeDeliveryUnprovenError
+            ? `Delivery is not proven: ${error.message}. No removal was dispatched; cleanup will retry.`
+            : 'Delivery or runtime verification is unavailable. No removal was dispatched; cleanup will retry.'
       )
     }
     log.debug('Cleanup deferred', { workStreamId: id, errorName: error instanceof Error ? error.name : 'unknown' })
