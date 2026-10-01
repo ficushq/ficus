@@ -1,3 +1,4 @@
+import type { SandboxClient, BashResponse } from '../sandbox/client/http-client'
 import type { ISandboxManager } from '../sandbox'
 import { getSandboxManager } from '../sandbox'
 import { loadLaunchPathLines, recordLaunchPathCommand, runWithLaunchPath } from '../sandbox/launch-path'
@@ -13,6 +14,13 @@ import {
 } from './local-deployment-log-path'
 import { getHostedAppsDomain } from './local-deployment-service'
 
+/** The executor reported a terminal, nonzero launch exit (not a lost stream). */
+export class LocalDeploymentLaunchFailedError extends Error {
+  constructor() {
+    super('Managed app launch failed; verify the command/runtime and startup logs.')
+  }
+}
+
 export interface StartManagedLocalDeploymentArgs {
   localDeploymentId: string
   sandboxId: string
@@ -21,7 +29,7 @@ export interface StartManagedLocalDeploymentArgs {
   port: number
 }
 
-function sessionNameForLocalDeployment(localDeploymentId: string): string {
+export function managedLocalDeploymentSessionName(localDeploymentId: string): string {
   return `tau-local-deployment-${localDeploymentId.slice(0, 8)}`
 }
 
@@ -65,7 +73,7 @@ export class LocalDeploymentProcessSupervisor {
   constructor(private manager: ISandboxManager = getSandboxManager()) {}
 
   async startManagedLocalDeployment(args: StartManagedLocalDeploymentArgs): Promise<{ processId: string }> {
-    const processId = sessionNameForLocalDeployment(args.localDeploymentId)
+    const processId = managedLocalDeploymentSessionName(args.localDeploymentId)
     const squadId = args.sandboxId.replace(/^squad_/, '')
     const { workspaceMount } = resolveWorkspaceLayout({ squadId })
     const dir = localDeploymentDir(args.sandboxId, args.localDeploymentId)
@@ -102,7 +110,15 @@ export class LocalDeploymentProcessSupervisor {
       `tmux new-session -d -s ${shellQuote(processId)} ${shellQuote(launchCommand)}`,
     ].join('\n')
 
-    await this.manager.exec(args.sandboxId, ['bash', '-lc', command])
+    try {
+      await this.manager.exec(args.sandboxId, ['bash', '-lc', command])
+    } catch (error) {
+      // Only a terminal executor exit proves failure. Lost/truncated transport
+      // may have launched the session; never classify that outcome as a crash.
+      if (error instanceof Error && /^Command failed with exit code \d+:/.test(error.message))
+        throw new LocalDeploymentLaunchFailedError()
+      throw error
+    }
     return { processId }
   }
 
@@ -110,13 +126,82 @@ export class LocalDeploymentProcessSupervisor {
     await this.manager.exec(sandboxId, ['bash', '-lc', `tmux kill-session -t ${shellQuote(processId)} || true`])
   }
 
-  async hasSession(sandboxId: string, processId: string): Promise<boolean> {
+  async hasSession(sandboxId: string, processId: string, signal?: AbortSignal): Promise<boolean> {
+    if (signal) return this.observeSession(sandboxId, processId, signal)
     const status = await this.manager.execStatus(sandboxId, [
       'bash',
       '-lc',
       `tmux has-session -t ${shellQuote(processId)}`,
     ])
     return status === 0
+  }
+
+  private async observeSession(sandboxId: string, processId: string, signal: AbortSignal): Promise<boolean> {
+    const manager = this.manager as ISandboxManager & {
+      getOrAttachClient?: (id: string) => Promise<SandboxClient | null>
+      getClientForSandbox?: (id: string) => SandboxClient | null
+    }
+    const client = manager.getOrAttachClient
+      ? await manager.getOrAttachClient(sandboxId)
+      : manager.getClientForSandbox?.(sandboxId)
+    signal.throwIfAborted()
+    if (client) {
+      const stream = client.bash({ command: `tmux has-session -t ${shellQuote(processId)}` })
+      return new Promise<boolean>((resolve, reject) => {
+        let exitCode: number | undefined
+        let failure: unknown
+        const abort = () => {
+          // This is only the owned read invocation, never the app's session.
+          void stream.cancelAndWait('tool-abort').then(() => reject(new Error('Session observation cancelled')), reject)
+        }
+        signal.addEventListener('abort', abort, { once: true })
+        stream.on('data', (response: BashResponse) => {
+          if (response.exitCode !== undefined) exitCode = response.exitCode
+        })
+        stream.on('error', (error: Error) => {
+          failure = error
+          abort()
+        })
+        stream.on('end', () => {
+          signal.removeEventListener('abort', abort)
+          if (signal.aborted || failure) return
+          if (exitCode === undefined) abort()
+          else resolve(exitCode === 0)
+        })
+      })
+    }
+    // Host runtime has no executor client. Use the manager-owned stream with
+    // a result marker and cancellation/reaping, instead of an unbounded exec.
+    if (!manager.streamExec) throw new Error('Sandbox observation is unavailable')
+    return new Promise<boolean>((resolve, reject) => {
+      let output = ''
+      const abort = () => {
+        void stop().then(() => reject(new Error('Session observation cancelled')), reject)
+      }
+      const stop = async () => {
+        signal.removeEventListener('abort', abort)
+        if (stream.cancelAndWait) await stream.cancelAndWait()
+        else stream.cancel()
+      }
+      const stream = manager.streamExec!(
+        sandboxId,
+        [
+          'bash',
+          '-lc',
+          `if tmux has-session -t ${shellQuote(processId)} 2>/dev/null; then echo FICUS_SESSION_ALIVE; else echo FICUS_SESSION_MISSING; fi`,
+        ],
+        (chunk) => {
+          output += chunk.toString()
+          if (/FICUS_SESSION_(ALIVE|MISSING)/.test(output))
+            void stop().then(() => resolve(output.includes('FICUS_SESSION_ALIVE')), reject)
+        },
+        () => {
+          void stop().then(() => reject(new Error('Session observation failed')), reject)
+        }
+      )
+      signal.addEventListener('abort', abort, { once: true })
+      if (signal.aborted) abort()
+    })
   }
 
   streamLogs(

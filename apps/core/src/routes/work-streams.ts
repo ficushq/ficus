@@ -62,6 +62,7 @@ import { resolveAgentChatSenderUserId } from '../services/inbox/agent-human-reci
 import { requirePermission } from '../middleware'
 import { requireEntityPermission, filterToAccessibleSquads } from '../middleware/require-entity-permission'
 import { hasPermission, getAccessibleSquadIds } from '../services/rbac'
+import { isValidMetadataPath } from '../services/work-streams/metadata-path'
 import type { Identity } from '../services/rbac'
 import {
   subscribeToWorkStream,
@@ -480,19 +481,29 @@ export const workStreamsRouter = new Hono()
       return c.json({ error: 'At least one match parameter required (format: path:value)' }, 400)
     }
 
-    const matches: Record<string, string> = {}
+    // JSON keys such as __proto__ must be retained as ordinary match criteria.
+    const matches: Record<string, string> = Object.create(null)
     for (const m of matchParams) {
       const colonIdx = m.indexOf(':')
       if (colonIdx === -1) {
         return c.json({ error: `Invalid match format: "${m}". Expected "path:value"` }, 400)
       }
-      matches[m.slice(0, colonIdx)] = m.slice(colonIdx + 1)
+      const path = m.slice(0, colonIdx)
+      const value = m.slice(colonIdx + 1)
+      if (!isValidMetadataPath(path)) {
+        return c.json({ error: 'Invalid metadata path: expected non-empty dot-separated keys without NUL' }, 400)
+      }
+      if (value.includes('\0')) return c.json({ error: 'Invalid metadata value: NUL is not supported' }, 400)
+      matches[path] = value
     }
 
-    const streams = await WorkStream.findByMetadata(matches, { status })
     const identity: Identity = c.get('identity')
-    const filtered = await filterToAccessibleSquads(identity, streams, (s) => s.squadId ?? null)
-    return c.json(await serializeCanonicalWorkStreams(filtered))
+    const accessible = await getAccessibleSquadIds(identity)
+    const streams = await WorkStream.findByMetadata(matches, {
+      status,
+      squadIds: accessible === 'all' ? undefined : accessible,
+    })
+    return c.json(await serializeCanonicalWorkStreams(streams))
   })
   .get('/', requireWorkStreamListPermission, async (c) => {
     const squadId = c.req.query('squadId')

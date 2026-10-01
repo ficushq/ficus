@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'crypto'
-import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNull, lt, ne } from 'drizzle-orm'
 import type { CreateLocalDeploymentInput, LocalDeployment, LocalDeploymentStatus } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { db, localDeployments } from '../../db'
@@ -305,15 +305,42 @@ export interface UpdateLocalDeploymentRecordInput {
 
 export async function updateLocalDeploymentRecord(
   id: string,
-  input: UpdateLocalDeploymentRecordInput
+  input: UpdateLocalDeploymentRecordInput,
+  guard: {
+    expectedRecord?: Pick<LocalDeployment, 'updatedAt' | 'status' | 'processId' | 'restartCount'>
+    onlyLive?: boolean
+  } = {}
 ): Promise<LocalDeployment> {
+  const conditions = [eq(localDeployments.id, id)]
+  if (guard.expectedRecord) {
+    const expected = guard.expectedRecord
+    // Null or omitted identity means no session, never a wildcard. Normalize
+    // before building SQL so an optional processId cannot reach eq as undefined.
+    const expectedProcessId = expected.processId ?? null
+    const timestamp = new Date(expected.updatedAt)
+    // PostgreSQL defaults retain microseconds, while the API Date retains only
+    // milliseconds. Match that millisecond plus lifecycle fields, rather than
+    // an exact timestamp that can never match a newly inserted row.
+    conditions.push(
+      gte(localDeployments.updatedAt, timestamp),
+      lt(localDeployments.updatedAt, new Date(timestamp.getTime() + 1)),
+      eq(localDeployments.status, expected.status),
+      expectedProcessId === null
+        ? isNull(localDeployments.processId)
+        : eq(localDeployments.processId, expectedProcessId),
+      eq(localDeployments.restartCount, expected.restartCount)
+    )
+  }
+  if (guard.onlyLive) conditions.push(ne(localDeployments.status, 'stopped'), isNull(localDeployments.archivedAt))
   const [row] = await db
     .update(localDeployments)
     .set({ ...input, updatedAt: new Date() })
-    .where(eq(localDeployments.id, id))
+    .where(and(...conditions))
     .returning()
 
   if (!row) {
+    const current = await getLocalDeployment(id)
+    if (current) return current // A newer write won; do not emit a stale event.
     throw new Error('Sandbox localDeployment not found')
   }
 

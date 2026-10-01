@@ -18,11 +18,14 @@ import {
   getLocalDeployment,
   listLocalDeployments,
   stopLocalDeploymentRecord,
-  updateLocalDeploymentRecord,
 } from '../services/deploy/local-deployment-service'
 import { LocalDeploymentProcessSupervisor } from '../services/deploy/local-deployment-process-supervisor'
 import { LocalDeploymentLogPathOutsideWorkspaceError } from '../services/deploy/local-deployment-log-path'
-import { refreshLocalDeploymentHealth, restartManagedLocalDeployment } from '../services/deploy/local-deployment-health'
+import {
+  refreshLocalDeploymentHealth,
+  restartManagedLocalDeployment,
+  startManagedLocalDeployment,
+} from '../services/deploy/local-deployment-health'
 import { normalizeLocalDeploymentInput } from '../services/deploy/local-deployment-validation'
 import { type LocalAppProxyServer, proxyLocalDeploymentRequest } from '../services/deploy/local-deployment-proxy'
 import { localDeploymentProxyJsonError } from '../services/deploy/local-deployment-proxy-response'
@@ -313,14 +316,10 @@ export const deploymentsRouter = new Hono()
       localDeployment = await createLocalDeployment(squad, input)
 
       if (localDeployment.mode === 'managed') {
-        const { processId } = await deps.supervisor.startManagedLocalDeployment({
-          localDeploymentId: localDeployment.id,
-          sandboxId: localDeployment.sandboxId,
-          command: localDeployment.command ?? '',
-          cwd: localDeployment.cwd,
-          port: localDeployment.port,
+        localDeployment = await startManagedLocalDeployment(localDeployment.id, {
+          ensureSquadSandbox: deps.ensureSquadSandbox,
+          supervisor: deps.supervisor,
         })
-        localDeployment = await updateLocalDeploymentRecord(localDeployment.id, { processId })
       }
 
       localDeployment = await deps.refreshLocalDeploymentHealth(localDeployment.id)
@@ -332,9 +331,8 @@ export const deploymentsRouter = new Hono()
       // which assumes a deployment exists.
       if (err instanceof LocalDeploymentPortInUseError) return c.json({ error: err.message }, 409)
       if (err instanceof LocalDeploymentPortUnavailableError) return c.json({ error: err.message }, 503)
-      if (localDeployment) {
-        await updateLocalDeploymentRecord(localDeployment.id, { status: 'crashed', keepSandboxAlive: false })
-      }
+      // Launch/refresh own guarded failure bookkeeping. Do not turn an
+      // unverified transport outcome into a crash or overwrite stop intent.
       const provisioning = getSandboxProvisionErrorResponse(err)
       if (provisioning) {
         if (provisioning.retryAfter) c.header('Retry-After', provisioning.retryAfter)
@@ -461,7 +459,7 @@ export const deploymentsRouter = new Hono()
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
       try {
-        return c.json(await getDependencies().restartManagedLocalDeployment(localDeployment.id))
+        return c.json(await getDependencies().restartManagedLocalDeployment(localDeployment.id, { allowStopped: true }))
       } catch (err) {
         const provisioning = getSandboxProvisionErrorResponse(err)
         if (provisioning) {
@@ -479,6 +477,7 @@ export const deploymentsRouter = new Hono()
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
 
+      const archived = await archiveLocalDeploymentRecord(localDeployment.id)
       const deps = getDependencies()
       if (localDeployment.mode === 'managed' && localDeployment.processId) {
         try {
@@ -497,7 +496,7 @@ export const deploymentsRouter = new Hono()
         }
       }
 
-      return c.json(await archiveLocalDeploymentRecord(localDeployment.id))
+      return c.json(archived)
     }
   )
   .post(
@@ -507,13 +506,14 @@ export const deploymentsRouter = new Hono()
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
 
+      const stopped = await stopLocalDeploymentRecord(localDeployment.id)
       const deps = getDependencies()
       await deps.ensureSquadSandbox(localDeployment.squadId, { restartManagedLocalDeployments: false })
       if (localDeployment.mode === 'managed' && localDeployment.processId) {
         await deps.supervisor.stopLocalDeployment(localDeployment.sandboxId, localDeployment.processId)
       }
 
-      return c.json(await stopLocalDeploymentRecord(localDeployment.id))
+      return c.json(stopped)
     }
   )
 
