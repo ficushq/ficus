@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { WORK_STREAM_PRESENTATION_CASES } from '../../../../packages/shared/src/test-fixtures/work-stream-presentation'
+import {
+  CODE_HOST_DELIVERY_PRESENTATION_CASES,
+  WORK_STREAM_PRESENTATION_CASES,
+} from '../../../../packages/shared/src/test-fixtures/work-stream-presentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { getWsDisplayState, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
 import { webStatus } from '../lib/statusPresentation'
 
-for (const row of WORK_STREAM_PRESENTATION_CASES) {
+for (const row of [...WORK_STREAM_PRESENTATION_CASES, ...CODE_HOST_DELIVERY_PRESENTATION_CASES]) {
   test(`visible status matrix: ${row.name}`, () => {
     const html = renderToStaticMarkup(<WorkStreamStatusBadges workStream={row.facts} />)
     expect(html).toContain(row.label)
@@ -21,12 +24,12 @@ test('delivery-external pills show the derived label from server explanation fac
         ...base,
         delivery: {
           kind: 'external',
-          explanation: { pullRequests: [{ number: 212, state: 'open' }] },
+          explanation: { codeHostReason: 'awaiting-merge', pullRequests: [{ number: 212, state: 'open' }] },
         },
       }}
     />
   )
-  expect(merge).toContain('Awaiting merge of #212')
+  expect(merge).toContain('Awaiting merge')
   expect(merge).not.toContain('Awaiting Code Host')
   const ci = renderToStaticMarkup(
     <WorkStreamStatusBadges
@@ -36,6 +39,7 @@ test('delivery-external pills show the derived label from server explanation fac
           kind: 'external',
           explanation: {
             pullRequests: [{ number: 212, state: 'open' }],
+            codeHostReason: 'ci-pending',
             gates: { checksState: 'pending' },
           },
         },

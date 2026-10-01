@@ -41,11 +41,26 @@ export interface WorkStreamDeliveryGateFacts {
   pendingHumanReview?: boolean
 }
 
+/** Presentation-only reason selected by Core from the canonical winning PR's evidence.
+ * Never grants approval/merge authority. Omission and future values mean unknown.
+ */
+export type CodeHostDeliveryReason =
+  | 'ci-pending'
+  | 'ci-failed'
+  | 'merge-conflict'
+  | 'changes-requested'
+  | 'draft'
+  | 'awaiting-merge'
+  | 'merged'
+  | 'closed'
+
 /**
  * Server-owned facts explaining a delivery presentation. Omitted fields are
  * unknown; consumers must fail soft rather than infer them client-side.
  */
 export interface WorkStreamDeliveryExplanation {
+  /** Canonical reason, not a client inference from sparse `gates` or PR existence. */
+  codeHostReason?: CodeHostDeliveryReason
   /** Why a `setup` presentation cannot complete, when the classifier knows. */
   setupReason?: 'unbound' | 'not-following-changes' | 'branch-mismatch' | 'direct-merge-facts'
   /** Stream vs pull request branch disagreement, when `setupReason` is `branch-mismatch`. */
@@ -68,6 +83,45 @@ export interface WorkStreamDeliveryPresentation {
   approvalWaitId?: string
   /** Explanatory facts, attached only when the server owns them. */
   explanation?: WorkStreamDeliveryExplanation
+}
+
+/** Shared row-label refinement. Call only after selecting the canonical presentation state.
+ * Old payloads, unknown reasons and incompatible kind/reason pairs keep the caller's generic label.
+ * Raw gate facts are intentionally not interpreted: they can outlive readiness evidence.
+ */
+export function codeHostDeliveryLabel(delivery?: WorkStreamDeliveryPresentation): string | null {
+  const reason = delivery?.explanation?.codeHostReason
+  if (delivery?.kind === 'failure') {
+    switch (reason) {
+      case 'ci-failed':
+        return 'CI failed'
+      case 'merge-conflict':
+        return 'Resolve merge conflicts'
+      case 'changes-requested':
+        return 'Changes requested'
+      case 'closed':
+        return 'PR closed without merging'
+      default:
+        return null
+    }
+  }
+  if (delivery?.kind === 'external') {
+    switch (reason) {
+      case 'ci-pending':
+        return 'Awaiting CI'
+      case 'draft':
+        return 'PR is draft'
+      case 'awaiting-merge':
+        return 'Awaiting merge'
+      case 'merged':
+        return (delivery.explanation?.pullRequests?.length ?? 0) > 1
+          ? 'PRs merged — finalizing delivery'
+          : 'PR merged — finalizing delivery'
+      default:
+        return null
+    }
+  }
+  return null
 }
 
 /**

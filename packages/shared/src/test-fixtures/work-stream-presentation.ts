@@ -314,3 +314,127 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     label: 'Blocked',
   },
 ]
+
+/** Additive wire contract for native row adapters; aggregate vocabulary stays unchanged. */
+export const CODE_HOST_DELIVERY_PRESENTATION_CASES: PresentationCase[] = [
+  ...(
+    [
+      ['ci-pending', 'Awaiting CI'],
+      ['draft', 'PR is draft'],
+      ['awaiting-merge', 'Awaiting merge'],
+      ['merged', 'PR merged — finalizing delivery'],
+    ] as const
+  ).map(([codeHostReason, label]) => ({
+    name: `external ${codeHostReason}`,
+    facts: { ...active, delivery: { kind: 'external' as const, explanation: { codeHostReason } } },
+    state: 'delivery_external' as const,
+    role: 'externalWait' as const,
+    attention: false,
+    bucket: 'externalWait' as const,
+    label,
+  })),
+  ...(
+    [
+      ['ci-failed', 'CI failed'],
+      ['merge-conflict', 'Resolve merge conflicts'],
+      ['changes-requested', 'Changes requested'],
+      ['closed', 'PR closed without merging'],
+    ] as const
+  ).map(([codeHostReason, label]) => ({
+    name: `failure ${codeHostReason}`,
+    facts: { ...active, delivery: { kind: 'failure' as const, explanation: { codeHostReason } } },
+    state: 'delivery_failure' as const,
+    role: 'danger' as const,
+    attention: false,
+    bucket: 'blocked' as const,
+    label,
+  })),
+  {
+    name: 'review wins CI pending',
+    facts: { ...active, delivery: { kind: 'review', explanation: { gates: { checksState: 'pending' } } } },
+    state: 'delivery_review',
+    role: 'review',
+    attention: true,
+    bucket: 'needsYou',
+    label: 'Review Pull Request',
+  },
+  {
+    name: 'open PR does not prove merge readiness',
+    facts: {
+      ...active,
+      delivery: { kind: 'external', explanation: { pullRequests: [{ number: 42, state: 'open' }] } },
+    },
+    state: 'delivery_external',
+    role: 'externalWait',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'Awaiting Code Host',
+  },
+  {
+    name: 'generic blocked is not a conflict',
+    facts: { ...active, delivery: { kind: 'external', explanation: { gates: { mergeState: 'blocked' } } } },
+    state: 'delivery_external',
+    role: 'externalWait',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'Awaiting Code Host',
+  },
+  {
+    name: 'future reason fails soft',
+    facts: {
+      ...active,
+      delivery: {
+        kind: 'external',
+        explanation: { codeHostReason: 'future-reason' as never, gates: { checksState: 'pending' } },
+      },
+    },
+    state: 'delivery_external',
+    role: 'externalWait',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'Awaiting Code Host',
+  },
+  {
+    name: 'incompatible reason fails soft',
+    facts: { ...active, delivery: { kind: 'failure', explanation: { codeHostReason: 'awaiting-merge' } } },
+    state: 'delivery_failure',
+    role: 'danger',
+    attention: false,
+    bucket: 'blocked',
+    label: 'Delivery Changes Required',
+  },
+  {
+    name: 'other waits keep precedence over CI',
+    facts: {
+      ...active,
+      openWaits: [{ type: 'question' }],
+      delivery: { kind: 'external', explanation: { codeHostReason: 'ci-pending' } },
+    },
+    state: 'waiting_on_answer',
+    role: 'humanWait',
+    attention: true,
+    bucket: 'needsYou',
+    label: 'Waiting on Answer',
+  },
+  {
+    name: 'all designated PRs merged',
+    facts: {
+      ...active,
+      delivery: {
+        kind: 'external',
+        explanation: {
+          codeHostReason: 'merged',
+          pullRequests: [
+            { number: 42, state: 'merged' },
+            { number: 8, state: 'merged' },
+          ],
+        },
+      },
+    },
+    state: 'delivery_external',
+    role: 'externalWait',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'PRs merged — finalizing delivery',
+  },
+]
