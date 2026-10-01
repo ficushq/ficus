@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { GitHubPollingProvider } from './provider'
 
 describe('GitHubPollingProvider', () => {
@@ -53,4 +53,46 @@ describe('GitHubPollingProvider', () => {
       'Invalid GitHub polling configuration'
     )
   })
+})
+
+test('the GitHub plugin/parser retains repository issue polling and emits new assignment outputs', async () => {
+  const { createGitHubPlugin } = await import('./plugin')
+  const item = (id: number) => ({
+    id,
+    event: 'assigned',
+    created_at: '2026-10-01T00:00:00Z',
+    issue: { id: 42, number: 7, title: 'Fix issue', state: 'open', updated_at: '2026-10-01T00:00:00Z' },
+    assignee: { login: 'testbot' },
+    actor: { login: 'noah' },
+  })
+  let events = [item(1)]
+  const request = spyOn(globalThis, 'fetch').mockImplementation((async (url: any) => {
+    expect(String(url)).toContain('/repos/acme/widgets/issues/events')
+    return Response.json(events)
+  }) as typeof fetch)
+  try {
+    const plugin = createGitHubPlugin(
+      { currentUser: async () => ({ version: 1, userId: 1, login: 'testbot' }) },
+      async () => 'token'
+    )
+    const connection = {
+      id: 'account',
+      squadId: 'squad',
+      providerKey: 'github',
+      adapterVersion: 1,
+      configuration: { kind: 'issue-events', owner: 'acme', repo: 'widgets' },
+    }
+    const poll = plugin.runtime.provider.capabilities.event_polling!
+    const baseline = await poll.poll(connection, null)
+    expect(baseline.events).toEqual([])
+    events = [item(2), item(1)]
+    const next = await poll.poll(connection, baseline.nextCursor)
+    expect(next.events).toHaveLength(1)
+    expect(plugin.runtime.provider.outputs!.normalize(next.events[0]!)[0]).toMatchObject({
+      output: 'issue.assigned',
+      data: { repository: 'acme/widgets', assignee: 'testbot' },
+    })
+  } finally {
+    request.mockRestore()
+  }
 })

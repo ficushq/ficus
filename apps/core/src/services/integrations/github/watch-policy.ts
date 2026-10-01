@@ -111,34 +111,23 @@ export class GitHubPrWatchPolicy {
       return pending
     }
     const repositoryWatches = new Map<string, EventPollingWatch>()
-    const watchRepositoryEvents = (
-      squadId: string,
-      connectionId: string,
-      repository: string,
-      kind = 'issue-events'
-    ) => {
+    const watchRepositoryEvents = (squadId: string, connectionId: string, repository: string) => {
       const [owner, repo] = repository.toLowerCase().split('/')
-      const key = `${squadId}:${connectionId}:${owner}/${repo}:${kind}`
+      const key = `${squadId}:${connectionId}:${owner}/${repo}:issue-events`
       repositoryWatches.set(key, {
         providerKey: 'github',
         resourceKey: key,
         active: true,
-        ...(kind === 'dependabot-alerts' ? { cadence: 'provider' as const } : {}),
         connection: {
           id: connectionId,
           squadId,
           providerKey: 'github',
           adapterVersion: 1,
-          configuration: { kind, owner, repo },
+          configuration: { kind: 'issue-events', owner, repo },
         },
       })
     }
-    const watchRepositoryInterest = async (
-      squadId: string,
-      repository: unknown,
-      connectionId?: string,
-      kind = 'issue-events'
-    ) => {
+    const watchRepositoryInterest = async (squadId: string, repository: unknown, connectionId?: string) => {
       if (typeof repository !== 'string') return
       if (isRepositoryPattern(repository)) {
         // A pattern is only as wide as the connection's own visibility, and the
@@ -148,13 +137,13 @@ export class GitHubPrWatchPolicy {
         const connection = await resolve(squadId, connectionId)
         if (!connection) return
         for (const expanded of await this.#options.expandRepositories(connection.id, [repository]))
-          watchRepositoryEvents(squadId, connection.id, expanded, kind)
+          watchRepositoryEvents(squadId, connection.id, expanded)
         return
       }
       if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) return
       const connection = await resolve(squadId, connectionId)
       if (!connection) return
-      watchRepositoryEvents(squadId, connection.id, repository, kind)
+      watchRepositoryEvents(squadId, connection.id, repository)
     }
 
     for (const stream of candidates) {
@@ -175,13 +164,8 @@ export class GitHubPrWatchPolicy {
         if (resource.kind === 'pull_request') {
           const [owner, repo] = resource.repository.split('/')
           refs.push({ owner: owner!, repo: repo!, number: resource.number, connectionId: resource.connectionId })
-        } else
-          await watchRepositoryInterest(
-            stream.squadId,
-            resource.repository,
-            resource.connectionId,
-            resource.kind === 'dependabot_alert' ? 'dependabot-alerts' : 'issue-events'
-          )
+        } else if (resource.kind === 'issue')
+          await watchRepositoryInterest(stream.squadId, resource.repository, resource.connectionId)
       }
       for (const subscription of stream.subscriptions ?? []) {
         if (subscription.source.integration !== 'github') continue
@@ -190,15 +174,8 @@ export class GitHubPrWatchPolicy {
           return match && ('value' in match ? match.value : integrationValueAt(stream.metadata, match.streamMetadata))
         }
         const repository = binding('repository')
-        if (subscription.source.output === 'dependabot_alert.updated') {
-          await watchRepositoryInterest(
-            stream.squadId,
-            repository,
-            subscription.source.connectionId,
-            'dependabot-alerts'
-          )
-          continue
-        }
+        // Security alerts are webhook-only; never reinterpret their bindings as PR/issue interest.
+        if (subscription.source.output === 'dependabot_alert.updated') continue
         if (['issue.assigned', 'issue.unassigned', 'issue.updated'].includes(subscription.source.output)) {
           await watchRepositoryInterest(stream.squadId, repository, subscription.source.connectionId)
           continue
@@ -270,17 +247,14 @@ export class GitHubPrWatchPolicy {
         if (
           !rule.enabled ||
           rule.action.type === 'ignore' ||
-          !['issue.assigned', 'issue.unassigned', 'issue.updated', 'dependabot_alert.updated'].includes(
-            rule.source.output
-          )
+          !['issue.assigned', 'issue.unassigned', 'issue.updated'].includes(rule.source.output)
         )
           continue
-        const kind = rule.source.output === 'dependabot_alert.updated' ? 'dependabot-alerts' : 'issue-events'
         const repository = rule.filters.repository || rule.match?.repository?.value
-        if (repository) await watchRepositoryInterest(squad.id, repository, rule.source.connectionId, kind)
+        if (repository) await watchRepositoryInterest(squad.id, repository, rule.source.connectionId)
         else if (rule.filters.squadRouting && Array.isArray(metadata?.github))
           for (const binding of metadata.github)
-            await watchRepositoryInterest(squad.id, binding?.repo, rule.source.connectionId, kind)
+            await watchRepositoryInterest(squad.id, binding?.repo, rule.source.connectionId)
       }
     }
 

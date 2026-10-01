@@ -57,6 +57,9 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
     }
   },
   shouldNotify(fact, configuration) {
+    // Migration-free retirement: durable poll observations/pending deliveries are history,
+    // not a backfill queue. A real webhook can still refine the same stored identity.
+    if (fact.output === DEPENDABOT_OUTPUT && !DEPENDABOT_ACTIONS.includes(String(fact.data.action))) return false
     return !isGitHubSelfComment(fact, String(record(configuration)?.login ?? ''))
   },
   notificationBody(fact) {

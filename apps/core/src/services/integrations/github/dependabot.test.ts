@@ -87,6 +87,7 @@ test('defaults notify the manager for high/critical open alerts only, with confi
   ).toBeUndefined()
   const rules = effectiveSquadEventRules(metadata, 'github').filter((r) => r.source.output === fact.output)
   expect(rules).toHaveLength(1)
+  expect(rules[0]!.enabled).toBe(true)
   rules[0]!.predicates = [{ field: 'severity', op: 'in', value: ['low', 'medium', 'high', 'critical'] }]
   expect(
     selectSquadEventRule(
@@ -97,39 +98,6 @@ test('defaults notify the manager for high/critical open alerts only, with confi
     )?.action.type
   ).toBe('notify-manager')
   expect(selectSquadEventRule({ ...metadata, integrationRules: { github: [] } }, 'github', fact, '')).toBeUndefined()
-})
-
-test('backfill publishes open alerts immediately and overlaps webhook facts without duplicate identities', async () => {
-  const urls: string[] = []
-  const provider = new GitHubPollingProvider(
-    async () => 'test-token',
-    async (url) => {
-      urls.push(String(url))
-      return String(url).includes('/dependabot/alerts') ? Response.json([alert]) : Response.json(repository)
-    }
-  )
-  expect(provider.parseConfig(connection.configuration)).toEqual(connection.configuration)
-  const first = await provider.capabilities.event_polling!.poll(connection, null)
-  expect(first.events).toHaveLength(1)
-  expect(first.suggestedIntervalMs).toBe(86_400_000)
-  expect(first.budgetUnitsConsumed).toBe(2)
-  const fact = githubOutputAdapter.normalize(first.events[0]!)[0]!
-  expect(fact.data.action).toBe('observed') // snapshots cannot claim a native reopen action
-  expect(fact.eventKey).toBe(githubOutputAdapter.normalize(event())[0]!.eventKey)
-  expect(urls.every((url) => url.startsWith('https://api.github.com/'))).toBe(true)
-  const second = await provider.capabilities.event_polling!.poll(connection, first.nextCursor)
-  expect(githubOutputAdapter.normalize(second.events[0]!)[0]!.eventKey).toBe(fact.eventKey)
-})
-
-test('permission failure is unavailable, not an empty alert page', async () => {
-  const provider = new GitHubPollingProvider(
-    async () => 'test-token',
-    async (url) =>
-      String(url).includes('/dependabot/alerts') ? new Response(null, { status: 403 }) : Response.json(repository)
-  )
-  await expect(provider.capabilities.event_polling!.poll(connection, null)).rejects.toThrow(
-    'Dependabot discovery unavailable (403)'
-  )
 })
 
 test('alert tracking uses the typed registry, immutable ID and never a delivery PR', () => {
@@ -144,69 +112,81 @@ test('alert tracking uses the typed registry, immutable ID and never a delivery 
   expect(githubOutputAdapter.workStreamBindings!(githubOutputAdapter.normalize(event())[0]!)).toEqual({})
 })
 
-test('enabled repository-scoped discovery reconciles even when webhooks are healthy; disabling removes watches', async () => {
-  let metadata: unknown = { github: [{ repo: 'acme/widgets' }] }
-  const policy = new GitHubPrWatchPolicy({
-    resolveConnection: async () => ({ id: 'account' }),
-    listWorkStreams: async () => [],
-    listSquads: async () => [{ id: 'squad', metadata }],
-    lastRealDeliveries: async () => new Map([['acme/widgets', new Date()]]),
-  })
-  expect(
-    (await policy.listWatches()).filter((w) => (w.connection.configuration as any).kind === 'dependabot-alerts')
-  ).toHaveLength(1)
-  metadata = { github: [{ repo: 'acme/widgets' }], integrationRules: { github: [] } }
-  expect(
-    (await policy.listWatches()).filter((w) => (w.connection.configuration as any).kind === 'dependabot-alerts')
-  ).toHaveLength(0)
+test('Dependabot interests never create polling watches or fall through to issue/PR polling', async () => {
+  let resolves = 0
+  let expands = 0
+  const target = githubOutputAdapter.trackedResource!(githubOutputAdapter.normalize(event())[0]!)!
+  const subscriptions = githubTrackedResourceAdapter.trackedSubscriptions(
+    resolveTrackedResources({ tracked: [target] })[0]!
+  )
+  // Even PR-shaped bindings on a security subscription must not create a PR watch.
+  subscriptions[0]!.match['pullRequest.number'] = { value: 7 }
+  for (const metadata of [
+    { github: [{ repo: 'acme/widgets' }] },
+    {
+      integrationRules: {
+        github: effectiveSquadEventRules({}, 'github')
+          .filter((r) => r.source.output === 'dependabot_alert.updated')
+          .map((r) => ({ ...r, filters: { ...r.filters, repository: 'acme/*' } })),
+      },
+    },
+  ]) {
+    const policy = new GitHubPrWatchPolicy({
+      resolveConnection: async () => {
+        resolves++
+        return { id: 'account' }
+      },
+      expandRepositories: async () => {
+        expands++
+        return ['acme/widgets']
+      },
+      listWorkStreams: async () => [
+        { squadId: 'squad', status: 'active', metadata: { tracked: [target] }, subscriptions },
+      ],
+      listSquads: async () => [{ id: 'squad', metadata }],
+      lastRealDeliveries: async () => new Map(),
+    })
+    const watches = await policy.listWatches()
+    // Shared repo bindings intentionally retain unrelated issue polling.
+    expect(watches.map((w) => w.connection.configuration)).toEqual(
+      'github' in metadata ? [{ kind: 'issue-events', owner: 'acme', repo: 'widgets' }] : []
+    )
+  }
+  expect(expands).toBe(0)
+  expect(resolves).toBe(1)
 })
 
-test('bounded pagination resumes from durable cursor and rejects off-origin links', async () => {
-  let next = true
-  const provider = new GitHubPollingProvider(
-    async () => 'test-token',
-    async (url) => {
-      if (!String(url).includes('/dependabot/alerts')) return Response.json(repository)
-      return Response.json([alert], {
-        headers: next
-          ? { link: '<https://api.github.com/repos/acme/widgets/dependabot/alerts?after=abc>; rel="next"' }
-          : {},
-      })
+test('retired Dependabot configurations are rejected before credential or API access through the plugin', async () => {
+  const { createGitHubPlugin } = await import('./plugin')
+  let credentials = 0
+  const plugin = createGitHubPlugin(
+    { currentUser: async () => ({ version: 1, userId: 1, login: 'test' }) },
+    async () => {
+      credentials++
+      return 'token'
     }
   )
-  const first = await provider.capabilities.event_polling!.poll(connection, null)
-  expect(first.nextCursor.after).toBe('abc')
-  expect(first.suggestedIntervalMs).toBe(60_000)
-  next = false
-  expect(
-    (await provider.capabilities.event_polling!.poll(connection, first.nextCursor)).nextCursor.after
-  ).toBeUndefined()
-  const bad = new GitHubPollingProvider(
-    async () => 'test-token',
-    async (url) =>
-      String(url).includes('/dependabot/alerts')
-        ? Response.json([alert], {
-            headers: { link: '<https://evil.example/repos/acme/widgets/dependabot/alerts?after=abc>; rel="next"' },
-          })
-        : Response.json(repository)
-  )
-  await expect(bad.capabilities.event_polling!.poll(connection, null)).rejects.toThrow('Invalid Dependabot pagination')
+  const provider = new GitHubPollingProvider(async () => undefined)
+  for (const configuration of [
+    connection.configuration,
+    { ...connection.configuration, number: 7, deliveryPresentation: true },
+  ]) {
+    expect(() => provider.parseConfig(configuration)).toThrow('Invalid GitHub polling configuration')
+    expect(() =>
+      plugin.runtime.provider.capabilities.event_polling!.poll(
+        { ...connection, configuration },
+        { after: 'old-page', repository },
+        undefined
+      )
+    ).toThrow('Invalid GitHub polling configuration')
+  }
+  expect(credentials).toBe(0)
 })
 
-test('initial stale-name redirects are followed safely and cancellation reaches every request', async () => {
-  const urls: string[] = []
-  const signal = new AbortController().signal as any
-  signal.reserveRequest = () => {}
-  const provider = new GitHubPollingProvider(
-    async () => 'test-token',
-    async (url, init) => {
-      urls.push(String(url))
-      expect(init?.signal).toBe(signal)
-      if (urls.length === 1)
-        return new Response(null, { status: 301, headers: { location: 'https://api.github.com/repositories/101' } })
-      return String(url).includes('/dependabot/alerts') ? Response.json([alert]) : Response.json(repository)
-    }
-  )
-  expect((await provider.capabilities.event_polling!.poll(connection, null, signal)).events).toHaveLength(1)
-  expect(urls).toHaveLength(3)
+test('synthetic Dependabot events are no longer normalized, and historical observations cannot notify', () => {
+  expect(githubOutputAdapter.normalize({ ...event('observed'), metadata: { synthetic: true } })).toEqual([])
+  expect(githubOutputAdapter.normalize({ ...event(), metadata: { synthetic: true } })).toEqual([])
+  const native = githubOutputAdapter.normalize(event())[0]!
+  expect(githubOutputAdapter.shouldNotify!({ ...native, data: { ...native.data, action: 'observed' } }, {})).toBe(false)
+  expect(githubOutputAdapter.shouldNotify!(native, {})).toBe(true)
 })
