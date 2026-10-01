@@ -11,7 +11,7 @@
  * Layout produced (spec §3/§4.1,
  * `docs/history/superpowers/specs/2026-08-20-prebuilt-core-artifacts-design.md`):
  *
- *   tau-core-<sha>/
+ *   ficus-core-<sha>/
  *     artifact.json
  *     apps/core/dist/{index,worker,migrate}.js
  *     apps/core/drizzle/…
@@ -371,7 +371,7 @@ async function runSmoke(opts: {
   try {
     const untar = await opts.run(['tar', '-xzf', opts.tarballPath, '-C', extractDir], {})
     if (untar.exitCode !== 0) throw new Error(`smoke: extracting the tarball failed: ${untar.stderr}`)
-    const treeRoot = join(extractDir, `tau-core-${opts.commit}`)
+    const treeRoot = join(extractDir, `ficus-core-${opts.commit}`)
 
     const migrate = await opts.run(['bun', join(treeRoot, 'apps/core/dist/migrate.js')], {
       cwd: join(treeRoot, 'apps/core'),
@@ -481,10 +481,10 @@ export async function assembleCoreArtifact(opts: AssembleCoreArtifactOptions): P
     // A FRESH staging dir every run: the manifest walker signs whatever it
     // finds, so a reused directory would fold a previous run's leftovers into
     // this artifact's digest.
-    const treeRoot = join(staging, `tau-core-${commit}`)
+    const treeRoot = join(staging, `ficus-core-${commit}`)
     await mkdir(treeRoot, { recursive: true })
 
-    log(`staging tau-core-${commit} in ${staging}`)
+    log(`staging ficus-core-${commit} in ${staging}`)
     await stageLayout(checkoutRoot, treeRoot)
     for (const notice of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
       if (await pathExists(join(checkoutRoot, notice)))
@@ -520,8 +520,8 @@ export async function assembleCoreArtifact(opts: AssembleCoreArtifactOptions): P
       log(`signed artifact.json -> ${sigPath}`)
     }
 
-    const tarballPath = join(outDir, `tau-core-${commit}-${platform}.tar.gz`)
-    const tar = await run(['tar', '-C', staging, '-czf', tarballPath, `tau-core-${commit}`], {})
+    const tarballPath = join(outDir, `ficus-core-${commit}-${platform}.tar.gz`)
+    const tar = await run(['tar', '-C', staging, '-czf', tarballPath, `ficus-core-${commit}`], {})
     if (tar.exitCode !== 0) throw new Error(`tar failed (exit ${tar.exitCode}): ${tar.stderr}`)
     log(`wrote ${tarballPath}`)
 
