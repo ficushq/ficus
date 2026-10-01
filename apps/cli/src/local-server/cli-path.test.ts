@@ -38,7 +38,7 @@ describe('cliInstallDir', () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-cli-path-')))
     try {
       mkdirSync(join(home, LEGACY_HOME_DIR_NAME))
-      expect(cliInstallDir({}, home)).toBe(join(home, LEGACY_HOME_DIR_NAME, 'bin'))
+      expect(cliInstallDir({}, home)).toBe(join(home, '.ficus', 'bin'))
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

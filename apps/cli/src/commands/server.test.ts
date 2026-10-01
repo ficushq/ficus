@@ -16,7 +16,7 @@ import { join } from 'path'
 import { isJsonMode, output, outputError, setOutputOptions } from '../output'
 import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { recordingRunner } from '../local-server/runner'
-import { readRegistry, upsertInstance } from '../local-server/state'
+import { getStatePath, readRegistry, upsertInstance } from '../local-server/state'
 import { LEGACY_HOME_DIR_NAME, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
 import { cliHome } from '../local-server/home-move'
 import { registerServerCommands, type ServerDeps } from './server'
@@ -30,12 +30,12 @@ beforeEach(() => {
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ficus' }))
   writeFileSync(
     join(root, '.env'),
-    'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nFICUS_SANDBOX_RUNTIME=host\n'
+    'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/ficus\nFICUS_SANDBOX_RUNTIME=host\n'
   )
   statePath = join(root, 'state.json')
   upsertInstance(
-    'tau',
-    { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+    'ficus',
+    { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
     { makeDefault: true },
     statePath
   )
@@ -104,28 +104,28 @@ describe('ficus server', () => {
     const { run, calls } = make({ 'docker inspect': { stdout: 'true\n' } })
     await run(['server', 'start'])
     expect(joined(calls)).toEqual([
-      'docker inspect -f {{.State.Running}} postgres-tau',
-      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
-      'bunx pm2 start ecosystem.config.js --only tau-api,tau-worker --update-env',
+      'docker inspect -f {{.State.Running}} postgres-ficus',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'bunx pm2 start ecosystem.config.js --only ficus-api,ficus-worker --update-env',
     ])
     expect(calls.at(-1)?.options.cwd).toBe(root)
   })
   it('start creates the instance container, volume and port when it does not exist yet', async () => {
     writeFileSync(
       join(root, '.env'),
-      'FICUS_INSTANCE=smoke\nPORT=3100\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nPORT=3100\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/ficus\n'
     )
     const { run, calls } = make({ 'docker inspect': { code: 1, stderr: 'Error: No such object' } })
     await run(['server', 'start'])
     expect(joined(calls)).toEqual([
-      'docker inspect -f {{.State.Running}} postgres-tau',
-      'docker run -d --name postgres-tau --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5433:5432 -v tau_postgres-data:/var/lib/postgresql paradedb/paradedb:latest',
-      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
-      'bunx pm2 start ecosystem.config.js --only tau-api,tau-worker --update-env',
+      'docker inspect -f {{.State.Running}} postgres-ficus',
+      'docker run -d --name postgres-ficus --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ficus -p 127.0.0.1:5433:5432 -v ficus_postgres-data:/var/lib/postgresql paradedb/paradedb:latest',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-ficus psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'bunx pm2 start ecosystem.config.js --only ficus-api,ficus-worker --update-env',
     ])
     // The pull's progress needs the terminal; the inspect it branches on must not have it.
     expect(calls.find((c) => c.command[1] === 'run')?.options.inherit).toBe(true)
@@ -153,7 +153,7 @@ describe('ficus server', () => {
         console.log = realLog
         ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
       }
-      return printed.some((l) => l.includes('Starting PostgreSQL container postgres-tau'))
+      return printed.some((l) => l.includes('Starting PostgreSQL container postgres-ficus'))
     }
     // A pull can take minutes, so say so — unless --json promised one
     // machine-readable document on stdout.
@@ -164,7 +164,7 @@ describe('ficus server', () => {
     writeFileSync(join(root, '.env'), 'DATABASE_URL=postgres://u:p@db.example:5432/x\n')
     const { run, calls } = make()
     await run(['server', 'start'])
-    expect(joined(calls)).toEqual(['bunx pm2 start ecosystem.config.js --only tau-api,tau-worker --update-env'])
+    expect(joined(calls)).toEqual(['bunx pm2 start ecosystem.config.js --only ficus-api,ficus-worker --update-env'])
   })
   it('start leaves a native loopback PostgreSQL alone and still starts pm2', async () => {
     // Loopback with the operator's own credentials is not our container (setup
@@ -173,16 +173,16 @@ describe('ficus server', () => {
     writeFileSync(join(root, '.env'), 'DATABASE_URL=postgres://me:pw@localhost:5432/app\n')
     const { run, calls } = make()
     await run(['server', 'start'])
-    expect(joined(calls)).toEqual(['bunx pm2 start ecosystem.config.js --only tau-api,tau-worker --update-env'])
+    expect(joined(calls)).toEqual(['bunx pm2 start ecosystem.config.js --only ficus-api,ficus-worker --update-env'])
   })
   it('stop and restart address the two apps', async () => {
     const { run, calls } = make()
     await run(['server', 'stop'])
     await run(['server', 'restart'])
     expect(joined(calls)).toEqual([
-      'bunx pm2 stop tau-api tau-worker',
-      'bunx pm2 restart tau-worker --update-env',
-      'bunx pm2 restart tau-api --update-env',
+      'bunx pm2 stop ficus-api ficus-worker',
+      'bunx pm2 restart ficus-worker --update-env',
+      'bunx pm2 restart ficus-api --update-env',
     ])
   })
   describe('on a checkout whose .env predates the Ficus naming', () => {
@@ -210,7 +210,7 @@ describe('ficus server', () => {
   it('start and restart warn when the built web bundle was made for a different base path', async () => {
     writeFileSync(
       join(root, '.env'),
-      'PORT=3000\nDATABASE_URL=postgres://user:pw@db.example.com:5432/tau\nAPP_BASE_PATH=/ficus\n'
+      'PORT=3000\nDATABASE_URL=postgres://user:pw@db.example.com:5432/ficus\nAPP_BASE_PATH=/ficus\n'
     )
     mkdirSync(join(root, 'apps', 'web', 'dist'), { recursive: true })
     writeFileSync(
@@ -260,20 +260,20 @@ describe('ficus server', () => {
   it('status reports root, processes and health', async () => {
     const { run } = make({
       'bunx pm2 jlist': {
-        stdout: JSON.stringify([{ name: 'tau-api', pid: 5, pm2_env: { status: 'online', pm_cwd: root } }]),
+        stdout: JSON.stringify([{ name: 'ficus-api', pid: 5, pm2_env: { status: 'online', pm_cwd: root } }]),
       },
       'git rev-parse --short HEAD': { stdout: 'abc1234\n' },
     })
     await run(['server', 'status'])
     const [data] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>]
     expect(data.root).toBe(root)
-    expect(data.instance).toBe('tau')
+    expect(data.instance).toBe('ficus')
     expect(data.port).toBe(3000)
     expect(data.runtime).toBe('host')
     expect(data.commit).toBe('abc1234')
     expect(data.health).toBe('ok')
     expect((data.processes as { name: string; status: string }[])[0]).toEqual({
-      name: 'tau-api',
+      name: 'ficus-api',
       status: 'online',
       pid: 5,
       cwd: root,
@@ -284,9 +284,9 @@ describe('ficus server', () => {
     const { run, calls } = make()
     await run(['server', 'status'])
     const [data, text] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>, string]
-    expect(data.instance).toBe('tau')
-    expect(text).toContain('instance: tau')
-    expect(text).toContain('tau-api: not registered')
+    expect(data.instance).toBe('ficus')
+    expect(text).toContain('instance: ficus')
+    expect(text).toContain('ficus-api: not registered')
     expect(joined(calls)).toContain('bunx pm2 jlist')
   })
   it('probes the public root /health route (/api/health is 401-only behind identity middleware)', async () => {
@@ -316,9 +316,9 @@ describe('ficus server', () => {
   it('logs passes component and line count through to pm2', async () => {
     const { run, calls } = make()
     await run(['server', 'logs', '-c', 'worker', '-n', '20'])
-    expect(joined(calls)).toEqual(['bunx pm2 logs tau-worker --lines 20 --nostream'])
+    expect(joined(calls)).toEqual(['bunx pm2 logs ficus-worker --lines 20 --nostream'])
     await run(['server', 'logs', '-f'])
-    expect(joined(calls).at(-1)).toBe('bunx pm2 logs tau-api tau-worker --lines 100')
+    expect(joined(calls).at(-1)).toBe('bunx pm2 logs ficus-api ficus-worker --lines 100')
     expect(calls.at(-1)?.options.inherit).toBe(true)
   })
   it('logs reports a non-zero pm2 exit through outputError', async () => {
@@ -338,7 +338,7 @@ describe('ficus server', () => {
       {
         'docker inspect -f {{json .Mounts}}': {
           stdout: JSON.stringify([
-            { Type: 'volume', Name: 'taumain_postgres-data', Destination: '/var/lib/postgresql' },
+            { Type: 'volume', Name: 'ficusmain_postgres-data', Destination: '/var/lib/postgresql' },
           ]),
         },
       },
@@ -346,19 +346,19 @@ describe('ficus server', () => {
     )
     await run(['server', 'uninstall', '--yes'])
     expect(joined(calls)).toEqual([
-      'bunx pm2 delete tau-api tau-worker',
+      'bunx pm2 delete ficus-api ficus-worker',
       'bunx pm2 save',
-      'docker inspect -f {{json .Mounts}} postgres-tau',
+      'docker inspect -f {{json .Mounts}} postgres-ficus',
     ])
     expect(readRegistry(statePath).instances).toEqual({})
     const [data, message] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>, string]
     expect(message).toContain(root)
     // The discovered compose project name, not the derived instance name.
-    expect(message).toContain('docker rm -f postgres-tau && docker volume rm taumain_postgres-data')
-    expect(data.kept).toContain('taumain_postgres-data')
+    expect(message).toContain('docker rm -f postgres-ficus && docker volume rm ficusmain_postgres-data')
+    expect(data.kept).toContain('ficusmain_postgres-data')
     expect(data.kept).toContain('~/.ficus')
     expect(message).toContain('data:       ~/.ficus')
-    expect(message).toContain('removed instance "tau"')
+    expect(message).toContain('removed instance "ficus"')
     rmSync(home, { recursive: true, force: true })
   })
   it('uninstall names a legacy CLI home that has not moved yet as the default instance data', async () => {
@@ -367,29 +367,29 @@ describe('ficus server', () => {
     const { run } = make({ 'docker inspect -f {{json .Mounts}}': { code: 1, stdout: '' } }, { env: { HOME: home } })
     await run(['server', 'uninstall', '--yes'])
     const message = (output as ReturnType<typeof mock>).mock.calls.at(-1)?.[1] as string
-    expect(message).toContain(`data:       ~/${LEGACY_HOME_DIR_NAME}\n`)
+    expect(message).toContain('data:       ~/.ficus\n')
     rmSync(home, { recursive: true, force: true })
   })
   it('uninstall falls back to the derived volume name when docker cannot answer', async () => {
     const { run } = make({ 'docker inspect -f {{json .Mounts}}': { code: 1, stdout: '' } })
     await run(['server', 'uninstall', '--yes'])
     const message = (output as ReturnType<typeof mock>).mock.calls.at(-1)?.[1] as string
-    expect(message).toContain('docker rm -f postgres-tau && docker volume rm tau_postgres-data')
+    expect(message).toContain('docker rm -f postgres-ficus && docker volume rm ficus_postgres-data')
   })
   it('uninstall names the labelled instance own container, volume and data directory', async () => {
-    writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nHOME_DIR=~/.tau-smoke\n')
+    writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nHOME_DIR=~/.ficus-smoke\n')
     const { run, calls } = make()
     await run(['server', 'uninstall', '--yes'])
     // The registry resolves the default instance's names; the volume probe
     // still runs (empty answer → derived-name fallback, asserted below).
     expect(joined(calls)).toEqual([
-      'bunx pm2 delete tau-api tau-worker',
+      'bunx pm2 delete ficus-api ficus-worker',
       'bunx pm2 save',
-      'docker inspect -f {{json .Mounts}} postgres-tau',
+      'docker inspect -f {{json .Mounts}} postgres-ficus',
     ])
     const message = (output as ReturnType<typeof mock>).mock.calls.at(-1)?.[1] as string
-    expect(message).toContain('docker rm -f postgres-tau && docker volume rm tau_postgres-data')
-    expect(message).toContain('~/.tau-smoke')
+    expect(message).toContain('docker rm -f postgres-ficus && docker volume rm ficus_postgres-data')
+    expect(message).toContain('~/.ficus-smoke')
   })
   it('uninstall leaves the registry alone for a checkout nobody registered', async () => {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-other-')))
@@ -400,7 +400,7 @@ describe('ficus server', () => {
     expect(joined(calls)).toEqual([])
     expect(outputError).toHaveBeenCalled()
     // The registered instance (a different checkout) is untouched.
-    expect(readRegistry(statePath).instances.tau?.root).toBe(root)
+    expect(readRegistry(statePath).instances.ficus?.root).toBe(root)
     const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
     expect(error.message).toContain('not registered')
     rmSync(other, { recursive: true, force: true })
@@ -412,31 +412,31 @@ describe('ficus server', () => {
     const gone = join(tmpdir(), `ficus-gone-${process.pid}`)
     upsertInstance(
       'smoke',
-      { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+      { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
       {},
       statePath
     )
     const { run, calls } = make()
     await run(['server', 'uninstall', '--instance', 'smoke', '--yes'])
     expect(outputError).not.toHaveBeenCalled()
-    expect(joined(calls)).toEqual(['bunx pm2 delete tau-smoke-api tau-smoke-worker', 'bunx pm2 save'])
+    expect(joined(calls)).toEqual(['bunx pm2 delete ficus-smoke-api ficus-smoke-worker', 'bunx pm2 save'])
     // pm2 ran somewhere that exists, not in the vanished checkout.
     expect(calls.every((c) => c.options.cwd !== gone)).toBe(true)
     expect(readRegistry(statePath).instances).toEqual({
-      tau: expect.objectContaining({ root }),
+      ficus: expect.objectContaining({ root }),
     })
     const [data, message] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>, string]
     expect(data.unregistered).toBe('smoke')
     expect(message).toContain(`removed instance "smoke"`)
     expect(message).toContain('no longer exists')
-    expect(message).toContain('docker rm -f postgres-tau-smoke && docker volume rm tau-smoke_postgres-data')
-    expect(message).toContain('~/.tau-smoke')
+    expect(message).toContain('docker rm -f postgres-ficus-smoke && docker volume rm ficus-smoke_postgres-data')
+    expect(message).toContain('~/.ficus-smoke')
   })
   it('uninstall --instance of a vanished checkout still removes the registration when the supervisor cleanup fails', async () => {
     const gone = join(tmpdir(), `ficus-gone-${process.pid}-b`)
     upsertInstance(
       'smoke',
-      { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+      { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
       {},
       statePath
     )
@@ -541,7 +541,7 @@ describe('ficus server', () => {
     const { run, deps, calls } = make({ 'docker inspect': { stdout: 'true\n' } })
     upsertInstance(
       'lab',
-      { root: other, port: 4100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+      { root: other, port: 4100, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
       {},
       deps.statePath
     )
@@ -553,22 +553,22 @@ describe('ficus server', () => {
     // `lab`, in lab's checkout and under lab's pm2 names.
     calls.length = 0
     await run(['server', 'start'])
-    expect(calls.at(-1)?.command.join(' ')).toContain('tau-lab-api,tau-lab-worker')
+    expect(calls.at(-1)?.command.join(' ')).toContain('ficus-lab-api,ficus-lab-worker')
     expect(calls.at(-1)?.options.cwd).toBe(other)
 
     // …and --instance still wins over it, for that command ONLY: an override
     // is not a selection, so it must leave the registry's default alone.
     // `use` is the only thing that moves it.
     calls.length = 0
-    await run(['server', 'start', '--instance', 'tau'])
-    expect(calls.at(-1)?.command.join(' ')).toContain('tau-api,tau-worker')
+    await run(['server', 'start', '--instance', 'ficus'])
+    expect(calls.at(-1)?.command.join(' ')).toContain('ficus-api,ficus-worker')
     expect(calls.at(-1)?.options.cwd).toBe(root)
     expect(readRegistry(deps.statePath).default).toBe('lab')
 
     // The next bare command is back on the default, unaffected by the override.
     calls.length = 0
     await run(['server', 'start'])
-    expect(calls.at(-1)?.command.join(' ')).toContain('tau-lab-api,tau-lab-worker')
+    expect(calls.at(-1)?.command.join(' ')).toContain('ficus-lab-api,ficus-lab-worker')
     rmSync(other, { recursive: true, force: true })
   })
 
@@ -577,13 +577,13 @@ describe('ficus server', () => {
     await run(['server', 'use', 'nope'])
     expect(outputError).toHaveBeenCalled()
     const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
-    expect(error.message).toBe("No local instance named 'nope' — known instances: tau")
-    expect(readRegistry(deps.statePath).default).toBe('tau')
+    expect(error.message).toBe("No local instance named 'nope' — known instances: ficus")
+    expect(readRegistry(deps.statePath).default).toBe('ficus')
   })
 
   it('install clones a fresh root, installs deps and hands off to bun run setup', async () => {
     const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-install-')))
-    const installRoot = join(installTmp, 'tau')
+    const installRoot = join(installTmp, 'ficus')
     const { runner, calls } = cloningRunner(installRoot)
     const { deps } = make()
     deps.runner = runner
@@ -662,7 +662,7 @@ describe('ficus server', () => {
   })
   it('install parses the production form (no `--` separator) and still forwards the trailing flags to setup', async () => {
     const installTmp = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-install-')))
-    const installRoot = join(installTmp, 'tau')
+    const installRoot = join(installTmp, 'ficus')
     const { runner, calls } = cloningRunner(installRoot)
     const { deps } = make()
     deps.runner = runner
@@ -700,8 +700,8 @@ describe('ficus server', () => {
       'git checkout --recurse-submodules v1',
       'git rev-parse HEAD',
       'bun run update:offline -- --from ' + sha,
-      'bunx pm2 restart tau-worker --update-env',
-      'bunx pm2 restart tau-api --update-env',
+      'bunx pm2 restart ficus-worker --update-env',
+      'bunx pm2 restart ficus-api --update-env',
     ])
     expect(calls.find((call) => call.command.includes('update:offline'))?.options.env?.FICUS_UPDATE_SUPERVISOR).toBe(
       'pm2'
@@ -812,6 +812,16 @@ describe('ficus server and the ficus identity', () => {
   })
 
   it('rename-identity --dry-run prints the plan for the registered checkout and changes nothing', async () => {
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        version: 3,
+        default: LEGACY_LOCAL_INSTANCE,
+        instances: {
+          [LEGACY_LOCAL_INSTANCE]: { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+        },
+      })
+    )
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-rename-home-')))
     try {
       writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://app:pw@db.example.com:5432/app\n')
@@ -821,7 +831,12 @@ describe('ficus server and the ficus identity', () => {
         `module.exports = { apps: [{ name: '${LEGACY_UNITS.api}' }, { name: '${LEGACY_UNITS.worker}' }] }\n`
       )
       const before = readFileSync(statePath, 'utf8')
-      const { run, calls } = make({}, { env: { HOME: home } })
+      const recoveryRegistry = join(home, LEGACY_HOME_DIR_NAME, 'cli', 'local-server.json')
+      mkdirSync(join(home, LEGACY_HOME_DIR_NAME, 'cli'), { recursive: true })
+      writeFileSync(recoveryRegistry, before)
+      mkdirSync(join(root, 'apps/core/dist'), { recursive: true })
+      writeFileSync(join(root, 'apps/core/dist/rebase-home.js'), '// fixture helper')
+      const { run, calls } = make({}, { env: { HOME: home }, statePath: getStatePath({ HOME: home }) })
       await run(['server', 'rename-identity', '--root', root, '--dry-run'])
       expect(outputError).not.toHaveBeenCalled()
       expect(output).toHaveBeenCalledWith(
@@ -832,7 +847,16 @@ describe('ficus server and the ficus identity', () => {
         expect.stringContaining('ficus')
       )
       expect(readFileSync(statePath, 'utf8')).toBe(before)
-      expect(calls).toEqual([])
+      expect(calls).toHaveLength(1)
+      expect(calls[0].command.at(-1)).toBe('--dry-run')
+      expect(readFileSync(recoveryRegistry, 'utf8')).toBe(before)
+      expect(existsSync(join(home, '.ficus'))).toBe(false)
+      // An explicit state override must not be replaced by home discovery.
+      writeFileSync(recoveryRegistry, JSON.stringify({ version: 3, instances: {} }))
+      const explicit = make({}, { env: { HOME: home, FICUS_LOCAL_SERVER_STATE: statePath }, statePath })
+      await explicit.run(['server', 'rename-identity', '--root', root, '--dry-run'])
+      expect(outputError).not.toHaveBeenCalled()
+      expect(readFileSync(statePath, 'utf8')).toBe(before)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
@@ -890,7 +914,7 @@ describe('ficus server list', () => {
     writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     upsertInstance(
       'smoke',
-      { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+      { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
       {},
       statePath
     )
@@ -902,8 +926,8 @@ describe('ficus server list', () => {
     const { run, calls } = make({
       'bunx pm2 jlist': {
         stdout: JSON.stringify([
-          { name: 'tau-api', pid: 5, pm2_env: { status: 'online', pm_cwd: root } },
-          { name: 'tau-smoke-worker', pid: 6, pm2_env: { status: 'stopped', pm_cwd: other } },
+          { name: 'ficus-api', pid: 5, pm2_env: { status: 'online', pm_cwd: root } },
+          { name: 'ficus-smoke-worker', pid: 6, pm2_env: { status: 'stopped', pm_cwd: other } },
         ]),
       },
     })
@@ -912,7 +936,7 @@ describe('ficus server list', () => {
     expect(joined(calls)).toEqual(['bunx pm2 jlist', 'bunx pm2 jlist'])
     expect(calls[0].options.cwd).toBe(root)
     const text = (output as ReturnType<typeof mock>).mock.calls.at(-1)?.[1] as string
-    expect(text).toContain(`* tau`)
+    expect(text).toContain(`* ficus`)
     expect(text).toContain(root)
     expect(text).toContain('http://localhost:3000')
     expect(text).toContain('api: online')
@@ -934,7 +958,7 @@ describe('ficus server list', () => {
     const other = secondInstance()
     const { run } = make({
       'bunx pm2 jlist': {
-        stdout: JSON.stringify([{ name: 'tau-api', pid: 5, pm2_env: { status: 'online', pm_cwd: root } }]),
+        stdout: JSON.stringify([{ name: 'ficus-api', pid: 5, pm2_env: { status: 'online', pm_cwd: root } }]),
       },
     })
     await run(['server', 'list', '--json'])
@@ -942,16 +966,16 @@ describe('ficus server list', () => {
     const [data] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [
       { default?: string; instances: Record<string, unknown>[] },
     ]
-    expect(data.default).toBe('tau')
+    expect(data.default).toBe('ficus')
     expect(data.instances).toEqual([
       {
-        label: 'tau',
+        label: 'ficus',
         root,
         port: 3000,
         url: 'http://localhost:3000',
         default: true,
         supervisor: 'pm2',
-        processes: [{ name: 'tau-api', status: 'online', pid: 5, cwd: root }],
+        processes: [{ name: 'ficus-api', status: 'online', pid: 5, cwd: root }],
       },
       {
         label: 'smoke',
@@ -974,25 +998,25 @@ describe('ficus server list', () => {
       JSON.stringify({
         version: 2,
         instances: {
-          tau: { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
-          smoke: { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+          ficus: { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
+          smoke: { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
         },
       })
     )
     const { run } = make()
     await run(['server', 'list'])
     const [data, text] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [{ default?: string }, string]
-    expect(data.default).toBe('smoke')
+    expect(data.default).toBe('ficus')
     expect(
       text
         .split('\n')
-        .find((l) => l.includes('smoke'))
+        .find((l) => l.includes('ficus'))
         ?.startsWith('*')
     ).toBe(true)
     expect(
       text
         .split('\n')
-        .find((l) => l.includes(' tau '))
+        .find((l) => l.includes(' smoke '))
         ?.startsWith('*')
     ).toBe(false)
     rmSync(other, { recursive: true, force: true })
@@ -1017,7 +1041,7 @@ describe('ficus server <cmd> --instance', () => {
     writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     upsertInstance(
       'smoke',
-      { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+      { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
       {},
       statePath
     )
@@ -1027,7 +1051,7 @@ describe('ficus server <cmd> --instance', () => {
     const other = smokeCheckout()
     const { run, calls } = make()
     await run(['server', 'stop', '--instance', 'smoke'])
-    expect(joined(calls)).toEqual(['bunx pm2 stop tau-smoke-api tau-smoke-worker'])
+    expect(joined(calls)).toEqual(['bunx pm2 stop ficus-smoke-api ficus-smoke-worker'])
     expect(calls[0].options.cwd).toBe(other)
     rmSync(other, { recursive: true, force: true })
   })
@@ -1051,7 +1075,7 @@ describe('ficus server <cmd> --instance', () => {
     await run(['server', 'stop', '--instance', 'nope'])
     const [error] = (outputError as ReturnType<typeof mock>).mock.calls.at(-1) as [Error]
     expect(error.message).toContain('unknown instance "nope"')
-    expect(error.message).toContain('known instances: tau')
+    expect(error.message).toContain('known instances: ficus')
     expect(calls).toEqual([])
   })
   it('uninstall drops the entry and hands the default to a remaining instance', async () => {
@@ -1060,7 +1084,7 @@ describe('ficus server <cmd> --instance', () => {
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'ficus' }))
     upsertInstance(
       'smoke',
-      { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+      { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't', identity: 2 },
       {},
       statePath
     )
@@ -1076,8 +1100,8 @@ describe('ficus server <cmd> --instance', () => {
 describe('registry-backed supervisor dispatch', () => {
   it('dispatches a systemd-user stop without touching pm2', async () => {
     upsertInstance(
-      'tau',
-      { root, port: 3000, supervisor: 'systemd-user', createdAt: 't', updatedAt: 'u' },
+      'ficus',
+      { root, port: 3000, supervisor: 'systemd-user', identity: 2, createdAt: 't', updatedAt: 'u' },
       {},
       statePath
     )
@@ -1085,8 +1109,8 @@ describe('registry-backed supervisor dispatch', () => {
     await run(['server', 'stop'])
     expect(joined(calls)).toEqual([
       'systemctl --user show-environment',
-      'systemctl --user stop tau-api.service',
-      'systemctl --user stop tau-worker.service',
+      'systemctl --user stop ficus-api.service',
+      'systemctl --user stop ficus-worker.service',
     ])
   })
 
@@ -1094,14 +1118,14 @@ describe('registry-backed supervisor dispatch', () => {
     const broken = join(root, '..', `ficus-broken-${Date.now()}`)
     symlinkSync(join(root, '..', 'missing-checkout'), broken)
     upsertInstance(
-      'tau',
+      'ficus',
       { root: broken, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 'u' },
       {},
       statePath
     )
     try {
       const { run, calls } = make()
-      await run(['server', 'stop', '--instance', 'tau'])
+      await run(['server', 'stop', '--instance', 'ficus'])
       expect(calls).toEqual([])
       expect(outputError).toHaveBeenCalled()
     } finally {
@@ -1123,21 +1147,101 @@ describe('registry-backed supervisor dispatch', () => {
   })
 
   it('dispatches launchd restart worker first and API last', async () => {
-    upsertInstance('tau', { root, port: 3000, supervisor: 'launchd', createdAt: 't', updatedAt: 'u' }, {}, statePath)
+    upsertInstance(
+      'ficus',
+      { root, port: 3000, supervisor: 'launchd', identity: 2, createdAt: 't', updatedAt: 'u' },
+      {},
+      statePath
+    )
     const uid = process.getuid?.() ?? 0
     const home = process.env.HOME ?? homedir()
     const printOf = (component: 'api' | 'worker') =>
-      `program arguments = {\n\t/usr/bin/bun\n}\n\tworking directory = ${realpathSync(root)}\n\tstderr path = ${join(cliHome({ homedir: home }), 'logs', `tau-${component}.log`)}\n`
+      `program arguments = {\n\t/usr/bin/bun\n}\n\tworking directory = ${realpathSync(root)}\n\tstderr path = ${join(cliHome({ homedir: home }), 'logs', `ficus-${component}.log`)}\n`
     const { run, calls } = make({
-      [`launchctl print gui/${uid}/ai.hiretau.tau-worker`]: { stdout: printOf('worker') },
-      [`launchctl print gui/${uid}/ai.hiretau.tau-api`]: { stdout: printOf('api') },
+      [`launchctl print gui/${uid}/sh.ficus.ficus-worker`]: { stdout: printOf('worker') },
+      [`launchctl print gui/${uid}/sh.ficus.ficus-api`]: { stdout: printOf('api') },
     })
     await run(['server', 'restart'])
     const commands = joined(calls)
-    const worker = commands.findIndex((line) => line.includes('kickstart -k') && line.endsWith('tau-worker'))
-    const api = commands.findIndex((line) => line.includes('kickstart -k') && line.endsWith('tau-api'))
+    const worker = commands.findIndex((line) => line.includes('kickstart -k') && line.endsWith('ficus-worker'))
+    const api = commands.findIndex((line) => line.includes('kickstart -k') && line.endsWith('ficus-api'))
     expect(worker).toBeGreaterThan(-1)
     expect(api).toBeGreaterThan(worker)
     expect(commands.some((line) => line.includes('pm2'))).toBe(false)
+  })
+})
+
+describe('finalized CLI identity gate', () => {
+  for (const command of ['start', 'stop', 'restart', 'status', 'logs', 'update', 'uninstall']) {
+    it(`refuses identity-less ${command} before invoking subprocesses`, async () => {
+      writeFileSync(
+        statePath,
+        JSON.stringify({
+          version: 3,
+          default: LEGACY_LOCAL_INSTANCE,
+          instances: {
+            [LEGACY_LOCAL_INSTANCE]: { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+          },
+        })
+      )
+      const { run, calls } = make()
+      const before = readFileSync(statePath, 'utf8')
+      await run(['server', command, ...(command === 'uninstall' ? ['--yes'] : [])])
+      expect(calls).toEqual([])
+      const error = (outputError as ReturnType<typeof mock>).mock.calls[0]?.[0] as Error
+      expect(error?.message).toContain('ficus-host-layout-bridge')
+      expect(readFileSync(statePath, 'utf8')).toBe(before)
+      expect(JSON.parse(before).version).toBe(3)
+    })
+  }
+})
+
+describe('finalized CLI identity gate additional paths', () => {
+  for (const args of [
+    ['server', 'install', '--root', 'ROOT'],
+    ['server', 'use', LEGACY_LOCAL_INSTANCE],
+    ['server', 'setup', '--root', 'ROOT', '--runtime', 'host', '--yes'],
+    ['server', 'uninstall', '--instance', LEGACY_LOCAL_INSTANCE, '--yes'],
+  ]) {
+    it(`refuses ${args[1]} for explicit identity1 without modifying the registry`, async () => {
+      writeFileSync(
+        statePath,
+        JSON.stringify({
+          version: 3,
+          default: LEGACY_LOCAL_INSTANCE,
+          instances: {
+            [LEGACY_LOCAL_INSTANCE]: {
+              root: args[1] === 'uninstall' ? join(root, 'missing') : root,
+              port: 3000,
+              supervisor: 'pm2',
+              createdAt: 't',
+              updatedAt: 't',
+              identity: 1,
+            },
+          },
+        })
+      )
+      const before = readFileSync(statePath, 'utf8')
+      const { run, calls } = make()
+      await run(args.map((arg) => (arg === 'ROOT' ? root : arg)))
+      expect(calls).toEqual([])
+      expect((outputError as ReturnType<typeof mock>).mock.calls[0]?.[0]?.message).toContain('ficus-host-layout-bridge')
+      expect(readFileSync(statePath, 'utf8')).toBe(before)
+    })
+  }
+  it('lists an old entry without probing its supervisor', async () => {
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        version: 3,
+        instances: {
+          [LEGACY_LOCAL_INSTANCE]: { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+        },
+      })
+    )
+    const { run, calls } = make()
+    await run(['server', 'list'])
+    expect(calls).toEqual([])
+    expect((output as ReturnType<typeof mock>).mock.calls[0]?.[1]).toContain('ficus-host-layout-bridge')
   })
 })

@@ -3,8 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { LEGACY_UNITS } from '@ficus/shared/node'
-
 import { loadExplicitSystemLogConfig } from './config'
 import { SystemLogProviderError } from './types'
 
@@ -15,7 +13,7 @@ describe('loadExplicitSystemLogConfig — systemd default target names', () => {
       const config = loadExplicitSystemLogConfig({ FICUS_SYSTEM_LOG_PROVIDER: 'systemd' } as NodeJS.ProcessEnv, {
         unitDir: emptyDir,
       })
-      expect(config).toEqual({ provider: 'systemd', targets: { api: LEGACY_UNITS.api, worker: LEGACY_UNITS.worker } })
+      expect(config).toEqual({ provider: 'systemd', targets: { api: 'ficus-api', worker: 'ficus-worker' } })
     } finally {
       rmSync(emptyDir, { recursive: true, force: true })
     }

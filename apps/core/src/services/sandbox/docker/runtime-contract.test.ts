@@ -1,5 +1,6 @@
+import { SANDBOX_IDENTITY_LEGACY } from '../retired-identity.fixture'
 import { describe, expect, test } from 'bun:test'
-import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_NEW } from '../identity-names'
+import { SANDBOX_IDENTITY_NEW } from '../identity-names'
 import {
   computeDockerSpecDigest,
   dockerRuntimeLabels,
@@ -78,11 +79,12 @@ describe('Docker runtime contract', () => {
       'sh.ficus.sandbox.command-contract',
     ])
     const legacy = contractLabels(SANDBOX_IDENTITY_LEGACY.imageLabelNamespace)
-    for (const imageLabels of [fresh, legacy])
+    for (const imageLabels of [fresh])
       expect(parseDockerImageContract('image', [{ Id: id, Config: { Labels: imageLabels } }])).toMatchObject({
         imageId: id,
         commandContractVersion: 1,
       })
+    expect(() => parseDockerImageContract('image', [{ Id: id, Config: { Labels: legacy } }])).toThrow()
     const newKeys = dockerRuntimeLabels(SANDBOX_IDENTITY_NEW.imageLabelNamespace)
     const legacyKeys = dockerRuntimeLabels(SANDBOX_IDENTITY_LEGACY.imageLabelNamespace)
     const mixed = {

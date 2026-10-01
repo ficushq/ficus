@@ -145,8 +145,8 @@ describe('update apply offline fallback', () => {
       expect(apiGet).not.toHaveBeenCalled()
       expect(output).toHaveBeenCalledWith(
         expect.objectContaining({
-          latest: expect.objectContaining({ id: 'r1' }),
-          source: join(dir, dirName, 'local-update-status.json'),
+          latest: dirName === '.ficus' ? expect.objectContaining({ id: 'r1' }) : null,
+          source: join(dir, '.ficus', 'local-update-status.json'),
         }),
         expect.any(String)
       )
@@ -178,6 +178,7 @@ describe('defaultUpdateDeps localPort', () => {
     process.env.FICUS_LOCAL_SERVER_STATE = statePath
     try {
       expect(defaultUpdateDeps().localPort(root)).toBe(3100)
+      expect(() => defaultUpdateDeps().offlineUpdate({ root, log: () => {} })).toThrow('ficus-host-layout-bridge')
       expect(defaultUpdateDeps().localPort(other)).toBe(4321)
       expect(defaultUpdateDeps().localPort(join(tmp, 'nope'))).toBeUndefined()
     } finally {

@@ -67,7 +67,7 @@ describe('state file', () => {
   })
   it('keeps reading the registry from a legacy CLI home that has not moved yet', () => {
     mkdirSync(join(tmp, LEGACY_HOME_DIR_NAME))
-    expect(getStatePath({ HOME: tmp })).toBe(join(tmp, LEGACY_HOME_DIR_NAME, 'cli', 'local-server.json'))
+    expect(getStatePath({ HOME: tmp })).toBe(join(tmp, '.ficus', 'cli', 'local-server.json'))
   })
   it('round-trips an instance through a directory it has to create, and removes it', () => {
     const path = join(tmp, 'nested', 'state.json')

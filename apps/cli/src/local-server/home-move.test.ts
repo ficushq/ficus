@@ -14,7 +14,14 @@ import {
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
-import { cliHome, finalizeCliHome, LEGACY_CLI_HOME_LINK, moveCliHome, unmoveCliHome } from './home-move'
+import {
+  recoveryCliHome,
+  cliHome,
+  finalizeCliHome,
+  LEGACY_CLI_HOME_LINK,
+  moveCliHome,
+  unmoveCliHome,
+} from './home-move'
 
 let home: string
 let ficus: string
@@ -34,7 +41,8 @@ describe('cliHome', () => {
   })
   it('is the legacy home when only it exists (not moved yet)', () => {
     mkdirSync(legacy)
-    expect(cliHome({ homedir: home })).toBe(legacy)
+    expect(cliHome({ homedir: home })).toBe(ficus)
+    expect(recoveryCliHome(home)).toBe(legacy)
   })
   it('is ~/.ficus when only it exists', () => {
     mkdirSync(ficus)
@@ -56,8 +64,8 @@ describe('cliHome', () => {
       seen.push(p)
       return p === join('/nowhere', LEGACY_HOME_DIR_NAME)
     }
-    expect(cliHome({ homedir: '/nowhere', exists })).toBe(join('/nowhere', LEGACY_HOME_DIR_NAME))
-    expect(seen).toContain('/nowhere/.ficus')
+    expect(cliHome({ homedir: '/nowhere', exists })).toBe(join('/nowhere', '.ficus'))
+    expect(seen).toEqual([])
   })
 })
 

@@ -44,7 +44,7 @@ describe('getHomeDir', () => {
   })
 })
 
-describe('resolveHomeDir default (no HOME_DIR): decided by where the data is', () => {
+describe('resolveHomeDir default (no HOME_DIR): always canonical', () => {
   const home = '/srv/home/svc'
   const ficus = join(home, HOME_DIR_NAME)
   const legacy = join(home, LEGACY_HOME_DIR_NAME)
@@ -82,13 +82,13 @@ describe('resolveHomeDir default (no HOME_DIR): decided by where the data is', (
     expect(r.warnings).toEqual([])
   })
 
-  it('is the legacy dir when only it holds data (a host or install that has not moved)', () => {
-    expect(resolve({ data: [legacy] }).result).toBe(legacy)
+  it('ignores a retired home even when it alone holds data', () => {
+    expect(resolve({ data: [legacy] }).result).toBe(ficus)
   })
 
-  it('stays the legacy dir when a stray, empty ~/.ficus appears beside it', () => {
+  it('uses the canonical home beside retired data', () => {
     const r = resolve({ data: [legacy] })
-    expect(r.result).toBe(legacy)
+    expect(r.result).toBe(ficus)
     expect(r.warnings).toEqual([])
   })
 
@@ -98,11 +98,10 @@ describe('resolveHomeDir default (no HOME_DIR): decided by where the data is', (
     expect(r.warnings).toEqual([])
   })
 
-  it('is ~/.ficus, with a warning, when both hold data', () => {
+  it('is canonical without probing retired data', () => {
     const r = resolve({ data: [ficus, legacy] })
     expect(r.result).toBe(ficus)
-    expect(r.warnings).toHaveLength(1)
-    expect(r.warnings[0]).toContain('both')
+    expect(r.warnings).toEqual([])
   })
 
   it('lets HOME_DIR win without probing either dir', () => {
@@ -113,7 +112,7 @@ describe('resolveHomeDir default (no HOME_DIR): decided by where the data is', (
   })
 
   it('treats an empty HOME_DIR as unset', () => {
-    expect(resolve({ data: [legacy] }, { HOME_DIR: '' }).result).toBe(legacy)
+    expect(resolve({ data: [legacy] }, { HOME_DIR: '' }).result).toBe(ficus)
   })
 })
 
@@ -128,7 +127,7 @@ describe('the HOME default on a real filesystem', () => {
 
   it('follows the migration: legacy data → ~/.ficus with the legacy name as its link', () => {
     data(LEGACY_HOME_DIR_NAME)
-    expect(resolveIn()).toBe(join(home, LEGACY_HOME_DIR_NAME))
+    expect(resolveIn()).toBe(join(home, HOME_DIR_NAME))
     renameSync(join(home, LEGACY_HOME_DIR_NAME), join(home, HOME_DIR_NAME))
     symlinkSync(join(home, HOME_DIR_NAME), join(home, LEGACY_HOME_DIR_NAME))
     expect(resolveIn()).toBe(join(home, HOME_DIR_NAME))
@@ -140,10 +139,10 @@ describe('the HOME default on a real filesystem', () => {
     expect(resolveIn()).toBe(join(home, HOME_DIR_NAME))
   })
 
-  it('legacy data stays put when a stray, empty ~/.ficus appears', () => {
+  it('retired data does not change the canonical default', () => {
     data(LEGACY_HOME_DIR_NAME)
     mkdirSync(join(home, HOME_DIR_NAME))
-    expect(resolveIn()).toBe(join(home, LEGACY_HOME_DIR_NAME))
+    expect(resolveIn()).toBe(join(home, HOME_DIR_NAME))
   })
 
   it('decides once per process: data appearing later does not move it', () => {
@@ -153,6 +152,6 @@ describe('the HOME default on a real filesystem', () => {
     data(LEGACY_HOME_DIR_NAME) // something writes a legacy data dir mid-process
     expect(getter.get()).toBe(first)
     getter.reset()
-    expect(getter.get()).toBe(join(home, LEGACY_HOME_DIR_NAME)) // the next process would see it
+    expect(getter.get()).toBe(join(home, HOME_DIR_NAME)) // the next process would see it
   })
 })

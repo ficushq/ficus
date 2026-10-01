@@ -779,7 +779,7 @@ describe('canonical checkout identity', () => {
     writeFileSync(d.statePath, v2)
     try {
       await expect(runSetup(opts({ root, instance: LEGACY_LOCAL_INSTANCE }), d)).rejects.toThrow(
-        `ficus server rename-identity --root ${realpathSync(root)}`
+        'ficus-host-layout-bridge'
       )
       expect(calls).toEqual([])
       expect(readFileSync(d.statePath, 'utf8')).toBe(v2)
@@ -880,9 +880,7 @@ describe('instances installed before the Ficus rename', () => {
       {},
       d.statePath
     )
-    await expect(runSetup(opts({ instance: LEGACY_LOCAL_INSTANCE }), d)).rejects.toThrow(
-      `ficus server rename-identity --root ${root}`
-    )
+    await expect(runSetup(opts({ instance: LEGACY_LOCAL_INSTANCE }), d)).rejects.toThrow('ficus-host-layout-bridge')
     expect(calls).toEqual([])
     expect(existsSync(join(root, '.env'))).toBe(false)
   })

@@ -34,10 +34,10 @@ describe('hostSystemdUnits', () => {
     expect(hostSystemdUnits({ unitDir: dir })).toEqual({ api: 'ficus-api', worker: 'ficus-worker' })
   })
 
-  test('legacy units otherwise', () => {
+  test('canonical units even when no canonical unit exists', () => {
     const emptyDir = mkdtempSync(join(tmpdir(), 'service-names-test-empty-'))
     try {
-      expect(hostSystemdUnits({ unitDir: emptyDir })).toEqual({ api: LEGACY_UNITS.api, worker: LEGACY_UNITS.worker })
+      expect(hostSystemdUnits({ unitDir: emptyDir })).toEqual({ api: 'ficus-api', worker: 'ficus-worker' })
     } finally {
       rmSync(emptyDir, { recursive: true, force: true })
     }
@@ -45,7 +45,7 @@ describe('hostSystemdUnits', () => {
 })
 
 describe('launchdLabel', () => {
-  test('new label unless only the legacy plist exists', () => {
+  test('canonical label even when only a retired plist exists', () => {
     expect(launchdLabel({ legacy: LEGACY_UNITS.api, new: 'ficus-api' }, { launchAgentsDir: dir })).toBe(
       'sh.ficus.ficus-api'
     )
@@ -54,7 +54,7 @@ describe('launchdLabel', () => {
     try {
       writeFileSync(join(agents, `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}.plist`), '')
       expect(launchdLabel({ legacy: LEGACY_UNITS.api, new: 'ficus-api' }, { launchAgentsDir: agents })).toBe(
-        `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.api}`
+        'sh.ficus.ficus-api'
       )
     } finally {
       rmSync(agents, { recursive: true, force: true })
@@ -64,7 +64,7 @@ describe('launchdLabel', () => {
   // A labeled local instance's legacy and new names differ by more than the prefix, so the
   // two must be threaded through separately rather than assumed to be the same string under
   // both prefixes.
-  test('falls back from a missing new plist to the legacy one, using the two different names', () => {
+  test('ignores retired plists when resolving a labeled instance', () => {
     const legacy = legacyLocalProcessNames('smoke').worker
     const updated = localProcessNames(renamedLocalInstanceLabel('smoke')).worker
     expect(updated).toBe('ficus-smoke-worker')
@@ -78,7 +78,7 @@ describe('launchdLabel', () => {
 
       writeFileSync(join(agents, `${LEGACY_LAUNCHD_PREFIX}.${legacy}.plist`), '')
       expect(launchdLabel({ legacy, new: updated }, { launchAgentsDir: agents })).toBe(
-        `${LEGACY_LAUNCHD_PREFIX}.${legacy}`
+        `${FICUS_LAUNCHD_PREFIX}.${updated}`
       )
     } finally {
       rmSync(agents, { recursive: true, force: true })
@@ -106,17 +106,17 @@ describe('renamedLocalInstanceLabel', () => {
 })
 
 describe('systemdUserUnit', () => {
-  test('the new unit unless only the legacy unit file is installed', () => {
+  test('the canonical unit even when only a retired unit exists', () => {
     const names = { legacy: LEGACY_UNITS.worker, new: 'ficus-worker' }
     expect(systemdUserUnit(names, { unitDir: dir })).toBe('ficus-worker.service')
     writeFileSync(join(dir, `${LEGACY_UNITS.worker}.service`), '')
-    expect(systemdUserUnit(names, { unitDir: dir })).toBe(`${LEGACY_UNITS.worker}.service`)
+    expect(systemdUserUnit(names, { unitDir: dir })).toBe('ficus-worker.service')
   })
 })
 
 describe('sandboxPasswordPath', () => {
   test('ficus path first', () => {
     expect(sandboxPasswordPath({ exists: (p) => p === '/etc/ficus/password' })).toBe('/etc/ficus/password')
-    expect(sandboxPasswordPath({ exists: (p) => p === LEGACY_SANDBOX_PASSWORD })).toBe(LEGACY_SANDBOX_PASSWORD)
+    expect(sandboxPasswordPath({ exists: (p) => p === LEGACY_SANDBOX_PASSWORD })).toBe('/etc/ficus/password')
   })
 })

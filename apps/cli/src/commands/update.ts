@@ -10,7 +10,7 @@ import { config } from '../config'
 import { output, outputError } from '../output'
 import { narrate } from '../local-server/log'
 import { makeSupervisorContext } from '../local-server/supervisor'
-import { recordIdentity } from '../local-server/instance'
+import { recordIdentity, requireCurrentIdentity } from '../local-server/instance'
 import { cliHome } from '../local-server/home-move'
 import { assertNoRenameInFlight, RENAME_JOURNAL } from '../local-server/supervisor-rename'
 import { ficusOrLegacyDir } from '@ficus/shared/node'
@@ -49,11 +49,12 @@ export function defaultUpdateDeps(): UpdateDeps {
       const registered = findInstanceByRoot(args.root, getStatePath())
       if (!registered)
         throw new Error(`checkout ${args.root} is not registered; run ficus server setup --root ${args.root}`)
+      requireCurrentIdentity(registered.record)
       const context = makeSupervisorContext({
         supervisor: registered.record.supervisor,
         root: args.root,
         label: registered.label,
-        // An instance rename-identity has not moved yet restarts under its old names.
+        // The selected record is verified before any update or restart effect.
         identity: recordIdentity(registered.record),
         runner: defaultRunner,
         log: args.log,

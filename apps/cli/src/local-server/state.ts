@@ -123,7 +123,7 @@ function toRecord(value: unknown, legacy: boolean): InstanceRecord | null {
 
 /** An entry a newer CLI wrote: an identity this code does not know how to name. */
 export function unsupportedIdentity(record: InstanceRecord): boolean {
-  return record.identity !== undefined && record.identity !== CURRENT_IDENTITY
+  return record.identity !== undefined && record.identity !== 1 && record.identity !== CURRENT_IDENTITY
 }
 
 function validRegistryLabel(label: string): boolean {

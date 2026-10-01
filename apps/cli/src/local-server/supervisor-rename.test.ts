@@ -17,7 +17,7 @@ import { tmpdir } from 'os'
 import { basename, join } from 'path'
 import { LEGACY_HOME_DIR_NAME, LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
 import { parseEnvFile } from './env-file'
-import { cliHome } from './home-move'
+import { recoveryCliHome } from './home-move'
 import { launchdDefinition, launchdNames as launchdNamesOf } from './launchd'
 import type { RunOptions, Runner, RunResult } from './runner'
 import type { LocalServerRegistry } from './state'
@@ -224,7 +224,7 @@ function world(
   const deps: RenameDeps = {
     runner,
     statePath,
-    journalPath: () => join(cliHome({ homedir: home }), RENAME_JOURNAL),
+    journalPath: () => join(recoveryCliHome(home), RENAME_JOURNAL),
     home,
     fetch:
       opts.fetch ??
@@ -272,7 +272,7 @@ function world(
     loaded,
     deps,
     printed,
-    journal: () => join(cliHome({ homedir: home }), RENAME_JOURNAL),
+    journal: () => join(recoveryCliHome(home), RENAME_JOURNAL),
   }
 }
 

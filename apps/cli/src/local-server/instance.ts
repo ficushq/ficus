@@ -33,6 +33,14 @@ export function recordIdentity(record: { identity?: number }): InstanceIdentity 
   return record.identity === CURRENT_IDENTITY ? CURRENT_IDENTITY : 1
 }
 
+/** Normal management requires the identity written by the bridge release. */
+export function requireCurrentIdentity(record: { identity?: number }): void {
+  if (record.identity !== CURRENT_IDENTITY)
+    throw new SetupOptionsError(
+      'this instance predates the Ficus identity — upgrade through the ficus-host-layout-bridge Core release first'
+    )
+}
+
 export interface InstanceNames {
   label: string
   /** pm2 app names — also what FICUS_PM2_*_NAME must say for system-log streaming. */

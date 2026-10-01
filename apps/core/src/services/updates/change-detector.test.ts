@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS, legacyLocalProcessNames } from '@ficus/shared/node'
+import { LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, legacyLocalProcessNames } from '@ficus/shared/node'
 
 import type { DeploymentFlavor } from './deployment-flavor'
 import {
@@ -105,7 +105,7 @@ describe('flavor-aware planning', () => {
       // The legacy per-instance plist this host still has registered.
       writeFileSync(join(launchAgentsDir, 'ai.hiretau.tau-smoke-worker.plist'), '') // ficus-p5-bridge
       expect(restartCommandsFor('launchd', { instance: 'smoke', uid: 501, launchAgentsDir })).toEqual([
-        ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-smoke-worker'], // ficus-p5-bridge
+        ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-worker'],
         ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-api'],
       ])
     } finally {
@@ -134,11 +134,11 @@ describe('flavor-aware planning', () => {
         'launchctl',
         'kickstart',
         '-k',
-        `gui/501/${LEGACY_LAUNCHD_PREFIX}.${legacy.worker}`,
+        'gui/501/sh.ficus.ficus-worker',
       ])
       expect(restartCommandsFor('systemd-user', { instance: LEGACY_LOCAL_INSTANCE, userUnitDir: unitDir })).toEqual([
         ['systemctl', '--user', 'restart', 'ficus-worker.service'],
-        ['systemctl', '--user', '--no-block', 'restart', `${legacy.api}.service`],
+        ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'],
       ])
     } finally {
       rmSync(unitDir, { recursive: true, force: true })
@@ -156,8 +156,8 @@ describe('flavor-aware planning', () => {
     const commands = commandsForTasks(['core'], [], SYSTEMD_DOCKER)
     const restarts = commands.filter((c) => c.command.includes('systemctl') || c.command.includes('sudo'))
     expect(restarts).toHaveLength(2)
-    expect(restarts[0].command.join(' ')).toContain(`systemctl restart ${LEGACY_UNITS.worker}`)
-    expect(restarts[1].command.join(' ')).toContain(`systemctl restart ${LEGACY_UNITS.api}`)
+    expect(restarts[0].command.join(' ')).toContain('systemctl restart ficus-worker')
+    expect(restarts[1].command.join(' ')).toContain('systemctl restart ficus-api')
   })
 
   it('systemd restart commands are sudo-prefixed only when not root, using the legacy units by default', () => {
@@ -166,14 +166,14 @@ describe('flavor-aware planning', () => {
       expect(restartCommandsFor('systemd', { isRoot: true, unitDir })[0]).toEqual([
         'systemctl',
         'restart',
-        LEGACY_UNITS.worker,
+        'ficus-worker',
       ])
       expect(restartCommandsFor('systemd', { isRoot: false, unitDir })[0]).toEqual([
         'sudo',
         '-n',
         'systemctl',
         'restart',
-        LEGACY_UNITS.worker,
+        'ficus-worker',
       ])
     } finally {
       rmSync(unitDir, { recursive: true, force: true })
