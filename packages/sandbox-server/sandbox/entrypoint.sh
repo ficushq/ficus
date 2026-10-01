@@ -46,7 +46,7 @@ normalize_shared_mount() {
   # Optional one-time recursive normalization for existing files. This runs in
   # the background and writes a marker so restarts do not repeat expensive work.
   if [ "${FICUS_RECURSIVE_PERMISSION_NORMALIZE:-false}" = "true" ]; then
-    local marker="$dir/.tau-permissions-normalized-v1"
+    local marker="$dir/.ficus-permissions-normalized-v1"
     if [ ! -e "$marker" ]; then
       (
         if [ -n "${FICUS_SHARED_GID:-}" ]; then
@@ -61,7 +61,7 @@ normalize_shared_mount() {
 }
 
 normalize_shared_mount /workspace
-normalize_shared_mount /var/lib/tau/ssh-source
+normalize_shared_mount /var/lib/ficus/ssh-source
 normalize_shared_mount /nix-cache
 
 # Source Nix environment
@@ -84,7 +84,7 @@ fi
 # We mirror $SSH_SOURCE into a container-private $SSH_DEST and own the perms
 # there. Any chown/chmod we do is on $SSH_DEST only — never on the shared mount,
 # so the host API keeps full read/write access via its normal Unix uid/gid.
-SSH_SOURCE=/var/lib/tau/ssh-source
+SSH_SOURCE=/var/lib/ficus/ssh-source
 SSH_DEST=/root/.ssh
 
 mkdir -p "$SSH_DEST"
@@ -197,9 +197,9 @@ save_nix_cache() {
 # for squad members); squad boxes use $WORKSPACE_PATH. Agent boxes seed the
 # minimal devbox.agent.json template; squad boxes seed the full devbox.json.
 WS="${FICUS_DEVBOX_DIR:-${WORKSPACE_PATH:-/workspace}}"
-DEFAULT_DEVBOX=/opt/tau/defaults/devbox.json
-if [ "${FICUS_SANDBOX_ROLE:-squad}" = "agent" ] && [ -f /opt/tau/defaults/devbox.agent.json ]; then
-  DEFAULT_DEVBOX=/opt/tau/defaults/devbox.agent.json
+DEFAULT_DEVBOX=/opt/ficus/defaults/devbox.json
+if [ "${FICUS_SANDBOX_ROLE:-squad}" = "agent" ] && [ -f /opt/ficus/defaults/devbox.agent.json ]; then
+  DEFAULT_DEVBOX=/opt/ficus/defaults/devbox.agent.json
 fi
 mkdir -p "$WS"
 if [ ! -f "$WS/devbox.json" ] && [ -f "$DEFAULT_DEVBOX" ]; then

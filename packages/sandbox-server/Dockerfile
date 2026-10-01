@@ -1,8 +1,8 @@
 # Ficus Sandbox — multi-stage build (3 stages, 2 published images)
 #
 #   base   — shared minimal core. Internal build stage; never run as a pod.
-#   agent  — minimal per-agent light box  → tau-sandbox-agent  (sandboxType: agent)
-#   squad  — full squad warm box (DinD + browsers + heavy devbox) → tau-sandbox
+#   agent  — minimal per-agent light box  → ficus-sandbox-agent  (sandboxType: agent)
+#   squad  — full squad warm box (DinD + browsers + heavy devbox) → ficus-sandbox
 #
 # Both leaf images derive from `base`, so BuildKit builds and caches the common
 # layers once. The node then pulls those base layers once; the agent image's
@@ -10,8 +10,8 @@
 # its heavy delta.
 #
 # Build (BuildKit reuses the `base` stage across both targets):
-#   docker build --target agent -t tau-sandbox-agent:latest -f packages/sandbox-server/Dockerfile .
-#   docker build --target squad -t tau-sandbox:latest       -f packages/sandbox-server/Dockerfile .
+#   docker build --target agent -t ficus-sandbox-agent:latest -f packages/sandbox-server/Dockerfile .
+#   docker build --target squad -t ficus-sandbox:latest       -f packages/sandbox-server/Dockerfile .
 
 # ============================================================================
 # Stage: base — shared minimal core (ubuntu + nix + devbox + bun + server)
@@ -83,7 +83,7 @@ COPY packages/sandbox-server/sandbox/ssh_config.d/99-github-ssh-over-443.conf /e
 COPY packages/sandbox-server/sandbox/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-RUN mkdir -p /workspace /memory /home/tau \
+RUN mkdir -p /workspace /memory /home/ficus \
     && git config --global --add safe.directory /workspace \
     && git config --global --add safe.directory '*'
 
@@ -97,7 +97,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=5s \
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # ============================================================================
-# Stage: agent — per-agent light box (tau-sandbox-agent)
+# Stage: agent — per-agent light box (ficus-sandbox-agent)
 # Base + a "comfort set" of ergonomic CLI tools (node/python runtimes +
 # ripgrep/fd/tree/less/gh/tmux/procps) installed into the GLOBAL nix profile so
 # they sit on PATH the instant the pod starts — no devbox activation and no Nix
@@ -108,11 +108,11 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # ============================================================================
 FROM base AS agent
 
-# Empty default devbox template. In this image /opt/tau/defaults/devbox.json IS
+# Empty default devbox template. In this image /opt/ficus/defaults/devbox.json IS
 # the (package-less) template the entrypoint seeds as the agent's own devbox in
 # /private (FICUS_DEVBOX_DIR). With no packages declared, the entrypoint's
 # `devbox install` is skipped — the comfort set already lives on PATH below.
-COPY packages/sandbox-server/sandbox/devbox.agent.json /opt/tau/defaults/devbox.json
+COPY packages/sandbox-server/sandbox/devbox.agent.json /opt/ficus/defaults/devbox.json
 
 # Comfort set → global nix profile (/root/.nix-profile, already first on PATH via
 # the base ENV). Installed at build time so the tools are on PATH at pod start
@@ -141,7 +141,7 @@ RUN gh --version \
 RUN ls /nix/store | sort > /nix-base-manifest.txt
 
 # ============================================================================
-# Stage: squad — full squad warm box (tau-sandbox)
+# Stage: squad — full squad warm box (ficus-sandbox)
 # Base + Docker-in-Docker + headless-browser stack + the heavy devbox toolchain
 # baked into /nix for instant startup. Reached by squad agents via `squad_bash`.
 # ============================================================================
@@ -193,7 +193,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Devbox packages (baked in for instant startup) ---
-COPY packages/sandbox-server/sandbox/devbox.json /opt/tau/defaults/devbox.json
+COPY packages/sandbox-server/sandbox/devbox.json /opt/ficus/defaults/devbox.json
 
 # Pre-install all devbox packages into /nix/store at build time.
 # This adds ~1.2GB but eliminates 5+ min download on every pod start.
@@ -205,12 +205,12 @@ COPY packages/sandbox-server/sandbox/devbox.json /opt/tau/defaults/devbox.json
 # closure — which then gets treated as the nix-cache "delta" and re-saved/restored
 # on every cold start (the baked toolchain becoming dead weight). The lock pins it.
 RUN mkdir -p /tmp/devbox-install \
-    && cp /opt/tau/defaults/devbox.json /tmp/devbox-install/devbox.json \
+    && cp /opt/ficus/defaults/devbox.json /tmp/devbox-install/devbox.json \
     && cd /tmp/devbox-install \
     && devbox install \
     && devbox run -- gh pr comment --help | grep -q -- '--attach' \
     && { devbox shellenv --init-hook > /dev/null 2>&1 || true; } \
-    && { cp /tmp/devbox-install/devbox.lock /opt/tau/defaults/devbox.lock 2>/dev/null \
+    && { cp /tmp/devbox-install/devbox.lock /opt/ficus/defaults/devbox.lock 2>/dev/null \
          || echo "[build] WARNING: no devbox.lock produced — runtime delta will not collapse"; } \
     && rm -rf /tmp/devbox-install
 

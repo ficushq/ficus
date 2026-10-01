@@ -827,7 +827,7 @@ async function _configureWorkspaceWatch(squadId: string): Promise<void> {
  *   the skill paths handed to the Pi session are host paths, read core-side by
  *   the resource loader AND in-container by the sandboxed read/bash tools.
  * - `memory`: the container layout's memoryMount, read-only.
- * - `ssh`: writable mount at /home/tau/.ssh with the known_hosts pre-seed
+ * - `ssh`: writable mount at /home/ficus/.ssh with the known_hosts pre-seed
  *   (host-side prep, unchanged from the pre-manifest flow).
  */
 async function buildDockerAssetVolumes(ctx: AssetContext): Promise<string[]> {
@@ -858,7 +858,7 @@ async function buildDockerAssetVolumes(ctx: AssetContext): Promise<string[]> {
         if (!existsSync(knownHostsPath)) {
           writeFileSync(knownHostsPath, '', { mode: 0o644 })
         }
-        volumes.push(`${source.hostPath}:/home/tau/.ssh`)
+        volumes.push(`${source.hostPath}:/home/ficus/.ssh`)
         break
       }
       default:

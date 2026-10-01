@@ -2,15 +2,15 @@ import { createHash } from 'crypto'
 
 export interface DockerCommandIdentityContract {
   version: 1
-  user: 'tau'
-  home: '/home/tau'
+  user: 'ficus'
+  home: '/home/ficus'
   uid: number
   gid: number
 }
 
 export interface ResolvedDockerCommandIdentity {
-  user: 'tau'
-  home: '/home/tau'
+  user: 'ficus'
+  home: '/home/ficus'
   source: 'host' | 'image'
   resolvedUid: number
   resolvedGid: number
@@ -49,8 +49,8 @@ export function parseDockerCommandIdentity(input: string): DockerCommandIdentity
   if (
     keys.join(',') !== 'gid,home,uid,user,version' ||
     record.version !== 1 ||
-    record.user !== 'tau' ||
-    record.home !== '/home/tau' ||
+    record.user !== 'ficus' ||
+    record.home !== '/home/ficus' ||
     !safeId(record.uid) ||
     !safeId(record.gid)
   ) {

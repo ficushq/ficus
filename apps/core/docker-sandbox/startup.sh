@@ -12,12 +12,12 @@ export DOCKER_HOST=
 DOCKERD_PID=
 PROXY_PID=
 EXECUTOR_PID=
-PROXY_DIR=/run/tau-docker
-PROXY_SOCKET=/run/tau-docker/docker.sock
-TOKEN_FILE=/run/tau/executor-token
-PROXY_PID_FILE=/run/tau/proxy.pid
-EXECUTOR_PID_FILE=/run/tau/executor.pid
-CHILD_EXIT_FIFO=/run/tau/child-exit
+PROXY_DIR=/run/ficus-docker
+PROXY_SOCKET=/run/ficus-docker/docker.sock
+TOKEN_FILE=/run/ficus/executor-token
+PROXY_PID_FILE=/run/ficus/proxy.pid
+EXECUTOR_PID_FILE=/run/ficus/executor.pid
+CHILD_EXIT_FIFO=/run/ficus/child-exit
 
 . /usr/local/lib/ficus-shutdown.sh
 
@@ -71,35 +71,35 @@ IDENTITY_SOURCE=image
 if printf '%s' "${FICUS_HOST_UID:-}:${FICUS_HOST_GID:-}" | grep -Eq '^[1-9][0-9]*:[1-9][0-9]*$' &&
    [ "$FICUS_HOST_UID" -le 2147483647 ] && [ "$FICUS_HOST_GID" -le 2147483647 ] &&
    [ "$FICUS_HOST_UID" -ne 65534 ] && [ "$FICUS_HOST_GID" -ne 65534 ]; then
-  if awk -F: -v id="$FICUS_HOST_UID" '$3 == id && $1 != "tau" { found=1 } END { exit !found }' /etc/passwd ||
-     awk -F: -v id="$FICUS_HOST_GID" '$3 == id && $1 != "tau" { found=1 } END { exit !found }' /etc/group; then
+  if awk -F: -v id="$FICUS_HOST_UID" '$3 == id && $1 != "ficus" { found=1 } END { exit !found }' /etc/passwd ||
+     awk -F: -v id="$FICUS_HOST_GID" '$3 == id && $1 != "ficus" { found=1 } END { exit !found }' /etc/group; then
     echo '[ficus-sandbox] requested command identity collides with the image' >&2
     exit 1
   fi
-  groupmod -g "$FICUS_HOST_GID" tau
-  usermod -u "$FICUS_HOST_UID" -g "$FICUS_HOST_GID" tau
-  chown "$FICUS_HOST_UID:$FICUS_HOST_GID" /home/tau /workspace
+  groupmod -g "$FICUS_HOST_GID" ficus
+  usermod -u "$FICUS_HOST_UID" -g "$FICUS_HOST_GID" ficus
+  chown "$FICUS_HOST_UID:$FICUS_HOST_GID" /home/ficus /workspace
   IDENTITY_SOURCE=host
 fi
 
-RESOLVED_UID="$(id -u tau)"
-RESOLVED_GID="$(id -g tau)"
-CONTRACT_DIGEST="$(printf '%s' "$(jq -cS . /opt/tau/command-identity.json)" | sha256sum | awk '{print $1}')"
-test "$(awk -F: '$1 == "tau" { print $6 }' /etc/passwd)" = /home/tau
-test "$(awk -F: '$1 == "tau" { print $3 }' /etc/passwd)" = "$RESOLVED_UID"
-test "$(awk -F: '$1 == "tau" { print $3 }' /etc/group)" = "$RESOLVED_GID"
+RESOLVED_UID="$(id -u ficus)"
+RESOLVED_GID="$(id -g ficus)"
+CONTRACT_DIGEST="$(printf '%s' "$(jq -cS . /opt/ficus/command-identity.json)" | sha256sum | awk '{print $1}')"
+test "$(awk -F: '$1 == "ficus" { print $6 }' /etc/passwd)" = /home/ficus
+test "$(awk -F: '$1 == "ficus" { print $3 }' /etc/passwd)" = "$RESOLVED_UID"
+test "$(awk -F: '$1 == "ficus" { print $3 }' /etc/group)" = "$RESOLVED_GID"
 test "${#CONTRACT_DIGEST}" = 64
-jq -e '.version == 1 and .user == "tau" and .home == "/home/tau" and .uid == 1000 and .gid == 1000' /opt/tau/command-identity.json >/dev/null
-su-exec tau sh -eu -c 'test -w /home/tau; test -w "$1"; probe="$1/.ficus-runtime-write-$$"; : >"$probe"; rm -f "$probe"' sh "$(pwd)"
+jq -e '.version == 1 and .user == "ficus" and .home == "/home/ficus" and .uid == 1000 and .gid == 1000' /opt/ficus/command-identity.json >/dev/null
+su-exec ficus sh -eu -c 'test -w /home/ficus; test -w "$1"; probe="$1/.ficus-runtime-write-$$"; : >"$probe"; rm -f "$probe"' sh "$(pwd)"
 
 # The proxy directory remains root-owned and non-writable by the command user.
 install -d -o root -g root -m 0711 "$PROXY_DIR"
 rm -f "$PROXY_SOCKET" "$CHILD_EXIT_FIFO"
 mkfifo -m 0600 "$CHILD_EXIT_FIFO"
-supervise_child proxy "$PROXY_PID_FILE" socat "UNIX-LISTEN:$PROXY_SOCKET,fork,user=tau,group=tau,mode=0600" UNIX-CONNECT:/var/run/docker.sock &
+supervise_child proxy "$PROXY_PID_FILE" socat "UNIX-LISTEN:$PROXY_SOCKET,fork,user=ficus,group=ficus,mode=0600" UNIX-CONNECT:/var/run/docker.sock &
 PROXY_PID=$!
 for _ in $(seq 1 50); do [ -S "$PROXY_SOCKET" ] && break; sleep 0.1; done
-su-exec tau env DOCKER_HOST="unix://$PROXY_SOCKET" docker info >/dev/null
+su-exec ficus env DOCKER_HOST="unix://$PROXY_SOCKET" docker info >/dev/null
 
 umask 077
 openssl rand -hex 32 >"$TOKEN_FILE"
@@ -109,8 +109,8 @@ chmod 0400 "$TOKEN_FILE"
 export EXECUTOR_DOCKER_RUNTIME=1
 export EXECUTOR_AUTH_TOKEN_FILE="$TOKEN_FILE"
 export EXECUTOR_BIND=0.0.0.0
-export EXECUTOR_COMMAND_USER=tau
-export EXECUTOR_COMMAND_HOME=/home/tau
+export EXECUTOR_COMMAND_USER=ficus
+export EXECUTOR_COMMAND_HOME=/home/ficus
 export EXECUTOR_COMMAND_UID="$RESOLVED_UID"
 export EXECUTOR_COMMAND_GID="$RESOLVED_GID"
 export EXECUTOR_COMMAND_SOURCE="$IDENTITY_SOURCE"
@@ -119,7 +119,7 @@ export EXECUTOR_COMMAND_CONTRACT_DIGEST="$CONTRACT_DIGEST"
 # workloads peg every CPU (an in-box benchmark/build saturating the box starved
 # the probe window and got healthy boxes condemned + recreated, destroying the
 # running work — observed live 2026-08-20 on the squad box). Two guards:
-#   - `nice -n -10`: we are root (workloads run as `tau` at priority 0 via
+#   - `nice -n -10`: we are root (workloads run as `ficus` at priority 0 via
 #     su-exec), so the scheduler always preempts saturated workloads to run the
 #     probe handler.
 #   - `oom_score_adj=-500` (applied by supervise_child via FICUS_CHILD_OOM_ADJ,
@@ -162,7 +162,7 @@ start_browser_service() {
   # command substitution) — the SAME digest form box-manager pushes on VM hosts.
   digest="$(printf %s "$(cat "$TOKEN_FILE")" | sha256sum | cut -d' ' -f1)"
   # Seed under the user browser-proxy actually sends (FICUS_BROWSER_DEV_ALLOW_USER),
-  # NOT the command user — the two differ (root vs tau) and the header wins.
+  # NOT the command user — the two differ (root vs ficus) and the header wins.
   ( umask 077; printf '%s' "$digest" >"$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token" )
   FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service" >/var/log/tau-browser.log 2>&1 &
   echo "[ficus-sandbox] tau-browser service started (pid $!, sock $FICUS_BROWSER_SOCK, dev-user $FICUS_BROWSER_DEV_ALLOW_USER)" >&2

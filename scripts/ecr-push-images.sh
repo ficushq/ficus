@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and push tau-core and tau-sandbox images to ECR.
+# Build and push ficus-core and ficus-sandbox images to ECR.
 #
 # Usage: ./scripts/push-images.sh [--core-only | --sandbox-only] [--tag TAG]
 #
@@ -42,8 +42,8 @@ echo ""
 cd "$REPO_ROOT"
 
 if [[ "$CORE" == "true" ]]; then
-  IMAGE="$ECR_REGISTRY/tau-core:$TAG"
-  echo "=== tau-core ==="
+  IMAGE="$ECR_REGISTRY/ficus-core:$TAG"
+  echo "=== ficus-core ==="
   if [[ "${SKIP_BUILD:-}" != "1" ]]; then
     echo "Building..."
     docker build --platform linux/amd64 -t "$IMAGE" -f Dockerfile .
@@ -56,8 +56,8 @@ fi
 if [[ "$SANDBOX" == "true" ]]; then
   # Both images come from one multi-stage Dockerfile (--target). BuildKit builds
   # and caches the shared `base` stage once, reused across both targets.
-  IMAGE="$ECR_REGISTRY/tau-sandbox:$TAG"
-  echo "=== tau-sandbox (squad) ==="
+  IMAGE="$ECR_REGISTRY/ficus-sandbox:$TAG"
+  echo "=== ficus-sandbox (squad) ==="
   if [[ "${SKIP_BUILD:-}" != "1" ]]; then
     echo "Building..."
     docker build --platform linux/amd64 --target squad -t "$IMAGE" -f packages/sandbox-server/Dockerfile .
@@ -66,8 +66,8 @@ if [[ "$SANDBOX" == "true" ]]; then
   docker push "$IMAGE"
   echo ""
 
-  AGENT_IMAGE="$ECR_REGISTRY/tau-sandbox-agent:$TAG"
-  echo "=== tau-sandbox-agent (light) ==="
+  AGENT_IMAGE="$ECR_REGISTRY/ficus-sandbox-agent:$TAG"
+  echo "=== ficus-sandbox-agent (light) ==="
   if [[ "${SKIP_BUILD:-}" != "1" ]]; then
     echo "Building..."
     docker build --platform linux/amd64 --target agent -t "$AGENT_IMAGE" -f packages/sandbox-server/Dockerfile .

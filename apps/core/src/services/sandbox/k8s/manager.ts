@@ -153,7 +153,7 @@ export class K8sSandboxManager implements ISandboxManager {
 
   constructor(namespace?: string, options: K8sSandboxManagerOptions = {}) {
     const runPeriodicLoops = options.runPeriodicLoops ?? true
-    const ns = namespace || process.env.FICUS_K8S_NAMESPACE || 'tau-sandboxes'
+    const ns = namespace || process.env.FICUS_K8S_NAMESPACE || 'ficus-sandboxes'
     this.podManager = new K8sPodManager(ns)
     this.provisionScope = provisionScope(this.podManager.getClusterServer(), ns)
     this.provisionCoordinator = new ProvisionCoordinator({
@@ -784,7 +784,7 @@ export class K8sSandboxManager implements ISandboxManager {
       return { host: 'localhost', port: localPort }
     }
 
-    return { host: `${podName}.tau-sandboxes.${this.podManager.namespace}.svc.cluster.local`, port }
+    return { host: `${podName}.ficus-sandboxes.${this.podManager.namespace}.svc.cluster.local`, port }
   }
 
   /**

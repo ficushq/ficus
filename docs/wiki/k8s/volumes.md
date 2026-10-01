@@ -2,7 +2,7 @@
 
 ## Overview
 
-All persistent data lives on a **single shared EFS volume** (`tau-core-data`) per client. Both core pods (API + worker) and sandbox pods mount this volume, using `subPath` to isolate squad-specific data.
+All persistent data lives on a **single shared EFS volume** (`ficus-core-data`) per client. Both core pods (API + worker) and sandbox pods mount this volume, using `subPath` to isolate squad-specific data.
 
 No dynamic PVC provisioning — the volume is created once by Pulumi.
 
@@ -16,10 +16,10 @@ Each client gets one EFS access point at path `/core-data-{clientName}`:
 
 Two static PVs reference the same access point (with unique `volumeHandle` suffixes) to allow PVCs in both namespaces:
 
-| PV                           | Namespace              | PVC Name        |
-| ---------------------------- | ---------------------- | --------------- |
-| `tau-{name}-core-data-pv`    | `tau-core-{name}`      | `tau-core-data` |
-| `tau-{name}-sandbox-data-pv` | `tau-sandboxes-{name}` | `tau-core-data` |
+| PV                           | Namespace                | PVC Name          |
+| ---------------------------- | ------------------------ | ----------------- |
+| `tau-{name}-core-data-pv`    | `ficus-core-{name}`      | `ficus-core-data` |
+| `tau-{name}-sandbox-data-pv` | `ficus-sandboxes-{name}` | `ficus-core-data` |
 
 ## Directory Layout
 
@@ -45,10 +45,10 @@ volumeMounts:
 volumes:
   - name: core-data
     persistentVolumeClaim:
-      claimName: tau-core-data
+      claimName: ficus-core-data
 ```
 
-`HOME_DIR=/data` is set via the `tau-core-config` ConfigMap.
+`HOME_DIR=/data` is set via the `ficus-core-config` ConfigMap.
 
 ## Sandbox Pods
 
@@ -64,12 +64,12 @@ volumeMounts:
     subPath: memory/{squadId}
     readOnly: true
   - name: core-data
-    mountPath: /var/lib/tau/ssh-source
+    mountPath: /var/lib/ficus/ssh-source
     subPath: ssh/{squadId}
 volumes:
   - name: core-data
     persistentVolumeClaim:
-      claimName: tau-core-data # PVC in tau-sandboxes-{name} namespace
+      claimName: ficus-core-data # PVC in ficus-sandboxes-{name} namespace
 ```
 
 - **Workspace**: read-write, contains code, devbox.json, .tau/ directory

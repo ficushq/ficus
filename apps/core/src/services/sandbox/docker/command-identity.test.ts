@@ -2,20 +2,20 @@ import { describe, expect, test } from 'bun:test'
 import { parseDockerCommandIdentity, resolveDockerCommandIdentity } from './command-identity'
 import { DockerSandboxCompatibilityError, DockerSandboxLifecycleError } from './errors'
 
-const contract = { version: 1, user: 'tau', home: '/home/tau', uid: 1000, gid: 1000 } as const
+const contract = { version: 1, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 } as const
 
 describe('Docker command identity', () => {
   test('strictly parses and deterministically fingerprints the contract', () => {
     const a = parseDockerCommandIdentity(JSON.stringify(contract))
-    const b = parseDockerCommandIdentity('{"gid":1000,"uid":1000,"home":"/home/tau","user":"tau","version":1}')
+    const b = parseDockerCommandIdentity('{"gid":1000,"uid":1000,"home":"/home/ficus","user":"ficus","version":1}')
     expect(a).toEqual(b)
     expect(a.digest).toMatch(/^[a-f0-9]{64}$/)
   })
 
   test('uses only a complete safe host identity pair', () => {
     expect(resolveDockerCommandIdentity(contract, { uid: 501, gid: 20 })).toMatchObject({
-      user: 'tau',
-      home: '/home/tau',
+      user: 'ficus',
+      home: '/home/ficus',
       source: 'host',
       resolvedUid: 501,
       resolvedGid: 20,
@@ -75,7 +75,7 @@ describe('Docker typed errors', () => {
     const error = new DockerSandboxCompatibilityError({
       operation: 'inspect-image',
       reason: 'IMAGE_REBUILD_REQUIRED',
-      containerName: 'tau-sandbox-safe',
+      containerName: 'ficus-sandbox-safe',
     })
     expect(error.message).toContain('bun run sandbox:build:docker')
     expect(error.code).toBe('IMAGE_REBUILD_REQUIRED')

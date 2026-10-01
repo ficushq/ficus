@@ -68,7 +68,7 @@ export function computeEnvUpdates(
   if (opts.runtime === 'k3d') {
     updates.push(
       { key: 'FICUS_K8S_LOCAL', value: 'true', explicit: ex('runtime') },
-      { key: 'FICUS_K8S_NAMESPACE', value: 'tau-sandboxes-dev', explicit: ex('runtime') },
+      { key: 'FICUS_K8S_NAMESPACE', value: 'ficus-sandboxes-dev', explicit: ex('runtime') },
       { key: 'FICUS_K8S_RUNTIME_CLASS', value: '', explicit: ex('runtime') }
     )
   } else if (parseEnvFile(ctx.existingEnv ?? '').FICUS_K8S_LOCAL?.trim() === 'true') {
@@ -283,12 +283,12 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
       plan: () => [
         opts.rebuildImage
           ? 'bun run sandbox:build:docker (forced)'
-          : 'bun run sandbox:build:docker unless tau-sandbox:latest exists',
+          : 'bun run sandbox:build:docker unless ficus-sandbox:latest exists',
       ],
       run: async () => {
-        const present = (await deps.runner(['docker', 'image', 'inspect', 'tau-sandbox:latest'])).code === 0
+        const present = (await deps.runner(['docker', 'image', 'inspect', 'ficus-sandbox:latest'])).code === 0
         if (present && !opts.rebuildImage)
-          return deps.log('tau-sandbox:latest exists — skipping build (use --rebuild-image to force)')
+          return deps.log('ficus-sandbox:latest exists — skipping build (use --rebuild-image to force)')
         await run(deps, root, ['bun', 'run', 'sandbox:build:docker'])
       },
     })
@@ -296,10 +296,10 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
     steps.push({
       id: 'runtime',
       title: 'Local k3d cluster',
-      plan: () => ['bun run k3d:setup unless cluster tau-dev exists'],
+      plan: () => ['bun run k3d:setup unless cluster ficus-dev exists'],
       run: async () => {
         const list = await deps.runner(['k3d', 'cluster', 'list'])
-        if (list.stdout.includes('tau-dev')) return deps.log('k3d cluster tau-dev exists — skipping k3d:setup')
+        if (list.stdout.includes('ficus-dev')) return deps.log('k3d cluster ficus-dev exists — skipping k3d:setup')
         await run(deps, root, ['bun', 'run', 'k3d:setup'])
       },
     })

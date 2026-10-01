@@ -40,10 +40,10 @@ bun run core:build            # Core (API + worker + web)
 
 # Tag and push
 export REGISTRY=your-registry.example.com
-docker tag tau-sandbox:latest $REGISTRY/tau-sandbox:latest
-docker tag tau-core:latest $REGISTRY/tau-core:latest
-docker push $REGISTRY/tau-sandbox:latest
-docker push $REGISTRY/tau-core:latest
+docker tag ficus-sandbox:latest $REGISTRY/ficus-sandbox:latest
+docker tag ficus-core:latest $REGISTRY/ficus-core:latest
+docker push $REGISTRY/ficus-sandbox:latest
+docker push $REGISTRY/ficus-core:latest
 ```
 
 ## 3. Configure Storage Classes
@@ -83,33 +83,33 @@ allowVolumeExpansion: true
 ## 4. Apply K8s Manifests
 
 ```bash
-# Create tau-core namespace
-kubectl create namespace tau-core --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace tau-core app=tau component=core --overwrite
+# Create ficus-core namespace
+kubectl create namespace ficus-core --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace ficus-core app=ficus component=core --overwrite
 
 # Apply sandbox infrastructure
-kubectl apply -f k8s/namespace.yaml      # tau-sandboxes namespace
+kubectl apply -f k8s/namespace.yaml      # ficus-sandboxes namespace
 kubectl apply -f k8s/runtime-class.yaml  # Sysbox RuntimeClass
 kubectl apply -f k8s/rbac.yaml           # RBAC for sandbox management
 kubectl apply -f k8s/headless-service.yaml  # DNS for sandbox pods
 kubectl apply -f k8s/network-policy.yaml # Network isolation
 
 # Verify
-kubectl get namespace tau-sandboxes && kubectl get runtimeclass sysbox-runc
+kubectl get namespace ficus-sandboxes && kubectl get runtimeclass sysbox-runc
 ```
 
 What each manifest is for:
 
-| Manifest                    | Purpose                                                       |
-| --------------------------- | ------------------------------------------------------------- |
-| `k8s/namespace.yaml`        | `tau-sandboxes` namespace for sandbox pods                    |
-| `k8s/core-namespace.yaml`   | `tau-core` namespace for the API/worker/web deployments       |
-| `k8s/core-deployment.yaml`  | Core API, worker, and web Deployments in `tau-core` namespace |
-| `k8s/rbac.yaml`             | Service account + role for managing sandbox pods/PVCs         |
-| `k8s/core-logs-rbac.yaml`   | Extra role letting Core read pod logs for the system-log UI   |
-| `k8s/headless-service.yaml` | DNS for individual sandbox pods                               |
-| `k8s/network-policy.yaml`   | Restrict sandbox pod network access                           |
-| `k8s/runtime-class.yaml`    | Sysbox RuntimeClass for secure Docker-in-Docker               |
+| Manifest                    | Purpose                                                         |
+| --------------------------- | --------------------------------------------------------------- |
+| `k8s/namespace.yaml`        | `ficus-sandboxes` namespace for sandbox pods                    |
+| `k8s/core-namespace.yaml`   | `ficus-core` namespace for the API/worker/web deployments       |
+| `k8s/core-deployment.yaml`  | Core API, worker, and web Deployments in `ficus-core` namespace |
+| `k8s/rbac.yaml`             | Service account + role for managing sandbox pods/PVCs           |
+| `k8s/core-logs-rbac.yaml`   | Extra role letting Core read pod logs for the system-log UI     |
+| `k8s/headless-service.yaml` | DNS for individual sandbox pods                                 |
+| `k8s/network-policy.yaml`   | Restrict sandbox pod network access                             |
+| `k8s/runtime-class.yaml`    | Sysbox RuntimeClass for secure Docker-in-Docker                 |
 
 ## 5. Create Secrets and ConfigMaps
 
@@ -118,14 +118,14 @@ What each manifest is for:
 > **Note:** `k8s/core-deployment.yaml` includes a ConfigMap and Secret with placeholder values. You can either edit that file directly, or create them separately with `kubectl` (shown below). If using `kubectl`, delete the ConfigMap/Secret sections from the manifest first.
 
 ```bash
-kubectl -n tau-core create configmap tau-core-config \
+kubectl -n ficus-core create configmap ficus-core-config \
   --from-literal=FICUS_SANDBOX_RUNTIME="k8s" \
   --from-literal=PORT="3000" \
   --from-literal=WORKER_PORT="3002" \
   --from-literal=MAX_CONCURRENT_AGENTS="10"
 
-kubectl -n tau-core create secret generic tau-core-secrets \
-  --from-literal=DATABASE_URL="postgresql://user:pass@host:5432/tau" \
+kubectl -n ficus-core create secret generic ficus-core-secrets \
+  --from-literal=DATABASE_URL="postgresql://user:pass@host:5432/ficus" \
   --from-literal=FICUS_ENCRYPTION_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
 ```
 
@@ -134,10 +134,10 @@ kubectl -n tau-core create secret generic tau-core-secrets \
 ### Sandbox Credentials
 
 ```bash
-kubectl -n tau-sandboxes create secret generic tau-git-credentials \
+kubectl -n ficus-sandboxes create secret generic ficus-git-credentials \
   --from-literal=GITHUB_TOKEN="ghp_..."
 
-kubectl -n tau-sandboxes create configmap tau-git-config \
+kubectl -n ficus-sandboxes create configmap ficus-git-config \
   --from-literal=user-name="Ficus Bot" \
   --from-literal=user-email="ficus@example.com"
 ```
@@ -146,19 +146,19 @@ kubectl -n tau-sandboxes create configmap tau-git-config \
 
 Core runs as three separate Deployments from the same Docker image:
 
-| Deployment   | Purpose                                      | Scale                                       |
-| ------------ | -------------------------------------------- | ------------------------------------------- |
-| `tau-api`    | HTTP API server (port 3000)                  | 1 replica (stateful — manages sandbox pods) |
-| `tau-worker` | Agent execution, scheduling, background jobs | Scale based on agent load                   |
-| `tau-web`    | Vite frontend (port 5173)                    | 1 replica                                   |
+| Deployment     | Purpose                                      | Scale                                       |
+| -------------- | -------------------------------------------- | ------------------------------------------- |
+| `ficus-api`    | HTTP API server (port 3000)                  | 1 replica (stateful — manages sandbox pods) |
+| `ficus-worker` | Agent execution, scheduling, background jobs | Scale based on agent load                   |
+| `ficus-web`    | Vite frontend (port 5173)                    | 1 replica                                   |
 
-`FICUS_SERVE_WEB` is intended for single-VM and self-hosted single-origin deployments. Kubernetes installs keep the split topology: `tau-api` serves API/WebSocket traffic, `tau-web` serves the frontend, and production static hosting/CDN choices remain separate.
+`FICUS_SERVE_WEB` is intended for single-VM and self-hosted single-origin deployments. Kubernetes installs keep the split topology: `ficus-api` serves API/WebSocket traffic, `ficus-web` serves the frontend, and production static hosting/CDN choices remain separate.
 
 The manifest at `k8s/core-deployment.yaml` includes all three Deployments, their Services, and the shared ConfigMap/Secret. Edit it to set your image registry and credentials:
 
 ```bash
 # Update image references in k8s/core-deployment.yaml
-sed -i "s|tau-core:latest|$REGISTRY/tau-core:latest|g" k8s/core-deployment.yaml
+sed -i "s|ficus-core:latest|$REGISTRY/ficus-core:latest|g" k8s/core-deployment.yaml
 
 # Update secrets (DATABASE_URL, FICUS_PASSWORD, etc.)
 # Edit k8s/core-deployment.yaml or use kubectl create secret (step 5)
@@ -166,15 +166,15 @@ sed -i "s|tau-core:latest|$REGISTRY/tau-core:latest|g" k8s/core-deployment.yaml
 kubectl apply -f k8s/core-deployment.yaml
 
 # Verify all three deployments are running
-kubectl -n tau-core get pods
-kubectl -n tau-core logs deployment/tau-api --tail=20
-kubectl -n tau-core logs deployment/tau-worker --tail=20
+kubectl -n ficus-core get pods
+kubectl -n ficus-core logs deployment/ficus-api --tail=20
+kubectl -n ficus-core logs deployment/ficus-worker --tail=20
 ```
 
 **Scaling workers:** Each worker handles `MAX_CONCURRENT_AGENTS` concurrent agent runs (default: 10). Scale horizontally:
 
 ```bash
-kubectl -n tau-core scale deployment tau-worker --replicas=3  # 30 concurrent agents
+kubectl -n ficus-core scale deployment ficus-worker --replicas=3  # 30 concurrent agents
 ```
 
 ## 7. Verify
@@ -183,15 +183,15 @@ Test that Core can create sandbox pods:
 
 ```bash
 # Terminal 1: Watch sandbox pods
-kubectl -n tau-sandboxes get pods -w
+kubectl -n ficus-sandboxes get pods -w
 
 # Terminal 2: Port-forward and test
-kubectl -n tau-core port-forward svc/tau-api 3000:3000 &
+kubectl -n ficus-core port-forward svc/ficus-api 3000:3000 &
 ficus agent create test-agent --model gpt-4o --system "You are a test agent"
 ficus run test-agent "echo hello"
 ```
 
-You should see a sandbox pod spin up in `tau-sandboxes`.
+You should see a sandbox pod spin up in `ficus-sandboxes`.
 
 ## 8. Monitoring & Troubleshooting
 
@@ -202,38 +202,99 @@ See [Troubleshooting](troubleshooting.md) for common issues and debugging comman
 ### Quick Checks
 
 ```bash
-kubectl -n tau-core logs deployment/tau-api -f         # API logs
-kubectl -n tau-core logs deployment/tau-worker -f      # Worker logs
-kubectl -n tau-sandboxes get pods                       # Sandbox pod status
-kubectl -n tau-sandboxes logs -l app=tau-sandbox       # Sandbox logs
+kubectl -n ficus-core logs deployment/ficus-api -f         # API logs
+kubectl -n ficus-core logs deployment/ficus-worker -f      # Worker logs
+kubectl -n ficus-sandboxes get pods                       # Sandbox pod status
+kubectl -n ficus-sandboxes logs -l app=ficus-sandbox       # Sandbox logs
 ```
 
 ### Common Issues
 
-| Issue                      | Check                                                                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------------- |
-| Sandbox pods stuck Pending | `kubectl describe pod` — check storage class, node resources                                   |
-| HTTP connection refused    | Verify network policy, check `kubectl get endpoints tau-sandboxes`                             |
-| RuntimeClass not found     | Sysbox not installed: `kubectl get runtimeclass sysbox-runc`                                   |
-| Permission denied          | `kubectl auth can-i create pods -n tau-sandboxes --as=system:serviceaccount:tau-core:tau-core` |
+| Issue                      | Check                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Sandbox pods stuck Pending | `kubectl describe pod` — check storage class, node resources                                         |
+| HTTP connection refused    | Verify network policy, check `kubectl get endpoints ficus-sandboxes`                                 |
+| RuntimeClass not found     | Sysbox not installed: `kubectl get runtimeclass sysbox-runc`                                         |
+| Permission denied          | `kubectl auth can-i create pods -n ficus-sandboxes --as=system:serviceaccount:ficus-core:ficus-core` |
+
+---
+
+## 9. Upgrading a cluster created before this release
+
+A previous release's manifests named every cluster-scoped resource
+differently: the core and sandbox namespaces, the API/worker Deployments and
+Services, the core data PVC, the sandbox-auth Secret, the `app` labels on
+core and sandbox pods, and the spec-hash pod annotation. This release renames
+all of it to the names used throughout this guide. Diff your checkout's
+previous `k8s/*.yaml` against this release's to see the exact old values —
+they are not reproduced here. A cluster created before this release does not
+pick up the new names automatically: namespaces and PVCs are not renamed in
+place. Move it by hand, in order, with `$OLD_CORE_NS`/`$OLD_SANDBOX_NS` set to
+your previous release's namespace names and `$OLD_PVC` to its core data PVC
+name:
+
+1. **Scale the deployment to 0** — stop writers before moving data:
+
+   ```bash
+   kubectl -n "$OLD_CORE_NS" scale deployment --all --replicas=0
+   ```
+
+2. **Create the new namespace and PVC** — apply `k8s/core-namespace.yaml` and
+   `k8s/namespace.yaml` from this release, then create an empty
+   `ficus-core-data` PVC in each new namespace with the same size and storage
+   class as `$OLD_PVC`.
+
+3. **Copy the data with a one-off pod mounting both PVCs** — the old PVC
+   (`$OLD_PVC`) and the new `ficus-core-data` PVC, then `rsync` (or `cp -a`)
+   the old volume's contents across:
+
+   ```bash
+   kubectl -n ficus-core run data-migrate --rm -i --restart=Never \
+     --image=busybox --overrides="{\"spec\":{\"containers\":[{\"name\":\"data-migrate\",\"image\":\"busybox\",\"command\":[\"sh\",\"-c\",\"cp -a /old/. /new/\"],\"volumeMounts\":[{\"name\":\"old\",\"mountPath\":\"/old\"},{\"name\":\"new\",\"mountPath\":\"/new\"}]}],\"volumes\":[{\"name\":\"old\",\"persistentVolumeClaim\":{\"claimName\":\"$OLD_PVC\"}},{\"name\":\"new\",\"persistentVolumeClaim\":{\"claimName\":\"ficus-core-data\"}}]}}"
+   ```
+
+   Repeat for the sandboxes namespace's PVC if sandbox data (workspaces,
+   memory, ssh, nix-cache) was not already on the shared `ficus-core-data`
+   volume.
+
+4. **Apply the new manifests** — `k8s/core-deployment.yaml`, `k8s/rbac.yaml`,
+   `k8s/core-logs-rbac.yaml`, `k8s/headless-service.yaml`,
+   `k8s/network-policy.yaml`, `k8s/runtime-class.yaml`, and the
+   `ficus-core-config` ConfigMap / `ficus-core-secrets` Secret (section 5
+   above), all under this release's namespace names. Scale the new
+   Deployments up and verify health (section 7) before continuing.
+
+5. **Delete the old namespace** — once the new deployment is verified healthy
+   and has served traffic, delete the old namespaces (this removes `$OLD_PVC`
+   and everything else that lived under them):
+
+   ```bash
+   kubectl delete namespace "$OLD_CORE_NS" "$OLD_SANDBOX_NS"
+   ```
+
+Any sandbox pod still running under a previous release's container-name
+prefix or label set is recognized and adopted by this release (it reads
+every label set this phase of the rename has used), so in-flight agent work
+survives the move; only the control-plane resources above need the manual
+steps.
 
 ---
 
 ## Appendix A: Environment Variable Reference
 
-### Core (tau-api / tau-worker)
+### Core (ficus-api / ficus-worker)
 
 | Variable                     | Default                               | Description                                                                                                                                     |
 | ---------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FICUS_SANDBOX_RUNTIME`      | (required, no default)                | One of `docker-sysbox`, `docker-socket`, `k8s`, `vm`, `host` — use `k8s` for this deployment. See [sandbox-runtimes.md](../sandbox-runtimes.md) |
-| `FICUS_K8S_NAMESPACE`        | `tau-sandboxes`                       | K8s namespace for sandbox pods                                                                                                                  |
-| `FICUS_SANDBOX_IMAGE`        | `tau-sandbox:latest`                  | Docker image for sandbox pods                                                                                                                   |
+| `FICUS_K8S_NAMESPACE`        | `ficus-sandboxes`                     | K8s namespace for sandbox pods                                                                                                                  |
+| `FICUS_SANDBOX_IMAGE`        | `ficus-sandbox:latest`                | Docker image for sandbox pods                                                                                                                   |
 | `FICUS_K8S_RUNTIME_CLASS`    | `sysbox-runc`                         | K8s RuntimeClass for sandbox pods. Set to `""` to disable                                                                                       |
 | `FICUS_ENCRYPTION_KEY`       | (required)                            | 64-char hex key for encrypting secrets in DB                                                                                                    |
 | `DATABASE_URL`               | (required)                            | PostgreSQL connection string                                                                                                                    |
 | `PORT`                       | `3000`                                | API server port                                                                                                                                 |
 | `WORKER_PORT`                | `3002`                                | Worker RPC port                                                                                                                                 |
-| `WORKER_URL`                 | `http://tau-worker:3002`              | Worker URL (set on API deployment)                                                                                                              |
+| `WORKER_URL`                 | `http://ficus-worker:3002`            | Worker URL (set on API deployment)                                                                                                              |
 | `FICUS_WORKER_EVENT_PORT`    | `3003`                                | Port for the worker's api↔worker event listener (see the note below)                                                                            |
 | `FICUS_INTERNAL_EVENT_TOKEN` | (derived from `FICUS_ENCRYPTION_KEY`) | Shared secret authenticating api↔worker events; must resolve identically in both                                                                |
 | `MAX_CONCURRENT_AGENTS`      | `10`                                  | Max concurrent agent runs per worker                                                                                                            |
@@ -247,8 +308,8 @@ kubectl -n tau-sandboxes logs -l app=tau-sandbox       # Sandbox logs
 >
 > To run them as SEPARATE pods, point each side at the other's Service:
 > set `FICUS_WORKER_EVENT_BIND=0.0.0.0` and
-> `FICUS_API_EVENT_URL=http://tau-api:3000/internal/events` on the worker, and
-> `FICUS_WORKER_EVENT_URL=http://tau-worker:3003/internal/events` on the api.
+> `FICUS_API_EVENT_URL=http://ficus-api:3000/internal/events` on the worker, and
+> `FICUS_WORKER_EVENT_URL=http://ficus-worker:3003/internal/events` on the api.
 > Keep port 3003 on an internal Service only — never an Ingress or NodePort.
 > Both pods must resolve the same token: either set `FICUS_INTERNAL_EVENT_TOKEN`
 > identically, or rely on them already sharing `FICUS_ENCRYPTION_KEY`, from which
@@ -319,7 +380,7 @@ parameters:
   fileSystemId: fs-xxxxxxxx
   directoryPerms: '700'
   encrypted: 'true'
-  basePath: '/tau-sandboxes'
+  basePath: '/ficus-sandboxes'
 mountOptions:
   - tls
 ```

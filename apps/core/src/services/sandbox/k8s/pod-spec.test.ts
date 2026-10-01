@@ -66,20 +66,20 @@ describe('sanitizeLabelValue', () => {
 
 describe('image and API URL resolution', () => {
   test('uses the compose registry image and Always pull policy for local k3d sandboxes', () => {
-    expect(getSandboxImage({ isLocalDev: true, env: {} })).toBe('tau-registry:5000/tau-sandbox:latest')
+    expect(getSandboxImage({ isLocalDev: true, env: {} })).toBe('ficus-registry:5000/ficus-sandbox:latest')
     expect(getSandboxImagePullPolicy({ isLocalDev: true })).toBe('Always')
   })
 
   test('agent sandboxType selects the minimal agent image', () => {
     expect(getSandboxImage({ sandboxType: 'agent', isLocalDev: true, env: {} })).toBe(
-      'tau-registry:5000/tau-sandbox-agent:latest'
+      'ficus-registry:5000/ficus-sandbox-agent:latest'
     )
-    expect(getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: {} })).toBe('tau-sandbox-agent:latest')
+    expect(getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: {} })).toBe('ficus-sandbox-agent:latest')
     expect(
       getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: { FICUS_SANDBOX_AGENT_IMAGE: 'x/y:z' } })
     ).toBe('x/y:z')
     expect(getSandboxImage({ sandboxType: 'squad', isLocalDev: true, env: {} })).toBe(
-      'tau-registry:5000/tau-sandbox:latest'
+      'ficus-registry:5000/ficus-sandbox:latest'
     )
   })
 
@@ -88,38 +88,38 @@ describe('image and API URL resolution', () => {
   // now says host/docker must not flip this module into local-k3d mode.
   test('the isLocalDev default follows the runtime, not a bare FICUS_K8S_LOCAL', () => {
     expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' } })).toBe(
-      'tau-sandbox:latest'
+      'ficus-sandbox:latest'
     )
     expect(
       getSandboxImage({
         sandboxType: 'agent',
         env: { FICUS_SANDBOX_RUNTIME: 'docker-socket', FICUS_K8S_LOCAL: 'true' },
       })
-    ).toBe('tau-sandbox-agent:latest')
+    ).toBe('ficus-sandbox-agent:latest')
     // Under the k8s runtime the key is honoured, as always.
     expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' } })).toBe(
-      'tau-registry:5000/tau-sandbox:latest'
+      'ficus-registry:5000/ficus-sandbox:latest'
     )
-    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'k8s' } })).toBe('tau-sandbox:latest')
+    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'k8s' } })).toBe('ficus-sandbox:latest')
   })
 
   test('resolveSandboxApiUrl: local dev points at host.k3d.internal on the live port', () => {
-    expect(resolveSandboxApiUrl('tau-sandboxes', { isLocalDev: true, port: '62832' })).toBe(
+    expect(resolveSandboxApiUrl('ficus-sandboxes', { isLocalDev: true, port: '62832' })).toBe(
       'http://host.k3d.internal:62832'
     )
     // Defaults to 3000 when no port is supplied.
-    expect(resolveSandboxApiUrl('tau-sandboxes', { isLocalDev: true, port: undefined })).toBe(
+    expect(resolveSandboxApiUrl('ficus-sandboxes', { isLocalDev: true, port: undefined })).toBe(
       'http://host.k3d.internal:3000'
     )
   })
 
-  test('resolveSandboxApiUrl: cluster mode uses stable tau-core Service DNS (port-independent)', () => {
-    expect(resolveSandboxApiUrl('tau-sandboxes', { isLocalDev: false, port: '62832' })).toBe(
-      'http://tau-api.tau-core.svc.cluster.local:3000'
+  test('resolveSandboxApiUrl: cluster mode uses stable ficus-core Service DNS (port-independent)', () => {
+    expect(resolveSandboxApiUrl('ficus-sandboxes', { isLocalDev: false, port: '62832' })).toBe(
+      'http://ficus-api.ficus-core.svc.cluster.local:3000'
     )
     // Namespace suffix is preserved when mapping sandboxes -> core.
-    expect(resolveSandboxApiUrl('tau-sandboxes-dev', { isLocalDev: false })).toBe(
-      'http://tau-api.tau-core-dev.svc.cluster.local:3000'
+    expect(resolveSandboxApiUrl('ficus-sandboxes-dev', { isLocalDev: false })).toBe(
+      'http://ficus-api.ficus-core-dev.svc.cluster.local:3000'
     )
   })
 })
@@ -227,6 +227,22 @@ describe('buildSandboxPodSpec', () => {
       reconcilableSpecHash(config)
     )
     expect(podSpec.metadata?.annotations?.[other.k8sSpecHashAnnotation]).toBeUndefined()
+  })
+
+  test('mounts the sandbox-auth secret at /etc/ficus and claims the ficus-core-data PVC', async () => {
+    const podSpec = await buildSpec({
+      sandboxId: 'squad_11111111-1111-4111-8111-111111111111',
+      podName: 'tau-sb-squad-11111111-1111-4111-8111-111111111111',
+      config: { sandboxType: 'squad' },
+    })
+    const container = podSpec.spec?.containers?.[0]
+    expect(container?.volumeMounts).toContainEqual({ name: 'sandbox-auth', mountPath: '/etc/ficus', readOnly: true })
+    expect(podSpec.spec?.volumes?.find((v: { name?: string }) => v.name === 'core-data')).toMatchObject({
+      persistentVolumeClaim: { claimName: 'ficus-core-data' },
+    })
+    expect(podSpec.spec?.affinity?.podAffinity?.preferredDuringSchedulingIgnoredDuringExecution?.[0]).toMatchObject({
+      podAffinityTerm: { labelSelector: { matchLabels: { app: 'ficus-core' } } },
+    })
   })
 
   test('mounts staged CLI from core-data at the ficus executable path', async () => {
@@ -409,7 +425,7 @@ describe('buildSandboxPodSpec', () => {
     expect(Object.keys(env).filter((name) => name.endsWith('_SANDBOX_ROLE'))).toEqual(['FICUS_SANDBOX_ROLE'])
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/nix-cache')).toBe(false)
     // memory + ssh mounts remain for squad members
-    expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/var/lib/tau/ssh-source')).toBe(true)
+    expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/var/lib/ficus/ssh-source')).toBe(true)
     // Squad members still mount the shared squad workspace + their own /private.
     expect(env.WORKSPACE_PATH).toBe('/workspace/11111111-1111-4111-8111-111111111111')
     expect(
@@ -433,7 +449,7 @@ describe('buildSandboxPodSpec', () => {
     expect(mountPaths).toContain('/private')
     expect(mountPaths.some((p: string) => p === '/workspace' || p.startsWith('/workspace/'))).toBe(false)
     // Solo agents are not squad members: no memory/ssh/nix-cache mounts.
-    expect(mountPaths).not.toContain('/var/lib/tau/ssh-source')
+    expect(mountPaths).not.toContain('/var/lib/ficus/ssh-source')
     expect(mountPaths).not.toContain('/nix-cache')
   })
 
@@ -535,7 +551,7 @@ describe('buildSandboxPodSpec workspace mount routing', () => {
     // ssh-source mount keyed by squad key
     expect(mounts).toContainEqual({
       name: 'core-data',
-      mountPath: '/var/lib/tau/ssh-source',
+      mountPath: '/var/lib/ficus/ssh-source',
       subPath: 'ssh/11111111-1111-4111-8111-111111111111',
     })
 
@@ -707,7 +723,7 @@ describe('buildSandboxPodSpec asset-manifest mounts (golden master)', () => {
       },
       {
         name: 'core-data',
-        mountPath: '/var/lib/tau/ssh-source',
+        mountPath: '/var/lib/ficus/ssh-source',
         subPath: 'ssh/11111111-1111-4111-8111-111111111111',
       },
     ]
@@ -737,7 +753,7 @@ describe('buildSandboxPodSpec asset-manifest mounts (golden master)', () => {
       },
       {
         name: 'core-data',
-        mountPath: '/var/lib/tau/ssh-source',
+        mountPath: '/var/lib/ficus/ssh-source',
         subPath: 'ssh/11111111-1111-4111-8111-111111111111',
       },
     ]

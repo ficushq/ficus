@@ -56,8 +56,8 @@ export const SANDBOX_IDENTITY_LEGACY: SandboxIdentitySet = {
   k8sAppLabelValue: 'tau-sandbox', // ficus-p5-bridge
 }
 
-/** The set new sandboxes are created and labelled with. Still the legacy set in this release. */
-export const SANDBOX_IDENTITY_WRITE: SandboxIdentitySet = SANDBOX_IDENTITY_LEGACY
+/** The set new sandboxes are created and labelled with. The new set as of this release. */
+export const SANDBOX_IDENTITY_WRITE: SandboxIdentitySet = SANDBOX_IDENTITY_NEW
 
 /** Every set a sandbox is recognised under, new first. */
 export const SANDBOX_IDENTITY_READ: readonly SandboxIdentitySet[] = [SANDBOX_IDENTITY_NEW, SANDBOX_IDENTITY_LEGACY]

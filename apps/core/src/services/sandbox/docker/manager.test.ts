@@ -607,16 +607,20 @@ describe('reclaimAgentNixStore', () => {
   it('refuses storage reclamation while a container under any identity prefix is running', () => {
     const store = path.join(nixRoot, sandboxId)
     fs.mkdirSync(store, { recursive: true })
-    const newName = `${SANDBOX_IDENTITY_NEW.containerPrefix}${sandboxId}`
+    // The LAST checked name (not necessarily the write name) is the one found
+    // running, so the loop must keep checking past earlier not-found entries
+    // regardless of which identity set is currently written.
+    const names = sandboxContainerNames(sandboxId)
+    const runningName = names[names.length - 1]
     const commands: string[][] = []
     const spawnSync = (args: string[]) => {
       commands.push(args)
       if (args[1] !== 'inspect') return result()
-      return args[4] === newName ? result(0, 'true\n') : result(1, '', 'No such object')
+      return args[4] === runningName ? result(0, 'true\n') : result(1, '', 'No such object')
     }
 
     expect(() => reclaimAgentNixStore(sandboxId, { spawnSync })).toThrow('running')
-    expect(commands.map((args) => args[4])).toEqual(sandboxContainerNames(sandboxId))
+    expect(commands.map((args) => args[4])).toEqual(names)
     expect(commands.some((args) => args[1] === 'run')).toBe(false)
     expect(fs.existsSync(store)).toBe(true)
   })
@@ -659,7 +663,7 @@ describe('reclaimAgentNixStore', () => {
         '0',
         '-v',
         `${store}:/target`,
-        'tau-sandbox:latest',
+        'ficus-sandbox:latest',
         '-c',
         'find /target -mindepth 1 -delete',
       ],
@@ -764,7 +768,7 @@ describe('computeDockerSpecHash', () => {
 
   it('is a full digest and changes when a mutable tag resolves to a new immutable image', () => {
     const first = {
-      imageReference: 'tau-sandbox:latest',
+      imageReference: 'ficus-sandbox:latest',
       imageId: `sha256:${'a'.repeat(64)}`,
       runtimeContractVersion: 1 as const,
       executorProtocolVersion: 1 as const,
@@ -808,7 +812,7 @@ describe('docker --shm-size=512m (browser parity, Phase 2)', () => {
   // it must drift-recreate, so it MUST fold into computeDockerSpecDigest.
   it('shmSize is part of the hashed spec digest (drift recreates)', () => {
     const base = {
-      imageReference: 'tau-sandbox:latest',
+      imageReference: 'ficus-sandbox:latest',
       imageId: `sha256:${'a'.repeat(64)}`,
       runtimeContractVersion: 1 as const,
       executorProtocolVersion: 1 as const,
@@ -854,12 +858,12 @@ describe('ensureSandbox spec-hash drift detection', () => {
     const removed: string[] = []
     const base = {
       sandboxes: new Map<string, unknown>(),
-      containerName: (id: string) => `tau-sandbox-${id}`,
+      containerName: (id: string) => `${SANDBOX_IDENTITY_WRITE.containerPrefix}${id}`,
       isContainerRunning: () => true,
       getExistingContainer: () => null,
       resolveImageContract: () => ({
-        imageReference: 'tau-sandbox:latest',
-        imageId: 'unresolved:tau-sandbox:latest',
+        imageReference: 'ficus-sandbox:latest',
+        imageId: 'unresolved:ficus-sandbox:latest',
         runtimeContractVersion: 1,
         executorProtocolVersion: 1,
         commandContractVersion: 1,

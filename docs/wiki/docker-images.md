@@ -1,11 +1,11 @@
 # Docker Images
 
-Ficus uses two Docker images: **tau-core** for the API server, worker, and CLI, and **tau-sandbox** for agent sandbox pods with devbox/nix development environments.
+Ficus uses two Docker images: **ficus-core** for the API server, worker, and CLI, and **ficus-sandbox** for agent sandbox pods with devbox/nix development environments.
 
-## tau-core
+## ficus-core
 
 **File:** `Dockerfile` (repo root)  
-**Build:** `bun run core:build` or `docker build -t tau-core:latest .`
+**Build:** `bun run core:build` or `docker build -t ficus-core:latest .`
 
 Multi-stage build producing a single image that runs as any of 3 services via CMD override.
 
@@ -45,10 +45,10 @@ Each K8s Deployment overrides the CMD to run a different service:
 
 ---
 
-## tau-sandbox
+## ficus-sandbox
 
 **File:** `packages/sandbox-server/Dockerfile`  
-**Build:** `bun run sandbox:build:k8s` or `docker build -t tau-sandbox:latest -f packages/sandbox-server/Dockerfile .`
+**Build:** `bun run sandbox:build:k8s` or `docker build -t ficus-sandbox:latest -f packages/sandbox-server/Dockerfile .`
 
 Single-stage build from `ubuntu:24.04` with nix, devbox, and all development packages baked in.
 
@@ -70,7 +70,7 @@ Single-stage build from `ubuntu:24.04` with nix, devbox, and all development pac
 - **Entrypoint:** `packages/sandbox-server/sandbox/entrypoint.sh` — handles sysbox user namespace setup, SSH key permissions for PVC-mounted keys
 - **Runtime class:** `sysbox-runc` for secure container isolation
 - **Healthcheck:** `GET /healthz` on port 50051
-- **Directories:** `/workspace` (code), `/memory` (memory files), `/home/tau`
+- **Directories:** `/workspace` (code), `/memory` (memory files), `/home/ficus`
 - **Ficus CLI:** mounted read-only from the shared core-data PVC at `/usr/local/bin/ficus`; rebuild the CLI and recreate pods after CLI-only changes, without rebuilding the sandbox image.
 
 ### Nix/Devbox Design Decision
@@ -87,15 +87,15 @@ The image bakes all devbox packages into the nix store at build time. This adds 
 ## Build Commands
 
 ```bash
-bun run core:build         # Build tau-core image
-bun run sandbox:build:k8s  # Build tau-sandbox image
+bun run core:build         # Build ficus-core image
+bun run sandbox:build:k8s  # Build ficus-sandbox image
 ```
 
 Both should target `linux/amd64` for K8s deployment:
 
 ```bash
-docker build --platform linux/amd64 -t tau-core:latest .
-docker build --platform linux/amd64 -t tau-sandbox:latest -f packages/sandbox-server/Dockerfile .
+docker build --platform linux/amd64 -t ficus-core:latest .
+docker build --platform linux/amd64 -t ficus-sandbox:latest -f packages/sandbox-server/Dockerfile .
 ```
 
 ## Layer Caching

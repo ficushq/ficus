@@ -75,16 +75,16 @@ describe('resolvePath', () => {
     expect(resolvePath('/memory/vault/notes.md')).toBe('/memory/vault/notes.md')
   })
 
-  it('resolves paths in /home/tau', () => {
-    expect(resolvePath('/home/tau/.ssh/known_hosts')).toBe('/home/tau/.ssh/known_hosts')
+  it('resolves paths in /home/ficus', () => {
+    expect(resolvePath('/home/ficus/.ssh/known_hosts')).toBe('/home/ficus/.ssh/known_hosts')
   })
 
   it('resolves paths in /nix', () => {
     expect(resolvePath('/nix/store/abc-package/bin/tool')).toBe('/nix/store/abc-package/bin/tool')
   })
 
-  it('resolves paths in /opt/tau', () => {
-    expect(resolvePath('/opt/tau/skills/some-skill/SKILL.md')).toBe('/opt/tau/skills/some-skill/SKILL.md')
+  it('resolves paths in /opt/ficus', () => {
+    expect(resolvePath('/opt/ficus/skills/some-skill/SKILL.md')).toBe('/opt/ficus/skills/some-skill/SKILL.md')
   })
 
   it('resolves paths in /tmp', () => {
@@ -121,7 +121,7 @@ describe('resolvePath', () => {
   it('rejects sibling directory attacks on allowed prefixes', () => {
     expect(() => resolvePath('/workspace-evil/steal.sh')).toThrow('Path outside allowed directories')
     expect(() => resolvePath('/memory-evil/data')).toThrow('Path outside allowed directories')
-    expect(() => resolvePath('/home/taurine/hack')).toThrow('Path outside allowed directories')
+    expect(() => resolvePath('/home/ficusville/hack')).toThrow('Path outside allowed directories')
   })
 
   describe('FICUS_BOX_HOME (VM box runtime only)', () => {

@@ -73,7 +73,7 @@ export function terminalApiUrlArgs(apiUrl: string): string {
   return args.join(' ')
 }
 
-const SANDBOX_IMAGE = process.env.FICUS_SANDBOX_IMAGE || 'tau-sandbox:latest'
+const SANDBOX_IMAGE = process.env.FICUS_SANDBOX_IMAGE || 'ficus-sandbox:latest'
 const DOCKER_SANDBOX_MEMORY_LIMIT = '2g'
 // Chromium (the in-container tau-browser service, dev parity with VM machines)
 // needs far more shared memory than Docker's 64 MB /dev/shm default. A create
@@ -1613,9 +1613,9 @@ export class DockerSandboxManager implements ISandboxManager {
               containerId,
               'sh',
               '-c',
-              `addgroup -g ${hostGid} tau 2>/dev/null || true; ` +
-                `adduser -u ${hostUid} -G tau -D -h /home/tau tau 2>/dev/null || true; ` +
-                `chown -R ${hostUid}:${hostGid} /home/tau 2>/dev/null || true`,
+              `addgroup -g ${hostGid} ficus 2>/dev/null || true; ` +
+                `adduser -u ${hostUid} -G ficus -D -h /home/ficus ficus 2>/dev/null || true; ` +
+                `chown -R ${hostUid}:${hostGid} /home/ficus 2>/dev/null || true`,
             ],
             { stdout: 'ignore', stderr: 'ignore' }
           )
@@ -1988,7 +1988,7 @@ export class DockerSandboxManager implements ISandboxManager {
 
   /**
    * Get `docker exec` args for running as the sandbox user.
-   * Returns `['--user', 'uid:gid', '-e', 'HOME=/home/tau']` if a non-root
+   * Returns `['--user', 'uid:gid', '-e', 'HOME=/home/ficus']` if a non-root
    * host user was detected, or an empty array to run as container root.
    */
   getClientForSandbox(sandboxId: string): SandboxClient | null {
@@ -2029,13 +2029,13 @@ export class DockerSandboxManager implements ISandboxManager {
         reason: 'START_FAILED',
         stderr: portResult.stderr.toString(),
       })
-    let tokenResult = Bun.spawnSync(['docker', 'exec', containerId, 'cat', '/run/tau/executor-token'], {
+    let tokenResult = Bun.spawnSync(['docker', 'exec', containerId, 'cat', '/run/ficus/executor-token'], {
       stdout: 'pipe',
       stderr: 'pipe',
     })
     for (let attempt = 0; tokenResult.exitCode !== 0 && attempt < 300; attempt++) {
       await Bun.sleep(100)
-      tokenResult = Bun.spawnSync(['docker', 'exec', containerId, 'cat', '/run/tau/executor-token'], {
+      tokenResult = Bun.spawnSync(['docker', 'exec', containerId, 'cat', '/run/ficus/executor-token'], {
         stdout: 'pipe',
         stderr: 'pipe',
       })
@@ -2080,15 +2080,15 @@ export class DockerSandboxManager implements ISandboxManager {
   private getSandboxUserArgs(): string[] {
     return [
       '--user',
-      'tau',
+      'ficus',
       '-e',
-      'HOME=/home/tau',
+      'HOME=/home/ficus',
       '-e',
-      'USER=tau',
+      'USER=ficus',
       '-e',
-      'LOGNAME=tau',
+      'LOGNAME=ficus',
       '-e',
-      'DOCKER_HOST=unix:///run/tau-docker/docker.sock',
+      'DOCKER_HOST=unix:///run/ficus-docker/docker.sock',
     ]
   }
 

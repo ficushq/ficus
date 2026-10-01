@@ -12,7 +12,7 @@ Ficus supports five sandbox runtimes, selected via the required `FICUS_SANDBOX_R
 | `docker-socket` | Dev on any Docker host, incl. macOS   | Docker containers (dockerode) | `docker exec` via spawn hooks |
 | `docker-sysbox` | Linux dev/server with sysbox          | Docker containers (dockerode) | `docker exec` via spawn hooks |
 | `vm`            | The hosted product; many agents       | Boxes (unix users) on VMs     | HTTP API over an SSH tunnel   |
-| `k8s`           | Hard isolation, resource guarantees   | K8s pods in `tau-sandboxes`   | HTTP API to sandbox service   |
+| `k8s`           | Hard isolation, resource guarantees   | K8s pods in `ficus-sandboxes` | HTTP API to sandbox service   |
 
 All of them implement the `ISandboxManager` interface (see `apps/core/src/services/sandbox/types.ts`). The factory in `factory.ts` returns the appropriate implementation based on the env var, and refuses to start when it is unset or unrecognized.
 
@@ -23,10 +23,10 @@ All of them implement the `ISandboxManager` interface (see `apps/core/src/servic
 │ K8s Cluster                                                  │
 │                                                              │
 │  ┌────────────────────────────────────────────┐              │
-│  │ tau-core namespace                         │              │
+│  │ ficus-core namespace                         │              │
 │  │                                            │              │
 │  │  ┌──────────┐        ┌──────────┐          │              │
-│  │  │ tau-api  │        │tau-worker│          │              │
+│  │  │ ficus-api  │        │ficus-worker│          │              │
 │  │  │ (1 rep)  │        │ (N reps) │          │              │
 │  │  └────┬─────┘        └────┬─────┘          │              │
 │  │       │                   │                │              │
@@ -37,10 +37,10 @@ All of them implement the `ISandboxManager` interface (see `apps/core/src/servic
 │  └─────────────────┼─────────────────────────-┘              │
 │                    │                                         │
 │                    │ HTTP (port 50051)                        │
-│                    │ DNS: <pod>.tau-sandboxes.<ns>.svc        │
+│                    │ DNS: <pod>.ficus-sandboxes.<ns>.svc        │
 │                    ▼                                         │
 │  ┌────────────────────────────────────────────┐              │
-│  │ tau-sandboxes namespace                    │              │
+│  │ ficus-sandboxes namespace                    │              │
 │  │                                            │              │
 │  │  ┌─────────────┐    ┌─────────────┐        │              │
 │  │  │ squad-abc   │    │ squad-xyz   │        │              │
@@ -52,7 +52,7 @@ All of them implement the `ISandboxManager` interface (see `apps/core/src/servic
 │  │  └─────────────┘    └─────────────┘        │              │
 │  └────────────────────────────────────────────┘              │
 │                                                              │
-│  Shared EFS Volume (tau-core-data):                          │
+│  Shared EFS Volume (ficus-core-data):                          │
 │    /data/workspaces/squads/{squadId}/                        │
 │    /data/ssh/{squadId}/                                      │
 │    /data/memory/{squadId}/                                   │
@@ -78,7 +78,7 @@ Manages K8s pod CRUD via `@kubernetes/client-node`.
 - **Pod creation** — Builds pod spec with volumes, probes, env vars, runtime class. Handles existing pods in terminal states (Failed/Succeeded) by deleting and recreating.
 - **Readiness** — Polls pod status until the `Ready` condition is true (up to 5 minutes for first boot with nix packages).
 - **Idle timeout** — Checks every 60s for pods idle beyond their timeout (default 15min). Configurable per squad via `SquadSandboxConfig.idleTimeout`. Pods with `alwaysOn: true` are never terminated.
-- **Auth secret sync** — Pushes `FICUS_PASSWORD` from the Core SecretStore into a K8s Secret (`tau-sandbox-auth`), which pods mount at `/etc/tau`. K8s auto-propagates updates to running pods (~1min delay).
+- **Auth secret sync** — Pushes `FICUS_PASSWORD` from the Core SecretStore into a K8s Secret (`ficus-sandbox-auth`), which pods mount at `/etc/ficus`. K8s auto-propagates updates to running pods (~1min delay).
 
 ### SandboxClient (`apps/core/src/services/sandbox/client/http-client.ts`)
 
@@ -152,21 +152,21 @@ ensureSandbox() called
 Sandbox pods are addressable via a headless service (`k8s/headless-service.yaml`):
 
 ```
-<podName>.tau-sandboxes.<namespace>.svc.cluster.local:50051
+<podName>.ficus-sandboxes.<namespace>.svc.cluster.local:50051
 ```
 
-This requires the pod spec to set `hostname: <podName>` and `subdomain: tau-sandboxes`, which the PodManager does automatically.
+This requires the pod spec to set `hostname: <podName>` and `subdomain: ficus-sandboxes`, which the PodManager does automatically.
 
 ## Volume Architecture
 
-All persistent data lives on a single shared EFS volume (`tau-core-data`). Sandbox pods mount squad-specific subdirectories via `subPath`:
+All persistent data lives on a single shared EFS volume (`ficus-core-data`). Sandbox pods mount squad-specific subdirectories via `subPath`:
 
-| Mount Path                | SubPath                          | Access     | Purpose                                                                |
-| ------------------------- | -------------------------------- | ---------- | ---------------------------------------------------------------------- |
-| `/workspace`              | `workspaces/squads/{squadId}`    | read-write | Code, devbox.json, .tau/                                               |
-| `/memory`                 | `memory/{squadId}`               | read-only  | Agent memory files                                                     |
-| `/var/lib/tau/ssh-source` | `ssh/{squadId}`                  | read-write | SSH key source; entrypoint mirrors into container-private `/root/.ssh` |
-| `/etc/tau`                | (K8s Secret: `tau-sandbox-auth`) | read-only  | Auth password for Ficus CLI                                            |
+| Mount Path                  | SubPath                            | Access     | Purpose                                                                |
+| --------------------------- | ---------------------------------- | ---------- | ---------------------------------------------------------------------- |
+| `/workspace`                | `workspaces/squads/{squadId}`      | read-write | Code, devbox.json, .tau/                                               |
+| `/memory`                   | `memory/{squadId}`                 | read-only  | Agent memory files                                                     |
+| `/var/lib/ficus/ssh-source` | `ssh/{squadId}`                    | read-write | SSH key source; entrypoint mirrors into container-private `/root/.ssh` |
+| `/etc/ficus`                | (K8s Secret: `ficus-sandbox-auth`) | read-only  | Auth password for Ficus CLI                                            |
 
 See [volumes.md](volumes.md) for the full storage architecture.
 

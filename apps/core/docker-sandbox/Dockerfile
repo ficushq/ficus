@@ -10,10 +10,10 @@
 
 FROM docker:dind
 
-LABEL io.hiretau.sandbox.managed="true" \
-      io.hiretau.sandbox.runtime-contract="1" \
-      io.hiretau.sandbox.executor-protocol="1" \
-      io.hiretau.sandbox.command-contract="1"
+LABEL sh.ficus.sandbox.managed="true" \
+      sh.ficus.sandbox.runtime-contract="1" \
+      sh.ficus.sandbox.executor-protocol="1" \
+      sh.ficus.sandbox.command-contract="1"
 
 # Install glibc compatibility (needed for compiled Bun binaries like the ficus CLI).
 # sgerrand/alpine-pkg-glibc only provides x86_64 packages — skip on arm64 (e.g. Apple Silicon).
@@ -162,7 +162,7 @@ RUN wget -q "https://github.com/opencontainers/runc/releases/download/v1.1.15/ru
     chmod +x /usr/local/bin/runc
 
 # Bake the authenticated executor and its named command identity.
-COPY apps/core/docker-sandbox/command-identity.json /opt/tau/command-identity.json
+COPY apps/core/docker-sandbox/command-identity.json /opt/ficus/command-identity.json
 COPY packages/sandbox-server/package.json /opt/sandbox/package.json
 COPY packages/sandbox-server/src /opt/sandbox/src
 # The executor depends on @ficus/shared as `workspace:*`, which bun can only
@@ -171,14 +171,14 @@ COPY packages/sandbox-server/src /opt/sandbox/src
 # /opt/sandbox/src path and the monorepo's package.json stays the single source.
 COPY packages/shared/package.json /opt/sandbox/packages/shared/package.json
 COPY packages/shared/src /opt/sandbox/packages/shared/src
-RUN addgroup -g 1000 tau && adduser -D -u 1000 -G tau -h /home/tau tau \
+RUN addgroup -g 1000 ficus && adduser -D -u 1000 -G ficus -h /home/ficus ficus \
     && cd /opt/sandbox \
     && bun -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("package.json","utf8"));p.workspaces=["packages/shared"];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' \
     && bun install --production \
     && bun -e "require('bun-pty'); require('@ficus/shared/advisory-lock')"
 
 # Create workspace mount point
-RUN mkdir -p /workspace /run/tau /run/tau-docker && chown tau:tau /workspace /home/tau
+RUN mkdir -p /workspace /run/ficus /run/ficus-docker && chown ficus:ficus /workspace /home/ficus
 WORKDIR /workspace
 
 # Configure git to trust the workspace directory

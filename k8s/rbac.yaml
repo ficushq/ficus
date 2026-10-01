@@ -2,8 +2,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: tau-sandbox-manager
-  namespace: tau-sandboxes
+  name: ficus-sandbox-manager
+  namespace: ficus-sandboxes
 rules:
   - apiGroups: [""]
     resources: ["pods"]
@@ -18,13 +18,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: tau-core-sandbox-manager
-  namespace: tau-sandboxes
+  name: ficus-core-sandbox-manager
+  namespace: ficus-sandboxes
 subjects:
   - kind: ServiceAccount
-    name: tau-core
-    namespace: tau-core
+    name: ficus-core
+    namespace: ficus-core
 roleRef:
   kind: Role
-  name: tau-sandbox-manager
+  name: ficus-sandbox-manager
   apiGroup: rbac.authorization.k8s.io

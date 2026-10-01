@@ -9,7 +9,7 @@ How the local development environment works, how it differs from a real cluster,
 │ macOS Host                                                      │
 │                                                                 │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │ tau-api   │  │tau-worker│  │   Postgres   │  │  Vite dev  │  │
+│  │ ficus-api   │  │ficus-worker│  │   Postgres   │  │  Vite dev  │  │
 │  │ (bun)    │  │ (bun)    │  │ (docker-     │  │  server    │  │
 │  │ :62832   │  │ :62833   │  │  compose)    │  │  :5173     │  │
 │  └────┬─────┘  └────┬─────┘  └──────────────┘  └────────────┘  │
@@ -23,7 +23,7 @@ How the local development environment works, how it differs from a real cluster,
 │  │ k3d (k3s-in-Docker)                           OrbStack  │   │
 │  │           │                                              │   │
 │  │  ┌────────┼─────────────────────────────────┐            │   │
-│  │  │ tau-sandboxes-dev namespace               │            │   │
+│  │  │ ficus-sandboxes-dev namespace               │            │   │
 │  │  │        │                                  │            │   │
 │  │  │  ┌─────▼───────┐    ┌─────────────┐      │            │   │
 │  │  │  │ squad-abc   │    │ squad-xyz   │      │            │   │
@@ -42,13 +42,13 @@ How the local development environment works, how it differs from a real cluster,
 │  │  │     (via --host-alias at cluster create)  │            │   │
 │  │  └──────────────────────────────────────────-┘            │   │
 │  │                                                           │   │
-│  │  hostPath volume: ~/.tau → /tau-data                      │   │
+│  │  hostPath volume: ~/.ficus → /ficus-data                      │   │
 │  └───────────────────────────────────────────────────────────┘   │
 │                                                                 │
-│  ~/.tau/                                                        │
+│  ~/.ficus/                                                       │
 │    workspaces/squads/{id}/   ← mounted as /workspace in pods    │
 │    memory/{id}/              ← mounted as /memory               │
-│    ssh/{id}/                 ← mounted as /var/lib/tau/ssh-source │
+│    ssh/{id}/                 ← mounted as /var/lib/ficus/ssh-source │
 │    nix/{id}/                 ← mounted as /nix-cache            │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -66,24 +66,24 @@ port-forwards ([host-runtime.md](../host-runtime.md)); or `docker-socket` for
 containers without a cluster. [sandbox-runtimes.md](../sandbox-runtimes.md)
 compares all five.
 
-| Aspect                 | Local Dev (k3d)                             | Cluster (`k8s` runtime)                 |
-| ---------------------- | ------------------------------------------- | --------------------------------------- |
-| **API/Worker**         | Run on host via bun/PM2                     | K8s pods in `tau-core` namespace        |
-| **Database**           | docker-compose on host                      | Managed RDS/Aurora                      |
-| **Pod → API routing**  | `host.k3d.internal` (via `--host-alias`)    | In-cluster DNS (`tau-api.tau-core.svc`) |
-| **API → Pod routing**  | `kubectl port-forward` (auto-managed)       | Headless service DNS                    |
-| **Storage**            | hostPath (`~/.tau/`)                        | EFS with access points                  |
-| **DinD isolation**     | Privileged mode                             | Sysbox runtime class                    |
-| **Docker storage**     | `emptyDir` volume at `/var/lib/docker`      | Sysbox manages storage                  |
-| **TLS**                | Disabled (`NODE_TLS_REJECT_UNAUTHORIZED=0`) | Proper CA chain                         |
-| **Sandbox image arch** | Native (arm64 on Apple Silicon)             | amd64                                   |
-| **Kubeconfig**         | Token-based context (`k3d-tau-dev-token`)   | In-cluster service account              |
+| Aspect                 | Local Dev (k3d)                             | Cluster (`k8s` runtime)                     |
+| ---------------------- | ------------------------------------------- | ------------------------------------------- |
+| **API/Worker**         | Run on host via bun/PM2                     | K8s pods in `ficus-core` namespace          |
+| **Database**           | docker-compose on host                      | Managed RDS/Aurora                          |
+| **Pod → API routing**  | `host.k3d.internal` (via `--host-alias`)    | In-cluster DNS (`ficus-api.ficus-core.svc`) |
+| **API → Pod routing**  | `kubectl port-forward` (auto-managed)       | Headless service DNS                        |
+| **Storage**            | hostPath (`~/.ficus/`)                      | EFS with access points                      |
+| **DinD isolation**     | Privileged mode                             | Sysbox runtime class                        |
+| **Docker storage**     | `emptyDir` volume at `/var/lib/docker`      | Sysbox manages storage                      |
+| **TLS**                | Disabled (`NODE_TLS_REJECT_UNAUTHORIZED=0`) | Proper CA chain                             |
+| **Sandbox image arch** | Native (arm64 on Apple Silicon)             | amd64                                       |
+| **Kubeconfig**         | Token-based context (`k3d-ficus-dev-token`) | In-cluster service account                  |
 
 ## Key Design Decisions
 
 ### Port-Forward Bridge
 
-On a real cluster, Core talks to sandbox pods via headless service DNS (`<pod>.tau-sandboxes.<ns>.svc.cluster.local`). This doesn't work from the host because the host isn't inside the cluster network.
+On a real cluster, Core talks to sandbox pods via headless service DNS (`<pod>.ficus-sandboxes.<ns>.svc.cluster.local`). This doesn't work from the host because the host isn't inside the cluster network.
 
 Instead, the `K8sPodManager` automatically manages `kubectl port-forward` processes when `FICUS_K8S_LOCAL=true`. Each sandbox gets a random free port on localhost, and the manager tracks the mapping in memory.
 
@@ -122,7 +122,7 @@ This doesn't occur on a sysbox-backed cluster, which provides proper filesystem 
 
 Bun's HTTP/2 client doesn't pass client certificates correctly through the `@kubernetes/client-node` HTTPS agent. Since k3d's default kubeconfig uses client-cert auth, API calls fail silently.
 
-The setup script creates a service account (`tau-dev`) with a long-lived token and configures a dedicated kubectl context (`k3d-tau-dev-token`). The `loadKubeConfig()` function in `kubeconfig.ts` explicitly sets this context when `FICUS_K8S_LOCAL=true`, so it works regardless of which kubectl context is active on the host.
+The setup script creates a service account (`ficus-dev`) with a long-lived token and configures a dedicated kubectl context (`k3d-ficus-dev-token`). The `loadKubeConfig()` function in `kubeconfig.ts` explicitly sets this context when `FICUS_K8S_LOCAL=true`, so it works regardless of which kubectl context is active on the host.
 
 ### Native Architecture
 
@@ -140,7 +140,7 @@ This runs `scripts/k3d-dev.sh setup` which:
 
 1. Installs k3d via Homebrew if missing
 2. Detects Docker runtime (OrbStack vs Docker Desktop) for host IP
-3. Creates a k3d cluster with `~/.tau/` as a hostPath volume and `host.k3d.internal` host-alias
+3. Creates a k3d cluster with `~/.ficus/` as a hostPath volume and `host.k3d.internal` host-alias
 4. Creates namespace, headless service, PV/PVC
 5. Creates a service account with token auth and configures kubectl context
 6. Builds the sandbox image for native arch and imports it into k3d
@@ -150,23 +150,23 @@ Configure `.env`:
 ```bash
 FICUS_SANDBOX_RUNTIME=k8s
 FICUS_K8S_LOCAL=true
-FICUS_K8S_NAMESPACE=tau-sandboxes-dev
+FICUS_K8S_NAMESPACE=ficus-sandboxes-dev
 FICUS_K8S_RUNTIME_CLASS=
 ```
 
 ## Day-to-Day Commands
 
-| Command                | Description                                           |
-| ---------------------- | ----------------------------------------------------- |
-| `bun run k3d:start`    | Resume a stopped cluster                              |
-| `bun run k3d:stop`     | Pause the cluster (preserves state, saves resources)  |
-| `bun run k3d:status`   | Show cluster health, pods, PVC                        |
-| `bun run k3d:pods`     | List sandbox pods                                     |
-| `bun run k3d:logs`     | Tail sandbox pod logs                                 |
-| `bun run k3d:shell`    | Shell into a sandbox pod                              |
-| `bun run k3d:kill`     | Kill sandbox pods (recreated on next use)             |
-| `bun run k3d:import`   | Rebuild sandbox image and import into k3d             |
-| `bun run k3d:teardown` | Delete cluster entirely (data in `~/.tau/` preserved) |
+| Command                | Description                                             |
+| ---------------------- | ------------------------------------------------------- |
+| `bun run k3d:start`    | Resume a stopped cluster                                |
+| `bun run k3d:stop`     | Pause the cluster (preserves state, saves resources)    |
+| `bun run k3d:status`   | Show cluster health, pods, PVC                          |
+| `bun run k3d:pods`     | List sandbox pods                                       |
+| `bun run k3d:logs`     | Tail sandbox pod logs                                   |
+| `bun run k3d:shell`    | Shell into a sandbox pod                                |
+| `bun run k3d:kill`     | Kill sandbox pods (recreated on next use)               |
+| `bun run k3d:import`   | Rebuild sandbox image and import into k3d               |
+| `bun run k3d:teardown` | Delete cluster entirely (data in `~/.ficus/` preserved) |
 
 ## Rebuilding the Sandbox Image
 
@@ -192,7 +192,7 @@ The pod will be recreated automatically on next use (via the reconciliation loop
 
 ```bash
 # Verify from inside the pod
-kubectl -n tau-sandboxes-dev exec <pod> -- curl -v http://host.k3d.internal:62832/api/health
+kubectl -n ficus-sandboxes-dev exec <pod> -- curl -v http://host.k3d.internal:62832/api/health
 ```
 
 **Checks:**
@@ -231,7 +231,7 @@ This is the devbox shellenv corruption issue. It should not happen with the cach
 
 ```bash
 # Check pod has the emptyDir volume
-kubectl -n tau-sandboxes-dev get pod <pod> -o jsonpath='{.spec.volumes}' | python3 -m json.tool | grep docker-storage
+kubectl -n ficus-sandboxes-dev get pod <pod> -o jsonpath='{.spec.volumes}' | python3 -m json.tool | grep docker-storage
 ```
 
 The pod must have an `emptyDir` volume mounted at `/var/lib/docker`. Without it, the inner dockerd tries overlayfs-on-overlayfs which fails. If missing, restart the API (the volume is added in `pod-manager.ts`) and kill the pod.
@@ -240,19 +240,19 @@ The pod must have an `emptyDir` volume mounted at `/var/lib/docker`. Without it,
 
 **Symptoms:** API logs show `HTTP-Code: 401 Message: Unauthorized`.
 
-The API uses token-based auth via the `k3d-tau-dev-token` kubectl context. If the token expired or the context was deleted:
+The API uses token-based auth via the `k3d-ficus-dev-token` kubectl context. If the token expired or the context was deleted:
 
 ```bash
 # Recreate the token
-kubectl -n tau-sandboxes-dev create token tau-dev --duration=87600h
+kubectl -n ficus-sandboxes-dev create token ficus-dev --duration=87600h
 
 # Update kubeconfig
-kubectl config set-credentials tau-dev-token --token="<new-token>"
+kubectl config set-credentials ficus-dev-token --token="<new-token>"
 ```
 
 Or teardown and re-setup: `bun run k3d:teardown && bun run k3d:setup`.
 
-The API explicitly sets the `k3d-tau-dev-token` context in `kubeconfig.ts` when `FICUS_K8S_LOCAL=true`, so switching kubectl contexts on the host does not affect the API.
+The API explicitly sets the `k3d-ficus-dev-token` context in `kubeconfig.ts` when `FICUS_K8S_LOCAL=true`, so switching kubectl contexts on the host does not affect the API.
 
 ### Image Not Updating After Rebuild
 
@@ -260,7 +260,7 @@ k3d caches images. If `bun run k3d:import` doesn't seem to pick up changes:
 
 ```bash
 # Force no-cache rebuild
-docker build --no-cache -t tau-sandbox:latest -f packages/sandbox-server/Dockerfile .
+docker build --no-cache -t ficus-sandbox:latest -f packages/sandbox-server/Dockerfile .
 bun run k3d:import
 bun run k3d:kill
 ```
@@ -281,7 +281,7 @@ bun run k3d:teardown
 bun run k3d:setup
 ```
 
-Data in `~/.tau/` is preserved across teardowns — only the cluster state is lost.
+Data in `~/.ficus/` is preserved across teardowns — only the cluster state is lost.
 
 ## Related Docs
 

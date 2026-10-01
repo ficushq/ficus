@@ -243,7 +243,7 @@ All file operations go through `resolvePath()` (`src/paths.ts`) which:
 2. Validates the resolved path is under an allowed prefix
 3. Rejects paths outside allowed directories
 
-**Allowed prefixes:** `/workspace`, `/memory`, `/home/tau`, `/nix`, `/opt/tau`, `/tmp`
+**Allowed prefixes:** `/workspace`, `/memory`, `/home/ficus`, `/nix`, `/opt/ficus`, `/tmp`
 
 This prevents agents from reading or writing arbitrary files on the host.
 
@@ -255,7 +255,7 @@ The Dockerfile (`packages/sandbox-server/Dockerfile`) builds a multi-stage image
 2. **Default packages:** A `devbox.json` with common tools is baked in and `devbox install` is run at build time (~2.5GB of nix packages). This makes runtime `devbox install` a fast no-op.
 3. **Entrypoint:** `sandbox/entrypoint.sh`
 
-The image does not bundle the Ficus CLI. Ficus Core copies the built CLI into the shared `tau-core-data` volume at `cli/ficus.js` and mounts it read-only at `/usr/local/bin/ficus` when creating pods. Recreate a sandbox pod after CLI changes to pick up the newly staged file; no sandbox image rebuild/import is required for CLI-only changes.
+The image does not bundle the Ficus CLI. Ficus Core copies the built CLI into the shared `ficus-core-data` volume at `cli/ficus.js` and mounts it read-only at `/usr/local/bin/ficus` when creating pods. Recreate a sandbox pod after CLI changes to pick up the newly staged file; no sandbox image rebuild/import is required for CLI-only changes.
 
 Build with:
 
@@ -282,14 +282,14 @@ Smoke test a built image with the default devbox/Nix Python path:
 
 ```bash
 bun run sandbox:build:k8s
-docker run --rm --entrypoint bash --shm-size=1g tau-sandbox:latest /opt/sandbox/scripts/smoke-headless-browser.sh
+docker run --rm --entrypoint bash --shm-size=1g ficus-sandbox:latest /opt/sandbox/scripts/smoke-headless-browser.sh
 ```
 
 To verify the publish target locally with buildx, run:
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t tau-sandbox:headless-browser-test \
+  -t ficus-sandbox:headless-browser-test \
   -f packages/sandbox-server/Dockerfile .
 ```
 

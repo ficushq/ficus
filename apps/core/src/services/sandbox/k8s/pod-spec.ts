@@ -65,10 +65,10 @@ export function getSandboxImage(
   if (opts.sandboxType === 'agent') {
     return (
       env.FICUS_SANDBOX_AGENT_IMAGE ||
-      (isLocalDev ? 'tau-registry:5000/tau-sandbox-agent:latest' : 'tau-sandbox-agent:latest')
+      (isLocalDev ? 'ficus-registry:5000/ficus-sandbox-agent:latest' : 'ficus-sandbox-agent:latest')
     )
   }
-  return env.FICUS_SANDBOX_IMAGE || (isLocalDev ? 'tau-registry:5000/tau-sandbox:latest' : 'tau-sandbox:latest')
+  return env.FICUS_SANDBOX_IMAGE || (isLocalDev ? 'ficus-registry:5000/ficus-sandbox:latest' : 'ficus-sandbox:latest')
 }
 
 export function getSandboxImagePullPolicy(_opts: { isLocalDev?: boolean } = {}): 'Always' {
@@ -92,8 +92,8 @@ export function resolveSandboxApiUrl(namespace: string, opts: { isLocalDev?: boo
     const port = opts.port ?? process.env.PORT ?? '3000'
     return `http://host.k3d.internal:${port}`
   }
-  const coreNamespace = namespace.replace('tau-sandboxes', 'tau-core')
-  return `http://tau-api.${coreNamespace}.svc.cluster.local:3000`
+  const coreNamespace = namespace.replace('ficus-sandboxes', 'ficus-core')
+  return `http://ficus-api.${coreNamespace}.svc.cluster.local:3000`
 }
 
 /** Exported for the death notifier, which reports the limit a killed pod ran under. */
@@ -436,7 +436,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
     },
     {
       name: 'sandbox-auth',
-      mountPath: '/etc/tau',
+      mountPath: '/etc/ficus',
       readOnly: true,
     }
   )
@@ -473,7 +473,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
             // container. The entrypoint mirrors this source dir into a
             // container-private /root/.ssh and applies strict perms there.
             asset.dest.base === 'ssh'
-            ? '/var/lib/tau/ssh-source'
+            ? '/var/lib/ficus/ssh-source'
             : null
     if (mountPath === null) {
       throw new Error(
@@ -650,7 +650,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
       volumes: [
         {
           name: 'core-data',
-          persistentVolumeClaim: { claimName: 'tau-core-data' },
+          persistentVolumeClaim: { claimName: 'ficus-core-data' },
         },
         {
           name: 'sandbox-auth',
@@ -668,7 +668,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
         },
       ],
 
-      // Pod affinity: prefer co-location with tau-core pods
+      // Pod affinity: prefer co-location with ficus-core pods
       affinity: {
         podAffinity: {
           preferredDuringSchedulingIgnoredDuringExecution: [
@@ -677,7 +677,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
               podAffinityTerm: {
                 labelSelector: {
                   matchLabels: {
-                    app: 'tau-core',
+                    app: 'ficus-core',
                   },
                 },
                 topologyKey: 'kubernetes.io/hostname',

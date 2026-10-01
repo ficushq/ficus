@@ -7,7 +7,7 @@ const log = createLogger('k8s-image-prepull')
 /** Identifying label on the throwaway pre-pull pods (for humans/kubectl).
  *  Cleanup is by deterministic name (finally-delete + delete-before-create),
  *  not by label sweep. */
-const PREPULL_LABEL = 'tau-sandbox-prepull'
+const PREPULL_LABEL = 'ficus-sandbox-prepull'
 /** Bounds a wedged pull: at the deadline the kubelet marks the pod Failed
  *  (DeadlineExceeded). It does NOT delete the Pod object — reaping relies on the
  *  finally-delete below and the next boot's delete-before-create (by name). */
@@ -28,7 +28,7 @@ export interface PrepullDeps {
 }
 
 /** 'squad' and 'system-manager' resolve to the same image, so these two types
- *  cover both distinct sandbox images (tau-sandbox + tau-sandbox-agent). */
+ *  cover both distinct sandbox images (ficus-sandbox + ficus-sandbox-agent). */
 const PREPULL_TYPES: SandboxType[] = ['squad', 'agent']
 
 export function prepullPodName(type: SandboxType): string {

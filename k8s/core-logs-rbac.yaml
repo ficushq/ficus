@@ -1,8 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: tau-core-log-reader
-  namespace: tau-core
+  name: ficus-core-log-reader
+  namespace: ficus-core
 rules:
   - apiGroups: [""]
     resources: ["pods"]
@@ -14,13 +14,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: tau-core-log-reader
-  namespace: tau-core
+  name: ficus-core-log-reader
+  namespace: ficus-core
 subjects:
   - kind: ServiceAccount
-    name: tau-core
-    namespace: tau-core
+    name: ficus-core
+    namespace: ficus-core
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: tau-core-log-reader
+  name: ficus-core-log-reader

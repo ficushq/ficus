@@ -138,7 +138,7 @@ headless use; the flag wins when both are set.
 | `--no-start`                                          | —                          | starts                                                           | write configuration/registry only; do not register or start a supervisor                                                             |
 | `--dry-run`                                           | —                          | off                                                              | print the plan (secrets redacted), change nothing, exit 0                                                                            |
 | `--yes`                                               | —                          | off                                                              | skip the plan confirmation (the runtime question is still asked on a TTY)                                                            |
-| `--rebuild-image`                                     | —                          | off                                                              | rebuild `tau-sandbox:latest` even if it already exists                                                                               |
+| `--rebuild-image`                                     | —                          | off                                                              | rebuild `ficus-sandbox:latest` even if it already exists                                                                             |
 | `--root <dir>`                                        | `FICUS_SERVER_ROOT`        | resolved (see below)                                             | the checkout to operate on                                                                                                           |
 
 The checkout a `ficus server` management command (`start`, `stop`, `restart`,
@@ -170,26 +170,26 @@ Three things, in the checkout and in your home directory:
 
 The managed `.env` keys:
 
-| Key                                                                 | Value                                                                                                                                                                              | Replaced when                              |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `FICUS_SANDBOX_RUNTIME`                                             | the chosen runtime (`k3d` is written as `k8s`)                                                                                                                                     | `--runtime`                                |
-| `FICUS_K8S_LOCAL`, `FICUS_K8S_NAMESPACE`, `FICUS_K8S_RUNTIME_CLASS` | `true`, `tau-sandboxes-dev`, empty — k3d only; otherwise a `FICUS_K8S_LOCAL=true` already in .env is blanked (it applies only to the k8s runtime) and the other two are left alone | `--runtime`                                |
-| `FICUS_ENCRYPTION_KEY`                                              | random 32-byte hex, only when empty                                                                                                                                                | never                                      |
-| `FICUS_INTERNAL_EVENT_TOKEN`                                        | random 32-byte hex, only when empty                                                                                                                                                | never                                      |
-| `FICUS_PASSWORD`                                                    | random 24-byte token, only when empty                                                                                                                                              | never                                      |
-| `FICUS_SERVE_WEB`                                                   | `1` (the core serves the built web UI on `PORT`)                                                                                                                                   | never                                      |
-| `FICUS_INSTANCE`                                                    | the instance label (`ficus` unless `--instance` says otherwise); a re-run with a _different_ `--instance` is refused, not replaced                                                 | `--instance`                               |
-| `PORT`                                                              | the port                                                                                                                                                                           | `--port`                                   |
-| `WORKER_PORT`                                                       | `PORT + 2`                                                                                                                                                                         | `--port`                                   |
-| `FICUS_WORKER_EVENT_PORT`                                           | `PORT + 3`                                                                                                                                                                         | `--port`                                   |
-| `FICUS_API_URL`                                                     | `http://localhost:<port>`                                                                                                                                                          | `--port`                                   |
-| `APP_URL`, `FICUS_WEB_ORIGIN`                                       | the app URL                                                                                                                                                                        | `--app-url`, `--port`                      |
-| `DATABASE_URL`                                                      | your DSN, or the managed container's URL with the database name                                                                                                                    | `--database-url`, `--db-name`, `--db-port` |
-| `HOME_DIR`                                                          | `--home-dir` when given; otherwise `~/.ficus-<label>`, and nothing at all for the `ficus` instance (the core's own default `~/.ficus`)                                             | `--home-dir`, `--instance`                 |
-| `FICUS_UPDATE_SUPERVISOR`                                           | selected supervisor                                                                                                                                                                | always reconciled                          |
-| `FICUS_SYSTEM_LOG_PROVIDER`                                         | `pm2` for PM2; `file` for native supervisors                                                                                                                                       | always reconciled                          |
-| `FICUS_PM2_API_NAME`, `FICUS_PM2_WORKER_NAME`                       | derived app names for PM2; cleared for native supervisors                                                                                                                          | always reconciled                          |
-| `FICUS_LOG_FILE_API`, `FICUS_LOG_FILE_WORKER`                       | absolute `~/.ficus/logs/<process>.log` paths for native supervisors; cleared for PM2                                                                                               | always reconciled                          |
+| Key                                                                 | Value                                                                                                                                                                                | Replaced when                              |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| `FICUS_SANDBOX_RUNTIME`                                             | the chosen runtime (`k3d` is written as `k8s`)                                                                                                                                       | `--runtime`                                |
+| `FICUS_K8S_LOCAL`, `FICUS_K8S_NAMESPACE`, `FICUS_K8S_RUNTIME_CLASS` | `true`, `ficus-sandboxes-dev`, empty — k3d only; otherwise a `FICUS_K8S_LOCAL=true` already in .env is blanked (it applies only to the k8s runtime) and the other two are left alone | `--runtime`                                |
+| `FICUS_ENCRYPTION_KEY`                                              | random 32-byte hex, only when empty                                                                                                                                                  | never                                      |
+| `FICUS_INTERNAL_EVENT_TOKEN`                                        | random 32-byte hex, only when empty                                                                                                                                                  | never                                      |
+| `FICUS_PASSWORD`                                                    | random 24-byte token, only when empty                                                                                                                                                | never                                      |
+| `FICUS_SERVE_WEB`                                                   | `1` (the core serves the built web UI on `PORT`)                                                                                                                                     | never                                      |
+| `FICUS_INSTANCE`                                                    | the instance label (`ficus` unless `--instance` says otherwise); a re-run with a _different_ `--instance` is refused, not replaced                                                   | `--instance`                               |
+| `PORT`                                                              | the port                                                                                                                                                                             | `--port`                                   |
+| `WORKER_PORT`                                                       | `PORT + 2`                                                                                                                                                                           | `--port`                                   |
+| `FICUS_WORKER_EVENT_PORT`                                           | `PORT + 3`                                                                                                                                                                           | `--port`                                   |
+| `FICUS_API_URL`                                                     | `http://localhost:<port>`                                                                                                                                                            | `--port`                                   |
+| `APP_URL`, `FICUS_WEB_ORIGIN`                                       | the app URL                                                                                                                                                                          | `--app-url`, `--port`                      |
+| `DATABASE_URL`                                                      | your DSN, or the managed container's URL with the database name                                                                                                                      | `--database-url`, `--db-name`, `--db-port` |
+| `HOME_DIR`                                                          | `--home-dir` when given; otherwise `~/.ficus-<label>`, and nothing at all for the `ficus` instance (the core's own default `~/.ficus`)                                               | `--home-dir`, `--instance`                 |
+| `FICUS_UPDATE_SUPERVISOR`                                           | selected supervisor                                                                                                                                                                  | always reconciled                          |
+| `FICUS_SYSTEM_LOG_PROVIDER`                                         | `pm2` for PM2; `file` for native supervisors                                                                                                                                         | always reconciled                          |
+| `FICUS_PM2_API_NAME`, `FICUS_PM2_WORKER_NAME`                       | derived app names for PM2; cleared for native supervisors                                                                                                                            | always reconciled                          |
+| `FICUS_LOG_FILE_API`, `FICUS_LOG_FILE_WORKER`                       | absolute `~/.ficus/logs/<process>.log` paths for native supervisors; cleared for PM2                                                                                                 | always reconciled                          |
 
 "Replaced when" is the whole rule: an existing non-empty value is kept unless
 you passed the flag (or env mirror) that owns it. One exception is baked in —
@@ -202,7 +202,7 @@ The steps, in order: preflight → config files → `.env` → PostgreSQL → mi
 → start worker first and API last under the selected supervisor and wait for the API → handoff. The registry entry is written
 **before** the start step — so `ficus server logs` can reach the instance even if
 the health wait fails — and refreshed after it. Each step
-checks before acting: an existing `tau-sandbox:latest` image or `tau-dev` k3d
+checks before acting: an existing `ficus-sandbox:latest` image or `ficus-dev` k3d
 cluster is left alone (`--rebuild-image` forces the image), builds are
 incremental, and starting an already-running pair is a restart.
 
@@ -411,7 +411,7 @@ unregistering the checkout that holds the label. Stopped pm2 entries are
 ignored, so this only blocks while the other checkout is actually running.
 
 **The k3d runtime is single-instance.** `bun run k3d:setup` creates one cluster
-(`tau-dev`) and bind-mounts `~/.tau` into it, neither of which is per-instance —
+(`ficus-dev`) and bind-mounts `~/.ficus` into it, neither of which is per-instance —
 so run k3d on the default `ficus` instance only, and give the extra instances
 `host` or a docker runtime.
 
@@ -536,8 +536,8 @@ same data from a clean start.
 - The default checkout `~/.ficus/ficus` lives inside `~/.ficus`, which is also
   Ficus's default data root (`HOME_DIR`). Source and data sit side by side;
   Ficus's storage never writes into `~/.ficus/ficus`.
-- The k3d runtime bind-mounts `~/.tau` into the cluster so pods and the host see
-  the same workspace files. That mount includes the checkout at `~/.tau/tau` —
+- The k3d runtime bind-mounts `~/.ficus` into the cluster so pods and the host see
+  the same workspace files. That mount includes the checkout at `~/.ficus/ficus` —
   harmless, but worth knowing before you point `--home-dir` somewhere exotic.
 
 ## After setup
@@ -743,7 +743,7 @@ differently, or debug a step that failed:
 6. **Build.** `bun run build:core && bun run build:cli && bun run build:web`.
 7. **Sandbox runtime.** `docker-socket` / `docker-sysbox`:
    `bun run sandbox:build:docker`. k3d: `bun run k3d:setup` (creates the
-   `tau-dev` cluster, the `tau-sandboxes-dev` namespace and the PVC, and imports
+   `ficus-dev` cluster, the `ficus-sandboxes-dev` namespace and the PVC, and imports
    the image). `host`: nothing. `k8s` and `vm` are not local installs — see
    [docs/wiki/k8s/deployment.md](k8s/deployment.md) and
    [docs/wiki/machines/runtime.md](machines/runtime.md).

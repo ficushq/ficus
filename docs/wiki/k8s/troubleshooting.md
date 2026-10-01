@@ -6,20 +6,20 @@ Common issues and debugging techniques for Ficus's K8s sandbox system in **produ
 
 ```bash
 # Check core pods
-kubectl -n tau-core get pods
-kubectl -n tau-core logs deployment/tau-api --tail=50
-kubectl -n tau-core logs deployment/tau-worker --tail=50
+kubectl -n ficus-core get pods
+kubectl -n ficus-core logs deployment/ficus-api --tail=50
+kubectl -n ficus-core logs deployment/ficus-worker --tail=50
 
 # Check sandbox pods
-kubectl -n tau-sandboxes get pods
-kubectl -n tau-sandboxes describe pod <pod-name>
-kubectl -n tau-sandboxes logs <pod-name> --tail=50
+kubectl -n ficus-sandboxes get pods
+kubectl -n ficus-sandboxes describe pod <pod-name>
+kubectl -n ficus-sandboxes logs <pod-name> --tail=50
 
 # Check infrastructure
 kubectl get runtimeclass sysbox-runc
-kubectl -n tau-sandboxes get networkpolicy
-kubectl -n tau-sandboxes get endpoints tau-sandboxes
-kubectl -n tau-sandboxes get pvc
+kubectl -n ficus-sandboxes get networkpolicy
+kubectl -n ficus-sandboxes get endpoints ficus-sandboxes
+kubectl -n ficus-sandboxes get pvc
 ```
 
 ## Pod Issues
@@ -29,22 +29,22 @@ kubectl -n tau-sandboxes get pvc
 **Symptoms:** Sandbox pod stays in `Pending` state, agent execution times out.
 
 ```bash
-kubectl -n tau-sandboxes describe pod <pod-name>
+kubectl -n ficus-sandboxes describe pod <pod-name>
 ```
 
-| Cause                  | Events Message                                    | Fix                                                                 |
-| ---------------------- | ------------------------------------------------- | ------------------------------------------------------------------- |
-| No nodes with sysbox   | `RuntimeClass "sysbox-runc" not found`            | Install sysbox on worker nodes, or set `FICUS_K8S_RUNTIME_CLASS=""` |
-| Insufficient resources | `Insufficient cpu` / `Insufficient memory`        | Scale nodes or reduce pod resource requests                         |
-| PVC not bound          | `persistentvolumeclaim "tau-core-data" not found` | Create the PVC (see [volumes.md](volumes.md))                       |
-| Node selector mismatch | `0/N nodes are available`                         | Check node labels match any node selectors                          |
+| Cause                  | Events Message                                      | Fix                                                                 |
+| ---------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+| No nodes with sysbox   | `RuntimeClass "sysbox-runc" not found`              | Install sysbox on worker nodes, or set `FICUS_K8S_RUNTIME_CLASS=""` |
+| Insufficient resources | `Insufficient cpu` / `Insufficient memory`          | Scale nodes or reduce pod resource requests                         |
+| PVC not bound          | `persistentvolumeclaim "ficus-core-data" not found` | Create the PVC (see [volumes.md](volumes.md))                       |
+| Node selector mismatch | `0/N nodes are available`                           | Check node labels match any node selectors                          |
 
 ### Pod in CrashLoopBackOff
 
 **Symptoms:** Pod starts, crashes, restarts repeatedly.
 
 ```bash
-kubectl -n tau-sandboxes logs <pod-name> --previous
+kubectl -n ficus-sandboxes logs <pod-name> --previous
 ```
 
 | Cause                  | Log Message                       | Fix                                                                    |
@@ -59,16 +59,16 @@ kubectl -n tau-sandboxes logs <pod-name> --previous
 
 ```bash
 # Check probe status
-kubectl -n tau-sandboxes describe pod <pod-name> | grep -A5 "Conditions"
+kubectl -n ficus-sandboxes describe pod <pod-name> | grep -A5 "Conditions"
 
 # Check sandbox health directly
-kubectl -n tau-sandboxes exec <pod-name> -- curl -s http://localhost:50051/healthz
+kubectl -n ficus-sandboxes exec <pod-name> -- curl -s http://localhost:50051/healthz
 ```
 
 The startup probe allows 5 minutes for first boot. If it fails:
 
 - **devbox install hanging** — network issue downloading nix packages. Check egress network policy and DNS resolution.
-- **dockerd failing to start** — sysbox may not be properly configured. Check `kubectl -n tau-sandboxes logs <pod-name>` for `dockerd` errors.
+- **dockerd failing to start** — sysbox may not be properly configured. Check `kubectl -n ficus-sandboxes logs <pod-name>` for `dockerd` errors.
 
 ### Pod Disappears / Gets Terminated
 
@@ -82,7 +82,7 @@ Pods are terminated in these cases:
 Check Core logs for idle termination:
 
 ```bash
-kubectl -n tau-core logs deployment/tau-worker --tail=100 | grep "idle\|terminat"
+kubectl -n ficus-core logs deployment/ficus-worker --tail=100 | grep "idle\|terminat"
 ```
 
 ## Connectivity Issues
@@ -93,20 +93,20 @@ kubectl -n tau-core logs deployment/tau-worker --tail=100 | grep "idle\|terminat
 
 ```bash
 # Verify DNS resolution
-kubectl -n tau-core exec deployment/tau-api -- nslookup tau-sandbox-<id>.tau-sandboxes.tau-sandboxes.svc.cluster.local
+kubectl -n ficus-core exec deployment/ficus-api -- nslookup ficus-sandbox-<id>.ficus-sandboxes.ficus-sandboxes.svc.cluster.local
 
 # Verify headless service has endpoints
-kubectl -n tau-sandboxes get endpoints tau-sandboxes
+kubectl -n ficus-sandboxes get endpoints ficus-sandboxes
 
 # Verify network policy allows traffic
-kubectl -n tau-sandboxes get networkpolicy -o yaml
+kubectl -n ficus-sandboxes get networkpolicy -o yaml
 ```
 
 **Common causes:**
 
 - **Headless service not created** — `kubectl apply -f k8s/headless-service.yaml`
-- **Pod hostname/subdomain not set** — check pod spec has `hostname: <podName>` and `subdomain: tau-sandboxes`
-- **Network policy blocking** — Core namespace must have labels `app: tau, component: core`
+- **Pod hostname/subdomain not set** — check pod spec has `hostname: <podName>` and `subdomain: ficus-sandboxes`
+- **Network policy blocking** — Core namespace must have labels `app: ficus, component: core`
 - **DNS propagation delay** — new pods take a few seconds to appear in DNS. Core retries automatically.
 
 ### Sandbox Cannot Reach Core API
@@ -115,7 +115,7 @@ kubectl -n tau-sandboxes get networkpolicy -o yaml
 
 ```bash
 # From inside the sandbox pod
-kubectl -n tau-sandboxes exec <pod-name> -- curl -s http://tau-api.tau-core.svc.cluster.local:3000/health
+kubectl -n ficus-sandboxes exec <pod-name> -- curl -s http://ficus-api.ficus-core.svc.cluster.local:3000/health
 ```
 
 Check that the network policy egress rule allows traffic to the Core namespace on port 3000.
@@ -128,7 +128,7 @@ Check that the network policy egress rule allows traffic to the Core namespace o
 
 ```bash
 # Check background install progress
-kubectl -n tau-sandboxes logs <pod-name> | grep "background\|devbox"
+kubectl -n ficus-sandboxes logs <pod-name> | grep "background\|devbox"
 ```
 
 **Causes:**
@@ -152,22 +152,22 @@ The bash endpoint activates devbox via a preamble script. Check:
 ### Permission Denied on Workspace
 
 ```bash
-kubectl -n tau-sandboxes exec <pod-name> -- ls -la /workspace
-kubectl -n tau-sandboxes exec <pod-name> -- id
+kubectl -n ficus-sandboxes exec <pod-name> -- ls -la /workspace
+kubectl -n ficus-sandboxes exec <pod-name> -- id
 ```
 
 With sysbox, the container runs as root in a user namespace. If the EFS access point was created with a different UID, files may not be accessible. The access point should use UID/GID 0 with permissions 700.
 
 ### SSH Key Permission or Connectivity Errors
 
-The entrypoint mirrors `/var/lib/tau/ssh-source` (the host-shared key dir) into a container-private `/root/.ssh` every 5s and applies strict perms there. Sandbox images also route standard GitHub SSH remotes (`git@github.com:org/repo.git`) through GitHub's SSH-over-HTTPS endpoint on TCP/443. If git still fails:
+The entrypoint mirrors `/var/lib/ficus/ssh-source` (the host-shared key dir) into a container-private `/root/.ssh` every 5s and applies strict perms there. Sandbox images also route standard GitHub SSH remotes (`git@github.com:org/repo.git`) through GitHub's SSH-over-HTTPS endpoint on TCP/443. If git still fails:
 
 ```bash
-kubectl -n tau-sandboxes exec <pod-name> -- ls -la /var/lib/tau/ssh-source  # source from host API
-kubectl -n tau-sandboxes exec <pod-name> -- ls -la /root/.ssh              # container copy
-kubectl -n tau-sandboxes exec <pod-name> -- ssh -G git@github.com | grep -E '^(hostname|port|user) '
-kubectl -n tau-sandboxes exec <pod-name> -- ssh -o ConnectTimeout=10 -T git@github.com
-kubectl -n tau-sandboxes exec <pod-name> -- ssh -o ConnectTimeout=10 -p 443 -T git@ssh.github.com
+kubectl -n ficus-sandboxes exec <pod-name> -- ls -la /var/lib/ficus/ssh-source  # source from host API
+kubectl -n ficus-sandboxes exec <pod-name> -- ls -la /root/.ssh              # container copy
+kubectl -n ficus-sandboxes exec <pod-name> -- ssh -G git@github.com | grep -E '^(hostname|port|user) '
+kubectl -n ficus-sandboxes exec <pod-name> -- ssh -o ConnectTimeout=10 -T git@github.com
+kubectl -n ficus-sandboxes exec <pod-name> -- ssh -o ConnectTimeout=10 -p 443 -T git@ssh.github.com
 ```
 
 If a key the API added on the host is missing from `/root/.ssh`, check the entrypoint's sync log and that `rsync` (or the `cp`-fallback path) ran. `/root/.ssh` is a private container directory, not a mount, so chown/chmod always succeed there.
@@ -180,10 +180,10 @@ Expected GitHub auth failures use exit code 1 with a message from GitHub. Timeou
 
 ```bash
 # Check the mounted secret
-kubectl -n tau-sandboxes exec <pod-name> -- cat /etc/tau/password
+kubectl -n ficus-sandboxes exec <pod-name> -- cat /etc/ficus/password
 
 # Check the K8s secret exists
-kubectl -n tau-sandboxes get secret tau-sandbox-auth -o jsonpath='{.data.password}' | base64 -d
+kubectl -n ficus-sandboxes get secret ficus-sandbox-auth -o jsonpath='{.data.password}' | base64 -d
 ```
 
 If the secret is empty or missing:
@@ -198,7 +198,7 @@ If the secret is empty or missing:
 **Fix:** Terminate the sandbox pod (it will be recreated with the new token):
 
 ```bash
-kubectl -n tau-sandboxes delete pod tau-sandbox-<squad-id>
+kubectl -n ficus-sandboxes delete pod ficus-sandbox-<squad-id>
 ```
 
 ## Resource Issues
@@ -206,7 +206,7 @@ kubectl -n tau-sandboxes delete pod tau-sandbox-<squad-id>
 ### Pod OOMKilled
 
 ```bash
-kubectl -n tau-sandboxes describe pod <pod-name> | grep OOM
+kubectl -n ficus-sandboxes describe pod <pod-name> | grep OOM
 ```
 
 Default memory limit is 2Gi. Large builds, multiple docker containers, or memory-hungry tools can exceed this. Solutions:
@@ -228,22 +228,22 @@ EFS (NFS) has higher latency than local disk, especially for metadata-heavy oper
 
 ```bash
 # Watch all sandbox pods
-kubectl -n tau-sandboxes get pods -w
+kubectl -n ficus-sandboxes get pods -w
 
 # Stream all sandbox logs
-kubectl -n tau-sandboxes logs -l app=tau-sandbox -f --max-log-requests=20
+kubectl -n ficus-sandboxes logs -l app=ficus-sandbox -f --max-log-requests=20
 
 # Check sandbox pod resource usage
-kubectl -n tau-sandboxes top pods
+kubectl -n ficus-sandboxes top pods
 
 # Force-delete a stuck pod
-kubectl -n tau-sandboxes delete pod <pod-name> --force --grace-period=0
+kubectl -n ficus-sandboxes delete pod <pod-name> --force --grace-period=0
 
 # Check RBAC permissions
-kubectl auth can-i create pods -n tau-sandboxes --as=system:serviceaccount:tau-core:tau-core
+kubectl auth can-i create pods -n ficus-sandboxes --as=system:serviceaccount:ficus-core:ficus-core
 
 # Exec into a sandbox for debugging
-kubectl -n tau-sandboxes exec -it <pod-name> -- bash
+kubectl -n ficus-sandboxes exec -it <pod-name> -- bash
 ```
 
 ## Related Docs

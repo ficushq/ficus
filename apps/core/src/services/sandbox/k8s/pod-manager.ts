@@ -2,7 +2,7 @@
  * K8sPodManager
  *
  * Manages pod lifecycle for K8s sandboxes — creation, health checking, idle timeouts.
- * Each squad gets its own pod running the tau-sandbox image with HTTP tools.
+ * Each squad gets its own pod running the ficus-sandbox image with HTTP tools.
  */
 
 import * as k8s from '@kubernetes/client-node'
@@ -36,7 +36,7 @@ import { K8sProvisionAttemptError } from './provision-errors'
 
 const log = createLogger('k8s-pod-manager')
 
-const DEFAULT_NAMESPACE = 'tau-sandboxes'
+const DEFAULT_NAMESPACE = 'ficus-sandboxes'
 
 /** The reconcilable-spec hash annotated on a pod under any identity set; undefined when absent. */
 function podSpecHash(pod: k8s.V1Pod): string | undefined {
@@ -233,8 +233,8 @@ export class K8sPodManager {
   async checkClusterConnectivity(): Promise<boolean> {
     try {
       // Use a namespaced pod read instead of a cluster-scoped namespace list.
-      // The tau-core ServiceAccount only needs sandbox-namespace permissions in production.
-      await this.coreApi.readNamespacedPod({ name: 'tau-connectivity-check', namespace: this.namespace })
+      // The ficus-core ServiceAccount only needs sandbox-namespace permissions in production.
+      await this.coreApi.readNamespacedPod({ name: 'ficus-connectivity-check', namespace: this.namespace })
       return true
     } catch (err: unknown) {
       const status = getK8sStatusCode(err)
@@ -253,7 +253,7 @@ export class K8sPodManager {
       }
       if (status === 401 || status === 403) {
         log.error(
-          `K8s cluster is reachable but tau-core is not authorized to manage sandbox pods in namespace ${this.namespace}: ${(err as Error).message}`
+          `K8s cluster is reachable but ficus-core is not authorized to manage sandbox pods in namespace ${this.namespace}: ${(err as Error).message}`
         )
         return false
       }

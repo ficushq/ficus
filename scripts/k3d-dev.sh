@@ -16,23 +16,23 @@
 #   k3d-dev.sh import         Rebuild sandbox image and push to local registry
 #   k3d-dev.sh teardown       Delete the entire cluster (destructive!)
 #
-# The cluster mounts ~/.tau into the k3d node so sandbox pods and the
+# The cluster mounts ~/.ficus into the k3d node so sandbox pods and the
 # host API share workspace/memory/ssh data via a static PV/PVC.
 
 set -euo pipefail
 
-CLUSTER_NAME="tau-dev"
-NAMESPACE="tau-sandboxes-dev"
-KUBECTL_CONTEXT="${FICUS_K8S_CONTEXT:-k3d-tau-dev-token}"
-REGISTRY_CONTAINER="tau-registry"
-K3D_NETWORK="${FICUS_K3D_NETWORK:-tau-dev}"
+CLUSTER_NAME="ficus-dev"
+NAMESPACE="ficus-sandboxes-dev"
+KUBECTL_CONTEXT="${FICUS_K8S_CONTEXT:-k3d-ficus-dev-token}"
+REGISTRY_CONTAINER="ficus-registry"
+K3D_NETWORK="${FICUS_K3D_NETWORK:-ficus-dev}"
 REGISTRY_HOST_PORT="${FICUS_K3D_REGISTRY_PORT:-5001}"
 REGISTRY_ENDPOINT="${REGISTRY_CONTAINER}:5000"
-REGISTRY_IMAGE="localhost:${REGISTRY_HOST_PORT}/tau-sandbox:latest"
-SANDBOX_IMAGE="${REGISTRY_ENDPOINT}/tau-sandbox:latest"
-AGENT_REGISTRY_IMAGE="localhost:${REGISTRY_HOST_PORT}/tau-sandbox-agent:latest"
-AGENT_SANDBOX_IMAGE="${REGISTRY_ENDPOINT}/tau-sandbox-agent:latest"
-FICUS_HOME="${HOME}/.tau"
+REGISTRY_IMAGE="localhost:${REGISTRY_HOST_PORT}/ficus-sandbox:latest"
+SANDBOX_IMAGE="${REGISTRY_ENDPOINT}/ficus-sandbox:latest"
+AGENT_REGISTRY_IMAGE="localhost:${REGISTRY_HOST_PORT}/ficus-sandbox-agent:latest"
+AGENT_SANDBOX_IMAGE="${REGISTRY_ENDPOINT}/ficus-sandbox-agent:latest"
+FICUS_HOME="${HOME}/.ficus"
 HOST_IP_FILE="${FICUS_HOME}/.k3d-host-ip"
 REGISTRY_CONFIG_FILE="${FICUS_HOME}/k3d-registries.yaml"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -183,7 +183,7 @@ prune_node_images() {
     return
   fi
   # Drop node images no longer referenced by any pod. Repeated `import` rebuilds leave the previous
-  # tau-sandbox:latest generations as unreferenced layers in containerd's overlay snapshotter — the
+  # ficus-sandbox:latest generations as unreferenced layers in containerd's overlay snapshotter — the
   # top disk consumer when the node hits DiskPressure (which evicts every sandbox at once). Pruning
   # on each import keeps that store from growing unbounded.
   if docker exec "k3d-${CLUSTER_NAME}-server-0" crictl rmi --prune >/dev/null 2>&1; then
@@ -303,7 +303,7 @@ cmd_setup() {
 
   ensure_registry
 
-  # --- Ensure ~/.tau directories exist ---
+  # --- Ensure ~/.ficus directories exist ---
   log "Ensuring ${FICUS_HOME} directories..."
   mkdir -p "${FICUS_HOME}/workspaces/squads"
   mkdir -p "${FICUS_HOME}/workspaces/agents"
@@ -322,7 +322,7 @@ cmd_setup() {
   log "Creating k3d cluster '${CLUSTER_NAME}'..."
   k3d cluster create "${CLUSTER_NAME}" \
     --agents 0 \
-    --volume "${FICUS_HOME}:/tau-data" \
+    --volume "${FICUS_HOME}:/ficus-data" \
     --network "${K3D_NETWORK}" \
     --no-lb \
     --registry-config "${REGISTRY_CONFIG_FILE}" \
@@ -346,11 +346,11 @@ cmd_setup() {
 apiVersion: v1
 kind: Service
 metadata:
-  name: tau-sandboxes
+  name: ficus-sandboxes
 spec:
   clusterIP: None
   selector:
-    app: tau-sandbox
+    app: ficus-sandbox
   ports:
     - port: 50051
       targetPort: 50051
@@ -363,28 +363,28 @@ EOF
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: tau-core-data-local
+  name: ficus-core-data-local
   labels:
     type: local
-    app: tau-dev
+    app: ficus-dev
 spec:
   capacity:
     storage: 50Gi
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: /tau-data
+    path: /ficus-data
     type: Directory
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   claimRef:
     namespace: ${NAMESPACE}
-    name: tau-core-data
+    name: ficus-core-data
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: tau-core-data
+  name: ficus-core-data
   namespace: ${NAMESPACE}
 spec:
   accessModes:
@@ -393,11 +393,11 @@ spec:
     requests:
       storage: 50Gi
   storageClassName: ""
-  volumeName: tau-core-data-local
+  volumeName: ficus-core-data-local
 EOF
 
   log "Waiting for PVC to bind..."
-  kubectl wait -n "${NAMESPACE}" --for=jsonpath='{.status.phase}'=Bound pvc/tau-core-data --timeout=30s
+  kubectl wait -n "${NAMESPACE}" --for=jsonpath='{.status.phase}'=Bound pvc/ficus-core-data --timeout=30s
 
   # --- Create service account with token auth ---
   # Bun's node-fetch compatibility doesn't pass client certificates through
@@ -405,23 +405,23 @@ EOF
   # Create a service account with a long-lived token and configure kubectl
   # to use it instead.
   log "Creating service account for token-based auth..."
-  kubectl -n "${NAMESPACE}" create serviceaccount tau-dev 2>/dev/null || true
-  kubectl create clusterrolebinding tau-dev-admin \
+  kubectl -n "${NAMESPACE}" create serviceaccount ficus-dev 2>/dev/null || true
+  kubectl create clusterrolebinding ficus-dev-admin \
     --clusterrole=cluster-admin \
-    --serviceaccount="${NAMESPACE}:tau-dev" 2>/dev/null || true
+    --serviceaccount="${NAMESPACE}:ficus-dev" 2>/dev/null || true
 
   local token
-  token=$(kubectl -n "${NAMESPACE}" create token tau-dev --duration=87600h)
+  token=$(kubectl -n "${NAMESPACE}" create token ficus-dev --duration=87600h)
 
   # Add token-based user and context to kubeconfig
-  kubectl config set-credentials tau-dev-token --token="${token}"
-  kubectl config set-context k3d-tau-dev-token \
+  kubectl config set-credentials ficus-dev-token --token="${token}"
+  kubectl config set-context k3d-ficus-dev-token \
     --cluster="k3d-${CLUSTER_NAME}" \
-    --user=tau-dev-token \
+    --user=ficus-dev-token \
     --namespace="${NAMESPACE}"
-  kubectl config use-context k3d-tau-dev-token
+  kubectl config use-context k3d-ficus-dev-token
 
-  log "Configured kubectl to use token auth (context: k3d-tau-dev-token)"
+  log "Configured kubectl to use token auth (context: k3d-ficus-dev-token)"
 
   # --- Build and push sandbox image ---
   # Use native arch for local dev (arm64 on Apple Silicon, amd64 on Intel).
@@ -512,9 +512,9 @@ cmd_status() {
 
   # PVC
   local pvc_status
-  pvc_status=$(kctl -n "${NAMESPACE}" get pvc tau-core-data -o jsonpath='{.status.phase}' 2>/dev/null || echo "missing")
+  pvc_status=$(kctl -n "${NAMESPACE}" get pvc ficus-core-data -o jsonpath='{.status.phase}' 2>/dev/null || echo "missing")
   if [[ "$pvc_status" == "Bound" ]]; then
-    echo -e "  PVC:      ${GREEN}bound${NC} (tau-core-data → ~/.tau)"
+    echo -e "  PVC:      ${GREEN}bound${NC} (ficus-core-data → ~/.ficus)"
   else
     echo -e "  PVC:      ${RED}${pvc_status}${NC}"
   fi
@@ -642,7 +642,7 @@ cmd_teardown() {
   fi
 
   echo -e "${YELLOW}This will delete the k3d cluster and all running pods.${NC}"
-  echo -e "${YELLOW}Data in ~/.tau/ is preserved.${NC}"
+  echo -e "${YELLOW}Data in ~/.ficus/ is preserved.${NC}"
   echo ""
   read -r -p "Continue? [y/N] " confirm
   if [[ "$confirm" == "*[yY]*" ]]; then
@@ -652,8 +652,8 @@ cmd_teardown() {
 
   log "Deleting cluster '${CLUSTER_NAME}'..."
   k3d cluster delete "${CLUSTER_NAME}"
-  kubectl delete pv tau-core-data-local 2>/dev/null || true
-  log "Done. Data in ~/.tau/ is preserved."
+  kubectl delete pv ficus-core-data-local 2>/dev/null || true
+  log "Done. Data in ~/.ficus/ is preserved."
 }
 
 cmd_help() {

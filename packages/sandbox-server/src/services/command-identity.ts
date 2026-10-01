@@ -16,8 +16,8 @@ export function readExecutorCommandIdentity(env: NodeJS.ProcessEnv): ExecutorCom
   const source = env.EXECUTOR_COMMAND_SOURCE === 'host' ? 'host' : 'image'
   const contractDigest = env.EXECUTOR_COMMAND_CONTRACT_DIGEST
   if (
-    user !== 'tau' ||
-    home !== '/home/tau' ||
+    user !== 'ficus' ||
+    home !== '/home/ficus' ||
     !Number.isSafeInteger(uid) ||
     !Number.isSafeInteger(gid) ||
     uid <= 0 ||

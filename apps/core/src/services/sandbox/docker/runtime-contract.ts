@@ -83,8 +83,8 @@ export function parseDockerImageContract(imageReference: string, inspect: unknow
 }
 
 export interface ExpectedDockerCommandIdentity {
-  user: 'tau'
-  home: '/home/tau'
+  user: 'ficus'
+  home: '/home/ficus'
   uid: number
   gid: number
   source: 'host' | 'image'

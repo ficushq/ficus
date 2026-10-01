@@ -59,9 +59,9 @@ export class K8sLogProvider implements SystemLogProvider {
 
   constructor(
     private readonly config: K8sLogConfig = {
-      namespace: 'tau-core',
-      selectors: { api: 'app=tau-core,component=api', worker: 'app=tau-core,component=worker' },
-      containers: { api: 'tau-api', worker: 'tau-worker' },
+      namespace: 'ficus-core',
+      selectors: { api: 'app=ficus-core,component=api', worker: 'app=ficus-core,component=worker' },
+      containers: { api: 'ficus-api', worker: 'ficus-worker' },
     },
     private readonly dependencies?: K8sLogDependencies,
     private readonly createDependencies: () => K8sLogDependencies = defaultDependencies

@@ -8,7 +8,7 @@ import { computeDockerSpecDigest, parseDockerImageContract } from './runtime-con
 import { removeOwnedDockerContainers, runOwnedDocker } from './docker-test-runtime'
 const enabled = process.env.FICUS_DOCKER_RUNTIME_INTEGRATION === '1'
 const owner = process.env.FICUS_DOCKER_TEST_OWNER ?? 'disabled'
-const image = process.env.FICUS_SANDBOX_IMAGE ?? 'tau-sandbox:latest'
+const image = process.env.FICUS_SANDBOX_IMAGE ?? 'ficus-sandbox:latest'
 
 function startArgs(name: string, extra: string[] = []): string[] {
   return [
@@ -37,7 +37,7 @@ async function startReady(name: string): Promise<{ token: string; port: string; 
   let port = ''
   let health: Response | undefined
   for (let attempt = 0; attempt < 150; attempt++) {
-    token = runOwnedDocker(['exec', name, 'cat', '/run/tau/executor-token'], owner).stdout.toString().trim()
+    token = runOwnedDocker(['exec', name, 'cat', '/run/ficus/executor-token'], owner).stdout.toString().trim()
     port =
       runOwnedDocker(['port', name, '50051/tcp'], owner)
         .stdout.toString()
@@ -74,16 +74,19 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
     const inspect = runOwnedDocker(['inspect', '-f', '{{json .Config.Env}}', name], owner)
     expect(inspect.stdout.toString()).not.toContain('EXECUTOR_AUTH_TOKEN=')
     expect(ready.health).toMatchObject({
-      runtimeContract: { runtime: 'docker', commandIdentity: { user: 'tau', uid: 12345, gid: 12346, source: 'host' } },
+      runtimeContract: {
+        runtime: 'docker',
+        commandIdentity: { user: 'ficus', uid: 12345, gid: 12346, source: 'host' },
+      },
     })
     expect(
-      runOwnedDocker(['exec', name, 'stat', '-c', '%a:%U:%G', '/run/tau-docker/docker.sock'], owner)
+      runOwnedDocker(['exec', name, 'stat', '-c', '%a:%U:%G', '/run/ficus-docker/docker.sock'], owner)
         .stdout.toString()
         .trim()
     ).toBe('600:ficus:ficus')
     expect(
       runOwnedDocker(
-        ['exec', name, 'su-exec', 'nobody', 'docker', '-H', 'unix:///run/tau-docker/docker.sock', 'info'],
+        ['exec', name, 'su-exec', 'nobody', 'docker', '-H', 'unix:///run/ficus-docker/docker.sock', 'info'],
         owner
       ).exitCode
     ).not.toBe(0)
@@ -102,7 +105,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
     expect(
       runOwnedDocker(['logs', name], owner).stderr.toString() + runOwnedDocker(['logs', name], owner).stdout.toString()
     ).toContain('collides with the image')
-    expect(runOwnedDocker(['exec', name, 'test', '-e', '/run/tau/executor-token'], owner).exitCode).not.toBe(0)
+    expect(runOwnedDocker(['exec', name, 'test', '-e', '/run/ficus/executor-token'], owner).exitCode).not.toBe(0)
   }, 30_000)
 
   test.each([['socat'], ['executor']])(
@@ -110,7 +113,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
     async (child) => {
       const name = `ficus-death-${child}-${owner}`
       await startReady(name)
-      const pidFile = child === 'socat' ? '/run/tau/proxy.pid' : '/run/tau/executor.pid'
+      const pidFile = child === 'socat' ? '/run/ficus/proxy.pid' : '/run/ficus/executor.pid'
       const pid = runOwnedDocker(['exec', name, 'cat', pidFile], owner).stdout.toString().trim()
       expect(pid).toMatch(/^[1-9][0-9]*$/)
       const killed = runOwnedDocker(['exec', name, 'kill', '-TERM', pid], owner)
@@ -127,7 +130,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
       owner
     )
     expect(started.exitCode).toBe(0)
-    expect(runOwnedDocker(['exec', name, 'test', '-e', '/run/tau/executor-token'], owner).exitCode).not.toBe(0)
+    expect(runOwnedDocker(['exec', name, 'test', '-e', '/run/ficus/executor-token'], owner).exitCode).not.toBe(0)
     expect(runOwnedDocker(['port', name, '50051/tcp'], owner).stdout.toString().trim()).toBe('')
   })
 
@@ -205,7 +208,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
     const sandboxId = `agent_${randomUUID()}`
     const workspace = mkdtempSync(path.join(tmpdir(), 'ficus-manager-runtime-'))
     chmodSync(workspace, 0o777)
-    const containerName = `tau-sandbox-${sandboxId}`
+    const containerName = `ficus-sandbox-${sandboxId}`
     let firstImageId = ''
     let secondImageId = ''
     let cleanupManager: any

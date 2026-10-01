@@ -1,11 +1,11 @@
 # Namespace for Ficus Core components
-# Labels allow NetworkPolicy in tau-sandboxes to select this namespace
+# Labels allow NetworkPolicy in ficus-sandboxes to select this namespace
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: tau-core
+  name: ficus-core
   labels:
-    app: tau
+    app: ficus
     component: core
 ---
 # ServiceAccount for Ficus Core
@@ -13,7 +13,7 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: tau-core
-  namespace: tau-core
+  name: ficus-core
+  namespace: ficus-core
   labels:
-    app: tau-core
+    app: ficus-core

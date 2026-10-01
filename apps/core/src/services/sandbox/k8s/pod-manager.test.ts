@@ -49,10 +49,10 @@ describe('K8sPodManager', () => {
 
   test('getPodEndpoint returns correct DNS', () => {
     const endpoint = K8sPodManager.prototype.getPodEndpoint.call(
-      { namespace: 'tau-sandboxes', pods: new Map(), portForwards: new Map() },
-      'tau-sandbox-squad-abc123'
+      { namespace: 'ficus-sandboxes', pods: new Map(), portForwards: new Map() },
+      'ficus-sandbox-squad-abc123'
     )
-    expect(endpoint).toBe('tau-sandbox-squad-abc123.tau-sandboxes.tau-sandboxes.svc.cluster.local:50051')
+    expect(endpoint).toBe('ficus-sandbox-squad-abc123.ficus-sandboxes.ficus-sandboxes.svc.cluster.local:50051')
   })
 
   test('getPodEndpoint works with different namespace', () => {
@@ -60,7 +60,7 @@ describe('K8sPodManager', () => {
       { namespace: 'custom-ns', pods: new Map(), portForwards: new Map() },
       'my-pod'
     )
-    expect(endpoint).toBe('my-pod.tau-sandboxes.custom-ns.svc.cluster.local:50051')
+    expect(endpoint).toBe('my-pod.ficus-sandboxes.custom-ns.svc.cluster.local:50051')
   })
 
   test('getPodEndpoint does not use app port-forwards for executor traffic', () => {
@@ -74,7 +74,7 @@ describe('K8sPodManager', () => {
       },
       'my-pod'
     )
-    expect(endpoint).toBe('my-pod.tau-sandboxes.custom-ns.svc.cluster.local:50051')
+    expect(endpoint).toBe('my-pod.ficus-sandboxes.custom-ns.svc.cluster.local:50051')
   })
 
   test('getPodState returns null for unknown sandbox', () => {
@@ -85,7 +85,7 @@ describe('K8sPodManager', () => {
   test('getPodState returns tracked pod state', () => {
     const podState: PodState = {
       sandboxId: 'squad_abc123',
-      podName: 'tau-sandbox-squad-abc123',
+      podName: 'ficus-sandbox-squad-abc123',
       status: 'ready',
       lastActivity: new Date(),
       idleTimeout: 900_000,
@@ -403,14 +403,14 @@ describe('K8sPodManager', () => {
             throw new Error('must not be called')
           }),
         },
-        namespace: 'tau-sandboxes',
+        namespace: 'ficus-sandboxes',
         kc: { getCurrentCluster: () => ({ server: 'https://kubernetes.default.svc' }) },
       }
 
       const result = await K8sPodManager.prototype.checkClusterConnectivity.call(manager)
 
       expect(result).toBe(true)
-      expect(readNamespacedPod).toHaveBeenCalledWith({ name: 'tau-connectivity-check', namespace: 'tau-sandboxes' })
+      expect(readNamespacedPod).toHaveBeenCalledWith({ name: 'ficus-connectivity-check', namespace: 'ficus-sandboxes' })
       expect(manager.coreApi.listNamespace).not.toHaveBeenCalled()
     })
 

@@ -185,8 +185,8 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
-          endpoint: 'tau-sandbox-test.tau-sandboxes.svc.cluster.local:50051',
+          podName: 'ficus-sandbox-test',
+          endpoint: 'ficus-sandbox-test.ficus-sandboxes.svc.cluster.local:50051',
           client: {} as any,
           workspacePath: '/host/workspace',
         },
@@ -201,7 +201,7 @@ describe('K8sSandboxManager', () => {
         5173
       )
 
-      expect(result).toEqual({ host: 'tau-sandbox-test.tau-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
+      expect(result).toEqual({ host: 'ficus-sandbox-test.ficus-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
     } finally {
       if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
       else process.env.FICUS_K8S_LOCAL = previousLocal
@@ -230,7 +230,7 @@ describe('K8sSandboxManager', () => {
     const forwarded: Array<{ sandboxId: string; podName: string; port: number }> = []
     const podManager = {
       namespace: 'custom-ns',
-      getPodState: () => ({ podName: 'tau-sandbox-test' }),
+      getPodState: () => ({ podName: 'ficus-sandbox-test' }),
       ensureAppPortForward: async (sandboxId: string, podName: string, port: number) => {
         forwarded.push({ sandboxId, podName, port })
         return 59668
@@ -245,7 +245,7 @@ describe('K8sSandboxManager', () => {
       )
 
       expect(result).toEqual({ host: 'localhost', port: 59668 })
-      expect(forwarded).toEqual([{ sandboxId: 'test-sandbox', podName: 'tau-sandbox-test', port: 3000 }])
+      expect(forwarded).toEqual([{ sandboxId: 'test-sandbox', podName: 'ficus-sandbox-test', port: 3000 }])
     } finally {
       if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
       else process.env.FICUS_K8S_LOCAL = previousLocal
@@ -266,8 +266,8 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
-          endpoint: 'tau-sandbox-test.tau-sandboxes.svc.cluster.local:50051',
+          podName: 'ficus-sandbox-test',
+          endpoint: 'ficus-sandbox-test.ficus-sandboxes.svc.cluster.local:50051',
           client: {} as any,
           workspacePath: '/host/workspace',
         },
@@ -288,7 +288,7 @@ describe('K8sSandboxManager', () => {
         5173
       )
 
-      expect(result).toEqual({ host: 'tau-sandbox-test.tau-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
+      expect(result).toEqual({ host: 'ficus-sandbox-test.ficus-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
     } finally {
       if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
       else process.env.FICUS_K8S_LOCAL = previousLocal
@@ -317,8 +317,8 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
-          endpoint: 'tau-sandbox-test.tau-sandboxes.svc.cluster.local:50051',
+          podName: 'ficus-sandbox-test',
+          endpoint: 'ficus-sandbox-test.ficus-sandboxes.svc.cluster.local:50051',
           client: {} as any,
           workspacePath: '/host/workspace',
           workspaceMount: '/workspace',
@@ -340,8 +340,8 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
-          endpoint: 'tau-sandbox-test.tau-sandboxes.svc.cluster.local:50051',
+          podName: 'ficus-sandbox-test',
+          endpoint: 'ficus-sandbox-test.ficus-sandboxes.svc.cluster.local:50051',
           client: {} as any,
           workspacePath: '/host/workspace',
         },
@@ -364,7 +364,7 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
+          podName: 'ficus-sandbox-test',
           endpoint: 'localhost:50051',
           client: {} as any,
           workspacePath: '/host/workspace',

@@ -19,7 +19,7 @@ import { isLocalK8sMode } from '../runtime'
 
 const IS_LOCAL_DEV = isLocalK8sMode()
 
-const K3D_CONTEXT = process.env.FICUS_K8S_CONTEXT || 'k3d-tau-dev-token'
+const K3D_CONTEXT = process.env.FICUS_K8S_CONTEXT || 'k3d-ficus-dev-token'
 
 export function loadKubeConfig(): k8s.KubeConfig {
   const kc = new k8s.KubeConfig()

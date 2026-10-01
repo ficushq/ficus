@@ -85,8 +85,8 @@ describe('prepullSandboxImages', () => {
     const c = captured.spec.containers[0]
     expect(c.command).toEqual(['/bin/true'])
     expect(c.imagePullPolicy).toBe('Always')
-    expect(c.image).toBe('tau-registry:5000/tau-sandbox:latest')
-    expect(captured.metadata.labels.app).toBe('tau-sandbox-prepull')
+    expect(c.image).toBe('ficus-registry:5000/ficus-sandbox:latest')
+    expect(captured.metadata.labels.app).toBe('ficus-sandbox-prepull')
   })
 
   test('never throws even if pod creation fails (best-effort, non-fatal)', async () => {

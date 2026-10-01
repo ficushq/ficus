@@ -8,14 +8,14 @@ Network policies (`k8s/network-policy.yaml`) restrict sandbox pod traffic:
 
 ### Ingress
 
-Sandbox pods **only accept connections from Core** (the `tau-core` namespace):
+Sandbox pods **only accept connections from Core** (the `ficus-core` namespace):
 
 ```yaml
 ingress:
   - from:
       - namespaceSelector:
           matchLabels:
-            app: tau
+            app: ficus
             component: core
     ports:
       - port: 50051 # sandbox HTTP API
@@ -41,7 +41,7 @@ Sandbox pods can reach:
 
 ## RBAC
 
-The Core service account (`tau-core`) has a Role scoped to the `tau-sandboxes` namespace (`k8s/rbac.yaml`):
+The Core service account (`ficus-core`) has a Role scoped to the `ficus-sandboxes` namespace (`k8s/rbac.yaml`):
 
 ```yaml
 rules:
@@ -56,7 +56,7 @@ rules:
     verbs: [get, list, create, update, delete]
 ```
 
-**Scope:** Core can only manage resources in the `tau-sandboxes` namespace. It cannot access pods in other namespaces or cluster-wide resources.
+**Scope:** Core can only manage resources in the `ficus-sandboxes` namespace. It cannot access pods in other namespaces or cluster-wide resources.
 
 **Least privilege notes:**
 
@@ -83,9 +83,9 @@ The sandbox restricts file operations to a set of allowed prefixes:
 ```
 /workspace    — agent working directory (read-write)
 /memory       — agent memory files (read-only mount)
-/home/tau     — ficus CLI home
+/home/ficus     — ficus CLI home
 /nix          — nix package store
-/opt/tau      — Ficus defaults and tools
+/opt/ficus    — Ficus defaults and tools
 /tmp          — temporary files
 ```
 
@@ -97,7 +97,7 @@ Each sandbox pod mounts only its own squad's data via `subPath`:
 
 - `/workspace` → `workspaces/squads/{squadId}` (read-write)
 - `/memory` → `memory/{squadId}` (read-only)
-- `/var/lib/tau/ssh-source` → `ssh/{squadId}` (read-write; entrypoint mirrors into private `/root/.ssh`)
+- `/var/lib/ficus/ssh-source` → `ssh/{squadId}` (read-write; entrypoint mirrors into private `/root/.ssh`)
 
 A pod for squad A cannot access squad B's workspace, even though they share the same underlying EFS volume. The `subPath` mount makes only the squad's subdirectory visible.
 
@@ -112,8 +112,8 @@ Core stores sensitive credentials (API keys, tokens, passwords) encrypted in the
 Sandbox pods need to authenticate with the Core API (for Ficus CLI). The password flows through:
 
 1. User sets `FICUS_PASSWORD` in Settings UI → encrypted in DB
-2. `K8sPodManager.syncAuthSecret()` pushes it to K8s Secret `tau-sandbox-auth` in the sandboxes namespace
-3. Secret is mounted at `/etc/tau/password` in sandbox pods
+2. `K8sPodManager.syncAuthSecret()` pushes it to K8s Secret `ficus-sandbox-auth` in the sandboxes namespace
+3. Secret is mounted at `/etc/ficus/password` in sandbox pods
 4. Ficus CLI reads the mounted file for authentication
 
 The secret is synced before each pod creation and whenever `FICUS_PASSWORD` changes (via `SecretStore.onChange` listener). K8s automatically propagates secret updates to running pods within ~1 minute.
