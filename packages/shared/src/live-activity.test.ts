@@ -235,3 +235,12 @@ describe('manual wait actors in native projections', () => {
     expect(shouldShowLiveActivity(state)).toBe(false)
   })
 })
+
+test('widget summary carries only the optional authoritative slot fact, including explicit clearing', () => {
+  for (const hasActiveSlotWait of [true, false, undefined]) {
+    const input = stream({ derivedState: 'idle', hasActiveSlotWait })
+    const summary = JSON.parse(JSON.stringify(buildWorkInterestSnapshot([input]).top[0]))
+    expect(summary.hasActiveSlotWait).toBe(hasActiveSlotWait)
+    expect('poolKey' in summary).toBe(false)
+  }
+})

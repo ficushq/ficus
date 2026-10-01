@@ -527,6 +527,19 @@ describe('WorkStreamList', () => {
     expect(html).not.toContain('No active work streams')
   })
 
+  test('Waiting filter includes proven slot waits, not ordinary idle', () => {
+    const html = renderWorkStreamList(
+      [
+        workStream({ id: 'slot', title: 'Proven resource wait', derivedState: 'idle', hasActiveSlotWait: true }),
+        workStream({ id: 'idle', title: 'Ordinary idle', derivedState: 'idle' }),
+      ],
+      {},
+      '/?status=waiting'
+    )
+    expect(html).toContain('Proven resource wait')
+    expect(html).not.toContain('Ordinary idle')
+  })
+
   test('toggles multiple status and squad filters, with All clearing each group', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/feed' })
     const rendered = dom.createRoot()
@@ -1046,13 +1059,27 @@ describe('squad WorkStreamList canonical ordering', () => {
         rendered.root.render(
           <QueryClientProvider client={queryClient}>
             <MemoryRouter>
-              <SquadWorkStreamList workStreams={ordered} squadId={squad.id} squad={squad} />
+              <SquadWorkStreamList
+                workStreams={[
+                  ...ordered,
+                  workStream({
+                    title: 'Slot waiting stream',
+                    derivedState: 'idle',
+                    hasActiveSlotWait: true,
+                    openWaits: [],
+                  }),
+                ]}
+                squadId={squad.id}
+                squad={squad}
+              />
             </MemoryRouter>
           </QueryClientProvider>
         )
       )
       const html = dom.window.document.body.innerHTML
       expect(html.indexOf('Squad Queue One')).toBeLessThan(html.indexOf('Squad Queue Two'))
+      expect(html).toContain('Slot waiting stream')
+      expect(html).toContain('Waiting for slot')
     } finally {
       await dom.cleanup()
     }
@@ -1197,7 +1224,7 @@ describe('WorkStreamDetailModal', async () => {
 
     expect(html).toContain('aria-label="Open dependency Blocking stream"')
     expect(html).toContain('aria-label="Blocked status"')
-    expect(html).toContain('bg-status-danger-solid')
+    expect(html).toContain('bg-status-attention-solid')
     expect(html).not.toContain('aria-label="Active status"')
     expect(html).toContain('>Blocking stream</button>')
   })

@@ -131,6 +131,8 @@ interface ChatViewProps {
   /** @deprecated use hideComposer */
   hideInput?: boolean
   header?: React.ReactNode
+  /** Compact persistent status beneath header chrome, never over messages or composer. */
+  headerStatus?: React.ReactNode
   inputPrefix?: React.ReactNode
   /** localStorage key for persisting draft input across navigations/refreshes */
   inputStorageKey?: string
@@ -446,6 +448,7 @@ export function ChatView({
   inputDisabledReason,
   hideInput,
   header,
+  headerStatus,
   inputPrefix,
   inputStorageKey,
   squadId,
@@ -1528,6 +1531,8 @@ export function ChatView({
           </div>
         </div>
       )}
+
+      {headerStatus && <div className="shrink-0 min-w-0">{headerStatus}</div>}
 
       {/* Messages */}
       <div

@@ -128,15 +128,15 @@ function render(props: Parameters<typeof AgentConversation>[0]) {
 // ---------------------------------------------------------------------------
 
 describe('AgentConversation wraps AgentChat', () => {
-  test("includes queued slot context in the composer's status, with no separate header row", () => {
+  test('keeps queued slot context out of the composer', () => {
     _agentSquadId = 'squad-a'
     _permissions = new Set(['slots:use'])
     _activeExecution = { active: true, status: 'running' }
     _slotWaits = [{ waiterId: 'waiter-a', poolKey: 'shared-box-intensive', queuedAt: '2026-09-14T21:49:49Z' }]
     try {
       const html = render({ agentId: 'a1' })
-      expect(html).toContain('Queued for slots:')
-      expect(html).toContain('shared-box-intensive')
+      expect(html).not.toContain('Queued for slots:')
+      expect(html).not.toContain('shared-box-intensive')
       // Plain "running" is the composer's Stop and the transcript's working row, not a label.
       expect(html).not.toContain('>running<')
       expect(html).not.toContain('agent-chat-header')

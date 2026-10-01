@@ -54,6 +54,7 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
   'waiting_on_answer',
   'waiting_on_dependency',
   'waiting_on_owner',
+  'waiting_for_slot',
   'blocked',
 ]
 
@@ -77,6 +78,7 @@ const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
   waiting_on_answer: '?',
   waiting_on_dependency: '⧗',
   waiting_on_owner: '⧗',
+  waiting_for_slot: '⧗',
   blocked: '⊘',
   idle: '○',
   execution_failed: '✖',
@@ -503,8 +505,8 @@ function WorkStreamRow({
   const assigneeTypeName = assignee ? (agentTypeNameMap.get(assignee.agentTypeId) ?? assignee.agentTypeId) : null
   const assigneeTarget = assignee ? `/squads/${slugFor(workStream.squadId)}/agents?agent=${assignee.id}` : null
 
-  // Display state: prefer the server-derived state, fall back to stored status. 'idle' (active with
-  // no execution and no wait) is the one alarming display — treated the same as 'blocked' visually.
+  // Shared presentation preserves genuine blockers and failures; ordinary idle
+  // is neutral, and a proven current resource subscription is informational.
   const state = wsFilterState(workStream)
   const statusTreatment = webStatus(WORK_STREAM_STATUS_ROLE[state] ?? 'neutral')
   const isInProgress = WORK_STREAM_STATUS_ROLE[state] === 'progress'

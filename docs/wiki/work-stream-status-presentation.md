@@ -12,7 +12,7 @@ Status is a read-only projection, not permission to advance, resume, approve, or
 | `review`      | Review Pull Request       | review        | yes             | needsYou      |
 | `merge`       | Merge Pull Request        | review        | yes             | needsYou      |
 | `external`    | Awaiting Code Host        | externalWait  | no              | externalWait  |
-| `setup`       | Delivery Setup Required   | danger        | no              | blocked       |
+| `setup`       | Delivery Setup Required   | attention     | no              | blocked       |
 | `failure`     | Delivery Changes Required | danger        | no              | blocked       |
 
 Precedence: terminal stored status, explicit pause, explicit waits (review > question > dependency > manual), execution failure, recognized delivery fact, then ordinary execution/queue/idle derivation. The exact workflow-owned manual delivery-approval wait is identified by `approvalWaitId` and presented as approval; unrelated manual waits remain blockers. No wait is changed or synthesized by presentation.
@@ -53,7 +53,7 @@ Each manual wait records who must act (`WorkStreamWait.actor`, manual waits only
 
 | Actor   | Presentation state | Label            | Semantic role | Human attention | Native bucket | Canonical order (active)                |
 | ------- | ------------------ | ---------------- | ------------- | --------------- | ------------- | --------------------------------------- |
-| `human` | `blocked`          | Blocked          | danger        | yes             | needsYou      | tier 0 (human-actionable)               |
+| `human` | `blocked`          | Blocked          | attention     | yes             | needsYou      | tier 0 (human-actionable)               |
 | `owner` | `waiting_on_owner` | Waiting on Owner | externalWait  | no              | externalWait  | tier 3 (with dependency/external waits) |
 
 `owner` means the stream's owner agent, or the squad manager when the stream has none. Provider or third-party events also use `owner`, with the wait message naming what it waits on. When several manual waits are open, any human wait wins (human > owner). Wait-type precedence is unchanged: a question, review or dependency still outranks any manual wait, and the exact workflow-owned delivery-approval wait (`approvalWaitId`) is still presented as approval. Workflow human-approval gates keep the default `human` actor and cannot be relabeled.
@@ -61,6 +61,20 @@ Each manual wait records who must act (`WorkStreamWait.actor`, manual waits only
 The actor changes attribution only. Every manual wait blocks admission, auto-parking, queued positioning (`queuedHasWait`) and flow attempts exactly as before. `waiting_on_owner` is presentation-only: Core's `derivedState` keeps `blocked` for older consumers, and older clients that ignore `actor` keep their historical Needs you rendering. The native bucket reuses `externalWait` rather than adding a value, so older native binaries keep rendering these rows as a known, non-alarming wait.
 
 Notifications follow the same rule. Human watchers (inbox and push), channel notifications and Action Center items are produced only for human-actor waits. An open owner wait still outranks a delivery gate, so such a stream presents as `waiting_on_owner` and gets neither a wait action nor a `workstream-delivery` action. The owner agent (else the squad manager) is still woken for every actor, with an actor-specific message. Correcting an open wait's actor (`POST /api/workstreams/:id/waits/:waitId/actor`, CLI `ficus workstream wait-actor`) is limited to users with `workstreams:update`, the owner agent or the squad manager. The change is appended to the wait's `actorChanges` audit trail. It never closes, reopens or re-dispatches the wait, and it sends the normal blocked notice when the new actor is `human`.
+
+## Resource subscriptions and ordinary idle
+
+`WorkStream.hasActiveSlotWait?: boolean` is additive, server-owned context, not a new wait or lifecycle state. An **otherwise idle** stream with `true` presents as `waiting_for_slot` (“Waiting for slot”), using the subdued informational `queue`/cyan palette. Ordinary `idle` is neutral gray. Human manual blockers and delivery setup use amber `attention`; actual execution and delivery failures remain red `danger`. Existing owner/dependency/external wait palettes are unchanged.
+
+Terminal states, pause, explicit waits, failures, delivery gates, admission queue and live execution all retain precedence. Active participants may have slot subscriptions without the stream becoming Waiting for slot. The stored status and `derivedState` vocabulary stay unchanged: older clients still receive `idle`, while new clients select the extra presentation state from the optional fact. Missing or false means **no proven current stream wait**, not proof that none of its agents has ever subscribed.
+
+Attribution is conservative. Core batch-loads current running attempts of activated running flows, then matches a live queued subscription to the participant's execution interval at enqueue time and that execution's exact `flowContext` stream/attempt. Historical participants, previous attempts of a reused agent, unrelated streams and waits outside a provable execution context do not qualify. The existing slot projection excludes granted/canceled/ended waiters, inactive pools, archived squads and invalid owners. Legacy non-flow or otherwise unattributable subscriptions remain visible in agent chat, but do not become stream status. Reads never claim capacity, suspend work, or change scheduler/continuation authority.
+
+The boolean follows existing work-stream read authorization and contains no pool names, agent identities, counts, rank or capacity. Pool details remain behind `GET /api/agents/:id/slot-waits`, which requires both agent visibility and `slots:use` or `slots:write` in the agent's squad. Its response remains `[{ waiterId, poolKey, queuedAt }]`.
+
+Web agent chats render a compact, collapsed disclosure **beneath the header**, in normal layout flow above messages. Idle agents say “Waiting for slot”; active/other states retain secondary “Slot queue” context. Native HTML `details`/`summary` provides keyboard and screen-reader disclosure semantics. Multiple long pool keys wrap inside a bounded scroll area. No queue text is placed in composer controls. Permission errors, read failures and cached rows still being revalidated cannot advertise a live wait. `slots.updated` (squad topic) and reconnects refresh both chat and stream projections.
+
+Widget summary `top[]` rows carry the same optional boolean, including explicit false for clearing. Detailed native rows can use it without changing their aggregate protocol. Proven idle slot waits use the **existing** `externalWait` aggregate bucket; ordinary idle retains its historical aggregate bucket while its detailed label is neutral Idle. Vocabulary, total count and ranking algorithm are unchanged. Slot lifecycle events also refresh the existing coalesced Live Activity fanout: recomputation includes squad subscribers and direct subscribers to nonterminal streams in that squad, with effective attention, authorization, token checks and unchanged-state suppression still applied. No synthetic work-stream lifecycle event or agent wake is emitted.
 
 ## Native projection and version skew
 

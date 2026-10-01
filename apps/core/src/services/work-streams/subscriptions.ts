@@ -1,7 +1,7 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { WATCH_ATTENTION, parseAttention, type Attention } from '@ficus/shared'
 import { db } from '../../db'
-import { workStreamSubscriptions } from '../../db/schema'
+import { workStreamSubscriptions, workStreams } from '../../db/schema'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 
 /**
@@ -75,4 +75,16 @@ export async function listUserWorkStreamAttention(userId: string): Promise<Map<s
 
 export async function countWorkStreamSubscribers(workStreamId: string): Promise<number> {
   return (await listWorkStreamSubscriberIds(workStreamId)).length
+}
+
+/** Recompute audience for a squad-scoped resource change, not permission to push.
+ * Snapshot loading still checks each user's effective interest and current RBAC.
+ */
+export async function listSquadWorkStreamSubscriberIds(squadId: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ userId: workStreamSubscriptions.userId })
+    .from(workStreamSubscriptions)
+    .innerJoin(workStreams, eq(workStreams.id, workStreamSubscriptions.workStreamId))
+    .where(and(eq(workStreams.squadId, squadId), inArray(workStreams.status, ['active', 'queued'])))
+  return rows.map((row) => row.userId)
 }

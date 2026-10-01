@@ -10,6 +10,7 @@
  * that the onAgentCreated useEffect fires when conv.agentId resolves — the two
  * responsibilities that are unique to AgentChat vs. the underlying hook or ChatView.
  */
+import { PermissionsProvider } from '../hooks/usePermissions'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChatApiProvider } from '../api/ChatApiProvider'
@@ -44,6 +45,7 @@ const TestChatView = ({
   onSend,
   hideComposer,
   afterMessages,
+  headerStatus,
   beforeComposer,
   deliveryMode,
   onDeliveryModeChange,
@@ -54,6 +56,7 @@ const TestChatView = ({
   items: RenderItem[]
   onSend: (message: string, imageIds?: string[]) => void | Promise<void>
   hideComposer?: boolean
+  headerStatus?: React.ReactNode
   afterMessages?: React.ReactNode
   beforeComposer?: React.ReactNode
   deliveryMode?: string
@@ -80,6 +83,7 @@ const TestChatView = ({
       data-delivery-mode={deliveryMode ?? ''}
       data-send-label={sendLabel ?? ''}
     >
+      <div data-testid="header-status">{headerStatus}</div>
       {items.map((item) => (
         <div key={item.id} data-kind={item.kind} data-item-id={item.id}>
           {item.kind === 'streaming'
@@ -257,6 +261,34 @@ afterEach(async () => {
 })
 
 describe('AgentChat', () => {
+  test('owns the slot status beneath the header for all agent chat wrappers', async () => {
+    const dom = await installDom()
+    const mc = makeMockClient()
+    const { Providers } = makeProviders(mc.client)
+    _agentStore['slot-agent'] = { id: 'slot-agent', status: 'idle', squadId: 'sq', terminatedAt: null }
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify([{ waiterId: 'w', poolKey: 'shared-box-intensive', queuedAt: '2026-10-01T00:00:00Z' }])
+      )) as typeof fetch
+    const { root } = dom.createRoot()
+    await dom.act(async () => {
+      root.render(
+        <Providers>
+          <PermissionsProvider
+            usePermissions={() => ({ can: () => true, permissions: ['slots:use'], isLoading: false, isError: false })}
+          >
+            <AgentChat agentId="slot-agent" dependencies={{ ChatViewComponent: TestChatView }} />
+          </PermissionsProvider>
+        </Providers>
+      )
+    })
+    await waitFor(() =>
+      expect(dom.window.document.querySelector('[data-testid="header-status"]')?.textContent).toContain(
+        'Waiting for slot'
+      )
+    )
+  })
+
   test('existing-agent: renders history items and streams', async () => {
     _capturedOnSend = null
     _capturedItems = []

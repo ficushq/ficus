@@ -1,3 +1,4 @@
+import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
 import { useStableRef } from '../hooks/useStableRef'
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
@@ -66,7 +67,7 @@ interface AgentChatProps {
   }
   showRawText?: boolean
   onToggleRawText?: () => void
-  /** Small live status beside the composer's controls (context used, sandbox and slot waits…). */
+  /** Small live status beside the composer's controls (context used and sandbox waits…). */
   composerStatus?: React.ReactNode | ((state: AgentChatHeaderState) => React.ReactNode)
   inputPrefix?: React.ReactNode
   focusTrigger?: number
@@ -346,6 +347,20 @@ export function AgentChat({
       enableFullscreen={enableFullscreen}
       embedded={embedded}
       header={typeof header === 'function' ? header({ waitingForSandbox: conv.waitingForSandbox }) : header}
+      headerStatus={
+        conv.agentId && agent?.squadId && !isTerminated && !isDormant ? (
+          <AgentSlotWaitStatus
+            key={conv.agentId}
+            agentId={conv.agentId}
+            squadId={agent.squadId}
+            isIdle={
+              agent.status === 'idle' &&
+              (!conv.executionStatus || ['completed', 'stopped', 'failed'].includes(conv.executionStatus)) &&
+              !conv.items.some((item) => item.kind === 'streaming')
+            }
+          />
+        ) : undefined
+      }
       afterMessages={
         <>
           {afterMessages}

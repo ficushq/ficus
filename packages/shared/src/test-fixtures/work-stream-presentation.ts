@@ -9,7 +9,7 @@ export interface PresentationCase {
   name: string
   facts: WorkStreamPresentationFacts
   state: WorkStreamPresentationState
-  role: Exclude<StatusRole, 'attention'>
+  role: StatusRole
   attention: boolean
   bucket: WorkBucket
   label: string
@@ -18,10 +18,28 @@ const active = { status: 'active', openWaits: [] } as const
 const paused = { id: 'pause', pausedAt: '2026-09-21T00:00:00Z', reason: null, parkAt: null, agentIds: [] }
 export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
   {
+    name: 'idle waiting for a slot',
+    facts: { ...active, hasActiveSlotWait: true },
+    state: 'waiting_for_slot',
+    role: 'queue',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'Waiting for slot',
+  },
+  {
+    name: 'running with secondary slot context',
+    facts: { ...active, derivedState: 'in_progress', hasActiveSlotWait: true },
+    state: 'in_progress',
+    role: 'progress',
+    attention: false,
+    bucket: 'running',
+    label: 'In Progress',
+  },
+  {
     name: 'true idle',
     facts: active,
     state: 'idle',
-    role: 'danger',
+    role: 'neutral',
     attention: false,
     bucket: 'blocked',
     label: 'Idle',
@@ -75,7 +93,7 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     name: 'manual blocker',
     facts: { ...active, openWaits: [{ type: 'manual' }] },
     state: 'blocked',
-    role: 'danger',
+    role: 'attention',
     attention: true,
     bucket: 'needsYou',
     label: 'Blocked',
@@ -84,7 +102,7 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     name: 'human-actor manual blocker',
     facts: { ...active, openWaits: [{ type: 'manual', actor: 'human' }] },
     state: 'blocked',
-    role: 'danger',
+    role: 'attention',
     attention: true,
     bucket: 'needsYou',
     label: 'Blocked',
@@ -102,7 +120,7 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     name: 'unknown actor (including manager) is human',
     facts: { ...active, openWaits: [{ type: 'manual', actor: PRE_RENAME_ACTOR }] },
     state: 'blocked',
-    role: 'danger',
+    role: 'attention',
     attention: true,
     bucket: 'needsYou',
     label: 'Blocked',
@@ -117,7 +135,7 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
       ],
     },
     state: 'blocked',
-    role: 'danger',
+    role: 'attention',
     attention: true,
     bucket: 'needsYou',
     label: 'Blocked',
@@ -209,7 +227,7 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     name: 'delivery setup missing',
     facts: { ...active, delivery: { kind: 'setup' } },
     state: 'delivery_setup',
-    role: 'danger',
+    role: 'attention',
     attention: false,
     bucket: 'blocked',
     label: 'Delivery Setup Required',
@@ -263,7 +281,7 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     name: 'explicit wait beats delivery',
     facts: { ...active, openWaits: [{ type: 'manual' }], delivery: { kind: 'merge' } },
     state: 'blocked',
-    role: 'danger',
+    role: 'attention',
     attention: true,
     bucket: 'needsYou',
     label: 'Blocked',
@@ -272,7 +290,7 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     name: 'empty waits erase stale review',
     facts: { ...active, derivedState: 'in_review' },
     state: 'idle',
-    role: 'danger',
+    role: 'neutral',
     attention: false,
     bucket: 'blocked',
     label: 'Idle',
@@ -290,7 +308,7 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     name: 'legacy omitted manual waits',
     facts: { status: 'active', derivedState: 'blocked' },
     state: 'blocked',
-    role: 'danger',
+    role: 'attention',
     attention: true,
     bucket: 'needsYou',
     label: 'Blocked',

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { WorkStream } from '@ficus/shared'
 import {
   createLiveActivityFanout,
+  registerLiveActivityFanout,
   endLiveActivitiesForUser,
   FANOUT_DEBOUNCE_MS,
   type LiveActivityFanoutDeps,
@@ -316,4 +317,68 @@ describe('live activity fan-out delivery', () => {
     expect(deleted).toEqual([])
     fanout.stop()
   })
+})
+
+test('slot lifecycle uses scoped, coalesced snapshot refresh and unregisters cleanly', async () => {
+  const listeners = new Map<string, (payload: unknown) => void>()
+  const timers = fakeTimers()
+  const snapshots: string[] = []
+  const lookups: unknown[] = []
+  const sent: Array<{ token: string; payload: unknown }> = []
+  let waiting = true
+  const fanout = registerLiveActivityFanout(
+    {
+      on: (event, handler) => {
+        listeners.set(event, handler as (payload: unknown) => void)
+        return () => {
+          listeners.delete(event)
+        }
+      },
+    },
+    {
+      resolveUserIds: async (input) => {
+        lookups.push(input)
+        return input.squadId === 'affected' && input.includeDirectStreamSubscribers ? ['direct-user', 'squad-user'] : []
+      },
+      loadUserStreams: async (user) => {
+        snapshots.push(user)
+        return [{ ...running('slot'), derivedState: 'idle', openWaits: [], hasActiveSlotWait: waiting }]
+      },
+      loadSnapshot: undefined,
+      hasApnsConfig: () => true,
+      listTokens: async (userIds) => userIds.map((userId) => ({ ...UPDATE_TOKEN, userId, apnsToken: userId })),
+      send: (async (token, payload) => {
+        sent.push({ token, payload })
+        return { ok: true, status: 200 }
+      }) as LiveActivityFanoutDeps['send'],
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    }
+  )
+  try {
+    expect(listeners.has('slots.updated')).toBe(true)
+    for (let i = 0; i < 3; i++) listeners.get('slots.updated')!({ squadId: 'affected' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(timers.size).toBe(2)
+    await timers.run()
+    expect(snapshots.sort()).toEqual(['direct-user', 'squad-user'])
+    expect(sent.map((entry) => entry.token).sort()).toEqual(['direct-user', 'squad-user'])
+    expect(sent).toHaveLength(2)
+    waiting = false
+    listeners.get('slots.updated')!({ squadId: 'affected' })
+    await Promise.resolve()
+    await Promise.resolve()
+    await timers.run()
+    expect(sent).toHaveLength(4)
+    listeners.get('slots.updated')!({ squadId: 'unrelated' })
+    await Promise.resolve()
+    await Promise.resolve()
+    await timers.run()
+    expect(sent).toHaveLength(4)
+    expect(lookups[0]).toEqual({ squadId: 'affected', includeDirectStreamSubscribers: true })
+  } finally {
+    fanout.stop()
+  }
+  expect(listeners.size).toBe(0)
 })

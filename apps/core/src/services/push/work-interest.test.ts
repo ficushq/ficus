@@ -25,6 +25,7 @@ function loader(options: {
   candidates?: WorkInterestCandidate[]
   deniedSquads?: string[]
   attention?: string[]
+  slotWaiting?: string[]
   activeUser?: boolean
 }) {
   const checked: string[] = []
@@ -63,7 +64,10 @@ function loader(options: {
                 openWaits: [{ type: 'question' }] as NonNullable<WorkStream['openWaits']>,
               }
             : {
-                derivedState: 'in_progress' as const,
+                derivedState: (options.slotWaiting?.includes(stream.id) ? 'idle' : 'in_progress') as
+                  | 'idle'
+                  | 'in_progress',
+                hasActiveSlotWait: options.slotWaiting?.includes(stream.id),
                 openWaits: [] as NonNullable<WorkStream['openWaits']>,
               },
         ])
@@ -242,4 +246,24 @@ describe('work interest selector', () => {
     expect(snapshot.top).toEqual([])
     expect(snapshot.liveActivity).toEqual({ activeCount: 0, needsYouCount: 0, top: [] })
   })
+})
+
+test('authorized widget snapshots carry current slot facts for direct and squad interest, not unrelated work', async () => {
+  const { load } = loader({
+    watchedSquads: ['watched'],
+    directStreams: ['direct', 'forbidden'],
+    candidates: [
+      candidate('direct', 'other'),
+      candidate('squad', 'watched'),
+      candidate('unrelated', 'other'),
+      candidate('forbidden', 'denied'),
+    ],
+    deniedSquads: ['denied'],
+    slotWaiting: ['direct', 'squad', 'unrelated', 'forbidden'],
+  })
+  const snapshot = await load('user-1')
+  expect(snapshot.top.map((row) => row.id).sort()).toEqual(['direct', 'squad'])
+  expect(snapshot.top.every((row) => row.hasActiveSlotWait === true)).toBe(true)
+  expect(snapshot.bucketCounts.externalWait).toBe(2)
+  expect(snapshot.totalCount).toBe(2)
 })

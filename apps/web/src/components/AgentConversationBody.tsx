@@ -100,8 +100,6 @@ export function AgentConversation({
         const idle = agent.status === 'idle' && !activeExecution?.active && !isTerminated
         return (
           <AgentComposerStatus
-            agentId={agentId}
-            squadId={agent.squadId}
             status={
               agent.status === 'compacting' ? 'compacting' : agent.status === 'resetting' ? 'resetting' : displayStatus
             }

@@ -10,7 +10,7 @@ import { createLogger } from '../../lib/infra/logger'
 import { getApnsConfig, sendApnsLiveActivity, type ApnsSendResult } from './apns'
 import { deleteLiveActivityToken, listLiveActivityTokens } from './live-activity-tokens'
 import { listSquadSubscriberIds } from '../squad/subscriptions'
-import { listWorkStreamSubscriberIds } from '../work-streams/subscriptions'
+import { listWorkStreamSubscriberIds, listSquadWorkStreamSubscriberIds } from '../work-streams/subscriptions'
 import { loadWorkInterestSnapshot } from './work-interest'
 
 const log = createLogger('live-activity-fanout')
@@ -61,9 +61,16 @@ export const LIVE_ACTIVITY_MAX_ATTEMPTS = 3
 
 type TimerHandle = ReturnType<typeof setTimeout>
 
+interface LiveActivityChange {
+  workStreamId?: string
+  squadId?: string
+  /** A resource event can change a direct subscriber's stream without a lifecycle event. */
+  includeDirectStreamSubscribers?: boolean
+}
+
 export interface LiveActivityFanoutDeps {
   /** Subscribers of the changed stream ∪ of its squad — the same set the inbox notification uses. */
-  resolveUserIds: (input: { workStreamId?: string; squadId?: string }) => Promise<string[]>
+  resolveUserIds: (input: LiveActivityChange) => Promise<string[]>
   /** Authoritative server snapshot. Legacy stream injection remains for focused unit tests. */
   loadSnapshot?: (userId: string) => Promise<WorkInterestSnapshot>
   loadUserStreams?: (userId: string) => Promise<WorkStream[]>
@@ -79,7 +86,7 @@ export interface LiveActivityFanoutDeps {
 
 export interface LiveActivityFanout {
   /** Called per event; resolves once the debounce is SCHEDULED, not once the push is sent. */
-  onWorkStreamEvent(payload: { workStreamId?: string; squadId?: string }): Promise<void>
+  onWorkStreamEvent(payload: LiveActivityChange): Promise<void>
   /** Schedule a refresh after a subscription-interest mutation. */
   refreshUser(userId: string): void
   /** Force the pending push for one user (tests; also used by flush). */
@@ -369,9 +376,12 @@ export async function endLiveActivitiesForUser(
  * Registration is cheap and unconditional so the flag can be flipped at runtime — the gate is
  * re-evaluated per event and again per push, rather than deciding once at boot.
  */
-export function registerLiveActivityFanout(emitter: {
-  on<K extends keyof EventMap>(event: K, handler: (payload: EventMap[K]) => void): () => void
-}): LiveActivityFanout {
+export function registerLiveActivityFanout(
+  emitter: {
+    on<K extends keyof EventMap>(event: K, handler: (payload: EventMap[K]) => void): () => void
+  },
+  deps: Partial<LiveActivityFanoutDeps> = {}
+): LiveActivityFanout {
   const fanout = createLiveActivityFanout({
     // The RECOMPUTE set, not a recipient set: every user with a subscription row on the stream or
     // its squad, at any level. Deliberately wider than the inbox notice (which resolves effective
@@ -380,15 +390,17 @@ export function registerLiveActivityFanout(emitter: {
     // anything, they see: `loadWorkInterestSnapshot` keeps only work whose effective attention is
     // `notify` and whose squad the user may read, so a mute or a lost role ends the card instead
     // of leaking content into it.
-    resolveUserIds: async ({ workStreamId, squadId }) => {
-      const [streamWatchers, squadWatchers] = await Promise.all([
+    resolveUserIds: async ({ workStreamId, squadId, includeDirectStreamSubscribers }) => {
+      const [streamWatchers, squadWatchers, directWatchers] = await Promise.all([
         workStreamId ? listWorkStreamSubscriberIds(workStreamId) : Promise.resolve([]),
         squadId ? listSquadSubscriberIds(squadId) : Promise.resolve([]),
+        squadId && includeDirectStreamSubscribers ? listSquadWorkStreamSubscriberIds(squadId) : Promise.resolve([]),
       ])
-      return [...new Set([...streamWatchers, ...squadWatchers])]
+      return [...new Set([...streamWatchers, ...squadWatchers, ...directWatchers])]
     },
     loadSnapshot: loadWorkInterestSnapshot,
     origin: () => process.env.PUBLIC_URL ?? '',
+    ...deps,
   })
 
   const unsubscribes: Array<() => void> = []
@@ -398,6 +410,12 @@ export function registerLiveActivityFanout(emitter: {
     })
     if (unsubscribe) unsubscribes.push(unsubscribe)
   }
+  const unsubscribeSlots = emitter.on('slots.updated', ({ squadId }) => {
+    void fanout.onWorkStreamEvent({ squadId, includeDirectStreamSubscribers: true }).catch((error) => {
+      log.warn('Could not refresh Live Activity after slot change', error)
+    })
+  })
+  if (unsubscribeSlots) unsubscribes.push(unsubscribeSlots)
   const unsubscribeInterest = emitter.on('liveActivity.interestChanged', ({ userId }) => fanout.refreshUser(userId))
   if (unsubscribeInterest) unsubscribes.push(unsubscribeInterest)
 

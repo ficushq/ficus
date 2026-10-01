@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { waitFor } from '@testing-library/dom'
+import { fireEvent, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../test/domHarness'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
+import { agentSlotWaitQueryKeys } from '../queryKeys'
 import { QueryInvalidator } from './QueryInvalidator'
 
 type Wait = { waiterId: string; poolKey: string; queuedAt: string }
@@ -66,12 +67,12 @@ describe('AgentSlotWaitStatus', () => {
     client.clear()
   })
 
-  async function render(agentId = 'agent-a', isConnected = false) {
+  async function render(agentId = 'agent-a', isConnected = false, isIdle = true) {
     await dom.act(async () => {
       root.render(
         <QueryClientProvider client={client}>
           <PermissionsProvider usePermissions={usePermissions}>
-            <AgentSlotWaitStatus agentId={agentId} squadId="squad-a" />
+            <AgentSlotWaitStatus agentId={agentId} squadId="squad-a" isIdle={isIdle} />
             <QueryInvalidator dependencies={{ queryClient: client, subscribe, isConnected }} />
           </PermissionsProvider>
         </QueryClientProvider>
@@ -95,9 +96,36 @@ describe('AgentSlotWaitStatus', () => {
     await render()
     await eventually(() => expect(text()).toContain('shared-box-intensive'))
     expect(text()).toContain('production-change')
-    expect(text()).toContain('Queued for slots')
+    expect(text()).toContain('Waiting for slot')
+    const details = dom.window.document.querySelector('details')!
+    expect(details.open).toBe(false)
+    await dom.act(async () => {
+      fireEvent.click(details.querySelector('summary')!)
+    })
+    expect(details.open).toBe(true)
     expect(dom.window.document.querySelector('[role="status"]')?.getAttribute('aria-live')).toBe('polite')
     expect(text()).not.toMatch(/position|ETA|only reason|idle because/i)
+  })
+
+  test('running agent keeps secondary context without claiming it is waiting', async () => {
+    await render('agent-a', false, false)
+    await eventually(() => expect(text()).toContain('Slot queue'))
+    expect(text()).not.toContain('Waiting for slot')
+  })
+
+  test('does not present a stale cached wait as live while revalidating it', async () => {
+    client.setQueryData(agentSlotWaitQueryKeys.agent('squad-a', 'agent-a'), [queued('old-pool')])
+    let resolve!: (response: Response) => void
+    pendingResponse = new Promise((r) => {
+      resolve = r
+    })
+    await render()
+    expect(text()).not.toContain('Waiting for slot')
+    expect(text()).not.toContain('old-pool')
+    await dom.act(async () => {
+      resolve(new Response('[]'))
+    })
+    await eventually(() => expect(text()).toBe(''))
   })
 
   test('renders nothing for no waits (including an agent that only owns claims)', async () => {
